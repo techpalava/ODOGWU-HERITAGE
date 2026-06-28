@@ -1,0 +1,6 @@
+{
+  "name": "The Odogwu Heritage",
+  "description": "Traditional Nigerian clothing community and tailoring coordinator. Create custom designs with simple fit estimation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
