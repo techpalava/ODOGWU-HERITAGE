@@ -1,9 +1,23 @@
-import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { Sparkles, Upload, Eye, CheckCircle2, Info, Lock, ArrowRight, Download, Edit3 } from 'lucide-react';
-import { StyleCategory, Fabric } from '../types';
+import React, { useState } from "react";
+import { motion } from "motion/react";
+import {
+  Sparkles,
+  Upload,
+  Eye,
+  CheckCircle2,
+  Info,
+  Lock,
+  ArrowRight,
+  Download,
+  Edit3,
+  RotateCcw,
+} from "lucide-react";
+import { StyleCategory, Fabric } from "../types";
+import { useAppStore } from "../store/useAppStore";
 
-import virtualTryOnConcept from '../assets/images/virtual_tryon_concept_1782563183054.jpg';
+import virtualTryOnConcept from "../assets/images/virtual_tryon_concept_1782563183054.jpg";
+
+import { compressImage } from "../utils/imageUtils";
 
 interface VirtualTryOnIntegrationCardProps {
   /**
@@ -13,7 +27,7 @@ interface VirtualTryOnIntegrationCardProps {
   /**
    * Reserved for tracking API request status
    */
-  apiStatus?: 'idle' | 'loading' | 'success' | 'error';
+  apiStatus?: "idle" | "loading" | "success" | "error";
   /**
    * Reserved to flag when API credentials and systems are ready for production
    */
@@ -47,14 +61,14 @@ interface VirtualTryOnIntegrationCardProps {
    */
   selectedStyle?: StyleCategory;
   selectedDesign?: unknown;
-  onNotificationTrigger?: (message: string, type: 'success' | 'info') => void;
+  onNotificationTrigger?: (message: string, type: "success" | "info") => void;
 }
 
 /**
  * FUTURE DEVELOPER INTEGRATION NOTES:
  * ----------------------------------
  * This component is reserved for future integration with the FASHN AI API (or another virtual try-on provider).
- * 
+ *
  * Future workflow:
  * 1. The customer configures their outfit:
  *    - Design Style (e.g. selectedDesignStyle)
@@ -63,7 +77,7 @@ interface VirtualTryOnIntegrationCardProps {
  * 2. The application sends the selected configuration to the external AI Virtual Try-On API.
  * 3. The API processes the parameters and generates a realistic image of the configured outfit on a model.
  * 4. The generated image (previewImage) is returned and displayed inside this card.
- * 
+ *
  * API Endpoint Payload Draft:
  * {
  *   "model_pose": "neutral_standing_male",
@@ -78,8 +92,8 @@ interface VirtualTryOnIntegrationCardProps {
  * }
  */
 export default function VirtualTryOnIntegrationCard({
-  apiProvider = 'FASHN AI API',
-  apiStatus = 'idle',
+  apiProvider = "FASHN AI API",
+  apiStatus = "idle",
   integrationReady = false,
   previewImage = null,
   selectedDesignStyle,
@@ -87,30 +101,72 @@ export default function VirtualTryOnIntegrationCard({
   selectedCustomDetails,
   selectedStyle,
   selectedDesign,
-  onNotificationTrigger
+  onNotificationTrigger,
 }: VirtualTryOnIntegrationCardProps) {
   // Gracefully merge aliases
   const activeStyle = selectedDesignStyle || selectedStyle;
   const activeFabric = selectedFabric;
   const activeDetails = selectedCustomDetails || selectedDesign;
 
-  const [email, setEmail] = useState('');
+  const { businessSettings, setBusinessSettings, currentUser } = useAppStore();
+  const isAdmin = currentUser?.role === "NTCC Founder & Coordinator";
+  const activeImage =
+    businessSettings.applicationSettings.virtualTryOnConceptImage ||
+    virtualTryOnConcept;
+
+  const [email, setEmail] = useState("");
   const [interestRegistered, setInterestRegistered] = useState(false);
   const [showNotification, setShowNotification] = useState<string | null>(null);
 
   const triggerLocalNotification = (msg: string) => {
     if (onNotificationTrigger) {
-      onNotificationTrigger(msg, 'success');
+      onNotificationTrigger(msg, "success");
     } else {
       setShowNotification(msg);
       setTimeout(() => setShowNotification(null), 4000);
     }
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select a valid image file.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      const compressedUrl = await compressImage(dataUrl);
+      setBusinessSettings((prev) => ({
+        ...prev,
+        applicationSettings: {
+          ...prev.applicationSettings,
+          virtualTryOnConceptImage: compressedUrl,
+        },
+      }));
+      triggerLocalNotification("Showcase image updated successfully!");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleResetImage = () => {
+    setBusinessSettings((prev) => ({
+      ...prev,
+      applicationSettings: {
+        ...prev.applicationSettings,
+        virtualTryOnConceptImage: "",
+      },
+    }));
+    triggerLocalNotification("Showcase image reset to default.");
+  };
+
   const handleNotifyMe = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !email.includes('@')) {
-      alert('Please enter a valid email address.');
+    if (!email.trim() || !email.includes("@")) {
+      alert("Please enter a valid email address.");
       return;
     }
     setInterestRegistered(true);
@@ -120,27 +176,83 @@ export default function VirtualTryOnIntegrationCard({
   return (
     <div id="virtual-try-on-premium-section" className="space-y-6">
       {/* Step Header */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase font-mono text-heritage-gold tracking-wider">Step 4 of 9</span>
+      <div className="space-y-2 text-center sm:text-left">
+        <div className="flex flex-col sm:flex-row items-center sm:items-center justify-center sm:justify-start gap-2">
+          <span className="text-[10px] uppercase font-mono text-heritage-gold tracking-wider">
+            Step 4 of 9
+          </span>
           <span className="inline-flex items-center gap-1.5 px-3 py-0.5 bg-heritage-gold/10 text-heritage-gold text-[9px] font-black uppercase rounded-full tracking-widest border border-heritage-gold/25 shadow-xs">
-            <Sparkles size={10} className="fill-current animate-pulse text-heritage-gold" /> Coming Soon
+            <Sparkles
+              size={10}
+              className="fill-current animate-pulse text-heritage-gold"
+            />{" "}
+            Coming Soon
           </span>
         </div>
-        
-        <h2 className="text-xl sm:text-2xl font-serif font-bold text-heritage-green flex items-center gap-2">
+
+        <h2 className="text-lg sm:text-2xl font-serif font-bold text-heritage-green flex items-center justify-center sm:justify-start gap-2">
           AI Virtual Try-On
         </h2>
         <p className="text-xs text-heritage-ink/75 leading-relaxed">
-          Preview your selected garment on a realistic human model using AI-powered virtual try-on technology. 
-          The system will automatically combine the selected <strong>Design Style</strong>, <strong>Fabric</strong>, and <strong>Custom Details</strong> to generate a realistic preview of the finished outfit. 
-          This feature will be powered by a third-party AI API in a future release.
+          Preview your selected garment on a realistic human model using
+          AI-powered virtual try-on technology. The system will automatically
+          combine the selected <strong>Design Style</strong>,{" "}
+          <strong>Fabric</strong>, and <strong>Custom Details</strong> to
+          generate a realistic preview of the finished outfit. This feature will
+          be powered by a third-party AI API in a future release.
         </p>
       </div>
 
+      {/* Admin Action Bar */}
+      {isAdmin && (
+        <div className="bg-heritage-gold/15 border-2 border-dashed border-heritage-gold/45 rounded-3xl p-5 text-white space-y-3 shadow-md">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="space-y-1">
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-heritage-gold/25 text-heritage-gold text-[9px] font-black uppercase rounded border border-heritage-gold/30 tracking-widest">
+                ⚙️ Coordinator Controls
+              </span>
+              <h4 className="font-bold text-sm text-white font-serif">
+                Customize Showcase Visual
+              </h4>
+              <p className="text-xs text-heritage-beige/85">
+                Upload your own photo to replace the generic placeholder below.
+                Changes save instantly.
+              </p>
+            </div>
+
+            <div className="flex gap-2 shrink-0">
+              <label
+                htmlFor="admin-card-upload-file"
+                className="px-4 py-2 bg-heritage-gold hover:bg-white text-heritage-forest hover:text-heritage-green rounded-xl text-xs font-bold uppercase tracking-wider transition duration-300 shadow-md cursor-pointer flex items-center gap-1.5 select-none"
+              >
+                <Upload size={12} />
+                <span>Upload Photo</span>
+              </label>
+              <input
+                type="file"
+                id="admin-card-upload-file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageUpload}
+              />
+              {businessSettings.applicationSettings
+                .virtualTryOnConceptImage && (
+                <button
+                  type="button"
+                  onClick={handleResetImage}
+                  className="px-4 py-2 bg-red-950/40 hover:bg-red-600 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition duration-300 border border-red-500/20"
+                  title="Reset to original concept artwork"
+                >
+                  Reset Default
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Luxury Promo Showcase Card */}
       <div className="relative overflow-hidden bg-gradient-to-br from-heritage-forest via-heritage-green to-heritage-forest border border-heritage-gold/30 rounded-3xl p-6 sm:p-8 text-white shadow-xl space-y-8">
-        
         {/* Prominent Concept Illustration Showcase Section */}
         <div className="flex flex-col items-center justify-center text-center space-y-4">
           <span className="inline-flex items-center gap-1 px-3 py-1 bg-heritage-gold/15 text-heritage-gold text-[10px] font-bold uppercase tracking-wider rounded-full border border-heritage-gold/30 shadow-xs">
@@ -149,40 +261,79 @@ export default function VirtualTryOnIntegrationCard({
           <h3 className="text-xl font-serif font-bold text-white tracking-tight uppercase">
             Virtual Try-On Showcase
           </h3>
-          
+
           {/* Portrait Image Frame */}
           <div className="relative max-w-sm w-full mx-auto aspect-[3/4] overflow-hidden rounded-3xl border-4 border-heritage-gold/45 shadow-2xl group">
-            <img loading="lazy" 
-              src={virtualTryOnConcept}
+            <img
+              loading="lazy"
+              src={activeImage}
               alt="AI Virtual Try-On Concept"
               className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
               referrerPolicy="no-referrer"
             />
             {/* Elegant vignette overlays and mock tags to match the concept theme */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30 pointer-events-none" />
-            
+
             {/* Custom mock overlay controls simulating a real active try-on screen */}
             <div className="absolute top-4 left-4 flex items-center gap-2 pointer-events-none">
               <span className="bg-black/50 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded border border-white/15">
                 ← Back
               </span>
             </div>
-            
+
             <div className="absolute top-4 right-4 flex flex-col gap-2">
-              <span className="p-2 bg-black/55 backdrop-blur-xs text-heritage-gold hover:text-white rounded-full border border-white/10 shadow-md cursor-not-allowed">
-                <Edit3 size={12} />
-              </span>
-              <span className="p-2 bg-black/55 backdrop-blur-xs text-heritage-gold hover:text-white rounded-full border border-white/10 shadow-md cursor-not-allowed">
-                <Download size={12} />
-              </span>
+              {isAdmin ? (
+                <>
+                  <label
+                    htmlFor="admin-card-upload-file-overlay"
+                    className="p-2.5 bg-heritage-green/90 hover:bg-heritage-gold text-heritage-gold hover:text-heritage-forest rounded-full border border-heritage-gold/30 shadow-md cursor-pointer transition flex items-center justify-center"
+                    title="Upload custom showcase image"
+                  >
+                    <Upload size={13} />
+                  </label>
+                  <input
+                    type="file"
+                    id="admin-card-upload-file-overlay"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageUpload}
+                  />
+                  {businessSettings.applicationSettings
+                    .virtualTryOnConceptImage && (
+                    <button
+                      type="button"
+                      onClick={handleResetImage}
+                      className="p-2.5 bg-red-900/90 hover:bg-red-600 text-white rounded-full border border-red-500/20 shadow-md cursor-pointer transition flex items-center justify-center"
+                      title="Reset default artwork"
+                    >
+                      <RotateCcw size={13} />
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span className="p-2 bg-black/55 backdrop-blur-xs text-heritage-gold hover:text-white rounded-full border border-white/10 shadow-md cursor-not-allowed">
+                    <Edit3 size={12} />
+                  </span>
+                  <span className="p-2 bg-black/55 backdrop-blur-xs text-heritage-gold hover:text-white rounded-full border border-white/10 shadow-md cursor-not-allowed">
+                    <Download size={12} />
+                  </span>
+                </>
+              )}
             </div>
 
             {/* Dynamic Outfit badge info */}
             <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-left bg-black/60 backdrop-blur-sm p-3 rounded-2xl border border-white/10">
               <div className="min-w-0 flex-1 pr-2">
-                <span className="text-[9px] uppercase tracking-wider text-heritage-gold font-bold block">Outfit Configuration</span>
-                <strong className="text-xs text-white block truncate">{activeStyle?.name || 'Classic Senator'}</strong>
-                <span className="text-[10px] text-white/70 block truncate font-mono">Fabric: {activeFabric?.name || 'Premium Cotton Swatch'}</span>
+                <span className="text-[9px] uppercase tracking-wider text-heritage-gold font-bold block">
+                  Bespoke Outfit Selection
+                </span>
+                <strong className="text-xs text-white block truncate">
+                  {activeStyle?.name || "Classic Senator"}
+                </strong>
+                <span className="text-[10px] text-white/70 block truncate font-mono">
+                  Fabric: {activeFabric?.name || "Premium Cotton Swatch"}
+                </span>
               </div>
               <div className="flex gap-1 shrink-0">
                 <span className="px-2 py-1 bg-heritage-gold text-heritage-forest rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm">
@@ -200,38 +351,50 @@ export default function VirtualTryOnIntegrationCard({
               Visualize Your Bespoke Attire
             </h4>
             <p className="text-xs text-heritage-beige/85 leading-relaxed font-sans">
-              Designed as a premium extension, this interactive experience allows customers to preview the perfect combination of traditional silhouette and selected fabric before finalizing bespoke tailoring and payment.
+              Designed as a premium extension, this interactive experience
+              allows customers to preview the perfect combination of traditional
+              silhouette and selected fabric before finalizing bespoke tailoring
+              and payment.
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl mx-auto text-xs font-sans">
             <div className="p-4 rounded-2xl bg-heritage-green/45 border border-heritage-gold/15 space-y-2 text-center sm:text-left">
               <div className="flex flex-col sm:flex-row items-center gap-2 text-heritage-gold font-serif font-semibold">
-                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-heritage-gold/25 text-heritage-gold text-[10px] font-mono">1</span>
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-heritage-gold/25 text-heritage-gold text-[10px] font-mono">
+                  1
+                </span>
                 <span>Select Silhouette</span>
               </div>
               <p className="text-[11px] text-heritage-beige/80 leading-relaxed sm:pl-7">
-                Choose from timeless traditional styles including the Royal Senator, Grand Agbada, and executive kaftans.
+                Choose from timeless traditional styles including the Royal
+                Senator, Grand Agbada, and executive kaftans.
               </p>
             </div>
 
             <div className="p-4 rounded-2xl bg-heritage-green/45 border border-heritage-gold/15 space-y-2 text-center sm:text-left">
               <div className="flex flex-col sm:flex-row items-center gap-2 text-heritage-gold font-serif font-semibold">
-                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-heritage-gold/25 text-heritage-gold text-[10px] font-mono">2</span>
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-heritage-gold/25 text-heritage-gold text-[10px] font-mono">
+                  2
+                </span>
                 <span>Drape Heritage Fabric</span>
               </div>
               <p className="text-[11px] text-heritage-beige/80 leading-relaxed sm:pl-7">
-                Instantly map your selected premium cotton, brocade, or satin silk patterns onto the 3D drape coordinates.
+                Instantly map your selected premium cotton, brocade, or satin
+                silk patterns onto the 3D drape coordinates.
               </p>
             </div>
 
             <div className="p-4 rounded-2xl bg-heritage-green/45 border border-heritage-gold/15 space-y-2 text-center sm:text-left">
               <div className="flex flex-col sm:flex-row items-center gap-2 text-heritage-gold font-serif font-semibold">
-                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-heritage-gold/25 text-heritage-gold text-[10px] font-mono">3</span>
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-heritage-gold/25 text-heritage-gold text-[10px] font-mono">
+                  3
+                </span>
                 <span>Verify Before Payment</span>
               </div>
               <p className="text-[11px] text-heritage-beige/80 leading-relaxed sm:pl-7">
-                View the combined pattern scaling and placement to ensure complete styling confidence before final payment.
+                View the combined pattern scaling and placement to ensure
+                complete styling confidence before final payment.
               </p>
             </div>
           </div>
@@ -243,10 +406,14 @@ export default function VirtualTryOnIntegrationCard({
                 ⭐ Future Premium Plugin Subscription
               </span>
               <div className="flex items-center justify-center gap-2 text-white">
-                <span className="text-xl font-bold text-heritage-gold">$15</span>
+                <span className="text-xl font-bold text-heritage-gold">
+                  $15
+                </span>
                 <span className="text-xs text-heritage-beige">/ month</span>
                 <span className="text-heritage-gold/40 mx-2">|</span>
-                <span className="text-xl font-bold text-heritage-gold">$120</span>
+                <span className="text-xl font-bold text-heritage-gold">
+                  $120
+                </span>
                 <span className="text-xs text-heritage-beige">/ year</span>
               </div>
             </div>
@@ -258,13 +425,16 @@ export default function VirtualTryOnIntegrationCard({
                   <span>EARLY ACCESS REGISTERED</span>
                 </div>
               ) : (
-                <form onSubmit={handleNotifyMe} className="flex flex-col sm:flex-row items-stretch gap-2 w-full max-w-md mx-auto">
+                <form
+                  onSubmit={handleNotifyMe}
+                  className="flex flex-col sm:flex-row items-stretch gap-2 w-full max-w-md mx-auto"
+                >
                   <input
                     type="email"
                     required
                     placeholder="Enter email to pre-register..."
                     value={email}
-                    onChange={e => setEmail(e.target.value)}
+                    onChange={(e) => setEmail(e.target.value)}
                     className="flex-1 px-4 py-2 bg-heritage-green border border-heritage-gold/30 rounded-xl text-xs text-white placeholder-heritage-beige/50 focus:outline-none focus:ring-1 focus:ring-heritage-gold text-center sm:text-left animate-none"
                   />
                   <button
@@ -289,37 +459,57 @@ export default function VirtualTryOnIntegrationCard({
           </h4>
         </div>
         <p className="text-[11px] text-heritage-ink/70 leading-relaxed">
-          The following parameters are compiled into <code>VirtualTryOnIntegrationCardProps</code> in <code>src/components/VirtualTryOnIntegrationCard.tsx</code> to support clean connection with the <strong>FASHN API</strong> or similar garment-fitment providers when integration starts.
+          The following parameters are compiled into{" "}
+          <code>VirtualTryOnIntegrationCardProps</code> in{" "}
+          <code>src/components/VirtualTryOnIntegrationCard.tsx</code> to support
+          clean connection with the <strong>FASHN API</strong> or similar
+          garment-fitment providers when integration starts.
         </p>
 
         {/* Props Visual Inspector */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 font-mono text-[10px] text-heritage-ink/65 bg-heritage-cream/20 p-3 rounded-xl border border-heritage-gold/10">
           <div className="p-2 bg-white rounded border border-gray-100">
             <span className="text-heritage-gold font-bold">apiProvider:</span>
-            <span className="text-heritage-green block mt-0.5">"{apiProvider}"</span>
+            <span className="text-heritage-green block mt-0.5">
+              "{apiProvider}"
+            </span>
           </div>
           <div className="p-2 bg-white rounded border border-gray-100">
             <span className="text-heritage-gold font-bold">apiStatus:</span>
-            <span className="text-heritage-green block mt-0.5">"{apiStatus}"</span>
+            <span className="text-heritage-green block mt-0.5">
+              "{apiStatus}"
+            </span>
           </div>
           <div className="p-2 bg-white rounded border border-gray-100">
-            <span className="text-heritage-gold font-bold">integrationReady:</span>
-            <span className="text-heritage-green block mt-0.5">{String(integrationReady)}</span>
+            <span className="text-heritage-gold font-bold">
+              integrationReady:
+            </span>
+            <span className="text-heritage-green block mt-0.5">
+              {String(integrationReady)}
+            </span>
           </div>
           <div className="p-2 bg-white rounded border border-gray-100">
             <span className="text-heritage-gold font-bold">previewImage:</span>
-            <span className="text-heritage-green block mt-0.5">{previewImage ? `"${previewImage}"` : "null"}</span>
+            <span className="text-heritage-green block mt-0.5">
+              {previewImage ? `"${previewImage}"` : "null"}
+            </span>
           </div>
           <div className="p-2 bg-white rounded border border-gray-100">
-            <span className="text-heritage-gold font-bold">selectedDesignStyle:</span>
+            <span className="text-heritage-gold font-bold">
+              selectedDesignStyle:
+            </span>
             <span className="text-heritage-green block mt-0.5">
               {activeStyle ? `"${activeStyle.name}"` : "undefined"}
             </span>
           </div>
           <div className="p-2 bg-white rounded border border-gray-100">
-            <span className="text-heritage-gold font-bold">selectedFabric:</span>
+            <span className="text-heritage-gold font-bold">
+              selectedFabric:
+            </span>
             <span className="text-heritage-green block mt-0.5">
-              {activeFabric ? `"${activeFabric.name}" (${activeFabric.code})` : "undefined"}
+              {activeFabric
+                ? `"${activeFabric.name}" (${activeFabric.code})`
+                : "undefined"}
             </span>
           </div>
         </div>

@@ -3,54 +3,114 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, Suspense, lazy } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Shirt, Compass, ClipboardList, Truck, Layers, Bell, Check, Sparkles, ShoppingCart, Trash2, X, ShoppingBag, CreditCard, Info, Database, Menu, Lock as LockIcon, Facebook, Instagram, MessageCircle, Mail, Phone, Music2 } from 'lucide-react';
-import { MasterOrder, HistoricalOrder, CartItem, CustomGroup, OrderContext, Fabric, StyleCategory, Customer, Showpiece, CommunityPhoto } from './types';
-import { STYLE_CATEGORIES, FABRICS, MOCK_HISTORICAL_ORDERS, MOCK_COMMUNITY_PHOTOS } from './data/mockData';
-import { StorageService } from './services/storageService';
-import { useAppStore } from './store/useAppStore';
+import React, { useState, Suspense, lazy } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  Shirt,
+  Compass,
+  ClipboardList,
+  Truck,
+  Layers,
+  Bell,
+  Check,
+  Sparkles,
+  ShoppingCart,
+  Trash2,
+  X,
+  ShoppingBag,
+  CreditCard,
+  Info,
+  Database,
+  Menu,
+  Lock as LockIcon,
+  Facebook,
+  Instagram,
+  MessageCircle,
+  Mail,
+  Phone,
+  Music2,
+} from "lucide-react";
+import {
+  MasterOrder,
+  HistoricalOrder,
+  CartItem,
+  CustomGroup,
+  OrderContext,
+  Fabric,
+  StyleCategory,
+  Customer,
+  Showpiece,
+  CommunityPhoto,
+} from "./types";
+import {
+  STYLE_CATEGORIES,
+  FABRICS,
+  MOCK_HISTORICAL_ORDERS,
+  MOCK_COMMUNITY_PHOTOS,
+} from "./data/mockData";
+import { StorageService } from "./services/storageService";
+import { useAppStore } from "./store/useAppStore";
 
 // Lazy load modular view components for performance optimization
-const HomeView = lazy(() => import('./components/HomeView'));
-const DesignStudioView = lazy(() => import('./components/DesignStudioView'));
-const DashboardView = lazy(() => import('./components/DashboardView'));
-const CustomOrderView = lazy(() => import('./components/CustomOrderView'));
-const AboutView = lazy(() => import('./components/AboutView'));
-const GalleryView = lazy(() => import('./components/GalleryView'));
-const LoginView = lazy(() => import('./components/LoginView'));
-const DatabaseView = lazy(() => import('./components/DatabaseView'));
-import { Header } from './components/Header';
-import { MobileMenu } from './components/MobileMenu';
-import { CartDrawer } from './components/CartDrawer';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import Footer from './components/Footer';
+const HomeView = lazy(() => import("./components/HomeView"));
+const DesignStudioView = lazy(() => import("./components/DesignStudioView"));
+const DashboardView = lazy(() => import("./components/DashboardView"));
+const CustomOrderView = lazy(() => import("./components/CustomOrderView"));
+const AboutView = lazy(() => import("./components/AboutView"));
+const GalleryView = lazy(() => import("./components/GalleryView"));
+const LoginView = lazy(() => import("./components/LoginView"));
+const DatabaseView = lazy(() => import("./components/DatabaseView"));
+import { Header } from "./components/Header";
+import { MobileMenu } from "./components/MobileMenu";
+import { CartDrawer } from "./components/CartDrawer";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import Footer from "./components/Footer";
 
-import odogwuLogo from './assets/images/odogwu_logo_1782556303014.jpg';
+import odogwuLogo from "./assets/images/odogwu_logo_1782556303014.jpg";
 
 export default function App() {
   const store = useAppStore();
   const {
-    activeTab, setActiveTab,
-    customGroups, setCustomGroups,
-    orderContext, setOrderContext,
-    currentUser, setCurrentUser,
-    fabrics, setFabrics,
-    styles, setStyles,
-    showpieces, setShowpieces,
-    communityPhotos, setCommunityPhotos,
-    customers, setCustomers,
-    orders, setOrders,
-    historicalOrders, setHistoricalOrders,
-    cartItems, setCartItems,
-    isCartOpen, setIsCartOpen,
-    presetStyleId, setPresetStyleId,
-    presetFabricCode, setPresetFabricCode,
-    isCheckoutPaymentOpen, setIsCheckoutPaymentOpen,
-    notification, setNotification,
-    initializeData, isLoadingData,
-    batches, setBatches,
-    businessSettings, setBusinessSettings
+    activeTab,
+    setActiveTab,
+    customGroups,
+    setCustomGroups,
+    orderContext,
+    setOrderContext,
+    currentUser,
+    setCurrentUser,
+    fabrics,
+    setFabrics,
+    styles,
+    setStyles,
+    showpieces,
+    setShowpieces,
+    communityPhotos,
+    setCommunityPhotos,
+    customers,
+    setCustomers,
+    orders,
+    setOrders,
+    historicalOrders,
+    setHistoricalOrders,
+    cartItems,
+    setCartItems,
+    isCartOpen,
+    setIsCartOpen,
+    presetStyleId,
+    setPresetStyleId,
+    presetFabricCode,
+    setPresetFabricCode,
+    isCheckoutPaymentOpen,
+    setIsCheckoutPaymentOpen,
+    notification,
+    setNotification,
+    initializeData,
+    isLoadingData,
+    batches,
+    setBatches,
+    businessSettings,
+    setBusinessSettings,
   } = store;
 
   // Initialize async data
@@ -58,19 +118,66 @@ export default function App() {
     initializeData();
   }, [initializeData]);
 
+  // Scroll tracking to save position on active tab
+  React.useEffect(() => {
+    const handleScroll = () => {
+      if (isLoadingData) return;
+      const scrollY = window.scrollY;
+      const savedScrollKey = `asml_scroll_position_${activeTab}`;
+      sessionStorage.setItem(savedScrollKey, scrollY.toString());
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [activeTab, isLoadingData]);
+
+  // Scroll restoration when navigation happens or page is loaded/refreshed
+  React.useEffect(() => {
+    if (isLoadingData) return;
+
+    // Use a slight timeout to ensure DOM is fully rendered and sized
+    const timer = setTimeout(() => {
+      // Priority 1: Anchor hash
+      if (window.location.hash) {
+        const id = window.location.hash.substring(1);
+        const element = document.getElementById(id);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth" });
+          return;
+        }
+      }
+
+      // Priority 2: Restoring scroll on refresh
+      const savedScrollKey = `asml_scroll_position_${activeTab}`;
+      const savedScrollY = sessionStorage.getItem(savedScrollKey);
+      if (savedScrollY) {
+        const yPos = parseInt(savedScrollY, 10);
+        if (!isNaN(yPos) && yPos > 0) {
+          window.scrollTo({ top: yPos, behavior: "auto" });
+          return;
+        }
+      }
+
+      // Default: Jump to top
+      window.scrollTo(0, 0);
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [isLoadingData, activeTab]);
+
   // Simulate automated daily cron job / database trigger to lock registrations whose closingDate has passed
   React.useEffect(() => {
     let changed = false;
     const now = new Date();
-    
-    const updatedGroups = customGroups.map(g => {
+
+    const updatedGroups = customGroups.map((g) => {
       try {
         const closeDate = new Date(g.closingDate);
-        if (closeDate < now && g.status !== 'Closed') {
+        if (closeDate < now && g.status !== "Closed") {
           changed = true;
           return {
             ...g,
-            status: 'Closed' as const
+            status: "Closed" as const,
           };
         }
       } catch (e) {
@@ -84,17 +191,22 @@ export default function App() {
     }
   }, [customGroups, setCustomGroups]);
 
-  const openBatch = batches.find(b => ['Open', 'Recruiting', 'Almost Full'].includes(b.status));
-  const activeCommunityBatch: OrderContext | null = openBatch ? {
-    orderType: 'Community',
-    batchId: openBatch.id,
-    batchName: openBatch.name,
-    closingDate: openBatch.endDate,
-    deliveryWindow: openBatch.estimatedDelivery || '',
-    expectedParticipants: openBatch.targetGarments,
-    currentMembers: openBatch.currentGarments,
-    pickupLocation: openBatch.pickupLocation || 'ASML Veldhoven Campus Lockers'
-  } : null;
+  const openBatch = batches.find((b) =>
+    ["Open", "Recruiting", "Almost Full"].includes(b.status),
+  );
+  const activeCommunityBatch: OrderContext | null = openBatch
+    ? {
+        orderType: "Community",
+        batchId: openBatch.id,
+        batchName: openBatch.name,
+        closingDate: openBatch.endDate,
+        deliveryWindow: openBatch.estimatedDelivery || "",
+        expectedParticipants: openBatch.targetGarments,
+        currentMembers: openBatch.currentGarments,
+        pickupLocation:
+          openBatch.pickupLocation || "ASML Veldhoven Campus Lockers",
+      }
+    : null;
 
   // Active masterOrder synced from current user's latest order in orders database, or first order as default
   const [masterOrder, setMasterOrder] = useState<MasterOrder | null>(null);
@@ -102,7 +214,10 @@ export default function App() {
   React.useEffect(() => {
     if (orders.length > 0) {
       if (currentUser) {
-        const userOrder = orders.find(o => o.customer.email.toLowerCase() === currentUser.email?.toLowerCase());
+        const userOrder = orders.find(
+          (o) =>
+            o.customer.email.toLowerCase() === currentUser.email?.toLowerCase(),
+        );
         if (userOrder) {
           setMasterOrder(userOrder);
         } else {
@@ -115,14 +230,23 @@ export default function App() {
   }, [currentUser, orders]);
 
   // Secure Deposit Checkout State
-  const [checkoutPaymentMethod, setCheckoutPaymentMethod] = useState<'ideal' | 'stripe'>('ideal');
-  const [checkoutIdealBank, setCheckoutIdealBank] = useState<string>('Rabobank');
-  const [checkoutCardNumber, setCheckoutCardNumber] = useState<string>('4242 4242 4242 4242');
-  const [checkoutCardExpiry, setCheckoutCardExpiry] = useState<string>('12/28');
-  const [checkoutCardCvc, setCheckoutCardCvc] = useState<string>('315');
-  const [isPaymentProcessing, setIsPaymentProcessing] = useState<boolean>(false);
+  const [checkoutPaymentMethod, setCheckoutPaymentMethod] = useState<
+    "ideal" | "stripe"
+  >("ideal");
+  const [checkoutIdealBank, setCheckoutIdealBank] =
+    useState<string>("Rabobank");
+  const [checkoutCardNumber, setCheckoutCardNumber] = useState<string>(
+    "4242 4242 4242 4242",
+  );
+  const [checkoutCardExpiry, setCheckoutCardExpiry] = useState<string>("12/28");
+  const [checkoutCardCvc, setCheckoutCardCvc] = useState<string>("315");
+  const [isPaymentProcessing, setIsPaymentProcessing] =
+    useState<boolean>(false);
 
-  const triggerNotification = (message: string, type: 'success' | 'info' = 'success') => {
+  const triggerNotification = (
+    message: string,
+    type: "success" | "info" = "success",
+  ) => {
     setNotification({ message, type });
     setTimeout(() => {
       setNotification(null);
@@ -138,57 +262,72 @@ export default function App() {
     StorageService.saveJoinedBatchIds(joinedBatchIds);
   }, [joinedBatchIds]);
 
-  const handleUpdateCustomGroup = (batchId: string, updatedFields: Partial<CustomGroup>) => {
-    setCustomGroups(prev => prev.map(group => {
-      if (group.batchId === batchId) {
-        return { ...group, ...updatedFields };
-      }
-      return group;
-    }));
-    triggerNotification('Batch configuration updated successfully.', 'success');
+  const handleUpdateCustomGroup = (
+    batchId: string,
+    updatedFields: Partial<CustomGroup>,
+  ) => {
+    setCustomGroups((prev) =>
+      prev.map((group) => {
+        if (group.batchId === batchId) {
+          return { ...group, ...updatedFields };
+        }
+        return group;
+      }),
+    );
+    triggerNotification("Batch configuration updated successfully.", "success");
   };
 
   const handleDeleteCustomGroup = (batchId: string) => {
-    setCustomGroups(prev => prev.filter(g => g.batchId !== batchId));
-    triggerNotification('Batch deleted permanently.', 'info');
+    setCustomGroups((prev) => prev.filter((g) => g.batchId !== batchId));
+    triggerNotification("Batch deleted permanently.", "info");
   };
 
   const handleLeaveCustomGroup = (batchId: string) => {
-    setCustomGroups(prev => prev.map(group => {
-      if (group.batchId === batchId) {
-        return { ...group, currentMembers: Math.max(0, group.currentMembers - 1) };
-      }
-      return group;
-    }));
-    setJoinedBatchIds(prev => prev.filter(id => id !== batchId));
-    triggerNotification('You have successfully left the order batch.', 'info');
+    setCustomGroups((prev) =>
+      prev.map((group) => {
+        if (group.batchId === batchId) {
+          return {
+            ...group,
+            currentMembers: Math.max(0, group.currentMembers - 1),
+          };
+        }
+        return group;
+      }),
+    );
+    setJoinedBatchIds((prev) => prev.filter((id) => id !== batchId));
+    triggerNotification("You have successfully left the order batch.", "info");
   };
 
   const handleJoinCustomGroup = (batchId: string) => {
     if (joinedBatchIds.includes(batchId)) return;
-    setCustomGroups(prev => prev.map(group => {
-      if (group.batchId === batchId) {
-        return { ...group, currentMembers: group.currentMembers + 1 };
-      }
-      return group;
-    }));
-    setJoinedBatchIds(prev => [...prev, batchId]);
-    triggerNotification('Successfully joined the order batch!', 'success');
+    setCustomGroups((prev) =>
+      prev.map((group) => {
+        if (group.batchId === batchId) {
+          return { ...group, currentMembers: group.currentMembers + 1 };
+        }
+        return group;
+      }),
+    );
+    setJoinedBatchIds((prev) => [...prev, batchId]);
+    triggerNotification("Successfully joined the order batch!", "success");
   };
 
   // State actions
-  const handleAddToCart = (item: Omit<CartItem, 'id'>) => {
+  const handleAddToCart = (item: Omit<CartItem, "id">) => {
     const newItem: CartItem = {
       ...item,
-      id: `CART-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+      id: `CART-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     };
-    setCartItems(prev => [...prev, newItem]);
-    triggerNotification(`"${item.style.name}" added to your tailoring cart!`, 'success');
+    setCartItems((prev) => [...prev, newItem]);
+    triggerNotification(
+      `"${item.style.name}" added to your tailoring cart!`,
+      "success",
+    );
   };
 
   const handleRemoveFromCart = (id: string) => {
-    setCartItems(prev => prev.filter(item => item.id !== id));
-    triggerNotification('Garment removed from cart.', 'info');
+    setCartItems((prev) => prev.filter((item) => item.id !== id));
+    triggerNotification("Garment removed from cart.", "info");
   };
 
   const handleCheckout = () => {
@@ -200,28 +339,32 @@ export default function App() {
     if (cartItems.length === 0) return;
     setIsPaymentProcessing(true);
 
-    const subtotal = cartItems.reduce((acc, item) => acc + item.garment.totalPrice + (item.design.additionalCap ? 15 : 0), 0);
+    const subtotal = cartItems.reduce(
+      (acc, item) => acc + item.garment.totalPrice,
+      0,
+    );
     const lastItem = cartItems[cartItems.length - 1];
-    
+
     try {
-      const response = await fetch('/api/create-payment-intent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/create-payment-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: subtotal,
-          paymentMethod: checkoutPaymentMethod === 'ideal' ? 'iDEAL' : 'Stripe',
-          idealBank: checkoutPaymentMethod === 'ideal' ? checkoutIdealBank : undefined,
-          customerEmail: lastItem.customer.email
-        })
+          paymentMethod: checkoutPaymentMethod === "ideal" ? "iDEAL" : "Stripe",
+          idealBank:
+            checkoutPaymentMethod === "ideal" ? checkoutIdealBank : undefined,
+          customerEmail: lastItem.customer.email,
+        }),
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
-        const nowStr = new Date().toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
+        const nowStr = new Date().toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
         });
 
         const newHistoryItems: HistoricalOrder[] = [];
@@ -230,8 +373,10 @@ export default function App() {
 
         cartItems.forEach((item, index) => {
           const trackingId = `ODH-${Date.now().toString().slice(-4)}-${index + 1}`;
-          const totalPrice = item.garment.totalPrice + (item.design.additionalCap ? 15 : 0);
-          const depositRequired = (totalPrice * businessSettings.pricingSettings.depositPercentage) / 100;
+          const totalPrice = item.garment.totalPrice;
+          const depositRequired =
+            (totalPrice * businessSettings.pricingSettings.depositPercentage) /
+            100;
           const remainingDue = totalPrice - depositRequired;
 
           const order: MasterOrder = {
@@ -241,30 +386,37 @@ export default function App() {
             design: item.design,
             garment: {
               ...item.garment,
-              totalPrice
+              totalPrice,
             },
             measurements: item.measurements,
             payment: {
               subtotal: totalPrice,
               deposit: depositRequired,
               remaining: remainingDue,
-              method: checkoutPaymentMethod === 'ideal' ? `iDEAL (${checkoutIdealBank})` : 'Stripe (Visa Card)',
+              method:
+                checkoutPaymentMethod === "ideal"
+                  ? `iDEAL (${checkoutIdealBank})`
+                  : "Stripe (Visa Card)",
               date: nowStr,
               isPaid: true,
               transactionId: data.transactionId,
-              secondPaymentStatus: 'unpaid'
+              secondPaymentStatus: "unpaid",
             },
             shipment: {
               trackingId: trackingId,
-              status: 'Stage 1: Deposit Paid (Escrow Blocked). Weaving fabric...',
+              status:
+                "Stage 1: Deposit Paid (Escrow Blocked). Weaving fabric...",
               currentStage: 1,
-              estimatedDeliveryDate: item.batchType === 'alone' ? 'Direct priority (14-21 days)' : 'August 15'
+              estimatedDeliveryDate:
+                item.batchType === "alone"
+                  ? "Direct priority (14-21 days)"
+                  : "August 15",
             },
             specialInstructions: item.specialInstructions,
             notesAboutLeftoverFabric: item.notesAboutLeftoverFabric,
             batchType: item.batchType,
             batchName: item.batchName,
-            customGroupCode: item.customGroupCode
+            customGroupCode: item.customGroupCode,
           };
 
           if (index === cartItems.length - 1) {
@@ -281,68 +433,80 @@ export default function App() {
             fabricName: item.fabric.name,
             fabricCode: item.fabric.code,
             amount: totalPrice,
-            status: 'In Progress',
-            trackingId: trackingId
+            status: "In Progress",
+            trackingId: trackingId,
           });
 
           // Update CustomGroups table (Relational Transaction Simulator)
-          let targetBatchId = 'GRP-Community-3';
-          if (item.batchType === 'personalized') {
-            targetBatchId = item.customGroupCode || '';
-          } else if (item.batchType === 'community') {
-            targetBatchId = 'GRP-Community-3';
-          } else if (item.batchType === 'alone') {
-            targetBatchId = '';
+          let targetBatchId = "GRP-Community-3";
+          if (item.batchType === "personalized") {
+            targetBatchId = item.customGroupCode || "";
+          } else if (item.batchType === "community") {
+            targetBatchId = "GRP-Community-3";
+          } else if (item.batchType === "alone") {
+            targetBatchId = "";
           }
 
           if (targetBatchId) {
-            setCustomGroups(prevGroups => {
-              return prevGroups.map(g => {
-                if (g.batchId === targetBatchId || g.batchName === item.batchName) {
+            setCustomGroups((prevGroups) => {
+              return prevGroups.map((g) => {
+                if (
+                  g.batchId === targetBatchId ||
+                  g.batchName === item.batchName
+                ) {
                   const nextMembers = g.currentMembers + 1;
                   const isFull = nextMembers >= g.maxParticipants;
                   return {
                     ...g,
                     currentMembers: nextMembers,
-                    status: isFull ? 'Full' : (nextMembers >= g.maxParticipants - 2 ? 'Almost Full' : g.status)
+                    status: isFull
+                      ? "Full"
+                      : nextMembers >= g.maxParticipants - 2
+                        ? "Almost Full"
+                        : g.status,
                   };
                 }
                 return g;
               });
             });
-            
+
             if (targetBatchId) {
-              setBatches(prev => prev.map(b => {
-                if (b.id === targetBatchId) {
-                  return { ...b, currentGarments: b.currentGarments + 1 };
-                }
-                return b;
-              }));
+              setBatches((prev) =>
+                prev.map((b) => {
+                  if (b.id === targetBatchId) {
+                    return { ...b, currentGarments: b.currentGarments + 1 };
+                  }
+                  return b;
+                }),
+              );
             }
           }
         });
 
         // Add to global orders database
-        setOrders(prev => [...newOrders, ...prev]);
+        setOrders((prev) => [...newOrders, ...prev]);
 
         if (lastMasterOrder) {
           setMasterOrder(lastMasterOrder);
         }
 
-        setHistoricalOrders(prev => [...newHistoryItems, ...prev]);
+        setHistoricalOrders((prev) => [...newHistoryItems, ...prev]);
         setCartItems([]);
         setIsCartOpen(false);
         setIsCheckoutPaymentOpen(false);
-        setActiveTab('dashboard');
-        
-        const targetCohort = lastItem.batchName || 'Community Batch';
-        triggerNotification(`Secure deposit received! ${newHistoryItems.length} bespoke order(s) placed in ${targetCohort}.`, 'success');
+        setActiveTab("dashboard");
+
+        const targetCohort = lastItem.batchName || "Community Batch";
+        triggerNotification(
+          `Secure deposit received! ${newHistoryItems.length} bespoke order(s) placed in ${targetCohort}.`,
+          "success",
+        );
       } else {
-        alert('Deposit transaction failed: ' + data.error);
+        alert("Deposit transaction failed: " + data.error);
       }
     } catch (err) {
       console.error(err);
-      alert('Failed to authorize secure deposit escrow payment.');
+      alert("Failed to authorize secure deposit escrow payment.");
     } finally {
       setIsPaymentProcessing(false);
     }
@@ -350,7 +514,7 @@ export default function App() {
 
   const handleOrderPlaced = (order: MasterOrder) => {
     setMasterOrder(order);
-    
+
     // Add the style to history logs for visual depth
     const newHistoryItem: HistoricalOrder = {
       id: order.shipment.trackingId,
@@ -360,37 +524,46 @@ export default function App() {
       fabricName: order.fabric.name,
       fabricCode: order.fabric.code,
       amount: order.payment.subtotal,
-      status: 'In Progress',
-      trackingId: order.shipment.trackingId
+      status: "In Progress",
+      trackingId: order.shipment.trackingId,
     };
-    
-    setHistoricalOrders(prev => [newHistoryItem, ...prev]);
-    const displayBatch = order.batchName || 'active Community Batch';
-    triggerNotification(`Success! Your order has been placed in the ${displayBatch} pipeline.`, 'success');
+
+    setHistoricalOrders((prev) => [newHistoryItem, ...prev]);
+    const displayBatch = order.batchName || "active Community Batch";
+    triggerNotification(
+      `Success! Your order has been placed in the ${displayBatch} pipeline.`,
+      "success",
+    );
   };
 
   const handleReorder = (styleId: string, fabricCode: string) => {
     // Navigate straight to Design Studio
-    setActiveTab('design');
-    triggerNotification(`Custom design selected. You can now edit your options.`, 'info');
+    setActiveTab("design");
+    triggerNotification(
+      `Custom design selected. You can now edit your options.`,
+      "info",
+    );
   };
 
   const handleLogin = (email: string, name: string, phone?: string) => {
-    const user: Customer = { email, name, phone: phone || '', location: '' };
+    const user: Customer = { email, name, phone: phone || "", location: "" };
     setCurrentUser(user);
     StorageService.saveSession(user);
-    triggerNotification(`Welcome back, ${name}! Secure session activated.`, 'success');
+    triggerNotification(
+      `Welcome back, ${name}! Secure session activated.`,
+      "success",
+    );
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
     StorageService.clearSession();
-    triggerNotification('Logged out successfully.', 'info');
+    triggerNotification("Logged out successfully.", "info");
   };
 
   const handleUpdateProfile = (name: string, email: string, phone: string) => {
     if (masterOrder) {
-      setMasterOrder(prev => {
+      setMasterOrder((prev) => {
         if (!prev) return null;
         return {
           ...prev,
@@ -398,32 +571,43 @@ export default function App() {
             ...prev.customer,
             name,
             email,
-            phone
-          }
+            phone,
+          },
         };
       });
     }
-    triggerNotification('Contact info saved successfully.', 'success');
+    triggerNotification("Contact info saved successfully.", "success");
   };
 
-  const handleUpdateMeasurements = (measurements: MasterOrder['measurements']) => {
+  const handleUpdateMeasurements = (
+    measurements: MasterOrder["measurements"],
+  ) => {
     if (masterOrder) {
-      setMasterOrder(prev => {
+      setMasterOrder((prev) => {
         if (!prev) return null;
         return {
           ...prev,
-          measurements
+          measurements,
         };
       });
     }
-    triggerNotification('Sizes updated successfully.', 'success');
+    triggerNotification("Sizes updated successfully.", "success");
   };
 
-  const checkoutSubtotal = cartItems.reduce((acc, item) => acc + item.garment.totalPrice + (item.design.additionalCap ? 15 : 0), 0);
-  const checkoutDepositRatio = businessSettings.pricingSettings.depositPercentage / 100;
+  const checkoutSubtotal = cartItems.reduce(
+    (acc, item) => acc + item.garment.totalPrice,
+    0,
+  );
+  const checkoutDepositRatio =
+    businessSettings.pricingSettings.depositPercentage / 100;
   const checkoutDepositAmount = checkoutSubtotal * checkoutDepositRatio;
   const checkoutRemainingAmount = checkoutSubtotal - checkoutDepositAmount;
-  const currencySymbol = businessSettings.pricingSettings.currency === 'EUR' ? '€' : businessSettings.pricingSettings.currency === 'USD' ? '$' : '₦';
+  const currencySymbol =
+    businessSettings.pricingSettings.currency === "EUR"
+      ? "€"
+      : businessSettings.pricingSettings.currency === "USD"
+        ? "$"
+        : "₦";
 
   return (
     <div className="min-h-screen bg-heritage-cream text-heritage-ink flex flex-col justify-between">
@@ -431,7 +615,11 @@ export default function App() {
       {notification && (
         <div className="fixed top-24 right-6 z-50 p-4 rounded-2xl bg-heritage-forest text-white border-2 border-heritage-gold shadow-2xl flex items-center gap-3 animate-fade-in text-xs font-sans max-w-sm select-none">
           <div className="h-6 w-6 rounded-full bg-heritage-gold/25 text-heritage-gold flex items-center justify-center shrink-0">
-            {notification.type === 'success' ? <Check size={14} /> : <Sparkles size={14} />}
+            {notification.type === "success" ? (
+              <Check size={14} />
+            ) : (
+              <Sparkles size={14} />
+            )}
           </div>
           <p className="font-semibold leading-normal">{notification.message}</p>
         </div>
@@ -446,136 +634,175 @@ export default function App() {
       {/* CORE ACTIVE OUTLET VIEWPORT */}
       <main className="flex-grow mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 w-full">
         <ErrorBoundary>
-          <Suspense fallback={<div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-heritage-gold"></div></div>}>
-        {activeTab === 'home' && (
-          <HomeView
-            onStartDesigning={() => {
-              setOrderContext(activeCommunityBatch);
-              setActiveTab('design');
-            }}
-            onNavigateToTab={(tabId: 'home' | 'design' | 'dashboard' | 'about' | 'gallery' | 'database' | 'custom-order') => setActiveTab(tabId)}
-            activeCommunityBatch={activeCommunityBatch}
-            communityPhotos={communityPhotos}
-          />
-        )}
+          <Suspense
+            fallback={
+              <div className="flex justify-center items-center h-64">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-heritage-gold"></div>
+              </div>
+            }
+          >
+            {activeTab === "home" && (
+              <HomeView
+                onStartDesigning={() => {
+                  setOrderContext(activeCommunityBatch);
+                  setActiveTab("design");
+                }}
+                onNavigateToTab={(
+                  tabId:
+                    | "home"
+                    | "design"
+                    | "dashboard"
+                    | "about"
+                    | "gallery"
+                    | "database"
+                    | "custom-order",
+                ) => setActiveTab(tabId)}
+                activeCommunityBatch={activeCommunityBatch}
+                communityPhotos={communityPhotos}
+              />
+            )}
 
-        {activeTab === 'design' && (
-          <DesignStudioView
-            onAddToCart={handleAddToCart}
-            onNavigateToTab={(tabId: 'home' | 'design' | 'dashboard' | 'about' | 'gallery' | 'database' | 'custom-order') => setActiveTab(tabId)}
-            openCartDrawer={() => setIsCartOpen(true)}
-            currentUser={currentUser}
-            orderContext={orderContext}
-            styles={styles}
-            fabrics={fabrics}
-            customers={customers}
-            setCustomers={setCustomers}
-            initialStyleId={presetStyleId}
-            initialFabricCode={presetFabricCode}
-            clearInitialPreset={() => {
-              setPresetStyleId(null);
-              setPresetFabricCode(null);
-            }}
-          />
-        )}
+            {activeTab === "design" && (
+              <DesignStudioView
+                onAddToCart={handleAddToCart}
+                onNavigateToTab={(
+                  tabId:
+                    | "home"
+                    | "design"
+                    | "dashboard"
+                    | "about"
+                    | "gallery"
+                    | "database"
+                    | "custom-order",
+                ) => setActiveTab(tabId)}
+                openCartDrawer={() => setIsCartOpen(true)}
+                currentUser={currentUser}
+                orderContext={orderContext}
+                styles={styles}
+                fabrics={fabrics}
+                customers={customers}
+                setCustomers={setCustomers}
+                initialStyleId={presetStyleId}
+                initialFabricCode={presetFabricCode}
+                clearInitialPreset={() => {
+                  setPresetStyleId(null);
+                  setPresetFabricCode(null);
+                }}
+              />
+            )}
 
-        {activeTab === 'custom-order' && (
-          <CustomOrderView
-            customGroups={customGroups}
-            batches={batches}
-            onCreateCustomGroup={(newGroup) => {
-              const fullGroup: CustomGroup = {
-                ...newGroup,
-                batchId: `GRP-${newGroup.batchName.replace(/\s+/g, '')}`,
-                currentMembers: 1,
-                organizer: currentUser?.name || 'Xavier E.',
-                closingDate: 'August 15, 2026',
-                deliveryWindow: `Late ${newGroup.preferredDeliveryMonth}`,
-                status: 'Open'
-              };
-              setCustomGroups(prev => [fullGroup, ...prev]);
-            }}
-            onSelectOrderContext={(context) => {
-              setOrderContext(context);
-              setActiveTab('design');
-              triggerNotification(`Context initialized: ${context.orderType}. Launching Studio!`, 'success');
-            }}
-            currentUser={currentUser}
-            onJoinCustomGroup={handleJoinCustomGroup}
-          />
-        )}
+            {activeTab === "custom-order" && (
+              <CustomOrderView
+                customGroups={customGroups}
+                batches={batches}
+                onCreateCustomGroup={(newGroup) => {
+                  const fullGroup: CustomGroup = {
+                    ...newGroup,
+                    batchId: `GRP-${newGroup.batchName.replace(/\s+/g, "")}`,
+                    currentMembers: 1,
+                    organizer: currentUser?.name || "Xavier E.",
+                    closingDate: "August 15, 2026",
+                    deliveryWindow: `Late ${newGroup.preferredDeliveryMonth}`,
+                    status: "Open",
+                  };
+                  setCustomGroups((prev) => [fullGroup, ...prev]);
+                }}
+                onSelectOrderContext={(context) => {
+                  setOrderContext(context);
+                  setActiveTab("design");
+                  triggerNotification(
+                    `Context initialized: ${context.orderType}. Launching Studio!`,
+                    "success",
+                  );
+                }}
+                currentUser={currentUser}
+                onJoinCustomGroup={handleJoinCustomGroup}
+              />
+            )}
 
-        {activeTab === 'dashboard' && (
-          currentUser ? (
-            <DashboardView
-              masterOrder={masterOrder}
-              historicalOrders={historicalOrders}
-              onReorder={handleReorder}
-              onNavigateToTab={(tabId: 'home' | 'design' | 'dashboard' | 'about' | 'gallery' | 'database' | 'custom-order') => setActiveTab(tabId)}
-              onUpdateProfile={handleUpdateProfile}
-              onUpdateMeasurements={handleUpdateMeasurements}
-              onLogout={handleLogout}
-              customGroups={customGroups}
-              onUpdateCustomGroup={handleUpdateCustomGroup}
-              onDeleteCustomGroup={handleDeleteCustomGroup}
-              onSelectOrderContext={(context) => {
-                setOrderContext(context);
-                setActiveTab('design');
-                triggerNotification(`Context loaded: ${context.batchName || context.orderType}. Opening Studio!`, 'success');
-              }}
-              joinedBatchIds={joinedBatchIds}
-              onLeaveCustomGroup={handleLeaveCustomGroup}
-              currentUser={currentUser}
-              batches={batches}
-            />
-          ) : (
-            <LoginView
-              onLogin={handleLogin}
-              customers={customers}
-              setCustomers={setCustomers}
-            />
-          )
-        )}
+            {activeTab === "dashboard" &&
+              (currentUser ? (
+                <DashboardView
+                  masterOrder={masterOrder}
+                  historicalOrders={historicalOrders}
+                  onReorder={handleReorder}
+                  onNavigateToTab={(
+                    tabId:
+                      | "home"
+                      | "design"
+                      | "dashboard"
+                      | "about"
+                      | "gallery"
+                      | "database"
+                      | "custom-order",
+                  ) => setActiveTab(tabId)}
+                  onUpdateProfile={handleUpdateProfile}
+                  onUpdateMeasurements={handleUpdateMeasurements}
+                  onLogout={handleLogout}
+                  customGroups={customGroups}
+                  onUpdateCustomGroup={handleUpdateCustomGroup}
+                  onDeleteCustomGroup={handleDeleteCustomGroup}
+                  onSelectOrderContext={(context) => {
+                    setOrderContext(context);
+                    setActiveTab("design");
+                    triggerNotification(
+                      `Context loaded: ${context.batchName || context.orderType}. Opening Studio!`,
+                      "success",
+                    );
+                  }}
+                  joinedBatchIds={joinedBatchIds}
+                  onLeaveCustomGroup={handleLeaveCustomGroup}
+                  currentUser={currentUser}
+                  batches={batches}
+                />
+              ) : (
+                <LoginView
+                  onLogin={handleLogin}
+                  customers={customers}
+                  setCustomers={setCustomers}
+                />
+              ))}
 
-        {activeTab === 'about' && (
-          <AboutView />
-        )}
+            {activeTab === "about" && <AboutView />}
 
-        {activeTab === 'gallery' && (
-          <GalleryView
-            showpieces={showpieces}
-            communityPhotos={communityPhotos}
-            onSelectStyle={(styleId, fabricCode) => {
-              setPresetStyleId(styleId);
-              setPresetFabricCode(fabricCode);
-              setActiveTab('design');
-              triggerNotification(`Lookbook preset loaded: ${styleId} + ${fabricCode}`, 'info');
-            }}
-          />
-        )}
+            {activeTab === "gallery" && (
+              <GalleryView
+                showpieces={showpieces}
+                communityPhotos={communityPhotos}
+                onSelectStyle={(styleId, fabricCode) => {
+                  setPresetStyleId(styleId);
+                  setPresetFabricCode(fabricCode);
+                  setActiveTab("design");
+                  triggerNotification(
+                    `Lookbook preset loaded: ${styleId} + ${fabricCode}`,
+                    "info",
+                  );
+                }}
+              />
+            )}
 
-        {activeTab === 'database' && (
-          <DatabaseView
-            customers={customers}
-            setCustomers={setCustomers}
-            styles={styles}
-            setStyles={setStyles}
-            fabrics={fabrics}
-            setFabrics={setFabrics}
-            customGroups={customGroups}
-            setCustomGroups={setCustomGroups}
-            orders={orders}
-            setOrders={setOrders}
-            showpieces={showpieces}
-            setShowpieces={setShowpieces}
-            communityPhotos={communityPhotos}
-            setCommunityPhotos={setCommunityPhotos}
-            batches={batches}
-            setBatches={setBatches}
-            businessSettings={businessSettings}
-            setBusinessSettings={setBusinessSettings}
-          />
-        )}
+            {activeTab === "database" && (
+              <DatabaseView
+                customers={customers}
+                setCustomers={setCustomers}
+                styles={styles}
+                setStyles={setStyles}
+                fabrics={fabrics}
+                setFabrics={setFabrics}
+                customGroups={customGroups}
+                setCustomGroups={setCustomGroups}
+                orders={orders}
+                setOrders={setOrders}
+                showpieces={showpieces}
+                setShowpieces={setShowpieces}
+                communityPhotos={communityPhotos}
+                setCommunityPhotos={setCommunityPhotos}
+                batches={batches}
+                setBatches={setBatches}
+                businessSettings={businessSettings}
+                setBusinessSettings={setBusinessSettings}
+              />
+            )}
           </Suspense>
         </ErrorBoundary>
       </main>
@@ -594,11 +821,15 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <CreditCard className="text-heritage-gold h-5 w-5 animate-pulse" />
                 <div>
-                  <h3 className="font-serif font-bold text-sm uppercase tracking-wide">Heritage Escrow Deposit Gate</h3>
-                  <p className="text-[10px] text-heritage-beige/70">ASML Veldhoven Campus Campus-Escrow Pipeline</p>
+                  <h3 className="font-serif font-bold text-sm uppercase tracking-wide">
+                    Heritage Escrow Deposit Gate
+                  </h3>
+                  <p className="text-[10px] text-heritage-beige/70">
+                    ASML Veldhoven Campus Campus-Escrow Pipeline
+                  </p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setIsCheckoutPaymentOpen(false)}
                 className="p-1 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition cursor-pointer"
               >
@@ -612,20 +843,34 @@ export default function App() {
               <div className="bg-white border border-heritage-gold/10 p-4 rounded-2xl space-y-3 shadow-sm">
                 <h4 className="font-serif font-semibold text-heritage-green uppercase text-[10px] tracking-wider pb-1.5 border-b border-gray-100 flex justify-between">
                   <span>Escrow Invoice Details</span>
-                  <span className="font-mono text-gray-400 font-normal">Items: {cartItems.length}</span>
+                  <span className="font-mono text-gray-400 font-normal">
+                    Items: {cartItems.length}
+                  </span>
                 </h4>
                 <div className="space-y-1.5 text-gray-600">
                   <div className="flex justify-between">
                     <span>Aggregate Garment Subtotal:</span>
-                    <span className="font-mono">{currencySymbol}{checkoutSubtotal.toFixed(2)}</span>
+                    <span className="font-mono">
+                      {currencySymbol}
+                      {checkoutSubtotal.toFixed(2)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-heritage-green font-bold text-sm pt-1.5 border-t border-dashed border-gray-100 font-serif">
-                    <span>Escrow Activation Deposit ({businessSettings.pricingSettings.depositPercentage}%):</span>
-                    <span className="font-mono text-heritage-gold">{currencySymbol}{checkoutDepositAmount.toFixed(2)}</span>
+                    <span>
+                      Escrow Activation Deposit (
+                      {businessSettings.pricingSettings.depositPercentage}%):
+                    </span>
+                    <span className="font-mono text-heritage-gold">
+                      {currencySymbol}
+                      {checkoutDepositAmount.toFixed(2)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-[10px] text-gray-400">
                     <span>Remaining Balance Due at Locker Delivery:</span>
-                    <span className="font-mono">{currencySymbol}{checkoutRemainingAmount.toFixed(2)}</span>
+                    <span className="font-mono">
+                      {currencySymbol}
+                      {checkoutRemainingAmount.toFixed(2)}
+                    </span>
                   </div>
                 </div>
 
@@ -635,7 +880,10 @@ export default function App() {
                     ✂️ Leftover Fabric Preference:
                   </span>
                   <p className="text-[10px] text-gray-600 italic leading-relaxed">
-                    "{cartItems[0]?.notesAboutLeftoverFabric || 'Return leftover fabric pieces with garment'}"
+                    "
+                    {cartItems[0]?.notesAboutLeftoverFabric ||
+                      "Return leftover fabric pieces with garment"}
+                    "
                   </p>
                 </div>
               </div>
@@ -648,33 +896,37 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => setCheckoutPaymentMethod('ideal')}
+                    onClick={() => setCheckoutPaymentMethod("ideal")}
                     className={`p-3.5 rounded-2xl border-2 flex flex-col items-center gap-1.5 transition cursor-pointer ${
-                      checkoutPaymentMethod === 'ideal'
-                        ? 'border-heritage-gold bg-heritage-gold/10 text-heritage-green'
-                        : 'border-gray-200 bg-white hover:border-gray-300 text-gray-500'
+                      checkoutPaymentMethod === "ideal"
+                        ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green"
+                        : "border-gray-200 bg-white hover:border-gray-300 text-gray-500"
                     }`}
                   >
                     <span className="text-xl">🇳🇱</span>
-                    <span className="font-bold text-[10px] uppercase tracking-wider">iDEAL Bank Transfer</span>
+                    <span className="font-bold text-[10px] uppercase tracking-wider">
+                      iDEAL Bank Transfer
+                    </span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => setCheckoutPaymentMethod('stripe')}
+                    onClick={() => setCheckoutPaymentMethod("stripe")}
                     className={`p-3.5 rounded-2xl border-2 flex flex-col items-center gap-1.5 transition cursor-pointer ${
-                      checkoutPaymentMethod === 'stripe'
-                        ? 'border-heritage-gold bg-heritage-gold/10 text-heritage-green'
-                        : 'border-gray-200 bg-white hover:border-gray-300 text-gray-500'
+                      checkoutPaymentMethod === "stripe"
+                        ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green"
+                        : "border-gray-200 bg-white hover:border-gray-300 text-gray-500"
                     }`}
                   >
                     <span className="text-lg">💳</span>
-                    <span className="font-bold text-[10px] uppercase tracking-wider">Stripe Credit Card</span>
+                    <span className="font-bold text-[10px] uppercase tracking-wider">
+                      Stripe Credit Card
+                    </span>
                   </button>
                 </div>
               </div>
 
               {/* Payment Details Inputs */}
-              {checkoutPaymentMethod === 'ideal' ? (
+              {checkoutPaymentMethod === "ideal" ? (
                 <div className="bg-white border border-heritage-gold/10 p-4 rounded-2xl space-y-3 shadow-sm">
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-bold uppercase tracking-wider text-heritage-green">
@@ -682,7 +934,7 @@ export default function App() {
                     </label>
                     <select
                       value={checkoutIdealBank}
-                      onChange={e => setCheckoutIdealBank(e.target.value)}
+                      onChange={(e) => setCheckoutIdealBank(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs"
                     >
                       <option value="Rabobank">Rabobank</option>
@@ -694,7 +946,9 @@ export default function App() {
                     </select>
                   </div>
                   <p className="text-[10px] text-gray-400 italic">
-                    Upon pressing pay, you will be securely redirected to your bank's authentication gateway to authorize the 50% escrow deposit.
+                    Upon pressing pay, you will be securely redirected to your
+                    bank's authentication gateway to authorize the 50% escrow
+                    deposit.
                   </p>
                 </div>
               ) : (
@@ -706,7 +960,7 @@ export default function App() {
                     <input
                       type="text"
                       value={checkoutCardNumber}
-                      onChange={e => setCheckoutCardNumber(e.target.value)}
+                      onChange={(e) => setCheckoutCardNumber(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-mono"
                     />
                   </div>
@@ -718,7 +972,7 @@ export default function App() {
                       <input
                         type="text"
                         value={checkoutCardExpiry}
-                        onChange={e => setCheckoutCardExpiry(e.target.value)}
+                        onChange={(e) => setCheckoutCardExpiry(e.target.value)}
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-mono font-medium"
                       />
                     </div>
@@ -729,7 +983,7 @@ export default function App() {
                       <input
                         type="text"
                         value={checkoutCardCvc}
-                        onChange={e => setCheckoutCardCvc(e.target.value)}
+                        onChange={(e) => setCheckoutCardCvc(e.target.value)}
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-mono font-medium"
                       />
                     </div>
@@ -741,7 +995,10 @@ export default function App() {
               <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl leading-relaxed text-[10px] flex items-start gap-2.5">
                 <span className="text-sm">🛡️</span>
                 <div>
-                  <strong>Escrow Security Protocol Active:</strong> Your payment remains frozen in the campus's verified locker holding vault. Tailors receive fabrication materials only, and cannot access the final sum until you scan your lockers passcode.
+                  <strong>Escrow Security Protocol Active:</strong> Your payment
+                  remains frozen in the campus's verified locker holding vault.
+                  Tailors receive fabrication materials only, and cannot access
+                  the final sum until you scan your lockers passcode.
                 </div>
               </div>
             </div>
@@ -768,8 +1025,12 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <LockIcon size={11} className="text-heritage-gold animate-bounce" />
-                    Authorize Escrow Deposit ({currencySymbol}{checkoutDepositAmount.toFixed(2)})
+                    <LockIcon
+                      size={11}
+                      className="text-heritage-gold animate-bounce"
+                    />
+                    Authorize Escrow Deposit ({currencySymbol}
+                    {checkoutDepositAmount.toFixed(2)})
                   </>
                 )}
               </button>

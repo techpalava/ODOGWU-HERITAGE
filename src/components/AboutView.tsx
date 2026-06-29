@@ -3,36 +3,60 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Heart, Globe, Award, ShieldCheck, ArrowUpRight, X, BookOpen, Search, Tag, Info, CheckCircle2, Image } from 'lucide-react';
-import collaborationBanner from '../assets/images/collaboration_banner_1782373364815.jpg';
-import fredrickEzehAvatar from '../assets/images/fredrick_ezeh_avatar_1782313590772.jpg';
-import { OFFICIAL_PRICE_LIST } from '../data/pricingData';
-import { useAppStore } from '../store/useAppStore';
+import React, { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  Sparkles,
+  Heart,
+  Globe,
+  Award,
+  ShieldCheck,
+  ArrowUpRight,
+  X,
+  BookOpen,
+  Search,
+  Tag,
+  Info,
+  CheckCircle2,
+  Image,
+} from "lucide-react";
+import collaborationBanner from "../assets/images/collaboration_banner_1782373364815.jpg";
+import fredrickEzehAvatar from "../assets/images/fredrick_ezeh_avatar_1782313590772.jpg";
+import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
+import { useAppStore } from "../store/useAppStore";
+import { compressImage } from "../utils/imageUtils";
 
 export default function AboutView() {
-  const { businessSettings, setBusinessSettings } = useAppStore();
-  const [isStoryOpen, setIsStoryOpen] = useState(false);
-  const [activePriceTab, setActivePriceTab] = useState<'guys' | 'ladies' | 'others'>('guys');
-  const [priceSearchQuery, setPriceSearchQuery] = useState('');
+  const { businessSettings, setBusinessSettings, currentUser } = useAppStore();
   
+  const isAdmin = currentUser?.role === "NTCC Founder & Coordinator";
+  
+  const [isStoryOpen, setIsStoryOpen] = useState(false);
+  const [activePriceTab, setActivePriceTab] = useState<
+    "guys" | "ladies" | "others"
+  >("guys");
+  const [priceSearchQuery, setPriceSearchQuery] = useState("");
+
   const leftLogo = businessSettings.collaborationLogos?.left || null;
   const rightLogo = businessSettings.collaborationLogos?.right || null;
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>, position: 'left' | 'right') => {
+  const handleLogoUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    position: "left" | "right",
+  ) => {
     if (e.target.files && e.target.files[0]) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         const logoData = event.target?.result as string;
-        setBusinessSettings({
-          ...businessSettings,
+        const compressedData = await compressImage(logoData);
+
+        setBusinessSettings((prev) => ({
+          ...prev,
           collaborationLogos: {
-            ...businessSettings.collaborationLogos,
-            left: position === 'left' ? logoData : (businessSettings.collaborationLogos?.left || null),
-            right: position === 'right' ? logoData : (businessSettings.collaborationLogos?.right || null),
-          }
-        });
+            ...prev.collaborationLogos,
+            [position]: compressedData,
+          },
+        }));
       };
       reader.readAsDataURL(e.target.files[0]);
     }
@@ -54,7 +78,9 @@ export default function AboutView() {
           About the NTCC Project
         </h1>
         <p className="text-sm text-heritage-ink/75 max-w-2xl mx-auto leading-relaxed">
-          Promoting the rich, colorful and dynamic traditional cultures of Nigeria through its different clothing, custom-tailored in Lagos and delivered securely to our community in the Netherlands.
+          Promoting the rich, colorful and dynamic traditional cultures of
+          Nigeria through its different clothing, custom-tailored in Lagos and
+          delivered securely to our community in the Netherlands.
         </p>
       </motion.div>
 
@@ -63,90 +89,115 @@ export default function AboutView() {
         initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.5, delay: 0.1 }}
-        className="rounded-3xl border border-heritage-gold/20 overflow-hidden shadow-xl bg-white p-2.5 relative group"
+        className="rounded-3xl border border-heritage-gold/20 overflow-hidden shadow-xl bg-white p-2.5 relative group mb-12"
       >
         <div className="relative">
-          <img loading="lazy"
+          <img
+            loading="lazy"
             src={collaborationBanner}
             alt="Odogwu Heritage and Vaprec Collaboration Banner"
             referrerPolicy="no-referrer"
             className="w-full h-auto rounded-2xl object-cover"
           />
-          
+
           {/* Left Logo Overlay */}
-          <div className={`absolute top-[28%] left-[7.5%] w-[27%] h-[53%] rounded-xl overflow-hidden flex items-center justify-center group/logo1 transition-all ${leftLogo ? 'bg-white shadow' : 'hover:bg-white/90 hover:shadow hover:backdrop-blur-sm'}`}>
-            <input 
-              type="file" 
-              accept="image/*" 
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-              onChange={(e) => handleLogoUpload(e, 'left')}
-              title="Upload Left Logo"
-            />
+          <div
+            className={`absolute top-[28%] left-[7.5%] w-[27%] h-[53%] rounded-xl overflow-hidden flex items-center justify-center group/logo1 transition-all ${leftLogo ? "bg-white shadow" : isAdmin ? "hover:bg-white/90 hover:shadow hover:backdrop-blur-sm" : ""}`}
+          >
+            {isAdmin && (
+              <input
+                type="file"
+                accept="image/*"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                onChange={(e) => handleLogoUpload(e, "left")}
+                title="Upload Left Logo"
+              />
+            )}
             {leftLogo ? (
               <>
-                <img src={leftLogo} alt="Partner Logo 1" className="w-full h-full object-contain p-2" />
-                <button 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setBusinessSettings({
-                      ...businessSettings,
-                      collaborationLogos: {
-                        ...businessSettings.collaborationLogos,
-                        left: null
-                      }
-                    });
-                  }} 
-                  className="absolute top-2 right-2 z-20 bg-white/80 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-full p-1.5 opacity-0 group-hover/logo1:opacity-100 transition shadow-sm"
-                  title="Remove Logo"
-                >
-                  <X size={14} />
-                </button>
+                <img
+                  src={leftLogo}
+                  alt="Partner Logo 1"
+                  className="w-full h-full object-contain p-2"
+                />
+                {isAdmin && (
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setBusinessSettings((prev) => ({
+                        ...prev,
+                        collaborationLogos: {
+                          ...prev.collaborationLogos,
+                          left: null,
+                        },
+                      }));
+                    }}
+                    className="absolute top-2 right-2 z-20 bg-white/80 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-full p-1.5 opacity-0 group-hover/logo1:opacity-100 transition shadow-sm"
+                    title="Remove Logo"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </>
-            ) : (
+            ) : isAdmin ? (
               <div className="flex flex-col items-center text-heritage-ink/40 opacity-0 group-hover/logo1:opacity-100 group-hover/logo1:text-heritage-gold transition">
                 <Image className="w-8 h-8 mb-2 opacity-80" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-center px-2">Upload Custom Logo 1</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-center px-2">
+                  Upload Custom Logo 1
+                </span>
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Right Logo Overlay */}
-          <div className={`absolute top-[28%] right-[7.5%] w-[27%] h-[53%] rounded-xl overflow-hidden flex items-center justify-center group/logo2 transition-all ${rightLogo ? 'bg-white shadow' : 'hover:bg-white/90 hover:shadow hover:backdrop-blur-sm'}`}>
-            <input 
-              type="file" 
-              accept="image/*" 
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-              onChange={(e) => handleLogoUpload(e, 'right')}
-              title="Upload Right Logo"
-            />
+          <div
+            className={`absolute top-[28%] right-[7.5%] w-[27%] h-[53%] rounded-xl overflow-hidden flex items-center justify-center group/logo2 transition-all ${rightLogo ? "bg-white shadow" : isAdmin ? "hover:bg-white/90 hover:shadow hover:backdrop-blur-sm" : ""}`}
+          >
+            {isAdmin && (
+              <input
+                type="file"
+                accept="image/*"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                onChange={(e) => handleLogoUpload(e, "right")}
+                title="Upload Right Logo"
+              />
+            )}
             {rightLogo ? (
               <>
-                <img src={rightLogo} alt="Partner Logo 2" className="w-full h-full object-contain p-2" />
-                <button 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setBusinessSettings({
-                      ...businessSettings,
-                      collaborationLogos: {
-                        ...businessSettings.collaborationLogos,
-                        right: null
-                      }
-                    });
-                  }} 
-                  className="absolute top-2 right-2 z-20 bg-white/80 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-full p-1.5 opacity-0 group-hover/logo2:opacity-100 transition shadow-sm"
-                  title="Remove Logo"
-                >
-                  <X size={14} />
-                </button>
+                <img
+                  src={rightLogo}
+                  alt="Partner Logo 2"
+                  className="w-full h-full object-contain p-2"
+                />
+                {isAdmin && (
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setBusinessSettings((prev) => ({
+                        ...prev,
+                        collaborationLogos: {
+                          ...prev.collaborationLogos,
+                          right: null,
+                        },
+                      }));
+                    }}
+                    className="absolute top-2 right-2 z-20 bg-white/80 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-full p-1.5 opacity-0 group-hover/logo2:opacity-100 transition shadow-sm"
+                    title="Remove Logo"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </>
-            ) : (
+            ) : isAdmin ? (
               <div className="flex flex-col items-center text-heritage-ink/40 opacity-0 group-hover/logo2:opacity-100 group-hover/logo2:text-heritage-gold transition">
                 <Image className="w-8 h-8 mb-2 opacity-80" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-center px-2">Upload Custom Logo 2</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-center px-2">
+                  Upload Custom Logo 2
+                </span>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </motion.div>
@@ -168,10 +219,13 @@ export default function AboutView() {
               The Vision
             </h3>
             <p className="text-xs text-heritage-ink/80 leading-relaxed font-medium">
-              To further extend the smiles and love into the already rich Dutch culture with the vibrant Nigerian taste.
+              To further extend the smiles and love into the already rich Dutch
+              culture with the vibrant Nigerian taste.
             </p>
             <p className="text-xs text-heritage-ink/75 leading-relaxed font-medium">
-              Our long-term goal is also to extend this outreach by collaborating with other cultures to do the same, building a borderless community of traditional expression.
+              Our long-term goal is also to extend this outreach by
+              collaborating with other cultures to do the same, building a
+              borderless community of traditional expression.
             </p>
           </div>
           <div className="pt-4 border-t border-gray-100 flex items-center justify-between text-[10px] text-heritage-gold uppercase tracking-wider font-bold">
@@ -195,7 +249,10 @@ export default function AboutView() {
               Mission &amp; Purpose
             </h3>
             <p className="text-xs text-heritage-ink/80 leading-relaxed font-medium font-sans">
-              To create earning opportunities for the average tailors in Nigeria and other (future culture) who are part of this great venture and enriching the Dutch culture and enabling people to express themselves through these bold prints (clothing).
+              To create earning opportunities for the average tailors in Nigeria
+              and other (future culture) who are part of this great venture and
+              enriching the Dutch culture and enabling people to express
+              themselves through these bold prints (clothing).
             </p>
           </div>
           <div className="pt-4 border-t border-gray-100 flex items-center justify-between text-[10px] text-heritage-green uppercase tracking-wider font-bold">
@@ -221,14 +278,19 @@ export default function AboutView() {
           </h2>
           <div className="w-16 h-[2px] bg-heritage-gold"></div>
           <p className="text-xs sm:text-sm text-heritage-ink/80 leading-relaxed font-sans">
-            Started in April 2025 by Fredrick Ezeh to share traditional Nigerian fashion, the Nigerian Traditional Clothing Community (NTCC) at ASML helps us learn about and celebrate culture on campus. We started with a small group of pioneers and have grown into a warm community for all colleagues.
+            Started in April 2025 by Fredrick Ezeh to share traditional Nigerian
+            fashion, the Nigerian Traditional Clothing Community (NTCC) at ASML
+            helps us learn about and celebrate culture on campus. We started
+            with a small group of pioneers and have grown into a warm community
+            for all colleagues.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center bg-heritage-cream/40 p-6 rounded-2xl border border-heritage-gold/10">
           <div className="md:col-span-4 flex flex-col items-center text-center space-y-3">
             <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden border-2 border-heritage-gold/30 shadow-sm shrink-0">
-              <img loading="lazy"
+              <img
+                loading="lazy"
                 src={fredrickEzehAvatar}
                 alt="Fredrick Ezeh"
                 className="w-full h-full object-cover"
@@ -236,14 +298,19 @@ export default function AboutView() {
               />
             </div>
             <div className="space-y-0.5">
-              <h4 className="text-xs font-bold text-heritage-green font-serif">Fredrick Ezeh</h4>
-              <p className="text-[9px] text-heritage-gold font-bold uppercase tracking-wider">Founder & ASML Coordinator</p>
+              <h4 className="text-xs font-bold text-heritage-green font-serif">
+                Fredrick Ezeh
+              </h4>
+              <p className="text-[9px] text-heritage-gold font-bold uppercase tracking-wider">
+                Founder & ASML Coordinator
+              </p>
             </div>
           </div>
 
           <div className="md:col-span-8 space-y-4">
             <p className="text-sm font-serif italic text-heritage-green leading-relaxed text-center md:text-left">
-              "Let's keep each other close and be supportive, that is all we need to live longer than our struggles."
+              "Let's keep each other close and be supportive, that is all we
+              need to live longer than our struggles."
             </p>
             <div className="flex justify-center md:justify-start">
               <button
@@ -275,13 +342,18 @@ export default function AboutView() {
             </h2>
             <div className="w-16 h-[2px] bg-heritage-gold"></div>
             <p className="text-xs text-heritage-ink/75 max-w-xl">
-              As a member of the NTCC, you benefit from pre-negotiated bespoke group tailoring rates. Look up your style configuration codes to view your savings.
+              As a member of the NTCC, you benefit from pre-negotiated bespoke
+              group tailoring rates. Look up your style configuration codes to
+              view your savings.
             </p>
           </div>
 
           {/* Search bar */}
           <div className="relative w-full md:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-heritage-ink/40" size={14} />
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-heritage-ink/40"
+              size={14}
+            />
             <input
               type="text"
               placeholder="Search codes or styles..."
@@ -291,7 +363,7 @@ export default function AboutView() {
             />
             {priceSearchQuery && (
               <button
-                onClick={() => setPriceSearchQuery('')}
+                onClick={() => setPriceSearchQuery("")}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-heritage-ink/40 hover:text-heritage-green text-xs"
               >
                 &times;
@@ -302,20 +374,24 @@ export default function AboutView() {
 
         {/* Pricing Tabs */}
         <div className="flex border-b border-gray-100 font-sans text-xs">
-          {(['guys', 'ladies', 'others'] as const).map((tab) => (
+          {(["guys", "ladies", "others"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => {
                 setActivePriceTab(tab);
-                setPriceSearchQuery('');
+                setPriceSearchQuery("");
               }}
               className={`px-4 sm:px-6 py-2.5 font-bold uppercase tracking-wider border-b-2 transition cursor-pointer -mb-[2px] ${
                 activePriceTab === tab
-                  ? 'border-heritage-gold text-heritage-green bg-heritage-cream/10'
-                  : 'border-transparent text-heritage-ink/50 hover:text-heritage-green'
+                  ? "border-heritage-gold text-heritage-green bg-heritage-cream/10"
+                  : "border-transparent text-heritage-ink/50 hover:text-heritage-green"
               }`}
             >
-              {tab === 'guys' ? 'Gentlemen' : tab === 'ladies' ? 'Ladies' : 'Accessories & Others'}
+              {tab === "guys"
+                ? "Gentlemen"
+                : tab === "ladies"
+                  ? "Ladies"
+                  : "Accessories & Others"}
             </button>
           ))}
         </div>
@@ -326,9 +402,13 @@ export default function AboutView() {
             <Tag size={14} className="text-emerald-700" />
           </div>
           <div className="flex-grow">
-            <p className="font-bold text-emerald-800">Exclusive NTCC Cohort Price Protection</p>
+            <p className="font-bold text-emerald-800">
+              Exclusive NTCC Cohort Price Protection
+            </p>
             <p className="text-[11px] text-emerald-700/90">
-              Active ASML group cohort members pay only the **Discounted Price Range**. Future public rates will transition to the standard **Actual (Future) Price Range**.
+              Active ASML group cohort members pay only the **Discounted Price
+              Range**. Future public rates will transition to the standard
+              **Actual (Future) Price Range**.
             </p>
           </div>
           <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider mt-1 sm:mt-0">
@@ -339,17 +419,23 @@ export default function AboutView() {
         {/* Pricing List Table / Grid */}
         <div className="overflow-x-auto rounded-2xl border border-heritage-gold/10 shadow-sm font-sans">
           {(() => {
-            const filteredPricing = OFFICIAL_PRICE_LIST.filter(item => {
+            const filteredPricing = OFFICIAL_PRICE_LIST.filter((item) => {
               const matchesTab = item.category === activePriceTab;
-              const matchesSearch = item.description.toLowerCase().includes(priceSearchQuery.toLowerCase()) ||
-                                    item.code.toLowerCase().includes(priceSearchQuery.toLowerCase());
+              const matchesSearch =
+                item.description
+                  .toLowerCase()
+                  .includes(priceSearchQuery.toLowerCase()) ||
+                item.code
+                  .toLowerCase()
+                  .includes(priceSearchQuery.toLowerCase());
               return matchesTab && matchesSearch;
             });
 
             if (filteredPricing.length === 0) {
               return (
                 <div className="p-8 text-center text-heritage-ink/50 text-xs">
-                  No pricing records matched your search query. Try another keyword.
+                  No pricing records matched your search query. Try another
+                  keyword.
                 </div>
               );
             }
@@ -362,40 +448,49 @@ export default function AboutView() {
                       <th className="py-3.5 px-4 w-16">Code</th>
                       <th className="py-3.5 px-4">Description</th>
                       <th className="py-3.5 px-4 w-28">Quantity</th>
-                      <th className="py-3.5 px-4 w-32 text-right">Discounted Price (Member)</th>
-                      <th className="py-3.5 px-4 w-32 text-right text-heritage-ink/50">Actual Price (Future)</th>
+                      <th className="py-3.5 px-4 w-32 text-right">
+                        Discounted Price (Member)
+                      </th>
+                      <th className="py-3.5 px-4 w-32 text-right text-heritage-ink/50">
+                        Actual Price (Future)
+                      </th>
                     </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredPricing.map((item) => (
-                    <tr key={item.code} className="hover:bg-heritage-cream/5 transition-colors">
-                      <td className="py-3 px-4">
-                        <span className="font-mono font-bold text-heritage-gold bg-heritage-gold/5 border border-heritage-gold/20 px-1.5 py-0.5 rounded">
-                          {item.code}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-medium text-heritage-ink">
-                        {item.description}
-                      </td>
-                      <td className="py-3 px-4 text-heritage-ink/75 font-medium italic">
-                        {item.quantity}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="font-mono text-emerald-700 font-bold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded">
-                          €{item.discountedMin === item.discountedMax 
-                            ? item.discountedMin.toFixed(2) 
-                            : `${item.discountedMin.toFixed(2)} - €${item.discountedMax.toFixed(2)}`}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right text-heritage-ink/40 font-mono line-through">
-                        €{item.actualMin === item.actualMax 
-                          ? item.actualMin.toFixed(2) 
-                          : `${item.actualMin.toFixed(2)} - €${item.actualMax.toFixed(2)}`}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredPricing.map((item) => (
+                      <tr
+                        key={item.code}
+                        className="hover:bg-heritage-cream/5 transition-colors"
+                      >
+                        <td className="py-3 px-4">
+                          <span className="font-mono font-bold text-heritage-gold bg-heritage-gold/5 border border-heritage-gold/20 px-1.5 py-0.5 rounded">
+                            {item.code}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-medium text-heritage-ink">
+                          {item.description}
+                        </td>
+                        <td className="py-3 px-4 text-heritage-ink/75 font-medium italic">
+                          {item.quantity}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="font-mono text-emerald-700 font-bold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded">
+                            €
+                            {item.discountedMin === item.discountedMax
+                              ? item.discountedMin.toFixed(2)
+                              : `${item.discountedMin.toFixed(2)} - €${item.discountedMax.toFixed(2)}`}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right text-heritage-ink/40 font-mono line-through">
+                          €
+                          {item.actualMin === item.actualMax
+                            ? item.actualMin.toFixed(2)
+                            : `${item.actualMin.toFixed(2)} - €${item.actualMax.toFixed(2)}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             );
           })()}
@@ -405,11 +500,25 @@ export default function AboutView() {
         <div className="p-4 bg-heritage-cream/20 border border-heritage-gold/15 rounded-2xl flex items-start gap-3 text-xs leading-relaxed text-heritage-ink/80">
           <Info size={14} className="text-heritage-gold shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <span className="font-bold text-heritage-green block">Pro Tips &amp; Special Policies:</span>
+            <span className="font-bold text-heritage-green block">
+              Pro Tips &amp; Special Policies:
+            </span>
             <ul className="list-disc pl-4 space-y-1 text-[11px] text-heritage-ink/70">
-              <li>For Ladies' dresses (L1–L4), adding an inner net or lining corresponds to code <strong>L5</strong>, adding <strong>+€10.00</strong> to the order.</li>
-              <li>Order Alone options carry an individual priority home shipping/courier surcharge of <strong>+€35.00</strong> (SEPA transfer directly).</li>
-              <li>Add-ons matching code <strong>Others-1</strong> can be added to any customized order in Step 3 for only <strong>+€10.00</strong> during active group phases.</li>
+              <li>
+                For Ladies' dresses (L1–L4), adding an inner net or lining
+                corresponds to code <strong>L5</strong>, adding{" "}
+                <strong>+€10.00</strong> to the order.
+              </li>
+              <li>
+                Order Alone options carry an individual priority home
+                shipping/courier surcharge of <strong>+€35.00</strong> (SEPA
+                transfer directly).
+              </li>
+              <li>
+                Add-ons matching code <strong>Others-1</strong> can be added to
+                any customized order in Step 3 for only <strong>+€10.00</strong>{" "}
+                during active group phases.
+              </li>
             </ul>
           </div>
         </div>
@@ -431,7 +540,9 @@ export default function AboutView() {
             Cultivating Inclusion &amp; Respect
           </h3>
           <p className="text-xs text-heritage-beige/90 leading-relaxed max-w-3xl font-medium">
-            Promoting more diversity and cultural inclusion in the Netherlands and beyond, where we can all appreciate and respect each other's culture in our own unique way.
+            Promoting more diversity and cultural inclusion in the Netherlands
+            and beyond, where we can all appreciate and respect each other's
+            culture in our own unique way.
           </p>
         </div>
       </motion.div>
@@ -454,7 +565,7 @@ export default function AboutView() {
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              transition={{ type: 'spring', duration: 0.4 }}
+              transition={{ type: "spring", duration: 0.4 }}
               className="relative bg-white text-heritage-ink rounded-3xl max-w-2xl w-full max-h-[85vh] overflow-hidden shadow-2xl border border-heritage-gold/20 flex flex-col z-10"
             >
               {/* Header */}
@@ -481,7 +592,8 @@ export default function AboutView() {
                   {/* Portrait Sidebar */}
                   <div className="md:col-span-4 flex flex-col items-center text-center space-y-3 bg-heritage-cream/40 p-4 rounded-2xl border border-heritage-gold/10">
                     <div className="relative w-28 h-28 rounded-2xl overflow-hidden border-2 border-heritage-gold/30 shadow-sm shrink-0">
-                      <img loading="lazy"
+                      <img
+                        loading="lazy"
                         src={fredrickEzehAvatar}
                         alt="Fredrick Ezeh"
                         className="w-full h-full object-cover"
@@ -489,15 +601,22 @@ export default function AboutView() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <h4 className="text-xs font-bold text-heritage-green font-serif">Fredrick Ezeh</h4>
-                      <p className="text-[9px] text-heritage-gold font-bold uppercase tracking-wider">Founder & ASML Coordinator</p>
-                      <p className="text-[9px] text-heritage-ink/65">ASML Veldhoven</p>
+                      <h4 className="text-xs font-bold text-heritage-green font-serif">
+                        Fredrick Ezeh
+                      </h4>
+                      <p className="text-[9px] text-heritage-gold font-bold uppercase tracking-wider">
+                        Founder & ASML Coordinator
+                      </p>
+                      <p className="text-[9px] text-heritage-ink/65">
+                        ASML Veldhoven
+                      </p>
                     </div>
-                    
+
                     <div className="w-full h-[1px] bg-heritage-gold/15 my-1"></div>
-                    
+
                     <p className="text-[10px] italic text-heritage-green/90 leading-relaxed font-serif">
-                      "Let's keep each other close and be supportive, that is all we need to live longer than our struggles."
+                      "Let's keep each other close and be supportive, that is
+                      all we need to live longer than our struggles."
                     </p>
                   </div>
 
@@ -506,25 +625,52 @@ export default function AboutView() {
                     <h3 className="text-base font-serif font-bold text-heritage-green">
                       Building a Culturally Inclusive ASML
                     </h3>
-                    
+
                     <p>
-                      In April 2025, I started a simple initiative within my project team to promote cultural inclusion. What began as a personal gesture of cultural pride has now grown far beyond our department. This movement is called the <strong>Nigerian Traditional Clothing Community (NTCC)</strong>, and our goal is to spread it across ASML, the Netherlands, and eventually the world.
+                      In April 2025, I started a simple initiative within my
+                      project team to promote cultural inclusion. What began as
+                      a personal gesture of cultural pride has now grown far
+                      beyond our department. This movement is called the{" "}
+                      <strong>
+                        Nigerian Traditional Clothing Community (NTCC)
+                      </strong>
+                      , and our goal is to spread it across ASML, the
+                      Netherlands, and eventually the world.
                     </p>
-                    
+
                     <p>
-                      The idea first started over a year ago. My colleagues often told me how much they liked seeing me wear traditional Nigerian clothing to work on Mondays and Wednesdays. They asked if they could get these outfits too. So, during my trip home to Nigeria in April 2025, I ordered the first batch for them. The response was better than I ever imagined!
+                      The idea first started over a year ago. My colleagues
+                      often told me how much they liked seeing me wear
+                      traditional Nigerian clothing to work on Mondays and
+                      Wednesdays. They asked if they could get these outfits
+                      too. So, during my trip home to Nigeria in April 2025, I
+                      ordered the first batch for them. The response was better
+                      than I ever imagined!
                     </p>
-                    
+
                     <p>
-                      When others saw our first group of members—known as <strong>The Pioneers</strong>—wearing their traditional clothing, they wanted to join too. This led to our second successful group, <strong>The Avengers</strong>.
+                      When others saw our first group of members—known as{" "}
+                      <strong>The Pioneers</strong>—wearing their traditional
+                      clothing, they wanted to join too. This led to our second
+                      successful group, <strong>The Avengers</strong>.
                     </p>
-                    
+
                     <p>
-                      Interest continued to grow. Our third group, <strong>The Transformers</strong>, became even more successful. I decided to surprise our ASML CEO, Christophe Fouquet, by gifting him a custom-tailored traditional shirt. He happily joined the community, which was a wonderful moment for promoting diversity, inclusion, and cultural pride at ASML.
+                      Interest continued to grow. Our third group,{" "}
+                      <strong>The Transformers</strong>, became even more
+                      successful. I decided to surprise our ASML CEO, Christophe
+                      Fouquet, by gifting him a custom-tailored traditional
+                      shirt. He happily joined the community, which was a
+                      wonderful moment for promoting diversity, inclusion, and
+                      cultural pride at ASML.
                     </p>
-                    
+
                     <p>
-                      After welcoming Christophe to NTCC, my dream is to share this beautiful traditional clothing with more ASML executives and other leaders. We want to build a global movement that brings love, smiles, and cultural appreciation to everyone who wants to be a part of it.
+                      After welcoming Christophe to NTCC, my dream is to share
+                      this beautiful traditional clothing with more ASML
+                      executives and other leaders. We want to build a global
+                      movement that brings love, smiles, and cultural
+                      appreciation to everyone who wants to be a part of it.
                     </p>
                   </div>
                 </div>
@@ -543,7 +689,12 @@ export default function AboutView() {
                     </div>
                   </div>
                   <p className="text-[11px] leading-relaxed text-heritage-beige/95">
-                    Gifting a traditional custom-tailored shirt to ASML CEO Christophe Fouquet represented a symbolic bridge between cultural heritage and corporate leadership. This successful inclusion showcases how corporate platforms can actively embrace, celebrate, and elevate cultural diversity on a global scale.
+                    Gifting a traditional custom-tailored shirt to ASML CEO
+                    Christophe Fouquet represented a symbolic bridge between
+                    cultural heritage and corporate leadership. This successful
+                    inclusion showcases how corporate platforms can actively
+                    embrace, celebrate, and elevate cultural diversity on a
+                    global scale.
                   </p>
                 </div>
               </div>

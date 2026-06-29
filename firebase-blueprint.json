@@ -1,0 +1,177 @@
+{
+  "entities": {
+    "BusinessSettings": {
+      "title": "BusinessSettings",
+      "description": "Global application business settings.",
+      "type": "object",
+      "properties": {
+        "collaborationLogos": { "type": "object" },
+        "batchSettings": { "type": "object" },
+        "shippingSettings": { "type": "object" },
+        "pricingSettings": { "type": "object" },
+        "productionSettings": { "type": "object" },
+        "applicationSettings": { "type": "object" }
+      }
+    },
+    "Batch": {
+      "title": "Batch",
+      "description": "Production batch information.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "batchNumber": { "type": "number" },
+        "name": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "duration": { "type": "string" },
+        "targetGarments": { "type": "number" },
+        "currentGarments": { "type": "number" },
+        "currentOrders": { "type": "number" },
+        "currentCustomers": { "type": "number" },
+        "status": { "type": "string" },
+        "visibility": { "type": "string" }
+      }
+    },
+    "CustomGroup": {
+      "title": "CustomGroup",
+      "description": "Custom groups for community batches.",
+      "type": "object",
+      "properties": {
+        "batchId": { "type": "string" },
+        "batchName": { "type": "string" },
+        "occasion": { "type": "string" },
+        "description": { "type": "string" },
+        "country": { "type": "string" },
+        "city": { "type": "string" },
+        "preferredDeliveryMonth": { "type": "string" },
+        "expectedParticipants": { "type": "number" },
+        "maxParticipants": { "type": "number" },
+        "visibility": { "type": "string" },
+        "organizer": { "type": "string" },
+        "currentMembers": { "type": "number" },
+        "closingDate": { "type": "string" },
+        "deliveryWindow": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer/Account details.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "location": { "type": "string" }
+      }
+    },
+    "Fabric": {
+      "title": "Fabric",
+      "description": "Fabric information.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "color": { "type": "string" },
+        "colorHex": { "type": "string" },
+        "priceMultiplier": { "type": "number" },
+        "stockStatus": { "type": "string" },
+        "image": { "type": "string" }
+      }
+    },
+    "StyleCategory": {
+      "title": "StyleCategory",
+      "description": "Garment style category.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "basePrice": { "type": "number" },
+        "gender": { "type": "string" },
+        "options": { "type": "array" }
+      }
+    },
+    "Showpiece": {
+      "title": "Showpiece",
+      "description": "Gallery showpieces.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "styleId": { "type": "string" },
+        "fabricCode": { "type": "string" }
+      }
+    },
+    "CommunityPhoto": {
+      "title": "CommunityPhoto",
+      "description": "Community photo.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "url": { "type": "string" },
+        "caption": { "type": "string" },
+        "cohortName": { "type": "string" },
+        "deliveryYear": { "type": "number" },
+        "featured": { "type": "boolean" },
+        "displayOrder": { "type": "number" },
+        "status": { "type": "string" }
+      }
+    },
+    "MasterOrder": {
+      "title": "MasterOrder",
+      "description": "Master order information.",
+      "type": "object",
+      "properties": {
+        "customer": { "type": "object" },
+        "style": { "type": "object" },
+        "fabric": { "type": "object" },
+        "design": { "type": "object" },
+        "garment": { "type": "object" },
+        "measurements": { "type": "object" },
+        "payment": { "type": "object" },
+        "shipment": { "type": "object" }
+      }
+    }
+  },
+  "firestore": {
+    "businessSettings": {
+      "schema": { "$ref": "#/entities/BusinessSettings" },
+      "description": "Global application business settings."
+    },
+    "batches": {
+      "schema": { "$ref": "#/entities/Batch" },
+      "description": "Production batches."
+    },
+    "customGroups": {
+      "schema": { "$ref": "#/entities/CustomGroup" },
+      "description": "Custom groups for community batches."
+    },
+    "customers": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "Customer/Account details."
+    },
+    "fabrics": {
+      "schema": { "$ref": "#/entities/Fabric" },
+      "description": "Fabrics."
+    },
+    "styles": {
+      "schema": { "$ref": "#/entities/StyleCategory" },
+      "description": "Garment styles."
+    },
+    "showpieces": {
+      "schema": { "$ref": "#/entities/Showpiece" },
+      "description": "Gallery showpieces."
+    },
+    "communityPhotos": {
+      "schema": { "$ref": "#/entities/CommunityPhoto" },
+      "description": "Community photos."
+    },
+    "orders": {
+      "schema": { "$ref": "#/entities/MasterOrder" },
+      "description": "Master orders."
+    }
+  }
+}

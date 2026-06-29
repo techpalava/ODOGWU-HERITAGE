@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { Eye, Shirt, Sparkles, Tag, Layers, Camera } from 'lucide-react';
-import { STYLE_CATEGORIES, FABRICS } from '../data/mockData';
-import { Showpiece, CommunityPhoto } from '../types';
+import React, { useState } from "react";
+import { Eye, Shirt, Sparkles, Tag, Layers, Camera } from "lucide-react";
+import { STYLE_CATEGORIES, FABRICS } from "../data/mockData";
+import { Showpiece, CommunityPhoto } from "../types";
 
 interface GalleryViewProps {
   onSelectStyle: (styleId: string, fabricCode: string) => void;
@@ -14,15 +14,23 @@ interface GalleryViewProps {
   communityPhotos?: CommunityPhoto[];
 }
 
-export default function GalleryView({ onSelectStyle, showpieces = [], communityPhotos = [] }: GalleryViewProps) {
-  const [filter, setFilter] = useState<'all' | 'male' | 'female' | 'fabric' | 'community'>('all');
+export default function GalleryView({
+  onSelectStyle,
+  showpieces = [],
+  communityPhotos = [],
+}: GalleryViewProps) {
+  const [filter, setFilter] = useState<
+    "all" | "male" | "female" | "fabric" | "community"
+  >("all");
 
-  const filteredItems = showpieces.filter(item => {
-    if (filter === 'all') return true;
+  const filteredItems = showpieces.filter((item) => {
+    if (filter === "all") return true;
     return item.category === filter;
   });
-  
-  const activeCommunityPhotos = communityPhotos.filter(p => p.status === 'active').sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+
+  const activeCommunityPhotos = communityPhotos
+    .filter((p) => p.status === "active")
+    .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
 
   return (
     <div id="gallery-view-container" className="space-y-12">
@@ -35,58 +43,60 @@ export default function GalleryView({ onSelectStyle, showpieces = [], communityP
           The Heritage Showcase
         </h1>
         <p className="mt-2 text-sm text-heritage-ink/70 max-w-3xl font-sans">
-          Browse our curated traditional combinations, worn by team members across ASML. Select any style to load its configuration instantly inside our Design Studio.
+          Browse our curated traditional combinations, worn by team members
+          across ASML. Select any style to load its configuration instantly
+          inside our Design Studio.
         </p>
       </div>
 
       {/* Filter Tabs */}
       <div className="flex border-b border-heritage-beige pb-2 gap-4 overflow-x-auto text-xs font-bold font-sans">
         <button
-          onClick={() => setFilter('all')}
+          onClick={() => setFilter("all")}
           className={`pb-2 px-3 transition whitespace-nowrap ${
-            filter === 'all'
-              ? 'border-b-2 border-heritage-green text-heritage-green font-extrabold'
-              : 'text-heritage-ink/55 hover:text-heritage-gold'
+            filter === "all"
+              ? "border-b-2 border-heritage-green text-heritage-green font-extrabold"
+              : "text-heritage-ink/55 hover:text-heritage-gold"
           }`}
         >
           All Showpieces
         </button>
         <button
-          onClick={() => setFilter('community')}
+          onClick={() => setFilter("community")}
           className={`pb-2 px-3 transition whitespace-nowrap ${
-            filter === 'community'
-              ? 'border-b-2 border-heritage-green text-heritage-green font-extrabold'
-              : 'text-heritage-ink/55 hover:text-heritage-gold'
+            filter === "community"
+              ? "border-b-2 border-heritage-green text-heritage-green font-extrabold"
+              : "text-heritage-ink/55 hover:text-heritage-gold"
           }`}
         >
           Community Gallery
         </button>
         <button
-          onClick={() => setFilter('male')}
+          onClick={() => setFilter("male")}
           className={`pb-2 px-3 transition whitespace-nowrap ${
-            filter === 'male'
-              ? 'border-b-2 border-heritage-green text-heritage-green font-extrabold'
-              : 'text-heritage-ink/55 hover:text-heritage-gold'
+            filter === "male"
+              ? "border-b-2 border-heritage-green text-heritage-green font-extrabold"
+              : "text-heritage-ink/55 hover:text-heritage-gold"
           }`}
         >
           Men's Attire
         </button>
         <button
-          onClick={() => setFilter('female')}
+          onClick={() => setFilter("female")}
           className={`pb-2 px-3 transition whitespace-nowrap ${
-            filter === 'female'
-              ? 'border-b-2 border-heritage-green text-heritage-green font-extrabold'
-              : 'text-heritage-ink/55 hover:text-heritage-gold'
+            filter === "female"
+              ? "border-b-2 border-heritage-green text-heritage-green font-extrabold"
+              : "text-heritage-ink/55 hover:text-heritage-gold"
           }`}
         >
           Women's Couture
         </button>
         <button
-          onClick={() => setFilter('fabric')}
+          onClick={() => setFilter("fabric")}
           className={`pb-2 px-3 transition whitespace-nowrap ${
-            filter === 'fabric'
-              ? 'border-b-2 border-heritage-green text-heritage-green font-extrabold'
-              : 'text-heritage-ink/55 hover:text-heritage-gold'
+            filter === "fabric"
+              ? "border-b-2 border-heritage-green text-heritage-green font-extrabold"
+              : "text-heritage-ink/55 hover:text-heritage-gold"
           }`}
         >
           Raw Fabric Bolts
@@ -94,27 +104,33 @@ export default function GalleryView({ onSelectStyle, showpieces = [], communityP
       </div>
 
       {/* Gallery Showcase Grid */}
-      {filter === 'community' ? (
+      {filter === "community" ? (
         <div className="space-y-16">
           {activeCommunityPhotos.length === 0 ? (
             <div className="col-span-full py-12 text-center">
               <Camera className="mx-auto h-12 w-12 text-heritage-ink/20 mb-3" />
-              <p className="text-heritage-ink/60 font-sans text-sm">No community gallery photos found.</p>
+              <p className="text-heritage-ink/60 font-sans text-sm">
+                No community gallery photos found.
+              </p>
             </div>
           ) : (
             // Group by cohortName
-            Array.from(new Set(activeCommunityPhotos.map(p => p.cohortName))).map(cohort => {
-              const cohortPhotos = activeCommunityPhotos.filter(p => p.cohortName === cohort);
+            Array.from(
+              new Set(activeCommunityPhotos.map((p) => p.cohortName)),
+            ).map((cohort) => {
+              const cohortPhotos = activeCommunityPhotos.filter(
+                (p) => p.cohortName === cohort,
+              );
               return (
-                <div key={cohort || 'Uncategorized'} className="space-y-6">
+                <div key={cohort || "Uncategorized"} className="space-y-6">
                   <div className="flex items-center gap-4">
                     <h2 className="font-serif text-2xl font-bold text-heritage-green">
-                      {cohort || 'Uncategorized'}
+                      {cohort || "Uncategorized"}
                     </h2>
                     <div className="h-px flex-grow bg-heritage-gold/20"></div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {cohortPhotos.map(photo => (
+                    {cohortPhotos.map((photo) => (
                       <div
                         key={photo.id}
                         className="group bg-white rounded-3xl border border-heritage-gold/15 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col"
@@ -137,7 +153,9 @@ export default function GalleryView({ onSelectStyle, showpieces = [], communityP
                             "{photo.caption}"
                           </p>
                           <div className="flex items-center gap-2 pt-2 border-t border-gray-100 mt-2">
-                            <span className="font-mono text-[10px] text-heritage-ink/60">{photo.deliveryYear}</span>
+                            <span className="font-mono text-[10px] text-heritage-ink/60">
+                              {photo.deliveryYear}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -148,9 +166,9 @@ export default function GalleryView({ onSelectStyle, showpieces = [], communityP
             })
           )}
         </div>
-      ) : filter !== 'fabric' ? (
+      ) : filter !== "fabric" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {filteredItems.map(item => (
+          {filteredItems.map((item) => (
             <div
               key={item.id}
               className="group bg-white rounded-3xl border border-heritage-gold/15 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col justify-between"
@@ -213,18 +231,29 @@ export default function GalleryView({ onSelectStyle, showpieces = [], communityP
       ) : (
         /* Fabric Bolts Specific Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 font-sans">
-          {FABRICS.map(fabric => (
+          {FABRICS.map((fabric) => (
             <div
               key={fabric.code}
               className="bg-white rounded-3xl border border-heritage-gold/15 p-6 shadow-sm flex flex-col sm:flex-row gap-6 hover:shadow-md transition"
             >
-              {/* Color swatch representation */}
-              <div
-                className="w-full sm:w-32 h-32 rounded-2xl relative overflow-hidden flex items-center justify-center shrink-0"
-                style={{
-                  background: `linear-gradient(135deg, ${fabric.colorHex}dd, ${fabric.colorHex}ff)`,
-                }}
-              >
+              {/* Color swatch representation (Replaced with Fabric Image) */}
+              <div className="w-full sm:w-32 h-32 rounded-2xl relative overflow-hidden flex items-center justify-center shrink-0 bg-gray-150">
+                {fabric.image ? (
+                  <img
+                    src={fabric.image}
+                    referrerPolicy="no-referrer"
+                    alt={fabric.name}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                ) : (
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background: `linear-gradient(135deg, ${fabric.colorHex}dd, ${fabric.colorHex}ff)`,
+                    }}
+                  />
+                )}
+                <div className="absolute inset-0 bg-black/10"></div>
                 <div className="absolute inset-0 bg-[radial-gradient(#C5A85C_1.5px,transparent_1.5px)] [background-size:12px_12px] opacity-20"></div>
                 <span className="text-[10px] font-bold bg-white/95 px-2 py-1 rounded text-heritage-green border shadow-sm font-mono z-10">
                   {fabric.code}
@@ -240,9 +269,11 @@ export default function GalleryView({ onSelectStyle, showpieces = [], communityP
                     </h3>
                     <span
                       className={`text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${
-                        fabric.stockStatus === 'In Stock'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                          : 'bg-amber-50 text-amber-800 border-amber-200'
+                        fabric.stockStatus === "In Stock"
+                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                          : fabric.stockStatus === "Low Stock"
+                            ? "bg-amber-50 text-amber-800 border-amber-200"
+                            : "bg-red-50 text-red-800 border-red-200"
                       }`}
                     >
                       {fabric.stockStatus}
@@ -252,21 +283,34 @@ export default function GalleryView({ onSelectStyle, showpieces = [], communityP
                     {fabric.description}
                   </p>
                   <p className="text-[10px] font-mono text-heritage-green pt-1">
-                    Texture: <strong className="font-semibold">{fabric.texture}</strong> · Base Swatch Color: <strong className="font-semibold">{fabric.colorName}</strong>
+                    Base Swatch Color:{" "}
+                    <strong className="font-semibold">
+                      {fabric.color}
+                    </strong>
                   </p>
                 </div>
 
                 <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                   <span className="font-bold text-heritage-green">
-                    Price multiplier:{' '}
-                    <span className="font-mono text-heritage-gold">{fabric.priceMultiplier}x</span>
+                    Width:{" "}
+                    <span className="font-mono text-heritage-gold">
+                      {fabric.width || "45 inches"}
+                    </span>
                   </span>
-                  <button
-                    onClick={() => onSelectStyle('royal-senator', fabric.code)}
-                    className="text-xs font-bold text-heritage-gold hover:underline flex items-center gap-1"
-                  >
-                    Select Fabric <Eye size={12} />
-                  </button>
+                  {fabric.stockStatus === "Out of Stock" ? (
+                    <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-1 rounded">
+                      Unavailable
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() =>
+                        onSelectStyle("royal-senator", fabric.code)
+                      }
+                      className="text-xs font-bold text-heritage-gold hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      Select Fabric <Eye size={12} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

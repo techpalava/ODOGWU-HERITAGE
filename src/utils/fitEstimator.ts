@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Measurements } from '../types';
+import { Measurements } from "../types";
 
 const roundToHalf = (num: number) => Math.round(num * 2) / 2;
 
@@ -15,23 +15,23 @@ export function estimateMeasurements(
   heightCm: number | null | undefined,
   weightKg: number | null | undefined,
   ageYears: number | null | undefined,
-  build: 'Slim' | 'Average' | 'Muscular' | 'Broad',
-  fitPreference: 'Slim/Executive' | 'Standard' | 'Relaxed',
-  gender: 'male' | 'female' | 'unisex' | 'couple' | 'family'
+  build: "Slim" | "Average" | "Muscular" | "Broad",
+  fitPreference: "Slim/Executive" | "Standard" | "Relaxed",
+  gender: "male" | "female" | "unisex" | "couple" | "family",
 ): Measurements {
   // 1. Establish intelligent defaults for missing parameters
-  const finalHeight = heightCm || (gender === 'female' ? 165 : 178);
+  const finalHeight = heightCm || (gender === "female" ? 165 : 178);
   const finalAge = ageYears || 32;
 
   let finalWeight = weightKg;
   if (!finalWeight) {
     let multiplier = 0.93; // Average
-    if (build === 'Slim') multiplier = 0.82;
-    else if (build === 'Muscular') multiplier = 1.05;
-    else if (build === 'Broad') multiplier = 1.18;
-    
+    if (build === "Slim") multiplier = 0.82;
+    else if (build === "Muscular") multiplier = 1.05;
+    else if (build === "Broad") multiplier = 1.18;
+
     finalWeight = (finalHeight - 100) * multiplier;
-    if (gender === 'female') {
+    if (gender === "female") {
       finalWeight *= 0.9;
     }
     finalWeight = Math.round(finalWeight);
@@ -39,7 +39,7 @@ export function estimateMeasurements(
 
   // 2. Establish absolute baseline references based on height and weight (Using official height baseline multipliers)
   const heightInches = finalHeight / 2.54;
-  const isFemale = gender === 'female';
+  const isFemale = gender === "female";
 
   // Master Height Baseline multipliers from sheet:
   const multHead = 0.33;
@@ -58,7 +58,7 @@ export function estimateMeasurements(
   // Pants/Trousers Height Baseline multipliers from sheet:
   const multTrouserWaist = 0.59;
   const multTrouserHip = 0.64;
-  const multTrouserThigh = 0.40;
+  const multTrouserThigh = 0.4;
   const multTrouserKnee = 0.28;
   const multTrouserAnkleHor = 0.24;
   const multTrouserWaistToHip = 0.08;
@@ -111,23 +111,23 @@ export function estimateMeasurements(
   // 3. Calibrate based on body build categories
   let scaleCircumference = 1.0;
   let scaleShoulder = 1.0;
-  
+
   switch (build) {
-    case 'Slim':
+    case "Slim":
       scaleCircumference = 0.94;
       scaleShoulder = 0.96;
       break;
-    case 'Muscular':
+    case "Muscular":
       scaleCircumference = 1.02;
       scaleShoulder = 1.04;
       bicepEst *= 1.08;
       trouserThighEst *= 1.06;
       break;
-    case 'Broad':
+    case "Broad":
       scaleCircumference = 1.08;
       scaleShoulder = 1.06;
       break;
-    case 'Average':
+    case "Average":
     default:
       break;
   }
@@ -149,13 +149,13 @@ export function estimateMeasurements(
   // 4. Calibrate based on custom fit preferences
   let scaleFit = 1.0;
   switch (fitPreference) {
-    case 'Slim/Executive':
+    case "Slim/Executive":
       scaleFit = 0.97;
       break;
-    case 'Relaxed':
+    case "Relaxed":
       scaleFit = 1.04;
       break;
-    case 'Standard':
+    case "Standard":
     default:
       break;
   }
@@ -200,7 +200,7 @@ export function estimateMeasurements(
     sleeve: roundToHalf(sleeve),
     trouserLength: roundToHalf(trouserLength),
     isAiEstimated: true,
-    unit: 'inch',
+    unit: "inch",
 
     // Shirts/Dress Advanced Heuristics
     head: roundToHalf(headEst),
@@ -212,9 +212,15 @@ export function estimateMeasurements(
     armHole: roundToHalf(armHoleEst),
     underBorst: underBorstEst ? roundToHalf(underBorstEst) : undefined,
     hipCircumference: isFemale ? roundToHalf(hip) : undefined,
-    squareNeckLength: squareNeckLengthEst ? roundToHalf(squareNeckLengthEst) : undefined,
-    squareNeckWidth: squareNeckWidthEst ? roundToHalf(squareNeckWidthEst) : undefined,
-    shoulderToUnderBorst: shoulderToUnderBorstEst ? roundToHalf(shoulderToUnderBorstEst) : undefined,
+    squareNeckLength: squareNeckLengthEst
+      ? roundToHalf(squareNeckLengthEst)
+      : undefined,
+    squareNeckWidth: squareNeckWidthEst
+      ? roundToHalf(squareNeckWidthEst)
+      : undefined,
+    shoulderToUnderBorst: shoulderToUnderBorstEst
+      ? roundToHalf(shoulderToUnderBorstEst)
+      : undefined,
 
     // Pants/Shorts Advanced Heuristics
     trouserWaist: roundToHalf(trouserWaistEst),
@@ -233,6 +239,6 @@ export function estimateMeasurements(
     heightHeadToShoulder: roundToHalf(hHeadToShoulder),
     heightShoulderToWaist: roundToHalf(hShoulderToWaist),
     heightHeadToWaist: roundToHalf(hHeadToWaist),
-    heightWaistToFloor: roundToHalf(hWaistToFloor)
+    heightWaistToFloor: roundToHalf(hWaistToFloor),
   };
 }

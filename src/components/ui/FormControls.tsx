@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 export interface SelectOption {
   value: string;
@@ -13,7 +13,8 @@ export interface BaseFieldProps {
   className?: string;
 }
 
-export interface SelectFieldProps extends BaseFieldProps, React.SelectHTMLAttributes<HTMLSelectElement> {
+export interface SelectFieldProps
+  extends BaseFieldProps, React.SelectHTMLAttributes<HTMLSelectElement> {
   options: SelectOption[];
 }
 
@@ -22,7 +23,7 @@ export const SelectField: React.FC<SelectFieldProps> = ({
   options,
   description,
   error,
-  className = '',
+  className = "",
   ...props
 }) => {
   return (
@@ -30,9 +31,11 @@ export const SelectField: React.FC<SelectFieldProps> = ({
       <label className="text-[10px] uppercase tracking-wider font-semibold text-heritage-ink/60">
         {label}
       </label>
-      {description && <p className="text-xs text-heritage-ink/40">{description}</p>}
+      {description && (
+        <p className="text-xs text-heritage-ink/40">{description}</p>
+      )}
       <select
-        className={`w-full p-2 bg-white border ${error ? 'border-red-500' : 'border-gray-200'} focus:border-heritage-gold rounded-xl text-xs outline-none transition cursor-pointer`}
+        className={`w-full p-2 bg-white border ${error ? "border-red-500" : "border-gray-200"} focus:border-heritage-gold rounded-xl text-xs outline-none transition cursor-pointer`}
         {...props}
       >
         {options.map((opt) => (
@@ -46,7 +49,8 @@ export const SelectField: React.FC<SelectFieldProps> = ({
   );
 };
 
-export interface InputFieldProps extends BaseFieldProps, React.InputHTMLAttributes<HTMLInputElement> {
+export interface InputFieldProps
+  extends BaseFieldProps, React.InputHTMLAttributes<HTMLInputElement> {
   leftIcon?: React.ReactNode;
 }
 
@@ -54,7 +58,7 @@ export const InputField: React.FC<InputFieldProps> = ({
   label,
   description,
   error,
-  className = '',
+  className = "",
   leftIcon,
   ...props
 }) => {
@@ -63,7 +67,9 @@ export const InputField: React.FC<InputFieldProps> = ({
       <label className="text-[10px] uppercase tracking-wider font-semibold text-heritage-ink/60">
         {label}
       </label>
-      {description && <p className="text-xs text-heritage-ink/40">{description}</p>}
+      {description && (
+        <p className="text-xs text-heritage-ink/40">{description}</p>
+      )}
       <div className="relative">
         {leftIcon && (
           <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-heritage-ink/40">
@@ -71,7 +77,7 @@ export const InputField: React.FC<InputFieldProps> = ({
           </div>
         )}
         <input
-          className={`w-full ${leftIcon ? 'pl-10' : 'pl-4'} pr-4 py-2 bg-white border ${error ? 'border-red-500' : 'border-gray-200'} focus:border-heritage-gold rounded-xl text-xs outline-none transition`}
+          className={`w-full ${leftIcon ? "pl-10" : "pl-4"} pr-4 py-2 bg-white border ${error ? "border-red-500" : "border-gray-200"} focus:border-heritage-gold rounded-xl text-xs outline-none transition`}
           {...props}
         />
       </div>

@@ -3,122 +3,344 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CustomGroup, Fabric, StyleCategory, Showpiece, CommunityPhoto, Customer, MasterOrder, Batch, BusinessSettings } from '../types';
+import {
+  CustomGroup,
+  Fabric,
+  StyleCategory,
+  Showpiece,
+  CommunityPhoto,
+  Customer,
+  MasterOrder,
+  Batch,
+  BusinessSettings,
+} from "../types";
+import { db } from "./firebase";
+import { ImageService } from "./imageService";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  writeBatch,
+  deleteDoc,
+  onSnapshot
+} from "firebase/firestore";
+
+function sanitizeForFirestore(val: any): any {
+  if (val === undefined) {
+    return null;
+  }
+  if (val === null) {
+    return null;
+  }
+  if (Array.isArray(val)) {
+    return val.map(sanitizeForFirestore);
+  }
+  if (typeof val === "object") {
+    const res: any = {};
+    for (const key of Object.keys(val)) {
+      const sanitized = sanitizeForFirestore(val[key]);
+      if (sanitized !== undefined) {
+        res[key] = sanitized;
+      }
+    }
+    return res;
+  }
+  if (typeof val === "string") {
+    // Firestore max document size is 1MB (1,048,576 bytes).
+    // A string > 300KB is risky and likely a base64 image.
+    if (val.length > 300000 && val.startsWith("data:image")) {
+      console.warn(
+        "Stripping excessively large base64 image to prevent Firestore crash.",
+      );
+      return null;
+    }
+    return val;
+  }
+  return val;
+}
 
 /**
- * StorageService abstracts the local storage interactions to prepare the frontend
- * for future WordPress REST API or other backend database integrations.
+ * StorageService abstracts database interactions to Firestore.
  */
 export const StorageService = {
   safeParse: <T>(saved: string | null): T | null => {
-    if (!saved || saved === 'undefined') return null;
+    if (!saved || saved === "undefined") return null;
     try {
       return JSON.parse(saved) as T;
     } catch (e) {
-      console.warn('Error parsing JSON from local storage', e);
+      console.warn("Error parsing JSON", e);
       return null;
     }
   },
 
-  // Business Settings
-  getBusinessSettings: (): BusinessSettings | null => {
-    const saved = localStorage.getItem('asml_business_settings');
-    return StorageService.safeParse<BusinessSettings>(saved);
+  // Helper to fetch collection
+  async fetchCollection<T>(collectionName: string): Promise<T[]> {
+    try {
+      const querySnapshot = await getDocs(collection(db, collectionName));
+      return querySnapshot.docs.map((doc) => doc.data() as T);
+    } catch (error) {
+      console.error(`Error fetching collection ${collectionName}:`, error);
+      return [];
+    }
   },
-  saveBusinessSettings: (settings: BusinessSettings) => {
-    localStorage.setItem('asml_business_settings', JSON.stringify(settings));
+
+  // Helper to subscribe to collection
+  subscribeToCollection<T>(collectionName: string, callback: (data: T[]) => void) {
+    return onSnapshot(collection(db, collectionName), (snapshot) => {
+      const items = snapshot.docs.map(doc => doc.data() as T);
+      callback(items);
+    }, (error) => {
+      console.error(`Error subscribing to collection ${collectionName}:`, error);
+    });
+  },
+
+  subscribeToDocument<T>(collectionName: string, documentId: string, callback: (data: T | null) => void) {
+    return onSnapshot(doc(db, collectionName, documentId), (snapshot) => {
+      if (snapshot.exists()) {
+        callback(snapshot.data() as T);
+      } else {
+        callback(null);
+      }
+    }, (error) => {
+      console.error(`Error subscribing to document ${collectionName}/${documentId}:`, error);
+    });
+  },
+
+  // Helper to save entire collection (replace all)
+  // For small prototype collections, we can just rewrite or merge them.
+  // A better approach is to use individual setDocs. We'll use a batch to write them.
+  async saveCollection<T>(
+    collectionName: string,
+    items: T[],
+    getId: (item: T) => string,
+  ) {
+    try {
+      const existingDocs = await getDocs(collection(db, collectionName));
+      const newIds = items.map((item) => getId(item));
+
+      const batch = writeBatch(db);
+
+      // Helper to extract all storage URLs from an object
+      const extractStorageUrls = (obj: any): string[] => {
+        let urls: string[] = [];
+        if (obj === undefined || obj === null) return urls;
+        if (Array.isArray(obj)) {
+          obj.forEach(item => {
+             urls = urls.concat(extractStorageUrls(item));
+          });
+          return urls;
+        }
+        if (typeof obj === "object") {
+          Object.values(obj).forEach(val => {
+            if (typeof val === "string" && val.includes("firebasestorage.googleapis.com")) {
+              urls.push(val);
+            } else {
+              urls = urls.concat(extractStorageUrls(val));
+            }
+          });
+        }
+        return urls;
+      };
+
+      // Upsert current items
+      await Promise.all(items.map(async (item) => {
+        const id = getId(item);
+        const docRef = doc(db, collectionName, id);
+        
+        const oldDoc = existingDocs.docs.find(d => d.id === id);
+        const oldData = oldDoc ? oldDoc.data() : null;
+        
+        const processedItem = await ImageService.uploadAllImagesInObject(item, collectionName, id);
+        
+        if (oldData) {
+          const oldUrls = extractStorageUrls(oldData);
+          const newUrls = extractStorageUrls(processedItem);
+          const orphanedUrls = oldUrls.filter(url => !newUrls.includes(url));
+          await Promise.all(orphanedUrls.map(url => ImageService.deleteImageFromStorage(url)));
+        }
+
+        batch.set(docRef, sanitizeForFirestore(processedItem));
+      }));
+
+      await batch.commit();
+    } catch (error) {
+      console.error(`Error saving collection ${collectionName}:`, error);
+    }
+  },
+
+  async deleteDocument(collectionName: string, id: string) {
+    try {
+      const docRef = doc(db, collectionName, id);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        await ImageService.deleteAllImagesInObject(data);
+        await deleteDoc(docRef);
+      }
+    } catch (error) {
+      console.error(`Error deleting document ${id} from ${collectionName}:`, error);
+      throw error;
+    }
+  },
+
+  // Business Settings
+  getBusinessSettings: async (): Promise<BusinessSettings | null> => {
+    try {
+      const docRef = doc(db, "settings", "business");
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        return docSnap.data() as BusinessSettings;
+      }
+    } catch (error) {
+      console.error("Error fetching business settings:", error);
+    }
+    return null;
+  },
+  saveBusinessSettings: async (settings: BusinessSettings) => {
+    try {
+      const docRef = doc(db, "settings", "business");
+      const docSnap = await getDoc(docRef);
+      const oldData = docSnap.exists() ? docSnap.data() : null;
+
+      const processedSettings = await ImageService.uploadAllImagesInObject(settings, "settings", "business");
+
+      if (oldData) {
+        const extractStorageUrls = (obj: any): string[] => {
+          let urls: string[] = [];
+          if (obj === undefined || obj === null) return urls;
+          if (Array.isArray(obj)) {
+            obj.forEach(item => { urls = urls.concat(extractStorageUrls(item)); });
+            return urls;
+          }
+          if (typeof obj === "object") {
+            Object.values(obj).forEach(val => {
+              if (typeof val === "string" && val.includes("firebasestorage.googleapis.com")) {
+                urls.push(val);
+              } else {
+                urls = urls.concat(extractStorageUrls(val));
+              }
+            });
+          }
+          return urls;
+        };
+        const oldUrls = extractStorageUrls(oldData);
+        const newUrls = extractStorageUrls(processedSettings);
+        const orphanedUrls = oldUrls.filter(url => !newUrls.includes(url));
+        await Promise.all(orphanedUrls.map(url => ImageService.deleteImageFromStorage(url)));
+      }
+
+      await setDoc(
+        docRef,
+        sanitizeForFirestore(processedSettings),
+      );
+    } catch (error) {
+      console.error(
+        "Error while saving business settings:",
+        error,
+      );
+      alert("Failed to save settings. If you uploaded an image, check limits.");
+    }
   },
 
   // Batches
-  getBatches: (): Batch[] | null => {
-    const saved = localStorage.getItem('asml_batches');
-    return StorageService.safeParse<Batch[]>(saved);
+  getBatches: async (): Promise<Batch[]> => {
+    return await StorageService.fetchCollection<Batch>("batches");
   },
-  saveBatches: (batches: Batch[]) => {
-    localStorage.setItem('asml_batches', JSON.stringify(batches));
+  saveBatches: async (batches: Batch[]) => {
+    await StorageService.saveCollection(
+      "batches",
+      batches,
+      (b) => b.id || b.batchNumber.toString(),
+    );
   },
 
   // Custom Groups
-  getGroups: (): CustomGroup[] | null => {
-    const saved = localStorage.getItem('asml_custom_groups');
-    return StorageService.safeParse<CustomGroup[]>(saved);
+  getGroups: async (): Promise<CustomGroup[]> => {
+    return await StorageService.fetchCollection<CustomGroup>("customGroups");
   },
-  saveGroups: (groups: CustomGroup[]) => {
-    localStorage.setItem('asml_custom_groups', JSON.stringify(groups));
+  saveGroups: async (groups: CustomGroup[]) => {
+    await StorageService.saveCollection(
+      "customGroups",
+      groups,
+      (g) => g.batchId,
+    );
   },
 
   // Users (Accounts)
-  getAccounts: (): Customer[] | null => {
-    const saved = localStorage.getItem('asml_accounts');
-    return StorageService.safeParse<Customer[]>(saved);
+  getAccounts: async (): Promise<Customer[]> => {
+    return await StorageService.fetchCollection<Customer>("customers");
   },
-  saveAccounts: (accounts: Customer[]) => {
-    localStorage.setItem('asml_accounts', JSON.stringify(accounts));
+  saveAccounts: async (accounts: Customer[]) => {
+    await StorageService.saveCollection("customers", accounts, (a) => a.email);
   },
 
-  // Active Session
+  // Active Session (keep in localStorage for auth persistence)
   getSession: (): Customer | null => {
-    const saved = localStorage.getItem('ntcc_user');
+    const saved = localStorage.getItem("ntcc_user");
     return StorageService.safeParse<Customer>(saved);
   },
   saveSession: (user: Customer) => {
-    localStorage.setItem('ntcc_user', JSON.stringify(user));
+    localStorage.setItem("ntcc_user", JSON.stringify(user));
   },
   clearSession: () => {
-    localStorage.removeItem('ntcc_user');
+    localStorage.removeItem("ntcc_user");
   },
 
   // Fabrics
-  getFabrics: (): Fabric[] | null => {
-    const saved = localStorage.getItem('asml_fabrics');
-    return StorageService.safeParse<Fabric[]>(saved);
+  getFabrics: async (): Promise<Fabric[]> => {
+    return await StorageService.fetchCollection<Fabric>("fabrics");
   },
-  saveFabrics: (fabrics: Fabric[]) => {
-    localStorage.setItem('asml_fabrics', JSON.stringify(fabrics));
+  saveFabrics: async (fabrics: Fabric[]) => {
+    await StorageService.saveCollection("fabrics", fabrics, (f) => f.code);
   },
 
   // Styles
-  getStyles: (): StyleCategory[] | null => {
-    const saved = localStorage.getItem('asml_styles');
-    return StorageService.safeParse<StyleCategory[]>(saved);
+  getStyles: async (): Promise<StyleCategory[]> => {
+    return await StorageService.fetchCollection<StyleCategory>("styles");
   },
-  saveStyles: (styles: StyleCategory[]) => {
-    localStorage.setItem('asml_styles', JSON.stringify(styles));
+  saveStyles: async (styles: StyleCategory[]) => {
+    await StorageService.saveCollection("styles", styles, (s) => s.id);
   },
 
   // Showpieces (Gallery)
-  getShowpieces: (): Showpiece[] | null => {
-    const saved = localStorage.getItem('asml_showpieces');
-    return StorageService.safeParse<Showpiece[]>(saved);
+  getShowpieces: async (): Promise<Showpiece[]> => {
+    return await StorageService.fetchCollection<Showpiece>("showpieces");
   },
-  saveShowpieces: (showpieces: Showpiece[]) => {
-    localStorage.setItem('asml_showpieces', JSON.stringify(showpieces));
+  saveShowpieces: async (showpieces: Showpiece[]) => {
+    await StorageService.saveCollection("showpieces", showpieces, (s) => s.id);
   },
 
   // Community Photos
-  getCommunityPhotos: (): CommunityPhoto[] | null => {
-    const saved = localStorage.getItem('asml_community_photos');
-    return StorageService.safeParse<CommunityPhoto[]>(saved);
+  getCommunityPhotos: async (): Promise<CommunityPhoto[]> => {
+    return await StorageService.fetchCollection<CommunityPhoto>(
+      "communityPhotos",
+    );
   },
-  saveCommunityPhotos: (photos: CommunityPhoto[]) => {
-    localStorage.setItem('asml_community_photos', JSON.stringify(photos));
+  saveCommunityPhotos: async (photos: CommunityPhoto[]) => {
+    await StorageService.saveCollection("communityPhotos", photos, (p) => p.id);
   },
 
   // Orders
-  getOrders: (): MasterOrder[] | null => {
-    const saved = localStorage.getItem('asml_orders');
-    return StorageService.safeParse<MasterOrder[]>(saved);
+  getOrders: async (): Promise<MasterOrder[]> => {
+    return await StorageService.fetchCollection<MasterOrder>("orders");
   },
-  saveOrders: (orders: MasterOrder[]) => {
-    localStorage.setItem('asml_orders', JSON.stringify(orders));
+  saveOrders: async (orders: MasterOrder[]) => {
+    await StorageService.saveCollection(
+      "orders",
+      orders,
+      (o) => o.shipment?.trackingId || Date.now().toString(),
+    );
   },
 
-  // Joined Batch IDs
+  // Joined Batch IDs (keep in local storage as it's user-specific device state for the prototype without auth)
   getJoinedBatchIds: (): string[] | null => {
-    const saved = localStorage.getItem('asml_joined_batch_ids');
+    const saved = localStorage.getItem("asml_joined_batch_ids");
     return StorageService.safeParse<string[]>(saved);
   },
   saveJoinedBatchIds: (ids: string[]) => {
-    localStorage.setItem('asml_joined_batch_ids', JSON.stringify(ids));
-  }
+    localStorage.setItem("asml_joined_batch_ids", JSON.stringify(ids));
+  },
 };

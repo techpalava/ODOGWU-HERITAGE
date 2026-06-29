@@ -10,6 +10,13 @@ export interface NamedMeasurementProfile {
   measurements: Measurements;
 }
 
+export interface BiometricConsent {
+  status: "accepted" | "declined";
+  timestamp: string;
+  gdprVersion: string;
+  userAgent?: string;
+}
+
 export interface Customer {
   name: string;
   email: string;
@@ -18,9 +25,10 @@ export interface Customer {
   role?: string;
   passcode?: string;
   orderStatus?: string;
-  method?: 'email' | 'gmail' | 'phone';
+  method?: "email" | "gmail" | "phone";
   measurementProfile?: Measurements;
   measurementProfiles?: NamedMeasurementProfile[]; // structured sub-collection under profile
+  biometricConsent?: BiometricConsent;
 }
 
 export interface ConstructionDetail {
@@ -35,8 +43,9 @@ export interface StyleCategory {
   name: string;
   description: string;
   basePrice: number;
-  gender: 'male' | 'female' | 'unisex' | 'couple' | 'family';
+  gender: "male" | "female" | "unisex" | "couple" | "family";
   outfitType?: string;
+  garmentComposition?: string;
   fabricCategory?: string;
   options: string[]; // specific sub-styles
   image?: string;
@@ -44,7 +53,6 @@ export interface StyleCategory {
     main: string;
     secondary: string;
   };
-  difficulty?: 'Easy' | 'Medium' | 'Hard';
   constructionDetails?: ConstructionDetail[];
 }
 
@@ -52,27 +60,29 @@ export interface Fabric {
   code: string;
   name: string;
   description: string;
-  colorName: string;
+  color: string;
   colorHex: string;
   priceMultiplier: number; // e.g. 1.0, 1.2
-  stockStatus: 'In Stock' | 'Low Stock' | 'Out of Stock';
-  texture: string;
-  
+  stockStatus: "In Stock" | "Low Stock" | "Out of Stock";
+
   // Database suggested fields
-  category?: 'Printed Fabrics' | 'Handcrafted Fabrics' | 'Traditional Fabrics' | 'Luxury Fabrics';
+  category?:
+    | "Printed Fabrics"
+    | "Handcrafted Fabrics"
+    | "Traditional Fabrics"
+    | "Luxury Fabrics";
   image?: string;
-  color?: string;
-  manufacturer?: string;
   width?: string;
   price?: number;
   stock?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Design {
   designCode: string;
   styleCategory: string;
   garmentType: string;
-  difficulty: 'Easy' | 'Medium' | 'Hard';
   image: string;
   description: string;
 }
@@ -97,8 +107,8 @@ export interface Measurements {
   height: number; // cm
   weight: number; // kg
   age: number;
-  bodyBuild: 'Slim' | 'Average' | 'Muscular' | 'Broad';
-  fitPreference: 'Slim/Executive' | 'Standard' | 'Relaxed';
+  bodyBuild: "Slim" | "Average" | "Muscular" | "Broad";
+  fitPreference: "Slim/Executive" | "Standard" | "Relaxed";
 
   // Specific tailored dimensions
   neck: number; // inches or cm
@@ -112,7 +122,7 @@ export interface Measurements {
   isAiEstimated: boolean;
 
   // Selected unit of measurement
-  unit?: 'inch' | 'cm';
+  unit?: "inch" | "cm";
 
   // Shirt/Dress Advanced Measurements (G, L, B)
   head?: number;
@@ -151,13 +161,14 @@ export interface Measurements {
 export interface Showpiece {
   id: string;
   title: string;
-  category: 'male' | 'female' | 'fabric';
+  category: "male" | "female" | "fabric";
   styleId: string;
   fabricCode: string;
   styleName: string;
   fabricName: string;
   colorHex: string;
   description: string;
+  image?: string;
   tag: string;
 }
 
@@ -168,11 +179,11 @@ export interface PaymentDetails {
   method: string;
   date: string;
   isPaid: boolean;
-  paymentMethod?: 'iDEAL' | 'Stripe';
+  paymentMethod?: "iDEAL" | "Stripe";
   idealBank?: string;
   transactionId?: string;
-  secondPaymentStatus?: 'unpaid' | 'pending' | 'paid';
-  secondPaymentMethod?: 'iDEAL' | 'Stripe';
+  secondPaymentStatus?: "unpaid" | "pending" | "paid";
+  secondPaymentMethod?: "iDEAL" | "Stripe";
   secondPaymentDate?: string;
   secondTransactionId?: string;
   lockerPasscode?: string;
@@ -196,7 +207,7 @@ export interface MasterOrder {
   shipment: ShipmentTracking;
   specialInstructions: string;
   notesAboutLeftoverFabric: string; // "Return leftover fabric" or "Donate to community"
-  batchType?: 'community' | 'alone' | 'personalized' | 'actual';
+  batchType?: "community" | "alone" | "personalized" | "actual";
   batchName?: string;
   customGroupCode?: string;
 }
@@ -209,7 +220,7 @@ export interface HistoricalOrder {
   fabricName: string;
   fabricCode: string;
   amount: number;
-  status: 'Delivered' | 'In Progress' | 'Cancelled';
+  status: "Delivered" | "In Progress" | "Cancelled";
   trackingId: string;
 }
 
@@ -223,13 +234,13 @@ export interface CartItem {
   measurements: Measurements;
   specialInstructions: string;
   notesAboutLeftoverFabric: string;
-  batchType?: 'community' | 'alone' | 'personalized' | 'actual';
+  batchType?: "community" | "alone" | "personalized" | "actual";
   batchName?: string;
   customGroupCode?: string;
 }
 
 export interface OrderContext {
-  orderType: 'Individual' | 'Group Organizer' | 'Group Member' | 'Community';
+  orderType: "Individual" | "Group Organizer" | "Group Member" | "Community";
   batchId?: string;
   batchName?: string;
   organizer?: string;
@@ -251,26 +262,59 @@ export interface Batch {
   currentGarments: number;
   currentOrders: number;
   currentCustomers: number;
-  status: 'Draft' | 'Yet To Start' | 'Open' | 'Recruiting' | 'Almost Full' | 'Full' | 'Production Ready' | 'Production Started' | 'Quality Control' | 'Packed' | 'Shipped' | 'Arrived Netherlands' | 'Ready For Pickup' | 'Collected' | 'Completed';
+  status:
+    | "Draft"
+    | "Yet To Start"
+    | "Open"
+    | "Recruiting"
+    | "Almost Full"
+    | "Full"
+    | "Production Ready"
+    | "Production Started"
+    | "Quality Control"
+    | "Packed"
+    | "Shipped"
+    | "Arrived Netherlands"
+    | "Ready For Pickup"
+    | "Collected"
+    | "Completed";
   registrationOpens?: string;
   registrationCloses?: string;
   productionStart?: string;
   estimatedDelivery?: string;
   pickupLocation?: string;
-  visibility: 'Private' | 'Public';
+  visibility: "Private" | "Public";
   createdBy?: string;
   createdDate?: string;
   updatedDate?: string;
-  fabricForecast?: { requiredYards: number, requiredRolls: number, inventoryStatus: string };
-  shippingForecast?: { totalPackages: number, estimatedWeightKg: number, estimatedVolumeCbm: number, shippingTier: string, expectedTransportCost: number };
+  fabricForecast?: {
+    requiredYards: number;
+    requiredRolls: number;
+    inventoryStatus: string;
+  };
+  shippingForecast?: {
+    totalPackages: number;
+    estimatedWeightKg: number;
+    estimatedVolumeCbm: number;
+    shippingTier: string;
+    expectedTransportCost: number;
+  };
   timeline?: any;
   administratorNotes?: string;
   galleryUrls?: string[];
   testimonials?: string[];
 }
 
+export interface OutfitType {
+  id: string;
+  name: string;
+  gender: "male" | "female" | "unisex" | "family";
+  enabled: boolean;
+  displayOrder: number;
+}
+
 export interface BusinessSettings {
-  collaborationLogos?: {
+  collaborationLogos: {
     left: string | null;
     right: string | null;
   };
@@ -294,6 +338,8 @@ export interface BusinessSettings {
     currency: string;
     vatTaxPercentage: number; // future
     discountRulesEnabled: boolean; // future
+    standardAccessoryCharge: number;
+    baseSewingPrices: { [key: string]: number };
   };
   productionSettings: {
     productionStartThresholdPercentage: number;
@@ -307,6 +353,8 @@ export interface BusinessSettings {
     defaultCountry: string;
     notificationMessagesEnabled: boolean;
     systemAnnouncements: string;
+    virtualTryOnConceptImage?: string;
+    hasInitializedData?: boolean;
     tagline?: string;
     description?: string;
     primaryPhone?: string;
@@ -323,6 +371,40 @@ export interface BusinessSettings {
       youtube?: string;
     };
   };
+  discountSettings?: DiscountSettings;
+  garmentCompositions?: string[];
+  outfitTypes?: OutfitType[];
+}
+
+export interface DiscountPlanningRule {
+  suggestedMinRange: number;
+  suggestedMaxRange: number;
+  minimumDiscount: number;
+  maximumDiscount: number;
+  internalNotes: string;
+}
+
+export interface FutureDiscount {
+  id: string;
+  name: string;
+  type: "percentage" | "fixed_amount";
+  value: number;
+  appliesTo: "all" | "individual" | "community" | "vip";
+  startDate: string;
+  endDate: string;
+  stackable: boolean;
+  active: boolean;
+  internalNotes: string;
+}
+
+export interface DiscountSettings {
+  individualOrders: DiscountPlanningRule;
+  communityOrders: DiscountPlanningRule;
+  vipOrders: {
+    status: "planning_only" | string;
+    internalNotes: string;
+  };
+  futureDiscounts: FutureDiscount[];
 }
 
 export interface CustomGroup {
@@ -335,14 +417,21 @@ export interface CustomGroup {
   preferredDeliveryMonth: string;
   expectedParticipants: number;
   maxParticipants: number;
-  visibility: 'Private' | 'Public';
+  visibility: "Private" | "Public";
   notes?: string;
   organizer: string;
   organizerId?: string;
   currentMembers: number;
   closingDate: string;
   deliveryWindow: string;
-  status: 'Draft' | 'Open' | 'Almost Full' | 'Full' | 'Closed' | 'Locked' | 'Completed';
+  status:
+    | "Draft"
+    | "Open"
+    | "Almost Full"
+    | "Full"
+    | "Closed"
+    | "Locked"
+    | "Completed";
   pickupLocation?: string;
   createdDate?: string;
   inviteCode?: string;
@@ -356,7 +445,7 @@ export interface CommunityPhoto {
   deliveryYear: number;
   featured: boolean;
   displayOrder: number;
-  status: 'active' | 'inactive';
+  status: "active" | "inactive";
 }
 
 // Foundation Platform Types
@@ -384,7 +473,7 @@ export interface Plugin {
   name: string;
   version: string;
   description: string;
-  status: 'active' | 'inactive' | 'error' | 'update_available';
+  status: "active" | "inactive" | "error" | "update_available";
   author: string;
   settings: Record<string, any>;
   hooks: string[];
@@ -417,6 +506,5 @@ export interface SystemEvent {
   timestamp: string;
   payload: any;
   source: string;
-  status: 'pending' | 'processed' | 'failed';
+  status: "pending" | "processed" | "failed";
 }
-

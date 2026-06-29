@@ -4,9 +4,27 @@ import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { estimateMeasurements } from "./src/utils/fitEstimator";
-import { getStripeClient } from "./src/utils/paymentService";
+import Stripe from "stripe";
 
 dotenv.config();
+
+let stripeInstance: Stripe | null = null;
+
+function getStripeClient(): Stripe {
+  if (stripeInstance) {
+    return stripeInstance;
+  }
+
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key || key.trim() === "" || key === "MY_STRIPE_SECRET_KEY") {
+    throw new Error(
+      "STRIPE_SECRET_KEY is not configured in the server environment. Please define it in your keys or .env file.",
+    );
+  }
+
+  stripeInstance = new Stripe(key);
+  return stripeInstance;
+}
 
 const app = express();
 const PORT = 3000;
@@ -59,8 +77,19 @@ Estimate highly precise bespoke garment measurements (in inches) for a client wi
 - Body Build Category: ${bodyBuild || "Average"} (e.g. Slim, Average, Muscular, Broad)
 - Fit Preference: ${fitPreference || "Standard"} (e.g. Slim/Executive, Standard, Relaxed)
 
-Use your master pattern-making knowledge to produce cohesive, proportional body dimensions.
+To assist you, our hand-crafted master-tailor heuristic baseline calculations (in inches) for this profile are:
+- Neck: ${fallbackMeasurements.neck}"
+- Shoulder: ${fallbackMeasurements.shoulder}"
+- Chest: ${fallbackMeasurements.chest}"
+- Waist: ${fallbackMeasurements.waist}"
+- Hip: ${fallbackMeasurements.hip}"
+- Sleeve: ${fallbackMeasurements.sleeve}"
+- Trouser Length: ${fallbackMeasurements.trouserLength}"
+- Head: ${fallbackMeasurements.head}"
+
+Using your master pattern-making knowledge, refine these measurements to produce cohesive, proportional body dimensions.
 Traditional West-African outfits (Senator suits, Agbada, Kaftan, Boubou) require precise spacing so the fabrics drape majestically.
+For example, adjust the neck or shoulder width slightly based on build, or tweak trouser length based on height/fit if needed.
 
 Estimate the following dimensions:
 - neck (neck size for Mandarin collars, typically 14 to 19 inches)
@@ -140,6 +169,78 @@ Ensure all values are realistic numbers rounded to the nearest 0.5 inches. Outpu
 });
 
 // API route for handling Stripe or iDEAL payment intents representing exactly 50% of the calculated total
+app.post("/api/suggest-fabric-names", async (req, res) => {
+  const { imageBase64 } = req.body;
+  
+  if (!imageBase64) {
+    return res.status(400).json({ success: false, error: "Image is required" });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+    // Return dummy suggestions if no API key is present
+    return res.json({
+      success: true,
+      suggestions: ["Classic Heritage Weave", "Premium Artisan Threads"]
+    });
+  }
+
+  try {
+    const ai = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+
+    const base64Data = imageBase64.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, "");
+
+    const prompt = `You are a textile expert. Analyze this fabric image and suggest 2 creative, premium-sounding names for this fabric. Output a JSON array of exactly 2 strings.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: "image/jpeg",
+                data: base64Data
+              }
+            }
+          ]
+        }
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: "Two creative fabric names"
+        },
+      },
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("Empty response from Gemini");
+    }
+
+    const suggestions = JSON.parse(text.trim());
+    res.json({ success: true, suggestions });
+  } catch (error: any) {
+    console.error("Gemini Fabric Suggestion error:", error);
+    res.json({
+      success: true,
+      suggestions: ["Classic Heritage Weave", "Premium Artisan Threads"]
+    });
+  }
+});
+
 app.post("/api/create-payment-intent", async (req, res) => {
   const { amount, paymentMethod, idealBank, customerEmail } = req.body;
 

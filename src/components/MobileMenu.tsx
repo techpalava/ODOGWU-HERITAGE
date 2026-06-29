@@ -1,31 +1,40 @@
-import React, { useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { X, Compass, Shirt, ShoppingBag, ClipboardList, Layers, Info, Database } from 'lucide-react';
-import { useAppStore } from '../store/useAppStore';
-import odogwuLogo from '../assets/images/odogwu_logo_1782556303014.jpg';
+import React, { useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  X,
+  Compass,
+  Shirt,
+  ShoppingBag,
+  ClipboardList,
+  Layers,
+  Info,
+  Database,
+} from "lucide-react";
+import { useAppStore } from "../store/useAppStore";
+import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 
 export function MobileMenu() {
-  const isMobileMenuOpen = useAppStore(state => state.isMobileMenuOpen);
-  const setIsMobileMenuOpen = useAppStore(state => state.setIsMobileMenuOpen);
-  const activeTab = useAppStore(state => state.activeTab);
-  const setActiveTab = useAppStore(state => state.setActiveTab);
+  const isMobileMenuOpen = useAppStore((state) => state.isMobileMenuOpen);
+  const setIsMobileMenuOpen = useAppStore((state) => state.setIsMobileMenuOpen);
+  const activeTab = useAppStore((state) => state.activeTab);
+  const setActiveTab = useAppStore((state) => state.setActiveTab);
 
   // Keyboard accessibility and body scroll block for mobile menu
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         setIsMobileMenuOpen(false);
       }
     };
     if (isMobileMenuOpen) {
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = "hidden";
+      window.addEventListener("keydown", handleKeyDown);
     } else {
-      document.body.style.overflow = '';
+      document.body.style.overflow = "";
     }
     return () => {
-      document.body.style.overflow = '';
-      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isMobileMenuOpen, setIsMobileMenuOpen]);
 
@@ -48,16 +57,17 @@ export function MobileMenu() {
             role="dialog"
             aria-modal="true"
             aria-label="Mobile Navigation Menu"
-            initial={{ x: '100%' }}
+            initial={{ x: "100%" }}
             animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", damping: 25, stiffness: 220 }}
             className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-[310px] bg-heritage-green border-l border-heritage-gold/25 p-5 sm:p-6 shadow-2xl flex flex-col justify-between lg:hidden font-sans"
           >
             <div className="space-y-6">
               <div className="flex items-center justify-between border-b border-heritage-gold/15 pb-4">
                 <div className="flex items-center gap-2.5">
-                  <img loading="lazy"
+                  <img
+                    loading="lazy"
                     src={odogwuLogo}
                     alt="The Odogwu Heritage"
                     className="w-9 h-9 rounded-full border border-heritage-gold/30 object-cover bg-heritage-forest shadow-sm shrink-0"
@@ -83,16 +93,27 @@ export function MobileMenu() {
                 </button>
               </div>
 
-              <nav className="flex flex-col space-y-1.5" aria-label="Mobile Tab Navigation">
+              <nav
+                className="flex flex-col space-y-1.5"
+                aria-label="Mobile Tab Navigation"
+              >
                 {[
-                  { id: 'home', label: 'Home', icon: Compass },
-                  { id: 'design', label: 'Design Studio', icon: Shirt },
-                  { id: 'custom-order', label: 'Custom Order', icon: ShoppingBag },
-                  { id: 'dashboard', label: 'My Dashboard', icon: ClipboardList },
-                  { id: 'gallery', label: 'Lookbook', icon: Layers },
-                  { id: 'about', label: 'About Us', icon: Info },
-                  { id: 'database', label: 'Admin & DB Panel', icon: Database }
-                ].map(tab => {
+                  { id: "home", label: "Home", icon: Compass },
+                  { id: "design", label: "Design Studio", icon: Shirt },
+                  {
+                    id: "custom-order",
+                    label: "Custom Order",
+                    icon: ShoppingBag,
+                  },
+                  {
+                    id: "dashboard",
+                    label: "My Dashboard",
+                    icon: ClipboardList,
+                  },
+                  { id: "gallery", label: "Lookbook", icon: Layers },
+                  { id: "about", label: "About Us", icon: Info },
+                  { id: "database", label: "Admin & DB Panel", icon: Database },
+                ].map((tab) => {
                   const Icon = tab.icon;
                   const isActive = activeTab === tab.id;
                   return (
@@ -104,12 +125,19 @@ export function MobileMenu() {
                       }}
                       className={`group flex items-center justify-between w-full py-3.5 px-4 rounded-xl text-left text-[11px] font-bold uppercase tracking-wider transition-all duration-200 border cursor-pointer select-none ${
                         isActive
-                          ? 'bg-heritage-forest text-heritage-gold border-heritage-gold/30 pl-5 border-l-4 shadow-md font-extrabold'
-                          : 'bg-transparent text-heritage-beige border-transparent hover:text-heritage-gold hover:bg-heritage-forest/30'
+                          ? "bg-heritage-forest text-heritage-gold border-heritage-gold/30 pl-5 border-l-4 shadow-md font-extrabold"
+                          : "bg-transparent text-heritage-beige border-transparent hover:text-white hover:bg-heritage-forest/30"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <Icon size={14} className={isActive ? 'text-heritage-gold' : 'text-heritage-beige/60 group-hover:text-heritage-gold transition-colors'} />
+                        <Icon
+                          size={14}
+                          className={
+                            isActive
+                              ? "text-heritage-gold"
+                              : "text-heritage-beige/60 group-hover:text-white transition-colors"
+                          }
+                        />
                         <span>{tab.label}</span>
                       </div>
                       {isActive && (

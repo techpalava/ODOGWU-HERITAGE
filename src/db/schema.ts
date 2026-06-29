@@ -1,7 +1,7 @@
 /**
  * WordPress Integration / Database Readiness Schema
- * 
- * This file contains recommended relational database schemas for future 
+ *
+ * This file contains recommended relational database schemas for future
  * WordPress integration or dedicated backend (e.g. PostgreSQL/MySQL).
  * It uses standard TypeScript definitions to map to future REST API resources
  * or WooCommerce Custom Post Types.
@@ -28,8 +28,8 @@ export interface DbMeasurement {
   height: number;
   weight: number;
   age: number;
-  body_build: 'Slim' | 'Average' | 'Muscular' | 'Broad';
-  fit_preference: 'Slim/Executive' | 'Standard' | 'Relaxed';
+  body_build: "Slim" | "Average" | "Muscular" | "Broad";
+  fit_preference: "Slim/Executive" | "Standard" | "Relaxed";
   neck: number;
   shoulder: number;
   chest: number;
@@ -52,8 +52,15 @@ export interface DbBatch {
   preferred_delivery_month: string;
   expected_participants: number;
   max_participants: number;
-  visibility: 'Private' | 'Public';
-  status: 'Draft' | 'Open' | 'Almost Full' | 'Full' | 'Closed' | 'Locked' | 'Completed';
+  visibility: "Private" | "Public";
+  status:
+    | "Draft"
+    | "Open"
+    | "Almost Full"
+    | "Full"
+    | "Closed"
+    | "Locked"
+    | "Completed";
   organizer_id: string;
   closing_date: string; // ISO DateTime
   delivery_window: string;
@@ -66,7 +73,14 @@ export interface DbOrder {
   id: string;
   customer_id: string;
   batch_id?: string;
-  status: 'Drafting' | 'Cutting' | 'Sewing' | 'Finishing' | 'Quality Control' | 'Ready' | 'Delivered';
+  status:
+    | "Drafting"
+    | "Cutting"
+    | "Sewing"
+    | "Finishing"
+    | "Quality Control"
+    | "Ready"
+    | "Delivered";
   stage: number;
   subtotal: number;
   deposit_paid: number;

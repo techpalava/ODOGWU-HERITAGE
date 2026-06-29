@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode } from "react";
 
 interface Props {
   children?: ReactNode;
@@ -13,7 +13,7 @@ interface State {
 export class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,
-    error: null
+    error: null,
   };
 
   public static getDerivedStateFromError(error: Error): State {
@@ -21,7 +21,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+    console.error("Uncaught error:", error, errorInfo);
   }
 
   public render() {
@@ -32,7 +32,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
       return (
         <div className="min-h-[400px] flex items-center justify-center p-8 text-center">
           <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-red-100">
-            <h2 className="text-xl font-bold text-red-600 mb-4">Something went wrong</h2>
+            <h2 className="text-xl font-bold text-red-600 mb-4">
+              Something went wrong
+            </h2>
             <p className="text-sm text-gray-600 mb-6">
               We encountered an unexpected error displaying this component.
             </p>
