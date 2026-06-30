@@ -1,23 +1,13 @@
 import React, { useState } from "react";
-import { motion } from "motion/react";
 import {
   Sparkles,
-  Upload,
-  Eye,
   CheckCircle2,
   Info,
-  Lock,
-  ArrowRight,
-  Download,
-  Edit3,
-  RotateCcw,
 } from "lucide-react";
 import { StyleCategory, Fabric } from "../types";
 import { useAppStore } from "../store/useAppStore";
 
 import virtualTryOnConcept from "../assets/images/virtual_tryon_concept_1782563183054.jpg";
-
-import { compressImage } from "../utils/imageUtils";
 
 interface VirtualTryOnIntegrationCardProps {
   /**
@@ -106,10 +96,8 @@ export default function VirtualTryOnIntegrationCard({
   // Gracefully merge aliases
   const activeStyle = selectedDesignStyle || selectedStyle;
   const activeFabric = selectedFabric;
-  const activeDetails = selectedCustomDetails || selectedDesign;
 
-  const { businessSettings, setBusinessSettings, currentUser } = useAppStore();
-  const isAdmin = currentUser?.role === "NTCC Founder & Coordinator";
+  const { businessSettings } = useAppStore();
   const activeImage =
     businessSettings.applicationSettings.virtualTryOnConceptImage ||
     virtualTryOnConcept;
@@ -125,42 +113,6 @@ export default function VirtualTryOnIntegrationCard({
       setShowNotification(msg);
       setTimeout(() => setShowNotification(null), 4000);
     }
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("Please select a valid image file.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = reader.result as string;
-      const compressedUrl = await compressImage(dataUrl);
-      setBusinessSettings((prev) => ({
-        ...prev,
-        applicationSettings: {
-          ...prev.applicationSettings,
-          virtualTryOnConceptImage: compressedUrl,
-        },
-      }));
-      triggerLocalNotification("Showcase image updated successfully!");
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleResetImage = () => {
-    setBusinessSettings((prev) => ({
-      ...prev,
-      applicationSettings: {
-        ...prev.applicationSettings,
-        virtualTryOnConceptImage: "",
-      },
-    }));
-    triggerLocalNotification("Showcase image reset to default.");
   };
 
   const handleNotifyMe = (e: React.FormEvent) => {
@@ -203,54 +155,6 @@ export default function VirtualTryOnIntegrationCard({
         </p>
       </div>
 
-      {/* Admin Action Bar */}
-      {isAdmin && (
-        <div className="bg-heritage-gold/15 border-2 border-dashed border-heritage-gold/45 rounded-3xl p-5 text-white space-y-3 shadow-md">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="space-y-1">
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-heritage-gold/25 text-heritage-gold text-[9px] font-black uppercase rounded border border-heritage-gold/30 tracking-widest">
-                ⚙️ Coordinator Controls
-              </span>
-              <h4 className="font-bold text-sm text-white font-serif">
-                Customize Showcase Visual
-              </h4>
-              <p className="text-xs text-heritage-beige/85">
-                Upload your own photo to replace the generic placeholder below.
-                Changes save instantly.
-              </p>
-            </div>
-
-            <div className="flex gap-2 shrink-0">
-              <label
-                htmlFor="admin-card-upload-file"
-                className="px-4 py-2 bg-heritage-gold hover:bg-white text-heritage-forest hover:text-heritage-green rounded-xl text-xs font-bold uppercase tracking-wider transition duration-300 shadow-md cursor-pointer flex items-center gap-1.5 select-none"
-              >
-                <Upload size={12} />
-                <span>Upload Photo</span>
-              </label>
-              <input
-                type="file"
-                id="admin-card-upload-file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleImageUpload}
-              />
-              {businessSettings.applicationSettings
-                .virtualTryOnConceptImage && (
-                <button
-                  type="button"
-                  onClick={handleResetImage}
-                  className="px-4 py-2 bg-red-950/40 hover:bg-red-600 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition duration-300 border border-red-500/20"
-                  title="Reset to original concept artwork"
-                >
-                  Reset Default
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Luxury Promo Showcase Card */}
       <div className="relative overflow-hidden bg-gradient-to-br from-heritage-forest via-heritage-green to-heritage-forest border border-heritage-gold/30 rounded-3xl p-6 sm:p-8 text-white shadow-xl space-y-8">
         {/* Prominent Concept Illustration Showcase Section */}
@@ -279,47 +183,6 @@ export default function VirtualTryOnIntegrationCard({
               <span className="bg-black/50 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded border border-white/15">
                 ← Back
               </span>
-            </div>
-
-            <div className="absolute top-4 right-4 flex flex-col gap-2">
-              {isAdmin ? (
-                <>
-                  <label
-                    htmlFor="admin-card-upload-file-overlay"
-                    className="p-2.5 bg-heritage-green/90 hover:bg-heritage-gold text-heritage-gold hover:text-heritage-forest rounded-full border border-heritage-gold/30 shadow-md cursor-pointer transition flex items-center justify-center"
-                    title="Upload custom showcase image"
-                  >
-                    <Upload size={13} />
-                  </label>
-                  <input
-                    type="file"
-                    id="admin-card-upload-file-overlay"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleImageUpload}
-                  />
-                  {businessSettings.applicationSettings
-                    .virtualTryOnConceptImage && (
-                    <button
-                      type="button"
-                      onClick={handleResetImage}
-                      className="p-2.5 bg-red-900/90 hover:bg-red-600 text-white rounded-full border border-red-500/20 shadow-md cursor-pointer transition flex items-center justify-center"
-                      title="Reset default artwork"
-                    >
-                      <RotateCcw size={13} />
-                    </button>
-                  )}
-                </>
-              ) : (
-                <>
-                  <span className="p-2 bg-black/55 backdrop-blur-xs text-heritage-gold hover:text-white rounded-full border border-white/10 shadow-md cursor-not-allowed">
-                    <Edit3 size={12} />
-                  </span>
-                  <span className="p-2 bg-black/55 backdrop-blur-xs text-heritage-gold hover:text-white rounded-full border border-white/10 shadow-md cursor-not-allowed">
-                    <Download size={12} />
-                  </span>
-                </>
-              )}
             </div>
 
             {/* Dynamic Outfit badge info */}

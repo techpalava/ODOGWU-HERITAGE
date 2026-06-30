@@ -11,11 +11,7 @@ import {
   Shirt,
   Scissors,
   Check,
-  Compass,
-  FileText,
-  Truck,
   Shield,
-  HelpCircle,
   AlertTriangle,
   Award,
   Search,
@@ -24,37 +20,28 @@ import {
   ChevronRight,
   ChevronDown,
   RotateCcw,
-  Users,
-  User,
-  Calendar,
-  Clock,
   BookOpen,
   Info,
   X,
   ZoomIn,
   Eye,
-  Sun,
-  Maximize2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  MasterOrder,
   StyleCategory,
   Fabric,
   Measurements,
   DesignSelections,
-  GarmentSelection,
   CartItem,
   OrderContext,
   Customer,
   NamedMeasurementProfile,
 } from "../types";
-import { STYLE_CATEGORIES, FABRICS, DESIGN_OPTIONS } from "../data/mockData";
+import { DESIGN_OPTIONS } from "../data/mockData";
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
-import { estimateMeasurements } from "../utils/fitEstimator";
 import { ApiService } from "../services/api";
 import { useAppStore } from "../store/useAppStore";
-import { SelectField, InputField } from "./ui/FormControls";
+import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
 
 interface DesignStudioViewProps {
@@ -400,17 +387,17 @@ export const getBaseSewingPrice = (
   if (configuredPrice !== undefined) {
     return configuredPrice;
   }
-  return garment.fee; // fallback to default garment fee
+  return garment.fee || 0; // fallback to default garment fee
 };
 
 export default function DesignStudioView({
   onAddToCart,
-  onNavigateToTab,
+  onNavigateToTab: _onNavigateToTab,
   openCartDrawer,
   currentUser,
   orderContext,
-  styles = STYLE_CATEGORIES,
-  fabrics = FABRICS,
+  styles = [],
+  fabrics = [],
   customers = [],
   setCustomers,
   initialStyleId,
@@ -498,7 +485,7 @@ export default function DesignStudioView({
 
   // STEP 1: Style Selection, Filtering & Pagination States
   const [selectedStyle, setSelectedStyle] = useState<StyleCategory>(
-    styles[0] || STYLE_CATEGORIES[0],
+    styles[0] || ({ id: "", name: "", description: "", basePrice: 0, gender: "unisex", tags: [], garments: [], images: [] } as unknown as StyleCategory),
   );
   const [styleSearchInput, setStyleSearchInput] = useState<string>("");
   const [styleSearch, setStyleSearch] = useState<string>("");
@@ -578,7 +565,7 @@ export default function DesignStudioView({
 
   // STEP 2: Fabric Selection, Filtering & Pagination States
   const [selectedFabric, setSelectedFabric] = useState<Fabric>(
-    fabrics[0] || FABRICS[0],
+    fabrics[0] || ({ code: "", name: "", price: 0, stock: 0, category: "", type: "", material: "", origin: "", color: "", tags: [], defaultYards: 6, stockQuantity: 0, priceMultiplier: 1, availableStatus: "available", createdAt: new Date().toISOString() } as unknown as Fabric),
   );
   const [fabricSearchInput, setFabricSearchInput] = useState<string>("");
   const [fabricSearch, setFabricSearch] = useState<string>("");
@@ -736,8 +723,7 @@ export default function DesignStudioView({
 
   // Price List States
   const [hasLining, setHasLining] = useState(false);
-  const [addonBead, setAddonBead] = useState(false);
-  const [addonName, setAddonName] = useState(false);
+  const [optionalAccessories, setOptionalAccessories] = useState<string[]>([]);
   const [selectedPriceCode, setSelectedPriceCode] = useState<string>("AUTO");
 
   // STEP 4: Garment Type selection
@@ -951,7 +937,7 @@ export default function DesignStudioView({
   const [batchType, setBatchType] = useState<
     "community" | "alone" | "personalized" | "actual"
   >("community");
-  const [selectedBatchName, setSelectedBatchName] =
+  const [selectedBatchName, _setSelectedBatchName] =
     useState<string>("August Batch");
   const [customGroupCode, setCustomGroupCode] = useState<string>("");
 
@@ -1028,14 +1014,14 @@ export default function DesignStudioView({
         code: "EXACT",
         description: "Exact Design Style Pricing",
         category: "special",
-        actualMin: selectedGarment.fee,
+        actualMin: selectedGarment.fee || 0,
         discountedMin: discountEnabled
-          ? selectedGarment.discountFee || selectedGarment.fee
-          : selectedGarment.fee,
-        actualMax: selectedGarment.fee,
+          ? selectedGarment.discountFee || selectedGarment.fee || 0
+          : selectedGarment.fee || 0,
+        actualMax: selectedGarment.fee || 0,
         discountedMax: discountEnabled
-          ? selectedGarment.discountFee || selectedGarment.fee
-          : selectedGarment.fee,
+          ? selectedGarment.discountFee || selectedGarment.fee || 0
+          : selectedGarment.fee || 0,
       };
     }
     const rawPrice =
@@ -1065,7 +1051,7 @@ export default function DesignStudioView({
     );
 
     // Maintain standard group buy/cohort discount ratio
-    const discountRatio = selectedGarment.discountFee
+    const discountRatio = (selectedGarment.discountFee && selectedGarment.fee)
       ? selectedGarment.discountFee / selectedGarment.fee
       : 1;
     const baseRate = isActualRate
@@ -1081,7 +1067,7 @@ export default function DesignStudioView({
       businessSettings.pricingSettings?.standardAccessoryCharge ?? 10;
 
     // Ladies Lining (L5): adds +€10.00 (Customization)
-    if (hasLining && selectedStyle.gender === "female") {
+    if (hasLining && selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "")) {
       extras += 10.0;
     }
 
@@ -1090,20 +1076,15 @@ export default function DesignStudioView({
       extras += accessoryPrice;
     }
 
-    // Royal Beads (Accessory)
-    if (addonBead) {
-      extras += accessoryPrice;
-    }
-
-    // Name Inscribed (Customization)
-    if (addonName) {
-      extras += 10.0;
+    // Optional Accessories
+    if (batchType !== "alone") {
+      extras += optionalAccessories.length * 10.0;
     }
 
     // Individual Courier Surcharge
     const courierSurcharge =
       batchType === "alone"
-        ? businessSettings.shippingSettings.individualOrderShippingRate
+        ? 35.0
         : 0;
 
     return baseRate + fabricSurcharge + extras + courierSurcharge;
@@ -1119,7 +1100,7 @@ export default function DesignStudioView({
     selectedGarment,
     businessSettings.pricingSettings?.baseSewingPrices,
   );
-  const discountRatio = selectedGarment.discountFee
+  const discountRatio = (selectedGarment.discountFee && selectedGarment.fee)
     ? selectedGarment.discountFee / selectedGarment.fee
     : 1;
   const baseRate = isActualRateForDisplay
@@ -1349,9 +1330,8 @@ export default function DesignStudioView({
       fabric: selectedFabric,
       design: {
         ...designSelections,
-        hasLining: selectedStyle.gender === "female" ? hasLining : false,
-        addonBead,
-        addonName,
+        hasLining: (selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "")) ? hasLining : false,
+        optionalAccessories: batchType !== "alone" ? optionalAccessories : [],
         priceCode:
           selectedPriceCode === "AUTO"
             ? getAutoDetectedPriceCode()
@@ -1375,8 +1355,8 @@ export default function DesignStudioView({
   };
 
   const resetDesignStudio = () => {
-    setSelectedStyle(styles[0] || STYLE_CATEGORIES[0]);
-    setSelectedFabric(fabrics[0] || FABRICS[0]);
+    setSelectedStyle(styles[0] || ({ id: "", name: "", description: "", basePrice: 0, gender: "unisex", tags: [], garments: [], images: [] } as unknown as StyleCategory));
+    setSelectedFabric(fabrics[0] || ({ code: "", name: "", price: 0, stock: 0, category: "", type: "", material: "", origin: "", color: "", tags: [], defaultYards: 6, stockQuantity: 0, priceMultiplier: 1, availableStatus: "available", createdAt: new Date().toISOString() } as unknown as Fabric));
     setDesignSelections({
       collar: DESIGN_OPTIONS.collars[0].name,
       embroidery: DESIGN_OPTIONS.embroideries[1].name,
@@ -1823,7 +1803,7 @@ export default function DesignStudioView({
                               {style.name}
                             </h3>
                             <span className="text-[9.5px] text-heritage-gold font-bold font-mono shrink-0 pt-0.5">
-                              €{style.basePrice.toFixed(2)}
+                              €{(style.basePrice || 0).toFixed(2)}
                             </span>
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -1870,7 +1850,7 @@ export default function DesignStudioView({
                                 </span>
                               )}
                             <span className="text-[9px] text-heritage-gold font-bold font-mono ml-auto shrink-0">
-                              €{style.basePrice.toFixed(2)}
+                              €{(style.basePrice || 0).toFixed(2)}
                             </span>
                           </div>
                           <p className="text-[11px] text-heritage-ink/75 leading-relaxed line-clamp-2 sm:line-clamp-none">
@@ -2353,75 +2333,72 @@ export default function DesignStudioView({
                 )}
 
                 {/* Ladies Inner Lining Net Toggle */}
-                {selectedStyle.gender === "female" && (
-                  <div className="space-y-2">
-                    <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
-                      Dress Reinforcement
-                    </label>
-                    <label className="flex items-center gap-3 cursor-pointer p-3 border border-gray-150 rounded-xl bg-heritage-cream/20 hover:border-heritage-gold/30 transition min-h-[56px] w-full">
-                      <input
-                        type="checkbox"
-                        checked={hasLining}
-                        onChange={(e) => setHasLining(e.target.checked)}
-                        className="h-4 w-4 text-heritage-green focus:ring-heritage-gold rounded border-gray-300 cursor-pointer"
-                      />
-                      <div>
-                        <span className="font-bold text-heritage-green text-xs block">
-                          Add Lining/Inner Net
-                        </span>
-                        <span className="text-[10px] text-heritage-ink/50 block leading-tight">
-                          Provides structure & opacity (L5: +€10.00)
-                        </span>
-                      </div>
-                    </label>
+                {selectedStyle.gender === "female" &&
+                  ["L1", "L2", "L3", "L4"].includes(
+                    selectedGarment.code || "",
+                  ) && (
+                    <div className="space-y-2">
+                      <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+                        Dress Reinforcement
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer p-3 border border-gray-150 rounded-xl bg-heritage-cream/20 hover:border-heritage-gold/30 transition min-h-[56px] w-full">
+                        <input
+                          type="checkbox"
+                          checked={hasLining}
+                          onChange={(e) => setHasLining(e.target.checked)}
+                          className="h-4 w-4 text-heritage-green focus:ring-heritage-gold rounded border-gray-300 cursor-pointer"
+                        />
+                        <div>
+                          <span className="font-bold text-heritage-green text-xs block">
+                            ✓ Add Inner Net / Lining (L5)
+                          </span>
+                          <span className="text-[10px] text-heritage-ink/50 block leading-tight">
+                            Provides structure & opacity (+€10.00)
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+                  )}
+
+                {/* Optional Accessories */}
+                {batchType !== "alone" ? (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+                        Optional Accessories (+ €10.00 each)
+                      </label>
+                      
+                      {["Headwear Accent", "Traditional Jewelry"].map((acc) => (
+                        <label key={acc} className="flex items-center gap-3 cursor-pointer p-3 border border-gray-150 rounded-xl bg-heritage-cream/20 hover:border-heritage-gold/30 transition min-h-[56px] w-full">
+                          <input
+                            type="checkbox"
+                            checked={optionalAccessories.includes(acc)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setOptionalAccessories([...optionalAccessories, acc]);
+                              } else {
+                                setOptionalAccessories(optionalAccessories.filter((a) => a !== acc));
+                              }
+                            }}
+                            className="h-4 w-4 text-heritage-green focus:ring-heritage-gold rounded border-gray-300 cursor-pointer"
+                          />
+                          <div>
+                            <span className="font-bold text-heritage-green text-xs block">
+                              Add {acc}
+                            </span>
+                            <span className="text-[10px] text-heritage-ink/50 block leading-tight">
+                              Included with outfit (+€10.00)
+                            </span>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-800 text-xs">
+                    Accessories are only available during active group order phases.
                   </div>
                 )}
-
-                {/* Coral Beads Toggle */}
-                <div className="space-y-2">
-                  <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
-                    Traditional Jewelry
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer p-3 border border-gray-150 rounded-xl bg-heritage-cream/20 hover:border-heritage-gold/30 transition min-h-[56px] w-full">
-                    <input
-                      type="checkbox"
-                      checked={addonBead}
-                      onChange={(e) => setAddonBead(e.target.checked)}
-                      className="h-4 w-4 text-heritage-green focus:ring-heritage-gold rounded border-gray-300 cursor-pointer"
-                    />
-                    <div>
-                      <span className="font-bold text-heritage-green text-xs block">
-                        Add Royal Coral Beads
-                      </span>
-                      <span className="text-[10px] text-heritage-ink/50 block leading-tight">
-                        Traditional neck/wrist beads (Others-1: +€10.00)
-                      </span>
-                    </div>
-                  </label>
-                </div>
-
-                {/* Name Inscription Surcharge */}
-                <div className="space-y-2">
-                  <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
-                    Bespoke Monogramming
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer p-3 border border-gray-150 rounded-xl bg-heritage-cream/20 hover:border-heritage-gold/30 transition min-h-[56px] w-full">
-                    <input
-                      type="checkbox"
-                      checked={addonName}
-                      onChange={(e) => setAddonName(e.target.checked)}
-                      className="h-4 w-4 text-heritage-green focus:ring-heritage-gold rounded border-gray-300 cursor-pointer"
-                    />
-                    <div>
-                      <span className="font-bold text-heritage-green text-xs block">
-                        Inscribe My Full Name
-                      </span>
-                      <span className="text-[10px] text-heritage-ink/50 block leading-tight">
-                        Embroidered name on inside seam (Others-1: +€10.00)
-                      </span>
-                    </div>
-                  </label>
-                </div>
               </div>
 
               {/* Garment Construction Pieces - Merged into Custom Accents */}
@@ -2464,19 +2441,19 @@ export default function DesignStudioView({
                         {discountEnabled ? (
                           <>
                             <span className="text-gray-400 line-through">
-                              Base: €{selectedGarment.fee.toFixed(2)}
+                              Base: €{(selectedGarment.fee || 0).toFixed(2)}
                             </span>
                             <span className="text-heritage-gold font-extrabold bg-heritage-gold/5 px-2 py-0.5 rounded border border-heritage-gold/25">
                               Sale: €
                               {(
                                 selectedGarment.discountFee ||
-                                selectedGarment.fee
+                                selectedGarment.fee || 0
                               ).toFixed(2)}
                             </span>
                           </>
                         ) : (
                           <span className="text-heritage-green font-bold bg-heritage-green/5 px-2 py-0.5 rounded border border-heritage-green/10">
-                            Price: €{selectedGarment.fee.toFixed(2)}
+                            Price: €{(selectedGarment.fee || 0).toFixed(2)}
                           </span>
                         )}
                       </div>
@@ -2536,16 +2513,16 @@ export default function DesignStudioView({
                                   {discountEnabled ? (
                                     <>
                                       <span className="text-gray-400 line-through">
-                                        Base: €{g.fee.toFixed(2)}
+                                        Base: €{(g.fee || 0).toFixed(2)}
                                       </span>
                                       <span className="text-heritage-gold font-bold">
                                         Sale: €
-                                        {(g.discountFee || g.fee).toFixed(2)}
+                                        {(g.discountFee || g.fee || 0).toFixed(2)}
                                       </span>
                                     </>
                                   ) : (
                                     <span className="text-heritage-green font-medium">
-                                      Price: €{g.fee.toFixed(2)}
+                                      Price: €{(g.fee || 0).toFixed(2)}
                                     </span>
                                   )}
                                 </div>
@@ -2687,9 +2664,8 @@ export default function DesignStudioView({
               selectedDesign={{
                 ...designSelections,
                 hasLining:
-                  selectedStyle.gender === "female" ? hasLining : false,
-                addonBead,
-                addonName,
+                  (selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "")) ? hasLining : false,
+                optionalAccessories: batchType !== "alone" ? optionalAccessories : [],
               }}
             />
           )}
@@ -4158,21 +4134,16 @@ export default function DesignStudioView({
                         <strong>Matching Custom Fila (Cap)</strong>
                       </li>
                     )}
-                    {selectedStyle.gender === "female" && hasLining && (
+                    {selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "") && hasLining && (
                       <li>
-                        Included Extra: <strong>Inner Lining/Net</strong>
+                        Included Extra: <strong>Inner Lining/Net (L5)</strong>
                       </li>
                     )}
-                    {addonBead && (
-                      <li>
-                        Included Extra: <strong>Royal Coral Beads</strong>
+                    {optionalAccessories.map(acc => (
+                      <li key={acc}>
+                        Included Extra: <strong>{acc}</strong>
                       </li>
-                    )}
-                    {addonName && (
-                      <li>
-                        Included Extra: <strong>Bespoke Name Monogram</strong>
-                      </li>
-                    )}
+                    ))}
                   </ul>
                 </div>
 
@@ -4367,7 +4338,7 @@ export default function DesignStudioView({
                 </span>
               </div>
 
-              {selectedStyle.gender === "female" && hasLining && (
+              {selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "") && hasLining && (
                 <div className="flex justify-between items-center text-heritage-ink/70">
                   <span>Inner Lining/Net (L5):</span>
                   <span className="font-semibold text-heritage-green">
@@ -4389,37 +4360,25 @@ export default function DesignStudioView({
                 </div>
               )}
 
-              {addonBead && (
-                <div className="flex justify-between items-center text-heritage-ink/70">
-                  <span>Coral Beads (Accessory):</span>
-                  <span className="font-semibold text-heritage-green">
-                    +{currencySymbol}
-                    {(
-                      businessSettings.pricingSettings
-                        ?.standardAccessoryCharge ?? 10
-                    ).toFixed(2)}
-                  </span>
-                </div>
-              )}
-
-              {addonName && (
-                <div className="flex justify-between items-center text-heritage-ink/70">
-                  <span>Bespoke Name Inscription (Customization):</span>
+              {optionalAccessories.map(acc => (
+                <div key={acc} className="flex justify-between items-center text-heritage-ink/70">
+                  <span>{acc}:</span>
                   <span className="font-semibold text-heritage-green">
                     +{currencySymbol}10.00
                   </span>
                 </div>
-              )}
+              ))}
 
               {batchType === "alone" && (
-                <div className="flex justify-between items-center text-amber-700 font-semibold text-[10px]">
-                  <span>Courier Surcharge (Order Alone):</span>
-                  <span className="font-mono">
-                    +{currencySymbol}
-                    {businessSettings.shippingSettings.individualOrderShippingRate.toFixed(
-                      2,
-                    )}
-                  </span>
+                <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
+                  <div className="flex justify-between items-center">
+                    <span>Priority Home Shipping / Courier (Order Alone):</span>
+                    <span className="font-mono">
+                      +{currencySymbol}
+                      {Number(35).toFixed(2)}
+                    </span>
+                  </div>
+                  <span className="text-[9px] text-amber-600/80 mt-0.5">(SEPA Transfer Directly)</span>
                 </div>
               )}
 
@@ -4508,24 +4467,18 @@ export default function DesignStudioView({
                   <strong className="text-heritage-gold">Included</strong>
                 </p>
               )}
-              {selectedStyle.gender === "female" && hasLining && (
+              {selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "") && hasLining && (
                 <p>
                   Lining/Inner Net:{" "}
-                  <strong className="text-heritage-gold">Included</strong>
+                  <strong className="text-heritage-gold">Included (L5)</strong>
                 </p>
               )}
-              {addonBead && (
-                <p>
-                  Coral Beads:{" "}
+              {optionalAccessories.map(acc => (
+                <p key={acc}>
+                  {acc}:{" "}
                   <strong className="text-heritage-gold">Included</strong>
                 </p>
-              )}
-              {addonName && (
-                <p>
-                  Monogram Name:{" "}
-                  <strong className="text-heritage-gold">Included</strong>
-                </p>
-              )}
+              ))}
               <p>
                 Batch / Queue:{" "}
                 <strong className="text-heritage-gold font-bold">

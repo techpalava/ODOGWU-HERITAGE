@@ -3,21 +3,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
-import { Eye, Shirt, Sparkles, Tag, Layers, Camera } from "lucide-react";
-import { STYLE_CATEGORIES, FABRICS } from "../data/mockData";
-import { Showpiece, CommunityPhoto } from "../types";
+import { useState } from "react";
+import { Eye, Shirt, Sparkles, Camera } from "lucide-react";
+import { Showpiece, CommunityPhoto, Fabric, StyleCategory } from "../types";
 
 interface GalleryViewProps {
   onSelectStyle: (styleId: string, fabricCode: string) => void;
   showpieces?: Showpiece[];
   communityPhotos?: CommunityPhoto[];
+  fabrics: Fabric[];
+  styles: StyleCategory[];
 }
 
 export default function GalleryView({
   onSelectStyle,
   showpieces = [],
   communityPhotos = [],
+  fabrics = [],
+  styles: _styles = [],
 }: GalleryViewProps) {
   const [filter, setFilter] = useState<
     "all" | "male" | "female" | "fabric" | "community"
@@ -231,7 +234,7 @@ export default function GalleryView({
       ) : (
         /* Fabric Bolts Specific Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 font-sans">
-          {FABRICS.map((fabric) => (
+          {fabrics.map((fabric) => (
             <div
               key={fabric.code}
               className="bg-white rounded-3xl border border-heritage-gold/15 p-6 shadow-sm flex flex-col sm:flex-row gap-6 hover:shadow-md transition"

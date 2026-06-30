@@ -57,6 +57,7 @@ export interface StyleCategory {
 }
 
 export interface Fabric {
+  id?: string;
   code: string;
   name: string;
   description: string;
@@ -94,6 +95,8 @@ export interface DesignSelections {
   pocket: string;
   additionalCap: boolean; // cap toggle for Men's Senator/Agbada
   hemFinish: string;
+  hasLining?: boolean; // L5 Policy
+  optionalAccessories?: string[]; // Headwear Accent, Traditional Jewelry
 }
 
 export interface GarmentSelection {

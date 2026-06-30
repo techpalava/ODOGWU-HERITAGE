@@ -9,10 +9,8 @@ import {
   ClipboardList,
   CreditCard,
   History,
-  Settings,
   Check,
   Mail,
-  Phone,
   Edit2,
   MapPin,
   Printer,
@@ -21,9 +19,7 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
-  Award,
   X,
-  Info,
   Clock,
   Shield,
   Users,
@@ -31,8 +27,6 @@ import {
   Share2,
   LogOut,
   Trash2,
-  Calendar,
-  CheckSquare,
   CheckCircle2,
 } from "lucide-react";
 import {
@@ -47,7 +41,7 @@ import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 interface DashboardViewProps {
   masterOrder: MasterOrder | null;
   historicalOrders: HistoricalOrder[];
-  onReorder: (styleId: string, fabricCode: string) => void;
+  onReorder: () => void;
   onNavigateToTab: (tabId: string) => void;
   onUpdateProfile: (name: string, email: string, phone: string) => void;
   onUpdateMeasurements: (measurements: MasterOrder["measurements"]) => void;
@@ -943,12 +937,7 @@ export default function DashboardView({
                         </button>
                         <button
                           onClick={() =>
-                            onReorder(
-                              order.styleName
-                                .toLowerCase()
-                                .replace(/\s+/g, "-"),
-                              order.fabricCode,
-                            )
+                            onReorder()
                           }
                           className="px-2.5 py-1 bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest transition rounded-lg text-[9px] font-bold uppercase cursor-pointer"
                         >
@@ -1950,6 +1939,40 @@ export default function DashboardView({
                           {selectedReceipt.design.hemFinish}
                         </strong>
                       </div>
+                      <div>
+                        L5 Selected:{" "}
+                        <strong className="text-heritage-green">
+                          {selectedReceipt.design.hasLining ? "Yes" : "No"}
+                        </strong>
+                      </div>
+                      <div>
+                        Order Type:{" "}
+                        <strong className="text-heritage-green">
+                          {selectedReceipt.batchType === "alone" ? "Order Alone" : "Join Current Group Order"}
+                        </strong>
+                      </div>
+                      <div>
+                        Shipping Surcharge Applied:{" "}
+                        <strong className="text-heritage-green">
+                          {selectedReceipt.batchType === "alone" ? "+ €35.00" : "None"}
+                        </strong>
+                      </div>
+                      {selectedReceipt.design.optionalAccessories && selectedReceipt.design.optionalAccessories.length > 0 && (
+                        <div>
+                          Selected Accessories:{" "}
+                          <strong className="text-heritage-green">
+                            {selectedReceipt.design.optionalAccessories.join(", ")}
+                          </strong>
+                        </div>
+                      )}
+                      {selectedReceipt.design.optionalAccessories && selectedReceipt.design.optionalAccessories.length > 0 && (
+                        <div>
+                          Accessory Total:{" "}
+                          <strong className="text-heritage-green">
+                            + €{(selectedReceipt.design.optionalAccessories.length * 10).toFixed(2)}
+                          </strong>
+                        </div>
+                      )}
                       <div>
                         Agbada Cap:{" "}
                         <strong className="text-heritage-green">

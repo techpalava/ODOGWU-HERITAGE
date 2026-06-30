@@ -29,7 +29,8 @@ function getStripeClient(): Stripe {
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // API route for AI sizing estimation using Gemini 3.5 Flash
 app.post("/api/estimate-measurements", async (req, res) => {
@@ -157,7 +158,11 @@ Ensure all values are realistic numbers rounded to the nearest 0.5 inches. Outpu
     });
 
   } catch (error: any) {
-    console.error("Gemini Sizing Estimation error:", error);
+    if (error?.status === 429 || error?.message?.includes("429") || error?.message?.includes("RESOURCE_EXHAUSTED")) {
+      console.warn("Gemini Sizing Estimation error (429): API credits depleted. Returning heuristic fallback.");
+    } else {
+      console.warn("Gemini Sizing Estimation error:", error.message || error);
+    }
     // If Gemini fails, return fallback calculations so user experience is smooth and non-blocking
     res.json({
       success: true,
@@ -170,7 +175,7 @@ Ensure all values are realistic numbers rounded to the nearest 0.5 inches. Outpu
 
 // API route for handling Stripe or iDEAL payment intents representing exactly 50% of the calculated total
 app.post("/api/suggest-fabric-names", async (req, res) => {
-  const { imageBase64 } = req.body;
+  const { imageBase64, previousSuggestions = [] } = req.body;
   
   if (!imageBase64) {
     return res.status(400).json({ success: false, error: "Image is required" });
@@ -181,7 +186,7 @@ app.post("/api/suggest-fabric-names", async (req, res) => {
     // Return dummy suggestions if no API key is present
     return res.json({
       success: true,
-      suggestions: ["Classic Heritage Weave", "Premium Artisan Threads"]
+      suggestions: ["Classic Heritage Weave", "Premium Artisan Threads"].filter(s => !previousSuggestions.includes(s))
     });
   }
 
@@ -197,7 +202,37 @@ app.post("/api/suggest-fabric-names", async (req, res) => {
 
     const base64Data = imageBase64.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, "");
 
-    const prompt = `You are a textile expert. Analyze this fabric image and suggest 2 creative, premium-sounding names for this fabric. Output a JSON array of exactly 2 strings.`;
+    const avoidPrompt = previousSuggestions.length > 0 
+      ? `\n\nCRITICAL: DO NOT suggest any of the following names as they have already been generated:\n${previousSuggestions.map((s: string) => `- "${s}"`).join('\n')}\nEnsure your new suggestions are entirely distinct and provide fresh creative alternatives while remaining accurate to the fabric.` 
+      : "";
+
+    const prompt = `You are an expert textile analyst and luxury African fashion designer.
+Analyze this fabric image and generate exactly two premium, context-aware fabric name suggestions, and determine its category.
+
+First, detect its visual identity by identifying:
+- Pattern style
+- Motifs and symbols (e.g. fish, floral, chains, geometry)
+- Dominant and secondary colours
+- Fabric category (e.g. Ankara, Lace, Adire, Aso Oke)
+- Traditional or modern appearance
+- Overall design characteristics
+
+Then, generate exactly 2 premium fabric name suggestions that accurately reflect the uploaded fabric.
+The names must be unique to this specific fabric and use luxury African fashion naming conventions.
+
+Examples:
+- If fish motifs: "Heritage Fish Lattice" or "Royal Fish Mosaic"
+- If chain-like geometric patterns: "Royal Link Chain" or "Imperial Chain Weave"
+- If floral motifs: "Emerald Floral Bloom" or "Royal Garden Blossom"
+
+If you cannot confidently identify the fabric, generate two tasteful premium names using the detected colour and pattern style.
+
+DO NOT use generic names like "Blue Fabric", "Orange Ankara", "Pattern 01", or "Fabric A".${avoidPrompt}
+
+Also, determine the best category for this fabric from these EXACT options:
+"Printed Fabrics", "Handcrafted Fabrics", "Traditional Fabrics", "Luxury Fabrics"
+
+Output ONLY a JSON object containing "suggestions" (array of 2 strings) and "category" (string).`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
@@ -218,9 +253,19 @@ app.post("/api/suggest-fabric-names", async (req, res) => {
       config: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING },
-          description: "Two creative fabric names"
+          type: Type.OBJECT,
+          properties: {
+            suggestions: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Two creative fabric names"
+            },
+            category: {
+              type: Type.STRING,
+              description: "The matching category name exactly as defined in the prompt options"
+            }
+          },
+          required: ["suggestions", "category"]
         },
       },
     });
@@ -230,13 +275,18 @@ app.post("/api/suggest-fabric-names", async (req, res) => {
       throw new Error("Empty response from Gemini");
     }
 
-    const suggestions = JSON.parse(text.trim());
-    res.json({ success: true, suggestions });
+    const result = JSON.parse(text.trim());
+    res.json({ success: true, suggestions: result.suggestions, category: result.category });
   } catch (error: any) {
-    console.error("Gemini Fabric Suggestion error:", error);
+    if (error?.status === 429 || error?.message?.includes("429") || error?.message?.includes("RESOURCE_EXHAUSTED")) {
+      console.warn("Gemini Fabric Suggestion error (429): API credits depleted. Returning dummy fallback.");
+    } else {
+      console.warn("Gemini Fabric Suggestion error:", error.message || error);
+    }
     res.json({
       success: true,
-      suggestions: ["Classic Heritage Weave", "Premium Artisan Threads"]
+      suggestions: ["Classic Heritage Weave", "Premium Artisan Threads"],
+      category: "Printed Fabrics"
     });
   }
 });

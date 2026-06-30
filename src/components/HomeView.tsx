@@ -3,17 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Sparkles,
   ArrowRight,
   ShieldCheck,
   Award,
-  MessageSquare,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { OrderContext, CommunityPhoto } from "../types";
-import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 
 interface HomeViewProps {
   onStartDesigning: () => void;

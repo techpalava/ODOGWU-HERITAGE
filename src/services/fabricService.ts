@@ -32,7 +32,7 @@ export const FabricService = {
   // Subscribe to real-time changes
   subscribeToFabrics: (callback: (fabrics: Fabric[]) => void) => {
     return onSnapshot(collection(db, FABRICS_COLLECTION), (snapshot) => {
-      const fabrics = snapshot.docs.map(doc => ({ ...doc.data() } as Fabric));
+      const fabrics = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Fabric));
       callback(fabrics);
     }, (error) => {
       console.error("Error subscribing to fabrics:", error);
@@ -43,8 +43,8 @@ export const FabricService = {
   saveFabric: async (fabric: Fabric) => {
     console.log("[FabricService.saveFabric] Start. fabric:", fabric);
     try {
-      const docRef = doc(db, FABRICS_COLLECTION, fabric.code);
-      console.log("[FabricService.saveFabric] Checking old snapshot for code:", fabric.code);
+      const docRef = doc(db, FABRICS_COLLECTION, fabric.id || fabric.code);
+      console.log("[FabricService.saveFabric] Checking old snapshot for docId:", docRef.id);
       const oldSnap = await getDoc(docRef);
       const oldData = oldSnap.exists() ? oldSnap.data() as Fabric : null;
       console.log("[FabricService.saveFabric] oldData exists?", !!oldData);
@@ -80,7 +80,7 @@ export const FabricService = {
       const sanitizedFabric = sanitizeForFirestore(fabricToSave);
 
       console.log("[FabricService.saveFabric] Writing to Firestore:", sanitizedFabric);
-      await setDoc(doc(db, FABRICS_COLLECTION, fabric.code), sanitizedFabric);
+      await setDoc(doc(db, FABRICS_COLLECTION, fabric.id || fabric.code), sanitizedFabric);
       console.log("[FabricService.saveFabric] Firestore write complete");
       return fabricToSave;
     } catch (error) {
@@ -93,7 +93,7 @@ export const FabricService = {
   deleteFabric: async (fabric: Fabric) => {
     try {
       // 1. Delete from Firestore
-      await deleteDoc(doc(db, FABRICS_COLLECTION, fabric.code));
+      await deleteDoc(doc(db, FABRICS_COLLECTION, fabric.id || fabric.code));
 
       // 2. Optionally delete from Storage if it's a firebase storage URL
       if (fabric.image && fabric.image.includes("firebasestorage.googleapis.com")) {

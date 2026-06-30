@@ -142,6 +142,21 @@ export function CartDrawer() {
                         <p>
                           👤 Recipient: <strong>{item.customer.name}</strong>
                         </p>
+                        {item.design.hasLining && (
+                          <p>
+                            ✨ L5 Lining: <strong className="text-heritage-gold">Included (+€10.00)</strong>
+                          </p>
+                        )}
+                        {item.design.optionalAccessories && item.design.optionalAccessories.length > 0 && (
+                          <p>
+                            💎 Accessories: <strong>{item.design.optionalAccessories.join(", ")}</strong>
+                          </p>
+                        )}
+                        {item.batchType === "alone" && (
+                          <p>
+                            🚚 Shipping: <strong>Priority Courier (+€35.00)</strong>
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex justify-between items-center pt-2 border-t border-gray-100">

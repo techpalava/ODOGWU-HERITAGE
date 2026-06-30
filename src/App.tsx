@@ -42,12 +42,6 @@ import {
   Showpiece,
   CommunityPhoto,
 } from "./types";
-import {
-  STYLE_CATEGORIES,
-  FABRICS,
-  MOCK_HISTORICAL_ORDERS,
-  MOCK_COMMUNITY_PHOTOS,
-} from "./data/mockData";
 import { StorageService } from "./services/storageService";
 import { useAppStore } from "./store/useAppStore";
 
@@ -330,213 +324,7 @@ export default function App() {
     triggerNotification("Garment removed from cart.", "info");
   };
 
-  const handleCheckout = () => {
-    if (cartItems.length === 0) return;
-    setIsCheckoutPaymentOpen(true);
-  };
-
-  const handleExecuteDepositPayment = async () => {
-    if (cartItems.length === 0) return;
-    setIsPaymentProcessing(true);
-
-    const subtotal = cartItems.reduce(
-      (acc, item) => acc + item.garment.totalPrice,
-      0,
-    );
-    const lastItem = cartItems[cartItems.length - 1];
-
-    try {
-      const response = await fetch("/api/create-payment-intent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: subtotal,
-          paymentMethod: checkoutPaymentMethod === "ideal" ? "iDEAL" : "Stripe",
-          idealBank:
-            checkoutPaymentMethod === "ideal" ? checkoutIdealBank : undefined,
-          customerEmail: lastItem.customer.email,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        const nowStr = new Date().toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        });
-
-        const newHistoryItems: HistoricalOrder[] = [];
-        let lastMasterOrder: MasterOrder | null = null;
-        const newOrders: MasterOrder[] = [];
-
-        cartItems.forEach((item, index) => {
-          const trackingId = `ODH-${Date.now().toString().slice(-4)}-${index + 1}`;
-          const totalPrice = item.garment.totalPrice;
-          const depositRequired =
-            (totalPrice * businessSettings.pricingSettings.depositPercentage) /
-            100;
-          const remainingDue = totalPrice - depositRequired;
-
-          const order: MasterOrder = {
-            customer: item.customer,
-            style: item.style,
-            fabric: item.fabric,
-            design: item.design,
-            garment: {
-              ...item.garment,
-              totalPrice,
-            },
-            measurements: item.measurements,
-            payment: {
-              subtotal: totalPrice,
-              deposit: depositRequired,
-              remaining: remainingDue,
-              method:
-                checkoutPaymentMethod === "ideal"
-                  ? `iDEAL (${checkoutIdealBank})`
-                  : "Stripe (Visa Card)",
-              date: nowStr,
-              isPaid: true,
-              transactionId: data.transactionId,
-              secondPaymentStatus: "unpaid",
-            },
-            shipment: {
-              trackingId: trackingId,
-              status:
-                "Stage 1: Deposit Paid (Escrow Blocked). Weaving fabric...",
-              currentStage: 1,
-              estimatedDeliveryDate:
-                item.batchType === "alone"
-                  ? "Direct priority (14-21 days)"
-                  : "August 15",
-            },
-            specialInstructions: item.specialInstructions,
-            notesAboutLeftoverFabric: item.notesAboutLeftoverFabric,
-            batchType: item.batchType,
-            batchName: item.batchName,
-            customGroupCode: item.customGroupCode,
-          };
-
-          if (index === cartItems.length - 1) {
-            lastMasterOrder = order;
-          }
-
-          newOrders.push(order);
-
-          newHistoryItems.push({
-            id: trackingId,
-            date: nowStr,
-            styleName: item.style.name,
-            garmentType: item.garment.type,
-            fabricName: item.fabric.name,
-            fabricCode: item.fabric.code,
-            amount: totalPrice,
-            status: "In Progress",
-            trackingId: trackingId,
-          });
-
-          // Update CustomGroups table (Relational Transaction Simulator)
-          let targetBatchId = "GRP-Community-3";
-          if (item.batchType === "personalized") {
-            targetBatchId = item.customGroupCode || "";
-          } else if (item.batchType === "community") {
-            targetBatchId = "GRP-Community-3";
-          } else if (item.batchType === "alone") {
-            targetBatchId = "";
-          }
-
-          if (targetBatchId) {
-            setCustomGroups((prevGroups) => {
-              return prevGroups.map((g) => {
-                if (
-                  g.batchId === targetBatchId ||
-                  g.batchName === item.batchName
-                ) {
-                  const nextMembers = g.currentMembers + 1;
-                  const isFull = nextMembers >= g.maxParticipants;
-                  return {
-                    ...g,
-                    currentMembers: nextMembers,
-                    status: isFull
-                      ? "Full"
-                      : nextMembers >= g.maxParticipants - 2
-                        ? "Almost Full"
-                        : g.status,
-                  };
-                }
-                return g;
-              });
-            });
-
-            if (targetBatchId) {
-              setBatches((prev) =>
-                prev.map((b) => {
-                  if (b.id === targetBatchId) {
-                    return { ...b, currentGarments: b.currentGarments + 1 };
-                  }
-                  return b;
-                }),
-              );
-            }
-          }
-        });
-
-        // Add to global orders database
-        setOrders((prev) => [...newOrders, ...prev]);
-
-        if (lastMasterOrder) {
-          setMasterOrder(lastMasterOrder);
-        }
-
-        setHistoricalOrders((prev) => [...newHistoryItems, ...prev]);
-        setCartItems([]);
-        setIsCartOpen(false);
-        setIsCheckoutPaymentOpen(false);
-        setActiveTab("dashboard");
-
-        const targetCohort = lastItem.batchName || "Community Batch";
-        triggerNotification(
-          `Secure deposit received! ${newHistoryItems.length} bespoke order(s) placed in ${targetCohort}.`,
-          "success",
-        );
-      } else {
-        alert("Deposit transaction failed: " + data.error);
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Failed to authorize secure deposit escrow payment.");
-    } finally {
-      setIsPaymentProcessing(false);
-    }
-  };
-
-  const handleOrderPlaced = (order: MasterOrder) => {
-    setMasterOrder(order);
-
-    // Add the style to history logs for visual depth
-    const newHistoryItem: HistoricalOrder = {
-      id: order.shipment.trackingId,
-      date: order.payment.date,
-      styleName: order.style.name,
-      garmentType: order.garment.type,
-      fabricName: order.fabric.name,
-      fabricCode: order.fabric.code,
-      amount: order.payment.subtotal,
-      status: "In Progress",
-      trackingId: order.shipment.trackingId,
-    };
-
-    setHistoricalOrders((prev) => [newHistoryItem, ...prev]);
-    const displayBatch = order.batchName || "active Community Batch";
-    triggerNotification(
-      `Success! Your order has been placed in the ${displayBatch} pipeline.`,
-      "success",
-    );
-  };
-
-  const handleReorder = (styleId: string, fabricCode: string) => {
+  const handleReorder = () => {
     // Navigate straight to Design Studio
     setActiveTab("design");
     triggerNotification(
@@ -769,6 +557,8 @@ export default function App() {
               <GalleryView
                 showpieces={showpieces}
                 communityPhotos={communityPhotos}
+                fabrics={fabrics}
+                styles={styles}
                 onSelectStyle={(styleId, fabricCode) => {
                   setPresetStyleId(styleId);
                   setPresetFabricCode(fabricCode);

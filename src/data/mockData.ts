@@ -27,7 +27,7 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
   },
   shippingSettings: {
     communityBatchShippingRate: 0,
-    individualOrderShippingRate: 45,
+    individualOrderShippingRate: 35,
     personalizedBatchShippingRate: 15,
     internationalDeliverySurcharge: 25,
     expressDeliverySurcharge: 50,

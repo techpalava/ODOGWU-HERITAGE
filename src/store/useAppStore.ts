@@ -19,22 +19,14 @@ import {
 } from "../types";
 import { ApiService } from "../services/api";
 import {
-  MOCK_HISTORICAL_ORDERS,
   FABRICS,
   STYLE_CATEGORIES,
-  MOCK_COMMUNITY_PHOTOS,
-  MOCK_BATCHES,
   DEFAULT_BUSINESS_SETTINGS,
 } from "../data/mockData";
-import {
-  MOCK_MEDIA_LIBRARY,
-  MOCK_PLUGINS,
-  MOCK_AUDIT_LOGS,
-  MOCK_ROLES,
-} from "../data/foundationMockData";
 import { StorageService } from "../services/storageService";
-
 import { FabricService } from "../services/fabricService";
+import { auth } from "../services/firebase";
+import { signInAnonymously } from "firebase/auth";
 
 interface AppState {
 
@@ -215,21 +207,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       typeof items === "function" ? items(get().cartItems) : items;
     set({ cartItems: newItems });
   },
-  historicalOrders: MOCK_HISTORICAL_ORDERS,
+  historicalOrders: [],
   setHistoricalOrders: (orders) => {
     const newOrders =
       typeof orders === "function" ? orders(get().historicalOrders) : orders;
     set({ historicalOrders: newOrders });
   },
 
-  fabrics: FABRICS,
+  fabrics: [],
   setFabrics: (fabrics) => {
     const newFabrics =
       typeof fabrics === "function" ? fabrics(get().fabrics) : fabrics;
     set({ fabrics: newFabrics });
     StorageService.saveFabrics(newFabrics);
   },
-  styles: STYLE_CATEGORIES,
+  styles: [],
   setStyles: (styles) => {
     const newStyles =
       typeof styles === "function" ? styles(get().styles) : styles;
@@ -245,7 +237,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ showpieces: newShowpieces });
     StorageService.saveShowpieces(newShowpieces);
   },
-  communityPhotos: MOCK_COMMUNITY_PHOTOS,
+  communityPhotos: [],
   setCommunityPhotos: (communityPhotos) => {
     const newPhotos =
       typeof communityPhotos === "function"
@@ -294,6 +286,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   initializeData: async () => {
     set({ isLoadingData: true });
     try {
+      try {
+        await signInAnonymously(auth);
+      } catch (err) {
+        console.warn("Failed to sign in anonymously:", err);
+      }
+
       const [accounts, session, ordersData, groupsData] = await Promise.all([
         ApiService.fetchAccounts(),
         ApiService.fetchSession(),
@@ -370,10 +368,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         currentUser: session || null,
         // others are set via subscriptions
         businessSettings: savedBusinessSettings,
-        mediaLibrary: MOCK_MEDIA_LIBRARY,
-        plugins: MOCK_PLUGINS,
-        auditLogs: MOCK_AUDIT_LOGS,
-        roles: MOCK_ROLES,
+        mediaLibrary: [],
+        plugins: [],
+        auditLogs: [],
+        roles: [],
         isLoadingData: false,
       });
     } catch (error) {

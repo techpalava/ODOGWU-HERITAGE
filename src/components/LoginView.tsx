@@ -3,14 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 import {
   ShieldCheck,
   Mail,
   Lock,
-  Sparkles,
   User,
   HelpCircle,
   ArrowRight,
@@ -18,10 +17,8 @@ import {
   Check,
   AlertCircle,
   Globe,
-  QrCode,
   CheckCircle2,
   RefreshCw,
-  Search,
   ChevronRight,
 } from "lucide-react";
 
@@ -84,28 +81,6 @@ export default function LoginView({
   const [googleStep, setGoogleStep] = useState<
     "select" | "input" | "processing" | "success"
   >("select");
-
-  // Pre-configured baseline profiles
-  const DEFAULT_PROFILES: Customer[] = [
-    {
-      name: "Xavier E.",
-      email: "x.e@asml-corp.nl",
-      phone: "+31 6 1234 5678",
-      role: "Active Cohort Member (The Transformers)",
-      orderStatus: "Active Order (Stage 3)",
-      passcode: "1960",
-      method: "email",
-    },
-    {
-      name: "Fredrick Ezeh",
-      email: "f.ezeh@asml.com",
-      phone: "+234 80 1234 5678",
-      role: "NTCC Founder & Coordinator",
-      orderStatus: "Past Cohort Orders",
-      passcode: "1960",
-      method: "email",
-    },
-  ];
 
   // OTP Timer countdown
   useEffect(() => {

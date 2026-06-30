@@ -10,21 +10,21 @@ import {
   Heart,
   Globe,
   Award,
-  ShieldCheck,
   ArrowUpRight,
   X,
   BookOpen,
   Search,
   Tag,
   Info,
-  CheckCircle2,
   Image,
+  Handshake,
 } from "lucide-react";
-import collaborationBanner from "../assets/images/collaboration_banner_1782373364815.jpg";
 import fredrickEzehAvatar from "../assets/images/fredrick_ezeh_avatar_1782313590772.jpg";
+import regeneratedImage from "../assets/images/regenerated_image_1782818963407.png";
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
 import { useAppStore } from "../store/useAppStore";
 import { compressImage } from "../utils/imageUtils";
+import { ImageService } from "../services/imageService";
 
 export default function AboutView() {
   const { businessSettings, setBusinessSettings, currentUser } = useAppStore();
@@ -50,11 +50,17 @@ export default function AboutView() {
         const logoData = event.target?.result as string;
         const compressedData = await compressImage(logoData);
 
+        const downloadURL = await ImageService.uploadImageIfBase64(
+          compressedData,
+          "logos",
+          position
+        );
+
         setBusinessSettings((prev) => ({
           ...prev,
           collaborationLogos: {
             ...prev.collaborationLogos,
-            [position]: compressedData,
+            [position]: downloadURL,
           },
         }));
       };
@@ -89,36 +95,28 @@ export default function AboutView() {
         initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.5, delay: 0.1 }}
-        className="rounded-3xl border border-heritage-gold/20 overflow-hidden shadow-xl bg-white p-2.5 relative group mb-12"
+        className="rounded-3xl border border-heritage-gold/20 overflow-hidden shadow-xl bg-gradient-to-br from-gray-50 to-white p-6 md:p-12 mb-12"
       >
-        <div className="relative">
-          <img
-            loading="lazy"
-            src={collaborationBanner}
-            alt="Odogwu Heritage and Vaprec Collaboration Banner"
-            referrerPolicy="no-referrer"
-            className="w-full h-auto rounded-2xl object-cover"
-          />
-
-          {/* Left Logo Overlay */}
-          <div
-            className={`absolute top-[28%] left-[7.5%] w-[27%] h-[53%] rounded-xl overflow-hidden flex items-center justify-center group/logo1 transition-all ${leftLogo ? "bg-white shadow" : isAdmin ? "hover:bg-white/90 hover:shadow hover:backdrop-blur-sm" : ""}`}
-          >
+        <div className="flex flex-col md:flex-row items-center justify-center gap-8 md:gap-16">
+          
+          {/* Left Logo Card (Partner) */}
+          <div className="relative w-48 h-48 md:w-56 md:h-56 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center group overflow-hidden transition-all hover:shadow-md">
             {isAdmin && (
               <input
                 type="file"
                 accept="image/*"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 onChange={(e) => handleLogoUpload(e, "left")}
-                title="Upload Left Logo"
+                title="Upload Partner Logo"
               />
             )}
+            
             {leftLogo ? (
               <>
                 <img
                   src={leftLogo}
-                  alt="Partner Logo 1"
-                  className="w-full h-full object-contain p-2"
+                  alt="Partner Logo"
+                  className="w-full h-full object-contain p-4"
                 />
                 {isAdmin && (
                   <button
@@ -127,48 +125,51 @@ export default function AboutView() {
                       e.stopPropagation();
                       setBusinessSettings((prev) => ({
                         ...prev,
-                        collaborationLogos: {
-                          ...prev.collaborationLogos,
-                          left: null,
-                        },
+                        collaborationLogos: { ...prev.collaborationLogos, left: null },
                       }));
                     }}
-                    className="absolute top-2 right-2 z-20 bg-white/80 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-full p-1.5 opacity-0 group-hover/logo1:opacity-100 transition shadow-sm"
-                    title="Remove Logo"
+                    className="absolute top-2 right-2 z-20 bg-white/90 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition shadow-sm"
                   >
                     <X size={14} />
                   </button>
                 )}
               </>
-            ) : isAdmin ? (
-              <div className="flex flex-col items-center text-heritage-ink/40 opacity-0 group-hover/logo1:opacity-100 group-hover/logo1:text-heritage-gold transition">
-                <Image className="w-8 h-8 mb-2 opacity-80" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-center px-2">
-                  Upload Custom Logo 1
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-heritage-ink/30 group-hover:text-heritage-gold transition px-4 text-center">
+                <Image className="w-10 h-10 mb-3 opacity-80" />
+                <span className="text-xs font-bold uppercase tracking-wider">
+                  {isAdmin ? "Upload Partner Logo" : "Partner Logo"}
                 </span>
               </div>
-            ) : null}
+            )}
           </div>
 
-          {/* Right Logo Overlay */}
-          <div
-            className={`absolute top-[28%] right-[7.5%] w-[27%] h-[53%] rounded-xl overflow-hidden flex items-center justify-center group/logo2 transition-all ${rightLogo ? "bg-white shadow" : isAdmin ? "hover:bg-white/90 hover:shadow hover:backdrop-blur-sm" : ""}`}
-          >
+          {/* Center Collaboration Handshake */}
+          <div className="flex flex-col items-center justify-center text-heritage-gold/60">
+            <div className="w-20 h-20 bg-heritage-gold/5 rounded-full flex items-center justify-center mb-2">
+               <Handshake className="w-10 h-10 text-heritage-gold" />
+            </div>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-heritage-ink/40">Collaboration</span>
+          </div>
+
+          {/* Right Logo Card (Vaprec) */}
+          <div className="relative w-48 h-48 md:w-56 md:h-56 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center group overflow-hidden transition-all hover:shadow-md">
             {isAdmin && (
               <input
                 type="file"
                 accept="image/*"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 onChange={(e) => handleLogoUpload(e, "right")}
-                title="Upload Right Logo"
+                title="Upload Vaprec Logo"
               />
             )}
+            
             {rightLogo ? (
               <>
                 <img
                   src={rightLogo}
-                  alt="Partner Logo 2"
-                  className="w-full h-full object-contain p-2"
+                  alt="Vaprec Logo"
+                  className="w-full h-full object-contain p-4"
                 />
                 {isAdmin && (
                   <button
@@ -177,28 +178,24 @@ export default function AboutView() {
                       e.stopPropagation();
                       setBusinessSettings((prev) => ({
                         ...prev,
-                        collaborationLogos: {
-                          ...prev.collaborationLogos,
-                          right: null,
-                        },
+                        collaborationLogos: { ...prev.collaborationLogos, right: null },
                       }));
                     }}
-                    className="absolute top-2 right-2 z-20 bg-white/80 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-full p-1.5 opacity-0 group-hover/logo2:opacity-100 transition shadow-sm"
-                    title="Remove Logo"
+                    className="absolute top-2 right-2 z-20 bg-white/90 hover:bg-red-50 hover:text-red-500 text-gray-500 rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition shadow-sm"
                   >
                     <X size={14} />
                   </button>
                 )}
               </>
-            ) : isAdmin ? (
-              <div className="flex flex-col items-center text-heritage-ink/40 opacity-0 group-hover/logo2:opacity-100 group-hover/logo2:text-heritage-gold transition">
-                <Image className="w-8 h-8 mb-2 opacity-80" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-center px-2">
-                  Upload Custom Logo 2
-                </span>
-              </div>
-            ) : null}
+            ) : (
+              <img
+                src={regeneratedImage}
+                alt="Vaprec Default Logo"
+                className="w-full h-full object-contain p-4 opacity-90"
+              />
+            )}
           </div>
+
         </div>
       </motion.div>
 

@@ -24,7 +24,8 @@ import {
   setDoc,
   writeBatch,
   deleteDoc,
-  onSnapshot
+  onSnapshot,
+  runTransaction
 } from "firebase/firestore";
 
 function sanitizeForFirestore(val: any): any {
@@ -79,7 +80,7 @@ export const StorageService = {
   async fetchCollection<T>(collectionName: string): Promise<T[]> {
     try {
       const querySnapshot = await getDocs(collection(db, collectionName));
-      return querySnapshot.docs.map((doc) => doc.data() as T);
+      return querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as T));
     } catch (error) {
       console.error(`Error fetching collection ${collectionName}:`, error);
       return [];
@@ -89,7 +90,7 @@ export const StorageService = {
   // Helper to subscribe to collection
   subscribeToCollection<T>(collectionName: string, callback: (data: T[]) => void) {
     return onSnapshot(collection(db, collectionName), (snapshot) => {
-      const items = snapshot.docs.map(doc => doc.data() as T);
+      const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as T));
       callback(items);
     }, (error) => {
       console.error(`Error subscribing to collection ${collectionName}:`, error);
@@ -99,7 +100,7 @@ export const StorageService = {
   subscribeToDocument<T>(collectionName: string, documentId: string, callback: (data: T | null) => void) {
     return onSnapshot(doc(db, collectionName, documentId), (snapshot) => {
       if (snapshot.exists()) {
-        callback(snapshot.data() as T);
+        callback({ id: snapshot.id, ...snapshot.data() } as T);
       } else {
         callback(null);
       }
@@ -293,8 +294,36 @@ export const StorageService = {
   getFabrics: async (): Promise<Fabric[]> => {
     return await StorageService.fetchCollection<Fabric>("fabrics");
   },
+  generateNextFabricCode: async (): Promise<string> => {
+    const seqRef = doc(db, "settings", "fabricSequence");
+    return await runTransaction(db, async (transaction) => {
+      const seqDoc = await transaction.get(seqRef);
+      let nextCodeNum = 1;
+      
+      if (!seqDoc.exists()) {
+        // If the sequence document doesn't exist, we fallback to querying the highest current code.
+        const existingDocs = await getDocs(collection(db, "fabrics"));
+        let maxNum = 0;
+        existingDocs.forEach(d => {
+          const codeStr = d.data().code;
+          if (codeStr && codeStr.startsWith("ODG-")) {
+            const num = parseInt(codeStr.substring(4), 10);
+            if (!isNaN(num) && num > maxNum) {
+              maxNum = num;
+            }
+          }
+        });
+        nextCodeNum = maxNum + 1;
+      } else {
+        nextCodeNum = (seqDoc.data().current || 0) + 1;
+      }
+
+      transaction.set(seqRef, { current: nextCodeNum }, { merge: true });
+      return `ODG-${String(nextCodeNum).padStart(3, "0")}`;
+    });
+  },
   saveFabrics: async (fabrics: Fabric[]) => {
-    await StorageService.saveCollection("fabrics", fabrics, (f) => f.code);
+    await StorageService.saveCollection("fabrics", fabrics, (f) => f.id || f.code);
   },
 
   // Styles

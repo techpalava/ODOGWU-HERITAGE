@@ -74,11 +74,6 @@ export default function CustomOrderView({
   const openBatches = batches.filter(
     (b) => b.visibility === "Public" && b.status === "Open",
   );
-  const publicGroups = customGroups.filter(
-    (g) =>
-      g.visibility === "Public" &&
-      (g.status === "Open" || g.status === "Almost Full"),
-  );
 
   const handleCreateGroupSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,22 +127,6 @@ export default function CustomOrderView({
     onSelectOrderContext({
       orderType: "Individual",
       deliveryWindow: "Within 2-3 weeks (Express Air Priority)",
-    });
-  };
-
-  const handleJoinExistingGroup = (group: CustomGroup) => {
-    if (onJoinCustomGroup) {
-      onJoinCustomGroup(group.batchId);
-    }
-    onSelectOrderContext({
-      orderType: "Group Member",
-      batchId: group.batchId,
-      batchName: group.batchName,
-      organizer: group.organizer,
-      deliveryWindow: group.deliveryWindow,
-      currentMembers: group.currentMembers + 1,
-      expectedParticipants: group.expectedParticipants,
-      closingDate: group.closingDate,
     });
   };
 
