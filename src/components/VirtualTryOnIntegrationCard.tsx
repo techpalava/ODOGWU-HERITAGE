@@ -7,7 +7,7 @@ import {
 import { StyleCategory, Fabric } from "../types";
 import { useAppStore } from "../store/useAppStore";
 
-import virtualTryOnConcept from "../assets/images/virtual_tryon_concept_1782563183054.jpg";
+import virtualTryOnConcept from "../assets/images/regenerated_image_1782898035247.png";
 
 interface VirtualTryOnIntegrationCardProps {
   /**
@@ -29,7 +29,7 @@ interface VirtualTryOnIntegrationCardProps {
   /**
    * The currently selected design style (StyleCategory)
    */
-  selectedDesignStyle?: StyleCategory;
+  Style?: StyleCategory;
   /**
    * The currently selected fabric swatch
    */
@@ -61,9 +61,9 @@ interface VirtualTryOnIntegrationCardProps {
  *
  * Future workflow:
  * 1. The customer configures their outfit:
- *    - Design Style (e.g. selectedDesignStyle)
+ *    - Design Style (e.g. Style)
  *    - Fabric (e.g. selectedFabric)
- *    - Custom Details (e.g. selectedCustomDetails)
+ *    - Custom Details (e.g. )
  * 2. The application sends the selected configuration to the external AI Virtual Try-On API.
  * 3. The API processes the parameters and generates a realistic image of the configured outfit on a model.
  * 4. The generated image (previewImage) is returned and displayed inside this card.
@@ -72,12 +72,12 @@ interface VirtualTryOnIntegrationCardProps {
  * {
  *   "model_pose": "neutral_standing_male",
  *   "garment_category": "men_traditional_suit",
- *   "design_style_id": selectedDesignStyle?.id,
+ *   "design_style_id": Style?.id,
  *   "fabric_texture_url": selectedFabric?.textureUrl || selectedFabric?.image,
  *   "custom_accents": {
- *     "collar": selectedCustomDetails?.collar,
- *     "embroidery": selectedCustomDetails?.embroidery,
- *     "sleeve": selectedCustomDetails?.sleeve
+ *     "collar": ?.collar,
+ *     "embroidery": ?.embroidery,
+ *     "sleeve": ?.sleeve
  *   }
  * }
  */
@@ -86,15 +86,13 @@ export default function VirtualTryOnIntegrationCard({
   apiStatus = "idle",
   integrationReady = false,
   previewImage = null,
-  selectedDesignStyle,
+  Style,
   selectedFabric,
-  selectedCustomDetails,
   selectedStyle,
-  selectedDesign,
   onNotificationTrigger,
 }: VirtualTryOnIntegrationCardProps) {
   // Gracefully merge aliases
-  const activeStyle = selectedDesignStyle || selectedStyle;
+  const activeStyle = Style || selectedStyle;
   const activeFabric = selectedFabric;
 
   const { businessSettings } = useAppStore();
@@ -166,40 +164,40 @@ export default function VirtualTryOnIntegrationCard({
             Virtual Try-On Showcase
           </h3>
 
-          {/* Portrait Image Frame */}
-          <div className="relative max-w-sm w-full mx-auto aspect-[3/4] overflow-hidden rounded-3xl border-4 border-heritage-gold/45 shadow-2xl group">
+          {/* Showcase Image Frame */}
+          <div className="relative flex items-center justify-center overflow-hidden rounded-3xl border-4 border-heritage-gold/45 shadow-2xl group w-full sm:w-auto max-w-full bg-[#050806]">
             <img
               loading="lazy"
               src={activeImage}
               alt="AI Virtual Try-On Concept"
-              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+              className="w-full sm:w-auto h-auto max-h-[80vh] object-contain transition-transform duration-700 group-hover:scale-105"
               referrerPolicy="no-referrer"
             />
             {/* Elegant vignette overlays and mock tags to match the concept theme */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30 pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/10 pointer-events-none" />
 
             {/* Custom mock overlay controls simulating a real active try-on screen */}
             <div className="absolute top-4 left-4 flex items-center gap-2 pointer-events-none">
-              <span className="bg-black/50 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded border border-white/15">
+              <span className="bg-black/50 backdrop-blur-xs text-white text-[10px] font-bold px-3 py-1 rounded-lg border border-white/15">
                 ← Back
               </span>
             </div>
 
             {/* Dynamic Outfit badge info */}
-            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-left bg-black/60 backdrop-blur-sm p-3 rounded-2xl border border-white/10">
-              <div className="min-w-0 flex-1 pr-2">
-                <span className="text-[9px] uppercase tracking-wider text-heritage-gold font-bold block">
+            <div className="absolute bottom-4 left-4 right-4 flex flex-col sm:flex-row items-start sm:items-center justify-between text-left bg-black/70 backdrop-blur-md p-4 rounded-2xl border border-white/15 gap-3">
+              <div className="min-w-0 flex-1 w-full pr-2">
+                <span className="text-[10px] uppercase tracking-wider text-heritage-gold font-bold block mb-0.5">
                   Bespoke Outfit Selection
                 </span>
-                <strong className="text-xs text-white block truncate">
+                <strong className="text-sm text-white block truncate">
                   {activeStyle?.name || "Classic Senator"}
                 </strong>
-                <span className="text-[10px] text-white/70 block truncate font-mono">
+                <span className="text-[11px] text-white/80 block truncate font-mono mt-1">
                   Fabric: {activeFabric?.name || "Premium Cotton Swatch"}
                 </span>
               </div>
-              <div className="flex gap-1 shrink-0">
-                <span className="px-2 py-1 bg-heritage-gold text-heritage-forest rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm">
+              <div className="flex gap-2 shrink-0 self-end sm:self-auto">
+                <span className="px-4 py-2 bg-heritage-gold text-heritage-forest rounded-xl text-[10px] font-black uppercase tracking-wider shadow-sm flex items-center justify-center">
                   AI Fit
                 </span>
               </div>
@@ -359,7 +357,7 @@ export default function VirtualTryOnIntegrationCard({
           </div>
           <div className="p-2 bg-white rounded border border-gray-100">
             <span className="text-heritage-gold font-bold">
-              selectedDesignStyle:
+              Style:
             </span>
             <span className="text-heritage-green block mt-0.5">
               {activeStyle ? `"${activeStyle.name}"` : "undefined"}

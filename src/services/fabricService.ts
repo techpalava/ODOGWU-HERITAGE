@@ -40,8 +40,8 @@ export const FabricService = {
   },
 
   // Add or Update Fabric
-  saveFabric: async (fabric: Fabric) => {
-    console.log("[FabricService.saveFabric] Start. fabric:", fabric);
+  saveFabric: async (fabric: Fabric, isNewRecord: boolean = false) => {
+    console.log("[FabricService.saveFabric] Start. fabric:", fabric, "isNewRecord:", isNewRecord);
     try {
       const docRef = doc(db, FABRICS_COLLECTION, fabric.id || fabric.code);
       console.log("[FabricService.saveFabric] Checking old snapshot for docId:", docRef.id);
@@ -54,7 +54,7 @@ export const FabricService = {
       // Check if image is a base64 string (meaning it was newly uploaded via compressImage)
       if (fabric.image && ImageService.isBase64Image(fabric.image)) {
         console.log("[FabricService.saveFabric] Image is base64, uploading...");
-        const uploadedUrl = await ImageService.uploadImageIfBase64(fabric.image, "fabrics", fabric.code);
+        const uploadedUrl = await ImageService.uploadImageIfBase64(fabric.image, "fabrics", isNewRecord ? "draft" : fabric.code);
         finalImageUrl = uploadedUrl || finalImageUrl;
         console.log("[FabricService.saveFabric] Image uploaded. new URL:", finalImageUrl);
 
@@ -79,10 +79,56 @@ export const FabricService = {
       console.log("[FabricService.saveFabric] Sanitizing fabricToSave");
       const sanitizedFabric = sanitizeForFirestore(fabricToSave);
 
-      console.log("[FabricService.saveFabric] Writing to Firestore:", sanitizedFabric);
-      await setDoc(doc(db, FABRICS_COLLECTION, fabric.id || fabric.code), sanitizedFabric);
-      console.log("[FabricService.saveFabric] Firestore write complete");
-      return fabricToSave;
+      if (isNewRecord) {
+        console.log("[FabricService.saveFabric] Processing transaction for new record code assignment");
+        const { runTransaction, getDocs } = await import("firebase/firestore");
+        
+        // 1. Get max fallback if sequence doc is missing (outside transaction)
+        const existingDocs = await getDocs(collection(db, "fabrics"));
+        let maxNum = 0;
+        existingDocs.forEach(d => {
+          const codeStr = d.data().code;
+          if (codeStr && codeStr.startsWith("ODG-")) {
+            const num = parseInt(codeStr.substring(4), 10);
+            if (!isNaN(num) && num > maxNum) {
+              maxNum = num;
+            }
+          }
+        });
+        const fallbackNext = maxNum + 1;
+
+        // 2. Transaction for atomic increment and save
+        return await runTransaction(db, async (transaction) => {
+          const seqRef = doc(db, "settings", "fabricSequence");
+          const seqDoc = await transaction.get(seqRef);
+          let nextCodeNum = fallbackNext;
+          
+          if (seqDoc.exists()) {
+            nextCodeNum = (seqDoc.data().current || 0) + 1;
+            // Ensure nextCodeNum is at least fallbackNext to avoid conflicts
+            if (nextCodeNum < fallbackNext) {
+               nextCodeNum = fallbackNext;
+            }
+          }
+
+          const actualCode = `ODG-${String(nextCodeNum).padStart(3, "0")}`;
+          transaction.set(seqRef, { current: nextCodeNum }, { merge: true });
+          
+          sanitizedFabric.code = actualCode;
+          sanitizedFabric.id = actualCode;
+          
+          const newDocRef = doc(db, FABRICS_COLLECTION, actualCode);
+          transaction.set(newDocRef, sanitizedFabric);
+          
+          console.log(`[FabricService.saveFabric] Transaction complete. Assigned code: ${actualCode}`);
+          return sanitizedFabric;
+        });
+      } else {
+        console.log("[FabricService.saveFabric] Writing to Firestore:", sanitizedFabric);
+        await setDoc(doc(db, FABRICS_COLLECTION, fabric.id || fabric.code), sanitizedFabric);
+        console.log("[FabricService.saveFabric] Firestore write complete");
+        return fabricToSave;
+      }
     } catch (error) {
       console.error("[FabricService.saveFabric] Error saving fabric:", error);
       throw error;

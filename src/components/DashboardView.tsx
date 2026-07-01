@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { useAppStore } from "../store/useAppStore";
 import {
   User,
   ClipboardList,
@@ -76,6 +77,8 @@ export default function DashboardView({
   currentUser,
   batches,
 }: DashboardViewProps) {
+  const { businessSettings } = useAppStore();
+
   // Local states for editing profile
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileName, setProfileName] = useState(
@@ -263,7 +266,7 @@ export default function DashboardView({
               </span>
             </h2>
             <p className="text-xs text-heritage-beige max-w-sm">
-              ASML Veldhoven Traditional Clothing Member. View your order
+              {businessSettings.applicationSettings.communityName} Member. View your order
               progress and manage your custom measurements below.
             </p>
           </div>
@@ -325,7 +328,7 @@ export default function DashboardView({
                       {
                         title: "Delivered to B4 secure locker",
                         date: "May 08, 2026",
-                        loc: "ASML Veldhoven (NL)",
+                        loc: businessSettings.productionSettings.defaultPickupLocation,
                         step: 6,
                         desc: "Locker B4-08 code ready for client pickup",
                       },
@@ -635,7 +638,7 @@ export default function DashboardView({
 
                 <div className="space-y-1">
                   <span className="text-heritage-ink/50 text-[9px] uppercase tracking-wider block">
-                    ASML Email
+                    Corporate Email
                   </span>
                   {isEditingProfile ? (
                     <input
@@ -674,7 +677,7 @@ export default function DashboardView({
                     Delivery Location
                   </span>
                   <strong className="text-heritage-green text-sm block py-1 flex items-center gap-1">
-                    <MapPin size={12} className="text-heritage-gold" /> ASML
+                    <MapPin size={12} className="text-heritage-gold" /> {businessSettings.productionSettings.defaultPickupLocation}
                     Campus Veldhoven (NL)
                   </strong>
                 </div>
@@ -1752,7 +1755,7 @@ export default function DashboardView({
               </p>
               <p>
                 <strong>2. Locker Location:</strong> The lockers are in{" "}
-                <strong>ASML Building 4, Ground Level East Wing</strong>.
+                <strong>{businessSettings.productionSettings.defaultPickupLocation}</strong>.
               </p>
               <p>
                 <strong>3. Fitting & Adjustments:</strong> You can try on your
@@ -1809,9 +1812,9 @@ export default function DashboardView({
                     </span>
                   </div>
                   <p className="text-[10px] text-heritage-ink/60 mt-0.5 leading-snug max-w-xs uppercase font-bold tracking-wider">
-                    Nigerian Traditional Clothing Community Buy
+                    {businessSettings.applicationSettings.tagline || "Nigerian Traditional Clothing Community (NTCC)"} Buy
                     <br />
-                    ASML Veldhoven Chapter — Est. 2024
+                    {businessSettings.applicationSettings.communityName} — Est. 2024
                   </p>
                 </div>
                 <div className="text-right">
@@ -1846,7 +1849,7 @@ export default function DashboardView({
                     {selectedReceipt.customer?.phone || profilePhone}
                   </span>
                   <span className="text-heritage-ink/50 block italic">
-                    ASML Veldhoven Campus Delivery
+                    {businessSettings.productionSettings.defaultPickupLocation} Delivery
                   </span>
                 </div>
                 <div className="space-y-1 text-right">
@@ -1870,7 +1873,7 @@ export default function DashboardView({
                     <strong>Locker Location:</strong>{" "}
                     {selectedReceipt.batchType === "alone"
                       ? "Direct priority home shipping"
-                      : "ASML Building 4 Ground level"}
+                      : businessSettings.productionSettings.defaultPickupLocation}
                   </span>
                 </div>
               </div>

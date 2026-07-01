@@ -8,7 +8,7 @@ import {
   Sparkles,
   ArrowLeft,
   ArrowRight,
-  Shirt,
+  Image as ImageIcon,
   Scissors,
   Check,
   Shield,
@@ -24,7 +24,7 @@ import {
   Info,
   X,
   ZoomIn,
-  Eye,
+  
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -43,6 +43,62 @@ import { ApiService } from "../services/api";
 import { useAppStore } from "../store/useAppStore";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
+
+// Cache for loaded image URLs to prevent skeleton flicker across renders
+const loadedImageCache = new Set<string>();
+
+const LazyFabricImage = ({ fabric }: { fabric: Fabric }) => {
+  const [loaded, setLoaded] = useState(loadedImageCache.has(fabric.image || ""));
+  
+  if (!fabric.image) return null;
+
+  return (
+    <>
+      {!loaded && (
+        <div className="absolute inset-0 bg-gray-100 animate-pulse rounded-xl flex items-center justify-center">
+          <ImageIcon className="text-gray-300" size={32} />
+        </div>
+      )}
+      <img
+        src={fabric.image}
+        alt={fabric.name}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onLoad={() => {
+          setLoaded(true);
+          loadedImageCache.add(fabric.image!);
+        }}
+        className={`absolute inset-0 w-full h-full object-contain p-2 transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+      />
+    </>
+  );
+};
+
+const FabricSkeleton = () => (
+  <div className="p-4 rounded-2xl border-2 border-gray-150 bg-white flex flex-col justify-between space-y-4 animate-pulse">
+    <div className="space-y-2">
+      <div className="h-48 w-full rounded-xl bg-gray-100 border border-gray-150 flex items-center justify-center">
+        <ImageIcon className="text-gray-200" size={48} />
+      </div>
+      <div className="space-y-1">
+        <div className="flex justify-between items-center mt-2">
+          <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+          <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+        </div>
+        <div className="h-3 bg-gray-200 rounded w-full mt-2"></div>
+        <div className="h-3 bg-gray-200 rounded w-5/6"></div>
+        <div className="h-3 bg-gray-200 rounded w-4/6"></div>
+      </div>
+    </div>
+    <div className="border-t border-gray-100 pt-2 flex justify-between items-center mt-4">
+      <div className="h-3 bg-gray-200 rounded w-1/3"></div>
+      <div className="flex items-center gap-1.5">
+         <div className="h-6 bg-gray-200 rounded w-12"></div>
+         <div className="h-6 bg-gray-200 rounded w-16"></div>
+      </div>
+    </div>
+  </div>
+);
 
 interface DesignStudioViewProps {
   onAddToCart: (item: Omit<CartItem, "id">) => void;
@@ -407,6 +463,7 @@ export default function DesignStudioView({
   // Current step state (1 to 9)
   const [currentStep, setCurrentStep] = useState<number>(1);
   const businessSettings = useAppStore((state) => state.businessSettings);
+  const isLoadingData = useAppStore((state) => state.isLoadingData);
   const storeBatches = useAppStore((state) => state.batches);
   const storeUser = useAppStore((state) => state.currentUser);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
@@ -434,7 +491,7 @@ export default function DesignStudioView({
         closingDate: computedActiveBatch.endDate,
         deliveryWindow: computedActiveBatch.estimatedDelivery || "",
         pickupLocation:
-          computedActiveBatch.pickupLocation || "ASML Veldhoven Campus Lockers",
+          computedActiveBatch.pickupLocation || businessSettings.productionSettings.defaultPickupLocation,
         currentMembers: computedActiveBatch.currentGarments,
         expectedParticipants: computedActiveBatch.targetGarments,
       }
@@ -443,7 +500,7 @@ export default function DesignStudioView({
         batchName: "No Active Batch",
         closingDate: "TBD",
         deliveryWindow: "TBD",
-        pickupLocation: "ASML Veldhoven Campus Lockers",
+        pickupLocation: businessSettings.productionSettings.defaultPickupLocation,
         currentMembers: 0,
         expectedParticipants: 0,
       };
@@ -695,7 +752,7 @@ export default function DesignStudioView({
     return matchesSearch && matchesColor && matchesMaterial;
   });
 
-  const fabricsPerPage = 6;
+  const fabricsPerPage = 20;
   const totalFabricPages =
     Math.ceil(filteredFabrics.length / fabricsPerPage) || 1;
   const paginatedFabrics = filteredFabrics.slice(
@@ -804,16 +861,16 @@ export default function DesignStudioView({
   const [showFabricZoomModal, setShowFabricZoomModal] =
     useState<boolean>(false);
   const [zoomedFabric, setZoomedFabric] = useState<Fabric | null>(null);
-  const [zoomScale, setZoomScale] = useState<number>(3);
-  const [zoomPosition, setZoomPosition] = useState<{ x: number; y: number }>({
-    x: 50,
-    y: 50,
-  });
-  const [isZoomActive, setIsZoomActive] = useState<boolean>(false);
-  const [lightingCondition, setLightingCondition] = useState<
-    "warm" | "daylight" | "studio"
-  >("studio");
-  const [isLoupeLocked, setIsLoupeLocked] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && showFabricZoomModal) {
+        setShowFabricZoomModal(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showFabricZoomModal]);
 
   const [measurements, setMeasurements] = useState<Measurements>({
     height: 178,
@@ -1199,7 +1256,7 @@ export default function DesignStudioView({
         return;
       }
       if (customerEmail.trim() && !customerEmail.includes("@")) {
-        setValidationError("Please provide a valid ASML corporate email.");
+        setValidationError("Please provide a valid corporate email.");
         return;
       }
     }
@@ -1324,7 +1381,7 @@ export default function DesignStudioView({
         location:
           batchType === "alone"
             ? "Direct Air Courier to personal home address"
-            : `ASML Building 4 Veldhoven Locker (Pickup: ${pickupTime})`,
+            : `${businessSettings.productionSettings.defaultPickupLocation} (Pickup: ${pickupTime})`,
       },
       style: selectedStyle,
       fabric: selectedFabric,
@@ -2027,9 +2084,11 @@ export default function DesignStudioView({
               </div>
 
               {/* Fabrics Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {paginatedFabrics.length === 0 ? (
-                  <div className="col-span-1 sm:col-span-2 p-8 text-center border-2 border-dashed border-gray-200 rounded-2xl space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {isLoadingData && fabrics.length === 0 ? (
+                  Array.from({ length: 10 }).map((_, idx) => <FabricSkeleton key={idx} />)
+                ) : paginatedFabrics.length === 0 ? (
+                  <div className="col-span-1 sm:col-span-2 md:col-span-3 lg:col-span-4 xl:col-span-5 p-8 text-center border-2 border-dashed border-gray-200 rounded-2xl space-y-3">
                     <SlidersHorizontal
                       className="mx-auto text-heritage-ink/30"
                       size={32}
@@ -2061,15 +2120,13 @@ export default function DesignStudioView({
                       }`}
                     >
                       <div className="space-y-2">
-                        {/* Interactive Color Box (Replaced with Fabric Image) */}
-                        <div className="h-16 w-full rounded-xl relative overflow-hidden shadow-inner flex items-end justify-between p-2 select-none bg-gray-150">
+                        {/* Interactive Color Box (Replaced with Full Fabric Image) */}
+                        <div 
+                          className="h-48 w-full rounded-xl relative overflow-hidden shadow-inner flex items-start justify-between p-2 select-none bg-gray-50 border border-gray-150 group cursor-pointer"
+                          onClick={() => setSelectedFabric(fabric)}
+                        >
                           {fabric.image ? (
-                            <img
-                              src={fabric.image}
-                              referrerPolicy="no-referrer"
-                              alt={fabric.name}
-                              className="absolute inset-0 w-full h-full object-cover"
-                            />
+                            <LazyFabricImage fabric={fabric} />
                           ) : (
                             <div
                               className="absolute inset-0"
@@ -2078,14 +2135,13 @@ export default function DesignStudioView({
                               }}
                             />
                           )}
-                          <div className="absolute inset-0 bg-black/10"></div>
-                          <div className="absolute inset-0 bg-[radial-gradient(#C5A85C_1px,transparent_1px)] [background-size:12px_12px] opacity-20"></div>
+                          <div className="absolute inset-0 bg-[radial-gradient(#C5A85C_1px,transparent_1px)] [background-size:12px_12px] opacity-10"></div>
 
-                          <span className="relative z-10 text-[9px] bg-white/90 border font-bold px-1.5 py-0.5 rounded text-heritage-green font-mono shadow-sm">
+                          <span className="relative z-10 text-[9px] bg-white/90 border font-bold px-1.5 py-0.5 rounded text-heritage-green font-mono shadow-sm mt-1 ml-1">
                             {fabric.code}
                           </span>
                           <span
-                            className={`relative z-10 text-[9px] bg-white/90 border font-bold px-1.5 py-0.5 rounded font-sans uppercase shadow-sm ${
+                            className={`relative z-10 text-[9px] bg-white/90 border font-bold px-1.5 py-0.5 rounded font-sans uppercase shadow-sm mt-1 mr-1 ${
                               fabric.stockStatus === "Out of Stock"
                                 ? "text-red-600"
                                 : fabric.stockStatus === "Low Stock"
@@ -2095,6 +2151,14 @@ export default function DesignStudioView({
                           >
                             {fabric.stockStatus}
                           </span>
+                          
+                          {/* Hover Zoom Prompt */}
+                          <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                             <div className="bg-white/90 backdrop-blur px-3 py-1.5 rounded-full shadow-lg text-[10px] font-bold text-heritage-green flex items-center gap-1">
+                               <ZoomIn size={12} />
+                               <span>Click to select</span>
+                             </div>
+                          </div>
                         </div>
 
                         <div className="space-y-1">
@@ -3911,7 +3975,7 @@ export default function DesignStudioView({
                     <strong>Destination:</strong>{" "}
                     {batchType === "alone"
                       ? "Direct Shipping to Your Provided Address"
-                      : "ASML Campus Lockers, Veldhoven, NL"}
+                      : businessSettings.productionSettings.defaultPickupLocation}
                   </div>
                 </div>
               </div>
@@ -3939,7 +4003,7 @@ export default function DesignStudioView({
                     <label className="block font-bold text-heritage-green">
                       {batchType === "alone"
                         ? "Personal Email"
-                        : "ASML Corporate Email (Optional)"}
+                        : "Corporate Email (Optional)"}
                     </label>
                     <input
                       type="email"
@@ -4156,7 +4220,7 @@ export default function DesignStudioView({
                       Full Name: <strong>{customerName}</strong>
                     </li>
                     <li>
-                      ASML Mail:{" "}
+                      Corporate Mail:{" "}
                       <strong>{customerEmail || "Not provided"}</strong>
                     </li>
                     <li>
@@ -4502,7 +4566,7 @@ export default function DesignStudioView({
             <p>
               Your deposit is processed into a secure community fund. Lagos
               materials and workshop sourcing commence immediately. Final
-              payment is authorized only when garments arrive at ASML campus
+              payment is authorized only when garments arrive at campus
               lockers.
             </p>
           </div>
@@ -4890,7 +4954,7 @@ export default function DesignStudioView({
         )}
       </AnimatePresence>
 
-      {/* High-Fidelity Swatch Zoom Inspector Modal */}
+      {/* Simple Fabric Zoom Modal */}
       <AnimatePresence>
         {showFabricZoomModal && zoomedFabric && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -4899,445 +4963,46 @@ export default function DesignStudioView({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => {
-                setShowFabricZoomModal(false);
-                setIsLoupeLocked(false);
-              }}
-              className="absolute inset-0 bg-black/75 backdrop-blur-xs"
+              onClick={() => setShowFabricZoomModal(false)}
+              className="absolute inset-0 bg-black/90 backdrop-blur-sm cursor-zoom-out"
             />
 
             {/* Modal Box */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              transition={{ type: "spring", duration: 0.4 }}
-              className="relative bg-white border-2 border-heritage-gold/30 rounded-3xl max-w-5xl w-full shadow-2xl overflow-hidden flex flex-col md:flex-row h-[90vh] md:h-[680px] z-10 font-sans text-heritage-ink"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ type: "spring", duration: 0.3 }}
+              className="relative max-w-5xl w-full h-[85vh] flex flex-col items-center justify-center z-10 pointer-events-none"
             >
               {/* Close button */}
               <button
                 type="button"
-                onClick={() => {
-                  setShowFabricZoomModal(false);
-                  setIsLoupeLocked(false);
-                }}
-                className="absolute top-4 right-4 text-heritage-green hover:text-heritage-gold transition p-1.5 rounded-full bg-white/80 hover:bg-white border border-heritage-gold/25 z-20 shadow cursor-pointer"
+                onClick={() => setShowFabricZoomModal(false)}
+                className="absolute top-0 right-0 md:-top-12 md:right-0 text-white hover:text-heritage-gold transition p-2 z-20 cursor-pointer flex items-center gap-2 pointer-events-auto bg-black/50 md:bg-transparent rounded-bl-lg md:rounded-none"
                 aria-label="Close zoom modal"
               >
-                <X size={18} />
+                <span className="text-sm font-bold tracking-widest uppercase hidden md:inline">Close</span>
+                <X size={24} />
               </button>
 
-              {/* Left Side: Interactive Swatch Viewer */}
-              <div className="w-full md:w-7/12 p-6 flex flex-col justify-between border-b md:border-b-0 md:border-r border-heritage-gold/15 bg-heritage-cream/10 overflow-y-auto">
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-1.5 text-heritage-gold font-mono font-bold text-[10px] uppercase tracking-wider">
-                      <Eye
-                        size={12}
-                        className="animate-pulse text-heritage-gold"
-                      />
-                      <span>4K Optical Zoom &amp; Thread-Counter</span>
-                    </div>
-                    <h3 className="text-lg font-serif font-bold text-heritage-green">
-                      {zoomedFabric.name}
-                    </h3>
-                    <p className="text-xs text-heritage-ink/60 leading-tight">
-                      Hover to position loupe. Drag/Move on touch screens. Tap
-                      to Lock Focus.
-                    </p>
-                  </div>
-
-                  {/* Main Interactive Zoom Window */}
-                  <div
-                    onMouseMove={(e) => {
-                      if (!isLoupeLocked) {
-                        setIsZoomActive(true);
-                        const bounds = e.currentTarget.getBoundingClientRect();
-                        const x =
-                          ((e.clientX - bounds.left) / bounds.width) * 100;
-                        const y =
-                          ((e.clientY - bounds.top) / bounds.height) * 100;
-                        setZoomPosition({
-                          x: Math.max(0, Math.min(100, x)),
-                          y: Math.max(0, Math.min(100, y)),
-                        });
-                      }
-                    }}
-                    onMouseEnter={() => setIsZoomActive(true)}
-                    onMouseLeave={() => {
-                      if (!isLoupeLocked) setIsZoomActive(false);
-                    }}
-                    onTouchMove={(e) => {
-                      if (!isLoupeLocked) {
-                        setIsZoomActive(true);
-                        const touch = e.touches[0];
-                        if (touch) {
-                          const bounds =
-                            e.currentTarget.getBoundingClientRect();
-                          const x =
-                            ((touch.clientX - bounds.left) / bounds.width) *
-                            100;
-                          const y =
-                            ((touch.clientY - bounds.top) / bounds.height) *
-                            100;
-                          setZoomPosition({
-                            x: Math.max(0, Math.min(100, x)),
-                            y: Math.max(0, Math.min(100, y)),
-                          });
-                        }
-                      }
-                    }}
-                    onTouchStart={() => setIsZoomActive(true)}
-                    onClick={() => setIsLoupeLocked(!isLoupeLocked)}
-                    className="relative h-64 sm:h-80 w-full rounded-2xl overflow-hidden border border-heritage-gold/20 shadow-inner cursor-crosshair select-none bg-zinc-900 flex items-center justify-center group"
-                  >
-                    {/* Main Fabric Swatch Image */}
-                    <img
-                      loading="lazy"
-                      src={
-                        zoomedFabric.image ||
-                        "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&q=80&w=400"
-                      }
-                      alt={zoomedFabric.name}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover transition-all duration-300"
-                      style={{
-                        filter:
-                          lightingCondition === "warm"
-                            ? "sepia(0.35) brightness(0.9) contrast(1.1) saturate(1.2) hue-rotate(-10deg)"
-                            : lightingCondition === "daylight"
-                              ? "brightness(1.08) contrast(1.02) saturate(1.1)"
-                              : "none",
-                      }}
-                    />
-
-                    {/* Holographic Watermark Overlay */}
-                    <div className="absolute top-2 right-2 bg-black/40 text-white/80 font-mono text-[8px] tracking-wider px-2 py-0.5 rounded uppercase pointer-events-none">
-                      {lightingCondition} light
-                    </div>
-
-                    {/* Magnifying Loupe Lens */}
-                    {isZoomActive && (
-                      <div
-                        className={`w-32 h-32 sm:w-40 sm:h-40 rounded-full border-3 shadow-2xl absolute pointer-events-none overflow-hidden flex items-center justify-center transition-transform duration-75 ${
-                          isLoupeLocked
-                            ? "border-amber-500 scale-105"
-                            : "border-heritage-gold"
-                        }`}
-                        style={{
-                          left: `calc(${zoomPosition.x}% - 64px)`,
-                          top: `calc(${zoomPosition.y}% - 64px)`,
-                        }}
-                      >
-                        {/* High resolution zoomed-in image */}
-                        <div
-                          className="w-full h-full absolute inset-0"
-                          style={{
-                            backgroundImage: `url(${zoomedFabric.image || "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&q=80&w=400"})`,
-                            backgroundSize: `${zoomScale * 100}%`,
-                            backgroundPosition: `${zoomPosition.x}% ${zoomPosition.y}%`,
-                            backgroundRepeat: "no-repeat",
-                            filter:
-                              lightingCondition === "warm"
-                                ? "sepia(0.35) brightness(0.9) contrast(1.1) saturate(1.2) hue-rotate(-10deg)"
-                                : lightingCondition === "daylight"
-                                  ? "brightness(1.08) contrast(1.02) saturate(1.1)"
-                                  : "none",
-                          }}
-                        />
-
-                        {/* Physical Thread Counter Grid Overlay inside Loupe */}
-                        <div className="absolute inset-0 bg-[linear-gradient(rgba(212,175,55,0.15)_1px,transparent_1px),linear-gradient(90deg,rgba(212,175,55,0.15)_1px,transparent_1px)] [background-size:10px_10px] pointer-events-none"></div>
-                        {/* Center crosshair */}
-                        <div className="w-4 h-[1px] bg-heritage-gold/50 absolute"></div>
-                        <div className="h-4 w-[1px] bg-heritage-gold/50 absolute"></div>
-                        {/* Circular measurement reticle */}
-                        <div className="w-20 h-20 rounded-full border border-heritage-gold/25 absolute pointer-events-none"></div>
-
-                        {/* Lock focus indicator badge */}
-                        {isLoupeLocked && (
-                          <div className="absolute bottom-2 bg-amber-500 text-white font-mono text-[7px] font-bold tracking-widest px-1.5 py-0.5 rounded shadow pointer-events-none uppercase">
-                            LOCKED
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Overlay Instruction when not locked */}
-                    {!isLoupeLocked && (
-                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 text-white/90 font-mono text-[9px] px-3 py-1 rounded-xl pointer-events-none transition opacity-0 group-hover:opacity-100 flex items-center gap-1.5 whitespace-nowrap">
-                        <span className="text-heritage-gold animate-bounce">
-                          🖱️
-                        </span>
-                        <span>Click to LOCK focus at coordinates</span>
-                      </div>
-                    )}
-                    {isLoupeLocked && (
-                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-amber-500/90 text-white font-mono text-[9px] px-3 py-1 rounded-xl pointer-events-none flex items-center gap-1.5 whitespace-nowrap shadow">
-                        <span>🔒 Click anywhere to UNLOCK focus</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Quick-Inspect Coordinates & Presets */}
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-mono uppercase tracking-widest text-heritage-gold font-bold">
-                      Inspect Coordinates Presets
-                    </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setZoomPosition({ x: 50, y: 50 });
-                          setIsZoomActive(true);
-                          setIsLoupeLocked(true);
-                        }}
-                        className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
-                          isLoupeLocked &&
-                          zoomPosition.x === 50 &&
-                          zoomPosition.y === 50
-                            ? "bg-heritage-green text-white border-heritage-green shadow-sm"
-                            : "bg-white text-heritage-green border-heritage-gold/20 hover:bg-heritage-gold/10"
-                        }`}
-                      >
-                        🎯 Center Weave
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setZoomPosition({ x: 80, y: 20 });
-                          setIsZoomActive(true);
-                          setIsLoupeLocked(true);
-                        }}
-                        className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
-                          isLoupeLocked &&
-                          zoomPosition.x === 80 &&
-                          zoomPosition.y === 20
-                            ? "bg-heritage-green text-white border-heritage-green shadow-sm"
-                            : "bg-white text-heritage-green border-heritage-gold/20 hover:bg-heritage-gold/10"
-                        }`}
-                      >
-                        📐 Corner Thread
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setZoomPosition({ x: 25, y: 75 });
-                          setIsZoomActive(true);
-                          setIsLoupeLocked(true);
-                        }}
-                        className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
-                          isLoupeLocked &&
-                          zoomPosition.x === 25 &&
-                          zoomPosition.y === 75
-                            ? "bg-heritage-green text-white border-heritage-green shadow-sm"
-                            : "bg-white text-heritage-green border-heritage-gold/20 hover:bg-heritage-gold/10"
-                        }`}
-                      >
-                        🧶 Warp &amp; Weft
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Lighting and Zoom Level Controls */}
-                <div className="mt-4 pt-4 border-t border-heritage-gold/10 space-y-3">
-                  {/* Zoom scale slider */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px] font-mono text-heritage-gold font-bold">
-                      <span>MAGNIFICATION SCALE</span>
-                      <span>{zoomScale.toFixed(1)}x</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="1.5"
-                      max="6.0"
-                      step="0.1"
-                      value={zoomScale}
-                      onChange={(e) => setZoomScale(parseFloat(e.target.value))}
-                      className="w-full accent-heritage-gold cursor-col-resize h-1 bg-gray-200 rounded-lg appearance-none"
-                    />
-                  </div>
-
-                  {/* Lighting Conditions toggle */}
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-mono uppercase tracking-widest text-heritage-gold font-bold">
-                      Simulated Lighting Environments (Luster Test)
-                    </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setLightingCondition("studio")}
-                        className={`py-1.5 px-2 rounded-lg border text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer transition ${
-                          lightingCondition === "studio"
-                            ? "bg-heritage-green text-white border-heritage-green"
-                            : "bg-white text-heritage-green border-heritage-gold/20 hover:bg-heritage-gold/10"
-                        }`}
-                      >
-                        💡 Studio Neutral
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLightingCondition("daylight")}
-                        className={`py-1.5 px-2 rounded-lg border text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer transition ${
-                          lightingCondition === "daylight"
-                            ? "bg-heritage-green text-white border-heritage-green"
-                            : "bg-white text-heritage-green border-heritage-gold/20 hover:bg-heritage-gold/10"
-                        }`}
-                      >
-                        ☀️ Bright Sun
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLightingCondition("warm")}
-                        className={`py-1.5 px-2 rounded-lg border text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer transition ${
-                          lightingCondition === "warm"
-                            ? "bg-heritage-green text-white border-heritage-green"
-                            : "bg-white text-heritage-green border-heritage-gold/20 hover:bg-heritage-gold/10"
-                        }`}
-                      >
-                        🕯️ Gala Evening
-                      </button>
-                    </div>
-                  </div>
-                </div>
+              <div className="w-full h-full relative flex items-center justify-center p-4 pointer-events-none">
+                 {/* Main Fabric Swatch Image */}
+                 <img
+                   loading="lazy"
+                   src={
+                     zoomedFabric.image ||
+                     "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&q=80&w=400"
+                   }
+                   alt={zoomedFabric.name}
+                   referrerPolicy="no-referrer"
+                   className="max-w-full max-h-full object-contain shadow-2xl rounded-sm pointer-events-auto"
+                 />
               </div>
-
-              {/* Right Side: Fabric Laboratory Report & Drapery Preview */}
-              <div className="flex-1 p-6 sm:p-8 flex flex-col justify-between overflow-y-auto bg-gradient-to-br from-white to-heritage-cream/10">
-                <div className="space-y-6">
-                  {/* Textile Laboratory Header */}
-                  <div className="border-b border-heritage-gold/15 pb-4">
-                    <span className="text-[9px] uppercase font-mono font-bold text-heritage-gold tracking-widest block mb-0.5">
-                      TEXTILE LABORATORY REPORT
-                    </span>
-                    <h4 className="text-xl font-serif font-bold text-heritage-green leading-snug">
-                      Weaving &amp; Fiber Details
-                    </h4>
-                    <p className="text-[11px] text-heritage-ink/70">
-                      Standardized physical properties for premium traditional
-                      tailoring.
-                    </p>
-                  </div>
-
-                  {/* Core Properties Matrix */}
-                  <div className="grid grid-cols-2 gap-3 text-left">
-                    <div className="p-3 bg-heritage-cream/15 rounded-xl border border-heritage-gold/10">
-                      <span className="block text-[8px] font-mono text-heritage-gold uppercase font-bold">
-                        WEAVE CATEGORY
-                      </span>
-                      <strong className="text-xs text-heritage-green">
-                        {zoomedFabric.category || "Premium Fabric"}
-                      </strong>
-                    </div>
-                    <div className="p-3 bg-heritage-cream/15 rounded-xl border border-heritage-gold/10">
-                      <span className="block text-[8px] font-mono text-heritage-gold uppercase font-bold">
-                        EST. THREAD DENSITY
-                      </span>
-                      <strong className="text-xs text-heritage-green">
-                        {zoomedFabric.name.includes("Lace")
-                          ? "280 threads/in (Corded)"
-                          : zoomedFabric.name.includes("Damask")
-                            ? "480 threads/in (Double Jacquard)"
-                            : "380 threads/in"}
-                      </strong>
-                    </div>
-                    <div className="p-3 bg-heritage-cream/15 rounded-xl border border-heritage-gold/10">
-                      <span className="block text-[8px] font-mono text-heritage-gold uppercase font-bold">
-                        CREASE RESISTANCE
-                      </span>
-                      <strong className="text-xs text-heritage-green">
-                        {zoomedFabric.name.includes("Cotton")
-                          ? "Excellent (Polished)"
-                          : "Outstanding (Wrinkle-Free)"}
-                      </strong>
-                    </div>
-                    <div className="p-3 bg-heritage-cream/15 rounded-xl border border-heritage-gold/10">
-                      <span className="block text-[8px] font-mono text-heritage-gold uppercase font-bold">
-                        YARN STRUCTURE
-                      </span>
-                      <strong className="text-xs text-heritage-green">
-                        Combed Long-Staple Cotton
-                      </strong>
-                    </div>
-                  </div>
-
-                  {/* Interactive Garment Drapery Simulator */}
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-mono uppercase tracking-widest text-heritage-gold font-bold">
-                      Simulated Drapery &amp; Scale Pattern Preview
-                    </label>
-                    <div className="relative bg-heritage-green/5 rounded-2xl p-4 border border-heritage-gold/15 flex items-center gap-4 shadow-inner overflow-hidden">
-                      <div className="absolute inset-0 bg-[radial-gradient(#C5A85C_0.5px,transparent_0.5px)] [background-size:10px_10px] opacity-10"></div>
-
-                      {/* Mini Silhouette Map */}
-                      <div className="w-16 h-16 rounded-xl overflow-hidden border border-heritage-gold/25 relative bg-white shrink-0 shadow-sm">
-                        <div
-                          className="w-full h-full"
-                          style={{
-                            backgroundImage: `url(${zoomedFabric.image})`,
-                            backgroundSize: "35px 35px",
-                            backgroundRepeat: "repeat",
-                          }}
-                        />
-                        {/* Overlay transparent white dress/robe mask to make it look mapped */}
-                        <div className="absolute inset-0 bg-heritage-green/10 mix-blend-multiply flex items-center justify-center">
-                          <Shirt
-                            size={28}
-                            className="text-white/65 stroke-[1.5]"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <h5 className="text-[11px] font-bold text-heritage-green">
-                          Pattern Scale Alignment
-                        </h5>
-                        <p className="text-[10px] text-heritage-ink/75 leading-relaxed">
-                          This high-fidelity swatch preview demonstrates the
-                          tile alignment mapped across a{" "}
-                          <strong>Grand Agbada</strong> or{" "}
-                          <strong>Royal Senator</strong> drape width.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Master Weaver Guidance */}
-                  <div className="bg-amber-50/50 border border-amber-200/55 p-4 rounded-2xl text-[10px] text-amber-900 leading-relaxed space-y-1 shadow-xs">
-                    <strong className="text-amber-800 flex items-center gap-1 font-serif text-xs">
-                      🇳🇬 Master Weaver's Atelier Note
-                    </strong>
-                    <p className="font-sans leading-relaxed text-[11px]">
-                      "This exceptional {zoomedFabric.color.toLowerCase()} weave offers
-                      spectacular durability. When crafting collars and cuffs,
-                      the crisp fibers maintain their custom-molded structure,
-                      preventing sag. The color shimmers exquisitely under warm
-                      festival spotlights."
-                    </p>
-                  </div>
-                </div>
-
-                {/* Close Swatch Inspector Button */}
-                <div className="pt-6 border-t border-heritage-gold/15 mt-6 flex gap-3 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedFabric(zoomedFabric)}
-                    className="px-5 py-2.5 bg-heritage-green hover:bg-heritage-forest text-white font-sans text-xs font-bold rounded-xl transition shadow-md cursor-pointer select-none"
-                  >
-                    Select this Fabric
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowFabricZoomModal(false);
-                      setIsLoupeLocked(false);
-                    }}
-                    className="px-5 py-2.5 bg-heritage-cream text-heritage-green border border-heritage-gold/20 hover:bg-heritage-gold/10 transition font-sans text-xs font-bold rounded-xl cursor-pointer select-none"
-                  >
-                    Close Inspector
-                  </button>
-                </div>
+              <div className="mt-4 text-center bg-black/50 px-6 py-3 rounded-full backdrop-blur-md border border-white/10 pointer-events-auto">
+                 <h3 className="text-lg font-serif font-bold text-white">
+                   {zoomedFabric.name} <span className="text-heritage-gold ml-2 text-sm font-sans">{zoomedFabric.code}</span>
+                 </h3>
               </div>
             </motion.div>
           </div>

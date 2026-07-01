@@ -24,8 +24,7 @@ import {
   setDoc,
   writeBatch,
   deleteDoc,
-  onSnapshot,
-  runTransaction
+  onSnapshot
 } from "firebase/firestore";
 
 function sanitizeForFirestore(val: any): any {
@@ -119,7 +118,6 @@ export const StorageService = {
   ) {
     try {
       const existingDocs = await getDocs(collection(db, collectionName));
-      const newIds = items.map((item) => getId(item));
 
       const batch = writeBatch(db);
 
@@ -294,33 +292,30 @@ export const StorageService = {
   getFabrics: async (): Promise<Fabric[]> => {
     return await StorageService.fetchCollection<Fabric>("fabrics");
   },
-  generateNextFabricCode: async (): Promise<string> => {
+  previewNextFabricCode: async (): Promise<string> => {
     const seqRef = doc(db, "settings", "fabricSequence");
-    return await runTransaction(db, async (transaction) => {
-      const seqDoc = await transaction.get(seqRef);
-      let nextCodeNum = 1;
-      
-      if (!seqDoc.exists()) {
-        // If the sequence document doesn't exist, we fallback to querying the highest current code.
-        const existingDocs = await getDocs(collection(db, "fabrics"));
-        let maxNum = 0;
-        existingDocs.forEach(d => {
-          const codeStr = d.data().code;
-          if (codeStr && codeStr.startsWith("ODG-")) {
-            const num = parseInt(codeStr.substring(4), 10);
-            if (!isNaN(num) && num > maxNum) {
-              maxNum = num;
-            }
+    const seqDoc = await getDoc(seqRef);
+    let nextCodeNum = 1;
+    
+    if (!seqDoc.exists()) {
+      // If the sequence document doesn't exist, we fallback to querying the highest current code.
+      const existingDocs = await getDocs(collection(db, "fabrics"));
+      let maxNum = 0;
+      existingDocs.forEach(d => {
+        const codeStr = d.data().code;
+        if (codeStr && codeStr.startsWith("ODG-")) {
+          const num = parseInt(codeStr.substring(4), 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
           }
-        });
-        nextCodeNum = maxNum + 1;
-      } else {
-        nextCodeNum = (seqDoc.data().current || 0) + 1;
-      }
+        }
+      });
+      nextCodeNum = maxNum + 1;
+    } else {
+      nextCodeNum = (seqDoc.data().current || 0) + 1;
+    }
 
-      transaction.set(seqRef, { current: nextCodeNum }, { merge: true });
-      return `ODG-${String(nextCodeNum).padStart(3, "0")}`;
-    });
+    return `ODG-${String(nextCodeNum).padStart(3, "0")}`;
   },
   saveFabrics: async (fabrics: Fabric[]) => {
     await StorageService.saveCollection("fabrics", fabrics, (f) => f.id || f.code);

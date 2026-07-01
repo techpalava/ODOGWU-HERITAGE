@@ -70,7 +70,7 @@ export function Header() {
                 THE ODOGWU HERITAGE
               </span>
               <span className="hidden sm:block text-[7px] sm:text-[8px] tracking-wide text-heritage-beige uppercase font-sans font-medium truncate">
-                Nigerian Traditional Clothing Community at ASML
+                {businessSettings.applicationSettings.tagline || "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}
               </span>
               <div className="block sm:hidden leading-[1.05] uppercase">
                 <span className="block text-[10.5px] font-extrabold tracking-[0.06em] text-heritage-gold font-display">

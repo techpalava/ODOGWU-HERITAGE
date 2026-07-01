@@ -1,0 +1,17 @@
+import fs from 'fs';
+
+function replaceInFile(filePath, replacements) {
+    let content = fs.readFileSync(filePath, 'utf8');
+    let modified = content;
+    for (const [search, replace] of replacements) {
+        modified = modified.replace(new RegExp(search, 'g'), replace);
+    }
+    if (modified !== content) {
+        fs.writeFileSync(filePath, modified);
+        console.log('Modified', filePath);
+    }
+}
+
+replaceInFile('src/data/mockData.ts', [
+    ['ASML Veldhoven Campus', 'Corporate Campus Lockers']
+]);

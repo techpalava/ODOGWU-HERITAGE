@@ -19,8 +19,6 @@ import {
 } from "../types";
 import { ApiService } from "../services/api";
 import {
-  FABRICS,
-  STYLE_CATEGORIES,
   DEFAULT_BUSINESS_SETTINGS,
 } from "../data/mockData";
 import { StorageService } from "../services/storageService";
@@ -132,6 +130,9 @@ interface AppState {
   // Initialization
   initializeData: () => Promise<void>;
 }
+
+// Track global snapshot listeners to prevent duplicates
+let storeUnsubs: (() => void)[] = [];
 
 export const useAppStore = create<AppState>((set, get) => ({
   activeTab:
@@ -292,12 +293,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         console.warn("Failed to sign in anonymously:", err);
       }
 
-      const [accounts, session, ordersData, groupsData] = await Promise.all([
-        ApiService.fetchAccounts(),
-        ApiService.fetchSession(),
-        ApiService.fetchOrders(),
-        ApiService.fetchGroups(),
-      ]);
+      const session = await ApiService.fetchSession();
 
       const storedSettings = await StorageService.getBusinessSettings();
       const isInitialized =
@@ -324,45 +320,66 @@ export const useAppStore = create<AppState>((set, get) => ({
         await StorageService.saveBusinessSettings(savedBusinessSettings);
       }
 
-      StorageService.subscribeToDocument<BusinessSettings>("settings", "business", (settings) => {
-        if (settings) {
-          set({ businessSettings: settings });
-        }
-      });
+      // Clear any existing listeners to prevent duplicates
+      storeUnsubs.forEach(unsub => unsub && unsub());
+      storeUnsubs = [];
+
+      storeUnsubs.push(
+        StorageService.subscribeToDocument<BusinessSettings>("settings", "business", (settings) => {
+          if (settings) {
+            set({ businessSettings: settings });
+          }
+        })
+      );
 
       // Real-time Fabric Listener
-      FabricService.subscribeToFabrics((fabrics) => {
-         set({ fabrics });
-      });
+      storeUnsubs.push(
+        FabricService.subscribeToFabrics((fabrics) => {
+           set({ fabrics });
+        })
+      );
 
+      storeUnsubs.push(
+        StorageService.subscribeToCollection<StyleCategory>("styles", (styles) => {
+          set({ styles });
+        })
+      );
 
-      StorageService.subscribeToCollection<StyleCategory>("styles", (styles) => {
-        set({ styles });
-      });
+      storeUnsubs.push(
+        StorageService.subscribeToCollection<Batch>("batches", (batches) => {
+          set({ batches });
+        })
+      );
 
-      StorageService.subscribeToCollection<Batch>("batches", (batches) => {
-        set({ batches });
-      });
+      storeUnsubs.push(
+        StorageService.subscribeToCollection<Showpiece>("showpieces", (showpieces) => {
+          set({ showpieces });
+        })
+      );
 
-      StorageService.subscribeToCollection<Showpiece>("showpieces", (showpieces) => {
-        set({ showpieces });
-      });
+      storeUnsubs.push(
+        StorageService.subscribeToCollection<CommunityPhoto>("communityPhotos", (photos) => {
+          set({ communityPhotos: photos });
+        })
+      );
 
-      StorageService.subscribeToCollection<CommunityPhoto>("communityPhotos", (photos) => {
-        set({ communityPhotos: photos });
-      });
+      storeUnsubs.push(
+        StorageService.subscribeToCollection<Customer>("customers", (accountsList) => {
+          set({ customers: accountsList });
+        })
+      );
 
-      StorageService.subscribeToCollection<Customer>("customers", (accountsList) => {
-        set({ customers: accountsList });
-      });
+      storeUnsubs.push(
+        StorageService.subscribeToCollection<MasterOrder>("orders", (ordersList) => {
+          set({ orders: ordersList });
+        })
+      );
 
-      StorageService.subscribeToCollection<MasterOrder>("orders", (ordersList) => {
-        set({ orders: ordersList });
-      });
-
-      StorageService.subscribeToCollection<CustomGroup>("customGroups", (groupsList) => {
-        set({ customGroups: groupsList });
-      });
+      storeUnsubs.push(
+        StorageService.subscribeToCollection<CustomGroup>("customGroups", (groupsList) => {
+          set({ customGroups: groupsList });
+        })
+      );
 
       set({
         currentUser: session || null,

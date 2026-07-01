@@ -45,7 +45,6 @@ export function estimateMeasurements(
   const multHead = 0.33;
   const multNeck = 0.25;
   const multShoulder = 0.27;
-  const multSleeveShort = 0.15;
   const multSleeveLong = 0.36;
   const multAnkleSleeve = 0.13;
   const multShirtLengthStd = 0.43;
@@ -77,7 +76,6 @@ export function estimateMeasurements(
   let headEst = heightInches * multHead;
   let neck = heightInches * multNeck;
   let shoulder = heightInches * multShoulder;
-  let sleeveShortEst = heightInches * multSleeveShort;
   let sleeveLongEst = heightInches * multSleeveLong;
   let ankleCircEst = heightInches * multAnkleSleeve;
   let shirtLengthStdEst = heightInches * multShirtLengthStd;

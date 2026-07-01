@@ -60,11 +60,11 @@ export default function Footer() {
             </div>
             <p className="text-sm font-medium text-heritage-beige/90 leading-relaxed font-serif italic">
               {businessSettings?.applicationSettings?.tagline ||
-                "Nigerian Traditional Clothing Community at ASML"}
+                "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}
             </p>
             <p className="text-xs text-heritage-beige/60 leading-relaxed">
               {businessSettings?.applicationSettings?.description ||
-                "The Nigerian Traditional Clothing Community at ASML, connecting skilled artisans in Nigeria with communities across the Netherlands through premium custom-made traditional clothing."}
+                "The NTCC Project and Community is dedicated to promoting the rich, colorful, and dynamic traditional cultures of Nigeria through its diverse traditional clothing. Every garment is custom-made in Nigeria by skilled artisans and carefully shipped to members of our community in the Netherlands."}
             </p>
           </div>
 
@@ -155,7 +155,7 @@ export default function Footer() {
                 <span className="leading-relaxed text-center sm:text-left">
                   {businessSettings?.productionSettings
                     ?.defaultPickupLocation ||
-                    "ASML Veldhoven Campus, Netherlands"}
+                    businessSettings.productionSettings.defaultPickupLocation}
                 </span>
               </li>
               <li className="flex flex-col sm:flex-row items-center sm:items-start gap-1.5 sm:gap-3">

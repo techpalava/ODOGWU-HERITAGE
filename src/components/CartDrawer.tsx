@@ -1,4 +1,3 @@
-import React from "react";
 import { ShoppingBag, X, Trash2, CreditCard } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 

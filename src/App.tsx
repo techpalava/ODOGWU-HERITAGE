@@ -4,43 +4,20 @@
  */
 
 import React, { useState, Suspense, lazy } from "react";
-import { motion, AnimatePresence } from "motion/react";
+
 import {
-  Shirt,
-  Compass,
-  ClipboardList,
-  Truck,
-  Layers,
-  Bell,
   Check,
   Sparkles,
-  ShoppingCart,
-  Trash2,
   X,
-  ShoppingBag,
   CreditCard,
-  Info,
-  Database,
-  Menu,
   Lock as LockIcon,
-  Facebook,
-  Instagram,
-  MessageCircle,
-  Mail,
-  Phone,
-  Music2,
 } from "lucide-react";
 import {
   MasterOrder,
-  HistoricalOrder,
   CartItem,
   CustomGroup,
   OrderContext,
-  Fabric,
-  StyleCategory,
   Customer,
-  Showpiece,
-  CommunityPhoto,
 } from "./types";
 import { StorageService } from "./services/storageService";
 import { useAppStore } from "./store/useAppStore";
@@ -60,7 +37,8 @@ import { CartDrawer } from "./components/CartDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import Footer from "./components/Footer";
 
-import odogwuLogo from "./assets/images/odogwu_logo_1782556303014.jpg";
+
+import { AdminAuthGuard } from "./components/AdminAuthGuard";
 
 export default function App() {
   const store = useAppStore();
@@ -86,10 +64,8 @@ export default function App() {
     orders,
     setOrders,
     historicalOrders,
-    setHistoricalOrders,
     cartItems,
     setCartItems,
-    isCartOpen,
     setIsCartOpen,
     presetStyleId,
     setPresetStyleId,
@@ -198,7 +174,7 @@ export default function App() {
         expectedParticipants: openBatch.targetGarments,
         currentMembers: openBatch.currentGarments,
         pickupLocation:
-          openBatch.pickupLocation || "ASML Veldhoven Campus Lockers",
+          openBatch.pickupLocation || businessSettings.productionSettings.defaultPickupLocation || "Veldhoven Campus Lockers",
       }
     : null;
 
@@ -319,9 +295,21 @@ export default function App() {
     );
   };
 
-  const handleRemoveFromCart = (id: string) => {
-    setCartItems((prev) => prev.filter((item) => item.id !== id));
-    triggerNotification("Garment removed from cart.", "info");
+  const handleExecuteDepositPayment = () => {
+    setIsPaymentProcessing(true);
+    // Simulate payment processing...
+    setTimeout(() => {
+      setIsPaymentProcessing(false);
+      setIsCheckoutPaymentOpen(false);
+      setIsCartOpen(false);
+      setCartItems([]);
+      triggerNotification(
+        "Deposit authorized securely! Atelier notified.",
+        "success"
+      );
+      // Create a mock order if needed or redirect
+      setActiveTab("dashboard");
+    }, 2000);
   };
 
   const handleReorder = () => {
@@ -572,26 +560,28 @@ export default function App() {
             )}
 
             {activeTab === "database" && (
-              <DatabaseView
-                customers={customers}
-                setCustomers={setCustomers}
-                styles={styles}
-                setStyles={setStyles}
-                fabrics={fabrics}
-                setFabrics={setFabrics}
-                customGroups={customGroups}
-                setCustomGroups={setCustomGroups}
-                orders={orders}
-                setOrders={setOrders}
-                showpieces={showpieces}
-                setShowpieces={setShowpieces}
-                communityPhotos={communityPhotos}
-                setCommunityPhotos={setCommunityPhotos}
-                batches={batches}
-                setBatches={setBatches}
-                businessSettings={businessSettings}
-                setBusinessSettings={setBusinessSettings}
-              />
+              <AdminAuthGuard onNavigateHome={() => setActiveTab("home")}>
+                <DatabaseView
+                  customers={customers}
+                  setCustomers={setCustomers}
+                  styles={styles}
+                  setStyles={setStyles}
+                  fabrics={fabrics}
+                  setFabrics={setFabrics}
+                  customGroups={customGroups}
+                  setCustomGroups={setCustomGroups}
+                  orders={orders}
+                  setOrders={setOrders}
+                  showpieces={showpieces}
+                  setShowpieces={setShowpieces}
+                  communityPhotos={communityPhotos}
+                  setCommunityPhotos={setCommunityPhotos}
+                  batches={batches}
+                  setBatches={setBatches}
+                  businessSettings={businessSettings}
+                  setBusinessSettings={setBusinessSettings}
+                />
+              </AdminAuthGuard>
             )}
           </Suspense>
         </ErrorBoundary>
@@ -615,7 +605,7 @@ export default function App() {
                     Heritage Escrow Deposit Gate
                   </h3>
                   <p className="text-[10px] text-heritage-beige/70">
-                    ASML Veldhoven Campus Campus-Escrow Pipeline
+                    Campus-Escrow Pipeline
                   </p>
                 </div>
               </div>

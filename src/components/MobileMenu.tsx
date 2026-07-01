@@ -18,6 +18,7 @@ export function MobileMenu() {
   const setIsMobileMenuOpen = useAppStore((state) => state.setIsMobileMenuOpen);
   const activeTab = useAppStore((state) => state.activeTab);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
+  const businessSettings = useAppStore((state) => state.businessSettings);
 
   // Keyboard accessibility and body scroll block for mobile menu
   useEffect(() => {
@@ -151,7 +152,7 @@ export function MobileMenu() {
 
             <div className="border-t border-heritage-gold/10 pt-4 space-y-2">
               <p className="text-[8px] text-heritage-beige/50 text-center leading-relaxed">
-                Connecting Lagos ateliers with ASML Veldhoven.
+                Connecting Lagos ateliers with {businessSettings.applicationSettings.communityName}.
               </p>
               <div className="flex justify-center items-center gap-1.5">
                 <span className="h-px bg-heritage-gold/15 flex-grow" />

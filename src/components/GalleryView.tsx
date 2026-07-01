@@ -47,7 +47,7 @@ export default function GalleryView({
         </h1>
         <p className="mt-2 text-sm text-heritage-ink/70 max-w-3xl font-sans">
           Browse our curated traditional combinations, worn by team members
-          across ASML. Select any style to load its configuration instantly
+          across the community. Select any style to load its configuration instantly
           inside our Design Studio.
         </p>
       </div>

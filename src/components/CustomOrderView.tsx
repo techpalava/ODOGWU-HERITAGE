@@ -37,7 +37,7 @@ interface CustomOrderViewProps {
 }
 
 export default function CustomOrderView({
-  customGroups,
+  
   batches,
   onCreateCustomGroup,
   onSelectOrderContext,
@@ -546,7 +546,7 @@ export default function CustomOrderView({
                           size={11}
                           className="text-heritage-gold shrink-0"
                         />
-                        <span>{batch.pickupLocation || "ASML Campus"}</span>
+                        <span>{batch.pickupLocation || businessSettings.productionSettings.defaultPickupLocation}</span>
                       </div>
                       <div className="flex items-center gap-1.5 font-sans font-medium">
                         <Users

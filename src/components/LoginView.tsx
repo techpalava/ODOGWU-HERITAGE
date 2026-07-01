@@ -593,7 +593,7 @@ export default function LoginView({
                     </h4>
                     <p className="text-[10px] text-heritage-ink/60 mt-1 max-w-xs mx-auto">
                       Instantly connect your secure Gmail address to create your
-                      ASML Bespoke digital passport.
+                      Bespoke digital passport.
                     </p>
                   </div>
                   <button
@@ -873,7 +873,7 @@ export default function LoginView({
                     <p className="text-[11px] text-gray-500 mt-1">
                       to continue to{" "}
                       <span className="font-semibold text-heritage-green">
-                        ASML Tailoring Spec Office
+                        Tailoring Spec Office
                       </span>
                     </p>
                   </div>
@@ -948,7 +948,7 @@ export default function LoginView({
 
                   <div className="text-[10px] text-gray-400 leading-normal pt-2">
                     Google will share your name, email address, profile picture,
-                    and language preference with ASML Corp. See their privacy
+                    and language preference with the Corporation See their privacy
                     policy.
                   </div>
                 </div>
@@ -1046,7 +1046,7 @@ export default function LoginView({
                       Authorization successful!
                     </h4>
                     <p className="text-[10px] text-green-600 mt-1">
-                      ASML digital passport successfully matched with Google ID.
+                      Digital passport successfully matched with Google ID.
                     </p>
                   </div>
                 </div>

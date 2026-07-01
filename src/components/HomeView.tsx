@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { OrderContext, CommunityPhoto } from "../types";
+import { useAppStore } from "../store/useAppStore";
 
 interface HomeViewProps {
   onStartDesigning: () => void;
@@ -26,6 +27,8 @@ export default function HomeView({
   activeCommunityBatch,
   communityPhotos,
 }: HomeViewProps) {
+  const { businessSettings } = useAppStore();
+
   const [days, setDays] = useState(17);
   const [hours, setHours] = useState(8);
   const [minutes, setMinutes] = useState(14);
@@ -90,7 +93,7 @@ export default function HomeView({
             </h1>
             {/* Desktop Hero Description */}
             <p className="hidden sm:block text-sm text-heritage-beige max-w-xl leading-relaxed font-sans">
-              Welcome to the Traditional Clothing Community at ASML. We empower
+              Welcome to {businessSettings.applicationSettings.communityName}. We empower
               people to express their identity and tell their unique stories
               through the timeless beauty of Nigerian traditional fabrics. By
               connecting skilled artisans in Nigeria with communities across the
@@ -101,7 +104,7 @@ export default function HomeView({
 
             {/* Mobile Hero Description (Summarized) */}
             <p className="block sm:hidden text-xs text-heritage-beige/95 max-w-md leading-relaxed font-sans">
-              Welcome to the ASML Traditional Clothing Community. We connect
+              Welcome to {businessSettings.applicationSettings.communityName}. We connect
               skilled artisans in Nigeria with Netherlands communities,
               delivering exquisite, custom-made garments that celebrate
               Nigeria's rich and diverse cultural heritage.
@@ -355,7 +358,7 @@ export default function HomeView({
             Our Community Gallery
           </h2>
           <p className="text-sm text-heritage-ink/75 leading-relaxed">
-            Discover members of The Odogwu Heritage community proudly wearing
+            Discover members of the NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC) proudly wearing
             their custom-made traditional outfits, handcrafted in Nigeria and
             delivered to the Netherlands.
           </p>
@@ -562,7 +565,7 @@ export default function HomeView({
           <div className="p-6 bg-white border border-heritage-gold/15 rounded-2xl space-y-4 shadow-sm flex flex-col justify-between">
             <p className="italic text-xs text-heritage-ink/80 leading-relaxed font-serif text-[13px]">
               "The fit is perfect. Ordering custom clothes from Lagos and
-              getting them delivered directly to the ASML campus in Veldhoven is
+              getting them delivered directly to {businessSettings.productionSettings.defaultPickupLocation} is
               super easy and convenient. I love wearing my Senator shirt on
               Mondays."
             </p>
@@ -575,7 +578,7 @@ export default function HomeView({
                   Amadi O.
                 </strong>
                 <span className="text-[10px] text-heritage-ink/50 block">
-                  ASML Senior Engineer, Eindhoven
+                  Senior Engineer, Eindhoven
                 </span>
               </div>
             </div>

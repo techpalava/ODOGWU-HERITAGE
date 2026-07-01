@@ -84,9 +84,7 @@ export default function AboutView() {
           About the NTCC Project
         </h1>
         <p className="text-sm text-heritage-ink/75 max-w-2xl mx-auto leading-relaxed">
-          Promoting the rich, colorful and dynamic traditional cultures of
-          Nigeria through its different clothing, custom-tailored in Lagos and
-          delivered securely to our community in the Netherlands.
+          The NTCC Project and Community is dedicated to promoting the rich, colorful, and dynamic traditional cultures of Nigeria through its diverse traditional clothing. Every garment is custom-made in Nigeria by skilled artisans and carefully shipped to members of our community in the Netherlands.
         </p>
       </motion.div>
 
@@ -276,7 +274,7 @@ export default function AboutView() {
           <div className="w-16 h-[2px] bg-heritage-gold"></div>
           <p className="text-xs sm:text-sm text-heritage-ink/80 leading-relaxed font-sans">
             Started in April 2025 by Fredrick Ezeh to share traditional Nigerian
-            fashion, the Nigerian Traditional Clothing Community (NTCC) at ASML
+            fashion, {businessSettings.applicationSettings.communityName}
             helps us learn about and celebrate culture on campus. We started
             with a small group of pioneers and have grown into a warm community
             for all colleagues.
@@ -299,7 +297,7 @@ export default function AboutView() {
                 Fredrick Ezeh
               </h4>
               <p className="text-[9px] text-heritage-gold font-bold uppercase tracking-wider">
-                Founder & ASML Coordinator
+                Founder & Coordinator
               </p>
             </div>
           </div>
@@ -403,7 +401,7 @@ export default function AboutView() {
               Exclusive NTCC Cohort Price Protection
             </p>
             <p className="text-[11px] text-emerald-700/90">
-              Active ASML group cohort members pay only the **Discounted Price
+              Active group cohort members pay only the **Discounted Price
               Range**. Future public rates will transition to the standard
               **Actual (Future) Price Range**.
             </p>
@@ -602,10 +600,10 @@ export default function AboutView() {
                         Fredrick Ezeh
                       </h4>
                       <p className="text-[9px] text-heritage-gold font-bold uppercase tracking-wider">
-                        Founder & ASML Coordinator
+                        Founder & Coordinator
                       </p>
                       <p className="text-[9px] text-heritage-ink/65">
-                        ASML Veldhoven
+                        Veldhoven
                       </p>
                     </div>
 
@@ -620,7 +618,7 @@ export default function AboutView() {
                   {/* Main Story Text */}
                   <div className="md:col-span-8 space-y-4 text-xs leading-relaxed text-heritage-ink/80 font-sans">
                     <h3 className="text-base font-serif font-bold text-heritage-green">
-                      Building a Culturally Inclusive ASML
+                      Building a Culturally Inclusive Community
                     </h3>
 
                     <p>
@@ -631,7 +629,7 @@ export default function AboutView() {
                       <strong>
                         Nigerian Traditional Clothing Community (NTCC)
                       </strong>
-                      , and our goal is to spread it across ASML, the
+                      , and our goal is to spread it across our community, the
                       Netherlands, and eventually the world.
                     </p>
 
@@ -655,16 +653,16 @@ export default function AboutView() {
                     <p>
                       Interest continued to grow. Our third group,{" "}
                       <strong>The Transformers</strong>, became even more
-                      successful. I decided to surprise our ASML CEO, Christophe
+                      successful. I decided to surprise our CEO, Christophe
                       Fouquet, by gifting him a custom-tailored traditional
                       shirt. He happily joined the community, which was a
                       wonderful moment for promoting diversity, inclusion, and
-                      cultural pride at ASML.
+                      cultural pride in our community.
                     </p>
 
                     <p>
                       After welcoming Christophe to NTCC, my dream is to share
-                      this beautiful traditional clothing with more ASML
+                      this beautiful traditional clothing with more community
                       executives and other leaders. We want to build a global
                       movement that brings love, smiles, and cultural
                       appreciation to everyone who wants to be a part of it.
@@ -681,12 +679,12 @@ export default function AboutView() {
                         Distinguished Inclusion Highlight
                       </span>
                       <h4 className="text-xs font-bold font-serif text-white">
-                        ASML CEO Christophe Fouquet Gifting
+                        CEO Christophe Fouquet Gifting
                       </h4>
                     </div>
                   </div>
                   <p className="text-[11px] leading-relaxed text-heritage-beige/95">
-                    Gifting a traditional custom-tailored shirt to ASML CEO
+                    Gifting a traditional custom-tailored shirt to CEO
                     Christophe Fouquet represented a symbolic bridge between
                     cultural heritage and corporate leadership. This successful
                     inclusion showcases how corporate platforms can actively

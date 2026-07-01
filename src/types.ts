@@ -21,7 +21,7 @@ export interface Customer {
   name: string;
   email: string;
   phone: string;
-  location?: string; // e.g. "ASML Building 4 Veldhoven" or similar
+  location?: string; // e.g. "Veldhoven Campus Lockers" or similar
   role?: string;
   passcode?: string;
   orderStatus?: string;
@@ -64,7 +64,7 @@ export interface Fabric {
   color: string;
   colorHex: string;
   priceMultiplier: number; // e.g. 1.0, 1.2
-  stockStatus: "In Stock" | "Low Stock" | "Out of Stock";
+  stockStatus: "In Stock" | "Low Stock" | "Out of Stock" | "Hidden";
 
   // Database suggested fields
   category?:

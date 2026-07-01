@@ -1,4 +1,4 @@
-import { collection, setDoc, doc } from "firebase/firestore";
+import {  setDoc, doc } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { ImageService } from "../services/imageService";
 import fs from "fs";

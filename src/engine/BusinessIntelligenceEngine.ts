@@ -22,7 +22,7 @@ export const BusinessIntelligenceEngine = {
 
   getEstimatedProductionHours: (
     garments: number,
-    settings: BusinessSettings,
+    _settings: BusinessSettings,
   ) => {
     // We assume 1 garment = 1 day's work fraction based on duration / garments or standard metric
     // If estimatedProductionDurationDays is provided, map that to hours. e.g. 1 garment = 8 hours

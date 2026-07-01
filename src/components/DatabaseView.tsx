@@ -179,20 +179,26 @@ export default function DatabaseView({
   const [suggestionHistory, setSuggestionHistory] = useState<string[]>([]);
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
 
-  const handleGenerateSuggestions = async (imageBase64: string): Promise<{suggestions: string[], category: string} | null> => {
+  const handleGenerateSuggestions = async (imageBase64: string, updateNameAutomatically = true): Promise<{suggestions: string[], category: string} | null> => {
     if (!imageBase64) return null;
     setIsGeneratingSuggestions(true);
     triggerStatus("Analyzing fabric image to generate suggestions...", "info");
     try {
-      const res = await fetch("/api/suggest-fabric-names", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64, previousSuggestions: suggestionHistory })
-      });
-      const data = await res.json();
-      if (data.success && data.suggestions) {
-        setFabricNameSuggestions(data.suggestions.slice(1));
+      const { generateLocalFabricNames } = await import("../lib/fabricNamingEngine");
+      const data = await generateLocalFabricNames(imageBase64, suggestionHistory);
+      
+      if (data && data.suggestions) {
+        setFabricNameSuggestions(data.suggestions);
         setSuggestionHistory(prev => [...prev, ...data.suggestions]);
+        
+        if (updateNameAutomatically) {
+          setEditingItem((prev: any) => ({
+            ...prev,
+            name: data.suggestions[0],
+            category: data.category || prev.category
+          }));
+        }
+        
         triggerStatus("Generated new fabric name suggestions!", "success");
         return { suggestions: data.suggestions, category: data.category };
       } else {
@@ -200,8 +206,8 @@ export default function DatabaseView({
         return null;
       }
     } catch (err) {
-      console.error("Failed to fetch fabric suggestions", err);
-      triggerStatus("Failed to fetch fabric suggestions", "error");
+      console.error("Failed to generate fabric suggestions locally", err);
+      triggerStatus("Failed to generate fabric suggestions", "error");
       return null;
     } finally {
       setIsGeneratingSuggestions(false);
@@ -221,7 +227,7 @@ export default function DatabaseView({
         setActiveTab("fabrics");
         
         try {
-          const nextCode = await StorageService.generateNextFabricCode();
+          const nextCode = await StorageService.previewNextFabricCode();
           
           setEditingItem({
             code: nextCode,
@@ -242,14 +248,7 @@ export default function DatabaseView({
           triggerStatus("AI uploaded fabric imported! Please review.", "info");
 
           if (!data.name && data.image) {
-             const result = await handleGenerateSuggestions(data.image);
-             if (result && result.suggestions.length > 0) {
-               setEditingItem((prev: any) => ({ 
-                 ...prev, 
-                 name: result.suggestions[0],
-                 category: result.category || prev.category
-               }));
-             }
+             await handleGenerateSuggestions(data.image);
           }
           
         } catch (err) {
@@ -264,7 +263,7 @@ export default function DatabaseView({
     });
     
     return () => unsub();
-  }, [fabrics]);
+  }, []);
 
   // Outfit Type Manager states
   const [editingOutfitType, setEditingOutfitType] = useState<OutfitType | null>(
@@ -719,15 +718,7 @@ export default function DatabaseView({
 
             // Clear history and fetch new name suggestions using the new URL (or base64)
             setSuggestionHistory([]);
-            const result = await handleGenerateSuggestions(uploadedUrl); // Auto-selects first suggestion on completion
-            
-            if (result && result.suggestions.length > 0) {
-              setEditingItem((prev: any) => ({
-                ...prev,
-                name: result.suggestions[0],
-                category: result.category || prev.category
-              }));
-            }
+            await handleGenerateSuggestions(uploadedUrl); // Auto-selects first suggestion on completion
 
             triggerStatus("Image uploaded, processed & dominant color detected!", "success");
           } else {
@@ -777,7 +768,7 @@ export default function DatabaseView({
           ...item,
           passcode: item.passcode || "1960",
           role: item.role || "Engineer",
-          location: item.location || "ASML Building 4 Veldhoven",
+          location: item.location || businessSettings.productionSettings.defaultPickupLocation,
         },
       ]);
       triggerStatus(`Added Customer ${item.name} successfully!`);
@@ -918,16 +909,9 @@ export default function DatabaseView({
 
     console.log("[handleSaveFabric] isNewRecord:", isNewRecord);
     if (isNewRecord) {
-      if (
-        fabrics.some((f) => f.code?.toUpperCase() === item.code?.toUpperCase())
-      ) {
-        console.log("[handleSaveFabric] Fabric code already exists");
-        triggerStatus("A fabric with this code already exists.", "error");
-        return;
-      }
       try {
         console.log("[handleSaveFabric] Calling FabricService.saveFabric for new record");
-        const savedItem = await FabricService.saveFabric(finalItem);
+        const savedItem = await FabricService.saveFabric(finalItem, true);
         console.log("[handleSaveFabric] Saved item successfully:", savedItem);
         triggerStatus(`Added fabric ${item.name} to catalogue!`, "success");
         setEditingType(null);
@@ -1354,7 +1338,7 @@ export default function DatabaseView({
                           })
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
-                        placeholder="e.g. ASML Veldhoven Building 4 Lockers"
+                        placeholder={`e.g. ${businessSettings.productionSettings.defaultPickupLocation}`}
                       />
                     </div>
                     <div className="space-y-1">
@@ -2518,7 +2502,7 @@ export default function DatabaseView({
                         }}
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
-                        {customers.map((c) => (
+                        {filteredCustomers.map((c) => (
                           <option key={c.email} value={c.email}>
                             {c.name} ({c.email})
                           </option>
@@ -2539,7 +2523,7 @@ export default function DatabaseView({
                             "Pattern Drafting & Sewing on Lagos floor",
                             "Garment Sewing Completed. Passing QA & Fit Checks...",
                             "Consolidated & Dispatched via Lagos-Schiethol Air Freight Route",
-                            "Arrived at ASML Veldhoven Locker Hub. Ready for secure PIN pickup!",
+                            `Arrived at ${businessSettings.productionSettings.defaultPickupLocation}. Ready for secure PIN pickup!`,
                           ];
                           setEditingItem({
                             ...editingItem,
@@ -2570,7 +2554,7 @@ export default function DatabaseView({
                           Stage 5: Schiphol Freight Transited
                         </option>
                         <option value={6}>
-                          Stage 6: Arrived in ASML Campus Locker!
+                          Stage 6: Arrived at Pickup Location!
                         </option>
                       </select>
                     </div>
@@ -3083,56 +3067,90 @@ export default function DatabaseView({
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 text-xs font-mono">
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-heritage-beige">Firebase Connection</span>
-                      <span className="text-green-400 font-bold">Healthy</span>
+                      <span className="text-heritage-beige">Firestore</span>
+                      <span className="text-green-400 font-bold">Connected</span>
                     </div>
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-heritage-beige">Firestore Status</span>
-                      <span className="text-green-400 font-bold">Healthy</span>
+                      <span className="text-heritage-beige">Collection Count</span>
+                      <span className="text-heritage-gold">{customers.length + fabrics.length + orders.length + communityPhotos.length + showpieces.length + batches.length} Docs</span>
                     </div>
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-heritage-beige">Storage Status</span>
-                      <span className="text-green-400 font-bold">Healthy</span>
+                      <span className="text-heritage-beige">Firebase Storage</span>
+                      <span className="text-green-400 font-bold">Connected</span>
                     </div>
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-heritage-beige">Auth Status</span>
-                      <span className="text-green-400 font-bold">Healthy</span>
+                      <span className="text-heritage-beige">Images Stored</span>
+                      <span className="text-heritage-gold">
+                        {(() => {
+                          let count = 0;
+                          const checkUrl = (url) => { if (typeof url === 'string' && url.includes('firebasestorage')) count++; };
+                          fabrics.forEach(f => checkUrl(f.image));
+                          communityPhotos.forEach(p => checkUrl(p.url));
+                          showpieces.forEach(s => checkUrl(s.image));
+                          return count;
+                        })()} Images
+                      </span>
                     </div>
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-heritage-beige">Last Sync</span>
+                      <span className="text-heritage-beige">Authentication</span>
+                      <span className="text-green-400 font-bold">Online</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-heritage-beige">Realtime Listeners</span>
+                      <span className="text-green-400 font-bold">Active</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-heritage-beige">Last Event</span>
                       <span className="text-heritage-gold">Just now</span>
                     </div>
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-heritage-beige">Docs Synced</span>
-                      <span className="text-heritage-gold">{customers.length + fabrics.length + orders.length + communityPhotos.length + showpieces.length + batches.length}</span>
+                      <span className="text-heritage-beige">System Status</span>
+                      <span className="text-green-400 font-bold">Healthy</span>
                     </div>
                   </div>
                 </div>
 
                 {/* LIVE SUMMARY CARDS */}
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  {/* Customers */}
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Total Customers</span>
                     <strong className="text-xl text-heritage-green font-mono">{customers.length}</strong>
                   </div>
+                  <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
+                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Active Customers</span>
+                    <strong className="text-xl text-heritage-green font-mono">{customers.filter(c => orders.some(o => o.customer.email === c.email)).length}</strong>
+                  </div>
+                  
+                  {/* Fabrics */}
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Total Fabrics</span>
                     <strong className="text-xl text-heritage-green font-mono">{fabrics.length}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Available Fabrics</span>
-                    <strong className="text-xl text-heritage-green font-mono">{fabrics.filter(f => (f.stock || 0) > 0).length}</strong>
+                    <strong className="text-xl text-heritage-green font-mono">{fabrics.filter(f => (f.stock || 0) > 0 && f.stockStatus !== 'Out of Stock' && f.stockStatus !== 'Hidden').length}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Out of Stock Fabrics</span>
-                    <strong className="text-xl text-red-600 font-mono">{fabrics.filter(f => (f.stock || 0) <= 0).length}</strong>
+                    <strong className="text-xl text-red-600 font-mono">{fabrics.filter(f => (f.stock || 0) <= 0 || f.stockStatus === 'Out of Stock').length}</strong>
                   </div>
+                  <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
+                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Hidden Fabrics</span>
+                    <strong className="text-xl text-gray-500 font-mono">{fabrics.filter(f => f.stockStatus === 'Hidden').length}</strong>
+                  </div>
+
+                  {/* Orders */}
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Total Orders</span>
                     <strong className="text-xl text-heritage-green font-mono">{orders.length}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
-                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Orders In Prod.</span>
+                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Pending Orders</span>
+                    <strong className="text-xl text-amber-600 font-mono">{orders.filter(o => [1, 2].includes(o.shipment.currentStage)).length}</strong>
+                  </div>
+                  <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
+                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Production Orders</span>
                     <strong className="text-xl text-heritage-gold font-mono">{orders.filter(o => [3, 4].includes(o.shipment.currentStage)).length}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
@@ -3143,6 +3161,26 @@ export default function DatabaseView({
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Cancelled Orders</span>
                     <strong className="text-xl text-gray-500 font-mono">{orders.filter(o => o.shipment.status.toLowerCase().includes("cancel")).length}</strong>
                   </div>
+
+                  {/* Payments */}
+                  <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
+                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Pending Payments</span>
+                    <strong className="text-xl text-amber-600 font-mono">€{orders.reduce((sum, o) => sum + (o.payment.secondPaymentStatus !== "paid" ? o.payment.remaining : 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                  </div>
+                  <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
+                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Completed Payments</span>
+                    <strong className="text-xl text-heritage-green font-mono">€{orders.reduce((sum, o) => sum + (o.payment.isPaid || o.payment.secondPaymentStatus === "paid" ? o.payment.subtotal : (o.payment.deposit || 0)), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                  </div>
+                  <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
+                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Total Revenue</span>
+                    <strong className="text-xl text-heritage-green font-mono">€{orders.reduce((sum, o) => sum + (o.payment.isPaid || o.payment.secondPaymentStatus === "paid" ? o.payment.subtotal : (o.payment.deposit || 0)), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                  </div>
+                  <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
+                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Outstanding Balance</span>
+                    <strong className="text-xl text-amber-600 font-mono">€{orders.reduce((sum, o) => sum + (o.payment.secondPaymentStatus !== "paid" ? o.payment.remaining : 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                  </div>
+
+                  {/* Gallery */}
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Community Photos</span>
                     <strong className="text-xl text-heritage-green font-mono">{communityPhotos.length}</strong>
@@ -3152,16 +3190,22 @@ export default function DatabaseView({
                     <strong className="text-xl text-heritage-green font-mono">{showpieces.length}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
-                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Total Revenue</span>
-                    <strong className="text-xl text-heritage-green font-mono">€{orders.reduce((sum, o) => sum + (o.payment.isPaid || o.payment.secondPaymentStatus === "paid" ? o.payment.subtotal : (o.payment.deposit || 0)), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Published Designs</span>
+                    <strong className="text-xl text-heritage-green font-mono">{styles.length}</strong>
+                  </div>
+
+                  {/* Batch Production */}
+                  <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
+                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Active Batches</span>
+                    <strong className="text-xl text-heritage-green font-mono">{batches.filter(b => ["Open", "Recruiting", "Almost Full", "Full", "Production Ready", "Production Started"].includes(b.status)).length}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
-                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Pending Payments</span>
-                    <strong className="text-xl text-amber-600 font-mono">€{orders.reduce((sum, o) => sum + (o.payment.secondPaymentStatus !== "paid" ? o.payment.remaining : 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Completed Batches</span>
+                    <strong className="text-xl text-heritage-green font-mono">{batches.filter(b => b.status === "Completed").length}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
-                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Completed Payments</span>
-                    <strong className="text-xl text-heritage-green font-mono">€{orders.reduce((sum, o) => sum + (o.payment.isPaid || o.payment.secondPaymentStatus === "paid" ? o.payment.subtotal : (o.payment.deposit || 0)), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                    <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Upcoming Shipments</span>
+                    <strong className="text-xl text-heritage-gold font-mono">{batches.filter(b => ["Quality Control", "Packed", "Shipped", "Arrived Netherlands"].includes(b.status)).length}</strong>
                   </div>
                 </div>
 
@@ -3397,7 +3441,7 @@ export default function DatabaseView({
                         name: "",
                         email: "",
                         phone: "",
-                        location: "ASML Veldhoven Building 4",
+                        location: businessSettings.productionSettings.defaultPickupLocation,
                         role: "Active Cohort Member",
                         passcode: "1960",
                         measurementProfile: {
@@ -3710,7 +3754,7 @@ export default function DatabaseView({
                       setEditingType("fabric");
                       
                       try {
-                        const nextCode = await StorageService.generateNextFabricCode();
+                        const nextCode = await StorageService.previewNextFabricCode();
                         setEditingItem(prev => ({ ...prev, code: nextCode }));
                       } catch (err) {
                          triggerStatus("Failed to generate code.", "error");
@@ -4166,7 +4210,7 @@ export default function DatabaseView({
                         currentOrders: 0,
                         currentCustomers: 0,
                         status: "Yet To Start",
-                        pickupLocation: "ASML Veldhoven Campus",
+                        pickupLocation: businessSettings.productionSettings.defaultPickupLocation,
                         visibility: "Public",
                       });
                       setEditingType("batch");
@@ -4313,7 +4357,7 @@ export default function DatabaseView({
                           name: "Guest User",
                           email: "guest@asml.com",
                           phone: "",
-                          location: "ASML Veldhoven",
+                          location: businessSettings.productionSettings.defaultPickupLocation,
                         },
                         style: styles[0] || {
                           id: "style-kaftan",
@@ -7827,7 +7871,7 @@ export default function DatabaseView({
                           "data:text/json;charset=utf-8," +
                           encodeURIComponent(
                             JSON.stringify(
-                              customers.map((c) => ({
+                              filteredCustomers.map((c) => ({
                                 name: c.name,
                                 email: c.email,
                                 consentStatus:
@@ -7941,7 +7985,7 @@ export default function DatabaseView({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 bg-white">
-                          {customers.map((c, i) => (
+                          {filteredCustomers.map((c, i) => (
                             <tr
                               key={c.email || i}
                               className="hover:bg-gray-50/50"

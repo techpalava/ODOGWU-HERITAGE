@@ -1,9 +1,5 @@
 import {
   CustomGroup,
-  Fabric,
-  StyleCategory,
-  Showpiece,
-  CommunityPhoto,
   Customer,
   MasterOrder,
 } from "../types";

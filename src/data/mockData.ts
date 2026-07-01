@@ -73,10 +73,11 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
     productionStartThresholdPercentage: 90,
     estimatedProductionDurationDays: 45,
     defaultDeliveryWindowDays: 60,
-    defaultPickupLocation: "ASML Veldhoven Campus Lockers",
+    defaultPickupLocation: "Veldhoven Campus Lockers",
   },
   applicationSettings: {
-    communityName: "The Odogwu Heritage Community",
+    communityName: "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)",
+    tagline: "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)",
     defaultActiveBatchId: "batch-6",
     defaultCountry: "Netherlands",
     notificationMessagesEnabled: true,
@@ -358,7 +359,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "Completed",
     visibility: "Public",
     estimatedDelivery: "May 2025",
-    pickupLocation: "ASML Veldhoven Campus",
+    pickupLocation: "Veldhoven Campus Lockers",
     timeline: { delivered: "2025-05-15" },
   },
   {
@@ -375,7 +376,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "Completed",
     visibility: "Public",
     estimatedDelivery: "Dec 2025",
-    pickupLocation: "ASML Veldhoven Campus",
+    pickupLocation: "Veldhoven Campus Lockers",
     timeline: { delivered: "2025-12-10" },
   },
   {
@@ -392,7 +393,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "Completed",
     visibility: "Public",
     estimatedDelivery: "Mar 2026",
-    pickupLocation: "ASML Veldhoven Campus",
+    pickupLocation: "Veldhoven Campus Lockers",
     timeline: { delivered: "2026-03-05" },
   },
   {
@@ -409,7 +410,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "Completed",
     visibility: "Public",
     estimatedDelivery: "Jun 2026",
-    pickupLocation: "ASML Veldhoven Campus",
+    pickupLocation: "Veldhoven Campus Lockers",
     timeline: { delivered: "2026-06-12" },
   },
   {
@@ -426,7 +427,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "Production Started",
     visibility: "Public",
     estimatedDelivery: "Aug 2026",
-    pickupLocation: "ASML Veldhoven Campus",
+    pickupLocation: "Veldhoven Campus Lockers",
     fabricForecast: {
       requiredYards: 240,
       requiredRolls: 40,
@@ -454,7 +455,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "Recruiting",
     visibility: "Public",
     estimatedDelivery: "Nov 2026",
-    pickupLocation: "ASML Veldhoven Campus",
+    pickupLocation: "Veldhoven Campus Lockers",
     fabricForecast: {
       requiredYards: 430,
       requiredRolls: 72,
@@ -482,7 +483,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "Yet To Start",
     visibility: "Public",
     estimatedDelivery: "Nov 2026",
-    pickupLocation: "ASML Veldhoven Campus",
+    pickupLocation: "Veldhoven Campus Lockers",
   },
   {
     id: "batch-8",
@@ -498,7 +499,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "Yet To Start",
     visibility: "Public",
     estimatedDelivery: "Dec 2026",
-    pickupLocation: "ASML Veldhoven Campus",
+    pickupLocation: "Veldhoven Campus Lockers",
   },
   {
     id: "batch-9",
@@ -514,7 +515,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "Yet To Start",
     visibility: "Public",
     estimatedDelivery: "Jan 2027",
-    pickupLocation: "ASML Veldhoven Campus",
+    pickupLocation: "Veldhoven Campus Lockers",
   },
   {
     id: "batch-10",
@@ -530,7 +531,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "Yet To Start",
     visibility: "Public",
     estimatedDelivery: "Feb 2027",
-    pickupLocation: "ASML Veldhoven Campus",
+    pickupLocation: "Veldhoven Campus Lockers",
   },
   {
     id: "batch-11",
@@ -546,7 +547,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "Yet To Start",
     visibility: "Public",
     estimatedDelivery: "Apr 2027",
-    pickupLocation: "ASML Veldhoven Campus",
+    pickupLocation: "Veldhoven Campus Lockers",
   },
 ];
 

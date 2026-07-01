@@ -1,106 +1,88 @@
 import { ref, uploadString, getDownloadURL, deleteObject } from "firebase/storage";
 import { storage } from "./firebase";
 import { v4 as uuidv4 } from "uuid";
-import { MediaRepository } from "../repositories/MediaRepository";
 
 export const ImageService = {
-  /**
-   * Checks if a string is a base64 image data URL.
-   */
-  isBase64Image: (url: string | null | undefined): boolean => {
-    return typeof url === 'string' && url.startsWith("data:image");
-  },
-
-  /**
-   * Uploads a base64 image to Firebase Storage and returns the download URL.
-   * If the input is not a base64 image, it returns the input unchanged.
-   */
-  uploadImageIfBase64: async (
-    imageStr: string | null | undefined,
-    folder: string,
-    idPrefix: string = ""
-  ): Promise<string | null | undefined> => {
-    console.log("[ImageService.uploadImageIfBase64] Start. folder:", folder, "idPrefix:", idPrefix);
-    if (!imageStr || !ImageService.isBase64Image(imageStr)) {
-      console.log("[ImageService.uploadImageIfBase64] Not base64, returning");
-      return imageStr;
+  uploadImageIfBase64: async (base64OrUrl: string, pathPrefix: string = "images", metadata?: any): Promise<string> => {
+    if (!base64OrUrl || !base64OrUrl.startsWith("data:image")) {
+      return base64OrUrl;
     }
 
     try {
-      const originalFileName = `${idPrefix || 'image'}.webp`;
-      console.log("[ImageService.uploadImageIfBase64] Calling MediaRepository.upload...");
-      const metadata = await MediaRepository.upload(
-          imageStr, 
-          folder, 
-          idPrefix || "misc", 
-          originalFileName, 
-          "admin", // Default for now
-          `${folder} - ${idPrefix}`
-      );
-      console.log("[ImageService.uploadImageIfBase64] Upload complete. URL:", metadata.url);
-      return metadata.url;
+      const id = uuidv4();
+      // Extract mime type from base64 string
+      const mimeType = base64OrUrl.match(/data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+).*,.*/)?.[1] || "image/jpeg";
+      const extension = mimeType.split('/')[1] || "jpg";
+      const filename = `${pathPrefix}/${id}.${extension}`;
+      
+      const storageRef = ref(storage, filename);
+      
+      const uploadMetadata = {
+        contentType: mimeType,
+        customMetadata: metadata || {}
+      };
+
+      await uploadString(storageRef, base64OrUrl, 'data_url', uploadMetadata);
+      return await getDownloadURL(storageRef);
     } catch (error) {
-      console.error(`[ImageService.uploadImageIfBase64] Failed to upload image to folder ${folder}:`, error);
-      throw error; // Do not fallback to base64 to prevent oversized Firestore payloads
+      console.error("Error uploading image:", error);
+      throw error;
     }
   },
 
-  /**
-   * Recursively traverses an object and uploads any base64 images it finds to Storage.
-   */
-  uploadAllImagesInObject: async (
-    obj: any,
-    folder: string,
-    idPrefix: string = ""
-  ): Promise<any> => {
-    if (obj === undefined || obj === null) {
-      return obj;
+  isBase64Image: (str: string): boolean => {
+    return !!str && str.startsWith("data:image");
+  },
+
+  deleteImageFromStorage: async (url: string): Promise<void> => {
+    if (!url || !url.includes("firebasestorage.googleapis.com")) return;
+    
+    try {
+      // Create a reference from the URL
+      const fileRef = ref(storage, url);
+      await deleteObject(fileRef);
+    } catch (error) {
+      console.error("Error deleting image:", error);
     }
+  },
+
+  uploadAllImagesInObject: async (obj: any, pathPrefix: string = "images", id?: string): Promise<any> => {
+    if (!obj) return obj;
+    
     if (Array.isArray(obj)) {
-      return Promise.all(obj.map(item => ImageService.uploadAllImagesInObject(item, folder, idPrefix)));
+      return Promise.all(obj.map(item => ImageService.uploadAllImagesInObject(item, pathPrefix, id)));
     }
-    if (typeof obj === "object") {
-      const newObj: any = {};
-      for (const key of Object.keys(obj)) {
-        if (typeof obj[key] === "string" && ImageService.isBase64Image(obj[key])) {
-          newObj[key] = await ImageService.uploadImageIfBase64(obj[key], folder, idPrefix);
-        } else {
-          newObj[key] = await ImageService.uploadAllImagesInObject(obj[key], folder, idPrefix);
+    
+    if (typeof obj === 'object') {
+      const newObj = { ...obj };
+      for (const [key, value] of Object.entries(newObj)) {
+        if (typeof value === 'string' && ImageService.isBase64Image(value)) {
+          newObj[key] = await ImageService.uploadImageIfBase64(value, pathPrefix, { refId: id });
+        } else if (typeof value === 'object') {
+          newObj[key] = await ImageService.uploadAllImagesInObject(value, pathPrefix, id);
         }
       }
       return newObj;
     }
+    
     return obj;
   },
 
-  /**
-   * Recursively traverses an object and deletes any Firebase Storage URLs it finds.
-   */
   deleteAllImagesInObject: async (obj: any): Promise<void> => {
-    if (obj === undefined || obj === null) {
-      return;
-    }
+    if (!obj) return;
+    
     if (Array.isArray(obj)) {
       await Promise.all(obj.map(item => ImageService.deleteAllImagesInObject(item)));
       return;
     }
-    if (typeof obj === "object") {
-      await Promise.all(Object.keys(obj).map(async (key) => {
-        if (typeof obj[key] === "string" && obj[key].includes("firebasestorage.googleapis.com")) {
-          await ImageService.deleteImageFromStorage(obj[key]);
-        } else {
-          await ImageService.deleteAllImagesInObject(obj[key]);
+    
+    if (typeof obj === 'object') {
+      for (const value of Object.values(obj)) {
+        if (typeof value === 'string' && value.includes("firebasestorage.googleapis.com")) {
+          await ImageService.deleteImageFromStorage(value);
+        } else if (typeof value === 'object') {
+          await ImageService.deleteAllImagesInObject(value);
         }
-      }));
-    }
-  },
-
-  deleteImageFromStorage: async (imageUrl: string) => {
-    if (imageUrl && imageUrl.includes("firebasestorage.googleapis.com")) {
-      try {
-        await MediaRepository.delete(imageUrl);
-      } catch (e) {
-        console.warn("Failed to delete image from storage", e);
       }
     }
   }

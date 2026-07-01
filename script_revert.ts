@@ -21,12 +21,8 @@ function processDirectory(dir) {
             processDirectory(fullPath);
         } else if (fullPath.endsWith('.ts') || fullPath.endsWith('.tsx')) {
             replaceInFile(fullPath, [
-                [/ASML/g, 'Corporate'],
-                [/Corporate Veldhoven/g, 'Corporate Campus'],
-                [/Corporate Veldhoven Campus/g, 'Corporate Campus'],
-                [/Corporate CEO/g, 'CEO'],
-                [/Corporate Email/g, 'Corporate Email'],
-                [/Corporate Mail:/g, 'Corporate Mail:']
+                [/Corporate/g, 'ASML'],
+                [/ASML Campus/g, 'ASML Veldhoven']
             ]);
         }
     }
