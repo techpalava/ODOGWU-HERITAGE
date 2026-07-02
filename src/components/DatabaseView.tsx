@@ -64,6 +64,7 @@ import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 import { BusinessIntelligenceEngine } from "../engine/BusinessIntelligenceEngine";
 import { useAppStore } from "../store/useAppStore";
+import { useReferenceDataFallback } from "../hooks/useReferenceData";
 
 interface DatabaseViewProps {
   customers: Customer[];
@@ -91,8 +92,10 @@ import { getClosestColorName } from "../utils/colorMatcher";
 import { FabricService } from "../services/fabricService";
 import { StorageService } from "../services/storageService";
 import { ImageService } from "../services/imageService";
+import { getActiveBatch } from "../utils/batchUtils";
 import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 import { db } from "../services/firebase";
+import { BatchManagementPanel } from "./BatchManagementPanel";
 
 type TabType =
   | "documentation"
@@ -1506,11 +1509,17 @@ export default function DatabaseView({
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
-                        <option value="male">Male</option>
-                        <option value="female">Female</option>
-                        <option value="unisex">Unisex</option>
-                        <option value="couple">Couple</option>
-                        <option value="family">Family</option>
+                        {useReferenceDataFallback("genders", [
+                          { value: "male", label: "Male" },
+                          { value: "female", label: "Female" },
+                          { value: "unisex", label: "Unisex" },
+                          { value: "couple", label: "Couple" },
+                          { value: "family", label: "Family" },
+                        ]).map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="space-y-1">
@@ -1527,28 +1536,16 @@ export default function DatabaseView({
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
-                        {(businessSettings.outfitTypes &&
-                        businessSettings.outfitTypes.length > 0
-                          ? businessSettings.outfitTypes.filter(
-                              (t) =>
-                                t.enabled || t.name === editingItem.outfitType,
-                            )
-                          : [
-                              { id: "senator-set", name: "Senator Set" },
-                              { id: "kaftan-set", name: "Kaftan Set" },
-                              { id: "boubou", name: "Boubou" },
-                              { id: "agbada", name: "Agbada" },
-                            ]
-                        )
-                          .sort(
-                            (a: any, b: any) =>
-                              (a.displayOrder || 0) - (b.displayOrder || 0),
-                          )
-                          .map((option: any) => (
-                            <option key={option.id} value={option.name}>
-                              {option.name}
-                            </option>
-                          ))}
+                        {useReferenceDataFallback("outfit_types", [
+                          { value: "Senator Set", label: "Senator Set" },
+                          { value: "Kaftan Set", label: "Kaftan Set" },
+                          { value: "Boubou", label: "Boubou" },
+                          { value: "Agbada", label: "Agbada" },
+                        ]).map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="space-y-1">
@@ -1565,28 +1562,26 @@ export default function DatabaseView({
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
-                        {(
-                          businessSettings.garmentCompositions || [
-                            "Shirt Only",
-                            "Trouser Only",
-                            "Shorts Only",
-                            "Blouse Only",
-                            "Top Only",
-                            "Skirt Only",
-                            "Wrapper Only",
-                            "Dress Only",
-                            "Kaftan Only",
-                            "Agbada Only",
-                            "2-Piece Set",
-                            "3-Piece Set",
-                            "4-Piece Set",
-                            "Couple Set",
-                            "Parent & Child Set",
-                            "Family Set",
-                          ]
-                        ).map((option) => (
-                          <option key={option} value={option}>
-                            {option}
+                        {useReferenceDataFallback("garment_compositions", [
+                          { value: "Shirt Only", label: "Shirt Only" },
+                          { value: "Trouser Only", label: "Trouser Only" },
+                          { value: "Shorts Only", label: "Shorts Only" },
+                          { value: "Blouse Only", label: "Blouse Only" },
+                          { value: "Top Only", label: "Top Only" },
+                          { value: "Skirt Only", label: "Skirt Only" },
+                          { value: "Wrapper Only", label: "Wrapper Only" },
+                          { value: "Dress Only", label: "Dress Only" },
+                          { value: "Kaftan Only", label: "Kaftan Only" },
+                          { value: "Agbada Only", label: "Agbada Only" },
+                          { value: "2-Piece Set", label: "2-Piece Set" },
+                          { value: "3-Piece Set", label: "3-Piece Set" },
+                          { value: "4-Piece Set", label: "4-Piece Set" },
+                          { value: "Couple Set", label: "Couple Set" },
+                          { value: "Parent & Child Set", label: "Parent & Child Set" },
+                          { value: "Family Set", label: "Family Set" },
+                        ]).map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
                           </option>
                         ))}
                       </select>
@@ -1606,15 +1601,19 @@ export default function DatabaseView({
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
                         <option value="Any">Any Fabric</option>
-                        <option value="Ankara">Ankara</option>
-                        <option value="Lace">Lace</option>
-                        <option value="Senator / Cashmere">
-                          Senator / Cashmere
-                        </option>
-                        <option value="Atiku">Atiku</option>
-                        <option value="Silk / Chiffon">Silk / Chiffon</option>
-                        <option value="Velvet">Velvet</option>
-                        <option value="Aso Oke">Aso Oke</option>
+                        {useReferenceDataFallback("fabric_categories", [
+                          { value: "Ankara", label: "Ankara" },
+                          { value: "Lace", label: "Lace" },
+                          { value: "Senator / Cashmere", label: "Senator / Cashmere" },
+                          { value: "Atiku", label: "Atiku" },
+                          { value: "Silk / Chiffon", label: "Silk / Chiffon" },
+                          { value: "Velvet", label: "Velvet" },
+                          { value: "Aso Oke", label: "Aso Oke" },
+                        ]).map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="space-y-1 sm:col-span-2">
@@ -2023,18 +2022,16 @@ export default function DatabaseView({
                           }
                           className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                         >
-                          <option value="Printed Fabrics">
-                            Printed Fabrics (Standard Ankara)
-                          </option>
-                          <option value="Handcrafted Fabrics">
-                            Handcrafted Fabrics (Adire Tie-Dye)
-                          </option>
-                          <option value="Traditional Fabrics">
-                            Traditional Fabrics (Aso-Oke Strip Weaves)
-                          </option>
-                          <option value="Luxury Fabrics">
-                            Luxury Fabrics (Grand Gold Cashmere Brocades)
-                          </option>
+                          {useReferenceDataFallback("fabric_categories", [
+                            { value: "Printed Fabrics", label: "Printed Fabrics (Standard Ankara)" },
+                            { value: "Handcrafted Fabrics", label: "Handcrafted Fabrics (Adire Tie-Dye)" },
+                            { value: "Traditional Fabrics", label: "Traditional Fabrics (Aso-Oke Strip Weaves)" },
+                            { value: "Luxury Fabrics", label: "Luxury Fabrics (Grand Gold Cashmere Brocades)" },
+                          ]).map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
                         </select>
                       </div>
 
@@ -2714,9 +2711,23 @@ export default function DatabaseView({
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
-                        <option value="male">Men's Attire</option>
-                        <option value="female">Women's Couture</option>
-                        <option value="fabric">Raw Fabric Bolts</option>
+                        {batches.sort((a,b) => a.batchNumber - b.batchNumber).map((b) => {
+                          const catValue = (() => {
+                            switch (b.batchNumber) {
+                              case 1: return "male";
+                              case 2: return "female";
+                              case 3: return "fabric";
+                              case 4: return "group4";
+                              case 5: return "group5";
+                              default: return `group${b.batchNumber}`;
+                            }
+                          })();
+                          return (
+                            <option key={catValue} value={catValue}>
+                              Group {b.batchNumber} - {b.name}
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                     <div className="space-y-1">
@@ -2869,8 +2880,7 @@ export default function DatabaseView({
                       <label className="font-bold text-heritage-green">
                         Cohort Name
                       </label>
-                      <input
-                        type="text"
+                      <select
                         required
                         value={editingItem.cohortName || ""}
                         onChange={(e) =>
@@ -2880,8 +2890,17 @@ export default function DatabaseView({
                           })
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg focus:ring-1 focus:ring-heritage-gold"
-                        placeholder="e.g. Group 3 — The Sovereign Cohort"
-                      />
+                      >
+                        <option value="">Select Cohort</option>
+                        {batches.sort((a,b) => a.batchNumber - b.batchNumber).map((b) => {
+                          const cohortName = `Group ${b.batchNumber} - ${b.name}`;
+                          return (
+                            <option key={b.batchNumber} value={cohortName}>
+                              {cohortName}
+                            </option>
+                          );
+                        })}
+                      </select>
                     </div>
                     <div className="space-y-1">
                       <label className="font-bold text-heritage-green">
@@ -3197,11 +3216,11 @@ export default function DatabaseView({
                   {/* Batch Production */}
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Active Batches</span>
-                    <strong className="text-xl text-heritage-green font-mono">{batches.filter(b => ["Open", "Recruiting", "Almost Full", "Full", "Production Ready", "Production Started"].includes(b.status)).length}</strong>
+                    <strong className="text-xl text-heritage-green font-mono">{batches.filter(b => ["OPEN", "RECRUITING", "ALMOST_FULL", "FULL", "PRODUCTION_READY", "PRODUCTION_STARTED"].includes(b.status)).length}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Completed Batches</span>
-                    <strong className="text-xl text-heritage-green font-mono">{batches.filter(b => b.status === "Completed").length}</strong>
+                    <strong className="text-xl text-heritage-green font-mono">{batches.filter(b => b.status === "COMPLETED").length}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Upcoming Shipments</span>
@@ -3907,6 +3926,7 @@ export default function DatabaseView({
 
             {activeTab === "batches" && (
               <div className="space-y-6 text-left">
+                <BatchManagementPanel batches={batches} />
                 {/* Business Intelligence Engine: Production Analytics */}
                 <div className="bg-white border border-heritage-gold/20 rounded-2xl p-6 shadow-sm mb-6">
                   <h3 className="font-serif font-bold text-lg text-heritage-green mb-4">
@@ -3974,14 +3994,7 @@ export default function DatabaseView({
                           </span>
                           <strong className="text-2xl text-heritage-green font-mono">
                             {(() => {
-                              const active = batches.find((b) =>
-                                [
-                                  "Open",
-                                  "Recruiting",
-                                  "Almost Full",
-                                  "In Progress",
-                                ].includes(b.status),
-                              );
+                              const active = getActiveBatch(batches);
                               return active
                                 ? `${BusinessIntelligenceEngine.calculateCapacityPercentage(active, businessSettings)}%`
                                 : "N/A";
@@ -3994,14 +4007,7 @@ export default function DatabaseView({
                           </span>
                           <strong className="text-xl text-heritage-green font-sans mt-1 block">
                             {(() => {
-                              const active = batches.find((b) =>
-                                [
-                                  "Open",
-                                  "Recruiting",
-                                  "Almost Full",
-                                  "In Progress",
-                                ].includes(b.status),
-                              );
+                              const active = getActiveBatch(batches);
                               return active?.estimatedDelivery || "TBD";
                             })()}
                           </strong>
@@ -4019,14 +4025,7 @@ export default function DatabaseView({
                       Forecast Engine
                     </h3>
                     {(() => {
-                      const active = batches.find((b) =>
-                        [
-                          "Open",
-                          "Recruiting",
-                          "Almost Full",
-                          "In Progress",
-                        ].includes(b.status),
-                      );
+                      const active = getActiveBatch(batches);
                       if (!active)
                         return (
                           <p className="text-xs text-gray-500">
@@ -4097,14 +4096,7 @@ export default function DatabaseView({
                       Intelligence
                     </h3>
                     {(() => {
-                      const active = batches.find((b) =>
-                        [
-                          "Open",
-                          "Recruiting",
-                          "Almost Full",
-                          "In Progress",
-                        ].includes(b.status),
-                      );
+                      const active = getActiveBatch(batches);
                       if (!active)
                         return (
                           <p className="text-xs text-gray-500">
@@ -4230,7 +4222,7 @@ export default function DatabaseView({
                         className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active"
                       >
                         <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-white shadow-sm shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 text-xl text-center shadow-heritage-gold/20">
-                          {b.status === "Completed"
+                          {b.status === "COMPLETED"
                             ? "✅"
                             : [
                                   "Production Ready",
@@ -4259,7 +4251,7 @@ export default function DatabaseView({
                             </div>
                             <span
                               className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                                ["Open", "Recruiting", "Almost Full"].includes(
+                                ["OPEN", "RECRUITING", "ALMOST_FULL"].includes(
                                   b.status,
                                 )
                                   ? "bg-green-100 text-green-700"
@@ -4269,9 +4261,9 @@ export default function DatabaseView({
                                         "Production Ready",
                                       ].includes(b.status)
                                     ? "bg-blue-100 text-blue-700"
-                                    : b.status === "Completed"
+                                    : b.status === "COMPLETED"
                                       ? "bg-gray-100 text-gray-700"
-                                      : ["Yet To Start", "Draft"].includes(
+                                      : ["YET_TO_START", "DRAFT"].includes(
                                             b.status,
                                           )
                                         ? "bg-yellow-100 text-yellow-700"
@@ -4682,11 +4674,23 @@ export default function DatabaseView({
                                   )}
                                 </td>
                                 <td className="px-4 py-3 capitalize font-semibold text-heritage-ink">
-                                  {s.category === "male"
-                                    ? "Men's Attire"
-                                    : s.category === "female"
-                                      ? "Women's Couture"
-                                      : "Raw Fabric"}
+                                  {(() => {
+                                      let bNum = 0;
+                                      const cat = s.category as string;
+                                      if (cat === "male") bNum = 1;
+                                      else if (cat === "female") bNum = 2;
+                                      else if (cat === "fabric") bNum = 3;
+                                      else if (cat === "group4") bNum = 4;
+                                      else if (cat === "group5") bNum = 5;
+                                      else if (cat.startsWith("group")) bNum = parseInt(cat.replace("group", ""));
+                                      
+                                      if (bNum > 0) {
+                                        const b = batches.find(x => x.batchNumber === bNum);
+                                        if (b) return `Group ${b.batchNumber} - ${b.name}`;
+                                        return `Group ${bNum}`;
+                                      }
+                                      return cat;
+                                    })()}
                                 </td>
                                 <td className="px-4 py-3">
                                   <span className="inline-block px-2 py-0.5 bg-heritage-forest/5 text-heritage-green rounded font-semibold text-[10px]">
@@ -4824,7 +4828,7 @@ export default function DatabaseView({
                           id: `photo-${Date.now().toString().slice(-4)}`,
                           url: "",
                           caption: "",
-                          cohortName: "Cohort " + new Date().getFullYear(),
+                          cohortName: batches.length > 0 ? `Group ${batches[0].batchNumber} - ${batches[0].name}` : "",
                           deliveryYear: new Date().getFullYear(),
                           featured: true,
                           status: "active",
@@ -6020,8 +6024,7 @@ export default function DatabaseView({
                                       : newOutfitGender
                                   }
                                   onChange={(e) => {
-                                    const val = e.target.value as
-                                      "male" | "female" | "unisex" | "family";
+                                    const val = e.target.value as any;
                                     if (editingOutfitType) {
                                       setEditingOutfitType({
                                         ...editingOutfitType,
@@ -6033,16 +6036,16 @@ export default function DatabaseView({
                                   }}
                                   className="w-full px-3 py-1.5 border border-heritage-gold/20 bg-white rounded-lg text-xs"
                                 >
-                                  <option value="male">Men's Collection</option>
-                                  <option value="female">
-                                    Women's Collection
-                                  </option>
-                                  <option value="unisex">
-                                    Unisex Collection
-                                  </option>
-                                  <option value="family">
-                                    Family Collection
-                                  </option>
+                                  {useReferenceDataFallback("genders", [
+                                    { value: "male", label: "Men's Collection" },
+                                    { value: "female", label: "Women's Collection" },
+                                    { value: "unisex", label: "Unisex Collection" },
+                                    { value: "family", label: "Family Collection" },
+                                  ]).map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
                                 </select>
                               </div>
                               <div className="space-y-1">

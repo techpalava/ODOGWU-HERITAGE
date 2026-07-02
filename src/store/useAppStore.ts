@@ -16,6 +16,7 @@ import {
   Plugin,
   AuditLog,
   Role,
+  ReferenceDataGroup,
 } from "../types";
 import { ApiService } from "../services/api";
 import {
@@ -25,6 +26,7 @@ import { StorageService } from "../services/storageService";
 import { FabricService } from "../services/fabricService";
 import { auth } from "../services/firebase";
 import { signInAnonymously } from "firebase/auth";
+import { processDynamicBatches } from "../utils/batchUtils";
 
 interface AppState {
 
@@ -36,7 +38,9 @@ interface AppState {
     | "about"
     | "gallery"
     | "database"
-    | "custom-order";
+    | "custom-order" | "login";
+  pendingRedirect: string | null;
+  setPendingRedirect: (redirect: string | null) => void;
   setActiveTab: (
     tab:
       | "home"
@@ -45,7 +49,7 @@ interface AppState {
       | "about"
       | "gallery"
       | "database"
-      | "custom-order",
+      | "custom-order" | "login",
   ) => void;
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (isOpen: boolean) => void;
@@ -116,6 +120,10 @@ interface AppState {
   ) => void;
 
   // Foundation Platform Data
+  referenceData: ReferenceDataGroup[];
+  setReferenceData: (
+    data: ReferenceDataGroup[] | ((prev: ReferenceDataGroup[]) => ReferenceDataGroup[]),
+  ) => void;
   mediaLibrary: MediaItem[];
   setMediaLibrary: (
     media: MediaItem[] | ((prev: MediaItem[]) => MediaItem[]),
@@ -140,12 +148,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       (sessionStorage.getItem("asml_active_tab") as any)) ||
     "home",
   setActiveTab: (tab) => {
+    const state = get();
+    // Protect Design Studio route
+    if (tab === "design" && !state.currentUser) {
+      set({ pendingRedirect: "design" });
+      tab = "login";
+    }
+
     if (typeof window !== "undefined") {
       sessionStorage.setItem("asml_active_tab", tab);
       sessionStorage.removeItem(`asml_scroll_position_${tab}`);
     }
     set({ activeTab: tab });
   },
+  pendingRedirect: null,
+  setPendingRedirect: (redirect) => set({ pendingRedirect: redirect }),
   isMobileMenuOpen: false,
   setIsMobileMenuOpen: (isOpen) => set({ isMobileMenuOpen: isOpen }),
   notification: null,
@@ -257,6 +274,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     StorageService.saveBusinessSettings(newSettings);
   },
 
+  referenceData: [],
+  setReferenceData: (data) => {
+    const newData =
+      typeof data === "function" ? data(get().referenceData) : data;
+    set({ referenceData: newData });
+  },
+
   mediaLibrary: [],
   setMediaLibrary: (media) => {
     const newMedia =
@@ -347,7 +371,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       storeUnsubs.push(
         StorageService.subscribeToCollection<Batch>("batches", (batches) => {
-          set({ batches });
+          set({ batches: processDynamicBatches(batches) });
         })
       );
 
@@ -378,6 +402,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       storeUnsubs.push(
         StorageService.subscribeToCollection<CustomGroup>("customGroups", (groupsList) => {
           set({ customGroups: groupsList });
+        })
+      );
+
+      storeUnsubs.push(
+        StorageService.subscribeToCollection<ReferenceDataGroup>("reference_data", (data) => {
+          set({ referenceData: data });
         })
       );
 

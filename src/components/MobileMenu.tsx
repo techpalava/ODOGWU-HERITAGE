@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   X,
-  Compass,
+  Home,
   Shirt,
   ShoppingBag,
   ClipboardList,
@@ -99,7 +99,7 @@ export function MobileMenu() {
                 aria-label="Mobile Tab Navigation"
               >
                 {[
-                  { id: "home", label: "Home", icon: Compass },
+                  { id: "home", label: "Home", icon: Home },
                   { id: "design", label: "Design Studio", icon: Shirt },
                   {
                     id: "custom-order",

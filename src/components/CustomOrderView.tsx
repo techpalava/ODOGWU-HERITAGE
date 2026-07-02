@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { CustomGroup, OrderContext, Batch } from "../types";
 import { useAppStore } from "../store/useAppStore";
+import { useReferenceDataFallback } from "../hooks/useReferenceData";
 
 interface CustomOrderViewProps {
   customGroups: CustomGroup[];
@@ -62,7 +63,7 @@ export default function CustomOrderView({
   const [maxParticipants, setMaxParticipants] = useState(
     businessSettings.batchSettings.maxGarmentsPerBatch,
   );
-  const [visibility, setVisibility] = useState<"Private" | "Public">("Public");
+  const [visibility, setVisibility] = useState<"PRIVATE" | "PUBLIC">("PUBLIC");
   const [notes, setNotes] = useState("");
   const [saveAsDraft, setSaveAsDraft] = useState(false);
 
@@ -72,7 +73,7 @@ export default function CustomOrderView({
 
   // Filter active public groups for Option 3 list (only Open)
   const openBatches = batches.filter(
-    (b) => b.visibility === "Public" && b.status === "Open",
+    (b) => b.visibility === "PUBLIC" && b.status === "OPEN",
   );
 
   const handleCreateGroupSubmit = (e: React.FormEvent) => {
@@ -104,7 +105,7 @@ export default function CustomOrderView({
       maxParticipants,
       visibility,
       notes,
-      status: saveAsDraft ? "Draft" : "Open",
+      status: saveAsDraft ? "DRAFT" : "OPEN",
     });
 
     setFormSuccess(true);
@@ -335,10 +336,16 @@ export default function CustomOrderView({
                     onChange={(e) => setCountry(e.target.value)}
                     className="w-full px-3 py-2 bg-heritage-cream/40 border border-heritage-gold/20 rounded-xl focus:outline-none"
                   >
-                    <option value="Netherlands">Netherlands</option>
-                    <option value="Belgium">Belgium</option>
-                    <option value="Germany">Germany</option>
-                    <option value="Nigeria">Nigeria</option>
+                    {useReferenceDataFallback("countries", [
+                      { value: "Netherlands", label: "Netherlands" },
+                      { value: "Belgium", label: "Belgium" },
+                      { value: "Germany", label: "Germany" },
+                      { value: "Nigeria", label: "Nigeria" },
+                    ]).map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -365,11 +372,17 @@ export default function CustomOrderView({
                     onChange={(e) => setPreferredDeliveryMonth(e.target.value)}
                     className="w-full px-3 py-2 bg-heritage-cream/40 border border-heritage-gold/20 rounded-xl focus:outline-none"
                   >
-                    <option value="July 2026">July 2026</option>
-                    <option value="August 2026">August 2026</option>
-                    <option value="September 2026">September 2026</option>
-                    <option value="October 2026">October 2026</option>
-                    <option value="December 2026">December 2026</option>
+                    {useReferenceDataFallback("delivery_months", [
+                      { value: "July 2026", label: "July 2026" },
+                      { value: "August 2026", label: "August 2026" },
+                      { value: "September 2026", label: "September 2026" },
+                      { value: "October 2026", label: "October 2026" },
+                      { value: "December 2026", label: "December 2026" },
+                    ]).map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -421,15 +434,15 @@ export default function CustomOrderView({
                   <div className="flex gap-2 pt-1">
                     <button
                       type="button"
-                      onClick={() => setVisibility("Public")}
-                      className={`flex-1 py-1 px-2 border rounded-lg flex items-center justify-center gap-1 font-bold ${visibility === "Public" ? "bg-heritage-green text-white border-heritage-green" : "bg-heritage-cream/30 text-heritage-ink/60 border-heritage-gold/20"}`}
+                      onClick={() => setVisibility("PUBLIC")}
+                      className={`flex-1 py-1 px-2 border rounded-lg flex items-center justify-center gap-1 font-bold ${visibility === "PUBLIC" ? "bg-heritage-green text-white border-heritage-green" : "bg-heritage-cream/30 text-heritage-ink/60 border-heritage-gold/20"}`}
                     >
                       <Globe size={11} /> Public
                     </button>
                     <button
                       type="button"
-                      onClick={() => setVisibility("Private")}
-                      className={`flex-1 py-1 px-2 border rounded-lg flex items-center justify-center gap-1 font-bold ${visibility === "Private" ? "bg-heritage-green text-white border-heritage-green" : "bg-heritage-cream/30 text-heritage-ink/60 border-heritage-gold/20"}`}
+                      onClick={() => setVisibility("PRIVATE")}
+                      className={`flex-1 py-1 px-2 border rounded-lg flex items-center justify-center gap-1 font-bold ${visibility === "PRIVATE" ? "bg-heritage-green text-white border-heritage-green" : "bg-heritage-cream/30 text-heritage-ink/60 border-heritage-gold/20"}`}
                     >
                       <Lock size={11} /> Private
                     </button>
@@ -508,9 +521,9 @@ export default function CustomOrderView({
               {openBatches.map((batch) => {
                 const getBadgeColor = (status: string) => {
                   switch (status) {
-                    case "Open":
+                    case "OPEN":
                       return "bg-emerald-50 text-emerald-800 border-emerald-200";
-                    case "Almost Full":
+                    case "ALMOST_FULL":
                       return "bg-amber-50 text-amber-800 border-amber-200";
                     case "Closing Soon":
                       return "bg-rose-50 text-rose-800 border-rose-200";
@@ -588,8 +601,8 @@ export default function CustomOrderView({
                           }
                           onSelectOrderContext(context);
                         }}
-                        disabled={batch.status === "Full"}
-                        className={`text-[10px] px-3.5 py-1.5 font-bold uppercase tracking-wider rounded-lg transition duration-200 cursor-pointer ${batch.status === "Full" ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200" : "bg-heritage-green hover:bg-heritage-gold hover:text-heritage-forest text-white border border-heritage-green hover:border-heritage-gold"}`}
+                        disabled={batch.status === "FULL"}
+                        className={`text-[10px] px-3.5 py-1.5 font-bold uppercase tracking-wider rounded-lg transition duration-200 cursor-pointer ${batch.status === "FULL" ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200" : "bg-heritage-green hover:bg-heritage-gold hover:text-heritage-forest text-white border border-heritage-green hover:border-heritage-gold"}`}
                       >
                         Join Group
                       </button>

@@ -64,14 +64,14 @@ export interface Fabric {
   color: string;
   colorHex: string;
   priceMultiplier: number; // e.g. 1.0, 1.2
-  stockStatus: "In Stock" | "Low Stock" | "Out of Stock" | "Hidden";
+  stockStatus: "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK" | "HIDDEN";
 
   // Database suggested fields
   category?:
-    | "Printed Fabrics"
-    | "Handcrafted Fabrics"
-    | "Traditional Fabrics"
-    | "Luxury Fabrics";
+    | "PRINTED_FABRICS"
+    | "HANDCRAFTED_FABRICS"
+    | "TRADITIONAL_FABRICS"
+    | "LUXURY_FABRICS";
   image?: string;
   width?: string;
   price?: number;
@@ -266,27 +266,34 @@ export interface Batch {
   currentOrders: number;
   currentCustomers: number;
   status:
-    | "Draft"
-    | "Yet To Start"
-    | "Open"
-    | "Recruiting"
-    | "Almost Full"
-    | "Full"
-    | "Production Ready"
-    | "Production Started"
-    | "Quality Control"
-    | "Packed"
-    | "Shipped"
-    | "Arrived Netherlands"
-    | "Ready For Pickup"
-    | "Collected"
-    | "Completed";
+    | "DRAFT"
+    | "YET_TO_START"
+    | "OPEN"
+    | "RECRUITING"
+    | "ALMOST_FULL"
+    | "FULL"
+    | "CLOSED"
+    | "COMING_SOON"
+    | "PRODUCTION_READY"
+    | "PRODUCTION_STARTED"
+    | "QUALITY_CONTROL"
+    | "PACKED"
+    | "SHIPPED"
+    | "ARRIVED_NETHERLANDS"
+    | "READY_FOR_PICKUP"
+    | "COLLECTED"
+    | "COMPLETED";
+  isActive?: boolean;
+  allowOrders?: boolean;
+  displayOrder?: number;
+  description?: string;
+  isAutoScheduled?: boolean;
   registrationOpens?: string;
   registrationCloses?: string;
   productionStart?: string;
   estimatedDelivery?: string;
   pickupLocation?: string;
-  visibility: "Private" | "Public";
+  visibility: "PRIVATE" | "PUBLIC";
   createdBy?: string;
   createdDate?: string;
   updatedDate?: string;
@@ -306,6 +313,9 @@ export interface Batch {
   administratorNotes?: string;
   galleryUrls?: string[];
   testimonials?: string[];
+  newParticipants?: number;
+  previousParticipants?: number;
+  dressesMade?: number;
 }
 
 export interface OutfitType {
@@ -420,7 +430,7 @@ export interface CustomGroup {
   preferredDeliveryMonth: string;
   expectedParticipants: number;
   maxParticipants: number;
-  visibility: "Private" | "Public";
+  visibility: "PRIVATE" | "PUBLIC";
   notes?: string;
   organizer: string;
   organizerId?: string;
@@ -428,13 +438,13 @@ export interface CustomGroup {
   closingDate: string;
   deliveryWindow: string;
   status:
-    | "Draft"
-    | "Open"
-    | "Almost Full"
-    | "Full"
-    | "Closed"
-    | "Locked"
-    | "Completed";
+    | "DRAFT"
+    | "OPEN"
+    | "ALMOST_FULL"
+    | "FULL"
+    | "CLOSED"
+    | "LOCKED"
+    | "COMPLETED";
   pickupLocation?: string;
   createdDate?: string;
   inviteCode?: string;
@@ -501,6 +511,23 @@ export interface Role {
   description: string;
   permissions: string[];
   isSystem: boolean; // cannot be deleted
+}
+
+export interface ReferenceOption {
+  id: string;
+  code: string;
+  label: string;
+  value?: string; // Kept for backwards compatibility if needed
+  enabled: boolean;
+  displayOrder: number;
+  metadata?: Record<string, any>;
+}
+
+export interface ReferenceDataGroup {
+  id: string; // e.g., 'batch_status', 'garment_categories'
+  name: string; // e.g., 'Batch Status'
+  description?: string;
+  options: ReferenceOption[];
 }
 
 export interface SystemEvent {

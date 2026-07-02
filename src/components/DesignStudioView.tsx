@@ -40,7 +40,9 @@ import {
 import { DESIGN_OPTIONS } from "../data/mockData";
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
 import { ApiService } from "../services/api";
+import { useReferenceDataFallback } from "../hooks/useReferenceData";
 import { useAppStore } from "../store/useAppStore";
+import { getActiveBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
 
@@ -480,9 +482,7 @@ export default function DesignStudioView({
     return (sessionStorage.getItem("odogwu_biometric_consent") as any) || null;
   });
 
-  const computedActiveBatch = storeBatches?.find((b) =>
-    ["Open", "Recruiting", "Almost Full"].includes(b.status),
-  );
+  const computedActiveBatch = getActiveBatch(storeBatches || []);
   const defaultCtx: OrderContext = computedActiveBatch
     ? {
         orderType: "Community",
@@ -1732,22 +1732,13 @@ export default function DesignStudioView({
                     onChange={(e) => setTypeFilter(e.target.value)}
                     options={[
                       { value: "all", label: "All Types" },
-                      ...(businessSettings.outfitTypes &&
-                      businessSettings.outfitTypes.length > 0
-                        ? businessSettings.outfitTypes
-                            .filter((t) => t.enabled)
-                            .sort(
-                              (a, b) =>
-                                (a.displayOrder || 0) - (b.displayOrder || 0),
-                            )
-                            .map((t) => ({ value: t.name, label: t.name }))
-                        : [
-                            { value: "Senator Set", label: "Senator Set" },
-                            { value: "Kaftan Set", label: "Kaftan Set" },
-                            { value: "Agbada", label: "Agbada" },
-                            { value: "Boubou", label: "Boubou" },
-                            { value: "Maxi Gown", label: "Maxi Gown" },
-                          ]),
+                      ...useReferenceDataFallback("outfit_types", [
+                        { value: "Senator Set", label: "Senator Set" },
+                        { value: "Kaftan Set", label: "Kaftan Set" },
+                        { value: "Agbada", label: "Agbada" },
+                        { value: "Boubou", label: "Boubou" },
+                        { value: "Maxi Gown", label: "Maxi Gown" },
+                      ]).map(opt => ({ value: opt.value, label: opt.label }))
                     ]}
                   />
 

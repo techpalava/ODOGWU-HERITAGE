@@ -20,7 +20,10 @@ import {
   Customer,
 } from "./types";
 import { StorageService } from "./services/storageService";
+import { auth } from "./services/firebase";
+import { signOut } from "firebase/auth";
 import { useAppStore } from "./store/useAppStore";
+import { getActiveBatch } from "./utils/batchUtils";
 
 // Lazy load modular view components for performance optimization
 const HomeView = lazy(() => import("./components/HomeView"));
@@ -143,11 +146,11 @@ export default function App() {
     const updatedGroups = customGroups.map((g) => {
       try {
         const closeDate = new Date(g.closingDate);
-        if (closeDate < now && g.status !== "Closed") {
+        if (closeDate < now && g.status !== "CLOSED") {
           changed = true;
           return {
             ...g,
-            status: "Closed" as const,
+            status: "CLOSED" as const,
           };
         }
       } catch (e) {
@@ -161,9 +164,7 @@ export default function App() {
     }
   }, [customGroups, setCustomGroups]);
 
-  const openBatch = batches.find((b) =>
-    ["Open", "Recruiting", "Almost Full"].includes(b.status),
-  );
+  const openBatch = getActiveBatch(batches);
   const activeCommunityBatch: OrderContext | null = openBatch
     ? {
         orderType: "Community",
@@ -329,11 +330,25 @@ export default function App() {
       `Welcome back, ${name}! Secure session activated.`,
       "success",
     );
+    
+    // Redirect if pending
+    if (store.pendingRedirect) {
+      setActiveTab(store.pendingRedirect as any);
+      store.setPendingRedirect(null);
+    } else if (activeTab === "login") {
+      setActiveTab("dashboard");
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.warn("Firebase signout error", err);
+    }
     setCurrentUser(null);
     StorageService.clearSession();
+    setActiveTab("home");
     triggerNotification("Logged out successfully.", "info");
   };
 
@@ -431,7 +446,8 @@ export default function App() {
                     | "about"
                     | "gallery"
                     | "database"
-                    | "custom-order",
+                    | "custom-order"
+                    | "login",
                 ) => setActiveTab(tabId)}
                 activeCommunityBatch={activeCommunityBatch}
                 communityPhotos={communityPhotos}
@@ -439,32 +455,41 @@ export default function App() {
             )}
 
             {activeTab === "design" && (
-              <DesignStudioView
-                onAddToCart={handleAddToCart}
-                onNavigateToTab={(
-                  tabId:
-                    | "home"
-                    | "design"
-                    | "dashboard"
-                    | "about"
-                    | "gallery"
-                    | "database"
-                    | "custom-order",
-                ) => setActiveTab(tabId)}
-                openCartDrawer={() => setIsCartOpen(true)}
-                currentUser={currentUser}
-                orderContext={orderContext}
-                styles={styles}
-                fabrics={fabrics}
-                customers={customers}
-                setCustomers={setCustomers}
-                initialStyleId={presetStyleId}
-                initialFabricCode={presetFabricCode}
-                clearInitialPreset={() => {
-                  setPresetStyleId(null);
-                  setPresetFabricCode(null);
-                }}
-              />
+              currentUser ? (
+                <DesignStudioView
+                  onAddToCart={handleAddToCart}
+                  onNavigateToTab={(
+                    tabId:
+                      | "home"
+                      | "design"
+                      | "dashboard"
+                      | "about"
+                      | "gallery"
+                      | "database"
+                      | "custom-order"
+                      | "login",
+                  ) => setActiveTab(tabId)}
+                  openCartDrawer={() => setIsCartOpen(true)}
+                  currentUser={currentUser}
+                  orderContext={orderContext}
+                  styles={styles}
+                  fabrics={fabrics}
+                  customers={customers}
+                  setCustomers={setCustomers}
+                  initialStyleId={presetStyleId}
+                  initialFabricCode={presetFabricCode}
+                  clearInitialPreset={() => {
+                    setPresetStyleId(null);
+                    setPresetFabricCode(null);
+                  }}
+                />
+              ) : (
+                <LoginView
+                  onLogin={handleLogin}
+                  customers={customers}
+                  setCustomers={setCustomers}
+                />
+              )
             )}
 
             {activeTab === "custom-order" && (
@@ -479,7 +504,7 @@ export default function App() {
                     organizer: currentUser?.name || "Xavier E.",
                     closingDate: "August 15, 2026",
                     deliveryWindow: `Late ${newGroup.preferredDeliveryMonth}`,
-                    status: "Open",
+                    status: "OPEN",
                   };
                   setCustomGroups((prev) => [fullGroup, ...prev]);
                 }}
@@ -510,7 +535,8 @@ export default function App() {
                       | "about"
                       | "gallery"
                       | "database"
-                      | "custom-order",
+                      | "custom-order"
+                    | "login",
                   ) => setActiveTab(tabId)}
                   onUpdateProfile={handleUpdateProfile}
                   onUpdateMeasurements={handleUpdateMeasurements}
@@ -539,6 +565,15 @@ export default function App() {
                 />
               ))}
 
+            
+            {activeTab === "login" && !currentUser && (
+              <LoginView
+                onLogin={handleLogin}
+                customers={customers}
+                setCustomers={setCustomers}
+              />
+            )}
+
             {activeTab === "about" && <AboutView />}
 
             {activeTab === "gallery" && (
@@ -547,6 +582,8 @@ export default function App() {
                 communityPhotos={communityPhotos}
                 fabrics={fabrics}
                 styles={styles}
+                batches={batches}
+                onNavigateToTab={(tab) => setActiveTab(tab as any)}
                 onSelectStyle={(styleId, fabricCode) => {
                   setPresetStyleId(styleId);
                   setPresetFabricCode(fabricCode);

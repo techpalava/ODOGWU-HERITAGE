@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useAppStore } from "../store/useAppStore";
+import { useReferenceDataFallback } from "../hooks/useReferenceData";
 import {
   User,
   ClipboardList,
@@ -118,7 +119,7 @@ export default function DashboardView({
       maxParticipants: 15,
       closingDate: "September 10, 2026",
       deliveryWindow: "September 28, 2026",
-      status: "Open",
+      status: "OPEN",
       organizer: "Grace E.",
     },
   ]);
@@ -446,7 +447,7 @@ export default function DashboardView({
             const userBatch =
               batches.find((b) => b.id === userBatchId) ||
               batches.find((b) =>
-                ["Production Started", "Open", "Almost Full"].includes(
+                ["PRODUCTION_STARTED", "OPEN", "ALMOST_FULL"].includes(
                   b.status,
                 ),
               );
@@ -498,7 +499,7 @@ export default function DashboardView({
                       Batch Progress ({userBatch.currentGarments} /{" "}
                       {userBatch.targetGarments} Garments)
                     </span>
-                    {userBatch.status === "Production Started" && (
+                    {userBatch.status === "PRODUCTION_STARTED" && (
                       <span className="text-[10px] bg-heritage-green text-white px-2 py-0.5 rounded font-bold animate-pulse">
                         Production Started
                       </span>
@@ -506,7 +507,7 @@ export default function DashboardView({
                   </div>
                   <div className="h-2.5 w-full bg-gray-100 rounded-full overflow-hidden">
                     <div
-                      className={`h-full ${userBatch.status === "Production Started" ? "bg-heritage-green" : "bg-heritage-gold"} transition-all duration-500`}
+                      className={`h-full ${userBatch.status === "PRODUCTION_STARTED" ? "bg-heritage-green" : "bg-heritage-gold"} transition-all duration-500`}
                       style={{
                         width: `${Math.min(100, (userBatch.currentGarments / userBatch.targetGarments) * 100)}%`,
                       }}
@@ -988,19 +989,19 @@ export default function DashboardView({
                   {myCreatedGroups.map((group) => {
                     const getStatusColor = (status: string) => {
                       switch (status) {
-                        case "Draft":
+                        case "DRAFT":
                           return "bg-gray-50 text-gray-700 border-gray-200";
-                        case "Open":
+                        case "OPEN":
                           return "bg-emerald-50 text-emerald-800 border-emerald-200";
-                        case "Almost Full":
+                        case "ALMOST_FULL":
                           return "bg-amber-50 text-amber-800 border-amber-200";
                         case "Full":
                           return "bg-orange-50 text-orange-800 border-orange-200";
-                        case "Closed":
+                        case "CLOSED":
                           return "bg-stone-50 text-stone-700 border-stone-200";
                         case "Locked":
                           return "bg-indigo-50 text-indigo-800 border-indigo-200";
-                        case "Completed":
+                        case "COMPLETED":
                           return "bg-heritage-cream text-heritage-green border-heritage-gold/30";
                         default:
                           return "bg-gray-50 text-gray-700 border-gray-200";
@@ -1008,14 +1009,14 @@ export default function DashboardView({
                     };
 
                     const canEdit =
-                      group.status === "Draft" || group.status === "Open";
+                      group.status === "DRAFT" || group.status === "OPEN";
                     const canInvite =
-                      group.status === "Draft" ||
-                      group.status === "Open" ||
-                      group.status === "Almost Full";
-                    const canDelete = group.status === "Draft";
+                      group.status === "DRAFT" ||
+                      group.status === "OPEN" ||
+                      group.status === "ALMOST_FULL";
+                    const canDelete = group.status === "DRAFT";
                     const canClose =
-                      group.status === "Open" || group.status === "Almost Full";
+                      group.status === "OPEN" || group.status === "ALMOST_FULL";
 
                     return (
                       <div
@@ -1124,7 +1125,7 @@ export default function DashboardView({
                               <button
                                 onClick={() => {
                                   onUpdateCustomGroup(group.batchId, {
-                                    status: "Closed",
+                                    status: "CLOSED",
                                   });
                                 }}
                                 className="px-2 sm:py-0.5 min-h-[44px] sm:min-h-[24px] hover:text-amber-700 border border-gray-150 rounded hover:bg-gray-50 flex items-center gap-0.5 cursor-pointer"
@@ -1171,19 +1172,19 @@ export default function DashboardView({
                   {myJoinedGroups.map((group) => {
                     const getStatusColor = (status: string) => {
                       switch (status) {
-                        case "Draft":
+                        case "DRAFT":
                           return "bg-gray-50 text-gray-700 border-gray-200";
-                        case "Open":
+                        case "OPEN":
                           return "bg-emerald-50 text-emerald-800 border-emerald-200";
-                        case "Almost Full":
+                        case "ALMOST_FULL":
                           return "bg-amber-50 text-amber-800 border-amber-200";
                         case "Full":
                           return "bg-orange-50 text-orange-800 border-orange-200";
-                        case "Closed":
+                        case "CLOSED":
                           return "bg-stone-50 text-stone-700 border-stone-200";
                         case "Locked":
                           return "bg-indigo-50 text-indigo-800 border-indigo-200";
-                        case "Completed":
+                        case "COMPLETED":
                           return "bg-heritage-cream text-heritage-green border-heritage-gold/30";
                         default:
                           return "bg-gray-50 text-gray-700 border-gray-200";
@@ -1191,7 +1192,7 @@ export default function DashboardView({
                     };
 
                     const canLeave =
-                      group.status !== "Locked" && group.status !== "Completed";
+                      group.status !== "LOCKED" && group.status !== "COMPLETED";
 
                     return (
                       <div
@@ -1497,25 +1498,24 @@ export default function DashboardView({
                           onChange={(e) =>
                             setEditingGroup({
                               ...editingGroup,
-                              status: e.target.value as
-                                | "Draft"
-                                | "Open"
-                                | "Almost Full"
-                                | "Full"
-                                | "Closed"
-                                | "Locked"
-                                | "Completed",
+                              status: e.target.value as any,
                             })
                           }
                           className="w-full px-3 py-2 bg-heritage-cream/20 border border-heritage-gold/20 rounded-xl focus:outline-none focus:border-heritage-gold text-heritage-green font-semibold"
                         >
-                          <option value="Draft">Draft</option>
-                          <option value="Open">Open</option>
-                          <option value="Almost Full">Almost Full</option>
-                          <option value="Full">Full</option>
-                          <option value="Closed">Closed</option>
-                          <option value="Locked">Locked</option>
-                          <option value="Completed">Completed</option>
+                          {useReferenceDataFallback("batch_status", [
+                            { value: "Draft", label: "Draft" },
+                            { value: "Open", label: "Open" },
+                            { value: "Almost Full", label: "Almost Full" },
+                            { value: "Full", label: "Full" },
+                            { value: "Closed", label: "Closed" },
+                            { value: "Locked", label: "Locked" },
+                            { value: "Completed", label: "Completed" },
+                          ]).map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
                         </select>
                       </div>
                       <div className="space-y-1">
@@ -1527,14 +1527,19 @@ export default function DashboardView({
                           onChange={(e) =>
                             setEditingGroup({
                               ...editingGroup,
-                              visibility: e.target.value as
-                                "Private" | "Public",
+                              visibility: e.target.value as any,
                             })
                           }
                           className="w-full px-3 py-2 bg-heritage-cream/20 border border-heritage-gold/20 rounded-xl focus:outline-none focus:border-heritage-gold text-heritage-green"
                         >
-                          <option value="Public">Public (Discoverable)</option>
-                          <option value="Private">Private (Invite-Only)</option>
+                          {useReferenceDataFallback("visibility", [
+                            { value: "Public", label: "Public (Discoverable)" },
+                            { value: "Private", label: "Private (Invite-Only)" },
+                          ]).map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
                         </select>
                       </div>
                     </div>

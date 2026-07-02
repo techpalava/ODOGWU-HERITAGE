@@ -16,6 +16,7 @@ import {
 } from "../types";
 import { db } from "./firebase";
 import { ImageService } from "./imageService";
+import { legacyCompatMap } from "../utils/legacyCompat";
 import {
   collection,
   doc,
@@ -79,7 +80,7 @@ export const StorageService = {
   async fetchCollection<T>(collectionName: string): Promise<T[]> {
     try {
       const querySnapshot = await getDocs(collection(db, collectionName));
-      return querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as T));
+      return querySnapshot.docs.map((doc) => legacyCompatMap(collectionName, { id: doc.id, ...doc.data() } as T));
     } catch (error) {
       console.error(`Error fetching collection ${collectionName}:`, error);
       return [];
@@ -89,7 +90,7 @@ export const StorageService = {
   // Helper to subscribe to collection
   subscribeToCollection<T>(collectionName: string, callback: (data: T[]) => void) {
     return onSnapshot(collection(db, collectionName), (snapshot) => {
-      const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as T));
+      const items = snapshot.docs.map(doc => legacyCompatMap(collectionName, { id: doc.id, ...doc.data() } as T));
       callback(items);
     }, (error) => {
       console.error(`Error subscribing to collection ${collectionName}:`, error);
@@ -99,7 +100,7 @@ export const StorageService = {
   subscribeToDocument<T>(collectionName: string, documentId: string, callback: (data: T | null) => void) {
     return onSnapshot(doc(db, collectionName, documentId), (snapshot) => {
       if (snapshot.exists()) {
-        callback({ id: snapshot.id, ...snapshot.data() } as T);
+        callback(legacyCompatMap(collectionName, { id: snapshot.id, ...snapshot.data() } as T));
       } else {
         callback(null);
       }

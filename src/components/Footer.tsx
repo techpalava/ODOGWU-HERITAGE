@@ -64,7 +64,7 @@ export default function Footer() {
             </p>
             <p className="text-xs text-heritage-beige/60 leading-relaxed">
               {businessSettings?.applicationSettings?.description ||
-                "The NTCC Project and Community is dedicated to promoting the rich, colorful, and dynamic traditional cultures of Nigeria through its diverse traditional clothing. Every garment is custom-made in Nigeria by skilled artisans and carefully shipped to members of our community in the Netherlands."}
+                "Connecting cultures through authentic Nigerian traditional clothing, handcrafted in Nigeria and delivered to our multicultural community in the Netherlands."}
             </p>
           </div>
 

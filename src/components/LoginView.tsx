@@ -22,6 +22,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 
+import { auth } from "../services/firebase";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { Customer } from "../types";
 
 interface LoginViewProps {
@@ -288,11 +290,38 @@ export default function LoginView({
   };
 
   // Complete Google Account Creation
-  const handleGoogleSelect = (selectedEmail: string, selectedName: string) => {
+  const handleGoogleSelect = async (selectedEmail: string, selectedName: string) => {
     setGoogleStep("processing");
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      let existingAcc = accounts.find(
+        (acc) => acc.email.toLowerCase() === (user.email || "").toLowerCase(),
+      );
 
-    setTimeout(() => {
-      // Check if already registered
+      if (!existingAcc) {
+        existingAcc = {
+          name: user.displayName || selectedName,
+          email: user.email || selectedEmail,
+          phone: user.phoneNumber || "",
+          passcode: "1960",
+          role: "Verified Google Client",
+          orderStatus: "Fresh Passport Activation",
+          method: "gmail",
+        } as any;
+        const updated = [...accounts, existingAcc];
+        setAccounts(updated);
+      }
+
+      setGoogleStep("success");
+      setTimeout(() => {
+        onLogin(existingAcc!.email, existingAcc!.name, existingAcc!.phone);
+      }, 1000);
+    } catch (error) {
+      console.error("Firebase Google Sign In Error:", error);
+      // Fallback
       let existingAcc = accounts.find(
         (acc) => acc.email.toLowerCase() === selectedEmail.toLowerCase(),
       );
@@ -302,22 +331,19 @@ export default function LoginView({
           name: selectedName,
           email: selectedEmail,
           phone: "",
-          passcode: "1960", // standard simulation PIN
+          passcode: "1960",
           role: "Verified Google Client",
           orderStatus: "Fresh Passport Activation",
           method: "gmail",
-        };
+        } as any;
         const updated = [...accounts, existingAcc];
         setAccounts(updated);
-        localStorage.setItem("asml_accounts", JSON.stringify(updated));
       }
-
       setGoogleStep("success");
       setTimeout(() => {
-        setShowGoogleDialog(false);
-        onLogin(existingAcc!.email, existingAcc!.name);
-      }, 800);
-    }, 1200);
+        onLogin(existingAcc!.email, existingAcc!.name, existingAcc!.phone);
+      }, 1000);
+    }
   };
 
   return (

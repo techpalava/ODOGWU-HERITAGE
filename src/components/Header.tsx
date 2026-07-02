@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import {
+  Home,
   Compass,
   Shirt,
   ClipboardList,
@@ -14,7 +15,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { auth } from "../services/firebase";
-import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { signOut, onAuthStateChanged } from "firebase/auth";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 
 export function Header() {
@@ -33,13 +34,15 @@ export function Header() {
     });
   }, []);
 
+  const { currentUser, setCurrentUser } = useAppStore();
   const handleAuth = async () => {
     try {
-      if (user) {
+      if (currentUser || user) {
         await signOut(auth);
+        setCurrentUser(null);
+        setActiveTab("home");
       } else {
-        const provider = new GoogleAuthProvider();
-        await signInWithPopup(auth, provider);
+        setActiveTab("login" as any);
       }
     } catch (error) {
       console.error("Auth error:", error);
@@ -136,21 +139,33 @@ export function Header() {
               type="button"
               onClick={handleAuth}
               className="flex items-center justify-center min-h-[38px] px-3.5 rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/20 cursor-pointer select-none"
-              title={user ? "Logout" : "Login"}
+              title={currentUser ? "Logout" : "Login"}
             >
-              {user ? (
+              {currentUser ? (
                 <LogOut size={12} className="mr-1.5 shrink-0" />
               ) : (
                 <LogIn size={12} className="mr-1.5 shrink-0" />
               )}
               <span className="text-[10px] font-bold uppercase tracking-wider">
-                {user ? "Logout" : "Login"}
+                {currentUser ? "Logout" : "Login"}
               </span>
             </button>
           </div>
 
           {/* Mobile Navigation Controls */}
           <div className="flex lg:hidden items-center gap-1 sm:gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("home");
+                setIsMobileMenuOpen(false);
+              }}
+              className="flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/15 cursor-pointer shadow-sm"
+              aria-label="Home"
+              title="Home"
+            >
+              <Home size={18} />
+            </button>
             <a
               href={`https://wa.me/${businessSettings?.applicationSettings?.whatsappNumber?.replace(/\D/g, "") || "31657903098"}`}
               className="flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/15 cursor-pointer shadow-sm"
@@ -182,9 +197,9 @@ export function Header() {
               type="button"
               onClick={handleAuth}
               className="flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:px-3.5 rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/15 cursor-pointer select-none shadow-sm"
-              title={user ? "Logout" : "Login"}
+              title={currentUser ? "Logout" : "Login"}
             >
-              {user ? (
+              {currentUser ? (
                 <LogOut size={14} className="sm:mr-1 shrink-0" />
               ) : (
                 <LogIn size={14} className="sm:mr-1 shrink-0" />

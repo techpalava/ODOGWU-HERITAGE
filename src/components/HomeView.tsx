@@ -137,10 +137,10 @@ export default function HomeView({
               </button>
               <button
                 id="btn-hero-how-it-works"
-                onClick={() => onNavigateToTab("about")}
+                onClick={() => onNavigateToTab("gallery")}
                 className="border border-heritage-beige/55 text-white hover:bg-white/10 transition duration-300 min-h-[44px] px-8 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider cursor-pointer w-full sm:w-auto"
               >
-                Our Process
+                Style Gallery
               </button>
             </div>
           </div>{" "}
