@@ -3,22 +3,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from "react";
-import {
-  Sparkles,
-  ArrowRight,
-  ShieldCheck,
-  Award,
-} from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Sparkles, ArrowRight, ShieldCheck, Award } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { OrderContext, CommunityPhoto } from "../types";
+import { OrderContext, CommunityPhoto, Showpiece, Fabric } from "../types";
 import { useAppStore } from "../store/useAppStore";
+import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 
 interface HomeViewProps {
   onStartDesigning: () => void;
   onNavigateToTab: (tabId: string) => void;
   activeCommunityBatch?: OrderContext | null;
   communityPhotos?: CommunityPhoto[];
+  showpieces?: Showpiece[];
+  fabrics?: Fabric[];
+  onSelectStyle?: (styleId: string, fabricCode: string) => void;
+  onSelectFabric?: (fabricCode: string) => void;
 }
 
 export default function HomeView({
@@ -26,12 +26,57 @@ export default function HomeView({
   onNavigateToTab,
   activeCommunityBatch,
   communityPhotos,
+  showpieces = [],
+  fabrics = [],
+  onSelectStyle,
+  onSelectFabric,
 }: HomeViewProps) {
-  const { businessSettings } = useAppStore();
+  const { businessSettings, currentUser, customers, orders, batches, styles } =
+    useAppStore();
 
-  const [days, setDays] = useState(17);
-  const [hours, setHours] = useState(8);
-  const [minutes, setMinutes] = useState(14);
+  const [, setNow] = useState(new Date());
+  const [fabricFilter, setFabricFilter] = useState("All Fabrics");
+
+  const activeFabrics = [...fabrics]
+    .filter(
+      (f) => fabricFilter === "All Fabrics" || f.category === fabricFilter,
+    )
+    .slice(0, 12);
+
+
+  const [styleFilter, setStyleFilter] = useState("All Styles");
+  
+  // Extract categories dynamically
+  const styleCategories = [
+    "All Styles",
+    ...Array.from(new Set(styles.map(s => {
+      if (s.gender === "male") return "Men";
+      if (s.gender === "female") return "Women";
+      if (s.gender === "couple") return "Couples";
+      if (s.gender === "family") return "Families";
+      if (s.gender === "unisex") return "Unisex";
+      return s.outfitType || s.gender;
+    }).filter(Boolean)))
+  ];
+
+  const activeStyles = [...styles]
+    .filter(s => {
+      if (styleFilter === "All Styles") return true;
+      const mappedGender = 
+        s.gender === "male" ? "Men" : 
+        s.gender === "female" ? "Women" : 
+        s.gender === "couple" ? "Couples" : 
+        s.gender === "family" ? "Families" : 
+        s.gender === "unisex" ? "Unisex" : s.gender;
+      
+      return mappedGender === styleFilter || s.outfitType === styleFilter;
+    })
+    .slice(0, 12);
+
+  const fabricCategories = [
+    "All Fabrics",
+    ...Array.from(new Set(fabrics.map((f) => f.category).filter(Boolean))),
+  ];
 
   // Community Photos Slider State
   const [selectedPhotos, setSelectedPhotos] = useState<CommunityPhoto[]>([]);
@@ -55,24 +100,19 @@ export default function HomeView({
     const interval = setInterval(() => {
       setActivePhotoIndex((prev) => (prev + 1) % selectedPhotos.length);
     }, 3000);
+
     return () => clearInterval(interval);
   }, [selectedPhotos]);
 
-  // Simple countdown simulation
   useEffect(() => {
     const timer = setInterval(() => {
-      setMinutes((prev) => {
-        if (prev > 0) return prev - 1;
-        setHours((h) => {
-          if (h > 0) return h - 1;
-          setDays((d) => (d > 0 ? d - 1 : 0));
-          return 23;
-        });
-        return 59;
-      });
-    }, 60000);
+      setNow(new Date());
+    }, 60000); // update every minute
+
     return () => clearInterval(timer);
   }, []);
+
+  const featuredShowpieces = [...showpieces].filter((s) => s.image).slice(0, 8);
 
   return (
     <div id="home-view-container" className="space-y-16">
@@ -93,21 +133,22 @@ export default function HomeView({
             </h1>
             {/* Desktop Hero Description */}
             <p className="hidden sm:block text-sm text-heritage-beige max-w-xl leading-relaxed font-sans">
-              Welcome to {businessSettings.applicationSettings.communityName}. We empower
-              people to express their identity and tell their unique stories
-              through the timeless beauty of Nigerian traditional fabrics. By
-              connecting skilled artisans in Nigeria with communities across the
-              Netherlands and beyond, we celebrate Nigeria's rich, colourful,
-              and diverse cultural heritage through authentic, custom-made
-              garments crafted with exceptional care and craftsmanship.
+              Welcome to {businessSettings.applicationSettings.communityName}.
+              We empower people to express their identity and tell their unique
+              stories through the timeless beauty of Nigerian traditional
+              fabrics. By connecting skilled artisans in Nigeria with
+              communities across the Netherlands and beyond, we celebrate
+              Nigeria's rich, colourful, and diverse cultural heritage through
+              authentic, custom-made garments crafted with exceptional care and
+              craftsmanship.
             </p>
 
             {/* Mobile Hero Description (Summarized) */}
             <p className="block sm:hidden text-xs text-heritage-beige/95 max-w-md leading-relaxed font-sans">
-              Welcome to {businessSettings.applicationSettings.communityName}. We connect
-              skilled artisans in Nigeria with Netherlands communities,
-              delivering exquisite, custom-made garments that celebrate
-              Nigeria's rich and diverse cultural heritage.
+              Welcome to {businessSettings.applicationSettings.communityName}.
+              We connect skilled artisans in Nigeria with Netherlands
+              communities, delivering exquisite, custom-made garments that
+              celebrate Nigeria's rich and diverse cultural heritage.
             </p>
 
             <div className="flex flex-wrap gap-4 pt-4">
@@ -128,6 +169,7 @@ export default function HomeView({
                   Create Your Own Batch <ArrowRight size={14} />
                 </button>
               )}
+
               <button
                 id="btn-hero-custom-order"
                 onClick={() => onNavigateToTab("custom-order")}
@@ -147,37 +189,22 @@ export default function HomeView({
           {/* Group Status Card */}
           <div className="lg:col-span-5 font-sans">
             <div className="rounded-2xl border border-heritage-gold/30 bg-heritage-forest p-6 space-y-5 shadow-xl">
-              {activeCommunityBatch ? (
-                <>
-                  <div className="flex justify-between items-center text-left">
-                    <div>
-                      <span className="text-[10px] text-heritage-gold font-bold tracking-widest uppercase block">
-                        ACTIVE GROUP
-                      </span>
-                      <h3 className="text-lg font-serif font-bold text-white mt-0.5">
-                        {activeCommunityBatch.batchName}
-                      </h3>
-                    </div>
-                    {(() => {
-                      const isClosed = (() => {
-                        if (!activeCommunityBatch?.closingDate) return false;
-                        try {
-                          return (
-                            new Date(activeCommunityBatch.closingDate) <
-                            new Date()
-                          );
-                        } catch (e) {
-                          return false;
-                        }
-                      })();
-                      if (isClosed) {
-                        return (
-                          <span className="bg-red-600/20 text-red-300 border border-red-600/40 px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider">
-                            Registration Locked
-                          </span>
-                        );
-                      }
-                      return (
+              {(() => {
+                const presentation = BatchBusinessRules.getHeroPresentation(activeCommunityBatch);
+                const progress = BatchBusinessRules.getProgressState(activeCommunityBatch);
+                
+                return (
+                  <>
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-left gap-3 sm:gap-0">
+                      <div>
+                        <span className="text-[10px] text-heritage-gold font-bold tracking-widest uppercase block">
+                          {presentation.title}
+                        </span>
+                        <h3 className="text-lg font-serif font-bold text-white mt-0.5">
+                          {presentation.headline}
+                        </h3>
+                      </div>
+                      {presentation.badgeStyle === "pulsing-gold" ? (
                         <motion.span
                           animate={{
                             opacity: [0.8, 1, 0.8],
@@ -192,73 +219,63 @@ export default function HomeView({
                             duration: 2.5,
                             ease: "easeInOut",
                           }}
-                          className="bg-heritage-gold/20 text-heritage-gold border border-heritage-gold/40 px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider inline-block"
+                          className="bg-heritage-gold/20 text-heritage-gold border border-heritage-gold/40 px-2.5 py-1 sm:px-3 sm:py-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-bold uppercase tracking-wider inline-block shrink-0"
                         >
-                          Open for Orders
+                          {presentation.badgeText}
                         </motion.span>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Progress bar */}
-                  <div className="space-y-2 text-left">
-                    <div className="flex justify-between text-[10px] text-heritage-beige font-mono mb-1">
-                      <span>
-                        {activeCommunityBatch.currentMembers} /{" "}
-                        {activeCommunityBatch.expectedParticipants} Garments
-                      </span>
-                      <span>
-                        {Math.round(
-                          (activeCommunityBatch.currentMembers /
-                            activeCommunityBatch.expectedParticipants) *
-                            100,
-                        )}
-                        % Complete
-                      </span>
+                      ) : presentation.badgeStyle === "gold-static" ? (
+                        <span className="bg-heritage-gold/20 text-heritage-gold border border-heritage-gold/40 px-2.5 py-1 sm:px-3 sm:py-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-bold uppercase tracking-wider shrink-0">
+                          {presentation.badgeText}
+                        </span>
+                      ) : presentation.badgeStyle === "green" ? (
+                        <span className="bg-heritage-green/20 text-heritage-beige border border-heritage-green/40 px-2.5 py-1 sm:px-3 sm:py-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-bold uppercase tracking-wider shrink-0">
+                          {presentation.badgeText}
+                        </span>
+                      ) : (
+                        <span className="bg-red-600/20 text-red-300 border border-red-600/40 px-2.5 py-1 sm:px-3 sm:py-1 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-bold uppercase tracking-wider shrink-0">
+                          {presentation.badgeText}
+                        </span>
+                      )}
                     </div>
-                    <div className="h-2 w-full bg-heritage-green rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-heritage-gold transition-all duration-500"
-                        style={{
-                          width: `${(activeCommunityBatch.currentMembers / activeCommunityBatch.expectedParticipants) * 100}%`,
-                        }}
-                      ></div>
-                    </div>
-                  </div>
 
-                  {/* Countdown or Production Lock State */}
-                  {(() => {
-                    const isClosed = (() => {
-                      if (!activeCommunityBatch?.closingDate) return false;
-                      try {
-                        return (
-                          new Date(activeCommunityBatch.closingDate) <
-                          new Date()
-                        );
-                      } catch (e) {
-                        return false;
-                      }
-                    })();
-                    if (isClosed) {
-                      return (
-                        <div className="pt-3 border-t border-white/15 space-y-2 text-left">
-                          <span className="text-[10px] text-heritage-gold uppercase tracking-wider font-bold block">
-                            Sourcing Phase:
+                    {presentation.showProgress && activeCommunityBatch && (
+                      <div className="space-y-2.5 sm:space-y-2 text-left pt-1 sm:pt-0">
+                        <div className="flex justify-between text-[10px] text-heritage-beige font-mono mb-1.5 sm:mb-1">
+                          <span>
+                            {activeCommunityBatch.currentMembers} / {activeCommunityBatch.expectedParticipants} Garments
                           </span>
-                          <div className="bg-white/5 border border-white/10 p-4 rounded-xl text-center space-y-1">
-                            <strong className="text-xs text-heritage-gold font-serif block uppercase tracking-wide">
-                              Locked &amp; Sent to Lagos Ateliers
-                            </strong>
-                            <span className="text-[10px] text-white/70 block leading-normal">
-                              Deadline passed on{" "}
-                              {activeCommunityBatch.closingDate}. Custom fabric
-                              is locked, patterns are being custom-drawn.
-                            </span>
-                          </div>
+                          <span>
+                            {progress.completionPercentage}% Complete
+                          </span>
                         </div>
-                      );
-                    }
-                    return (
+                        <div className="h-2 w-full bg-heritage-green rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-heritage-gold transition-all duration-500"
+                            style={{
+                              width: `${progress.completionPercentage}%`,
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {!presentation.showCountdown && presentation.productionPhase && (
+                      <div className="pt-3 border-t border-white/15 space-y-2 text-left">
+                        <span className="text-[10px] text-heritage-gold uppercase tracking-wider font-bold block">
+                          Current Phase:
+                        </span>
+                        <div className="bg-white/5 border border-white/10 p-4 rounded-xl text-center space-y-1">
+                          <strong className="text-xs text-heritage-gold font-serif block uppercase tracking-wide">
+                            {presentation.productionPhase}
+                          </strong>
+                          <span className="text-[10px] text-white/70 block leading-normal">
+                            {presentation.productionDescription}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {presentation.showCountdown && (
                       <div className="pt-3 border-t border-white/15 space-y-2 text-left">
                         <span className="text-[10px] text-heritage-gold uppercase tracking-wider font-bold block">
                           Registration Closes In:
@@ -266,7 +283,7 @@ export default function HomeView({
                         <div className="grid grid-cols-3 gap-2 text-center text-white font-serif">
                           <div className="bg-white/5 border border-white/10 p-2 rounded-xl">
                             <strong className="text-lg text-heritage-gold block">
-                              {days}
+                              {progress.daysRemaining}
                             </strong>
                             <span className="text-[8px] uppercase tracking-wider text-white/50 font-sans">
                               Days
@@ -274,7 +291,7 @@ export default function HomeView({
                           </div>
                           <div className="bg-white/5 border border-white/10 p-2 rounded-xl">
                             <strong className="text-lg text-heritage-gold block">
-                              {hours.toString().padStart(2, "0")}
+                              {progress.hoursRemaining.toString().padStart(2, "0")}
                             </strong>
                             <span className="text-[8px] uppercase tracking-wider text-white/50 font-sans">
                               Hours
@@ -282,7 +299,7 @@ export default function HomeView({
                           </div>
                           <div className="bg-white/5 border border-white/10 p-2 rounded-xl">
                             <strong className="text-lg text-heritage-gold block">
-                              {minutes.toString().padStart(2, "0")}
+                              {progress.minutesRemaining.toString().padStart(2, "0")}
                             </strong>
                             <span className="text-[8px] uppercase tracking-wider text-white/50 font-sans">
                               Mins
@@ -290,77 +307,644 @@ export default function HomeView({
                           </div>
                         </div>
                       </div>
-                    );
-                  })()}
+                    )}
 
-                  {/* Dates Info */}
-                  <div className="grid grid-cols-2 gap-4 text-xs pt-4 border-t border-white/10">
-                    <div className="text-left">
-                      <span className="text-white/50 block text-[9px]">
-                        Sourcing Closes:
-                      </span>
-                      <span className="font-bold text-white">
-                        {activeCommunityBatch.closingDate.replace(", 2026", "")}
-                      </span>
-                    </div>
-                    <div className="text-right sm:text-left">
-                      <span className="text-white/50 block text-[9px]">
-                        Veldhoven Handoff:
-                      </span>
-                      <span className="font-bold text-white font-serif text-heritage-gold">
-                        {activeCommunityBatch.deliveryWindow.replace(
-                          ", 2026",
-                          "",
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="text-center py-6 space-y-5">
-                  <div className="w-12 h-12 bg-heritage-gold/10 border border-heritage-gold/30 rounded-full flex items-center justify-center mx-auto text-heritage-gold">
-                    <span className="text-lg">⚜</span>
-                  </div>
-                  <div className="space-y-2">
-                    <h3 className="text-base font-serif font-bold text-white">
-                      Community Batch Registration Closed
-                    </h3>
-                  </div>
-                  <button
-                    onClick={() => onNavigateToTab("custom-order")}
-                    className="w-full bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg inline-flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    Create Your Own Batch <ArrowRight size={14} />
-                  </button>
-                  <button
-                    onClick={() => {
-                      onNavigateToTab("custom-order");
-                      setTimeout(() => {
-                        const el = document.getElementById("option-join-group");
-                        if (el) el.scrollIntoView({ behavior: "smooth" });
-                      }, 100);
-                    }}
-                    className="w-full border border-heritage-gold/50 text-heritage-gold hover:bg-heritage-gold/10 transition duration-300 py-3 rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center justify-center gap-2 cursor-pointer mt-2"
-                  >
-                    Join A Personalized Group <ArrowRight size={14} />
-                  </button>
-                </div>
-              )}
+                    {activeCommunityBatch && (
+                      <div className="grid grid-cols-2 gap-4 text-xs pt-5 sm:pt-4 border-t border-white/10">
+                        <div className="text-left space-y-1 sm:space-y-0">
+                          <span className="text-white/50 block text-[9px]">
+                            Sourcing Closes:
+                          </span>
+                          <span className="font-bold text-white block">
+                            {activeCommunityBatch.closingDate.replace(", 2026", "")}
+                          </span>
+                        </div>
+                        <div className="text-right space-y-1 sm:space-y-0">
+                          <span className="text-white/50 block text-[9px]">
+                            Veldhoven Handoff:
+                          </span>
+                          <span className="font-bold text-white font-serif text-heritage-gold block">
+                            {activeCommunityBatch.deliveryWindow.replace(", 2026", "")}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {!activeCommunityBatch && (
+                      <div className="text-center py-2 space-y-3">
+                         <div className="w-12 h-12 bg-heritage-gold/10 border border-heritage-gold/30 rounded-full flex items-center justify-center mx-auto text-heritage-gold mb-4">
+                           <span className="text-lg">⚜</span>
+                         </div>
+                         <button
+                           onClick={() => onNavigateToTab("custom-order")}
+                           className="w-full bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg inline-flex items-center justify-center gap-2 cursor-pointer"
+                         >
+                           {presentation.buttonText} <ArrowRight size={14} />
+                         </button>
+                         <button
+                           onClick={() => {
+                             onNavigateToTab("custom-order");
+                             setTimeout(() => {
+                               const el = document.getElementById("option-join-group");
+                               if (el) el.scrollIntoView({ behavior: "smooth" });
+                             }, 100);
+                           }}
+                           className="w-full border border-heritage-gold/50 text-heritage-gold hover:bg-heritage-gold/10 transition duration-300 py-3 rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center justify-center gap-2 cursor-pointer mt-2"
+                         >
+                           Join A Personalized Group <ArrowRight size={14} />
+                         </button>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>
       </section>
 
+      {/* Why Choose NTCC? */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-heritage-cream/20 border border-heritage-gold/15 p-6 rounded-2xl space-y-3 text-center sm:text-left transition-all hover:bg-heritage-cream/40 hover:border-heritage-gold/30">
+          <div className="text-3xl mb-4">🇳🇬</div>
+          <h3 className="font-serif font-bold text-heritage-green text-lg tracking-tight">
+            Authentic Nigerian Craftsmanship
+          </h3>
+          <p className="text-sm text-heritage-ink/75 leading-relaxed">
+            Every outfit is handcrafted by experienced Nigerian tailors.
+          </p>
+        </div>
+
+        <div className="bg-heritage-cream/20 border border-heritage-gold/15 p-6 rounded-2xl space-y-3 text-center sm:text-left transition-all hover:bg-heritage-cream/40 hover:border-heritage-gold/30">
+          <div className="text-3xl mb-4">📏</div>
+          <h3 className="font-serif font-bold text-heritage-green text-lg tracking-tight">
+            Made to Your Measurements
+          </h3>
+          <p className="text-sm text-heritage-ink/75 leading-relaxed">
+            Each garment is custom-tailored specifically for you.
+          </p>
+        </div>
+
+        <div className="bg-heritage-cream/20 border border-heritage-gold/15 p-6 rounded-2xl space-y-3 text-center sm:text-left transition-all hover:bg-heritage-cream/40 hover:border-heritage-gold/30">
+          <div className="text-3xl mb-4">✈️</div>
+          <h3 className="font-serif font-bold text-heritage-green text-lg tracking-tight">
+            Delivered to the Netherlands
+          </h3>
+          <p className="text-sm text-heritage-ink/75 leading-relaxed">
+            Secure shipping directly from Nigeria.
+          </p>
+        </div>
+
+        <div className="bg-heritage-cream/20 border border-heritage-gold/15 p-6 rounded-2xl space-y-3 text-center sm:text-left transition-all hover:bg-heritage-cream/40 hover:border-heritage-gold/30">
+          <div className="text-3xl mb-4">👥</div>
+          <h3 className="font-serif font-bold text-heritage-green text-lg tracking-tight">
+            Join a Growing Community
+          </h3>
+          <p className="text-sm text-heritage-ink/75 leading-relaxed">
+            Wear your culture with hundreds of community members.
+          </p>
+        </div>
+      </section>
+
+      {/* Featured Outfits Window Display */}
+      {featuredShowpieces.length > 0 && (
+        <section className="space-y-8 pb-4">
+          <div className="text-center space-y-3 max-w-3xl mx-auto">
+            <h2 className="text-3xl font-serif font-bold text-heritage-green tracking-tight">
+              Featured Outfits
+            </h2>
+            <p className="text-sm text-heritage-ink/75 leading-relaxed">
+              Explore a selection of beautifully crafted traditional Nigerian
+              outfits made for members of the Nigerian Traditional Clothing
+              Community (NTCC).
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {featuredShowpieces.map((showpiece) => (
+              <div
+                key={showpiece.id}
+                className="group bg-white rounded-2xl overflow-hidden border border-heritage-gold/15 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full"
+              >
+                <div className="relative aspect-[3/4] bg-heritage-cream/30 overflow-hidden">
+                  {showpiece.image ? (
+                    <img
+                      src={showpiece.image}
+                      alt={showpiece.title}
+                      loading="lazy"
+                      className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-700 ease-in-out"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-heritage-gold/30">
+                      <Sparkles size={32} />
+                    </div>
+                  )}
+
+                  {/* Subtle overlay gradient */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                </div>
+
+                <div className="p-5 flex flex-col flex-grow bg-white relative z-10 space-y-3">
+                  <div className="flex justify-between items-start gap-2">
+                    <div>
+                      <h3 className="font-serif font-bold text-heritage-green text-lg leading-tight line-clamp-1 group-hover:text-heritage-gold transition-colors">
+                        {showpiece.title}
+                      </h3>
+                      <p className="text-xs text-heritage-ink/60 font-medium capitalize mt-1 flex gap-2 items-center">
+                        <span>{showpiece.category}</span>
+                        <span className="w-1 h-1 rounded-full bg-heritage-gold/50"></span>
+                        <span className="truncate">{showpiece.styleName}</span>
+                      </p>
+                    </div>
+                    {/* Badge */}
+                    {showpiece.tag && (
+                      <span className="px-2 py-1 bg-heritage-gold/10 text-heritage-gold border border-heritage-gold/20 rounded text-[9px] font-bold uppercase tracking-wider whitespace-nowrap">
+                        {showpiece.tag}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <div
+                      className="w-4 h-4 rounded-full border border-gray-200 shadow-sm"
+                      style={{
+                        backgroundColor: showpiece.colorHex || "#D4AF37",
+                      }}
+                    ></div>
+                    <span className="text-xs font-medium text-heritage-ink/75 truncate">
+                      {showpiece.fabricName}
+                    </span>
+                  </div>
+
+                  <div className="mt-auto pt-4">
+                    <button
+                      onClick={() => {
+                        if (onSelectStyle) {
+                          onSelectStyle(
+                            showpiece.styleId,
+                            showpiece.fabricCode,
+                          );
+                        }
+                      }}
+                      className="w-full py-2.5 px-4 bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-sm flex justify-center items-center gap-2"
+                    >
+                      Customize This Look <ArrowRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* How It Works (Tailoring Journey) */}
+      <section className="space-y-8 py-8">
+        <div className="text-center space-y-3 max-w-3xl mx-auto">
+          <h2 className="text-3xl font-serif font-bold text-heritage-green tracking-tight">
+            How It Works
+          </h2>
+          <p className="text-sm text-heritage-ink/75 leading-relaxed">
+            From your design ideas to a beautifully tailored outfit delivered to
+            the Netherlands.
+          </p>
+        </div>
+
+        <div className="relative">
+          {/* Connecting Line for Desktop */}
+          <div className="hidden lg:block absolute top-[50px] left-[10%] right-[10%] h-[2px] bg-heritage-gold/20"></div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6 relative z-10">
+            {[
+              {
+                icon: "🎨",
+                title: "Choose Your Style",
+                description:
+                  "Browse our collection of traditional Nigerian clothing and select the design that best matches your preferences.",
+              },
+              {
+                icon: "🧵",
+                title: "Select Your Fabric",
+                description:
+                  "Choose from our carefully curated collection of authentic premium fabrics to create your unique outfit.",
+              },
+              {
+                icon: "📏",
+                title: "Submit Your Measurements",
+                description:
+                  "Provide your measurements or use your saved profile to ensure a comfortable and accurate fit.",
+              },
+              {
+                icon: "✂️",
+                title: "Tailored in Nigeria",
+                description:
+                  "Experienced Nigerian artisans carefully handcraft your outfit using traditional tailoring techniques and premium craftsmanship.",
+              },
+              {
+                icon: "📦",
+                title: "Shipped to the Netherlands",
+                description:
+                  "After quality inspection, your finished outfit is securely packaged and shipped to the Netherlands with your batch delivery.",
+              },
+              {
+                icon: "✨",
+                title: "Enjoy Your Outfit",
+                description:
+                  "Receive your custom-made Nigerian attire and celebrate culture through exceptional craftsmanship and timeless style.",
+              },
+            ].map((step, index) => (
+              <div
+                key={index}
+                className="flex flex-col items-center text-center space-y-4 group"
+              >
+                <div className="w-24 h-24 sm:w-20 sm:h-20 bg-white border-2 border-heritage-gold/20 rounded-full flex items-center justify-center text-4xl shadow-md group-hover:scale-110 group-hover:border-heritage-gold/50 transition-all duration-300 relative bg-heritage-cream/10 z-10">
+                  {step.icon}
+                </div>
+                <div className="space-y-2">
+                  <h3 className="font-serif font-bold text-heritage-green text-sm lg:text-base leading-tight">
+                    {step.title}
+                  </h3>
+                  <p className="text-xs text-heritage-ink/75 leading-relaxed hidden sm:block">
+                    {step.description}
+                  </p>
+                  <p className="text-sm text-heritage-ink/75 leading-relaxed block sm:hidden">
+                    {step.description}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Optional Trust Badges */}
+        <div className="flex flex-col sm:flex-row justify-center items-center gap-4 sm:gap-8 pt-8 border-t border-heritage-gold/15">
+          <div className="flex items-center gap-2 text-xs text-heritage-green font-medium">
+            <ShieldCheck size={16} className="text-heritage-gold" />
+            <span>Authentic Nigerian Craftsmanship</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-heritage-green font-medium">
+            <ShieldCheck size={16} className="text-heritage-gold" />
+            <span>Secure Batch Delivery</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-heritage-green font-medium">
+            <ShieldCheck size={16} className="text-heritage-gold" />
+            <span>Custom Made for Every Customer</span>
+          </div>
+        </div>
+
+        <div className="text-center pt-6">
+          <button
+            onClick={() => {
+              if (currentUser) {
+                onStartDesigning();
+              } else {
+                onNavigateToTab("login");
+              }
+            }}
+            className="inline-flex bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2"
+          >
+            Start Designing Your Outfit <ArrowRight size={14} />
+          </button>
+        </div>
+      </section>
+
+      {/* Fabric Showcase */}
+      <section className="space-y-8 py-8">
+        <div className="text-center space-y-3 max-w-3xl mx-auto">
+          <h2 className="text-3xl font-serif font-bold text-heritage-green tracking-tight">
+            Discover Premium Fabrics
+          </h2>
+          <p className="text-sm text-heritage-ink/75 leading-relaxed">
+            Browse authentic Nigerian fabrics carefully selected for exceptional
+            quality, colour, and craftsmanship.
+          </p>
+        </div>
+
+        {fabricCategories.length > 1 && (
+          <div className="flex flex-wrap justify-center gap-2 max-w-4xl mx-auto px-4">
+            {fabricCategories.map((category, idx) => (
+              <button
+                key={idx}
+                onClick={() => setFabricFilter(category as string)}
+                className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-colors duration-300 ${
+                  fabricFilter === category
+                    ? "bg-heritage-gold text-heritage-forest shadow-md"
+                    : "bg-heritage-cream/30 text-heritage-green border border-heritage-gold/20 hover:bg-heritage-gold/20"
+                }`}
+              >
+                {String(category).replace(/_/g, " ")}
+              </button>
+            ))}
+          </div>
+        )}
+        {activeFabrics.length === 0 ? (
+          <div className="text-center py-12 px-4 border border-dashed border-heritage-gold/30 rounded-2xl mx-4 sm:mx-8 bg-heritage-cream/10">
+            <p className="text-sm text-heritage-ink/60 font-medium">
+              Our fabric collection is being updated. Please visit the Design
+              Studio soon.
+            </p>
+          </div>
+        ) : (
+          <div className="relative max-w-full overflow-hidden px-4 sm:px-8">
+            <div className="flex overflow-x-auto snap-x snap-mandatory gap-6 pb-8 pt-4 hide-scrollbar cursor-grab active:cursor-grabbing">
+              {activeFabrics.map((fabric) => (
+                <div
+                  key={fabric.id || fabric.code}
+                  className="snap-start shrink-0 w-[75vw] sm:w-[calc(50%-12px)] lg:w-[calc(25%-18px)] group bg-white rounded-2xl overflow-hidden border border-heritage-gold/15 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full"
+                >
+                  <div
+                    className="relative aspect-square bg-heritage-cream/30 overflow-hidden cursor-pointer"
+                    onClick={() => {
+                      if (onSelectFabric) onSelectFabric(fabric.code);
+                    }}
+                  >
+                    {fabric.image ? (
+                      <img
+                        src={fabric.image}
+                        alt={fabric.name}
+                        loading="lazy"
+                        className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-700 ease-in-out"
+                      />
+                    ) : (
+                      <div
+                        className="absolute inset-0 group-hover:scale-105 transition-transform duration-700 ease-in-out"
+                        style={{
+                          background: `linear-gradient(135deg, ${fabric.colorHex || "#D4AF37"}cc, ${fabric.colorHex || "#D4AF37"}ff)`,
+                        }}
+                      />
+                    )}
+
+                    {/* Subtle overlay gradient */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+
+                    {/* Badges */}
+                    <div className="absolute top-3 right-3 flex flex-col gap-2 items-end">
+                      {fabric.category && (
+                        <span className="px-2 py-1 bg-heritage-green/90 text-white backdrop-blur-md rounded text-[9px] font-bold uppercase tracking-wider shadow-sm border border-white/20">
+                          {fabric.category.replace(/_/g, " ")}
+                        </span>
+                      )}
+                      {fabric.stockStatus === "LOW_STOCK" && (
+                        <span className="px-2 py-1 bg-red-600/90 text-white backdrop-blur-md rounded text-[9px] font-bold uppercase tracking-wider shadow-sm border border-white/20">
+                          Limited Edition
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-5 flex flex-col flex-grow bg-white relative z-10 space-y-3">
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <h3
+                          className="font-serif font-bold text-heritage-green text-lg leading-tight line-clamp-1 group-hover:text-heritage-gold transition-colors cursor-pointer"
+                          onClick={() => {
+                            if (onSelectFabric) onSelectFabric(fabric.code);
+                          }}
+                        >
+                          {fabric.name}
+                        </h3>
+                        <p className="text-xs text-heritage-ink/60 font-medium capitalize mt-1 flex gap-2 items-center">
+                          <span className="truncate">{fabric.code}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <div
+                        className="w-4 h-4 rounded-full border border-gray-200 shadow-sm"
+                        style={{
+                          backgroundColor: fabric.colorHex || "#D4AF37",
+                        }}
+                      ></div>
+                      <span className="text-xs font-medium text-heritage-ink/75 truncate capitalize">
+                        {fabric.color}
+                      </span>
+                    </div>
+
+                    <div className="mt-auto pt-4">
+                      <button
+                        onClick={() => {
+                          if (onSelectFabric) {
+                            onSelectFabric(fabric.code);
+                          }
+                        }}
+                        className="w-full py-2.5 px-4 bg-heritage-cream/50 text-heritage-green border border-heritage-gold/30 hover:bg-heritage-gold hover:text-heritage-forest hover:border-heritage-gold rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-300 shadow-sm flex justify-center items-center gap-2"
+                      >
+                        Design with this <ArrowRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
+
+      {/* Design Styles Showcase */}
+      <section className="space-y-8 py-8">
+        <div className="text-center space-y-3 max-w-3xl mx-auto">
+          <h2 className="text-3xl font-serif font-bold text-heritage-green tracking-tight">
+            Explore Design Styles
+          </h2>
+          <p className="text-sm text-heritage-ink/75 leading-relaxed">
+            Discover beautifully tailored traditional Nigerian clothing styles, each custom-made to your measurements using the fabric of your choice.
+          </p>
+        </div>
+
+        {styleCategories.length > 1 && (
+          <div className="flex flex-wrap justify-center gap-2 max-w-4xl mx-auto px-4">
+            {styleCategories.map((category, idx) => (
+              <button
+                key={idx}
+                onClick={() => setStyleFilter(category as string)}
+                className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-colors duration-300 ${
+                  styleFilter === category
+                    ? "bg-heritage-gold text-heritage-forest shadow-md"
+                    : "bg-heritage-cream/30 text-heritage-green border border-heritage-gold/20 hover:bg-heritage-gold/20"
+                }`}
+              >
+                {String(category).replace(/_/g, " ")}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {activeStyles.length === 0 ? (
+          <div className="text-center py-12 px-4 border border-dashed border-heritage-gold/30 rounded-2xl mx-4 sm:mx-8 bg-heritage-cream/10">
+            <p className="text-sm text-heritage-ink/60 font-medium">
+              Our style collection is being updated. Please visit the Design
+              Studio soon.
+            </p>
+          </div>
+        ) : (
+          <div className="relative max-w-full overflow-hidden px-4 sm:px-8">
+            <div className="flex overflow-x-auto snap-x snap-mandatory gap-6 pb-8 pt-4 hide-scrollbar cursor-grab active:cursor-grabbing">
+              {activeStyles.map((style) => (
+                <div
+                  key={style.id}
+                  className="snap-start shrink-0 w-[75vw] sm:w-[calc(50%-12px)] lg:w-[calc(25%-18px)] group bg-white rounded-2xl overflow-hidden border border-heritage-gold/15 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full"
+                >
+                  <div
+                    className="relative aspect-square bg-heritage-cream/30 overflow-hidden cursor-pointer"
+                    onClick={() => {
+                      if (onSelectStyle) onSelectStyle(style.id, "");
+                    }}
+                  >
+                    {style.image ? (
+                      <img
+                        src={style.image}
+                        alt={style.name}
+                        loading="lazy"
+                        className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-700 ease-in-out"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 bg-heritage-cream/50 group-hover:scale-105 transition-transform duration-700 ease-in-out flex items-center justify-center">
+                        <span className="text-heritage-gold/40 font-serif text-sm">No Image</span>
+                      </div>
+                    )}
+                    
+                    {/* Subtle overlay gradient */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    
+                    {/* Badges */}
+                    <div className="absolute top-3 right-3 flex flex-col gap-2 items-end">
+                      {style.gender && (
+                        <span className="px-2 py-1 bg-heritage-green/90 text-white backdrop-blur-md rounded text-[9px] font-bold uppercase tracking-wider shadow-sm border border-white/20">
+                          {style.gender === "male" ? "Men" : style.gender === "female" ? "Women" : style.gender}
+                        </span>
+                      )}
+                      {style.outfitType && (
+                        <span className="px-2 py-1 bg-heritage-gold/90 text-heritage-forest backdrop-blur-md rounded text-[9px] font-bold uppercase tracking-wider shadow-sm border border-white/20">
+                          {style.outfitType}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-5 flex flex-col flex-grow bg-white relative z-10 space-y-3">
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <h3
+                          className="font-serif font-bold text-heritage-green text-lg leading-tight line-clamp-1 group-hover:text-heritage-gold transition-colors cursor-pointer"
+                          onClick={() => {
+                            if (onSelectStyle) onSelectStyle(style.id, "");
+                          }}
+                        >
+                          {style.name}
+                        </h3>
+                        {style.description && (
+                          <p className="text-xs text-heritage-ink/60 font-medium mt-1 line-clamp-2 leading-relaxed">
+                            {style.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-auto pt-4">
+                      <button
+                        onClick={() => {
+                          if (onSelectStyle) {
+                            onSelectStyle(style.id, "");
+                          }
+                        }}
+                        className="w-full py-2.5 px-4 bg-heritage-cream/50 text-heritage-green border border-heritage-gold/30 hover:bg-heritage-gold hover:text-heritage-forest hover:border-heritage-gold rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-300 shadow-sm flex justify-center items-center gap-2"
+                      >
+                        Design this style <ArrowRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Made For Everyone */}
+      <section className="space-y-8 py-8">
+        <div className="text-center space-y-3 max-w-3xl mx-auto px-4">
+          <h2 className="text-3xl font-serif font-bold text-heritage-green tracking-tight">
+            Made For Everyone
+          </h2>
+          <p className="text-sm text-heritage-ink/75 leading-relaxed">
+            Authentic Nigerian traditional clothing, thoughtfully tailored for
+            individuals, couples, families, and children in our multicultural
+            community.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 px-4 sm:px-8">
+          {[
+            {
+              icon: "👔",
+              title: "Men",
+              description:
+                "Traditional attire including Senator wear, Agbada, Isiagu, Kaftans, Shirts, and more.",
+            },
+            {
+              icon: "👗",
+              title: "Women",
+              description:
+                "Elegant gowns, skirts, blouses, wrappers, dresses, and beautifully tailored traditional outfits.",
+            },
+            {
+              icon: "👨‍👩‍👧‍👦",
+              title: "Families & Couples",
+              description:
+                "Coordinate matching outfits for weddings, celebrations, cultural events, and family portraits.",
+            },
+            {
+              icon: "🧒",
+              title: "Children",
+              description:
+                "Traditional clothing specially tailored for children while preserving comfort, style, and authenticity.",
+            },
+          ].map((item, idx) => (
+            <div
+              key={idx}
+              className="bg-white rounded-2xl p-6 border border-heritage-gold/15 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full group"
+            >
+              <div className="w-14 h-14 bg-heritage-cream/30 border border-heritage-gold/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform duration-300 shadow-sm">
+                {item.icon}
+              </div>
+              <h3 className="font-serif font-bold text-heritage-green text-xl mb-3 group-hover:text-heritage-gold transition-colors">
+                {item.title}
+              </h3>
+              <p className="text-sm text-heritage-ink/70 leading-relaxed font-sans">
+                {item.description}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="text-center pt-6">
+          <button
+            onClick={() => {
+              if (currentUser) {
+                onStartDesigning();
+              } else {
+                onNavigateToTab("login");
+              }
+            }}
+            className="inline-flex bg-heritage-gold text-heritage-forest hover:bg-heritage-green hover:text-white px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2 cursor-pointer"
+          >
+            Design Your Outfit <ArrowRight size={14} />
+          </button>
+        </div>
+      </section>
+
       {/* Community Photo Gallery Showcase */}
-      <section className="space-y-8">
+      <section id="community-gallery" className="space-y-8">
         <div className="text-center space-y-3 max-w-3xl mx-auto">
           <h2 className="text-3xl font-serif font-bold text-heritage-green tracking-tight">
             Our Community Gallery
           </h2>
           <p className="text-sm text-heritage-ink/75 leading-relaxed">
-            Discover members of the NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC) proudly wearing
-            their custom-made traditional outfits, handcrafted in Nigeria and
-            delivered to the Netherlands.
+            Discover members of the NIGERIAN TRADITIONAL CLOTHING COMMUNITY
+            (NTCC) proudly wearing their custom-made traditional outfits,
+            handcrafted in Nigeria and delivered to the Netherlands.
           </p>
         </div>
 
@@ -387,7 +971,7 @@ export default function HomeView({
                     initial={{ scale: 1 }}
                     animate={{ scale: 1.06 }}
                     transition={{ duration: 5, ease: "easeOut" }}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                     referrerPolicy="no-referrer"
                   />
 
@@ -487,20 +1071,92 @@ export default function HomeView({
         )}
       </section>
 
-      {/* Multicultural Fun Stats Banner */}
-      <section className="bg-heritage-green text-white rounded-3xl p-8 sm:p-10 text-center max-w-4xl mx-auto shadow-md border border-heritage-gold/20 relative overflow-hidden">
+      {/* Community Impact Social Proof Section */}
+      <section className="bg-heritage-green text-white rounded-3xl p-8 sm:p-12 text-center max-w-5xl mx-auto shadow-2xl border border-heritage-gold/20 relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1606744824163-985d376605aa?auto=format&fit=crop&q=80')] opacity-5 mix-blend-overlay"></div>
-        <div className="relative z-10 space-y-3">
-          <h3 className="text-2xl sm:text-3xl font-serif font-bold text-heritage-gold tracking-wide">
-            Be Part of the Multicultural Fun
-          </h3>
-          <p className="text-base sm:text-lg text-white/90 font-medium">
-            24 People, 30 Dresses Made
-          </p>
-          <div className="inline-block mt-4 pt-4 border-t border-heritage-gold/30">
-            <span className="text-xs uppercase tracking-[0.2em] font-semibold text-white/70 font-sans">
-              December 2025
-            </span>
+        <div className="relative z-10 space-y-10">
+          <div className="space-y-4 max-w-3xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif font-bold text-heritage-gold tracking-tight">
+              Join Hundreds Celebrating Nigerian Culture
+            </h2>
+            <p className="text-base sm:text-lg text-white/80 font-sans leading-relaxed max-w-2xl mx-auto">
+              Become part of a growing multicultural community in the
+              Netherlands discovering the beauty of authentic Nigerian
+              traditional clothing.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
+              <span className="text-4xl sm:text-5xl font-serif font-bold text-heritage-gold mb-2 block group-hover:scale-110 transition-transform duration-300">
+                <CountUpNumber
+                  value={
+                    batches?.reduce(
+                      (acc, b) => acc + (b.currentCustomers || 0),
+                      0,
+                    ) ||
+                    (customers && customers.length > 0 ? customers.length : 24)
+                  }
+                />
+              </span>
+              <span className="text-xs uppercase tracking-widest text-white/70 font-semibold font-sans">
+                Participants
+              </span>
+            </div>
+
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
+              <span className="text-4xl sm:text-5xl font-serif font-bold text-heritage-gold mb-2 block group-hover:scale-110 transition-transform duration-300">
+                <CountUpNumber
+                  value={
+                    batches?.reduce(
+                      (acc, b) => acc + (b.currentGarments || 0),
+                      0,
+                    ) || (orders && orders.length > 0 ? orders.length : 30)
+                  }
+                />
+              </span>
+              <span className="text-xs uppercase tracking-widest text-white/70 font-semibold font-sans">
+                Traditional Outfits
+              </span>
+            </div>
+
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
+              <span className="text-4xl sm:text-5xl font-serif font-bold text-heritage-gold mb-2 block group-hover:scale-110 transition-transform duration-300">
+                <CountUpNumber value={6} />
+              </span>
+              <span className="text-xs uppercase tracking-widest text-white/70 font-semibold font-sans">
+                Nationalities
+              </span>
+            </div>
+
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
+              <div className="h-12 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300">
+                <Sparkles className="text-heritage-gold" size={32} />
+              </div>
+              <span className="text-xs uppercase tracking-widest text-white/70 font-semibold font-sans">
+                Growing Every Batch
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
+            <button
+              onClick={onStartDesigning}
+              className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 px-10 py-4 rounded-xl text-sm font-bold uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 cursor-pointer"
+            >
+              Join Current Batch <ArrowRight size={16} />
+            </button>
+
+            <button
+              onClick={() => {
+                const el = document.getElementById("community-gallery");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+                else onNavigateToTab("gallery");
+              }}
+              className="w-full sm:w-auto text-white hover:text-heritage-gold transition duration-300 px-6 py-4 rounded-xl text-xs font-semibold uppercase tracking-wider flex items-center justify-center cursor-pointer"
+            >
+              View Community Gallery
+            </button>
           </div>
         </div>
       </section>
@@ -565,7 +1221,8 @@ export default function HomeView({
           <div className="p-6 bg-white border border-heritage-gold/15 rounded-2xl space-y-4 shadow-sm flex flex-col justify-between">
             <p className="italic text-xs text-heritage-ink/80 leading-relaxed font-serif text-[13px]">
               "The fit is perfect. Ordering custom clothes from Lagos and
-              getting them delivered directly to {businessSettings.productionSettings.defaultPickupLocation} is
+              getting them delivered directly to{" "}
+              {businessSettings.productionSettings.defaultPickupLocation} is
               super easy and convenient. I love wearing my Senator shirt on
               Mondays."
             </p>
@@ -605,6 +1262,111 @@ export default function HomeView({
           </div>
         </div>
       </section>
+
+      {/* Final Call to Action Section */}
+      <section className="relative overflow-hidden rounded-3xl bg-heritage-green p-8 sm:p-12 lg:p-16 text-white shadow-2xl border border-heritage-gold/20 text-center mx-auto mb-8">
+        <div className="absolute -left-24 -top-24 w-96 h-96 rounded-full border border-heritage-gold/10 pointer-events-none"></div>
+        <div className="absolute -right-24 -bottom-24 w-96 h-96 rounded-full border border-heritage-gold/10 pointer-events-none"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl text-heritage-gold/5 pointer-events-none font-serif select-none">
+          ⚜
+        </div>
+        
+        <div className="relative z-10 space-y-8 max-w-3xl mx-auto">
+          <div className="space-y-4">
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif font-bold tracking-tight text-white leading-tight">
+              Ready to Design Your Custom Outfit?
+            </h2>
+            <div className="space-y-3 text-sm text-heritage-beige max-w-2xl mx-auto leading-relaxed">
+              <p>
+                Experience authentic Nigerian traditional clothing, handcrafted by skilled artisans in Nigeria and custom-made to your preferences.
+              </p>
+              <p>
+                Every outfit is created with exceptional craftsmanship and carefully delivered to our community in the Netherlands.
+              </p>
+              <p>
+                Whether you're celebrating your heritage, attending a cultural event, or simply appreciating beautiful craftsmanship, your custom outfit begins here.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap justify-center gap-x-6 gap-y-3 text-xs text-heritage-beige/90 py-4 font-medium">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={14} className="text-heritage-gold" />
+              <span>Handcrafted in Nigeria</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={14} className="text-heritage-gold" />
+              <span>Custom Made for Every Customer</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={14} className="text-heritage-gold" />
+              <span>Secure Delivery to the Netherlands</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={14} className="text-heritage-gold" />
+              <span>Authentic Traditional Craftsmanship</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
+            <button
+              onClick={onStartDesigning}
+              className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green px-8 py-4 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-xl inline-flex items-center justify-center gap-2 cursor-pointer"
+            >
+              Start Designing <ArrowRight size={14} />
+            </button>
+            <button
+              onClick={() => onNavigateToTab("gallery")}
+              className="w-full sm:w-auto border border-heritage-gold/50 text-heritage-gold hover:bg-heritage-gold/10 transition duration-300 px-8 py-4 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center cursor-pointer"
+            >
+              Browse Gallery
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
   );
+}
+
+function CountUpNumber({ value }: { value: number }) {
+  const [displayValue, setDisplayValue] = useState(0);
+  const elementRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    let hasAnimated = false;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !hasAnimated) {
+          hasAnimated = true;
+
+          let startTime: number;
+          const duration = 2000;
+
+          const animateCount = (timestamp: number) => {
+            if (!startTime) startTime = timestamp;
+            const progress = Math.min((timestamp - startTime) / duration, 1);
+
+            const easeOut = 1 - Math.pow(1 - progress, 4);
+            setDisplayValue(Math.floor(easeOut * value));
+
+            if (progress < 1) {
+              requestAnimationFrame(animateCount);
+            }
+          };
+
+          requestAnimationFrame(animateCount);
+        }
+      },
+      { threshold: 0.1 },
+    );
+
+    if (elementRef.current) {
+      observer.observe(elementRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [value]);
+
+  return <span ref={elementRef}>{displayValue}</span>;
 }

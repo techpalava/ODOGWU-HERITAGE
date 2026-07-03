@@ -92,7 +92,7 @@ import { getClosestColorName } from "../utils/colorMatcher";
 import { FabricService } from "../services/fabricService";
 import { StorageService } from "../services/storageService";
 import { ImageService } from "../services/imageService";
-import { getActiveBatch } from "../utils/batchUtils";
+import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { BatchManagementPanel } from "./BatchManagementPanel";
@@ -904,10 +904,10 @@ export default function DatabaseView({
       price,
       stockStatus:
         item.stock <= 0
-          ? "Out of Stock"
+          ? "OUT_OF_STOCK"
           : item.stock <= 5
-            ? "Low Stock"
-            : "In Stock",
+            ? "LOW_STOCK"
+            : "IN_STOCK",
     };
 
     console.log("[handleSaveFabric] isNewRecord:", isNewRecord);
@@ -1199,7 +1199,7 @@ export default function DatabaseView({
               { id: "fabrics", label: "Fabrics Catalogue", icon: Layers },
               { id: "batches", label: "Sourcing Batches", icon: Layers2 },
               { id: "orders", label: "Master Orders", icon: ClipboardList },
-              { id: "showpieces", label: "Lookbook Showpieces", icon: Tag },
+              { id: "showpieces", label: "Gallery Showpieces", icon: Tag },
               { id: "photos", label: "Community & Cohorts", icon: Image },
               { id: "media", label: "Media Library", icon: Image },
               { id: "plugins", label: "Plugins", icon: Puzzle },
@@ -1250,7 +1250,7 @@ export default function DatabaseView({
                         fabric: "Fabric Item",
                         batch: "Sourcing Batch",
                         order: "Master Order",
-                        showpiece: "Lookbook Showpiece",
+                        showpiece: "Gallery Showpiece",
                         photo: "Community Photo",
                       };
                       const name = entityNames[editingType] || "Record";
@@ -2107,10 +2107,10 @@ export default function DatabaseView({
                                   stock,
                                   stockStatus:
                                     stock <= 0
-                                      ? "Out of Stock"
+                                      ? "OUT_OF_STOCK"
                                       : stock <= 5
-                                        ? "Low Stock"
-                                        : "In Stock",
+                                        ? "LOW_STOCK"
+                                        : "IN_STOCK",
                                 });
                               }}
                               className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg font-mono"
@@ -2126,7 +2126,7 @@ export default function DatabaseView({
                                   ...editingItem,
                                   stock: newStock,
                                   stockStatus:
-                                    newStock <= 0 ? "Out of Stock" : "In Stock",
+                                    newStock <= 0 ? "OUT_OF_STOCK" : "IN_STOCK",
                                 });
                               }}
                               className={`w-full py-2 px-3 border rounded-lg font-bold text-center transition cursor-pointer select-none text-[10px] ${
@@ -2419,15 +2419,15 @@ export default function DatabaseView({
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
-                        <option value="Draft">Draft</option>
-                        <option value="Yet To Start">Yet To Start</option>
-                        <option value="Open">Open</option>
-                        <option value="Almost Full">Almost Full</option>
-                        <option value="Full">Full</option>
-                        <option value="Closed">Closed</option>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Locked">Locked</option>
-                        <option value="Completed">Completed</option>
+                        <option value="DRAFT">Draft</option>
+                        <option value="YET_TO_START">Yet To Start</option>
+                        <option value="OPEN">Open</option>
+                        <option value="ALMOST_FULL">Almost Full</option>
+                        <option value="FULL">Full</option>
+                        <option value="CLOSED">Closed</option>
+                        <option value="PRODUCTION_STARTED">In Progress</option>
+                        <option value="LOCKED">Locked</option>
+                        <option value="COMPLETED">Completed</option>
                       </select>
                     </div>
                     <div className="sm:col-span-2 pt-4 flex gap-2 justify-end">
@@ -3148,15 +3148,15 @@ export default function DatabaseView({
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Available Fabrics</span>
-                    <strong className="text-xl text-heritage-green font-mono">{fabrics.filter(f => (f.stock || 0) > 0 && f.stockStatus !== 'Out of Stock' && f.stockStatus !== 'Hidden').length}</strong>
+                    <strong className="text-xl text-heritage-green font-mono">{fabrics.filter(f => (f.stock || 0) > 0 && f.stockStatus !== 'OUT_OF_STOCK' && f.stockStatus !== 'HIDDEN').length}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Out of Stock Fabrics</span>
-                    <strong className="text-xl text-red-600 font-mono">{fabrics.filter(f => (f.stock || 0) <= 0 || f.stockStatus === 'Out of Stock').length}</strong>
+                    <strong className="text-xl text-red-600 font-mono">{fabrics.filter(f => (f.stock || 0) <= 0 || f.stockStatus === 'OUT_OF_STOCK').length}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Hidden Fabrics</span>
-                    <strong className="text-xl text-gray-500 font-mono">{fabrics.filter(f => f.stockStatus === 'Hidden').length}</strong>
+                    <strong className="text-xl text-gray-500 font-mono">{fabrics.filter(f => f.stockStatus === 'HIDDEN').length}</strong>
                   </div>
 
                   {/* Orders */}
@@ -3846,10 +3846,10 @@ export default function DatabaseView({
                                 }`}
                               >
                                 {f.stock <= 0
-                                  ? "Out of Stock"
+                                  ? "OUT_OF_STOCK"
                                   : f.stock <= 5
-                                    ? "Low Stock"
-                                    : "In Stock"}
+                                    ? "LOW_STOCK"
+                                    : "IN_STOCK"}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-right">
@@ -3863,8 +3863,8 @@ export default function DatabaseView({
                                       stock: newStock,
                                       stockStatus:
                                         newStock <= 0
-                                          ? "Out of Stock"
-                                          : "In Stock",
+                                          ? "OUT_OF_STOCK"
+                                          : "IN_STOCK",
                                     };
                                     FabricService.saveFabric(finalItem).catch(err => {
                                       console.error("Failed to update stock", err);
@@ -3994,7 +3994,7 @@ export default function DatabaseView({
                           </span>
                           <strong className="text-2xl text-heritage-green font-mono">
                             {(() => {
-                              const active = getActiveBatch(batches);
+                              const active = getCurrentCommunityBatch(batches);
                               return active
                                 ? `${BusinessIntelligenceEngine.calculateCapacityPercentage(active, businessSettings)}%`
                                 : "N/A";
@@ -4007,7 +4007,7 @@ export default function DatabaseView({
                           </span>
                           <strong className="text-xl text-heritage-green font-sans mt-1 block">
                             {(() => {
-                              const active = getActiveBatch(batches);
+                              const active = getCurrentCommunityBatch(batches);
                               return active?.estimatedDelivery || "TBD";
                             })()}
                           </strong>
@@ -4025,7 +4025,7 @@ export default function DatabaseView({
                       Forecast Engine
                     </h3>
                     {(() => {
-                      const active = getActiveBatch(batches);
+                      const active = getCurrentCommunityBatch(batches);
                       if (!active)
                         return (
                           <p className="text-xs text-gray-500">
@@ -4096,7 +4096,7 @@ export default function DatabaseView({
                       Intelligence
                     </h3>
                     {(() => {
-                      const active = getActiveBatch(batches);
+                      const active = getCurrentCommunityBatch(batches);
                       if (!active)
                         return (
                           <p className="text-xs text-gray-500">
@@ -4587,7 +4587,7 @@ export default function DatabaseView({
                     }}
                     className="flex items-center gap-1.5 px-4 py-2 bg-heritage-green text-heritage-gold text-xs font-bold rounded-xl border border-heritage-gold/20 shadow-sm cursor-pointer select-none uppercase tracking-wider shrink-0"
                   >
-                    <Plus size={13} /> Add Lookbook Showpiece
+                    <Plus size={13} /> Add Gallery Showpiece
                   </button>
                 </div>
 

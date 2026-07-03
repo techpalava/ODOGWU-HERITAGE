@@ -36,3 +36,12 @@ body {
   color: #1B1B1B;
 }
 
+
+/* Hide scrollbar for smooth carousels */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

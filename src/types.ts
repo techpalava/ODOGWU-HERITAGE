@@ -252,6 +252,8 @@ export interface OrderContext {
   pickupLocation?: string;
   currentMembers?: number;
   expectedParticipants?: number;
+  allowOrders?: boolean;
+  batchStatus?: string;
 }
 
 export interface Batch {

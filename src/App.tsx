@@ -23,7 +23,7 @@ import { StorageService } from "./services/storageService";
 import { auth } from "./services/firebase";
 import { signOut } from "firebase/auth";
 import { useAppStore } from "./store/useAppStore";
-import { getActiveBatch } from "./utils/batchUtils";
+import { getCurrentCommunityBatch } from "./utils/batchUtils";
 
 // Lazy load modular view components for performance optimization
 const HomeView = lazy(() => import("./components/HomeView"));
@@ -164,7 +164,7 @@ export default function App() {
     }
   }, [customGroups, setCustomGroups]);
 
-  const openBatch = getActiveBatch(batches);
+  const openBatch = getCurrentCommunityBatch(batches);
   const activeCommunityBatch: OrderContext | null = openBatch
     ? {
         orderType: "Community",
@@ -174,6 +174,8 @@ export default function App() {
         deliveryWindow: openBatch.estimatedDelivery || "",
         expectedParticipants: openBatch.targetGarments,
         currentMembers: openBatch.currentGarments,
+        allowOrders: openBatch.allowOrders,
+        batchStatus: openBatch.status,
         pickupLocation:
           openBatch.pickupLocation || businessSettings.productionSettings.defaultPickupLocation || "Veldhoven Campus Lockers",
       }
@@ -451,6 +453,44 @@ export default function App() {
                 ) => setActiveTab(tabId)}
                 activeCommunityBatch={activeCommunityBatch}
                 communityPhotos={communityPhotos}
+                showpieces={showpieces}
+                fabrics={fabrics}
+                onSelectStyle={(styleId, fabricCode) => {
+                  setPresetStyleId(styleId);
+                  setPresetFabricCode(fabricCode);
+                  if (!currentUser) {
+                    setActiveTab("login");
+                    triggerNotification(
+                      "Please login to customize this look.",
+                      "info"
+                    );
+                  } else {
+                    setOrderContext(activeCommunityBatch);
+                    setActiveTab("design");
+                    triggerNotification(
+                      "Design Studio loaded with your selected look.",
+                      "info"
+                    );
+                  }
+                }}
+                onSelectFabric={(fabricCode) => {
+                  setPresetStyleId(undefined);
+                  setPresetFabricCode(fabricCode);
+                  if (!currentUser) {
+                    setActiveTab("login");
+                    triggerNotification(
+                      "Please login to customize this fabric.",
+                      "info"
+                    );
+                  } else {
+                    setOrderContext(activeCommunityBatch);
+                    setActiveTab("design");
+                    triggerNotification(
+                      "Design Studio loaded with your selected fabric.",
+                      "info"
+                    );
+                  }
+                }}
               />
             )}
 
@@ -589,7 +629,7 @@ export default function App() {
                   setPresetFabricCode(fabricCode);
                   setActiveTab("design");
                   triggerNotification(
-                    `Lookbook preset loaded: ${styleId} + ${fabricCode}`,
+                    `Gallery preset loaded: ${styleId} + ${fabricCode}`,
                     "info",
                   );
                 }}

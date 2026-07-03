@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useAppStore } from "../store/useAppStore";
+import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { useReferenceDataFallback } from "../hooks/useReferenceData";
 import {
   User,
@@ -447,7 +448,7 @@ export default function DashboardView({
             const userBatch =
               batches.find((b) => b.id === userBatchId) ||
               batches.find((b) =>
-                ["PRODUCTION_STARTED", "OPEN", "ALMOST_FULL"].includes(
+                ["PRODUCTION_STARTED", "OPEN", "ALMOST_FULL", "FULL"].includes(
                   b.status,
                 ),
               );
@@ -499,7 +500,7 @@ export default function DashboardView({
                       Batch Progress ({userBatch.currentGarments} /{" "}
                       {userBatch.targetGarments} Garments)
                     </span>
-                    {userBatch.status === "PRODUCTION_STARTED" && (
+                    {BatchBusinessRules.getLifecycleStage(userBatch) === "In Production" && (
                       <span className="text-[10px] bg-heritage-green text-white px-2 py-0.5 rounded font-bold animate-pulse">
                         Production Started
                       </span>
@@ -507,7 +508,7 @@ export default function DashboardView({
                   </div>
                   <div className="h-2.5 w-full bg-gray-100 rounded-full overflow-hidden">
                     <div
-                      className={`h-full ${userBatch.status === "PRODUCTION_STARTED" ? "bg-heritage-green" : "bg-heritage-gold"} transition-all duration-500`}
+                      className={`h-full ${BatchBusinessRules.getLifecycleStage(userBatch) === "In Production" ? "bg-heritage-green" : "bg-heritage-gold"} transition-all duration-500`}
                       style={{
                         width: `${Math.min(100, (userBatch.currentGarments / userBatch.targetGarments) * 100)}%`,
                       }}
@@ -995,11 +996,11 @@ export default function DashboardView({
                           return "bg-emerald-50 text-emerald-800 border-emerald-200";
                         case "ALMOST_FULL":
                           return "bg-amber-50 text-amber-800 border-amber-200";
-                        case "Full":
+                        case "FULL":
                           return "bg-orange-50 text-orange-800 border-orange-200";
                         case "CLOSED":
                           return "bg-stone-50 text-stone-700 border-stone-200";
-                        case "Locked":
+                        case "LOCKED":
                           return "bg-indigo-50 text-indigo-800 border-indigo-200";
                         case "COMPLETED":
                           return "bg-heritage-cream text-heritage-green border-heritage-gold/30";
@@ -1008,15 +1009,10 @@ export default function DashboardView({
                       }
                     };
 
-                    const canEdit =
-                      group.status === "DRAFT" || group.status === "OPEN";
-                    const canInvite =
-                      group.status === "DRAFT" ||
-                      group.status === "OPEN" ||
-                      group.status === "ALMOST_FULL";
-                    const canDelete = group.status === "DRAFT";
-                    const canClose =
-                      group.status === "OPEN" || group.status === "ALMOST_FULL";
+                    const canEdit = BatchBusinessRules.canEditBatch(group);
+                    const canInvite = BatchBusinessRules.canJoinBatch(group);
+                    const canDelete = BatchBusinessRules.canDeleteBatch(group);
+                    const canClose = BatchBusinessRules.canCloseBatch(group);
 
                     return (
                       <div
@@ -1178,11 +1174,11 @@ export default function DashboardView({
                           return "bg-emerald-50 text-emerald-800 border-emerald-200";
                         case "ALMOST_FULL":
                           return "bg-amber-50 text-amber-800 border-amber-200";
-                        case "Full":
+                        case "FULL":
                           return "bg-orange-50 text-orange-800 border-orange-200";
                         case "CLOSED":
                           return "bg-stone-50 text-stone-700 border-stone-200";
-                        case "Locked":
+                        case "LOCKED":
                           return "bg-indigo-50 text-indigo-800 border-indigo-200";
                         case "COMPLETED":
                           return "bg-heritage-cream text-heritage-green border-heritage-gold/30";
@@ -1192,7 +1188,7 @@ export default function DashboardView({
                     };
 
                     const canLeave =
-                      group.status !== "LOCKED" && group.status !== "COMPLETED";
+                      BatchBusinessRules.canLeaveBatch(group);
 
                     return (
                       <div

@@ -813,8 +813,8 @@ const BASE_FABRICS: Fabric[] = [
       "High-thread-count premium Nigerian polished cotton. Machine printed.",
     colorHex: "#0D3E26",
     priceMultiplier: 1.05,
-    stockStatus: "In Stock",
-    category: "Printed Fabrics",
+    stockStatus: "IN_STOCK",
+    category: "PRINTED_FABRICS",
     image:
       "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&q=80&w=400",
     color: "Emerald Green",
@@ -829,8 +829,8 @@ const BASE_FABRICS: Fabric[] = [
       "Lightweight brocade cotton imported for cultural gala events. Machine printed.",
     colorHex: "#0D5C75",
     priceMultiplier: 0.95,
-    stockStatus: "Low Stock",
-    category: "Printed Fabrics",
+    stockStatus: "LOW_STOCK",
+    category: "PRINTED_FABRICS",
     image:
       "https://images.unsplash.com/photo-1584184922226-f725f05a9603?auto=format&fit=crop&q=80&w=400",
     color: "Teal Blue",
@@ -845,8 +845,8 @@ const BASE_FABRICS: Fabric[] = [
       "Stately and rich machine printed woven damask, blending warm ochre gold and beige threads.",
     colorHex: "#C5A85C",
     priceMultiplier: 1.25,
-    stockStatus: "In Stock",
-    category: "Printed Fabrics",
+    stockStatus: "IN_STOCK",
+    category: "PRINTED_FABRICS",
     image:
       "https://images.unsplash.com/photo-1606744824163-985d376605aa?auto=format&fit=crop&q=80&w=400",
     color: "Ochre Gold",
@@ -861,8 +861,8 @@ const BASE_FABRICS: Fabric[] = [
       "Authentic tie-dye/resist-dyed cotton from local artisanal weavers in southwestern Nigeria.",
     colorHex: "#121212",
     priceMultiplier: 1.1,
-    stockStatus: "In Stock",
-    category: "Handcrafted Fabrics",
+    stockStatus: "IN_STOCK",
+    category: "HANDCRAFTED_FABRICS",
     image:
       "https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&q=80&w=400",
     color: "Deep Charcoal Black",
@@ -877,8 +877,8 @@ const BASE_FABRICS: Fabric[] = [
       "Authentic high grade hand-dyed adire cotton from local artisanal weavers in southwestern Nigeria.",
     colorHex: "#22325F",
     priceMultiplier: 1.2,
-    stockStatus: "In Stock",
-    category: "Handcrafted Fabrics",
+    stockStatus: "IN_STOCK",
+    category: "HANDCRAFTED_FABRICS",
     image:
       "https://images.unsplash.com/photo-1618220179428-22790b461013?auto=format&fit=crop&q=80&w=400",
     color: "Indigo Blue",
@@ -930,67 +930,67 @@ const materials = [
   {
     type: "Hollandis Ankara",
     mult: 1.05,
-    cat: "Printed Fabrics" as const,
+    cat: "PRINTED_FABRICS" as const,
     mfr: "Machine printed",
   },
   {
     type: "Hi-Target Ankara",
     mult: 0.95,
-    cat: "Printed Fabrics" as const,
+    cat: "PRINTED_FABRICS" as const,
     mfr: "Machine printed",
   },
   {
     type: "Isiagu (Ankara)",
     mult: 1.25,
-    cat: "Printed Fabrics" as const,
+    cat: "PRINTED_FABRICS" as const,
     mfr: "Machine printed",
   },
   {
     type: "Kampala (Standard Grade)",
     mult: 1.1,
-    cat: "Handcrafted Fabrics" as const,
+    cat: "HANDCRAFTED_FABRICS" as const,
     mfr: "Hand Crafted",
   },
   {
     type: "Kampala (High Grade)",
     mult: 1.2,
-    cat: "Handcrafted Fabrics" as const,
+    cat: "HANDCRAFTED_FABRICS" as const,
     mfr: "Hand Crafted",
   },
   {
     type: "Isiagu (Akwa-Oche)",
     mult: 1.35,
-    cat: "Traditional Fabrics" as const,
+    cat: "TRADITIONAL_FABRICS" as const,
     mfr: "Premium Quality",
   },
   {
     type: "Lace",
     mult: 1.5,
-    cat: "Luxury Fabrics" as const,
+    cat: "LUXURY_FABRICS" as const,
     mfr: "Premium Quality",
   },
   {
     type: "Asioke (By Tailor)",
     mult: 1.3,
-    cat: "Traditional Fabrics" as const,
+    cat: "TRADITIONAL_FABRICS" as const,
     mfr: "Tailored",
   },
   {
     type: "Adire",
     mult: 1.15,
-    cat: "Handcrafted Fabrics" as const,
+    cat: "HANDCRAFTED_FABRICS" as const,
     mfr: "Hand Crafted",
   },
   {
     type: "Aso Oke",
     mult: 1.4,
-    cat: "Traditional Fabrics" as const,
+    cat: "TRADITIONAL_FABRICS" as const,
     mfr: "Premium Quality",
   },
   {
     type: "Kente",
     mult: 1.45,
-    cat: "Traditional Fabrics" as const,
+    cat: "TRADITIONAL_FABRICS" as const,
     mfr: "Traditionally hand-woven",
   },
 ];
@@ -1009,17 +1009,17 @@ for (let i = 0; i < 45; i++) {
   const priceMultiplier = parseFloat((mat.mult + (i % 5) * 0.02).toFixed(2));
 
   const stockIndex = i % 10;
-  const stockStatus: "In Stock" | "Low Stock" | "Out of Stock" =
+  const stockStatus: "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK" =
     stockIndex === 9
-      ? "Out of Stock"
+      ? "OUT_OF_STOCK"
       : stockIndex >= 7
-        ? "Low Stock"
-        : "In Stock";
+        ? "LOW_STOCK"
+        : "IN_STOCK";
 
   const stock =
-    stockStatus === "Out of Stock"
+    stockStatus === "OUT_OF_STOCK"
       ? 0
-      : stockStatus === "Low Stock"
+      : stockStatus === "LOW_STOCK"
         ? Math.floor(Math.random() * 5) + 1
         : Math.floor(Math.random() * 80) + 12;
 

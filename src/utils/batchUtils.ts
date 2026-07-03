@@ -1,7 +1,8 @@
 import { Batch } from "../types";
+import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 
 export function processDynamicBatches(batches: Batch[]): Batch[] {
-  const now = new Date();
+
   
   // First, figure out if there's any manually overridden active batch
   const manualActiveBatch = batches.find(b => b.isAutoScheduled === false && b.isActive);
@@ -14,46 +15,51 @@ export function processDynamicBatches(batches: Batch[]): Batch[] {
     }
 
     // Default: auto-scheduled is true if not set
-    const startDate = new Date(batch.startDate);
-    const endDate = new Date(batch.endDate);
-    
-    // Set hours to encompass the full day for end date
-    endDate.setHours(23, 59, 59, 999);
+
+
 
     let newStatus = batch.status;
-
-    if (now < startDate) {
-      newStatus = "COMING_SOON";
-    } else if (now >= startDate && now <= endDate) {
-      newStatus = "OPEN";
-    } else if (now > endDate) {
-      // If it's already a completed or shipped state, don't revert to just "Closed" unless it was open
-      if (
-        [
-          "Completed", 
-          "Collected", 
-          "Ready For Pickup", 
-          "Arrived Netherlands", 
-          "Shipped", 
-          "Packed", 
-          "Quality Control", 
-          "Production Started", 
-          "Production Ready"
-        ].includes(batch.status)
-      ) {
-        newStatus = batch.status;
-      } else {
-        newStatus = "CLOSED";
-      }
+    const eligibility = BatchBusinessRules.canAcceptOrders(batch);
+    
+    // Do not override advanced downstream production states
+    const productionStates = [
+      "COMPLETED", 
+      "COLLECTED", 
+      "READY_FOR_PICKUP", 
+      "ARRIVED_NETHERLANDS", 
+      "SHIPPED", 
+      "PACKED", 
+      "QUALITY_CONTROL", 
+      "PRODUCTION_STARTED", 
+      "PRODUCTION_READY"
+    ];
+    
+    if (!productionStates.includes(batch.status)) {
+        if (eligibility.canAcceptOrders) {
+            newStatus = "OPEN";
+        } else {
+            if (eligibility.statusCode === "NOT_YET_OPEN") {
+                newStatus = "COMING_SOON";
+            } else if (eligibility.statusCode === "BATCH_FULL" || eligibility.statusCode === "ORDERS_DISABLED") {
+                newStatus = "FULL";
+            } else if (eligibility.statusCode === "EXPIRED" || eligibility.statusCode === "REGISTRATION_CLOSED") {
+                newStatus = "CLOSED";
+            } else {
+                newStatus = eligibility.statusCode as Batch["status"];
+            }
+        }
     }
 
     let isNowActive = false;
     
-    // We only set this auto-scheduled batch to active if it's open, 
+    // We only set this auto-scheduled batch to active if it's in a live state, 
     // AND there's no manual active batch, 
     // AND we haven't already assigned an active batch this run (to ensure only ONE is active).
     if (
-      (newStatus === "OPEN" || newStatus === "RECRUITING" || newStatus === "ALMOST_FULL") &&
+      (newStatus === "OPEN" || newStatus === "RECRUITING" || newStatus === "ALMOST_FULL" || newStatus === "FULL" || 
+       newStatus === "PRODUCTION_READY" || newStatus === "PRODUCTION_STARTED" || 
+       newStatus === "QUALITY_CONTROL" || newStatus === "PACKED" || newStatus === "SHIPPED" || 
+       newStatus === "ARRIVED_NETHERLANDS" || newStatus === "READY_FOR_PICKUP") &&
       !manualActiveBatch &&
       !autoActiveAssigned
     ) {
@@ -63,13 +69,13 @@ export function processDynamicBatches(batches: Batch[]): Batch[] {
 
     return {
       ...batch,
-      status: newStatus,
+      status: newStatus as Batch["status"],
       isActive: isNowActive
     };
   });
 }
 
-export function getActiveBatch(batches: Batch[]): Batch | undefined {
+export function getCurrentCommunityBatch(batches: Batch[]): Batch | undefined {
   const processedBatches = processDynamicBatches(batches);
   return processedBatches.find(b => b.isActive);
 }

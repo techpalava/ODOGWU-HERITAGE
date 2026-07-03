@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import {
-  Home,
   Compass,
   Shirt,
   ClipboardList,
@@ -9,7 +8,6 @@ import {
   Database,
   ShoppingCart,
   Menu,
-  MessageCircle,
   LogIn,
   LogOut,
 } from "lucide-react";
@@ -59,7 +57,7 @@ export function Header() {
               setActiveTab("home");
               setIsMobileMenuOpen(false);
             }}
-            className="flex items-center gap-2 sm:gap-3 cursor-pointer select-none min-w-0 max-w-[60%] sm:max-w-none"
+            className="flex items-center gap-2.5 sm:gap-3 cursor-pointer select-none min-w-0 flex-1 pr-2"
           >
             <img
               loading="lazy"
@@ -73,17 +71,16 @@ export function Header() {
                 THE ODOGWU HERITAGE
               </span>
               <span className="hidden sm:block text-[7px] sm:text-[8px] tracking-wide text-heritage-beige uppercase font-sans font-medium truncate">
-                {businessSettings.applicationSettings.tagline || "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}
+                {businessSettings.applicationSettings.tagline ||
+                  "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}
               </span>
-              <div className="block sm:hidden leading-[1.05] uppercase">
-                <span className="block text-[10.5px] font-extrabold tracking-[0.06em] text-heritage-gold font-display">
-                  THE ODOGWU
+              <div className="block sm:hidden leading-[1.15] uppercase min-w-0 pr-1 py-1">
+                <span className="block text-[11px] font-extrabold tracking-[0.05em] text-heritage-gold font-display break-words">
+                  THE ODOGWU HERITAGE
                 </span>
-                <span className="block text-[10.5px] font-extrabold tracking-[0.06em] text-heritage-gold font-display">
-                  HERITAGE
-                </span>
-                <span className="block text-[9px] tracking-[0.12em] text-heritage-beige font-sans font-semibold mt-0.5">
-                  NTCC
+                <span className="block text-[8px] tracking-[0.05em] text-heritage-beige font-sans font-semibold mt-0.5 break-words">
+                  {businessSettings.applicationSettings.tagline ||
+                    "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)"}
                 </span>
               </div>
             </div>
@@ -97,7 +94,7 @@ export function Header() {
                 { id: "design", label: "Design Studio", icon: Shirt },
                 { id: "dashboard", label: "My Dashboard", icon: ClipboardList },
                 { id: "about", label: "About", icon: Info },
-                { id: "gallery", label: "Lookbook", icon: Layers },
+                { id: "gallery", label: "Gallery", icon: Layers },
                 { id: "database", label: "Admin Portal & DB", icon: Database },
               ].map((tab) => {
                 const Icon = tab.icon;
@@ -153,63 +150,41 @@ export function Header() {
           </div>
 
           {/* Mobile Navigation Controls */}
-          <div className="flex lg:hidden items-center gap-1 sm:gap-2.5">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab("home");
-                setIsMobileMenuOpen(false);
-              }}
-              className="flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/15 cursor-pointer shadow-sm"
-              aria-label="Home"
-              title="Home"
-            >
-              <Home size={18} />
-            </button>
-            <a
-              href={`https://wa.me/${businessSettings?.applicationSettings?.whatsappNumber?.replace(/\D/g, "") || "31657903098"}`}
-              className="flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/15 cursor-pointer shadow-sm"
-              aria-label="WhatsApp Chat"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <MessageCircle size={18} />
-            </a>
-
+          <div className="flex lg:hidden items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={() => setIsCartOpen(true)}
-              className="relative flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:px-3.5 rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/15 cursor-pointer select-none shadow-sm"
+              className="relative flex items-center justify-center w-11 h-11 sm:h-10 sm:w-auto sm:px-3.5 rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/15 cursor-pointer select-none shadow-sm"
               title="View Tailoring Cart"
+              aria-label="Cart"
             >
-              <ShoppingCart size={14} className="sm:mr-1 shrink-0" />
+              <ShoppingCart size={16} className="sm:mr-1 shrink-0" />
               <span className="text-[9px] font-bold uppercase tracking-wider hidden sm:inline">
                 Cart
               </span>
               {cartItemsCount > 0 && (
-                <span className="absolute -top-1 -right-1.5 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-red-600 text-[8px] font-black text-white shadow-md">
+                <span className="absolute -top-1 -right-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-red-600 text-[8px] font-black text-white shadow-md">
                   {cartItemsCount}
                 </span>
               )}
             </button>
-
             <button
               type="button"
               onClick={handleAuth}
-              className="flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:px-3.5 rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/15 cursor-pointer select-none shadow-sm"
+              className="flex items-center justify-center w-11 h-11 sm:h-10 sm:px-3.5 rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/15 cursor-pointer select-none shadow-sm"
               title={currentUser ? "Logout" : "Login"}
+              aria-label={currentUser ? "Logout" : "Login"}
             >
               {currentUser ? (
-                <LogOut size={14} className="sm:mr-1 shrink-0" />
+                <LogOut size={16} className="sm:mr-1 shrink-0" />
               ) : (
-                <LogIn size={14} className="sm:mr-1 shrink-0" />
+                <LogIn size={16} className="sm:mr-1 shrink-0" />
               )}
             </button>
-
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen(true)}
-              className="flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/15 cursor-pointer select-none shadow-sm"
+              className="flex items-center justify-center w-11 h-11 sm:h-10 sm:w-10 rounded-xl bg-heritage-forest text-heritage-gold hover:bg-heritage-gold hover:text-heritage-forest transition border border-heritage-gold/15 cursor-pointer select-none shadow-sm"
               aria-label="Open main navigation menu"
             >
               <Menu size={18} />

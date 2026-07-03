@@ -9,6 +9,7 @@ import {
   Layers,
   Info,
   Database,
+  MessageCircle,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
@@ -111,7 +112,7 @@ export function MobileMenu() {
                     label: "My Dashboard",
                     icon: ClipboardList,
                   },
-                  { id: "gallery", label: "Lookbook", icon: Layers },
+                  { id: "gallery", label: "Gallery", icon: Layers },
                   { id: "about", label: "About Us", icon: Info },
                   { id: "database", label: "Admin & DB Panel", icon: Database },
                 ].map((tab) => {
@@ -147,12 +148,28 @@ export function MobileMenu() {
                     </button>
                   );
                 })}
+                <a
+                  href={`https://wa.me/${businessSettings?.applicationSettings?.whatsappNumber?.replace(/\D/g, "") || "31657903098"}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="group flex items-center justify-between w-full py-3.5 px-4 rounded-xl text-left text-[11px] font-bold uppercase tracking-wider transition-all duration-200 border cursor-pointer select-none bg-transparent text-heritage-beige border-transparent hover:text-white hover:bg-heritage-forest/30"
+                >
+                  <div className="flex items-center gap-3">
+                    <MessageCircle
+                      size={14}
+                      className="text-heritage-beige/60 group-hover:text-white transition-colors"
+                    />
+                    <span>Community Chat</span>
+                  </div>
+                </a>
               </nav>
             </div>
 
             <div className="border-t border-heritage-gold/10 pt-4 space-y-2">
               <p className="text-[8px] text-heritage-beige/50 text-center leading-relaxed">
-                Connecting Lagos ateliers with {businessSettings.applicationSettings.communityName}.
+                Connecting Lagos ateliers with{" "}
+                {businessSettings.applicationSettings.communityName}.
               </p>
               <div className="flex justify-center items-center gap-1.5">
                 <span className="h-px bg-heritage-gold/15 flex-grow" />

@@ -42,7 +42,8 @@ import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
 import { ApiService } from "../services/api";
 import { useReferenceDataFallback } from "../hooks/useReferenceData";
 import { useAppStore } from "../store/useAppStore";
-import { getActiveBatch } from "../utils/batchUtils";
+import { BatchBusinessRules } from "../engine/BatchBusinessRules";
+import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
 
@@ -482,7 +483,7 @@ export default function DesignStudioView({
     return (sessionStorage.getItem("odogwu_biometric_consent") as any) || null;
   });
 
-  const computedActiveBatch = getActiveBatch(storeBatches || []);
+  const computedActiveBatch = getCurrentCommunityBatch(storeBatches || []);
   const defaultCtx: OrderContext = computedActiveBatch
     ? {
         orderType: "Community",
@@ -494,6 +495,8 @@ export default function DesignStudioView({
           computedActiveBatch.pickupLocation || businessSettings.productionSettings.defaultPickupLocation,
         currentMembers: computedActiveBatch.currentGarments,
         expectedParticipants: computedActiveBatch.targetGarments,
+        allowOrders: computedActiveBatch.allowOrders,
+        batchStatus: computedActiveBatch.status,
       }
     : {
         orderType: "Community",
@@ -503,6 +506,8 @@ export default function DesignStudioView({
         pickupLocation: businessSettings.productionSettings.defaultPickupLocation,
         currentMembers: 0,
         expectedParticipants: 0,
+        allowOrders: false,
+        batchStatus: "CLOSED",
       };
 
   const ctx = orderContext || defaultCtx;
@@ -523,15 +528,8 @@ export default function DesignStudioView({
           orderContext.batchId || orderContext.batchName || "",
         );
       } else {
-        const isClosed = (() => {
-          if (!orderContext.closingDate) return false;
-          try {
-            return new Date(orderContext.closingDate) < new Date();
-          } catch (e) {
-            return false;
-          }
-        })();
-        if (isClosed) {
+        const eligibility = BatchBusinessRules.canAcceptOrders(orderContext);
+        if (!eligibility.canAcceptOrders) {
           setBatchType("alone");
         } else {
           setBatchType("community");
@@ -654,7 +652,7 @@ export default function DesignStudioView({
     setFabricPage(1);
   }, [fabricSearch, fabricColorFilter, fabricMaterialFilter]);
 
-  // Load preset style & fabric from Lookbook selection
+  // Load preset style & fabric from Gallery selection
   useEffect(() => {
     if (initialStyleId) {
       const match = styles.find((s) => s.id === initialStyleId);
@@ -1189,7 +1187,7 @@ export default function DesignStudioView({
         setValidationError("Please select a fabric swatch option.");
         return;
       }
-      if (selectedFabric.stockStatus === "Out of Stock") {
+      if (selectedFabric.stockStatus === "OUT_OF_STOCK") {
         setValidationError(
           "The selected fabric is Out of Stock. Please select an In Stock or Low Stock option to continue.",
         );
@@ -2133,9 +2131,9 @@ export default function DesignStudioView({
                           </span>
                           <span
                             className={`relative z-10 text-[9px] bg-white/90 border font-bold px-1.5 py-0.5 rounded font-sans uppercase shadow-sm mt-1 mr-1 ${
-                              fabric.stockStatus === "Out of Stock"
+                              fabric.stockStatus === "OUT_OF_STOCK"
                                 ? "text-red-600"
-                                : fabric.stockStatus === "Low Stock"
+                                : fabric.stockStatus === "LOW_STOCK"
                                   ? "text-orange-600"
                                   : "text-heritage-gold"
                             }`}
@@ -3906,21 +3904,14 @@ export default function DesignStudioView({
 
                 {orderContext?.orderType === "Community" &&
                   (() => {
-                    const isClosed = (() => {
-                      if (!orderContext.closingDate) return false;
-                      try {
-                        return new Date(orderContext.closingDate) < new Date();
-                      } catch (e) {
-                        return false;
-                      }
-                    })();
-                    if (isClosed) {
+                    const eligibility = BatchBusinessRules.canAcceptOrders(orderContext);
+        if (!eligibility.canAcceptOrders) {
                       return (
                         <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3.5 mb-3 text-xs space-y-1">
                           <div className="flex items-center gap-1.5 font-bold text-red-700">
                             <AlertTriangle size={14} />
                             <span>
-                              REGISTRATION CLOSED ({orderContext.batchName})
+                              {eligibility.displayLabel.toUpperCase()} ({orderContext.batchName})
                             </span>
                           </div>
                           <p className="leading-relaxed text-[11px] text-red-700">

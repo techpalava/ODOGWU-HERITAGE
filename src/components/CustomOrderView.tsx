@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { CustomGroup, OrderContext, Batch } from "../types";
 import { useAppStore } from "../store/useAppStore";
+import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { useReferenceDataFallback } from "../hooks/useReferenceData";
 
 interface CustomOrderViewProps {
@@ -73,7 +74,7 @@ export default function CustomOrderView({
 
   // Filter active public groups for Option 3 list (only Open)
   const openBatches = batches.filter(
-    (b) => b.visibility === "PUBLIC" && b.status === "OPEN",
+    (b) => b.visibility === "PUBLIC" && BatchBusinessRules.getLifecycleStage(b) === "Recruiting",
   );
 
   const handleCreateGroupSubmit = (e: React.FormEvent) => {
@@ -519,6 +520,7 @@ export default function CustomOrderView({
 
             <div className="space-y-4">
               {openBatches.map((batch) => {
+                const eligibility = BatchBusinessRules.canAcceptOrders(batch);
                 const getBadgeColor = (status: string) => {
                   switch (status) {
                     case "OPEN":
@@ -547,9 +549,9 @@ export default function CustomOrderView({
                         </span>
                       </div>
                       <span
-                        className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border ${getBadgeColor(batch.status)}`}
+                        className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border ${getBadgeColor(eligibility.statusCode)}`}
                       >
-                        {batch.status}
+                        {eligibility.displayLabel}
                       </span>
                     </div>
 
@@ -601,8 +603,8 @@ export default function CustomOrderView({
                           }
                           onSelectOrderContext(context);
                         }}
-                        disabled={batch.status === "FULL"}
-                        className={`text-[10px] px-3.5 py-1.5 font-bold uppercase tracking-wider rounded-lg transition duration-200 cursor-pointer ${batch.status === "FULL" ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200" : "bg-heritage-green hover:bg-heritage-gold hover:text-heritage-forest text-white border border-heritage-green hover:border-heritage-gold"}`}
+                        disabled={!eligibility.canAcceptOrders}
+                        className={`text-[10px] px-3.5 py-1.5 font-bold uppercase tracking-wider rounded-lg transition duration-200 cursor-pointer ${!eligibility.canAcceptOrders ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200" : "bg-heritage-green hover:bg-heritage-gold hover:text-heritage-forest text-white border border-heritage-green hover:border-heritage-gold"}`}
                       >
                         Join Group
                       </button>

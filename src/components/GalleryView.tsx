@@ -1,3 +1,4 @@
+import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -74,7 +75,7 @@ export default function GalleryView({
       {/* Header section */}
       <div className="border-b border-heritage-beige pb-6">
         <span className="text-xs font-semibold uppercase tracking-widest text-heritage-gold">
-          Lookbook & Fabric Showcase
+          Gallery & Fabric Showcase
         </span>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-heritage-green sm:text-4xl font-display">
           The Heritage Showcase
@@ -107,7 +108,7 @@ export default function GalleryView({
             let statusColor = "bg-gray-100 text-gray-400 border-gray-100";
             let displayStatus: string = batch.status;
 
-            if (batch.status === "CLOSED" || batch.status === "COMPLETED") {
+            if (BatchBusinessRules.getLifecycleStage(batch) === "Registration Closed" || BatchBusinessRules.getLifecycleStage(batch) === "Completed") {
               statusColor = "bg-gray-50 text-gray-400 border-gray-100";
               displayStatus = "Closed";
             }
@@ -115,7 +116,7 @@ export default function GalleryView({
               statusColor = "bg-heritage-gold/10 text-heritage-gold border-heritage-gold/30";
               displayStatus = "Open for Orders";
             }
-            else if (batch.status === "COMING_SOON" || batch.status === "YET_TO_START") {
+            else if (BatchBusinessRules.getLifecycleStage(batch) === "Upcoming") {
               statusColor = "bg-neutral-50 text-neutral-400 border-neutral-100";
               displayStatus = "Coming Soon";
             }
@@ -239,7 +240,7 @@ export default function GalleryView({
                     ).sort((a,b) => a.batchNumber - b.batchNumber);
 
                     const current = searchedBatches.filter(b => b.isActive);
-                    const completed = searchedBatches.filter(b => b.status === "CLOSED" || b.status === "COMPLETED");
+                    const completed = searchedBatches.filter(b => BatchBusinessRules.getLifecycleStage(b) === "Registration Closed" || BatchBusinessRules.getLifecycleStage(b) === "Completed");
                     const upcoming = searchedBatches.filter(b => !b.isActive && b.status !== "CLOSED" && b.status !== "COMPLETED");
 
                     return (
@@ -390,13 +391,13 @@ export default function GalleryView({
                         {group.photos.map((photo) => (
                           <div
                             key={photo.id}
-                            className="group bg-white rounded-3xl border border-heritage-gold/15 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col"
+                            className="group bg-white rounded-3xl border border-heritage-gold/15 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col aspect-[3/4] sm:aspect-[4/5] lg:aspect-[3/4]"
                           >
-                            <div className="relative h-96 w-full overflow-hidden bg-heritage-cream">
+                            <div className="relative h-[75%] sm:h-[78%] lg:h-[80%] w-full overflow-hidden bg-heritage-cream">
                               <img
                                 src={photo.url}
                                 alt={photo.caption || "Community Photo"}
-                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                                 referrerPolicy="no-referrer"
                               />
                               {photo.featured && (
@@ -405,8 +406,8 @@ export default function GalleryView({
                                 </div>
                               )}
                             </div>
-                            <div className="p-5 space-y-2 flex-grow flex flex-col justify-between font-sans text-xs">
-                              <p className="text-heritage-ink/80 leading-relaxed italic">
+                            <div className="h-[25%] sm:h-[22%] lg:h-[20%] p-4 sm:p-5 space-y-2 flex flex-col justify-between font-sans text-xs">
+                              <p className="text-heritage-ink/80 leading-relaxed italic line-clamp-2 sm:line-clamp-3">
                                 "{photo.caption}"
                               </p>
                               <div className="flex items-center gap-2 pt-2 border-t border-gray-100 mt-2">
@@ -647,7 +648,7 @@ export default function GalleryView({
                         <img
                           src={item.image}
                           alt={item.title}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                           referrerPolicy="no-referrer"
                         />
                       ) : (
