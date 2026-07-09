@@ -13,7 +13,6 @@ import { CapacityService } from "../services/CapacityService";
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 
 interface HomeViewProps {
-  onStartDesigning: () => void;
   onNavigateToTab: (tabId: string) => void;
   activeCommunityBatch?: OrderContext | null;
   communityPhotos?: CommunityPhoto[];
@@ -24,7 +23,6 @@ interface HomeViewProps {
 }
 
 export default function HomeView({
-  onStartDesigning,
   onNavigateToTab,
   activeCommunityBatch,
   communityPhotos,
@@ -122,8 +120,7 @@ export default function HomeView({
 
   const featuredShowpieces = [...showpieces].filter((s) => s.image).slice(0, 8);
 
-  const activeBatchEligibility = BatchBusinessRules.canAcceptOrders(activeCommunityBatch);
-  const canJoinActiveBatch = activeBatchEligibility.canAcceptOrders;
+  
 
   return (
     <div id="home-view-container" className="space-y-16">
@@ -163,23 +160,13 @@ export default function HomeView({
             </p>
 
             <div className="flex flex-wrap gap-4 pt-4">
-              {activeCommunityBatch && canJoinActiveBatch ? (
-                <button
+              <button
                   id="btn-hero-join-cohort"
-                  onClick={onStartDesigning}
+                  onClick={() => onNavigateToTab(journey.destination as any)}
                   className="bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 min-h-[44px] px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto"
                 >
-                  Join {activeCommunityBatch.batchName} <ArrowRight size={14} />
+                  {journey.primaryAction} <ArrowRight size={14} />
                 </button>
-              ) : (
-                <button
-                  id="btn-hero-create-batch"
-                  onClick={() => onNavigateToTab("custom-order")}
-                  className="bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 min-h-[44px] px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto"
-                >
-                  Create Your Own Batch <ArrowRight size={14} />
-                </button>
-              )}
 
               <button
                 id="btn-hero-custom-order"
@@ -605,16 +592,10 @@ export default function HomeView({
 
         <div className="text-center pt-6">
           <button
-            onClick={() => {
-              if (currentUser) {
-                onStartDesigning();
-              } else {
-                onNavigateToTab("login");
-              }
-            }}
-            className="inline-flex bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2"
+            onClick={() => onNavigateToTab(journey.destination as any)}
+            className="inline-flex bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2 cursor-pointer"
           >
-            Start Designing Your Outfit <ArrowRight size={14} />
+            {journey.primaryAction} <ArrowRight size={14} />
           </button>
         </div>
       </section>
@@ -932,16 +913,10 @@ export default function HomeView({
 
         <div className="text-center pt-6">
           <button
-            onClick={() => {
-              if (currentUser) {
-                onStartDesigning();
-              } else {
-                onNavigateToTab("login");
-              }
-            }}
+            onClick={() => onNavigateToTab(journey.destination as any)}
             className="inline-flex bg-heritage-gold text-heritage-forest hover:bg-heritage-green hover:text-white px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2 cursor-pointer"
           >
-            Design Your Outfit <ArrowRight size={14} />
+            {journey.primaryAction} <ArrowRight size={14} />
           </button>
         </div>
       </section>
@@ -1151,21 +1126,12 @@ export default function HomeView({
           </div>
 
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
-            {activeCommunityBatch && canJoinActiveBatch ? (
-              <button
-                onClick={onStartDesigning}
+            <button
+                onClick={() => onNavigateToTab(journey.destination as any)}
                 className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 px-10 py-4 rounded-xl text-sm font-bold uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 cursor-pointer"
               >
-                Join Current Batch <ArrowRight size={16} />
+                {journey.primaryAction} <ArrowRight size={16} />
               </button>
-            ) : (
-              <button
-                onClick={() => onNavigateToTab("custom-order")}
-                className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 px-10 py-4 rounded-xl text-sm font-bold uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 cursor-pointer"
-              >
-                Create Custom Order <ArrowRight size={16} />
-              </button>
-            )}
 
             <button
               onClick={() => {

@@ -453,10 +453,6 @@ export default function App() {
           >
             {activeTab === "home" && (
               <HomeView
-                onStartDesigning={() => {
-                  setOrderContext(activeCommunityBatch);
-                  setActiveTab("design");
-                }}
                 onNavigateToTab={(
                   tabId:
                     | "home"

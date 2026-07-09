@@ -1,6 +1,9 @@
 import { Customer, MasterOrder, HistoricalOrder, Batch, CartItem } from "../types";
 import { OrderRoutingEngine } from "./OrderRoutingEngine";
 import { AuthorizationEngine } from "./AuthorizationEngine";
+import { BatchBusinessRules } from "./BatchBusinessRules";
+import { getCurrentCommunityBatch } from "../utils/batchUtils";
+
 
 export type JourneyState =
   | "NEW_VISITOR"
@@ -50,9 +53,13 @@ export class CustomerJourneyEngine {
         let state: JourneyState = "NEW_VISITOR";
         let progress = 0;
         let currentOrder: MasterOrder | CartItem | null = null;
-        let primaryAction = "Explore Designs";
+        
+        const openBatch = getCurrentCommunityBatch(allBatches);
+        const canJoinActiveBatch = openBatch ? BatchBusinessRules.canAcceptOrders(openBatch).canAcceptOrders : false;
+        
+        let primaryAction = canJoinActiveBatch ? `Join ${openBatch?.name}` : "Create Custom Order";
         let secondaryAction = "Learn How it Works";
-        let destination = "gallery";
+        let destination = canJoinActiveBatch ? "design" : "custom-order";
         let notification = "Welcome to the Odogwu Heritage Passport.";
         let workspace: JourneyModel["workspace"] = "OVERVIEW";
         let canContinue = true;
@@ -189,9 +196,9 @@ export class CustomerJourneyEngine {
         if (historicalOrders && historicalOrders.length > 0) {
             state = "NO_ACTIVE_WORK";
             progress = 0;
-            primaryAction = "Start New Design";
+            primaryAction = canJoinActiveBatch ? `Join ${openBatch?.name}` : "Start New Design";
             secondaryAction = "View Past Orders";
-            destination = "design";
+            destination = canJoinActiveBatch ? "design" : "custom-order";
             notification = "Ready for your next bespoke attire?";
             workspace = "COMPLETED_ORDERS";
             recommendedNextStep = "Head to the Design Studio to create a new look.";
@@ -203,9 +210,9 @@ export class CustomerJourneyEngine {
 
         state = "ACCOUNT_CREATED";
         progress = 5;
-        primaryAction = "Create Custom Attire";
+        primaryAction = canJoinActiveBatch ? `Join ${openBatch?.name}` : "Create Custom Order";
         secondaryAction = "View Inspiration";
-        destination = "design";
+        destination = canJoinActiveBatch ? "design" : "custom-order";
         notification = "Welcome! Start your custom tailoring journey.";
         workspace = "OVERVIEW";
         recommendedNextStep = "Go to the Design Studio to select a style.";

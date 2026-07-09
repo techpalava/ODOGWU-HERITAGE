@@ -1,5 +1,9 @@
 import React from "react";
 import { useAppStore } from "../store/useAppStore";
+import { BatchBusinessRules } from "../engine/BatchBusinessRules";
+import { getCurrentCommunityBatch } from "../utils/batchUtils";
+import { CapacityService } from "../services/CapacityService";
+
 import {
   Phone,
   Mail,
@@ -16,7 +20,7 @@ import {
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 
 export default function Footer() {
-  const { activeTab, setActiveTab, businessSettings } = useAppStore();
+  const { activeTab, setActiveTab, businessSettings, batches } = useAppStore();
 
   const handleNavigation = (e: React.MouseEvent, tab: string) => {
     e.preventDefault();
@@ -24,12 +28,32 @@ export default function Footer() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const openBatch = getCurrentCommunityBatch(batches);
+  const activeCommunityBatch = openBatch
+    ? {
+        orderType: "Community",
+        batchId: openBatch.id,
+        batchName: openBatch.name,
+        closingDate: openBatch.endDate,
+        deliveryWindow: openBatch.estimatedDelivery || "",
+        expectedParticipants: CapacityService.getTargetCapacity(openBatch),
+        currentMembers: CapacityService.getReservedCapacity(openBatch),
+        allowOrders: openBatch.allowOrders,
+        batchStatus: openBatch.status,
+        pickupLocation:
+          openBatch.pickupLocation || businessSettings?.productionSettings?.defaultPickupLocation || "Veldhoven Campus Lockers",
+      } as any
+    : null;
+
+  const activeBatchEligibility = BatchBusinessRules.canAcceptOrders(activeCommunityBatch);
+  const canJoinActiveBatch = activeBatchEligibility.canAcceptOrders;
+
   const quickLinks = [
     { label: "Home", tab: "home" },
     { label: "Design Studio", tab: "design" },
     { label: "Gallery", tab: "gallery" },
     { label: "How It Works", tab: "home" }, // Assuming it scrolls or goes to home
-    { label: "Join Current Batch", tab: "home" }, // Depending on implementation
+    { label: activeCommunityBatch && canJoinActiveBatch ? "Join Current Batch" : "Create Custom Order", tab: activeCommunityBatch && canJoinActiveBatch ? "home" : "custom-order" },
     { label: "Contact", tab: "home" }, // Depending on implementation
   ];
 
