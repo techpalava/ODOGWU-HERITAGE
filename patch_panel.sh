@@ -1,3 +1,0 @@
-#!/bin/bash
-sed -i 's/import { OrderRoutingDecision } from '\''..\/engine\/OrderRoutingEngine'\'';/import { OrderRoutingDecision } from '\''..\/engine\/OrderRoutingEngine'\'';\nimport { RoutingPresentationEngine } from '\''..\/engine\/RoutingPresentationEngine'\'';/g' src/components/OrderRoutingPanel.tsx
-sed -i 's/const { headline, description, availableActions, nextCommunityBatches, mode } = decision;/const presentation = RoutingPresentationEngine.buildPresentation(decision);\n  const { title: headline, description, availableActions, nextCommunityBatches } = presentation;\n  const { mode } = decision;/g' src/components/OrderRoutingPanel.tsx

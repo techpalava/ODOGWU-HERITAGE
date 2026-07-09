@@ -4439,7 +4439,7 @@ export default function DesignStudioView({
                 onClick={handlePrevStep}
                 className="flex items-center gap-1.5 hover:text-heritage-gold transition text-xs font-bold uppercase py-2 text-heritage-green min-h-[44px] px-2 sm:px-4"
               >
-                <ArrowLeft size={14} /> {journey.stepperPreviousLabel || "Previous Step"}
+                <ArrowLeft size={14} /> {journey.stepperPreviousLabel}
               </button>
             ) : (
               <div></div>
@@ -4451,7 +4451,7 @@ export default function DesignStudioView({
                 onClick={handleNextStep}
                 className="bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest transition min-h-[44px] px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
               >
-                {journey.stepperNextLabel || "Continue"} <ArrowRight size={14} />
+                {journey.stepperNextLabel} <ArrowRight size={14} />
               </button>
             ) : (
               <button
@@ -4460,7 +4460,7 @@ export default function DesignStudioView({
                 onClick={handleAddToCartAction}
                 className="bg-heritage-gold text-heritage-forest hover:bg-heritage-green hover:text-white transition min-h-[44px] px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-lg cursor-pointer"
               >
-                {journey.stepperSubmitLabel || "Add Custom Attire to Cart"} <Check size={14} />
+                {journey.stepperSubmitLabel} <Check size={14} />
               </button>
             )}
           </div>

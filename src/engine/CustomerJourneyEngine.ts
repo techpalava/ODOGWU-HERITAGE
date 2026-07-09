@@ -35,9 +35,9 @@ export interface JourneyModel {
   canContinue: boolean;
   blockers: string[];
   recommendedNextStep: string;
-  stepperPreviousLabel?: string;
-  stepperNextLabel?: string;
-  stepperSubmitLabel?: string;
+  stepperPreviousLabel: string;
+  stepperNextLabel: string;
+  stepperSubmitLabel: string;
 }
 
 export interface CustomerContext {
@@ -69,7 +69,7 @@ export class CustomerJourneyEngine {
             } else if (currentStep === 2) {
                 stepperPreviousLabel = "Back to Styles";
             } else if (currentStep === totalSteps) {
-                stepperPreviousLabel = "Back to Review";
+                stepperPreviousLabel = "Back to Special Directives";
             }
             
             stepperNextLabel = "Continue to Next Step";
