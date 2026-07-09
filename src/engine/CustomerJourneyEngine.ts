@@ -35,6 +35,9 @@ export interface JourneyModel {
   canContinue: boolean;
   blockers: string[];
   recommendedNextStep: string;
+  stepperPreviousLabel?: string;
+  stepperNextLabel?: string;
+  stepperSubmitLabel?: string;
 }
 
 export interface CustomerContext {
@@ -43,11 +46,39 @@ export interface CustomerContext {
     activeOrders: MasterOrder[];
     historicalOrders: HistoricalOrder[];
     allBatches: Batch[];
+    stepperContext?: {
+        currentStep: number;
+        totalSteps: number;
+    };
 }
 
 export class CustomerJourneyEngine {
     static getCurrentJourney(context: CustomerContext): JourneyModel {
-        const { currentUser, drafts, activeOrders, historicalOrders, allBatches } = context;
+        const { currentUser, drafts, activeOrders, historicalOrders, allBatches, stepperContext } = context;
+
+        let stepperPreviousLabel = "Previous Step";
+        let stepperNextLabel = "Continue";
+        let stepperSubmitLabel = "Add Custom Attire to Cart";
+
+        if (stepperContext) {
+            const { currentStep, totalSteps } = stepperContext;
+            
+            // Custom model logic based on state/context
+            if (currentStep === 1) {
+                stepperPreviousLabel = "";
+            } else if (currentStep === 2) {
+                stepperPreviousLabel = "Back to Styles";
+            } else if (currentStep === totalSteps) {
+                stepperPreviousLabel = "Back to Review";
+            }
+            
+            stepperNextLabel = "Continue to Next Step";
+            if (currentStep === 1) stepperNextLabel = "Proceed with this Style";
+            if (currentStep === totalSteps - 1) stepperNextLabel = "Review Order Details";
+            
+            stepperSubmitLabel = "Secure My Order Selection";
+        }
+
 
         // Base defaults
         let state: JourneyState = "NEW_VISITOR";
@@ -67,7 +98,7 @@ export class CustomerJourneyEngine {
         let recommendedNextStep = "View the gallery to see our styles.";
 
         if (!currentUser) {
-            return {
+            return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,
                 state, progress, currentOrder, primaryAction, secondaryAction,
                 destination, notification, workspace, canContinue, blockers, recommendedNextStep
             };
@@ -128,7 +159,7 @@ export class CustomerJourneyEngine {
                  workspace = activeOrder.batchType === "community" ? "COMMUNITY_ORDERS" : activeOrder.batchType === "alone" ? "INDIVIDUAL_ORDERS" : "PERSONALIZED_BATCHES";
                  recommendedNextStep = "Wait for production to begin.";
             }
-            return {
+            return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,
                 state, progress, currentOrder, primaryAction, secondaryAction,
                 destination, notification, workspace, canContinue, blockers, recommendedNextStep
             };
@@ -172,7 +203,7 @@ export class CustomerJourneyEngine {
                 recommendedNextStep = "Choose Individual Order or personalized batch.";
             }
 
-            return {
+            return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,
                 state, progress, currentOrder, primaryAction, secondaryAction,
                 destination, notification, workspace, canContinue, blockers, recommendedNextStep
             };
@@ -187,7 +218,7 @@ export class CustomerJourneyEngine {
              notification = "Please complete your profile to continue.";
              workspace = "OVERVIEW";
              recommendedNextStep = "Add your phone number for delivery updates.";
-             return {
+             return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,
                 state, progress, currentOrder, primaryAction, secondaryAction,
                 destination, notification, workspace, canContinue, blockers, recommendedNextStep
             };
@@ -202,7 +233,7 @@ export class CustomerJourneyEngine {
             notification = "Ready for your next bespoke attire?";
             workspace = "COMPLETED_ORDERS";
             recommendedNextStep = "Head to the Design Studio to create a new look.";
-            return {
+            return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,
                 state, progress, currentOrder, primaryAction, secondaryAction,
                 destination, notification, workspace, canContinue, blockers, recommendedNextStep
             };
@@ -217,7 +248,7 @@ export class CustomerJourneyEngine {
         workspace = "OVERVIEW";
         recommendedNextStep = "Go to the Design Studio to select a style.";
 
-        return {
+        return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,
             state, progress, currentOrder, primaryAction, secondaryAction,
             destination, notification, workspace, canContinue, blockers, recommendedNextStep
         };

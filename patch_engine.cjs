@@ -1,61 +1,49 @@
 const fs = require('fs');
 let content = fs.readFileSync('src/engine/CustomerJourneyEngine.ts', 'utf8');
 
-const imports = `import { BatchBusinessRules } from "./BatchBusinessRules";\nimport { getCurrentCommunityBatch } from "../utils/batchUtils";\n`;
-if (!content.includes('BatchBusinessRules')) {
-  content = content.replace('import { AuthorizationEngine } from "./AuthorizationEngine";', 'import { AuthorizationEngine } from "./AuthorizationEngine";\n' + imports);
-}
+// 1. Add stepperContext to CustomerContext
+content = content.replace(
+    'allBatches: Batch[];',
+    'allBatches: Batch[];\n    stepperContext?: {\n        currentStep: number;\n        totalSteps: number;\n    };'
+);
 
-const findBaseDefaults = `        // Base defaults
-        let state: JourneyState = "NEW_VISITOR";
-        let progress = 0;
-        let currentOrder: MasterOrder | CartItem | null = null;
-        let primaryAction = "Explore Designs";
-        let secondaryAction = "Learn How it Works";
-        let destination = "gallery";`;
+// 2. Add properties to JourneyModel
+content = content.replace(
+    'recommendedNextStep: string;',
+    'recommendedNextStep: string;\n  stepperPreviousLabel?: string;\n  stepperNextLabel?: string;\n  stepperSubmitLabel?: string;'
+);
 
-const replacementBaseDefaults = `        // Base defaults
-        let state: JourneyState = "NEW_VISITOR";
-        let progress = 0;
-        let currentOrder: MasterOrder | CartItem | null = null;
-        
-        const openBatch = getCurrentCommunityBatch(allBatches);
-        const canJoinActiveBatch = openBatch ? BatchBusinessRules.canAcceptOrders(openBatch).canAcceptOrders : false;
-        
-        let primaryAction = canJoinActiveBatch ? \`Join \${openBatch?.name}\` : "Create Custom Order";
-        let secondaryAction = "Learn How it Works";
-        let destination = canJoinActiveBatch ? "design" : "custom-order";`;
+// 3. Initialize variables in getCurrentJourney
+content = content.replace(
+    'const { currentUser, drafts, activeOrders, historicalOrders, allBatches } = context;',
+    `const { currentUser, drafts, activeOrders, historicalOrders, allBatches, stepperContext } = context;
 
-content = content.replace(findBaseDefaults, replacementBaseDefaults);
+        let stepperPreviousLabel = "Previous Step";
+        let stepperNextLabel = "Continue";
+        let stepperSubmitLabel = "Add Custom Attire to Cart";
 
-const findAccountCreated = `        state = "ACCOUNT_CREATED";
-        progress = 5;
-        primaryAction = "Create Custom Attire";
-        secondaryAction = "View Inspiration";
-        destination = "design";`;
+        if (stepperContext) {
+            const { currentStep, totalSteps } = stepperContext;
+            
+            // Custom model logic based on state/context
+            if (currentStep === 1) {
+                stepperPreviousLabel = "";
+            } else if (currentStep === 2) {
+                stepperPreviousLabel = "Back to Styles";
+            } else if (currentStep === totalSteps) {
+                stepperPreviousLabel = "Back to Review";
+            }
+            
+            stepperNextLabel = "Continue to Next Step";
+            if (currentStep === 1) stepperNextLabel = "Proceed with this Style";
+            if (currentStep === totalSteps - 1) stepperNextLabel = "Review Order Details";
+            
+            stepperSubmitLabel = "Secure My Order Selection";
+        }
+`
+);
 
-const replaceAccountCreated = `        state = "ACCOUNT_CREATED";
-        progress = 5;
-        primaryAction = canJoinActiveBatch ? \`Join \${openBatch?.name}\` : "Create Custom Order";
-        secondaryAction = "View Inspiration";
-        destination = canJoinActiveBatch ? "design" : "custom-order";`;
-
-content = content.replace(findAccountCreated, replaceAccountCreated);
-
-const findNoActiveWork = `        if (historicalOrders && historicalOrders.length > 0) {
-            state = "NO_ACTIVE_WORK";
-            progress = 0;
-            primaryAction = "Start New Design";
-            secondaryAction = "View Past Orders";
-            destination = "design";`;
-
-const replaceNoActiveWork = `        if (historicalOrders && historicalOrders.length > 0) {
-            state = "NO_ACTIVE_WORK";
-            progress = 0;
-            primaryAction = canJoinActiveBatch ? \`Join \${openBatch?.name}\` : "Start New Design";
-            secondaryAction = "View Past Orders";
-            destination = canJoinActiveBatch ? "design" : "custom-order";`;
-
-content = content.replace(findNoActiveWork, replaceNoActiveWork);
+// 4. Update returns
+content = content.replace(/return\s*\{/g, 'return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,');
 
 fs.writeFileSync('src/engine/CustomerJourneyEngine.ts', content);
