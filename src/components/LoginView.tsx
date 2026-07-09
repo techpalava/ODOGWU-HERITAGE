@@ -458,7 +458,7 @@ export default function LoginView({
                     4-Digit Security PIN
                   </label>
                   <span className="text-[9px] text-heritage-gold font-bold flex items-center gap-0.5">
-                    <HelpCircle size={10} /> Baseline Code: 1960
+                    <HelpCircle size={10} /> Legacy Auth Code: 1960 (Deprecated)
                   </span>
                 </div>
                 <div className="relative">

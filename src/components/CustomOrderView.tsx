@@ -18,6 +18,7 @@ import {
 import { CustomGroup, OrderContext, Batch } from "../types";
 import { useAppStore } from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
+import { CapacityService } from "../services/CapacityService";
 import { useReferenceDataFallback } from "../hooks/useReferenceData";
 
 interface CustomOrderViewProps {
@@ -569,7 +570,7 @@ export default function CustomOrderView({
                           className="text-heritage-gold shrink-0"
                         />
                         <span>
-                          {batch.currentGarments} / {batch.targetGarments}{" "}
+                          {CapacityService.getCapacitySummary(batch).progressBadge}{" "}
                           Members
                         </span>
                       </div>
@@ -595,8 +596,8 @@ export default function CustomOrderView({
                             closingDate: batch.endDate,
                             deliveryWindow: batch.estimatedDelivery,
                             pickupLocation: batch.pickupLocation,
-                            currentMembers: batch.currentGarments,
-                            expectedParticipants: batch.targetGarments,
+                            currentMembers: CapacityService.getReservedCapacity(batch),
+                            expectedParticipants: CapacityService.getTargetCapacity(batch),
                           };
                           if (onJoinCustomGroup) {
                             onJoinCustomGroup(batch.id);

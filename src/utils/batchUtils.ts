@@ -2,13 +2,22 @@ import { Batch } from "../types";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 
 export function processDynamicBatches(batches: Batch[]): Batch[] {
+  // ARCHITECTURAL COMPLIANCE:
+  // Apply explicit deterministic ordering before lifecycle evaluation
+  // Prefer displayOrder if present, fallback to batchNumber
+  const sortedBatches = [...batches].sort((a, b) => {
+    const orderA = a.displayOrder !== undefined ? a.displayOrder : a.batchNumber;
+    const orderB = b.displayOrder !== undefined ? b.displayOrder : b.batchNumber;
+    return orderA - orderB;
+  });
+
 
   
   // First, figure out if there's any manually overridden active batch
-  const manualActiveBatch = batches.find(b => b.isAutoScheduled === false && b.isActive);
+  const manualActiveBatch = sortedBatches.find(b => b.isAutoScheduled === false && b.isActive);
   let autoActiveAssigned = false;
 
-  return batches.map(batch => {
+  return sortedBatches.map(batch => {
     // If auto-scheduling is explicitly disabled for this batch, keep its status
     if (batch.isAutoScheduled === false) {
       return batch;
@@ -87,4 +96,13 @@ export function getNextUpcomingBatch(batches: Batch[]): Batch | undefined {
   // Sort by start date ascending to get the earliest next one
   upcoming.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
   return upcoming[0];
+}
+
+export function getNextUpcomingBatches(batches: Batch[], count: number = 3): Batch[] {
+  const processedBatches = processDynamicBatches(batches);
+  // Get batches that are coming soon
+  const upcoming = processedBatches.filter(b => b.status === "COMING_SOON" || b.status === "YET_TO_START");
+  // Sort by start date ascending to get the earliest ones
+  upcoming.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+  return upcoming.slice(0, count);
 }

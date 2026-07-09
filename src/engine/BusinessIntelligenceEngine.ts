@@ -4,20 +4,16 @@
  */
 
 import { Batch, BusinessSettings } from "../types";
+import { CapacityService } from "../services/CapacityService";
 
 export const BusinessIntelligenceEngine = {
   // --- PRODUCTION & CAPACITY ---
-  calculateCapacityPercentage: (batch: Batch, settings: BusinessSettings) => {
-    const target =
-      batch.targetGarments || settings.batchSettings.minGarmentsPerBatch;
-    if (target === 0) return 0;
-    return Math.min(100, Math.round((batch.currentGarments / target) * 100));
+  calculateCapacityPercentage: (batch: Batch, _settings: BusinessSettings) => {
+    return CapacityService.getCapacityBreakdown(batch).percentage;
   },
 
-  getRemainingGarments: (batch: Batch, settings: BusinessSettings) => {
-    const target =
-      batch.targetGarments || settings.batchSettings.minGarmentsPerBatch;
-    return Math.max(0, target - batch.currentGarments);
+  getRemainingGarments: (batch: Batch, _settings: BusinessSettings) => {
+    return CapacityService.getRemainingCapacity(batch);
   },
 
   getEstimatedProductionHours: (
@@ -65,7 +61,7 @@ export const BusinessIntelligenceEngine = {
   // --- ANALYTICS ---
   getBatchAnalytics: (batches: Batch[], settings: BusinessSettings) => {
     const totalGarments = batches.reduce(
-      (acc, b) => acc + b.currentGarments,
+      (acc, b) => acc + CapacityService.getReservedCapacity(b),
       0,
     );
     const totalCustomers = batches.reduce(

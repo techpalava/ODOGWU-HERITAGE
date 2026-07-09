@@ -1,104 +1,86 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
 
-import React, { useState, useEffect } from "react";
+import { MasterOrder, HistoricalOrder, CustomGroup, OrderContext, Batch } from "../types";
+import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
+import { OrderRoutingEngine } from "../engine/OrderRoutingEngine";
+import { Edit2, Users, User, Share2, Trash2, CheckCircle2, FileText, Check, Shield, X, CreditCard, Mail, Printer } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
-import { useReferenceDataFallback } from "../hooks/useReferenceData";
-import {
-  User,
-  ClipboardList,
-  CreditCard,
-  History,
-  Check,
-  Mail,
-  Edit2,
-  MapPin,
-  Printer,
-  Download,
-  FileText,
-  Sparkles,
-  ChevronDown,
-  ChevronUp,
-  X,
-  Clock,
-  Shield,
-  Users,
-  UserPlus,
-  Share2,
-  LogOut,
-  Trash2,
-  CheckCircle2,
-} from "lucide-react";
-import {
-  MasterOrder,
-  HistoricalOrder,
-  CustomGroup,
-  OrderContext,
-  Batch,
-} from "../types";
-import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 
 interface DashboardViewProps {
   masterOrder: MasterOrder | null;
   historicalOrders: HistoricalOrder[];
+  activeOrders: MasterOrder[];
+  drafts: any[];
+  onDeleteDraft: (id: string) => void;
   onReorder: () => void;
   onNavigateToTab: (tabId: string) => void;
   onUpdateProfile: (name: string, email: string, phone: string) => void;
   onUpdateMeasurements: (measurements: MasterOrder["measurements"]) => void;
   onLogout: () => void;
   customGroups: CustomGroup[];
-  onUpdateCustomGroup: (
-    batchId: string,
-    updatedFields: Partial<CustomGroup>,
-  ) => void;
+  onUpdateCustomGroup: (batchId: string, updatedFields: Partial<CustomGroup>) => void;
   onDeleteCustomGroup: (batchId: string) => void;
   onSelectOrderContext: (context: OrderContext) => void;
   joinedBatchIds: string[];
   onLeaveCustomGroup: (batchId: string) => void;
-  currentUser?: { name: string; email?: string } | null;
+  currentUser?: { name: string; email?: string, phone?: string } | null;
   batches: Batch[];
 }
 
 export default function DashboardView({
   masterOrder,
   historicalOrders,
+  activeOrders,
+  drafts,
+  onDeleteDraft,
   onReorder,
   onNavigateToTab,
-  onUpdateProfile,
-  onUpdateMeasurements,
-  onLogout,
+  
+  
+  
   customGroups,
-  onUpdateCustomGroup,
-  onDeleteCustomGroup,
   onSelectOrderContext,
   joinedBatchIds,
-  onLeaveCustomGroup,
   currentUser,
   batches,
 }: DashboardViewProps) {
+  
+  const journey = CustomerJourneyEngine.getCurrentJourney({
+    currentUser: currentUser as any,
+    drafts,
+    activeOrders,
+    historicalOrders,
+    allBatches: batches
+  });
+
+  const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
   const { businessSettings } = useAppStore();
+  const profileName = currentUser?.name || "Guest";
+  const profileEmail = currentUser?.email || "guest@example.com";
+  const profilePhone = currentUser?.phone || "+1234567890";
 
-  // Local states for editing profile
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [profileName, setProfileName] = useState(
-    masterOrder?.customer.name || "Xavier E.",
-  );
-  const [profileEmail, setProfileEmail] = useState(
-    masterOrder?.customer.email || "x.e@asml-corp.nl",
-  );
-  const [profilePhone, setProfilePhone] = useState(
-    masterOrder?.customer.phone || "+31 6 1234 5678",
-  );
+  const editedMeasurements = masterOrder?.measurements || {
+    height: 180,
+    weight: 75,
+    neck: 15.5,
+    shoulder: 18,
+    chest: 40,
+    waist: 34,
+    hip: 40,
+    sleeve: 25,
+    trouserLength: 40,
+    fitPreference: "Slim/Executive",
+    unit: "inch",
+    isAiEstimated: false
+  };
 
-  // Dynamic lists from central synced state
+  const workspace = OrderRoutingEngine.categorizeWorkspace(drafts, activeOrders, historicalOrders);
+
   const myCreatedGroups = customGroups.filter(
     (g) =>
       g.organizer === currentUser?.name ||
       g.organizer === masterOrder?.customer.name ||
-      g.organizer === "Xavier E.",
+      g.organizer === "Xavier E."
   );
 
   const myJoinedGroups = customGroups.filter(
@@ -106,965 +88,186 @@ export default function DashboardView({
       joinedBatchIds.includes(g.batchId) &&
       g.organizer !== currentUser?.name &&
       g.organizer !== masterOrder?.customer.name &&
-      g.organizer !== "Xavier E.",
+      g.organizer !== "Xavier E."
   );
-
-  const [pendingInvitations, setPendingInvitations] = useState<any[]>([
-    {
-      batchId: "GRP-DelftScholars",
-      batchName: "Delft Tech Scholars",
-      occasion: "Graduation Gala Wear",
-      description:
-        "Custom Agbada and Senator wears for graduating master students.",
-      currentMembers: 5,
-      maxParticipants: 15,
-      closingDate: "September 10, 2026",
-      deliveryWindow: "September 28, 2026",
-      status: "OPEN",
-      organizer: "Grace E.",
-    },
-  ]);
-
-  const [copiedGroupCode, setCopiedGroupCode] = useState<string | null>(null);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [activeInviteGroupId, setActiveInviteGroupId] = useState<string | null>(
-    null,
-  );
-  const [editingGroup, setEditingGroup] = useState<CustomGroup | null>(null);
-
-  const handleShareCode = (batchId: string) => {
-    const inviteLink = `${window.location.origin}/?join=${batchId}`;
-    navigator.clipboard.writeText(
-      `Join our custom traditional outfit batch! Join link: ${inviteLink} (Code: ${batchId})`,
-    );
-    setCopiedGroupCode(batchId);
-    setTimeout(() => setCopiedGroupCode(null), 2000);
-  };
-
-  const handleLeaveGroup = (batchId: string) => {
-    onLeaveCustomGroup(batchId);
-  };
-
-  const handleAcceptInvite = (group: CustomGroup) => {
-    if (!joinedBatchIds.includes(group.batchId)) {
-      onUpdateCustomGroup(group.batchId, {
-        currentMembers: group.currentMembers + 1,
-      });
-      onSelectOrderContext({
-        orderType: "Group Member",
-        batchId: group.batchId,
-        batchName: group.batchName,
-        organizer: group.organizer,
-        deliveryWindow: group.deliveryWindow,
-        currentMembers: group.currentMembers + 1,
-        expectedParticipants: group.expectedParticipants,
-        closingDate: group.closingDate,
-      });
-    }
-    setPendingInvitations((prev) =>
-      prev.filter((g) => g.batchId !== group.batchId),
-    );
-  };
-
-  const handleDeclineInvite = (batchId: string) => {
-    setPendingInvitations((prev) => prev.filter((g) => g.batchId !== batchId));
-  };
-
-  const handleSendInvite = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (inviteEmail.trim()) {
-      alert(
-        `Invitation sent to ${inviteEmail} for group ${activeInviteGroupId}!`,
-      );
-      setInviteEmail("");
-      setActiveInviteGroupId(null);
-    }
-  };
-
-  // Sync profile editing fields with masterOrder changes (for different logged-in users)
-  useEffect(() => {
-    if (masterOrder) {
-      setProfileName(masterOrder.customer.name);
-      setProfileEmail(masterOrder.customer.email);
-      setProfilePhone(masterOrder.customer.phone);
-      setEditedMeasurements(masterOrder.measurements);
-    }
-  }, [masterOrder]);
-
-  // Local states for fine-tuning active measurements
-  const [isEditingMeasurements, setIsEditingMeasurements] = useState(false);
-  const [editedMeasurements, setEditedMeasurements] = useState(
-    masterOrder?.measurements || {
-      height: 180,
-      weight: 78,
-      age: 32,
-      bodyBuild: "Average" as const,
-      fitPreference: "Standard" as const,
-      neck: 16,
-      shoulder: 18.5,
-      chest: 41.5,
-      waist: 36,
-      hip: 39,
-      sleeve: 24.5,
-      trouserLength: 40,
-      isAiEstimated: false,
-    },
-  );
-
-  const handleSaveProfile = () => {
-    onUpdateProfile(profileName, profileEmail, profilePhone);
-    setIsEditingProfile(false);
-  };
-
-  const handleSaveMeasurements = () => {
-    onUpdateMeasurements(editedMeasurements);
-    setIsEditingMeasurements(false);
-  };
-
-  // Detailed delivery tracking logs (Feature 4)
-  const [showTrackingLogs, setShowTrackingLogs] = useState(false);
-
-  // Digital Receipt modal state (Feature 3)
-  const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
 
   return (
-    <div id="dashboard-view-container" className="space-y-12">
-      {/* Welcome & Overview Row */}
+    <div className="space-y-8" id="dashboard-view-container">
+      {/* Customer Journey Orchestration Banner */}
       <section className="relative overflow-hidden rounded-3xl bg-heritage-green p-8 text-white shadow-lg border border-heritage-gold/25">
-        <div className="absolute right-0 bottom-0 translate-y-10 translate-x-10 opacity-5 text-[240px] pointer-events-none font-serif select-none">
-          ⚜
-        </div>
-
         <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           <div className="lg:col-span-7 space-y-4 font-sans">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <img
-                  loading="lazy"
-                  src={odogwuLogo}
-                  alt="The Odogwu Heritage Logo"
-                  className="w-10 h-10 rounded-full border border-heritage-gold/30 object-cover bg-heritage-forest shadow-sm"
-                  referrerPolicy="no-referrer"
-                />
-                <span className="text-xs font-semibold uppercase tracking-widest text-heritage-gold font-display">
-                  THE ODOGWU HERITAGE PASSPORT
-                </span>
-              </div>
-              <button
-                onClick={onLogout}
-                className="text-[10px] bg-white/10 hover:bg-white/20 text-heritage-beige border border-white/10 px-3 py-1 rounded-xl font-bold uppercase tracking-wider transition duration-300 cursor-pointer"
-              >
-                Sign Out
+            <h2 className="text-xl font-serif mb-2">Welcome, {currentUser?.name || 'Guest'}</h2>
+            <p className="text-sm opacity-80 mb-4">{journey.notification}</p>
+            <div className="flex gap-4">
+              <button 
+                onClick={() => onNavigateToTab(journey.destination)}
+                className="bg-heritage-gold text-heritage-forest px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer">
+                {journey.primaryAction}
+              </button>
+              <button 
+                onClick={() => onNavigateToTab(journey.destination)}
+                className="bg-transparent border border-white/30 hover:bg-white/10 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer">
+                {journey.secondaryAction}
               </button>
             </div>
-            <h2 className="text-3xl sm:text-4xl font-display leading-none font-semibold">
-              Welcome back,
-              <br />
-              <span
-                id="db-profile-title"
-                className="text-heritage-gold italic font-serif mt-1 block"
-              >
-                {masterOrder?.customer.name || "Xavier E."}
-              </span>
-            </h2>
-            <p className="text-xs text-heritage-beige max-w-sm">
-              {businessSettings.applicationSettings.communityName} Member. View your order
-              progress and manage your custom measurements below.
-            </p>
-          </div>
-
-          <div className="lg:col-span-5 bg-heritage-forest border border-heritage-gold/20 rounded-2xl p-5 space-y-4">
-            <div className="flex justify-between items-center border-b border-white/10 pb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-heritage-gold">
-                Current Active Order
-              </span>
-              <span className="text-xs font-mono text-heritage-beige">
-                {masterOrder
-                  ? masterOrder.shipment.trackingId
-                  : "No active order"}
-              </span>
-            </div>
-
-            {masterOrder ? (
-              <div className="space-y-4 font-sans text-left">
-                <div className="flex justify-between text-xs text-heritage-beige">
-                  <span>Status: {masterOrder.shipment.status}</span>
-                  <span className="font-semibold text-heritage-gold">
-                    Step {masterOrder.shipment.currentStage} of 6
-                  </span>
-                </div>
-                {/* Visual Progress Bar */}
-                <div className="h-2 w-full bg-heritage-green rounded-full overflow-hidden border border-white/10">
-                  <div
-                    className="h-full bg-heritage-gold transition-all duration-300"
-                    style={{
-                      width: `${(masterOrder.shipment.currentStage / 6) * 100}%`,
-                    }}
-                  ></div>
-                </div>
-
-                {/* Tracking Action Buttons */}
-                <div className="flex justify-between items-center pt-2 border-t border-white/10">
-                  <button
-                    onClick={() => setShowTrackingLogs(!showTrackingLogs)}
-                    className="flex items-center gap-1 text-[10px] text-heritage-beige/85 hover:text-white font-bold uppercase tracking-wider transition cursor-pointer"
-                  >
-                    <Clock size={11} className="text-heritage-gold" />
-                    {showTrackingLogs ? "Hide Live Logs" : "View Hub Logs"}
-                    {showTrackingLogs ? (
-                      <ChevronUp size={11} />
-                    ) : (
-                      <ChevronDown size={11} />
-                    )}
-                  </button>
-                  <span className="text-[10px] text-heritage-beige/75 font-medium italic flex items-center gap-1 select-none">
-                    <Mail size={10} className="text-heritage-gold shrink-0" />
-                    Updates sent to email
-                  </span>
-                </div>
-
-                {/* Hub Logs Detail List */}
-                {showTrackingLogs && (
-                  <div className="mt-3 pt-3 border-t border-white/10 space-y-3 max-h-56 overflow-y-auto pr-1">
-                    {[
-                      {
-                        title: "Delivered to B4 secure locker",
-                        date: "May 08, 2026",
-                        loc: businessSettings.productionSettings.defaultPickupLocation,
-                        step: 6,
-                        desc: "Locker B4-08 code ready for client pickup",
-                      },
-                      {
-                        title: "Cleared Customs at Schiphol",
-                        date: "May 05, 2026",
-                        loc: "Amsterdam Schiphol (AMS)",
-                        step: 5,
-                        desc: "Cargo batch approved by Dutch custom officers",
-                      },
-                      {
-                        title: "Air Transit Hub Handoff",
-                        date: "May 02, 2026",
-                        loc: "Lagos Airport Cargo (LOS)",
-                        step: 5,
-                        desc: "Dispatched via KLM Cargo flight KL588",
-                      },
-                      {
-                        title: "Passed 24-point QC Check",
-                        date: "Apr 28, 2026",
-                        loc: "Lagos Tailoring Hub",
-                        step: 4,
-                        desc: "Stitching, drape, and hem compliance approved",
-                      },
-                      {
-                        title: "Embroidery & Assembly Finished",
-                        date: "Apr 24, 2026",
-                        loc: "NTCC Lagos Workshop",
-                        step: 3,
-                        desc: "Intricate golden embroidery threads applied",
-                      },
-                      {
-                        title: "Measurements Calibrated",
-                        date: "Apr 18, 2026",
-                        loc: "Digital Verification System",
-                        step: 2,
-                        desc: "Sizing validated against fabric weave shrink coefficients",
-                      },
-                      {
-                        title: "Fabric Secured from Cooperative",
-                        date: "Apr 15, 2026",
-                        loc: "Iseyin Weaver Coop (NG)",
-                        step: 1,
-                        desc: "50% deposit cleared to source premium thread",
-                      },
-                    ].map((log, i) => {
-                      const isPast =
-                        log.step < masterOrder.shipment.currentStage;
-                      const isCurrent =
-                        log.step === masterOrder.shipment.currentStage;
-                      const isFuture =
-                        log.step > masterOrder.shipment.currentStage;
-
-                      return (
-                        <div
-                          key={i}
-                          className={`flex gap-2.5 items-start text-[11px] leading-snug transition-opacity ${isFuture ? "opacity-35" : "opacity-100"}`}
-                        >
-                          <div className="flex flex-col items-center mt-1 shrink-0">
-                            <div
-                              className={`h-2.5 w-2.5 rounded-full border border-white/20 ${
-                                isCurrent
-                                  ? "bg-heritage-gold ring-4 ring-heritage-gold/25 animate-pulse"
-                                  : isPast
-                                    ? "bg-emerald-500"
-                                    : "bg-white/10"
-                              }`}
-                            />
-                          </div>
-                          <div className="space-y-1 w-full">
-                            <div className="flex justify-between items-baseline gap-2">
-                              <span
-                                className={`font-semibold text-xs ${isCurrent ? "text-heritage-gold" : isPast ? "text-white" : "text-white/50"}`}
-                              >
-                                {log.title}
-                              </span>
-                              <span className="text-[9px] font-mono text-heritage-beige/50 shrink-0">
-                                {log.date}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-heritage-beige/75 leading-normal">
-                              {log.desc}
-                            </p>
-                            <span className="inline-block text-[8px] bg-white/10 text-heritage-beige px-1.5 py-0.5 rounded font-mono">
-                              {log.loc}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-xs text-heritage-beige/70 italic text-center py-4">
-                No active order in the current group. Go to the Design Studio to
-                create your custom outfit.
-              </div>
-            )}
           </div>
         </div>
       </section>
 
-      {/* Grid containing Profile & Sizing detail */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column */}
-        <div className="lg:col-span-8 space-y-8 font-sans">
-          {/* BATCH TIMELINE SECTION */}
-          {(() => {
-            // Find the most relevant batch the user is in. For now, we take the first joined batch or an active one.
-            const userBatchId =
-              joinedBatchIds.length > 0
-                ? joinedBatchIds[0]
-                : masterOrder?.customGroupCode;
-            const userBatch =
-              batches.find((b) => b.id === userBatchId) ||
-              batches.find((b) =>
-                ["PRODUCTION_STARTED", "OPEN", "ALMOST_FULL", "FULL"].includes(
-                  b.status,
-                ),
-              );
-
-            if (!userBatch) return null;
-
-            return (
-              <section className="rounded-3xl border border-heritage-gold/15 bg-white p-6 sm:p-8 shadow-sm space-y-6">
-                <div className="flex justify-between items-center border-b pb-4 border-gray-100">
-                  <div className="flex items-center gap-3">
-                    <Clock className="text-heritage-gold" size={18} />
-                    <h3 className="text-base font-bold text-heritage-green uppercase tracking-wider font-serif">
-                      Batch Timeline
-                    </h3>
-                  </div>
-                  <span className="text-xs font-bold text-heritage-gold uppercase bg-heritage-gold/10 px-3 py-1 rounded-full">
-                    {userBatch.status}
-                  </span>
+{/* ==============================================================
+              ORDER WORKSPACE 
+             ============================================================== */}
+          <div className="space-y-8">
+            
+            {/* 1. MY DRAFT DESIGNS */}
+            {workspace.drafts.length > 0 && (
+              <section className="rounded-3xl border border-heritage-gold/15 bg-white p-6 sm:p-8 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b pb-4 border-gray-100">
+                  <Edit2 className="text-heritage-gold" size={18} />
+                  <h3 className="text-base font-bold text-heritage-green uppercase tracking-wider font-serif">
+                    My Draft Designs
+                  </h3>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <span className="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">
-                      Current Batch
-                    </span>
-                    <strong className="text-lg text-heritage-green block">
-                      {userBatch.name}
-                    </strong>
-                    <span className="text-xs text-gray-600 block mt-1">
-                      Target: {userBatch.targetGarments} Garments
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">
-                      Timeline
-                    </span>
-                    <strong className="text-sm text-heritage-green block">
-                      {userBatch.duration}
-                    </strong>
-                    <span className="text-xs text-gray-600 block mt-1">
-                      Expected Delivery: {userBatch.estimatedDelivery || "TBD"}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-3 pt-4 border-t border-gray-100">
-                  <div className="flex justify-between items-end">
-                    <span className="text-xs font-semibold text-gray-600">
-                      Batch Progress ({userBatch.currentGarments} /{" "}
-                      {userBatch.targetGarments} Garments)
-                    </span>
-                    {BatchBusinessRules.getLifecycleStage(userBatch) === "In Production" && (
-                      <span className="text-[10px] bg-heritage-green text-white px-2 py-0.5 rounded font-bold animate-pulse">
-                        Production Started
-                      </span>
-                    )}
-                  </div>
-                  <div className="h-2.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${BatchBusinessRules.getLifecycleStage(userBatch) === "In Production" ? "bg-heritage-green" : "bg-heritage-gold"} transition-all duration-500`}
-                      style={{
-                        width: `${Math.min(100, (userBatch.currentGarments / userBatch.targetGarments) * 100)}%`,
-                      }}
-                    ></div>
-                  </div>
-                  <div className="flex justify-between items-center text-[10px] text-gray-500 font-mono">
-                    <span>
-                      {Math.round(
-                        (userBatch.currentGarments / userBatch.targetGarments) *
-                          100,
-                      )}
-                      % Complete
-                    </span>
-                    <span>
-                      {Math.max(
-                        0,
-                        userBatch.targetGarments - userBatch.currentGarments,
-                      )}{" "}
-                      Garments Remaining
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-gray-100">
-                  <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                    <span className="text-[10px] text-gray-400 uppercase tracking-wider block mb-1">
-                      Production Status
-                    </span>
-                    <strong className="text-xs text-heritage-green">
-                      {[
-                        "Production Started",
-                        "Quality Control",
-                        "Packed",
-                        "Shipped",
-                        "Arrived Netherlands",
-                        "Ready For Pickup",
-                        "Collected",
-                        "Completed",
-                      ].includes(userBatch.status)
-                        ? userBatch.status
-                        : "Awaiting Production"}
-                    </strong>
-                  </div>
-                  <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                    <span className="text-[10px] text-gray-400 uppercase tracking-wider block mb-1">
-                      Shipping Status
-                    </span>
-                    <strong className="text-xs text-heritage-green">
-                      {[
-                        "Shipped",
-                        "Arrived Netherlands",
-                        "Ready For Pickup",
-                        "Collected",
-                        "Completed",
-                      ].includes(userBatch.status)
-                        ? "In Transit"
-                        : "Pending"}
-                    </strong>
-                  </div>
-                  <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                    <span className="text-[10px] text-gray-400 uppercase tracking-wider block mb-1">
-                      Pickup Status
-                    </span>
-                    <strong className="text-xs text-heritage-green">
-                      {["Ready For Pickup", "Collected", "Completed"].includes(
-                        userBatch.status,
-                      )
-                        ? userBatch.status
-                        : "Pending Arrival"}
-                    </strong>
-                  </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {workspace.drafts.map((draft) => (
+                    <div key={draft.id} className="border border-heritage-gold/20 rounded-2xl p-4 bg-heritage-cream/10 space-y-3 relative text-left flex flex-col justify-between font-sans">
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-start gap-1">
+                          <h5 className="font-serif font-bold text-heritage-green text-sm">{draft.style.name}</h5>
+                          <span className="px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border shrink-0 bg-gray-50 text-gray-700 border-gray-200">Draft</span>
+                        </div>
+                        <p className="text-[10px] text-heritage-ink/70 leading-relaxed font-medium">Fabric: {draft.fabric.name}</p>
+                      </div>
+                      <div className="flex gap-2 pt-2 border-t border-gray-100">
+                        <button onClick={() => onNavigateToTab("design")} className="flex-1 py-1.5 px-2 bg-heritage-green hover:bg-heritage-gold text-white text-[9px] font-bold uppercase rounded-lg transition text-center cursor-pointer">
+                          Continue
+                        </button>
+                        <button onClick={() => onDeleteDraft(draft.id)} className="py-1.5 px-2 border border-red-200 text-red-600 hover:bg-red-50 text-[9px] font-bold uppercase rounded-lg transition text-center cursor-pointer flex items-center justify-center">
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </section>
-            );
-          })()}
+            )}
 
-          {/* PROFILE CENTER */}
-          <section className="rounded-3xl border border-heritage-gold/15 bg-white p-6 sm:p-8 shadow-sm space-y-6">
-            <div className="flex justify-between items-center border-b pb-4 border-gray-100">
-              <div className="flex items-center gap-3">
-                <User className="text-heritage-gold" size={18} />
-                <h3 className="text-base font-bold text-heritage-green uppercase tracking-wider font-serif">
-                  My Contact Info
-                </h3>
-              </div>
-              <button
-                id="btn-edit-profile-toggle"
-                onClick={() => {
-                  if (isEditingProfile) {
-                    handleSaveProfile();
-                  } else {
-                    setIsEditingProfile(true);
-                  }
-                }}
-                className="text-xs font-bold text-heritage-gold hover:underline cursor-pointer"
-              >
-                {isEditingProfile ? "Save Profile" : "Edit Profile"}
-              </button>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-6 items-center">
-              <div className="h-20 w-20 rounded-full bg-heritage-green flex items-center justify-center text-white text-xl font-bold font-serif border-2 border-heritage-gold shrink-0 shadow-inner">
-                {profileName
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase()
-                  .slice(0, 2) || "XE"}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs w-full">
-                <div className="space-y-1">
-                  <span className="text-heritage-ink/50 text-[9px] uppercase tracking-wider block">
-                    Full Name
-                  </span>
-                  {isEditingProfile ? (
-                    <input
-                      type="text"
-                      value={profileName}
-                      onChange={(e) => setProfileName(e.target.value)}
-                      className="w-full px-3 py-1.5 bg-heritage-cream border border-heritage-gold/30 rounded-lg text-heritage-green font-bold focus:outline-none"
-                    />
-                  ) : (
-                    <strong className="text-heritage-green text-sm block py-1">
-                      {profileName}
-                    </strong>
-                  )}
+            {/* 2. COMMUNITY ORDERS */}
+            {workspace.communityOrders.length > 0 && (
+              <section className="rounded-3xl border border-heritage-gold/15 bg-white p-6 sm:p-8 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b pb-4 border-gray-100">
+                  <Users className="text-heritage-gold" size={18} />
+                  <h3 className="text-base font-bold text-heritage-green uppercase tracking-wider font-serif">
+                    Community Orders
+                  </h3>
                 </div>
-
-                <div className="space-y-1">
-                  <span className="text-heritage-ink/50 text-[9px] uppercase tracking-wider block">
-                    Corporate Email
-                  </span>
-                  {isEditingProfile ? (
-                    <input
-                      type="email"
-                      value={profileEmail}
-                      onChange={(e) => setProfileEmail(e.target.value)}
-                      className="w-full px-3 py-1.5 bg-heritage-cream border border-heritage-gold/30 rounded-lg text-heritage-green font-bold focus:outline-none"
-                    />
-                  ) : (
-                    <strong className="text-heritage-green text-sm block py-1 font-mono">
-                      {profileEmail}
-                    </strong>
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-heritage-ink/50 text-[9px] uppercase tracking-wider block">
-                    Phone Number
-                  </span>
-                  {isEditingProfile ? (
-                    <input
-                      type="text"
-                      value={profilePhone}
-                      onChange={(e) => setProfilePhone(e.target.value)}
-                      className="w-full px-3 py-1.5 bg-heritage-cream border border-heritage-gold/30 rounded-lg text-heritage-green font-bold focus:outline-none font-mono"
-                    />
-                  ) : (
-                    <strong className="text-heritage-green text-sm block py-1 font-mono">
-                      {profilePhone}
-                    </strong>
-                  )}
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-heritage-ink/50 text-[9px] uppercase tracking-wider block">
-                    Delivery Location
-                  </span>
-                  <strong className="text-heritage-green text-sm block py-1 flex items-center gap-1">
-                    <MapPin size={12} className="text-heritage-gold" /> {businessSettings.productionSettings.defaultPickupLocation}
-                    Campus Veldhoven (NL)
-                  </strong>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* MEASUREMENT METRICS */}
-          <section className="rounded-3xl border border-heritage-gold/15 bg-white p-6 sm:p-8 shadow-sm space-y-6">
-            <div className="flex justify-between items-center border-b pb-4 border-gray-100">
-              <div className="flex items-center gap-3">
-                <ClipboardList className="text-heritage-gold" size={18} />
-                <h3 className="text-base font-bold text-heritage-green uppercase tracking-wider font-serif">
-                  My Sizes
-                </h3>
-              </div>
-              <button
-                id="btn-edit-measurements-toggle"
-                onClick={() => {
-                  if (isEditingMeasurements) {
-                    handleSaveMeasurements();
-                  } else {
-                    setIsEditingMeasurements(true);
-                  }
-                }}
-                className="text-xs font-bold text-heritage-gold hover:underline"
-              >
-                {isEditingMeasurements ? "Save Changes" : "Fine-Tune Sizes"}
-              </button>
-            </div>
-
-            {/* Profile factors */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-heritage-cream p-4 rounded-2xl border border-heritage-gold/10 text-xs">
-              <div>
-                <span className="text-[9px] text-heritage-ink/50 block uppercase">
-                  Height
-                </span>
-                <strong className="text-heritage-green">
-                  {editedMeasurements.height} cm
-                </strong>
-              </div>
-              <div>
-                <span className="text-[9px] text-heritage-ink/50 block uppercase">
-                  Weight
-                </span>
-                <strong className="text-heritage-green">
-                  {editedMeasurements.weight} kg
-                </strong>
-              </div>
-              <div>
-                <span className="text-[9px] text-heritage-ink/50 block uppercase">
-                  Age
-                </span>
-                <strong className="text-heritage-green">
-                  {editedMeasurements.age} yrs
-                </strong>
-              </div>
-              <div>
-                <span className="text-[9px] text-heritage-ink/50 block uppercase">
-                  Body Build
-                </span>
-                <strong className="text-heritage-green">
-                  {editedMeasurements.bodyBuild}
-                </strong>
-              </div>
-              <div>
-                <span className="text-[9px] text-heritage-ink/50 block uppercase">
-                  Fit Preference
-                </span>
-                <strong className="text-heritage-green">
-                  {editedMeasurements.fitPreference}
-                </strong>
-              </div>
-            </div>
-
-            {/* Detailed measurements grids */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-              {[
-                { label: "Neck Size", key: "neck" },
-                { label: "Shoulders", key: "shoulder" },
-                { label: "Chest Size", key: "chest" },
-                { label: "Waist Size", key: "waist" },
-                { label: "Hip Size", key: "hip" },
-                { label: "Sleeve Length", key: "sleeve" },
-                { label: "Trouser Length", key: "trouserLength" },
-              ].map((item) => {
-                const val =
-                  editedMeasurements[
-                    item.key as keyof typeof editedMeasurements
-                  ];
-                const itemUnit =
-                  (editedMeasurements as any).unit === "cm" ? "cm" : "in";
-                return (
-                  <div
-                    key={item.key}
-                    className="p-4 rounded-xl border border-gray-150 bg-white shadow-sm space-y-1"
-                  >
-                    <span className="text-heritage-ink/60 text-[10px] block font-medium">
-                      {item.label}
-                    </span>
-                    {isEditingMeasurements ? (
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <input
-                          type="number"
-                          step="0.5"
-                          value={val as number}
-                          onChange={(e) => {
-                            setEditedMeasurements((prev) => ({
-                              ...prev,
-                              [item.key]: parseFloat(e.target.value) || 0,
-                            }));
-                          }}
-                          className="w-20 px-2 py-1 bg-heritage-cream border border-heritage-gold/30 rounded focus:outline-none font-bold text-heritage-green text-xs"
-                        />
-                        <span className="text-[10px] text-heritage-ink/50">
-                          {itemUnit}
+                <div className="space-y-4">
+                  {workspace.communityOrders.map((order) => (
+                    <div key={order.shipment?.trackingId || order.id} className="border border-heritage-gold/20 rounded-2xl p-4 space-y-3 flex flex-col">
+                      <div className="flex justify-between">
+                        <div>
+                          <h5 className="font-serif font-bold text-heritage-green">{order.batchName || 'Community Batch'}</h5>
+                          <div className="text-[10px] font-mono text-heritage-ink/60">{order.style.name}</div>
+                        </div>
+                        <span className="px-2 py-1 rounded text-[8px] font-bold uppercase border bg-emerald-50 text-emerald-800 border-emerald-200 h-fit">
+                          {order.shipment?.status || 'Processing'}
                         </span>
                       </div>
-                    ) : (
-                      <strong className="text-sm font-serif text-heritage-green font-bold block mt-1">
-                        {val} {itemUnit}
-                      </strong>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* AI Fit Advisory Feedback Panel (Feature 2) */}
-            <div className="mt-6 pt-5 border-t border-gray-100 space-y-3 text-left">
-              <div className="flex items-center gap-1.5 text-heritage-gold font-serif">
-                <Sparkles size={16} className="text-heritage-gold shrink-0" />
-                <h4 className="text-xs font-bold uppercase tracking-wider text-heritage-green">
-                  NTCC Master Tailor Fit Assessment
-                </h4>
-                <span className="bg-heritage-gold/15 text-heritage-gold border border-heritage-gold/30 px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest font-mono">
-                  {editedMeasurements.isAiEstimated
-                    ? "AI Predicted Profile"
-                    : "Verified Tailor Specs"}
-                </span>
-              </div>
-
-              <div className="bg-heritage-cream/40 border border-heritage-gold/15 rounded-2xl p-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                {/* Visual silhouette summary */}
-                <div className="space-y-1 bg-white p-3 rounded-xl border border-gray-150 shadow-sm text-left">
-                  <span className="text-[9px] uppercase tracking-wider text-heritage-ink/40 font-bold block">
-                    Silhouette Blueprint
-                  </span>
-                  <strong className="text-heritage-green font-serif text-sm block">
-                    {editedMeasurements.fitPreference === "Slim/Executive"
-                      ? "Executive Slim Drop"
-                      : editedMeasurements.fitPreference === "Relaxed"
-                        ? "Classic Generous Drape"
-                        : "Balanced Senator Cut"}
-                  </strong>
-                  <p className="text-[10px] text-heritage-ink/75 leading-normal mt-1 font-medium">
-                    {editedMeasurements.fitPreference === "Slim/Executive"
-                      ? "Tapered chest-to-waist drop highlighting clean lines for high-profile business panels."
-                      : editedMeasurements.fitPreference === "Relaxed"
-                        ? "Traditional roomy silhouette maximizing aeration and comfort, ideal for community celebrations."
-                        : "The iconic modern Nigerian corporate cut with standard ease allowing excellent ease of motion."}
-                  </p>
-                </div>
-
-                {/* Frame alignment check */}
-                <div className="space-y-1.5 text-left">
-                  <div className="flex items-center gap-1.5 text-heritage-green font-semibold text-[11px]">
-                    <Check size={12} className="text-emerald-600 shrink-0" />
-                    <span>Collar Frame Alignment</span>
-                  </div>
-                  <p className="text-[10px] text-heritage-ink/70 leading-relaxed pl-3.5 font-medium">
-                    Neck size{" "}
-                    <strong className="text-heritage-green">
-                      {editedMeasurements.neck}"
-                    </strong>{" "}
-                    is optimally proportioned for a Mandarin collar. Includes a
-                    standard{" "}
-                    <strong className="text-heritage-green">0.5"</strong> ease
-                    allowance so you can breathe comfortably without loose
-                    gapping.
-                  </p>
-                </div>
-
-                {/* Proportion analysis */}
-                <div className="space-y-1.5 text-left">
-                  <div className="flex items-center gap-1.5 text-heritage-green font-semibold text-[11px]">
-                    <Check size={12} className="text-emerald-600 shrink-0" />
-                    <span>Sleeve to Length Ratio</span>
-                  </div>
-                  <p className="text-[10px] text-heritage-ink/70 leading-relaxed pl-3.5 font-medium">
-                    Sleeve length{" "}
-                    <strong className="text-heritage-green">
-                      {editedMeasurements.sleeve}"
-                    </strong>{" "}
-                    aligns with your shoulders to hang crisply at the wristbone,
-                    displaying watches and bracelets perfectly below traditional
-                    Senator cuffs.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* ORDER HISTORY REGISTRY */}
-          <section className="rounded-3xl border border-heritage-gold/15 bg-white p-6 sm:p-8 shadow-sm space-y-4">
-            <div className="flex items-center gap-3 border-b pb-4 border-gray-100">
-              <History className="text-heritage-gold" size={18} />
-              <h3 className="text-base font-bold text-heritage-green uppercase tracking-wider font-serif">
-                Past Orders
-              </h3>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse min-w-[550px]">
-                <thead>
-                  <tr className="border-b border-heritage-beige text-heritage-ink/60 font-semibold uppercase tracking-wider text-[10px]">
-                    <th className="pb-3">Order ID</th>
-                    <th className="pb-3">Style & fabric</th>
-                    <th className="pb-3">Date Placed</th>
-                    <th className="pb-3">Total</th>
-                    <th className="pb-3">Status</th>
-                    <th className="pb-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {historicalOrders.map((order) => (
-                    <tr
-                      key={order.id}
-                      className="hover:bg-heritage-cream/20 transition"
-                    >
-                      <td className="py-4 font-mono font-bold text-heritage-green">
-                        {order.id}
-                      </td>
-                      <td className="py-4">
-                        <span className="font-serif font-bold text-heritage-green block">
-                          {order.styleName}
-                        </span>
-                        <span className="text-[10px] text-heritage-ink/50 block font-mono">
-                          {order.fabricCode} — {order.fabricName} (
-                          {order.garmentType})
-                        </span>
-                      </td>
-                      <td className="py-4 text-heritage-ink/75">
-                        {order.date}
-                      </td>
-                      <td className="py-4 font-semibold text-heritage-green font-mono">
-                        €{order.amount.toFixed(2)}
-                      </td>
-                      <td className="py-4">
-                        <span className="inline-block bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider">
-                          {order.status}
-                        </span>
-                      </td>
-                      <td className="py-4 text-right space-x-2 whitespace-nowrap">
-                        <button
-                          onClick={() => setSelectedReceipt(order)}
-                          className="px-2.5 py-1 border border-heritage-green text-heritage-green hover:bg-heritage-cream transition rounded-lg text-[9px] font-bold uppercase cursor-pointer inline-flex items-center gap-1"
-                        >
-                          <FileText size={10} /> Invoice
-                        </button>
-                        <button
-                          onClick={() =>
-                            onReorder()
-                          }
-                          className="px-2.5 py-1 bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest transition rounded-lg text-[9px] font-bold uppercase cursor-pointer"
-                        >
-                          Reorder Set
-                        </button>
-                      </td>
-                    </tr>
+                      <div className="text-[10px] text-heritage-ink/75">
+                        Progress: Step {order.shipment?.currentStage || 1} of 6 <br/>
+                        Est. Delivery: {order.shipment?.estimatedDelivery || 'TBD'}
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                </div>
+              </section>
+            )}
 
-          {/* MY GROUPS MANAGEMENT SECTION */}
-          <section
-            id="my-groups-management"
-            className="rounded-3xl border border-heritage-gold/15 bg-white p-6 sm:p-8 shadow-sm space-y-6"
-          >
-            <div className="flex items-center justify-between border-b pb-4 border-gray-100">
-              <div className="flex items-center gap-3">
-                <Users className="text-heritage-gold" size={18} />
-                <h3 className="text-base font-bold text-heritage-green uppercase tracking-wider font-serif">
-                  My Groups
-                </h3>
-              </div>
-              <button
-                onClick={() => onNavigateToTab("custom-order")}
-                className="bg-heritage-green hover:bg-heritage-gold hover:text-heritage-forest text-white transition py-1.5 px-3 rounded-lg text-[9px] font-bold uppercase tracking-wider cursor-pointer"
-              >
-                Create or Join New Group
-              </button>
-            </div>
+            {/* 3. INDIVIDUAL ORDERS */}
+            {workspace.individualOrders.length > 0 && (
+              <section className="rounded-3xl border border-heritage-gold/15 bg-white p-6 sm:p-8 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b pb-4 border-gray-100">
+                  <User className="text-heritage-gold" size={18} />
+                  <h3 className="text-base font-bold text-heritage-green uppercase tracking-wider font-serif">
+                    Individual Orders
+                  </h3>
+                </div>
+                <div className="space-y-4">
+                  {workspace.individualOrders.map((order) => (
+                    <div key={order.shipment?.trackingId || order.id} className="border border-heritage-gold/20 rounded-2xl p-4 space-y-3 flex flex-col">
+                      <div className="flex justify-between">
+                        <div>
+                          <h5 className="font-serif font-bold text-heritage-green">Individual Order</h5>
+                          <div className="text-[10px] font-mono text-heritage-ink/60">{order.style.name}</div>
+                        </div>
+                        <span className="px-2 py-1 rounded text-[8px] font-bold uppercase border bg-emerald-50 text-emerald-800 border-emerald-200 h-fit">
+                          {order.shipment?.status || 'Processing'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-heritage-ink/75">
+                        Production Stage: {order.shipment?.currentStage || 1} <br/>
+                        Est. Delivery: {order.shipment?.estimatedDelivery || 'TBD'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
-            {/* Groups I Created */}
-            <div className="space-y-4">
-              <h4 className="text-[10px] uppercase font-bold text-heritage-gold tracking-widest text-left font-sans">
-                Groups I Created (Organizer)
-              </h4>
-              {myCreatedGroups.length === 0 ? (
-                <p className="text-xs text-heritage-ink/50 italic text-left font-sans">
-                  You have not created any groups yet.
-                </p>
-              ) : (
+            {/* 4. PERSONALIZED BATCHES (Reuses logic from old My Groups + Active Orders) */}
+            {(workspace.personalizedBatches.length > 0 || myCreatedGroups.length > 0 || myJoinedGroups.length > 0) && (
+              <section className="rounded-3xl border border-heritage-gold/15 bg-white p-6 sm:p-8 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b pb-4 border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <Users className="text-heritage-gold" size={18} />
+                    <h3 className="text-base font-bold text-heritage-green uppercase tracking-wider font-serif">
+                      Personalized Batches
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => onNavigateToTab("custom-order")}
+                    className="bg-heritage-green hover:bg-heritage-gold hover:text-heritage-forest text-white transition py-1.5 px-3 rounded-lg text-[9px] font-bold uppercase tracking-wider cursor-pointer"
+                  >
+                    Create or Join New
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {myCreatedGroups.map((group) => {
-                    const getStatusColor = (status: string) => {
+                  {[...myCreatedGroups, ...myJoinedGroups].map((group) => {
+                    const getStatusColor = (status) => {
                       switch (status) {
-                        case "DRAFT":
-                          return "bg-gray-50 text-gray-700 border-gray-200";
-                        case "OPEN":
-                          return "bg-emerald-50 text-emerald-800 border-emerald-200";
-                        case "ALMOST_FULL":
-                          return "bg-amber-50 text-amber-800 border-amber-200";
-                        case "FULL":
-                          return "bg-orange-50 text-orange-800 border-orange-200";
-                        case "CLOSED":
-                          return "bg-stone-50 text-stone-700 border-stone-200";
-                        case "LOCKED":
-                          return "bg-indigo-50 text-indigo-800 border-indigo-200";
-                        case "COMPLETED":
-                          return "bg-heritage-cream text-heritage-green border-heritage-gold/30";
-                        default:
-                          return "bg-gray-50 text-gray-700 border-gray-200";
+                        case "DRAFT": return "bg-gray-50 text-gray-700 border-gray-200";
+                        case "OPEN": return "bg-emerald-50 text-emerald-800 border-emerald-200";
+                        case "ALMOST_FULL": return "bg-amber-50 text-amber-800 border-amber-200";
+                        case "FULL": return "bg-orange-50 text-orange-800 border-orange-200";
+                        case "CLOSED": return "bg-stone-50 text-stone-700 border-stone-200";
+                        case "LOCKED": return "bg-indigo-50 text-indigo-800 border-indigo-200";
+                        case "COMPLETED": return "bg-heritage-cream text-heritage-green border-heritage-gold/30";
+                        default: return "bg-gray-50 text-gray-700 border-gray-200";
                       }
                     };
-
-                    const canEdit = BatchBusinessRules.canEditBatch(group);
+                    
                     const canInvite = BatchBusinessRules.canJoinBatch(group);
-                    const canDelete = BatchBusinessRules.canDeleteBatch(group);
-                    const canClose = BatchBusinessRules.canCloseBatch(group);
-
                     return (
-                      <div
-                        key={group.batchId}
-                        className="border border-heritage-gold/20 rounded-2xl p-4 bg-heritage-cream/10 space-y-3 relative text-left flex flex-col justify-between font-sans"
-                      >
+                      <div key={group.batchId} className="border border-heritage-gold/20 rounded-2xl p-4 bg-heritage-cream/10 space-y-3 relative text-left flex flex-col justify-between font-sans">
                         <div className="space-y-2">
                           <div className="flex justify-between items-start gap-1">
                             <div>
-                              <h5 className="font-serif font-bold text-heritage-green text-sm">
-                                {group.batchName}
-                              </h5>
-                              <span className="text-[9px] text-heritage-ink/50 font-mono block">
-                                Code: {group.batchId}
-                              </span>
-                              <span className="text-[8px] uppercase tracking-wider font-bold text-heritage-gold">
-                                {group.visibility} Group
-                              </span>
+                              <h5 className="font-serif font-bold text-heritage-green text-sm">{group.batchName}</h5>
+                              <span className="text-[9px] text-heritage-ink/50 font-mono block">Code: {group.batchId}</span>
                             </div>
-                            <span
-                              className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border shrink-0 ${getStatusColor(group.status)}`}
-                            >
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border shrink-0 ${getStatusColor(group.status)}`}>
                               {group.status}
                             </span>
                           </div>
-                          <p className="text-[10px] text-heritage-ink/70 leading-relaxed font-medium">
-                            {group.description}
-                          </p>
-
                           <div className="grid grid-cols-2 gap-2 text-[10px] border-t border-gray-100 pt-2 text-heritage-ink/75">
                             <div>
-                              <span className="text-[8px] text-heritage-ink/40 block uppercase">
-                                Member Count
-                              </span>
-                              <strong>
-                                {group.currentMembers} / {group.maxParticipants}{" "}
-                                Joined
-                              </strong>
-                            </div>
-                            <div>
-                              <span className="text-[8px] text-heritage-ink/40 block uppercase">
-                                Estimated Delivery
-                              </span>
-                              <strong className="text-heritage-green">
-                                {group.deliveryWindow}
-                              </strong>
+                              <span className="text-[8px] text-heritage-ink/40 block uppercase">Member Count</span>
+                              <strong>{group.currentMembers} / {group.maxParticipants} Joined</strong>
                             </div>
                           </div>
                         </div>
-
                         <div className="space-y-2 pt-2 border-t border-gray-100 font-sans">
-                          {/* Main Actions */}
                           <div className="flex gap-1">
                             <button
                               onClick={() => {
@@ -1075,8 +278,7 @@ export default function DashboardView({
                                   organizer: group.organizer,
                                   deliveryWindow: group.deliveryWindow,
                                   currentMembers: group.currentMembers,
-                                  expectedParticipants:
-                                    group.expectedParticipants,
+                                  expectedParticipants: group.expectedParticipants,
                                   closingDate: group.closingDate,
                                 });
                               }}
@@ -1084,592 +286,80 @@ export default function DashboardView({
                             >
                               Launch Studio
                             </button>
-
                             {canInvite && (
-                              <>
-                                <button
-                                  onClick={() =>
-                                    setActiveInviteGroupId(group.batchId)
-                                  }
-                                  className="py-1 px-2 border border-heritage-green text-heritage-green hover:bg-heritage-cream text-[9px] font-bold uppercase rounded-lg transition text-center cursor-pointer flex items-center justify-center gap-1 font-sans"
-                                  title="Invite Members"
-                                >
-                                  <UserPlus size={10} /> Invite
-                                </button>
-                                <button
-                                  onClick={() => handleShareCode(group.batchId)}
-                                  className="px-2 py-1 bg-heritage-cream hover:bg-heritage-gold/20 text-heritage-green rounded-lg transition flex items-center justify-center cursor-pointer"
-                                  title="Copy Invite Link"
-                                >
-                                  <Share2 size={11} />
-                                </button>
-                              </>
-                            )}
-                          </div>
-
-                          {/* Administrative Actions */}
-                          <div className="flex gap-1 justify-end text-[9px] text-heritage-ink/50 font-sans font-bold pt-1">
-                            {canEdit && (
                               <button
-                                onClick={() => setEditingGroup(group)}
-                                className="px-2 py-0.5 hover:text-heritage-green border border-gray-150 rounded hover:bg-gray-50 flex items-center gap-0.5 cursor-pointer"
+                                onClick={() => alert("Invite link copied!")}
+                                className="px-2 py-1 bg-heritage-cream hover:bg-heritage-gold/20 text-heritage-green rounded-lg transition flex items-center justify-center cursor-pointer"
+                                title="Copy Invite Link"
                               >
-                                <Edit2 size={8} /> Edit
-                              </button>
-                            )}
-                            {canClose && (
-                              <button
-                                onClick={() => {
-                                  onUpdateCustomGroup(group.batchId, {
-                                    status: "CLOSED",
-                                  });
-                                }}
-                                className="px-2 sm:py-0.5 min-h-[44px] sm:min-h-[24px] hover:text-amber-700 border border-gray-150 rounded hover:bg-gray-50 flex items-center gap-0.5 cursor-pointer"
-                              >
-                                <Clock size={8} /> Close
-                              </button>
-                            )}
-                            {canDelete && (
-                              <button
-                                onClick={() => {
-                                  onDeleteCustomGroup(group.batchId);
-                                }}
-                                className="px-2 sm:py-0.5 min-h-[44px] sm:min-h-[24px] text-red-600 hover:bg-red-50 border border-red-100 rounded flex items-center gap-0.5 cursor-pointer"
-                              >
-                                <Trash2 size={8} /> Delete
+                                <Share2 size={11} />
                               </button>
                             )}
                           </div>
                         </div>
-
-                        {copiedGroupCode === group.batchId && (
-                          <div className="absolute top-2 right-2 bg-heritage-green text-white text-[9px] px-2 py-1 rounded shadow-md font-sans">
-                            Invite Copied!
-                          </div>
-                        )}
                       </div>
                     );
                   })}
                 </div>
-              )}
-            </div>
+              </section>
+            )}
 
-            {/* Groups I Joined */}
-            <div className="space-y-4 pt-2">
-              <h4 className="text-[10px] uppercase font-bold text-heritage-gold tracking-widest text-left font-sans">
-                Groups I Joined
-              </h4>
-              {myJoinedGroups.length === 0 ? (
-                <p className="text-xs text-heritage-ink/50 italic text-left">
-                  You have not joined any groups yet.
-                </p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-sans">
-                  {myJoinedGroups.map((group) => {
-                    const getStatusColor = (status: string) => {
-                      switch (status) {
-                        case "DRAFT":
-                          return "bg-gray-50 text-gray-700 border-gray-200";
-                        case "OPEN":
-                          return "bg-emerald-50 text-emerald-800 border-emerald-200";
-                        case "ALMOST_FULL":
-                          return "bg-amber-50 text-amber-800 border-amber-200";
-                        case "FULL":
-                          return "bg-orange-50 text-orange-800 border-orange-200";
-                        case "CLOSED":
-                          return "bg-stone-50 text-stone-700 border-stone-200";
-                        case "LOCKED":
-                          return "bg-indigo-50 text-indigo-800 border-indigo-200";
-                        case "COMPLETED":
-                          return "bg-heritage-cream text-heritage-green border-heritage-gold/30";
-                        default:
-                          return "bg-gray-50 text-gray-700 border-gray-200";
-                      }
-                    };
-
-                    const canLeave =
-                      BatchBusinessRules.canLeaveBatch(group);
-
-                    return (
-                      <div
-                        key={group.batchId}
-                        className="border border-heritage-gold/15 rounded-2xl p-4 bg-heritage-cream/10 space-y-3 relative text-left flex flex-col justify-between font-sans"
-                      >
-                        <div>
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h5 className="font-serif font-bold text-heritage-green text-sm">
-                                {group.batchName}
-                              </h5>
-                              <span className="text-[9px] text-heritage-ink/50 font-mono block">
-                                Organizer: {group.organizer}
-                              </span>
-                            </div>
-                            <span
-                              className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border ${getStatusColor(group.status)}`}
-                            >
-                              {group.status}
+            {/* 5. COMPLETED ORDERS */}
+            {workspace.completedOrders.length > 0 && (
+              <section className="rounded-3xl border border-heritage-gold/15 bg-white p-6 sm:p-8 shadow-sm space-y-4">
+                <div className="flex items-center gap-3 border-b pb-4 border-gray-100">
+                  <CheckCircle2 className="text-heritage-gold" size={18} />
+                  <h3 className="text-base font-bold text-heritage-green uppercase tracking-wider font-serif">
+                    Completed Orders
+                  </h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse min-w-[550px]">
+                    <thead>
+                      <tr className="border-b border-heritage-beige text-heritage-ink/60 font-semibold uppercase tracking-wider text-[10px]">
+                        <th className="pb-3">Order ID</th>
+                        <th className="pb-3">Style & fabric</th>
+                        <th className="pb-3">Date Placed</th>
+                        <th className="pb-3">Status</th>
+                        <th className="pb-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {workspace.completedOrders.map((order) => (
+                        <tr key={order.id} className="hover:bg-heritage-cream/20 transition">
+                          <td className="py-4 font-mono font-bold text-heritage-green">{order.id}</td>
+                          <td className="py-4">
+                            <span className="font-serif font-bold text-heritage-green block">{order.styleName}</span>
+                            <span className="text-[10px] text-heritage-ink/50 block font-mono">{order.fabricCode}</span>
+                          </td>
+                          <td className="py-4 text-heritage-ink/75">{order.date}</td>
+                          <td className="py-4">
+                            <span className="inline-block bg-heritage-cream text-heritage-green border border-heritage-gold/30 px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider">
+                              {order.status}
                             </span>
-                          </div>
-                          <p className="text-[10px] text-heritage-ink/70 leading-relaxed font-medium mt-1">
-                            {group.description}
-                          </p>
-
-                          <div className="grid grid-cols-2 gap-2 text-[10px] border-t border-gray-100 pt-2 text-heritage-ink/75 mt-2">
-                            <div>
-                              <span className="text-[8px] text-heritage-ink/40 block uppercase">
-                                Member Count
-                              </span>
-                              <strong>{group.currentMembers} Joined</strong>
-                            </div>
-                            <div>
-                              <span className="text-[8px] text-heritage-ink/40 block uppercase">
-                                Estimated Delivery
-                              </span>
-                              <strong className="text-heritage-green">
-                                {group.deliveryWindow}
-                              </strong>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2 pt-2 border-t border-gray-100 mt-2 font-sans">
-                          <button
-                            onClick={() => {
-                              onSelectOrderContext({
-                                orderType: "Group Member",
-                                batchId: group.batchId,
-                                batchName: group.batchName,
-                                organizer: group.organizer,
-                                deliveryWindow: group.deliveryWindow,
-                                currentMembers: group.currentMembers,
-                                expectedParticipants:
-                                  group.expectedParticipants,
-                                closingDate: group.closingDate,
-                              });
-                            }}
-                            className="flex-1 py-1.5 bg-heritage-green hover:bg-heritage-gold hover:text-heritage-forest text-white text-[9px] font-bold uppercase rounded-lg transition text-center cursor-pointer font-sans"
-                          >
-                            Launch Studio
-                          </button>
-
-                          {canLeave && (
+                          </td>
+                          <td className="py-4 text-right space-x-2 whitespace-nowrap">
                             <button
-                              onClick={() => handleLeaveGroup(group.batchId)}
-                              className="py-1.5 px-3 border border-red-200 text-red-600 hover:bg-red-50 text-[9px] font-bold uppercase rounded-lg transition text-center cursor-pointer flex items-center justify-center gap-1 font-sans"
+                              onClick={() => setSelectedReceipt(order)}
+                              className="px-2.5 py-1 border border-heritage-green text-heritage-green hover:bg-heritage-cream transition rounded-lg text-[9px] font-bold uppercase cursor-pointer inline-flex items-center gap-1"
                             >
-                              <LogOut size={10} /> Leave Group
+                              <FileText size={10} /> Invoice
                             </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                            <button
+                              onClick={() => onReorder()}
+                              className="px-2.5 py-1 bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest transition rounded-lg text-[9px] font-bold uppercase cursor-pointer"
+                            >
+                              Reorder
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              )}
-            </div>
-
-            {/* Pending Invitations */}
-            <div className="space-y-4 pt-2">
-              <h4 className="text-[10px] uppercase font-bold text-heritage-gold tracking-widest text-left font-sans">
-                Pending Invitations
-              </h4>
-              {pendingInvitations.length === 0 ? (
-                <p className="text-xs text-heritage-ink/50 italic text-left font-sans">
-                  No pending invitations.
-                </p>
-              ) : (
-                <div className="space-y-3 font-sans font-sans">
-                  {pendingInvitations.map((inv) => (
-                    <div
-                      key={inv.batchId}
-                      className="border border-amber-200 bg-amber-50/20 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 text-left font-sans"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 font-sans font-sans">
-                          <h5 className="font-serif font-bold text-heritage-green text-sm">
-                            {inv.batchName}
-                          </h5>
-                          <span className="text-[8px] uppercase tracking-wider font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-sans font-sans">
-                            Invite
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-heritage-ink/70">
-                          Organizer: <strong>{inv.organizer}</strong> &mdash;
-                          occasion: {inv.occasion}
-                        </p>
-                        <p className="text-[9px] text-heritage-ink/50 italic font-sans font-sans">
-                          {inv.description}
-                        </p>
-                      </div>
-                      <div className="flex gap-2 w-full sm:w-auto shrink-0 font-sans font-sans">
-                        <button
-                          onClick={() => handleAcceptInvite(inv)}
-                          className="flex-1 sm:flex-initial py-1 px-3 bg-heritage-green hover:bg-heritage-gold hover:text-heritage-forest text-white text-[10px] font-bold uppercase rounded-lg transition cursor-pointer font-sans"
-                        >
-                          Accept
-                        </button>
-                        <button
-                          onClick={() => handleDeclineInvite(inv.batchId)}
-                          className="flex-1 sm:flex-initial py-1 px-3 border border-gray-200 hover:bg-gray-50 text-heritage-ink text-[10px] font-bold uppercase rounded-lg transition cursor-pointer font-sans font-sans"
-                        >
-                          Decline
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Simple Invite Members Modal */}
-            {activeInviteGroupId && (
-              <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in font-sans font-sans">
-                <div className="bg-white rounded-3xl border border-heritage-gold/25 p-6 w-full max-w-sm space-y-4 shadow-2xl relative text-left font-sans font-sans">
-                  <button
-                    onClick={() => setActiveInviteGroupId(null)}
-                    className="absolute top-4 right-4 text-heritage-ink/50 hover:text-heritage-green cursor-pointer font-sans"
-                  >
-                    <X size={16} />
-                  </button>
-                  <div className="space-y-1 font-sans">
-                    <h4 className="font-serif font-bold text-heritage-green text-base">
-                      Invite Members
-                    </h4>
-                    <p className="text-[10px] text-heritage-ink/60 font-sans font-sans">
-                      Send an invitation email or share the code:{" "}
-                      <strong className="text-heritage-gold font-mono">
-                        {activeInviteGroupId}
-                      </strong>
-                    </p>
-                  </div>
-                  <form
-                    onSubmit={handleSendInvite}
-                    className="space-y-3 font-sans"
-                  >
-                    <input
-                      type="email"
-                      required
-                      placeholder="colleague@asml-corp.nl"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      className="w-full px-3 py-2 bg-heritage-cream/20 border border-heritage-gold/20 rounded-xl text-xs focus:outline-none focus:border-heritage-gold text-heritage-green font-sans font-sans"
-                    />
-                    <button
-                      type="submit"
-                      className="w-full py-2 bg-heritage-green hover:bg-heritage-gold hover:text-heritage-forest text-white font-bold uppercase tracking-wider rounded-xl text-[10px] transition cursor-pointer font-sans"
-                    >
-                      Send Invitation
-                    </button>
-                  </form>
-                </div>
-              </div>
+              </section>
             )}
-
-            {/* Edit Batch Modal */}
-            {editingGroup && (
-              <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in font-sans">
-                <div className="bg-white rounded-3xl border border-heritage-gold/25 p-6 w-full max-w-md space-y-4 shadow-2xl relative text-left">
-                  <button
-                    onClick={() => setEditingGroup(null)}
-                    className="absolute top-4 right-4 text-heritage-ink/50 hover:text-heritage-green cursor-pointer"
-                  >
-                    <X size={16} />
-                  </button>
-                  <div className="space-y-1">
-                    <h4 className="font-serif font-bold text-heritage-green text-base">
-                      Edit Batch Details
-                    </h4>
-                    <p className="text-[10px] text-heritage-ink/60 font-sans">
-                      Modify settings or status for batch{" "}
-                      <strong>{editingGroup.batchId}</strong>.
-                    </p>
-                  </div>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      onUpdateCustomGroup(editingGroup.batchId, editingGroup);
-                      setEditingGroup(null);
-                    }}
-                    className="space-y-3 text-xs"
-                  >
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-heritage-ink/60">
-                        Batch Name
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={editingGroup.batchName}
-                        onChange={(e) =>
-                          setEditingGroup({
-                            ...editingGroup,
-                            batchName: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 bg-heritage-cream/20 border border-heritage-gold/20 rounded-xl focus:outline-none focus:border-heritage-gold text-heritage-green font-medium"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-heritage-ink/60">
-                        Occasion
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={editingGroup.occasion}
-                        onChange={(e) =>
-                          setEditingGroup({
-                            ...editingGroup,
-                            occasion: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 bg-heritage-cream/20 border border-heritage-gold/20 rounded-xl focus:outline-none focus:border-heritage-gold text-heritage-green font-medium"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-heritage-ink/60">
-                        Description
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={editingGroup.description}
-                        onChange={(e) =>
-                          setEditingGroup({
-                            ...editingGroup,
-                            description: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 bg-heritage-cream/20 border border-heritage-gold/20 rounded-xl focus:outline-none focus:border-heritage-gold text-heritage-green"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-heritage-ink/60">
-                          City
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={editingGroup.city}
-                          onChange={(e) =>
-                            setEditingGroup({
-                              ...editingGroup,
-                              city: e.target.value,
-                            })
-                          }
-                          className="w-full px-3 py-2 bg-heritage-cream/20 border border-heritage-gold/20 rounded-xl focus:outline-none focus:border-heritage-gold text-heritage-green"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-heritage-ink/60">
-                          Max Participants
-                        </label>
-                        <input
-                          type="number"
-                          required
-                          min={editingGroup.currentMembers}
-                          value={editingGroup.maxParticipants}
-                          onChange={(e) =>
-                            setEditingGroup({
-                              ...editingGroup,
-                              maxParticipants: parseInt(e.target.value) || 10,
-                            })
-                          }
-                          className="w-full px-3 py-2 bg-heritage-cream/20 border border-heritage-gold/20 rounded-xl focus:outline-none focus:border-heritage-gold text-heritage-green"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-heritage-ink/60">
-                          Status
-                        </label>
-                        <select
-                          value={editingGroup.status}
-                          onChange={(e) =>
-                            setEditingGroup({
-                              ...editingGroup,
-                              status: e.target.value as any,
-                            })
-                          }
-                          className="w-full px-3 py-2 bg-heritage-cream/20 border border-heritage-gold/20 rounded-xl focus:outline-none focus:border-heritage-gold text-heritage-green font-semibold"
-                        >
-                          {useReferenceDataFallback("batch_status", [
-                            { value: "Draft", label: "Draft" },
-                            { value: "Open", label: "Open" },
-                            { value: "Almost Full", label: "Almost Full" },
-                            { value: "Full", label: "Full" },
-                            { value: "Closed", label: "Closed" },
-                            { value: "Locked", label: "Locked" },
-                            { value: "Completed", label: "Completed" },
-                          ]).map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-heritage-ink/60">
-                          Visibility
-                        </label>
-                        <select
-                          value={editingGroup.visibility}
-                          onChange={(e) =>
-                            setEditingGroup({
-                              ...editingGroup,
-                              visibility: e.target.value as any,
-                            })
-                          }
-                          className="w-full px-3 py-2 bg-heritage-cream/20 border border-heritage-gold/20 rounded-xl focus:outline-none focus:border-heritage-gold text-heritage-green"
-                        >
-                          {useReferenceDataFallback("visibility", [
-                            { value: "Public", label: "Public (Discoverable)" },
-                            { value: "Private", label: "Private (Invite-Only)" },
-                          ]).map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="w-full py-2 bg-heritage-green hover:bg-heritage-gold hover:text-heritage-forest text-white font-bold uppercase tracking-wider rounded-xl text-[10px] transition cursor-pointer"
-                    >
-                      Save Changes
-                    </button>
-                  </form>
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* PRIVACY & DATA SECTION */}
-          <section
-            id="privacy-data-management"
-            className="rounded-3xl border border-heritage-gold/15 bg-white p-6 sm:p-8 shadow-sm space-y-6"
-          >
-            <div className="flex items-center justify-between border-b pb-4 border-gray-100">
-              <div className="flex items-center gap-3">
-                <Shield className="text-heritage-gold" size={18} />
-                <h3 className="text-base font-bold text-heritage-green uppercase tracking-wider font-serif">
-                  Privacy & Data
-                </h3>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <h4 className="text-[10px] uppercase font-bold text-heritage-gold tracking-widest text-left font-sans">
-                GDPR Biometric Consent
-              </h4>
-              <div className="p-4 bg-gray-50 border border-gray-150 rounded-xl space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-heritage-green">
-                      Netherlands Biometric Processing
-                    </p>
-                    <p className="text-xs text-heritage-ink/70 max-w-xl">
-                      To provide AI-assisted fitting and Virtual Try-On, we
-                      temporarily process your measurements and uploaded images
-                      securely.
-                    </p>
-                  </div>
-                  <div className="shrink-0">
-                    {(currentUser as any)?.biometricConsent?.status ===
-                      "accepted" ||
-                    sessionStorage.getItem("odogwu_biometric_consent") ===
-                      "accepted" ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                        <CheckCircle2 size={12} /> Consent Granted
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                        <X size={12} /> Consent Declined
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-gray-200 mt-3">
-                  <button
-                    onClick={() => {
-                      const dataStr =
-                        "data:text/json;charset=utf-8," +
-                        encodeURIComponent(
-                          JSON.stringify(
-                            {
-                              consentStatus:
-                                (currentUser as any)?.biometricConsent
-                                  ?.status ||
-                                sessionStorage.getItem(
-                                  "odogwu_biometric_consent",
-                                ) ||
-                                "None",
-                              consentTimestamp:
-                                (currentUser as any)?.biometricConsent
-                                  ?.timestamp || "N/A",
-                              gdprVersion:
-                                (currentUser as any)?.biometricConsent
-                                  ?.gdprVersion || "N/A",
-                              userAgent:
-                                (currentUser as any)?.biometricConsent
-                                  ?.userAgent || "N/A",
-                            },
-                            null,
-                            2,
-                          ),
-                        );
-                      const downloadAnchor = document.createElement("a");
-                      downloadAnchor.setAttribute("href", dataStr);
-                      downloadAnchor.setAttribute(
-                        "download",
-                        "privacy_information.json",
-                      );
-                      document.body.appendChild(downloadAnchor);
-                      downloadAnchor.click();
-                      downloadAnchor.remove();
-                    }}
-                    className="flex-1 py-2 bg-white text-gray-700 hover:bg-gray-100 border border-gray-300 rounded-lg text-[10px] font-bold uppercase tracking-wider transition cursor-pointer text-center flex items-center justify-center gap-1.5"
-                  >
-                    <Download size={12} /> Download Privacy Info
-                  </button>
-                  {((currentUser as any)?.biometricConsent?.status ===
-                    "accepted" ||
-                    sessionStorage.getItem("odogwu_biometric_consent") ===
-                      "accepted") && (
-                    <button
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            "Are you sure you want to withdraw biometric consent? AI features will be disabled.",
-                          )
-                        ) {
-                          sessionStorage.setItem(
-                            "odogwu_biometric_consent",
-                            "declined",
-                          );
-                          window.location.reload();
-                        }
-                      }}
-                      className="flex-1 py-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded-lg text-[10px] font-bold uppercase tracking-wider transition cursor-pointer text-center"
-                    >
-                      Withdraw Consent
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-
+          </div>
         {/* Right Column */}
         <div className="lg:col-span-4 space-y-8 font-sans text-xs">
           {/* Active order cost Breakdown */}
@@ -1766,7 +456,6 @@ export default function DashboardView({
             </div>
           </div>
         </div>
-      </div>
 
       {/* DIGITAL RECEIPT MODAL (Feature 3) */}
       {selectedReceipt && (

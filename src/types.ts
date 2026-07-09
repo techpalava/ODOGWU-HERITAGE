@@ -254,6 +254,7 @@ export interface OrderContext {
   expectedParticipants?: number;
   allowOrders?: boolean;
   batchStatus?: string;
+  isPaid?: boolean;
 }
 
 export interface Batch {

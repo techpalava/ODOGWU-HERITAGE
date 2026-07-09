@@ -43,6 +43,11 @@ import { ApiService } from "../services/api";
 import { useReferenceDataFallback } from "../hooks/useReferenceData";
 import { useAppStore } from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
+import { CapacityService } from "../services/CapacityService";
+import { OrderRoutingEngine, OrderRoutingDecision } from "../engine/OrderRoutingEngine";
+import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
+import { RoutingPresentationEngine } from "../engine/RoutingPresentationEngine";
+import OrderRoutingPanel from "./OrderRoutingPanel";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
@@ -471,6 +476,26 @@ export default function DesignStudioView({
   const storeUser = useAppStore((state) => state.currentUser);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const setNotification = useAppStore((state) => state.setNotification);
+  const cartItems = useAppStore((state) => state.cartItems);
+  const historicalOrders = useAppStore((state) => state.historicalOrders);
+  const activeOrders = useAppStore((state) => state.orders);
+
+  const journey = CustomerJourneyEngine.getCurrentJourney({
+    currentUser: storeUser as any,
+    drafts: cartItems,
+    activeOrders,
+    historicalOrders,
+    allBatches: storeBatches
+  });
+
+  const outfitTypes = useReferenceDataFallback("outfit_types", [
+    { value: "Senator Set", label: "Senator Set" },
+    { value: "Kaftan Set", label: "Kaftan Set" },
+    { value: "Agbada", label: "Agbada" },
+    { value: "Boubou", label: "Boubou" },
+    { value: "Maxi Gown", label: "Maxi Gown" },
+  ]);
+
 
   // GDPR Biometric Consent State
   const [showConsentModal, setShowConsentModal] = useState<boolean>(false);
@@ -483,6 +508,10 @@ export default function DesignStudioView({
     return (sessionStorage.getItem("odogwu_biometric_consent") as any) || null;
   });
 
+  const [routingDecision, setRoutingDecision] = useState<OrderRoutingDecision | null>(null);
+  const [showRoutingPanel, setShowRoutingPanel] = useState<boolean>(false);
+  const routingPresentation = routingDecision ? RoutingPresentationEngine.buildPresentation(routingDecision) : null;
+
   const computedActiveBatch = getCurrentCommunityBatch(storeBatches || []);
   const defaultCtx: OrderContext = computedActiveBatch
     ? {
@@ -493,8 +522,8 @@ export default function DesignStudioView({
         deliveryWindow: computedActiveBatch.estimatedDelivery || "",
         pickupLocation:
           computedActiveBatch.pickupLocation || businessSettings.productionSettings.defaultPickupLocation,
-        currentMembers: computedActiveBatch.currentGarments,
-        expectedParticipants: computedActiveBatch.targetGarments,
+        currentMembers: CapacityService.getReservedCapacity(computedActiveBatch),
+        expectedParticipants: CapacityService.getTargetCapacity(computedActiveBatch),
         allowOrders: computedActiveBatch.allowOrders,
         batchStatus: computedActiveBatch.status,
       }
@@ -536,7 +565,9 @@ export default function DesignStudioView({
         }
       }
     }
-  }, [orderContext]);
+    
+
+  }, [orderContext, storeBatches]);
 
   // STEP 1: Style Selection, Filtering & Pagination States
   const [selectedStyle, setSelectedStyle] = useState<StyleCategory>(
@@ -996,6 +1027,16 @@ export default function DesignStudioView({
     useState<string>("August Batch");
   const [customGroupCode, setCustomGroupCode] = useState<string>("");
 
+  useEffect(() => {
+    const dynamicCtx = { ...ctx };
+    if (batchType === "alone") dynamicCtx.orderType = "Individual";
+    else if (batchType === "personalized") dynamicCtx.orderType = "Group Organizer";
+    else dynamicCtx.orderType = "Community";
+    
+    const decision = OrderRoutingEngine.evaluateOrder(dynamicCtx, storeBatches || []);
+    setRoutingDecision(decision);
+  }, [batchType, storeBatches]);
+
   // Auto-populate customer info if logged in
   useEffect(() => {
     if (currentUser) {
@@ -1015,6 +1056,9 @@ export default function DesignStudioView({
 
   // Cart addition success modal
   const [showAddedModal, setShowAddedModal] = useState<boolean>(false);
+  const [showNextBatchConfirm, setShowNextBatchConfirm] = useState<boolean>(false);
+  const [nextBatchToJoin, setNextBatchToJoin] = useState<any>(null);
+  const [draftCommunityBatchName, setDraftCommunityBatchName] = useState<string>("");
 
   // Active accordion section for Step 5 advanced sizing passport
   const [activeAccordion, setActiveAccordion] = useState<string>("core");
@@ -1362,9 +1406,22 @@ export default function DesignStudioView({
 
   // Dispatch custom garment choice to tailoring Cart
   const handleAddToCartAction = () => {
+    // Phase 4.2 Integration: Evaluate routing when customer submits order
+    const decision = OrderRoutingEngine.evaluateOrder(ctx, storeBatches || []);
+    
+    if (!decision.allowCommunitySubmission && batchType === "community") {
+      setRoutingDecision(decision);
+      setShowRoutingPanel(true);
+      return;
+    }
+
+    proceedToCart();
+  };
+
+  const proceedToCart = () => {
     const finalBatchName =
       batchType === "community"
-        ? ctx.batchName
+        ? (draftCommunityBatchName || ctx.batchName)
         : batchType === "alone"
           ? "Individual Order (No Batch)"
           : batchType === "personalized"
@@ -1409,6 +1466,43 @@ export default function DesignStudioView({
     setShowAddedModal(true);
   };
 
+  const handleRoutingActionSelect = (actionType: string) => {
+    if (!OrderRoutingEngine.canChangeRouting(orderContext)) {
+      alert("This order has already been confirmed and can no longer be changed.");
+      setShowRoutingPanel(false);
+      return;
+    }
+    if (actionType === "INDIVIDUAL_ORDER") {
+      setBatchType("alone");
+      setShowRoutingPanel(false);
+    } else if (actionType === "PERSONALIZED_BATCH") {
+      setBatchType("personalized");
+      setShowRoutingPanel(false);
+    } else if (actionType === "COMMUNITY_ORDER") {
+      setBatchType("community");
+      setDraftCommunityBatchName("");
+      setShowRoutingPanel(false);
+    } else if (actionType === "NEXT_BATCH") {
+      const nextBatch = routingPresentation?.nextCommunityBatches?.[0];
+      if (nextBatch) {
+        setNextBatchToJoin(nextBatch);
+        setShowNextBatchConfirm(true);
+      }
+    }
+    // Let the user click submit again now that the batch type is updated, or submit directly
+    // The prompt says: "When selected: Reuse the existing Design Studio. Preserve every design selection. Only change: batchType -> INDIVIDUAL"
+    // So we just change state and close the panel.
+  };
+
+  const handleConfirmNextBatch = () => {
+    if (nextBatchToJoin) {
+      setBatchType("community");
+      setDraftCommunityBatchName(nextBatchToJoin.name);
+    }
+    setShowNextBatchConfirm(false);
+    setShowRoutingPanel(false);
+  };
+
   const resetDesignStudio = () => {
     setSelectedStyle(styles[0] || ({ id: "", name: "", description: "", basePrice: 0, gender: "unisex", tags: [], garments: [], images: [] } as unknown as StyleCategory));
     setSelectedFabric(fabrics[0] || ({ code: "", name: "", price: 0, stock: 0, category: "", type: "", material: "", origin: "", color: "", tags: [], defaultYards: 6, stockQuantity: 0, priceMultiplier: 1, availableStatus: "available", createdAt: new Date().toISOString() } as unknown as Fabric));
@@ -1444,6 +1538,32 @@ export default function DesignStudioView({
 
   return (
     <div id="design-studio-stepper" className="space-y-8 font-sans">
+      
+      {/* Information Banner for Routing (Phase 4.2) */}
+      {routingDecision && !routingDecision.allowCommunitySubmission && (
+        <div className={`p-4 rounded-xl border flex items-start gap-3 ${
+          routingDecision.mode !== 'COMMUNITY_OPEN' ? 'bg-heritage-gold/10 border-heritage-gold/20 text-heritage-gold' :
+          'bg-heritage-ink/5 border-heritage-ink/10 text-heritage-ink'
+        }`}>
+          <div className="mt-0.5"><AlertTriangle size={16} /></div>
+          <div>
+            <h4 className="font-bold text-sm mb-1">{routingPresentation.title}</h4>
+            <p className="text-xs opacity-90 leading-relaxed">{routingPresentation.description}</p>
+          </div>
+        </div>
+      )}
+
+            {/* Journey Engine Context Notification */}
+      {journey.notification && (
+        <div className="bg-heritage-cream/20 border border-heritage-gold/30 rounded-2xl p-4 text-xs font-sans text-heritage-green flex items-start gap-3 mb-6 shadow-sm">
+          <Info size={16} className="text-heritage-gold mt-0.5 shrink-0" />
+          <div>
+            <span className="font-bold uppercase tracking-wider block mb-0.5">Journey Context</span>
+            {journey.notification}
+          </div>
+        </div>
+      )}
+
       {/* 9-step progress visualizer */}
       <div className="bg-white border border-heritage-gold/15 p-4 rounded-3xl shadow-sm space-y-3 select-none">
         <div className="flex flex-col sm:flex-row sm:justify-between items-center gap-1.5 sm:gap-0 text-center sm:text-left">
@@ -1532,121 +1652,119 @@ export default function DesignStudioView({
         </div>
       </div>
 
-      {/* ORDER CONTEXT CARD */}
-      {(() => {
-        return (
-          <div className="bg-heritage-cream/40 border border-heritage-gold/30 rounded-3xl p-5 flex flex-col gap-4 shadow-sm text-center sm:text-left">
-            <div className="space-y-1.5 flex flex-col items-center sm:items-start w-full">
-              <span className="text-[9px] text-heritage-gold font-bold tracking-wider uppercase bg-black/5 px-1.5 py-0.5 rounded-sm w-fit block">
-                Current Order Details
+            {/* ROUTING PRESENTATION CARD */}
+      {routingDecision && (
+        <div className={`bg-white border rounded-3xl p-5 flex flex-col gap-4 shadow-sm text-center sm:text-left ${routingDecision.mode === 'COMMUNITY_OPEN' ? 'border-heritage-green/30' : 'border-heritage-gold/30'}`}>
+          <div className="space-y-1.5 flex flex-col items-center sm:items-start w-full">
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-bold tracking-wider uppercase bg-black/5 px-1.5 py-0.5 rounded-sm w-fit block text-heritage-ink/60">
+                Your Order Options
               </span>
-              {ctx.orderType === "Community" && (
-                <div className="space-y-1 w-full">
-                  <h4 className="font-serif font-bold text-heritage-green text-sm">
-                    Community Batch &mdash; {ctx.batchName}
-                  </h4>
-                  <p className="text-[11px] text-heritage-ink/75">
-                    Your order is automatically grouped with our active
-                    Veldhoven campus batch to secure premium pricing and free
-                    direct-to-locker shipping.
-                  </p>
-                </div>
-              )}
-              {ctx.orderType === "Individual" && (
-                <div className="space-y-1 w-full">
-                  <h4 className="font-serif font-bold text-heritage-green text-sm">
-                    Individual Custom Order
-                  </h4>
-                  <p className="text-[11px] text-heritage-ink/75">
-                    Production begins immediately after order confirmation. No
-                    batch requirements. Air courier delivery straight to your
-                    address.
-                  </p>
-                </div>
-              )}
-              {ctx.orderType === "Group Organizer" && (
-                <div className="space-y-1 w-full">
-                  <h4 className="font-serif font-bold text-heritage-green text-sm">
-                    Organizer: {ctx.organizer || "You"} &mdash; Group:{" "}
-                    {ctx.batchName}
-                  </h4>
-                  <p className="text-[11px] text-heritage-ink/75">
-                    You are starting this new custom community batch. Share your
-                    invite code once generated to let colleagues and friends
-                    join!
-                  </p>
-                </div>
-              )}
-              {ctx.orderType === "Group Member" && (
-                <div className="space-y-1 w-full">
-                  <h4 className="font-serif font-bold text-heritage-green text-sm">
-                    Group Member &mdash; Group: {ctx.batchName}
-                  </h4>
-                  <p className="text-[11px] text-heritage-ink/75">
-                    Joining personalized group organized by{" "}
-                    <strong>{ctx.organizer}</strong>. Delivery and logistics are
-                    coordinated collectively.
-                  </p>
-                </div>
-              )}
+              <span className={`text-[9px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full w-fit block ${
+                routingDecision.mode === 'COMMUNITY_OPEN' ? 'bg-heritage-green/10 text-heritage-green' :
+                routingDecision.mode === 'INDIVIDUAL' ? 'bg-heritage-ink text-white' :
+                routingDecision.mode === 'GROUP' ? 'bg-heritage-gold/20 text-heritage-gold' :
+                'bg-gray-100 text-gray-500'
+              }`}>
+                Current Mode: {
+                  routingDecision.mode === 'COMMUNITY_OPEN' ? 'Community Order' :
+                  routingDecision.mode === 'INDIVIDUAL' ? 'Individual Order' :
+                  routingDecision.mode === 'GROUP' ? 'Personalized Batch' :
+                  'Select an Option'
+                }
+              </span>
             </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 w-full border-t border-heritage-gold/15 pt-4 text-center sm:text-left">
-              {ctx.orderType !== "Individual" ? (
-                <>
-                  <div className="space-y-0.5">
-                    <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">
-                      Estimated Delivery:
-                    </span>
-                    <span className="font-serif font-bold text-heritage-green block text-[11px]">
-                      {ctx.deliveryWindow || "September 10, 2026"}
-                    </span>
-                  </div>
-                  {ctx.closingDate && (
-                    <div className="space-y-0.5">
-                      <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">
-                        Closing Date:
-                      </span>
-                      <span className="font-semibold text-heritage-gold block text-[11px]">
-                        {ctx.closingDate}
-                      </span>
-                    </div>
-                  )}
-                  {ctx.pickupLocation && (
-                    <div className="space-y-0.5">
-                      <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">
-                        Pickup Hub:
-                      </span>
-                      <span className="font-semibold text-heritage-green block text-[11px] leading-tight">
-                        {ctx.pickupLocation}
-                      </span>
-                    </div>
-                  )}
-                  {ctx.currentMembers !== undefined && (
-                    <div className="space-y-0.5">
-                      <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">
-                        Group Size:
-                      </span>
-                      <span className="font-semibold text-heritage-green block text-[11px]">
-                        {ctx.currentMembers} joined
-                      </span>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="col-span-2 sm:col-span-4 space-y-0.5">
-                  <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">
-                    Estimated Delivery:
-                  </span>
-                  <span className="font-serif font-bold text-heritage-gold block text-[11px]">
-                    Express Delivery (2-3 weeks)
-                  </span>
-                </div>
-              )}
+            <div className="space-y-1 w-full">
+              <h4 className={`font-serif font-bold text-sm ${routingDecision.mode === 'COMMUNITY_OPEN' ? 'text-heritage-green' : 'text-heritage-gold'}`}>
+                {routingDecision.mode === 'COMMUNITY_OPEN' ? routingPresentation.title : 'Order Routing Guidance'}
+              </h4>
+              <p className="text-[11px] text-heritage-ink/75 font-medium leading-relaxed">
+                {routingPresentation.submissionMessage}
+              </p>
             </div>
           </div>
-        );
-      })()}
+          {routingPresentation.currentBatchSummary && (
+            <div className="flex flex-wrap gap-x-6 gap-y-3 w-full border-t border-gray-100 pt-4 text-center sm:text-left">
+              <div className="space-y-0.5 min-w-[120px]">
+                <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">Community Batch</span>
+                <span className="font-semibold text-heritage-ink block text-[11px] uppercase tracking-wide">{routingPresentation.currentBatchSummary.name}</span>
+              </div>
+              <div className="space-y-0.5 min-w-[100px]">
+                <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">Status</span>
+                <span className={`font-bold block text-[11px] uppercase tracking-wide ${
+                  routingDecision.mode === 'COMMUNITY_OPEN' 
+                    ? 'text-heritage-green' 
+                    : routingPresentation.currentBatchSummary.status.includes('FULL')
+                      ? 'text-heritage-gold'
+                      : routingPresentation.currentBatchSummary.status.includes('PRODUCTION')
+                        ? 'text-blue-600'
+                        : 'text-gray-500'
+                }`}>
+                  {routingPresentation.currentBatchSummary.status}
+                </span>
+              </div>
+              <div className="space-y-0.5 min-w-[100px]">
+                <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">Capacity</span>
+                <span className="font-semibold text-heritage-ink block text-[11px]">{routingPresentation.currentBatchSummary.capacity}</span>
+              </div>
+              <div className="space-y-0.5 min-w-[120px]">
+                <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">Production Progress</span>
+                <span className="font-semibold text-heritage-ink block text-[11px]">{routingPresentation.currentBatchSummary.nextMilestone}</span>
+              </div>
+              <div className="space-y-0.5 min-w-[120px]">
+                <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">Estimated Delivery</span>
+                <span className="font-serif font-bold text-heritage-gold block text-[11px]">{routingPresentation.currentBatchSummary.expectedDelivery}</span>
+              </div>
+            </div>
+          )}
+          {!routingDecision.allowCommunitySubmission && routingPresentation.availableActions && routingDecision.mode !== 'COMMUNITY_OPEN' && (
+            <div className="w-full border-t border-gray-100 pt-4 mt-2">
+              <div className="flex flex-col sm:flex-row gap-3">
+                {routingPresentation.availableActions.filter(a => a.type !== 'COMMUNITY_ORDER').map((action, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleRoutingActionSelect(action.type)}
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold border transition-colors ${
+                      (batchType === 'alone' && action.type === 'INDIVIDUAL_ORDER') ||
+                      (batchType === 'personalized' && action.type === 'PERSONALIZED_BATCH')
+                        ? 'bg-heritage-ink text-white border-heritage-ink shadow-md'
+                        : 'bg-white text-heritage-ink border-gray-200 hover:border-heritage-ink/30 opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    {action.buttonText}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 text-[10px] text-center text-heritage-ink/50 space-y-1">
+                <p>Your design is automatically saved while you work.</p>
+                {OrderRoutingEngine.canChangeRouting(orderContext) ? (<p>You can change your ordering option at any time before payment.</p>) : (<p className="text-red-500">This order has already been confirmed and can no longer be changed.</p>)}
+              </div>
+              
+              {routingPresentation.nextCommunityBatches && routingPresentation.nextCommunityBatches.length > 0 && (
+                <div className="mt-6 border border-gray-100 rounded-2xl p-4 bg-gray-50 flex flex-col md:flex-row items-center justify-between gap-4">
+                  <div className="flex-1 space-y-1 w-full text-center md:text-left">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Next Upcoming Batch</span>
+                    <h5 className="font-serif font-bold text-sm text-heritage-ink">{routingPresentation.nextCommunityBatches[0].name}</h5>
+                    <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1 mt-2 text-[10px] text-gray-600">
+                      <span><strong className="text-gray-900">Registration Opens:</strong> {routingPresentation.nextCommunityBatches[0].startDate || routingPresentation.nextCommunityBatches[0].registrationOpens || "TBD"}</span>
+                      <span><strong className="text-gray-900">Expected Delivery:</strong> {routingPresentation.nextCommunityBatches[0].expectedDelivery || "TBD"}</span>
+                      {routingPresentation.nextCommunityBatches[0].targetGarments ? (
+                        <span><strong className="text-gray-900">Capacity:</strong> {routingPresentation.nextCommunityBatches[0].currentGarments || 0} / {routingPresentation.nextCommunityBatches[0].targetGarments} Garments</span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleRoutingActionSelect("NEXT_BATCH")}
+                    className="shrink-0 bg-white border border-gray-200 text-heritage-ink font-bold text-xs py-2 px-4 rounded-xl hover:bg-gray-50 transition-colors whitespace-nowrap"
+                  >
+                    Join Next Batch
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Validation feedback banners */}
       {validationError && (
@@ -1730,13 +1848,7 @@ export default function DesignStudioView({
                     onChange={(e) => setTypeFilter(e.target.value)}
                     options={[
                       { value: "all", label: "All Types" },
-                      ...useReferenceDataFallback("outfit_types", [
-                        { value: "Senator Set", label: "Senator Set" },
-                        { value: "Kaftan Set", label: "Kaftan Set" },
-                        { value: "Agbada", label: "Agbada" },
-                        { value: "Boubou", label: "Boubou" },
-                        { value: "Maxi Gown", label: "Maxi Gown" },
-                      ]).map(opt => ({ value: opt.value, label: opt.label }))
+                      ...outfitTypes.map(opt => ({ value: opt.value, label: opt.label }))
                     ]}
                   />
 
@@ -3896,72 +4008,55 @@ export default function DesignStudioView({
                 </p>
               </div>
 
-              {/* Order Context Information - Read Only (Controls Bypassed) */}
+                            {/* Order Context Information - Read Only (Controls Bypassed) */}
               <div className="bg-heritage-cream/30 p-4 border border-heritage-gold/20 rounded-2xl space-y-2 text-left">
                 <span className="text-[10px] uppercase font-bold text-heritage-gold tracking-wider block">
                   Delivery &amp; Batch Route (Locked)
                 </span>
-
-                {orderContext?.orderType === "Community" &&
-                  (() => {
-                    const eligibility = BatchBusinessRules.canAcceptOrders(orderContext);
-        if (!eligibility.canAcceptOrders) {
-                      return (
-                        <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3.5 mb-3 text-xs space-y-1">
-                          <div className="flex items-center gap-1.5 font-bold text-red-700">
-                            <AlertTriangle size={14} />
-                            <span>
-                              {eligibility.displayLabel.toUpperCase()} ({orderContext.batchName})
-                            </span>
-                          </div>
-                          <p className="leading-relaxed text-[11px] text-red-700">
-                            The collective campus cohort{" "}
-                            <strong>{orderContext.batchName}</strong> closed
-                            enrollment on {orderContext.closingDate} and has
-                            transitioned to active production.
-                          </p>
-                          <p className="font-semibold text-[11px] text-red-950">
-                            Your order has been automatically upgraded to{" "}
-                            <strong>Individual Priority Route</strong> to ensure
-                            prompt tailoring and express delivery straight to
-                            your personal address!
-                          </p>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-
-                <p className="text-xs text-heritage-ink/80 leading-relaxed font-medium">
-                  Your batch and delivery queue have been optimized
-                  automatically based on your custom order configuration.
-                  Bypassing manual batch controls ensures your custom pricing,
-                  scheduling, and logistics are configured correctly.
-                </p>
-                <div className="text-[11px] bg-white p-3 rounded-xl border border-gray-150 font-sans space-y-1.5">
-                  <div>
-                    <strong>Selected Path:</strong>{" "}
-                    {batchType === "community"
-                      ? `Active Community Cohort (${ctx.batchName})`
-                      : batchType === "alone"
-                        ? "Individual Priority Order"
-                        : `Personalized Custom Batch (${customGroupCode})`}
-                  </div>
-                  <div>
-                    <strong>Delivery Schedule:</strong>{" "}
-                    {batchType === "alone"
-                      ? "2-3 Weeks (Express Air Priority)"
-                      : "Coordinated Collective Delivery (September or October 2026)"}
-                  </div>
-                  <div>
-                    <strong>Destination:</strong>{" "}
-                    {batchType === "alone"
-                      ? "Direct Shipping to Your Provided Address"
-                      : businessSettings.productionSettings.defaultPickupLocation}
-                  </div>
-                </div>
+                
+                {routingDecision && (
+                  <>
+                    <div className={`border rounded-xl p-3.5 mb-3 text-xs space-y-1 ${routingDecision.mode === 'COMMUNITY_OPEN' ? 'bg-heritage-green/10 border-heritage-green/20 text-heritage-green' : 'bg-heritage-gold/10 border-heritage-gold/20 text-heritage-ink'}`}>
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <AlertTriangle size={14} />
+                        <span>{routingPresentation.title.toUpperCase()}</span>
+                      </div>
+                      <p className="leading-relaxed text-[11px] font-medium">
+                        {routingPresentation.submissionMessage}
+                      </p>
+                    </div>
+                    
+                    <p className="text-xs text-heritage-ink/80 leading-relaxed font-medium">
+                      Your order route is governed by our centralized capacity and routing engine.
+                    </p>
+                    
+                    <div className="text-[11px] bg-white p-3 rounded-xl border border-gray-150 font-sans space-y-1.5 text-heritage-ink">
+                      <div>
+                        <strong>Selected Path:</strong>{" "}
+                        {routingDecision.mode === "COMMUNITY_OPEN"
+                          ? `Active Community Cohort (${routingPresentation.currentBatchSummary?.name || 'Veldhoven Campus Batch'})`
+                          : routingDecision.mode === "INDIVIDUAL"
+                            ? "Individual Priority Order"
+                            : routingDecision.mode === "GROUP"
+                              ? "Personalized Custom Batch"
+                              : "Pending Routing Decision"}
+                      </div>
+                      <div>
+                        <strong>Delivery Schedule:</strong>{" "}
+                        {routingDecision.mode === "INDIVIDUAL"
+                          ? "2-3 Weeks (Express Air Priority)"
+                          : "Coordinated Collective Delivery"}
+                      </div>
+                      <div>
+                        <strong>Destination:</strong>{" "}
+                        {routingDecision.mode === "INDIVIDUAL"
+                          ? "Direct Shipping to Your Provided Address"
+                          : businessSettings.productionSettings.defaultPickupLocation}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
-
               {/* Contact Information & Specific Logistics fields */}
               <div className="border-t pt-4 space-y-4">
                 <h4 className="text-xs font-bold text-heritage-green uppercase tracking-wider">
@@ -4988,6 +5083,63 @@ export default function DesignStudioView({
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+      
+      {/* Next Batch Confirmation Modal */}
+      <AnimatePresence>
+        {showNextBatchConfirm && nextBatchToJoin && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 sm:p-8"
+            >
+              <h2 className="text-xl font-serif font-bold text-heritage-green mb-2">
+                Move this design to the next available community batch?
+              </h2>
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-6 space-y-4">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Current Batch</span>
+                  <div className="font-bold text-gray-400">{ctx.batchName} (Closed)</div>
+                </div>
+                <div className="pt-3 border-t border-gray-200">
+                  <span className="text-[10px] uppercase font-bold text-heritage-gold tracking-wider">Next Batch</span>
+                  <div className="font-bold text-heritage-ink">{nextBatchToJoin.name}</div>
+                  <div className="text-xs text-gray-600 mt-1">
+                    Registration Opens: {nextBatchToJoin.registrationOpens || nextBatchToJoin.startDate || "TBD"}
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowNextBatchConfirm(false)}
+                  className="flex-1 py-3 px-4 bg-white border border-gray-200 text-heritage-ink rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-gray-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmNextBatch}
+                  className="flex-1 py-3 px-4 bg-heritage-green text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-heritage-gold hover:text-heritage-forest transition"
+                >
+                  Move Design
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Order Routing Panel */}
+
+      <AnimatePresence>
+        {showRoutingPanel && routingDecision && (
+          <OrderRoutingPanel
+            decision={routingDecision}
+            onSelectAction={handleRoutingActionSelect}
+            onCancel={() => setShowRoutingPanel(false)}
+          />
         )}
       </AnimatePresence>
     </div>

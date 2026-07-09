@@ -1,3 +1,4 @@
+import { AuthorizationEngine } from "./engine/AuthorizationEngine";
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -23,7 +24,9 @@ import { StorageService } from "./services/storageService";
 import { auth } from "./services/firebase";
 import { signOut } from "firebase/auth";
 import { useAppStore } from "./store/useAppStore";
+import { CustomerJourneyEngine } from "./engine/CustomerJourneyEngine";
 import { getCurrentCommunityBatch } from "./utils/batchUtils";
+import { CapacityService } from "./services/CapacityService";
 
 // Lazy load modular view components for performance optimization
 const HomeView = lazy(() => import("./components/HomeView"));
@@ -172,8 +175,8 @@ export default function App() {
         batchName: openBatch.name,
         closingDate: openBatch.endDate,
         deliveryWindow: openBatch.estimatedDelivery || "",
-        expectedParticipants: openBatch.targetGarments,
-        currentMembers: openBatch.currentGarments,
+        expectedParticipants: CapacityService.getTargetCapacity(openBatch),
+        currentMembers: CapacityService.getReservedCapacity(openBatch),
         allowOrders: openBatch.allowOrders,
         batchStatus: openBatch.status,
         pickupLocation:
@@ -310,8 +313,15 @@ export default function App() {
         "Deposit authorized securely! Atelier notified.",
         "success"
       );
-      // Create a mock order if needed or redirect
-      setActiveTab("dashboard");
+      // Re-evaluate journey to determine post-checkout destination
+      const nextJourney = CustomerJourneyEngine.getCurrentJourney({
+        currentUser: store.currentUser as any,
+        drafts: [],
+        activeOrders: store.orders, // we would ideally add the order here
+        historicalOrders: store.historicalOrders,
+        allBatches: store.batches,
+      });
+      setActiveTab(nextJourney.destination as any);
     }, 2000);
   };
 
@@ -333,12 +343,19 @@ export default function App() {
       "success",
     );
     
-    // Redirect if pending
+    // Re-evaluate journey upon login
     if (store.pendingRedirect) {
       setActiveTab(store.pendingRedirect as any);
       store.setPendingRedirect(null);
     } else if (activeTab === "login") {
-      setActiveTab("dashboard");
+      const loginJourney = CustomerJourneyEngine.getCurrentJourney({
+        currentUser: user as any,
+        drafts: store.cartItems,
+        activeOrders: store.orders,
+        historicalOrders: store.historicalOrders,
+        allBatches: store.batches,
+      });
+      setActiveTab(loginJourney.destination as any);
     }
   };
 
@@ -495,7 +512,7 @@ export default function App() {
             )}
 
             {activeTab === "design" && (
-              currentUser ? (
+              AuthorizationEngine.canAccessRoute("design", currentUser) ? (
                 <DesignStudioView
                   onAddToCart={handleAddToCart}
                   onNavigateToTab={(
@@ -562,10 +579,13 @@ export default function App() {
             )}
 
             {activeTab === "dashboard" &&
-              (currentUser ? (
+              (AuthorizationEngine.canViewCustomerPortal(currentUser) ? (
                 <DashboardView
                   masterOrder={masterOrder}
                   historicalOrders={historicalOrders}
+                  activeOrders={orders}
+                  drafts={cartItems}
+                  onDeleteDraft={(id) => setCartItems((prev) => prev.filter((i) => i.id !== id))}
                   onReorder={handleReorder}
                   onNavigateToTab={(
                     tabId:

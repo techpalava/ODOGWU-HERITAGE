@@ -1,0 +1,9 @@
+# Testimonials Section Expansion Report
+
+## Summary of Additions
+- **Components Updated**: Updated the "What our colleagues say" testimonials section in `HomeView.tsx`.
+- **New Testimonial Cards Added**: Appended two new testimonial cards for "Martijn V." and "Sarah K." with the exact required quotes, names, roles, initials ("MV" and "SK"), and styling.
+- **Equal-Height Implementation**: Added `h-full` to all testimonial cards. By leveraging their existing `flex flex-col justify-between` utility classes inside a CSS grid layout, the cards automatically stretch to equal heights within their respective rows, and the bottom borders with avatar details perfectly align at the bottom edge regardless of the quotes' vertical length. Added `shrink-0` to the avatars to ensure they maintain their perfect circular shape.
+- **Responsive Layout Changes**: The parent container already utilizes `grid grid-cols-1 md:grid-cols-2 gap-6`, providing exactly the requested responsive flow. On mobile, it displays 1 card per row. From tablet (`md`) and above, it displays 2 cards per row. With 4 total cards, this naturally wraps into a neat 2x2 layout on desktop, maintaining generous spacing uniformly.
+- **Future Scalability Considerations**: The entire group of cards follows identical, repetitive JSX markup. If this section is later migrated to consume dynamic data (e.g., from a Firestore `testimonials` collection), the current structure maps directly onto a standard `.map()` iteration over an array without requiring any grid or CSS alterations.
+- **Scope Confirmation**: Confirmed that the first two original testimonials are entirely unmodified. No other sections, business logic, authentications, or collections were touched. The expansion strictly adheres to the requested visual layout and structural intent.

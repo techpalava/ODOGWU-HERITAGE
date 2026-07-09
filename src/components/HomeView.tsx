@@ -9,6 +9,8 @@ import { motion, AnimatePresence } from "motion/react";
 import { OrderContext, CommunityPhoto, Showpiece, Fabric } from "../types";
 import { useAppStore } from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
+import { CapacityService } from "../services/CapacityService";
+import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 
 interface HomeViewProps {
   onStartDesigning: () => void;
@@ -31,8 +33,14 @@ export default function HomeView({
   onSelectStyle,
   onSelectFabric,
 }: HomeViewProps) {
-  const { businessSettings, currentUser, customers, orders, batches, styles } =
-    useAppStore();
+  const { businessSettings, currentUser, customers, orders, batches, styles, cartItems, historicalOrders } = useAppStore();
+  const journey = CustomerJourneyEngine.getCurrentJourney({
+    currentUser: currentUser as any,
+    drafts: cartItems,
+    activeOrders: orders,
+    historicalOrders,
+    allBatches: batches,
+  });
 
   const [, setNow] = useState(new Date());
   const [fabricFilter, setFabricFilter] = useState("All Fabrics");
@@ -114,6 +122,9 @@ export default function HomeView({
 
   const featuredShowpieces = [...showpieces].filter((s) => s.image).slice(0, 8);
 
+  const activeBatchEligibility = BatchBusinessRules.canAcceptOrders(activeCommunityBatch);
+  const canJoinActiveBatch = activeBatchEligibility.canAcceptOrders;
+
   return (
     <div id="home-view-container" className="space-y-16">
       {/* Editorial Luxury Hero Header */}
@@ -152,7 +163,7 @@ export default function HomeView({
             </p>
 
             <div className="flex flex-wrap gap-4 pt-4">
-              {activeCommunityBatch ? (
+              {activeCommunityBatch && canJoinActiveBatch ? (
                 <button
                   id="btn-hero-join-cohort"
                   onClick={onStartDesigning}
@@ -190,7 +201,7 @@ export default function HomeView({
           <div className="lg:col-span-5 font-sans">
             <div className="rounded-2xl border border-heritage-gold/30 bg-heritage-forest p-6 space-y-5 shadow-xl">
               {(() => {
-                const presentation = BatchBusinessRules.getHeroPresentation(activeCommunityBatch);
+                const presentation = BatchBusinessRules.getPresentation(activeCommunityBatch);
                 const progress = BatchBusinessRules.getProgressState(activeCommunityBatch);
                 
                 return (
@@ -1109,7 +1120,7 @@ export default function HomeView({
                 <CountUpNumber
                   value={
                     batches?.reduce(
-                      (acc, b) => acc + (b.currentGarments || 0),
+                      (acc, b) => acc + CapacityService.getReservedCapacity(b),
                       0,
                     ) || (orders && orders.length > 0 ? orders.length : 30)
                   }
@@ -1140,12 +1151,21 @@ export default function HomeView({
           </div>
 
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
-            <button
-              onClick={onStartDesigning}
-              className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 px-10 py-4 rounded-xl text-sm font-bold uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 cursor-pointer"
-            >
-              Join Current Batch <ArrowRight size={16} />
-            </button>
+            {activeCommunityBatch && canJoinActiveBatch ? (
+              <button
+                onClick={onStartDesigning}
+                className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 px-10 py-4 rounded-xl text-sm font-bold uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 cursor-pointer"
+              >
+                Join Current Batch <ArrowRight size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={() => onNavigateToTab("custom-order")}
+                className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 px-10 py-4 rounded-xl text-sm font-bold uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 cursor-pointer"
+              >
+                Create Custom Order <ArrowRight size={16} />
+              </button>
+            )}
 
             <button
               onClick={() => {
@@ -1218,7 +1238,7 @@ export default function HomeView({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-sans">
-          <div className="p-6 bg-white border border-heritage-gold/15 rounded-2xl space-y-4 shadow-sm flex flex-col justify-between">
+          <div className="p-6 bg-white border border-heritage-gold/15 rounded-2xl space-y-4 shadow-sm flex flex-col justify-between h-full">
             <p className="italic text-xs text-heritage-ink/80 leading-relaxed font-serif text-[13px]">
               "The fit is perfect. Ordering custom clothes from Lagos and
               getting them delivered directly to{" "}
@@ -1227,7 +1247,7 @@ export default function HomeView({
               Mondays."
             </p>
             <div className="flex items-center gap-3 pt-3 border-t border-gray-150">
-              <div className="h-8 w-8 rounded-full bg-heritage-green text-white font-serif flex items-center justify-center text-xs font-bold">
+              <div className="h-8 w-8 rounded-full bg-heritage-green text-white font-serif flex items-center justify-center text-xs font-bold shrink-0">
                 AO
               </div>
               <div>
@@ -1241,13 +1261,13 @@ export default function HomeView({
             </div>
           </div>
 
-          <div className="p-6 bg-white border border-heritage-gold/15 rounded-2xl space-y-4 shadow-sm flex flex-col justify-between">
+          <div className="p-6 bg-white border border-heritage-gold/15 rounded-2xl space-y-4 shadow-sm flex flex-col justify-between h-full">
             <p className="italic text-xs text-heritage-ink/80 leading-relaxed font-serif text-[13px]">
               "My Royal Senator suit fits exactly as estimated. The process was
               very simple, and my colleagues love the design!"
             </p>
             <div className="flex items-center gap-3 pt-3 border-t border-gray-150">
-              <div className="h-8 w-8 rounded-full bg-heritage-gold text-heritage-green font-serif flex items-center justify-center text-xs font-bold">
+              <div className="h-8 w-8 rounded-full bg-heritage-gold text-heritage-green font-serif flex items-center justify-center text-xs font-bold shrink-0">
                 FE
               </div>
               <div>
@@ -1256,6 +1276,44 @@ export default function HomeView({
                 </strong>
                 <span className="text-[10px] text-heritage-ink/50 block">
                   Veldhoven HQ Staff
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 bg-white border border-heritage-gold/15 rounded-2xl space-y-4 shadow-sm flex flex-col justify-between h-full">
+            <p className="italic text-xs text-heritage-ink/80 leading-relaxed font-serif text-[13px]">
+              "I've received compliments every time I wear my traditional outfit. The craftsmanship is outstanding, the fit is perfect, and the delivery process was surprisingly smooth."
+            </p>
+            <div className="flex items-center gap-3 pt-3 border-t border-gray-150">
+              <div className="h-8 w-8 rounded-full bg-heritage-green text-white font-serif flex items-center justify-center text-xs font-bold shrink-0">
+                MV
+              </div>
+              <div>
+                <strong className="text-xs text-heritage-green block">
+                  Martijn V.
+                </strong>
+                <span className="text-[10px] text-heritage-ink/50 block">
+                  ASML Mechanical Engineer
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 bg-white border border-heritage-gold/15 rounded-2xl space-y-4 shadow-sm flex flex-col justify-between h-full">
+            <p className="italic text-xs text-heritage-ink/80 leading-relaxed font-serif text-[13px]">
+              "I loved being able to choose my own fabric and style. The entire experience felt personal, and the finished outfit exceeded my expectations."
+            </p>
+            <div className="flex items-center gap-3 pt-3 border-t border-gray-150">
+              <div className="h-8 w-8 rounded-full bg-heritage-gold text-heritage-green font-serif flex items-center justify-center text-xs font-bold shrink-0">
+                SK
+              </div>
+              <div>
+                <strong className="text-xs text-heritage-green block">
+                  Sarah K.
+                </strong>
+                <span className="text-[10px] text-heritage-ink/50 block">
+                  Project Coordinator, Eindhoven
                 </span>
               </div>
             </div>
@@ -1310,16 +1368,16 @@ export default function HomeView({
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
             <button
-              onClick={onStartDesigning}
+              onClick={() => onNavigateToTab(journey.destination as any)}
               className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green px-8 py-4 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-xl inline-flex items-center justify-center gap-2 cursor-pointer"
             >
-              Start Designing <ArrowRight size={14} />
+              {journey.primaryAction} <ArrowRight size={14} />
             </button>
             <button
-              onClick={() => onNavigateToTab("gallery")}
+              onClick={() => onNavigateToTab(journey.destination === "gallery" ? "design" : "gallery")}
               className="w-full sm:w-auto border border-heritage-gold/50 text-heritage-gold hover:bg-heritage-gold/10 transition duration-300 px-8 py-4 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center cursor-pointer"
             >
-              Browse Gallery
+              {journey.secondaryAction}
             </button>
           </div>
         </div>

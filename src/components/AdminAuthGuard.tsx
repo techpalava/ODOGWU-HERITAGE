@@ -1,33 +1,55 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { auth } from "../services/firebase";
-import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, User } from "firebase/auth";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { ShieldCheck, Loader2 } from "lucide-react";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
+import { useAppStore } from "../store/useAppStore";
+import { AuthorizationEngine } from "../engine/AuthorizationEngine";
+import { Customer } from "../types";
 
 interface AdminAuthGuardProps {
   children: React.ReactNode;
   onNavigateHome: () => void;
+  requiredPermission?: (user: Customer | null) => boolean;
 }
 
-export function AdminAuthGuard({ children, onNavigateHome }: AdminAuthGuardProps) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
+export function AdminAuthGuard({
+  children,
+  onNavigateHome,
+  requiredPermission,
+}: AdminAuthGuardProps) {
+  const { currentUser, setCustomers, customers, setCurrentUser } =
+    useAppStore();
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState("");
 
   const handleGoogleLogin = async () => {
     try {
       setError("");
       setLoading(true);
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      let existingAcc = customers.find(
+        (acc) => acc.email.toLowerCase() === (user.email || "").toLowerCase(),
+      );
+
+      if (!existingAcc) {
+        existingAcc = {
+          name: user.displayName || "Admin User",
+          email: user.email || "",
+          phone: user.phoneNumber || "",
+          passcode: "1960", // Legacy compat
+          role: "Verified Google Client", // Default role
+          orderStatus: "Fresh Passport Activation",
+          method: "gmail",
+        } as any;
+        setCustomers([...customers, existingAcc]);
+      }
+
+      setCurrentUser(existingAcc!);
+      setLoading(false);
     } catch (err: any) {
       console.error("Login failed:", err);
       setError(err.message || "Failed to authenticate with Google.");
@@ -43,13 +65,18 @@ export function AdminAuthGuard({ children, onNavigateHome }: AdminAuthGuardProps
     );
   }
 
-  if (!user) {
+  // Authorize based on requiredPermission. Default to View Staff Dashboard.
+  const checkPermission =
+    requiredPermission || AuthorizationEngine.canViewStaffDashboard;
+  const isAuthorized = checkPermission(currentUser);
+
+  if (!isAuthorized) {
     return (
       <div className="max-w-md mx-auto my-12 p-8 bg-white rounded-3xl shadow-xl border border-gray-100 text-center font-sans">
         <div className="bg-heritage-green p-8 text-center border-b border-heritage-gold/20 relative overflow-hidden flex flex-col items-center justify-center rounded-t-3xl -mt-8 -mx-8 mb-8">
           <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#C5A85C_1px,transparent_1px)] [background-size:16px_16px]" />
           <div className="relative mb-4">
-             <img
+            <img
               loading="lazy"
               src={odogwuLogo}
               alt="The Odogwu Heritage Logo"
@@ -58,22 +85,21 @@ export function AdminAuthGuard({ children, onNavigateHome }: AdminAuthGuardProps
             />
           </div>
           <span className="relative inline-flex items-center gap-1.5 px-3 py-1 bg-heritage-gold/20 text-heritage-gold border border-heritage-gold/40 rounded-full text-[10px] font-bold uppercase tracking-widest mb-3">
-            <ShieldCheck size={12} /> Admin Auth Required
+            <ShieldCheck size={12} /> Access Restricted
           </span>
           <h2 className="relative text-2xl font-display font-bold text-white tracking-tight">
-            Admin Portal Login
+            Staff Portal Login
           </h2>
           <p className="relative text-xs text-heritage-beige/80 mt-1.5 leading-relaxed max-w-xs mx-auto">
-            Access to the administrative control panel requires authorization via a Google Account.
+            Access to this section requires staff authorization. Please sign in
+            with an authorized Google Workspace account.
           </p>
         </div>
-
         {error && (
           <div className="mb-6 p-3 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200">
             {error}
           </div>
         )}
-
         <button
           onClick={handleGoogleLogin}
           className="w-full bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 transition duration-300 py-3 rounded-xl text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2.5 shadow-sm cursor-pointer mb-4"
@@ -98,7 +124,6 @@ export function AdminAuthGuard({ children, onNavigateHome }: AdminAuthGuardProps
           </svg>
           Sign In with Google
         </button>
-
         <button
           onClick={onNavigateHome}
           className="text-xs text-gray-500 hover:text-heritage-green font-medium underline"

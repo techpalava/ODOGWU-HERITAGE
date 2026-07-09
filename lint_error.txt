@@ -1,0 +1,14 @@
+
+> react-example@0.0.0 lint
+> tsc --noEmit
+
+src/App.tsx(175,31): error TS2304: Cannot find name 'CapacityService'.
+src/App.tsx(176,25): error TS2304: Cannot find name 'CapacityService'.
+src/components/DashboardView.tsx(1004,56): error TS2339: Property 'canEditBatch' does not exist on type 'typeof BatchBusinessRules'.
+src/components/DashboardView.tsx(1005,58): error TS2339: Property 'canJoinBatch' does not exist on type 'typeof BatchBusinessRules'.
+src/components/DashboardView.tsx(1006,58): error TS2339: Property 'canDeleteBatch' does not exist on type 'typeof BatchBusinessRules'.
+src/components/DashboardView.tsx(1007,57): error TS2339: Property 'canCloseBatch' does not exist on type 'typeof BatchBusinessRules'.
+src/components/DashboardView.tsx(1183,42): error TS2339: Property 'canLeaveBatch' does not exist on type 'typeof BatchBusinessRules'.
+src/components/HomeView.tsx(194,57): error TS2551: Property 'getHeroPresentation' does not exist on type 'typeof BatchBusinessRules'. Did you mean 'getPresentation'?
+src/engine/BusinessIntelligenceEngine.ts(11,47): error TS6133: 'settings' is declared but its value is never read.
+src/engine/BusinessIntelligenceEngine.ts(15,40): error TS6133: 'settings' is declared but its value is never read.

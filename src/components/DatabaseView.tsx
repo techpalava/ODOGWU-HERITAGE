@@ -1,3 +1,4 @@
+import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -63,6 +64,7 @@ import {
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 import { BusinessIntelligenceEngine } from "../engine/BusinessIntelligenceEngine";
+import { CapacityService } from "../services/CapacityService";
 import { useAppStore } from "../store/useAppStore";
 import { useReferenceDataFallback } from "../hooks/useReferenceData";
 
@@ -146,6 +148,7 @@ export default function DatabaseView({
   const [newPrice, setNewPrice] = useState(150);
 
   const {
+    currentUser,
     mediaLibrary,
     plugins,
     auditLogs,
@@ -1192,26 +1195,28 @@ export default function DatabaseView({
                 id: "documentation",
                 label: "Schema Models & ERD",
                 icon: BookOpen,
+                condition: true // Everyone who can view staff dashboard
               },
-              { id: "operations", label: "Operations Dashboard", icon: Layers },
-              { id: "users", label: "Users & Profiles", icon: User },
-              { id: "styles", label: "Garment Options", icon: Shirt },
-              { id: "fabrics", label: "Fabrics Catalogue", icon: Layers },
-              { id: "batches", label: "Sourcing Batches", icon: Layers2 },
-              { id: "orders", label: "Master Orders", icon: ClipboardList },
-              { id: "showpieces", label: "Gallery Showpieces", icon: Tag },
-              { id: "photos", label: "Community & Cohorts", icon: Image },
-              { id: "media", label: "Media Library", icon: Image },
-              { id: "plugins", label: "Plugins", icon: Puzzle },
-              { id: "audit", label: "Audit Logs", icon: FileText },
-              { id: "roles", label: "Roles", icon: ShieldCheck },
+              { id: "operations", label: "Operations Dashboard", icon: Layers, condition: AuthorizationEngine.canViewReports(currentUser) },
+              { id: "users", label: "Users & Profiles", icon: User, condition: AuthorizationEngine.canManageCustomers(currentUser) },
+              { id: "styles", label: "Garment Options", icon: Shirt, condition: AuthorizationEngine.canManageReferenceData(currentUser) },
+              { id: "fabrics", label: "Fabrics Catalogue", icon: Layers, condition: AuthorizationEngine.canManageFabrics(currentUser) },
+              { id: "batches", label: "Sourcing Batches", icon: Layers2, condition: AuthorizationEngine.canManageBatches(currentUser) },
+              { id: "orders", label: "Master Orders", icon: ClipboardList, condition: AuthorizationEngine.canManageOrders(currentUser) },
+              { id: "showpieces", label: "Gallery Showpieces", icon: Tag, condition: AuthorizationEngine.canManageShowpieces(currentUser) },
+              { id: "photos", label: "Community & Cohorts", icon: Image, condition: AuthorizationEngine.canManageGallery(currentUser) },
+              { id: "media", label: "Media Library", icon: Image, condition: AuthorizationEngine.canManageMedia(currentUser) },
+              { id: "plugins", label: "Plugins", icon: Puzzle, condition: AuthorizationEngine.canManageSettings(currentUser) },
+              { id: "audit", label: "Audit Logs", icon: FileText, condition: AuthorizationEngine.canManageUsers(currentUser) },
+              { id: "roles", label: "Roles", icon: ShieldCheck, condition: AuthorizationEngine.canManageUsers(currentUser) },
               {
                 id: "compliance",
                 label: "Compliance & GDPR",
                 icon: ShieldCheck,
+                condition: AuthorizationEngine.canManageSettings(currentUser)
               },
-              { id: "settings", label: "System Settings", icon: Sliders },
-            ].map((tab) => {
+              { id: "settings", label: "System Settings", icon: Sliders, condition: AuthorizationEngine.canManageSettings(currentUser) },
+            ].filter(tab => tab.condition !== false).map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               return (
@@ -4035,7 +4040,7 @@ export default function DatabaseView({
 
                       const requiredYards =
                         active.fabricForecast?.requiredYards ||
-                        active.currentGarments * 6.5; // default estimate
+                        CapacityService.getReservedCapacity(active) * 6.5; // default estimate
                       const requiredRolls =
                         active.fabricForecast?.requiredRolls ||
                         Math.ceil(requiredYards / 6);
@@ -4055,7 +4060,7 @@ export default function DatabaseView({
                               Target Garments
                             </span>
                             <strong className="text-heritage-green">
-                              {active.targetGarments} Garments
+                              {CapacityService.getTargetCapacity(active)} Garments
                             </strong>
                           </div>
                           <div className="flex justify-between items-center border-b border-gray-50 pb-2">
@@ -4294,14 +4299,14 @@ export default function DatabaseView({
                                   Garments
                                 </span>
                                 <span className="text-[10px] font-mono font-bold text-heritage-gold">
-                                  {b.currentGarments} / {b.targetGarments}
+                                  {CapacityService.getCapacitySummary(b).progressBadge}
                                 </span>
                               </div>
                               <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
                                 <div
                                   className="h-full bg-heritage-green"
                                   style={{
-                                    width: `${Math.min(100, (b.currentGarments / b.targetGarments) * 100)}%`,
+                                    width: `${CapacityService.getCapacitySummary(b).completionPercentage}%`,
                                   }}
                                 ></div>
                               </div>

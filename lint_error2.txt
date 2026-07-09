@@ -1,0 +1,6 @@
+
+> react-example@0.0.0 lint
+> tsc --noEmit
+
+src/App.tsx(175,31): error TS2304: Cannot find name 'CapacityService'.
+src/App.tsx(176,25): error TS2304: Cannot find name 'CapacityService'.

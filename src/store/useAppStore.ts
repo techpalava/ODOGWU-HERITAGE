@@ -1,3 +1,4 @@
+import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 import { create } from "zustand";
 import {
   Customer,
@@ -25,7 +26,7 @@ import {
 import { StorageService } from "../services/storageService";
 import { FabricService } from "../services/fabricService";
 import { auth } from "../services/firebase";
-import { signInAnonymously } from "firebase/auth";
+import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import { processDynamicBatches } from "../utils/batchUtils";
 
 interface AppState {
@@ -150,7 +151,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveTab: (tab) => {
     const state = get();
     // Protect Design Studio route
-    if (tab === "design" && !state.currentUser) {
+    if (tab === "design" && !AuthorizationEngine.canAccessRoute("design", state.currentUser)) {
       set({ pendingRedirect: "design" });
       tab = "login";
     }
@@ -352,6 +353,49 @@ export const useAppStore = create<AppState>((set, get) => ({
         StorageService.subscribeToDocument<BusinessSettings>("settings", "business", (settings) => {
           if (settings) {
             set({ businessSettings: settings });
+          }
+        })
+      );
+
+      // Listen for Firebase Auth state changes
+      storeUnsubs.push(
+        onAuthStateChanged(auth, (firebaseUser) => {
+          if (firebaseUser && firebaseUser.email) {
+            // Find existing customer by email
+            const state = get();
+            const existingCustomer = state.customers.find(
+              (c) => c.email.toLowerCase() === firebaseUser.email?.toLowerCase()
+            );
+            
+            if (existingCustomer) {
+              set({ currentUser: existingCustomer });
+              StorageService.saveSession(existingCustomer);
+            } else {
+              // Create temporary customer profile based on firebase user if missing
+              const newCustomer: Customer = {
+                name: firebaseUser.displayName || "Authenticated User",
+                email: firebaseUser.email || "",
+                phone: firebaseUser.phoneNumber || "",
+                passcode: "1960", // Legacy compat
+                role: "Verified Google Client",
+                orderStatus: "Fresh Passport Activation",
+                method: "gmail",
+              } as any;
+              
+              set({ 
+                currentUser: newCustomer,
+                customers: [...state.customers, newCustomer]
+              });
+              StorageService.saveSession(newCustomer);
+            }
+          } else {
+            // Fallback for mock users/guests using legacy local storage
+            const localSession = StorageService.getSession();
+            if (localSession) {
+              set({ currentUser: localSession });
+            } else {
+              set({ currentUser: null });
+            }
           }
         })
       );

@@ -1,5 +1,6 @@
 import { ShoppingBag, X, Trash2, CreditCard } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
+import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 
 export function CartDrawer() {
   const isCartOpen = useAppStore((state) => state.isCartOpen);
@@ -12,6 +13,18 @@ export function CartDrawer() {
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const setNotification = useAppStore((state) => state.setNotification);
   const businessSettings = useAppStore((state) => state.businessSettings);
+  const currentUser = useAppStore((state) => state.currentUser);
+  const orders = useAppStore((state) => state.orders);
+  const historicalOrders = useAppStore((state) => state.historicalOrders);
+  const batches = useAppStore((state) => state.batches);
+
+  const journey = CustomerJourneyEngine.getCurrentJourney({
+    currentUser: currentUser as any,
+    drafts: cartItems,
+    activeOrders: orders,
+    historicalOrders,
+    allBatches: batches,
+  });
 
   if (!isCartOpen) return null;
 
@@ -25,6 +38,22 @@ export function CartDrawer() {
 
   const handleCheckout = () => {
     if (cartItems.length === 0) return;
+    
+    // Check journey for blockers
+    if (journey.destination === "login") {
+      setIsCartOpen(false);
+      setActiveTab("login");
+      setNotification({ message: journey.notification, type: "info" });
+      setTimeout(() => { setNotification(null); }, 4000);
+      return;
+    } else if (journey.destination === "dashboard" && journey.primaryAction === "Complete Profile") {
+      setIsCartOpen(false);
+      setActiveTab("dashboard");
+      setNotification({ message: journey.notification, type: "info" });
+      setTimeout(() => { setNotification(null); }, 4000);
+      return;
+    }
+    
     setIsCheckoutPaymentOpen(true);
   };
 
@@ -229,7 +258,7 @@ export function CartDrawer() {
                 onClick={handleCheckout}
                 className="w-full bg-heritage-gold text-heritage-forest hover:bg-heritage-green hover:text-white transition py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 shadow-md cursor-pointer"
               >
-                <CreditCard size={12} /> Place Group Order Securely
+                <CreditCard size={12} /> {journey.destination === "login" || journey.primaryAction === "Complete Profile" ? journey.primaryAction : "Place Group Order Securely"}
               </button>
             </div>
           )}

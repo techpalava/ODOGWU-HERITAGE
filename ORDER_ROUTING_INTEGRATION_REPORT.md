@@ -1,0 +1,11 @@
+# Order Routing Integration Report
+
+## Summary of Integration
+- **Components Integrated**: Updated `src/components/DesignStudioView.tsx` and created `src/components/OrderRoutingPanel.tsx`. The design studio now invokes `OrderRoutingEngine.evaluateOrder` on component mount (for the banner) and when "Add Custom Attire to Cart" (Submit Order) is pressed.
+- **Banner Implementation**: An informational banner has been placed above the 9-step progress visualizer in the Design Studio. It renders completely dynamically based on `routingDecision.presentation`. It does not block the user from designing their outfit.
+- **OrderRoutingPanel Implementation**: Created the `OrderRoutingPanel` component to render the `presentation` model, the `availableActions`, and the `nextAvailableBatches`. It intercepts the submit action if a community order cannot be placed and the user is attempting to place a community order.
+- **Data Preservation Verification**: When a user selects "Individual Order" or "Personalized Batch" from the `OrderRoutingPanel`, it only changes the `batchType` state to `alone` or `personalized` respectively. This preserves all previous selections (style, fabric, measurements, etc.) and allows the user to continue submission without losing their work.
+- **Timeline Integration Verification**: `OrderRoutingEngine` natively fetches `nextAvailableBatches` using `getNextUpcomingBatches` from `batchUtils.ts` directly reading from the `storeBatches`. The panel simply maps over this array, meaning no distinct timeline logic exists in the panel itself.
+- **Submission Workflow Changes**: `handleAddToCartAction` now calls `OrderRoutingEngine.evaluateOrder` to re-validate. If a community batch is no longer available and the user's `batchType` was `community`, it stops the cart dispatch and opens the routing panel.
+- **Architectural Compliance Review**: Verified that no business logic exists within the `OrderRoutingPanel` or in the presentation layers of `DesignStudioView` regarding the routing logic itself. All UI data comes directly from the `OrderRoutingDecision` engine object.
+- **Confirmation**: All routing decisions now originate exclusively from the `OrderRoutingEngine`. No existing design workflows were disrupted, and Timeline Manager logic remains as the single source of truth for the batches.

@@ -26,11 +26,12 @@ import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
 import { useAppStore } from "../store/useAppStore";
 import { compressImage } from "../utils/imageUtils";
 import { ImageService } from "../services/imageService";
+import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 
 export default function AboutView() {
   const { businessSettings, setBusinessSettings, currentUser } = useAppStore();
   
-  const isAdmin = currentUser?.role === "NTCC Founder & Coordinator";
+  const isAdmin = AuthorizationEngine.canManageSettings(currentUser);
   
   const [isStoryOpen, setIsStoryOpen] = useState(false);
   const [activePriceTab, setActivePriceTab] = useState<
