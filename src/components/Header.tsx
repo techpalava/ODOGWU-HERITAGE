@@ -15,6 +15,7 @@ import { useAppStore } from "../store/useAppStore";
 import { auth } from "../services/firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
+import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 
 export function Header() {
   const activeTab = useAppStore((state) => state.activeTab);
@@ -95,8 +96,9 @@ export function Header() {
                 { id: "dashboard", label: "My Dashboard", icon: ClipboardList },
                 { id: "about", label: "About", icon: Info },
                 { id: "gallery", label: "Gallery", icon: Layers },
-                { id: "database", label: "Admin Portal & DB", icon: Database },
-              ].map((tab) => {
+                (AuthorizationEngine.canViewStaffDashboard(currentUser) ? { id: "database", label: "Admin Portal & DB", icon: Database } : null),
+              ].filter(Boolean).map((tab) => {
+                if (!tab) return null;
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
                 return (

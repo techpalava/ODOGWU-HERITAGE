@@ -1024,6 +1024,7 @@ export default function DesignStudioView({
   const [batchType, setBatchType] = useState<
     "community" | "alone" | "personalized" | "actual"
   >("community");
+  const [initialRouteSet, setInitialRouteSet] = useState(false);
   const [selectedBatchName, _setSelectedBatchName] =
     useState<string>("August Batch");
   const [customGroupCode, setCustomGroupCode] = useState<string>("");
@@ -1035,8 +1036,16 @@ export default function DesignStudioView({
     else dynamicCtx.orderType = "Community";
     
     const decision = OrderRoutingEngine.evaluateOrder(dynamicCtx, storeBatches || []);
+    
+    if (!initialRouteSet && storeBatches) {
+      if (decision.mode === "COMMUNITY_CLOSED" && batchType === "community") {
+        setBatchType("alone");
+      }
+      setInitialRouteSet(true);
+    }
+
     setRoutingDecision(decision);
-  }, [batchType, storeBatches]);
+  }, [batchType, storeBatches, initialRouteSet]);
 
   // Auto-populate customer info if logged in
   useEffect(() => {
@@ -4054,21 +4063,21 @@ export default function DesignStudioView({
                         <strong>Selected Path:</strong>{" "}
                         {routingDecision.mode === "COMMUNITY_OPEN"
                           ? `Active Community Cohort (${routingPresentation.currentBatchSummary?.name || 'Veldhoven Campus Batch'})`
-                          : routingDecision.mode === "INDIVIDUAL"
+                          : batchType === "alone"
                             ? "Individual Priority Order"
-                            : routingDecision.mode === "GROUP"
+                            : batchType === "personalized"
                               ? "Personalized Custom Batch"
                               : "Pending Routing Decision"}
                       </div>
                       <div>
                         <strong>Delivery Schedule:</strong>{" "}
-                        {routingDecision.mode === "INDIVIDUAL"
+                        {batchType === "alone"
                           ? "2-3 Weeks (Express Air Priority)"
                           : "Coordinated Collective Delivery"}
                       </div>
                       <div>
                         <strong>Destination:</strong>{" "}
-                        {routingDecision.mode === "INDIVIDUAL"
+                        {batchType === "alone"
                           ? "Direct Shipping to Your Provided Address"
                           : businessSettings.productionSettings.defaultPickupLocation}
                       </div>
@@ -4322,13 +4331,21 @@ export default function DesignStudioView({
                     <li>
                       Mobile Number: <strong>{customerPhone}</strong>
                     </li>
+                    {routingDecision?.currentBatch && routingDecision.mode !== "COMMUNITY_OPEN" && (
+                      <li className="text-heritage-ink/70">
+                        Production Group:{" "}
+                        <strong className="text-heritage-gold">
+                          {routingDecision.currentBatch.name} (Closed)
+                        </strong>
+                      </li>
+                    )}
                     <li>
-                      Selected Batch:{" "}
+                      Your Order Route:{" "}
                       <strong className="text-heritage-gold">
                         {batchType === "community"
-                          ? ctx.batchName
+                          ? (ctx.batchName || "Community Batch")
                           : batchType === "alone"
-                            ? "Order Alone (Home Courier)"
+                            ? "Individual Order (Home Courier)"
                             : batchType === "personalized"
                               ? `Personalized Group (${customGroupCode || "CUSTOM-GROUP"})`
                               : selectedBatchName}
@@ -4639,18 +4656,28 @@ export default function DesignStudioView({
                   <strong className="text-heritage-gold">Included</strong>
                 </p>
               ))}
-              <p>
-                Batch / Queue:{" "}
-                <strong className="text-heritage-gold font-bold">
-                  {batchType === "community"
-                    ? ctx.batchName
-                    : batchType === "alone"
-                      ? "Order Alone (Home Courier)"
-                      : batchType === "personalized"
-                        ? `Personalized Group (${customGroupCode || "CUSTOM-GROUP"})`
-                        : selectedBatchName}
-                </strong>
-              </p>
+              {routingDecision?.currentBatch && (
+                <p>
+                  {routingDecision.mode === "COMMUNITY_OPEN" ? "Open Community Batch: " : "Current Production Batch: "}
+                  <strong className="text-heritage-gold font-bold">
+                    {routingDecision.currentBatch.name} {routingDecision.mode !== "COMMUNITY_OPEN" && "(Closed)"}
+                  </strong>
+                </p>
+              )}
+              {(!routingDecision || routingDecision.mode !== "COMMUNITY_OPEN" || batchType !== "community") && (
+                <p>
+                  Your Order Route:{" "}
+                  <strong className="text-heritage-gold font-bold">
+                    {batchType === "community"
+                      ? (ctx.batchName || "Community Batch")
+                      : batchType === "alone"
+                        ? "Individual Order (Home Courier)"
+                        : batchType === "personalized"
+                          ? `Personalized Group (${customGroupCode || "CUSTOM-GROUP"})`
+                          : selectedBatchName}
+                  </strong>
+                </p>
+              )}
             </div>
           </div>
 

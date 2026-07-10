@@ -67,7 +67,7 @@ export function AdminAuthGuard({
 
   // Authorize based on requiredPermission. Default to View Staff Dashboard.
   const checkPermission =
-    requiredPermission || AuthorizationEngine.canViewStaffDashboard;
+    requiredPermission || ((user) => AuthorizationEngine.canViewStaffDashboard(user));
   const isAuthorized = checkPermission(currentUser);
 
   if (!isAuthorized) {

@@ -12,12 +12,14 @@ import {
   MessageCircle,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
+import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 
 export function MobileMenu() {
   const isMobileMenuOpen = useAppStore((state) => state.isMobileMenuOpen);
   const setIsMobileMenuOpen = useAppStore((state) => state.setIsMobileMenuOpen);
   const activeTab = useAppStore((state) => state.activeTab);
+  const currentUser = useAppStore((state) => state.currentUser);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const businessSettings = useAppStore((state) => state.businessSettings);
 
@@ -114,8 +116,9 @@ export function MobileMenu() {
                   },
                   { id: "gallery", label: "Gallery", icon: Layers },
                   { id: "about", label: "About Us", icon: Info },
-                  { id: "database", label: "Admin & DB Panel", icon: Database },
-                ].map((tab) => {
+                  (AuthorizationEngine.canViewStaffDashboard(currentUser) ? { id: "database", label: "Admin & DB Panel", icon: Database } : null),
+                ].filter(Boolean).map((tab) => {
+                  if (!tab) return null;
                   const Icon = tab.icon;
                   const isActive = activeTab === tab.id;
                   return (

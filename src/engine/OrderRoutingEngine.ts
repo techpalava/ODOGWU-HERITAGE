@@ -74,11 +74,11 @@ export class OrderRoutingEngine {
     // If orderContext is provided, it might override the default routing behavior
     if (orderContext) {
       if (orderContext.orderType === "Group Organizer" || orderContext.orderType === "Group Member") {
-        routingReason = `Routing to personalized batch as requested by context (${orderContext.orderType}).`;
+        routingReason = eligibility.canAcceptOrders ? `Routing to personalized batch as requested by context (${orderContext.orderType}).` : `Community batch is closed. Routing to personalized batch.`;
         routingReasonKey = "CONTEXT_PERSONALIZED_BATCH";
         canSubmitCommunityOrder = false;
       } else if (orderContext.orderType === "Individual") {
-        routingReason = "Routing to individual order as explicitly requested.";
+        routingReason = eligibility.canAcceptOrders ? "Routing to individual order as explicitly requested." : `Community batch is closed. Defaulting to individual order.`;
         routingReasonKey = "CONTEXT_INDIVIDUAL_ORDER";
         canSubmitCommunityOrder = false;
       } else {
