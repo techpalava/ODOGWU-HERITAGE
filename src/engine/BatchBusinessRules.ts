@@ -187,7 +187,7 @@ export class BatchBusinessRules {
       }
     } else if (stage === "In Production") {
       presentation.title = "SOURCING PHASE";
-      presentation.headline = "Batch is in Production";
+      presentation.headline = (batch as any)?.batchName ? `${(batch as any).batchName} Orders in Production` : "Orders in Production";
       presentation.badgeText = "In Production";
       presentation.badgeStyle = "green";
       presentation.buttonText = "Pre-register Next Batch";

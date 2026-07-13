@@ -31,7 +31,7 @@ export default function HomeView({
   onSelectStyle,
   onSelectFabric,
 }: HomeViewProps) {
-  const { businessSettings, currentUser, customers, orders, batches, styles, cartItems, historicalOrders } = useAppStore();
+  const { isLoadingData, businessSettings, currentUser, customers, orders, batches, styles, cartItems, historicalOrders } = useAppStore();
   const journey = CustomerJourneyEngine.getCurrentJourney({
     currentUser: currentUser as any,
     drafts: cartItems,
@@ -39,6 +39,12 @@ export default function HomeView({
     historicalOrders,
     allBatches: batches,
   });
+
+  
+  const canJoinActiveBatch = activeCommunityBatch ? BatchBusinessRules.canAcceptOrders(activeCommunityBatch as any).canAcceptOrders : false;
+  const heroPrimaryAction = canJoinActiveBatch ? `Join ${(activeCommunityBatch as any)?.name || (activeCommunityBatch as any)?.batchName || ''}`.trim() : "Create Custom Order";
+  const firstHeroPrimaryAction = canJoinActiveBatch ? `Join ${(activeCommunityBatch as any)?.name || (activeCommunityBatch as any)?.batchName || ''}`.trim() : "Create Group";
+  const heroDestination = canJoinActiveBatch ? "design" : "custom-order";
 
   const [, setNow] = useState(new Date());
   const [fabricFilter, setFabricFilter] = useState("All Fabrics");
@@ -160,12 +166,30 @@ export default function HomeView({
             </p>
 
             <div className="flex flex-wrap gap-4 pt-4">
+              {isLoadingData ? (
+                <>
+                  <div className="w-full sm:w-32 h-11 bg-white/10 rounded-xl animate-pulse" />
+                  <div className="w-full sm:w-32 h-11 bg-white/10 rounded-xl animate-pulse" />
+                </>
+              ) : (
+                <>
               <button
                   id="btn-hero-join-cohort"
-                  onClick={() => onNavigateToTab(journey.destination as any)}
+                  onClick={() => {
+                    onNavigateToTab(heroDestination as any);
+                    if (heroDestination === "custom-order") {
+                      // Allow time for lazy loading and rendering
+                      setTimeout(() => {
+                        const el = document.getElementById("option-create-group");
+                        if (el) {
+                          el.scrollIntoView({ behavior: "smooth", block: "start" });
+                        }
+                      }, 200);
+                    }
+                  }}
                   className="bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 min-h-[44px] px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto"
                 >
-                  {journey.primaryAction} <ArrowRight size={14} />
+                  {firstHeroPrimaryAction} <ArrowRight size={14} />
                 </button>
 
               <button
@@ -182,11 +206,15 @@ export default function HomeView({
               >
                 Style Gallery
               </button>
+              </>)}
             </div>
           </div>{" "}
           {/* Group Status Card */}
           <div className="lg:col-span-5 font-sans">
-            <div className="rounded-2xl border border-heritage-gold/30 bg-heritage-forest p-6 space-y-5 shadow-xl">
+            {isLoadingData ? (
+              <div className="rounded-2xl border border-heritage-gold/30 bg-heritage-forest/50 p-6 space-y-5 shadow-xl h-[240px] animate-pulse" />
+            ) : (
+              <div className="rounded-2xl border border-heritage-gold/30 bg-heritage-forest p-6 space-y-5 shadow-xl">
               {(() => {
                 const presentation = BatchBusinessRules.getPresentation(activeCommunityBatch);
                 const progress = BatchBusinessRules.getProgressState(activeCommunityBatch);
@@ -357,6 +385,7 @@ export default function HomeView({
                 );
               })()}
             </div>
+            )}
           </div>
         </div>
       </section>
@@ -592,10 +621,10 @@ export default function HomeView({
 
         <div className="text-center pt-6">
           <button
-            onClick={() => onNavigateToTab(journey.destination as any)}
+            onClick={() => onNavigateToTab(heroDestination as any)}
             className="inline-flex bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2 cursor-pointer"
           >
-            {journey.primaryAction} <ArrowRight size={14} />
+            {heroPrimaryAction} <ArrowRight size={14} />
           </button>
         </div>
       </section>
@@ -913,10 +942,10 @@ export default function HomeView({
 
         <div className="text-center pt-6">
           <button
-            onClick={() => onNavigateToTab(journey.destination as any)}
+            onClick={() => onNavigateToTab(heroDestination as any)}
             className="inline-flex bg-heritage-gold text-heritage-forest hover:bg-heritage-green hover:text-white px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2 cursor-pointer"
           >
-            {journey.primaryAction} <ArrowRight size={14} />
+            {heroPrimaryAction} <ArrowRight size={14} />
           </button>
         </div>
       </section>
@@ -1127,10 +1156,10 @@ export default function HomeView({
 
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
             <button
-                onClick={() => onNavigateToTab(journey.destination as any)}
+                onClick={() => onNavigateToTab(heroDestination as any)}
                 className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 px-10 py-4 rounded-xl text-sm font-bold uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 cursor-pointer"
               >
-                {journey.primaryAction} <ArrowRight size={16} />
+                {heroPrimaryAction} <ArrowRight size={16} />
               </button>
 
             <button
@@ -1334,10 +1363,10 @@ export default function HomeView({
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
             <button
-              onClick={() => onNavigateToTab(journey.destination as any)}
+              onClick={() => onNavigateToTab(heroDestination as any)}
               className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green px-8 py-4 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-xl inline-flex items-center justify-center gap-2 cursor-pointer"
             >
-              {journey.primaryAction} <ArrowRight size={14} />
+              {heroPrimaryAction} <ArrowRight size={14} />
             </button>
             <button
               onClick={() => onNavigateToTab(journey.destination === "gallery" ? "design" : "gallery")}
