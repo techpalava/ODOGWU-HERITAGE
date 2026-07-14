@@ -212,14 +212,14 @@ export default function LoginView({
       email: regEmail.trim(),
       phone: "",
       passcode: regPIN,
-      role: "New Cohort Member",
+      role: AuthorizationEngine.resolveRole({ email: regEmail.trim() } as any),
       orderStatus: "Fresh Passport Activation",
       method: "email",
     };
 
     const updated = [...accounts, newAcc];
     setAccounts(updated);
-    localStorage.setItem("asml_accounts", JSON.stringify(updated));
+    
 
     setSuccessMsg("Account created successfully!");
     setTimeout(() => {
@@ -275,14 +275,14 @@ export default function LoginView({
       email: simEmail,
       phone: fullPhone,
       passcode: regPIN,
-      role: "Verified Mobile Member",
+      role: AuthorizationEngine.resolveRole({ email: simEmail } as any),
       orderStatus: "Fresh Passport Activation",
       method: "phone",
     };
 
     const updated = [...accounts, newAcc];
     setAccounts(updated);
-    localStorage.setItem("asml_accounts", JSON.stringify(updated));
+    
 
     setSuccessMsg("Mobile account activated!");
     setTimeout(() => {
@@ -563,7 +563,7 @@ export default function LoginView({
                     type="submit"
                     className="w-full mt-2 bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest transition duration-300 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 shadow-md cursor-pointer"
                   >
-                    Register Tailoring Passport <ArrowRight size={12} />
+                    Create My Account <ArrowRight size={12} />
                   </button>
                 </form>
               )}
@@ -720,7 +720,7 @@ export default function LoginView({
                     disabled={!otpVerified}
                     className="w-full mt-2 bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest disabled:opacity-50 disabled:pointer-events-none transition duration-300 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 shadow-md cursor-pointer"
                   >
-                    Activate Mobile Tailoring Passport <ArrowRight size={12} />
+                    Create My Account <ArrowRight size={12} />
                   </button>
                 </form>
               )}

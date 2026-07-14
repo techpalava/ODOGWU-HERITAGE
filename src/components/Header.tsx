@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { auth } from "../services/firebase";
+import { StorageService } from "../services/storageService";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
@@ -39,6 +40,7 @@ export function Header() {
       if (currentUser || user) {
         await signOut(auth);
         setCurrentUser(null);
+        StorageService.clearSession();
         setActiveTab("home");
       } else {
         setActiveTab("login" as any);

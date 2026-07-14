@@ -1,4 +1,3 @@
-import { AuthorizationEngine } from "./engine/AuthorizationEngine";
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -23,6 +22,7 @@ import {
 import { StorageService } from "./services/storageService";
 import { auth } from "./services/firebase";
 import { signOut } from "firebase/auth";
+import { AuthorizationEngine } from "./engine/AuthorizationEngine";
 import { useAppStore } from "./store/useAppStore";
 import { CustomerJourneyEngine } from "./engine/CustomerJourneyEngine";
 import { getCurrentCommunityBatch } from "./utils/batchUtils";
@@ -335,7 +335,19 @@ export default function App() {
   };
 
   const handleLogin = (email: string, name: string, phone?: string) => {
-    const user: Customer = { email, name, phone: phone || "", location: "" };
+    // Find the full user profile from the database
+    let user = store.customers.find(
+      (c) => (c.email || "").trim().toLowerCase() === email.trim().toLowerCase()
+    );
+    // If somehow not found (e.g. simulated phone login missing), fallback
+    if (!user) {
+      user = { email, name, phone: phone || "", location: "" } as Customer;
+    }
+    
+    // In case the role is not correctly resolved yet, we could resolve it, 
+    // but the app store should have it. To be safe, we assign it.
+    user.role = AuthorizationEngine.resolveRole(user);
+    
     setCurrentUser(user);
     StorageService.saveSession(user);
     triggerNotification(

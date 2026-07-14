@@ -370,7 +370,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             // Find existing customer by email
             const state = get();
             const existingCustomer = state.customers.find(
-              (c) => c.email.toLowerCase() === firebaseUser.email?.toLowerCase()
+              (c) => (c.email || "").trim().toLowerCase() === (firebaseUser.email || "").trim().toLowerCase()
             );
             
             if (existingCustomer) {
@@ -383,7 +383,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                 email: firebaseUser.email || "",
                 phone: firebaseUser.phoneNumber || "",
                 passcode: "1960", // Legacy compat
-                role: "Verified Google Client",
+                role: AuthorizationEngine.resolveRole({ email: firebaseUser.email } as any),
                 orderStatus: "Fresh Passport Activation",
                 method: "gmail",
               } as any;
