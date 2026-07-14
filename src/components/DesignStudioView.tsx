@@ -1,8 +1,3 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState, useEffect } from "react";
 import {
   Sparkles,
@@ -110,7 +105,6 @@ const FabricSkeleton = () => (
 
 interface DesignStudioViewProps {
   onAddToCart: (item: Omit<CartItem, "id">) => void;
-  onNavigateToTab: (tabId: string) => void;
   openCartDrawer: () => void;
   currentUser?: { email?: string; phone?: string; name: string } | null;
   orderContext?: OrderContext | null;
@@ -456,7 +450,6 @@ export const getBaseSewingPrice = (
 
 export default function DesignStudioView({
   onAddToCart,
-  onNavigateToTab,
   openCartDrawer,
   currentUser,
   orderContext,
@@ -1650,121 +1643,6 @@ export default function DesignStudioView({
           })}
         </div>
       </div>
-
-            {/* ROUTING PRESENTATION CARD */}
-      {routingDecision && (
-        <div className={`bg-white border rounded-3xl p-5 flex flex-col gap-4 shadow-sm text-center sm:text-left ${routingDecision.mode === 'COMMUNITY_OPEN' ? 'border-heritage-green/30' : 'border-heritage-gold/30'}`}>
-          <div className="space-y-1.5 flex flex-col items-center sm:items-start w-full">
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] font-bold tracking-wider uppercase bg-black/5 px-1.5 py-0.5 rounded-sm w-fit block text-heritage-ink/60">
-                Your Order Options
-              </span>
-              <span className={`text-[9px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full w-fit block ${
-                routingDecision.mode === 'COMMUNITY_OPEN' ? 'bg-heritage-green/10 text-heritage-green' :
-                routingDecision.mode === 'INDIVIDUAL' ? 'bg-heritage-ink text-white' :
-                routingDecision.mode === 'GROUP' ? 'bg-heritage-gold/20 text-heritage-gold' :
-                'bg-gray-100 text-gray-500'
-              }`}>
-                Current Mode: {
-                  routingDecision.mode === 'COMMUNITY_OPEN' ? 'Community Order' :
-                  routingDecision.mode === 'INDIVIDUAL' ? 'Individual Order' :
-                  routingDecision.mode === 'GROUP' ? 'Personalized Batch' :
-                  'Select an Option'
-                }
-              </span>
-            </div>
-            <div className="space-y-1 w-full">
-              <h4 className={`font-serif font-bold text-sm ${routingDecision.mode === 'COMMUNITY_OPEN' ? 'text-heritage-green' : 'text-heritage-gold'}`}>
-                {routingDecision.mode === 'COMMUNITY_OPEN' ? routingPresentation.title : 'Order Routing Guidance'}
-              </h4>
-              <p className="text-[11px] text-heritage-ink/75 font-medium leading-relaxed">
-                {routingPresentation.submissionMessage}
-              </p>
-            </div>
-          </div>
-          {routingPresentation.currentBatchSummary && (
-            <div className="flex flex-wrap gap-x-6 gap-y-3 w-full border-t border-gray-100 pt-4 text-center sm:text-left">
-              <div className="space-y-0.5 min-w-[120px]">
-                <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">Community Batch</span>
-                <span className="font-semibold text-heritage-ink block text-[11px] uppercase tracking-wide">{routingPresentation.currentBatchSummary.name}</span>
-              </div>
-              <div className="space-y-0.5 min-w-[100px]">
-                <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">Status</span>
-                <span className={`font-bold block text-[11px] uppercase tracking-wide ${
-                  routingDecision.mode === 'COMMUNITY_OPEN' 
-                    ? 'text-heritage-green' 
-                    : routingPresentation.currentBatchSummary.status.includes('FULL')
-                      ? 'text-heritage-gold'
-                      : routingPresentation.currentBatchSummary.status.includes('PRODUCTION')
-                        ? 'text-blue-600'
-                        : 'text-gray-500'
-                }`}>
-                  {routingPresentation.currentBatchSummary.status}
-                </span>
-              </div>
-              <div className="space-y-0.5 min-w-[100px]">
-                <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">Capacity</span>
-                <span className="font-semibold text-heritage-ink block text-[11px]">{routingPresentation.currentBatchSummary.capacity}</span>
-              </div>
-              <div className="space-y-0.5 min-w-[120px]">
-                <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">Production Progress</span>
-                <span className="font-semibold text-heritage-ink block text-[11px]">{routingPresentation.currentBatchSummary.nextMilestone}</span>
-              </div>
-              <div className="space-y-0.5 min-w-[120px]">
-                <span className="text-heritage-ink/40 block text-[9px] uppercase tracking-wider">Estimated Delivery</span>
-                <span className="font-serif font-bold text-heritage-gold block text-[11px]">{routingPresentation.currentBatchSummary.expectedDelivery}</span>
-              </div>
-            </div>
-          )}
-          {!routingDecision.allowCommunitySubmission && routingPresentation.availableActions && routingDecision.mode !== 'COMMUNITY_OPEN' && (
-            <div className="w-full border-t border-gray-100 pt-4 mt-2">
-              <div className="flex flex-col sm:flex-row gap-3">
-                {routingPresentation.availableActions.filter(a => a.type !== 'COMMUNITY_ORDER').map((action, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleRoutingActionSelect(action.type)}
-                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold border transition-colors ${
-                      (batchType === 'alone' && action.type === 'INDIVIDUAL_ORDER') ||
-                      (batchType === 'personalized' && action.type === 'PERSONALIZED_BATCH')
-                        ? 'bg-heritage-ink text-white border-heritage-ink shadow-md'
-                        : 'bg-white text-heritage-ink border-gray-200 hover:border-heritage-ink/30 opacity-70 hover:opacity-100'
-                    }`}
-                  >
-                    {action.buttonText}
-                  </button>
-                ))}
-              </div>
-              <div className="mt-4 text-[10px] text-center text-heritage-ink/50 space-y-1">
-                <p>Your design is automatically saved while you work.</p>
-                {OrderRoutingEngine.canChangeRouting(orderContext) ? (<p>You can change your ordering option at any time before payment.</p>) : (<p className="text-red-500">This order has already been confirmed and can no longer be changed.</p>)}
-              </div>
-              
-              {routingPresentation.nextCommunityBatches && routingPresentation.nextCommunityBatches.length > 0 && (
-                <div className="mt-6 border border-gray-100 rounded-2xl p-4 bg-gray-50 flex flex-col md:flex-row items-center justify-between gap-4">
-                  <div className="flex-1 space-y-1 w-full text-center md:text-left">
-                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Next Upcoming Batch</span>
-                    <h5 className="font-serif font-bold text-sm text-heritage-ink">{routingPresentation.nextCommunityBatches[0].name}</h5>
-                    <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1 mt-2 text-[10px] text-gray-600">
-                      <span><strong className="text-gray-900">Registration Opens:</strong> {routingPresentation.nextCommunityBatches[0].startDate || routingPresentation.nextCommunityBatches[0].registrationOpens || "TBD"}</span>
-                      <span><strong className="text-gray-900">Expected Delivery:</strong> {routingPresentation.nextCommunityBatches[0].expectedDelivery || "TBD"}</span>
-                      {routingPresentation.nextCommunityBatches[0].targetGarments ? (
-                        <span><strong className="text-gray-900">Capacity:</strong> {routingPresentation.nextCommunityBatches[0].currentGarments || 0} / {routingPresentation.nextCommunityBatches[0].targetGarments} Garments</span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleRoutingActionSelect("NEXT_BATCH")}
-                    className="shrink-0 bg-white border border-gray-200 text-heritage-ink font-bold text-xs py-2 px-4 rounded-xl hover:bg-gray-50 transition-colors whitespace-nowrap"
-                  >
-                    Join Next Batch
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Validation feedback banners */}
       {validationError && (
         <div className="p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl flex items-center gap-3 text-xs">
@@ -2184,11 +2062,11 @@ export default function DesignStudioView({
               </div>
 
               {/* Fabrics Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                 {isLoadingData && fabrics.length === 0 ? (
-                  Array.from({ length: 10 }).map((_, idx) => <FabricSkeleton key={idx} />)
+                  Array.from({ length: 8 }).map((_, idx) => <FabricSkeleton key={idx} />)
                 ) : paginatedFabrics.length === 0 ? (
-                  <div className="col-span-1 sm:col-span-2 md:col-span-3 lg:col-span-4 xl:col-span-5 p-8 text-center border-2 border-dashed border-gray-200 rounded-2xl space-y-3">
+                  <div className="col-span-1 sm:col-span-2 lg:col-span-4 p-8 text-center border-2 border-dashed border-gray-200 rounded-2xl space-y-3">
                     <SlidersHorizontal
                       className="mx-auto text-heritage-ink/30"
                       size={32}
@@ -2213,72 +2091,77 @@ export default function DesignStudioView({
                     <div
                       key={fabric.code}
                       onClick={() => setSelectedFabric(fabric)}
-                      className={`p-4 rounded-2xl border-2 cursor-pointer transition flex flex-col justify-between space-y-4 ${
+                      className={`p-4 rounded-xl border flex flex-col justify-between space-y-4 transition-all duration-200 cursor-pointer ${
                         selectedFabric.code === fabric.code
-                          ? "border-heritage-gold bg-heritage-cream/40 shadow-sm"
-                          : "border-gray-150 bg-white hover:border-heritage-gold/40"
+                          ? "border-heritage-gold shadow-[0_0_15px_rgba(197,168,92,0.15)] bg-[#FFFCF6]"
+                          : "border-[#E5E0D8] bg-[#FAFAF8] hover:shadow-md hover:border-heritage-gold/50"
                       }`}
                     >
-                      <div className="space-y-2">
-                        {/* Interactive Color Box (Replaced with Full Fabric Image) */}
+                      <div className="space-y-3">
+                        {/* Interactive Color Box / Full Fabric Image */}
                         <div 
-                          className="h-48 w-full rounded-xl relative overflow-hidden shadow-inner flex items-start justify-between p-2 select-none bg-gray-50 border border-gray-150 group cursor-pointer"
-                          onClick={() => setSelectedFabric(fabric)}
+                          className="h-44 w-full rounded-lg relative overflow-hidden flex items-start justify-between p-2 select-none group border border-[#E5E0D8] bg-white shadow-sm"
                         >
                           {fabric.image ? (
-                            <LazyFabricImage fabric={fabric} />
+                            <div className="absolute inset-0 w-full h-full transition-transform duration-500 group-hover:scale-110">
+                               <LazyFabricImage fabric={fabric} />
+                            </div>
                           ) : (
                             <div
-                              className="absolute inset-0"
+                              className="absolute inset-0 w-full h-full transition-transform duration-500 group-hover:scale-110"
                               style={{
                                 background: `linear-gradient(135deg, ${fabric.colorHex}cc, ${fabric.colorHex}ff)`,
                               }}
                             />
                           )}
-                          <div className="absolute inset-0 bg-[radial-gradient(#C5A85C_1px,transparent_1px)] [background-size:12px_12px] opacity-10"></div>
-
-                          <span className="relative z-10 text-[9px] bg-white/90 border font-bold px-1.5 py-0.5 rounded text-heritage-green font-mono shadow-sm mt-1 ml-1">
-                            {fabric.code}
-                          </span>
-                          <span
-                            className={`relative z-10 text-[9px] bg-white/90 border font-bold px-1.5 py-0.5 rounded font-sans uppercase shadow-sm mt-1 mr-1 ${
-                              fabric.stockStatus === "OUT_OF_STOCK"
-                                ? "text-red-600"
-                                : fabric.stockStatus === "LOW_STOCK"
-                                  ? "text-orange-600"
-                                  : "text-heritage-gold"
-                            }`}
-                          >
-                            {fabric.stockStatus}
-                          </span>
                           
+                          <div className="absolute inset-0 bg-[radial-gradient(#C5A85C_1px,transparent_1px)] [background-size:12px_12px] opacity-[0.03]"></div>
+                          <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+                          
+                          <div className="relative z-10 flex flex-col items-start gap-1 pointer-events-none">
+                              <span className="text-[10px] bg-white/95 backdrop-blur-sm border border-[#E5E0D8] font-bold px-2 py-0.5 rounded shadow-sm text-heritage-green font-mono">
+                                {fabric.code}
+                              </span>
+                              <span
+                                className={`text-[9px] bg-white/95 backdrop-blur-sm border border-[#E5E0D8] font-bold px-1.5 py-0.5 rounded font-sans uppercase shadow-sm ${
+                                  fabric.stockStatus === "OUT_OF_STOCK"
+                                    ? "text-red-600"
+                                    : fabric.stockStatus === "LOW_STOCK"
+                                      ? "text-orange-600"
+                                      : "text-heritage-gold"
+                                }`}
+                              >
+                                {fabric.stockStatus.replace('_', ' ')}
+                              </span>
+                          </div>
+
                           {/* Hover Zoom Prompt */}
-                          <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                             <div className="bg-white/90 backdrop-blur px-3 py-1.5 rounded-full shadow-lg text-[10px] font-bold text-heritage-green flex items-center gap-1">
+                          <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-20">
+                             <div className="bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-lg text-[10px] font-bold text-heritage-green flex items-center gap-1.5 transform translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
                                <ZoomIn size={12} />
                                <span>Click to select</span>
                              </div>
                           </div>
                         </div>
 
-                        <div className="space-y-1">
-                          <div className="flex justify-between items-center">
-                            <h4 className="font-serif text-xs font-bold text-heritage-green">
+                        <div className="space-y-1.5 px-0.5">
+                          <div className="flex justify-between items-start gap-2">
+                            <h4 className="font-serif text-[13px] font-bold text-heritage-green leading-snug line-clamp-2">
                               {fabric.name}
                             </h4>
-                            <span className="text-[9px] bg-heritage-gold/10 text-heritage-gold font-bold px-1.5 py-0.5 rounded">
+                            <span className="shrink-0 text-[9px] font-sans bg-[#F2EDE4] text-heritage-green font-semibold px-2 py-0.5 rounded border border-[#E5E0D8]">
                               {fabric.color}
                             </span>
                           </div>
-                          <p className="text-[10px] text-heritage-ink/70 leading-relaxed h-12 overflow-hidden">
+                          <p className="text-[10px] text-heritage-ink/70 leading-relaxed h-8 line-clamp-2">
                             {fabric.description}
                           </p>
                         </div>
                       </div>
 
-                      <div className="border-t border-gray-100 pt-2 flex justify-between items-center text-[10px] font-sans font-bold text-heritage-green">
-                        <span>Width: {fabric.width || "45 inches"}</span>
-                        <div className="flex items-center gap-1.5">
+                      <div className="border-t border-[#E5E0D8] pt-3 flex justify-between items-center text-[10px] font-sans px-0.5">
+                        <span className="text-heritage-ink/60 font-medium">Width: {fabric.width || "45 inches"}</span>
+                        <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -2286,11 +2169,10 @@ export default function DesignStudioView({
                               setZoomedFabric(fabric);
                               setShowFabricZoomModal(true);
                             }}
-                            className="px-2 py-1 rounded bg-heritage-gold/15 text-heritage-gold hover:bg-heritage-gold hover:text-white transition-all flex items-center gap-1 border border-heritage-gold/25 cursor-pointer font-sans text-[9px] font-bold"
+                            className="p-1.5 rounded bg-white text-heritage-green hover:bg-[#F2EDE4] transition-colors border border-[#E5E0D8] cursor-pointer shadow-sm"
                             title="Zoom Swatch Texture"
                           >
-                            <ZoomIn size={10} />
-                            <span>Zoom</span>
+                            <ZoomIn size={12} />
                           </button>
                           <button
                             type="button"
@@ -2298,15 +2180,14 @@ export default function DesignStudioView({
                               e.stopPropagation();
                               setSelectedFabric(fabric);
                             }}
-                            className={`px-3 py-1 rounded text-[9px] font-extrabold uppercase transition-all duration-200 cursor-pointer select-none ${
+                            className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all duration-200 cursor-pointer select-none flex items-center gap-1 border shadow-sm ${
                               selectedFabric.code === fabric.code
-                                ? "bg-heritage-gold text-white border border-heritage-gold"
-                                : "bg-heritage-cream text-heritage-green border border-heritage-gold/20 hover:bg-heritage-gold hover:text-white"
+                                ? "bg-heritage-gold text-white border-heritage-gold"
+                                : "bg-white text-heritage-green border-[#E5E0D8] hover:border-heritage-gold hover:text-heritage-gold"
                             }`}
                           >
-                            {selectedFabric.code === fabric.code
-                              ? "Selected ✓"
-                              : "Select"}
+                            {selectedFabric.code === fabric.code && <Check size={12} />}
+                            {selectedFabric.code === fabric.code ? "Selected" : "Select"}
                           </button>
                         </div>
                       </div>
@@ -4453,27 +4334,6 @@ export default function DesignStudioView({
             )}
           </div>
         </div>
-          {journey.requiresAttention && (
-            <div className="mt-6 bg-heritage-green/5 border border-heritage-green/10 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between shadow-sm gap-4">
-              <div className="flex items-center gap-3">
-                <div className="text-heritage-gold mt-1 sm:mt-0">
-                  <AlertTriangle size={18} />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-heritage-green mb-0.5">{journey.notification}</h4>
-                  <p className="text-xs text-heritage-ink/70">{journey.recommendedNextStep}</p>
-                </div>
-              </div>
-              <button 
-                type="button"
-                onClick={() => onNavigateToTab && onNavigateToTab(journey.destination)}
-                className="bg-heritage-gold text-heritage-forest hover:bg-heritage-gold/90 transition px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 min-h-[36px] whitespace-nowrap w-full sm:w-auto justify-center"
-              >
-                {journey.primaryAction} <ArrowRight size={14} />
-              </button>
-            </div>
-          )}
-
         {/* RIGHT COLUMN: Real-time billing estimation block */}
         <div className="lg:col-span-4 space-y-6">
           <div className="rounded-3xl border border-heritage-gold/25 bg-white p-6 shadow-sm space-y-6">
@@ -4647,28 +4507,19 @@ export default function DesignStudioView({
                   <strong className="text-heritage-gold">Included</strong>
                 </p>
               ))}
-              {routingDecision?.currentBatch && (
-                <p>
-                  {routingDecision.mode === "COMMUNITY_OPEN" ? "Open Community Batch: " : "Current Production Batch: "}
-                  <strong className="text-heritage-gold font-bold">
-                    {routingDecision.currentBatch.name} {routingDecision.mode !== "COMMUNITY_OPEN" && "(Closed)"}
-                  </strong>
-                </p>
-              )}
-              {(!routingDecision || routingDecision.mode !== "COMMUNITY_OPEN" || batchType !== "community") && (
-                <p>
-                  Your Order Route:{" "}
-                  <strong className="text-heritage-gold font-bold">
-                    {batchType === "community"
-                      ? (ctx.batchName || "Community Batch")
-                      : batchType === "alone"
-                        ? "Individual Order (Home Courier)"
-                        : batchType === "personalized"
-                          ? `Personalized Group (${customGroupCode || "CUSTOM-GROUP"})`
-                          : selectedBatchName}
-                  </strong>
-                </p>
-              )}
+
+              <p>
+                Your Order Route:{" "}
+                <strong className="text-heritage-gold font-bold">
+                  {batchType === "community"
+                    ? (ctx.batchName || "Community Batch")
+                    : batchType === "alone"
+                      ? "Individual Order"
+                      : batchType === "personalized"
+                        ? `Personalized Group (${customGroupCode || "CUSTOM-GROUP"})`
+                        : "Custom Order"}
+                </strong>
+              </p>
             </div>
           </div>
 

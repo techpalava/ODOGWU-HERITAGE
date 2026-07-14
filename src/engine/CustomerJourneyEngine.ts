@@ -108,7 +108,10 @@ export class CustomerJourneyEngine {
              state = "ACCOUNT_CREATED";
         }
 
-        const activeOrder = activeOrders.length > 0 ? activeOrders[0] : null;
+        const userActiveOrders = activeOrders.filter(o => 
+            o.customer && currentUser && o.customer.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()
+        );
+        const activeOrder = userActiveOrders.length > 0 ? userActiveOrders[0] : null;
 
         if (activeOrder) {
             currentOrder = activeOrder;

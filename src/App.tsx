@@ -523,17 +523,6 @@ export default function App() {
               AuthorizationEngine.canAccessRoute("design", currentUser) ? (
                 <DesignStudioView
                   onAddToCart={handleAddToCart}
-                  onNavigateToTab={(
-                    tabId:
-                      | "home"
-                      | "design"
-                      | "dashboard"
-                      | "about"
-                      | "gallery"
-                      | "database"
-                      | "custom-order"
-                      | "login",
-                  ) => setActiveTab(tabId)}
                   openCartDrawer={() => setIsCartOpen(true)}
                   currentUser={currentUser}
                   orderContext={orderContext}

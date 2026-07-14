@@ -100,6 +100,7 @@ export default function DashboardView({
           <div className="lg:col-span-7 space-y-4 font-sans">
             <h2 className="text-xl font-serif mb-2">Welcome, {currentUser?.name || 'Guest'}</h2>
             
+            {journey.requiresAttention && (
               <>
                 <p className="text-sm opacity-80 mb-4">{journey.notification}</p>
                 <div className="flex gap-4">
@@ -115,7 +116,7 @@ export default function DashboardView({
                   </button>
                 </div>
               </>
-            
+            )}
           </div>
         </div>
       </section>
