@@ -16,7 +16,8 @@ export class AuthorizationEngine {
     "techpalavabox@gmail.com",
     "f.o.startups@gmail.com",
     "vaprecfamily@gmail.com",
-    "milltechbox@gmail.com"
+    "millsakabana@gmail.com",
+    "millstechbox@gmail.com"
   ];
 
   static isAdminEmail(email?: string): boolean {

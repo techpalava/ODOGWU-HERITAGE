@@ -32,7 +32,7 @@ export function AdminAuthGuard({
       const user = result.user;
 
       let existingAcc = customers.find(
-        (acc) => acc.email.toLowerCase() === (user.email || "").toLowerCase(),
+        (acc) => (acc.email || "").trim().toLowerCase() === (user.email || "").trim().toLowerCase(),
       );
 
       if (!existingAcc) {
@@ -41,21 +41,33 @@ export function AdminAuthGuard({
           email: user.email || "",
           phone: user.phoneNumber || "",
           passcode: "1960", // Legacy compat
-          role: AuthorizationEngine.isAdminEmail(user.email) ? AuthorizationEngine.ROLES.SUPER_ADMINISTRATOR : "Verified Google Client", // Default role
+          role: AuthorizationEngine.resolveRole({ email: user.email } as any),
           orderStatus: "Fresh Passport Activation",
           method: "gmail",
         } as any;
         setCustomers([...customers, existingAcc]);
-      } else if (AuthorizationEngine.isAdminEmail(user.email)) {
-        // Ensure role is updated if they are an admin
-        existingAcc.role = AuthorizationEngine.ROLES.SUPER_ADMINISTRATOR;
+      } else {
+        // Ensure role is updated
+        existingAcc.role = AuthorizationEngine.resolveRole(existingAcc);
       }
       
       setCurrentUser(existingAcc!);
       setLoading(false);
     } catch (err: any) {
       console.error("Login failed:", err);
-      setError(err.message || "Failed to authenticate with Google.");
+      let friendlyMessage = "Google login failed. Please try again or contact support.";
+      if (err.code === "auth/unauthorized-domain") {
+        friendlyMessage = "Google login is not authorized for this website domain yet. Please contact support.";
+      } else if (err.code === "auth/operation-not-allowed") {
+        friendlyMessage = "Google login is not enabled yet. Please contact support.";
+      } else if (err.code === "auth/popup-blocked") {
+        friendlyMessage = "Your browser blocked the Google login window. Please allow popups and try again.";
+      } else if (err.code === "auth/popup-closed-by-user") {
+        friendlyMessage = "Google login was cancelled. Please try again.";
+      } else if (err.code === "auth/network-request-failed") {
+        friendlyMessage = "Network issue. Please check your connection and try again.";
+      }
+      setError(friendlyMessage);
       setLoading(false);
     }
   };

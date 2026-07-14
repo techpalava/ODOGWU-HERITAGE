@@ -11,13 +11,11 @@ import {
   Mail,
   Lock,
   User,
-  HelpCircle,
   ArrowRight,
   Smartphone,
   Check,
-  AlertCircle,
-  Globe,
   CheckCircle2,
+  XCircle,
   RefreshCw,
   } from "lucide-react";
 
@@ -41,7 +39,7 @@ export default function LoginView({
   const [activeMode, setActiveMode] = useState<"login" | "register">("login");
 
   // Registration sub-methods: 'email' | 'gmail' | 'phone'
-  const [regMethod, setRegMethod] = useState<"email" | "gmail" | "phone">(
+  const [regMethod, setRegMethod] = useState<"email" | "phone">(
     "email",
   );
 
@@ -134,7 +132,7 @@ export default function LoginView({
       const user = result.user;
       
       let existingAcc = accounts.find(
-        (acc) => acc.email.toLowerCase() === (user.email || "").toLowerCase(),
+        (acc) => (acc.email || "").trim().toLowerCase() === (user.email || "").trim().toLowerCase(),
       );
 
       if (!existingAcc) {
@@ -143,14 +141,14 @@ export default function LoginView({
           email: user.email || "",
           phone: user.phoneNumber || "",
           passcode: "1960",
-          role: AuthorizationEngine.isAdminEmail(user.email) ? AuthorizationEngine.ROLES.SUPER_ADMINISTRATOR : "Verified Google Client",
+          role: AuthorizationEngine.resolveRole({ email: user.email } as any),
           orderStatus: "Fresh Passport Activation",
           method: "gmail",
         } as any;
         const updated = [...accounts, existingAcc];
         setAccounts(updated);
-      } else if (AuthorizationEngine.isAdminEmail(user.email)) {
-        existingAcc.role = AuthorizationEngine.ROLES.SUPER_ADMINISTRATOR;
+      } else {
+        existingAcc.role = AuthorizationEngine.resolveRole(existingAcc);
       }
 
       setSuccessMsg(`Session activated: ${existingAcc.name}`);
@@ -159,7 +157,19 @@ export default function LoginView({
       }, 600);
     } catch (err: any) {
       console.error("Login failed:", err);
-      setError(err.message || "Failed to authenticate with Google.");
+      let friendlyMessage = "Google login failed. Please try again or contact support.";
+      if (err.code === "auth/unauthorized-domain") {
+        friendlyMessage = "Google login is not authorized for this website domain yet. Please contact support.";
+      } else if (err.code === "auth/operation-not-allowed") {
+        friendlyMessage = "Google login is not enabled yet. Please contact support.";
+      } else if (err.code === "auth/popup-blocked") {
+        friendlyMessage = "Your browser blocked the Google login window. Please allow popups and try again.";
+      } else if (err.code === "auth/popup-closed-by-user") {
+        friendlyMessage = "Google login was cancelled. Please try again.";
+      } else if (err.code === "auth/network-request-failed") {
+        friendlyMessage = "Network issue. Please check your connection and try again.";
+      }
+      setError(friendlyMessage);
     }
   };
 
@@ -352,81 +362,78 @@ export default function LoginView({
         {/* Dual Mode Tab Selector */}
         <div className="flex border-b border-gray-100 bg-heritage-cream/10">
           <button
+            type="button"
             onClick={() => {
               setActiveMode("login");
               setError("");
-              setSuccessMsg("");
             }}
-            className={`flex-1 py-3.5 text-xs uppercase font-bold tracking-wider border-b-2 transition-all ${
+            className={`flex-1 py-4 text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${
               activeMode === "login"
-                ? "border-heritage-gold text-heritage-green bg-white"
-                : "border-transparent text-heritage-ink/50 hover:text-heritage-ink hover:bg-gray-50"
+                ? "bg-white text-heritage-green border-b-2 border-heritage-gold"
+                : "text-heritage-ink/50 hover:text-heritage-green hover:bg-white/50"
             }`}
           >
-            Log In
+            <Lock size={14} /> Log In
           </button>
           <button
+            type="button"
             onClick={() => {
               setActiveMode("register");
               setError("");
-              setSuccessMsg("");
             }}
-            className={`flex-1 py-3.5 text-xs uppercase font-bold tracking-wider border-b-2 transition-all ${
+            className={`flex-1 py-4 text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${
               activeMode === "register"
-                ? "border-heritage-gold text-heritage-green bg-white"
-                : "border-transparent text-heritage-ink/50 hover:text-heritage-ink hover:bg-gray-50"
+                ? "bg-white text-heritage-green border-b-2 border-heritage-gold"
+                : "text-heritage-ink/50 hover:text-heritage-green hover:bg-white/50"
             }`}
           >
-            Create Account
+            <User size={14} /> Create Account
           </button>
         </div>
 
-        {/* Content Body */}
-        <div className="p-8 space-y-6">
+        <div className="p-6">
           {error && (
-            <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl font-medium flex items-start gap-2">
-              <AlertCircle size={15} className="shrink-0 mt-0.5" />
-              <span>{error}</span>
+            <div className="mb-6 p-3 bg-red-50 text-red-700 text-[10px] uppercase font-bold tracking-wider rounded-xl border border-red-200 flex items-start gap-2">
+              <span className="mt-0.5"><XCircle size={14} /></span>
+              <span className="flex-1 leading-snug">{error}</span>
             </div>
           )}
 
           {successMsg && (
-            <div className="p-3.5 bg-green-50 border border-green-200 text-green-700 text-xs rounded-xl font-medium flex items-start gap-2">
-              <CheckCircle2 size={15} className="shrink-0 mt-0.5" />
-              <span>{successMsg}</span>
+            <div className="mb-6 p-3 bg-green-50 text-green-700 text-[10px] uppercase font-bold tracking-wider rounded-xl border border-green-200 flex items-start gap-2">
+              <span className="mt-0.5"><CheckCircle2 size={14} /></span>
+              <span className="flex-1 leading-snug">{successMsg}</span>
             </div>
           )}
 
-          {/* MODE 1: LOG IN */}
+          {/* MODE 1: LOGIN */}
           {activeMode === "login" && (
             <form onSubmit={handleSignIn} className="space-y-4">
-              {/* Identifier */}
               <div className="space-y-1.5">
                 <label className="block text-[10px] uppercase font-bold text-heritage-ink/50 tracking-wider">
-                  Email Address or Phone Number
+                  Email Address
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-heritage-ink/30">
                     <Mail size={14} />
                   </div>
                   <input
-                    type="text"
+                    type="email"
                     value={loginIdentifier}
                     onChange={(e) => setLoginIdentifier(e.target.value)}
-                    placeholder="name@asml-corp.nl or +234..."
+                    placeholder="johndoe@gmail.com"
                     className="block w-full pl-10 pr-4 py-2.5 bg-heritage-cream/40 border border-gray-250 rounded-xl text-xs focus:ring-1 focus:ring-heritage-gold focus:border-heritage-gold outline-none text-heritage-ink font-medium"
                   />
                 </div>
               </div>
 
-              {/* Security PIN */}
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
                   <label className="block text-[10px] uppercase font-bold text-heritage-ink/50 tracking-wider">
-                    4-Digit Security PIN
+                    Security PIN
                   </label>
-                  <span className="text-[9px] text-heritage-gold font-bold flex items-center gap-0.5">
-                    <HelpCircle size={10} /> Legacy Auth Code: 1960 (Deprecated)
+                  <span className="text-[9px] text-heritage-gold hover:text-heritage-green cursor-pointer transition-colors">
+                    Forgot PIN?
                   </span>
                 </div>
                 <div className="relative">
@@ -458,8 +465,8 @@ export default function LoginView({
           {/* MODE 2: CREATE ACCOUNT */}
           {activeMode === "register" && (
             <div className="space-y-5">
-              {/* Three Sub-Methods Tab Heads */}
-              <div className="grid grid-cols-3 gap-2 bg-heritage-cream/30 p-1.5 rounded-xl border border-heritage-gold/10">
+              {/* Two Sub-Methods Tab Heads */}
+              <div className="grid grid-cols-2 gap-2 bg-heritage-cream/30 p-1.5 rounded-xl border border-heritage-gold/10">
                 <button
                   type="button"
                   onClick={() => {
@@ -474,22 +481,8 @@ export default function LoginView({
                 >
                   <Mail size={12} /> Email
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRegMethod("gmail");
-                    setError("");
-                    handleGoogleSignIn();
-                    
-                  }}
-                  className={`py-2 text-[10px] uppercase font-bold tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                    regMethod === "gmail"
-                      ? "bg-white text-heritage-green shadow-sm border border-heritage-gold/25"
-                      : "text-heritage-ink/65 hover:text-heritage-ink"
-                  }`}
-                >
-                  <Globe size={12} /> Gmail
-                </button>
+
+          
                 <button
                   type="button"
                   onClick={() => {
@@ -575,39 +568,7 @@ export default function LoginView({
                 </form>
               )}
 
-              {/* SUBMODE B: GMAIL/GOOGLE SIGN UP INTERFACE */}
-              {regMethod === "gmail" && (
-                <div className="p-4 rounded-2xl border border-dashed border-heritage-gold/30 bg-heritage-cream/10 text-center space-y-4">
-                  <div className="h-10 w-10 mx-auto rounded-full bg-heritage-gold/10 text-heritage-gold flex items-center justify-center">
-                    <Globe size={18} />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-heritage-green uppercase tracking-wide">
-                      Continue with Google Account
-                    </h4>
-                    <p className="text-[10px] text-heritage-ink/60 mt-1 max-w-xs mx-auto">
-                      Instantly connect your secure Gmail address to create your
-                      Bespoke digital passport.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleGoogleSignIn();
-                      
-                    }}
-                    className="w-full bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 transition duration-300 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2.5 shadow-sm cursor-pointer"
-                  >
-                    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
-                      <path
-                        fill="#EA4335"
-                        d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l3.245-3.125C18.23 1.956 15.485 1 12.24 1 6.033 1 1 6.033 1 12.24s5.033 11.24 11.24 11.24c6.478 0 10.793-4.537 10.793-10.985 0-.737-.08-1.3-.175-1.863h-10.618z"
-                      />
-                    </svg>
-                    Authorize via Google Account
-                  </button>
-                </div>
-              )}
+              
 
               {/* SUBMODE C: PHONE NUMBER SIGN UP WITH OTP */}
               {regMethod === "phone" && (
@@ -771,7 +732,7 @@ export default function LoginView({
             <div className="relative flex items-center">
               <div className="flex-grow border-t border-gray-150"></div>
               <span className="flex-shrink mx-3 text-[9px] text-heritage-ink/40 font-bold uppercase tracking-wider">
-                Gmail Login
+                Or continue with
               </span>
               <div className="flex-grow border-t border-gray-150"></div>
             </div>

@@ -75,6 +75,9 @@ interface AppState {
 
   // Data State
   isLoadingData: boolean;
+  hasLoadedBatches: boolean;
+  hasLoadedOrders: boolean;
+  hasLoadedBusinessSettings: boolean;
   currentUser: Customer | null;
   setCurrentUser: (user: Customer | null) => void;
   customers: Customer[];
@@ -183,6 +186,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Data State
   isLoadingData: true,
+  hasLoadedBatches: false,
+  hasLoadedOrders: false,
+  hasLoadedBusinessSettings: false,
   currentUser: null,
   setCurrentUser: (user) => {
     set({ currentUser: user });
@@ -352,7 +358,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       storeUnsubs.push(
         StorageService.subscribeToDocument<BusinessSettings>("settings", "business", (settings) => {
           if (settings) {
-            set({ businessSettings: settings });
+            set({ businessSettings: settings, hasLoadedBusinessSettings: true });
           }
         })
       );
@@ -415,7 +421,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       storeUnsubs.push(
         StorageService.subscribeToCollection<Batch>("batches", (batches) => {
-          set({ batches: processDynamicBatches(batches) });
+          set({ batches: processDynamicBatches(batches), hasLoadedBatches: true });
         })
       );
 
@@ -439,7 +445,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       storeUnsubs.push(
         StorageService.subscribeToCollection<MasterOrder>("orders", (ordersList) => {
-          set({ orders: ordersList });
+          set({ orders: ordersList, hasLoadedOrders: true });
         })
       );
 
@@ -459,6 +465,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         currentUser: session || null,
         // others are set via subscriptions
         businessSettings: savedBusinessSettings,
+        hasLoadedBusinessSettings: true,
         mediaLibrary: [],
         plugins: [],
         auditLogs: [],

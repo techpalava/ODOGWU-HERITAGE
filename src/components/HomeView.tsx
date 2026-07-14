@@ -31,7 +31,21 @@ export default function HomeView({
   onSelectStyle,
   onSelectFabric,
 }: HomeViewProps) {
-  const { isLoadingData, businessSettings, currentUser, customers, orders, batches, styles, cartItems, historicalOrders } = useAppStore();
+  const { 
+    hasLoadedBatches, 
+    hasLoadedOrders, 
+    hasLoadedBusinessSettings, 
+    businessSettings, 
+    currentUser, 
+    customers, 
+    orders, 
+    batches, 
+    styles, 
+    cartItems, 
+    historicalOrders 
+  } = useAppStore();
+
+  const isHeroDataReady = hasLoadedBatches && hasLoadedBusinessSettings && (!currentUser || hasLoadedOrders);
   const journey = CustomerJourneyEngine.getCurrentJourney({
     currentUser: currentUser as any,
     drafts: cartItems,
@@ -166,7 +180,7 @@ export default function HomeView({
             </p>
 
             <div className="flex flex-wrap gap-4 pt-4">
-              {isLoadingData ? (
+              {!isHeroDataReady ? (
                 <>
                   <div className="w-full sm:w-32 h-11 bg-white/10 rounded-xl animate-pulse" />
                   <div className="w-full sm:w-32 h-11 bg-white/10 rounded-xl animate-pulse" />
@@ -211,7 +225,7 @@ export default function HomeView({
           </div>{" "}
           {/* Group Status Card */}
           <div className="lg:col-span-5 font-sans">
-            {isLoadingData ? (
+            {!isHeroDataReady ? (
               <div className="rounded-2xl border border-heritage-gold/30 bg-heritage-forest/50 p-6 space-y-5 shadow-xl h-[240px] animate-pulse" />
             ) : (
               <div className="rounded-2xl border border-heritage-gold/30 bg-heritage-forest p-6 space-y-5 shadow-xl">
