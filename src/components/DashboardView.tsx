@@ -99,19 +99,23 @@ export default function DashboardView({
         <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           <div className="lg:col-span-7 space-y-4 font-sans">
             <h2 className="text-xl font-serif mb-2">Welcome, {currentUser?.name || 'Guest'}</h2>
-            <p className="text-sm opacity-80 mb-4">{journey.notification}</p>
-            <div className="flex gap-4">
-              <button 
-                onClick={() => onNavigateToTab(journey.destination)}
-                className="bg-heritage-gold text-heritage-forest px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer">
-                {journey.primaryAction}
-              </button>
-              <button 
-                onClick={() => onNavigateToTab(journey.destination)}
-                className="bg-transparent border border-white/30 hover:bg-white/10 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer">
-                {journey.secondaryAction}
-              </button>
-            </div>
+            
+              <>
+                <p className="text-sm opacity-80 mb-4">{journey.notification}</p>
+                <div className="flex gap-4">
+                  <button 
+                    onClick={() => onNavigateToTab(journey.destination)}
+                    className="bg-heritage-gold text-heritage-forest px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer">
+                    {journey.primaryAction}
+                  </button>
+                  <button 
+                    onClick={() => onNavigateToTab(journey.destination)}
+                    className="bg-transparent border border-white/30 hover:bg-white/10 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer">
+                    {journey.secondaryAction}
+                  </button>
+                </div>
+              </>
+            
           </div>
         </div>
       </section>
@@ -676,8 +680,8 @@ export default function DashboardView({
                         </strong>
                       </div>
                     </div>
+                  
                   )}
-
                   {/* Sizing Blueprint summary */}
                   <div className="text-[10px] text-heritage-ink/70 space-y-1 text-left">
                     <span className="font-bold text-heritage-green">

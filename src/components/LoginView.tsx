@@ -354,8 +354,7 @@ export default function LoginView({
             Customer Login
           </h2>
           <p className="relative text-xs text-heritage-beige/80 mt-1.5 leading-relaxed max-w-xs mx-auto">
-            Log in or create a custom tailoring profile with full cloud
-            specifications.
+            Log in or create an account.
           </p>
         </div>
 

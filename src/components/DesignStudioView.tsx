@@ -456,7 +456,7 @@ export const getBaseSewingPrice = (
 
 export default function DesignStudioView({
   onAddToCart,
-  onNavigateToTab: _onNavigateToTab,
+  onNavigateToTab,
   openCartDrawer,
   currentUser,
   orderContext,
@@ -1559,35 +1559,6 @@ export default function DesignStudioView({
           <div>
             <h4 className="font-bold text-sm mb-1">{routingPresentation.title}</h4>
             <p className="text-xs opacity-90 leading-relaxed">{routingPresentation.description}</p>
-          </div>
-        </div>
-      )}
-
-                  {/* Journey Engine Context Notification */}
-      {journey.notification && (
-        <div className="bg-heritage-cream/20 border border-heritage-gold/30 rounded-2xl p-4 text-xs font-sans text-heritage-green flex items-start gap-3 mb-6 shadow-sm">
-          <Info size={16} className="text-heritage-gold mt-0.5 shrink-0" />
-          <div className="flex-1 space-y-3">
-            <div>
-              <span className="font-bold uppercase tracking-wider block mb-0.5">Journey Context</span>
-              <p>{journey.notification}</p>
-            </div>
-            {journey.recommendedNextStep && (
-              <div className="bg-white/50 p-2.5 rounded-lg border border-heritage-gold/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div>
-                  <span className="font-bold text-[10px] text-heritage-gold uppercase tracking-wider block mb-0.5">Recommended Next Step</span>
-                  <span className="font-medium">{journey.recommendedNextStep}</span>
-                </div>
-                {journey.destination !== "design" && (
-                  <button 
-                    onClick={() => _onNavigateToTab(journey.destination as any)}
-                    className="shrink-0 bg-heritage-gold text-heritage-forest hover:bg-heritage-green hover:text-white transition px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-sm flex items-center gap-1.5"
-                  >
-                    {journey.primaryAction} <ArrowRight size={12} />
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -4482,6 +4453,26 @@ export default function DesignStudioView({
             )}
           </div>
         </div>
+          {journey.requiresAttention && (
+            <div className="mt-6 bg-heritage-green/5 border border-heritage-green/10 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between shadow-sm gap-4">
+              <div className="flex items-center gap-3">
+                <div className="text-heritage-gold mt-1 sm:mt-0">
+                  <AlertTriangle size={18} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-heritage-green mb-0.5">{journey.notification}</h4>
+                  <p className="text-xs text-heritage-ink/70">{journey.recommendedNextStep}</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => onNavigateToTab && onNavigateToTab(journey.destination)}
+                className="bg-heritage-gold text-heritage-forest hover:bg-heritage-gold/90 transition px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 min-h-[36px] whitespace-nowrap w-full sm:w-auto justify-center"
+              >
+                {journey.primaryAction} <ArrowRight size={14} />
+              </button>
+            </div>
+          )}
 
         {/* RIGHT COLUMN: Real-time billing estimation block */}
         <div className="lg:col-span-4 space-y-6">

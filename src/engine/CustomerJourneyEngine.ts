@@ -38,6 +38,7 @@ export interface JourneyModel {
   stepperPreviousLabel: string;
   stepperNextLabel: string;
   stepperSubmitLabel: string;
+  requiresAttention: boolean;
 }
 
 export interface CustomerContext {
@@ -96,12 +97,10 @@ export class CustomerJourneyEngine {
         let canContinue = true;
         let blockers: string[] = [];
         let recommendedNextStep = "View the gallery to see our styles.";
+        let requiresAttention = false;
 
         if (!currentUser) {
-            return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,
-                state, progress, currentOrder, primaryAction, secondaryAction,
-                destination, notification, workspace, canContinue, blockers, recommendedNextStep
-            };
+            return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel, state, progress, currentOrder, primaryAction, secondaryAction, destination, notification, workspace, canContinue, blockers, recommendedNextStep, requiresAttention };
         }
 
         const canViewPortal = AuthorizationEngine.canViewCustomerPortal(currentUser);
@@ -123,7 +122,7 @@ export class CustomerJourneyEngine {
                  workspace = "COMPLETED_ORDERS";
                  recommendedNextStep = "Share your look in the Community Gallery.";
             } else if (activeOrder.payment?.isPaid === false) {
-                 state = "PAYMENT_PENDING";
+                 state = "PAYMENT_PENDING"; requiresAttention = true;
                  progress = 25;
                  primaryAction = "Complete Payment";
                  secondaryAction = "View Order Details";
@@ -132,37 +131,34 @@ export class CustomerJourneyEngine {
                  workspace = activeOrder.batchType === "community" ? "COMMUNITY_ORDERS" : activeOrder.batchType === "alone" ? "INDIVIDUAL_ORDERS" : "PERSONALIZED_BATCHES";
                  recommendedNextStep = "Authorize Escrow Deposit to begin production.";
             } else if (activeOrder.shipment?.currentStage && activeOrder.shipment.currentStage > 1 && activeOrder.shipment.currentStage < 5) {
-                 state = "PRODUCTION";
+                 state = "PRODUCTION"; requiresAttention = true;
                  progress = 50;
-                 primaryAction = "Track Production";
+                 primaryAction = "View My Dashboard";
                  secondaryAction = "View Details";
                  destination = "dashboard";
                  notification = "Your attire is currently in production.";
                  workspace = activeOrder.batchType === "community" ? "COMMUNITY_ORDERS" : activeOrder.batchType === "alone" ? "INDIVIDUAL_ORDERS" : "PERSONALIZED_BATCHES";
                  recommendedNextStep = "Monitor production milestones in your dashboard.";
             } else if (activeOrder.shipment?.currentStage && activeOrder.shipment.currentStage >= 5) {
-                 state = "SHIPPING";
+                 state = "SHIPPING"; requiresAttention = true;
                  progress = 75;
-                 primaryAction = "Track Shipment";
+                 primaryAction = "View My Dashboard";
                  secondaryAction = "View Details";
                  destination = "dashboard";
                  notification = "Your attire is shipped and on its way.";
                  workspace = activeOrder.batchType === "community" ? "COMMUNITY_ORDERS" : activeOrder.batchType === "alone" ? "INDIVIDUAL_ORDERS" : "PERSONALIZED_BATCHES";
                  recommendedNextStep = "Check tracking for estimated arrival date.";
             } else {
-                 state = "PAYMENT_COMPLETED";
+                 state = "PAYMENT_COMPLETED"; requiresAttention = true;
                  progress = 30;
-                 primaryAction = "Track Order";
+                 primaryAction = "View My Dashboard";
                  secondaryAction = "View Details";
                  destination = "dashboard";
                  notification = "Payment received. Awaiting production start.";
                  workspace = activeOrder.batchType === "community" ? "COMMUNITY_ORDERS" : activeOrder.batchType === "alone" ? "INDIVIDUAL_ORDERS" : "PERSONALIZED_BATCHES";
                  recommendedNextStep = "Wait for production to begin.";
             }
-            return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,
-                state, progress, currentOrder, primaryAction, secondaryAction,
-                destination, notification, workspace, canContinue, blockers, recommendedNextStep
-            };
+            return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel, state, progress, currentOrder, primaryAction, secondaryAction, destination, notification, workspace, canContinue, blockers, recommendedNextStep, requiresAttention };
         }
 
         if (drafts && drafts.length > 0) {
@@ -203,10 +199,7 @@ export class CustomerJourneyEngine {
                 recommendedNextStep = "Choose Individual Order or personalized batch.";
             }
 
-            return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,
-                state, progress, currentOrder, primaryAction, secondaryAction,
-                destination, notification, workspace, canContinue, blockers, recommendedNextStep
-            };
+            return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel, state, progress, currentOrder, primaryAction, secondaryAction, destination, notification, workspace, canContinue, blockers, recommendedNextStep, requiresAttention };
         }
 
         if (currentUser && !currentUser.phone) {
@@ -218,10 +211,7 @@ export class CustomerJourneyEngine {
              notification = "Please complete your profile to continue.";
              workspace = "OVERVIEW";
              recommendedNextStep = "Add your phone number for delivery updates.";
-             return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,
-                state, progress, currentOrder, primaryAction, secondaryAction,
-                destination, notification, workspace, canContinue, blockers, recommendedNextStep
-            };
+             return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel, state, progress, currentOrder, primaryAction, secondaryAction, destination, notification, workspace, canContinue, blockers, recommendedNextStep, requiresAttention };
         }
 
         if (historicalOrders && historicalOrders.length > 0) {
@@ -233,10 +223,7 @@ export class CustomerJourneyEngine {
             notification = "Ready for your next bespoke attire?";
             workspace = "COMPLETED_ORDERS";
             recommendedNextStep = "Head to the Design Studio to create a new look.";
-            return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,
-                state, progress, currentOrder, primaryAction, secondaryAction,
-                destination, notification, workspace, canContinue, blockers, recommendedNextStep
-            };
+            return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel, state, progress, currentOrder, primaryAction, secondaryAction, destination, notification, workspace, canContinue, blockers, recommendedNextStep, requiresAttention };
         }
 
         state = "ACCOUNT_CREATED";
@@ -248,9 +235,6 @@ export class CustomerJourneyEngine {
         workspace = "OVERVIEW";
         recommendedNextStep = "Go to the Design Studio to select a style.";
 
-        return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel,
-            state, progress, currentOrder, primaryAction, secondaryAction,
-            destination, notification, workspace, canContinue, blockers, recommendedNextStep
-        };
+        return { stepperPreviousLabel, stepperNextLabel, stepperSubmitLabel, state, progress, currentOrder, primaryAction, secondaryAction, destination, notification, workspace, canContinue, blockers, recommendedNextStep, requiresAttention };
     }
 }
