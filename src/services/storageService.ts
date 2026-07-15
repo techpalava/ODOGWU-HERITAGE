@@ -28,6 +28,22 @@ import {
   onSnapshot
 } from "firebase/firestore";
 
+
+function deepEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  if (typeof a !== 'object' || typeof b !== 'object') return false;
+  
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  
+  for (const key of keysA) {
+    if (!keysB.includes(key) || !deepEqual(a[key], b[key])) return false;
+  }
+  return true;
+}
+
 function sanitizeForFirestore(val: any): any {
   if (val === undefined) {
     return null;
@@ -117,6 +133,7 @@ export const StorageService = {
     items: T[],
     getId: (item: T) => string,
   ) {
+    console.log("saveCollection called for:", collectionName);
     try {
       const existingDocs = await getDocs(collection(db, collectionName));
 
@@ -145,6 +162,7 @@ export const StorageService = {
       };
 
       // Upsert current items
+      let writes = 0;
       await Promise.all(items.map(async (item) => {
         const id = getId(item);
         const docRef = doc(db, collectionName, id);
@@ -153,18 +171,25 @@ export const StorageService = {
         const oldData = oldDoc ? oldDoc.data() : null;
         
         const processedItem = await ImageService.uploadAllImagesInObject(item, collectionName, id);
+        const sanitizedNewData = sanitizeForFirestore(processedItem);
         
         if (oldData) {
           const oldUrls = extractStorageUrls(oldData);
-          const newUrls = extractStorageUrls(processedItem);
+          const newUrls = extractStorageUrls(sanitizedNewData);
           const orphanedUrls = oldUrls.filter(url => !newUrls.includes(url));
           await Promise.all(orphanedUrls.map(url => ImageService.deleteImageFromStorage(url)));
+          
+          // Only write if data actually changed
+          if (deepEqual(oldData, sanitizedNewData)) {
+             return;
+          }
         }
 
-        batch.set(docRef, sanitizeForFirestore(processedItem));
+        batch.set(docRef, sanitizedNewData);
+        writes++;
       }));
-
-      await batch.commit();
+      if (writes > 0) await batch.commit();
+      
     } catch (error) {
       console.error(`Error saving collection ${collectionName}:`, error);
     }
@@ -207,7 +232,13 @@ export const StorageService = {
 
       const processedSettings = await ImageService.uploadAllImagesInObject(settings, "settings", "business");
 
+      const sanitizedSettings = sanitizeForFirestore(processedSettings);
+
       if (oldData) {
+        if (deepEqual(oldData, sanitizedSettings)) {
+           return;
+        }
+
         const extractStorageUrls = (obj: any): string[] => {
           let urls: string[] = [];
           if (obj === undefined || obj === null) return urls;
@@ -234,7 +265,7 @@ export const StorageService = {
 
       await setDoc(
         docRef,
-        sanitizeForFirestore(processedSettings),
+        sanitizedSettings,
       );
     } catch (error) {
       console.error(

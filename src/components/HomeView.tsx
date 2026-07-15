@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useRef } from "react";
-import { Sparkles, ArrowRight, ShieldCheck, Award } from "lucide-react";
+import { Sparkles, ArrowRight, ShieldCheck, Award, Shirt, Camera } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { OrderContext, CommunityPhoto, Showpiece, Fabric } from "../types";
 import { useAppStore } from "../store/useAppStore";
@@ -144,6 +144,49 @@ export default function HomeView({
 
   return (
     <div id="home-view-container" className="space-y-16">
+            {/* Quick Action Bar */}
+      <section className="bg-white rounded-2xl p-4 shadow-sm border border-heritage-gold/20 mb-2 sm:mb-4 relative z-20">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <button
+            id="btn-quick-join-cohort"
+            onClick={() => {
+              onNavigateToTab(heroDestination as any);
+              if (heroDestination === "custom-order") {
+                setTimeout(() => {
+                  const el = document.getElementById("option-create-group");
+                  if (el) {
+                    el.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }
+                }, 200);
+              }
+            }}
+            className="w-full bg-heritage-green text-white hover:bg-heritage-forest transition duration-300 min-h-[52px] px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-wider shadow-sm flex items-center justify-center gap-2 cursor-pointer border border-transparent"
+          >
+            <Sparkles size={16} className="text-heritage-gold shrink-0" />
+            <span className="truncate">{firstHeroPrimaryAction}</span>
+            <ArrowRight size={14} className="opacity-70 shrink-0" />
+          </button>
+          
+          <button
+            id="btn-quick-custom-order"
+            onClick={() => onNavigateToTab("custom-order")}
+            className="w-full bg-heritage-cream text-heritage-green hover:bg-[#EBE5DA] transition duration-300 min-h-[52px] px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-wider shadow-sm flex items-center justify-center gap-2 cursor-pointer border border-heritage-gold/30"
+          >
+            <Shirt size={16} className="text-heritage-gold shrink-0" />
+            <span className="truncate">Custom Order</span>
+          </button>
+
+          <button
+            id="btn-quick-gallery"
+            onClick={() => onNavigateToTab("gallery")}
+            className="w-full bg-white text-heritage-green hover:bg-gray-50 transition duration-300 min-h-[52px] px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-wider shadow-sm flex items-center justify-center gap-2 cursor-pointer border border-gray-200"
+          >
+            <Camera size={16} className="text-heritage-ink/60 shrink-0" />
+            <span className="truncate">Style Gallery</span>
+          </button>
+        </div>
+      </section>
+
       {/* Editorial Luxury Hero Header */}
       <section className="relative overflow-hidden rounded-3xl bg-heritage-green p-8 sm:p-12 lg:p-16 text-white shadow-2xl border border-heritage-gold/20">
         <div className="absolute -right-24 -bottom-24 w-96 h-96 rounded-full border border-heritage-gold/10 pointer-events-none"></div>
@@ -179,49 +222,7 @@ export default function HomeView({
               celebrate Nigeria's rich and diverse cultural heritage.
             </p>
 
-            <div className="flex flex-wrap gap-4 pt-4">
-              {!isHeroDataReady ? (
-                <>
-                  <div className="w-full sm:w-32 h-11 bg-white/10 rounded-xl animate-pulse" />
-                  <div className="w-full sm:w-32 h-11 bg-white/10 rounded-xl animate-pulse" />
-                </>
-              ) : (
-                <>
-              <button
-                  id="btn-hero-join-cohort"
-                  onClick={() => {
-                    onNavigateToTab(heroDestination as any);
-                    if (heroDestination === "custom-order") {
-                      // Allow time for lazy loading and rendering
-                      setTimeout(() => {
-                        const el = document.getElementById("option-create-group");
-                        if (el) {
-                          el.scrollIntoView({ behavior: "smooth", block: "start" });
-                        }
-                      }, 200);
-                    }
-                  }}
-                  className="bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 min-h-[44px] px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto"
-                >
-                  {firstHeroPrimaryAction} <ArrowRight size={14} />
-                </button>
 
-              <button
-                id="btn-hero-custom-order"
-                onClick={() => onNavigateToTab("custom-order")}
-                className="bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 min-h-[44px] px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto"
-              >
-                Custom Order <ArrowRight size={14} />
-              </button>
-              <button
-                id="btn-hero-how-it-works"
-                onClick={() => onNavigateToTab("gallery")}
-                className="border border-heritage-beige/55 text-white hover:bg-white/10 transition duration-300 min-h-[44px] px-8 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider cursor-pointer w-full sm:w-auto"
-              >
-                Style Gallery
-              </button>
-              </>)}
-            </div>
           </div>{" "}
           {/* Group Status Card */}
           <div className="lg:col-span-5 font-sans">
