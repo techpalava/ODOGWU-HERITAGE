@@ -25,7 +25,7 @@ import { signOut } from "firebase/auth";
 import { AuthorizationEngine } from "./engine/AuthorizationEngine";
 import { useAppStore } from "./store/useAppStore";
 import { CustomerJourneyEngine } from "./engine/CustomerJourneyEngine";
-import { getCurrentCommunityBatch } from "./utils/batchUtils";
+import { getCurrentRegistrationBatch } from "./utils/batchUtils";
 import { CapacityService } from "./services/CapacityService";
 
 // Lazy load modular view components for performance optimization
@@ -167,22 +167,24 @@ export default function App() {
     }
   }, [customGroups, setCustomGroups]);
 
-  const openBatch = getCurrentCommunityBatch(batches);
-  const activeCommunityBatch: OrderContext | null = openBatch
+  
+  const registrationBatch = getCurrentRegistrationBatch(batches);
+  
+  const activeCommunityBatch: OrderContext | null = registrationBatch
     ? {
         orderType: "Community",
-        batchId: openBatch.id,
-        batchName: openBatch.name,
-        closingDate: openBatch.endDate,
-        deliveryWindow: openBatch.estimatedDelivery || "",
-        expectedParticipants: CapacityService.getTargetCapacity(openBatch),
-        currentMembers: CapacityService.getReservedCapacity(openBatch),
-        allowOrders: openBatch.allowOrders,
-        batchStatus: openBatch.status,
-        pickupLocation:
-          openBatch.pickupLocation || businessSettings.productionSettings.defaultPickupLocation || "Veldhoven Campus Lockers",
+        batchId: registrationBatch.id,
+        batchName: registrationBatch.name,
+        closingDate: registrationBatch.endDate,
+        deliveryWindow: registrationBatch.estimatedDelivery || "",
+        expectedParticipants: CapacityService.getTargetCapacity(registrationBatch),
+        currentMembers: CapacityService.getReservedCapacity(registrationBatch),
+        allowOrders: registrationBatch.allowOrders,
+        batchStatus: registrationBatch.status,
+        pickupLocation: registrationBatch.pickupLocation || businessSettings.productionSettings.defaultPickupLocation || "Veldhoven Campus Lockers",
       }
     : null;
+
 
   // Active masterOrder synced from current user's latest order in orders database, or first order as default
   const [masterOrder, setMasterOrder] = useState<MasterOrder | null>(null);
