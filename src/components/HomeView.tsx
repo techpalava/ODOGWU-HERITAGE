@@ -12,6 +12,9 @@ import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { CapacityService } from "../services/CapacityService";
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 import ankaraLadyImage from "../assets/images/couture_gown_photo_1782308183701.jpg";
+import ankaraManImage from "../assets/images/grand_agbada_photo_1782308152763.jpg";
+import ankaraKidsImage from "../assets/images/regenerated_image_1784258480371.png";
+import ankaraFamilyImage from "../assets/images/regenerated_image_1784259611604.png";
 
 interface HomeViewProps {
   onNavigateToTab: (tabId: string) => void;
@@ -56,6 +59,38 @@ export default function HomeView({
   const heroPrimaryAction = canJoinActiveBatch ? `Join ${(activeCommunityBatch as any)?.name || (activeCommunityBatch as any)?.batchName || ''}`.trim() : "Create Custom Order";
   const firstHeroPrimaryAction = canJoinActiveBatch ? `Join ${(activeCommunityBatch as any)?.name || (activeCommunityBatch as any)?.batchName || ''}`.trim() : "Create Group";
   const heroDestination = canJoinActiveBatch ? "design" : "custom-order";
+
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  const heroSlides = [
+    {
+      id: "slide-1",
+      src: ankaraLadyImage,
+      alt: "Lady wearing elegant Ankara traditional attire",
+    },
+    {
+      id: "slide-2",
+      src: ankaraManImage,
+      alt: "Man wearing elegant Ankara traditional attire",
+    },
+    {
+      id: "slide-3",
+      src: ankaraKidsImage,
+      alt: "Girl and boy wearing Ankara traditional attire",
+    },
+    {
+      id: "slide-4",
+      src: ankaraFamilyImage,
+      alt: "Family wearing coordinated Ankara traditional attire",
+    }
+  ];
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % heroSlides.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [heroSlides.length]);
 
   const [, setNow] = useState(new Date());
   const [fabricFilter, setFabricFilter] = useState("All Fabrics");
@@ -239,16 +274,31 @@ export default function HomeView({
             </div>
           </div>
           
-          {/* Hero Image */}
+          {/* Hero Image Carousel */}
           <div className="lg:col-span-5 font-sans relative flex justify-center lg:justify-end mt-8 lg:mt-0">
-            <div className="rounded-2xl overflow-hidden border border-heritage-gold/30 shadow-2xl relative aspect-[3/4] w-full max-w-[320px] lg:max-w-sm">
-              <img
-                src={ankaraLadyImage}
-                alt="Lady wearing elegant Ankara traditional attire"
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
+            <div className="rounded-2xl overflow-hidden border border-heritage-gold/30 shadow-2xl relative aspect-[3/4] w-full max-w-[320px] lg:max-w-sm bg-heritage-forest/50">
+              {heroSlides.map((slide, index) => (
+                <img
+                  key={slide.id}
+                  src={slide.src}
+                  alt={slide.alt}
+                  className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${index === currentSlide ? "opacity-100" : "opacity-0"}`}
+                  referrerPolicy="no-referrer"
+                />
+              ))}
               <div className="absolute inset-0 bg-gradient-to-t from-heritage-forest/60 to-transparent pointer-events-none"></div>
+              
+              {/* Slide Indicators */}
+              <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 z-10">
+                {heroSlides.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setCurrentSlide(index)}
+                    className={`h-1.5 rounded-full transition-all duration-500 cursor-pointer ${currentSlide === index ? "bg-heritage-gold w-5" : "bg-white/40 w-1.5 hover:bg-white/70"}`}
+                    aria-label={`Go to slide ${index + 1}`}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>
