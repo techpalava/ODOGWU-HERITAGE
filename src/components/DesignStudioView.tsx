@@ -1225,11 +1225,7 @@ export default function DesignStudioView({
     setValidationError("");
 
     // Step validation checks
-    if (currentStep === 1 && !selectedStyle) {
-      setValidationError("Please select a style template to proceed.");
-      return;
-    }
-    if (currentStep === 2) {
+    if (currentStep === 1) {
       if (!selectedFabric) {
         setValidationError("Please select a fabric swatch option.");
         return;
@@ -1240,6 +1236,10 @@ export default function DesignStudioView({
         );
         return;
       }
+    }
+    if (currentStep === 2 && !selectedStyle) {
+      setValidationError("Please select a style template to proceed.");
+      return;
     }
     if (currentStep === 3) {
       const hasConsented =
@@ -1528,8 +1528,8 @@ export default function DesignStudioView({
 
   // Visual helper for stepper header
   const stepTitles = [
-    "Style Choice",
     "Fabric Selection",
+    "Style Choice",
     "Custom Accents",
     "Virtual Try-On",
     "Sizing Input",
@@ -1579,10 +1579,12 @@ export default function DesignStudioView({
         </div>
 
         {/* Minimal horizontal list showing step dots (fully clickable for passed steps) */}
-        <div className="flex justify-between items-center text-[9px] sm:text-[10px] text-heritage-ink/50 uppercase tracking-widest font-semibold pt-1.5 px-0.5 sm:px-1">
+        <div className="flex justify-between items-start text-[9px] sm:text-[10px] text-heritage-ink/50 uppercase tracking-widest font-semibold pt-1.5 px-0.5 sm:px-1">
           {stepTitles.map((title, idx) => {
             const isPassed = idx + 1 < currentStep;
             const isCurrent = idx + 1 === currentStep;
+            const shortLabels = ["Fabric", "Style", "Accents", "Try-On", "Sizing", "Dims", "Delivery", "Notes", "Review"];
+            const shortLabel = shortLabels[idx];
             return (
               <button
                 key={idx}
@@ -1608,7 +1610,7 @@ export default function DesignStudioView({
                     (localBiometricConsent === "declined" ||
                       storeUser?.biometricConsent?.status === "declined"))
                 }
-                className={`group relative flex items-center justify-center transition-all duration-200 p-1 sm:p-1.5 rounded-lg focus:outline-none focus:ring-1 focus:ring-heritage-gold/30 ${
+                className={`group relative flex flex-col items-center justify-start transition-all duration-200 p-0.5 sm:p-1 rounded-lg focus:outline-none focus:ring-1 focus:ring-heritage-gold/30 ${
                   isCurrent
                     ? "text-heritage-gold font-bold scale-110 cursor-default"
                     : isPassed &&
@@ -1617,12 +1619,18 @@ export default function DesignStudioView({
                           (localBiometricConsent === "declined" ||
                             storeUser?.biometricConsent?.status === "declined")
                         )
-                      ? "text-heritage-green cursor-pointer hover:scale-115 hover:text-heritage-forest hover:bg-heritage-cream/30"
+                      ? "text-heritage-green cursor-pointer hover:scale-110 hover:text-heritage-forest hover:bg-heritage-cream/30"
                       : "text-heritage-ink/30 cursor-not-allowed"
                 }`}
               >
-                <span className="font-mono text-[11px] sm:text-xs">
+                <span className="font-mono text-[11px] sm:text-xs leading-none">
                   {idx + 1}
+                </span>
+                <span className="mt-1 text-[7px] sm:text-[8px] uppercase tracking-wider hidden sm:block whitespace-nowrap">
+                  {shortLabel}
+                </span>
+                <span className="mt-1 text-[6px] uppercase tracking-wide block sm:hidden whitespace-nowrap overflow-hidden text-ellipsis max-w-[32px]">
+                  {shortLabel}
                 </span>
 
                 {/* Custom Tooltip */}
@@ -1654,12 +1662,12 @@ export default function DesignStudioView({
       {/* RENDER DYNAMIC STEPS CONTAINER */}
       <main className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-8 bg-white border border-heritage-gold/15 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
-          {/* STEP 1: Style Template Selection */}
-          {currentStep === 1 && (
+          {/* STEP 2: Style Template Selection */}
+          {currentStep === 2 && (
             <div className="space-y-6">
               <div className="space-y-1 text-center sm:text-left">
                 <span className="text-[10px] uppercase font-mono text-heritage-gold tracking-wider block">
-                  Step 1 of 9
+                  Step 2 of 9
                 </span>
                 <h2 className="text-lg sm:text-2xl font-serif font-bold text-heritage-green">
                   Choose Design Style
@@ -1960,12 +1968,12 @@ export default function DesignStudioView({
             </div>
           )}
 
-          {/* STEP 2: Fabric Swatches Selection */}
-          {currentStep === 2 && (
+          {/* STEP 1: Fabric Swatches Selection */}
+          {currentStep === 1 && (
             <div className="space-y-6 font-sans">
               <div className="space-y-1 text-center sm:text-left">
                 <span className="text-[10px] uppercase font-mono text-heritage-gold tracking-wider block">
-                  Step 2 of 9
+                  Step 1 of 9
                 </span>
                 <h2 className="text-lg sm:text-2xl font-serif font-bold text-heritage-green">
                   Select Fabric

@@ -74,7 +74,8 @@ export class CustomerJourneyEngine {
             }
             
             stepperNextLabel = "Continue to Next Step";
-            if (currentStep === 1) stepperNextLabel = "Proceed with this Style";
+            if (currentStep === 1) stepperNextLabel = "Proceed with this Fabric";
+            if (currentStep === 2) stepperNextLabel = "Proceed with this Style";
             if (currentStep === totalSteps - 1) stepperNextLabel = "Review Order Details";
             
             stepperSubmitLabel = "Secure My Order Selection";
