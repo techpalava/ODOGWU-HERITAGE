@@ -55,6 +55,20 @@ export interface StyleCategory {
     secondary: string;
   };
   constructionDetails?: ConstructionDetail[];
+  
+  // Garment detail configs
+  supportedGarmentDetails?: {
+    trousers?: boolean;
+    shorts?: boolean;
+    skirt?: boolean;
+    dress?: boolean;
+    sleeves?: boolean;
+    pockets?: boolean;
+    embroidery?: boolean;
+    accessories?: boolean;
+    lining?: boolean;
+  };
+  defaultGarmentDetails?: DesignSelections;
 }
 
 export interface Fabric {
@@ -94,14 +108,30 @@ export interface Design {
 }
 
 export interface DesignSelections {
-  collar: string;
-  embroidery: string;
-  sleeve: string;
-  pocket: string;
-  additionalCap: boolean; // cap toggle for Men's Senator/Agbada
-  hemFinish: string;
-  hasLining?: boolean; // L5 Policy
-  optionalAccessories?: string[]; // Headwear Accent, Traditional Jewelry
+  // Old fields for backward compat
+  collar?: string;
+  embroidery?: string;
+  sleeve?: string;
+  pocket?: string;
+  additionalCap?: boolean;
+  hemFinish?: string;
+  hasLining?: boolean;
+  optionalAccessories?: string[];
+
+  // New detailed garment fields
+  topLength?: string;
+  topPocket?: string;
+  dressLength?: string;
+  dressPocket?: string;
+  sleeveLength?: string;
+  trouserFastening?: string;
+  trouserPocket?: string;
+  shortFastening?: string;
+  shortPocket?: string;
+  skirtLength?: string;
+  skirtPocket?: string;
+  embroideryDesign?: string;
+  accessories?: string[];
 }
 
 export interface GarmentSelection {
