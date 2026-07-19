@@ -1771,9 +1771,9 @@ export default function DesignStudioView({
               </div>
 
               {/* Styles Grid */}
-              <div className="grid grid-cols-1 gap-4 font-sans">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 font-sans">
                 {paginatedStyles.length === 0 ? (
-                  <div className="p-8 text-center border-2 border-dashed border-gray-200 rounded-2xl space-y-3">
+                  <div className="p-8 text-center border-2 border-dashed border-gray-200 rounded-2xl space-y-3 sm:col-span-2">
                     <SlidersHorizontal
                       className="mx-auto text-heritage-ink/30"
                       size={32}
@@ -1798,118 +1798,79 @@ export default function DesignStudioView({
                     <div
                       key={style.id}
                       onClick={() => handleStyleChange(style)}
-                      className={`p-4 sm:p-5 rounded-2xl border-2 cursor-pointer transition flex gap-4 sm:gap-5 items-center ${
+                      className={`flex flex-col overflow-hidden rounded-2xl border-2 cursor-pointer transition-all duration-300 ${
                         selectedStyle.id === style.id
-                          ? "border-heritage-gold bg-heritage-cream/40 shadow-sm"
-                          : "border-gray-150 bg-white hover:border-heritage-gold/40"
+                          ? "border-heritage-gold shadow-md bg-heritage-cream/20"
+                          : "border-gray-150 bg-white shadow-sm hover:border-heritage-gold/40 hover:shadow-md"
                       }`}
                     >
-                      {/* Style Image on the Left */}
+                      {/* Large Image at Top */}
                       {style.image && (
-                        <div className="flex flex-col items-center gap-1.5 shrink-0">
-                          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden bg-heritage-cream border border-heritage-gold/10 shadow-sm relative">
-                            <img
-                              loading="lazy"
-                              src={style.image}
-                              alt={style.name}
-                              className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
-                              referrerPolicy="no-referrer"
-                            />
-                          </div>
+                        <div className="relative w-full aspect-[4/5] sm:aspect-[3/4] bg-heritage-cream/30 border-b border-gray-100 overflow-hidden shrink-0 flex items-center justify-center p-2">
+                          <img
+                            loading="lazy"
+                            src={style.image}
+                            alt={style.name}
+                            className="w-full h-full object-contain transition-transform duration-500 hover:scale-[1.03]"
+                            referrerPolicy="no-referrer"
+                          />
+                          {/* Selection indicator */}
+                          {selectedStyle.id === style.id && (
+                            <div className="absolute top-3 right-3 bg-heritage-gold text-white p-1.5 rounded-full shadow-lg z-10">
+                              <Check size={14} strokeWidth={3} />
+                            </div>
+                          )}
+                          {/* Detected Colors */}
                           {style.detectedColors && (
-                            <div className="flex items-center gap-1 bg-white px-1.5 py-0.5 rounded-full border border-gray-150 shadow-sm">
+                            <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full border border-gray-150 shadow-sm z-10">
                               <div
-                                className="w-2.5 h-2.5 rounded-full border border-gray-200"
-                                style={{
-                                  backgroundColor: style.detectedColors.main,
-                                }}
+                                className="w-3 h-3 rounded-full border border-gray-200 shadow-sm"
+                                style={{ backgroundColor: style.detectedColors.main }}
                                 title="Main Color"
                               ></div>
                               <div
-                                className="w-2.5 h-2.5 rounded-full border border-gray-200"
-                                style={{
-                                  backgroundColor:
-                                    style.detectedColors.secondary,
-                                }}
+                                className="w-3 h-3 rounded-full border border-gray-200 shadow-sm"
+                                style={{ backgroundColor: style.detectedColors.secondary }}
                                 title="Secondary Color"
                               ></div>
                             </div>
                           )}
                         </div>
                       )}
-
-                      <div className="flex-grow min-w-0">
-                        {/* Mobile Layout */}
-                        <div className="sm:hidden flex flex-col justify-center space-y-1">
-                          <div className="flex justify-between items-start gap-2">
-                            <h3 className="font-serif text-sm font-semibold text-heritage-green line-clamp-2 leading-tight">
-                              {style.name}
-                            </h3>
-                            <span className="text-[9.5px] text-heritage-gold font-bold font-mono shrink-0 pt-0.5">
-                              €{(style.basePrice || 0).toFixed(2)}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                            <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-green/10 text-heritage-green border border-heritage-green/20">
-                              {style.gender}
-                            </span>
-                            <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-gold/10 text-heritage-gold border border-heritage-gold/20">
-                              {style.outfitType || "Senator Set"}
-                            </span>
-                            <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-green text-heritage-gold border border-heritage-gold/20">
-                              {style.garmentComposition || "2-Piece Set"}
-                            </span>
-                            {style.fabricCategory &&
-                              style.fabricCategory !== "Any" && (
-                                <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded border border-heritage-gold/30 text-heritage-gold bg-heritage-gold/5">
-                                  {style.fabricCategory}
-                                </span>
-                              )}
-                          </div>
-                          <p className="text-[10px] text-heritage-ink/75 leading-snug pt-1">
-                            {style.description}
-                          </p>
+                      
+                      {/* Card Content Below */}
+                      <div className="p-4 sm:p-5 flex flex-col flex-grow bg-white">
+                        <div className="flex justify-between items-start gap-2 mb-3">
+                          <h3 className="font-serif text-sm sm:text-base font-bold text-heritage-green leading-tight">
+                            {style.name}
+                          </h3>
+                          <span className="text-[11px] sm:text-xs text-heritage-gold font-bold font-mono shrink-0 pt-0.5">
+                            €{(style.basePrice || 0).toFixed(2)}
+                          </span>
                         </div>
-
-                        {/* Desktop Layout */}
-                        <div className="hidden sm:block space-y-1.5">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="font-serif text-sm font-bold text-heritage-green truncate max-w-[150px] lg:max-w-[200px]">
-                              {style.name}
-                            </h3>
-                            <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-green/10 text-heritage-green border border-heritage-green/20">
-                              {style.gender}
+                        
+                        {/* Badges */}
+                        <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                          <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-green/10 text-heritage-green border border-heritage-green/20">
+                            {style.gender}
+                          </span>
+                          <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-gold/10 text-heritage-gold border border-heritage-gold/20">
+                            {style.outfitType || "Senator Set"}
+                          </span>
+                          <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-green text-heritage-gold border border-heritage-gold/20">
+                            {style.garmentComposition || "2-Piece Set"}
+                          </span>
+                          {style.fabricCategory && style.fabricCategory !== "Any" && (
+                            <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded border border-heritage-gold/30 text-heritage-gold bg-heritage-gold/5">
+                              {style.fabricCategory}
                             </span>
-                            <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-gold/10 text-heritage-gold border border-heritage-gold/20">
-                              {style.outfitType || "Senator Set"}
-                            </span>
-                            <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-green text-heritage-gold border border-heritage-gold/20">
-                              {style.garmentComposition || "2-Piece Set"}
-                            </span>
-                            {style.fabricCategory &&
-                              style.fabricCategory !== "Any" && (
-                                <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded border border-heritage-gold/30 text-heritage-gold bg-heritage-gold/5">
-                                  {style.fabricCategory}
-                                </span>
-                              )}
-                            <span className="text-[9px] text-heritage-gold font-bold font-mono ml-auto shrink-0">
-                              €{(style.basePrice || 0).toFixed(2)}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-heritage-ink/75 leading-relaxed line-clamp-2 sm:line-clamp-none">
-                            {style.description}
-                          </p>
+                          )}
                         </div>
-                      </div>
-
-                      <div
-                        className={`h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                          selectedStyle.id === style.id
-                            ? "border-heritage-gold bg-heritage-gold text-white"
-                            : "border-gray-300"
-                        }`}
-                      >
-                        {selectedStyle.id === style.id && <Check size={10} />}
+                        
+                        {/* Description */}
+                        <p className="text-[10px] sm:text-[11px] text-heritage-ink/75 leading-relaxed line-clamp-2 mt-auto">
+                          {style.description}
+                        </p>
                       </div>
                     </div>
                   ))
