@@ -35,7 +35,6 @@ import {
 import { DESIGN_OPTIONS } from "../data/mockData";
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
 import { ApiService } from "../services/api";
-import { useReferenceDataFallback } from "../hooks/useReferenceData";
 import { useAppStore } from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { CapacityService } from "../services/CapacityService";
@@ -46,6 +45,7 @@ import OrderRoutingPanel from "./OrderRoutingPanel";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
+import { DESIGN_CATEGORIES_LIST } from "./DesignCategories";
 
 // Cache for loaded image URLs to prevent skeleton flicker across renders
 const loadedImageCache = new Set<string>();
@@ -437,7 +437,7 @@ export const getBaseSewingPrice = (
 ): number => {
   const oType = style.outfitType || style.name;
   const comp = getGarmentCompositionFromCode(
-    garment.code || "",
+    garment?.code || "",
     style.garmentComposition || "2-Piece Set",
   );
   const key = `${oType}_${comp}`;
@@ -481,14 +481,6 @@ export default function DesignStudioView({
     allBatches: storeBatches,
     stepperContext: { currentStep, totalSteps: 9 }
   });
-
-  const outfitTypes = useReferenceDataFallback("outfit_types", [
-    { value: "Senator Set", label: "Senator Set" },
-    { value: "Kaftan Set", label: "Kaftan Set" },
-    { value: "Agbada", label: "Agbada" },
-    { value: "Boubou", label: "Boubou" },
-    { value: "Maxi Gown", label: "Maxi Gown" },
-  ]);
 
 
   // GDPR Biometric Consent State
@@ -564,22 +556,18 @@ export default function DesignStudioView({
   }, [orderContext, storeBatches]);
 
   // STEP 1: Style Selection, Filtering & Pagination States
-  const [selectedStyle, setSelectedStyle] = useState<StyleCategory>(
-    styles[0] || ({ id: "", name: "", description: "", basePrice: 0, gender: "unisex", tags: [], garments: [], images: [] } as unknown as StyleCategory),
-  );
+  const [selectedStyle, setSelectedStyle] = useState<StyleCategory | null>(null);
   const [styleSearchInput, setStyleSearchInput] = useState<string>("");
   const [styleSearch, setStyleSearch] = useState<string>("");
-  const [genderFilter, setGenderFilter] = useState<string>("all");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [priceFilter, setPriceFilter] = useState<string>("all");
+  const [designCategoryFilter, setDesignCategoryFilter] = useState<string>("All Designs");
   const [stylePage, setStylePage] = useState<number>(1);
 
   // Sync selectedStyle if styles prop changes and current selectedStyle is not in styles
   useEffect(() => {
-    if (styles.length > 0 && !styles.some((s) => s.id === selectedStyle.id)) {
-      setSelectedStyle(styles[0]);
+    if (selectedStyle && styles.length > 0 && !styles.some((s) => s.id === selectedStyle.id)) {
+      setSelectedStyle(null);
     }
-  }, [styles]);
+  }, [styles, selectedStyle]);
 
   // Debounce Style Search
   useEffect(() => {
@@ -592,7 +580,7 @@ export default function DesignStudioView({
   // Reset page to 1 when filters change to avoid empty pages
   useEffect(() => {
     setStylePage(1);
-  }, [styleSearch, genderFilter, typeFilter, priceFilter]);
+  }, [styleSearch, designCategoryFilter]);
 
   // Compute filtered styles
   const filteredStyles = styles.filter((style) => {
@@ -601,30 +589,24 @@ export default function DesignStudioView({
       style.name.toLowerCase().includes(styleSearch.toLowerCase()) ||
       style.description.toLowerCase().includes(styleSearch.toLowerCase());
 
-    // 2. Gender
-    const matchesGender =
-      genderFilter === "all" || style.gender === genderFilter;
-
-    // 3. Type
-    let matchesType = true;
-    if (typeFilter !== "all") {
-      matchesType =
-        (style.outfitType &&
-          style.outfitType.toLowerCase() === typeFilter.toLowerCase()) ||
-        style.name.toLowerCase().includes(typeFilter.toLowerCase());
+    // 2. Design Category Filtering
+    let matchesCategory = true;
+    const txt = (style.name + " " + style.description + " " + (style.options || []).join(" ")).toLowerCase();
+    
+    if (designCategoryFilter === "Male Designs (Adults & Kids)") {
+      matchesCategory = style.gender === "male" || style.gender === "unisex" || style.gender === "family" || style.gender === "couple";
+    } else if (designCategoryFilter === "Female Designs (Adults & Kids)") {
+      matchesCategory = style.gender === "female" || style.gender === "unisex" || style.gender === "family" || style.gender === "couple";
+    } else if (designCategoryFilter === "Family-Look Designs") {
+      matchesCategory = style.gender === "family" || style.gender === "couple" || style.gender === "unisex" || txt.includes("family") || txt.includes("couple") || txt.includes("matching");
+    } else if (designCategoryFilter === "Embroidered & Monogram Trim Designs") {
+      matchesCategory = txt.includes("embroid") || txt.includes("monogram") || txt.includes("trim") || txt.includes("stitch") || txt.includes("accent") || txt.includes("thread") || txt.includes("lace");
+    } else if (designCategoryFilter === "Designs with Lining / Inner Nets (Ladies)") {
+      const isFemale = style.gender === "female" || style.gender === "unisex";
+      matchesCategory = isFemale && (txt.includes("lining") || txt.includes("net") || txt.includes("gown") || txt.includes("dress") || txt.includes("boubou") || txt.includes("couture") || txt.includes("bodice") || (style.outfitType?.toLowerCase().includes("gown") || style.outfitType?.toLowerCase().includes("dress") || style.outfitType?.toLowerCase().includes("boubou")));
     }
 
-    // 4. Price
-    let matchesPrice = true;
-    if (priceFilter === "under180") {
-      matchesPrice = style.basePrice < 180;
-    } else if (priceFilter === "180to250") {
-      matchesPrice = style.basePrice >= 180 && style.basePrice <= 250;
-    } else if (priceFilter === "over250") {
-      matchesPrice = style.basePrice > 250;
-    }
-
-    return matchesSearch && matchesGender && matchesType && matchesPrice;
+    return matchesSearch && matchesCategory;
   });
 
   const stylesPerPage = 6;
@@ -637,32 +619,29 @@ export default function DesignStudioView({
   const handleResetFilters = () => {
     setStyleSearchInput("");
     setStyleSearch("");
-    setGenderFilter("all");
-    setTypeFilter("all");
-    setPriceFilter("all");
+    setDesignCategoryFilter("All Designs");
     setStylePage(1);
   };
 
   // STEP 2: Fabric Selection, Filtering & Pagination States
-  const [selectedFabric, setSelectedFabric] = useState<Fabric>(
-    fabrics[0] || ({ code: "", name: "", price: 0, stock: 0, category: "", type: "", material: "", origin: "", color: "", tags: [], defaultYards: 6, stockQuantity: 0, priceMultiplier: 1, availableStatus: "available", createdAt: new Date().toISOString() } as unknown as Fabric),
-  );
+  const [selectedFabric, setSelectedFabric] = useState<Fabric | null>(null);
+
   const [fabricSearchInput, setFabricSearchInput] = useState<string>("");
   const [fabricSearch, setFabricSearch] = useState<string>("");
-  const [fabricColorFilter, setFabricColorFilter] = useState<string>("all");
-  const [fabricMaterialFilter, setFabricMaterialFilter] =
+  const [fabricCategoryFilter, setFabricCategoryFilter] =
     useState<string>("all");
   const [fabricPage, setFabricPage] = useState<number>(1);
 
   // Sync selectedFabric if fabrics prop changes and current selectedFabric is not in fabrics
   useEffect(() => {
     if (
+      selectedFabric &&
       fabrics.length > 0 &&
-      !fabrics.some((f) => f.code === selectedFabric.code)
+      !fabrics.some((f) => f?.code === selectedFabric?.code)
     ) {
-      setSelectedFabric(fabrics[0]);
+      setSelectedFabric(null);
     }
-  }, [fabrics]);
+  }, [fabrics, selectedFabric]);
 
   // Debounce Fabric Search
   useEffect(() => {
@@ -675,7 +654,7 @@ export default function DesignStudioView({
   // Reset page to 1 when fabric filters change
   useEffect(() => {
     setFabricPage(1);
-  }, [fabricSearch, fabricColorFilter, fabricMaterialFilter]);
+  }, [fabricSearch, fabricCategoryFilter]);
 
   // Load preset style & fabric from Gallery selection
   useEffect(() => {
@@ -686,7 +665,7 @@ export default function DesignStudioView({
       }
     }
     if (initialFabricCode) {
-      const match = fabrics.find((f) => f.code === initialFabricCode);
+      const match = fabrics.find((f) => f?.code === initialFabricCode);
       if (match) {
         setSelectedFabric(match);
       }
@@ -701,78 +680,18 @@ export default function DesignStudioView({
   const filteredFabrics = fabrics.filter((fabric) => {
     // 1. Search Query
     const matchesSearch =
-      fabric.name.toLowerCase().includes(fabricSearch.toLowerCase()) ||
-      fabric.code.toLowerCase().includes(fabricSearch.toLowerCase()) ||
-      fabric.description.toLowerCase().includes(fabricSearch.toLowerCase()) ||
-      fabric.color.toLowerCase().includes(fabricSearch.toLowerCase());
+      (fabric.name || "").toLowerCase().includes(fabricSearch.toLowerCase()) ||
+      (fabric?.code || "").toLowerCase().includes(fabricSearch.toLowerCase()) ||
+      (fabric.description || "").toLowerCase().includes(fabricSearch.toLowerCase()) ||
+      (fabric.color || "").toLowerCase().includes(fabricSearch.toLowerCase());
 
-    // 2. Color Group
-    let matchesColor = true;
-    if (fabricColorFilter !== "all") {
-      const colLower = fabric.color.toLowerCase();
-      if (fabricColorFilter === "blue") {
-        matchesColor =
-          colLower.includes("blue") ||
-          colLower.includes("indigo") ||
-          colLower.includes("teal");
-      } else if (fabricColorFilter === "green") {
-        matchesColor =
-          colLower.includes("green") ||
-          colLower.includes("moss") ||
-          colLower.includes("emerald");
-      } else if (fabricColorFilter === "gold") {
-        matchesColor =
-          colLower.includes("gold") ||
-          colLower.includes("ochre") ||
-          colLower.includes("sunset") ||
-          colLower.includes("bronze");
-      } else if (fabricColorFilter === "red") {
-        matchesColor =
-          colLower.includes("red") ||
-          colLower.includes("crimson") ||
-          colLower.includes("burgundy") ||
-          colLower.includes("purple");
-      } else if (fabricColorFilter === "dark") {
-        matchesColor =
-          colLower.includes("black") ||
-          colLower.includes("charcoal") ||
-          colLower.includes("slate") ||
-          colLower.includes("grey");
-      } else if (fabricColorFilter === "light") {
-        matchesColor =
-          colLower.includes("cream") ||
-          colLower.includes("ivory") ||
-          colLower.includes("sand");
-      }
+    // 2. Fabric Category
+    let matchesCategory = true;
+    if (fabricCategoryFilter !== "all") {
+      matchesCategory = fabric.category === fabricCategoryFilter;
     }
 
-    // 3. Material/Texture type
-    let matchesMaterial = true;
-    if (fabricMaterialFilter !== "all") {
-      const textLower = fabric.name.toLowerCase() + " " + fabric.description.toLowerCase();
-      if (fabricMaterialFilter === "cotton") {
-        matchesMaterial = textLower.includes("cotton");
-      } else if (fabricMaterialFilter === "brocade") {
-        matchesMaterial =
-          textLower.includes("brocade") ||
-          textLower.includes("damask") ||
-          textLower.includes("jacquard");
-      } else if (fabricMaterialFilter === "wool") {
-        matchesMaterial =
-          textLower.includes("cashmere") ||
-          textLower.includes("wool") ||
-          textLower.includes("velvet");
-      } else if (fabricMaterialFilter === "handwoven") {
-        matchesMaterial =
-          textLower.includes("aso oke") ||
-          textLower.includes("adire") ||
-          textLower.includes("handwoven") ||
-          textLower.includes("organic") ||
-          textLower.includes("kente");
-      }
-    }
-
-    return matchesSearch && matchesColor && matchesMaterial;
+    return matchesSearch && matchesCategory;
   });
 
   const fabricsPerPage = 20;
@@ -786,8 +705,7 @@ export default function DesignStudioView({
   const handleResetFabricFilters = () => {
     setFabricSearchInput("");
     setFabricSearch("");
-    setFabricColorFilter("all");
-    setFabricMaterialFilter("all");
+    setFabricCategoryFilter("all");
     setFabricPage(1);
   };
 
@@ -807,7 +725,8 @@ export default function DesignStudioView({
   const [selectedPriceCode, setSelectedPriceCode] = useState<string>("AUTO");
 
   // STEP 4: Garment Type selection
-  const garmentTypesForStyle = (style: StyleCategory) => {
+  const garmentTypesForStyle = (style: StyleCategory | null) => {
+    if (!style) return [];
     const exactMatch = {
       type: "Use Exact Design Style",
       fee: style.basePrice,
@@ -821,16 +740,16 @@ export default function DesignStudioView({
         type: c.type,
         fee: c.price,
         discountFee: c.discountPrice || c.price,
-        code: c.code,
+        code: c?.code,
       }));
     } else if (style.gender === "female") {
       details = OFFICIAL_PRICE_LIST.filter(
-        (p) => p.category === "ladies" && p.code !== "L5",
+        (p) => p.category === "ladies" && p?.code !== "L5",
       ).map((p) => ({
         type: p.description,
         fee: p.actualMax,
         discountFee: p.discountedMax,
-        code: p.code,
+        code: p?.code,
       }));
     } else {
       // male, unisex, couple, family
@@ -839,7 +758,7 @@ export default function DesignStudioView({
           type: p.description,
           fee: p.actualMax,
           discountFee: p.discountedMax,
-          code: p.code,
+          code: p?.code,
         }),
       );
     }
@@ -847,16 +766,23 @@ export default function DesignStudioView({
     return [exactMatch, ...details];
   };
 
-  const defaultGarment = garmentTypesForStyle(selectedStyle)[0] || {
-    type: "Standard Garment",
-    fee: selectedStyle.basePrice || 150,
-  };
   const [selectedGarment, setSelectedGarment] = useState<{
     type: string;
     fee: number;
     discountFee?: number;
     code?: string;
-  }>(defaultGarment);
+  } | null>(null);
+
+  useEffect(() => {
+    if (selectedStyle) {
+      const defaultGarment = garmentTypesForStyle(selectedStyle)[0];
+      if (defaultGarment) {
+        setSelectedGarment(defaultGarment);
+      }
+    } else {
+      setSelectedGarment(null);
+    }
+  }, [selectedStyle]);
   const [isGarmentDropdownOpen, setIsGarmentDropdownOpen] = useState(false);
 
   // STEP 5 & 6: Sizing Inputs and Estimation state
@@ -1057,6 +983,23 @@ export default function DesignStudioView({
   // Validation feedback
   const [validationError, setValidationError] = useState<string>("");
 
+  useEffect(() => {
+    if (selectedFabric && currentStep === 1) {
+      if (validationError === "Please select fabric.") {
+        setValidationError("");
+      } else if (
+        validationError ===
+          "The selected fabric is Out of Stock. Please select an In Stock or Low Stock option to continue." &&
+        selectedFabric.stockStatus !== "OUT_OF_STOCK"
+      ) {
+        setValidationError("");
+      }
+    }
+    if (selectedStyle && currentStep === 2 && validationError === "Please select design style.") {
+      setValidationError("");
+    }
+  }, [selectedFabric, selectedStyle, validationError, currentStep]);
+
   // Cart addition success modal
   const [showAddedModal, setShowAddedModal] = useState<boolean>(false);
   const [showNextBatchConfirm, setShowNextBatchConfirm] = useState<boolean>(false);
@@ -1077,7 +1020,7 @@ export default function DesignStudioView({
         age: age === "" ? null : age,
         bodyBuild,
         fitPreference,
-        gender: selectedStyle.gender,
+        gender: selectedStyle?.gender || "unisex",
       });
       setMeasurements(measurements);
       setEstimationSource(source);
@@ -1105,7 +1048,7 @@ export default function DesignStudioView({
 
   // Official Pricing List Helpers
   const getAutoDetectedPriceCode = () => {
-    return selectedGarment.code || "G1";
+    return selectedGarment?.code || "G1";
   };
 
   const getPriceDetailsForCode = (code: string) => {
@@ -1116,18 +1059,18 @@ export default function DesignStudioView({
         code: "EXACT",
         description: "Exact Design Style Pricing",
         category: "special",
-        actualMin: selectedGarment.fee || 0,
+        actualMin: selectedGarment?.fee || 0,
         discountedMin: discountEnabled
-          ? selectedGarment.discountFee || selectedGarment.fee || 0
-          : selectedGarment.fee || 0,
-        actualMax: selectedGarment.fee || 0,
+          ? selectedGarment?.discountFee || selectedGarment?.fee || 0
+          : selectedGarment?.fee || 0,
+        actualMax: selectedGarment?.fee || 0,
         discountedMax: discountEnabled
-          ? selectedGarment.discountFee || selectedGarment.fee || 0
-          : selectedGarment.fee || 0,
+          ? selectedGarment?.discountFee || selectedGarment?.fee || 0
+          : selectedGarment?.fee || 0,
       };
     }
     const rawPrice =
-      OFFICIAL_PRICE_LIST.find((p) => p.code === code) ||
+      OFFICIAL_PRICE_LIST.find((p) => p?.code === code) ||
       OFFICIAL_PRICE_LIST[0];
     if (!discountEnabled) {
       return {
@@ -1141,20 +1084,18 @@ export default function DesignStudioView({
 
   // Total pricing calculations based on dynamic base sewing prices & standard accessory charge
   const calculateSubtotal = () => {
+    if (!selectedFabric) return 0;
+
     const isActualRate =
       batchType === "alone" ||
       !(businessSettings.pricingSettings?.discountRulesEnabled ?? false);
 
     // Resolve dynamic Base Sewing Price based on Outfit Type and Garment Composition
-    const baseRateRaw = getBaseSewingPrice(
-      selectedStyle,
-      selectedGarment,
-      businessSettings.pricingSettings?.baseSewingPrices,
-    );
+    const baseRateRaw = (selectedStyle && selectedGarment) ? getBaseSewingPrice(selectedStyle, selectedGarment, businessSettings.pricingSettings?.baseSewingPrices) : (selectedGarment?.fee || 0);
 
     // Maintain standard group buy/cohort discount ratio
-    const discountRatio = (selectedGarment.discountFee && selectedGarment.fee)
-      ? selectedGarment.discountFee / selectedGarment.fee
+    const discountRatio = (selectedGarment?.discountFee && selectedGarment?.fee)
+      ? selectedGarment?.discountFee / selectedGarment?.fee
       : 1;
     const baseRate = isActualRate
       ? baseRateRaw
@@ -1169,7 +1110,7 @@ export default function DesignStudioView({
       businessSettings.pricingSettings?.standardAccessoryCharge ?? 10;
 
     // Ladies Lining (L5): adds +€10.00 (Customization)
-    if (hasLining && selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "")) {
+    if (selectedStyle && hasLining && selectedStyle?.gender === "female" && selectedGarment && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "")) {
       extras += 10.0;
     }
 
@@ -1197,17 +1138,13 @@ export default function DesignStudioView({
   const isActualRateForDisplay = batchType === "alone" || !discountEnabled;
 
   // Expose base rate variables for display
-  const baseRateRaw = getBaseSewingPrice(
-    selectedStyle,
-    selectedGarment,
-    businessSettings.pricingSettings?.baseSewingPrices,
-  );
-  const discountRatio = (selectedGarment.discountFee && selectedGarment.fee)
-    ? selectedGarment.discountFee / selectedGarment.fee
+  const baseRateRaw = (selectedFabric && selectedStyle && selectedGarment) ? getBaseSewingPrice(selectedStyle, selectedGarment, businessSettings.pricingSettings?.baseSewingPrices) : (selectedGarment?.fee || 0);
+  const discountRatio = (selectedGarment?.discountFee && selectedGarment?.fee)
+    ? selectedGarment?.discountFee / selectedGarment?.fee
     : 1;
-  const baseRate = isActualRateForDisplay
+  const baseRate = (!selectedFabric) ? 0 : (isActualRateForDisplay
     ? baseRateRaw
-    : Math.round(baseRateRaw * discountRatio);
+    : Math.round(baseRateRaw * discountRatio));
 
   const subtotal = calculateSubtotal();
   const depositRatio = businessSettings.pricingSettings.depositPercentage / 100;
@@ -1227,18 +1164,27 @@ export default function DesignStudioView({
     // Step validation checks
     if (currentStep === 1) {
       if (!selectedFabric) {
-        setValidationError("Please select a fabric swatch option.");
+        setValidationError("Please select fabric.");
+        setTimeout(() => {
+          document.getElementById("design-studio-stepper")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 50);
         return;
       }
       if (selectedFabric.stockStatus === "OUT_OF_STOCK") {
         setValidationError(
           "The selected fabric is Out of Stock. Please select an In Stock or Low Stock option to continue.",
         );
+        setTimeout(() => {
+          document.getElementById("design-studio-stepper")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 50);
         return;
       }
     }
     if (currentStep === 2 && !selectedStyle) {
-      setValidationError("Please select a style template to proceed.");
+      setValidationError("Please select design style.");
+      setTimeout(() => {
+        document.getElementById("design-studio-stepper")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
       return;
     }
     if (currentStep === 3) {
@@ -1445,7 +1391,7 @@ export default function DesignStudioView({
       fabric: selectedFabric,
       design: {
         ...designSelections,
-        hasLining: (selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "")) ? hasLining : false,
+        hasLining: (selectedStyle && selectedGarment && selectedStyle?.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "")) ? hasLining : false,
         optionalAccessories: batchType !== "alone" ? optionalAccessories : [],
         priceCode:
           selectedPriceCode === "AUTO"
@@ -1453,7 +1399,7 @@ export default function DesignStudioView({
             : selectedPriceCode,
       },
       garment: {
-        type: `${selectedGarment.type} [Code: ${selectedPriceCode === "AUTO" ? getAutoDetectedPriceCode() : selectedPriceCode}]`,
+        type: `${selectedGarment?.type || "Pending"} [Code: ${selectedPriceCode === "AUTO" ? getAutoDetectedPriceCode() : selectedPriceCode}]`,
         tailoringFee: baseRate,
         totalPrice: subtotal,
       },
@@ -1508,7 +1454,7 @@ export default function DesignStudioView({
 
   const resetDesignStudio = () => {
     setSelectedStyle(styles[0] || ({ id: "", name: "", description: "", basePrice: 0, gender: "unisex", tags: [], garments: [], images: [] } as unknown as StyleCategory));
-    setSelectedFabric(fabrics[0] || ({ code: "", name: "", price: 0, stock: 0, category: "", type: "", material: "", origin: "", color: "", tags: [], defaultYards: 6, stockQuantity: 0, priceMultiplier: 1, availableStatus: "available", createdAt: new Date().toISOString() } as unknown as Fabric));
+    setSelectedFabric(null);
     setDesignSelections({
       collar: DESIGN_OPTIONS.collars[0].name,
       embroidery: DESIGN_OPTIONS.embroideries[1].name,
@@ -1557,7 +1503,8 @@ export default function DesignStudioView({
       )}
 
       {/* 9-step progress visualizer */}
-      <div className="bg-white border border-heritage-gold/15 p-4 rounded-3xl shadow-sm space-y-3 select-none">
+      {/* MOBILE STEPPER (Hidden on md and up) */}
+      <div className="md:hidden bg-white border border-heritage-gold/15 p-4 rounded-3xl shadow-sm space-y-3 select-none">
         <div className="flex flex-col sm:flex-row sm:justify-between items-center gap-1.5 sm:gap-0 text-center sm:text-left">
           <span className="font-bold text-heritage-green text-xs sm:text-xs">
             Step {currentStep} of 9:{" "}
@@ -1651,6 +1598,85 @@ export default function DesignStudioView({
           })}
         </div>
       </div>
+
+      {/* DESKTOP/TABLET STEPPER (Hidden on mobile) */}
+      <div className="hidden md:block bg-white border border-heritage-gold/15 py-3 px-5 rounded-2xl shadow-sm select-none">
+        <div className="flex justify-between items-end mb-2">
+          <div className="text-heritage-green font-bold text-sm">
+            Step {currentStep} of 9:{" "}
+            <span className="text-heritage-gold font-serif ml-1">
+              {stepTitles[currentStep - 1]}
+            </span>
+          </div>
+          <div className="font-mono text-heritage-ink/50 text-[11px] font-bold">
+            {Math.round((currentStep / 9) * 100)}% Complete
+          </div>
+        </div>
+
+        {/* Dynamic bar */}
+        <div className="h-[3px] w-full bg-heritage-cream rounded-full overflow-hidden mb-2.5">
+          <div
+            className="h-full bg-heritage-gold transition-all duration-300"
+            style={{ width: `${(currentStep / 9) * 100}%` }}
+          ></div>
+        </div>
+
+        {/* Labels row */}
+        <div className="flex justify-between items-start text-[10px] uppercase tracking-wider font-semibold">
+          {stepTitles.map((_title, idx) => {
+            const isPassed = idx + 1 < currentStep;
+            const isCurrent = idx + 1 === currentStep;
+            const shortLabels = ["Fabric", "Style", "Accents", "Try-On", "Sizing", "Dims", "Delivery", "Notes", "Review"];
+            const shortLabel = shortLabels[idx];
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => {
+                  if (isPassed) {
+                    const targetStep = idx + 1;
+                    if (
+                      targetStep === 4 &&
+                      (localBiometricConsent === "declined" ||
+                        storeUser?.biometricConsent?.status === "declined")
+                    ) {
+                      return;
+                    }
+                    setCurrentStep(targetStep);
+                    setValidationError("");
+                  }
+                }}
+                disabled={
+                  !isPassed ||
+                  (idx + 1 === 4 &&
+                    (localBiometricConsent === "declined" ||
+                      storeUser?.biometricConsent?.status === "declined"))
+                }
+                className={`flex flex-col items-center sm:items-start gap-0.5 transition-colors duration-200 focus:outline-none w-14 ${
+                  isCurrent
+                    ? "text-heritage-gold"
+                    : isPassed &&
+                        !(
+                          idx + 1 === 4 &&
+                          (localBiometricConsent === "declined" ||
+                            storeUser?.biometricConsent?.status === "declined")
+                        )
+                      ? "text-heritage-green/70 cursor-pointer hover:text-heritage-gold"
+                      : "text-heritage-ink/25 cursor-not-allowed"
+                }`}
+              >
+                <span className={`font-mono text-[11px] leading-none ${isCurrent ? "font-bold" : "font-medium"}`}>
+                  {idx + 1}
+                </span>
+                <span className={`leading-tight text-center sm:text-left text-[9px] ${isCurrent ? "font-bold" : "font-medium"}`}>
+                  {shortLabel}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Validation feedback banners */}
       {validationError && (
         <div className="p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl flex items-center gap-3 text-xs">
@@ -1697,9 +1723,7 @@ export default function DesignStudioView({
                   </div>
                   {/* Active filters status & reset */}
                   {(styleSearch ||
-                    genderFilter !== "all" ||
-                    typeFilter !== "all" ||
-                    priceFilter !== "all") && (
+                    designCategoryFilter !== "All Designs") && (
                     <button
                       onClick={handleResetFilters}
                       className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-heritage-gold hover:text-heritage-green transition bg-white border border-heritage-gold/20 rounded-xl"
@@ -1710,46 +1734,26 @@ export default function DesignStudioView({
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* Gender Filter */}
-                  <SelectField
-                    label="Gender"
-                    value={genderFilter}
-                    onChange={(e) => setGenderFilter(e.target.value)}
-                    options={[
-                      { value: "all", label: "All Genders" },
-                      {
-                        value: "male",
-                        label: "Male (Senator, Kaftan, Agbada)",
-                      },
-                      { value: "female", label: "Female (Boubou, Gown)" },
-                    ]}
-                  />
-
-                  {/* Type Filter */}
-                  <SelectField
-                    label="Style Type"
-                    value={typeFilter}
-                    onChange={(e) => setTypeFilter(e.target.value)}
-                    options={[
-                      { value: "all", label: "All Types" },
-                      ...outfitTypes.map(opt => ({ value: opt.value, label: opt.label }))
-                    ]}
-                  />
-
-                  {/* Price Filter */}
-                  <SelectField
-                    label="Base Price Range"
-                    value={priceFilter}
-                    onChange={(e) => setPriceFilter(e.target.value)}
-                    options={[
-                      { value: "all", label: "All Price Ranges" },
-                      { value: "under180", label: "Under €180" },
-                      { value: "180to250", label: "€180 - €250" },
-                      { value: "over250", label: "Over €250" },
-                    ]}
-                  />
+                <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide">
+                  {DESIGN_CATEGORIES_LIST.map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setDesignCategoryFilter(cat.id)}
+                      className={`whitespace-nowrap px-4 py-2 text-xs font-semibold rounded-full border transition ${
+                        designCategoryFilter === cat.id
+                          ? "bg-heritage-gold text-white border-heritage-gold shadow-sm"
+                          : "bg-white text-heritage-ink/70 border-heritage-gold/20 hover:border-heritage-gold hover:text-heritage-gold"
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
                 </div>
+                {designCategoryFilter !== "All Designs" && (
+                  <div className="text-xs text-heritage-ink/80 bg-heritage-cream/50 p-2 px-3 rounded-lg border border-heritage-gold/10">
+                    {DESIGN_CATEGORIES_LIST.find((c) => c.id === designCategoryFilter)?.desc}
+                  </div>
+                )}
 
                 {/* Counter status bar */}
                 <div className="flex justify-between items-center text-[10px] text-heritage-ink/50 pt-1">
@@ -1799,7 +1803,7 @@ export default function DesignStudioView({
                       key={style.id}
                       onClick={() => handleStyleChange(style)}
                       className={`flex flex-col overflow-hidden rounded-2xl border-2 cursor-pointer transition-all duration-300 ${
-                        selectedStyle.id === style.id
+                        selectedStyle?.id === style.id
                           ? "border-heritage-gold shadow-md bg-heritage-cream/20"
                           : "border-gray-150 bg-white shadow-sm hover:border-heritage-gold/40 hover:shadow-md"
                       }`}
@@ -1815,7 +1819,7 @@ export default function DesignStudioView({
                             referrerPolicy="no-referrer"
                           />
                           {/* Selection indicator */}
-                          {selectedStyle.id === style.id && (
+                          {selectedStyle?.id === style.id && (
                             <div className="absolute top-3 right-3 bg-heritage-gold text-white p-1.5 rounded-full shadow-lg z-10">
                               <Check size={14} strokeWidth={3} />
                             </div>
@@ -1964,8 +1968,7 @@ export default function DesignStudioView({
                   </div>
                   {/* Active filters status & reset */}
                   {(fabricSearch ||
-                    fabricColorFilter !== "all" ||
-                    fabricMaterialFilter !== "all") && (
+                    fabricCategoryFilter !== "all") && (
                     <button
                       onClick={handleResetFabricFilters}
                       className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-heritage-gold hover:text-heritage-green transition bg-white border border-heritage-gold/20 rounded-xl"
@@ -1976,37 +1979,21 @@ export default function DesignStudioView({
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Color Shade Filter */}
+                <div className="grid grid-cols-1 gap-3">
+                  {/* Category Filter */}
                   <SelectField
-                    label="Color Group"
-                    value={fabricColorFilter}
-                    onChange={(e) => setFabricColorFilter(e.target.value)}
+                    label="Fabric Category"
+                    value={fabricCategoryFilter}
+                    onChange={(e) => setFabricCategoryFilter(e.target.value)}
                     options={[
-                      { value: "all", label: "All Colors" },
-                      { value: "blue", label: "Blue & Indigo hues" },
-                      { value: "green", label: "Green & Forest hues" },
-                      { value: "gold", label: "Gold & Ochre hues" },
-                      { value: "red", label: "Red, Crimson & Purple" },
-                      { value: "dark", label: "Black, Charcoal & Slate" },
-                      { value: "light", label: "Ivory, Cream & Sand" },
-                    ]}
-                  />
-
-                  {/* Material Filter */}
-                  <SelectField
-                    label="Material / Weave"
-                    value={fabricMaterialFilter}
-                    onChange={(e) => setFabricMaterialFilter(e.target.value)}
-                    options={[
-                      { value: "all", label: "All Materials" },
-                      { value: "cotton", label: "Polished Cotton" },
-                      { value: "brocade", label: "Brocade & Damask" },
-                      { value: "wool", label: "Cashmere & Velvet" },
-                      {
-                        value: "handwoven",
-                        label: "Hand-woven / Adire / Aso Oke",
-                      },
+                      { value: "all", label: "All Categories" },
+                      { value: "HiTarget Ankara", label: "HiTarget Ankara" },
+                      { value: "Hollandis Ankara", label: "Hollandis Ankara" },
+                      { value: "Kampala", label: "Kampala" },
+                      { value: "Aso-Oke", label: "Aso-Oke" },
+                      { value: "Adire", label: "Adire" },
+                      { value: "Isiagu (Akwa-Oche)", label: "Isiagu (Akwa-Oche)" },
+                      { value: "Lace", label: "Lace" },
                     ]}
                   />
                 </div>
@@ -2058,12 +2045,15 @@ export default function DesignStudioView({
                 ) : (
                   paginatedFabrics.map((fabric) => (
                     <div
-                      key={fabric.code}
-                      onClick={() => setSelectedFabric(fabric)}
-                      className={`p-4 rounded-xl border flex flex-col justify-between space-y-4 transition-all duration-200 cursor-pointer ${
-                        selectedFabric.code === fabric.code
+                      key={fabric?.code}
+                      onClick={() => {
+                        setZoomedFabric(fabric);
+                        setShowFabricZoomModal(true);
+                      }}
+                      className={`p-4 rounded-xl border flex flex-col justify-between space-y-4 transition-all duration-300 cursor-zoom-in hover:-translate-y-1 ${
+                        selectedFabric?.code === fabric?.code
                           ? "border-heritage-gold shadow-[0_0_15px_rgba(197,168,92,0.15)] bg-[#FFFCF6]"
-                          : "border-[#E5E0D8] bg-[#FAFAF8] hover:shadow-md hover:border-heritage-gold/50"
+                          : "border-[#E5E0D8] bg-[#FAFAF8] hover:shadow-lg hover:border-heritage-gold/50"
                       }`}
                     >
                       <div className="space-y-3">
@@ -2089,7 +2079,7 @@ export default function DesignStudioView({
                           
                           <div className="relative z-10 flex flex-col items-start gap-1 pointer-events-none">
                               <span className="text-[10px] bg-white/95 backdrop-blur-sm border border-[#E5E0D8] font-bold px-2 py-0.5 rounded shadow-sm text-heritage-green font-mono">
-                                {fabric.code}
+                                {fabric?.code}
                               </span>
                               <span
                                 className={`text-[9px] bg-white/95 backdrop-blur-sm border border-[#E5E0D8] font-bold px-1.5 py-0.5 rounded font-sans uppercase shadow-sm ${
@@ -2108,7 +2098,7 @@ export default function DesignStudioView({
                           <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-20">
                              <div className="bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-lg text-[10px] font-bold text-heritage-green flex items-center gap-1.5 transform translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
                                <ZoomIn size={12} />
-                               <span>Click to select</span>
+                               <span>Click to Zoom</span>
                              </div>
                           </div>
                         </div>
@@ -2150,13 +2140,13 @@ export default function DesignStudioView({
                               setSelectedFabric(fabric);
                             }}
                             className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all duration-200 cursor-pointer select-none flex items-center gap-1 border shadow-sm ${
-                              selectedFabric.code === fabric.code
+                              selectedFabric?.code === fabric?.code
                                 ? "bg-heritage-gold text-white border-heritage-gold"
                                 : "bg-white text-heritage-green border-[#E5E0D8] hover:border-heritage-gold hover:text-heritage-gold"
                             }`}
                           >
-                            {selectedFabric.code === fabric.code && <Check size={12} />}
-                            {selectedFabric.code === fabric.code ? "Selected" : "Select"}
+                            {selectedFabric?.code === fabric?.code && <Check size={12} />}
+                            {selectedFabric?.code === fabric?.code ? "Selected" : "Select"}
                           </button>
                         </div>
                       </div>
@@ -2317,7 +2307,7 @@ export default function DesignStudioView({
                 />
 
                 {/* Matching Cap Toggle (Only for relevant male styles) */}
-                {selectedStyle.gender === "male" && (
+                {selectedStyle?.gender === "male" && (
                   <div className="space-y-2">
                     <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
                       Headwear Accents
@@ -2347,9 +2337,9 @@ export default function DesignStudioView({
                 )}
 
                 {/* Ladies Inner Lining Net Toggle */}
-                {selectedStyle.gender === "female" &&
+                {selectedStyle?.gender === "female" &&
                   ["L1", "L2", "L3", "L4"].includes(
-                    selectedGarment.code || "",
+                    selectedGarment?.code || "",
                   ) && (
                     <div className="space-y-2">
                       <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
@@ -2445,29 +2435,29 @@ export default function DesignStudioView({
                     <div className="space-y-1 min-w-0 flex-1 pr-4">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[9px] bg-heritage-green/10 text-heritage-green px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                          {selectedGarment.code || "CUSTOM"}
+                          {selectedGarment?.code || "CUSTOM"}
                         </span>
                         <h4 className="font-bold text-heritage-green text-xs sm:text-sm truncate">
-                          {selectedGarment.type}
+                          {selectedGarment?.type || "Pending"}
                         </h4>
                       </div>
                       <div className="text-[11px] text-heritage-ink/75 flex items-center gap-2">
                         {discountEnabled ? (
                           <>
                             <span className="text-gray-400 line-through">
-                              Base: €{(selectedGarment.fee || 0).toFixed(2)}
+                              Base: €{(selectedGarment?.fee || 0).toFixed(2)}
                             </span>
                             <span className="text-heritage-gold font-extrabold bg-heritage-gold/5 px-2 py-0.5 rounded border border-heritage-gold/25">
                               Sale: €
                               {(
-                                selectedGarment.discountFee ||
-                                selectedGarment.fee || 0
+                                selectedGarment?.discountFee ||
+                                selectedGarment?.fee || 0
                               ).toFixed(2)}
                             </span>
                           </>
                         ) : (
                           <span className="text-heritage-green font-bold bg-heritage-green/5 px-2 py-0.5 rounded border border-heritage-green/10">
-                            Price: €{(selectedGarment.fee || 0).toFixed(2)}
+                            Price: €{(selectedGarment?.fee || 0).toFixed(2)}
                           </span>
                         )}
                       </div>
@@ -2496,7 +2486,7 @@ export default function DesignStudioView({
                       />
                       <div className="absolute left-0 right-0 mt-2 bg-white border border-heritage-gold/20 rounded-2xl shadow-xl z-30 max-h-80 overflow-y-auto divide-y divide-gray-100 divide-dashed animate-in fade-in slide-in-from-top-2 duration-200">
                         {garmentTypesForStyle(selectedStyle).map((g) => {
-                          const isSelected = selectedGarment.type === g.type;
+                          const isSelected = selectedGarment?.type === g.type;
                           return (
                             <div
                               key={g.type}
@@ -2517,7 +2507,7 @@ export default function DesignStudioView({
                                         : "bg-heritage-green/5 text-heritage-green border border-heritage-gold/20"
                                     }`}
                                   >
-                                    {g.code || "CUSTOM"}
+                                    {g?.code || "CUSTOM"}
                                   </span>
                                   <h5 className="font-bold text-heritage-green text-xs sm:text-[13px] truncate">
                                     {g.type}
@@ -2649,8 +2639,8 @@ export default function DesignStudioView({
                         {OFFICIAL_PRICE_LIST.filter(
                           (p) => p.category === "guys",
                         ).map((p) => (
-                          <option key={p.code} value={p.code}>
-                            {p.code}: {p.description.substring(0, 30)}...
+                          <option key={p?.code} value={p?.code}>
+                            {p?.code}: {p.description.substring(0, 30)}...
                           </option>
                         ))}
                       </optgroup>
@@ -2658,8 +2648,8 @@ export default function DesignStudioView({
                         {OFFICIAL_PRICE_LIST.filter(
                           (p) => p.category === "ladies",
                         ).map((p) => (
-                          <option key={p.code} value={p.code}>
-                            {p.code}: {p.description.substring(0, 30)}...
+                          <option key={p?.code} value={p?.code}>
+                            {p?.code}: {p.description.substring(0, 30)}...
                           </option>
                         ))}
                       </optgroup>
@@ -2678,7 +2668,7 @@ export default function DesignStudioView({
               selectedDesign={{
                 ...designSelections,
                 hasLining:
-                  (selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "")) ? hasLining : false,
+                  (selectedStyle?.gender === "female" && selectedGarment && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "")) ? hasLining : false,
                 optionalAccessories: batchType !== "alone" ? optionalAccessories : [],
               }}
             />
@@ -2974,7 +2964,7 @@ export default function DesignStudioView({
             (() => {
               const unitLabel =
                 (measurements.unit || "inch") === "inch" ? "in" : "cm";
-              const isFemaleStyle = selectedStyle.gender === "female";
+              const isFemaleStyle = selectedStyle?.gender === "female";
 
               const coreFields = [
                 {
@@ -3227,13 +3217,13 @@ export default function DesignStudioView({
                 },
               ];
 
-              const gType = selectedGarment.type.toLowerCase();
+              const gType = selectedGarment?.type.toLowerCase();
               const recommendUpper =
                 gType.includes("shirt") ||
                 gType.includes("set") ||
                 gType.includes("gown") ||
                 gType.includes("dress") ||
-                fTypeRecommendUpper(selectedStyle.id);
+                fTypeRecommendUpper(selectedStyle?.id || "");
               const recommendLower =
                 gType.includes("trouser") || gType.includes("set");
 
@@ -4094,16 +4084,16 @@ export default function DesignStudioView({
                   </h4>
                   <ul className="space-y-1 bg-heritage-cream/40 p-4 rounded-xl border">
                     <li>
-                      Style template: <strong>{selectedStyle.name}</strong>
+                      Style template: <strong>{selectedStyle?.name || "Pending"}</strong>
                     </li>
                     <li>
                       Selected Fabric:{" "}
                       <strong>
-                        {selectedFabric.name} ({selectedFabric.code})
+                        {selectedFabric?.name || "Pending"} ({selectedFabric?.code})
                       </strong>
                     </li>
                     <li>
-                      Garment Cut: <strong>{selectedGarment.type}</strong>
+                      Garment Cut: <strong>{selectedGarment?.type || "Pending"}</strong>
                     </li>
                     <li>
                       Neck Accent: <strong>{designSelections.collar}</strong>
@@ -4124,7 +4114,7 @@ export default function DesignStudioView({
                         <strong>Matching Custom Fila (Cap)</strong>
                       </li>
                     )}
-                    {selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "") && hasLining && (
+                    {selectedStyle?.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "") && hasLining && (
                       <li>
                         Included Extra: <strong>Inner Lining/Net (L5)</strong>
                       </li>
@@ -4232,7 +4222,7 @@ export default function DesignStudioView({
                         </strong>
                       </li>
                     ) : null}
-                    {selectedStyle.gender === "female" &&
+                    {selectedStyle?.gender === "female" &&
                     measurements.underBorst ? (
                       <li>
                         Calibrated Under-Bust Size:{" "}
@@ -4319,23 +4309,25 @@ export default function DesignStudioView({
             </div>
 
             <div className="space-y-2 text-xs font-sans">
-              <div className="flex justify-between items-start text-heritage-ink/70 gap-4">
-                <span className="leading-tight">
-                  Base Sewing Price (
-                  {selectedStyle.outfitType || selectedStyle.name} -{" "}
-                  {getGarmentCompositionFromCode(
-                    selectedGarment.code || "",
-                    selectedStyle.garmentComposition || "2-Piece Set",
-                  )}
-                  ):
-                </span>
-                <span className="font-semibold text-heritage-green shrink-0">
-                  {currencySymbol}
-                  {baseRate.toFixed(2)}
-                </span>
-              </div>
+              {selectedFabric && selectedStyle && selectedGarment && (
+                <div className="flex justify-between items-start text-heritage-ink/70 gap-4">
+                  <span className="leading-tight">
+                    Base Sewing Price (
+                    {selectedStyle?.outfitType || selectedStyle?.name || "Pending Design"} -{" "}
+                    {getGarmentCompositionFromCode(
+                      selectedGarment?.code || "",
+                      selectedStyle?.garmentComposition || "Pending"
+                    )}
+                    ):
+                  </span>
+                  <span className="font-semibold text-heritage-green shrink-0">
+                    {currencySymbol}
+                    {baseRate.toFixed(2)}
+                  </span>
+                </div>
+              )}
 
-              {selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "") && hasLining && (
+              {selectedFabric && selectedStyle?.gender === "female" && selectedGarment && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "") && hasLining && (
                 <div className="flex justify-between items-center text-heritage-ink/70">
                   <span>Inner Lining/Net (L5):</span>
                   <span className="font-semibold text-heritage-green">
@@ -4344,7 +4336,7 @@ export default function DesignStudioView({
                 </div>
               )}
 
-              {designSelections.additionalCap && (
+              {selectedFabric && designSelections.additionalCap && (
                 <div className="flex justify-between items-center text-heritage-ink/70">
                   <span>Custom Matching Fila (Accessory):</span>
                   <span className="font-semibold text-heritage-green">
@@ -4357,7 +4349,7 @@ export default function DesignStudioView({
                 </div>
               )}
 
-              {optionalAccessories.map(acc => (
+              {selectedFabric && optionalAccessories.map(acc => (
                 <div key={acc} className="flex justify-between items-center text-heritage-ink/70">
                   <span>{acc}:</span>
                   <span className="font-semibold text-heritage-green">
@@ -4366,7 +4358,7 @@ export default function DesignStudioView({
                 </div>
               ))}
 
-              {batchType === "alone" && (
+              {selectedFabric && batchType === "alone" && (
                 <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
                   <div className="flex justify-between items-center">
                     <span>Priority Home Shipping / Courier (Order Alone):</span>
@@ -4419,19 +4411,19 @@ export default function DesignStudioView({
               <p>
                 Style:{" "}
                 <strong className="text-heritage-green font-serif">
-                  {selectedStyle.name}
+                  {selectedStyle?.name || "Pending"}
                 </strong>
               </p>
               <p>
                 Fabric:{" "}
                 <strong className="text-heritage-green">
-                  {selectedFabric.name}
+                  {selectedFabric?.name || "Pending"}
                 </strong>
               </p>
               <p>
                 Garment Cut:{" "}
                 <strong className="text-heritage-green">
-                  {selectedGarment.type}
+                  {selectedGarment?.type || "Pending"}
                 </strong>
               </p>
               <p>
@@ -4464,7 +4456,7 @@ export default function DesignStudioView({
                   <strong className="text-heritage-gold">Included</strong>
                 </p>
               )}
-              {selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "") && hasLining && (
+              {selectedStyle?.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "") && hasLining && (
                 <p>
                   Lining/Inner Net:{" "}
                   <strong className="text-heritage-gold">Included (L5)</strong>
@@ -4533,7 +4525,7 @@ export default function DesignStudioView({
             {/* Config summary card */}
             <div className="w-full bg-white border border-gray-150 rounded-2xl p-4 text-left text-[11px] space-y-2 mb-6">
               <div className="flex justify-between font-serif font-bold text-heritage-green pb-1.5 border-b border-gray-100">
-                <span>{selectedStyle.name}</span>
+                <span>{selectedStyle?.name || "Pending"}</span>
                 <span className="font-mono text-heritage-gold">
                   {currencySymbol}
                   {subtotal.toFixed(2)}
@@ -4544,7 +4536,7 @@ export default function DesignStudioView({
                   Garment Type:
                 </span>
                 <span className="font-semibold text-right">
-                  {selectedGarment.type}
+                  {selectedGarment?.type || "Pending"}
                 </span>
 
                 <span className="text-heritage-ink/50 font-medium">
@@ -4552,9 +4544,9 @@ export default function DesignStudioView({
                 </span>
                 <span
                   className="font-semibold text-right truncate"
-                  title={selectedFabric.name}
+                  title={selectedFabric?.name || "Pending"}
                 >
-                  {selectedFabric.name}
+                  {selectedFabric?.name || "Pending"}
                 </span>
 
                 <span className="text-heritage-ink/50 font-medium">
@@ -4933,10 +4925,38 @@ export default function DesignStudioView({
                    className="max-w-full max-h-full object-contain shadow-2xl rounded-sm pointer-events-auto"
                  />
               </div>
-              <div className="mt-4 text-center bg-black/50 px-6 py-3 rounded-full backdrop-blur-md border border-white/10 pointer-events-auto">
-                 <h3 className="text-lg font-serif font-bold text-white">
-                   {zoomedFabric.name} <span className="text-heritage-gold ml-2 text-sm font-sans">{zoomedFabric.code}</span>
-                 </h3>
+              <div className="mt-4 flex flex-col items-center gap-3 bg-black/60 px-8 py-4 rounded-3xl backdrop-blur-md border border-white/10 pointer-events-auto">
+                 <div className="text-center">
+                   <h3 className="text-xl font-serif font-bold text-white mb-1">
+                     {zoomedFabric.name} <span className="text-heritage-gold ml-2 text-sm font-sans">{zoomedFabric?.code}</span>
+                   </h3>
+                   <div className="flex items-center justify-center gap-2 text-[11px] font-sans text-gray-300 font-medium">
+                     <span className="bg-white/10 px-2 py-0.5 rounded">{zoomedFabric.category || "Premium Fabric"}</span>
+                     <span>&bull;</span>
+                     <span className="bg-white/10 px-2 py-0.5 rounded">{zoomedFabric.color}</span>
+                     <span>&bull;</span>
+                     <span className={`px-2 py-0.5 rounded font-bold uppercase ${
+                        zoomedFabric.stockStatus === "OUT_OF_STOCK"
+                          ? "bg-red-900/50 text-red-300"
+                          : zoomedFabric.stockStatus === "LOW_STOCK"
+                            ? "bg-orange-900/50 text-orange-300"
+                            : "bg-heritage-green/50 text-heritage-gold"
+                      }`}>
+                        {zoomedFabric.stockStatus.replace('_', ' ')}
+                     </span>
+                   </div>
+                 </div>
+                 
+                 <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedFabric(zoomedFabric);
+                      setShowFabricZoomModal(false);
+                    }}
+                    className="mt-2 px-8 py-2.5 bg-heritage-gold hover:bg-yellow-600 text-white font-bold rounded-full transition-colors shadow-lg shadow-heritage-gold/20 flex items-center gap-2 text-sm"
+                 >
+                    Select Fabric
+                 </button>
               </div>
             </motion.div>
           </div>

@@ -68,7 +68,19 @@ export class CustomerJourneyEngine {
             if (currentStep === 1) {
                 stepperPreviousLabel = "";
             } else if (currentStep === 2) {
-                stepperPreviousLabel = "Back to Styles";
+                stepperPreviousLabel = "Back to Fabric";
+            } else if (currentStep === 3) {
+                stepperPreviousLabel = "Back to Style";
+            } else if (currentStep === 4) {
+                stepperPreviousLabel = "Back to Custom Details";
+            } else if (currentStep === 5) {
+                stepperPreviousLabel = "Back to Virtual Try-On";
+            } else if (currentStep === 6) {
+                stepperPreviousLabel = "Back to Sizing Method";
+            } else if (currentStep === 7) {
+                stepperPreviousLabel = "Back to Measurements";
+            } else if (currentStep === 8) {
+                stepperPreviousLabel = "Back to Delivery Details";
             } else if (currentStep === totalSteps) {
                 stepperPreviousLabel = "Back to Special Directives";
             }

@@ -91,7 +91,7 @@ export const generateLocalFabricNames = async (
     if (!imageBase64OrUrl) {
       resolve({
         suggestions: ["Royal Heritage Weave", "Elite Indigo Lattice", "Classic Golden Matrix"],
-        category: "Printed Fabrics"
+        category: "HiTarget Ankara"
       });
       return;
     }
@@ -178,7 +178,7 @@ export const generateLocalFabricNames = async (
         const random = mulberry32(seed);
         
         // Deterministically select category
-        const categories = ["Printed Fabrics", "Handcrafted Fabrics", "Traditional Fabrics", "Luxury Fabrics"];
+        const categories = ["HiTarget Ankara", "Hollandis Ankara", "Kampala", "Aso-Oke", "Adire", "Isiagu (Akwa-Oche)", "Lace"];
         const category = categories[Math.floor(random() * categories.length)];
         
         const suggestions: string[] = [];
@@ -220,7 +220,7 @@ export const generateLocalFabricNames = async (
         // Fallback on error
         resolve({
           suggestions: ["Royal Indigo Weave", "Elite Emerald Lattice", "Classic Sunset Matrix"],
-          category: "Printed Fabrics"
+          category: "HiTarget Ankara"
         });
       }
     };
@@ -229,7 +229,7 @@ export const generateLocalFabricNames = async (
       // Fallback on error
       resolve({
         suggestions: ["Royal Crimson Weave", "Elite Onyx Lattice", "Classic Ivory Matrix"],
-        category: "Printed Fabrics"
+        category: "HiTarget Ankara"
       });
     };
     

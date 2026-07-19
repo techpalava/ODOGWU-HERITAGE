@@ -1,0 +1,165 @@
+--- src/components/DesignStudioView.tsx
++++ src/components/DesignStudioView.tsx
+@@ -1020,7 +1020,7 @@
+         hips: null,
+         pant_length: null,
+         long_sleeve_length: null,
+-        gender: selectedStyle.gender,
++        gender: selectedStyle?.gender || "unisex",
+         // Add fit preference
+         fit_preference: fitPreference,
+       });
+@@ -1114,7 +1114,7 @@
+     return discountRatio;
+   };
+   const baseRateRaw = selectedGarment ? selectedGarment.fee : 0;
+-    if (hasLining && selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "")) {
++    if (selectedStyle && hasLining && selectedStyle.gender === "female" && selectedGarment && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "")) {
+       // Added cost handled below in calculateSubtotal
+     }
+ 
+@@ -1393,7 +1393,7 @@
+       baseSewingPrice: Math.round(baseRateRaw * discountRatio),
+       actualSewingPriceDisplay: baseRateRaw,
+       priceListCode: selectedPriceCode === "AUTO" ? getAutoDetectedPriceCode() : selectedPriceCode,
+-        hasLining: (selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "")) ? hasLining : false,
++        hasLining: (selectedStyle && selectedGarment && selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "")) ? hasLining : false,
+         liningFee: hasLining ? businessSettings.pricingSettings.femaleLiningFee : 0,
+         optionalAccessories,
+       agbadaEmbroideryFee:
+@@ -1731,7 +1731,7 @@
+                       }}
+                       className={`p-4 rounded-xl border flex flex-col justify-between space-y-4 transition-all duration-300 cursor-pointer hover:-translate-y-1 ${
+-                        selectedStyle.id === style.id
++                        selectedStyle?.id === style.id
+                           ? "border-heritage-gold shadow-[0_0_15px_rgba(197,168,92,0.15)] bg-[#FFFCF6]"
+                           : "border-heritage-gold/10 hover:border-heritage-gold/40 hover:shadow-lg bg-white"
+                       }`}
+@@ -1747,7 +1747,7 @@
+                           >
+-                          {selectedStyle.id === style.id && (
++                          {selectedStyle?.id === style.id && (
+                             <div className="absolute inset-0 bg-heritage-gold/10" />
+                           )}
+                           <img
+@@ -2235,7 +2235,7 @@
+               </div>
+ 
+               {/* Show collar options only for male styles or generic */}
+-                {selectedStyle.gender === "male" && (
++                {selectedStyle?.gender === "male" && (
+                   <div className="space-y-4">
+                     <h3 className="text-sm font-serif font-bold text-heritage-green border-b border-heritage-gold/15 pb-2">
+                       Neck Accent
+@@ -2265,7 +2265,7 @@
+                 )}
+ 
+               {/* Show neckline options only for female styles */}
+-                {selectedStyle.gender === "female" &&
++                {selectedStyle?.gender === "female" &&
+                   ["L1", "L2", "L3", "L4"].includes(
+-                    selectedGarment.code || "",
++                    selectedGarment?.code || "",
+                   ) && (
+@@ -2596,7 +2596,7 @@
+                   priceListCode:
+                     selectedPriceCode === "AUTO" ? getAutoDetectedPriceCode() : selectedPriceCode,
+-                  (selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "")) ? hasLining : false,
++                  hasLining: (selectedStyle?.gender === "female" && selectedGarment && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "")) ? hasLining : false,
+                   liningFee: hasLining ? businessSettings.pricingSettings.femaleLiningFee : 0,
+                   optionalAccessories,
+                   agbadaEmbroideryFee:
+@@ -2892,7 +2892,7 @@
+           <div className="lg:col-span-8 bg-white border border-heritage-gold/15 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+             {/* STEP 4: Advanced Garment Sizing Configurator */}
+             {currentStep === 5 && (
+-              const isFemaleStyle = selectedStyle.gender === "female";
++              const isFemaleStyle = selectedStyle?.gender === "female";
+               <div className="space-y-6">
+                 <div className="space-y-1 text-center sm:text-left">
+@@ -3151,7 +3151,7 @@
+ 
+             {/* Optional manual override section depending on inputs required */}
+-                fTypeRecommendUpper(selectedStyle.id);
++                fTypeRecommendUpper(selectedStyle?.id || "");
+               <div className="mt-8 border border-gray-100 rounded-xl overflow-hidden shadow-sm">
+                 <button
+                   type="button"
+@@ -4012,7 +4012,7 @@
+                   </h4>
+                   <ul className="space-y-1 bg-heritage-cream/40 p-4 rounded-xl border">
+                     <li>
+-                      Style template: <strong>{selectedStyle.name}</strong>
++                      Style template: <strong>{selectedStyle?.name || "Pending"}</strong>
+                     </li>
+                     <li>
+                       Selected Fabric:{" "}
+@@ -4015,7 +4015,7 @@
+                       </strong>
+                     </li>
+                     <li>
+-                      Garment Cut: <strong>{selectedGarment.type}</strong>
++                      Garment Cut: <strong>{selectedGarment?.type || "Pending"}</strong>
+                     </li>
+                     <li>
+                       Neck Accent: <strong>{designSelections.collar}</strong>
+@@ -4042,7 +4042,7 @@
+                     </li>
+-                    {selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "") && hasLining && (
++                    {selectedStyle?.gender === "female" && selectedGarment && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "") && hasLining && (
+                       <li>
+                         Lining Included
+                       </li>
+@@ -4150,7 +4150,7 @@
+ 
+                   {/* Advanced sizing specific female values */}
+-                    {selectedStyle.gender === "female" &&
++                    {selectedStyle?.gender === "female" &&
+                       (measurements.bust > 0 ||
+                         measurements.under_bust > 0 ||
+@@ -4241,10 +4241,10 @@
+                   <span className="font-mono text-[9px] text-heritage-gold font-bold">
+                     GARMENT CUT
+                   </span>
+-                    {selectedStyle.outfitType || selectedStyle.name} -{" "}
++                    {selectedStyle?.outfitType || selectedStyle?.name || "Pending Design"} -{" "}
+                     <span className="text-heritage-ink/60 font-serif">
+-                      selectedStyle.garmentComposition || "2-Piece Set",
++                      {selectedStyle?.garmentComposition || "2-Piece Set"}
+                     </span>
+                 </div>
+                 <span className="font-mono text-xs">
+@@ -4255,7 +4255,7 @@
+               </div>
+ 
+-              {selectedFabric && selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "") && hasLining && (
++              {selectedFabric && selectedStyle?.gender === "female" && selectedGarment && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "") && hasLining && (
+                 <div className="flex justify-between items-center py-2.5">
+                   <div className="flex flex-col gap-0.5">
+@@ -4339,7 +4339,7 @@
+               <span className="font-bold">Original: €{baseRateRaw.toFixed(2)}</span> (before VIP discount applied)
+             </div>
+           )}
+-                  {selectedStyle.name}
++                  {selectedStyle?.name || "Pending"}
+                 </div>
+                 <div className="font-mono text-[10px] sm:text-xs">
+                   €{baseRate.toFixed(2)}
+@@ -4384,7 +4384,7 @@
+               </div>
+ 
+-              {selectedStyle.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "") && hasLining && (
++              {selectedStyle?.gender === "female" && selectedGarment && ["L1", "L2", "L3", "L4"].includes(selectedGarment.code || "") && hasLining && (
+                 <div className="flex justify-between items-center py-2.5 text-xs text-heritage-ink/75 border-b border-dashed border-heritage-beige/35">
+                   <span>Lining Added</span>
+                   <span className="font-mono">
+@@ -4453,7 +4453,7 @@
+             <div className="flex justify-between items-start font-bold">
+               <div className="flex flex-col gap-0.5">
+-                <span>{selectedStyle.name}</span>
++                <span>{selectedStyle?.name || "Pending"}</span>
+                 <span className="text-[10px] text-heritage-ink/60 font-serif">
+-                  {selectedGarment.type}
++                  {selectedGarment?.type || "Pending"}
+                 </span>
+               </div>

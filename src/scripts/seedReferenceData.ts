@@ -50,10 +50,13 @@ const referenceData = [
     name: "Fabric Categories",
     description: "Categories for fabrics in the catalog",
     options: [
-      { id: "fabric_cat_printed", code: "PRINTED_FABRICS", label: "Printed Fabrics (Standard Ankara)", value: "Printed Fabrics", enabled: true, displayOrder: 1 },
-      { id: "fabric_cat_handcrafted", code: "HANDCRAFTED_FABRICS", label: "Handcrafted Fabrics (Adire, Tie-Dye)", value: "Handcrafted Fabrics", enabled: true, displayOrder: 2 },
-      { id: "fabric_cat_traditional", code: "TRADITIONAL_FABRICS", label: "Traditional Fabrics (Aso-Oke, Isiagu)", value: "Traditional Fabrics", enabled: true, displayOrder: 3 },
-      { id: "fabric_cat_luxury", code: "LUXURY_FABRICS", label: "Luxury Fabrics (Lace, Silk, Velvet)", value: "Luxury Fabrics", enabled: true, displayOrder: 4 }
+      { id: "fabric_cat_hitarget", code: "HiTarget Ankara", label: "HiTarget Ankara", value: "HiTarget Ankara", enabled: true, displayOrder: 1 },
+      { id: "fabric_cat_hollandis", code: "Hollandis Ankara", label: "Hollandis Ankara", value: "Hollandis Ankara", enabled: true, displayOrder: 2 },
+      { id: "fabric_cat_kampala", code: "Kampala", label: "Kampala", value: "Kampala", enabled: true, displayOrder: 3 },
+      { id: "fabric_cat_asooke", code: "Aso-Oke", label: "Aso-Oke", value: "Aso-Oke", enabled: true, displayOrder: 4 },
+      { id: "fabric_cat_adire", code: "Adire", label: "Adire", value: "Adire", enabled: true, displayOrder: 5 },
+      { id: "fabric_cat_isiagu", code: "Isiagu (Akwa-Oche)", label: "Isiagu (Akwa-Oche)", value: "Isiagu (Akwa-Oche)", enabled: true, displayOrder: 6 },
+      { id: "fabric_cat_lace", code: "Lace", label: "Lace", value: "Lace", enabled: true, displayOrder: 7 }
     ]
   },
   {

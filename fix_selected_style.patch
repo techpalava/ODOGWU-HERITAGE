@@ -1,0 +1,23 @@
+--- src/components/DesignStudioView.tsx
++++ src/components/DesignStudioView.tsx
+@@ -556,10 +556,7 @@
+   }, [orderContext, storeBatches]);
+ 
+   // STEP 1: Style Selection, Filtering & Pagination States
+-  const [selectedStyle, setSelectedStyle] = useState<StyleCategory>(
+-    styles[0] || ({ id: "", name: "", description: "", basePrice: 0, gender: "unisex", tags: [], garments: [], images: [] } as unknown as StyleCategory),
+-  );
++  const [selectedStyle, setSelectedStyle] = useState<StyleCategory | null>(null);
+   const [styleSearchInput, setStyleSearchInput] = useState<string>("");
+   const [styleSearch, setStyleSearch] = useState<string>("");
+   const [designCategoryFilter, setDesignCategoryFilter] = useState<string>("All Designs");
+@@ -567,7 +564,7 @@
+ 
+   // Sync selectedStyle if styles prop changes and current selectedStyle is not in styles
+   useEffect(() => {
+-    if (styles.length > 0 && !styles.some((s) => s.id === selectedStyle.id)) {
+-      setSelectedStyle(styles[0]);
++    if (selectedStyle && styles.length > 0 && !styles.some((s) => s.id === selectedStyle.id)) {
++      setSelectedStyle(null);
+     }
+   }, [styles, selectedStyle]);

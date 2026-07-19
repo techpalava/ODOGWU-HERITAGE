@@ -239,7 +239,7 @@ export default function DatabaseView({
             code: nextCode,
             name: data.name || "Generating...",
             description: data.description || "Premium Nigerian Traditional weave.",
-            category: data.category || "Printed Fabrics",
+            category: data.category || "HiTarget Ankara",
             priceMultiplier: 1.2,
             color: data.color || "Multi",
             colorHex: data.colorHex || "#2e3a1e",
@@ -1607,13 +1607,13 @@ export default function DatabaseView({
                       >
                         <option value="Any">Any Fabric</option>
                         {useReferenceDataFallback("fabric_categories", [
-                          { value: "Ankara", label: "Ankara" },
+                          { value: "HiTarget Ankara", label: "HiTarget Ankara" },
+                          { value: "Hollandis Ankara", label: "Hollandis Ankara" },
+                          { value: "Kampala", label: "Kampala" },
+                          { value: "Aso-Oke", label: "Aso-Oke" },
+                          { value: "Adire", label: "Adire" },
+                          { value: "Isiagu (Akwa-Oche)", label: "Isiagu (Akwa-Oche)" },
                           { value: "Lace", label: "Lace" },
-                          { value: "Senator / Cashmere", label: "Senator / Cashmere" },
-                          { value: "Atiku", label: "Atiku" },
-                          { value: "Silk / Chiffon", label: "Silk / Chiffon" },
-                          { value: "Velvet", label: "Velvet" },
-                          { value: "Aso Oke", label: "Aso Oke" },
                         ]).map((opt) => (
                           <option key={opt.value} value={opt.value}>
                             {opt.label}
@@ -2018,7 +2018,7 @@ export default function DatabaseView({
                           Fabric Category Class
                         </label>
                         <select
-                          value={editingItem.category || "Printed Fabrics"}
+                          value={editingItem.category || "HiTarget Ankara"}
                           onChange={(e) =>
                             setEditingItem({
                               ...editingItem,
@@ -2028,10 +2028,13 @@ export default function DatabaseView({
                           className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                         >
                           {useReferenceDataFallback("fabric_categories", [
-                            { value: "Printed Fabrics", label: "Printed Fabrics (Standard Ankara)" },
-                            { value: "Handcrafted Fabrics", label: "Handcrafted Fabrics (Adire Tie-Dye)" },
-                            { value: "Traditional Fabrics", label: "Traditional Fabrics (Aso-Oke Strip Weaves)" },
-                            { value: "Luxury Fabrics", label: "Luxury Fabrics (Grand Gold Cashmere Brocades)" },
+                            { value: "HiTarget Ankara", label: "HiTarget Ankara" },
+                            { value: "Hollandis Ankara", label: "Hollandis Ankara" },
+                            { value: "Kampala", label: "Kampala" },
+                            { value: "Aso-Oke", label: "Aso-Oke" },
+                            { value: "Adire", label: "Adire" },
+                            { value: "Isiagu (Akwa-Oche)", label: "Isiagu (Akwa-Oche)" },
+                            { value: "Lace", label: "Lace" },
                           ]).map((opt) => (
                             <option key={opt.value} value={opt.value}>
                               {opt.label}
@@ -3766,7 +3769,7 @@ export default function DatabaseView({
                         code: "Generating...",
                         name: "",
                         description: "Premium Nigerian Traditional weave.",
-                        category: "Printed Fabrics",
+                        category: "HiTarget Ankara",
                         priceMultiplier: 1.2,
                         color: "Multi",
                         colorHex: "#2e3a1e",

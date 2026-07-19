@@ -47,6 +47,7 @@ export interface StyleCategory {
   outfitType?: string;
   garmentComposition?: string;
   fabricCategory?: string;
+  designCategories?: string[]; // E.g., "Male Designs", "Family-Look Designs", etc.
   options: string[]; // specific sub-styles
   image?: string;
   detectedColors?: {
@@ -68,10 +69,14 @@ export interface Fabric {
 
   // Database suggested fields
   category?:
-    | "PRINTED_FABRICS"
-    | "HANDCRAFTED_FABRICS"
-    | "TRADITIONAL_FABRICS"
-    | "LUXURY_FABRICS";
+    | "HiTarget Ankara"
+    | "Hollandis Ankara"
+    | "Kampala"
+    | "Aso-Oke"
+    | "Adire"
+    | "Isiagu (Akwa-Oche)"
+    | "Lace"
+    | string; // keep string for compatibility, though we'll strictly type the literals
   image?: string;
   width?: string;
   price?: number;

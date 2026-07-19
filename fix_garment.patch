@@ -1,0 +1,35 @@
+--- src/components/DesignStudioView.tsx
++++ src/components/DesignStudioView.tsx
+@@ -737,13 +737,14 @@
+   const [selectedPriceCode, setSelectedPriceCode] = useState<string>("AUTO");
+ 
+   // STEP 4: Garment Type selection
+-  const garmentTypesForStyle = (style: StyleCategory) => {
++  const garmentTypesForStyle = (style: StyleCategory | null) => {
++    if (!style) return [];
+     const exactMatch = {
+       type: "Use Exact Design Style",
+       fee: style.basePrice,
+       discountFee: style.basePrice,
+       code: "EXACT",
+     };
+ 
+     let details = [];
+     if (style.constructionDetails && style.constructionDetails.length > 0) {
+@@ -770,14 +771,11 @@
+     return [exactMatch, ...details];
+   };
+ 
+-  const defaultGarment = garmentTypesForStyle(selectedStyle)[0] || {
+-    type: "Standard Garment",
+-    fee: selectedStyle.basePrice || 150,
+-  };
++  const defaultGarment = selectedStyle ? garmentTypesForStyle(selectedStyle)[0] : null;
+   const [selectedGarment, setSelectedGarment] = useState<{
+     type: string;
+     fee: number;
+     discountFee?: number;
+     code?: string;
+-  }>(defaultGarment);
++  } | null>(defaultGarment);
+   const [isGarmentDropdownOpen, setIsGarmentDropdownOpen] = useState(false);
