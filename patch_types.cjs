@@ -1,7 +1,34 @@
 const fs = require('fs');
 let content = fs.readFileSync('src/types.ts', 'utf8');
 
-const replacement = `export interface DesignSelections {
+const interfaceStyleCategory = `export interface StyleCategory {
+  id: string;
+  name: string;
+  description: string;
+  basePrice: number;
+  gender: "male" | "female" | "unisex" | "couple" | "family";
+  outfitType?: string;
+  garmentComposition?: string;
+  fabricCategory?: string;
+  designCategories?: string[]; // E.g., "Male Designs", "Family-Look Designs", etc.
+  options: string[]; // specific sub-styles
+  image?: string;
+  detectedColors?: {
+    main: string;
+    secondary: string;
+  };
+  constructionDetails?: ConstructionDetail[];
+
+  // Premium features
+  hasMonogram?: boolean;
+  hasEmbroidery?: boolean;
+  hasMonogramTrimming?: boolean;
+  
+  // Garment detail configs`;
+
+content = content.replace(/export interface StyleCategory \{[\s\S]*?\/\/ Garment detail configs/, interfaceStyleCategory);
+
+const interfaceDesignSelections = `export interface DesignSelections {
   // Old fields for backward compat
   collar?: string;
   embroidery?: string;
@@ -12,21 +39,13 @@ const replacement = `export interface DesignSelections {
   hasLining?: boolean;
   optionalAccessories?: string[];
 
-  // New detailed garment fields
-  topLength?: string;
-  topPocket?: string;
-  dressLength?: string;
-  dressPocket?: string;
-  sleeveLength?: string;
-  trouserFastening?: string;
-  trouserPocket?: string;
-  shortFastening?: string;
-  shortPocket?: string;
-  skirtLength?: string;
-  skirtPocket?: string;
-  embroideryDesign?: string;
-  accessories?: string[];
-}`;
+  // Premium features
+  hasMonogram?: boolean;
+  hasEmbroidery?: boolean;
+  hasMonogramTrimming?: boolean;
 
-content = content.replace(/export interface DesignSelections \{[\s\S]*?\}/, replacement);
+  // New detailed garment fields`;
+
+content = content.replace(/export interface DesignSelections \{[\s\S]*?\/\/ New detailed garment fields/, interfaceDesignSelections);
+
 fs.writeFileSync('src/types.ts', content);

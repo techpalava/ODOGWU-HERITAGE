@@ -55,6 +55,16 @@ export interface StyleCategory {
     secondary: string;
   };
   constructionDetails?: ConstructionDetail[];
+
+  // Premium features
+  hasMonogram?: boolean;
+  hasEmbroidery?: boolean;
+  hasMonogramTrimming?: boolean;
+  includedDesignFeatures?: {
+    hasMonogram?: boolean;
+    hasEmbroidery?: boolean;
+    hasMonogramTrimming?: boolean;
+  };
   
   // Garment detail configs
   supportedGarmentDetails?: {
@@ -117,6 +127,11 @@ export interface DesignSelections {
   hemFinish?: string;
   hasLining?: boolean;
   optionalAccessories?: string[];
+
+  // Premium features
+  hasMonogram?: boolean;
+  hasEmbroidery?: boolean;
+  hasMonogramTrimming?: boolean;
 
   // New detailed garment fields
   topLength?: string;

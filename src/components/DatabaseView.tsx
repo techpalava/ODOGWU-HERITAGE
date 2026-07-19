@@ -136,6 +136,50 @@ export default function DatabaseView({
   businessSettings,
   setBusinessSettings,
 }: DatabaseViewProps) {
+  const genderOptions = useReferenceDataFallback("genders", [
+    { value: "male", label: "Male" },
+    { value: "female", label: "Female" },
+    { value: "unisex", label: "Unisex" },
+    { value: "couple", label: "Couple" },
+    { value: "family", label: "Family" },
+  ]);
+
+  const genderOptionsCollection = useReferenceDataFallback("genders", [
+    { value: "male", label: "Men's Collection" },
+    { value: "female", label: "Women's Collection" },
+    { value: "unisex", label: "Unisex Collection" },
+    { value: "family", label: "Family Collection" },
+  ]);
+
+  const outfitTypeOptions = useReferenceDataFallback("outfit_types", [
+    { value: "Senator Set", label: "Senator Set" },
+    { value: "Kaftan Set", label: "Kaftan Set" },
+    { value: "Boubou", label: "Boubou" },
+    { value: "Agbada", label: "Agbada" },
+  ]);
+
+  const garmentCompositionOptions = useReferenceDataFallback("garment_compositions", [
+    { value: "Shirt Only", label: "Shirt Only" },
+    { value: "Trouser Only", label: "Trouser Only" },
+    { value: "Shorts Only", label: "Shorts Only" },
+    { value: "Blouse Only", label: "Blouse Only" },
+    { value: "Top Only", label: "Top Only" },
+    { value: "Dress Only", label: "Dress Only" },
+    { value: "2-Piece Set", label: "2-Piece Set" },
+    { value: "3-Piece Set", label: "3-Piece Set" },
+    { value: "4-Piece Set", label: "4-Piece Set" },
+  ]);
+
+  const fabricCategoryOptions = useReferenceDataFallback("fabric_categories", [
+    { value: "HiTarget Ankara", label: "HiTarget Ankara" },
+    { value: "Hollandis Ankara", label: "Hollandis Ankara" },
+    { value: "Kampala", label: "Kampala" },
+    { value: "Aso-Oke", label: "Aso-Oke" },
+    { value: "Adire", label: "Adire" },
+    { value: "Isiagu (Akwa-Oche)", label: "Isiagu (Akwa-Oche)" },
+    { value: "Lace", label: "Lace" },
+  ]);
+
   const [activeTab, setActiveTab] = useState<TabType>("documentation");
   const [settingsSubTab, setSettingsSubTab] = useState<
     "rules" | "discounts" | "pricing_engine"
@@ -895,6 +939,11 @@ export default function DatabaseView({
       triggerStatus("Fabric Code and Name are required.", "error");
       return;
     }
+    
+    if (!item.category) {
+      triggerStatus("Fabric Category is required. Please select an allowed category.", "error");
+      return;
+    }
 
     console.log("[handleSaveFabric] Base pricing calculation");
     // Auto-calculate the price from base if multiplier is updated
@@ -1114,7 +1163,7 @@ export default function DatabaseView({
     (f) =>
       f.name.toLowerCase().includes(fabricSearch.toLowerCase()) ||
       f.code.toLowerCase().includes(fabricSearch.toLowerCase()) ||
-      f.category.toLowerCase().includes(fabricSearch.toLowerCase()),
+      (f.category || "").toLowerCase().includes(fabricSearch.toLowerCase()),
   );
 
   const filteredBatches = batches.filter(
@@ -1514,13 +1563,7 @@ export default function DatabaseView({
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
-                        {useReferenceDataFallback("genders", [
-                          { value: "male", label: "Male" },
-                          { value: "female", label: "Female" },
-                          { value: "unisex", label: "Unisex" },
-                          { value: "couple", label: "Couple" },
-                          { value: "family", label: "Family" },
-                        ]).map((opt) => (
+                        {genderOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>
                             {opt.label}
                           </option>
@@ -1541,12 +1584,7 @@ export default function DatabaseView({
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
-                        {useReferenceDataFallback("outfit_types", [
-                          { value: "Senator Set", label: "Senator Set" },
-                          { value: "Kaftan Set", label: "Kaftan Set" },
-                          { value: "Boubou", label: "Boubou" },
-                          { value: "Agbada", label: "Agbada" },
-                        ]).map((opt) => (
+                        {outfitTypeOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>
                             {opt.label}
                           </option>
@@ -1567,24 +1605,7 @@ export default function DatabaseView({
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
-                        {useReferenceDataFallback("garment_compositions", [
-                          { value: "Shirt Only", label: "Shirt Only" },
-                          { value: "Trouser Only", label: "Trouser Only" },
-                          { value: "Shorts Only", label: "Shorts Only" },
-                          { value: "Blouse Only", label: "Blouse Only" },
-                          { value: "Top Only", label: "Top Only" },
-                          { value: "Skirt Only", label: "Skirt Only" },
-                          { value: "Wrapper Only", label: "Wrapper Only" },
-                          { value: "Dress Only", label: "Dress Only" },
-                          { value: "Kaftan Only", label: "Kaftan Only" },
-                          { value: "Agbada Only", label: "Agbada Only" },
-                          { value: "2-Piece Set", label: "2-Piece Set" },
-                          { value: "3-Piece Set", label: "3-Piece Set" },
-                          { value: "4-Piece Set", label: "4-Piece Set" },
-                          { value: "Couple Set", label: "Couple Set" },
-                          { value: "Parent & Child Set", label: "Parent & Child Set" },
-                          { value: "Family Set", label: "Family Set" },
-                        ]).map((opt) => (
+                        {garmentCompositionOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>
                             {opt.label}
                           </option>
@@ -1606,15 +1627,7 @@ export default function DatabaseView({
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
                         <option value="Any">Any Fabric</option>
-                        {useReferenceDataFallback("fabric_categories", [
-                          { value: "HiTarget Ankara", label: "HiTarget Ankara" },
-                          { value: "Hollandis Ankara", label: "Hollandis Ankara" },
-                          { value: "Kampala", label: "Kampala" },
-                          { value: "Aso-Oke", label: "Aso-Oke" },
-                          { value: "Adire", label: "Adire" },
-                          { value: "Isiagu (Akwa-Oche)", label: "Isiagu (Akwa-Oche)" },
-                          { value: "Lace", label: "Lace" },
-                        ]).map((opt) => (
+                        {fabricCategoryOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>
                             {opt.label}
                           </option>
@@ -2052,15 +2065,8 @@ export default function DatabaseView({
                           }
                           className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                         >
-                          {useReferenceDataFallback("fabric_categories", [
-                            { value: "HiTarget Ankara", label: "HiTarget Ankara" },
-                            { value: "Hollandis Ankara", label: "Hollandis Ankara" },
-                            { value: "Kampala", label: "Kampala" },
-                            { value: "Aso-Oke", label: "Aso-Oke" },
-                            { value: "Adire", label: "Adire" },
-                            { value: "Isiagu (Akwa-Oche)", label: "Isiagu (Akwa-Oche)" },
-                            { value: "Lace", label: "Lace" },
-                          ]).map((opt) => (
+                          <option value="" disabled>Select fabric category</option>
+                          {fabricCategoryOptions.map((opt) => (
                             <option key={opt.value} value={opt.value}>
                               {opt.label}
                             </option>
@@ -3929,7 +3935,22 @@ export default function DatabaseView({
                                 <button
                                   onClick={() => {
                                     setIsNewRecord(false);
-                                    setEditingItem(f);
+                                    
+                                    const allowedCategories = ["HiTarget Ankara", "Hollandis Ankara", "Kampala", "Aso-Oke", "Adire", "Isiagu (Akwa-Oche)", "Lace"];
+                                    let cat = f.category;
+                                    if (cat === "Hi-Target Ankara" || cat === "Hi-Target") cat = "HiTarget Ankara";
+                                    if (cat && !allowedCategories.includes(cat)) {
+                                      cat = ""; // force re-selection
+                                    }
+                                    
+                                    setEditingItem({
+                                      ...f,
+                                      category: cat || "",
+                                      stock: f.stock ?? 0,
+                                      color: f.color || "Multi",
+                                      colorHex: f.colorHex || "#2e3a1e",
+                                      width: f.width || "45 inches",
+                                    });
                                     setFabricNameSuggestions([]);
                                     setSuggestionHistory([]);
                                     setEditingType("fabric");
@@ -6069,12 +6090,7 @@ export default function DatabaseView({
                                   }}
                                   className="w-full px-3 py-1.5 border border-heritage-gold/20 bg-white rounded-lg text-xs"
                                 >
-                                  {useReferenceDataFallback("genders", [
-                                    { value: "male", label: "Men's Collection" },
-                                    { value: "female", label: "Women's Collection" },
-                                    { value: "unisex", label: "Unisex Collection" },
-                                    { value: "family", label: "Family Collection" },
-                                  ]).map((opt) => (
+                                  {genderOptionsCollection.map((opt) => (
                                     <option key={opt.value} value={opt.value}>
                                       {opt.label}
                                     </option>

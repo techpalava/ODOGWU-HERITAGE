@@ -515,7 +515,22 @@ export const GARMENT_DETAIL_PRICING: Record<string, Record<string, number>> = {
   }
 };
 
-export const calculateGarmentDetailsPrice = (details: DesignSelections): number => {
+export const hasMonogram = (item: any): boolean => {
+  const text = [item?.name, item?.description, ...(item?.options || [])].filter(Boolean).join(" ").toLowerCase();
+  return item?.hasMonogram === true || item?.includedDesignFeatures?.hasMonogram === true || item?.defaultGarmentDetails?.hasMonogram === true || item?.embroideryDesign === "Name Monogram" || item?.defaultGarmentDetails?.embroideryDesign === "Name Monogram" || /\bmonogram\b/.test(text);
+};
+
+export const hasEmbroidery = (item: any): boolean => {
+  const text = [item?.name, item?.description, ...(item?.options || [])].filter(Boolean).join(" ").toLowerCase();
+  return item?.hasEmbroidery === true || item?.includedDesignFeatures?.hasEmbroidery === true || item?.defaultGarmentDetails?.hasEmbroidery === true || item?.embroideryDesign === "Embroidery" || item?.defaultGarmentDetails?.embroideryDesign === "Embroidery" || /embroider|embroid/.test(text);
+};
+
+export const hasMonogramTrimming = (item: any): boolean => {
+  const text = [item?.name, item?.description, ...(item?.options || [])].filter(Boolean).join(" ").toLowerCase();
+  return item?.hasMonogramTrimming === true || item?.includedDesignFeatures?.hasMonogramTrimming === true || item?.defaultGarmentDetails?.hasMonogramTrimming === true || item?.embroideryDesign === "Monogram Trimming" || item?.defaultGarmentDetails?.embroideryDesign === "Monogram Trimming" || /monogram trim|monogram trimming/.test(text);
+};
+
+export const calculateGarmentDetailsPrice = (details: DesignSelections, style?: any): number => {
   let total = 0;
   if (details.topLength && GARMENT_DETAIL_PRICING.topLength[details.topLength]) total += GARMENT_DETAIL_PRICING.topLength[details.topLength];
   if (details.topPocket && GARMENT_DETAIL_PRICING.topPocket[details.topPocket]) total += GARMENT_DETAIL_PRICING.topPocket[details.topPocket];
@@ -528,7 +543,10 @@ export const calculateGarmentDetailsPrice = (details: DesignSelections): number 
   if (details.shortPocket && GARMENT_DETAIL_PRICING.shortPocket[details.shortPocket]) total += GARMENT_DETAIL_PRICING.shortPocket[details.shortPocket];
   if (details.skirtLength && GARMENT_DETAIL_PRICING.skirtLength[details.skirtLength]) total += GARMENT_DETAIL_PRICING.skirtLength[details.skirtLength];
   if (details.skirtPocket && GARMENT_DETAIL_PRICING.skirtPocket[details.skirtPocket]) total += GARMENT_DETAIL_PRICING.skirtPocket[details.skirtPocket];
-  if (details.embroideryDesign && GARMENT_DETAIL_PRICING.embroideryDesign[details.embroideryDesign]) total += GARMENT_DETAIL_PRICING.embroideryDesign[details.embroideryDesign];
+  // Prevent double counting if both enum and boolean are present
+  if (hasMonogram(details) || (style && hasMonogram(style))) total += GARMENT_DETAIL_PRICING.embroideryDesign["Name Monogram"] || 12.00;
+  if (hasEmbroidery(details) || (style && hasEmbroidery(style))) total += GARMENT_DETAIL_PRICING.embroideryDesign["Embroidery"] || 12.00;
+  if (hasMonogramTrimming(details) || (style && hasMonogramTrimming(style))) total += GARMENT_DETAIL_PRICING.embroideryDesign["Monogram Trimming"] || 12.00;
   if (details.accessories) {
     for (const acc of details.accessories) {
       if (GARMENT_DETAIL_PRICING.accessories[acc]) {
@@ -1441,49 +1459,60 @@ export default function DesignStudioView({
   };
 
   // Total pricing calculations based on dynamic base sewing prices & standard accessory charge
-  const calculateSubtotal = () => {
-    if (!selectedFabric) return 0;
+  // Centralized Pricing Helper
+  const getPricingBreakdown = () => {
+    let fabricPrice = 0;
+    let customDetailsPrice = 0;
+    let baseRate = 0;
+    let courierSurcharge = 0;
 
-    const isActualRate =
-      batchType === "alone" ||
-      !(businessSettings.pricingSettings?.discountRulesEnabled ?? false);
-
-    // Resolve dynamic Base Sewing Price based on Outfit Type and Garment Composition
-    const baseRateRaw = (selectedStyle && selectedGarment) ? getBaseSewingPrice(selectedStyle, selectedGarment, businessSettings.pricingSettings?.baseSewingPrices) : 0;
-
-    // Maintain standard group buy/cohort discount ratio
-    const discountRatio = (selectedGarment?.discountFee && selectedGarment?.fee)
-      ? selectedGarment?.discountFee / selectedGarment?.fee
-      : 1;
-    const baseRate = isActualRate
-      ? baseRateRaw
-      : Math.round(baseRateRaw * discountRatio);
-
-    // Fabric pricing based on normalized fabric type
-    const fabricSurcharge = getFabricPrice(selectedFabric);
-
-    // New Garment Details Pricing
-    const garmentDetailsPrice = calculateGarmentDetailsPrice(designSelections);
-
-    // Ladies Lining (L5): adds +€10.00 (Customization)
-    let liningPrice = 0;
-    if (selectedStyle && hasLining && selectedStyle?.gender === "female" && selectedGarment && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "")) {
-      liningPrice = 10.0;
+    if (selectedFabric) {
+      fabricPrice = getFabricPrice(selectedFabric);
     }
 
-    // Individual Courier Surcharge
-    const courierSurcharge =
-      batchType === "alone"
-        ? 35.0
-        : 0;
+    if (selectedFabric && selectedStyle && selectedGarment) {
+      // Custom Garment Details Pricing
+      let detailsPrice = calculateGarmentDetailsPrice(designSelections, selectedStyle);
+      
+      if (designSelections.additionalCap) {
+        detailsPrice += (businessSettings.pricingSettings?.standardAccessoryCharge ?? 10);
+      }
+      
+      if (optionalAccessories && optionalAccessories.length > 0) {
+        detailsPrice += (optionalAccessories.length * 10);
+      }
 
-    // Only include baseRate and garment details if a style has been selected.
-    const effectiveBaseRate = (selectedFabric && selectedStyle && selectedGarment) ? baseRate : 0;
-    const effectiveDetailsPrice = (selectedFabric && selectedStyle && selectedGarment) ? garmentDetailsPrice : 0;
-    const effectiveLiningPrice = (selectedFabric && selectedStyle && selectedGarment) ? liningPrice : 0;
+      const isLiningSupported = ['L1', 'L2', 'L3', 'L4'].includes(selectedGarment?.code || "");
+      if (hasLining && selectedStyle?.gender === "female" && isLiningSupported) {
+        detailsPrice += 10.0;
+      }
+      
+      customDetailsPrice = detailsPrice;
 
-    return fabricSurcharge + effectiveBaseRate + effectiveDetailsPrice + effectiveLiningPrice + courierSurcharge;
+      // Base Sewing Price (not included in subtotal for step 1-3 summary)
+      const isActualRate = batchType === "alone" || !(businessSettings.pricingSettings?.discountRulesEnabled ?? false);
+      const baseRateRaw = getBaseSewingPrice(selectedStyle, selectedGarment, businessSettings.pricingSettings?.baseSewingPrices);
+      const discountRatio = (selectedGarment?.discountFee && selectedGarment?.fee)
+        ? selectedGarment?.discountFee / selectedGarment?.fee
+        : 1;
+      baseRate = isActualRate ? baseRateRaw : Math.round(baseRateRaw * discountRatio);
+    }
+
+    if (selectedFabric && batchType === "alone") {
+      courierSurcharge = 35.0;
+    }
+
+    const subtotal = fabricPrice + customDetailsPrice;
+
+    return {
+      fabricPrice,
+      customDetailsPrice,
+      baseRate,
+      courierSurcharge,
+      subtotal
+    };
   };
+
 
   const discountEnabled =
     businessSettings.pricingSettings?.discountRulesEnabled ?? false;
@@ -1497,9 +1526,9 @@ export default function DesignStudioView({
   const baseRate = (!selectedFabric || !selectedStyle || !selectedGarment) ? 0 : (isActualRateForDisplay
     ? baseRateRaw
     : Math.round(baseRateRaw * discountRatio));
-  const garmentDetailsPrice = (!selectedFabric || !selectedStyle || !selectedGarment) ? 0 : calculateGarmentDetailsPrice(designSelections);
-
-  const subtotal = calculateSubtotal();
+  const pricing = getPricingBreakdown();
+  const garmentDetailsPrice = pricing.customDetailsPrice;
+  const subtotal = pricing.subtotal;
   const depositRatio = businessSettings.pricingSettings.depositPercentage / 100;
   const depositRequired = subtotal * depositRatio;
   const remainingDue = subtotal - depositRequired;
@@ -2305,6 +2334,21 @@ export default function DesignStudioView({
                               {style.fabricCategory}
                             </span>
                           )}
+                          {hasMonogram(style) && (
+                            <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-gold/20 text-heritage-green border border-heritage-gold/30 flex items-center gap-1">
+                              Contains Monogram
+                            </span>
+                          )}
+                          {hasEmbroidery(style) && (
+                            <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-gold/20 text-heritage-green border border-heritage-gold/30 flex items-center gap-1">
+                              Contains Embroidery
+                            </span>
+                          )}
+                          {hasMonogramTrimming(style) && (
+                            <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-gold/20 text-heritage-green border border-heritage-gold/30 flex items-center gap-1">
+                              Contains Monogram Trim
+                            </span>
+                          )}
                         </div>
                         
                         {/* Description */}
@@ -2396,7 +2440,7 @@ export default function DesignStudioView({
                     />
                     <input
                       type="text"
-                      placeholder="Search fabrics (e.g. Royal Emerald, Damask, ODG-001)..."
+                      placeholder="Search fabrics (e.g. Royal Emerald, Aso-Oke, ODG-001)..."
                       value={fabricSearchInput}
                       onChange={(e) => setFabricSearchInput(e.target.value)}
                       className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 focus:border-heritage-gold rounded-xl text-xs outline-none transition"
