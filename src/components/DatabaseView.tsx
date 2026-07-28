@@ -116,6 +116,8 @@ type TabType =
   | "operations"
   | "compliance";
 
+import { GARMENT_DETAIL_PRICING } from "./DesignStudioView";
+
 export default function DatabaseView({
   customers,
   setCustomers,
@@ -193,6 +195,8 @@ export default function DatabaseView({
 
   const {
     currentUser,
+    customDetailCatalog,
+    setCustomDetailCatalog,
     mediaLibrary,
     plugins,
     auditLogs,
@@ -201,7 +205,11 @@ export default function DatabaseView({
 
   // Search states for each table
   const [userSearch, setUserSearch] = useState("");
+  const [styleSubTab, setStyleSubTab] = useState<"styles" | "catalogue">("styles");
   const [styleSearch, setStyleSearch] = useState("");
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [editingCatalogOption, setEditingCatalogOption] = useState<any>(null);
+  const [isNewCatalogOption, setIsNewCatalogOption] = useState(false);
   const [fabricSearch, setFabricSearch] = useState("");
   const [batchSearch, setBatchSearch] = useState("");
   const [orderSearch, setOrderSearch] = useState("");
@@ -859,12 +867,135 @@ export default function DatabaseView({
   };
 
   // STYLES
+  const handlePopulateConstruction = () => {
+    const item = editingItem as StyleCategory;
+    if (!item) return;
+
+    const supported = item.supportedGarmentDetails || {};
+    const gender = item.gender;
+    const isMale = gender === 'male' || gender === 'unisex';
+    const isFemale = gender === 'female' || gender === 'unisex';
+    const isFamily = gender === 'family' || gender === 'couple';
+    
+    const gCode = item.id || "";
+    const name = (item.name || "").toLowerCase();
+    
+    const comp = (item.garmentComposition || "").toLowerCase();
+    
+    const isShirt = ['G1', 'G2', 'G5', 'G6'].includes(gCode) 
+       || name.includes('shirt') 
+       || name.includes('kaftan') 
+       || name.includes('senator') 
+       || name.includes('agbada')
+      || comp.includes('shirt')
+      || comp.includes('top');
+    const isDress = ['L1', 'L2', 'L3', 'L4'].includes(gCode)
+      || name.includes('dress')
+      || name.includes('gown')
+      || name.includes('boubou')
+      || comp.includes('dress')
+      || comp.includes('gown');
+    const isTrouser = ['G4', 'G5', 'G6', 'L6', 'L7', 'L8', 'L9', 'L10'].includes(gCode) 
+       || name.includes('trouser') 
+       || name.includes('pant')
+      || name.includes('senator')
+      || name.includes('kaftan set')
+      || name.includes('agbada')
+      || comp.includes('2-piece')
+      || comp.includes('3-piece')
+      || comp.includes('set')
+      || comp.includes('trouser')
+      || comp.includes('pant');
+    const isShorts = ['G3'].includes(gCode) 
+       || name.includes('short')
+      || comp.includes('short')
+      || name.includes('nikka')
+      || comp.includes('nikka');
+    const isSkirt = name.includes('skirt')
+      || comp.includes('skirt')
+      || comp.includes('wrapper');
+
+    const showTrousers = isTrouser && (supported.trousers !== false);
+    const showShorts = isShorts && (supported.shorts !== false);
+    const showSkirt = isSkirt && (supported.skirt !== false);
+    const showDress = isDress && (supported.dress !== false);
+    const showSleeves = (isShirt || isDress) && (supported.sleeves !== false);
+    const showPockets = supported.pockets !== false;
+    const showEmbroidery = supported.embroidery !== false;
+    const showAccessories = supported.accessories !== false;
+    
+    const newDetails: any[] = [];
+    
+    const addGroup = (type: string, optionsMap: Record<string, number>) => {
+      Object.entries(optionsMap).forEach(([code, price]) => {
+        newDetails.push({ type, code, price });
+      });
+    };
+
+    if ((isMale || isFamily) && isShirt) {
+      addGroup("topLength", GARMENT_DETAIL_PRICING.topLength);
+      if (showPockets) addGroup("topPocket", GARMENT_DETAIL_PRICING.topPocket);
+    }
+    if ((isFemale || isFamily) && showDress) {
+      addGroup("dressLength", GARMENT_DETAIL_PRICING.dressLength);
+      if (showPockets) addGroup("dressPocket", GARMENT_DETAIL_PRICING.dressPocket);
+    }
+    if ((isFemale || isFamily) && showSkirt) {
+      addGroup("skirtLength", GARMENT_DETAIL_PRICING.skirtLength);
+      if (showPockets) addGroup("skirtPocket", GARMENT_DETAIL_PRICING.skirtPocket);
+    }
+    if (showSleeves) {
+      addGroup("sleeveLength", GARMENT_DETAIL_PRICING.sleeveLength);
+    }
+    if (showTrousers) {
+      addGroup("trouserFastening", GARMENT_DETAIL_PRICING.trouserFastening);
+      if (showPockets) addGroup("trouserPocket", GARMENT_DETAIL_PRICING.trouserPocket);
+    }
+    if (showShorts) {
+      addGroup("shortFastening", GARMENT_DETAIL_PRICING.shortFastening);
+      if (showPockets) addGroup("shortPocket", GARMENT_DETAIL_PRICING.shortPocket);
+    }
+    if (showEmbroidery) {
+      addGroup("embroideryDesign", GARMENT_DETAIL_PRICING.embroideryDesign);
+    }
+    if (showAccessories) {
+      addGroup("accessories", GARMENT_DETAIL_PRICING.accessories);
+    }
+    
+    setEditingItem({
+      ...item,
+      constructionDetails: newDetails
+    });
+    triggerStatus("Construction options generated from official pricing.", "success");
+  };
+
   const handleSaveStyle = (e: React.FormEvent) => {
     e.preventDefault();
     const item = editingItem as StyleCategory;
     if (!item.id || !item.name) {
       alert("Style ID and Name are required.");
       return;
+    }
+    
+    if (!item.targetDemographic && !item.gender) {
+      alert("Target Demographic is required.");
+      return;
+    }
+    
+    if (item.customDetailConfig) {
+      const conf = item.customDetailConfig;
+      if (!conf.representedGenders || conf.representedGenders.length === 0) {
+        alert("Represented genders must be assigned.");
+        return;
+      }
+      if (conf.featuresMaleAndFemale && (!conf.representedGenders.includes('male') || !conf.representedGenders.includes('female'))) {
+        alert("Features both male and female requires both male and female to be represented.");
+        return;
+      }
+      if (conf.enabled && (!conf.supportedGarmentGroups || conf.supportedGarmentGroups.length === 0)) {
+        alert("At least one supported garment group is required when Step 3 is enabled.");
+        return;
+      }
     }
 
     if (isNewRecord) {
@@ -1459,6 +1590,155 @@ export default function DatabaseView({
                   </form>
                 )}
 
+                {editingType === "catalog_option" && (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const item = editingCatalogOption;
+                      if (!item.id || !item.label || !item.description || !item.garmentGroup || !item.selectionGroup || item.eligibleDemographics.length === 0) {
+                        alert("Missing required fields");
+                        return;
+                      }
+                      try {
+                        const { StorageService } = await import('../services/storageService');
+                        item.updatedAt = new Date().toISOString();
+                        await StorageService.saveCatalogOption(item);
+                        
+                        setCustomDetailCatalog((prev: any) => {
+                          const existing = prev.find((o: any) => o.id === item.id);
+                          if (existing) return prev.map((o: any) => o.id === item.id ? item : o);
+                          return [...prev, item];
+                        });
+                        setEditingType(null);
+                        setEditingCatalogOption(null);
+                      } catch (err) {
+                        alert("Failed to save catalog option");
+                      }
+                    }}
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans"
+                  >
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">Option ID (Primary Key)</label>
+                      <input
+                        type="text"
+                        required
+                        disabled={!isNewCatalogOption}
+                        value={editingCatalogOption?.id || ""}
+                        onChange={(e) => setEditingCatalogOption({ ...editingCatalogOption, id: e.target.value })}
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">Customer-Facing Label</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingCatalogOption?.label || ""}
+                        onChange={(e) => setEditingCatalogOption({ ...editingCatalogOption, label: e.target.value })}
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="font-bold text-heritage-green">Description</label>
+                      <textarea
+                        required
+                        value={editingCatalogOption?.description || ""}
+                        onChange={(e) => setEditingCatalogOption({ ...editingCatalogOption, description: e.target.value })}
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg min-h-[60px]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">Garment Group</label>
+                      <select
+                        required
+                        value={editingCatalogOption?.garmentGroup || ""}
+                        onChange={(e) => setEditingCatalogOption({ ...editingCatalogOption, garmentGroup: e.target.value })}
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      >
+                        {['shirt', 'dress', 'neck', 'standard_shorts', 'bum_shorts', 'trousers', 'skirt'].map(g => (
+                          <option key={g} value={g}>{g}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">Selection Group</label>
+                      <select
+                        required
+                        value={editingCatalogOption?.selectionGroup || ""}
+                        onChange={(e) => setEditingCatalogOption({ ...editingCatalogOption, selectionGroup: e.target.value })}
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      >
+                        {['shirt_construction', 'shirt_pockets', 'dress_construction', 'dress_pockets', 'neck_design', 'standard_shorts_fastening', 'standard_shorts_pockets', 'bum_shorts_fastening', 'bum_shorts_pockets', 'trouser_fastening', 'trouser_pockets', 'skirt_length', 'skirt_pockets'].map(g => (
+                          <option key={g} value={g}>{g}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">Price (in cents, e.g. 6500 for €65.00)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        required
+                        value={editingCatalogOption?.priceCents || 0}
+                        onChange={(e) => setEditingCatalogOption({ ...editingCatalogOption, priceCents: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green block">Eligible Demographics</label>
+                      <div className="flex gap-4 mt-2">
+                        {['male', 'female', 'unisex'].map(d => (
+                          <label key={d} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={(editingCatalogOption?.eligibleDemographics || []).includes(d)}
+                              onChange={(e) => {
+                                const curr = editingCatalogOption?.eligibleDemographics || [];
+                                setEditingCatalogOption({
+                                  ...editingCatalogOption,
+                                  eligibleDemographics: e.target.checked ? [...curr, d] : curr.filter((x: string) => x !== d)
+                                });
+                              }}
+                              className="h-4 w-4 text-heritage-green rounded"
+                            />
+                            <span className="capitalize">{d}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="flex items-center gap-2 cursor-pointer p-2 bg-heritage-cream/30 rounded border border-heritage-gold/20">
+                        <input
+                          type="checkbox"
+                          checked={editingCatalogOption?.active ?? true}
+                          onChange={(e) => setEditingCatalogOption({ ...editingCatalogOption, active: e.target.checked })}
+                          className="h-4 w-4 text-heritage-green rounded"
+                        />
+                        <span className="font-bold text-heritage-green">Active (Available for new orders)</span>
+                      </label>
+                    </div>
+                    
+                    <div className="col-span-1 sm:col-span-2 flex justify-end gap-3 mt-4 pt-4 border-t border-heritage-gold/20">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingType(null);
+                          setEditingCatalogOption(null);
+                        }}
+                        className="px-4 py-2 text-heritage-ink/70 font-bold hover:bg-gray-100 rounded-lg transition cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-6 py-2 bg-heritage-green text-heritage-gold font-bold rounded-lg shadow-sm hover:bg-emerald-800 transition cursor-pointer"
+                      >
+                        Save Option
+                      </button>
+                    </div>
+                  </form>
+                )}
+
                 {editingType === "style" && (
                   <form
                     onSubmit={handleSaveStyle}
@@ -1559,6 +1839,7 @@ export default function DatabaseView({
                           setEditingItem({
                             ...editingItem,
                             gender: e.target.value,
+                            targetDemographic: e.target.value,
                           })
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
@@ -1569,6 +1850,101 @@ export default function DatabaseView({
                           </option>
                         ))}
                       </select>
+                    </div>
+                    <div className="space-y-4 col-span-1 sm:col-span-2 bg-heritage-cream/10 p-4 rounded-xl border border-heritage-gold/20">
+                      <h4 className="font-bold text-heritage-green text-sm mb-2 border-b border-heritage-gold/20 pb-2">Step 3 Custom Detail Configuration</h4>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="font-bold text-heritage-green block">Represented Genders</label>
+                          <div className="flex gap-4">
+                            {['male', 'female'].map(g => (
+                              <label key={g} className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={editingItem.customDetailConfig?.representedGenders?.includes(g) || false}
+                                  onChange={(e) => {
+                                    const conf = editingItem.customDetailConfig || { representedGenders: [], featuresMaleAndFemale: false, supportedGarmentGroups: [], requiredSelectionGroups: [], enabled: true };
+                                    const list = conf.representedGenders || [];
+                                    setEditingItem({
+                                      ...editingItem,
+                                      customDetailConfig: {
+                                        ...conf,
+                                        representedGenders: e.target.checked ? [...list, g] : list.filter((i: string) => i !== g)
+                                      }
+                                    });
+                                  }}
+                                  className="h-4 w-4 text-heritage-green rounded"
+                                />
+                                <span className="capitalize">{g}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 cursor-pointer mt-6">
+                            <input
+                              type="checkbox"
+                              checked={editingItem.customDetailConfig?.featuresMaleAndFemale || false}
+                              onChange={(e) => {
+                                const conf = editingItem.customDetailConfig || { representedGenders: [], featuresMaleAndFemale: false, supportedGarmentGroups: [], requiredSelectionGroups: [], enabled: true };
+                                setEditingItem({
+                                  ...editingItem,
+                                  customDetailConfig: { ...conf, featuresMaleAndFemale: e.target.checked }
+                                });
+                              }}
+                              className="h-4 w-4 text-heritage-green rounded"
+                            />
+                            <span className="font-bold text-heritage-green">Explicitly features BOTH male and female garments</span>
+                          </label>
+                        </div>
+
+                        <div className="space-y-2 col-span-1 sm:col-span-2">
+                          <label className="font-bold text-heritage-green block">Supported Garment Groups</label>
+                          <div className="flex flex-wrap gap-2">
+                            {['shirt', 'dress', 'neck', 'standard_shorts', 'bum_shorts', 'trousers', 'skirt'].map(g => (
+                              <label key={g} className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded border border-gray-150 text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={editingItem.customDetailConfig?.supportedGarmentGroups?.includes(g) || false}
+                                  onChange={(e) => {
+                                    const conf = editingItem.customDetailConfig || { representedGenders: [], featuresMaleAndFemale: false, supportedGarmentGroups: [], requiredSelectionGroups: [], enabled: true };
+                                    const list = conf.supportedGarmentGroups || [];
+                                    setEditingItem({
+                                      ...editingItem,
+                                      customDetailConfig: {
+                                        ...conf,
+                                        supportedGarmentGroups: e.target.checked ? [...list, g] : list.filter((i: string) => i !== g)
+                                      }
+                                    });
+                                  }}
+                                  className="h-4 w-4 text-heritage-green rounded"
+                                />
+                                <span className="capitalize">{g.replace(/_/g, ' ')}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-2 col-span-1 sm:col-span-2 mt-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={editingItem.customDetailConfig?.enabled ?? true}
+                              onChange={(e) => {
+                                const conf = editingItem.customDetailConfig || { representedGenders: [], featuresMaleAndFemale: false, supportedGarmentGroups: [], requiredSelectionGroups: [], enabled: true };
+                                setEditingItem({
+                                  ...editingItem,
+                                  customDetailConfig: { ...conf, enabled: e.target.checked }
+                                });
+                              }}
+                              className="h-4 w-4 text-heritage-green rounded"
+                            />
+                            <span className="font-bold text-heritage-green">Enable Step 3 Custom Details for this style</span>
+                          </label>
+                        </div>
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <label className="font-bold text-heritage-green">
@@ -1793,187 +2169,6 @@ export default function DatabaseView({
                         </div>
                       )}
                     </div>
-                    <div className="space-y-3 sm:col-span-2 border-t border-heritage-gold/20 pt-4 mt-2">
-                      <div className="flex justify-between items-center">
-                        <label className="font-bold text-heritage-green">
-                          Garment Construction Details & Prices
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const current =
-                              editingItem.constructionDetails || [];
-                            setEditingItem({
-                              ...editingItem,
-                              constructionDetails: [
-                                ...current,
-                                {
-                                  code: "NEW",
-                                  type: "New Configuration",
-                                  price: editingItem.basePrice || 150,
-                                  discountPrice:
-                                    (editingItem.basePrice || 150) - 20,
-                                },
-                              ],
-                            });
-                          }}
-                          className="text-[10px] font-bold bg-heritage-green/10 text-heritage-green hover:bg-heritage-green hover:text-white px-2 py-1 rounded transition"
-                        >
-                          + Add Option
-                        </button>
-                      </div>
-
-                      <div className="space-y-2">
-                        {(editingItem.constructionDetails || []).map(
-                          (detail: ConstructionDetail, idx: number) => (
-                            <div
-                              key={idx}
-                              className="flex flex-col sm:flex-row gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200"
-                            >
-                              <input
-                                type="text"
-                                placeholder="Code (e.g. G1)"
-                                value={detail.code}
-                                onChange={(e) => {
-                                  const newDetails = [
-                                    ...editingItem.constructionDetails,
-                                  ];
-                                  newDetails[idx] = {
-                                    ...detail,
-                                    code: e.target.value,
-                                  };
-                                  setEditingItem({
-                                    ...editingItem,
-                                    constructionDetails: newDetails,
-                                  });
-                                }}
-                                className="w-20 px-2 py-1 border border-gray-300 rounded font-mono text-xs"
-                              />
-                              <input
-                                type="text"
-                                placeholder="Description (e.g. 3-Piece Set)"
-                                value={detail.type}
-                                onChange={(e) => {
-                                  const newDetails = [
-                                    ...editingItem.constructionDetails,
-                                  ];
-                                  newDetails[idx] = {
-                                    ...detail,
-                                    type: e.target.value,
-                                  };
-                                  setEditingItem({
-                                    ...editingItem,
-                                    constructionDetails: newDetails,
-                                  });
-                                }}
-                                className="flex-grow px-2 py-1 border border-gray-300 rounded text-xs"
-                              />
-                              <div className="flex items-center gap-1">
-                                <span className="text-gray-400 font-medium">
-                                  €
-                                </span>
-                                <input
-                                  type="number"
-                                  placeholder="Price"
-                                  value={detail.price}
-                                  onChange={(e) => {
-                                    const newDetails = [
-                                      ...editingItem.constructionDetails,
-                                    ];
-                                    newDetails[idx] = {
-                                      ...detail,
-                                      price: parseFloat(e.target.value) || 0,
-                                    };
-                                    setEditingItem({
-                                      ...editingItem,
-                                      constructionDetails: newDetails,
-                                    });
-                                  }}
-                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-xs"
-                                />
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span className="text-gray-400 font-medium">
-                                  Dist: €
-                                </span>
-                                <input
-                                  type="number"
-                                  placeholder="Disc"
-                                  value={detail.discountPrice || ""}
-                                  onChange={(e) => {
-                                    const newDetails = [
-                                      ...editingItem.constructionDetails,
-                                    ];
-                                    newDetails[idx] = {
-                                      ...detail,
-                                      discountPrice:
-                                        parseFloat(e.target.value) || 0,
-                                    };
-                                    setEditingItem({
-                                      ...editingItem,
-                                      constructionDetails: newDetails,
-                                    });
-                                  }}
-                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-xs text-green-700"
-                                />
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const newDetails =
-                                    editingItem.constructionDetails.filter(
-                                      (_, i) => i !== idx,
-                                    );
-                                  setEditingItem({
-                                    ...editingItem,
-                                    constructionDetails: newDetails,
-                                  });
-                                }}
-                                className="p-1.5 text-red-500 hover:bg-red-100 rounded"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          ),
-                        )}
-                        {(!editingItem.constructionDetails ||
-                          editingItem.constructionDetails.length === 0) && (
-                          <div className="text-center p-4 bg-gray-50 border border-dashed border-gray-300 rounded-lg">
-                            <p className="text-xs text-gray-500 mb-2">
-                              No specific construction pricing defined. Will
-                              fall back to official price list by gender.
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const isFemale =
-                                  editingItem.gender === "female";
-                                const defaults = OFFICIAL_PRICE_LIST.filter(
-                                  (p) =>
-                                    isFemale
-                                      ? p.category === "ladies" &&
-                                        p.code !== "L5"
-                                      : p.category === "guys",
-                                ).map((p) => ({
-                                  code: p.code,
-                                  type: p.description,
-                                  price: p.actualMax,
-                                  discountPrice: p.discountedMax,
-                                }));
-                                setEditingItem({
-                                  ...editingItem,
-                                  constructionDetails: defaults,
-                                });
-                              }}
-                              className="text-xs bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300 transition font-medium"
-                            >
-                              Populate from Official Price List
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
                     <div className="sm:col-span-2 pt-4 border-t border-gray-200 mt-4">
                       <h4 className="font-bold text-heritage-green text-sm mb-2">Supported Garment Details</h4>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -1998,6 +2193,85 @@ export default function DatabaseView({
                         ))}
                       </div>
                     </div>
+
+                    <div className="sm:col-span-2 space-y-3 p-4 bg-gray-50 border border-gray-200 rounded-xl">
+                      <div className="flex justify-between items-center">
+                        <label className="font-bold text-heritage-green">Garment Construction Details & Prices</label>
+                        <button
+                          type="button"
+                          onClick={handlePopulateConstruction}
+                          className="px-3 py-1.5 text-[10px] font-bold bg-heritage-green text-heritage-gold rounded-lg hover:bg-heritage-forest transition cursor-pointer"
+                        >
+                          Populate from official price list
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-gray-500">
+                        Populate construction groups based on the target demographic, outfit type, garment composition, and supported details checked above.
+                      </p>
+                      
+                      {editingItem.constructionDetails && editingItem.constructionDetails.length > 0 ? (
+                        <div className="space-y-4 mt-2">
+                          {Object.entries(
+                            (editingItem.constructionDetails as any[]).reduce((acc: any, curr: any) => {
+                              if (!acc[curr.type]) acc[curr.type] = [];
+                              acc[curr.type].push(curr);
+                              return acc;
+                            }, {})
+                          ).map(([type, details]: [string, any]) => (
+                            <div key={type} className="border border-gray-200 rounded-lg p-3 bg-white">
+                              <h4 className="font-bold text-[10px] uppercase text-heritage-green mb-2">{type.replace(/([A-Z])/g, ' $1')}</h4>
+                              <div className="space-y-2">
+                                {details.map((detail: any, idx: number) => (
+                                  <div key={idx} className="flex gap-2 items-center">
+                                    <input 
+                                      type="text" 
+                                      value={detail.code}
+                                      onChange={(e) => {
+                                        const newArr = [...(editingItem.constructionDetails || [])];
+                                        const i = newArr.findIndex(c => c.type === type && c.code === detail.code);
+                                        if (i !== -1) newArr[i] = { ...newArr[i], code: e.target.value };
+                                        setEditingItem({ ...editingItem, constructionDetails: newArr });
+                                      }}
+                                      className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded"
+                                    />
+                                    <span className="text-xs text-gray-500">€</span>
+                                    <input 
+                                      type="number" 
+                                      step="0.01"
+                                      value={detail.price}
+                                      onChange={(e) => {
+                                        const newArr = [...(editingItem.constructionDetails || [])];
+                                        const i = newArr.findIndex(c => c.type === type && c.code === detail.code);
+                                        if (i !== -1) newArr[i] = { ...newArr[i], price: parseFloat(e.target.value) || 0 };
+                                        setEditingItem({ ...editingItem, constructionDetails: newArr });
+                                      }}
+                                      className="w-20 px-2 py-1 text-xs border border-gray-200 rounded text-right"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const newArr = [...(editingItem.constructionDetails || [])];
+                                        const i = newArr.findIndex(c => c.type === type && c.code === detail.code);
+                                        if (i !== -1) newArr.splice(i, 1);
+                                        setEditingItem({ ...editingItem, constructionDetails: newArr });
+                                      }}
+                                      className="text-red-500 hover:text-red-700 p-1"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-gray-500 italic p-2 border border-dashed border-gray-300 rounded text-center">
+                          No construction details defined. Step 3 will not show any options.
+                        </div>
+                      )}
+                    </div>
+
                     <div className="sm:col-span-2 pt-4 flex gap-2 justify-end">
                       <button
                         type="button"
@@ -3610,7 +3884,32 @@ export default function DatabaseView({
 
             {activeTab === "styles" && (
               <div className="space-y-6 text-left">
-                <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                <div className="flex bg-heritage-cream rounded-t-2xl border-b border-heritage-gold/20 overflow-x-auto">
+                  <div
+                    onClick={() => { setStyleSubTab("styles"); setEditingType(null); }}
+                    className={`px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all rounded-t-xl select-none cursor-pointer flex items-center gap-1.5 ${
+                      styleSubTab === "styles"
+                        ? "bg-white text-heritage-green border-t border-l border-r border-heritage-gold/20 -mb-[1px]"
+                        : "text-heritage-ink/40 hover:text-heritage-green hover:bg-white/50"
+                    }`}
+                  >
+                    Style Configuration
+                  </div>
+                  <div
+                    onClick={() => { setStyleSubTab("catalogue"); setEditingType(null); }}
+                    className={`px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all rounded-t-xl select-none cursor-pointer flex items-center gap-1.5 ${
+                      styleSubTab === "catalogue"
+                        ? "bg-white text-heritage-green border-t border-l border-r border-heritage-gold/20 -mb-[1px]"
+                        : "text-heritage-ink/40 hover:text-heritage-green hover:bg-white/50"
+                    }`}
+                  >
+                    Custom Detail Catalogue
+                  </div>
+                </div>
+
+                {styleSubTab === "styles" && (
+                  <div className="space-y-6">
+                    <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
                   <div className="relative w-full sm:w-80">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-heritage-beige">
                       <Search size={14} />
@@ -3775,6 +4074,101 @@ export default function DatabaseView({
                     </div>
                   ))}
                 </div>
+                </div>
+                )}
+
+                {styleSubTab === "catalogue" && (
+                  <div className="space-y-6">
+                    <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                      <div className="relative w-full sm:w-80">
+                        <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-heritage-beige">
+                          <Search size={14} />
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Search custom options..."
+                          value={catalogSearch}
+                          onChange={(e) => setCatalogSearch(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2 border border-heritage-gold/20 rounded-xl text-xs"
+                        />
+                      </div>
+                      <button
+                        onClick={() => {
+                          setIsNewCatalogOption(true);
+                          setEditingCatalogOption({
+                            id: `opt-${Date.now().toString().slice(-6)}`,
+                            label: "",
+                            description: "",
+                            garmentGroup: "shirt",
+                            selectionGroup: "shirt_construction",
+                            priceCents: 0,
+                            eligibleDemographics: ["male", "unisex"],
+                            displayOrder: 0,
+                            required: true,
+                            active: true,
+                            allowMultiple: false,
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString()
+                          });
+                          setEditingType("catalog_option");
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-heritage-green text-heritage-gold text-xs font-bold rounded-xl border border-heritage-gold/20 shadow-sm cursor-pointer select-none uppercase tracking-wider shrink-0"
+                      >
+                        <Plus size={13} /> Add Option
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {customDetailCatalog
+                        .filter(
+                          (c) =>
+                            c.label.toLowerCase().includes(catalogSearch.toLowerCase()) ||
+                            c.garmentGroup.toLowerCase().includes(catalogSearch.toLowerCase()) ||
+                            c.selectionGroup.toLowerCase().includes(catalogSearch.toLowerCase())
+                        )
+                        .map((opt) => (
+                          <div
+                            key={opt.id}
+                            className="bg-white border border-heritage-gold/20 p-4 rounded-xl flex flex-col justify-between"
+                          >
+                            <div>
+                              <div className="flex justify-between items-start mb-2">
+                                <h3 className="font-bold text-heritage-green text-sm line-clamp-1">{opt.label}</h3>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${opt.active ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+                                  {opt.active ? "Active" : "Inactive"}
+                                </span>
+                              </div>
+                              <p className="text-xs text-heritage-ink/70 mb-2 line-clamp-2">{opt.description}</p>
+                              
+                              <div className="flex flex-wrap gap-1 mb-3">
+                                <span className="bg-blue-50 text-blue-700 text-[9px] px-1.5 py-0.5 rounded font-mono">
+                                  {opt.garmentGroup} / {opt.selectionGroup}
+                                </span>
+                                <span className="bg-purple-50 text-purple-700 text-[9px] px-1.5 py-0.5 rounded font-mono">
+                                  {opt.eligibleDemographics.join(", ")}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between pt-3 border-t border-gray-100 mt-2">
+                              <span className="font-bold text-heritage-green text-sm">
+                                {opt.priceCents === 0 ? "Included" : `€${(opt.priceCents / 100).toFixed(2)}`}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  setEditingCatalogOption({ ...opt });
+                                  setIsNewCatalogOption(false);
+                                  setEditingType("catalog_option");
+                                }}
+                                className="text-heritage-gold bg-heritage-green px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-emerald-800 flex items-center gap-1 cursor-pointer"
+                              >
+                                <Pen size={12} /> Edit
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

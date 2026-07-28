@@ -16,13 +16,39 @@ export class AuthorizationEngine {
     "techpalavabox@gmail.com",
     "f.o.startups@gmail.com",
     "vaprecfamily@gmail.com",
-    "millsakabana@gmail.com",
     "millstechbox@gmail.com"
   ];
 
+  static getCanonicalEmail(email?: string): string {
+    if (!email) return "";
+    let canonical = email.trim().toLowerCase();
+    
+    const parts = canonical.split('@');
+    if (parts.length !== 2) return canonical;
+    
+    let [localPart, domain] = parts;
+    
+    if (domain === 'googlemail.com') {
+      domain = 'gmail.com';
+    }
+    
+    if (domain === 'gmail.com') {
+      const plusIndex = localPart.indexOf('+');
+      if (plusIndex !== -1) {
+        localPart = localPart.substring(0, plusIndex);
+      }
+      localPart = localPart.replace(/\./g, '');
+    }
+    
+    return `${localPart}@${domain}`;
+  }
+
   static isAdminEmail(email?: string): boolean {
     if (!email) return false;
-    return this.ALLOWED_ADMIN_EMAILS.includes(email.trim().toLowerCase());
+    const canonicalInput = this.getCanonicalEmail(email);
+    return this.ALLOWED_ADMIN_EMAILS.some(
+      allowed => this.getCanonicalEmail(allowed) === canonicalInput
+    );
   }
 
   // Helper to resolve the role of the user, defaults to Guest

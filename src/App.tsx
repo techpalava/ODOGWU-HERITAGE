@@ -723,9 +723,52 @@ export default function App() {
                     Items: {cartItems.length}
                   </span>
                 </h4>
-                <div className="space-y-1.5 text-gray-600">
+                <div className="space-y-1.5 text-gray-600 text-[10px]">
                   <div className="flex justify-between">
-                    <span>Aggregate Garment Subtotal:</span>
+                    <span>Fabric Price:</span>
+                    <span className="font-mono">
+                      {currencySymbol}
+                      {cartItems.reduce((acc, item) => acc + (item.garment.fabricPrice || 0), 0).toFixed(2)}
+                    </span>
+                  </div>
+                  {cartItems.reduce((acc, item) => acc + (item.garment.fabricSewingCost || 0), 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span>Fabric Sewing Cost:</span>
+                      <span className="font-mono">
+                        {currencySymbol}
+                        {cartItems.reduce((acc, item) => acc + (item.garment.fabricSewingCost || 0), 0).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {cartItems.reduce((acc, item) => acc + ((item.garment.customDetailsPrice || 0) - (item.garment.monogramPrice || 0)), 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span>Custom Detail Options:</span>
+                      <span className="font-mono">
+                        {currencySymbol}
+                        {cartItems.reduce((acc, item) => acc + ((item.garment.customDetailsPrice || 0) - (item.garment.monogramPrice || 0)), 0).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {cartItems.reduce((acc, item) => acc + (item.garment.constructionSewingCost || 0), 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span>Construction Sewing Cost:</span>
+                      <span className="font-mono">
+                        {currencySymbol}
+                        {cartItems.reduce((acc, item) => acc + (item.garment.constructionSewingCost || 0), 0).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {cartItems.reduce((acc, item) => acc + (item.garment.monogramPrice || 0), 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span>Automatic Monogram/Embroidery Cost:</span>
+                      <span className="font-mono">
+                        {currencySymbol}
+                        {cartItems.reduce((acc, item) => acc + (item.garment.monogramPrice || 0), 0).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-heritage-green font-bold pt-1.5 border-t border-gray-100 mt-1">
+                    <span>Total Subtotal:</span>
                     <span className="font-mono">
                       {currencySymbol}
                       {checkoutSubtotal.toFixed(2)}

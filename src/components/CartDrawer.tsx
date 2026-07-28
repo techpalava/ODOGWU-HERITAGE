@@ -17,6 +17,7 @@ export function CartDrawer() {
   const orders = useAppStore((state) => state.orders);
   const historicalOrders = useAppStore((state) => state.historicalOrders);
   const batches = useAppStore((state) => state.batches);
+  const customDetailCatalog = useAppStore((state) => state.customDetailCatalog);
 
   const journey = CustomerJourneyEngine.getCurrentJourney({
     currentUser: currentUser as any,
@@ -164,9 +165,15 @@ export function CartDrawer() {
                             {item.fabric.name} ({item.fabric.code})
                           </strong>
                         </p>
-                        <p>
-                          🪡 Accent: <strong>{item.design.collar}</strong>
-                        </p>
+                        {Object.values(item.design.customDetails || {}).map(optId => {
+                          const opt = customDetailCatalog.find(o => o.id === optId);
+                          if (!opt) return null;
+                          return (
+                            <p key={opt.id}>
+                              🪡 {opt.selectionGroup.replace(/_/g, ' ')}: <strong>{opt.label}</strong>
+                            </p>
+                          );
+                        })}
                         <p>
                           👤 Recipient: <strong>{item.customer.name}</strong>
                         </p>

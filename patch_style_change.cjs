@@ -1,30 +1,11 @@
 const fs = require('fs');
 let content = fs.readFileSync('src/components/DesignStudioView.tsx', 'utf8');
-
-const targetStr = `  // Helper to sync garment types when style changes
-  const handleStyleChange = (style: StyleCategory) => {
+const target = `  const handleStyleChange = (style: StyleCategory) => {
     setSelectedStyle(style);
-    const availableTypes = garmentTypesForStyle(style);
-    setSelectedGarment(
-      availableTypes[0] || {
-        type: "Standard Garment",
-        fee: style.basePrice || 150,
-      },
-    );`;
-
-const replacement = `  // Helper to sync garment types when style changes
-  const handleStyleChange = (style: StyleCategory) => {
+    const availableTypes = garmentTypesForStyle(style);`;
+const replacement = `  const handleStyleChange = (style: StyleCategory) => {
     setSelectedStyle(style);
-    const availableTypes = garmentTypesForStyle(style);
-    const defaultGarment = availableTypes[0] || {
-      type: "Standard Garment",
-      fee: style.basePrice || 150,
-    };
-    setSelectedGarment(defaultGarment);
-    
-    if (defaultGarment.code === "EXACT" && style.defaultGarmentDetails) {
-      setDesignSelections(style.defaultGarmentDetails);
-    }`;
-
-content = content.replace(targetStr, replacement);
+    setDesignSelections({ customDetails: {} });
+    const availableTypes = garmentTypesForStyle(style);`;
+content = content.replace(target, replacement);
 fs.writeFileSync('src/components/DesignStudioView.tsx', content);

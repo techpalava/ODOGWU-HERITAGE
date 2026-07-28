@@ -1,0 +1,196 @@
+const GarmentDetailSelector = ({
+  selectedStyle,
+  selectedGarment,
+  designSelections,
+  setDesignSelections,
+  hasLining,
+  setHasLining,
+  currencySymbol
+}: any) => {
+  const gender = selectedStyle?.gender;
+  const isMale = gender === 'male' || gender === 'unisex';
+  const isFemale = gender === 'female' || gender === 'unisex';
+  const isFamily = gender === 'family' || gender === 'couple';
+
+  const gCode = selectedGarment?.code || "";
+  const name = (selectedStyle?.name || "").toLowerCase();
+  const oType = (selectedStyle?.outfitType || "").toLowerCase();
+
+  const comp = (selectedStyle?.garmentComposition || "").toLowerCase();
+  
+  const isShirt = ['G1', 'G2', 'G5', 'G6'].includes(gCode) 
+    || name.includes('shirt') 
+    || name.includes('kaftan') 
+    || name.includes('senator') 
+    || name.includes('agbada')
+    || comp.includes('shirt')
+    || comp.includes('top');
+
+  const isDress = ['L1', 'L2', 'L3', 'L4'].includes(gCode)
+    || name.includes('dress')
+    || name.includes('gown')
+    || name.includes('boubou')
+    || comp.includes('dress')
+    || comp.includes('gown');
+
+  const isTrouser = ['G4', 'G5', 'G6', 'L6', 'L7', 'L8', 'L9', 'L10'].includes(gCode) 
+    || name.includes('trouser') 
+    || name.includes('pant')
+    || name.includes('senator')
+    || name.includes('kaftan set')
+    || name.includes('agbada')
+    || comp.includes('2-piece')
+    || comp.includes('3-piece')
+    || comp.includes('set')
+    || comp.includes('trouser')
+    || comp.includes('pant');
+
+  const isShorts = ['G3'].includes(gCode) 
+    || name.includes('short')
+    || comp.includes('short')
+    || name.includes('nikka')
+    || comp.includes('nikka');
+
+  const isSkirt = name.includes('skirt')
+    || comp.includes('skirt')
+    || comp.includes('wrapper');
+
+  const isLiningSupported = ['L1', 'L2', 'L3', 'L4'].includes(gCode) 
+    || isDress 
+    || isSkirt;
+
+  const supported = selectedStyle?.supportedGarmentDetails || {};
+  const showTrousers = isTrouser && (supported.trousers !== false);
+  const showShorts = isShorts && (supported.shorts !== false);
+  const showSkirt = isSkirt && (supported.skirt !== false);
+  const showDress = isDress && (supported.dress !== false);
+  const showSleeves = (isShirt || isDress) && (supported.sleeves !== false);
+  const showPockets = supported.pockets !== false;
+  const showEmbroidery = supported.embroidery !== false;
+  const showAccessories = supported.accessories !== false;
+  const showLining = isLiningSupported && (supported.lining !== false);
+
+  const getMap = (type: string, fallback: Record<string, number>) => {
+    if (selectedStyle && selectedStyle.constructionDetails) {
+      const map: Record<string, number> = {};
+      selectedStyle.constructionDetails.filter((c: any) => c.type === type).forEach((c: any) => { map[c.code] = c.price; });
+      return map;
+    }
+    return fallback;
+  };
+
+  const renderGroup = (title: string, field: keyof DesignSelections, optionsMap: Record<string, number>, isMultiple = false) => {
+    if (!optionsMap || Object.keys(optionsMap).length === 0) return null;
+    return (
+      <div className="space-y-2 mb-4 col-span-1 md:col-span-2">
+        <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+          {title}
+        </label>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {Object.entries(optionsMap).map(([option, price]) => {
+            const isSelected = isMultiple 
+              ? (designSelections[field] || []).includes(option)
+              : designSelections[field] === option;
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => {
+                  if (isMultiple) {
+                    const current = (designSelections[field] || []) as string[];
+                    setDesignSelections((prev: any) => ({
+                      ...prev,
+                      [field]: isSelected ? current.filter(c => c !== option) : [...current, option]
+                    }));
+                  } else {
+                    setDesignSelections((prev: any) => ({ ...prev, [field]: option }));
+                  }
+                }}
+                className={`flex flex-col items-start p-2 rounded-xl border text-left transition-all duration-200 ${
+                  isSelected ? 'border-heritage-gold bg-heritage-cream/30' : 'border-gray-200 hover:border-heritage-gold/50'
+                }`}
+              >
+                <span className={`text-[11px] font-semibold leading-tight ${isSelected ? 'text-heritage-green' : 'text-heritage-ink/75'}`}>
+                  {option}
+                </span>
+                <span className="text-[10px] font-mono text-heritage-green/80 mt-1">
+                  {price === 0 ? 'Included' : `+${currencySymbol}${price.toFixed(2)}`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+      {(isMale || isFamily) && isShirt && (
+        <>
+          {renderGroup("Top Length", "topLength", getMap("topLength", GARMENT_DETAIL_PRICING.topLength))}
+          {showPockets && renderGroup("Top Pocket", "topPocket", getMap("topPocket", GARMENT_DETAIL_PRICING.topPocket))}
+        </>
+      )}
+      {(isFemale || isFamily) && showDress && (
+        <>
+          {renderGroup("Dress Length", "dressLength", getMap("dressLength", GARMENT_DETAIL_PRICING.dressLength))}
+          {showPockets && renderGroup("Dress Pocket", "dressPocket", getMap("dressPocket", GARMENT_DETAIL_PRICING.dressPocket))}
+        </>
+      )}
+      {(isFemale || isFamily) && showSkirt && (
+        <>
+          {renderGroup("Skirt Length", "skirtLength", getMap("skirtLength", GARMENT_DETAIL_PRICING.skirtLength))}
+          {showPockets && renderGroup("Skirt Pocket", "skirtPocket", getMap("skirtPocket", GARMENT_DETAIL_PRICING.skirtPocket))}
+        </>
+      )}
+      {showSleeves && (
+        <>
+          {renderGroup("Sleeve Length", "sleeveLength", getMap("sleeveLength", GARMENT_DETAIL_PRICING.sleeveLength))}
+        </>
+      )}
+      {showTrousers && (
+        <>
+          {renderGroup("Trouser Fastening", "trouserFastening", getMap("trouserFastening", GARMENT_DETAIL_PRICING.trouserFastening))}
+          {showPockets && renderGroup("Trouser Pocket", "trouserPocket", getMap("trouserPocket", GARMENT_DETAIL_PRICING.trouserPocket))}
+        </>
+      )}
+      {showShorts && (
+        <>
+          {renderGroup("Short Fastening", "shortFastening", getMap("shortFastening", GARMENT_DETAIL_PRICING.shortFastening))}
+          {showPockets && renderGroup("Short Pocket", "shortPocket", getMap("shortPocket", GARMENT_DETAIL_PRICING.shortPocket))}
+        </>
+      )}
+      {showEmbroidery && renderGroup("Monogram & Embroidery", "embroideryDesign", getMap("embroideryDesign", GARMENT_DETAIL_PRICING.embroideryDesign))}
+      {showAccessories && renderGroup("Accessories", "accessories", getMap("accessories", GARMENT_DETAIL_PRICING.accessories), true)}
+      
+      {showLining && (
+        <div className="space-y-2 mb-4 col-span-1 md:col-span-2">
+          <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+            Dress Reinforcement
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer p-3 border border-gray-150 rounded-xl bg-heritage-cream/20 hover:border-heritage-gold/30 transition w-full md:w-1/2">
+            <input
+              type="checkbox"
+              checked={hasLining}
+              onChange={(e) => setHasLining(e.target.checked)}
+              className="h-4 w-4 text-heritage-green focus:ring-heritage-gold rounded border-gray-300 cursor-pointer"
+            />
+            <div>
+              <span className="font-bold text-heritage-green text-xs block">
+                Add Inner Net / Lining (L5)
+              </span>
+              <span className="text-[10px] text-heritage-ink/50 block leading-tight">
+                Provides structure & opacity (+{currencySymbol}10.00)
+              </span>
+            </div>
+          </label>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+const GarmentDetailSummaryItems = ({ designSelections, isLi = false, currencySymbol, style }: { designSelections: any, isLi?: boolean, currencySymbol: string, style?: any }) => {
+  const items = getGarmentDetailsBreakdown(designSelections, style).map(item => {

@@ -159,7 +159,7 @@ export default function LoginView({
       console.error("Login failed:", err);
       let friendlyMessage = "Google login failed. Please try again or contact support.";
       if (err.code === "auth/unauthorized-domain") {
-        friendlyMessage = "Google login is not authorized for this website domain yet. Please contact support.";
+        friendlyMessage = "This website domain is not authorized for Google login yet. Add this exact domain in Firebase Authentication > Settings > Authorized domains.";
       } else if (err.code === "auth/operation-not-allowed") {
         friendlyMessage = "Google login is not enabled yet. Please contact support.";
       } else if (err.code === "auth/popup-blocked") {

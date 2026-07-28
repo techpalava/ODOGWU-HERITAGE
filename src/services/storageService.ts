@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  CustomGroup,
+import { CustomDetailOption, CustomGroup, 
   Fabric,
   StyleCategory,
   Showpiece,
@@ -15,6 +14,7 @@ import {
   BusinessSettings,
 } from "../types";
 import { db } from "./firebase";
+import { SEED_CUSTOM_DETAIL_CATALOG } from "../config/GarmentDetailsConfig";
 import { ImageService } from "./imageService";
 import { legacyCompatMap } from "../utils/legacyCompat";
 import {
@@ -82,6 +82,27 @@ function sanitizeForFirestore(val: any): any {
  * StorageService abstracts database interactions to Firestore.
  */
 export const StorageService = {
+  async getCatalog(): Promise<CustomDetailOption[]> {
+    try {
+      const snap = await getDocs(collection(db, "custom_detail_catalog"));
+      const catalog: CustomDetailOption[] = [];
+      snap.forEach((doc) => catalog.push(doc.data() as CustomDetailOption));
+      
+      if (catalog.length === 0) {
+        console.warn("Catalog empty, using fallback seed...");
+        return SEED_CUSTOM_DETAIL_CATALOG;
+      }
+      return catalog;
+    } catch (e) {
+      console.error("Failed to load catalog, using fallback", e);
+      return SEED_CUSTOM_DETAIL_CATALOG;
+    }
+  },
+
+  async saveCatalogOption(option: CustomDetailOption): Promise<void> {
+    await setDoc(doc(db, "custom_detail_catalog", option.id), option);
+  },
+
   safeParse: <T>(saved: string | null): T | null => {
     if (!saved || saved === "undefined") return null;
     try {

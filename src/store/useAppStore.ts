@@ -1,7 +1,6 @@
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 import { create } from "zustand";
-import {
-  Customer,
+import { CustomDetailOption, Customer, 
   MasterOrder,
   CustomGroup,
   Fabric,
@@ -106,6 +105,8 @@ interface AppState {
 
   fabrics: Fabric[];
   setFabrics: (fabrics: Fabric[] | ((prev: Fabric[]) => Fabric[])) => void;
+  customDetailCatalog: CustomDetailOption[];
+  setCustomDetailCatalog: (catalog: CustomDetailOption[]) => void;
   styles: StyleCategory[];
   setStyles: (
     styles: StyleCategory[] | ((prev: StyleCategory[]) => StyleCategory[]),
@@ -147,6 +148,8 @@ interface AppState {
 let storeUnsubs: (() => void)[] = [];
 
 export const useAppStore = create<AppState>((set, get) => ({
+  customDetailCatalog: [],
+  setCustomDetailCatalog: (catalog) => set({ customDetailCatalog: catalog }),
   activeTab:
     (typeof window !== "undefined" &&
       (sessionStorage.getItem("asml_active_tab") as any)) ||
@@ -326,7 +329,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const session = await ApiService.fetchSession();
 
+      
+      const catalog = await StorageService.getCatalog();
+      set({ customDetailCatalog: catalog });
       const storedSettings = await StorageService.getBusinessSettings();
+
       const isInitialized =
         storedSettings?.applicationSettings?.hasInitializedData;
 

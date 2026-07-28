@@ -31,6 +31,30 @@ export interface Customer {
   biometricConsent?: BiometricConsent;
 }
 
+export interface CustomDetailOption {
+  id: string;
+  label: string;
+  description: string;
+  garmentGroup: string;
+  selectionGroup: string;
+  priceCents: number;
+  eligibleDemographics: Array<"male" | "female" | "unisex">;
+  displayOrder: number;
+  required: boolean;
+  active: boolean;
+  allowMultiple: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomDetailConfig {
+  representedGenders: Array<"male" | "female">;
+  featuresMaleAndFemale: boolean;
+  supportedGarmentGroups: string[];
+  requiredSelectionGroups: string[];
+  enabled: boolean;
+}
+
 export interface ConstructionDetail {
   code: string;
   type: string;
@@ -55,6 +79,13 @@ export interface StyleCategory {
     secondary: string;
   };
   constructionDetails?: ConstructionDetail[];
+  customDetailConfig?: CustomDetailConfig;
+
+  // New metadata fields
+  targetDemographic?: "male" | "female" | "unisex";
+  featuresMaleAndFemale?: boolean;
+  garmentCompositionList?: string[];
+  supportedGarmentDetails?: any;
 
   // Premium features
   hasMonogram?: boolean;
@@ -66,18 +97,6 @@ export interface StyleCategory {
     hasMonogramTrimming?: boolean;
   };
   
-  // Garment detail configs
-  supportedGarmentDetails?: {
-    trousers?: boolean;
-    shorts?: boolean;
-    skirt?: boolean;
-    dress?: boolean;
-    sleeves?: boolean;
-    pockets?: boolean;
-    embroidery?: boolean;
-    accessories?: boolean;
-    lining?: boolean;
-  };
   defaultGarmentDetails?: DesignSelections;
 }
 
@@ -134,6 +153,7 @@ export interface DesignSelections {
   hasMonogramTrimming?: boolean;
 
   // New detailed garment fields
+  customDetails?: Record<string, string>;
   topLength?: string;
   topPocket?: string;
   dressLength?: string;
@@ -153,6 +173,11 @@ export interface GarmentSelection {
   type: string; // e.g., "Shirt Only", "Shirt + Trouser", "Complete Set", "Gown Only"
   tailoringFee: number;
   totalPrice: number;
+  fabricSewingCost?: number;
+  constructionSewingCost?: number;
+  fabricPrice?: number;
+  customDetailsPrice?: number;
+  monogramPrice?: number;
 }
 
 export interface Measurements {
