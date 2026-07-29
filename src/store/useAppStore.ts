@@ -110,7 +110,7 @@ interface AppState {
   styles: StyleCategory[];
   setStyles: (
     styles: StyleCategory[] | ((prev: StyleCategory[]) => StyleCategory[]),
-  ) => void;
+  ) => Promise<void>;
   showpieces: Showpiece[];
   setShowpieces: (
     showpieces: Showpiece[] | ((prev: Showpiece[]) => Showpiece[]),
@@ -250,11 +250,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     StorageService.saveFabrics(newFabrics);
   },
   styles: [],
-  setStyles: (styles) => {
+  setStyles: async (styles) => {
     const newStyles =
       typeof styles === "function" ? styles(get().styles) : styles;
+    await StorageService.saveStyles(newStyles);
     set({ styles: newStyles });
-    StorageService.saveStyles(newStyles);
   },
   showpieces: [],
   setShowpieces: (showpieces) => {

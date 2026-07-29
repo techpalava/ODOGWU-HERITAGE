@@ -1,5 +1,10 @@
-import { SelectionGroup } from '../config/GarmentDetailsConfig';
-import { getApplicableCustomDetailGroups, getCustomDetailsBreakdown, calculateCustomDetailsPrice } from '../utils/catalogHelpers';
+import {
+  calculateCustomDetailsPrice,
+  getCustomDetailSnapshots,
+  getCustomDetailsBreakdown,
+  getMissingCustomDetailGroup,
+  groupApplicableCustomDetails,
+} from "../utils/catalogHelpers";
 import React, { useState, useEffect } from "react";
 import {
   Sparkles,
@@ -33,6 +38,7 @@ import {
   OrderContext,
   Customer,
   NamedMeasurementProfile,
+  CustomDetailSelectionGroup,
 } from "../types";
 
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
@@ -574,7 +580,35 @@ export const CONSTRUCTION_SEWING_COST_MAP = {
 };
 
 export const getConstructionSewingCost = (details: DesignSelections): number => {
-  return 0;
+  const optionCosts: Record<string, number> = {
+    shirt_std_short: CONSTRUCTION_SEWING_COST_MAP.shirt.standard_shortSleeve,
+    shirt_std_midlong: CONSTRUCTION_SEWING_COST_MAP.shirt.standard_longSleeve,
+    shirt_long_short: CONSTRUCTION_SEWING_COST_MAP.shirt.long_shortSleeve,
+    shirt_long_midlong: CONSTRUCTION_SEWING_COST_MAP.shirt.long_longSleeve,
+    dress_std_sleeveless: CONSTRUCTION_SEWING_COST_MAP.dress.standard_sleeveless,
+    dress_std_short: CONSTRUCTION_SEWING_COST_MAP.dress.standard_shortSleeve,
+    dress_std_midlong: CONSTRUCTION_SEWING_COST_MAP.dress.standard_longSleeve,
+    dress_long_sleeveless: CONSTRUCTION_SEWING_COST_MAP.dress.long_sleeveless,
+    dress_long_short: CONSTRUCTION_SEWING_COST_MAP.dress.long_shortSleeve,
+    dress_long_midlong: CONSTRUCTION_SEWING_COST_MAP.dress.long_longSleeve,
+    shorts_std_rope: CONSTRUCTION_SEWING_COST_MAP.shorts.rope,
+    shorts_std_elastic: CONSTRUCTION_SEWING_COST_MAP.shorts.elastic,
+    shorts_std_belt: CONSTRUCTION_SEWING_COST_MAP.shorts.belt,
+    bum_rope: CONSTRUCTION_SEWING_COST_MAP.shorts.rope,
+    bum_elastic: CONSTRUCTION_SEWING_COST_MAP.shorts.elastic,
+    bum_belt: CONSTRUCTION_SEWING_COST_MAP.shorts.belt,
+    trouser_rope: CONSTRUCTION_SEWING_COST_MAP.trouser.rope,
+    trouser_elastic: CONSTRUCTION_SEWING_COST_MAP.trouser.elastic,
+    trouser_belt: CONSTRUCTION_SEWING_COST_MAP.trouser.belt,
+    skirt_std: CONSTRUCTION_SEWING_COST_MAP.skirt.standard,
+    skirt_long: CONSTRUCTION_SEWING_COST_MAP.skirt.long,
+  };
+
+  return Object.values(details.customDetails || {}).reduce(
+    (total, optionId) =>
+      total + (optionId ? optionCosts[optionId] || 0 : 0),
+    0,
+  );
 };
 
 export const calculateGarmentDetailsPrice = (details: DesignSelections, style?: any, catalog: any[] = []): { total: number, monogramPrice: number } => {
@@ -684,8 +718,15 @@ const GarmentDetailSelector = ({
 }: any) => {
   const customDetailCatalog = useAppStore((state: any) => state.customDetailCatalog);
   const customDetails = designSelections.customDetails || {};
+  const applicableGroups = groupApplicableCustomDetails(
+    selectedStyle,
+    customDetailCatalog,
+  );
 
-  const handleSelect = (groupId: string, optionId: string) => {
+  const handleSelect = (
+    groupId: CustomDetailSelectionGroup,
+    optionId: string,
+  ) => {
     setDesignSelections((prev: any) => ({
       ...prev,
       customDetails: {
@@ -696,56 +737,36 @@ const GarmentDetailSelector = ({
   };
 
   const demo = selectedStyle?.targetDemographic || selectedStyle?.gender || "unisex";
-  const explicitBoth = selectedStyle?.featuresMaleAndFemale || demo === "family" || demo === "couple";
-  const supportDetails = selectedStyle?.supportedGarmentDetails || [];
-  
-  const shouldShow = (demographic: "male" | "female", requiredGarments: string[]) => {
-    let demoMatch = false;
-    if (explicitBoth) {
-      demoMatch = true;
-    } else if (demo === demographic || demo === "unisex") {
-      demoMatch = true;
-    }
-    
-    if (!demoMatch) return false;
+  const explicitBoth =
+    selectedStyle?.customDetailConfig?.featuresMaleAndFemale ||
+    selectedStyle?.featuresMaleAndFemale ||
+    demo === "family" ||
+    demo === "couple";
 
-    if (supportDetails && supportDetails.length > 0) {
-      return requiredGarments.some(g => supportDetails.includes(g));
-    } else {
-      const comp = (selectedStyle?.garmentComposition || "").toLowerCase();
-      const name = (selectedStyle?.name || "").toLowerCase();
-      
-      const hasWord = (word: string) => comp.includes(word) || name.includes(word);
-      
-      if (requiredGarments.includes('shirt') && (hasWord('shirt') || hasWord('top') || hasWord('senator') || hasWord('agbada'))) return true;
-      if (requiredGarments.includes('trousers') && (hasWord('trouser') || hasWord('pant') || hasWord('2 piece') || hasWord('two piece'))) return true;
-      if (requiredGarments.includes('dress') && (hasWord('dress') || hasWord('gown') || hasWord('boubou') || hasWord('bubu'))) return true;
-      if (requiredGarments.includes('skirt') && (hasWord('skirt'))) return true;
-      if (requiredGarments.includes('shorts') && (hasWord('short') || hasWord('nikka'))) return true;
-      
-      // Defaults if we can't figure it out
-      if (!comp && demographic === 'male') return requiredGarments.includes('shirt');
-      if (!comp && demographic === 'female') return requiredGarments.includes('dress');
-      return false;
-    }
+  const groupTitles: Record<CustomDetailSelectionGroup, string> = {
+    shirt_construction: "Shirt Length & Sleeve",
+    shirt_pockets: "Shirt Pockets",
+    dress_construction: "Dress Length & Sleeve",
+    dress_pockets: "Dress Pockets",
+    neck_design: "Neck Design",
+    standard_shorts_fastening: "Standard Leg Shorts (Nikka)",
+    standard_shorts_pockets: "Standard Shorts Pockets",
+    bum_shorts_fastening: "Bum / Leg Shorts",
+    bum_shorts_pockets: "Bum Shorts Pockets",
+    trouser_fastening: "Trousers / Leg Pants",
+    trouser_pockets: "Trouser Pockets",
+    skirt_length: "Skirt Length",
+    skirt_pockets: "Skirt Pockets",
   };
 
-  const showShirt = shouldShow('male', ['shirt']);
-  const showTrouser = shouldShow('male', ['trousers']);
-  const showShorts = shouldShow('male', ['shorts']);
-  const showBumShorts = shouldShow('male', ['bum_shorts']) || shouldShow('female', ['bum_shorts']);
-  const showDress = shouldShow('female', ['dress']);
-  const showSkirt = shouldShow('female', ['skirt']);
-  // Neck is shown if shirt or dress is shown
-  const showNeck = showShirt || showDress;
-
-  const renderGroup = (groupId: SelectionGroup, title: string) => {
-    const options = customDetailCatalog.filter((o: any) => o.selectionGroup === groupId && o.active);
-    if (options.length === 0) return null;
+  const renderGroup = (
+    groupId: CustomDetailSelectionGroup,
+    options: any[],
+  ) => {
     return (
       <div className="space-y-2 mb-4 col-span-1" key={groupId}>
         <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
-          {title}
+          {groupTitles[groupId]}
         </label>
         <div className="space-y-2">
           {options.map(opt => (
@@ -776,24 +797,15 @@ const GarmentDetailSelector = ({
 
   return (
     <>
-      {showShirt && renderGroup("shirt_length_sleeve", "Shirt Length & Sleeve")}
-      {showNeck && renderGroup("neck_design", "Neck Design")}
-      {showShirt && renderGroup("shirt_pockets", "Shirt Pockets")}
-      
-      {showDress && renderGroup("dress_length_sleeve", "Dress Length & Sleeve")}
-      {showDress && renderGroup("dress_pockets", "Dress Pockets")}
-
-      {showTrouser && renderGroup("trousers", "Trousers / Leg Pants")}
-      {showTrouser && renderGroup("trouser_pockets", "Trouser Pockets")}
-
-      {showShorts && renderGroup("standard_shorts", "Standard Leg Shorts (Nikka)")}
-      {showShorts && renderGroup("standard_shorts_pockets", "Standard Shorts Pockets")}
-
-      {showBumShorts && renderGroup("bum_shorts", "Bum / Leg Shorts")}
-      {showBumShorts && renderGroup("bum_shorts_pockets", "Bum Shorts Pockets")}
-
-      {showSkirt && renderGroup("skirt", "Skirt")}
-      {showSkirt && renderGroup("skirt_pockets", "Skirt Pockets")}
+      {explicitBoth && applicableGroups.length > 0 && (
+        <div className="col-span-1 md:col-span-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 px-4 py-3 text-[11px] text-heritage-ink/70">
+          This design includes male and female garments. Complete every
+          applicable garment section below.
+        </div>
+      )}
+      {applicableGroups.map((group) =>
+        renderGroup(group.id, group.options),
+      )}
 
       {showLining && (
         <div className="space-y-2 mb-4 col-span-1 md:col-span-2">
@@ -822,7 +834,7 @@ const GarmentDetailSelector = ({
   );
 };
 
-const GarmentDetailSummaryItems = ({ designSelections, isLi = false, currencySymbol, catalog }: { designSelections: any, isLi?: boolean, currencySymbol: string, catalog?: any[] }) => {
+const GarmentDetailSummaryItems = ({ designSelections, isLi = false, currencySymbol, catalog = [] }: { designSelections: any, isLi?: boolean, currencySymbol: string, catalog?: any[] }) => {
   const items = getGarmentDetailsBreakdown(designSelections, catalog).map(item => {
     const display = item.price === 0 ? 'Included' : `+${currencySymbol}${item.price.toFixed(2)}`;
     return { ...item, display };
@@ -1512,7 +1524,7 @@ export default function DesignStudioView({
       
       customDetailsPrice = detailsPrice;
 
-      // Base Sewing Price (not included in subtotal for step 1-3 summary)
+      // Base design sewing price
       const isActualRate = batchType === "alone" || !(businessSettings.pricingSettings?.discountRulesEnabled ?? false);
       const baseRateRaw = getBaseSewingPrice(selectedStyle, selectedGarment, businessSettings.pricingSettings?.baseSewingPrices);
       const discountRatio = (selectedGarment?.discountFee && selectedGarment?.fee)
@@ -1525,7 +1537,13 @@ export default function DesignStudioView({
       courierSurcharge = 35.0;
     }
 
-    const subtotal = fabricPrice + fabricSewingCost + constructionSewingCost + customDetailsPrice;
+    const subtotal =
+      fabricPrice +
+      fabricSewingCost +
+      constructionSewingCost +
+      customDetailsPrice +
+      baseRate +
+      courierSurcharge;
 
     return {
       fabricPrice,
@@ -1596,81 +1614,15 @@ export default function DesignStudioView({
       return;
     }
     if (currentStep === 3) {
-      const demo = selectedStyle?.targetDemographic || selectedStyle?.gender || "unisex";
-      const explicitBoth = selectedStyle?.featuresMaleAndFemale || demo === "family" || demo === "couple";
-      const supportDetails = selectedStyle?.supportedGarmentDetails || [];
-      
-      const shouldShow = (demographic: "male" | "female", requiredGarments: string[]) => {
-        let demoMatch = false;
-        if (explicitBoth) {
-          demoMatch = true;
-        } else if (demo === demographic || demo === "unisex") {
-          demoMatch = true;
-        }
-        
-        if (!demoMatch) return false;
-    
-        if (supportDetails && supportDetails.length > 0) {
-          return requiredGarments.some(g => supportDetails.includes(g));
-        } else {
-          const comp = (selectedStyle?.garmentComposition || "").toLowerCase();
-          const name = (selectedStyle?.name || "").toLowerCase();
-          
-          const hasWord = (word: string) => comp.includes(word) || name.includes(word);
-          
-          if (requiredGarments.includes('shirt') && (hasWord('shirt') || hasWord('top') || hasWord('senator') || hasWord('agbada'))) return true;
-          if (requiredGarments.includes('trousers') && (hasWord('trouser') || hasWord('pant') || hasWord('2 piece') || hasWord('two piece'))) return true;
-          if (requiredGarments.includes('dress') && (hasWord('dress') || hasWord('gown') || hasWord('boubou') || hasWord('bubu'))) return true;
-          if (requiredGarments.includes('skirt') && (hasWord('skirt'))) return true;
-          if (requiredGarments.includes('shorts') && (hasWord('short') || hasWord('nikka'))) return true;
-          
-          if (!comp && demographic === 'male') return requiredGarments.includes('shirt');
-          if (!comp && demographic === 'female') return requiredGarments.includes('dress');
-          return false;
-        }
-      };
-    
-      const showShirt = shouldShow('male', ['shirt']);
-      const showTrouser = shouldShow('male', ['trousers']);
-      const showShorts = shouldShow('male', ['shorts']);
-      const showBumShorts = shouldShow('male', ['bum_shorts']) || shouldShow('female', ['bum_shorts']);
-      const showDress = shouldShow('female', ['dress']);
-      const showSkirt = shouldShow('female', ['skirt']);
-      const showNeck = showShirt || showDress;
+      const missingGroup = getMissingCustomDetailGroup(
+        selectedStyle,
+        designSelections,
+        customDetailCatalog,
+      );
 
-      const customDetails = designSelections.customDetails || {};
-      let missing = "";
-
-      if (showShirt) {
-        if (!customDetails.shirt_length_sleeve) missing = "shirt length and sleeve option";
-        else if (!customDetails.shirt_pockets) missing = "shirt pockets option";
-      }
-      if (!missing && showDress) {
-        if (!customDetails.dress_length_sleeve) missing = "dress length and sleeve option";
-        else if (!customDetails.dress_pockets) missing = "dress pockets option";
-      }
-      if (!missing && showNeck) {
-        if (!customDetails.neck_design) missing = "neck design";
-      }
-      if (!missing && showTrouser) {
-        if (!customDetails.trousers) missing = "trouser option";
-        else if (!customDetails.trouser_pockets) missing = "trouser pockets option";
-      }
-      if (!missing && showShorts) {
-        if (!customDetails.standard_shorts) missing = "shorts option";
-        else if (!customDetails.standard_shorts_pockets) missing = "shorts pockets option";
-      }
-      if (!missing && showBumShorts) {
-        if (!customDetails.bum_shorts) missing = "bum shorts option";
-        else if (!customDetails.bum_shorts_pockets) missing = "bum shorts pockets option";
-      }
-      if (!missing && showSkirt) {
-        if (!customDetails.skirt) missing = "skirt option";
-        else if (!customDetails.skirt_pockets) missing = "skirt pockets option";
-      }
-
-      if (missing) {
-        setValidationError(`Please select a ${missing}.`);
+      if (missingGroup) {
+        const missingLabel = missingGroup.replace(/_/g, " ");
+        setValidationError(`Please select a ${missingLabel} option.`);
         setTimeout(() => {
           document.getElementById("design-studio-stepper")?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 50);
@@ -1862,6 +1814,10 @@ export default function DesignStudioView({
       fabric: selectedFabric,
       design: {
         ...designSelections,
+        customDetailSnapshots: getCustomDetailSnapshots(
+          designSelections,
+          customDetailCatalog,
+        ),
         hasLining: (selectedStyle && selectedGarment && selectedStyle?.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "")) ? hasLining : false,
         optionalAccessories: batchType !== "alone" ? optionalAccessories : [],
         priceCode:
@@ -1878,6 +1834,8 @@ export default function DesignStudioView({
         fabricPrice: pricing.fabricPrice,
         customDetailsPrice: pricing.customDetailsPrice,
         monogramPrice: pricing.monogramPrice,
+        courierSurcharge: pricing.courierSurcharge,
+        checkoutTotal: subtotal,
       },
       measurements: measurements,
       specialInstructions: specialInstructions,
@@ -4378,7 +4336,7 @@ export default function DesignStudioView({
                   )}
                 </>
               )}
-              {selectedFabric && getGarmentDetailsBreakdown(designSelections, selectedStyle).map((item, idx) => (
+              {selectedFabric && getGarmentDetailsBreakdown(designSelections, customDetailCatalog).map((item, idx) => (
                 <div key={idx} className="flex justify-between items-center text-heritage-ink/70">
                   <span>{item.label}{item.value ? ': ' + item.value : ''}</span>
                   <span className="font-semibold text-heritage-green">

@@ -31,14 +31,40 @@ export interface Customer {
   biometricConsent?: BiometricConsent;
 }
 
+export type CustomDetailDemographic = "male" | "female" | "unisex";
+
+export type CustomDetailGarmentGroup =
+  | "shirt"
+  | "dress"
+  | "neck"
+  | "standard_shorts"
+  | "bum_shorts"
+  | "trousers"
+  | "skirt";
+
+export type CustomDetailSelectionGroup =
+  | "shirt_construction"
+  | "shirt_pockets"
+  | "dress_construction"
+  | "dress_pockets"
+  | "neck_design"
+  | "standard_shorts_fastening"
+  | "standard_shorts_pockets"
+  | "bum_shorts_fastening"
+  | "bum_shorts_pockets"
+  | "trouser_fastening"
+  | "trouser_pockets"
+  | "skirt_length"
+  | "skirt_pockets";
+
 export interface CustomDetailOption {
   id: string;
   label: string;
   description: string;
-  garmentGroup: string;
-  selectionGroup: string;
+  garmentGroup: CustomDetailGarmentGroup;
+  selectionGroup: CustomDetailSelectionGroup;
   priceCents: number;
-  eligibleDemographics: Array<"male" | "female" | "unisex">;
+  eligibleDemographics: CustomDetailDemographic[];
   displayOrder: number;
   required: boolean;
   active: boolean;
@@ -50,8 +76,8 @@ export interface CustomDetailOption {
 export interface CustomDetailConfig {
   representedGenders: Array<"male" | "female">;
   featuresMaleAndFemale: boolean;
-  supportedGarmentGroups: string[];
-  requiredSelectionGroups: string[];
+  supportedGarmentGroups: CustomDetailGarmentGroup[];
+  requiredSelectionGroups: CustomDetailSelectionGroup[];
   enabled: boolean;
 }
 
@@ -153,7 +179,8 @@ export interface DesignSelections {
   hasMonogramTrimming?: boolean;
 
   // New detailed garment fields
-  customDetails?: Record<string, string>;
+  customDetails?: Partial<Record<CustomDetailSelectionGroup, string>>;
+  customDetailSnapshots?: CustomDetailSelectionSnapshot[];
   topLength?: string;
   topPocket?: string;
   dressLength?: string;
@@ -169,6 +196,15 @@ export interface DesignSelections {
   accessories?: string[];
 }
 
+export interface CustomDetailSelectionSnapshot {
+  optionId: string;
+  label: string;
+  description: string;
+  garmentGroup: CustomDetailGarmentGroup;
+  selectionGroup: CustomDetailSelectionGroup;
+  priceCents: number;
+}
+
 export interface GarmentSelection {
   type: string; // e.g., "Shirt Only", "Shirt + Trouser", "Complete Set", "Gown Only"
   tailoringFee: number;
@@ -178,6 +214,8 @@ export interface GarmentSelection {
   fabricPrice?: number;
   customDetailsPrice?: number;
   monogramPrice?: number;
+  courierSurcharge?: number;
+  checkoutTotal?: number;
 }
 
 export interface Measurements {

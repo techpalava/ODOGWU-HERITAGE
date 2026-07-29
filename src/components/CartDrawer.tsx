@@ -165,8 +165,14 @@ export function CartDrawer() {
                             {item.fabric.name} ({item.fabric.code})
                           </strong>
                         </p>
-                        {Object.values(item.design.customDetails || {}).map(optId => {
-                          const opt = customDetailCatalog.find(o => o.id === optId);
+                        {(item.design.customDetailSnapshots?.length
+                          ? item.design.customDetailSnapshots
+                          : Object.values(item.design.customDetails || {})
+                        ).map((selection) => {
+                          const opt =
+                            typeof selection === "string"
+                              ? customDetailCatalog.find((o) => o.id === selection)
+                              : { ...selection, id: selection.optionId };
                           if (!opt) return null;
                           return (
                             <p key={opt.id}>
