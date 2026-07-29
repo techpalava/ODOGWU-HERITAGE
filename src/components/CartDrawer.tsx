@@ -3,8 +3,8 @@ import { useAppStore } from "../store/useAppStore";
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 import {
   calculateCartPricing,
-  getStoredIndividualShippingCost,
-} from "../utils/individualShipping";
+  getStoredShippingCost,
+} from "../utils/shippingPricing";
 
 export function CartDrawer() {
   const isCartOpen = useAppStore((state) => state.isCartOpen);
@@ -138,7 +138,7 @@ export function CartDrawer() {
                   const itemTotal = Math.max(
                     0,
                     item.garment.totalPrice -
-                      getStoredIndividualShippingCost(item.garment),
+                      getStoredShippingCost(item.garment),
                   );
                   return (
                     <div
@@ -215,6 +215,19 @@ export function CartDrawer() {
                             </strong>
                           </p>
                         )}
+                        {item.batchType !== "alone" && item.garment.batchShipping && (
+                          <p>
+                            Batch shipping:{" "}
+                            <strong>
+                              {item.garment.batchShipping.batchName} (
+                              {item.garment.batchShipping.garmentPieceCount} garment
+                              {item.garment.batchShipping.garmentPieceCount === 1
+                                ? ""
+                                : "s"}
+                              )
+                            </strong>
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex justify-between items-center pt-2 border-t border-gray-100">
@@ -250,25 +263,43 @@ export function CartDrawer() {
                     {cartPricing.garmentSubtotal.toFixed(2)}
                   </span>
                 </div>
-                {cartPricing.shippingQuote && (
+                {cartPricing.individualShippingQuote && (
                   <div className="text-heritage-ink/70">
                     <div className="flex justify-between">
                       <span>Shipping - Lagos to Eindhoven:</span>
                       <span className="font-mono font-semibold text-heritage-green">
                         {currencySymbol}
-                        {cartPricing.shippingTotal.toFixed(2)}
+                        {cartPricing.individualShippingQuote.priceEur.toFixed(2)}
                       </span>
                     </div>
                     <p className="text-[9px] text-heritage-ink/45 mt-0.5">
-                      {cartPricing.shippingQuote.garmentPieceCount} garment piece
-                      {cartPricing.shippingQuote.garmentPieceCount === 1
+                      {cartPricing.individualShippingQuote.garmentPieceCount} garment piece
+                      {cartPricing.individualShippingQuote.garmentPieceCount === 1
                         ? ""
                         : "s"}{" "}
-                      · {cartPricing.shippingQuote.estimatedWeightKg.toFixed(2)} kg
-                      estimated · {cartPricing.shippingQuote.weightBand}
+                      · {cartPricing.individualShippingQuote.estimatedWeightKg.toFixed(2)} kg
+                      estimated · {cartPricing.individualShippingQuote.weightBand}
                     </p>
                   </div>
                 )}
+                {cartPricing.batchShippingQuotes.map((quote) => (
+                  <div key={quote.batchId} className="text-heritage-ink/70">
+                    <div className="flex justify-between">
+                      <span>Batch shipping - {quote.batchName}:</span>
+                      <span className="font-mono font-semibold text-heritage-green">
+                        {currencySymbol}
+                        {quote.priceEur.toFixed(2)}
+                      </span>
+                    </div>
+                    <p className="text-[9px] text-heritage-ink/45 mt-0.5">
+                      {quote.garmentPieceCount} garment piece
+                      {quote.garmentPieceCount === 1 ? "" : "s"} ·{" "}
+                      {currencySymbol}
+                      {quote.exactRateEurPerGarment.toFixed(2)} each ·{" "}
+                      {quote.capacityBand} planned capacity
+                    </p>
+                  </div>
+                ))}
                 <div className="flex justify-between text-heritage-ink/70 border-t pt-2">
                   <span>Total subtotal:</span>
                   <span className="font-mono font-semibold text-heritage-green">
