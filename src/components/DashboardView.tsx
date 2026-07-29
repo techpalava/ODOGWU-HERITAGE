@@ -645,9 +645,15 @@ export default function DashboardView({
                         </strong>
                       </div>
                       <div>
-                        Shipping Surcharge Applied:{" "}
+                        Individual Shipping - Lagos to Eindhoven:{" "}
                         <strong className="text-heritage-green">
-                          {selectedReceipt.batchType === "alone" ? "+ €35.00" : "None"}
+                          {selectedReceipt.batchType === "alone"
+                            ? selectedReceipt.garment?.individualShipping
+                              ? `€${selectedReceipt.garment.individualShipping.priceEur.toFixed(2)} (${selectedReceipt.garment.individualShipping.weightBand})`
+                              : selectedReceipt.garment?.courierSurcharge
+                                ? `€${selectedReceipt.garment.courierSurcharge.toFixed(2)} (legacy quote)`
+                                : "Quote unavailable"
+                            : "Not applicable"}
                         </strong>
                       </div>
                       {selectedReceipt.design.optionalAccessories && selectedReceipt.design.optionalAccessories.length > 0 && (

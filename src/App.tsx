@@ -27,6 +27,7 @@ import { useAppStore } from "./store/useAppStore";
 import { CustomerJourneyEngine } from "./engine/CustomerJourneyEngine";
 import { getCurrentRegistrationBatch } from "./utils/batchUtils";
 import { CapacityService } from "./services/CapacityService";
+import { calculateCartPricing } from "./utils/individualShipping";
 
 // Lazy load modular view components for performance optimization
 const HomeView = lazy(() => import("./components/HomeView"));
@@ -418,14 +419,15 @@ export default function App() {
     triggerNotification("Sizes updated successfully.", "success");
   };
 
-  const checkoutSubtotal = cartItems.reduce(
-    (acc, item) => acc + item.garment.totalPrice,
-    0,
-  );
   const checkoutDepositRatio =
     businessSettings.pricingSettings.depositPercentage / 100;
-  const checkoutDepositAmount = checkoutSubtotal * checkoutDepositRatio;
-  const checkoutRemainingAmount = checkoutSubtotal - checkoutDepositAmount;
+  const checkoutPricing = calculateCartPricing(
+    cartItems,
+    checkoutDepositRatio,
+  );
+  const checkoutSubtotal = checkoutPricing.total;
+  const checkoutDepositAmount = checkoutPricing.depositDueNow;
+  const checkoutRemainingAmount = checkoutPricing.remainingDue;
   const currencySymbol =
     businessSettings.pricingSettings.currency === "EUR"
       ? "€"
@@ -767,13 +769,24 @@ export default function App() {
                       </span>
                     </div>
                   )}
-                  {cartItems.reduce((acc, item) => acc + (item.garment.courierSurcharge || 0), 0) > 0 && (
-                    <div className="flex justify-between">
-                      <span>Priority Home Shipping / Courier:</span>
-                      <span className="font-mono">
-                        {currencySymbol}
-                        {cartItems.reduce((acc, item) => acc + (item.garment.courierSurcharge || 0), 0).toFixed(2)}
-                      </span>
+                  {checkoutPricing.shippingQuote && (
+                    <div className="space-y-0.5">
+                      <div className="flex justify-between">
+                        <span>Individual Shipping - Lagos to Eindhoven:</span>
+                        <span className="font-mono">
+                          {currencySymbol}
+                          {checkoutPricing.shippingTotal.toFixed(2)}
+                        </span>
+                      </div>
+                      <p className="text-[9px] text-gray-400">
+                        {checkoutPricing.shippingQuote.garmentPieceCount} garment
+                        piece
+                        {checkoutPricing.shippingQuote.garmentPieceCount === 1
+                          ? ""
+                          : "s"}{" "}
+                        · {checkoutPricing.shippingQuote.estimatedWeightKg.toFixed(2)} kg
+                        estimated · {checkoutPricing.shippingQuote.weightBand}
+                      </p>
                     </div>
                   )}
                   <div className="flex justify-between text-heritage-green font-bold pt-1.5 border-t border-gray-100 mt-1">
@@ -785,8 +798,13 @@ export default function App() {
                   </div>
                   <div className="flex justify-between text-heritage-green font-bold text-sm pt-1.5 border-t border-dashed border-gray-100 font-serif">
                     <span>
-                      Escrow Activation Deposit (
-                      {businessSettings.pricingSettings.depositPercentage}%):
+                      Due Now (
+                      {businessSettings.pricingSettings.depositPercentage}%
+                      Garment Deposit
+                      {checkoutPricing.shippingTotal > 0
+                        ? " + Full Shipping"
+                        : ""}
+                      ):
                     </span>
                     <span className="font-mono text-heritage-gold">
                       {currencySymbol}
@@ -875,8 +893,12 @@ export default function App() {
                   </div>
                   <p className="text-[10px] text-gray-400 italic">
                     Upon pressing pay, you will be securely redirected to your
-                    bank's authentication gateway to authorize the 50% escrow
-                    deposit.
+                    bank's authentication gateway to authorize the garment
+                    deposit
+                    {checkoutPricing.shippingTotal > 0
+                      ? " and full shipping payment"
+                      : ""}
+                    .
                   </p>
                 </div>
               ) : (

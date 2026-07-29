@@ -55,6 +55,10 @@ import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
 import { DESIGN_CATEGORIES_LIST } from "./DesignCategories";
+import {
+  calculateIndividualShipping,
+  getGarmentPieceCount,
+} from "../utils/individualShipping";
 
 // Cache for loaded image URLs to prevent skeleton flicker across renders
 const loadedImageCache = new Set<string>();
@@ -1457,7 +1461,9 @@ export default function DesignStudioView({
     let constructionSewingCost = 0;
     let customDetailsPrice = 0;
     let monogramPrice = 0;
-    let courierSurcharge = 0;
+    let individualShipping: ReturnType<
+      typeof calculateIndividualShipping
+    > | null = null;
 
     if (selectedFabric) {
       fabricPrice = getFabricPrice(selectedFabric);
@@ -1488,16 +1494,28 @@ export default function DesignStudioView({
 
     }
 
-    if (selectedFabric && batchType === "alone") {
-      courierSurcharge = 35.0;
+    if (
+      selectedFabric &&
+      selectedStyle &&
+      selectedGarment &&
+      batchType === "alone"
+    ) {
+      const garmentComposition = getGarmentCompositionFromCode(
+        selectedGarment.code || "",
+        selectedStyle.garmentComposition,
+      );
+      individualShipping = calculateIndividualShipping(
+        getGarmentPieceCount(garmentComposition),
+      );
     }
 
+    const shippingCost = individualShipping?.priceEur ?? 0;
     const subtotal =
       fabricPrice +
       fabricSewingCost +
       constructionSewingCost +
       customDetailsPrice +
-      courierSurcharge;
+      shippingCost;
 
     return {
       fabricPrice,
@@ -1505,7 +1523,8 @@ export default function DesignStudioView({
       constructionSewingCost,
       customDetailsPrice,
       monogramPrice,
-      courierSurcharge,
+      individualShipping,
+      shippingCost,
       subtotal
     };
   };
@@ -1514,8 +1533,10 @@ export default function DesignStudioView({
   const garmentDetailsPrice = pricing.customDetailsPrice;
   const subtotal = pricing.subtotal;
   const depositRatio = businessSettings.pricingSettings.depositPercentage / 100;
-  const depositRequired = subtotal * depositRatio;
-  const remainingDue = subtotal - depositRequired;
+  const garmentSubtotal = subtotal - pricing.shippingCost;
+  const depositRequired =
+    garmentSubtotal * depositRatio + pricing.shippingCost;
+  const remainingDue = garmentSubtotal * (1 - depositRatio);
   const currencySymbol =
     businessSettings.pricingSettings.currency === "EUR"
       ? "€"
@@ -1773,7 +1794,7 @@ export default function DesignStudioView({
         fabricPrice: pricing.fabricPrice,
         customDetailsPrice: pricing.customDetailsPrice,
         monogramPrice: pricing.monogramPrice,
-        courierSurcharge: pricing.courierSurcharge,
+        individualShipping: pricing.individualShipping || undefined,
         checkoutTotal: subtotal,
       },
       measurements: measurements,
@@ -4319,16 +4340,21 @@ export default function DesignStudioView({
                 </div>
               ))}
 
-              {selectedFabric && batchType === "alone" && (
+              {pricing.individualShipping && (
                 <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
                   <div className="flex justify-between items-center">
-                    <span>Priority Home Shipping / Courier (Order Alone):</span>
+                    <span>Individual Shipping - Lagos to Eindhoven:</span>
                     <span className="font-mono">
                       +{currencySymbol}
-                      {Number(35).toFixed(2)}
+                      {pricing.individualShipping.priceEur.toFixed(2)}
                     </span>
                   </div>
-                  <span className="text-[9px] text-amber-600/80 mt-0.5">(SEPA Transfer Directly)</span>
+                  <span className="text-[9px] text-amber-600/80 mt-0.5">
+                    {pricing.individualShipping.garmentPieceCount} garment piece
+                    {pricing.individualShipping.garmentPieceCount === 1 ? "" : "s"} ·{" "}
+                    {pricing.individualShipping.estimatedWeightKg.toFixed(2)} kg estimated ·{" "}
+                    {pricing.individualShipping.weightBand}
+                  </span>
                 </div>
               )}
 
@@ -4345,8 +4371,8 @@ export default function DesignStudioView({
             <div className="grid grid-cols-2 gap-3 text-center pt-1.5">
               <div className="bg-heritage-cream/60 border border-heritage-gold/20 p-3 rounded-xl">
                 <span className="block text-[8px] uppercase tracking-wider text-heritage-ink/50 font-bold">
-                  {businessSettings.pricingSettings.depositPercentage}% Deposit
-                  Due
+                  Due Now ({businessSettings.pricingSettings.depositPercentage}%
+                  Garment Deposit{pricing.shippingCost > 0 ? " + Shipping" : ""})
                 </span>
                 <span className="text-sm font-bold text-heritage-green font-mono">
                   {currencySymbol}
@@ -4422,10 +4448,10 @@ export default function DesignStudioView({
               Bespoke Escrow Policy
             </span>
             <p>
-              Your deposit is processed into a secure community fund. Lagos
-              materials and workshop sourcing commence immediately. Final
-              payment is authorized only when garments arrive at campus
-              lockers.
+              Your garment deposit is processed into a secure community fund.
+              Individual shipping is paid in full with the deposit. Lagos
+              materials and workshop sourcing commence immediately, and the
+              remaining garment balance is due at delivery.
             </p>
           </div>
         </div>

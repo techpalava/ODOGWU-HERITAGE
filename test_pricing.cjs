@@ -10,6 +10,8 @@ const databaseView = read("src/components/DatabaseView.tsx");
 const dashboardView = read("src/components/DashboardView.tsx");
 const app = read("src/App.tsx");
 const types = read("src/types.ts");
+const cartDrawer = read("src/components/CartDrawer.tsx");
+const shippingEngine = read("src/utils/individualShipping.ts");
 
 const forbiddenPricingTerms = [
   "getBaseSewingPrice",
@@ -53,6 +55,19 @@ assert.equal(
   false,
   "New garment records must not define a tailoring/base fee",
 );
+for (const source of [designStudio, cartDrawer, app]) {
+  assert.equal(
+    source.includes("€35.00"),
+    false,
+    "Active ordering and checkout views must not display the legacy €35 rate",
+  );
+}
+for (const rate of ["131.25", "236.25", "425.25", "765.45"]) {
+  assert.ok(
+    shippingEngine.includes(rate),
+    `Shipping engine must include the ${rate} EUR rate`,
+  );
+}
 
 const subtotalMatch = designStudio.match(
   /const subtotal =\s*([\s\S]*?);\s*\n\s*return \{/,
@@ -65,7 +80,7 @@ for (const component of [
   "fabricSewingCost",
   "constructionSewingCost",
   "customDetailsPrice",
-  "courierSurcharge",
+  "shippingCost",
 ]) {
   assert.ok(
     subtotalFormula.includes(component),

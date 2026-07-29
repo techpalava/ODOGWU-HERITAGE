@@ -591,9 +591,9 @@ export default function AboutView() {
                 <strong>+€10.00</strong> to the order.
               </li>
               <li>
-                Order Alone options carry an individual priority home
-                shipping/courier surcharge of <strong>+€35.00</strong> (SEPA
-                transfer directly).
+                Individual orders use weight-band shipping from Lagos to
+                Eindhoven, starting at <strong>€131.25</strong>. The cart
+                combines garment pieces into one shipment quote.
               </li>
               <li>
                 Add-ons matching code <strong>Others-1</strong> can be added to

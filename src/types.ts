@@ -212,6 +212,18 @@ export interface GarmentSelection {
   fabricPrice?: number;
   customDetailsPrice?: number;
   monogramPrice?: number;
+  individualShipping?: {
+    routeId: "LAGOS_EINDHOVEN";
+    origin: "Lagos";
+    destination: "Eindhoven";
+    garmentPieceCount: number;
+    estimatedWeightKg: number;
+    weightBand: "0 - 2 kg" | ">2 - 5 kg" | ">5 - 10 kg" | ">10 - 20 kg" | ">20 kg";
+    priceEur: number;
+    priceNgn: number;
+    exchangeRateNgnPerEur: number;
+  };
+  // Read-only compatibility for carts created before the shipping-rate engine.
   courierSurcharge?: number;
   checkoutTotal?: number;
 }

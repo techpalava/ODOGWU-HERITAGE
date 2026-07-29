@@ -1,6 +1,10 @@
 import { ShoppingBag, X, Trash2, CreditCard } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
+import {
+  calculateCartPricing,
+  getStoredIndividualShippingCost,
+} from "../utils/individualShipping";
 
 export function CartDrawer() {
   const isCartOpen = useAppStore((state) => state.isCartOpen);
@@ -58,12 +62,10 @@ export function CartDrawer() {
     setIsCheckoutPaymentOpen(true);
   };
 
-  const subtotal = cartItems.reduce(
-    (acc, item) => acc + item.garment.totalPrice,
-    0,
-  );
   const depositRatio = businessSettings.pricingSettings.depositPercentage / 100;
-  const depositAmount = subtotal * depositRatio;
+  const cartPricing = calculateCartPricing(cartItems, depositRatio);
+  const subtotal = cartPricing.total;
+  const depositAmount = cartPricing.depositDueNow;
   const currencySymbol =
     businessSettings.pricingSettings.currency === "EUR"
       ? "€"
@@ -133,7 +135,11 @@ export function CartDrawer() {
             ) : (
               <div className="space-y-4">
                 {cartItems.map((item) => {
-                  const itemTotal = item.garment.totalPrice;
+                  const itemTotal = Math.max(
+                    0,
+                    item.garment.totalPrice -
+                      getStoredIndividualShippingCost(item.garment),
+                  );
                   return (
                     <div
                       key={item.id}
@@ -195,7 +201,18 @@ export function CartDrawer() {
                         )}
                         {item.batchType === "alone" && (
                           <p>
-                            🚚 Shipping: <strong>Priority Courier (+€35.00)</strong>
+                            Shipping:{" "}
+                            <strong>
+                              Lagos to Eindhoven (
+                              {item.garment.individualShipping?.garmentPieceCount ??
+                                1}{" "}
+                              garment piece
+                              {(item.garment.individualShipping
+                                ?.garmentPieceCount ?? 1) === 1
+                                ? ""
+                                : "s"}
+                              )
+                            </strong>
                           </p>
                         )}
                       </div>
@@ -225,9 +242,35 @@ export function CartDrawer() {
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between text-heritage-ink/70">
                   <span>
-                    Subtotal ({cartItems.length} garment
+                    Garments ({cartItems.length} item
                     {cartItems.length > 1 ? "s" : ""}):
                   </span>
+                  <span className="font-mono font-semibold text-heritage-green">
+                    {currencySymbol}
+                    {cartPricing.garmentSubtotal.toFixed(2)}
+                  </span>
+                </div>
+                {cartPricing.shippingQuote && (
+                  <div className="text-heritage-ink/70">
+                    <div className="flex justify-between">
+                      <span>Shipping - Lagos to Eindhoven:</span>
+                      <span className="font-mono font-semibold text-heritage-green">
+                        {currencySymbol}
+                        {cartPricing.shippingTotal.toFixed(2)}
+                      </span>
+                    </div>
+                    <p className="text-[9px] text-heritage-ink/45 mt-0.5">
+                      {cartPricing.shippingQuote.garmentPieceCount} garment piece
+                      {cartPricing.shippingQuote.garmentPieceCount === 1
+                        ? ""
+                        : "s"}{" "}
+                      · {cartPricing.shippingQuote.estimatedWeightKg.toFixed(2)} kg
+                      estimated · {cartPricing.shippingQuote.weightBand}
+                    </p>
+                  </div>
+                )}
+                <div className="flex justify-between text-heritage-ink/70 border-t pt-2">
+                  <span>Total subtotal:</span>
                   <span className="font-mono font-semibold text-heritage-green">
                     {currencySymbol}
                     {subtotal.toFixed(2)}
@@ -235,8 +278,10 @@ export function CartDrawer() {
                 </div>
                 <div className="flex justify-between text-heritage-ink/70">
                   <span>
-                    Secure Escrow Deposit (
-                    {businessSettings.pricingSettings.depositPercentage}%):
+                    Due now (
+                    {businessSettings.pricingSettings.depositPercentage}%
+                    garment deposit
+                    {cartPricing.shippingTotal > 0 ? " + full shipping" : ""}):
                   </span>
                   <span className="font-mono font-semibold text-heritage-gold">
                     {currencySymbol}
@@ -258,11 +303,14 @@ export function CartDrawer() {
                 </span>
                 <div>
                   <strong>Heritage Escrow System:</strong> Your{" "}
-                  {businessSettings.pricingSettings.depositPercentage}% deposit
-                  activates our Lagos weaving looms immediately. The final{" "}
+                  {businessSettings.pricingSettings.depositPercentage}% garment
+                  deposit
+                  {cartPricing.shippingTotal > 0
+                    ? " and full shipping payment"
+                    : ""}{" "}
+                  activate our Lagos workshop immediately. The final{" "}
                   {100 - businessSettings.pricingSettings.depositPercentage}%
-                  remains in escrow until your physical locker delivery is
-                  complete.
+                  garment balance remains due at delivery.
                 </div>
               </div>
 
