@@ -159,24 +159,49 @@ const FEMALE_GROUPS: CustomDetailGarmentGroup[] = [
   "skirt",
 ];
 
+const getStyleDemographic = (style: StyleCategory) => {
+  const raw = String(style.targetDemographic || style.gender || "unisex")
+    .trim()
+    .toLowerCase();
+  const explicitlyBoth =
+    style.customDetailConfig?.featuresMaleAndFemale === true ||
+    style.featuresMaleAndFemale === true ||
+    raw === "family" ||
+    raw === "couple";
+
+  return {
+    raw,
+    isMale: raw === "male",
+    isFemale: raw === "female",
+    isUnisex: raw === "unisex",
+    explicitlyBoth,
+  };
+};
+
 const inferLegacyGarmentGroups = (
   style: StyleCategory,
 ): CustomDetailGarmentGroup[] => {
-  const demographic = style.targetDemographic || style.gender;
-  const isMale = demographic === "male";
-  const isFemale = demographic === "female";
-  const isBoth =
-    demographic === "unisex" ||
-    demographic === "family" ||
-    demographic === "couple" ||
-    style.featuresMaleAndFemale;
-  const source =
-    `${style.name || ""} ${style.garmentComposition || ""}`.toLowerCase();
+  const { isMale, isFemale, isUnisex, explicitlyBoth } =
+    getStyleDemographic(style);
+  const supportsMale = isMale || isUnisex || explicitlyBoth;
+  const supportsFemale = isFemale || isUnisex || explicitlyBoth;
+  const source = [
+    style.name,
+    style.description,
+    style.outfitType,
+    style.garmentComposition,
+    ...(style.garmentCompositionList || []),
+    ...(style.options || []),
+    ...(style.designCategories || []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
   const has = (...terms: string[]) => terms.some((term) => source.includes(term));
   const groups = new Set<CustomDetailGarmentGroup>();
 
-  if (isMale || isBoth) {
-    if (has("shirt", "top", "senator", "agbada")) {
+  if (supportsMale) {
+    if (has("shirt", "top", "senator", "agbada", "kaftan", "kimono")) {
       groups.add("shirt");
       groups.add("neck");
     }
@@ -196,7 +221,7 @@ const inferLegacyGarmentGroups = (
     if (has("bum")) groups.add("bum_shorts");
   }
 
-  if (isFemale || isBoth) {
+  if (supportsFemale) {
     if (has("dress", "gown", "boubou", "bubu")) {
       groups.add("dress");
       groups.add("neck");
@@ -206,7 +231,11 @@ const inferLegacyGarmentGroups = (
   }
 
   if (groups.size === 0) {
-    const defaults = isMale ? ["shirt", "neck"] : isFemale ? ["dress", "neck"] : [];
+    const defaults: CustomDetailGarmentGroup[] = explicitlyBoth
+      ? ["shirt", "dress", "neck", "trousers", "skirt"]
+      : isFemale
+        ? ["dress", "neck"]
+        : ["shirt", "neck", "trousers"];
     defaults.forEach((group) => groups.add(group as CustomDetailGarmentGroup));
   }
 
@@ -218,7 +247,6 @@ export const getSupportedCustomDetailGroups = (
 ): CustomDetailGarmentGroup[] => {
   if (!style) return [];
   const config = style.customDetailConfig;
-  if (config?.enabled === false) return [];
 
   const configuredGroups = (config?.supportedGarmentGroups || []).filter(
     (group) => VALID_GARMENT_GROUPS.has(group),
@@ -237,27 +265,51 @@ export const getApplicableCustomDetailGroups = (
   if (!style) return [];
   const supportedGroups = getSupportedCustomDetailGroups(style);
   const config = style.customDetailConfig;
-  const demographic = style.targetDemographic || style.gender;
-  const representedGenders =
-    config?.representedGenders?.length
-      ? config.representedGenders
-      : demographic === "male"
+  const { isMale, isFemale } = getStyleDemographic(style);
+  const configuredGenders = (config?.representedGenders || [])
+    .map((value) => String(value).trim().toLowerCase())
+    .filter((value): value is "male" | "female" =>
+      value === "male" || value === "female",
+    );
+  const representedGenders: Array<"male" | "female"> =
+    configuredGenders.length > 0
+      ? configuredGenders
+      : isMale
         ? ["male"]
-        : demographic === "female"
+        : isFemale
           ? ["female"]
           : ["male", "female"];
+  const isEligible = (option: CustomDetailOption) =>
+    supportedGroups.includes(option.garmentGroup) &&
+    option.eligibleDemographics.some(
+      (demographic) =>
+        demographic === "unisex" ||
+        representedGenders.includes(demographic as "male" | "female"),
+    );
+  const normalizedCatalog = normalizeCustomDetailCatalog(catalog);
+  const activeOptions = normalizedCatalog.filter(
+    (option) => option.active && isEligible(option),
+  );
+  const groupsWithActiveOptions = new Set(
+    activeOptions.map((option) => option.garmentGroup),
+  );
+  const missingGroups = supportedGroups.filter(
+    (group) => !groupsWithActiveOptions.has(group),
+  );
+  const canonicalRecovery = SEED_CUSTOM_DETAIL_CATALOG.filter(
+    (option) =>
+      option.active &&
+      missingGroups.includes(option.garmentGroup) &&
+      isEligible(option),
+  );
+  const recoveredById = new Map(
+    [...activeOptions, ...canonicalRecovery].map((option) => [
+      option.id,
+      option,
+    ]),
+  );
 
-  return normalizeCustomDetailCatalog(catalog)
-    .filter(
-      (option) =>
-        option.active &&
-        supportedGroups.includes(option.garmentGroup) &&
-        option.eligibleDemographics.some(
-          (demographic) =>
-            demographic === "unisex" ||
-            representedGenders.includes(demographic as "male" | "female"),
-        ),
-    )
+  return [...recoveredById.values()]
     .sort(
       (a, b) =>
         a.displayOrder - b.displayOrder ||

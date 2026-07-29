@@ -889,10 +889,6 @@ export default function DatabaseView({
         alert("Features both male and female requires both male and female to be represented.");
         return;
       }
-      if (conf.enabled && (!conf.supportedGarmentGroups || conf.supportedGarmentGroups.length === 0)) {
-        alert("At least one supported garment group is required when Step 3 is enabled.");
-        return;
-      }
     }
 
     let nextStyles: StyleCategory[];
@@ -1864,6 +1860,10 @@ export default function DatabaseView({
 
                         <div className="space-y-2 col-span-1 sm:col-span-2">
                           <label className="font-bold text-heritage-green block">Supported Garment Groups</label>
+                          <p className="text-[10px] text-heritage-ink/60">
+                            If no group is selected, Step 3 automatically uses
+                            the style demographic and garment description.
+                          </p>
                           <div className="flex flex-wrap gap-2">
                             {['shirt', 'dress', 'neck', 'standard_shorts', 'bum_shorts', 'trousers', 'skirt'].map(g => (
                               <label key={g} className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded border border-gray-150 text-xs">
@@ -1962,24 +1962,6 @@ export default function DatabaseView({
                               </label>
                             ))}
                           </div>
-                        </div>
-                        
-                        <div className="space-y-2 col-span-1 sm:col-span-2 mt-2">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={editingItem.customDetailConfig?.enabled ?? true}
-                              onChange={(e) => {
-                                const conf = editingItem.customDetailConfig || { representedGenders: [], featuresMaleAndFemale: false, supportedGarmentGroups: [], requiredSelectionGroups: [], enabled: true };
-                                setEditingItem({
-                                  ...editingItem,
-                                  customDetailConfig: { ...conf, enabled: e.target.checked }
-                                });
-                              }}
-                              className="h-4 w-4 text-heritage-green rounded"
-                            />
-                            <span className="font-bold text-heritage-green">Enable Step 3 Custom Details for this style</span>
-                          </label>
                         </div>
                       </div>
                     </div>
