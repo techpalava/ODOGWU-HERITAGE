@@ -55,13 +55,13 @@ import {
   CommunityPhoto,
   Batch,
   BusinessSettings,
-  ConstructionDetail,
   FutureDiscount,
   DiscountSettings,
   DiscountPlanningRule,
   OutfitType,
 } from "../types";
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
+import { CUSTOM_DETAIL_SELECTION_GROUPS } from "../config/GarmentDetailsConfig";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 import { BusinessIntelligenceEngine } from "../engine/BusinessIntelligenceEngine";
 import { CapacityService } from "../services/CapacityService";
@@ -116,7 +116,6 @@ type TabType =
   | "operations"
   | "compliance";
 
-import { GARMENT_DETAIL_PRICING } from "./DesignStudioView";
 
 export default function DatabaseView({
   customers,
@@ -867,109 +866,7 @@ export default function DatabaseView({
   };
 
   // STYLES
-  const handlePopulateConstruction = () => {
-    const item = editingItem as StyleCategory;
-    if (!item) return;
-
-    const supported = item.supportedGarmentDetails || {};
-    const gender = item.gender;
-    const isMale = gender === 'male' || gender === 'unisex';
-    const isFemale = gender === 'female' || gender === 'unisex';
-    const isFamily = gender === 'family' || gender === 'couple';
-    
-    const gCode = item.id || "";
-    const name = (item.name || "").toLowerCase();
-    
-    const comp = (item.garmentComposition || "").toLowerCase();
-    
-    const isShirt = ['G1', 'G2', 'G5', 'G6'].includes(gCode) 
-       || name.includes('shirt') 
-       || name.includes('kaftan') 
-       || name.includes('senator') 
-       || name.includes('agbada')
-      || comp.includes('shirt')
-      || comp.includes('top');
-    const isDress = ['L1', 'L2', 'L3', 'L4'].includes(gCode)
-      || name.includes('dress')
-      || name.includes('gown')
-      || name.includes('boubou')
-      || comp.includes('dress')
-      || comp.includes('gown');
-    const isTrouser = ['G4', 'G5', 'G6', 'L6', 'L7', 'L8', 'L9', 'L10'].includes(gCode) 
-       || name.includes('trouser') 
-       || name.includes('pant')
-      || name.includes('senator')
-      || name.includes('kaftan set')
-      || name.includes('agbada')
-      || comp.includes('2-piece')
-      || comp.includes('3-piece')
-      || comp.includes('set')
-      || comp.includes('trouser')
-      || comp.includes('pant');
-    const isShorts = ['G3'].includes(gCode) 
-       || name.includes('short')
-      || comp.includes('short')
-      || name.includes('nikka')
-      || comp.includes('nikka');
-    const isSkirt = name.includes('skirt')
-      || comp.includes('skirt')
-      || comp.includes('wrapper');
-
-    const showTrousers = isTrouser && (supported.trousers !== false);
-    const showShorts = isShorts && (supported.shorts !== false);
-    const showSkirt = isSkirt && (supported.skirt !== false);
-    const showDress = isDress && (supported.dress !== false);
-    const showSleeves = (isShirt || isDress) && (supported.sleeves !== false);
-    const showPockets = supported.pockets !== false;
-    const showEmbroidery = supported.embroidery !== false;
-    const showAccessories = supported.accessories !== false;
-    
-    const newDetails: any[] = [];
-    
-    const addGroup = (type: string, optionsMap: Record<string, number>) => {
-      Object.entries(optionsMap).forEach(([code, price]) => {
-        newDetails.push({ type, code, price });
-      });
-    };
-
-    if ((isMale || isFamily) && isShirt) {
-      addGroup("topLength", GARMENT_DETAIL_PRICING.topLength);
-      if (showPockets) addGroup("topPocket", GARMENT_DETAIL_PRICING.topPocket);
-    }
-    if ((isFemale || isFamily) && showDress) {
-      addGroup("dressLength", GARMENT_DETAIL_PRICING.dressLength);
-      if (showPockets) addGroup("dressPocket", GARMENT_DETAIL_PRICING.dressPocket);
-    }
-    if ((isFemale || isFamily) && showSkirt) {
-      addGroup("skirtLength", GARMENT_DETAIL_PRICING.skirtLength);
-      if (showPockets) addGroup("skirtPocket", GARMENT_DETAIL_PRICING.skirtPocket);
-    }
-    if (showSleeves) {
-      addGroup("sleeveLength", GARMENT_DETAIL_PRICING.sleeveLength);
-    }
-    if (showTrousers) {
-      addGroup("trouserFastening", GARMENT_DETAIL_PRICING.trouserFastening);
-      if (showPockets) addGroup("trouserPocket", GARMENT_DETAIL_PRICING.trouserPocket);
-    }
-    if (showShorts) {
-      addGroup("shortFastening", GARMENT_DETAIL_PRICING.shortFastening);
-      if (showPockets) addGroup("shortPocket", GARMENT_DETAIL_PRICING.shortPocket);
-    }
-    if (showEmbroidery) {
-      addGroup("embroideryDesign", GARMENT_DETAIL_PRICING.embroideryDesign);
-    }
-    if (showAccessories) {
-      addGroup("accessories", GARMENT_DETAIL_PRICING.accessories);
-    }
-    
-    setEditingItem({
-      ...item,
-      constructionDetails: newDetails
-    });
-    triggerStatus("Construction options generated from official pricing.", "success");
-  };
-
-  const handleSaveStyle = (e: React.FormEvent) => {
+  const handleSaveStyle = async (e: React.FormEvent) => {
     e.preventDefault();
     const item = editingItem as StyleCategory;
     if (!item.id || !item.name) {
@@ -998,18 +895,27 @@ export default function DatabaseView({
       }
     }
 
+    let nextStyles: StyleCategory[];
     if (isNewRecord) {
       if (styles.some((s) => s.id === item.id)) {
         alert("A style with this ID already exists.");
         return;
       }
-      setStyles((prev) => [...prev, item]);
-      triggerStatus(`Created style ${item.name} successfully!`);
+      nextStyles = [...styles, item];
     } else {
-      setStyles((prev) => prev.map((s) => (s.id === item.id ? item : s)));
-      triggerStatus(`Updated style ${item.name} successfully!`);
+      nextStyles = styles.map((style) => (style.id === item.id ? item : style));
     }
-    setEditingType(null);
+
+    try {
+      await setStyles(nextStyles);
+      triggerStatus(
+        `${isNewRecord ? "Created" : "Updated"} style ${item.name} successfully!`,
+      );
+      setEditingType(null);
+    } catch (error) {
+      console.error("Failed to persist style configuration", error);
+      triggerStatus("Failed to save the style configuration.", "error");
+    }
   };
 
   const handleDeleteStyle = async (id: string) => {
@@ -1599,9 +1505,16 @@ export default function DatabaseView({
                         alert("Missing required fields");
                         return;
                       }
+                      if (
+                        isNewCatalogOption &&
+                        customDetailCatalog.some((option) => option.id === item.id)
+                      ) {
+                        alert("An option with this ID already exists.");
+                        return;
+                      }
                       try {
-                        const { StorageService } = await import('../services/storageService');
                         item.updatedAt = new Date().toISOString();
+                        item.createdAt = item.createdAt || item.updatedAt;
                         await StorageService.saveCatalogOption(item);
                         
                         setCustomDetailCatalog((prev: any) => {
@@ -1685,6 +1598,23 @@ export default function DatabaseView({
                       />
                     </div>
                     <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
+                        Display Order
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editingCatalogOption?.displayOrder ?? 0}
+                        onChange={(e) =>
+                          setEditingCatalogOption({
+                            ...editingCatalogOption,
+                            displayOrder: parseInt(e.target.value, 10) || 0,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      />
+                    </div>
+                    <div className="space-y-1">
                       <label className="font-bold text-heritage-green block">Eligible Demographics</label>
                       <div className="flex gap-4 mt-2">
                         {['male', 'female', 'unisex'].map(d => (
@@ -1706,7 +1636,7 @@ export default function DatabaseView({
                         ))}
                       </div>
                     </div>
-                    <div className="space-y-1 sm:col-span-2">
+                    <div className="space-y-2 sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <label className="flex items-center gap-2 cursor-pointer p-2 bg-heritage-cream/30 rounded border border-heritage-gold/20">
                         <input
                           type="checkbox"
@@ -1715,6 +1645,38 @@ export default function DatabaseView({
                           className="h-4 w-4 text-heritage-green rounded"
                         />
                         <span className="font-bold text-heritage-green">Active (Available for new orders)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer p-2 bg-heritage-cream/30 rounded border border-heritage-gold/20">
+                        <input
+                          type="checkbox"
+                          checked={editingCatalogOption?.required ?? true}
+                          onChange={(e) =>
+                            setEditingCatalogOption({
+                              ...editingCatalogOption,
+                              required: e.target.checked,
+                            })
+                          }
+                          className="h-4 w-4 text-heritage-green rounded"
+                        />
+                        <span className="font-bold text-heritage-green">
+                          Required by Default
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer p-2 bg-heritage-cream/30 rounded border border-heritage-gold/20">
+                        <input
+                          type="checkbox"
+                          checked={editingCatalogOption?.allowMultiple ?? false}
+                          onChange={(e) =>
+                            setEditingCatalogOption({
+                              ...editingCatalogOption,
+                              allowMultiple: e.target.checked,
+                            })
+                          }
+                          className="h-4 w-4 text-heritage-green rounded"
+                        />
+                        <span className="font-bold text-heritage-green">
+                          Allow Multiple
+                        </span>
                       </label>
                     </div>
                     
@@ -1911,17 +1873,92 @@ export default function DatabaseView({
                                   onChange={(e) => {
                                     const conf = editingItem.customDetailConfig || { representedGenders: [], featuresMaleAndFemale: false, supportedGarmentGroups: [], requiredSelectionGroups: [], enabled: true };
                                     const list = conf.supportedGarmentGroups || [];
+                                    const supportedGarmentGroups = e.target.checked
+                                      ? [...list, g]
+                                      : list.filter((i: string) => i !== g);
+                                    const validSelectionGroups = new Set(
+                                      customDetailCatalog
+                                        .filter((option) =>
+                                          supportedGarmentGroups.includes(option.garmentGroup),
+                                        )
+                                        .map((option) => option.selectionGroup),
+                                    );
                                     setEditingItem({
                                       ...editingItem,
                                       customDetailConfig: {
                                         ...conf,
-                                        supportedGarmentGroups: e.target.checked ? [...list, g] : list.filter((i: string) => i !== g)
+                                        supportedGarmentGroups,
+                                        requiredSelectionGroups:
+                                          conf.requiredSelectionGroups.filter(
+                                            (group: string) =>
+                                              validSelectionGroups.has(group as any),
+                                          ),
                                       }
                                     });
                                   }}
                                   className="h-4 w-4 text-heritage-green rounded"
                                 />
                                 <span className="capitalize">{g.replace(/_/g, ' ')}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 col-span-1 sm:col-span-2">
+                          <label className="font-bold text-heritage-green block">
+                            Required Selection Groups
+                          </label>
+                          <p className="text-[10px] text-heritage-ink/60">
+                            Customers must complete checked groups before leaving
+                            Step 3. Only groups supported by this style are shown.
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {CUSTOM_DETAIL_SELECTION_GROUPS.filter((group) =>
+                              customDetailCatalog.some(
+                                (option) =>
+                                  option.selectionGroup === group &&
+                                  editingItem.customDetailConfig?.supportedGarmentGroups?.includes(
+                                    option.garmentGroup,
+                                  ),
+                              ),
+                            ).map((group) => (
+                              <label
+                                key={group}
+                                className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded border border-gray-150 text-xs"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={
+                                    editingItem.customDetailConfig?.requiredSelectionGroups?.includes(
+                                      group,
+                                    ) || false
+                                  }
+                                  onChange={(e) => {
+                                    const conf = editingItem.customDetailConfig || {
+                                      representedGenders: [],
+                                      featuresMaleAndFemale: false,
+                                      supportedGarmentGroups: [],
+                                      requiredSelectionGroups: [],
+                                      enabled: true,
+                                    };
+                                    const required = conf.requiredSelectionGroups || [];
+                                    setEditingItem({
+                                      ...editingItem,
+                                      customDetailConfig: {
+                                        ...conf,
+                                        requiredSelectionGroups: e.target.checked
+                                          ? [...required, group]
+                                          : required.filter(
+                                              (item: string) => item !== group,
+                                            ),
+                                      },
+                                    });
+                                  }}
+                                  className="h-4 w-4 text-heritage-green rounded"
+                                />
+                                <span className="capitalize">
+                                  {group.replace(/_/g, " ")}
+                                </span>
                               </label>
                             ))}
                           </div>
@@ -2169,44 +2206,14 @@ export default function DatabaseView({
                         </div>
                       )}
                     </div>
-                    <div className="sm:col-span-2 pt-4 border-t border-gray-200 mt-4">
-                      <h4 className="font-bold text-heritage-green text-sm mb-2">Supported Garment Details</h4>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {['trousers', 'shorts', 'skirt', 'dress', 'sleeves', 'pockets', 'embroidery', 'accessories', 'lining'].map((field) => (
-                          <label key={field} className="flex items-center gap-2 text-sm text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={editingItem.supportedGarmentDetails?.[field] ?? true}
-                              onChange={(e) => {
-                                setEditingItem({
-                                  ...editingItem,
-                                  supportedGarmentDetails: {
-                                    ...(editingItem.supportedGarmentDetails || {}),
-                                    [field]: e.target.checked
-                                  }
-                                });
-                              }}
-                              className="rounded border-gray-300 text-heritage-gold focus:ring-heritage-gold"
-                            />
-                            {field.charAt(0).toUpperCase() + field.slice(1)}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
                     <div className="sm:col-span-2 space-y-3 p-4 bg-gray-50 border border-gray-200 rounded-xl">
-                      <div className="flex justify-between items-center">
-                        <label className="font-bold text-heritage-green">Garment Construction Details & Prices</label>
-                        <button
-                          type="button"
-                          onClick={handlePopulateConstruction}
-                          className="px-3 py-1.5 text-[10px] font-bold bg-heritage-green text-heritage-gold rounded-lg hover:bg-heritage-forest transition cursor-pointer"
-                        >
-                          Populate from official price list
-                        </button>
-                      </div>
+                      <label className="font-bold text-heritage-green">
+                        Legacy Embroidery and Accessory Price Overrides
+                      </label>
                       <p className="text-[10px] text-gray-500">
-                        Populate construction groups based on the target demographic, outfit type, garment composition, and supported details checked above.
+                        Step 3 garment choices and prices come from the Custom
+                        Detail Catalogue. Keep only style-specific legacy
+                        embroidery or accessory overrides here.
                       </p>
                       
                       {editingItem.constructionDetails && editingItem.constructionDetails.length > 0 ? (
@@ -2267,7 +2274,7 @@ export default function DatabaseView({
                         </div>
                       ) : (
                         <div className="text-[10px] text-gray-500 italic p-2 border border-dashed border-gray-300 rounded text-center">
-                          No construction details defined. Step 3 will not show any options.
+                          No style-specific legacy price overrides.
                         </div>
                       )}
                     </div>
@@ -3938,6 +3945,26 @@ export default function DatabaseView({
                         ],
                         outfitType: "Senator Set",
                         garmentComposition: "2-Piece Set",
+                        customDetailConfig: {
+                          representedGenders: ["male", "female"],
+                          featuresMaleAndFemale: true,
+                          supportedGarmentGroups: [
+                            "shirt",
+                            "dress",
+                            "neck",
+                            "trousers",
+                          ],
+                          requiredSelectionGroups: [
+                            "shirt_construction",
+                            "shirt_pockets",
+                            "dress_construction",
+                            "dress_pockets",
+                            "neck_design",
+                            "trouser_fastening",
+                            "trouser_pockets",
+                          ],
+                          enabled: true,
+                        },
                       });
                       setEditingType("style");
                     }}

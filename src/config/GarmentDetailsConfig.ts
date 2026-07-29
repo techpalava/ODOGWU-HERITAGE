@@ -1,8 +1,29 @@
-export type Demographic = 'male' | 'female' | 'unisex';
-export type GarmentGroup = 'shirt' | 'dress' | 'neck' | 'shorts' | 'bum_shorts' | 'trousers' | 'skirt';
-export type SelectionGroup = 'shirt_length_sleeve' | 'shirt_pockets' | 'dress_length_sleeve' | 'dress_pockets' | 'neck_design' | 'standard_shorts' | 'standard_shorts_pockets' | 'bum_shorts' | 'bum_shorts_pockets' | 'trousers' | 'trouser_pockets' | 'skirt' | 'skirt_pockets';
+import {
+  CustomDetailDemographic,
+  CustomDetailGarmentGroup,
+  CustomDetailOption,
+  CustomDetailSelectionGroup,
+} from "../types";
 
-import { CustomDetailOption } from '../types';
+export type Demographic = CustomDetailDemographic;
+export type GarmentGroup = CustomDetailGarmentGroup;
+export type SelectionGroup = CustomDetailSelectionGroup;
+
+export const CUSTOM_DETAIL_SELECTION_GROUPS: CustomDetailSelectionGroup[] = [
+  "shirt_construction",
+  "shirt_pockets",
+  "dress_construction",
+  "dress_pockets",
+  "neck_design",
+  "standard_shorts_fastening",
+  "standard_shorts_pockets",
+  "bum_shorts_fastening",
+  "bum_shorts_pockets",
+  "trouser_fastening",
+  "trouser_pockets",
+  "skirt_length",
+  "skirt_pockets",
+];
 
 export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
 
