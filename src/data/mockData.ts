@@ -39,35 +39,6 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
     vatTaxPercentage: 21,
     discountRulesEnabled: false,
     standardAccessoryCharge: 10,
-    baseSewingPrices: {
-      "Senator Set_2-Piece Set": 160,
-      "Senator Shirt_Shirt Only": 120,
-      "Native Shirt_Shirt Only": 110,
-      "Kaftan_Kaftan Only": 145,
-      "Kaftan Set_2-Piece Set": 165,
-      "Agbada_3-Piece Set": 275,
-      "Isiagu Set_2-Piece Set": 180,
-      "Dashiki_Shirt Only": 115,
-      "Buba & Sokoto_2-Piece Set": 150,
-      "Shirt & Trouser_2-Piece Set": 155,
-      "Shirt & Shorts_2-Piece Set": 135,
-      "Traditional Suit_2-Piece Set": 195,
-      "Maxi Gown_Dress Only": 180,
-      "Midi Gown_Dress Only": 160,
-      "Shift Dress_Dress Only": 140,
-      "Boubou_Dress Only": 180,
-      "Kaftan Dress_Dress Only": 165,
-      "Kimono Set_2-Piece Set": 175,
-      "Blouse_Blouse Only": 95,
-      "Top & Skirt_2-Piece Set": 150,
-      "Wrapper Set_Wrapper Only": 110,
-      "Skirt Set_2-Piece Set": 145,
-      "Palazzo Trouser_Trouser Only": 95,
-      "Jumpsuit_Dress Only": 150,
-      "Couple Collection_Couple Set": 290,
-      "Parent & Child Collection_Parent & Child Set": 240,
-      "Family Collection_Family Set": 380,
-    },
   },
   productionSettings: {
     productionStartThresholdPercentage: 90,
@@ -563,7 +534,6 @@ const BASE_DESIGNS: StyleCategory[] = [
     name: "Royal Senator",
     description:
       "A sharp, architectural classic featuring structured fits, crisp mandarin collar design, and custom embroidery options. A staple of modern prestige.",
-    basePrice: 170.0,
     gender: "male",
     options: ["Mandarin Collar", "Hidden Button Placket", "Sleek Side Vent"],
     image: royalSenatorImg,
@@ -575,7 +545,6 @@ const BASE_DESIGNS: StyleCategory[] = [
     name: "Executive Kaftan",
     description:
       "An elegant long-hem traditional tunic perfect for formal occasions or casual executive prestige. Offers maximum comfort and supreme flow.",
-    basePrice: 150.0,
     gender: "male",
     options: ["Flared Hemline", "Turn-up Cuffs", "Traditional Side Openings"],
     image: executiveKaftanImg,
@@ -587,7 +556,6 @@ const BASE_DESIGNS: StyleCategory[] = [
     name: "Grand Agbada",
     description:
       "The ultimate majestic three-piece suite including an expansive outer robe, inner tunic, trousers, and optional customized traditional cap.",
-    basePrice: 280.0,
     gender: "male",
     options: [
       "Majestic Wide Robe",
@@ -603,7 +571,6 @@ const BASE_DESIGNS: StyleCategory[] = [
     name: "Classic Boubou",
     description:
       "An effortlessly elegant, flowing gown radiating queenly grace. Softly contoured lines, loose-cut comfortable silhouette, and delicate neckline detailing.",
-    basePrice: 185.0,
     gender: "female",
     options: [
       "Flowing Caftan Sleeves",
@@ -619,7 +586,6 @@ const BASE_DESIGNS: StyleCategory[] = [
     name: "Couture Gown",
     description:
       "Tailor-fitted luxury gown with custom flare or mermaid silhouette, custom shoulder styling, and intricate structural seams for majestic celebration wear.",
-    basePrice: 245.0,
     gender: "female",
     options: [
       "Mermaid Flare Seams",
@@ -665,7 +631,6 @@ const designTypes = [
     type: "Senator",
     gender: "male",
     image: royalSenatorImg,
-    basePrice: 160,
     options: [
       "Mandarin Collar",
       "Hidden Button Placket",
@@ -679,7 +644,6 @@ const designTypes = [
     type: "Kaftan",
     gender: "male",
     image: executiveKaftanImg,
-    basePrice: 145,
     options: [
       "Flared Hemline",
       "Turn-up Cuffs",
@@ -693,7 +657,6 @@ const designTypes = [
     type: "Agbada",
     gender: "male",
     image: grandAgbadaImg,
-    basePrice: 275,
     options: [
       "Majestic Wide Robe",
       "Elaborate Embroidery Bed",
@@ -707,7 +670,6 @@ const designTypes = [
     type: "Boubou",
     gender: "female",
     image: classicBoubouImg,
-    basePrice: 180,
     options: [
       "Flowing Caftan Sleeves",
       "Gilded Neck Accents",
@@ -721,7 +683,6 @@ const designTypes = [
     type: "Couture Gown",
     gender: "female",
     image: coutureGownImg,
-    basePrice: 235,
     options: [
       "Mermaid Flare Seams",
       "Fitted Bodice",
@@ -740,16 +701,14 @@ for (let i = 0; i < 45; i++) {
   const prefix = prefixes[i % prefixes.length];
   const designType = designTypes[i % designTypes.length];
 
-  const priceVariance = (i * 3) % 45;
-  const basePrice = Math.round(designType.basePrice + priceVariance);
+  const designVariant = (i * 3) % 45;
   const name = `${prefix} ${designType.type}`;
-  const description = `A bespoke and premium variant of our traditional ${designType.type.toLowerCase()} template, showcasing premium ${priceVariance % 2 === 0 ? "gilded embroidery lines" : "double-stitched structural hems"}, optimized collar cuts, and standard executive proportions.`;
+  const description = `A bespoke and premium variant of our traditional ${designType.type.toLowerCase()} template, showcasing premium ${designVariant % 2 === 0 ? "gilded embroidery lines" : "double-stitched structural hems"}, optimized collar cuts, and standard executive proportions.`;
 
   generatedStyles.push({
     id: `${designType.type.toLowerCase().replace(" ", "-")}-var-${idCounter++}`,
     name,
     description,
-    basePrice,
     gender: designType.gender as "male" | "female",
     options: [...designType.options],
     image: designType.image,

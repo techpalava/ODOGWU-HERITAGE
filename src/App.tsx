@@ -767,15 +767,6 @@ export default function App() {
                       </span>
                     </div>
                   )}
-                  {cartItems.reduce((acc, item) => acc + (item.garment.tailoringFee || 0), 0) > 0 && (
-                    <div className="flex justify-between">
-                      <span>Base Sewing Price:</span>
-                      <span className="font-mono">
-                        {currencySymbol}
-                        {cartItems.reduce((acc, item) => acc + (item.garment.tailoringFee || 0), 0).toFixed(2)}
-                      </span>
-                    </div>
-                  )}
                   {cartItems.reduce((acc, item) => acc + (item.garment.courierSurcharge || 0), 0) > 0 && (
                     <div className="flex justify-between">
                       <span>Priority Home Shipping / Courier:</span>

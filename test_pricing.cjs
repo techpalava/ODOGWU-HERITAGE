@@ -1,2 +1,83 @@
-const fs = require('fs');
-console.log("Checking DesignStudioView.tsx");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const read = (file) =>
+  fs.readFileSync(path.join(__dirname, file), "utf8");
+
+const designStudio = read("src/components/DesignStudioView.tsx");
+const databaseView = read("src/components/DatabaseView.tsx");
+const dashboardView = read("src/components/DashboardView.tsx");
+const app = read("src/App.tsx");
+const types = read("src/types.ts");
+
+const forbiddenPricingTerms = [
+  "getBaseSewingPrice",
+  "baseSewingPrices",
+  "baseRate",
+  "tailoringFee:",
+  "Base Sewing Price",
+  "style.basePrice",
+];
+
+for (const term of forbiddenPricingTerms) {
+  assert.equal(
+    designStudio.includes(term),
+    false,
+    `Design Studio must not use legacy pricing term: ${term}`,
+  );
+}
+
+assert.equal(
+  databaseView.includes("Base Sewing Prices"),
+  false,
+  "Admin settings must not expose the legacy base-sewing price editor",
+);
+assert.equal(
+  databaseView.includes("Base Price (€)"),
+  false,
+  "Garment Options must not expose a design-style base price",
+);
+assert.equal(
+  dashboardView.includes("Base Sewing Price"),
+  false,
+  "Dashboard summaries must not display a base sewing price",
+);
+assert.equal(
+  app.includes("Base Sewing Price"),
+  false,
+  "Checkout summaries must not display a base sewing price",
+);
+assert.equal(
+  types.includes("tailoringFee"),
+  false,
+  "New garment records must not define a tailoring/base fee",
+);
+
+const subtotalMatch = designStudio.match(
+  /const subtotal =\s*([\s\S]*?);\s*\n\s*return \{/,
+);
+assert.ok(subtotalMatch, "Could not locate the Design Studio subtotal formula");
+
+const subtotalFormula = subtotalMatch[1];
+for (const component of [
+  "fabricPrice",
+  "fabricSewingCost",
+  "constructionSewingCost",
+  "customDetailsPrice",
+  "courierSurcharge",
+]) {
+  assert.ok(
+    subtotalFormula.includes(component),
+    `Subtotal must include ${component}`,
+  );
+}
+assert.equal(
+  /base|style/i.test(subtotalFormula),
+  false,
+  "Subtotal must not include any design-style or base-price component",
+);
+
+console.log("PASS: design-style base price is absent from active pricing");
+console.log("PASS: admin, checkout, and dashboard base-price labels are removed");
+console.log("PASS: subtotal contains only supported pricing determinants");

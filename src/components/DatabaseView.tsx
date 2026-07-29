@@ -188,10 +188,6 @@ export default function DatabaseView({
   const [editingFutureDiscount, setEditingFutureDiscount] =
     useState<FutureDiscount | null>(null);
   const [isAddingFutureDiscount, setIsAddingFutureDiscount] = useState(false);
-  const [newOType, setNewOType] = useState("Senator Set");
-  const [newComp, setNewComp] = useState("2-Piece Set");
-  const [newPrice, setNewPrice] = useState(150);
-
   const {
     currentUser,
     customDetailCatalog,
@@ -1772,23 +1768,6 @@ export default function DatabaseView({
                     </div>
                     <div className="space-y-1">
                       <label className="font-bold text-heritage-green">
-                        Base Price (€)
-                      </label>
-                      <input
-                        type="number"
-                        required
-                        value={editingItem.basePrice}
-                        onChange={(e) =>
-                          setEditingItem({
-                            ...editingItem,
-                            basePrice: parseFloat(e.target.value),
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="font-bold text-heritage-green">
                         Target Demographic
                       </label>
                       <select
@@ -2904,7 +2883,7 @@ export default function DatabaseView({
                       >
                         {styles.map((s) => (
                           <option key={s.id} value={s.id}>
-                            {s.name} (€{s.basePrice})
+                            {s.name}
                           </option>
                         ))}
                       </select>
@@ -3918,7 +3897,6 @@ export default function DatabaseView({
                         id: `style-${Date.now().toString().slice(-4)}`,
                         name: "",
                         description: "",
-                        basePrice: 150,
                         gender: "unisex",
                         options: [
                           "Standard Collar",
@@ -3975,18 +3953,13 @@ export default function DatabaseView({
                           </div>
                         )}
                         <div className="space-y-2 flex-grow min-w-0">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h4 className="font-serif font-bold text-sm text-heritage-green">
-                                {s.name}
-                              </h4>
-                              <p className="font-mono text-[9px] text-gray-400">
-                                ID: {s.id}
-                              </p>
-                            </div>
-                            <span className="text-sm font-black text-heritage-green bg-heritage-forest/5 border border-heritage-gold/10 px-2.5 py-0.5 rounded-lg shrink-0 ml-2">
-                              €{s.basePrice}
-                            </span>
+                          <div>
+                            <h4 className="font-serif font-bold text-sm text-heritage-green">
+                              {s.name}
+                            </h4>
+                            <p className="font-mono text-[9px] text-gray-400">
+                              ID: {s.id}
+                            </p>
                           </div>
                           <p className="text-[11px] text-gray-600 leading-normal line-clamp-2">
                             {s.description}
@@ -4811,7 +4784,6 @@ export default function DatabaseView({
                         style: styles[0] || {
                           id: "style-kaftan",
                           name: "Standard Senator",
-                          basePrice: 150,
                         },
                         fabric: fabrics[0] || {
                           code: "ODG-001",
@@ -4827,7 +4799,6 @@ export default function DatabaseView({
                         },
                         garment: {
                           type: "Shirt + Trouser Set",
-                          tailoringFee: 45,
                           totalPrice: 195,
                         },
                         measurements: {
@@ -7613,220 +7584,6 @@ export default function DatabaseView({
                           gele, shawls, bags, beads) to the total tailoring
                           invoice.
                         </div>
-                      </div>
-                    </div>
-
-                    {/* Base Sewing Prices Card */}
-                    <div className="bg-white border border-heritage-gold/20 rounded-2xl p-6 shadow-sm">
-                      <div className="mb-4">
-                        <h3 className="font-serif font-bold text-lg text-heritage-green">
-                          Base Sewing Prices
-                        </h3>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          Configure base tailoring fees dynamically by combining
-                          Outfit Type and Garment Composition.
-                        </p>
-                      </div>
-
-                      {/* Add new combination form */}
-                      <div className="bg-heritage-cream/15 border border-dashed border-heritage-gold/30 p-4 rounded-xl mb-6 grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-heritage-green uppercase">
-                            Outfit Type
-                          </label>
-                          <select
-                            value={newOType}
-                            onChange={(e) => setNewOType(e.target.value)}
-                            className="w-full px-2.5 py-1.5 border border-gray-200 bg-white rounded-lg text-xs"
-                          >
-                            <option value="Senator Set">Senator Set</option>
-                            <option value="Senator Shirt">Senator Shirt</option>
-                            <option value="Native Shirt">Native Shirt</option>
-                            <option value="Kaftan">Kaftan</option>
-                            <option value="Kaftan Set">Kaftan Set</option>
-                            <option value="Agbada">Agbada</option>
-                            <option value="Isiagu Set">Isiagu Set</option>
-                            <option value="Dashiki">Dashiki</option>
-                            <option value="Buba & Sokoto">Buba & Sokoto</option>
-                            <option value="Shirt & Trouser">
-                              Shirt & Trouser
-                            </option>
-                            <option value="Shirt & Shorts">
-                              Shirt & Shorts
-                            </option>
-                            <option value="Traditional Suit">
-                              Traditional Suit
-                            </option>
-                            <option value="Maxi Gown">Maxi Gown</option>
-                            <option value="Midi Gown">Midi Gown</option>
-                            <option value="Shift Dress">Shift Dress</option>
-                            <option value="Boubou">Boubou</option>
-                            <option value="Kaftan Dress">Kaftan Dress</option>
-                            <option value="Kimono Set">Kimono Set</option>
-                            <option value="Blouse">Blouse</option>
-                            <option value="Top & Skirt">Top & Skirt</option>
-                            <option value="Wrapper Set">Wrapper Set</option>
-                            <option value="Skirt Set">Skirt Set</option>
-                            <option value="Palazzo Trouser">
-                              Palazzo Trouser
-                            </option>
-                            <option value="Jumpsuit">Jumpsuit</option>
-                          </select>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-heritage-green uppercase">
-                            Garment Composition
-                          </label>
-                          <select
-                            value={newComp}
-                            onChange={(e) => setNewComp(e.target.value)}
-                            className="w-full px-2.5 py-1.5 border border-gray-200 bg-white rounded-lg text-xs"
-                          >
-                            <option value="2-Piece Set">2-Piece Set</option>
-                            <option value="Shirt Only">Shirt Only</option>
-                            <option value="Trouser Only">Trouser Only</option>
-                            <option value="Shorts Only">Shorts Only</option>
-                            <option value="3-Piece Set">3-Piece Set</option>
-                            <option value="4-Piece Set">4-Piece Set</option>
-                            <option value="Dress Only">Dress Only</option>
-                            <option value="Kaftan Only">Kaftan Only</option>
-                            <option value="Agbada Only">Agbada Only</option>
-                            <option value="Blouse Only">Blouse Only</option>
-                            <option value="Top Only">Top Only</option>
-                            <option value="Skirt Only">Skirt Only</option>
-                            <option value="Wrapper Only">Wrapper Only</option>
-                          </select>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-heritage-green uppercase">
-                            Base Price (€)
-                          </label>
-                          <input
-                            type="number"
-                            value={newPrice}
-                            onChange={(e) =>
-                              setNewPrice(parseInt(e.target.value) || 0)
-                            }
-                            className="w-full px-2.5 py-1.5 border border-gray-200 bg-white rounded-lg text-xs font-mono"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const key = `${newOType}_${newComp}`;
-                            setBusinessSettings((prev) => {
-                              const prices = {
-                                ...(prev.pricingSettings?.baseSewingPrices ||
-                                  {}),
-                              };
-                              prices[key] = newPrice;
-                              return {
-                                ...prev,
-                                pricingSettings: {
-                                  ...prev.pricingSettings,
-                                  baseSewingPrices: prices,
-                                },
-                              };
-                            });
-                            triggerStatus(
-                              `Added base sewing price of €${newPrice} for ${newOType} (${newComp})!`,
-                              "success",
-                            );
-                          }}
-                          className="w-full py-2 bg-heritage-green text-heritage-gold font-bold uppercase tracking-wider text-[10px] rounded-lg border border-heritage-gold/20"
-                        >
-                          Add Combination
-                        </button>
-                      </div>
-
-                      {/* Current base price list */}
-                      <div className="overflow-x-auto border border-gray-100 rounded-xl">
-                        <table className="w-full text-left border-collapse text-xs font-sans">
-                          <thead>
-                            <tr className="bg-heritage-forest/10 text-heritage-green font-serif font-bold uppercase tracking-wider text-[10px]">
-                              <th className="px-4 py-3">Outfit Type</th>
-                              <th className="px-4 py-3">Garment Composition</th>
-                              <th className="px-4 py-3">
-                                Base Sewing Price (€)
-                              </th>
-                              <th className="px-4 py-3 text-right">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-50">
-                            {Object.entries(
-                              businessSettings.pricingSettings
-                                ?.baseSewingPrices || {},
-                            ).map(([key, price]) => {
-                              const [oType, comp] = key.split("_");
-                              return (
-                                <tr
-                                  key={key}
-                                  className="hover:bg-heritage-cream/10"
-                                >
-                                  <td className="px-4 py-2.5 font-bold text-heritage-green">
-                                    {oType}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-gray-600">
-                                    {comp}
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <input
-                                      type="number"
-                                      value={price}
-                                      onChange={(e) => {
-                                        const val =
-                                          parseInt(e.target.value) || 0;
-                                        setBusinessSettings((prev) => {
-                                          const prices = {
-                                            ...(prev.pricingSettings
-                                              ?.baseSewingPrices || {}),
-                                          };
-                                          prices[key] = val;
-                                          return {
-                                            ...prev,
-                                            pricingSettings: {
-                                              ...prev.pricingSettings,
-                                              baseSewingPrices: prices,
-                                            },
-                                          };
-                                        });
-                                      }}
-                                      className="w-24 px-2 py-1 text-right border border-gray-200 rounded text-xs font-mono focus:border-heritage-gold"
-                                    />
-                                  </td>
-                                  <td className="px-4 py-2.5 text-right">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setBusinessSettings((prev) => {
-                                          const prices = {
-                                            ...(prev.pricingSettings
-                                              ?.baseSewingPrices || {}),
-                                          };
-                                          delete prices[key];
-                                          return {
-                                            ...prev,
-                                            pricingSettings: {
-                                              ...prev.pricingSettings,
-                                              baseSewingPrices: prices,
-                                            },
-                                          };
-                                        });
-                                        triggerStatus(
-                                          `Removed combination ${key}`,
-                                          "success",
-                                        );
-                                      }}
-                                      className="text-red-500 hover:text-red-700 font-bold"
-                                    >
-                                      Delete
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
                       </div>
                     </div>
 

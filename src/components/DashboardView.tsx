@@ -379,12 +379,6 @@ export default function DashboardView({
               </div>
 
               <div className="space-y-2 font-medium">
-                <div className="flex justify-between">
-                  <span>Base Sewing Price:</span>
-                  <span className="text-heritage-green font-bold">
-                    €{(masterOrder.style.basePrice || 150).toFixed(2)}
-                  </span>
-                </div>
                 <div className="flex justify-between border-t pt-2 font-bold text-sm text-heritage-green font-serif">
                   <span>Total Price:</span>
                   <span>€{masterOrder.payment.subtotal.toFixed(2)}</span>
@@ -744,17 +738,6 @@ export default function DashboardView({
 
               {/* Financial calculations */}
               <div className="border-t pt-4 space-y-2 font-sans text-left">
-                <div className="flex justify-between text-[11px] text-heritage-ink/75 border-b pb-2 border-gray-100">
-                  <span>Base Sewing Price:</span>
-                  <span className="font-bold text-heritage-green">
-                    €
-                    {(
-                      selectedReceipt.style?.basePrice ||
-                      selectedReceipt.amount ||
-                      320
-                    ).toFixed(2)}
-                  </span>
-                </div>
                 <div className="flex justify-between text-xs font-serif font-bold text-heritage-green pt-1">
                   <span className="text-sm">Total Custom Order Value:</span>
                   <span className="text-sm">

@@ -92,7 +92,6 @@ export interface StyleCategory {
   id: string;
   name: string;
   description: string;
-  basePrice: number;
   gender: "male" | "female" | "unisex" | "couple" | "family";
   outfitType?: string;
   garmentComposition?: string;
@@ -207,7 +206,6 @@ export interface CustomDetailSelectionSnapshot {
 
 export interface GarmentSelection {
   type: string; // e.g., "Shirt Only", "Shirt + Trouser", "Complete Set", "Gown Only"
-  tailoringFee: number;
   totalPrice: number;
   fabricSewingCost?: number;
   constructionSewingCost?: number;
@@ -468,7 +466,6 @@ export interface BusinessSettings {
     vatTaxPercentage: number; // future
     discountRulesEnabled: boolean; // future
     standardAccessoryCharge: number;
-    baseSewingPrices: { [key: string]: number };
   };
   productionSettings: {
     productionStartThresholdPercentage: number;

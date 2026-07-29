@@ -439,25 +439,6 @@ export const getGarmentCompositionFromCode = (
   return defaultComp || "2-Piece Set";
 };
 
-export const getBaseSewingPrice = (
-  style: StyleCategory,
-  garment: { type: string; fee: number; code?: string },
-  baseSewingPrices?: { [key: string]: number },
-): number => {
-  const oType = style.outfitType || style.name;
-  const comp = getGarmentCompositionFromCode(
-    garment?.code || "",
-    style.garmentComposition || "2-Piece Set",
-  );
-  const key = `${oType}_${comp}`;
-  const configuredPrice = baseSewingPrices?.[key];
-  if (configuredPrice !== undefined) {
-    return configuredPrice;
-  }
-  return garment.fee || 0; // fallback to default garment fee
-};
-
-
 export const GARMENT_DETAIL_PRICING: Record<string, Record<string, number>> = {
   topLength: {
     "Standard length (at crotch area)": 15.77,
@@ -1148,8 +1129,8 @@ export default function DesignStudioView({
     if (!style) return [];
     const exactMatch = {
       type: "Use Exact Design Style",
-      fee: style.basePrice,
-      discountFee: style.basePrice,
+      fee: 0,
+      discountFee: 0,
       code: "EXACT",
     };
 
@@ -1159,8 +1140,8 @@ export default function DesignStudioView({
         (p) => p.category === "ladies" && p?.code !== "L5",
       ).map((p) => ({
         type: p.description,
-        fee: p.actualMax,
-        discountFee: p.discountedMax,
+        fee: 0,
+        discountFee: 0,
         code: p?.code,
       }));
     } else {
@@ -1168,8 +1149,8 @@ export default function DesignStudioView({
       details = OFFICIAL_PRICE_LIST.filter((p) => p.category === "guys").map(
         (p) => ({
           type: p.description,
-          fee: p.actualMax,
-          discountFee: p.discountedMax,
+          fee: 0,
+          discountFee: 0,
           code: p?.code,
         }),
       );
@@ -1455,7 +1436,7 @@ export default function DesignStudioView({
     const availableTypes = garmentTypesForStyle(style);
     const defaultGarment = availableTypes[0] || {
       type: "Standard Garment",
-      fee: style.basePrice || 150,
+      fee: 0,
     };
     setSelectedGarment(defaultGarment);
     
@@ -1469,46 +1450,13 @@ export default function DesignStudioView({
     return selectedGarment?.code || "G1";
   };
 
-  const getPriceDetailsForCode = (code: string) => {
-    const discountEnabled =
-      businessSettings.pricingSettings?.discountRulesEnabled ?? false;
-    if (code === "EXACT") {
-      return {
-        code: "EXACT",
-        description: "Exact Design Style Pricing",
-        category: "special",
-        actualMin: selectedGarment?.fee || 0,
-        discountedMin: discountEnabled
-          ? selectedGarment?.discountFee || selectedGarment?.fee || 0
-          : selectedGarment?.fee || 0,
-        actualMax: selectedGarment?.fee || 0,
-        discountedMax: discountEnabled
-          ? selectedGarment?.discountFee || selectedGarment?.fee || 0
-          : selectedGarment?.fee || 0,
-      };
-    }
-    const rawPrice =
-      OFFICIAL_PRICE_LIST.find((p) => p?.code === code) ||
-      OFFICIAL_PRICE_LIST[0];
-    if (!discountEnabled) {
-      return {
-        ...rawPrice,
-        discountedMin: rawPrice.actualMin,
-        discountedMax: rawPrice.actualMax,
-      };
-    }
-    return rawPrice;
-  };
-
-  // Total pricing calculations based on dynamic base sewing prices & standard accessory charge
-  // Centralized Pricing Helper
+  // Centralized pricing helper. Design-style prices are intentionally excluded.
   const getPricingBreakdown = () => {
     let fabricPrice = 0;
     let fabricSewingCost = 0;
     let constructionSewingCost = 0;
     let customDetailsPrice = 0;
     let monogramPrice = 0;
-    let baseRate = 0;
     let courierSurcharge = 0;
 
     if (selectedFabric) {
@@ -1538,13 +1486,6 @@ export default function DesignStudioView({
       
       customDetailsPrice = detailsPrice;
 
-      // Base design sewing price
-      const isActualRate = batchType === "alone" || !(businessSettings.pricingSettings?.discountRulesEnabled ?? false);
-      const baseRateRaw = getBaseSewingPrice(selectedStyle, selectedGarment, businessSettings.pricingSettings?.baseSewingPrices);
-      const discountRatio = (selectedGarment?.discountFee && selectedGarment?.fee)
-        ? selectedGarment?.discountFee / selectedGarment?.fee
-        : 1;
-      baseRate = isActualRate ? baseRateRaw : Math.round(baseRateRaw * discountRatio);
     }
 
     if (selectedFabric && batchType === "alone") {
@@ -1556,7 +1497,6 @@ export default function DesignStudioView({
       fabricSewingCost +
       constructionSewingCost +
       customDetailsPrice +
-      baseRate +
       courierSurcharge;
 
     return {
@@ -1565,25 +1505,11 @@ export default function DesignStudioView({
       constructionSewingCost,
       customDetailsPrice,
       monogramPrice,
-      baseRate,
       courierSurcharge,
       subtotal
     };
   };
 
-
-  const discountEnabled =
-    businessSettings.pricingSettings?.discountRulesEnabled ?? false;
-  const isActualRateForDisplay = batchType === "alone" || !discountEnabled;
-
-  // Expose variables for display
-  const baseRateRaw = (selectedFabric && selectedStyle && selectedGarment) ? getBaseSewingPrice(selectedStyle, selectedGarment, businessSettings.pricingSettings?.baseSewingPrices) : 0;
-  const discountRatio = (selectedGarment?.discountFee && selectedGarment?.fee)
-    ? selectedGarment?.discountFee / selectedGarment?.fee
-    : 1;
-  const baseRate = (!selectedFabric || !selectedStyle || !selectedGarment) ? 0 : (isActualRateForDisplay
-    ? baseRateRaw
-    : Math.round(baseRateRaw * discountRatio));
   const pricing = getPricingBreakdown();
   const garmentDetailsPrice = pricing.customDetailsPrice;
   const subtotal = pricing.subtotal;
@@ -1841,7 +1767,6 @@ export default function DesignStudioView({
       },
       garment: {
         type: `${selectedGarment?.type || "Pending"} [Code: ${selectedPriceCode === "AUTO" ? getAutoDetectedPriceCode() : selectedPriceCode}]`,
-        tailoringFee: baseRate,
         totalPrice: subtotal,
         fabricSewingCost: pricing.fabricSewingCost,
         constructionSewingCost: pricing.constructionSewingCost,
@@ -1901,7 +1826,7 @@ export default function DesignStudioView({
   };
 
   const resetDesignStudio = () => {
-    setSelectedStyle(styles[0] || ({ id: "", name: "", description: "", basePrice: 0, gender: "unisex", tags: [], garments: [], images: [] } as unknown as StyleCategory));
+    setSelectedStyle(styles[0] || ({ id: "", name: "", description: "", gender: "unisex", tags: [], garments: [], images: [] } as unknown as StyleCategory));
     setSelectedFabric(null);
     setDesignSelections({ accessories: [] });
     setSpecialInstructions("");
@@ -2285,13 +2210,10 @@ export default function DesignStudioView({
                       
                       {/* Card Content Below */}
                       <div className="p-4 sm:p-5 flex flex-col flex-grow bg-white">
-                        <div className="flex justify-between items-start gap-2 mb-3">
+                        <div className="mb-3">
                           <h3 className="font-serif text-sm sm:text-base font-bold text-heritage-green leading-tight">
                             {style.name}
                           </h3>
-                          <span className="text-[11px] sm:text-xs text-heritage-gold font-bold font-mono shrink-0 pt-0.5">
-                            €{(style.basePrice || 0).toFixed(2)}
-                          </span>
                         </div>
                         
                         {/* Badges */}
@@ -4366,24 +4288,6 @@ export default function DesignStudioView({
                   </span>
                 </div>
               )}
-              {selectedFabric && selectedStyle && selectedGarment && (
-                <div className="flex justify-between items-start text-heritage-ink/70 gap-4">
-                  <span className="leading-tight">
-                    Base Sewing Price (
-                    {selectedStyle?.outfitType || selectedStyle?.name || "Pending Design"} -{" "}
-                    {getGarmentCompositionFromCode(
-                      selectedGarment?.code || "",
-                      selectedStyle?.garmentComposition || "Pending"
-                    )}
-                    ):
-                  </span>
-                  <span className="font-semibold text-heritage-green shrink-0">
-                    {currencySymbol}
-                    {baseRate.toFixed(2)}
-                  </span>
-                </div>
-              )}
-
               {selectedFabric && selectedStyle?.gender === "female" && selectedGarment && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "") && hasLining && (
                 <div className="flex justify-between items-center text-heritage-ink/70">
                   <span>Inner Lining/Net (L5):</span>
