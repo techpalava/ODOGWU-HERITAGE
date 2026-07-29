@@ -204,6 +204,40 @@ export interface CustomDetailSelectionSnapshot {
   priceCents: number;
 }
 
+export interface IndividualShippingSnapshot {
+  routeId: "LAGOS_EINDHOVEN";
+  origin: "Lagos";
+  destination: "Eindhoven";
+  garmentPieceCount: number;
+  estimatedWeightKg: number;
+  weightBand: "0 - 2 kg" | ">2 - 5 kg" | ">5 - 10 kg" | ">10 - 20 kg" | ">20 kg";
+  priceEur: number;
+  priceNgn: number;
+  exchangeRateNgnPerEur: number;
+}
+
+export interface BatchShippingSnapshot {
+  routeId: "LAGOS_EINDHOVEN_BATCH";
+  pricingVersion: string;
+  origin: "Lagos";
+  destination: "Eindhoven";
+  batchId: string;
+  batchName: string;
+  plannedGarmentCapacity: number;
+  capacityBand:
+    | "1 - 4 garments"
+    | "5 - 10 garments"
+    | "11 - 20 garments"
+    | "21 - 40 garments"
+    | "41+ garments";
+  garmentPieceCount: number;
+  exactRateEurPerGarment: number;
+  rateNgnPerGarment: number;
+  priceEur: number;
+  priceNgn: number;
+  exchangeRateNgnPerEur: number;
+}
+
 export interface GarmentSelection {
   type: string; // e.g., "Shirt Only", "Shirt + Trouser", "Complete Set", "Gown Only"
   totalPrice: number;
@@ -212,17 +246,8 @@ export interface GarmentSelection {
   fabricPrice?: number;
   customDetailsPrice?: number;
   monogramPrice?: number;
-  individualShipping?: {
-    routeId: "LAGOS_EINDHOVEN";
-    origin: "Lagos";
-    destination: "Eindhoven";
-    garmentPieceCount: number;
-    estimatedWeightKg: number;
-    weightBand: "0 - 2 kg" | ">2 - 5 kg" | ">5 - 10 kg" | ">10 - 20 kg" | ">20 kg";
-    priceEur: number;
-    priceNgn: number;
-    exchangeRateNgnPerEur: number;
-  };
+  individualShipping?: IndividualShippingSnapshot;
+  batchShipping?: BatchShippingSnapshot;
   // Read-only compatibility for carts created before the shipping-rate engine.
   courierSurcharge?: number;
   checkoutTotal?: number;
@@ -361,6 +386,7 @@ export interface CartItem {
   specialInstructions: string;
   notesAboutLeftoverFabric: string;
   batchType?: "community" | "alone" | "personalized" | "actual";
+  batchId?: string;
   batchName?: string;
   customGroupCode?: string;
 }

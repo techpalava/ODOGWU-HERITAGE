@@ -27,7 +27,7 @@ import { useAppStore } from "./store/useAppStore";
 import { CustomerJourneyEngine } from "./engine/CustomerJourneyEngine";
 import { getCurrentRegistrationBatch } from "./utils/batchUtils";
 import { CapacityService } from "./services/CapacityService";
-import { calculateCartPricing } from "./utils/individualShipping";
+import { calculateCartPricing } from "./utils/shippingPricing";
 
 // Lazy load modular view components for performance optimization
 const HomeView = lazy(() => import("./components/HomeView"));
@@ -769,26 +769,44 @@ export default function App() {
                       </span>
                     </div>
                   )}
-                  {checkoutPricing.shippingQuote && (
+                  {checkoutPricing.individualShippingQuote && (
                     <div className="space-y-0.5">
                       <div className="flex justify-between">
                         <span>Individual Shipping - Lagos to Eindhoven:</span>
                         <span className="font-mono">
                           {currencySymbol}
-                          {checkoutPricing.shippingTotal.toFixed(2)}
+                          {checkoutPricing.individualShippingQuote.priceEur.toFixed(2)}
                         </span>
                       </div>
                       <p className="text-[9px] text-gray-400">
-                        {checkoutPricing.shippingQuote.garmentPieceCount} garment
+                        {checkoutPricing.individualShippingQuote.garmentPieceCount} garment
                         piece
-                        {checkoutPricing.shippingQuote.garmentPieceCount === 1
+                        {checkoutPricing.individualShippingQuote.garmentPieceCount === 1
                           ? ""
                           : "s"}{" "}
-                        · {checkoutPricing.shippingQuote.estimatedWeightKg.toFixed(2)} kg
-                        estimated · {checkoutPricing.shippingQuote.weightBand}
+                        · {checkoutPricing.individualShippingQuote.estimatedWeightKg.toFixed(2)} kg
+                        estimated · {checkoutPricing.individualShippingQuote.weightBand}
                       </p>
                     </div>
                   )}
+                  {checkoutPricing.batchShippingQuotes.map((quote) => (
+                    <div key={quote.batchId} className="space-y-0.5">
+                      <div className="flex justify-between">
+                        <span>Batch Shipping - {quote.batchName}:</span>
+                        <span className="font-mono">
+                          {currencySymbol}
+                          {quote.priceEur.toFixed(2)}
+                        </span>
+                      </div>
+                      <p className="text-[9px] text-gray-400">
+                        {quote.garmentPieceCount} garment piece
+                        {quote.garmentPieceCount === 1 ? "" : "s"} ·{" "}
+                        {currencySymbol}
+                        {quote.exactRateEurPerGarment.toFixed(2)} each ·{" "}
+                        {quote.capacityBand} planned capacity
+                      </p>
+                    </div>
+                  ))}
                   <div className="flex justify-between text-heritage-green font-bold pt-1.5 border-t border-gray-100 mt-1">
                     <span>Total Subtotal:</span>
                     <span className="font-mono">

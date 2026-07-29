@@ -11,7 +11,7 @@ const dashboardView = read("src/components/DashboardView.tsx");
 const app = read("src/App.tsx");
 const types = read("src/types.ts");
 const cartDrawer = read("src/components/CartDrawer.tsx");
-const shippingEngine = read("src/utils/individualShipping.ts");
+const shippingEngine = read("src/utils/shippingPricing.ts");
 
 const forbiddenPricingTerms = [
   "getBaseSewingPrice",

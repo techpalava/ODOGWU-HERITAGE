@@ -10,7 +10,7 @@
     "clean": "rm -rf dist server.js",
     "start": "node dist/server.cjs",
     "lint": "tsc --noEmit",
-    "test:shipping": "tsx test_individual_shipping.ts"
+    "test:shipping": "tsx test_shipping.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -56,9 +56,10 @@ import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
 import { DESIGN_CATEGORIES_LIST } from "./DesignCategories";
 import {
+  calculateBatchShipping,
   calculateIndividualShipping,
   getGarmentPieceCount,
-} from "../utils/individualShipping";
+} from "../utils/shippingPricing";
 
 // Cache for loaded image URLs to prevent skeleton flicker across renders
 const loadedImageCache = new Set<string>();
@@ -1464,6 +1465,9 @@ export default function DesignStudioView({
     let individualShipping: ReturnType<
       typeof calculateIndividualShipping
     > | null = null;
+    let batchShipping: ReturnType<
+      typeof calculateBatchShipping
+    > | null = null;
 
     if (selectedFabric) {
       fabricPrice = getFabricPrice(selectedFabric);
@@ -1494,22 +1498,35 @@ export default function DesignStudioView({
 
     }
 
-    if (
-      selectedFabric &&
-      selectedStyle &&
-      selectedGarment &&
-      batchType === "alone"
-    ) {
+    if (selectedFabric && selectedStyle && selectedGarment) {
       const garmentComposition = getGarmentCompositionFromCode(
         selectedGarment.code || "",
         selectedStyle.garmentComposition,
       );
-      individualShipping = calculateIndividualShipping(
-        getGarmentPieceCount(garmentComposition),
-      );
+      const garmentPieceCount = getGarmentPieceCount(garmentComposition);
+
+      if (batchType === "alone") {
+        individualShipping = calculateIndividualShipping(garmentPieceCount);
+      } else {
+        const isPersonalizedBatch = batchType === "personalized";
+        const batchId = isPersonalizedBatch
+          ? customGroupCode || ctx.batchId || ctx.batchName || "PERSONALIZED-BATCH"
+          : ctx.batchId || ctx.batchName || selectedBatchName;
+        const batchName = isPersonalizedBatch
+          ? ctx.batchName || customGroupCode || "Personalized Batch"
+          : ctx.batchName || selectedBatchName;
+
+        batchShipping = calculateBatchShipping({
+          batchId,
+          batchName,
+          plannedGarmentCapacity: ctx.expectedParticipants || 1,
+          garmentPieceCount,
+        });
+      }
     }
 
-    const shippingCost = individualShipping?.priceEur ?? 0;
+    const shippingCost =
+      individualShipping?.priceEur ?? batchShipping?.priceEur ?? 0;
     const subtotal =
       fabricPrice +
       fabricSewingCost +
@@ -1524,6 +1541,7 @@ export default function DesignStudioView({
       customDetailsPrice,
       monogramPrice,
       individualShipping,
+      batchShipping,
       shippingCost,
       subtotal
     };
@@ -1795,12 +1813,14 @@ export default function DesignStudioView({
         customDetailsPrice: pricing.customDetailsPrice,
         monogramPrice: pricing.monogramPrice,
         individualShipping: pricing.individualShipping || undefined,
+        batchShipping: pricing.batchShipping || undefined,
         checkoutTotal: subtotal,
       },
       measurements: measurements,
       specialInstructions: specialInstructions,
       notesAboutLeftoverFabric: leftoverFabricChoice,
       batchType: batchType,
+      batchId: pricing.batchShipping?.batchId,
       batchName: finalBatchName,
       customGroupCode: customGroupCode,
     };
@@ -4358,6 +4378,34 @@ export default function DesignStudioView({
                 </div>
               )}
 
+              {pricing.batchShipping && (
+                <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
+                  <div className="flex justify-between items-center">
+                    <span>Batch Shipping - Lagos to Eindhoven:</span>
+                    <span className="font-mono">
+                      +{currencySymbol}
+                      {pricing.batchShipping.priceEur.toFixed(2)}
+                    </span>
+                  </div>
+                  <span className="text-[9px] text-amber-600/80 mt-0.5">
+                    {pricing.batchShipping.garmentPieceCount} garment piece
+                    {pricing.batchShipping.garmentPieceCount === 1 ? "" : "s"} ·{" "}
+                    {currencySymbol}
+                    {pricing.batchShipping.exactRateEurPerGarment.toFixed(2)} each ·{" "}
+                    {pricing.batchShipping.capacityBand} planned capacity
+                  </span>
+                </div>
+              )}
+
+              {batchType !== "alone" &&
+                !pricing.batchShipping &&
+                (!selectedStyle || !selectedGarment) && (
+                  <div className="flex justify-between items-center text-heritage-ink/60 text-[10px]">
+                    <span>Batch Shipping - Lagos to Eindhoven:</span>
+                    <span className="font-semibold">Pending garment selection</span>
+                  </div>
+                )}
+
               <div className="flex justify-between border-t pt-2.5 font-bold text-sm text-heritage-green font-serif">
                 <span>Total Subtotal:</span>
                 <span className="font-mono text-emerald-800">
@@ -4449,9 +4497,9 @@ export default function DesignStudioView({
             </span>
             <p>
               Your garment deposit is processed into a secure community fund.
-              Individual shipping is paid in full with the deposit. Lagos
-              materials and workshop sourcing commence immediately, and the
-              remaining garment balance is due at delivery.
+              Shipping is paid in full with the deposit. Lagos materials and
+              workshop sourcing commence immediately, and the remaining
+              garment balance is due at delivery.
             </p>
           </div>
         </div>
