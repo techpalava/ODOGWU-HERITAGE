@@ -15,6 +15,7 @@ import { CustomDetailOption, CustomGroup,
 } from "../types";
 import { db } from "./firebase";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "../config/GarmentDetailsConfig";
+import { normalizeCustomDetailCatalog } from "../utils/catalogHelpers";
 import { ImageService } from "./imageService";
 import { legacyCompatMap } from "../utils/legacyCompat";
 import {
@@ -90,12 +91,11 @@ export const StorageService = {
       
       if (catalog.length === 0) {
         console.warn("Catalog empty, using fallback seed...");
-        return SEED_CUSTOM_DETAIL_CATALOG;
       }
-      return catalog;
+      return normalizeCustomDetailCatalog(catalog);
     } catch (e) {
       console.error("Failed to load catalog, using fallback", e);
-      return SEED_CUSTOM_DETAIL_CATALOG;
+      return normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
     }
   },
 

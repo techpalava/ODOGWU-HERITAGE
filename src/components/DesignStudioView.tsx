@@ -4,6 +4,7 @@ import {
   getCustomDetailsBreakdown,
   getMissingCustomDetailGroup,
   groupApplicableCustomDetails,
+  normalizeCustomDetailCatalog,
 } from "../utils/catalogHelpers";
 import React, { useState, useEffect } from "react";
 import {
@@ -718,9 +719,10 @@ const GarmentDetailSelector = ({
 }: any) => {
   const customDetailCatalog = useAppStore((state: any) => state.customDetailCatalog);
   const customDetails = designSelections.customDetails || {};
+  const effectiveCatalog = normalizeCustomDetailCatalog(customDetailCatalog);
   const applicableGroups = groupApplicableCustomDetails(
     selectedStyle,
-    customDetailCatalog,
+    effectiveCatalog,
   );
 
   const handleSelect = (
@@ -805,6 +807,18 @@ const GarmentDetailSelector = ({
       )}
       {applicableGroups.map((group) =>
         renderGroup(group.id, group.options),
+      )}
+
+      {applicableGroups.length === 0 && !showLining && (
+        <div className="col-span-1 md:col-span-2 rounded-xl border border-heritage-gold/25 bg-heritage-cream/20 px-4 py-4">
+          <p className="text-xs font-bold text-heritage-green">
+            No additional garment details are required for this design.
+          </p>
+          <p className="mt-1 text-[10px] leading-relaxed text-heritage-ink/65">
+            Continue to the next step, or return to Style if you intended to
+            choose a different outfit.
+          </p>
+        </div>
       )}
 
       {showLining && (

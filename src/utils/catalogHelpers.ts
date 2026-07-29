@@ -6,6 +6,143 @@ import {
   DesignSelections,
   StyleCategory,
 } from "../types";
+import { SEED_CUSTOM_DETAIL_CATALOG } from "../config/GarmentDetailsConfig";
+
+const VALID_GARMENT_GROUPS = new Set<CustomDetailGarmentGroup>([
+  "shirt",
+  "dress",
+  "neck",
+  "standard_shorts",
+  "bum_shorts",
+  "trousers",
+  "skirt",
+]);
+
+const VALID_SELECTION_GROUPS = new Set<CustomDetailSelectionGroup>([
+  "shirt_construction",
+  "shirt_pockets",
+  "dress_construction",
+  "dress_pockets",
+  "neck_design",
+  "standard_shorts_fastening",
+  "standard_shorts_pockets",
+  "bum_shorts_fastening",
+  "bum_shorts_pockets",
+  "trouser_fastening",
+  "trouser_pockets",
+  "skirt_length",
+  "skirt_pockets",
+]);
+
+const VALID_DEMOGRAPHICS = new Set(["male", "female", "unisex"]);
+
+const normalizeCatalogOption = (
+  candidate: unknown,
+  fallback?: CustomDetailOption,
+): CustomDetailOption | null => {
+  if (!candidate || typeof candidate !== "object") return fallback || null;
+
+  const saved = candidate as Partial<CustomDetailOption>;
+  const merged = { ...(fallback || {}), ...saved } as Partial<CustomDetailOption>;
+  const demographics = Array.isArray(merged.eligibleDemographics)
+    ? merged.eligibleDemographics.filter((item) =>
+        VALID_DEMOGRAPHICS.has(item),
+      )
+    : [];
+
+  if (
+    typeof merged.id !== "string" ||
+    !merged.id.trim() ||
+    typeof merged.label !== "string" ||
+    !merged.label.trim() ||
+    typeof merged.description !== "string" ||
+    !VALID_GARMENT_GROUPS.has(
+      merged.garmentGroup as CustomDetailGarmentGroup,
+    ) ||
+    !VALID_SELECTION_GROUPS.has(
+      merged.selectionGroup as CustomDetailSelectionGroup,
+    )
+  ) {
+    return fallback || null;
+  }
+
+  const fallbackDemographics = fallback?.eligibleDemographics || [];
+  const priceCents = Number(merged.priceCents);
+  const displayOrder = Number(merged.displayOrder);
+
+  return {
+    id: merged.id.trim(),
+    label: merged.label.trim(),
+    description: merged.description.trim(),
+    garmentGroup: merged.garmentGroup as CustomDetailGarmentGroup,
+    selectionGroup: merged.selectionGroup as CustomDetailSelectionGroup,
+    priceCents:
+      Number.isFinite(priceCents) && priceCents >= 0
+        ? Math.round(priceCents)
+        : fallback?.priceCents || 0,
+    eligibleDemographics:
+      demographics.length > 0 ? demographics : fallbackDemographics,
+    displayOrder: Number.isFinite(displayOrder)
+      ? displayOrder
+      : fallback?.displayOrder || 0,
+    required:
+      typeof merged.required === "boolean"
+        ? merged.required
+        : fallback?.required || false,
+    active:
+      typeof merged.active === "boolean"
+        ? merged.active
+        : fallback?.active ?? true,
+    allowMultiple:
+      typeof merged.allowMultiple === "boolean"
+        ? merged.allowMultiple
+        : fallback?.allowMultiple || false,
+    createdAt:
+      typeof merged.createdAt === "string"
+        ? merged.createdAt
+        : fallback?.createdAt || new Date().toISOString(),
+    updatedAt:
+      typeof merged.updatedAt === "string"
+        ? merged.updatedAt
+        : fallback?.updatedAt || new Date().toISOString(),
+  };
+};
+
+export const normalizeCustomDetailCatalog = (
+  catalog: unknown,
+): CustomDetailOption[] => {
+  const savedOptions = Array.isArray(catalog) ? catalog : [];
+  const savedById = new Map<string, unknown>();
+
+  for (const option of savedOptions) {
+    if (
+      option &&
+      typeof option === "object" &&
+      typeof (option as { id?: unknown }).id === "string"
+    ) {
+      savedById.set((option as { id: string }).id, option);
+    }
+  }
+
+  const canonicalIds = new Set(
+    SEED_CUSTOM_DETAIL_CATALOG.map((option) => option.id),
+  );
+  const canonical = SEED_CUSTOM_DETAIL_CATALOG.map((seed) =>
+    normalizeCatalogOption(savedById.get(seed.id), seed),
+  ).filter((option): option is CustomDetailOption => option !== null);
+  const validCustomOptions = savedOptions
+    .filter(
+      (option) =>
+        option &&
+        typeof option === "object" &&
+        typeof (option as { id?: unknown }).id === "string" &&
+        !canonicalIds.has((option as { id: string }).id),
+    )
+    .map((option) => normalizeCatalogOption(option))
+    .filter((option): option is CustomDetailOption => option !== null);
+
+  return [...canonical, ...validCustomOptions];
+};
 
 const MALE_GROUPS: CustomDetailGarmentGroup[] = [
   "shirt",
@@ -43,7 +180,16 @@ const inferLegacyGarmentGroups = (
       groups.add("shirt");
       groups.add("neck");
     }
-    if (has("trouser", "pant", "2 piece", "two piece")) {
+    if (
+      has(
+        "trouser",
+        "pant",
+        "2 piece",
+        "2-piece",
+        "two piece",
+        "two-piece",
+      )
+    ) {
       groups.add("trousers");
     }
     if (has("short", "nikka") && !has("bum")) groups.add("standard_shorts");
@@ -72,9 +218,15 @@ export const getSupportedCustomDetailGroups = (
 ): CustomDetailGarmentGroup[] => {
   if (!style) return [];
   const config = style.customDetailConfig;
-  if (config) {
-    return config.enabled ? [...new Set(config.supportedGarmentGroups)] : [];
+  if (config?.enabled === false) return [];
+
+  const configuredGroups = (config?.supportedGarmentGroups || []).filter(
+    (group) => VALID_GARMENT_GROUPS.has(group),
+  );
+  if (configuredGroups.length > 0) {
+    return [...new Set(configuredGroups)];
   }
+
   return inferLegacyGarmentGroups(style);
 };
 
@@ -85,16 +237,17 @@ export const getApplicableCustomDetailGroups = (
   if (!style) return [];
   const supportedGroups = getSupportedCustomDetailGroups(style);
   const config = style.customDetailConfig;
+  const demographic = style.targetDemographic || style.gender;
   const representedGenders =
     config?.representedGenders?.length
       ? config.representedGenders
-      : style.gender === "male"
+      : demographic === "male"
         ? ["male"]
-        : style.gender === "female"
+        : demographic === "female"
           ? ["female"]
           : ["male", "female"];
 
-  return catalog
+  return normalizeCustomDetailCatalog(catalog)
     .filter(
       (option) =>
         option.active &&
@@ -175,9 +328,13 @@ export const getMissingCustomDetailGroup = (
 export const getCustomDetailSnapshots = (
   selections: DesignSelections,
   catalog: CustomDetailOption[],
-): CustomDetailSelectionSnapshot[] =>
-  Object.values(selections.customDetails || {}).flatMap((optionId) => {
-    const option = catalog.find((candidate) => candidate.id === optionId);
+): CustomDetailSelectionSnapshot[] => {
+  const effectiveCatalog = normalizeCustomDetailCatalog(catalog);
+
+  return Object.values(selections.customDetails || {}).flatMap((optionId) => {
+    const option = effectiveCatalog.find(
+      (candidate) => candidate.id === optionId,
+    );
     if (!option) return [];
     return [
       {
@@ -190,6 +347,7 @@ export const getCustomDetailSnapshots = (
       },
     ];
   });
+};
 
 export const getCustomDetailsBreakdown = (
   selections: DesignSelections,
