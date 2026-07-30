@@ -3,8 +3,13 @@ import { useAppStore } from "../store/useAppStore";
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 import {
   calculateCartPricing,
-  getStoredIndividualShippingCost,
-} from "../utils/individualShipping";
+  getStoredShippingCost,
+} from "../utils/shippingPricing";
+import {
+  clampDepositPercentage,
+  getDepositRatio,
+  PRICING_CURRENCY_SYMBOL,
+} from "../utils/money";
 
 export function CartDrawer() {
   const isCartOpen = useAppStore((state) => state.isCartOpen);
@@ -62,16 +67,14 @@ export function CartDrawer() {
     setIsCheckoutPaymentOpen(true);
   };
 
-  const depositRatio = businessSettings.pricingSettings.depositPercentage / 100;
+  const depositPercentage = clampDepositPercentage(
+    businessSettings.pricingSettings.depositPercentage,
+  );
+  const depositRatio = getDepositRatio(depositPercentage);
   const cartPricing = calculateCartPricing(cartItems, depositRatio);
   const subtotal = cartPricing.total;
   const depositAmount = cartPricing.depositDueNow;
-  const currencySymbol =
-    businessSettings.pricingSettings.currency === "EUR"
-      ? "€"
-      : businessSettings.pricingSettings.currency === "USD"
-        ? "$"
-        : "₦";
+  const currencySymbol = PRICING_CURRENCY_SYMBOL;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
@@ -138,7 +141,7 @@ export function CartDrawer() {
                   const itemTotal = Math.max(
                     0,
                     item.garment.totalPrice -
-                      getStoredIndividualShippingCost(item.garment),
+                      getStoredShippingCost(item.garment),
                   );
                   return (
                     <div
@@ -199,6 +202,22 @@ export function CartDrawer() {
                             💎 Accessories: <strong>{item.design.optionalAccessories.join(", ")}</strong>
                           </p>
                         )}
+                        {item.design.decorativeFeatures &&
+                          item.design.decorativeFeatures.length > 0 && (
+                            <p>
+                              Decorative details:{" "}
+                              <strong>
+                                {item.design.decorativeFeatures.join(", ")}
+                              </strong>
+                            </p>
+                          )}
+                        {item.design.accessories &&
+                          item.design.accessories.length > 0 && (
+                            <p>
+                              Traditional accessories:{" "}
+                              <strong>{item.design.accessories.join(", ")}</strong>
+                            </p>
+                          )}
                         {item.batchType === "alone" && (
                           <p>
                             Shipping:{" "}
@@ -209,6 +228,19 @@ export function CartDrawer() {
                               garment piece
                               {(item.garment.individualShipping
                                 ?.garmentPieceCount ?? 1) === 1
+                                ? ""
+                                : "s"}
+                              )
+                            </strong>
+                          </p>
+                        )}
+                        {item.batchType !== "alone" && item.garment.batchShipping && (
+                          <p>
+                            Batch shipping:{" "}
+                            <strong>
+                              {item.garment.batchShipping.batchName} (
+                              {item.garment.batchShipping.garmentPieceCount} garment
+                              {item.garment.batchShipping.garmentPieceCount === 1
                                 ? ""
                                 : "s"}
                               )
@@ -250,25 +282,43 @@ export function CartDrawer() {
                     {cartPricing.garmentSubtotal.toFixed(2)}
                   </span>
                 </div>
-                {cartPricing.shippingQuote && (
+                {cartPricing.individualShippingQuote && (
                   <div className="text-heritage-ink/70">
                     <div className="flex justify-between">
                       <span>Shipping - Lagos to Eindhoven:</span>
                       <span className="font-mono font-semibold text-heritage-green">
                         {currencySymbol}
-                        {cartPricing.shippingTotal.toFixed(2)}
+                        {cartPricing.individualShippingQuote.priceEur.toFixed(2)}
                       </span>
                     </div>
                     <p className="text-[9px] text-heritage-ink/45 mt-0.5">
-                      {cartPricing.shippingQuote.garmentPieceCount} garment piece
-                      {cartPricing.shippingQuote.garmentPieceCount === 1
+                      {cartPricing.individualShippingQuote.garmentPieceCount} garment piece
+                      {cartPricing.individualShippingQuote.garmentPieceCount === 1
                         ? ""
                         : "s"}{" "}
-                      · {cartPricing.shippingQuote.estimatedWeightKg.toFixed(2)} kg
-                      estimated · {cartPricing.shippingQuote.weightBand}
+                      · {cartPricing.individualShippingQuote.estimatedWeightKg.toFixed(2)} kg
+                      estimated · {cartPricing.individualShippingQuote.weightBand}
                     </p>
                   </div>
                 )}
+                {cartPricing.batchShippingQuotes.map((quote) => (
+                  <div key={quote.batchId} className="text-heritage-ink/70">
+                    <div className="flex justify-between">
+                      <span>Batch shipping - {quote.batchName}:</span>
+                      <span className="font-mono font-semibold text-heritage-green">
+                        {currencySymbol}
+                        {quote.priceEur.toFixed(2)}
+                      </span>
+                    </div>
+                    <p className="text-[9px] text-heritage-ink/45 mt-0.5">
+                      {quote.garmentPieceCount} garment piece
+                      {quote.garmentPieceCount === 1 ? "" : "s"} ·{" "}
+                      {currencySymbol}
+                      {quote.exactRateEurPerGarment.toFixed(2)} each ·{" "}
+                      {quote.capacityBand} planned capacity
+                    </p>
+                  </div>
+                ))}
                 <div className="flex justify-between text-heritage-ink/70 border-t pt-2">
                   <span>Total subtotal:</span>
                   <span className="font-mono font-semibold text-heritage-green">
@@ -279,7 +329,7 @@ export function CartDrawer() {
                 <div className="flex justify-between text-heritage-ink/70">
                   <span>
                     Due now (
-                    {businessSettings.pricingSettings.depositPercentage}%
+                    {depositPercentage}%
                     garment deposit
                     {cartPricing.shippingTotal > 0 ? " + full shipping" : ""}):
                   </span>
@@ -303,13 +353,13 @@ export function CartDrawer() {
                 </span>
                 <div>
                   <strong>Heritage Escrow System:</strong> Your{" "}
-                  {businessSettings.pricingSettings.depositPercentage}% garment
+                  {depositPercentage}% garment
                   deposit
                   {cartPricing.shippingTotal > 0
                     ? " and full shipping payment"
                     : ""}{" "}
                   activate our Lagos workshop immediately. The final{" "}
-                  {100 - businessSettings.pricingSettings.depositPercentage}%
+                  {100 - depositPercentage}%
                   garment balance remains due at delivery.
                 </div>
               </div>

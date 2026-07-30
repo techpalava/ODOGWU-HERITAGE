@@ -1,9 +1,9 @@
 import {
-  calculateCustomDetailsPrice,
   getCustomDetailSnapshots,
   getCustomDetailsBreakdown,
   getMissingCustomDetailGroup,
   groupApplicableCustomDetails,
+  isLiningEligibleForStyle,
   normalizeCustomDetailCatalog,
 } from "../utils/catalogHelpers";
 import React, { useState, useEffect } from "react";
@@ -39,7 +39,9 @@ import {
   OrderContext,
   Customer,
   NamedMeasurementProfile,
+  CustomDetailOption,
   CustomDetailSelectionGroup,
+  DecorativeFeature,
 } from "../types";
 
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
@@ -56,9 +58,36 @@ import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
 import { DESIGN_CATEGORIES_LIST } from "./DesignCategories";
 import {
+  calculateBatchShipping,
   calculateIndividualShipping,
   getGarmentPieceCount,
-} from "../utils/individualShipping";
+} from "../utils/shippingPricing";
+import {
+  clampDepositPercentage,
+  getDepositRatio,
+  PRICING_CURRENCY_SYMBOL,
+  roundMoney,
+} from "../utils/money";
+import {
+  calculateGarmentDetailsPrice,
+  DECORATIVE_FEATURE_OPTIONS,
+  getIncludedDecorativeFeatures,
+  hasEmbroidery,
+  hasMonogram,
+  hasMonogramTrimming,
+  TRADITIONAL_ACCESSORY_OPTIONS,
+} from "../utils/decorativePricing";
+import type {
+  PricedSelection,
+  TraditionalAccessory,
+} from "../utils/decorativePricing";
+import { resolvePersonalizedBatchShippingContext } from "../utils/personalizedBatchContext";
+import {
+  getFabricPricingError,
+  getFabricSewingCost,
+  getNormalizedFabricName,
+  resolveFabricPrice,
+} from "../utils/fabricPricing";
 
 // Cache for loaded image URLs to prevent skeleton flicker across renders
 const loadedImageCache = new Set<string>();
@@ -443,94 +472,15 @@ export const getGarmentCompositionFromCode = (
   return defaultComp || "2-Piece Set";
 };
 
-export const GARMENT_DETAIL_PRICING: Record<string, Record<string, number>> = {
-  topLength: {
-    "Standard length (at crotch area)": 15.77,
-    "Long length (at or below knee)": 20.77,
-  },
-  topPocket: {
-    "With 1 chest pocket": 0,
-    "With 2 chest pockets": 0,
-    "No pockets": 0,
-  },
-  dressLength: {
-    "Standard length (above or at crotch area)": 20.77,
-    "Long length (at or below knee, above ankle)": 25.77,
-  },
-  dressPocket: {
-    "With Pocket(s)": 0,
-    "No Pocket(s)": 0,
-  },
-  sleeveLength: {
-    "Sleeveless (Over the Shoulder Sleeve)": 15.77,
-    "Short sleeve": 15.77,
-    "Mid sleeve (3-Quarter)": 20.77,
-    "Long sleeve": 20.77,
-  },
-  trouserFastening: {
-    "With Rope": 41.53,
-    "With Elastic Band": 46.53,
-    "With Belt Holder": 46.53,
-  },
-  trouserPocket: {
-    "With Regular side waist-pockets": 0,
-    "Back pocket": 0,
-    "No pockets": 0,
-  },
-  shortFastening: {
-    "With Rope": 36.53,
-    "With Elastic Band": 41.53,
-    "With Belt Holder": 41.53,
-  },
-  shortPocket: {
-    "Combat (Extra side hip-pockets)": 5.00,
-    "With Regular side waist-pockets": 0,
-    "Back pocket": 0,
-    "No pockets": 0,
-  },
-  skirtLength: {
-    "Standard length (above knee)": 25.77,
-    "Long length (at or below knee, above ankle)": 30.77,
-  },
-  skirtPocket: {
-    "With 1 side-pocket": 0,
-    "With 2 side-pockets": 0,
-    "No pockets": 0,
-  },
-  embroideryDesign: {
-    "Name Monogram": 12.00,
-    "Embroidery": 12.00,
-    "Monogram Trimming": 12.00,
-  },
-  accessories: {
-    "Traditional Hat": 12.00,
-    "Traditional Bead": 12.00,
-    "Traditional Stick": 12.00,
-  }
-};
-
-export const hasMonogram = (item: any): boolean => {
-  const text = [item?.name, item?.description, ...(item?.options || [])].filter(Boolean).join(" ").toLowerCase();
-  return item?.hasMonogram === true || item?.includedDesignFeatures?.hasMonogram === true || item?.defaultGarmentDetails?.hasMonogram === true || item?.embroideryDesign === "Name Monogram" || item?.defaultGarmentDetails?.embroideryDesign === "Name Monogram" || /\bmonogram\b/.test(text);
-};
-
-export const hasEmbroidery = (item: any): boolean => {
-  const text = [item?.name, item?.description, ...(item?.options || [])].filter(Boolean).join(" ").toLowerCase();
-  return item?.hasEmbroidery === true || item?.includedDesignFeatures?.hasEmbroidery === true || item?.defaultGarmentDetails?.hasEmbroidery === true || item?.embroideryDesign === "Embroidery" || item?.defaultGarmentDetails?.embroideryDesign === "Embroidery" || /embroider|embroid/.test(text);
-};
-
-export const hasMonogramTrimming = (item: any): boolean => {
-  const text = [item?.name, item?.description, ...(item?.options || [])].filter(Boolean).join(" ").toLowerCase();
-  return item?.hasMonogramTrimming === true || item?.includedDesignFeatures?.hasMonogramTrimming === true || item?.defaultGarmentDetails?.hasMonogramTrimming === true || item?.embroideryDesign === "Monogram Trimming" || item?.defaultGarmentDetails?.embroideryDesign === "Monogram Trimming" || /monogram trim|monogram trimming/.test(text);
-};
-
-
-export const getGarmentDetailsBreakdown = (details: DesignSelections, catalog: any[] = []): {label: string; value: string; price: number; originalId?: string}[] => {
-  if (catalog && catalog.length > 0) {
-    return getCustomDetailsBreakdown(details, catalog);
-  }
-  return []; // Legacy fallback
-};
+export const getGarmentDetailsBreakdown = (
+  details: DesignSelections,
+  catalog: CustomDetailOption[] = [],
+): {
+  label: string;
+  value: string;
+  price: number;
+  originalId?: string;
+}[] => getCustomDetailsBreakdown(details, catalog);
 
 
 export const CONSTRUCTION_SEWING_COST_MAP = {
@@ -597,102 +547,6 @@ export const getConstructionSewingCost = (details: DesignSelections): number => 
   );
 };
 
-export const calculateGarmentDetailsPrice = (details: DesignSelections, style?: any, catalog: any[] = []): { total: number, monogramPrice: number } => {
-  let total = 0;
-  let monogramPrice = 0;
-  
-  const getPrice = (type: string, code: string): number => {
-    if (style && style.constructionDetails) {
-      const match = style.constructionDetails.find((c: any) => c.type === type && c.code === code);
-      return match ? match.price : 0;
-    }
-    return (GARMENT_DETAIL_PRICING[type] || {})[code] || 0;
-  };
-  
-  total += calculateCustomDetailsPrice(details, catalog);
-
-  if (details.embroideryDesign) {
-    const p = getPrice("embroideryDesign", details.embroideryDesign as string);
-    total += p;
-    monogramPrice += p;
-  } else if (style) {
-    if (hasMonogram(style)) {
-      let p = getPrice("embroideryDesign", "Name Monogram");
-      if (p === 0 && (!style.constructionDetails || !style.constructionDetails.some((c: any) => c.type === 'embroideryDesign'))) p = 12.00;
-      total += p;
-      monogramPrice += p;
-    }
-    if (hasEmbroidery(style)) {
-      let p = getPrice("embroideryDesign", "Embroidery");
-      if (p === 0 && (!style.constructionDetails || !style.constructionDetails.some((c: any) => c.type === 'embroideryDesign'))) p = 12.00;
-      total += p;
-      monogramPrice += p;
-    }
-    if (hasMonogramTrimming(style)) {
-      let p = getPrice("embroideryDesign", "Monogram Trimming");
-      if (p === 0 && (!style.constructionDetails || !style.constructionDetails.some((c: any) => c.type === 'embroideryDesign'))) p = 12.00;
-      total += p;
-      monogramPrice += p;
-    }
-  }
-
-  if (details.accessories) {
-    for (const acc of details.accessories) {
-      total += getPrice("accessories", acc);
-    }
-  }
-
-  return { total, monogramPrice };
-};
-
-export const FABRIC_PRICING: Record<string, number> = {
-  "HiTarget Ankara": 3.91,
-  "Hollandis Ankara": 3.91,
-  "Kampala": 5.00,
-  "Aso-Oke": 6.25,
-  "Adire": 6.88,
-  "Isiagu (Akwa-Oche)": 28.13,
-  "Lace": 28.13,
-};
-
-export const FABRIC_SEWING_COST: Record<string, number> = {
-  "HiTarget Ankara": 4.06,
-  "Hollandis Ankara": 4.06,
-  "Kampala": 0.00,
-  "Aso-Oke": 0.00,
-  "Adire": 0.00,
-  "Isiagu (Akwa-Oche)": 0.00,
-  "Lace": 0.00,
-};
-
-export const getFabricSewingCost = (fabric: Fabric | null): number => {
-  if (!fabric) return 0;
-  const category = fabric.category || fabric.name || "";
-  const normalized = getNormalizedFabricName(category);
-  return FABRIC_SEWING_COST[normalized] || 0;
-};
-
-export const getNormalizedFabricName = (name: string): string => {
-  if (!name) return "";
-  const lower = name.toLowerCase();
-  if (lower.includes("hitarget") || lower.includes("hi-target")) return "HiTarget Ankara";
-  if (lower.includes("hollandis")) return "Hollandis Ankara";
-  if (lower.includes("kampala")) return "Kampala";
-  if (lower.includes("aso oke") || lower.includes("aso-oke") || lower.includes("asioke")) return "Aso-Oke";
-  if (lower.includes("adire")) return "Adire";
-  if (lower.includes("isiagu")) return "Isiagu (Akwa-Oche)";
-  if (lower.includes("lace")) return "Lace";
-  return name;
-};
-
-export const getFabricPrice = (fabric: Fabric | null): number => {
-  if (!fabric) return 0;
-  const category = fabric.category || fabric.name || "";
-  const normalized = getNormalizedFabricName(category);
-  return FABRIC_PRICING[normalized] || 0;
-};
-
-
 const GarmentDetailSelector = ({
   selectedStyle,
   selectedGarment,
@@ -709,6 +563,12 @@ const GarmentDetailSelector = ({
     selectedStyle,
     effectiveCatalog,
   );
+  const includedDecorativeFeatures = getIncludedDecorativeFeatures(
+    selectedStyle,
+  );
+  const selectedDecorativeFeatures =
+    designSelections.decorativeFeatures || [];
+  const selectedAccessories = designSelections.accessories || [];
 
   const handleSelect = (
     groupId: CustomDetailSelectionGroup,
@@ -721,6 +581,40 @@ const GarmentDetailSelector = ({
         [groupId]: optionId
       }
     }));
+  };
+
+  const handleDecorativeFeatureToggle = (
+    feature: DecorativeFeature,
+    checked: boolean,
+  ) => {
+    if (includedDecorativeFeatures.includes(feature)) return;
+
+    setDesignSelections((prev: DesignSelections) => {
+      const nextFeatures = new Set(prev.decorativeFeatures || []);
+      if (checked) nextFeatures.add(feature);
+      else nextFeatures.delete(feature);
+
+      return {
+        ...prev,
+        decorativeFeatures: [...nextFeatures],
+      };
+    });
+  };
+
+  const handleAccessoryToggle = (
+    accessory: TraditionalAccessory,
+    checked: boolean,
+  ) => {
+    setDesignSelections((prev: DesignSelections) => {
+      const nextAccessories = new Set(prev.accessories || []);
+      if (checked) nextAccessories.add(accessory);
+      else nextAccessories.delete(accessory);
+
+      return {
+        ...prev,
+        accessories: [...nextAccessories],
+      };
+    });
   };
 
   const demo = selectedStyle?.targetDemographic || selectedStyle?.gender || "unisex";
@@ -779,8 +673,10 @@ const GarmentDetailSelector = ({
     );
   };
 
-  const isLiningSupported = ['L1', 'L2', 'L3', 'L4'].includes(selectedGarment?.code || "");
-  const showLining = (demo === "female" || explicitBoth) && isLiningSupported;
+  const showLining = isLiningEligibleForStyle(
+    selectedStyle,
+    selectedGarment?.code,
+  );
 
   return (
     <>
@@ -797,14 +693,107 @@ const GarmentDetailSelector = ({
       {applicableGroups.length === 0 && !showLining && (
         <div className="col-span-1 md:col-span-2 rounded-xl border border-heritage-gold/25 bg-heritage-cream/20 px-4 py-4">
           <p className="text-xs font-bold text-heritage-green">
-            No additional garment details are required for this design.
+            No construction choices are required for this design.
           </p>
           <p className="mt-1 text-[10px] leading-relaxed text-heritage-ink/65">
-            Continue to the next step, or return to Style if you intended to
-            choose a different outfit.
+            You can still add decorative details or traditional accessories
+            below.
           </p>
         </div>
       )}
+
+      <fieldset className="col-span-1 space-y-2 md:col-span-2">
+        <legend className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+          Monogram, Embroidery & Trim
+        </legend>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+          {DECORATIVE_FEATURE_OPTIONS.map((feature) => {
+            const includedByStyle =
+              includedDecorativeFeatures.includes(feature);
+            const checked =
+              includedByStyle ||
+              selectedDecorativeFeatures.includes(feature);
+
+            return (
+              <label
+                key={feature}
+                className={`flex min-h-[76px] items-start gap-3 rounded-xl border p-3 transition ${
+                  checked
+                    ? "border-heritage-gold bg-heritage-cream/20"
+                    : "border-gray-150 bg-white hover:border-heritage-gold/50"
+                } ${includedByStyle ? "cursor-default" : "cursor-pointer"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={includedByStyle}
+                  onChange={(event) =>
+                    handleDecorativeFeatureToggle(
+                      feature,
+                      event.target.checked,
+                    )
+                  }
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-gold"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-start justify-between gap-2">
+                    <span className="text-xs font-bold text-heritage-green">
+                      {feature}
+                    </span>
+                    <span className="shrink-0 text-xs font-bold text-heritage-gold">
+                      +{currencySymbol}12.00
+                    </span>
+                  </span>
+                  <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                    {includedByStyle
+                      ? "Required by the selected design and added automatically."
+                      : "Optional decorative finish."}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <fieldset className="col-span-1 space-y-2 md:col-span-2">
+        <legend className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+          Traditional Accessories
+        </legend>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+          {TRADITIONAL_ACCESSORY_OPTIONS.map((accessory) => {
+            const checked = selectedAccessories.includes(accessory);
+
+            return (
+              <label
+                key={accessory}
+                className={`flex min-h-[62px] cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+                  checked
+                    ? "border-heritage-gold bg-heritage-cream/20"
+                    : "border-gray-150 bg-white hover:border-heritage-gold/50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(event) =>
+                    handleAccessoryToggle(accessory, event.target.checked)
+                  }
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-gold"
+                />
+                <span className="flex min-w-0 flex-1 items-start justify-between gap-2">
+                  <span className="text-xs font-bold text-heritage-green">
+                    {accessory}
+                  </span>
+                  <span className="shrink-0 text-xs font-bold text-heritage-gold">
+                    +{currencySymbol}12.00
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
 
       {showLining && (
         <div className="space-y-2 mb-4 col-span-1 md:col-span-2">
@@ -833,21 +822,48 @@ const GarmentDetailSelector = ({
   );
 };
 
-const GarmentDetailSummaryItems = ({ designSelections, isLi = false, currencySymbol, catalog = [] }: { designSelections: any, isLi?: boolean, currencySymbol: string, catalog?: any[] }) => {
+const GarmentDetailSummaryItems = ({
+  designSelections,
+  isLi = false,
+  currencySymbol,
+  catalog = [],
+  decorativeFeatures = [],
+  accessories = [],
+}: {
+  designSelections: DesignSelections;
+  isLi?: boolean;
+  currencySymbol: string;
+  catalog?: CustomDetailOption[];
+  decorativeFeatures?: PricedSelection[];
+  accessories?: PricedSelection[];
+}) => {
   const items = getGarmentDetailsBreakdown(designSelections, catalog).map(item => {
     const display = item.price === 0 ? 'Included' : `+${currencySymbol}${item.price.toFixed(2)}`;
     return { ...item, display };
   });
+  const pricedItems = [
+    ...decorativeFeatures.map((feature) => ({
+      label: feature.includedByStyle ? "Design Feature" : "Decorative Detail",
+      value: feature.label,
+      display: `+${currencySymbol}${feature.price.toFixed(2)}`,
+    })),
+    ...accessories.map((accessory) => ({
+      label: "Traditional Accessory",
+      value: accessory.label,
+      display: `+${currencySymbol}${accessory.price.toFixed(2)}`,
+    })),
+  ];
+  const allItems = [...items, ...pricedItems];
 
   return (
     <>
-      {items.map((item: any, i: number) => 
+      {allItems.map((item: any, i: number) =>
         isLi ? (
-          <li key={i}>
+          <li key={`${item.label}-${item.value}-${i}`}>
             {item.label}{item.value ? ': ' : ' '}<strong>{item.value}</strong> <span className="text-heritage-gold ml-1">({item.display})</span>
           </li>
         ) : (
-          <p key={i}>
+          <p key={`${item.label}-${item.value}-${i}`}>
             {item.label}{item.value ? ': ' : ' '}<strong className="text-heritage-green">{item.value}</strong> <span className="text-heritage-gold ml-1">({item.display})</span>
           </p>
         )
@@ -1125,8 +1141,7 @@ export default function DesignStudioView({
 
   // Price List States
   const [hasLining, setHasLining] = useState(false);
-  const [optionalAccessories, setOptionalAccessories] = useState<string[]>([]);
-  const [selectedPriceCode, setSelectedPriceCode] = useState<string>("AUTO");
+  const selectedPriceCode: string = "AUTO";
 
   // STEP 4: Garment Type selection
   const garmentTypesForStyle = (style: StyleCategory | null) => {
@@ -1169,6 +1184,16 @@ export default function DesignStudioView({
     discountFee?: number;
     code?: string;
   } | null>(null);
+  const liningEligible = isLiningEligibleForStyle(
+    selectedStyle,
+    selectedGarment?.code,
+  );
+
+  useEffect(() => {
+    if (!liningEligible && hasLining) {
+      setHasLining(false);
+    }
+  }, [hasLining, liningEligible]);
 
   useEffect(() => {
     if (selectedStyle) {
@@ -1461,32 +1486,47 @@ export default function DesignStudioView({
     let constructionSewingCost = 0;
     let customDetailsPrice = 0;
     let monogramPrice = 0;
+    let traditionalAccessoriesPrice = 0;
+    let decorativeFeatures: PricedSelection[] = [];
+    let traditionalAccessories: PricedSelection[] = [];
+    let batchShippingPendingReason: string | null = null;
     let individualShipping: ReturnType<
       typeof calculateIndividualShipping
     > | null = null;
+    let batchShipping: ReturnType<
+      typeof calculateBatchShipping
+    > | null = null;
+    const resolvedFabricPrice = resolveFabricPrice(selectedFabric);
+    const fabricPricingError = getFabricPricingError(selectedFabric);
 
-    if (selectedFabric) {
-      fabricPrice = getFabricPrice(selectedFabric);
+    if (selectedFabric && resolvedFabricPrice !== null) {
+      fabricPrice = resolvedFabricPrice;
       fabricSewingCost = getFabricSewingCost(selectedFabric);
     }
 
-    if (selectedFabric && selectedStyle && selectedGarment) {
+    if (
+      selectedFabric &&
+      resolvedFabricPrice !== null &&
+      selectedStyle &&
+      selectedGarment
+    ) {
       constructionSewingCost = getConstructionSewingCost(designSelections);
       // Custom Garment Details Pricing
       const detailCosts = calculateGarmentDetailsPrice(designSelections, selectedStyle, customDetailCatalog);
       let detailsPrice = detailCosts.total;
       monogramPrice = detailCosts.monogramPrice;
+      decorativeFeatures = detailCosts.decorativeFeatures;
+      traditionalAccessories = detailCosts.accessories;
+      traditionalAccessoriesPrice = detailCosts.accessories.reduce(
+        (total, accessory) => total + accessory.price,
+        0,
+      );
       
       if (designSelections.additionalCap) {
         detailsPrice += (businessSettings.pricingSettings?.standardAccessoryCharge ?? 10);
       }
       
-      if (optionalAccessories && optionalAccessories.length > 0) {
-        detailsPrice += (optionalAccessories.length * 10);
-      }
-
-      const isLiningSupported = ['L1', 'L2', 'L3', 'L4'].includes(selectedGarment?.code || "");
-      if (hasLining && selectedStyle?.gender === "female" && isLiningSupported) {
+      if (hasLining && liningEligible) {
         detailsPrice += 10.0;
       }
       
@@ -1496,26 +1536,51 @@ export default function DesignStudioView({
 
     if (
       selectedFabric &&
+      resolvedFabricPrice !== null &&
       selectedStyle &&
-      selectedGarment &&
-      batchType === "alone"
+      selectedGarment
     ) {
       const garmentComposition = getGarmentCompositionFromCode(
         selectedGarment.code || "",
         selectedStyle.garmentComposition,
       );
-      individualShipping = calculateIndividualShipping(
-        getGarmentPieceCount(garmentComposition),
-      );
+      const garmentPieceCount = getGarmentPieceCount(garmentComposition);
+
+      if (batchType === "alone") {
+        individualShipping = calculateIndividualShipping(garmentPieceCount);
+      } else {
+        const isPersonalizedBatch = batchType === "personalized";
+        if (isPersonalizedBatch) {
+          const personalizedContext =
+            resolvePersonalizedBatchShippingContext(ctx, customGroupCode);
+          batchShippingPendingReason = personalizedContext.error;
+
+          if (personalizedContext.context) {
+            batchShipping = calculateBatchShipping({
+              ...personalizedContext.context,
+              garmentPieceCount,
+            });
+          }
+        } else {
+          batchShipping = calculateBatchShipping({
+            batchId: ctx.batchId || ctx.batchName || selectedBatchName,
+            batchName: ctx.batchName || selectedBatchName,
+            plannedGarmentCapacity: ctx.expectedParticipants || 1,
+            garmentPieceCount,
+          });
+        }
+      }
     }
 
-    const shippingCost = individualShipping?.priceEur ?? 0;
-    const subtotal =
+    const shippingCost =
+      individualShipping?.priceEur ?? batchShipping?.priceEur ?? 0;
+    const subtotal = roundMoney(
       fabricPrice +
       fabricSewingCost +
       constructionSewingCost +
       customDetailsPrice +
-      shippingCost;
+      shippingCost,
+    );
 
     return {
       fabricPrice,
@@ -1523,26 +1588,36 @@ export default function DesignStudioView({
       constructionSewingCost,
       customDetailsPrice,
       monogramPrice,
+      traditionalAccessoriesPrice,
+      decorativeFeatures,
+      traditionalAccessories,
+      batchShippingPendingReason,
+      fabricPricingError,
       individualShipping,
+      batchShipping,
       shippingCost,
       subtotal
     };
   };
 
   const pricing = getPricingBreakdown();
-  const garmentDetailsPrice = pricing.customDetailsPrice;
+  const selectedFabricPrice = resolveFabricPrice(selectedFabric);
   const subtotal = pricing.subtotal;
-  const depositRatio = businessSettings.pricingSettings.depositPercentage / 100;
-  const garmentSubtotal = subtotal - pricing.shippingCost;
-  const depositRequired =
-    garmentSubtotal * depositRatio + pricing.shippingCost;
-  const remainingDue = garmentSubtotal * (1 - depositRatio);
-  const currencySymbol =
-    businessSettings.pricingSettings.currency === "EUR"
-      ? "€"
-      : businessSettings.pricingSettings.currency === "USD"
-        ? "$"
-        : "₦";
+  const personalizedGroupLabel =
+    pricing.batchShipping?.batchName ||
+    customGroupCode ||
+    "Setup Required";
+  const depositPercentage = clampDepositPercentage(
+    businessSettings.pricingSettings.depositPercentage,
+  );
+  const depositRatio = getDepositRatio(depositPercentage);
+  const garmentSubtotal = roundMoney(subtotal - pricing.shippingCost);
+  const garmentDeposit = roundMoney(garmentSubtotal * depositRatio);
+  const depositRequired = roundMoney(
+    garmentDeposit + pricing.shippingCost,
+  );
+  const remainingDue = roundMoney(garmentSubtotal - garmentDeposit);
+  const currencySymbol = PRICING_CURRENCY_SYMBOL;
 
   // Handle step advances
   const handleNextStep = () => {
@@ -1739,6 +1814,29 @@ export default function DesignStudioView({
 
   // Dispatch custom garment choice to tailoring Cart
   const handleAddToCartAction = () => {
+    if (batchType === "personalized") {
+      const personalizedContext =
+        resolvePersonalizedBatchShippingContext(ctx, customGroupCode);
+      if (!personalizedContext.context) {
+        setValidationError(
+          personalizedContext.error ||
+            "Complete the personalized group setup before placing this order.",
+        );
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      const fabricPricingError = getFabricPricingError(selectedFabric);
+      if (fabricPricingError) {
+        setValidationError(fabricPricingError);
+        setTimeout(() => {
+          document
+            .getElementById("design-studio-stepper")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 50);
+        return;
+      }
+    }
+
     // Phase 4.2 Integration: Evaluate routing when customer submits order
     const decision = OrderRoutingEngine.evaluateOrder(ctx, storeBatches || []);
     
@@ -1758,7 +1856,7 @@ export default function DesignStudioView({
         : batchType === "alone"
           ? "Individual Order (No Batch)"
           : batchType === "personalized"
-            ? `Personalized Group: ${customGroupCode || "CUSTOM-GROUP"}`
+            ? `Personalized Group: ${pricing.batchShipping?.batchName || customGroupCode}`
             : selectedBatchName;
 
     const cartItemData = {
@@ -1775,12 +1873,14 @@ export default function DesignStudioView({
       fabric: selectedFabric,
       design: {
         ...designSelections,
+        decorativeFeatures: pricing.decorativeFeatures.map(
+          (feature) => feature.label as DecorativeFeature,
+        ),
         customDetailSnapshots: getCustomDetailSnapshots(
           designSelections,
           customDetailCatalog,
         ),
-        hasLining: (selectedStyle && selectedGarment && selectedStyle?.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "")) ? hasLining : false,
-        optionalAccessories: batchType !== "alone" ? optionalAccessories : [],
+        hasLining: liningEligible ? hasLining : false,
         priceCode:
           selectedPriceCode === "AUTO"
             ? getAutoDetectedPriceCode()
@@ -1794,15 +1894,21 @@ export default function DesignStudioView({
         fabricPrice: pricing.fabricPrice,
         customDetailsPrice: pricing.customDetailsPrice,
         monogramPrice: pricing.monogramPrice,
+        traditionalAccessoriesPrice: pricing.traditionalAccessoriesPrice,
         individualShipping: pricing.individualShipping || undefined,
+        batchShipping: pricing.batchShipping || undefined,
         checkoutTotal: subtotal,
       },
       measurements: measurements,
       specialInstructions: specialInstructions,
       notesAboutLeftoverFabric: leftoverFabricChoice,
       batchType: batchType,
+      batchId: pricing.batchShipping?.batchId,
       batchName: finalBatchName,
-      customGroupCode: customGroupCode,
+      customGroupCode:
+        batchType === "personalized"
+          ? pricing.batchShipping?.batchId
+          : customGroupCode,
     };
 
     onAddToCart(cartItemData);
@@ -2641,9 +2747,7 @@ export default function DesignStudioView({
               selectedFabric={selectedFabric}
               selectedDesign={{
                 ...designSelections,
-                hasLining:
-                  (selectedStyle?.gender === "female" && selectedGarment && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "")) ? hasLining : false,
-                optionalAccessories: batchType !== "alone" ? optionalAccessories : [],
+                hasLining: liningEligible ? hasLining : false,
               }}
             />
           )}
@@ -4074,13 +4178,20 @@ export default function DesignStudioView({
                     <li>
                       Garment Cut: <strong>{selectedGarment?.type || "Pending"}</strong>
                     </li>
-                    <GarmentDetailSummaryItems designSelections={designSelections} isLi={true} currencySymbol={currencySymbol} style={selectedStyle} />
+                    <GarmentDetailSummaryItems
+                      designSelections={designSelections}
+                      isLi={true}
+                      currencySymbol={currencySymbol}
+                      catalog={customDetailCatalog}
+                      decorativeFeatures={pricing.decorativeFeatures}
+                      accessories={pricing.traditionalAccessories}
+                    />
                     {pricing.constructionSewingCost > 0 && (
                       <li>
                         Construction Sewing Cost: <strong>+{currencySymbol}{pricing.constructionSewingCost.toFixed(2)}</strong>
                       </li>
                     )}
-                    {selectedStyle?.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "") && hasLining && (
+                    {liningEligible && hasLining && (
                       <li>
                         Included Extra: <strong>Inner Lining/Net (L5)</strong> <span className="text-heritage-gold ml-1">(+{currencySymbol}10.00)</span>
                       </li>
@@ -4119,7 +4230,7 @@ export default function DesignStudioView({
                           : batchType === "alone"
                             ? "Individual Order (Home Courier)"
                             : batchType === "personalized"
-                              ? `Personalized Group (${customGroupCode || "CUSTOM-GROUP"})`
+                              ? `Personalized Group (${personalizedGroupLabel})`
                               : selectedBatchName}
                       </strong>
                     </li>
@@ -4211,7 +4322,7 @@ export default function DesignStudioView({
                       : batchType === "alone"
                         ? "Individual Sourcing & Direct Delivery Queue"
                         : batchType === "personalized"
-                          ? `Custom Private Cohort (${customGroupCode || "CUSTOM-GROUP"})`
+                          ? `Personalized Group (${personalizedGroupLabel})`
                           : selectedBatchName}
                   </strong>{" "}
                   registry. Sourcing starts immediately.
@@ -4278,10 +4389,16 @@ export default function DesignStudioView({
                   <div className="flex justify-between items-center text-heritage-ink/70">
                     <span>Fabric Price:</span>
                     <span className="font-semibold text-heritage-green">
-                      {currencySymbol}
-                      {getFabricPrice(selectedFabric).toFixed(2)}
+                      {selectedFabricPrice !== null
+                        ? `${currencySymbol}${selectedFabricPrice.toFixed(2)}`
+                        : "Pricing unavailable"}
                     </span>
                   </div>
+                  {pricing.fabricPricingError && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[10px] text-red-700">
+                      {pricing.fabricPricingError}
+                    </div>
+                  )}
                   {pricing.fabricSewingCost > 0 && (
                     <div className="flex justify-between items-center text-heritage-ink/70">
                       <span>Fabric Sewing Cost:</span>
@@ -4301,6 +4418,31 @@ export default function DesignStudioView({
                   </span>
                 </div>
               ))}
+              {selectedFabric && pricing.decorativeFeatures.map((feature) => (
+                <div
+                  key={`decorative-${feature.label}`}
+                  className="flex justify-between items-center text-heritage-ink/70"
+                >
+                  <span>
+                    {feature.includedByStyle ? "Design Feature" : "Decorative Detail"}:{" "}
+                    {feature.label}
+                  </span>
+                  <span className="font-semibold text-heritage-green">
+                    +{currencySymbol}{feature.price.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+              {selectedFabric && pricing.traditionalAccessories.map((accessory) => (
+                <div
+                  key={`traditional-accessory-${accessory.label}`}
+                  className="flex justify-between items-center text-heritage-ink/70"
+                >
+                  <span>Traditional Accessory: {accessory.label}</span>
+                  <span className="font-semibold text-heritage-green">
+                    +{currencySymbol}{accessory.price.toFixed(2)}
+                  </span>
+                </div>
+              ))}
               {pricing.constructionSewingCost > 0 && (
                 <div className="flex justify-between items-center text-heritage-ink/70">
                   <span>Construction Sewing Cost:</span>
@@ -4309,7 +4451,7 @@ export default function DesignStudioView({
                   </span>
                 </div>
               )}
-              {selectedFabric && selectedStyle?.gender === "female" && selectedGarment && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "") && hasLining && (
+              {selectedFabric && liningEligible && hasLining && (
                 <div className="flex justify-between items-center text-heritage-ink/70">
                   <span>Inner Lining/Net (L5):</span>
                   <span className="font-semibold text-heritage-green">
@@ -4331,15 +4473,6 @@ export default function DesignStudioView({
                 </div>
               )}
 
-              {selectedFabric && optionalAccessories.map(acc => (
-                <div key={acc} className="flex justify-between items-center text-heritage-ink/70">
-                  <span>{acc}:</span>
-                  <span className="font-semibold text-heritage-green">
-                    +{currencySymbol}10.00
-                  </span>
-                </div>
-              ))}
-
               {pricing.individualShipping && (
                 <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
                   <div className="flex justify-between items-center">
@@ -4358,6 +4491,46 @@ export default function DesignStudioView({
                 </div>
               )}
 
+              {pricing.batchShipping && (
+                <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
+                  <div className="flex justify-between items-center">
+                    <span>Batch Shipping - Lagos to Eindhoven:</span>
+                    <span className="font-mono">
+                      +{currencySymbol}
+                      {pricing.batchShipping.priceEur.toFixed(2)}
+                    </span>
+                  </div>
+                  <span className="text-[9px] text-amber-600/80 mt-0.5">
+                    {pricing.batchShipping.garmentPieceCount} garment piece
+                    {pricing.batchShipping.garmentPieceCount === 1 ? "" : "s"} ·{" "}
+                    {currencySymbol}
+                    {pricing.batchShipping.exactRateEurPerGarment.toFixed(2)} each ·{" "}
+                    {pricing.batchShipping.capacityBand} planned capacity
+                  </span>
+                </div>
+              )}
+
+              {batchType === "personalized" &&
+                !pricing.batchShipping &&
+                pricing.batchShippingPendingReason && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] text-amber-800">
+                    <span className="block font-bold">
+                      Personalized batch shipping is pending
+                    </span>
+                    <span>{pricing.batchShippingPendingReason}</span>
+                  </div>
+                )}
+
+              {batchType !== "alone" &&
+                batchType !== "personalized" &&
+                !pricing.batchShipping &&
+                (!selectedStyle || !selectedGarment) && (
+                  <div className="flex justify-between items-center text-heritage-ink/60 text-[10px]">
+                    <span>Batch Shipping - Lagos to Eindhoven:</span>
+                    <span className="font-semibold">Pending garment selection</span>
+                  </div>
+                )}
+
               <div className="flex justify-between border-t pt-2.5 font-bold text-sm text-heritage-green font-serif">
                 <span>Total Subtotal:</span>
                 <span className="font-mono text-emerald-800">
@@ -4371,7 +4544,7 @@ export default function DesignStudioView({
             <div className="grid grid-cols-2 gap-3 text-center pt-1.5">
               <div className="bg-heritage-cream/60 border border-heritage-gold/20 p-3 rounded-xl">
                 <span className="block text-[8px] uppercase tracking-wider text-heritage-ink/50 font-bold">
-                  Due Now ({businessSettings.pricingSettings.depositPercentage}%
+                  Due Now ({depositPercentage}%
                   Garment Deposit{pricing.shippingCost > 0 ? " + Shipping" : ""})
                 </span>
                 <span className="text-sm font-bold text-heritage-green font-mono">
@@ -4413,14 +4586,21 @@ export default function DesignStudioView({
                   {selectedGarment?.type || "Pending"}
                 </strong>
               </p>
-              <GarmentDetailSummaryItems designSelections={designSelections} isLi={false} currencySymbol={currencySymbol} style={selectedStyle} />
+              <GarmentDetailSummaryItems
+                designSelections={designSelections}
+                isLi={false}
+                currencySymbol={currencySymbol}
+                catalog={customDetailCatalog}
+                decorativeFeatures={pricing.decorativeFeatures}
+                accessories={pricing.traditionalAccessories}
+              />
               {pricing.constructionSewingCost > 0 && (
                 <p>
                   Construction Sewing Cost:{" "}
                   <strong className="text-heritage-green">+{currencySymbol}{pricing.constructionSewingCost.toFixed(2)}</strong>
                 </p>
               )}
-              {selectedStyle?.gender === "female" && ["L1", "L2", "L3", "L4"].includes(selectedGarment?.code || "") && hasLining && (
+              {liningEligible && hasLining && (
                 <p>
                   Lining/Inner Net:{" "}
                   <strong className="text-heritage-gold">Included (L5) (+{currencySymbol}10.00)</strong>
@@ -4435,7 +4615,7 @@ export default function DesignStudioView({
                     : batchType === "alone"
                       ? "Individual Order"
                       : batchType === "personalized"
-                        ? `Personalized Group (${customGroupCode || "CUSTOM-GROUP"})`
+                        ? `Personalized Group (${personalizedGroupLabel})`
                         : "Custom Order"}
                 </strong>
               </p>
@@ -4449,9 +4629,9 @@ export default function DesignStudioView({
             </span>
             <p>
               Your garment deposit is processed into a secure community fund.
-              Individual shipping is paid in full with the deposit. Lagos
-              materials and workshop sourcing commence immediately, and the
-              remaining garment balance is due at delivery.
+              Shipping is paid in full with the deposit. Lagos materials and
+              workshop sourcing commence immediately, and the remaining
+              garment balance is due at delivery.
             </p>
           </div>
         </div>

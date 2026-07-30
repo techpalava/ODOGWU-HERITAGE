@@ -258,6 +258,22 @@ export const getSupportedCustomDetailGroups = (
   return inferLegacyGarmentGroups(style);
 };
 
+export const isLiningEligibleForStyle = (
+  style: StyleCategory | null,
+  garmentCode?: string,
+): boolean => {
+  if (!style) return false;
+
+  const { isFemale, isUnisex, explicitlyBoth } = getStyleDemographic(style);
+  if (!isFemale && !isUnisex && !explicitlyBoth) return false;
+
+  if (garmentCode && garmentCode !== "EXACT") {
+    return ["L1", "L2", "L3", "L4"].includes(garmentCode);
+  }
+
+  return getSupportedCustomDetailGroups(style).includes("dress");
+};
+
 export const getApplicableCustomDetailGroups = (
   style: StyleCategory | null,
   catalog: CustomDetailOption[],
@@ -405,10 +421,15 @@ export const getCustomDetailsBreakdown = (
   selections: DesignSelections,
   catalog: CustomDetailOption[],
 ) => {
-  const snapshots =
-    selections.customDetailSnapshots?.length
+  const hasLiveSelections = Object.prototype.hasOwnProperty.call(
+    selections,
+    "customDetails",
+  );
+  const snapshots = hasLiveSelections
+    ? getCustomDetailSnapshots(selections, catalog)
+    : selections.customDetailSnapshots?.length
       ? selections.customDetailSnapshots
-      : getCustomDetailSnapshots(selections, catalog);
+      : [];
 
   return snapshots.map((option) => ({
     label: option.label,

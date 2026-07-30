@@ -106,7 +106,11 @@ interface AppState {
   fabrics: Fabric[];
   setFabrics: (fabrics: Fabric[] | ((prev: Fabric[]) => Fabric[])) => void;
   customDetailCatalog: CustomDetailOption[];
-  setCustomDetailCatalog: (catalog: CustomDetailOption[]) => void;
+  setCustomDetailCatalog: (
+    catalog:
+      | CustomDetailOption[]
+      | ((prev: CustomDetailOption[]) => CustomDetailOption[]),
+  ) => void;
   styles: StyleCategory[];
   setStyles: (
     styles: StyleCategory[] | ((prev: StyleCategory[]) => StyleCategory[]),
@@ -149,7 +153,13 @@ let storeUnsubs: (() => void)[] = [];
 
 export const useAppStore = create<AppState>((set, get) => ({
   customDetailCatalog: [],
-  setCustomDetailCatalog: (catalog) => set({ customDetailCatalog: catalog }),
+  setCustomDetailCatalog: (catalog) => {
+    const nextCatalog =
+      typeof catalog === "function"
+        ? catalog(get().customDetailCatalog)
+        : catalog;
+    set({ customDetailCatalog: nextCatalog });
+  },
   activeTab:
     (typeof window !== "undefined" &&
       (sessionStorage.getItem("asml_active_tab") as any)) ||

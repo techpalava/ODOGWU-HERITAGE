@@ -44,6 +44,7 @@ import {
   FileText,
   Copy,
   ListCollapse,
+  Pen,
 } from "lucide-react";
 import {
   Fabric,
@@ -60,13 +61,17 @@ import {
   DiscountPlanningRule,
   OutfitType,
 } from "../types";
-import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
 import { CUSTOM_DETAIL_SELECTION_GROUPS } from "../config/GarmentDetailsConfig";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 import { BusinessIntelligenceEngine } from "../engine/BusinessIntelligenceEngine";
 import { CapacityService } from "../services/CapacityService";
 import { useAppStore } from "../store/useAppStore";
 import { useReferenceDataFallback } from "../hooks/useReferenceData";
+import {
+  clampDepositPercentage,
+  PRICING_CURRENCY,
+  PRICING_CURRENCY_SYMBOL,
+} from "../utils/money";
 
 interface DatabaseViewProps {
   customers: Customer[];
@@ -224,6 +229,7 @@ export default function DatabaseView({
     | "order"
     | "showpiece"
     | "photo"
+    | "catalog_option"
     | null
   >(null);
   const [editingItem, setEditingItem] = useState<any>(null); // holds the item being edited or new template
@@ -1787,6 +1793,87 @@ export default function DatabaseView({
                           </option>
                         ))}
                       </select>
+                    </div>
+                    <div className="space-y-2 col-span-1 sm:col-span-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-4">
+                      <div>
+                        <h4 className="font-bold text-heritage-green">
+                          Included Decorative Features
+                        </h4>
+                        <p className="mt-1 text-[10px] text-heritage-ink/60">
+                          Checked features are required by this design and add
+                          {` ${PRICING_CURRENCY_SYMBOL}12.00`} automatically in
+                          Design Studio Step 3. Style names and descriptions do
+                          not control pricing.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {(
+                          [
+                            {
+                              key: "hasMonogram",
+                              label: "Name Monogram",
+                            },
+                            {
+                              key: "hasEmbroidery",
+                              label: "Embroidery",
+                            },
+                            {
+                              key: "hasMonogramTrimming",
+                              label: "Monogram Trimming",
+                            },
+                          ] as const
+                        ).map(({ key, label }) => {
+                          const checked =
+                            editingItem.includedDesignFeatures?.[key] ??
+                            editingItem[key] ??
+                            editingItem.defaultGarmentDetails?.[key] ??
+                            false;
+
+                          return (
+                            <label
+                              key={key}
+                              className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-150 bg-white px-3 py-2 text-xs"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => {
+                                  const current =
+                                    editingItem.includedDesignFeatures || {};
+                                  setEditingItem({
+                                    ...editingItem,
+                                    includedDesignFeatures: {
+                                      hasMonogram:
+                                        current.hasMonogram ??
+                                        editingItem.hasMonogram ??
+                                        editingItem.defaultGarmentDetails
+                                          ?.hasMonogram ??
+                                        false,
+                                      hasEmbroidery:
+                                        current.hasEmbroidery ??
+                                        editingItem.hasEmbroidery ??
+                                        editingItem.defaultGarmentDetails
+                                          ?.hasEmbroidery ??
+                                        false,
+                                      hasMonogramTrimming:
+                                        current.hasMonogramTrimming ??
+                                        editingItem.hasMonogramTrimming ??
+                                        editingItem.defaultGarmentDetails
+                                          ?.hasMonogramTrimming ??
+                                        false,
+                                      [key]: event.target.checked,
+                                    },
+                                  });
+                                }}
+                                className="h-4 w-4 rounded text-heritage-green"
+                              />
+                              <span className="font-bold text-heritage-green">
+                                {label}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
                     </div>
                     <div className="space-y-4 col-span-1 sm:col-span-2 bg-heritage-cream/10 p-4 rounded-xl border border-heritage-gold/20">
                       <h4 className="font-bold text-heritage-green text-sm mb-2 border-b border-heritage-gold/20 pb-2">Step 3 Custom Detail Configuration</h4>
@@ -5557,6 +5644,8 @@ export default function DatabaseView({
                             </label>
                             <input
                               type="number"
+                              min={0}
+                              max={100}
                               value={
                                 businessSettings.batchSettings
                                   .minGarmentsPerBatch
@@ -5682,7 +5771,7 @@ export default function DatabaseView({
                           <div className="flex justify-between items-center">
                             <label className="text-xs text-gray-600 font-medium">
                               Community Batch Shipping Rate (
-                              {businessSettings.pricingSettings.currency})
+                              {PRICING_CURRENCY})
                             </label>
                             <input
                               type="number"
@@ -5706,7 +5795,7 @@ export default function DatabaseView({
                           <div className="flex justify-between items-center">
                             <label className="text-xs text-gray-600 font-medium">
                               Individual Order Shipping (
-                              {businessSettings.pricingSettings.currency})
+                              {PRICING_CURRENCY})
                             </label>
                             <input
                               type="number"
@@ -5730,7 +5819,7 @@ export default function DatabaseView({
                           <div className="flex justify-between items-center">
                             <label className="text-xs text-gray-600 font-medium">
                               Personalized Batch Shipping (
-                              {businessSettings.pricingSettings.currency})
+                              {PRICING_CURRENCY})
                             </label>
                             <input
                               type="number"
@@ -5823,7 +5912,9 @@ export default function DatabaseView({
                                   pricingSettings: {
                                     ...prev.pricingSettings,
                                     depositPercentage:
-                                      parseInt(e.target.value) || 0,
+                                      clampDepositPercentage(
+                                        Number(e.target.value),
+                                      ),
                                   },
                                 }))
                               }
@@ -5839,8 +5930,10 @@ export default function DatabaseView({
                               disabled
                               value={
                                 100 -
-                                businessSettings.pricingSettings
-                                  .depositPercentage
+                                clampDepositPercentage(
+                                  businessSettings.pricingSettings
+                                    .depositPercentage,
+                                )
                               }
                               className="w-24 px-2 py-1 text-right border border-gray-100 bg-gray-50 text-gray-400 rounded text-xs cursor-not-allowed"
                             />
@@ -5849,23 +5942,12 @@ export default function DatabaseView({
                             <label className="text-xs text-gray-600 font-medium">
                               Primary Currency
                             </label>
-                            <select
-                              value={businessSettings.pricingSettings.currency}
-                              onChange={(e) =>
-                                setBusinessSettings((prev) => ({
-                                  ...prev,
-                                  pricingSettings: {
-                                    ...prev.pricingSettings,
-                                    currency: e.target.value,
-                                  },
-                                }))
-                              }
-                              className="w-24 px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:border-heritage-gold text-right"
-                            >
-                              <option value="EUR">EUR (€)</option>
-                              <option value="USD">USD ($)</option>
-                              <option value="NGN">NGN (₦)</option>
-                            </select>
+                            <input
+                              type="text"
+                              readOnly
+                              value={`${PRICING_CURRENCY} (${PRICING_CURRENCY_SYMBOL})`}
+                              className="w-24 px-2 py-1 border border-gray-100 bg-gray-50 text-gray-500 rounded text-xs text-right cursor-not-allowed"
+                            />
                           </div>
                           <div className="flex justify-between items-center">
                             <label className="text-xs text-gray-600 font-medium">
@@ -6854,7 +6936,7 @@ export default function DatabaseView({
                           <div className="space-y-1">
                             <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">
                               Minimum Discount (
-                              {businessSettings.pricingSettings.currency})
+                              {PRICING_CURRENCY})
                             </label>
                             <input
                               type="number"
@@ -6872,7 +6954,7 @@ export default function DatabaseView({
                           <div className="space-y-1">
                             <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">
                               Maximum Discount (
-                              {businessSettings.pricingSettings.currency})
+                              {PRICING_CURRENCY})
                             </label>
                             <input
                               type="number"
@@ -6966,7 +7048,7 @@ export default function DatabaseView({
                           <div className="space-y-1">
                             <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">
                               Minimum Discount (
-                              {businessSettings.pricingSettings.currency})
+                              {PRICING_CURRENCY})
                             </label>
                             <input
                               type="number"
@@ -6984,7 +7066,7 @@ export default function DatabaseView({
                           <div className="space-y-1">
                             <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">
                               Maximum Discount (
-                              {businessSettings.pricingSettings.currency})
+                              {PRICING_CURRENCY})
                             </label>
                             <input
                               type="number"
@@ -7176,7 +7258,7 @@ export default function DatabaseView({
                                 </option>
                                 <option value="fixed_amount">
                                   Fixed Surcharge Slicing (
-                                  {businessSettings.pricingSettings.currency})
+                                  {PRICING_CURRENCY})
                                 </option>
                               </select>
                             </div>
@@ -7186,7 +7268,7 @@ export default function DatabaseView({
                                 Discount Value (
                                 {editingFutureDiscount.type === "percentage"
                                   ? "%"
-                                  : businessSettings.pricingSettings.currency}
+                                  : PRICING_CURRENCY}
                                 )
                               </label>
                               <input
@@ -7401,7 +7483,7 @@ export default function DatabaseView({
                                   <td className="px-4 py-3.5 font-bold text-heritage-green">
                                     {disc.type === "percentage"
                                       ? `${disc.value}%`
-                                      : `${disc.value} ${businessSettings.pricingSettings.currency}`}
+                                      : `${disc.value} ${PRICING_CURRENCY}`}
                                   </td>
                                   <td className="px-4 py-3.5">
                                     <span className="px-2 py-0.5 bg-gray-100 text-gray-700 font-extrabold uppercase text-[9px] rounded tracking-wider font-mono">

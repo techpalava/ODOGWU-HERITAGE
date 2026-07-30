@@ -645,7 +645,7 @@ export default function DashboardView({
                         </strong>
                       </div>
                       <div>
-                        Individual Shipping - Lagos to Eindhoven:{" "}
+                        Shipping - Lagos to Eindhoven:{" "}
                         <strong className="text-heritage-green">
                           {selectedReceipt.batchType === "alone"
                             ? selectedReceipt.garment?.individualShipping
@@ -653,7 +653,9 @@ export default function DashboardView({
                               : selectedReceipt.garment?.courierSurcharge
                                 ? `€${selectedReceipt.garment.courierSurcharge.toFixed(2)} (legacy quote)`
                                 : "Quote unavailable"
-                            : "Not applicable"}
+                            : selectedReceipt.garment?.batchShipping
+                              ? `€${selectedReceipt.garment.batchShipping.priceEur.toFixed(2)} (${selectedReceipt.garment.batchShipping.capacityBand})`
+                              : "Batch quote unavailable"}
                         </strong>
                       </div>
                       {selectedReceipt.design.optionalAccessories && selectedReceipt.design.optionalAccessories.length > 0 && (

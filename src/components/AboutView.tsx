@@ -596,6 +596,12 @@ export default function AboutView() {
                 combines garment pieces into one shipment quote.
               </li>
               <li>
+                Community and personalized batch orders use a per-garment
+                shipping rate based on the batch's planned capacity. The rate
+                is saved with the order and batch items share one consolidated
+                quote.
+              </li>
+              <li>
                 Add-ons matching code <strong>Others-1</strong> can be added to
                 any customized order in Step 3 for only <strong>+€10.00</strong>{" "}
                 during active group phases.
