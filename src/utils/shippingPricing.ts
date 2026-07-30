@@ -4,6 +4,7 @@ import type {
   GarmentSelection,
   IndividualShippingSnapshot,
 } from "../types";
+import { clampRatio, roundMoney } from "./money";
 
 export const LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR = 1600;
 export const GARMENT_WEIGHT_KG = 5 / 12;
@@ -70,9 +71,6 @@ const BATCH_SHIPPING_RATES: BatchShippingRate[] = [
     garmentDivisor: 60,
   },
 ];
-
-const roundCurrency = (value: number): number =>
-  Math.round((value + Number.EPSILON) * 100) / 100;
 
 const normalizePositiveInteger = (value: number): number =>
   Math.max(1, Math.ceil(Number.isFinite(value) ? value : 1));
@@ -171,7 +169,7 @@ export const calculateBatchShipping = ({
     garmentPieceCount: normalizedPieceCount,
     exactRateEurPerGarment,
     rateNgnPerGarment,
-    priceEur: roundCurrency(exactRateEurPerGarment * normalizedPieceCount),
+    priceEur: roundMoney(exactRateEurPerGarment * normalizedPieceCount),
     priceNgn,
     exchangeRateNgnPerEur: LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR,
   };
@@ -198,11 +196,17 @@ export const calculateCartPricing = (
   cartItems: CartItem[],
   depositRatio: number,
 ): CartPricingSummary => {
-  const garmentSubtotal = cartItems.reduce(
-    (total, item) =>
-      total +
-      Math.max(0, item.garment.totalPrice - getStoredShippingCost(item.garment)),
-    0,
+  const normalizedDepositRatio = clampRatio(depositRatio);
+  const garmentSubtotal = roundMoney(
+    cartItems.reduce(
+      (total, item) =>
+        total +
+        Math.max(
+          0,
+          item.garment.totalPrice - getStoredShippingCost(item.garment),
+        ),
+      0,
+    ),
   );
 
   const individualPieceCount = cartItems.reduce((total, item) => {
@@ -248,18 +252,20 @@ export const calculateCartPricing = (
   const batchShippingQuotes = Array.from(batchGroups.values()).map(
     calculateBatchShipping,
   );
-  const shippingTotal = roundCurrency(
+  const shippingTotal = roundMoney(
     (individualShippingQuote?.priceEur ?? 0) +
       batchShippingQuotes.reduce((total, quote) => total + quote.priceEur, 0),
   );
-  const garmentDeposit = garmentSubtotal * depositRatio;
+  const garmentDeposit = roundMoney(
+    garmentSubtotal * normalizedDepositRatio,
+  );
 
   return {
     garmentSubtotal,
     shippingTotal,
-    total: garmentSubtotal + shippingTotal,
-    depositDueNow: garmentDeposit + shippingTotal,
-    remainingDue: garmentSubtotal - garmentDeposit,
+    total: roundMoney(garmentSubtotal + shippingTotal),
+    depositDueNow: roundMoney(garmentDeposit + shippingTotal),
+    remainingDue: roundMoney(garmentSubtotal - garmentDeposit),
     individualShippingQuote,
     batchShippingQuotes,
     shippingQuote: individualShippingQuote,

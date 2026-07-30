@@ -28,6 +28,11 @@ import { CustomerJourneyEngine } from "./engine/CustomerJourneyEngine";
 import { getCurrentRegistrationBatch } from "./utils/batchUtils";
 import { CapacityService } from "./services/CapacityService";
 import { calculateCartPricing } from "./utils/shippingPricing";
+import {
+  clampDepositPercentage,
+  getDepositRatio,
+  PRICING_CURRENCY_SYMBOL,
+} from "./utils/money";
 
 // Lazy load modular view components for performance optimization
 const HomeView = lazy(() => import("./components/HomeView"));
@@ -419,8 +424,12 @@ export default function App() {
     triggerNotification("Sizes updated successfully.", "success");
   };
 
-  const checkoutDepositRatio =
-    businessSettings.pricingSettings.depositPercentage / 100;
+  const checkoutDepositPercentage = clampDepositPercentage(
+    businessSettings.pricingSettings.depositPercentage,
+  );
+  const checkoutDepositRatio = getDepositRatio(
+    checkoutDepositPercentage,
+  );
   const checkoutPricing = calculateCartPricing(
     cartItems,
     checkoutDepositRatio,
@@ -428,12 +437,27 @@ export default function App() {
   const checkoutSubtotal = checkoutPricing.total;
   const checkoutDepositAmount = checkoutPricing.depositDueNow;
   const checkoutRemainingAmount = checkoutPricing.remainingDue;
-  const currencySymbol =
-    businessSettings.pricingSettings.currency === "EUR"
-      ? "€"
-      : businessSettings.pricingSettings.currency === "USD"
-        ? "$"
-        : "₦";
+  const currencySymbol = PRICING_CURRENCY_SYMBOL;
+  const checkoutDecorativeTotal = cartItems.reduce(
+    (total, item) => total + (item.garment.monogramPrice || 0),
+    0,
+  );
+  const checkoutTraditionalAccessoriesTotal = cartItems.reduce(
+    (total, item) =>
+      total + (item.garment.traditionalAccessoriesPrice || 0),
+    0,
+  );
+  const checkoutCustomDetailOptionsTotal = cartItems.reduce(
+    (total, item) =>
+      total +
+      Math.max(
+        0,
+        (item.garment.customDetailsPrice || 0) -
+          (item.garment.monogramPrice || 0) -
+          (item.garment.traditionalAccessoriesPrice || 0),
+      ),
+    0,
+  );
 
   return (
     <div className="min-h-screen bg-heritage-cream text-heritage-ink flex flex-col justify-between">
@@ -742,12 +766,12 @@ export default function App() {
                       </span>
                     </div>
                   )}
-                  {cartItems.reduce((acc, item) => acc + ((item.garment.customDetailsPrice || 0) - (item.garment.monogramPrice || 0)), 0) > 0 && (
+                  {checkoutCustomDetailOptionsTotal > 0 && (
                     <div className="flex justify-between">
                       <span>Custom Detail Options:</span>
                       <span className="font-mono">
                         {currencySymbol}
-                        {cartItems.reduce((acc, item) => acc + ((item.garment.customDetailsPrice || 0) - (item.garment.monogramPrice || 0)), 0).toFixed(2)}
+                        {checkoutCustomDetailOptionsTotal.toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -760,12 +784,21 @@ export default function App() {
                       </span>
                     </div>
                   )}
-                  {cartItems.reduce((acc, item) => acc + (item.garment.monogramPrice || 0), 0) > 0 && (
+                  {checkoutDecorativeTotal > 0 && (
                     <div className="flex justify-between">
-                      <span>Automatic Monogram/Embroidery Cost:</span>
+                      <span>Monogram, Embroidery &amp; Trim:</span>
                       <span className="font-mono">
                         {currencySymbol}
-                        {cartItems.reduce((acc, item) => acc + (item.garment.monogramPrice || 0), 0).toFixed(2)}
+                        {checkoutDecorativeTotal.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {checkoutTraditionalAccessoriesTotal > 0 && (
+                    <div className="flex justify-between">
+                      <span>Traditional Accessories:</span>
+                      <span className="font-mono">
+                        {currencySymbol}
+                        {checkoutTraditionalAccessoriesTotal.toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -817,7 +850,7 @@ export default function App() {
                   <div className="flex justify-between text-heritage-green font-bold text-sm pt-1.5 border-t border-dashed border-gray-100 font-serif">
                     <span>
                       Due Now (
-                      {businessSettings.pricingSettings.depositPercentage}%
+                      {checkoutDepositPercentage}%
                       Garment Deposit
                       {checkoutPricing.shippingTotal > 0
                         ? " + Full Shipping"

@@ -94,7 +94,10 @@ export function legacyCompatMap<T>(collectionName: string, data: T): T {
     if (item.garment && item.garment.type) item.garment.type = mapValue(item.garment.type);
     if (item.fabric && item.fabric.category) item.fabric.category = mapValue(item.fabric.category);
   } else if (collectionName === "styles") {
-    if (item.gender) item.gender = mapValue(item.gender);
+    if (item.gender) item.gender = String(item.gender).toLowerCase();
+    if (item.targetDemographic) {
+      item.targetDemographic = String(item.targetDemographic).toLowerCase();
+    }
     if (item.outfitType) item.outfitType = mapValue(item.outfitType);
     if (item.garmentComposition) item.garmentComposition = mapValue(item.garmentComposition);
   } else if (collectionName === "showpieces") {

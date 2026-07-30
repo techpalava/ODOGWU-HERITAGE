@@ -5,6 +5,11 @@ import {
   calculateCartPricing,
   getStoredShippingCost,
 } from "../utils/shippingPricing";
+import {
+  clampDepositPercentage,
+  getDepositRatio,
+  PRICING_CURRENCY_SYMBOL,
+} from "../utils/money";
 
 export function CartDrawer() {
   const isCartOpen = useAppStore((state) => state.isCartOpen);
@@ -62,16 +67,14 @@ export function CartDrawer() {
     setIsCheckoutPaymentOpen(true);
   };
 
-  const depositRatio = businessSettings.pricingSettings.depositPercentage / 100;
+  const depositPercentage = clampDepositPercentage(
+    businessSettings.pricingSettings.depositPercentage,
+  );
+  const depositRatio = getDepositRatio(depositPercentage);
   const cartPricing = calculateCartPricing(cartItems, depositRatio);
   const subtotal = cartPricing.total;
   const depositAmount = cartPricing.depositDueNow;
-  const currencySymbol =
-    businessSettings.pricingSettings.currency === "EUR"
-      ? "€"
-      : businessSettings.pricingSettings.currency === "USD"
-        ? "$"
-        : "₦";
+  const currencySymbol = PRICING_CURRENCY_SYMBOL;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
@@ -199,6 +202,22 @@ export function CartDrawer() {
                             💎 Accessories: <strong>{item.design.optionalAccessories.join(", ")}</strong>
                           </p>
                         )}
+                        {item.design.decorativeFeatures &&
+                          item.design.decorativeFeatures.length > 0 && (
+                            <p>
+                              Decorative details:{" "}
+                              <strong>
+                                {item.design.decorativeFeatures.join(", ")}
+                              </strong>
+                            </p>
+                          )}
+                        {item.design.accessories &&
+                          item.design.accessories.length > 0 && (
+                            <p>
+                              Traditional accessories:{" "}
+                              <strong>{item.design.accessories.join(", ")}</strong>
+                            </p>
+                          )}
                         {item.batchType === "alone" && (
                           <p>
                             Shipping:{" "}
@@ -310,7 +329,7 @@ export function CartDrawer() {
                 <div className="flex justify-between text-heritage-ink/70">
                   <span>
                     Due now (
-                    {businessSettings.pricingSettings.depositPercentage}%
+                    {depositPercentage}%
                     garment deposit
                     {cartPricing.shippingTotal > 0 ? " + full shipping" : ""}):
                   </span>
@@ -334,13 +353,13 @@ export function CartDrawer() {
                 </span>
                 <div>
                   <strong>Heritage Escrow System:</strong> Your{" "}
-                  {businessSettings.pricingSettings.depositPercentage}% garment
+                  {depositPercentage}% garment
                   deposit
                   {cartPricing.shippingTotal > 0
                     ? " and full shipping payment"
                     : ""}{" "}
                   activate our Lagos workshop immediately. The final{" "}
-                  {100 - businessSettings.pricingSettings.depositPercentage}%
+                  {100 - depositPercentage}%
                   garment balance remains due at delivery.
                 </div>
               </div>

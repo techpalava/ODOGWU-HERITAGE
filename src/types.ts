@@ -176,6 +176,7 @@ export interface DesignSelections {
   hasMonogram?: boolean;
   hasEmbroidery?: boolean;
   hasMonogramTrimming?: boolean;
+  decorativeFeatures?: DecorativeFeature[];
 
   // New detailed garment fields
   customDetails?: Partial<Record<CustomDetailSelectionGroup, string>>;
@@ -194,6 +195,11 @@ export interface DesignSelections {
   embroideryDesign?: string;
   accessories?: string[];
 }
+
+export type DecorativeFeature =
+  | "Name Monogram"
+  | "Embroidery"
+  | "Monogram Trimming";
 
 export interface CustomDetailSelectionSnapshot {
   optionId: string;
@@ -246,6 +252,7 @@ export interface GarmentSelection {
   fabricPrice?: number;
   customDetailsPrice?: number;
   monogramPrice?: number;
+  traditionalAccessoriesPrice?: number;
   individualShipping?: IndividualShippingSnapshot;
   batchShipping?: BatchShippingSnapshot;
   // Read-only compatibility for carts created before the shipping-rate engine.
