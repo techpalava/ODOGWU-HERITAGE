@@ -19,7 +19,7 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
     right: null,
   },
   batchSettings: {
-    minGarmentsPerBatch: 15,
+    minGarmentsPerBatch: 10,
     maxGarmentsPerBatch: 300,
     minParticipantsRequired: 10,
     defaultCommunityBatchSize: 40,

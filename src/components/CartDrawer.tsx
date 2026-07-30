@@ -2,6 +2,7 @@ import { ShoppingBag, X, Trash2, CreditCard } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 import {
+  BATCH_MINIMUM_GARMENTS,
   calculateCartPricing,
   getStoredShippingCost,
 } from "../utils/shippingPricing";
@@ -304,7 +305,7 @@ export function CartDrawer() {
                 {cartPricing.batchShippingQuotes.map((quote) => (
                   <div key={quote.batchId} className="text-heritage-ink/70">
                     <div className="flex justify-between">
-                      <span>Batch shipping - {quote.batchName}:</span>
+                      <span>Flat batch shipping - {quote.batchName}:</span>
                       <span className="font-mono font-semibold text-heritage-green">
                         {currencySymbol}
                         {quote.priceEur.toFixed(2)}
@@ -315,7 +316,12 @@ export function CartDrawer() {
                       {quote.garmentPieceCount === 1 ? "" : "s"} ·{" "}
                       {currencySymbol}
                       {quote.exactRateEurPerGarment.toFixed(2)} each ·{" "}
-                      {quote.capacityBand} planned capacity
+                      {quote.minimumBatchGarments ??
+                        BATCH_MINIMUM_GARMENTS}
+                      -garment batch minimum
+                      {quote.allowsSplitShipments
+                        ? " · split shipments available for large batches"
+                        : ""}
                     </p>
                   </div>
                 ))}

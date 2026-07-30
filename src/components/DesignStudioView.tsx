@@ -58,6 +58,7 @@ import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
 import { DESIGN_CATEGORIES_LIST } from "./DesignCategories";
 import {
+  BATCH_MINIMUM_GARMENTS,
   calculateBatchShipping,
   calculateIndividualShipping,
   getGarmentPieceCount,
@@ -4494,7 +4495,7 @@ export default function DesignStudioView({
               {pricing.batchShipping && (
                 <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
                   <div className="flex justify-between items-center">
-                    <span>Batch Shipping - Lagos to Eindhoven:</span>
+                    <span>Flat Batch Shipping - Lagos to Eindhoven:</span>
                     <span className="font-mono">
                       +{currencySymbol}
                       {pricing.batchShipping.priceEur.toFixed(2)}
@@ -4505,7 +4506,12 @@ export default function DesignStudioView({
                     {pricing.batchShipping.garmentPieceCount === 1 ? "" : "s"} ·{" "}
                     {currencySymbol}
                     {pricing.batchShipping.exactRateEurPerGarment.toFixed(2)} each ·{" "}
-                    {pricing.batchShipping.capacityBand} planned capacity
+                    {pricing.batchShipping.minimumBatchGarments ??
+                      BATCH_MINIMUM_GARMENTS}
+                    -garment batch minimum
+                    {pricing.batchShipping.allowsSplitShipments
+                      ? " · split shipments available for large batches"
+                      : ""}
                   </span>
                 </div>
               )}
@@ -4526,7 +4532,7 @@ export default function DesignStudioView({
                 !pricing.batchShipping &&
                 (!selectedStyle || !selectedGarment) && (
                   <div className="flex justify-between items-center text-heritage-ink/60 text-[10px]">
-                    <span>Batch Shipping - Lagos to Eindhoven:</span>
+                    <span>Flat Batch Shipping - Lagos to Eindhoven:</span>
                     <span className="font-semibold">Pending garment selection</span>
                   </div>
                 )}

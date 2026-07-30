@@ -27,6 +27,10 @@ import { useAppStore } from "../store/useAppStore";
 import { compressImage } from "../utils/imageUtils";
 import { ImageService } from "../services/imageService";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
+import {
+  BATCH_FLAT_RATE_EUR_PER_GARMENT,
+  BATCH_MINIMUM_GARMENTS,
+} from "../utils/shippingPricing";
 
 export default function AboutView() {
   const { businessSettings, setBusinessSettings, currentUser } = useAppStore();
@@ -596,10 +600,16 @@ export default function AboutView() {
                 combines garment pieces into one shipment quote.
               </li>
               <li>
-                Community and personalized batch orders use a per-garment
-                shipping rate based on the batch's planned capacity. The rate
-                is saved with the order and batch items share one consolidated
-                quote.
+                Community and personalized batch orders use a flat shipping
+                rate of{" "}
+                <strong>
+                  €{BATCH_FLAT_RATE_EUR_PER_GARMENT.toFixed(2)} per garment
+                </strong>{" "}
+                from Lagos to
+                Eindhoven. A batch requires at least{" "}
+                <strong>{BATCH_MINIMUM_GARMENTS} confirmed garments</strong>;
+                larger batches may be divided into multiple shipments without
+                changing the per-garment rate.
               </li>
               <li>
                 Add-ons matching code <strong>Others-1</strong> can be added to

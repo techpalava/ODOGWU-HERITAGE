@@ -225,6 +225,7 @@ export interface IndividualShippingSnapshot {
 export interface BatchShippingSnapshot {
   routeId: "LAGOS_EINDHOVEN_BATCH";
   pricingVersion: string;
+  rateModel?: "FLAT_PER_GARMENT";
   origin: "Lagos";
   destination: "Eindhoven";
   batchId: string;
@@ -235,7 +236,10 @@ export interface BatchShippingSnapshot {
     | "5 - 10 garments"
     | "11 - 20 garments"
     | "21 - 40 garments"
-    | "41+ garments";
+    | "41+ garments"
+    | "10+ garments";
+  minimumBatchGarments?: number;
+  allowsSplitShipments?: boolean;
   garmentPieceCount: number;
   exactRateEurPerGarment: number;
   rateNgnPerGarment: number;
@@ -498,6 +502,8 @@ export interface BusinessSettings {
     automaticBatchStatusRules: boolean;
   };
   shippingSettings: {
+    // Legacy mirrors retained for persisted settings. Active batch pricing is
+    // controlled by the centralized flat-rate shipping policy.
     communityBatchShippingRate: number;
     individualOrderShippingRate: number;
     personalizedBatchShippingRate: number;

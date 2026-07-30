@@ -40,6 +40,22 @@ assert.equal(
   false,
   "Garment Options must not expose a design-style base price",
 );
+for (const legacyBatchSetting of [
+  ".communityBatchShippingRate",
+  ".personalizedBatchShippingRate",
+  ".minGarmentsPerBatch",
+]) {
+  assert.equal(
+    databaseView.includes(legacyBatchSetting),
+    false,
+    `Admin must not expose an editable legacy batch policy: ${legacyBatchSetting}`,
+  );
+}
+assert.ok(
+  databaseView.includes("BATCH_FLAT_RATE_EUR_PER_GARMENT") &&
+    databaseView.includes("BATCH_MINIMUM_GARMENTS"),
+  "Admin must display the centralized flat batch-shipping policy",
+);
 assert.equal(
   dashboardView.includes("Base Sewing Price"),
   false,
@@ -66,6 +82,21 @@ for (const rate of ["131.25", "236.25", "425.25", "765.45"]) {
   assert.ok(
     shippingEngine.includes(rate),
     `Shipping engine must include the ${rate} EUR rate`,
+  );
+}
+assert.ok(
+  shippingEngine.includes("BATCH_FLAT_RATE_EUR_PER_GARMENT = 15.09"),
+  "Batch shipping must use the centralized €15.09 flat rate",
+);
+assert.ok(
+  shippingEngine.includes("BATCH_MINIMUM_GARMENTS = 10"),
+  "Batch shipping must record the 10-garment minimum policy",
+);
+for (const legacyBatchRate of ["32.81", "13.13", "11.81", "10.63", "12.76"]) {
+  assert.equal(
+    shippingEngine.includes(legacyBatchRate),
+    false,
+    `Batch shipping must not retain legacy capacity rate ${legacyBatchRate}`,
   );
 }
 

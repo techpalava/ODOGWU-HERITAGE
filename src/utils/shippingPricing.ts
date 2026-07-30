@@ -8,7 +8,16 @@ import { clampRatio, roundMoney } from "./money";
 
 export const LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR = 1600;
 export const GARMENT_WEIGHT_KG = 5 / 12;
-export const BATCH_SHIPPING_PRICING_VERSION = "2026-07-29" as const;
+export const BATCH_SHIPPING_PRICING_VERSION = "2026-07-30-flat-v1" as const;
+export const BATCH_FLAT_RATE_EUR_PER_GARMENT = 15.09;
+export const BATCH_MINIMUM_GARMENTS = 10;
+
+export const BATCH_SHIPPING_POLICY = Object.freeze({
+  rateModel: "FLAT_PER_GARMENT" as const,
+  rateEurPerGarment: BATCH_FLAT_RATE_EUR_PER_GARMENT,
+  minimumBatchGarments: BATCH_MINIMUM_GARMENTS,
+  allowsSplitShipments: true,
+});
 
 export type IndividualShippingQuote = IndividualShippingSnapshot;
 export type BatchShippingQuote = BatchShippingSnapshot;
@@ -31,46 +40,6 @@ interface BatchShippingInput {
   plannedGarmentCapacity: number;
   garmentPieceCount: number;
 }
-
-interface BatchShippingRate {
-  maximumCapacity: number;
-  capacityBand: BatchShippingQuote["capacityBand"];
-  freightNgn: number;
-  garmentDivisor: number;
-}
-
-const BATCH_SHIPPING_RATES: BatchShippingRate[] = [
-  {
-    maximumCapacity: 4,
-    capacityBand: "1 - 4 garments",
-    freightNgn: 210000,
-    garmentDivisor: 4,
-  },
-  {
-    maximumCapacity: 10,
-    capacityBand: "5 - 10 garments",
-    freightNgn: 210000,
-    garmentDivisor: 10,
-  },
-  {
-    maximumCapacity: 20,
-    capacityBand: "11 - 20 garments",
-    freightNgn: 378000,
-    garmentDivisor: 20,
-  },
-  {
-    maximumCapacity: 40,
-    capacityBand: "21 - 40 garments",
-    freightNgn: 680400,
-    garmentDivisor: 40,
-  },
-  {
-    maximumCapacity: Number.POSITIVE_INFINITY,
-    capacityBand: "41+ garments",
-    freightNgn: 1224720,
-    garmentDivisor: 60,
-  },
-];
 
 const normalizePositiveInteger = (value: number): number =>
   Math.max(1, Math.ceil(Number.isFinite(value) ? value : 1));
@@ -148,28 +117,32 @@ export const calculateBatchShipping = ({
 }: BatchShippingInput): BatchShippingQuote => {
   const normalizedCapacity = normalizePositiveInteger(plannedGarmentCapacity);
   const normalizedPieceCount = normalizePositiveInteger(garmentPieceCount);
-  const rate =
-    BATCH_SHIPPING_RATES.find(
-      (candidate) => normalizedCapacity <= candidate.maximumCapacity,
-    ) ?? BATCH_SHIPPING_RATES[BATCH_SHIPPING_RATES.length - 1];
-  const rateNgnPerGarment = rate.freightNgn / rate.garmentDivisor;
-  const exactRateEurPerGarment =
-    rateNgnPerGarment / LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR;
+  const exactRateEurPerGarment = BATCH_SHIPPING_POLICY.rateEurPerGarment;
+  const rateNgnPerGarment = Math.round(
+    exactRateEurPerGarment *
+      LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR,
+  );
+  const priceEur = roundMoney(
+    exactRateEurPerGarment * normalizedPieceCount,
+  );
   const priceNgn = rateNgnPerGarment * normalizedPieceCount;
 
   return {
     routeId: "LAGOS_EINDHOVEN_BATCH",
     pricingVersion: BATCH_SHIPPING_PRICING_VERSION,
+    rateModel: BATCH_SHIPPING_POLICY.rateModel,
     origin: "Lagos",
     destination: "Eindhoven",
     batchId: batchId.trim() || "UNASSIGNED-BATCH",
     batchName: batchName.trim() || "Batch Order",
     plannedGarmentCapacity: normalizedCapacity,
-    capacityBand: rate.capacityBand,
+    capacityBand: "10+ garments",
+    minimumBatchGarments: BATCH_SHIPPING_POLICY.minimumBatchGarments,
+    allowsSplitShipments: BATCH_SHIPPING_POLICY.allowsSplitShipments,
     garmentPieceCount: normalizedPieceCount,
     exactRateEurPerGarment,
     rateNgnPerGarment,
-    priceEur: roundMoney(exactRateEurPerGarment * normalizedPieceCount),
+    priceEur,
     priceNgn,
     exchangeRateNgnPerEur: LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR,
   };

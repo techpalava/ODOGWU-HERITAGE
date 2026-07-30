@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import type { CartItem } from "./src/types";
 import {
+  BATCH_FLAT_RATE_EUR_PER_GARMENT,
+  BATCH_MINIMUM_GARMENTS,
   calculateBatchShipping,
   calculateCartPricing,
   calculateIndividualShipping,
@@ -65,28 +67,24 @@ const makeItem = (
 assert.equal(getGarmentPieceCount("3-Piece Set"), 3);
 assert.equal(getGarmentPieceCount("Family Look"), 4);
 
-const batchBoundaries = [
-  [4, 32.81, "1 - 4 garments"],
-  [5, 13.13, "5 - 10 garments"],
-  [10, 13.13, "5 - 10 garments"],
-  [11, 11.81, "11 - 20 garments"],
-  [20, 11.81, "11 - 20 garments"],
-  [21, 10.63, "21 - 40 garments"],
-  [40, 10.63, "21 - 40 garments"],
-  [41, 12.76, "41+ garments"],
-  [60, 12.76, "41+ garments"],
-  [61, 12.76, "41+ garments"],
-] as const;
+const plannedBatchSizes = [1, 4, 10, 11, 20, 40, 60, 61, 120] as const;
 
-batchBoundaries.forEach(([capacity, expectedPrice, expectedBand]) => {
+plannedBatchSizes.forEach((capacity) => {
   const quote = calculateBatchShipping({
     batchId: "BOUNDARY",
     batchName: "Boundary Batch",
     plannedGarmentCapacity: capacity,
     garmentPieceCount: 1,
   });
-  closeTo(quote.priceEur, expectedPrice, `capacity ${capacity}`);
-  assert.equal(quote.capacityBand, expectedBand);
+  closeTo(
+    quote.priceEur,
+    BATCH_FLAT_RATE_EUR_PER_GARMENT,
+    `flat rate for planned capacity ${capacity}`,
+  );
+  assert.equal(quote.capacityBand, "10+ garments");
+  assert.equal(quote.rateModel, "FLAT_PER_GARMENT");
+  assert.equal(quote.minimumBatchGarments, BATCH_MINIMUM_GARMENTS);
+  assert.equal(quote.allowsSplitShipments, true);
 });
 
 closeTo(
@@ -96,8 +94,8 @@ closeTo(
     plannedGarmentCapacity: 40,
     garmentPieceCount: 2,
   }).priceEur,
-  21.26,
-  "two-piece target 40",
+  30.18,
+  "two-piece flat batch quote",
 );
 closeTo(
   calculateBatchShipping({
@@ -106,8 +104,8 @@ closeTo(
     plannedGarmentCapacity: 10,
     garmentPieceCount: 3,
   }).priceEur,
-  39.38,
-  "three-piece target 10",
+  45.27,
+  "three-piece flat batch quote",
 );
 closeTo(
   calculateBatchShipping({
@@ -116,8 +114,18 @@ closeTo(
     plannedGarmentCapacity: 60,
     garmentPieceCount: 4,
   }).priceEur,
-  51.03,
-  "four-piece target 60",
+  60.36,
+  "four-piece flat batch quote",
+);
+closeTo(
+  calculateBatchShipping({
+    batchId: "BATCH-LARGE",
+    batchName: "Large",
+    plannedGarmentCapacity: 125,
+    garmentPieceCount: 125,
+  }).priceEur,
+  1886.25,
+  "large batches have no flat-rate pricing ceiling",
 );
 
 const sameBatchCart = calculateCartPricing(
@@ -139,9 +147,9 @@ const sameBatchCart = calculateCartPricing(
 );
 assert.equal(sameBatchCart.batchShippingQuotes.length, 1);
 assert.equal(sameBatchCart.batchShippingQuotes[0].garmentPieceCount, 3);
-closeTo(sameBatchCart.batchShippingQuotes[0].priceEur, 31.89, "grouped batch quote");
+closeTo(sameBatchCart.batchShippingQuotes[0].priceEur, 45.27, "grouped batch quote");
 closeTo(sameBatchCart.garmentSubtotal, 250, "shipping removed from garment subtotal");
-closeTo(sameBatchCart.depositDueNow, 156.89, "full shipping collected due now");
+closeTo(sameBatchCart.depositDueNow, 170.27, "full shipping collected due now");
 closeTo(sameBatchCart.remainingDue, 125, "remaining excludes shipping");
 
 const mixedCart = calculateCartPricing(
@@ -166,12 +174,12 @@ assert.equal(mixedCart.batchShippingQuotes.length, 2);
 closeTo(mixedCart.garmentSubtotal, 300, "mixed garment subtotal");
 closeTo(
   mixedCart.shippingTotal,
-  131.25 + 21.26 + 39.38,
+  131.25 + 30.18 + 45.27,
   "mixed route shipping",
 );
 closeTo(
   mixedCart.depositDueNow,
-  150 + 131.25 + 21.26 + 39.38,
+  150 + 131.25 + 30.18 + 45.27,
   "mixed route due now",
 );
 closeTo(mixedCart.remainingDue, 150, "mixed route remaining");

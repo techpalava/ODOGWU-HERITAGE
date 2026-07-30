@@ -27,7 +27,10 @@ import { useAppStore } from "./store/useAppStore";
 import { CustomerJourneyEngine } from "./engine/CustomerJourneyEngine";
 import { getCurrentRegistrationBatch } from "./utils/batchUtils";
 import { CapacityService } from "./services/CapacityService";
-import { calculateCartPricing } from "./utils/shippingPricing";
+import {
+  BATCH_MINIMUM_GARMENTS,
+  calculateCartPricing,
+} from "./utils/shippingPricing";
 import {
   clampDepositPercentage,
   getDepositRatio,
@@ -825,7 +828,7 @@ export default function App() {
                   {checkoutPricing.batchShippingQuotes.map((quote) => (
                     <div key={quote.batchId} className="space-y-0.5">
                       <div className="flex justify-between">
-                        <span>Batch Shipping - {quote.batchName}:</span>
+                        <span>Flat Batch Shipping - {quote.batchName}:</span>
                         <span className="font-mono">
                           {currencySymbol}
                           {quote.priceEur.toFixed(2)}
@@ -836,7 +839,12 @@ export default function App() {
                         {quote.garmentPieceCount === 1 ? "" : "s"} ·{" "}
                         {currencySymbol}
                         {quote.exactRateEurPerGarment.toFixed(2)} each ·{" "}
-                        {quote.capacityBand} planned capacity
+                        {quote.minimumBatchGarments ??
+                          BATCH_MINIMUM_GARMENTS}
+                        -garment batch minimum
+                        {quote.allowsSplitShipments
+                          ? " · split shipments available for large batches"
+                          : ""}
                       </p>
                     </div>
                   ))}
