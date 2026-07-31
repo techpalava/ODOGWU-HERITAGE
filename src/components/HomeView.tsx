@@ -204,6 +204,7 @@ export default function HomeView({
         onCreatePrivateBatch={onCreatePrivateBatch}
         onBrowseGallery={() => onNavigateToTab("gallery")}
         onManageSourcingBatches={onManageSourcingBatches}
+        onCustomOrder={() => onNavigateToTab("design")}
       />
 
       {/* Editorial Luxury Hero Header */}
