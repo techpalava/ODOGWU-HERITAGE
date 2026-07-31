@@ -1,10 +1,10 @@
-import { getAdminServices } from "./firebaseAdmin";
+import { getAdminServices } from "./firebaseAdmin.js";
 import {
   bootstrapFirebaseCustomer,
   loginWithPin,
   registerWithPin,
-} from "./customerAuth";
-import type { HttpRequest, HttpResponse } from "./httpTypes";
+} from "./customerAuth.js";
+import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 
 function authErrorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "";

@@ -1,4 +1,7 @@
-import type { HttpRequest, HttpResponse } from "../src/server/httpTypes";
+import type {
+  HttpRequest,
+  HttpResponse,
+} from "../src/server/httpTypes.js";
 
 export default function healthHandler(
   _req: HttpRequest,

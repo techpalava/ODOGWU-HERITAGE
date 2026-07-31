@@ -1,1 +1,1 @@
-export { handlePinLogin as default } from "../../src/server/authHttp";
+export { handlePinLogin as default } from "../../src/server/authHttp.js";
