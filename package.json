@@ -14,6 +14,7 @@
     "test:shipping": "tsx test_shipping.ts",
     "test:design-pricing": "tsx test_design_pricing.ts",
     "test:guest-checkout": "tsx test_guest_checkout.ts",
+    "test:homepage-gateway": "tsx test_homepage_order_gateway.ts",
     "test:firestore-security": "tsx test_firestore_security.ts"
   },
   "dependencies": {

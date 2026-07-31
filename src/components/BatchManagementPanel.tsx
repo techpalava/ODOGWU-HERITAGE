@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { Batch } from "../types";
 import { StorageService } from "../services/storageService";
-import { Settings, Save } from "lucide-react";
+import { Eye, Save, Settings } from "lucide-react";
 import { InputField, SelectField } from "./ui/FormControls";
-import { useReferenceDataFallback } from "../hooks/useReferenceData";
+import { normalizeBatchStatus } from "../utils/batchStatus";
+import { getHomepageOrderGatewayState } from "../utils/homepageOrderGateway";
 
 interface BatchManagementPanelProps {
   batches: Batch[];
@@ -13,21 +14,36 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
   const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Batch>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const homepageState = getHomepageOrderGatewayState(batches);
 
-  const statusOptions = useReferenceDataFallback("batch_status", [
-    { value: "Open", label: "Open" },
-    { value: "Closed", label: "Closed" },
-    { value: "Coming Soon", label: "Coming Soon" },
-    { value: "Recruiting", label: "Recruiting" },
-    { value: "Almost Full", label: "Almost Full" },
-    { value: "In Progress", label: "In Progress" },
-    { value: "Completed", label: "Completed" },
-    { value: "Production Started", label: "Production Started" },
-  ]);
+  const statusOptions = [
+    { value: "DRAFT", label: "Draft" },
+    { value: "YET_TO_START", label: "Yet to Start" },
+    { value: "OPEN", label: "Open" },
+    { value: "RECRUITING", label: "Recruiting" },
+    { value: "ALMOST_FULL", label: "Almost Full" },
+    { value: "FULL", label: "Full" },
+    { value: "CLOSED", label: "Closed" },
+    { value: "COMING_SOON", label: "Coming Soon" },
+    { value: "PRODUCTION_READY", label: "Production Ready" },
+    { value: "PRODUCTION_STARTED", label: "Production Started" },
+    { value: "QUALITY_CONTROL", label: "Quality Control" },
+    { value: "PACKED", label: "Packed" },
+    { value: "SHIPPED", label: "Shipped" },
+    { value: "ARRIVED_NETHERLANDS", label: "Arrived in the Netherlands" },
+    { value: "READY_FOR_PICKUP", label: "Ready for Pickup" },
+    { value: "COLLECTED", label: "Collected" },
+    { value: "COMPLETED", label: "Completed" },
+  ];
 
   const handleEdit = (batch: Batch) => {
     setEditingBatchId(batch.id || batch.batchNumber.toString());
-    setFormData(batch);
+    setFormData({
+      ...batch,
+      status: normalizeBatchStatus(batch.status) as Batch["status"],
+    });
+    setSaveFeedback(null);
   };
 
   const handleCreateBatch = async () => {
@@ -54,8 +70,12 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
       };
 
       await StorageService.saveBatches([newBatch]);
+      setSaveFeedback(
+        `${newBatch.name} created. Edit its dates and enable orders when it is ready.`,
+      );
     } catch (e) {
       console.error("Failed to create batch", e);
+      setSaveFeedback("The batch could not be created. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -63,7 +83,35 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
 
   const handleSave = async () => {
     if (!editingBatchId || !formData) return;
-    
+
+    const name = formData.name?.trim();
+    const targetGarments = Number(formData.targetGarments);
+    const currentGarments = Number(formData.currentGarments);
+    const startDate = formData.startDate || "";
+    const endDate = formData.endDate || "";
+
+    if (!name || !startDate || !endDate) {
+      setSaveFeedback("Batch name, start date, and end date are required.");
+      return;
+    }
+    if (startDate > endDate) {
+      setSaveFeedback("The registration closing date must follow the opening date.");
+      return;
+    }
+    if (
+      !Number.isFinite(targetGarments) ||
+      targetGarments < homepageState.minimumGarments
+    ) {
+      setSaveFeedback(
+        `Target garments must be at least ${homepageState.minimumGarments}.`,
+      );
+      return;
+    }
+    if (!Number.isFinite(currentGarments) || currentGarments < 0) {
+      setSaveFeedback("Current garments cannot be negative.");
+      return;
+    }
+
     setIsSaving(true);
     try {
       // Find original batch and merge
@@ -72,7 +120,15 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
 
       const updatedBatch: Batch = {
         ...originalBatch,
-        ...formData
+        ...formData,
+        name,
+        startDate,
+        endDate,
+        targetGarments,
+        currentGarments,
+        status: normalizeBatchStatus(formData.status) as Batch["status"],
+        visibility: formData.visibility || "PUBLIC",
+        updatedDate: new Date().toISOString(),
       };
 
       let batchesToSave = [updatedBatch];
@@ -84,11 +140,23 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
       }
 
       await StorageService.saveBatches(batchesToSave);
-      
+
+      const nextHomepageState = getHomepageOrderGatewayState(
+        batches.map((batch) =>
+          batchesToSave.find((savedBatch) => savedBatch.id === batch.id) ||
+          batch,
+        ),
+      );
+      setSaveFeedback(
+        nextHomepageState.joinBatch
+          ? `Saved. The homepage button is now "Join ${nextHomepageState.joinBatch.name}".`
+          : "Saved. No Type B homepage button is currently eligible.",
+      );
       setEditingBatchId(null);
       setFormData({});
     } catch (e) {
       console.error("Failed to save batch", e);
+      setSaveFeedback("The timeline could not be saved. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -100,11 +168,11 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
         <div>
           <h3 className="font-serif font-bold text-lg text-heritage-green mb-2 flex items-center gap-2">
             <Settings className="h-5 w-5 text-heritage-gold" />
-            Batch Timeline Management (Admin Override)
+            Sourcing Batches
           </h3>
           <p className="text-xs text-heritage-ink/70 max-w-2xl">
-            The Timeline system automatically drives batch statuses globally based on their dates. 
-            You can disable automatic scheduling per-batch to manually force its status or edit timelines here.
+            Registration dates, order permission, visibility, and capacity
+            determine the live Type B button on the homepage.
           </p>
         </div>
         <button
@@ -115,6 +183,42 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
            + Create New Batch
         </button>
       </div>
+
+      <div
+        aria-live="polite"
+        className="mb-6 flex flex-col gap-3 border-y border-heritage-gold/20 bg-heritage-cream/25 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div className="flex items-start gap-3">
+          <Eye
+            className="mt-0.5 h-5 w-5 shrink-0 text-heritage-gold"
+            aria-hidden="true"
+          />
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-green/65">
+              Homepage Type B Button
+            </p>
+            <p className="mt-1 font-display text-lg font-bold text-heritage-green">
+              {homepageState.joinBatch
+                ? `Join ${homepageState.joinBatch.name}`
+                : "Hidden - no joinable sourcing batch"}
+            </p>
+          </div>
+        </div>
+        <p className="max-w-xl text-xs leading-relaxed text-heritage-ink/65">
+          {homepageState.joinBatch
+            ? "This public batch is inside its registration window, accepts orders, and has capacity."
+            : "Type B appears when one public batch is open by its dates or manual status, allows orders, and has remaining capacity."}
+        </p>
+      </div>
+
+      {saveFeedback && (
+        <p
+          role="status"
+          className="mb-4 border-l-2 border-heritage-gold bg-heritage-cream/30 px-3 py-2 text-xs font-semibold text-heritage-green"
+        >
+          {saveFeedback}
+        </p>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
@@ -150,6 +254,20 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
                            value={formData.displayOrder?.toString() || ""} 
                            onChange={(e) => setFormData({...formData, displayOrder: parseInt(e.target.value) || 0})} 
                         />
+                        <SelectField
+                          label="Homepage Visibility"
+                          value={formData.visibility || "PUBLIC"}
+                          options={[
+                            { value: "PUBLIC", label: "Public" },
+                            { value: "PRIVATE", label: "Private" },
+                          ]}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              visibility: e.target.value as Batch["visibility"],
+                            })
+                          }
+                        />
                       </div>
                     </td>
                     <td className="p-3 align-top">
@@ -180,6 +298,31 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
                            className="w-4 h-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
                         />
                         <span className="text-xs font-bold text-gray-700">Allow Orders</span>
+                      </div>
+
+                      <div className="mt-4 space-y-3 border-t border-heritage-gold/15 pt-3">
+                        <InputField
+                          label="Target Garments"
+                          type="number"
+                          value={formData.targetGarments?.toString() || ""}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              targetGarments: Number(e.target.value),
+                            })
+                          }
+                        />
+                        <InputField
+                          label="Current Garments"
+                          type="number"
+                          value={formData.currentGarments?.toString() || "0"}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              currentGarments: Number(e.target.value),
+                            })
+                          }
+                        />
                       </div>
 
                     </td>

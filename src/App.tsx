@@ -200,6 +200,9 @@ export default function App() {
       }
     : null;
 
+  const [adminPortalInitialTab, setAdminPortalInitialTab] = useState<
+    "batches" | null
+  >(null);
 
   // Active masterOrder synced from current user's latest order in orders database, or first order as default
   const [masterOrder, setMasterOrder] = useState<MasterOrder | null>(null);
@@ -699,7 +702,32 @@ export default function App() {
                     | "custom-order"
                     | "login",
                 ) => setActiveTab(tabId)}
-                activeCommunityBatch={activeCommunityBatch}
+                onJoinCommunityBatch={() => {
+                  if (!activeCommunityBatch) {
+                    return;
+                  }
+                  setPresetStyleId(null);
+                  setPresetFabricCode(null);
+                  setOrderContext(activeCommunityBatch);
+                  setActiveTab("design");
+                }}
+                onCreatePrivateBatch={() => {
+                  setOrderContext(null);
+                  setActiveTab("custom-order");
+                  setTimeout(() => {
+                    document
+                      .getElementById("option-create-group")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }, 200);
+                }}
+                onManageSourcingBatches={
+                  AuthorizationEngine.canManageBatches(currentUser)
+                    ? () => {
+                        setAdminPortalInitialTab("batches");
+                        setActiveTab("database");
+                      }
+                    : undefined
+                }
                 communityPhotos={communityPhotos}
                 showpieces={showpieces}
                 fabrics={fabrics}
@@ -888,6 +916,8 @@ export default function App() {
                   setBatches={setBatches}
                   businessSettings={businessSettings}
                   setBusinessSettings={setBusinessSettings}
+                  initialTab={adminPortalInitialTab || undefined}
+                  onInitialTabApplied={() => setAdminPortalInitialTab(null)}
                 />
               </AdminAuthGuard>
             )}
