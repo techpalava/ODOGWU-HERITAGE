@@ -18,6 +18,8 @@ export interface BiometricConsent {
 }
 
 export interface Customer {
+  ownerUid?: string;
+  canonicalEmail?: string;
   name: string;
   email: string;
   phone: string;
@@ -212,6 +214,7 @@ export interface CustomDetailSelectionSnapshot {
 
 export interface IndividualShippingSnapshot {
   routeId: "LAGOS_EINDHOVEN";
+  pricingVersion: string;
   origin: "Lagos";
   destination: "Eindhoven";
   garmentPieceCount: number;
@@ -225,6 +228,7 @@ export interface IndividualShippingSnapshot {
 export interface BatchShippingSnapshot {
   routeId: "LAGOS_EINDHOVEN_BATCH";
   pricingVersion: string;
+  rateModel?: "FLAT_PER_GARMENT";
   origin: "Lagos";
   destination: "Eindhoven";
   batchId: string;
@@ -235,13 +239,121 @@ export interface BatchShippingSnapshot {
     | "5 - 10 garments"
     | "11 - 20 garments"
     | "21 - 40 garments"
-    | "41+ garments";
+    | "41+ garments"
+    | "10+ garments";
+  minimumBatchGarments?: number;
+  allowsSplitShipments?: boolean;
   garmentPieceCount: number;
   exactRateEurPerGarment: number;
   rateNgnPerGarment: number;
   priceEur: number;
   priceNgn: number;
   exchangeRateNgnPerEur: number;
+}
+
+export type DeliveryMethod = "PICKUP" | "DELIVERY";
+
+export type FinalMileDestinationZone =
+  | "EINDHOVEN"
+  | "NETHERLANDS_OTHER"
+  | "EUROPE"
+  | "NORTH_AMERICA"
+  | "SOUTH_AMERICA"
+  | "AFRICA"
+  | "ASIA";
+
+export type FinalMileWeightBand =
+  | "0 - 2 kg"
+  | ">2 - 5 kg"
+  | ">5 - 10 kg"
+  | ">10 - 20 kg"
+  | ">20 kg";
+
+export type ShippingQuoteStatus =
+  | "READY"
+  | "DESTINATION_REQUIRED"
+  | "MANUAL_QUOTE_REQUIRED";
+
+export type FinalMileWeightSource =
+  | "ACTUAL_WEIGHT"
+  | "GARMENT_COUNT_ESTIMATE";
+
+export interface DeliveryAddress {
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  postalCode: string;
+  countryCode: string;
+}
+
+export interface DeliverySelection {
+  method: DeliveryMethod;
+  pickupLocation?: string;
+  pickupWindow?: string;
+  address?: DeliveryAddress;
+  // Trusted fulfillment data can override the garment-count estimate.
+  actualParcelWeightKg?: number;
+}
+
+export interface FinalMileShippingSnapshot {
+  routeId: "EINDHOVEN_DESTINATION";
+  pricingVersion: string;
+  shipmentGroupId: string;
+  arrivalGroupKey: string;
+  status: ShippingQuoteStatus;
+  method: DeliveryMethod | null;
+  zone: FinalMileDestinationZone | null;
+  zoneLabel: string;
+  address?: DeliveryAddress;
+  pickupLocation?: string;
+  pickupWindow?: string;
+  garmentPieceCount: number;
+  weightSource: FinalMileWeightSource | null;
+  actualParcelWeightKg?: number;
+  weightBand: FinalMileWeightBand | null;
+  priceEur: number | null;
+  manualQuoteReason?: string;
+}
+
+export interface ShippingBreakdownSnapshot {
+  lagosToEindhovenShipping: number;
+  eindhovenToDestinationShipping: number | null;
+  totalShipping: number | null;
+  status: ShippingQuoteStatus;
+}
+
+export type CartShippingReviewStatus =
+  | "CURRENT"
+  | "CONFIRMATION_REQUIRED"
+  | "REVIEW_REQUIRED";
+
+export interface CartShippingSnapshot {
+  pricingVersion: string;
+  repricedAt: string;
+  sourceFingerprint: string;
+  status: CartShippingReviewStatus;
+  garmentPieceCount: number | null;
+  lagosToEindhovenShipping: number | null;
+  eindhovenToDestinationShipping: number | null;
+  totalShipping: number | null;
+  previousShippingTotal?: number;
+  updatedShippingTotal?: number;
+  confirmedAt?: string;
+  reviewReason?: string;
+}
+
+export type CartPricingReviewStatus =
+  | "CURRENT"
+  | "CONFIRMATION_REQUIRED";
+
+export interface CartPricingReview {
+  pricingVersion: string;
+  repricedAt: string;
+  sourceFingerprint: string;
+  status: CartPricingReviewStatus;
+  previousGarmentSubtotal: number;
+  updatedGarmentSubtotal: number;
+  confirmedAt?: string;
 }
 
 export interface GarmentSelection {
@@ -355,6 +467,7 @@ export interface ShipmentTracking {
 }
 
 export interface MasterOrder {
+  ownerUid?: string;
   customer: Customer;
   style: StyleCategory;
   fabric: Fabric;
@@ -368,6 +481,10 @@ export interface MasterOrder {
   batchType?: "community" | "alone" | "personalized" | "actual";
   batchName?: string;
   customGroupCode?: string;
+  checkoutId?: string;
+  deliverySelection?: DeliverySelection;
+  finalMileShipping?: FinalMileShippingSnapshot;
+  shippingBreakdown?: ShippingBreakdownSnapshot;
 }
 
 export interface HistoricalOrder {
@@ -396,6 +513,70 @@ export interface CartItem {
   batchId?: string;
   batchName?: string;
   customGroupCode?: string;
+  garmentPieceCount?: number;
+  deliverySelection?: DeliverySelection;
+  shippingSnapshot?: CartShippingSnapshot;
+  pricingReview?: CartPricingReview;
+  guestCartId?: string;
+  configurationHash?: string;
+  claimedByEmail?: string;
+}
+
+export interface GuestDesignDraft {
+  currentStep: number;
+  selectedFabricCode: string | null;
+  selectedStyleId: string | null;
+  selectedGarment: {
+    type: string;
+    fee: number;
+    discountFee?: number;
+    code?: string;
+  } | null;
+  designSelections: DesignSelections;
+  measurements: Measurements;
+  sizingMode: "ai" | "manual";
+  deliveryMethod: DeliveryMethod | null;
+  deliveryAddress: DeliveryAddress;
+  pickupTime: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  batchType: "community" | "alone" | "personalized" | "actual";
+  batchId?: string;
+  batchName?: string;
+  customGroupCode: string;
+  garmentPieceCount: number | null;
+  specialInstructions: string;
+  leftoverFabricChoice: string;
+  hasLining: boolean;
+  pricingBreakdown: {
+    fabricPrice: number;
+    fabricSewingCost: number;
+    constructionSewingCost: number;
+    customDetailsPrice: number;
+    lagosToEindhovenShipping: number;
+    eindhovenToDestinationShipping: number | null;
+    total: number;
+  };
+  shippingSnapshot: {
+    individual?: IndividualShippingSnapshot;
+    batch?: BatchShippingSnapshot;
+    finalMile?: FinalMileShippingSnapshot;
+  };
+  updatedAt: string;
+}
+
+export interface GuestOrderSession {
+  schemaVersion: string;
+  guestCartId: string;
+  status: "ACTIVE" | "CLAIMED";
+  createdAt: string;
+  updatedAt: string;
+  checkoutIntent: boolean;
+  designDraft?: GuestDesignDraft;
+  cartItems: CartItem[];
+  claimedAt?: string;
+  claimedByEmail?: string;
 }
 
 export interface OrderContext {
@@ -498,6 +679,8 @@ export interface BusinessSettings {
     automaticBatchStatusRules: boolean;
   };
   shippingSettings: {
+    // Legacy mirrors retained for persisted settings. Active batch pricing is
+    // controlled by the centralized flat-rate shipping policy.
     communityBatchShippingRate: number;
     individualOrderShippingRate: number;
     personalizedBatchShippingRate: number;
@@ -579,6 +762,7 @@ export interface DiscountSettings {
 }
 
 export interface CustomGroup {
+  ownerUid?: string;
   batchId: string;
   batchName: string;
   occasion: string;

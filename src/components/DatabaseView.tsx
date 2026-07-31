@@ -72,6 +72,10 @@ import {
   PRICING_CURRENCY,
   PRICING_CURRENCY_SYMBOL,
 } from "../utils/money";
+import {
+  BATCH_FLAT_RATE_EUR_PER_GARMENT,
+  BATCH_MINIMUM_GARMENTS,
+} from "../utils/shippingPricing";
 
 interface DatabaseViewProps {
   customers: Customer[];
@@ -806,7 +810,9 @@ export default function DatabaseView({
   // USERS
   const handleSaveUser = (e: React.FormEvent) => {
     e.preventDefault();
-    const item = editingItem as Customer;
+    const { passcode: _legacyPasscode, ...safeEditingItem } =
+      editingItem as Customer;
+    const item = safeEditingItem as Customer;
     if (!item.email || !item.name) {
       alert("Email and Name are required.");
       return;
@@ -825,8 +831,8 @@ export default function DatabaseView({
         ...prev,
         {
           ...item,
-          passcode: item.passcode || "1960",
-          role: item.role || "Engineer",
+          passcode: undefined,
+          role: item.role || "Customer",
           location: item.location || businessSettings.productionSettings.defaultPickupLocation,
         },
       ]);
@@ -1431,23 +1437,6 @@ export default function DatabaseView({
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                         placeholder={`e.g. ${businessSettings.productionSettings.defaultPickupLocation}`}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="font-bold text-heritage-green">
-                        User Security PIN (Passcode)
-                      </label>
-                      <input
-                        type="text"
-                        maxLength={4}
-                        value={editingItem.passcode || "1960"}
-                        onChange={(e) =>
-                          setEditingItem({
-                            ...editingItem,
-                            passcode: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg font-mono tracking-widest"
                       />
                     </div>
                     <div className="space-y-1">
@@ -3829,8 +3818,7 @@ export default function DatabaseView({
                         email: "",
                         phone: "",
                         location: businessSettings.productionSettings.defaultPickupLocation,
-                        role: "Active Cohort Member",
-                        passcode: "1960",
+                        role: "Customer",
                         measurementProfile: {
                           height: 180,
                           weight: 78,
@@ -3865,7 +3853,6 @@ export default function DatabaseView({
                           <th className="px-4 py-3">Phone</th>
                           <th className="px-4 py-3">Campus Location</th>
                           <th className="px-4 py-3">Role Class</th>
-                          <th className="px-4 py-3">PIN</th>
                           <th className="px-4 py-3 text-right">Actions</th>
                         </tr>
                       </thead>
@@ -3901,9 +3888,6 @@ export default function DatabaseView({
                                 <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-heritage-gold/10 text-heritage-gold border border-heritage-gold/20">
                                   {c.role || "Active Cohort Member"}
                                 </span>
-                              </td>
-                              <td className="px-4 py-3 font-mono text-gray-400 select-all">
-                                {c.passcode || "1960"}
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="flex gap-2 justify-end">
@@ -5642,26 +5626,14 @@ export default function DatabaseView({
                             <label className="text-xs text-gray-600 font-medium">
                               Minimum Garments Per Batch
                             </label>
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              value={
-                                businessSettings.batchSettings
-                                  .minGarmentsPerBatch
-                              }
-                              onChange={(e) =>
-                                setBusinessSettings((prev) => ({
-                                  ...prev,
-                                  batchSettings: {
-                                    ...prev.batchSettings,
-                                    minGarmentsPerBatch:
-                                      parseInt(e.target.value) || 0,
-                                  },
-                                }))
-                              }
-                              className="w-24 px-2 py-1 text-right border border-gray-200 rounded text-xs focus:outline-none focus:border-heritage-gold"
-                            />
+                            <div className="text-right">
+                              <strong className="block text-xs font-mono text-heritage-green">
+                                {BATCH_MINIMUM_GARMENTS}
+                              </strong>
+                              <span className="block text-[9px] text-gray-400">
+                                Flat-rate dispatch policy
+                              </span>
+                            </div>
                           </div>
                           <div className="flex justify-between items-center">
                             <label className="text-xs text-gray-600 font-medium">
@@ -5770,27 +5742,18 @@ export default function DatabaseView({
                         <div className="space-y-3">
                           <div className="flex justify-between items-center">
                             <label className="text-xs text-gray-600 font-medium">
-                              Community Batch Shipping Rate (
+                              Flat Batch Shipping per Garment (
                               {PRICING_CURRENCY})
                             </label>
-                            <input
-                              type="number"
-                              value={
-                                businessSettings.shippingSettings
-                                  .communityBatchShippingRate
-                              }
-                              onChange={(e) =>
-                                setBusinessSettings((prev) => ({
-                                  ...prev,
-                                  shippingSettings: {
-                                    ...prev.shippingSettings,
-                                    communityBatchShippingRate:
-                                      parseFloat(e.target.value) || 0,
-                                  },
-                                }))
-                              }
-                              className="w-24 px-2 py-1 text-right border border-gray-200 rounded text-xs focus:outline-none focus:border-heritage-gold"
-                            />
+                            <div className="text-right">
+                              <strong className="block text-xs font-mono text-heritage-green">
+                                {PRICING_CURRENCY_SYMBOL}
+                                {BATCH_FLAT_RATE_EUR_PER_GARMENT.toFixed(2)}
+                              </strong>
+                              <span className="block text-[9px] text-gray-400">
+                                Community + personalized
+                              </span>
+                            </div>
                           </div>
                           <div className="flex justify-between items-center">
                             <label className="text-xs text-gray-600 font-medium">
@@ -5816,30 +5779,12 @@ export default function DatabaseView({
                               className="w-24 px-2 py-1 text-right border border-gray-200 rounded text-xs focus:outline-none focus:border-heritage-gold"
                             />
                           </div>
-                          <div className="flex justify-between items-center">
-                            <label className="text-xs text-gray-600 font-medium">
-                              Personalized Batch Shipping (
-                              {PRICING_CURRENCY})
-                            </label>
-                            <input
-                              type="number"
-                              value={
-                                businessSettings.shippingSettings
-                                  .personalizedBatchShippingRate
-                              }
-                              onChange={(e) =>
-                                setBusinessSettings((prev) => ({
-                                  ...prev,
-                                  shippingSettings: {
-                                    ...prev.shippingSettings,
-                                    personalizedBatchShippingRate:
-                                      parseFloat(e.target.value) || 0,
-                                  },
-                                }))
-                              }
-                              className="w-24 px-2 py-1 text-right border border-gray-200 rounded text-xs focus:outline-none focus:border-heritage-gold"
-                            />
-                          </div>
+                          <p className="text-[10px] leading-relaxed text-gray-500">
+                            Batch dispatch requires at least{" "}
+                            {BATCH_MINIMUM_GARMENTS} confirmed garments. Large
+                            batches may be split across shipments at the same
+                            per-garment rate.
+                          </p>
                           <div className="flex justify-between items-center">
                             <label className="text-xs text-gray-600 font-medium">
                               International Delivery Surcharge
@@ -7728,29 +7673,19 @@ export default function DatabaseView({
                         </p>
                       </div>
                       <div className="space-y-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div className="space-y-1">
                             <label className="text-xs text-gray-600 font-medium block">
-                              Community Batch Shipping Rate (€)
+                              Flat Batch Shipping per Garment (
+                              {PRICING_CURRENCY_SYMBOL})
                             </label>
-                            <input
-                              type="number"
-                              value={
-                                businessSettings.shippingSettings
-                                  .communityBatchShippingRate
-                              }
-                              onChange={(e) => {
-                                const val = parseInt(e.target.value) || 0;
-                                setBusinessSettings((prev) => ({
-                                  ...prev,
-                                  shippingSettings: {
-                                    ...prev.shippingSettings,
-                                    communityBatchShippingRate: val,
-                                  },
-                                }));
-                              }}
-                              className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:border-heritage-gold font-mono"
-                            />
+                            <div className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-mono text-heritage-green bg-gray-50">
+                              {BATCH_FLAT_RATE_EUR_PER_GARMENT.toFixed(2)}
+                            </div>
+                            <p className="text-[9px] text-gray-400">
+                              Community and personalized batches · minimum{" "}
+                              {BATCH_MINIMUM_GARMENTS} confirmed garments
+                            </p>
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs text-gray-600 font-medium block">
@@ -7769,29 +7704,6 @@ export default function DatabaseView({
                                   shippingSettings: {
                                     ...prev.shippingSettings,
                                     individualOrderShippingRate: val,
-                                  },
-                                }));
-                              }}
-                              className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs outline-none focus:border-heritage-gold font-mono"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs text-gray-600 font-medium block">
-                              Personalized Group Shipping Rate (€)
-                            </label>
-                            <input
-                              type="number"
-                              value={
-                                businessSettings.shippingSettings
-                                  .personalizedBatchShippingRate
-                              }
-                              onChange={(e) => {
-                                const val = parseInt(e.target.value) || 0;
-                                setBusinessSettings((prev) => ({
-                                  ...prev,
-                                  shippingSettings: {
-                                    ...prev.shippingSettings,
-                                    personalizedBatchShippingRate: val,
                                   },
                                 }));
                               }}

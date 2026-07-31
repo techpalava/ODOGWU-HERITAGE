@@ -6,6 +6,7 @@ import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 import { useAppStore } from "../store/useAppStore";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 import { Customer } from "../types";
+import { FirebaseCustomerAuth } from "../services/firebaseCustomerAuth";
 
 interface AdminAuthGuardProps {
   children: React.ReactNode;
@@ -18,8 +19,7 @@ export function AdminAuthGuard({
   onNavigateHome,
   requiredPermission,
 }: AdminAuthGuardProps) {
-  const { currentUser, setCustomers, customers, setCurrentUser } =
-    useAppStore();
+  const { currentUser, setCurrentUser } = useAppStore();
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
 
@@ -29,29 +29,8 @@ export function AdminAuthGuard({
       setLoading(true);
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-
-      let existingAcc = customers.find(
-        (acc) => (acc.email || "").trim().toLowerCase() === (user.email || "").trim().toLowerCase(),
-      );
-
-      if (!existingAcc) {
-        existingAcc = {
-          name: user.displayName || "Admin User",
-          email: user.email || "",
-          phone: user.phoneNumber || "",
-          passcode: "1960", // Legacy compat
-          role: AuthorizationEngine.resolveRole({ email: user.email } as any),
-          orderStatus: "Fresh Passport Activation",
-          method: "gmail",
-        } as any;
-        setCustomers([...customers, existingAcc]);
-      } else {
-        // Ensure role is updated
-        existingAcc.role = AuthorizationEngine.resolveRole(existingAcc);
-      }
-      
-      setCurrentUser(existingAcc!);
+      const customer = await FirebaseCustomerAuth.bootstrap(result.user);
+      setCurrentUser(customer);
       setLoading(false);
     } catch (err: any) {
       console.error("Login failed:", err);

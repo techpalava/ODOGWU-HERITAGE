@@ -20,6 +20,10 @@ import { useAppStore } from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { CapacityService } from "../services/CapacityService";
 import { useReferenceDataFallback } from "../hooks/useReferenceData";
+import {
+  BATCH_FLAT_RATE_EUR_PER_GARMENT,
+  BATCH_MINIMUM_GARMENTS,
+} from "../utils/shippingPricing";
 
 interface CustomOrderViewProps {
   customGroups: CustomGroup[];
@@ -117,7 +121,7 @@ export default function CustomOrderView({
         orderType: "Group Organizer",
         batchId: `GRP-${batchName.replace(/\s+/g, "")}`,
         batchName: batchName,
-        organizer: currentUser?.name || "Xavier E.",
+        organizer: currentUser?.name || "Guest organizer",
         deliveryWindow: `Late ${preferredDeliveryMonth}`,
         expectedParticipants: expectedParticipants,
         currentMembers: 1,
@@ -314,6 +318,14 @@ export default function CustomOrderView({
                   />
                 </div>
               </div>
+
+              <p className="text-[10px] leading-relaxed text-heritage-ink/55">
+                Batch shipping from Lagos to Eindhoven is €
+                {BATCH_FLAT_RATE_EUR_PER_GARMENT.toFixed(2)} per garment. A
+                group must reach at least {BATCH_MINIMUM_GARMENTS} confirmed
+                garments; larger batches may be divided into multiple
+                shipments at the same per-garment rate.
+              </p>
 
               <div className="space-y-1">
                 <label className="text-[10px] uppercase font-bold text-heritage-ink/60">

@@ -1,37 +1,41 @@
 import { BatchProgressEngine, BatchProgressSummary } from "../engine/BatchProgressEngine";
 import { Batch, OrderContext } from "../types";
-import { useAppStore } from "../store/useAppStore";
 
 export const CapacityService = {
-  getCapacitySummary(dataOrId: string | Batch | Partial<OrderContext> | null | undefined): BatchProgressSummary {
-    let data: Batch | Partial<OrderContext> | null | undefined = undefined;
-    if (typeof dataOrId === "string") {
-      const batches = useAppStore.getState().batches;
-      data = batches.find((b) => b.id === dataOrId);
-    } else {
-      data = dataOrId;
-    }
+  getCapacitySummary(
+    data: Batch | Partial<OrderContext> | null | undefined,
+  ): BatchProgressSummary {
     return BatchProgressEngine.getSummary(data);
   },
 
-  getReservedCapacity(dataOrId: string | Batch | Partial<OrderContext> | null | undefined): number {
-    return this.getCapacitySummary(dataOrId).committedGarments;
+  getReservedCapacity(
+    data: Batch | Partial<OrderContext> | null | undefined,
+  ): number {
+    return this.getCapacitySummary(data).committedGarments;
   },
 
-  getRemainingCapacity(dataOrId: string | Batch | Partial<OrderContext> | null | undefined): number {
-    return this.getCapacitySummary(dataOrId).remainingGarments;
+  getRemainingCapacity(
+    data: Batch | Partial<OrderContext> | null | undefined,
+  ): number {
+    return this.getCapacitySummary(data).remainingGarments;
   },
 
-  getTargetCapacity(dataOrId: string | Batch | Partial<OrderContext> | null | undefined): number {
-    return this.getCapacitySummary(dataOrId).targetGarments;
+  getTargetCapacity(
+    data: Batch | Partial<OrderContext> | null | undefined,
+  ): number {
+    return this.getCapacitySummary(data).targetGarments;
   },
 
-  getCapacityStatus(dataOrId: string | Batch | Partial<OrderContext> | null | undefined) {
-    return this.getCapacitySummary(dataOrId).capacityStatus;
+  getCapacityStatus(
+    data: Batch | Partial<OrderContext> | null | undefined,
+  ) {
+    return this.getCapacitySummary(data).capacityStatus;
   },
 
-  getCapacityBreakdown(dataOrId: string | Batch | Partial<OrderContext> | null | undefined) {
-    const summary = this.getCapacitySummary(dataOrId);
+  getCapacityBreakdown(
+    data: Batch | Partial<OrderContext> | null | undefined,
+  ) {
+    const summary = this.getCapacitySummary(data);
     return {
       reserved: summary.committedGarments,
       remaining: summary.remainingGarments,
@@ -40,12 +44,16 @@ export const CapacityService = {
     };
   },
 
-  isBatchFull(dataOrId: string | Batch | Partial<OrderContext> | null | undefined): boolean {
-    const status = this.getCapacityStatus(dataOrId);
+  isBatchFull(
+    data: Batch | Partial<OrderContext> | null | undefined,
+  ): boolean {
+    const status = this.getCapacityStatus(data);
     return status === "FULL" || status === "OVERCAPACITY";
   },
 
-  isCapacityAvailable(dataOrId: string | Batch | Partial<OrderContext> | null | undefined): boolean {
-    return !this.isBatchFull(dataOrId);
+  isCapacityAvailable(
+    data: Batch | Partial<OrderContext> | null | undefined,
+  ): boolean {
+    return !this.isBatchFull(data);
   }
 };

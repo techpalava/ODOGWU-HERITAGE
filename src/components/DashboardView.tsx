@@ -6,6 +6,7 @@ import { OrderRoutingEngine } from "../engine/OrderRoutingEngine";
 import { Edit2, Users, User, Share2, Trash2, CheckCircle2, FileText, Check, Shield, X, CreditCard, Mail, Printer } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
+import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
 
 interface DashboardViewProps {
   masterOrder: MasterOrder | null;
@@ -654,10 +655,43 @@ export default function DashboardView({
                                 ? `€${selectedReceipt.garment.courierSurcharge.toFixed(2)} (legacy quote)`
                                 : "Quote unavailable"
                             : selectedReceipt.garment?.batchShipping
-                              ? `€${selectedReceipt.garment.batchShipping.priceEur.toFixed(2)} (${selectedReceipt.garment.batchShipping.capacityBand})`
+                              ? selectedReceipt.garment.batchShipping.rateModel ===
+                                "FLAT_PER_GARMENT"
+                                ? `€${selectedReceipt.garment.batchShipping.priceEur.toFixed(2)} (€${selectedReceipt.garment.batchShipping.exactRateEurPerGarment.toFixed(2)} per garment; ${selectedReceipt.garment.batchShipping.minimumBatchGarments ?? BATCH_MINIMUM_GARMENTS}-garment batch minimum)`
+                                : `€${selectedReceipt.garment.batchShipping.priceEur.toFixed(2)} (${selectedReceipt.garment.batchShipping.capacityBand}, legacy quote)`
                               : "Batch quote unavailable"}
                         </strong>
                       </div>
+                      {selectedReceipt.finalMileShipping && (
+                        <div>
+                          Final Delivery:{" "}
+                          <strong className="text-heritage-green">
+                            {selectedReceipt.finalMileShipping.method ===
+                            "PICKUP"
+                              ? `${selectedReceipt.finalMileShipping.pickupLocation} pickup (€0.00)`
+                              : selectedReceipt.finalMileShipping.status ===
+                                  "READY"
+                                ? `${selectedReceipt.finalMileShipping.zoneLabel} (${selectedReceipt.finalMileShipping.weightBand}) · €${(
+                                    selectedReceipt.shippingBreakdown
+                                      ?.eindhovenToDestinationShipping ?? 0
+                                  ).toFixed(2)}`
+                                : "Shipping quote required"}
+                          </strong>
+                        </div>
+                      )}
+                      {selectedReceipt.shippingBreakdown &&
+                        selectedReceipt.shippingBreakdown.totalShipping !==
+                          null && (
+                          <div>
+                            Total Shipping:{" "}
+                            <strong className="text-heritage-green">
+                              €
+                              {selectedReceipt.shippingBreakdown.totalShipping.toFixed(
+                                2,
+                              )}
+                            </strong>
+                          </div>
+                        )}
                       {selectedReceipt.design.optionalAccessories && selectedReceipt.design.optionalAccessories.length > 0 && (
                         <div>
                           Selected Accessories:{" "}

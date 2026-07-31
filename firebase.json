@@ -1,0 +1,6 @@
+{
+  "firestore": {
+    "database": "ai-studio-theodogwuheritag-179eff1a-bd76-4f7f-9dba-3006b52d6a9f",
+    "rules": "firestore.rules"
+  }
+}

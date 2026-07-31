@@ -1,4 +1,9 @@
 import { Customer } from "../types";
+import {
+  ALLOWED_ADMIN_EMAILS,
+  getCanonicalEmail,
+  isAllowedAdminEmail,
+} from "../security/authIdentity";
 
 export class AuthorizationEngine {
   // Base role definitions (future expansion should load this dynamically)
@@ -12,43 +17,14 @@ export class AuthorizationEngine {
     SUPER_ADMINISTRATOR: "Super Administrator",
   };
 
-  static ALLOWED_ADMIN_EMAILS = [
-    "techpalavabox@gmail.com",
-    "f.o.startups@gmail.com",
-    "vaprecfamily@gmail.com",
-    "millstechbox@gmail.com"
-  ];
+  static ALLOWED_ADMIN_EMAILS = [...ALLOWED_ADMIN_EMAILS];
 
   static getCanonicalEmail(email?: string): string {
-    if (!email) return "";
-    let canonical = email.trim().toLowerCase();
-    
-    const parts = canonical.split('@');
-    if (parts.length !== 2) return canonical;
-    
-    let [localPart, domain] = parts;
-    
-    if (domain === 'googlemail.com') {
-      domain = 'gmail.com';
-    }
-    
-    if (domain === 'gmail.com') {
-      const plusIndex = localPart.indexOf('+');
-      if (plusIndex !== -1) {
-        localPart = localPart.substring(0, plusIndex);
-      }
-      localPart = localPart.replace(/\./g, '');
-    }
-    
-    return `${localPart}@${domain}`;
+    return getCanonicalEmail(email);
   }
 
   static isAdminEmail(email?: string): boolean {
-    if (!email) return false;
-    const canonicalInput = this.getCanonicalEmail(email);
-    return this.ALLOWED_ADMIN_EMAILS.some(
-      allowed => this.getCanonicalEmail(allowed) === canonicalInput
-    );
+    return isAllowedAdminEmail(email);
   }
 
   // Helper to resolve the role of the user, defaults to Guest
@@ -79,8 +55,7 @@ export class AuthorizationEngine {
       case "dashboard":
         return this.canViewCustomerPortal(user);
       case "design":
-        // Legacy flow required a logged in user to even view the design studio to protect pending redirects
-        return this.canSubmitOrder(user);
+        return this.canViewDesignStudio(user);
       case "database":
         return this.canViewStaffDashboard(user);
       default:

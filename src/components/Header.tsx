@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import {
   Compass,
   Shirt,
@@ -13,8 +12,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { auth } from "../services/firebase";
-import { StorageService } from "../services/storageService";
-import { signOut, onAuthStateChanged } from "firebase/auth";
+import { signOut } from "firebase/auth";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 
@@ -26,21 +24,12 @@ export function Header() {
   const cartItemsCount = useAppStore((state) => state.cartItems.length);
   const businessSettings = useAppStore((state) => state.businessSettings);
 
-  const [user, setUser] = useState<any>(null);
-
-  useEffect(() => {
-    return onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
-  }, []);
-
   const { currentUser, setCurrentUser } = useAppStore();
   const handleAuth = async () => {
     try {
-      if (currentUser || user) {
+      if (currentUser) {
         await signOut(auth);
         setCurrentUser(null);
-        StorageService.clearSession();
         setActiveTab("home");
       } else {
         setActiveTab("login" as any);
@@ -95,7 +84,13 @@ export function Header() {
               {[
                 { id: "home", label: "Home", icon: Compass },
                 { id: "design", label: "Design Studio", icon: Shirt },
-                { id: "dashboard", label: "My Dashboard", icon: ClipboardList },
+                (currentUser
+                  ? {
+                      id: "dashboard",
+                      label: "My Dashboard",
+                      icon: ClipboardList,
+                    }
+                  : null),
                 { id: "about", label: "About", icon: Info },
                 { id: "gallery", label: "Gallery", icon: Layers },
                 (AuthorizationEngine.canViewStaffDashboard(currentUser) ? { id: "database", label: "Admin Portal & DB", icon: Database } : null),

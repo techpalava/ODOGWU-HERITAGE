@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion } from "motion/react";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 import {
@@ -22,38 +22,24 @@ import {
 import { auth } from "../services/firebase";
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { Customer } from "../types";
-import { AuthorizationEngine } from "../engine/AuthorizationEngine";
+import { FirebaseCustomerAuth } from "../services/firebaseCustomerAuth";
 
 interface LoginViewProps {
-  onLogin: (email: string, name: string, phone?: string) => void;
+  onLogin: (customer: Customer) => void;
   customers: Customer[];
   setCustomers: React.Dispatch<React.SetStateAction<Customer[]>>;
+  checkoutMode?: boolean;
+  onCancel?: () => void;
 }
 
 export default function LoginView({
   onLogin,
-  customers,
-  setCustomers,
+  checkoutMode = false,
+  onCancel,
 }: LoginViewProps) {
   // Navigation active login/register mode: 'login' | 'register'
   const [activeMode, setActiveMode] = useState<"login" | "register">("login");
-
-  // Registration sub-methods: 'email' | 'gmail' | 'phone'
-  const [regMethod, setRegMethod] = useState<"email" | "phone">(
-    "email",
-  );
-
-  // Synchronized state with parent customers database
-  const accounts = customers;
-  const setAccounts = (
-    updated: Customer[] | ((prev: Customer[]) => Customer[]),
-  ) => {
-    if (typeof updated === "function") {
-      setCustomers(updated);
-    } else {
-      setCustomers(updated);
-    }
-  };
+  const [regMethod] = useState<"email" | "phone">("email");
 
   // Sign In inputs
   const [loginIdentifier, setLoginIdentifier] = useState(""); // can be email or phone
@@ -65,29 +51,16 @@ export default function LoginView({
   const [regName, setRegName] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [regPIN, setRegPIN] = useState("");
-
-  // Register inputs (Phone)
   const [regPhone, setRegPhone] = useState("");
-  const [countryCode, setCountryCode] = useState("+234"); // default Nigeria/Lagos
+  const [countryCode, setCountryCode] = useState("+234");
   const [phoneOtp, setPhoneOtp] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpTimer, setOtpTimer] = useState(60);
-  const [otpVerified, setOtpVerified] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-
-  // OTP Timer countdown
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (otpSent && otpTimer > 0 && !otpVerified) {
-      interval = setInterval(() => {
-        setOtpTimer((prev) => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [otpSent, otpTimer, otpVerified]);
+  const [otpSent] = useState(false);
+  const [otpTimer] = useState(0);
+  const [otpVerified] = useState(false);
+  const [isVerifyingOtp] = useState(false);
 
   // Handle Sign In submission
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -100,61 +73,30 @@ export default function LoginView({
       return;
     }
 
-    const cleanId = loginIdentifier.trim().toLowerCase();
-
-    // Search in accounts database
-    const match = accounts.find((acc) => {
-      const emailMatch = acc.email.toLowerCase() === cleanId;
-      const phoneMatch =
-        acc.phone &&
-        acc.phone.replace(/[\s-()]/g, "") === cleanId.replace(/[\s-()]/g, "");
-      return (emailMatch || phoneMatch) && acc.passcode === loginPasscode;
-    });
-
-    if (match) {
-      setSuccessMsg(`Welcome back, ${match.name}!`);
-      setTimeout(() => {
-        onLogin(match.email, match.name, match.phone);
-      }, 800);
-    } else {
+    try {
+      const customer = await FirebaseCustomerAuth.signInWithPin(
+        loginIdentifier.trim(),
+        loginPasscode,
+      );
+      setSuccessMsg(`Welcome back, ${customer.name}!`);
+      onLogin(customer);
+    } catch (loginError) {
       setError(
-        "Incorrect identifier or security PIN. Please try again or create a new account.",
+        loginError instanceof Error
+          ? loginError.message
+          : "Secure login failed. Please try again.",
       );
     }
   };
 
-  // Quick Login trigger
   const handleGoogleSignIn = async () => {
     try {
       setError("");
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      
-      let existingAcc = accounts.find(
-        (acc) => (acc.email || "").trim().toLowerCase() === (user.email || "").trim().toLowerCase(),
-      );
-
-      if (!existingAcc) {
-        existingAcc = {
-          name: user.displayName || "Google User",
-          email: user.email || "",
-          phone: user.phoneNumber || "",
-          passcode: "1960",
-          role: AuthorizationEngine.resolveRole({ email: user.email } as any),
-          orderStatus: "Fresh Passport Activation",
-          method: "gmail",
-        } as any;
-        const updated = [...accounts, existingAcc];
-        setAccounts(updated);
-      } else {
-        existingAcc.role = AuthorizationEngine.resolveRole(existingAcc);
-      }
-
-      setSuccessMsg(`Session activated: ${existingAcc.name}`);
-      setTimeout(() => {
-        onLogin(existingAcc!.email, existingAcc!.name, existingAcc!.phone);
-      }, 600);
+      const customer = await FirebaseCustomerAuth.bootstrap(result.user);
+      setSuccessMsg(`Session activated: ${customer.name}`);
+      onLogin(customer);
     } catch (err: any) {
       console.error("Login failed:", err);
       let friendlyMessage = "Google login failed. Please try again or contact support.";
@@ -168,33 +110,6 @@ export default function LoginView({
         friendlyMessage = "Google login was cancelled. Please try again.";
       } else if (err.code === "auth/network-request-failed") {
         friendlyMessage = "Network issue. Please check your connection and try again.";
-      } else if (err.code === "auth/invalid-credential" || err.message?.includes("invalid-credential") || err.message?.includes("malformed response")) {
-        console.warn("Google Auth not configured, using mock fallback for sandbox.");
-        const mockUser = {
-          email: "guest@example.com",
-          displayName: "Sandbox Guest",
-          phoneNumber: "8000000000"
-        };
-        let existingAcc = accounts.find(
-          (acc) => (acc.email || "").trim().toLowerCase() === mockUser.email.trim().toLowerCase(),
-        );
-        if (!existingAcc) {
-          existingAcc = {
-            name: mockUser.displayName,
-            email: mockUser.email,
-            phone: mockUser.phoneNumber,
-            passcode: "1960",
-            role: AuthorizationEngine.resolveRole({ email: mockUser.email } as any),
-            orderStatus: "Fresh Passport Activation",
-            method: "gmail",
-          } as any;
-          setAccounts([...accounts, existingAcc]);
-        }
-        setSuccessMsg(`Session activated: ${existingAcc.name}`);
-        setTimeout(() => {
-          onLogin(existingAcc.email, existingAcc.name, existingAcc.phone);
-        }, 600);
-        return;
       }
       setError(friendlyMessage);
     }
@@ -202,7 +117,7 @@ export default function LoginView({
 
   
   // Register with Email
-  const handleRegisterEmail = (e: React.FormEvent) => {
+  const handleRegisterEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -223,130 +138,40 @@ export default function LoginView({
       return;
     }
 
-    // Check if account already exists
-    const exists = accounts.some(
-      (acc) => acc.email.toLowerCase() === regEmail.trim().toLowerCase(),
-    );
-    if (exists) {
+    try {
+      const customer = await FirebaseCustomerAuth.registerWithPin({
+        name: regName.trim(),
+        email: regEmail.trim(),
+        pin: regPIN,
+      });
+      setSuccessMsg("Account created successfully!");
+      onLogin(customer);
+    } catch (registrationError) {
       setError(
-        "An account with this email address already exists. Please log in.",
+        registrationError instanceof Error
+          ? registrationError.message
+          : "Secure account creation failed. Please try again.",
       );
-      return;
     }
-
-    const newAcc: Customer = {
-      name: regName.trim(),
-      email: regEmail.trim(),
-      phone: "",
-      passcode: regPIN,
-      role: AuthorizationEngine.resolveRole({ email: regEmail.trim() } as any),
-      orderStatus: "Fresh Passport Activation",
-      method: "email",
-    };
-
-    const updated = [...accounts, newAcc];
-    setAccounts(updated);
-    
-
-    setSuccessMsg("Account created successfully!");
-    setTimeout(() => {
-      onLogin(newAcc.email, newAcc.name);
-    }, 1000);
   };
 
-  // Register with Phone
   const handleRegisterPhone = (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-
-    if (!regName.trim()) {
-      setError("Please enter your full name.");
-      return;
-    }
-    if (!regPhone.trim()) {
-      setError("Please enter your phone number.");
-      return;
-    }
-    if (regPIN.length < 4) {
-      setError("Please set a 4-digit security PIN.");
-      return;
-    }
-    if (!otpVerified) {
-      setError(
-        "Please verify your phone number using the SMS verification OTP code.",
-      );
-      return;
-    }
-
-    const fullPhone = `${countryCode} ${regPhone.trim()}`;
-
-    // Check if account already exists by phone
-    const exists = accounts.some(
-      (acc) =>
-        acc.phone &&
-        acc.phone.replace(/[\s-()]/g, "") === fullPhone.replace(/[\s-()]/g, ""),
+    setError(
+      "Phone registration is unavailable until Firebase SMS authentication is enabled. Please use Google or email registration.",
     );
-    if (exists) {
-      setError(
-        "An account with this phone number already exists. Please log in.",
-      );
-      return;
-    }
-
-    // Generate simulated login email
-    const cleanName = regName.trim().toLowerCase().replace(/\s+/g, ".");
-    const simEmail = `${cleanName}@phone-member.nl`;
-
-    const newAcc: Customer = {
-      name: regName.trim(),
-      email: simEmail,
-      phone: fullPhone,
-      passcode: regPIN,
-      role: AuthorizationEngine.resolveRole({ email: simEmail } as any),
-      orderStatus: "Fresh Passport Activation",
-      method: "phone",
-    };
-
-    const updated = [...accounts, newAcc];
-    setAccounts(updated);
-    
-
-    setSuccessMsg("Mobile account activated!");
-    setTimeout(() => {
-      onLogin(simEmail, newAcc.name, fullPhone);
-    }, 1000);
   };
 
-  // Trigger Phone Verification OTP Simulation
   const triggerSendOtp = () => {
-    if (!regPhone.trim() || regPhone.length < 6) {
-      setError("Please enter a valid phone number before requesting OTP.");
-      return;
-    }
-    setError("");
-    setOtpSent(true);
-    setOtpTimer(60);
-    setPhoneOtp("");
-    // Notice toast
-    setSuccessMsg("Simulated SMS Sent! Check Code in panel.");
-    setTimeout(() => setSuccessMsg(""), 3000);
+    setError(
+      "Phone registration is unavailable until Firebase SMS authentication is enabled.",
+    );
   };
 
-  // Verify phone OTP
   const handleVerifyOtp = () => {
-    setIsVerifyingOtp(true);
-    setTimeout(() => {
-      setIsVerifyingOtp(false);
-      if (phoneOtp === "1960") {
-        setOtpVerified(true);
-        setSuccessMsg("Phone number successfully verified!");
-        setError("");
-      } else {
-        setError(
-          'Incorrect OTP code. Enter "1960" for simulation authorization.',
-        );
-      }
-    }, 800);
+    setError(
+      "Phone registration is unavailable until Firebase SMS authentication is enabled.",
+    );
   };
 
   ;
@@ -381,9 +206,36 @@ export default function LoginView({
             Customer Login
           </h2>
           <p className="relative text-xs text-heritage-beige/80 mt-1.5 leading-relaxed max-w-xs mx-auto">
-            Log in or create an account.
+            {checkoutMode
+              ? "Sign in or create an account to securely complete your order."
+              : "Log in or create an account."}
           </p>
         </div>
+
+        {checkoutMode && (
+          <div className="p-6 pb-2 bg-white">
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              className="w-full bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 transition duration-300 py-3 rounded-xl text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2.5 shadow-sm cursor-pointer"
+            >
+              <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-3.53 6.16-4.53z" />
+              </svg>
+              Continue with Google
+            </button>
+            <div className="relative flex items-center mt-5">
+              <div className="flex-grow border-t border-gray-150" />
+              <span className="flex-shrink mx-3 text-[9px] text-heritage-ink/40 font-bold uppercase tracking-wider">
+                Or use email and PIN
+              </span>
+              <div className="flex-grow border-t border-gray-150" />
+            </div>
+          </div>
+        )}
 
         {/* Dual Mode Tab Selector */}
         <div className="flex border-b border-gray-100 bg-heritage-cream/10">
@@ -491,43 +343,7 @@ export default function LoginView({
           {/* MODE 2: CREATE ACCOUNT */}
           {activeMode === "register" && (
             <div className="space-y-5">
-              {/* Two Sub-Methods Tab Heads */}
-              <div className="grid grid-cols-2 gap-2 bg-heritage-cream/30 p-1.5 rounded-xl border border-heritage-gold/10">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRegMethod("email");
-                    setError("");
-                  }}
-                  className={`py-2 text-[10px] uppercase font-bold tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                    regMethod === "email"
-                      ? "bg-white text-heritage-green shadow-sm border border-heritage-gold/25"
-                      : "text-heritage-ink/65 hover:text-heritage-ink"
-                  }`}
-                >
-                  <Mail size={12} /> Email
-                </button>
-
-          
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRegMethod("phone");
-                    setError("");
-                  }}
-                  className={`py-2 text-[10px] uppercase font-bold tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                    regMethod === "phone"
-                      ? "bg-white text-heritage-green shadow-sm border border-heritage-gold/25"
-                      : "text-heritage-ink/65 hover:text-heritage-ink"
-                  }`}
-                >
-                  <Smartphone size={12} /> Phone
-                </button>
-              </div>
-
-              {/* SUBMODE A: CUSTOM EMAIL SIGN UP */}
-              {regMethod === "email" && (
-                <form onSubmit={handleRegisterEmail} className="space-y-4">
+              <form onSubmit={handleRegisterEmail} className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="block text-[10px] uppercase font-bold text-heritage-ink/50 tracking-wider">
                       Full Name
@@ -591,8 +407,7 @@ export default function LoginView({
                   >
                     Create My Account <ArrowRight size={12} />
                   </button>
-                </form>
-              )}
+              </form>
 
               
 
@@ -713,7 +528,7 @@ export default function LoginView({
                               onChange={(e) =>
                                 setPhoneOtp(e.target.value.replace(/\D/g, ""))
                               }
-                              placeholder="Enter Code (Simulation PIN: 1960)"
+                              placeholder="Enter SMS verification code"
                               className="flex-1 px-3 py-1.5 bg-white border rounded-lg text-xs font-mono font-bold text-center tracking-widest focus:outline-none focus:border-heritage-gold"
                             />
                             <button
@@ -732,9 +547,8 @@ export default function LoginView({
                         )}
                         {!otpVerified && (
                           <p className="text-[8px] text-heritage-ink/50 leading-tight">
-                            * For simulation testing, enter standard code{" "}
-                            <strong className="text-heritage-gold">1960</strong>{" "}
-                            to authorize phone.
+                            Phone registration requires verified Firebase SMS
+                            authentication.
                           </p>
                         )}
                       </div>
@@ -753,7 +567,7 @@ export default function LoginView({
             </div>
           )}
 
-          {/* Quick-Access Member Cards */}
+          {!checkoutMode && (
           <div className="space-y-3 pt-2">
             <div className="relative flex items-center">
               <div className="flex-grow border-t border-gray-150"></div>
@@ -777,6 +591,17 @@ export default function LoginView({
               Continue with Google
             </button>
           </div>
+          )}
+
+          {checkoutMode && onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="w-full mt-4 py-2 text-[10px] font-bold uppercase tracking-wider text-heritage-green hover:text-heritage-gold cursor-pointer"
+            >
+              Back to Cart
+            </button>
+          )}
         </div>
       </motion.div>
 
