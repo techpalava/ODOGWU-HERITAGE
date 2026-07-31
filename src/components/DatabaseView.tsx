@@ -96,6 +96,8 @@ interface DatabaseViewProps {
   setBatches: React.Dispatch<React.SetStateAction<Batch[]>>;
   businessSettings: BusinessSettings;
   setBusinessSettings: React.Dispatch<React.SetStateAction<BusinessSettings>>;
+  initialTab?: TabType;
+  onInitialTabApplied?: () => void;
 }
 
 import { compressImage } from "../utils/imageUtils";
@@ -145,6 +147,8 @@ export default function DatabaseView({
   setBatches,
   businessSettings,
   setBusinessSettings,
+  initialTab,
+  onInitialTabApplied,
 }: DatabaseViewProps) {
   const genderOptions = useReferenceDataFallback("genders", [
     { value: "male", label: "Male" },
@@ -190,7 +194,18 @@ export default function DatabaseView({
     { value: "Lace", label: "Lace" },
   ]);
 
-  const [activeTab, setActiveTab] = useState<TabType>("documentation");
+  const [activeTab, setActiveTab] = useState<TabType>(
+    initialTab || "documentation",
+  );
+
+  useEffect(() => {
+    if (!initialTab) {
+      return;
+    }
+
+    setActiveTab(initialTab);
+    onInitialTabApplied?.();
+  }, [initialTab, onInitialTabApplied]);
   const [settingsSubTab, setSettingsSubTab] = useState<
     "rules" | "discounts" | "pricing_engine"
   >("rules");

@@ -1,5 +1,11 @@
 import { Batch, OrderContext } from "../types";
 import { CapacityService } from "../services/CapacityService";
+import { parseBatchDateBoundary } from "../utils/batchDateRange";
+import {
+  normalizeBatchStatus,
+  PRODUCTION_OR_CLOSED_STATUSES,
+  REGISTRATION_OPEN_STATUSES,
+} from "../utils/batchStatus";
 
 export interface BatchEligibility {
   canAcceptOrders: boolean;
@@ -14,8 +20,10 @@ export interface BatchEligibility {
 }
 
 export class BatchBusinessRules {
-  static canAcceptOrders(data: Batch | Partial<OrderContext> | null | undefined): BatchEligibility {
-    const now = new Date();
+  static canAcceptOrders(
+    data: Batch | Partial<OrderContext> | null | undefined,
+    now: Date = new Date(),
+  ): BatchEligibility {
     
     const defaultClosed: BatchEligibility = {
       canAcceptOrders: false,
@@ -35,6 +43,7 @@ export class BatchBusinessRules {
     let startDateStr = "";
     let allowOrders = true;
     let status = "";
+    let isManualSchedule = false;
     if ("expectedParticipants" in data) {
       const ctx = data as OrderContext;
       endDateStr = ctx.closingDate || "";
@@ -46,17 +55,32 @@ export class BatchBusinessRules {
       endDateStr = batch.endDate || "";
       startDateStr = batch.startDate || "";
       allowOrders = batch.allowOrders !== false;
-      status = batch.status || "";
+      status = normalizeBatchStatus(batch.status) || "";
+      isManualSchedule = batch.isAutoScheduled === false;
     }
 
     const capacitySummary = CapacityService.getCapacitySummary(data);
     const remainingCapacity = capacitySummary.remainingGarments;
     const completionPercentage = capacitySummary.completionPercentage;
 
-    const isStarted = status === "PRODUCTION_STARTED";
-    const isStatusClosed = status === "CLOSED" || status === "COMPLETED";
+    const downstreamProductionStates = new Set<Batch["status"]>(
+      PRODUCTION_OR_CLOSED_STATUSES.filter(
+        (batchStatus) =>
+          batchStatus !== "FULL" && batchStatus !== "CLOSED",
+      ),
+    );
+    const isDownstreamProductionState = downstreamProductionStates.has(
+      status as Batch["status"],
+    );
     const isManuallyClosed = !allowOrders;
-    const isTimeUp = endDateStr ? now > new Date(endDateStr) : false;
+    const isManualOpenOverride =
+      isManualSchedule &&
+      REGISTRATION_OPEN_STATUSES.includes(status as Batch["status"]);
+    const isManualNonJoinableStatus =
+      isManualSchedule && !isManualOpenOverride;
+    const startDate = parseBatchDateBoundary(startDateStr, "start");
+    const endDate = parseBatchDateBoundary(endDateStr, "end");
+    const isTimeUp = !isManualOpenOverride && Boolean(endDate && now > endDate);
     const isFull = capacitySummary.capacityStatus === "FULL" || capacitySummary.capacityStatus === "OVERCAPACITY";
 
     let timeDiff = 0;
@@ -65,8 +89,10 @@ export class BatchBusinessRules {
     let minutesRemaining = 0;
 
     if (endDateStr) {
-      const endDate = new Date(endDateStr);
-      timeDiff = endDate.getTime() - now.getTime();
+      const resolvedEndDate = parseBatchDateBoundary(endDateStr, "end");
+      timeDiff = resolvedEndDate
+        ? resolvedEndDate.getTime() - now.getTime()
+        : 0;
       if (timeDiff > 0) {
         daysRemaining = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
         hoursRemaining = Math.floor((timeDiff / (1000 * 60 * 60)) % 24);
@@ -82,7 +108,10 @@ export class BatchBusinessRules {
       minutesRemaining
     };
 
-    if (!isStarted && (!startDateStr || now < new Date(startDateStr))) {
+    if (
+      !isManualOpenOverride &&
+      (!startDate || now < startDate)
+    ) {
         return {
             ...baseResult,
             canAcceptOrders: false,
@@ -92,13 +121,23 @@ export class BatchBusinessRules {
         };
     }
 
-    if (isStatusClosed) {
+    if (isDownstreamProductionState) {
         return {
             ...baseResult,
             canAcceptOrders: false,
             statusCode: "REGISTRATION_CLOSED",
             displayLabel: "Registration Closed",
             reason: "Batch production has already started",
+        };
+    }
+
+    if (isManualNonJoinableStatus) {
+        return {
+            ...baseResult,
+            canAcceptOrders: false,
+            statusCode: "REGISTRATION_CLOSED",
+            displayLabel: "Registration Closed",
+            reason: "Manual batch status is not open for registration",
         };
     }
 

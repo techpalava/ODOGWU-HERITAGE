@@ -1,7 +1,16 @@
 import { Batch } from "../types";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
+import {
+  normalizeBatchStatus,
+  PRODUCTION_OR_CLOSED_STATUSES,
+  REGISTRATION_OPEN_STATUSES,
+} from "./batchStatus";
+import { BATCH_MINIMUM_GARMENTS } from "./shippingPricing";
 
-export function processDynamicBatches(batches: Batch[]): Batch[] {
+export function processDynamicBatches(
+  batches: Batch[],
+  now: Date = new Date(),
+): Batch[] {
   // ARCHITECTURAL COMPLIANCE:
   // Apply explicit deterministic ordering before lifecycle evaluation
   // Prefer displayOrder if present, fallback to batchNumber
@@ -18,32 +27,35 @@ export function processDynamicBatches(batches: Batch[]): Batch[] {
   let autoActiveAssigned = false;
 
   return sortedBatches.map(batch => {
+    const normalizedStatus = normalizeBatchStatus(batch.status);
+    const normalizedBatch = {
+      ...batch,
+      status: normalizedStatus as Batch["status"],
+    };
+
     // If auto-scheduling is explicitly disabled for this batch, keep its status
     if (batch.isAutoScheduled === false) {
-      return batch;
+      return normalizedBatch;
     }
 
     // Default: auto-scheduled is true if not set
 
 
 
-    let newStatus = batch.status;
-    const eligibility = BatchBusinessRules.canAcceptOrders(batch);
+    let newStatus = normalizedBatch.status;
+    const eligibility = BatchBusinessRules.canAcceptOrders(
+      normalizedBatch,
+      now,
+    );
     
     // Do not override advanced downstream production states
-    const productionStates = [
-      "COMPLETED", 
-      "COLLECTED", 
-      "READY_FOR_PICKUP", 
-      "ARRIVED_NETHERLANDS", 
-      "SHIPPED", 
-      "PACKED", 
-      "QUALITY_CONTROL", 
-      "PRODUCTION_STARTED", 
-      "PRODUCTION_READY"
-    ];
+    const productionStates = new Set<Batch["status"]>(
+      PRODUCTION_OR_CLOSED_STATUSES.filter(
+        (status) => status !== "FULL" && status !== "CLOSED",
+      ),
+    );
     
-    if (!productionStates.includes(batch.status)) {
+    if (!productionStates.has(normalizedBatch.status)) {
         if (eligibility.canAcceptOrders) {
             newStatus = "OPEN";
         } else {
@@ -77,7 +89,7 @@ export function processDynamicBatches(batches: Batch[]): Batch[] {
     }
 
     return {
-      ...batch,
+      ...normalizedBatch,
       status: newStatus as Batch["status"],
       isActive: isNowActive
     };
@@ -107,34 +119,35 @@ export function getNextUpcomingBatches(batches: Batch[], count: number = 3): Bat
   return upcoming.slice(0, count);
 }
 
-export function getCurrentRegistrationBatch(batches: Batch[]): Batch | undefined {
-  const processedBatches = processDynamicBatches(batches);
-  const now = new Date();
-  
-  // Find a batch that is currently joinable
-  const registrationStates = ["OPEN", "RECRUITING", "ALMOST_FULL"];
-  const productionStates = [
-    "PRODUCTION_STARTED", 
-    "PRODUCTION_READY", 
-    "QUALITY_CONTROL", 
-    "PACKED", 
-    "SHIPPED", 
-    "ARRIVED_NETHERLANDS", 
-    "READY_FOR_PICKUP", 
-    "COMPLETED", 
-    "CLOSED"
-  ];
-  
-  return processedBatches.find(b => {
-    const isWithinTimeline = now >= new Date(b.startDate) && now <= new Date(b.endDate);
-    const hasCapacity = b.currentGarments < b.targetGarments;
-    const isAllowed = b.allowOrders !== false;
-    
-    // Explicitly reject production states
-    if (productionStates.includes(b.status)) return false;
-    
-    return isWithinTimeline && registrationStates.includes(b.status) && isAllowed && hasCapacity;
+export function getCurrentRegistrationBatch(
+  batches: Batch[],
+  now: Date = new Date(),
+): Batch | undefined {
+  const processedBatches = processDynamicBatches(batches, now);
+
+  const joinableBatches = processedBatches.filter((batch) => {
+    const status = normalizeBatchStatus(batch.status);
+    const eligibility = BatchBusinessRules.canAcceptOrders(batch, now);
+    const isEnabledManualOverride =
+      batch.isAutoScheduled !== false || batch.isActive === true;
+
+    return (
+      batch.visibility !== "PRIVATE" &&
+      isEnabledManualOverride &&
+      batch.targetGarments >= BATCH_MINIMUM_GARMENTS &&
+      REGISTRATION_OPEN_STATUSES.includes(status as Batch["status"]) &&
+      eligibility.canAcceptOrders
+    );
   });
+
+  return joinableBatches.sort((a, b) => {
+    const priority = (batch: Batch) => {
+      if (batch.isAutoScheduled === false && batch.isActive) return 0;
+      if (batch.isActive) return 1;
+      return 2;
+    };
+    return priority(a) - priority(b);
+  })[0];
 }
 
 export function getCurrentProductionBatch(batches: Batch[]): Batch | undefined {

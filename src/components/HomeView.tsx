@@ -4,13 +4,14 @@
  */
 
 import { useState, useEffect, useRef } from "react";
-import { Sparkles, ArrowRight, ShieldCheck, Award, Shirt, Camera } from "lucide-react";
+import { Sparkles, ArrowRight, ShieldCheck, Award } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { OrderContext, CommunityPhoto, Showpiece, Fabric } from "../types";
+import { CommunityPhoto, Showpiece, Fabric } from "../types";
 import { useAppStore } from "../store/useAppStore";
-import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { CapacityService } from "../services/CapacityService";
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
+import HomepageOrderGateway from "./HomepageOrderGateway";
+import { getHomepageOrderGatewayState } from "../utils/homepageOrderGateway";
 import ankaraLadyImage from "../assets/images/couture_gown_photo_1782308183701.jpg";
 import ankaraManImage from "../assets/images/grand_agbada_photo_1782308152763.jpg";
 import ankaraKidsImage from "../assets/images/regenerated_image_1784258480371.png";
@@ -18,7 +19,9 @@ import ankaraFamilyImage from "../assets/images/regenerated_image_1784259611604.
 
 interface HomeViewProps {
   onNavigateToTab: (tabId: string) => void;
-  activeCommunityBatch?: OrderContext | null;
+  onJoinCommunityBatch: () => void;
+  onCreatePrivateBatch: () => void;
+  onManageSourcingBatches?: () => void;
   communityPhotos?: CommunityPhoto[];
   showpieces?: Showpiece[];
   fabrics?: Fabric[];
@@ -28,7 +31,9 @@ interface HomeViewProps {
 
 export default function HomeView({
   onNavigateToTab,
-  activeCommunityBatch,
+  onJoinCommunityBatch,
+  onCreatePrivateBatch,
+  onManageSourcingBatches,
   communityPhotos,
   showpieces = [],
   fabrics = [],
@@ -41,6 +46,7 @@ export default function HomeView({
     customers,
     orders,
     batches,
+    hasLoadedBatches,
     styles, 
     cartItems, 
     historicalOrders 
@@ -55,10 +61,25 @@ export default function HomeView({
   });
 
   
-  const canJoinActiveBatch = activeCommunityBatch ? BatchBusinessRules.canAcceptOrders(activeCommunityBatch as any).canAcceptOrders : false;
-  const heroPrimaryAction = canJoinActiveBatch ? `Join ${(activeCommunityBatch as any)?.name || (activeCommunityBatch as any)?.batchName || ''}`.trim() : "Create Custom Order";
-  const firstHeroPrimaryAction = canJoinActiveBatch ? `Join ${(activeCommunityBatch as any)?.name || (activeCommunityBatch as any)?.batchName || ''}`.trim() : "Create Group";
-  const heroDestination = canJoinActiveBatch ? "design" : "custom-order";
+  const orderGatewayState = getHomepageOrderGatewayState(batches);
+  const isBatchGatewayLoading = !hasLoadedBatches;
+  const canJoinActiveBatch = Boolean(orderGatewayState.joinBatch);
+  const activeBatchName = orderGatewayState.joinBatch?.name || "";
+  const heroPrimaryAction = isBatchGatewayLoading
+    ? "Loading Order Options"
+    : canJoinActiveBatch
+      ? `Join ${activeBatchName}`
+      : "Create Custom Order";
+  const firstHeroPrimaryAction = isBatchGatewayLoading
+    ? "Loading Order Options"
+    : canJoinActiveBatch
+      ? `Join ${activeBatchName}`
+      : "Create Group";
+  const handleHeroPrimaryAction = isBatchGatewayLoading
+    ? undefined
+    : canJoinActiveBatch
+      ? onJoinCommunityBatch
+      : onCreatePrivateBatch;
 
   const [currentSlide, setCurrentSlide] = useState(0);
 
@@ -176,48 +197,14 @@ export default function HomeView({
 
   return (
     <div id="home-view-container" className="space-y-16">
-            {/* Quick Action Bar */}
-      <section className="bg-white rounded-2xl p-4 shadow-sm border border-heritage-gold/20 mb-2 sm:mb-4 relative z-20">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <button
-            id="btn-quick-join-cohort"
-            onClick={() => {
-              onNavigateToTab(heroDestination as any);
-              if (heroDestination === "custom-order") {
-                setTimeout(() => {
-                  const el = document.getElementById("option-create-group");
-                  if (el) {
-                    el.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }
-                }, 200);
-              }
-            }}
-            className="w-full bg-heritage-green text-white hover:bg-heritage-forest transition duration-300 min-h-[52px] px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-wider shadow-sm flex items-center justify-center gap-2 cursor-pointer border border-transparent"
-          >
-            <Sparkles size={16} className="text-heritage-gold shrink-0" />
-            <span className="truncate">{firstHeroPrimaryAction}</span>
-            <ArrowRight size={14} className="opacity-70 shrink-0" />
-          </button>
-          
-          <button
-            id="btn-quick-custom-order"
-            onClick={() => onNavigateToTab("custom-order")}
-            className="w-full bg-heritage-cream text-heritage-green hover:bg-[#EBE5DA] transition duration-300 min-h-[52px] px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-wider shadow-sm flex items-center justify-center gap-2 cursor-pointer border border-heritage-gold/30"
-          >
-            <Shirt size={16} className="text-heritage-gold shrink-0" />
-            <span className="truncate">Custom Order</span>
-          </button>
-
-          <button
-            id="btn-quick-gallery"
-            onClick={() => onNavigateToTab("gallery")}
-            className="w-full bg-white text-heritage-green hover:bg-gray-50 transition duration-300 min-h-[52px] px-4 py-3 rounded-xl text-[11px] font-bold uppercase tracking-wider shadow-sm flex items-center justify-center gap-2 cursor-pointer border border-gray-200"
-          >
-            <Camera size={16} className="text-heritage-ink/60 shrink-0" />
-            <span className="truncate">Style Gallery</span>
-          </button>
-        </div>
-      </section>
+      <HomepageOrderGateway
+        state={orderGatewayState}
+        isLoading={isBatchGatewayLoading}
+        onJoinBatch={onJoinCommunityBatch}
+        onCreatePrivateBatch={onCreatePrivateBatch}
+        onBrowseGallery={() => onNavigateToTab("gallery")}
+        onManageSourcingBatches={onManageSourcingBatches}
+      />
 
       {/* Editorial Luxury Hero Header */}
       <section className="relative overflow-hidden rounded-3xl bg-heritage-green p-8 sm:p-12 lg:p-16 text-white shadow-2xl border border-heritage-gold/20">
@@ -256,18 +243,9 @@ export default function HomeView({
 
             <div className="pt-4 sm:pt-6">
               <button
-                onClick={() => {
-                  onNavigateToTab(heroDestination as any);
-                  if (heroDestination === "custom-order") {
-                    setTimeout(() => {
-                      const el = document.getElementById("option-create-group");
-                      if (el) {
-                        el.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }
-                    }, 200);
-                  }
-                }}
-                className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 py-3.5 px-8 rounded-xl text-sm font-bold uppercase tracking-wider shadow-lg inline-flex items-center justify-center gap-2 cursor-pointer"
+                onClick={handleHeroPrimaryAction}
+                disabled={isBatchGatewayLoading}
+                className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 py-3.5 px-8 rounded-xl text-sm font-bold uppercase tracking-wider shadow-lg inline-flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
               >
                 {firstHeroPrimaryAction} <ArrowRight size={18} />
               </button>
@@ -535,8 +513,9 @@ export default function HomeView({
 
         <div className="text-center pt-6">
           <button
-            onClick={() => onNavigateToTab(heroDestination as any)}
-            className="inline-flex bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2 cursor-pointer"
+            onClick={handleHeroPrimaryAction}
+            disabled={isBatchGatewayLoading}
+            className="inline-flex bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
           >
             {heroPrimaryAction} <ArrowRight size={14} />
           </button>
@@ -856,8 +835,9 @@ export default function HomeView({
 
         <div className="text-center pt-6">
           <button
-            onClick={() => onNavigateToTab(heroDestination as any)}
-            className="inline-flex bg-heritage-gold text-heritage-forest hover:bg-heritage-green hover:text-white px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2 cursor-pointer"
+            onClick={handleHeroPrimaryAction}
+            disabled={isBatchGatewayLoading}
+            className="inline-flex bg-heritage-gold text-heritage-forest hover:bg-heritage-green hover:text-white px-8 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-md items-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
           >
             {heroPrimaryAction} <ArrowRight size={14} />
           </button>
@@ -1070,11 +1050,12 @@ export default function HomeView({
 
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
             <button
-                onClick={() => onNavigateToTab(heroDestination as any)}
-                className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 px-10 py-4 rounded-xl text-sm font-bold uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {heroPrimaryAction} <ArrowRight size={16} />
-              </button>
+              onClick={handleHeroPrimaryAction}
+              disabled={isBatchGatewayLoading}
+              className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green transition duration-300 px-10 py-4 rounded-xl text-sm font-bold uppercase tracking-wider shadow-xl flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
+            >
+              {heroPrimaryAction} <ArrowRight size={16} />
+            </button>
 
             <button
               onClick={() => {
@@ -1277,8 +1258,9 @@ export default function HomeView({
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
             <button
-              onClick={() => onNavigateToTab(heroDestination as any)}
-              className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green px-8 py-4 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-xl inline-flex items-center justify-center gap-2 cursor-pointer"
+              onClick={handleHeroPrimaryAction}
+              disabled={isBatchGatewayLoading}
+              className="w-full sm:w-auto bg-heritage-gold text-heritage-forest hover:bg-white hover:text-heritage-green px-8 py-4 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors duration-300 shadow-xl inline-flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-70"
             >
               {heroPrimaryAction} <ArrowRight size={14} />
             </button>
