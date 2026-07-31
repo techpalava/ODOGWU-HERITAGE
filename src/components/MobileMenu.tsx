@@ -109,11 +109,13 @@ export function MobileMenu() {
                     label: "Custom Order",
                     icon: ShoppingBag,
                   },
-                  {
-                    id: "dashboard",
-                    label: "My Dashboard",
-                    icon: ClipboardList,
-                  },
+                  (currentUser
+                    ? {
+                        id: "dashboard",
+                        label: "My Dashboard",
+                        icon: ClipboardList,
+                      }
+                    : null),
                   { id: "gallery", label: "Gallery", icon: Layers },
                   { id: "about", label: "About Us", icon: Info },
                   (AuthorizationEngine.canViewStaffDashboard(currentUser) ? { id: "database", label: "Admin & DB Panel", icon: Database } : null),

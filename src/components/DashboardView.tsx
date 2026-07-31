@@ -662,6 +662,36 @@ export default function DashboardView({
                               : "Batch quote unavailable"}
                         </strong>
                       </div>
+                      {selectedReceipt.finalMileShipping && (
+                        <div>
+                          Final Delivery:{" "}
+                          <strong className="text-heritage-green">
+                            {selectedReceipt.finalMileShipping.method ===
+                            "PICKUP"
+                              ? `${selectedReceipt.finalMileShipping.pickupLocation} pickup (€0.00)`
+                              : selectedReceipt.finalMileShipping.status ===
+                                  "READY"
+                                ? `${selectedReceipt.finalMileShipping.zoneLabel} (${selectedReceipt.finalMileShipping.weightBand}) · €${(
+                                    selectedReceipt.shippingBreakdown
+                                      ?.eindhovenToDestinationShipping ?? 0
+                                  ).toFixed(2)}`
+                                : "Shipping quote required"}
+                          </strong>
+                        </div>
+                      )}
+                      {selectedReceipt.shippingBreakdown &&
+                        selectedReceipt.shippingBreakdown.totalShipping !==
+                          null && (
+                          <div>
+                            Total Shipping:{" "}
+                            <strong className="text-heritage-green">
+                              €
+                              {selectedReceipt.shippingBreakdown.totalShipping.toFixed(
+                                2,
+                              )}
+                            </strong>
+                          </div>
+                        )}
                       {selectedReceipt.design.optionalAccessories && selectedReceipt.design.optionalAccessories.length > 0 && (
                         <div>
                           Selected Accessories:{" "}

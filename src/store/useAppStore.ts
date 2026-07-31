@@ -25,8 +25,11 @@ import {
 import { StorageService } from "../services/storageService";
 import { FabricService } from "../services/fabricService";
 import { auth } from "../services/firebase";
-import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged } from "firebase/auth";
 import { processDynamicBatches } from "../utils/batchUtils";
+import { migrateLegacyCartShippingItems } from "../utils/shippingPricing";
+import { GuestOrderSessionService } from "../services/guestOrderSessionService";
+import { FirebaseCustomerAuth } from "../services/firebaseCustomerAuth";
 
 interface AppState {
 
@@ -71,6 +74,9 @@ interface AppState {
   setIsCheckoutPaymentOpen: (isOpen: boolean) => void;
   isCartOpen: boolean;
   setIsCartOpen: (isOpen: boolean) => void;
+  guestCartId: string;
+  checkoutIntent: boolean;
+  setCheckoutIntent: (required: boolean) => void;
 
   // Data State
   isLoadingData: boolean;
@@ -150,6 +156,18 @@ interface AppState {
 
 // Track global snapshot listeners to prevent duplicates
 let storeUnsubs: (() => void)[] = [];
+let privateStoreUnsubs: (() => void)[] = [];
+let authBootstrapSequence = 0;
+
+const clearPrivateStoreSubscriptions = () => {
+  privateStoreUnsubs.forEach((unsubscribe) => unsubscribe());
+  privateStoreUnsubs = [];
+};
+
+const initialGuestSession =
+  typeof window !== "undefined"
+    ? GuestOrderSessionService.getActiveSession()
+    : null;
 
 export const useAppStore = create<AppState>((set, get) => ({
   customDetailCatalog: [],
@@ -166,9 +184,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     "home",
   setActiveTab: (tab) => {
     const state = get();
-    // Protect Design Studio route
-    if (tab === "design" && !AuthorizationEngine.canAccessRoute("design", state.currentUser)) {
-      set({ pendingRedirect: "design" });
+    if (
+      (tab === "dashboard" || tab === "database") &&
+      !AuthorizationEngine.canAccessRoute(tab, state.currentUser)
+    ) {
+      set({ pendingRedirect: tab });
       tab = "login";
     }
 
@@ -196,6 +216,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   setIsCheckoutPaymentOpen: (isOpen) => set({ isCheckoutPaymentOpen: isOpen }),
   isCartOpen: false,
   setIsCartOpen: (isOpen) => set({ isCartOpen: isOpen }),
+  guestCartId: initialGuestSession?.guestCartId || "",
+  checkoutIntent: initialGuestSession?.checkoutIntent || false,
+  setCheckoutIntent: (required) => {
+    if (!get().currentUser) {
+      GuestOrderSessionService.setCheckoutIntent(required);
+    }
+    set({ checkoutIntent: required });
+  },
 
   // Data State
   isLoadingData: true,
@@ -204,11 +232,89 @@ export const useAppStore = create<AppState>((set, get) => ({
   hasLoadedBusinessSettings: false,
   currentUser: null,
   setCurrentUser: (user) => {
-    set({ currentUser: user });
+    clearPrivateStoreSubscriptions();
     if (user) {
-      ApiService.saveSession(user);
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) {
+        console.error(
+          "Rejected a local-only customer session without Firebase authentication.",
+        );
+        ApiService.clearSession();
+        return;
+      }
+      const canonicalUser: Customer = {
+        ...user,
+        ownerUid: firebaseUser.uid,
+        email: AuthorizationEngine.getCanonicalEmail(user.email),
+        canonicalEmail: AuthorizationEngine.getCanonicalEmail(user.email),
+        role: AuthorizationEngine.resolveRole(user),
+      };
+      const claim = GuestOrderSessionService.claimGuestCart(canonicalUser);
+      set({
+        currentUser: canonicalUser,
+        cartItems: claim.items,
+        customers: [canonicalUser],
+        orders: [],
+        hasLoadedOrders: false,
+      });
+      ApiService.saveSession(canonicalUser);
+
+      if (AuthorizationEngine.canViewStaffDashboard(canonicalUser)) {
+        privateStoreUnsubs.push(
+          StorageService.subscribeToCollection<Customer>(
+            "customers",
+            (accountsList) => set({ customers: accountsList }),
+          ),
+          StorageService.subscribeToCollection<MasterOrder>(
+            "orders",
+            (ordersList) =>
+              set({ orders: ordersList, hasLoadedOrders: true }),
+          ),
+        );
+      } else {
+        privateStoreUnsubs.push(
+          StorageService.subscribeToCustomerAccount(
+            canonicalUser.email,
+            (account) =>
+              set({
+                customers: [
+                  account
+                    ? {
+                        ...account,
+                        email: AuthorizationEngine.getCanonicalEmail(
+                          account.email,
+                        ),
+                      }
+                    : canonicalUser,
+                ],
+              }),
+          ),
+          StorageService.subscribeToCustomerOrders(
+            canonicalUser.email,
+            (ordersList) =>
+              set({ orders: ordersList, hasLoadedOrders: true }),
+          ),
+        );
+      }
     } else {
+      const previousUser = get().currentUser;
+      if (previousUser) {
+        GuestOrderSessionService.saveAccountCartItems(
+          previousUser.email,
+          get().cartItems,
+        );
+      }
       ApiService.clearSession();
+      const guestSession = GuestOrderSessionService.getActiveSession();
+      set({
+        currentUser: null,
+        cartItems: guestSession.cartItems,
+        guestCartId: guestSession.guestCartId,
+        checkoutIntent: guestSession.checkoutIntent,
+        customers: [],
+        orders: [],
+        hasLoadedOrders: true,
+      });
     }
   },
   customers: [],
@@ -216,21 +322,57 @@ export const useAppStore = create<AppState>((set, get) => ({
     const newCustomers =
       typeof customers === "function" ? customers(get().customers) : customers;
     set({ customers: newCustomers });
-    ApiService.saveAccounts(newCustomers);
+    if (AuthorizationEngine.canViewStaffDashboard(get().currentUser)) {
+      ApiService.saveAccounts(newCustomers);
+    } else {
+      void Promise.all(
+        newCustomers.map((customer) =>
+          StorageService.saveAccount(customer),
+        ),
+      );
+    }
   },
   orders: [],
   setOrders: (orders) => {
     const newOrders =
       typeof orders === "function" ? orders(get().orders) : orders;
     set({ orders: newOrders });
-    ApiService.saveOrders(newOrders);
+    if (AuthorizationEngine.canViewStaffDashboard(get().currentUser)) {
+      ApiService.saveOrders(newOrders);
+    } else {
+      void Promise.all(
+        newOrders.map((order) => StorageService.saveOrder(order)),
+      );
+    }
   },
   customGroups: [],
   setCustomGroups: (groups) => {
+    const previousGroups = get().customGroups;
     const newGroups =
       typeof groups === "function" ? groups(get().customGroups) : groups;
     set({ customGroups: newGroups });
-    ApiService.saveGroups(newGroups);
+    const currentUser = get().currentUser;
+    if (AuthorizationEngine.canViewStaffDashboard(currentUser)) {
+      ApiService.saveGroups(newGroups);
+    } else if (currentUser?.ownerUid) {
+      const changedGroups = newGroups.filter((group) => {
+        const previous = previousGroups.find(
+          (candidate) => candidate.batchId === group.batchId,
+        );
+        return !previous || JSON.stringify(previous) !== JSON.stringify(group);
+      });
+      const removedOwnedGroups = previousGroups.filter(
+        (group) =>
+          group.ownerUid === currentUser.ownerUid &&
+          !newGroups.some((candidate) => candidate.batchId === group.batchId),
+      );
+      void Promise.all([
+        ...changedGroups.map((group) => StorageService.saveGroup(group)),
+        ...removedOwnedGroups.map((group) =>
+          StorageService.deleteDocument("customGroups", group.batchId),
+        ),
+      ]);
+    }
   },
   batches: [],
   setBatches: (batches) => {
@@ -239,10 +381,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ batches: newBatches });
     StorageService.saveBatches(newBatches);
   },
-  cartItems: [],
+  cartItems: initialGuestSession?.cartItems || [],
   setCartItems: (items) => {
-    const newItems =
+    const requestedItems =
       typeof items === "function" ? items(get().cartItems) : items;
+    const migration = migrateLegacyCartShippingItems(requestedItems);
+    const currentUser = get().currentUser;
+    const newItems = currentUser
+      ? GuestOrderSessionService.saveAccountCartItems(
+          currentUser.email,
+          migration.items,
+        )
+      : GuestOrderSessionService.saveGuestCartItems(migration.items);
     set({ cartItems: newItems });
   },
   historicalOrders: [],
@@ -331,15 +481,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   initializeData: async () => {
     set({ isLoadingData: true });
     try {
-      try {
-        await signInAnonymously(auth);
-      } catch (err) {
-        console.warn("Failed to sign in anonymously:", err);
-      }
-
-      const session = await ApiService.fetchSession();
-
-      
       const catalog = await StorageService.getCatalog();
       set({ customDetailCatalog: catalog });
       const storedSettings = await StorageService.getBusinessSettings();
@@ -365,12 +506,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...savedBusinessSettings.applicationSettings,
           hasInitializedData: true,
         };
-        await StorageService.saveBusinessSettings(savedBusinessSettings);
       }
 
       // Clear any existing listeners to prevent duplicates
       storeUnsubs.forEach(unsub => unsub && unsub());
       storeUnsubs = [];
+      clearPrivateStoreSubscriptions();
 
       storeUnsubs.push(
         StorageService.subscribeToDocument<BusinessSettings>("settings", "business", (settings) => {
@@ -383,42 +524,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Listen for Firebase Auth state changes
       storeUnsubs.push(
         onAuthStateChanged(auth, (firebaseUser) => {
-          if (firebaseUser && firebaseUser.email) {
-            // Find existing customer by email
-            const state = get();
-            const existingCustomer = state.customers.find(
-              (c) => (c.email || "").trim().toLowerCase() === (firebaseUser.email || "").trim().toLowerCase()
-            );
-            
-            if (existingCustomer) {
-              set({ currentUser: existingCustomer });
-              StorageService.saveSession(existingCustomer);
-            } else {
-              // Create temporary customer profile based on firebase user if missing
-              const newCustomer: Customer = {
-                name: firebaseUser.displayName || "Authenticated User",
-                email: firebaseUser.email || "",
-                phone: firebaseUser.phoneNumber || "",
-                passcode: "1960", // Legacy compat
-                role: AuthorizationEngine.resolveRole({ email: firebaseUser.email } as any),
-                orderStatus: "Fresh Passport Activation",
-                method: "gmail",
-              } as any;
-              
-              set({ 
-                currentUser: newCustomer,
-                customers: [...state.customers, newCustomer]
-              });
-              StorageService.saveSession(newCustomer);
-            }
+          const sequence = ++authBootstrapSequence;
+          if (firebaseUser && !firebaseUser.isAnonymous) {
+            void (async () => {
+              try {
+                const customer =
+                  await FirebaseCustomerAuth.bootstrap(firebaseUser);
+                if (sequence === authBootstrapSequence) {
+                  get().setCurrentUser(customer);
+                }
+              } catch (error) {
+                console.error(
+                  "Failed to establish the secure Firebase customer session:",
+                  error,
+                );
+                if (sequence === authBootstrapSequence) {
+                  ApiService.clearSession();
+                  get().setCurrentUser(null);
+                }
+              }
+            })();
           } else {
-            // Fallback for mock users/guests using legacy local storage
-            const localSession = StorageService.getSession();
-            if (localSession) {
-              set({ currentUser: localSession });
-            } else {
-              set({ currentUser: null });
-            }
+            ApiService.clearSession();
+            get().setCurrentUser(null);
           }
         })
       );
@@ -455,18 +583,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
 
       storeUnsubs.push(
-        StorageService.subscribeToCollection<Customer>("customers", (accountsList) => {
-          set({ customers: accountsList });
-        })
-      );
-
-      storeUnsubs.push(
-        StorageService.subscribeToCollection<MasterOrder>("orders", (ordersList) => {
-          set({ orders: ordersList, hasLoadedOrders: true });
-        })
-      );
-
-      storeUnsubs.push(
         StorageService.subscribeToCollection<CustomGroup>("customGroups", (groupsList) => {
           set({ customGroups: groupsList });
         })
@@ -479,7 +595,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
 
       set({
-        currentUser: session || null,
         // others are set via subscriptions
         businessSettings: savedBusinessSettings,
         hasLoadedBusinessSettings: true,

@@ -12,6 +12,8 @@ const app = read("src/App.tsx");
 const types = read("src/types.ts");
 const cartDrawer = read("src/components/CartDrawer.tsx");
 const shippingEngine = read("src/utils/shippingPricing.ts");
+const storageService = read("src/services/storageService.ts");
+const appStore = read("src/store/useAppStore.ts");
 
 const forbiddenPricingTerms = [
   "getBaseSewingPrice",
@@ -99,6 +101,40 @@ for (const legacyBatchRate of ["32.81", "13.13", "11.81", "10.63", "12.76"]) {
     `Batch shipping must not retain legacy capacity rate ${legacyBatchRate}`,
   );
 }
+assert.ok(
+  shippingEngine.includes('FINAL_MILE_PRICING_VERSION = "2026-07-30-final-mile-v1"') &&
+    shippingEngine.includes("calculateFinalMileShipping") &&
+    shippingEngine.includes("lagosToEindhovenShipping +"),
+  "Final-mile pricing must be versioned and added to inbound shipping centrally",
+);
+assert.ok(
+  shippingEngine.includes('"DESTINATION_REQUIRED"') &&
+    shippingEngine.includes('"MANUAL_QUOTE_REQUIRED"'),
+  "Unpriced final delivery must use explicit blocking states",
+);
+assert.ok(
+  designStudio.includes("addressLine1") &&
+    designStudio.includes("postalCode") &&
+    designStudio.includes("countryCode") &&
+    !designStudio.includes("Personal Shipping Address"),
+  "Step 7 must use structured delivery fields instead of one free-form address",
+);
+assert.ok(
+  cartDrawer.includes("cartPricing.canCheckout") &&
+    app.includes("checkoutPricing.canCheckout"),
+  "Cart and payment handlers must enforce final-delivery quote blockers",
+);
+assert.ok(
+  storageService.includes("getCartItems") &&
+    storageService.includes("saveCartItems") &&
+    appStore.includes("StorageService.getCartItems()") &&
+    appStore.includes("StorageService.saveCartItems(newItems)"),
+  "Cart delivery selections must persist through refresh",
+);
+assert.ok(
+  app.includes("setOrders((previous) => [...previous, ...completedOrders])"),
+  "Successful checkout must persist completed orders before clearing the cart",
+);
 
 const subtotalMatch = designStudio.match(
   /const subtotal =\s*([\s\S]*?);\s*\n\s*return \{/,

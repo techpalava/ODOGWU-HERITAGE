@@ -5,6 +5,11 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { estimateMeasurements } from "./src/utils/fitEstimator";
 import Stripe from "stripe";
+import {
+  handleAuthBootstrap,
+  handlePinLogin,
+  handlePinRegister,
+} from "./src/server/authHttp";
 
 dotenv.config();
 
@@ -31,6 +36,10 @@ const PORT = 3000;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+app.post("/api/auth/bootstrap", handleAuthBootstrap);
+app.post("/api/auth/pin-login", handlePinLogin);
+app.post("/api/auth/pin-register", handlePinRegister);
 
 // API route for AI sizing estimation using Gemini 3.5 Flash
 app.post("/api/estimate-measurements", async (req, res) => {

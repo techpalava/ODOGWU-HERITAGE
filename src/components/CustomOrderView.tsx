@@ -121,7 +121,7 @@ export default function CustomOrderView({
         orderType: "Group Organizer",
         batchId: `GRP-${batchName.replace(/\s+/g, "")}`,
         batchName: batchName,
-        organizer: currentUser?.name || "Xavier E.",
+        organizer: currentUser?.name || "Guest organizer",
         deliveryWindow: `Late ${preferredDeliveryMonth}`,
         expectedParticipants: expectedParticipants,
         currentMembers: 1,

@@ -10,10 +10,12 @@ import { CustomDetailOption, CustomGroup,
   CommunityPhoto,
   Customer,
   MasterOrder,
+  CartItem,
+  GuestOrderSession,
   Batch,
   BusinessSettings,
 } from "../types";
-import { db } from "./firebase";
+import { auth, db } from "./firebase";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "../config/GarmentDetailsConfig";
 import { normalizeCustomDetailCatalog } from "../utils/catalogHelpers";
 import { ImageService } from "./imageService";
@@ -23,12 +25,21 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
+  query,
   setDoc,
   writeBatch,
   deleteDoc,
-  onSnapshot
+  onSnapshot,
+  where,
 } from "firebase/firestore";
+import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 
+const GUEST_ORDER_SESSION_KEY = "odogwu_guest_order_session_v1";
+const ACCOUNT_CART_KEY_PREFIX = "odogwu_account_cart_v1:";
+
+const getAccountCartStorageKey = (canonicalEmail: string): string =>
+  `${ACCOUNT_CART_KEY_PREFIX}${encodeURIComponent(canonicalEmail)}`;
 
 function deepEqual(a: any, b: any): boolean {
   if (a === b) return true;
@@ -320,6 +331,28 @@ export const StorageService = {
       (g) => g.batchId,
     );
   },
+  saveGroup: async (group: CustomGroup) => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser || firebaseUser.isAnonymous) {
+      throw new Error("Firebase authentication is required to save a group.");
+    }
+    const isOrganizer =
+      group.ownerUid === firebaseUser.uid ||
+      group.organizerId === firebaseUser.uid;
+    await setDoc(
+      doc(db, "customGroups", group.batchId),
+      sanitizeForFirestore({
+        ...group,
+        ...(isOrganizer
+          ? {
+              ownerUid: firebaseUser.uid,
+              organizerId: firebaseUser.uid,
+            }
+          : {}),
+      }),
+      { merge: true },
+    );
+  },
 
   // Users (Accounts)
   getAccounts: async (): Promise<Customer[]> => {
@@ -327,6 +360,65 @@ export const StorageService = {
   },
   saveAccounts: async (accounts: Customer[]) => {
     await StorageService.saveCollection("customers", accounts, (a) => a.email);
+  },
+  saveAccount: async (account: Customer) => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser || firebaseUser.isAnonymous) {
+      throw new Error("Firebase authentication is required to save a profile.");
+    }
+    const canonicalEmail = AuthorizationEngine.getCanonicalEmail(
+      account.email,
+    );
+    const ownedAccount = await getDocs(
+      query(
+        collection(db, "customers"),
+        where("ownerUid", "==", firebaseUser.uid),
+        limit(1),
+      ),
+    );
+    if (ownedAccount.empty) {
+      throw new Error(
+        "The authenticated Firebase profile has not been provisioned.",
+      );
+    }
+    await setDoc(
+      ownedAccount.docs[0].ref,
+      sanitizeForFirestore({
+        ...account,
+        ownerUid: firebaseUser.uid,
+        canonicalEmail,
+        email: canonicalEmail,
+      }),
+      { merge: true },
+    );
+  },
+  subscribeToCustomerAccount: (
+    _email: string,
+    callback: (account: Customer | null) => void,
+  ) => {
+    const ownerUid = auth.currentUser?.uid;
+    if (!ownerUid) {
+      callback(null);
+      return () => undefined;
+    }
+    return onSnapshot(
+      query(
+        collection(db, "customers"),
+        where("ownerUid", "==", ownerUid),
+        limit(1),
+      ),
+      (snapshot) => {
+        callback(
+          snapshot.empty
+            ? null
+            : (snapshot.docs[0].data() as Customer),
+        );
+      },
+      (error) => {
+        console.error("Error subscribing to customer account:", error);
+        callback(null);
+      },
+    );
   },
 
   // Active Session (keep in localStorage for auth persistence)
@@ -339,6 +431,56 @@ export const StorageService = {
   },
   clearSession: () => {
     localStorage.removeItem("ntcc_user");
+  },
+
+  // Cart drafts are device-local and restored after refresh.
+  getCartItems: (): CartItem[] => {
+    if (typeof window === "undefined") return [];
+    const saved = localStorage.getItem("odogwu_cart_items");
+    return StorageService.safeParse<CartItem[]>(saved) || [];
+  },
+  saveCartItems: (items: CartItem[]) => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("odogwu_cart_items", JSON.stringify(items));
+  },
+  clearCartItems: () => {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem("odogwu_cart_items");
+  },
+
+  getGuestOrderSession: (): GuestOrderSession | null => {
+    if (typeof window === "undefined") return null;
+    return StorageService.safeParse<GuestOrderSession>(
+      localStorage.getItem(GUEST_ORDER_SESSION_KEY),
+    );
+  },
+  saveGuestOrderSession: (session: GuestOrderSession) => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(GUEST_ORDER_SESSION_KEY, JSON.stringify(session));
+  },
+  clearGuestOrderSession: () => {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem(GUEST_ORDER_SESSION_KEY);
+  },
+  getAccountCartItems: (canonicalEmail: string): CartItem[] => {
+    if (typeof window === "undefined" || !canonicalEmail) return [];
+    return (
+      StorageService.safeParse<CartItem[]>(
+        localStorage.getItem(
+          getAccountCartStorageKey(canonicalEmail),
+        ),
+      ) || []
+    );
+  },
+  saveAccountCartItems: (
+    canonicalEmail: string,
+    items: CartItem[],
+  ) => {
+    if (typeof window === "undefined" || !canonicalEmail) return;
+    localStorage.setItem(
+      getAccountCartStorageKey(canonicalEmail),
+      JSON.stringify(items),
+    );
   },
 
   // Fabrics
@@ -409,6 +551,60 @@ export const StorageService = {
       "orders",
       orders,
       (o) => o.shipment?.trackingId || Date.now().toString(),
+    );
+  },
+  saveOrder: async (order: MasterOrder) => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser || firebaseUser.isAnonymous) {
+      throw new Error("Firebase authentication is required to save an order.");
+    }
+    const orderId = order.shipment?.trackingId;
+    if (!orderId) {
+      throw new Error("An order tracking ID is required before saving.");
+    }
+    await setDoc(
+      doc(db, "orders", orderId),
+      sanitizeForFirestore({
+        ...order,
+        ownerUid: order.ownerUid || firebaseUser.uid,
+        customer: {
+          ...order.customer,
+          ownerUid: order.customer.ownerUid || firebaseUser.uid,
+          canonicalEmail: AuthorizationEngine.getCanonicalEmail(
+            order.customer.email,
+          ),
+          email: AuthorizationEngine.getCanonicalEmail(order.customer.email),
+        },
+      }),
+      { merge: true },
+    );
+  },
+  subscribeToCustomerOrders: (
+    _email: string,
+    callback: (orders: MasterOrder[]) => void,
+  ) => {
+    const ownerUid = auth.currentUser?.uid;
+    if (!ownerUid) {
+      callback([]);
+      return () => undefined;
+    }
+    return onSnapshot(
+      query(
+        collection(db, "orders"),
+        where("ownerUid", "==", ownerUid),
+      ),
+      (snapshot) => {
+        callback(
+          snapshot.docs.map(
+            (orderDocument) =>
+              orderDocument.data() as MasterOrder,
+          ),
+        );
+      },
+      (error) => {
+        console.error("Error subscribing to customer orders:", error);
+        callback([]);
+      },
     );
   },
 

@@ -1,11 +1,23 @@
+import { useState } from "react";
 import { ShoppingBag, X, Trash2, CreditCard } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
-import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 import {
   BATCH_MINIMUM_GARMENTS,
   calculateCartPricing,
+  confirmCartShippingReprice,
+  FINAL_MILE_COUNTRY_OPTIONS,
   getStoredShippingCost,
 } from "../utils/shippingPricing";
+import {
+  confirmCartPricingUpdates,
+  rerouteCartItemToIndividual,
+  revalidateCartForCheckout,
+} from "../utils/checkoutValidation";
+import type {
+  CartItem,
+  DeliveryAddress,
+  DeliveryMethod,
+} from "../types";
 import {
   clampDepositPercentage,
   getDepositRatio,
@@ -13,6 +25,25 @@ import {
 } from "../utils/money";
 
 export function CartDrawer() {
+  const [shippingEditorItemId, setShippingEditorItemId] = useState<
+    string | null
+  >(null);
+  const [shippingEditorMethod, setShippingEditorMethod] =
+    useState<DeliveryMethod>("PICKUP");
+  const [shippingEditorAddress, setShippingEditorAddress] =
+    useState<DeliveryAddress>({
+      addressLine1: "",
+      city: "",
+      postalCode: "",
+      countryCode: "NL",
+    });
+  const [shippingEditorRoute, setShippingEditorRoute] =
+    useState<NonNullable<CartItem["batchType"]>>("alone");
+  const [shippingEditorQuantity, setShippingEditorQuantity] =
+    useState("1");
+  const [shippingEditorBatchId, setShippingEditorBatchId] = useState("");
+  const [shippingEditorBatchName, setShippingEditorBatchName] = useState("");
+  const [rerouteItemIds, setRerouteItemIds] = useState<string[]>([]);
   const isCartOpen = useAppStore((state) => state.isCartOpen);
   const setIsCartOpen = useAppStore((state) => state.setIsCartOpen);
   const cartItems = useAppStore((state) => state.cartItems);
@@ -22,20 +53,15 @@ export function CartDrawer() {
   );
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const setNotification = useAppStore((state) => state.setNotification);
+  const setCheckoutIntent = useAppStore(
+    (state) => state.setCheckoutIntent,
+  );
   const businessSettings = useAppStore((state) => state.businessSettings);
   const currentUser = useAppStore((state) => state.currentUser);
-  const orders = useAppStore((state) => state.orders);
-  const historicalOrders = useAppStore((state) => state.historicalOrders);
   const batches = useAppStore((state) => state.batches);
+  const fabrics = useAppStore((state) => state.fabrics);
+  const styles = useAppStore((state) => state.styles);
   const customDetailCatalog = useAppStore((state) => state.customDetailCatalog);
-
-  const journey = CustomerJourneyEngine.getCurrentJourney({
-    currentUser: currentUser as any,
-    drafts: cartItems,
-    activeOrders: orders,
-    historicalOrders,
-    allBatches: batches,
-  });
 
   if (!isCartOpen) return null;
 
@@ -47,24 +73,166 @@ export function CartDrawer() {
     }, 4000);
   };
 
+  const openShippingEditor = (item: CartItem) => {
+    const method = item.deliverySelection?.method || "PICKUP";
+    setShippingEditorMethod(method);
+    setShippingEditorAddress(
+      item.deliverySelection?.address || {
+        addressLine1: "",
+        city: "",
+        postalCode: "",
+        countryCode: "NL",
+      },
+    );
+    setShippingEditorRoute(item.batchType || "alone");
+    setShippingEditorQuantity(
+      String(
+        item.garmentPieceCount ??
+          item.shippingSnapshot?.garmentPieceCount ??
+          "",
+      ),
+    );
+    setShippingEditorBatchId(
+      item.batchId || item.customGroupCode || "",
+    );
+    setShippingEditorBatchName(item.batchName || "");
+    setShippingEditorItemId(item.id);
+  };
+
+  const saveShippingDetails = (item: CartItem) => {
+    const garmentPieceCount = Number.parseInt(
+      shippingEditorQuantity,
+      10,
+    );
+    const deliverySelection =
+      shippingEditorMethod === "PICKUP"
+        ? {
+            method: "PICKUP" as const,
+            pickupLocation:
+              businessSettings.productionSettings.defaultPickupLocation,
+            pickupWindow:
+              item.deliverySelection?.pickupWindow || "To be arranged",
+          }
+        : {
+            method: "DELIVERY" as const,
+            address: shippingEditorAddress,
+            actualParcelWeightKg:
+              item.deliverySelection?.actualParcelWeightKg,
+          };
+
+    setCartItems((currentItems) =>
+      currentItems.map((currentItem) =>
+        currentItem.id === item.id
+          ? {
+              ...currentItem,
+              batchType: shippingEditorRoute,
+              batchId:
+                shippingEditorRoute === "alone"
+                  ? undefined
+                  : shippingEditorBatchId,
+              batchName:
+                shippingEditorRoute === "alone"
+                  ? "Individual Order (No Batch)"
+                  : shippingEditorBatchName,
+              customGroupCode:
+                shippingEditorRoute === "personalized"
+                  ? shippingEditorBatchId
+                  : currentItem.customGroupCode,
+              garmentPieceCount:
+                Number.isInteger(garmentPieceCount) &&
+                garmentPieceCount > 0
+                  ? garmentPieceCount
+                  : undefined,
+              deliverySelection,
+            }
+          : currentItem,
+      ),
+    );
+    setShippingEditorItemId(null);
+    setNotification({
+      message: "Shipping details updated. Please review the current amount.",
+      type: "success",
+    });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  const acceptUpdatedShipping = () => {
+    setCartItems((currentItems) =>
+      confirmCartShippingReprice(currentItems),
+    );
+    setNotification({
+      message: "Updated shipping amount accepted.",
+      type: "success",
+    });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  const acceptUpdatedGarmentPricing = () => {
+    setCartItems((currentItems) =>
+      confirmCartPricingUpdates(currentItems),
+    );
+    setNotification({
+      message: "Updated garment price accepted.",
+      type: "success",
+    });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  const continueAsIndividualOrder = (itemId: string) => {
+    setCartItems((currentItems) =>
+      rerouteCartItemToIndividual(currentItems, itemId),
+    );
+    setRerouteItemIds((current) =>
+      current.filter((candidate) => candidate !== itemId),
+    );
+    setNotification({
+      message:
+        "The design was preserved and moved to an individual order route.",
+      type: "success",
+    });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
   const handleCheckout = () => {
     if (cartItems.length === 0) return;
-    
-    // Check journey for blockers
-    if (journey.destination === "login") {
-      setIsCartOpen(false);
-      setActiveTab("login");
-      setNotification({ message: journey.notification, type: "info" });
-      setTimeout(() => { setNotification(null); }, 4000);
-      return;
-    } else if (journey.destination === "dashboard" && journey.primaryAction === "Complete Profile") {
-      setIsCartOpen(false);
-      setActiveTab("dashboard");
-      setNotification({ message: journey.notification, type: "info" });
-      setTimeout(() => { setNotification(null); }, 4000);
+    const validation = revalidateCartForCheckout(cartItems, {
+      fabrics,
+      styles,
+      batches,
+      customDetailCatalog,
+      businessSettings,
+      depositRatio,
+    });
+    if (validation.changed) {
+      setCartItems(validation.items);
+    }
+    setRerouteItemIds(validation.rerouteItemIds);
+    if (!validation.canProceed) {
+      setNotification({
+        message:
+          validation.blockers[0] ||
+          "Review the cart before payment.",
+        type: "info",
+      });
+      setTimeout(() => {
+        setNotification(null);
+      }, 5000);
       return;
     }
-    
+
+    if (!currentUser) {
+      setCheckoutIntent(true);
+      setIsCartOpen(false);
+      setActiveTab("login");
+      setNotification({
+        message:
+          "Sign in or create an account to securely complete your order.",
+        type: "info",
+      });
+      setTimeout(() => setNotification(null), 4000);
+      return;
+    }
+
     setIsCheckoutPaymentOpen(true);
   };
 
@@ -76,6 +244,36 @@ export function CartDrawer() {
   const subtotal = cartPricing.total;
   const depositAmount = cartPricing.depositDueNow;
   const currencySymbol = PRICING_CURRENCY_SYMBOL;
+  const repricedItems = cartItems.filter(
+    (item) =>
+      item.shippingSnapshot?.status === "CONFIRMATION_REQUIRED",
+  );
+  const previousShippingTotal = repricedItems.reduce(
+    (total, item) =>
+      total + (item.shippingSnapshot?.previousShippingTotal ?? 0),
+    0,
+  );
+  const updatedShippingTotal = repricedItems.reduce(
+    (total, item) =>
+      total + (item.shippingSnapshot?.updatedShippingTotal ?? 0),
+    0,
+  );
+  const repricedGarmentItems = cartItems.filter(
+    (item) =>
+      item.pricingReview?.status === "CONFIRMATION_REQUIRED",
+  );
+  const previousGarmentTotal = repricedGarmentItems.reduce(
+    (total, item) =>
+      total +
+      (item.pricingReview?.previousGarmentSubtotal ?? 0),
+    0,
+  );
+  const updatedGarmentTotal = repricedGarmentItems.reduce(
+    (total, item) =>
+      total +
+      (item.pricingReview?.updatedGarmentSubtotal ?? 0),
+    0,
+  );
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
@@ -250,6 +448,206 @@ export function CartDrawer() {
                         )}
                       </div>
 
+                      <div className="border-t border-amber-200 pt-3 space-y-3">
+                        {item.shippingSnapshot?.status ===
+                          "REVIEW_REQUIRED" && (
+                          <div className="text-[10px] text-amber-800">
+                            <p className="font-bold">Review shipping details</p>
+                            <p className="mt-0.5">
+                              {item.shippingSnapshot.reviewReason ||
+                                "Complete the delivery information before payment."}
+                            </p>
+                          </div>
+                        )}
+                        {shippingEditorItemId !== item.id ? (
+                            <button
+                              type="button"
+                              onClick={() => openShippingEditor(item)}
+                              className="text-[10px] font-bold text-heritage-green underline underline-offset-4 cursor-pointer"
+                            >
+                              {item.shippingSnapshot?.status ===
+                              "REVIEW_REQUIRED"
+                                ? "Review shipping details"
+                                : "Edit order details"}
+                            </button>
+                          ) : (
+                            <div className="space-y-3">
+                              <div className="grid grid-cols-2 gap-2">
+                                <label className="text-[9px] font-bold uppercase text-heritage-ink/60">
+                                  Order route
+                                  <select
+                                    value={shippingEditorRoute}
+                                    onChange={(event) =>
+                                      setShippingEditorRoute(
+                                        event.target.value as NonNullable<
+                                          CartItem["batchType"]
+                                        >,
+                                      )
+                                    }
+                                    className="mt-1 min-h-[40px] w-full border border-gray-200 px-2 text-[10px] font-normal normal-case"
+                                  >
+                                    <option value="alone">
+                                      Individual order
+                                    </option>
+                                    <option value="community">
+                                      Community batch
+                                    </option>
+                                    <option value="personalized">
+                                      Personalized batch
+                                    </option>
+                                    <option value="actual">
+                                      Assigned batch
+                                    </option>
+                                  </select>
+                                </label>
+                                <label className="text-[9px] font-bold uppercase text-heritage-ink/60">
+                                  Garment quantity
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    value={shippingEditorQuantity}
+                                    onChange={(event) =>
+                                      setShippingEditorQuantity(
+                                        event.target.value,
+                                      )
+                                    }
+                                    className="mt-1 min-h-[40px] w-full border border-gray-200 px-3 text-[10px] font-normal normal-case"
+                                  />
+                                </label>
+                              </div>
+                              {shippingEditorRoute !== "alone" && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <input
+                                    aria-label="Batch ID"
+                                    placeholder="Batch ID"
+                                    value={shippingEditorBatchId}
+                                    onChange={(event) =>
+                                      setShippingEditorBatchId(
+                                        event.target.value,
+                                      )
+                                    }
+                                    className="min-h-[40px] border border-gray-200 px-3 text-[10px]"
+                                  />
+                                  <input
+                                    aria-label="Batch name"
+                                    placeholder="Batch name"
+                                    value={shippingEditorBatchName}
+                                    onChange={(event) =>
+                                      setShippingEditorBatchName(
+                                        event.target.value,
+                                      )
+                                    }
+                                    className="min-h-[40px] border border-gray-200 px-3 text-[10px]"
+                                  />
+                                </div>
+                              )}
+                              <div className="grid grid-cols-2 gap-2">
+                                {(["PICKUP", "DELIVERY"] as const).map(
+                                  (method) => (
+                                    <button
+                                      key={method}
+                                      type="button"
+                                      onClick={() =>
+                                        setShippingEditorMethod(method)
+                                      }
+                                      className={`min-h-[40px] border px-3 text-[9px] font-bold uppercase cursor-pointer ${
+                                        shippingEditorMethod === method
+                                          ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green"
+                                          : "border-gray-200 text-heritage-ink/60"
+                                      }`}
+                                    >
+                                      {method === "PICKUP"
+                                        ? "Eindhoven pickup"
+                                        : "Deliver to address"}
+                                    </button>
+                                  ),
+                                )}
+                              </div>
+                              {shippingEditorMethod === "DELIVERY" && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <input
+                                    aria-label="Address line 1"
+                                    placeholder="Address line 1"
+                                    value={shippingEditorAddress.addressLine1}
+                                    onChange={(event) =>
+                                      setShippingEditorAddress((current) => ({
+                                        ...current,
+                                        addressLine1: event.target.value,
+                                      }))
+                                    }
+                                    className="col-span-2 min-h-[40px] border border-gray-200 px-3 text-[10px]"
+                                  />
+                                  <input
+                                    aria-label="City"
+                                    placeholder="City"
+                                    value={shippingEditorAddress.city}
+                                    onChange={(event) =>
+                                      setShippingEditorAddress((current) => ({
+                                        ...current,
+                                        city: event.target.value,
+                                      }))
+                                    }
+                                    className="min-h-[40px] border border-gray-200 px-3 text-[10px]"
+                                  />
+                                  <input
+                                    aria-label="Postal code"
+                                    placeholder="Postal code"
+                                    value={shippingEditorAddress.postalCode}
+                                    onChange={(event) =>
+                                      setShippingEditorAddress((current) => ({
+                                        ...current,
+                                        postalCode: event.target.value,
+                                      }))
+                                    }
+                                    className="min-h-[40px] border border-gray-200 px-3 text-[10px]"
+                                  />
+                                  <select
+                                    aria-label="Country"
+                                    value={shippingEditorAddress.countryCode}
+                                    onChange={(event) =>
+                                      setShippingEditorAddress((current) => ({
+                                        ...current,
+                                        countryCode: event.target.value,
+                                      }))
+                                    }
+                                    className="col-span-2 min-h-[40px] border border-gray-200 px-3 text-[10px]"
+                                  >
+                                    {FINAL_MILE_COUNTRY_OPTIONS.map(
+                                      (country) => (
+                                        <option
+                                          key={country.code}
+                                          value={country.code}
+                                        >
+                                          {country.label}
+                                        </option>
+                                      ),
+                                    )}
+                                  </select>
+                                </div>
+                              )}
+                              <div className="flex gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => saveShippingDetails(item)}
+                                  className="min-h-[40px] bg-heritage-green px-4 text-[9px] font-bold uppercase text-white cursor-pointer"
+                                >
+                                  Save shipping details
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setShippingEditorItemId(null)
+                                  }
+                                  className="min-h-[40px] text-[9px] font-bold uppercase text-heritage-ink/60 cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                        )}
+                      </div>
+
                       <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                         <span className="text-[9px] text-heritage-ink/40 font-semibold font-mono">
                           ID: {item.id.split("-").slice(0, 2).join("-")}
@@ -272,6 +670,89 @@ export function CartDrawer() {
           {/* Drawer Footer summary */}
           {cartItems.length > 0 && (
             <div className="bg-white border-t border-heritage-gold/25 p-6 space-y-4">
+              {rerouteItemIds.map((itemId) => {
+                const item = cartItems.find(
+                  (candidate) => candidate.id === itemId,
+                );
+                if (!item) return null;
+                return (
+                  <div
+                    key={itemId}
+                    className="border-y border-amber-200 py-3 text-[10px] text-amber-900 space-y-2"
+                  >
+                    <p className="font-bold">
+                      {item.batchName || "Community batch"} is no longer
+                      joinable.
+                    </p>
+                    <p>Your garment design remains safely in the cart.</p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        continueAsIndividualOrder(itemId)
+                      }
+                      className="min-h-[40px] w-full bg-heritage-green px-4 text-[9px] font-bold uppercase tracking-wider text-white cursor-pointer"
+                    >
+                      Continue as individual order
+                    </button>
+                  </div>
+                );
+              })}
+              {repricedGarmentItems.length > 0 && (
+                <div className="border-y border-amber-200 py-3 text-[10px] text-amber-900 space-y-2">
+                  <p className="font-bold uppercase tracking-wider">
+                    Garment price updated
+                  </p>
+                  <div className="flex justify-between gap-3">
+                    <span>Previous garment total:</span>
+                    <span className="font-mono">
+                      {currencySymbol}
+                      {previousGarmentTotal.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3 font-bold">
+                    <span>Updated garment total:</span>
+                    <span className="font-mono">
+                      {currencySymbol}
+                      {updatedGarmentTotal.toFixed(2)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={acceptUpdatedGarmentPricing}
+                    className="min-h-[40px] w-full bg-heritage-green px-4 text-[9px] font-bold uppercase tracking-wider text-white cursor-pointer"
+                  >
+                    Accept updated garment price
+                  </button>
+                </div>
+              )}
+              {repricedItems.length > 0 && (
+                <div className="border-y border-amber-200 py-3 text-[10px] text-amber-900 space-y-2">
+                  <p className="font-bold uppercase tracking-wider">
+                    Shipping price updated
+                  </p>
+                  <div className="flex justify-between gap-3">
+                    <span>Previous shipping:</span>
+                    <span className="font-mono">
+                      {currencySymbol}
+                      {previousShippingTotal.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3 font-bold">
+                    <span>Updated shipping:</span>
+                    <span className="font-mono">
+                      {currencySymbol}
+                      {updatedShippingTotal.toFixed(2)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={acceptUpdatedShipping}
+                    className="min-h-[40px] w-full bg-heritage-green px-4 text-[9px] font-bold uppercase tracking-wider text-white cursor-pointer"
+                  >
+                    Accept updated shipping
+                  </button>
+                </div>
+              )}
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between text-heritage-ink/70">
                   <span>
@@ -286,7 +767,7 @@ export function CartDrawer() {
                 {cartPricing.individualShippingQuote && (
                   <div className="text-heritage-ink/70">
                     <div className="flex justify-between">
-                      <span>Shipping - Lagos to Eindhoven:</span>
+                      <span>Lagos &rarr; Eindhoven shipping:</span>
                       <span className="font-mono font-semibold text-heritage-green">
                         {currencySymbol}
                         {cartPricing.individualShippingQuote.priceEur.toFixed(2)}
@@ -305,7 +786,9 @@ export function CartDrawer() {
                 {cartPricing.batchShippingQuotes.map((quote) => (
                   <div key={quote.batchId} className="text-heritage-ink/70">
                     <div className="flex justify-between">
-                      <span>Flat batch shipping - {quote.batchName}:</span>
+                      <span>
+                        Lagos &rarr; Eindhoven · {quote.batchName}:
+                      </span>
                       <span className="font-mono font-semibold text-heritage-green">
                         {currencySymbol}
                         {quote.priceEur.toFixed(2)}
@@ -325,11 +808,55 @@ export function CartDrawer() {
                     </p>
                   </div>
                 ))}
+                {cartPricing.finalMileShippingQuotes.map((quote) => (
+                  <div
+                    key={quote.shipmentGroupId}
+                    className="text-heritage-ink/70"
+                  >
+                    <div className="flex justify-between gap-3">
+                      <span>
+                        {quote.method === "PICKUP"
+                          ? `${quote.pickupLocation || "Configured location"} pickup:`
+                          : quote.status === "READY"
+                            ? `Eindhoven → ${quote.zoneLabel} (${quote.weightBand}):`
+                            : "Eindhoven → final destination:"}
+                      </span>
+                      <span
+                        className={`text-right font-semibold ${
+                          quote.status === "READY"
+                            ? "font-mono text-heritage-green"
+                            : "text-amber-700"
+                        }`}
+                      >
+                        {quote.status === "READY"
+                          ? `${currencySymbol}${(quote.priceEur ?? 0).toFixed(2)}`
+                          : quote.status === "MANUAL_QUOTE_REQUIRED"
+                            ? "Quote required"
+                            : "Delivery selection required"}
+                      </span>
+                    </div>
+                    {quote.status !== "READY" && (
+                      <p className="mt-0.5 text-[9px] text-amber-700">
+                        {quote.manualQuoteReason ||
+                          "Return to Design Studio Step 7 to select final delivery."}
+                      </p>
+                    )}
+                  </div>
+                ))}
+                <div className="flex justify-between text-heritage-ink/70 border-t pt-2">
+                  <span>Total shipping:</span>
+                  <span className="font-mono font-semibold text-heritage-green">
+                    {cartPricing.totalShipping === null
+                      ? "Pending quote"
+                      : `${currencySymbol}${cartPricing.totalShipping.toFixed(2)}`}
+                  </span>
+                </div>
                 <div className="flex justify-between text-heritage-ink/70 border-t pt-2">
                   <span>Total subtotal:</span>
                   <span className="font-mono font-semibold text-heritage-green">
-                    {currencySymbol}
-                    {subtotal.toFixed(2)}
+                    {subtotal === null
+                      ? "Pending quote"
+                      : `${currencySymbol}${subtotal.toFixed(2)}`}
                   </span>
                 </div>
                 <div className="flex justify-between text-heritage-ink/70">
@@ -337,18 +864,24 @@ export function CartDrawer() {
                     Due now (
                     {depositPercentage}%
                     garment deposit
-                    {cartPricing.shippingTotal > 0 ? " + full shipping" : ""}):
+                    {cartPricing.totalShipping !== null &&
+                    cartPricing.totalShipping > 0
+                      ? " + full shipping"
+                      : ""}
+                    ):
                   </span>
                   <span className="font-mono font-semibold text-heritage-gold">
-                    {currencySymbol}
-                    {depositAmount.toFixed(2)}
+                    {depositAmount === null
+                      ? "Unavailable"
+                      : `${currencySymbol}${depositAmount.toFixed(2)}`}
                   </span>
                 </div>
                 <div className="flex justify-between font-bold text-sm text-heritage-green border-t pt-2 font-serif">
                   <span>Total checkout deposit:</span>
                   <span className="font-mono">
-                    {currencySymbol}
-                    {depositAmount.toFixed(2)}
+                    {depositAmount === null
+                      ? "Unavailable"
+                      : `${currencySymbol}${depositAmount.toFixed(2)}`}
                   </span>
                 </div>
               </div>
@@ -361,7 +894,8 @@ export function CartDrawer() {
                   <strong>Heritage Escrow System:</strong> Your{" "}
                   {depositPercentage}% garment
                   deposit
-                  {cartPricing.shippingTotal > 0
+                  {cartPricing.totalShipping !== null &&
+                  cartPricing.totalShipping > 0
                     ? " and full shipping payment"
                     : ""}{" "}
                   activate our Lagos workshop immediately. The final{" "}
@@ -373,9 +907,21 @@ export function CartDrawer() {
               <button
                 type="button"
                 onClick={handleCheckout}
-                className="w-full bg-heritage-gold text-heritage-forest hover:bg-heritage-green hover:text-white transition py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                disabled={!cartPricing.canCheckout}
+                className="w-full bg-heritage-gold text-heritage-forest hover:bg-heritage-green hover:text-white transition py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <CreditCard size={12} /> {journey.destination === "login" || journey.primaryAction === "Complete Profile" ? journey.primaryAction : "Place Group Order Securely"}
+                <CreditCard size={12} />{" "}
+                {!cartPricing.canCheckout
+                  ? cartPricing.requiresShippingReview
+                    ? "Review Shipping Details"
+                    : cartPricing.requiresPriceConfirmation
+                      ? "Confirm Updated Garment Price"
+                    : cartPricing.requiresShippingConfirmation
+                      ? "Confirm Updated Shipping"
+                      : cartPricing.shippingStatus === "MANUAL_QUOTE_REQUIRED"
+                        ? "Shipping Quote Required"
+                        : "Complete Final Delivery"
+                  : "Proceed to Checkout"}
               </button>
             </div>
           )}

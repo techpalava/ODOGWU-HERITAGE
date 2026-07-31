@@ -612,6 +612,13 @@ export default function AboutView() {
                 changing the per-garment rate.
               </li>
               <li>
+                Final delivery from the configured Netherlands pickup point is
+                priced separately for both individual and batch orders.
+                Collection is free; address delivery is calculated from the
+                destination zone and parcel band. Unsupported destinations and
+                parcels over 20 kg require a manual quote before payment.
+              </li>
+              <li>
                 Add-ons matching code <strong>Others-1</strong> can be added to
                 any customized order in Step 3 for only <strong>+€10.00</strong>{" "}
                 during active group phases.

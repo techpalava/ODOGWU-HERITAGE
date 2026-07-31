@@ -29,13 +29,17 @@ import { getCurrentRegistrationBatch } from "./utils/batchUtils";
 import { CapacityService } from "./services/CapacityService";
 import {
   BATCH_MINIMUM_GARMENTS,
+  calculateCartPaymentAllocations,
   calculateCartPricing,
+  getFinalMileShipmentGroupId,
+  stampCurrentCartShippingItem,
 } from "./utils/shippingPricing";
 import {
   clampDepositPercentage,
   getDepositRatio,
   PRICING_CURRENCY_SYMBOL,
 } from "./utils/money";
+import { revalidateCartForCheckout } from "./utils/checkoutValidation";
 
 // Lazy load modular view components for performance optimization
 const HomeView = lazy(() => import("./components/HomeView"));
@@ -88,6 +92,8 @@ export default function App() {
     setPresetFabricCode,
     isCheckoutPaymentOpen,
     setIsCheckoutPaymentOpen,
+    checkoutIntent,
+    setCheckoutIntent,
     notification,
     setNotification,
     initializeData,
@@ -211,8 +217,10 @@ export default function App() {
           setMasterOrder(null);
         }
       } else {
-        setMasterOrder(orders[0] || null);
+        setMasterOrder(null);
       }
+    } else {
+      setMasterOrder(null);
     }
   }, [currentUser, orders]);
 
@@ -305,7 +313,8 @@ export default function App() {
       ...item,
       id: `CART-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     };
-    setCartItems((prev) => [...prev, newItem]);
+    const currentItem = stampCurrentCartShippingItem(newItem);
+    setCartItems((prev) => [...prev, currentItem]);
     triggerNotification(
       `"${item.style.name}" added to your tailoring cart!`,
       "success",
@@ -313,9 +322,147 @@ export default function App() {
   };
 
   const handleExecuteDepositPayment = () => {
+    if (!currentUser) {
+      setIsCheckoutPaymentOpen(false);
+      setCheckoutIntent(true);
+      setActiveTab("login");
+      triggerNotification(
+        "Sign in or create an account to securely complete your order.",
+        "info",
+      );
+      return;
+    }
+
+    const validation = revalidateCartForCheckout(cartItems, {
+      fabrics,
+      styles,
+      batches,
+      customDetailCatalog: store.customDetailCatalog,
+      businessSettings,
+      depositRatio: checkoutDepositRatio,
+    });
+    if (validation.changed) {
+      setCartItems(validation.items);
+    }
+    if (
+      !validation.canProceed ||
+      validation.pricing.total === null ||
+      validation.pricing.depositDueNow === null
+    ) {
+      setIsCheckoutPaymentOpen(false);
+      setIsCartOpen(true);
+      triggerNotification(
+        validation.blockers[0] ||
+          "Review the latest pricing and shipping details before payment.",
+        "info",
+      );
+      return;
+    }
+
+    const checkoutItems = [...validation.items];
+    const pricingSnapshot = validation.pricing;
+    let paymentAllocations: ReturnType<
+      typeof calculateCartPaymentAllocations
+    >;
+    try {
+      paymentAllocations = calculateCartPaymentAllocations(
+        checkoutItems,
+        pricingSnapshot,
+        checkoutDepositRatio,
+      );
+    } catch (error) {
+      console.error("Payment allocation failed:", error);
+      triggerNotification(
+        "The checkout totals could not be reconciled. Please review the cart before payment.",
+        "info",
+      );
+      return;
+    }
+    const paymentAllocationByItem = new Map(
+      paymentAllocations.map((allocation) => [
+        allocation.itemId,
+        allocation,
+      ]),
+    );
+    const checkoutId = `CHECKOUT-${Date.now()}-${Math.floor(
+      Math.random() * 10000,
+    )}`;
+    const transactionId = `TXN-${Date.now()}`;
+    const paymentDate = new Date().toISOString();
+    const finalMileQuoteByGroup = new Map(
+      pricingSnapshot.finalMileShippingQuotes.map((quote) => [
+        quote.shipmentGroupId,
+        quote,
+      ]),
+    );
+
+    const completedOrders: MasterOrder[] = checkoutItems.map((item) => {
+      const allocation = paymentAllocationByItem.get(item.id);
+      if (!allocation) {
+        throw new Error(`Missing payment allocation for ${item.id}.`);
+      }
+      const shipmentGroupId = getFinalMileShipmentGroupId(item);
+      const finalMileShipping =
+        finalMileQuoteByGroup.get(shipmentGroupId);
+
+      return {
+        customer: item.customer,
+        style: item.style,
+        fabric: item.fabric,
+        design: item.design,
+        garment: {
+          ...item.garment,
+          checkoutTotal: allocation.orderSubtotal,
+        },
+        measurements: item.measurements,
+        payment: {
+          subtotal: allocation.orderSubtotal,
+          deposit: allocation.dueNow,
+          remaining: allocation.remainingGarmentBalance,
+          method:
+            checkoutPaymentMethod === "ideal"
+              ? "iDEAL Bank Transfer"
+              : "Stripe Credit Card",
+          date: paymentDate,
+          isPaid: true,
+          paymentMethod:
+            checkoutPaymentMethod === "ideal" ? "iDEAL" : "Stripe",
+          idealBank:
+            checkoutPaymentMethod === "ideal"
+              ? checkoutIdealBank
+              : undefined,
+          transactionId,
+          secondPaymentStatus: "unpaid",
+        },
+        shipment: {
+          trackingId: `${checkoutId}-${item.id}`,
+          status: "Deposit Paid",
+          currentStage: 1,
+          estimatedDeliveryDate: "TBD",
+        },
+        specialInstructions: item.specialInstructions,
+        notesAboutLeftoverFabric: item.notesAboutLeftoverFabric,
+        batchType: item.batchType,
+        batchName: item.batchName,
+        customGroupCode: item.customGroupCode,
+        checkoutId,
+        deliverySelection: item.deliverySelection,
+        finalMileShipping,
+        shippingBreakdown: {
+          lagosToEindhovenShipping:
+            allocation.lagosToEindhovenShipping,
+          eindhovenToDestinationShipping:
+            allocation.eindhovenToDestinationShipping,
+          totalShipping: allocation.totalShipping,
+          status: "READY",
+        },
+      };
+    });
+
     setIsPaymentProcessing(true);
     // Simulate payment processing...
     setTimeout(() => {
+      setOrders((previous) => [...previous, ...completedOrders]);
       setIsPaymentProcessing(false);
       setIsCheckoutPaymentOpen(false);
       setIsCartOpen(false);
@@ -328,7 +475,7 @@ export default function App() {
       const nextJourney = CustomerJourneyEngine.getCurrentJourney({
         currentUser: store.currentUser as any,
         drafts: [],
-        activeOrders: store.orders, // we would ideally add the order here
+        activeOrders: [...store.orders, ...completedOrders],
         historicalOrders: store.historicalOrders,
         allBatches: store.batches,
       });
@@ -345,28 +492,22 @@ export default function App() {
     );
   };
 
-  const handleLogin = (email: string, name: string, phone?: string) => {
-    // Find the full user profile from the database
-    let user = store.customers.find(
-      (c) => (c.email || "").trim().toLowerCase() === email.trim().toLowerCase()
-    );
-    // If somehow not found (e.g. simulated phone login missing), fallback
-    if (!user) {
-      user = { email, name, phone: phone || "", location: "" } as Customer;
-    }
-    
-    // In case the role is not correctly resolved yet, we could resolve it, 
-    // but the app store should have it. To be safe, we assign it.
-    user.role = AuthorizationEngine.resolveRole(user);
-    
+  const handleLogin = (customer: Customer) => {
+    const user = {
+      ...customer,
+      email: AuthorizationEngine.getCanonicalEmail(customer.email),
+      role: AuthorizationEngine.resolveRole(customer),
+    };
+
     setCurrentUser(user);
-    StorageService.saveSession(user);
     triggerNotification(
-      `Welcome back, ${name}! Secure session activated.`,
+      `Welcome back, ${user.name}! Secure session activated.`,
       "success",
     );
-    
-    // Re-evaluate journey upon login
+
+    if (checkoutIntent) {
+      return;
+    }
     if (store.pendingRedirect) {
       setActiveTab(store.pendingRedirect as any);
       store.setPendingRedirect(null);
@@ -462,6 +603,57 @@ export default function App() {
     0,
   );
 
+  const checkoutResumeInProgress = React.useRef(false);
+  React.useEffect(() => {
+    if (
+      !currentUser ||
+      !checkoutIntent ||
+      checkoutResumeInProgress.current
+    ) {
+      return;
+    }
+    checkoutResumeInProgress.current = true;
+    const validation = revalidateCartForCheckout(cartItems, {
+      fabrics,
+      styles,
+      batches,
+      customDetailCatalog: store.customDetailCatalog,
+      businessSettings,
+      depositRatio: checkoutDepositRatio,
+    });
+    if (validation.changed) {
+      setCartItems(validation.items);
+    }
+    setCheckoutIntent(false);
+    setActiveTab("home");
+    if (validation.canProceed) {
+      setIsCheckoutPaymentOpen(true);
+    } else {
+      setIsCartOpen(true);
+      triggerNotification(
+        validation.blockers[0] ||
+          "Please review the updated cart before payment.",
+        "info",
+      );
+    }
+    checkoutResumeInProgress.current = false;
+  }, [
+    currentUser,
+    checkoutIntent,
+    cartItems,
+    fabrics,
+    styles,
+    batches,
+    store.customDetailCatalog,
+    businessSettings,
+    checkoutDepositRatio,
+    setCartItems,
+    setCheckoutIntent,
+    setActiveTab,
+    setIsCheckoutPaymentOpen,
+    setIsCartOpen,
+  ]);
+
   return (
     <div className="min-h-screen bg-heritage-cream text-heritage-ink flex flex-col justify-between">
       {/* Toast Notification HUD */}
@@ -514,67 +706,43 @@ export default function App() {
                 onSelectStyle={(styleId, fabricCode) => {
                   setPresetStyleId(styleId);
                   setPresetFabricCode(fabricCode);
-                  if (!currentUser) {
-                    setActiveTab("login");
-                    triggerNotification(
-                      "Please login to customize this look.",
-                      "info"
-                    );
-                  } else {
-                    setOrderContext(activeCommunityBatch);
-                    setActiveTab("design");
-                    triggerNotification(
-                      "Design Studio loaded with your selected look.",
-                      "info"
-                    );
-                  }
+                  setOrderContext(activeCommunityBatch);
+                  setActiveTab("design");
+                  triggerNotification(
+                    "Design Studio loaded with your selected look.",
+                    "info",
+                  );
                 }}
                 onSelectFabric={(fabricCode) => {
                   setPresetStyleId(undefined);
                   setPresetFabricCode(fabricCode);
-                  if (!currentUser) {
-                    setActiveTab("login");
-                    triggerNotification(
-                      "Please login to customize this fabric.",
-                      "info"
-                    );
-                  } else {
-                    setOrderContext(activeCommunityBatch);
-                    setActiveTab("design");
-                    triggerNotification(
-                      "Design Studio loaded with your selected fabric.",
-                      "info"
-                    );
-                  }
+                  setOrderContext(activeCommunityBatch);
+                  setActiveTab("design");
+                  triggerNotification(
+                    "Design Studio loaded with your selected fabric.",
+                    "info",
+                  );
                 }}
               />
             )}
 
             {activeTab === "design" && (
-              AuthorizationEngine.canAccessRoute("design", currentUser) ? (
-                <DesignStudioView
-                  onAddToCart={handleAddToCart}
-                  openCartDrawer={() => setIsCartOpen(true)}
-                  currentUser={currentUser}
-                  orderContext={orderContext}
-                  styles={styles}
-                  fabrics={fabrics}
-                  customers={customers}
-                  setCustomers={setCustomers}
-                  initialStyleId={presetStyleId}
-                  initialFabricCode={presetFabricCode}
-                  clearInitialPreset={() => {
-                    setPresetStyleId(null);
-                    setPresetFabricCode(null);
-                  }}
-                />
-              ) : (
-                <LoginView
-                  onLogin={handleLogin}
-                  customers={customers}
-                  setCustomers={setCustomers}
-                />
-              )
+              <DesignStudioView
+                onAddToCart={handleAddToCart}
+                openCartDrawer={() => setIsCartOpen(true)}
+                currentUser={currentUser}
+                orderContext={orderContext}
+                styles={styles}
+                fabrics={fabrics}
+                customers={customers}
+                setCustomers={setCustomers}
+                initialStyleId={presetStyleId}
+                initialFabricCode={presetFabricCode}
+                clearInitialPreset={() => {
+                  setPresetStyleId(null);
+                  setPresetFabricCode(null);
+                }}
+              />
             )}
 
             {activeTab === "custom-order" && (
@@ -582,11 +750,16 @@ export default function App() {
                 customGroups={customGroups}
                 batches={batches}
                 onCreateCustomGroup={(newGroup) => {
+                  if (!currentUser) {
+                    return;
+                  }
                   const fullGroup: CustomGroup = {
                     ...newGroup,
+                    ownerUid: currentUser.ownerUid,
                     batchId: `GRP-${newGroup.batchName.replace(/\s+/g, "")}`,
                     currentMembers: 1,
-                    organizer: currentUser?.name || "Xavier E.",
+                    organizer: currentUser.name,
+                    organizerId: currentUser.ownerUid,
                     closingDate: "August 15, 2026",
                     deliveryWindow: `Late ${newGroup.preferredDeliveryMonth}`,
                     status: "OPEN",
@@ -659,6 +832,16 @@ export default function App() {
                 onLogin={handleLogin}
                 customers={customers}
                 setCustomers={setCustomers}
+                checkoutMode={checkoutIntent}
+                onCancel={
+                  checkoutIntent
+                    ? () => {
+                        setCheckoutIntent(false);
+                        setActiveTab("home");
+                        setIsCartOpen(true);
+                      }
+                    : undefined
+                }
               />
             )}
 
@@ -808,7 +991,7 @@ export default function App() {
                   {checkoutPricing.individualShippingQuote && (
                     <div className="space-y-0.5">
                       <div className="flex justify-between">
-                        <span>Individual Shipping - Lagos to Eindhoven:</span>
+                        <span>Lagos &rarr; Eindhoven shipping:</span>
                         <span className="font-mono">
                           {currencySymbol}
                           {checkoutPricing.individualShippingQuote.priceEur.toFixed(2)}
@@ -828,7 +1011,9 @@ export default function App() {
                   {checkoutPricing.batchShippingQuotes.map((quote) => (
                     <div key={quote.batchId} className="space-y-0.5">
                       <div className="flex justify-between">
-                        <span>Flat Batch Shipping - {quote.batchName}:</span>
+                        <span>
+                          Lagos &rarr; Eindhoven · {quote.batchName}:
+                        </span>
                         <span className="font-mono">
                           {currencySymbol}
                           {quote.priceEur.toFixed(2)}
@@ -848,11 +1033,56 @@ export default function App() {
                       </p>
                     </div>
                   ))}
+                  {checkoutPricing.finalMileShippingQuotes.map((quote) => (
+                    <div
+                      key={quote.shipmentGroupId}
+                      className="space-y-0.5"
+                    >
+                      <div className="flex justify-between gap-3">
+                        <span>
+                          {quote.method === "PICKUP"
+                            ? `${quote.pickupLocation || "Configured location"} pickup:`
+                            : quote.status === "READY"
+                              ? `Eindhoven → ${quote.zoneLabel} (${quote.weightBand}):`
+                              : "Eindhoven → final destination:"}
+                        </span>
+                        <span
+                          className={`text-right ${
+                            quote.status === "READY"
+                              ? "font-mono"
+                              : "font-semibold text-amber-700"
+                          }`}
+                        >
+                          {quote.status === "READY"
+                            ? `${currencySymbol}${(quote.priceEur ?? 0).toFixed(2)}`
+                            : quote.status ===
+                                "MANUAL_QUOTE_REQUIRED"
+                              ? "Quote required"
+                              : "Selection required"}
+                        </span>
+                      </div>
+                      {quote.status !== "READY" && (
+                        <p className="text-[9px] text-amber-700">
+                          {quote.manualQuoteReason ||
+                            "Complete final delivery in Design Studio Step 7."}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex justify-between font-bold pt-1.5 border-t border-gray-100 mt-1">
+                    <span>Total Shipping:</span>
+                    <span className="font-mono">
+                      {checkoutPricing.totalShipping === null
+                        ? "Pending quote"
+                        : `${currencySymbol}${checkoutPricing.totalShipping.toFixed(2)}`}
+                    </span>
+                  </div>
                   <div className="flex justify-between text-heritage-green font-bold pt-1.5 border-t border-gray-100 mt-1">
                     <span>Total Subtotal:</span>
                     <span className="font-mono">
-                      {currencySymbol}
-                      {checkoutSubtotal.toFixed(2)}
+                      {checkoutSubtotal === null
+                        ? "Pending quote"
+                        : `${currencySymbol}${checkoutSubtotal.toFixed(2)}`}
                     </span>
                   </div>
                   <div className="flex justify-between text-heritage-green font-bold text-sm pt-1.5 border-t border-dashed border-gray-100 font-serif">
@@ -860,18 +1090,20 @@ export default function App() {
                       Due Now (
                       {checkoutDepositPercentage}%
                       Garment Deposit
-                      {checkoutPricing.shippingTotal > 0
+                      {checkoutPricing.totalShipping !== null &&
+                      checkoutPricing.totalShipping > 0
                         ? " + Full Shipping"
                         : ""}
                       ):
                     </span>
                     <span className="font-mono text-heritage-gold">
-                      {currencySymbol}
-                      {checkoutDepositAmount.toFixed(2)}
+                      {checkoutDepositAmount === null
+                        ? "Unavailable"
+                        : `${currencySymbol}${checkoutDepositAmount.toFixed(2)}`}
                     </span>
                   </div>
                   <div className="flex justify-between text-[10px] text-gray-400">
-                    <span>Remaining Balance Due at Locker Delivery:</span>
+                    <span>Remaining Garment Balance Due at Hand-off:</span>
                     <span className="font-mono">
                       {currencySymbol}
                       {checkoutRemainingAmount.toFixed(2)}
@@ -954,7 +1186,8 @@ export default function App() {
                     Upon pressing pay, you will be securely redirected to your
                     bank's authentication gateway to authorize the garment
                     deposit
-                    {checkoutPricing.shippingTotal > 0
+                    {checkoutPricing.totalShipping !== null &&
+                    checkoutPricing.totalShipping > 0
                       ? " and full shipping payment"
                       : ""}
                     .
@@ -1024,7 +1257,11 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleExecuteDepositPayment}
-                disabled={isPaymentProcessing}
+                disabled={
+                  isPaymentProcessing ||
+                  !checkoutPricing.canCheckout ||
+                  checkoutDepositAmount === null
+                }
                 className="px-6 py-2 bg-heritage-green hover:bg-heritage-gold text-white hover:text-heritage-forest rounded-xl text-[10px] font-bold uppercase tracking-widest transition flex items-center gap-2 border border-heritage-gold/20 shadow-md cursor-pointer disabled:opacity-50"
               >
                 {isPaymentProcessing ? (
@@ -1038,8 +1275,9 @@ export default function App() {
                       size={11}
                       className="text-heritage-gold animate-bounce"
                     />
-                    Authorize Escrow Deposit ({currencySymbol}
-                    {checkoutDepositAmount.toFixed(2)})
+                    {checkoutDepositAmount === null
+                      ? "Shipping Quote Required"
+                      : `Authorize Escrow Deposit (${currencySymbol}${checkoutDepositAmount.toFixed(2)})`}
                   </>
                 )}
               </button>

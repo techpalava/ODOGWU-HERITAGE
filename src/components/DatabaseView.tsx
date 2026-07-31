@@ -810,7 +810,9 @@ export default function DatabaseView({
   // USERS
   const handleSaveUser = (e: React.FormEvent) => {
     e.preventDefault();
-    const item = editingItem as Customer;
+    const { passcode: _legacyPasscode, ...safeEditingItem } =
+      editingItem as Customer;
+    const item = safeEditingItem as Customer;
     if (!item.email || !item.name) {
       alert("Email and Name are required.");
       return;
@@ -829,8 +831,8 @@ export default function DatabaseView({
         ...prev,
         {
           ...item,
-          passcode: item.passcode || "1960",
-          role: item.role || "Engineer",
+          passcode: undefined,
+          role: item.role || "Customer",
           location: item.location || businessSettings.productionSettings.defaultPickupLocation,
         },
       ]);
@@ -1435,23 +1437,6 @@ export default function DatabaseView({
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                         placeholder={`e.g. ${businessSettings.productionSettings.defaultPickupLocation}`}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="font-bold text-heritage-green">
-                        User Security PIN (Passcode)
-                      </label>
-                      <input
-                        type="text"
-                        maxLength={4}
-                        value={editingItem.passcode || "1960"}
-                        onChange={(e) =>
-                          setEditingItem({
-                            ...editingItem,
-                            passcode: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg font-mono tracking-widest"
                       />
                     </div>
                     <div className="space-y-1">
@@ -3833,8 +3818,7 @@ export default function DatabaseView({
                         email: "",
                         phone: "",
                         location: businessSettings.productionSettings.defaultPickupLocation,
-                        role: "Active Cohort Member",
-                        passcode: "1960",
+                        role: "Customer",
                         measurementProfile: {
                           height: 180,
                           weight: 78,
@@ -3869,7 +3853,6 @@ export default function DatabaseView({
                           <th className="px-4 py-3">Phone</th>
                           <th className="px-4 py-3">Campus Location</th>
                           <th className="px-4 py-3">Role Class</th>
-                          <th className="px-4 py-3">PIN</th>
                           <th className="px-4 py-3 text-right">Actions</th>
                         </tr>
                       </thead>
@@ -3905,9 +3888,6 @@ export default function DatabaseView({
                                 <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-heritage-gold/10 text-heritage-gold border border-heritage-gold/20">
                                   {c.role || "Active Cohort Member"}
                                 </span>
-                              </td>
-                              <td className="px-4 py-3 font-mono text-gray-400 select-all">
-                                {c.passcode || "1960"}
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="flex gap-2 justify-end">

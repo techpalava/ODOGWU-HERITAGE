@@ -42,6 +42,10 @@ import {
   CustomDetailOption,
   CustomDetailSelectionGroup,
   DecorativeFeature,
+  DeliveryAddress,
+  DeliveryMethod,
+  DeliverySelection,
+  GuestDesignDraft,
 } from "../types";
 
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
@@ -60,7 +64,9 @@ import { DESIGN_CATEGORIES_LIST } from "./DesignCategories";
 import {
   BATCH_MINIMUM_GARMENTS,
   calculateBatchShipping,
+  calculateFinalMileShipping,
   calculateIndividualShipping,
+  FINAL_MILE_COUNTRY_OPTIONS,
   getGarmentPieceCount,
 } from "../utils/shippingPricing";
 import {
@@ -78,6 +84,8 @@ import {
   hasMonogramTrimming,
   TRADITIONAL_ACCESSORY_OPTIONS,
 } from "../utils/decorativePricing";
+import { getConstructionSewingCost } from "../utils/designPricing";
+import { GuestOrderSessionService } from "../services/guestOrderSessionService";
 import type {
   PricedSelection,
   TraditionalAccessory,
@@ -484,70 +492,6 @@ export const getGarmentDetailsBreakdown = (
 }[] => getCustomDetailsBreakdown(details, catalog);
 
 
-export const CONSTRUCTION_SEWING_COST_MAP = {
-  default: 4.06,
-  shirt: {
-    standard_shortSleeve: 4.06,
-    standard_longSleeve: 4.38,
-    long_shortSleeve: 4.69,
-    long_longSleeve: 5.00,
-  },
-  dress: {
-    standard_sleeveless: 5.00,
-    standard_shortSleeve: 5.31,
-    standard_longSleeve: 5.83,
-    long_sleeveless: 5.63,
-    long_shortSleeve: 5.94,
-    long_longSleeve: 6.25,
-  },
-  trouser: {
-    rope: 5.63,
-    elastic: 5.94,
-    belt: 6.25,
-  },
-  shorts: {
-    rope: 5.00,
-    elastic: 5.31,
-    belt: 5.83,
-  },
-  skirt: {
-    standard: 5.31,
-    long: 5.94,
-  }
-};
-
-export const getConstructionSewingCost = (details: DesignSelections): number => {
-  const optionCosts: Record<string, number> = {
-    shirt_std_short: CONSTRUCTION_SEWING_COST_MAP.shirt.standard_shortSleeve,
-    shirt_std_midlong: CONSTRUCTION_SEWING_COST_MAP.shirt.standard_longSleeve,
-    shirt_long_short: CONSTRUCTION_SEWING_COST_MAP.shirt.long_shortSleeve,
-    shirt_long_midlong: CONSTRUCTION_SEWING_COST_MAP.shirt.long_longSleeve,
-    dress_std_sleeveless: CONSTRUCTION_SEWING_COST_MAP.dress.standard_sleeveless,
-    dress_std_short: CONSTRUCTION_SEWING_COST_MAP.dress.standard_shortSleeve,
-    dress_std_midlong: CONSTRUCTION_SEWING_COST_MAP.dress.standard_longSleeve,
-    dress_long_sleeveless: CONSTRUCTION_SEWING_COST_MAP.dress.long_sleeveless,
-    dress_long_short: CONSTRUCTION_SEWING_COST_MAP.dress.long_shortSleeve,
-    dress_long_midlong: CONSTRUCTION_SEWING_COST_MAP.dress.long_longSleeve,
-    shorts_std_rope: CONSTRUCTION_SEWING_COST_MAP.shorts.rope,
-    shorts_std_elastic: CONSTRUCTION_SEWING_COST_MAP.shorts.elastic,
-    shorts_std_belt: CONSTRUCTION_SEWING_COST_MAP.shorts.belt,
-    bum_rope: CONSTRUCTION_SEWING_COST_MAP.shorts.rope,
-    bum_elastic: CONSTRUCTION_SEWING_COST_MAP.shorts.elastic,
-    bum_belt: CONSTRUCTION_SEWING_COST_MAP.shorts.belt,
-    trouser_rope: CONSTRUCTION_SEWING_COST_MAP.trouser.rope,
-    trouser_elastic: CONSTRUCTION_SEWING_COST_MAP.trouser.elastic,
-    trouser_belt: CONSTRUCTION_SEWING_COST_MAP.trouser.belt,
-    skirt_std: CONSTRUCTION_SEWING_COST_MAP.skirt.standard,
-    skirt_long: CONSTRUCTION_SEWING_COST_MAP.skirt.long,
-  };
-
-  return Object.values(details.customDetails || {}).reduce(
-    (total, optionId) =>
-      total + (optionId ? optionCosts[optionId] || 0 : 0),
-    0,
-  );
-};
-
 const GarmentDetailSelector = ({
   selectedStyle,
   selectedGarment,
@@ -888,6 +832,8 @@ export default function DesignStudioView({
 }: DesignStudioViewProps) {
   // Current step state (1 to 9)
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const [guestDraftHydrated, setGuestDraftHydrated] =
+    useState<boolean>(false);
   const businessSettings = useAppStore((state) => state.businessSettings);
   const isLoadingData = useAppStore((state) => state.isLoadingData);
   const storeBatches = useAppStore((state) => state.batches);
@@ -1360,9 +1306,33 @@ export default function DesignStudioView({
   const [customerName, setCustomerName] = useState<string>("");
   const [customerEmail, setCustomerEmail] = useState<string>("");
   const [customerPhone, setCustomerPhone] = useState<string>("");
+  const [deliveryMethod, setDeliveryMethod] =
+    useState<DeliveryMethod | null>(null);
   const [pickupTime, setPickupTime] = useState<string>(
     "Monday Afternoon (13:00 - 17:00)",
   );
+  const [deliveryAddress, setDeliveryAddress] = useState<DeliveryAddress>({
+    addressLine1: "",
+    addressLine2: "",
+    city: "",
+    postalCode: "",
+    countryCode: "",
+  });
+
+  const deliverySelection: DeliverySelection | undefined =
+    deliveryMethod === "PICKUP"
+      ? {
+          method: "PICKUP",
+          pickupLocation:
+            businessSettings.productionSettings.defaultPickupLocation,
+          pickupWindow: pickupTime,
+        }
+      : deliveryMethod === "DELIVERY"
+        ? {
+            method: "DELIVERY",
+            address: deliveryAddress,
+          }
+        : undefined;
 
   // Batch / Group Options (Site-wide adaptive ordering options)
   const [batchType, setBatchType] = useState<
@@ -1497,6 +1467,9 @@ export default function DesignStudioView({
     let batchShipping: ReturnType<
       typeof calculateBatchShipping
     > | null = null;
+    let finalMileShipping: ReturnType<
+      typeof calculateFinalMileShipping
+    > | null = null;
     const resolvedFabricPrice = resolveFabricPrice(selectedFabric);
     const fabricPricingError = getFabricPricingError(selectedFabric);
 
@@ -1571,10 +1544,36 @@ export default function DesignStudioView({
           });
         }
       }
+
+      const arrivalGroupKey =
+        batchType === "alone"
+          ? "individual"
+          : `batch:${(
+              batchShipping?.batchId ||
+              ctx.batchId ||
+              ctx.batchName ||
+              selectedBatchName
+            )
+              .trim()
+              .toLocaleLowerCase("en")}`;
+      finalMileShipping = calculateFinalMileShipping({
+        deliverySelection,
+        garmentPieceCount,
+        shipmentGroupId: "FM-DESIGN-STUDIO-PREVIEW",
+        arrivalGroupKey,
+      });
     }
 
-    const shippingCost =
+    const lagosToEindhovenShipping =
       individualShipping?.priceEur ?? batchShipping?.priceEur ?? 0;
+    const eindhovenToDestinationShipping =
+      finalMileShipping?.status === "READY"
+        ? finalMileShipping.priceEur
+        : null;
+    const shippingCost = roundMoney(
+      lagosToEindhovenShipping +
+        (eindhovenToDestinationShipping ?? 0),
+    );
     const subtotal = roundMoney(
       fabricPrice +
       fabricSewingCost +
@@ -1596,6 +1595,9 @@ export default function DesignStudioView({
       fabricPricingError,
       individualShipping,
       batchShipping,
+      finalMileShipping,
+      lagosToEindhovenShipping,
+      eindhovenToDestinationShipping,
       shippingCost,
       subtotal
     };
@@ -1618,7 +1620,149 @@ export default function DesignStudioView({
     garmentDeposit + pricing.shippingCost,
   );
   const remainingDue = roundMoney(garmentSubtotal - garmentDeposit);
+  const isInboundShippingReady =
+    batchType === "alone"
+      ? Boolean(pricing.individualShipping)
+      : Boolean(pricing.batchShipping);
+  const isFinalMileReady =
+    pricing.finalMileShipping?.status === "READY";
+  const isShippingReady = isInboundShippingReady && isFinalMileReady;
   const currencySymbol = PRICING_CURRENCY_SYMBOL;
+
+  useEffect(() => {
+    if (currentUser || guestDraftHydrated || isLoadingData) return;
+    if (styles.length === 0 || fabrics.length === 0) return;
+
+    const draft = GuestOrderSessionService.getGuestDesignDraft();
+    if (!draft) {
+      setGuestDraftHydrated(true);
+      return;
+    }
+
+    const draftStyle =
+      styles.find((style) => style.id === draft.selectedStyleId) || null;
+    const draftFabric =
+      fabrics.find(
+        (fabric) => fabric.code === draft.selectedFabricCode,
+      ) || null;
+    setCurrentStep(Math.min(9, Math.max(1, draft.currentStep)));
+    setSelectedStyle(draftStyle);
+    setSelectedFabric(draftFabric);
+    setSizingMode(draft.sizingMode);
+    setMeasurements(draft.measurements);
+    setDeliveryMethod(draft.deliveryMethod);
+    setDeliveryAddress(draft.deliveryAddress);
+    setPickupTime(draft.pickupTime);
+    setCustomerName(draft.customerName);
+    setCustomerEmail(draft.customerEmail);
+    setCustomerPhone(draft.customerPhone);
+    setBatchType(draft.batchType);
+    setCustomGroupCode(draft.customGroupCode);
+    setSpecialInstructions(draft.specialInstructions);
+    setLeftoverFabricChoice(draft.leftoverFabricChoice);
+    setHasLining(draft.hasLining);
+
+    const restoreSelections = window.setTimeout(() => {
+      setSelectedGarment(draft.selectedGarment);
+      setDesignSelections(draft.designSelections);
+      setGuestDraftHydrated(true);
+    }, 0);
+    return () => window.clearTimeout(restoreSelections);
+  }, [
+    currentUser,
+    guestDraftHydrated,
+    isLoadingData,
+    styles,
+    fabrics,
+  ]);
+
+  useEffect(() => {
+    if (currentUser || !guestDraftHydrated) return;
+
+    const persistTimer = window.setTimeout(() => {
+      const guestDraft: GuestDesignDraft = {
+        currentStep,
+        selectedFabricCode: selectedFabric?.code || null,
+        selectedStyleId: selectedStyle?.id || null,
+        selectedGarment,
+        designSelections,
+        measurements,
+        sizingMode,
+        deliveryMethod,
+        deliveryAddress,
+        pickupTime,
+        customerName,
+        customerEmail,
+        customerPhone,
+        batchType,
+        batchId:
+          pricing.batchShipping?.batchId || ctx.batchId,
+        batchName:
+          pricing.batchShipping?.batchName || ctx.batchName,
+        customGroupCode,
+        garmentPieceCount:
+          pricing.individualShipping?.garmentPieceCount ??
+          pricing.batchShipping?.garmentPieceCount ??
+          null,
+        specialInstructions,
+        leftoverFabricChoice,
+        hasLining,
+        pricingBreakdown: {
+          fabricPrice: pricing.fabricPrice,
+          fabricSewingCost: pricing.fabricSewingCost,
+          constructionSewingCost: pricing.constructionSewingCost,
+          customDetailsPrice: pricing.customDetailsPrice,
+          lagosToEindhovenShipping:
+            pricing.lagosToEindhovenShipping,
+          eindhovenToDestinationShipping:
+            pricing.eindhovenToDestinationShipping,
+          total: pricing.subtotal,
+        },
+        shippingSnapshot: {
+          individual: pricing.individualShipping || undefined,
+          batch: pricing.batchShipping || undefined,
+          finalMile: pricing.finalMileShipping || undefined,
+        },
+        updatedAt: new Date().toISOString(),
+      };
+      GuestOrderSessionService.saveGuestDesignDraft(guestDraft);
+    }, 250);
+
+    return () => window.clearTimeout(persistTimer);
+  }, [
+    currentUser,
+    guestDraftHydrated,
+    currentStep,
+    selectedFabric,
+    selectedStyle,
+    selectedGarment,
+    designSelections,
+    measurements,
+    sizingMode,
+    deliveryMethod,
+    deliveryAddress,
+    pickupTime,
+    customerName,
+    customerEmail,
+    customerPhone,
+    batchType,
+    customGroupCode,
+    specialInstructions,
+    leftoverFabricChoice,
+    hasLining,
+    pricing.fabricPrice,
+    pricing.fabricSewingCost,
+    pricing.constructionSewingCost,
+    pricing.customDetailsPrice,
+    pricing.lagosToEindhovenShipping,
+    pricing.eindhovenToDestinationShipping,
+    pricing.subtotal,
+    pricing.individualShipping,
+    pricing.batchShipping,
+    pricing.finalMileShipping,
+    ctx.batchId,
+    ctx.batchName,
+  ]);
 
   // Handle step advances
   const handleNextStep = () => {
@@ -1707,7 +1851,22 @@ export default function DesignStudioView({
         return;
       }
       if (customerEmail.trim() && !customerEmail.includes("@")) {
-        setValidationError("Please provide a valid corporate email.");
+        setValidationError("Please provide a valid email address.");
+        return;
+      }
+      if (!deliveryMethod) {
+        setValidationError(
+          "Please choose Eindhoven pickup or delivery to your address.",
+        );
+        return;
+      }
+      if (
+        deliveryMethod === "DELIVERY" &&
+        pricing.finalMileShipping?.status === "DESTINATION_REQUIRED"
+      ) {
+        setValidationError(
+          "Please complete the address, city, postal code, and country for final delivery.",
+        );
         return;
       }
     }
@@ -1859,16 +2018,33 @@ export default function DesignStudioView({
           : batchType === "personalized"
             ? `Personalized Group: ${pricing.batchShipping?.batchName || customGroupCode}`
             : selectedBatchName;
+    const deliveryLocation =
+      deliverySelection?.method === "PICKUP"
+        ? `${deliverySelection.pickupLocation} (Pickup: ${deliverySelection.pickupWindow})`
+        : deliverySelection?.address
+          ? [
+              deliverySelection.address.addressLine1,
+              deliverySelection.address.addressLine2,
+              deliverySelection.address.postalCode,
+              deliverySelection.address.city,
+              deliverySelection.address.countryCode,
+            ]
+              .filter(Boolean)
+              .join(", ")
+          : "";
+    const storedItemTotal = roundMoney(
+      subtotal -
+        (pricing.finalMileShipping?.status === "READY"
+          ? pricing.finalMileShipping.priceEur ?? 0
+          : 0),
+    );
 
     const cartItemData = {
       customer: {
         name: customerName,
         email: customerEmail,
         phone: customerPhone,
-        location:
-          batchType === "alone"
-            ? "Direct Air Courier to personal home address"
-            : `${businessSettings.productionSettings.defaultPickupLocation} (Pickup: ${pickupTime})`,
+        location: deliveryLocation,
       },
       style: selectedStyle,
       fabric: selectedFabric,
@@ -1889,7 +2065,7 @@ export default function DesignStudioView({
       },
       garment: {
         type: `${selectedGarment?.type || "Pending"} [Code: ${selectedPriceCode === "AUTO" ? getAutoDetectedPriceCode() : selectedPriceCode}]`,
-        totalPrice: subtotal,
+        totalPrice: storedItemTotal,
         fabricSewingCost: pricing.fabricSewingCost,
         constructionSewingCost: pricing.constructionSewingCost,
         fabricPrice: pricing.fabricPrice,
@@ -1898,7 +2074,7 @@ export default function DesignStudioView({
         traditionalAccessoriesPrice: pricing.traditionalAccessoriesPrice,
         individualShipping: pricing.individualShipping || undefined,
         batchShipping: pricing.batchShipping || undefined,
-        checkoutTotal: subtotal,
+        checkoutTotal: storedItemTotal,
       },
       measurements: measurements,
       specialInstructions: specialInstructions,
@@ -1906,6 +2082,11 @@ export default function DesignStudioView({
       batchType: batchType,
       batchId: pricing.batchShipping?.batchId,
       batchName: finalBatchName,
+      garmentPieceCount:
+        pricing.individualShipping?.garmentPieceCount ??
+        pricing.batchShipping?.garmentPieceCount ??
+        getGarmentPieceCount(selectedStyle.garmentComposition),
+      deliverySelection,
       customGroupCode:
         batchType === "personalized"
           ? pricing.batchShipping?.batchId
@@ -3918,11 +4099,11 @@ export default function DesignStudioView({
                   Step 7 of 9
                 </span>
                 <h2 className="text-lg sm:text-2xl font-serif font-bold text-heritage-green">
-                  Delivery & Batch Options
+                  Final Delivery Details
                 </h2>
                 <p className="text-xs text-heritage-ink/75 leading-relaxed">
-                  Choose how you'd like your bespoke garment to be queued and
-                  delivered.
+                  Choose pickup or delivery after your order reaches the
+                  Netherlands.
                 </p>
               </div>
 
@@ -3967,68 +4148,60 @@ export default function DesignStudioView({
                       </div>
                       <div>
                         <strong>Destination:</strong>{" "}
-                        {batchType === "alone"
-                          ? "Direct Shipping to Your Provided Address"
-                          : businessSettings.productionSettings.defaultPickupLocation}
+                        {!deliveryMethod
+                          ? "Select below"
+                          : deliveryMethod === "PICKUP"
+                            ? businessSettings.productionSettings.defaultPickupLocation
+                            : pricing.finalMileShipping?.zoneLabel ||
+                              "Complete delivery address"}
                       </div>
                     </div>
                   </>
                 )}
               </div>
-              {/* Contact Information & Specific Logistics fields */}
               <div className="border-t pt-4 space-y-4">
                 <h4 className="text-xs font-bold text-heritage-green uppercase tracking-wider">
-                  Contact &amp; Delivery Logistics
+                  Choose Final Delivery
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                  <div className="space-y-1">
-                    <label className="block font-bold text-heritage-green">
-                      Your Name
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Xavier E."
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      className="w-full min-h-[44px] px-3 bg-white border border-gray-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-heritage-gold"
-                    />
-                  </div>
+                <div className="grid grid-cols-2 gap-2" role="group" aria-label="Final delivery method">
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryMethod("PICKUP")}
+                    aria-pressed={deliveryMethod === "PICKUP"}
+                    className={`min-h-[52px] border px-3 py-2 text-xs font-bold transition ${
+                      deliveryMethod === "PICKUP"
+                        ? "border-heritage-green bg-heritage-green text-white shadow-sm"
+                        : "border-gray-200 bg-white text-heritage-ink hover:border-heritage-gold"
+                    }`}
+                  >
+                    Pickup · {currencySymbol}0.00
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryMethod("DELIVERY")}
+                    aria-pressed={deliveryMethod === "DELIVERY"}
+                    className={`min-h-[52px] border px-3 py-2 text-xs font-bold transition ${
+                      deliveryMethod === "DELIVERY"
+                        ? "border-heritage-green bg-heritage-green text-white shadow-sm"
+                        : "border-gray-200 bg-white text-heritage-ink hover:border-heritage-gold"
+                    }`}
+                  >
+                    Deliver to Address
+                  </button>
+                </div>
 
-                  <div className="space-y-1">
-                    <label className="block font-bold text-heritage-green">
-                      {batchType === "alone"
-                        ? "Personal Email"
-                        : "Corporate Email (Optional)"}
-                    </label>
-                    <input
-                      type="email"
-                      placeholder={
-                        batchType === "alone"
-                          ? "xavier@gmail.com"
-                          : "x.e@asml-corp.nl"
-                      }
-                      value={customerEmail}
-                      onChange={(e) => setCustomerEmail(e.target.value)}
-                      className="w-full min-h-[44px] px-3 bg-white border border-gray-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-heritage-gold font-mono"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block font-bold text-heritage-green">
-                      Mobile Phone (for tracking alerts)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="+31 6 1234 5678"
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                      className="w-full min-h-[44px] px-3 bg-white border border-gray-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-heritage-gold font-mono"
-                    />
-                  </div>
-
-                  {batchType !== "alone" ? (
+                {deliveryMethod === "PICKUP" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-xl border border-heritage-gold/20 bg-heritage-cream/30 p-4 text-xs">
+                    <div>
+                      <span className="block text-[9px] font-bold uppercase text-heritage-ink/50">
+                        Pickup Location
+                      </span>
+                      <strong className="text-heritage-green">
+                        {businessSettings.productionSettings.defaultPickupLocation}
+                      </strong>
+                    </div>
                     <SelectField
-                      label="Preferred Locker Pickup Window"
+                      label="Preferred Pickup Window"
                       value={pickupTime}
                       onChange={(e) => setPickupTime(e.target.value)}
                       options={[
@@ -4051,26 +4224,189 @@ export default function DesignStudioView({
                       ]}
                       className="!space-y-1"
                     />
-                  ) : (
-                    <div className="space-y-1">
+                  </div>
+                )}
+
+                {deliveryMethod === "DELIVERY" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-xl border border-gray-200 bg-white p-4 text-xs">
+                    <div className="space-y-1 sm:col-span-2">
                       <label className="block font-bold text-heritage-green">
-                        Personal Shipping Address
+                        Address Line 1
                       </label>
                       <input
                         type="text"
-                        placeholder="e.g. Flight Forum 100, Eindhoven"
-                        value={
-                          pickupTime.startsWith("Monday") ||
-                          pickupTime.startsWith("Wednesday")
-                            ? ""
-                            : pickupTime
+                        placeholder="Street name and building number"
+                        value={deliveryAddress.addressLine1}
+                        onChange={(e) =>
+                          setDeliveryAddress((previous) => ({
+                            ...previous,
+                            addressLine1: e.target.value,
+                          }))
                         }
-                        onChange={(e) => setPickupTime(e.target.value)}
-                        className="w-full min-h-[44px] px-3 bg-white border border-gray-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-heritage-gold font-sans"
-                        required
+                        className="w-full min-h-[44px] px-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-heritage-gold"
                       />
                     </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="block font-bold text-heritage-green">
+                        Address Line 2 (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Apartment, suite, floor or unit"
+                        value={deliveryAddress.addressLine2 || ""}
+                        onChange={(e) =>
+                          setDeliveryAddress((previous) => ({
+                            ...previous,
+                            addressLine2: e.target.value,
+                          }))
+                        }
+                        className="w-full min-h-[44px] px-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-heritage-gold"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block font-bold text-heritage-green">
+                        City
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Eindhoven"
+                        value={deliveryAddress.city}
+                        onChange={(e) =>
+                          setDeliveryAddress((previous) => ({
+                            ...previous,
+                            city: e.target.value,
+                          }))
+                        }
+                        className="w-full min-h-[44px] px-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-heritage-gold"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block font-bold text-heritage-green">
+                        Postal Code
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="5611"
+                        value={deliveryAddress.postalCode}
+                        onChange={(e) =>
+                          setDeliveryAddress((previous) => ({
+                            ...previous,
+                            postalCode: e.target.value,
+                          }))
+                        }
+                        className="w-full min-h-[44px] px-3 bg-white border border-gray-200 rounded-xl font-mono focus:outline-none focus:ring-1 focus:ring-heritage-gold"
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="block font-bold text-heritage-green">
+                        Country or Region
+                      </label>
+                      <select
+                        value={deliveryAddress.countryCode}
+                        onChange={(e) =>
+                          setDeliveryAddress((previous) => ({
+                            ...previous,
+                            countryCode: e.target.value,
+                          }))
+                        }
+                        className="w-full min-h-[44px] px-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-heritage-gold"
+                      >
+                        <option value="">Select country or region</option>
+                        {FINAL_MILE_COUNTRY_OPTIONS.map((country) => (
+                          <option key={country.code} value={country.code}>
+                            {country.label}
+                            {country.requiresManualQuote
+                              ? " · Quote required"
+                              : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                <div
+                  className={`border px-4 py-3 text-xs ${
+                    pricing.finalMileShipping?.status === "READY"
+                      ? "border-heritage-green/20 bg-heritage-green/5 text-heritage-green"
+                      : pricing.finalMileShipping?.status ===
+                          "MANUAL_QUOTE_REQUIRED"
+                        ? "border-amber-300 bg-amber-50 text-amber-900"
+                        : "border-gray-200 bg-gray-50 text-heritage-ink/60"
+                  }`}
+                >
+                  {pricing.finalMileShipping?.status === "READY" ? (
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="font-bold">
+                        {pricing.finalMileShipping.method === "PICKUP"
+                          ? `${pricing.finalMileShipping.pickupLocation} pickup`
+                          : `Eindhoven → ${pricing.finalMileShipping.zoneLabel} (${pricing.finalMileShipping.weightBand})`}
+                      </span>
+                      <strong className="font-mono">
+                        {currencySymbol}
+                        {(pricing.finalMileShipping.priceEur ?? 0).toFixed(2)}
+                      </strong>
+                    </div>
+                  ) : pricing.finalMileShipping?.status ===
+                    "MANUAL_QUOTE_REQUIRED" ? (
+                    <div>
+                      <strong className="block">Shipping quote required</strong>
+                      <span>
+                        {pricing.finalMileShipping.manualQuoteReason}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="font-semibold">
+                      Final delivery:{" "}
+                      {deliveryMethod === "DELIVERY"
+                        ? "Complete the address above"
+                        : "Select pickup or delivery"}
+                    </span>
                   )}
+                </div>
+              </div>
+
+              <div className="border-t pt-4 space-y-4">
+                <h4 className="text-xs font-bold text-heritage-green uppercase tracking-wider">
+                  Contact Information
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1">
+                    <label className="block font-bold text-heritage-green">
+                      Your Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Xavier E."
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="w-full min-h-[44px] px-3 bg-white border border-gray-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-heritage-gold"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block font-bold text-heritage-green">
+                      Email Address (Optional)
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="name@example.com"
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      className="w-full min-h-[44px] px-3 bg-white border border-gray-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-heritage-gold font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="block font-bold text-heritage-green">
+                      Mobile Phone (for delivery updates)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="+31 6 1234 5678"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      className="w-full min-h-[44px] px-3 bg-white border border-gray-200 rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-heritage-gold font-mono"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -4477,7 +4813,7 @@ export default function DesignStudioView({
               {pricing.individualShipping && (
                 <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
                   <div className="flex justify-between items-center">
-                    <span>Individual Shipping - Lagos to Eindhoven:</span>
+                    <span>Lagos &rarr; Eindhoven shipping:</span>
                     <span className="font-mono">
                       +{currencySymbol}
                       {pricing.individualShipping.priceEur.toFixed(2)}
@@ -4495,7 +4831,7 @@ export default function DesignStudioView({
               {pricing.batchShipping && (
                 <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
                   <div className="flex justify-between items-center">
-                    <span>Flat Batch Shipping - Lagos to Eindhoven:</span>
+                    <span>Lagos &rarr; Eindhoven shipping:</span>
                     <span className="font-mono">
                       +{currencySymbol}
                       {pricing.batchShipping.priceEur.toFixed(2)}
@@ -4532,18 +4868,71 @@ export default function DesignStudioView({
                 !pricing.batchShipping &&
                 (!selectedStyle || !selectedGarment) && (
                   <div className="flex justify-between items-center text-heritage-ink/60 text-[10px]">
-                    <span>Flat Batch Shipping - Lagos to Eindhoven:</span>
+                    <span>Lagos &rarr; Eindhoven shipping:</span>
                     <span className="font-semibold">Pending garment selection</span>
                   </div>
                 )}
 
+              <div className="flex flex-col text-[10px]">
+                <div className="flex justify-between items-center text-heritage-ink/70">
+                  <span>
+                    {pricing.finalMileShipping?.method === "PICKUP"
+                      ? `${pricing.finalMileShipping.pickupLocation || "Configured location"} pickup:`
+                      : pricing.finalMileShipping?.status === "READY"
+                        ? `Eindhoven → ${pricing.finalMileShipping.zoneLabel} (${pricing.finalMileShipping.weightBand}):`
+                        : "Final delivery:"}
+                  </span>
+                  {pricing.finalMileShipping?.status === "READY" ? (
+                    <span className="font-mono font-semibold text-heritage-green">
+                      +{currencySymbol}
+                      {(pricing.finalMileShipping.priceEur ?? 0).toFixed(2)}
+                    </span>
+                  ) : pricing.finalMileShipping?.status ===
+                    "MANUAL_QUOTE_REQUIRED" ? (
+                    <span className="font-semibold text-amber-700">
+                      Shipping quote required
+                    </span>
+                  ) : (
+                    <span className="font-semibold text-heritage-ink/50">
+                      Select in Step 7
+                    </span>
+                  )}
+                </div>
+                {pricing.finalMileShipping?.status ===
+                  "MANUAL_QUOTE_REQUIRED" && (
+                  <span className="mt-0.5 text-[9px] text-amber-700">
+                    {pricing.finalMileShipping.manualQuoteReason}
+                  </span>
+                )}
+              </div>
+
+              {isShippingReady && (
+                <div className="flex justify-between border-t border-dashed pt-2 text-[10px] font-bold text-heritage-ink/75">
+                  <span>Total shipping:</span>
+                  <span className="font-mono">
+                    {currencySymbol}
+                    {pricing.shippingCost.toFixed(2)}
+                  </span>
+                </div>
+              )}
+
               <div className="flex justify-between border-t pt-2.5 font-bold text-sm text-heritage-green font-serif">
-                <span>Total Subtotal:</span>
+                <span>
+                  {isShippingReady
+                    ? "Total Subtotal:"
+                    : "Estimated Total So Far:"}
+                </span>
                 <span className="font-mono text-emerald-800">
                   {currencySymbol}
                   {subtotal.toFixed(2)}
                 </span>
               </div>
+              {!isShippingReady && (
+                <p className="text-[9px] leading-relaxed text-heritage-ink/50">
+                  Final total and payment amount will be available after
+                  final delivery is selected and priced.
+                </p>
+              )}
             </div>
 
             {/* Split payments */}
@@ -4554,8 +4943,9 @@ export default function DesignStudioView({
                   Garment Deposit{pricing.shippingCost > 0 ? " + Shipping" : ""})
                 </span>
                 <span className="text-sm font-bold text-heritage-green font-mono">
-                  {currencySymbol}
-                  {depositRequired.toFixed(2)}
+                  {isShippingReady
+                    ? `${currencySymbol}${depositRequired.toFixed(2)}`
+                    : "Pending final delivery"}
                 </span>
               </div>
               <div className="bg-heritage-cream/60 border border-heritage-gold/20 p-3 rounded-xl">
@@ -4623,6 +5013,21 @@ export default function DesignStudioView({
                       : batchType === "personalized"
                         ? `Personalized Group (${personalizedGroupLabel})`
                         : "Custom Order"}
+                </strong>
+              </p>
+              <p>
+                Final Delivery:{" "}
+                <strong className="text-heritage-green">
+                  {!pricing.finalMileShipping
+                    ? "Select in Step 7"
+                    : pricing.finalMileShipping.status ===
+                        "MANUAL_QUOTE_REQUIRED"
+                      ? "Shipping quote required"
+                      : pricing.finalMileShipping.method === "PICKUP"
+                        ? `${pricing.finalMileShipping.pickupLocation} pickup`
+                        : pricing.finalMileShipping.status === "READY"
+                          ? pricing.finalMileShipping.zoneLabel
+                          : "Select in Step 7"}
                 </strong>
               </p>
             </div>

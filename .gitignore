@@ -2,6 +2,7 @@ node_modules/
 build/
 dist/
 coverage/
+.codex-preview/
 .DS_Store
 *.log
 .env*

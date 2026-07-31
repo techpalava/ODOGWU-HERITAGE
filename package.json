@@ -10,8 +10,11 @@
     "clean": "rm -rf dist server.js",
     "start": "node dist/server.cjs",
     "lint": "tsc --noEmit",
+    "test:api-routes": "tsx test_api_routes.ts",
     "test:shipping": "tsx test_shipping.ts",
-    "test:design-pricing": "tsx test_design_pricing.ts"
+    "test:design-pricing": "tsx test_design_pricing.ts",
+    "test:guest-checkout": "tsx test_guest_checkout.ts",
+    "test:firestore-security": "tsx test_firestore_security.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

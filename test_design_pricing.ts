@@ -254,6 +254,10 @@ assert.equal(roundMoney(10.005), 10.01);
 const cartItem = {
   id: "cart-test",
   batchType: "alone",
+  deliverySelection: {
+    method: "PICKUP",
+    pickupLocation: "Veldhoven Campus Lockers",
+  },
   garment: {
     type: "Test",
     totalPrice: 10.005,
