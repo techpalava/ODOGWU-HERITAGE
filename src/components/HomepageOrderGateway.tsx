@@ -2,8 +2,8 @@ import {
   ArrowRight,
   Camera,
   Settings,
-  UserPlus,
-  Users,
+  Sparkles,
+  Shirt,
 } from "lucide-react";
 import type { HomepageOrderGatewayState } from "../utils/homepageOrderGateway";
 
@@ -14,6 +14,7 @@ interface HomepageOrderGatewayProps {
   onCreatePrivateBatch: () => void;
   onBrowseGallery: () => void;
   onManageSourcingBatches?: () => void;
+  onCustomOrder?: () => void;
 }
 
 export default function HomepageOrderGateway({
@@ -23,144 +24,130 @@ export default function HomepageOrderGateway({
   onCreatePrivateBatch,
   onBrowseGallery,
   onManageSourcingBatches,
+  onCustomOrder,
 }: HomepageOrderGatewayProps) {
   const { joinBatch, minimumGarments } = state;
+
+  const handleCustomOrderClick = () => {
+    if (joinBatch) {
+      onJoinBatch();
+    } else if (onCustomOrder) {
+      onCustomOrder();
+    } else {
+      onJoinBatch();
+    }
+  };
 
   return (
     <section
       aria-labelledby="homepage-order-gateway-title"
-      className="relative z-20 overflow-hidden rounded-lg border border-heritage-gold/25 bg-white shadow-sm"
+      className="relative z-20 space-y-4"
     >
-      <div className="flex items-center justify-between gap-4 border-b border-heritage-gold/15 px-5 py-3 sm:px-6">
-        <h2
-          id="homepage-order-gateway-title"
-          className="font-display text-xl font-bold text-heritage-green sm:text-2xl"
-        >
-          Start Your Order
-        </h2>
-        {onManageSourcingBatches && (
+      <h2 id="homepage-order-gateway-title" className="sr-only">
+        Start Your Order
+      </h2>
+
+      {onManageSourcingBatches && (
+        <div className="flex justify-end px-1">
           <button
             type="button"
             onClick={onManageSourcingBatches}
-            className="inline-flex min-h-9 items-center gap-2 rounded-lg px-2.5 text-[10px] font-bold uppercase text-heritage-green/70 transition-colors hover:bg-heritage-cream hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
+            className="inline-flex min-h-8 items-center gap-2 rounded-lg bg-white border border-heritage-gold/20 px-3 text-[10px] font-bold uppercase text-heritage-green/75 transition-colors hover:bg-heritage-cream hover:text-heritage-green shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold cursor-pointer"
           >
-            <Settings size={14} aria-hidden="true" />
-            <span className="hidden sm:inline">Manage Sourcing Batches</span>
-            <span className="sm:hidden">Manage</span>
+            <Settings size={13} aria-hidden="true" />
+            <span>Manage Sourcing Batches</span>
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div
           aria-busy="true"
           aria-label="Loading current order options"
-          className="grid gap-px bg-heritage-gold/15 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px]"
+          className="bg-white rounded-3xl border border-heritage-gold/15 p-2.5 shadow-md flex flex-col md:flex-row gap-3 items-center w-full animate-pulse"
         >
-          {[0, 1].map((item) => (
-            <div
-              key={item}
-              className="min-h-[168px] animate-pulse bg-white p-5 sm:p-6"
-            >
-              <div className="h-10 w-10 rounded-lg bg-heritage-cream" />
-              <div className="mt-4 h-4 w-2/3 rounded bg-heritage-cream" />
-              <div className="mt-3 h-3 w-full rounded bg-heritage-cream/70" />
-              <div className="mt-2 h-3 w-4/5 rounded bg-heritage-cream/70" />
-            </div>
-          ))}
-          <div className="min-h-[112px] animate-pulse bg-heritage-cream/45 p-5 sm:p-6 lg:min-h-full">
-            <div className="h-11 w-full rounded-lg bg-white/80" />
-          </div>
+          <div className="h-12 bg-heritage-cream/40 rounded-xl flex-1 w-full" />
+          <div className="h-12 bg-heritage-cream/40 rounded-xl flex-1 w-full" />
+          <div className="h-12 bg-heritage-cream/40 rounded-xl flex-1 w-full" />
         </div>
       ) : (
-        <div
-          className={`grid gap-px bg-heritage-gold/15 ${
-            joinBatch
-              ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px]"
-              : "lg:grid-cols-[minmax(0,1fr)_220px]"
-          }`}
-        >
-          {joinBatch && (
-            <article className="flex min-h-[168px] flex-col bg-white p-5 sm:p-6">
-              <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-green text-heritage-gold">
-                  <Users size={19} aria-hidden="true" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase text-heritage-gold">
-                    Order Type B
-                  </p>
-                  <h3 className="mt-1 font-display text-xl font-bold text-heritage-green">
-                    Join {joinBatch.name}
-                  </h3>
-                </div>
-              </div>
-
-              <p className="mt-3 text-xs leading-relaxed text-heritage-ink/70">
-                Join the currently open community batch before its ordering
-                deadline.
-              </p>
-              <p className="mt-2 text-[10px] font-bold uppercase text-heritage-green/70">
-                Group minimum: {minimumGarments} garments total | Shared
-                shipping
-              </p>
-
-              <button
-                id="btn-quick-join-cohort"
-                type="button"
-                onClick={onJoinBatch}
-                className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-heritage-green px-4 py-2.5 text-[11px] font-bold uppercase text-white transition-colors hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-              >
-                Join {joinBatch.name}
-                <ArrowRight size={15} aria-hidden="true" />
-              </button>
-            </article>
-          )}
-
-          <article className="flex min-h-[168px] flex-col bg-white p-5 sm:p-6">
-            <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-cream text-heritage-green">
-                <UserPlus size={19} aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase text-heritage-gold">
-                  Order Type C
-                </p>
-                <h3 className="mt-1 font-display text-xl font-bold text-heritage-green">
-                  Create a Private Batch
-                </h3>
-              </div>
-            </div>
-
-            <p className="mt-3 text-xs leading-relaxed text-heritage-ink/70">
-              Create a private group for friends, family, colleagues, or
-              community members to order together.
-            </p>
-            <p className="mt-2 text-[10px] font-bold uppercase text-heritage-green/70">
-              Group minimum: {minimumGarments} garments total | Shared shipping
-            </p>
-
+        <div className="space-y-4">
+          {/* Main buttons bar matching image.png */}
+          <div className="bg-white rounded-3xl border border-heritage-gold/20 p-2.5 shadow-md flex flex-col md:flex-row gap-3 items-center w-full">
+            {/* CREATE GROUP Button */}
             <button
               id="btn-create-private-batch"
               type="button"
               onClick={onCreatePrivateBatch}
-              className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-heritage-green bg-white px-4 py-2.5 text-[11px] font-bold uppercase text-heritage-green transition-colors hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              className="flex-1 w-full h-12 bg-heritage-green hover:bg-heritage-forest text-white text-xs font-bold uppercase tracking-wider rounded-xl flex items-center justify-between px-5 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
             >
-              Create Private Batch
-              <ArrowRight size={15} aria-hidden="true" />
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-heritage-gold shrink-0" aria-hidden="true" />
+                <span>CREATE GROUP</span>
+              </div>
+              <ArrowRight size={15} className="text-white shrink-0" aria-hidden="true" />
             </button>
-          </article>
 
-          <div className="flex min-h-[112px] items-center bg-heritage-cream/45 p-5 sm:p-6 lg:min-h-full">
+            {/* CUSTOM ORDER Button */}
+            <button
+              id="btn-custom-order-quick"
+              type="button"
+              onClick={handleCustomOrderClick}
+              className="flex-1 w-full h-12 bg-heritage-cream/35 hover:bg-heritage-cream/60 text-heritage-green text-xs font-bold uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 px-5 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              <Shirt size={16} className="text-heritage-gold shrink-0" aria-hidden="true" />
+              <span>CUSTOM ORDER</span>
+            </button>
+
+            {/* STYLE GALLERY Button */}
             <button
               id="btn-quick-gallery"
               type="button"
               onClick={onBrowseGallery}
-              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-heritage-gold/35 bg-white px-4 py-2.5 text-[11px] font-bold uppercase text-heritage-green transition-colors hover:border-heritage-gold hover:bg-heritage-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              className="flex-1 w-full h-12 bg-white hover:bg-heritage-cream/10 border border-heritage-gold/25 text-heritage-green text-xs font-bold uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 px-5 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
             >
-              <Camera size={16} aria-hidden="true" />
-              Browse Style Gallery
+              <Camera size={16} className="text-heritage-green/70 shrink-0" aria-hidden="true" />
+              <span>STYLE GALLERY</span>
             </button>
+          </div>
+
+          {/* Descriptive text grid around each button */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-1 px-3">
+            {/* Create Group Info */}
+            <div className="text-center md:text-left space-y-1">
+              <h3 className="font-serif font-bold text-heritage-green text-sm">
+                Create a Group
+              </h3>
+              <p className="text-xs text-heritage-ink/70 leading-relaxed">
+                Create a private group for friends, family, or colleagues. Enjoy shared shipping with a minimum of {minimumGarments} garments total.
+              </p>
+            </div>
+
+            {/* Custom Order Info */}
+            <div className="text-center md:text-left space-y-1">
+              <h3 className="font-serif font-bold text-heritage-green text-sm">
+                Custom Order
+              </h3>
+              <p className="text-xs text-heritage-ink/70 leading-relaxed">
+                {joinBatch ? (
+                  <>
+                    Join {joinBatch.name} community batch to design your tailored outfit with no group coordinating required.
+                  </>
+                ) : (
+                  "Design custom bespoke outfits. Select styles, choose fabrics, and estimate sizes with our simple built-in size guide."
+                )}
+              </p>
+            </div>
+
+            {/* Style Gallery Info */}
+            <div className="text-center md:text-left space-y-1">
+              <h3 className="font-serif font-bold text-heritage-green text-sm">
+                Browse Styles
+              </h3>
+              <p className="text-xs text-heritage-ink/70 leading-relaxed">
+                Explore our community showcase featuring completed traditional Nigerian outfits custom-designed by and made for our members.
+              </p>
+            </div>
           </div>
         </div>
       )}
