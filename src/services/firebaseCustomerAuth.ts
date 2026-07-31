@@ -12,24 +12,72 @@ type AuthResponse = {
   error?: string;
 };
 
+const AUTH_SERVER_UNAVAILABLE_MESSAGE =
+  "Authentication server is temporarily unavailable. Please try again.";
+
+function createAuthError(message: string, code?: string) {
+  const error = new Error(message) as Error & { code?: string };
+  error.code = code;
+  return error;
+}
+
+async function parseAuthResponse(response: Response): Promise<AuthResponse> {
+  const contentType = response.headers.get("content-type")?.toLowerCase() || "";
+  if (!contentType.includes("application/json")) {
+    throw createAuthError(
+      AUTH_SERVER_UNAVAILABLE_MESSAGE,
+      "AUTH_SERVER_UNAVAILABLE",
+    );
+  }
+
+  let payload: AuthResponse;
+  try {
+    payload = (await response.json()) as AuthResponse;
+  } catch {
+    throw createAuthError(
+      AUTH_SERVER_UNAVAILABLE_MESSAGE,
+      "AUTH_SERVER_UNAVAILABLE",
+    );
+  }
+
+  if (!payload || typeof payload !== "object") {
+    throw createAuthError(
+      AUTH_SERVER_UNAVAILABLE_MESSAGE,
+      "AUTH_SERVER_UNAVAILABLE",
+    );
+  }
+
+  return payload;
+}
+
 async function requestAuth(
   path: string,
   body?: Record<string, unknown>,
   idToken?: string,
 ): Promise<AuthResponse> {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-    },
-    body: JSON.stringify(body || {}),
-  });
-  const payload = (await response.json()) as AuthResponse;
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+      },
+      body: JSON.stringify(body || {}),
+    });
+  } catch {
+    throw createAuthError(
+      AUTH_SERVER_UNAVAILABLE_MESSAGE,
+      "AUTH_SERVER_UNAVAILABLE",
+    );
+  }
+
+  const payload = await parseAuthResponse(response);
   if (!response.ok) {
-    const error = new Error(payload.error || "Authentication failed.");
-    (error as Error & { code?: string }).code = payload.error;
-    throw error;
+    throw createAuthError(
+      payload.error || "Authentication failed.",
+      payload.error,
+    );
   }
   return payload;
 }

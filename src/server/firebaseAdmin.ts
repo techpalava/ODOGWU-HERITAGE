@@ -7,7 +7,9 @@ import {
 } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
-import firebaseConfig from "../../firebase-applet-config.json";
+import firebaseConfig from "../../firebase-applet-config.json" with {
+  type: "json",
+};
 
 function getAdminApp(): App {
   const existingApp = getApps()[0];

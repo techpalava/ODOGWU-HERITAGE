@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
-import healthHandler from "./api/health";
-import bootstrapHandler from "./api/auth/bootstrap";
-import pinLoginHandler from "./api/auth/pin-login";
-import pinRegisterHandler from "./api/auth/pin-register";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import ts from "typescript";
+import healthHandler from "./api/health.js";
+import bootstrapHandler from "./api/auth/bootstrap.js";
+import pinLoginHandler from "./api/auth/pin-login.js";
+import pinRegisterHandler from "./api/auth/pin-register.js";
 import type {
   HttpRequest,
   HttpResponse,
-} from "./src/server/httpTypes";
+} from "./src/server/httpTypes.js";
 
 type ResponseState = {
   status: number;
@@ -50,7 +53,62 @@ function request(
   };
 }
 
+function assertVercelRuntimeImports(entryFiles: string[]) {
+  const visited = new Set<string>();
+
+  function visit(filePath: string) {
+    const absolutePath = resolve(filePath);
+    if (visited.has(absolutePath)) return;
+    visited.add(absolutePath);
+
+    const sourceText = readFileSync(absolutePath, "utf8");
+    const sourceFile = ts.createSourceFile(
+      absolutePath,
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+
+    for (const statement of sourceFile.statements) {
+      const moduleSpecifier =
+        ts.isImportDeclaration(statement) ||
+        ts.isExportDeclaration(statement)
+          ? statement.moduleSpecifier
+          : undefined;
+      if (!moduleSpecifier || !ts.isStringLiteral(moduleSpecifier)) {
+        continue;
+      }
+
+      const specifier = moduleSpecifier.text;
+      if (!specifier.startsWith(".")) continue;
+
+      assert.match(
+        specifier,
+        /\.(?:js|json)$/,
+        `${absolutePath} must use an explicit runtime extension: ${specifier}`,
+      );
+
+      if (!specifier.endsWith(".js")) continue;
+      const dependencyPath = resolve(
+        dirname(absolutePath),
+        specifier.replace(/\.js$/, ".ts"),
+      );
+      if (existsSync(dependencyPath)) visit(dependencyPath);
+    }
+  }
+
+  entryFiles.forEach(visit);
+}
+
 async function run() {
+  assertVercelRuntimeImports([
+    "./api/health.ts",
+    "./api/auth/bootstrap.ts",
+    "./api/auth/pin-login.ts",
+    "./api/auth/pin-register.ts",
+  ]);
+
   assert.equal(typeof healthHandler, "function");
   assert.equal(typeof bootstrapHandler, "function");
   assert.equal(typeof pinLoginHandler, "function");

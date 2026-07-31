@@ -10,12 +10,12 @@ import {
   type Firestore,
 } from "firebase-admin/firestore";
 import type { Auth, DecodedIdToken } from "firebase-admin/auth";
-import type { Customer } from "../types";
+import type { Customer } from "../types.js";
 import {
   getCanonicalEmail,
   isAllowedAdminEmail,
   normalizePhone,
-} from "../security/authIdentity";
+} from "../security/authIdentity.js";
 
 const MAX_PIN_FAILURES = 5;
 const PIN_LOCK_MS = 15 * 60 * 1000;
