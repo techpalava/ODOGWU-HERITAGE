@@ -107,7 +107,8 @@ export default function HomepageOrderGateway({
               <button
                 id="btn-quick-join-cohort"
                 type="button"
-                onClick={onJoinBatch}
+                onClick={isLoading ? undefined : onJoinBatch}
+                disabled={isLoading}
                 className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-heritage-green px-4 py-2.5 text-[11px] font-bold uppercase text-white transition-colors hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
               >
                 Join {joinBatch.name}
@@ -139,7 +140,8 @@ export default function HomepageOrderGateway({
             <button
               id="btn-create-private-batch"
               type="button"
-              onClick={onCreatePrivateBatch}
+              onClick={isLoading ? undefined : onCreatePrivateBatch}
+              disabled={isLoading}
               className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-heritage-green px-4 py-2.5 text-[11px] font-bold uppercase text-white transition-colors hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
             >
               Create Private Batch
