@@ -40,6 +40,7 @@ import {
   PRICING_CURRENCY_SYMBOL,
 } from "./utils/money";
 import { revalidateCartForCheckout } from "./utils/checkoutValidation";
+import { isBatchPricingRoute } from "./utils/designPricing";
 
 // Lazy load modular view components for performance optimization
 const HomeView = lazy(() => import("./components/HomeView"));
@@ -594,17 +595,64 @@ export default function App() {
       total + (item.garment.traditionalAccessoriesPrice || 0),
     0,
   );
-  const checkoutCustomDetailOptionsTotal = cartItems.reduce(
+  const checkoutBatchClothingTotal = cartItems.reduce(
     (total, item) =>
       total +
-      Math.max(
-        0,
-        (item.garment.customDetailsPrice || 0) -
-          (item.garment.monogramPrice || 0) -
-          (item.garment.traditionalAccessoriesPrice || 0),
-      ),
+      (isBatchPricingRoute(item.batchType)
+        ? item.garment.clothingPrice || 0
+        : 0),
     0,
   );
+  const hasBatchCheckoutItems = cartItems.some((item) =>
+    isBatchPricingRoute(item.batchType),
+  );
+  const checkoutIndividualFabricTotal = cartItems.reduce(
+    (total, item) =>
+      total +
+      (!isBatchPricingRoute(item.batchType)
+        ? item.garment.fabricPrice || 0
+        : 0),
+    0,
+  );
+  const checkoutIndividualFabricSewingTotal = cartItems.reduce(
+    (total, item) =>
+      total +
+      (!isBatchPricingRoute(item.batchType)
+        ? item.garment.fabricSewingCost || 0
+        : 0),
+    0,
+  );
+  const checkoutIndividualConstructionSewingTotal = cartItems.reduce(
+    (total, item) =>
+      total +
+      (!isBatchPricingRoute(item.batchType)
+        ? item.garment.constructionSewingCost || 0
+        : 0),
+    0,
+  );
+  const checkoutIndividualClothingTotal = cartItems.reduce(
+    (total, item) =>
+      total +
+      (!isBatchPricingRoute(item.batchType)
+        ? item.garment.clothingPrice || 0
+        : 0),
+    0,
+  );
+  const checkoutConstructionUpgradesTotal = cartItems.reduce(
+    (total, item) =>
+      total +
+      (item.garment.constructionUpgradesPrice ??
+        Math.max(
+          0,
+          (item.garment.customDetailsPrice || 0) -
+            (item.garment.monogramPrice || 0) -
+            (item.garment.traditionalAccessoriesPrice || 0) -
+            (item.garment.clothingPrice || 0),
+        )),
+    0,
+  );
+  const checkoutCustomDetailOptionsTotal =
+    checkoutIndividualClothingTotal + checkoutConstructionUpgradesTotal;
 
   const checkoutResumeInProgress = React.useRef(false);
   React.useEffect(() => {
@@ -714,6 +762,10 @@ export default function App() {
                 }}
                 onJoinCommunityBatch={() => {
                   if (!activeCommunityBatch) {
+                    triggerNotification(
+                      "This batch is no longer accepting orders. Please check back soon.",
+                      "info",
+                    );
                     return;
                   }
                   setPresetStyleId(null);
@@ -721,6 +773,9 @@ export default function App() {
                   setOrderContext(activeCommunityBatch);
                   setActiveTab("design");
                 }}
+                joinBatch={
+                  activeCommunityBatch ? registrationBatch ?? null : null
+                }
                 onCreatePrivateBatch={() => {
                   setOrderContext(null);
                   setActiveTab("custom-order");
@@ -756,20 +811,24 @@ export default function App() {
                 onSelectStyle={(styleId, fabricCode) => {
                   setPresetStyleId(styleId);
                   setPresetFabricCode(fabricCode);
-                  setOrderContext(activeCommunityBatch);
+                  setOrderContext(activeCommunityBatch ?? null);
                   setActiveTab("design");
                   triggerNotification(
-                    "Design Studio loaded with your selected look.",
+                    activeCommunityBatch
+                      ? "Design Studio loaded with your selected look."
+                      : "Design Studio loaded. Choose your order type in the studio.",
                     "info",
                   );
                 }}
                 onSelectFabric={(fabricCode) => {
                   setPresetStyleId(undefined);
                   setPresetFabricCode(fabricCode);
-                  setOrderContext(activeCommunityBatch);
+                  setOrderContext(activeCommunityBatch ?? null);
                   setActiveTab("design");
                   triggerNotification(
-                    "Design Studio loaded with your selected fabric.",
+                    activeCommunityBatch
+                      ? "Design Studio loaded with your selected fabric."
+                      : "Design Studio loaded. Choose your order type in the studio.",
                     "info",
                   );
                 }}
@@ -988,19 +1047,34 @@ export default function App() {
                   </span>
                 </h4>
                 <div className="space-y-1.5 text-gray-600 text-[10px]">
-                  <div className="flex justify-between">
-                    <span>Fabric Price:</span>
-                    <span className="font-mono">
-                      {currencySymbol}
-                      {cartItems.reduce((acc, item) => acc + (item.garment.fabricPrice || 0), 0).toFixed(2)}
-                    </span>
-                  </div>
-                  {cartItems.reduce((acc, item) => acc + (item.garment.fabricSewingCost || 0), 0) > 0 && (
+                  {hasBatchCheckoutItems && (
+                    <div className="rounded-lg border border-heritage-gold/20 bg-heritage-cream/30 px-3 py-2">
+                      <div className="flex justify-between gap-3 font-semibold text-heritage-ink/80">
+                        <span>Selected Clothing Price:</span>
+                        <span className="font-mono font-bold text-heritage-green">
+                          {currencySymbol}{checkoutBatchClothingTotal.toFixed(2)}
+                        </span>
+                      </div>
+                      <p className="mt-1 font-semibold text-heritage-green/70">
+                        Includes fabric and sewing costs
+                      </p>
+                    </div>
+                  )}
+                  {checkoutIndividualFabricTotal > 0 && (
+                    <div className="flex justify-between">
+                      <span>Fabric Price:</span>
+                      <span className="font-mono">
+                        {currencySymbol}
+                        {checkoutIndividualFabricTotal.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {checkoutIndividualFabricSewingTotal > 0 && (
                     <div className="flex justify-between">
                       <span>Fabric Sewing Cost:</span>
                       <span className="font-mono">
                         {currencySymbol}
-                        {cartItems.reduce((acc, item) => acc + (item.garment.fabricSewingCost || 0), 0).toFixed(2)}
+                        {checkoutIndividualFabricSewingTotal.toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -1013,12 +1087,12 @@ export default function App() {
                       </span>
                     </div>
                   )}
-                  {cartItems.reduce((acc, item) => acc + (item.garment.constructionSewingCost || 0), 0) > 0 && (
+                  {checkoutIndividualConstructionSewingTotal > 0 && (
                     <div className="flex justify-between">
                       <span>Construction Sewing Cost:</span>
                       <span className="font-mono">
                         {currencySymbol}
-                        {cartItems.reduce((acc, item) => acc + (item.garment.constructionSewingCost || 0), 0).toFixed(2)}
+                        {checkoutIndividualConstructionSewingTotal.toFixed(2)}
                       </span>
                     </div>
                   )}

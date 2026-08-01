@@ -34,6 +34,22 @@ const VALID_SELECTION_GROUPS = new Set<CustomDetailSelectionGroup>([
   "skirt_pockets",
 ]);
 
+export const CLOTHING_PRICE_SELECTION_GROUPS: readonly CustomDetailSelectionGroup[] = [
+  "shirt_construction",
+  "dress_construction",
+  "standard_shorts_fastening",
+  "bum_shorts_fastening",
+  "trouser_fastening",
+  "skirt_length",
+];
+
+const CLOTHING_PRICE_SELECTION_GROUP_SET =
+  new Set<CustomDetailSelectionGroup>(CLOTHING_PRICE_SELECTION_GROUPS);
+
+export const isClothingPriceSelectionGroup = (
+  group: CustomDetailSelectionGroup,
+): boolean => CLOTHING_PRICE_SELECTION_GROUP_SET.has(group);
+
 const VALID_DEMOGRAPHICS = new Set(["male", "female", "unisex"]);
 
 const normalizeCatalogOption = (
@@ -417,25 +433,64 @@ export const getCustomDetailSnapshots = (
   });
 };
 
-export const getCustomDetailsBreakdown = (
+export const getSelectedCustomDetailSnapshots = (
   selections: DesignSelections,
   catalog: CustomDetailOption[],
-) => {
+): CustomDetailSelectionSnapshot[] => {
   const hasLiveSelections = Object.prototype.hasOwnProperty.call(
     selections,
     "customDetails",
   );
-  const snapshots = hasLiveSelections
+
+  return hasLiveSelections
     ? getCustomDetailSnapshots(selections, catalog)
     : selections.customDetailSnapshots?.length
       ? selections.customDetailSnapshots
       : [];
+};
 
-  return snapshots.map((option) => ({
+export interface CustomDetailsPriceBreakdown {
+  clothingPrice: number;
+  constructionUpgradesPrice: number;
+  total: number;
+}
+
+export const calculateCustomDetailsPriceBreakdown = (
+  selections: DesignSelections,
+  catalog: CustomDetailOption[],
+): CustomDetailsPriceBreakdown => {
+  const totals = getSelectedCustomDetailSnapshots(selections, catalog).reduce(
+    (current, option) => {
+      const key = isClothingPriceSelectionGroup(option.selectionGroup)
+        ? "clothingPriceCents"
+        : "constructionUpgradesPriceCents";
+      current[key] += Math.max(0, Math.round(option.priceCents));
+      return current;
+    },
+    { clothingPriceCents: 0, constructionUpgradesPriceCents: 0 },
+  );
+
+  return {
+    clothingPrice: totals.clothingPriceCents / 100,
+    constructionUpgradesPrice:
+      totals.constructionUpgradesPriceCents / 100,
+    total:
+      (totals.clothingPriceCents +
+        totals.constructionUpgradesPriceCents) /
+      100,
+  };
+};
+
+export const getCustomDetailsBreakdown = (
+  selections: DesignSelections,
+  catalog: CustomDetailOption[],
+) => {
+  return getSelectedCustomDetailSnapshots(selections, catalog).map((option) => ({
     label: option.label,
     value: "",
     price: option.priceCents / 100,
     originalId: option.optionId,
+    selectionGroup: option.selectionGroup,
   }));
 };
 

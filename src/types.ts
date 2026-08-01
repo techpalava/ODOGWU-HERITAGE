@@ -359,9 +359,14 @@ export interface CartPricingReview {
 export interface GarmentSelection {
   type: string; // e.g., "Shirt Only", "Shirt + Trouser", "Complete Set", "Gown Only"
   totalPrice: number;
+  clothingPrice?: number;
+  includesFabricAndSewing?: boolean;
+  includedFabricPrice?: number;
+  includedSewingCost?: number;
   fabricSewingCost?: number;
   constructionSewingCost?: number;
   fabricPrice?: number;
+  constructionUpgradesPrice?: number;
   customDetailsPrice?: number;
   monogramPrice?: number;
   traditionalAccessoriesPrice?: number;
@@ -550,9 +555,12 @@ export interface GuestDesignDraft {
   leftoverFabricChoice: string;
   hasLining: boolean;
   pricingBreakdown: {
+    clothingPrice?: number;
+    includesFabricAndSewing?: boolean;
     fabricPrice: number;
     fabricSewingCost: number;
     constructionSewingCost: number;
+    constructionUpgradesPrice?: number;
     customDetailsPrice: number;
     lagosToEindhovenShipping: number;
     eindhovenToDestinationShipping: number | null;
