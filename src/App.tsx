@@ -724,11 +724,23 @@ export default function App() {
                 onCreatePrivateBatch={() => {
                   setOrderContext(null);
                   setActiveTab("custom-order");
-                  setTimeout(() => {
-                    document
-                      .getElementById("option-create-group")
-                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }, 200);
+                  let scrollAttempts = 0;
+                  const scrollToCreateGroup = () => {
+                    const createGroupSection =
+                      document.getElementById("option-create-group");
+                    if (createGroupSection) {
+                      createGroupSection.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+                      return;
+                    }
+                    scrollAttempts += 1;
+                    if (scrollAttempts < 20) {
+                      window.setTimeout(scrollToCreateGroup, 50);
+                    }
+                  };
+                  window.setTimeout(scrollToCreateGroup, 0);
                 }}
                 onManageSourcingBatches={
                   AuthorizationEngine.canManageBatches(currentUser)
