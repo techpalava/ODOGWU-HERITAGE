@@ -19,6 +19,7 @@ import ankaraFamilyImage from "../assets/images/regenerated_image_1784259611604.
 
 interface HomeViewProps {
   onNavigateToTab: (tabId: string) => void;
+  onStartIndividualOrder: () => void;
   onJoinCommunityBatch: () => void;
   onCreatePrivateBatch: () => void;
   onManageSourcingBatches?: () => void;
@@ -31,6 +32,7 @@ interface HomeViewProps {
 
 export default function HomeView({
   onNavigateToTab,
+  onStartIndividualOrder,
   onJoinCommunityBatch,
   onCreatePrivateBatch,
   onManageSourcingBatches,
@@ -200,6 +202,7 @@ export default function HomeView({
       <HomepageOrderGateway
         state={orderGatewayState}
         isLoading={isBatchGatewayLoading}
+        onStartIndividualOrder={onStartIndividualOrder}
         onJoinBatch={onJoinCommunityBatch}
         onCreatePrivateBatch={onCreatePrivateBatch}
         onBrowseGallery={() => onNavigateToTab("gallery")}
