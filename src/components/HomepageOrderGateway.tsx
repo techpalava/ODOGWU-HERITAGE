@@ -82,51 +82,14 @@ export default function HomepageOrderGateway({
             joinBatch ? "xl:grid-cols-4" : "xl:grid-cols-3"
           }`}
         >
-          <article className="flex min-h-[230px] flex-col bg-white p-5 sm:p-6">
-            <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-green text-heritage-gold">
-                <Shirt size={19} aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase text-heritage-gold">
-                  Order Type A
-                </p>
-                <h3 className="mt-1 font-display text-xl font-bold text-heritage-green">
-                  Individual Custom Order
-                </h3>
-              </div>
-            </div>
-
-            <p className="mt-3 text-xs leading-relaxed text-heritage-ink/70">
-              Order custom-made attire without joining a batch or waiting for a
-              group deadline.
-            </p>
-            <p className="mt-2 text-[10px] font-bold uppercase text-heritage-green/70">
-              Independent order | Higher direct shipping cost
-            </p>
-
-            <button
-              id="btn-start-individual-order"
-              type="button"
-              onClick={onStartIndividualOrder}
-              className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-heritage-green px-4 py-2.5 text-[11px] font-bold uppercase text-white transition-colors hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-            >
-              Start Individual Order
-              <ArrowRight size={15} aria-hidden="true" />
-            </button>
-          </article>
-
           {joinBatch && (
             <article className="flex min-h-[168px] flex-col bg-white p-5 sm:p-6">
               <div className="flex items-start gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-green text-heritage-gold">
                   <Users size={19} aria-hidden="true" />
                 </span>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase text-heritage-gold">
-                    Order Type B
-                  </p>
-                  <h3 className="mt-1 font-display text-xl font-bold text-heritage-green">
+                <div className="min-w-0 self-center">
+                  <h3 className="font-display text-xl font-bold leading-tight text-heritage-green">
                     Join {joinBatch.name}
                   </h3>
                 </div>
@@ -158,11 +121,8 @@ export default function HomepageOrderGateway({
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-cream text-heritage-green">
                 <UserPlus size={19} aria-hidden="true" />
               </span>
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase text-heritage-gold">
-                  Order Type C
-                </p>
-                <h3 className="mt-1 font-display text-xl font-bold text-heritage-green">
+              <div className="min-w-0 self-center">
+                <h3 className="font-display text-xl font-bold leading-tight text-heritage-green">
                   Create a Private Batch
                 </h3>
               </div>
@@ -180,9 +140,40 @@ export default function HomepageOrderGateway({
               id="btn-create-private-batch"
               type="button"
               onClick={onCreatePrivateBatch}
-              className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-heritage-green bg-white px-4 py-2.5 text-[11px] font-bold uppercase text-heritage-green transition-colors hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-heritage-green px-4 py-2.5 text-[11px] font-bold uppercase text-white transition-colors hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
             >
               Create Private Batch
+              <ArrowRight size={15} aria-hidden="true" />
+            </button>
+          </article>
+
+          <article className="flex min-h-[230px] flex-col bg-white p-5 sm:p-6">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-green text-heritage-gold">
+                <Shirt size={19} aria-hidden="true" />
+              </span>
+              <div className="min-w-0 self-center">
+                <h3 className="font-display text-xl font-bold leading-tight text-heritage-green">
+                  Individual Custom Order
+                </h3>
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs leading-relaxed text-heritage-ink/70">
+              Order custom-made attire without joining a batch or waiting for a
+              group deadline.
+            </p>
+            <p className="mt-2 text-[10px] font-bold uppercase text-heritage-green/70">
+              Independent order | Higher direct shipping cost
+            </p>
+
+            <button
+              id="btn-start-individual-order"
+              type="button"
+              onClick={onStartIndividualOrder}
+              className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-heritage-green px-4 py-2.5 text-[11px] font-bold uppercase text-white transition-colors hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              Start Individual Order
               <ArrowRight size={15} aria-hidden="true" />
             </button>
           </article>
@@ -192,11 +183,8 @@ export default function HomepageOrderGateway({
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-cream text-heritage-green">
                 <ShoppingBag size={19} aria-hidden="true" />
               </span>
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase text-heritage-gold">
-                  Order Type D
-                </p>
-                <h3 className="mt-1 font-display text-xl font-bold text-heritage-green">
+              <div className="min-w-0 self-center">
+                <h3 className="font-display text-xl font-bold leading-tight text-heritage-green">
                   Ready to Wear
                 </h3>
               </div>

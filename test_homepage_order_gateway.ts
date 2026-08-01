@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { Batch } from "./src/types";
+import type { Batch, OrderContext } from "./src/types";
 import HomepageOrderGateway from "./src/components/HomepageOrderGateway";
 import { getHomepageOrderGatewayState } from "./src/utils/homepageOrderGateway";
+import { BatchBusinessRules } from "./src/engine/BatchBusinessRules";
+import { OrderRoutingEngine } from "./src/engine/OrderRoutingEngine";
 
 const day = 24 * 60 * 60 * 1000;
 const now = Date.now();
@@ -29,6 +31,27 @@ const openState = getHomepageOrderGatewayState([makeBatch()]);
 assert.equal(openState.joinBatch?.id, "batch-6");
 assert.equal(openState.joinBatch?.name, "Avatars");
 assert.equal(openState.minimumGarments, 10);
+
+const openCommunityContext: OrderContext = {
+  orderType: "Community",
+  batchId: "batch-6",
+  batchName: "Avatars",
+  closingDate: new Date(now + day).toISOString(),
+  expectedParticipants: 40,
+  currentMembers: 12,
+  allowOrders: true,
+  batchStatus: "OPEN",
+};
+assert.equal(
+  BatchBusinessRules.canAcceptOrders(openCommunityContext).canAcceptOrders,
+  true,
+  "A community order context must not require a batch-only startDate field",
+);
+assert.equal(
+  OrderRoutingEngine.evaluateOrder(openCommunityContext, [makeBatch()]).mode,
+  "COMMUNITY_OPEN",
+  "The routing engine must preserve an eligible homepage community context",
+);
 
 const productionState = getHomepageOrderGatewayState([
   makeBatch({
@@ -226,11 +249,20 @@ const joinMarkup = renderToStaticMarkup(
   }),
 );
 assert.match(joinMarkup, /Join Avatars/);
-assert.match(joinMarkup, /Order Type A/);
 assert.match(joinMarkup, /Individual Custom Order/);
-assert.match(joinMarkup, /Order Type D/);
+assert.match(joinMarkup, /Ready to Wear/);
 assert.match(joinMarkup, /Ready to Wear - Coming Soon/);
+assert.doesNotMatch(joinMarkup, /Order Type [ABCD]/);
 assert.match(joinMarkup, /Manage Sourcing Batches/);
+assert.ok(
+  joinMarkup.indexOf("Join Avatars") <
+    joinMarkup.indexOf("Create a Private Batch") &&
+    joinMarkup.indexOf("Create a Private Batch") <
+      joinMarkup.indexOf("Individual Custom Order") &&
+    joinMarkup.indexOf("Individual Custom Order") <
+      joinMarkup.indexOf("Ready to Wear"),
+  "Batch actions must appear before individual and ready-to-wear actions",
+);
 
 const customerMarkup = renderToStaticMarkup(
   createElement(HomepageOrderGateway, {
@@ -242,9 +274,17 @@ const customerMarkup = renderToStaticMarkup(
   }),
 );
 assert.doesNotMatch(customerMarkup, /Order Type B/);
-assert.match(customerMarkup, /Order Type A/);
-assert.match(customerMarkup, /Order Type D/);
+assert.match(customerMarkup, /Individual Custom Order/);
+assert.match(customerMarkup, /Ready to Wear/);
+assert.doesNotMatch(customerMarkup, /Order Type [ABCD]/);
 assert.doesNotMatch(customerMarkup, /Manage Sourcing Batches/);
+assert.ok(
+  customerMarkup.indexOf("Create a Private Batch") <
+    customerMarkup.indexOf("Individual Custom Order") &&
+    customerMarkup.indexOf("Individual Custom Order") <
+      customerMarkup.indexOf("Ready to Wear"),
+  "Private batch must remain first when no community batch is joinable",
+);
 
 console.log(
   "PASS: homepage order gateway source-of-truth, boundaries, and labels",
