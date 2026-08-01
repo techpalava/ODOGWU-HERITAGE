@@ -44,7 +44,8 @@ export class BatchBusinessRules {
     let allowOrders = true;
     let status = "";
     let isManualSchedule = false;
-    if ("expectedParticipants" in data) {
+    const isOrderContext = "expectedParticipants" in data;
+    if (isOrderContext) {
       const ctx = data as OrderContext;
       endDateStr = ctx.closingDate || "";
       startDateStr = ""; 
@@ -109,6 +110,7 @@ export class BatchBusinessRules {
     };
 
     if (
+      !isOrderContext &&
       !isManualOpenOverride &&
       (!startDate || now < startDate)
     ) {
