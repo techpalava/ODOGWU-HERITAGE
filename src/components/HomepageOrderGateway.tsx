@@ -2,6 +2,8 @@ import {
   ArrowRight,
   Camera,
   Settings,
+  Shirt,
+  ShoppingBag,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -10,6 +12,7 @@ import type { HomepageOrderGatewayState } from "../utils/homepageOrderGateway";
 interface HomepageOrderGatewayProps {
   state: HomepageOrderGatewayState;
   isLoading?: boolean;
+  onStartIndividualOrder: () => void;
   onJoinBatch: () => void;
   onCreatePrivateBatch: () => void;
   onBrowseGallery: () => void;
@@ -19,6 +22,7 @@ interface HomepageOrderGatewayProps {
 export default function HomepageOrderGateway({
   state,
   isLoading = false,
+  onStartIndividualOrder,
   onJoinBatch,
   onCreatePrivateBatch,
   onBrowseGallery,
@@ -55,9 +59,9 @@ export default function HomepageOrderGateway({
         <div
           aria-busy="true"
           aria-label="Loading current order options"
-          className="grid gap-px bg-heritage-gold/15 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px]"
+          className="grid gap-px bg-heritage-gold/15 md:grid-cols-2 xl:grid-cols-4"
         >
-          {[0, 1].map((item) => (
+          {[0, 1, 2, 3].map((item) => (
             <div
               key={item}
               className="min-h-[168px] animate-pulse bg-white p-5 sm:p-6"
@@ -68,18 +72,50 @@ export default function HomepageOrderGateway({
               <div className="mt-2 h-3 w-4/5 rounded bg-heritage-cream/70" />
             </div>
           ))}
-          <div className="min-h-[112px] animate-pulse bg-heritage-cream/45 p-5 sm:p-6 lg:min-h-full">
+          <div className="min-h-[88px] animate-pulse bg-heritage-cream/45 p-5 sm:p-6 md:col-span-2 xl:col-span-4">
             <div className="h-11 w-full rounded-lg bg-white/80" />
           </div>
         </div>
       ) : (
         <div
-          className={`grid gap-px bg-heritage-gold/15 ${
-            joinBatch
-              ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px]"
-              : "lg:grid-cols-[minmax(0,1fr)_220px]"
+          className={`grid gap-px bg-heritage-gold/15 md:grid-cols-2 ${
+            joinBatch ? "xl:grid-cols-4" : "xl:grid-cols-3"
           }`}
         >
+          <article className="flex min-h-[230px] flex-col bg-white p-5 sm:p-6">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-green text-heritage-gold">
+                <Shirt size={19} aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase text-heritage-gold">
+                  Order Type A
+                </p>
+                <h3 className="mt-1 font-display text-xl font-bold text-heritage-green">
+                  Individual Custom Order
+                </h3>
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs leading-relaxed text-heritage-ink/70">
+              Order custom-made attire without joining a batch or waiting for a
+              group deadline.
+            </p>
+            <p className="mt-2 text-[10px] font-bold uppercase text-heritage-green/70">
+              Independent order | Higher direct shipping cost
+            </p>
+
+            <button
+              id="btn-start-individual-order"
+              type="button"
+              onClick={onStartIndividualOrder}
+              className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-heritage-green px-4 py-2.5 text-[11px] font-bold uppercase text-white transition-colors hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              Start Individual Order
+              <ArrowRight size={15} aria-hidden="true" />
+            </button>
+          </article>
+
           {joinBatch && (
             <article className="flex min-h-[168px] flex-col bg-white p-5 sm:p-6">
               <div className="flex items-start gap-3">
@@ -151,7 +187,41 @@ export default function HomepageOrderGateway({
             </button>
           </article>
 
-          <div className="flex min-h-[112px] items-center bg-heritage-cream/45 p-5 sm:p-6 lg:min-h-full">
+          <article className="flex min-h-[230px] flex-col bg-white p-5 sm:p-6">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-cream text-heritage-green">
+                <ShoppingBag size={19} aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase text-heritage-gold">
+                  Order Type D
+                </p>
+                <h3 className="mt-1 font-display text-xl font-bold text-heritage-green">
+                  Ready to Wear
+                </h3>
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs leading-relaxed text-heritage-ink/70">
+              Choose a finished outfit in your size, pay, and have it shipped
+              without entering the custom design flow.
+            </p>
+            <p className="mt-2 text-[10px] font-bold uppercase text-heritage-green/70">
+              1-9 garments: EUR 131 shipping | 10+: EUR 15 per garment
+            </p>
+
+            <button
+              id="btn-ready-to-wear"
+              type="button"
+              disabled
+              aria-disabled="true"
+              className="mt-auto inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-heritage-green/20 bg-heritage-cream/60 px-4 py-2.5 text-[11px] font-bold uppercase text-heritage-green/60"
+            >
+              Ready to Wear - Coming Soon
+            </button>
+          </article>
+
+          <div className="flex min-h-[88px] items-center bg-heritage-cream/45 p-5 sm:p-6 md:col-span-2 xl:col-span-4">
             <button
               id="btn-quick-gallery"
               type="button"

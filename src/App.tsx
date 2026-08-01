@@ -702,6 +702,16 @@ export default function App() {
                     | "custom-order"
                     | "login",
                 ) => setActiveTab(tabId)}
+                onStartIndividualOrder={() => {
+                  setPresetStyleId(null);
+                  setPresetFabricCode(null);
+                  setOrderContext({
+                    orderType: "Individual",
+                    deliveryWindow:
+                      "Within 2-3 weeks (Express Air Priority)",
+                  });
+                  setActiveTab("design");
+                }}
                 onJoinCommunityBatch={() => {
                   if (!activeCommunityBatch) {
                     return;
