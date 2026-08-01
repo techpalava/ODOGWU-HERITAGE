@@ -1656,8 +1656,10 @@ export default function DesignStudioView({
     setCustomerName(draft.customerName);
     setCustomerEmail(draft.customerEmail);
     setCustomerPhone(draft.customerPhone);
-    setBatchType(draft.batchType);
-    setCustomGroupCode(draft.customGroupCode);
+    if (!orderContext) {
+      setBatchType(draft.batchType);
+      setCustomGroupCode(draft.customGroupCode);
+    }
     setSpecialInstructions(draft.specialInstructions);
     setLeftoverFabricChoice(draft.leftoverFabricChoice);
     setHasLining(draft.hasLining);
@@ -1674,6 +1676,7 @@ export default function DesignStudioView({
     isLoadingData,
     styles,
     fabrics,
+    orderContext,
   ]);
 
   useEffect(() => {
