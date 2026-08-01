@@ -414,6 +414,42 @@ assert.equal(
   "unchanged authoritative pricing is idempotent across retries",
 );
 
+const batchCartItem = makeCartItem("batch-pricing-item", {
+  batchType: "personalized",
+  batchId: "PRIVATE-PRICE-001",
+  batchName: "Private Price Test",
+  customGroupCode: "PRIVATE-PRICE-001",
+  design: {
+    customDetails: {
+      shirt_construction: "shirt_std_short",
+      shirt_pockets: "shirt_pocket_0",
+    },
+  },
+  garment: {
+    type: "Shirt Only",
+    totalPrice: 77.03,
+    clothingPrice: 65,
+    fabricPrice: 3.91,
+    fabricSewingCost: 4.06,
+    constructionSewingCost: 4.06,
+  },
+});
+const batchPricingValidation = revalidateCartForCheckout(
+  [batchCartItem],
+  checkoutContext,
+  "2026-08-01T10:06:30.000Z",
+);
+const repricedBatchGarment = batchPricingValidation.items[0].garment;
+assert.equal(repricedBatchGarment.clothingPrice, 65);
+assert.equal(repricedBatchGarment.includesFabricAndSewing, true);
+assert.equal(repricedBatchGarment.fabricPrice, 0);
+assert.equal(repricedBatchGarment.fabricSewingCost, 0);
+assert.equal(repricedBatchGarment.constructionSewingCost, 0);
+assert.equal(repricedBatchGarment.includedFabricPrice, 3.91);
+assert.equal(repricedBatchGarment.includedSewingCost, 8.12);
+assert.equal(getCartItemGarmentSubtotal(batchPricingValidation.items[0]), 65);
+assert.equal(batchPricingValidation.pricing.garmentSubtotal, 65);
+
 const updatedFabric: Fabric = {
   ...fabric,
   category: "Future Fabric",
