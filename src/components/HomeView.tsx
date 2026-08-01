@@ -6,12 +6,13 @@
 import { useState, useEffect, useRef } from "react";
 import { Sparkles, ArrowRight, ShieldCheck, Award } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { CommunityPhoto, Showpiece, Fabric } from "../types";
+import { Batch, CommunityPhoto, Showpiece, Fabric } from "../types";
 import { useAppStore } from "../store/useAppStore";
 import { CapacityService } from "../services/CapacityService";
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 import HomepageOrderGateway from "./HomepageOrderGateway";
-import { getHomepageOrderGatewayState } from "../utils/homepageOrderGateway";
+import type { HomepageOrderGatewayState } from "../utils/homepageOrderGateway";
+import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
 import ankaraLadyImage from "../assets/images/couture_gown_photo_1782308183701.jpg";
 import ankaraManImage from "../assets/images/grand_agbada_photo_1782308152763.jpg";
 import ankaraKidsImage from "../assets/images/regenerated_image_1784258480371.png";
@@ -21,6 +22,7 @@ interface HomeViewProps {
   onNavigateToTab: (tabId: string) => void;
   onStartIndividualOrder: () => void;
   onJoinCommunityBatch: () => void;
+  joinBatch?: Batch | null;
   onCreatePrivateBatch: () => void;
   onManageSourcingBatches?: () => void;
   communityPhotos?: CommunityPhoto[];
@@ -34,6 +36,7 @@ export default function HomeView({
   onNavigateToTab,
   onStartIndividualOrder,
   onJoinCommunityBatch,
+  joinBatch,
   onCreatePrivateBatch,
   onManageSourcingBatches,
   communityPhotos,
@@ -63,7 +66,10 @@ export default function HomeView({
   });
 
   
-  const orderGatewayState = getHomepageOrderGatewayState(batches);
+  const orderGatewayState: HomepageOrderGatewayState = {
+    joinBatch: joinBatch ?? null,
+    minimumGarments: BATCH_MINIMUM_GARMENTS,
+  };
   const isBatchGatewayLoading = !hasLoadedBatches;
   const canJoinActiveBatch = Boolean(orderGatewayState.joinBatch);
   const activeBatchName = orderGatewayState.joinBatch?.name || "";

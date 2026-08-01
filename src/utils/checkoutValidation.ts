@@ -50,6 +50,7 @@ const getStableSourceFingerprint = (
   const source = JSON.stringify({
     version: CHECKOUT_DESIGN_PRICING_VERSION,
     itemId: item.id,
+    batchType: item.batchType,
     fabric: {
       code: fabric.code,
       category: fabric.category,
@@ -308,10 +309,17 @@ export const revalidateCartForCheckout = (
       style,
       garment: {
         ...item.garment,
+        clothingPrice: authoritativePricing.clothingPrice,
+        includesFabricAndSewing:
+          authoritativePricing.includesFabricAndSewing,
+        includedFabricPrice: authoritativePricing.includedFabricPrice,
+        includedSewingCost: authoritativePricing.includedSewingCost,
         fabricPrice: authoritativePricing.fabricPrice,
         fabricSewingCost: authoritativePricing.fabricSewingCost,
         constructionSewingCost:
           authoritativePricing.constructionSewingCost,
+        constructionUpgradesPrice:
+          authoritativePricing.constructionUpgradesPrice,
         customDetailsPrice: authoritativePricing.customDetailsPrice,
         monogramPrice: authoritativePricing.monogramPrice,
         traditionalAccessoriesPrice:

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type {
+  BusinessSettings,
   CartItem,
   CustomDetailOption,
   Fabric,
@@ -27,6 +29,10 @@ import {
 } from "./src/utils/money";
 import { resolvePersonalizedBatchShippingContext } from "./src/utils/personalizedBatchContext";
 import { calculateCartPricing } from "./src/utils/shippingPricing";
+import {
+  calculateDesignPricing,
+  isBatchPricingRoute,
+} from "./src/utils/designPricing";
 
 const makeStyle = (
   overrides: Partial<StyleCategory> = {},
@@ -245,6 +251,92 @@ assert.equal(
 const unpricedFabric = makeFabric({ category: "Future Fabric" });
 assert.equal(resolveFabricPrice(unpricedFabric), null);
 assert.match(getFabricPricingError(unpricedFabric) || "", /not configured/i);
+
+const pricingSettings = {
+  pricingSettings: {
+    depositPercentage: 50,
+    balancePercentage: 50,
+    currency: "EUR",
+    vatTaxPercentage: 0,
+    discountRulesEnabled: false,
+    standardAccessoryCharge: 10,
+  },
+} as BusinessSettings;
+const selectedClothing = {
+  customDetails: {
+    shirt_construction: "shirt_std_short",
+    shirt_pockets: "shirt_pocket_0",
+  },
+};
+const individualDesignPricing = calculateDesignPricing({
+  route: "alone",
+  design: selectedClothing,
+  fabric: hiTarget,
+  style: makeStyle(),
+  catalog: [],
+  businessSettings: pricingSettings,
+});
+assert.ok(individualDesignPricing);
+assert.equal(individualDesignPricing.clothingPrice, 65);
+assert.equal(individualDesignPricing.includesFabricAndSewing, false);
+assert.equal(individualDesignPricing.fabricPrice, 3.91);
+assert.equal(individualDesignPricing.fabricSewingCost, 4.06);
+assert.equal(individualDesignPricing.constructionSewingCost, 4.06);
+assert.equal(individualDesignPricing.garmentSubtotal, 77.03);
+
+for (const route of ["community", "personalized", "actual"] as const) {
+  assert.equal(isBatchPricingRoute(route), true);
+  const batchDesignPricing = calculateDesignPricing({
+    route,
+    design: selectedClothing,
+    fabric: hiTarget,
+    style: makeStyle(),
+    catalog: [],
+    businessSettings: pricingSettings,
+  });
+  assert.ok(batchDesignPricing);
+  assert.equal(batchDesignPricing.clothingPrice, 65);
+  assert.equal(batchDesignPricing.includesFabricAndSewing, true);
+  assert.equal(batchDesignPricing.fabricPrice, 0);
+  assert.equal(batchDesignPricing.fabricSewingCost, 0);
+  assert.equal(batchDesignPricing.constructionSewingCost, 0);
+  assert.equal(batchDesignPricing.includedFabricPrice, 3.91);
+  assert.equal(batchDesignPricing.includedSewingCost, 8.12);
+  assert.equal(batchDesignPricing.garmentSubtotal, 65);
+}
+
+const batchWithSeparateAddOns = calculateDesignPricing({
+  route: "community",
+  design: {
+    ...selectedClothing,
+    decorativeFeatures: ["Embroidery"],
+    accessories: ["Traditional Hat"],
+    additionalCap: true,
+  },
+  fabric: hiTarget,
+  style: makeStyle(),
+  catalog: [],
+  businessSettings: pricingSettings,
+});
+assert.ok(batchWithSeparateAddOns);
+assert.equal(batchWithSeparateAddOns.clothingPrice, 65);
+assert.equal(batchWithSeparateAddOns.constructionUpgradesPrice, 10);
+assert.equal(batchWithSeparateAddOns.monogramPrice, 12);
+assert.equal(batchWithSeparateAddOns.traditionalAccessoriesPrice, 12);
+assert.equal(batchWithSeparateAddOns.customDetailsPrice, 34);
+assert.equal(batchWithSeparateAddOns.garmentSubtotal, 99);
+
+for (const summaryFile of [
+  "src/components/DesignStudioView.tsx",
+  "src/components/CartDrawer.tsx",
+  "src/App.tsx",
+]) {
+  assert.match(
+    readFileSync(summaryFile, "utf8"),
+    /Includes fabric and sewing costs/,
+    `${summaryFile} explains the batch clothing price`,
+  );
+}
 
 assert.equal(clampDepositPercentage(-5), 0);
 assert.equal(clampDepositPercentage(125), 100);

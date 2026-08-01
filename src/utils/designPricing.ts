@@ -6,9 +6,11 @@ import type {
   Fabric,
   StyleCategory,
 } from "../types";
+import { calculateCustomDetailsPriceBreakdown } from "./catalogHelpers";
 import {
   calculateGarmentDetailsPrice,
 } from "./decorativePricing";
+import type { PricedSelection } from "./decorativePricing";
 import {
   getFabricSewingCost,
   resolveFabricPrice,
@@ -16,7 +18,7 @@ import {
 import { roundMoney } from "./money";
 
 export const CHECKOUT_DESIGN_PRICING_VERSION =
-  "2026-07-30-design-checkout-v1";
+  "2026-08-01-design-checkout-v2";
 
 export const CONSTRUCTION_SEWING_COST_MAP = {
   default: 4.06,
@@ -95,14 +97,111 @@ export const getConstructionSewingCost = (
 };
 
 export interface AuthoritativeDesignPricing {
+  clothingPrice: number;
+  includesFabricAndSewing: boolean;
+  includedFabricPrice: number;
+  includedSewingCost: number;
   fabricPrice: number;
   fabricSewingCost: number;
   constructionSewingCost: number;
+  constructionUpgradesPrice: number;
   customDetailsPrice: number;
   monogramPrice: number;
   traditionalAccessoriesPrice: number;
+  decorativeFeatures: PricedSelection[];
+  traditionalAccessories: PricedSelection[];
   garmentSubtotal: number;
 }
+
+export type DesignPricingRoute = NonNullable<CartItem["batchType"]>;
+
+export const isBatchPricingRoute = (
+  route: CartItem["batchType"],
+): boolean =>
+  route === "community" || route === "personalized" || route === "actual";
+
+export interface DesignPricingInput {
+  route: CartItem["batchType"];
+  design: DesignSelections;
+  fabric: Fabric;
+  style?: StyleCategory | null;
+  catalog: CustomDetailOption[];
+  businessSettings: BusinessSettings;
+}
+
+export const calculateDesignPricing = ({
+  route,
+  design,
+  fabric,
+  style,
+  catalog,
+  businessSettings,
+}: DesignPricingInput): AuthoritativeDesignPricing | null => {
+  const resolvedFabricPrice = resolveFabricPrice(fabric);
+  if (resolvedFabricPrice === null) return null;
+
+  const rawFabricSewingCost = getFabricSewingCost(fabric);
+  const rawConstructionSewingCost = style
+    ? getConstructionSewingCost(design)
+    : 0;
+  const detailPricing = calculateGarmentDetailsPrice(design, style, catalog);
+  const catalogPricing = calculateCustomDetailsPriceBreakdown(design, catalog);
+  const traditionalAccessoriesPrice = detailPricing.accessories.reduce(
+    (total, accessory) => total + accessory.price,
+    0,
+  );
+  let constructionUpgradesPrice = catalogPricing.constructionUpgradesPrice;
+  if (design.additionalCap) {
+    constructionUpgradesPrice +=
+      businessSettings.pricingSettings.standardAccessoryCharge;
+  }
+  if (design.hasLining) {
+    constructionUpgradesPrice += 10;
+  }
+
+  const clothingPrice = roundMoney(catalogPricing.clothingPrice);
+  const monogramPrice = roundMoney(detailPricing.monogramPrice);
+  const roundedAccessoriesPrice = roundMoney(traditionalAccessoriesPrice);
+  constructionUpgradesPrice = roundMoney(constructionUpgradesPrice);
+  const customDetailsPrice = roundMoney(
+    constructionUpgradesPrice + monogramPrice + roundedAccessoriesPrice,
+  );
+  const includesFabricAndSewing = isBatchPricingRoute(route);
+  const fabricPrice = includesFabricAndSewing ? 0 : resolvedFabricPrice;
+  const fabricSewingCost = includesFabricAndSewing
+    ? 0
+    : rawFabricSewingCost;
+  const constructionSewingCost = includesFabricAndSewing
+    ? 0
+    : rawConstructionSewingCost;
+
+  return {
+    clothingPrice,
+    includesFabricAndSewing,
+    includedFabricPrice: includesFabricAndSewing
+      ? roundMoney(resolvedFabricPrice)
+      : 0,
+    includedSewingCost: includesFabricAndSewing
+      ? roundMoney(rawFabricSewingCost + rawConstructionSewingCost)
+      : 0,
+    fabricPrice: roundMoney(fabricPrice),
+    fabricSewingCost: roundMoney(fabricSewingCost),
+    constructionSewingCost: roundMoney(constructionSewingCost),
+    constructionUpgradesPrice,
+    customDetailsPrice,
+    monogramPrice,
+    traditionalAccessoriesPrice: roundedAccessoriesPrice,
+    decorativeFeatures: detailPricing.decorativeFeatures,
+    traditionalAccessories: detailPricing.accessories,
+    garmentSubtotal: roundMoney(
+      clothingPrice +
+        fabricPrice +
+        fabricSewingCost +
+        constructionSewingCost +
+        customDetailsPrice,
+    ),
+  };
+};
 
 export const calculateAuthoritativeDesignPricing = (
   item: CartItem,
@@ -111,43 +210,12 @@ export const calculateAuthoritativeDesignPricing = (
   catalog: CustomDetailOption[],
   businessSettings: BusinessSettings,
 ): AuthoritativeDesignPricing | null => {
-  const resolvedFabricPrice = resolveFabricPrice(fabric);
-  if (resolvedFabricPrice === null) return null;
-
-  const fabricSewingCost = getFabricSewingCost(fabric);
-  const constructionSewingCost = getConstructionSewingCost(item.design);
-  const detailPricing = calculateGarmentDetailsPrice(
-    item.design,
+  return calculateDesignPricing({
+    route: item.batchType,
+    design: item.design,
+    fabric,
     style,
     catalog,
-  );
-  const traditionalAccessoriesPrice = detailPricing.accessories.reduce(
-    (total, accessory) => total + accessory.price,
-    0,
-  );
-  let customDetailsPrice = detailPricing.total;
-  if (item.design.additionalCap) {
-    customDetailsPrice +=
-      businessSettings.pricingSettings.standardAccessoryCharge;
-  }
-  if (item.design.hasLining) {
-    customDetailsPrice += 10;
-  }
-
-  return {
-    fabricPrice: resolvedFabricPrice,
-    fabricSewingCost,
-    constructionSewingCost,
-    customDetailsPrice: roundMoney(customDetailsPrice),
-    monogramPrice: roundMoney(detailPricing.monogramPrice),
-    traditionalAccessoriesPrice: roundMoney(
-      traditionalAccessoriesPrice,
-    ),
-    garmentSubtotal: roundMoney(
-      resolvedFabricPrice +
-        fabricSewingCost +
-        constructionSewingCost +
-        customDetailsPrice,
-    ),
-  };
+    businessSettings,
+  });
 };

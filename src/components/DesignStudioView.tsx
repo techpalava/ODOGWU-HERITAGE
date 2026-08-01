@@ -3,6 +3,7 @@ import {
   getCustomDetailsBreakdown,
   getMissingCustomDetailGroup,
   groupApplicableCustomDetails,
+  isClothingPriceSelectionGroup,
   isLiningEligibleForStyle,
   normalizeCustomDetailCatalog,
 } from "../utils/catalogHelpers";
@@ -76,7 +77,6 @@ import {
   roundMoney,
 } from "../utils/money";
 import {
-  calculateGarmentDetailsPrice,
   DECORATIVE_FEATURE_OPTIONS,
   getIncludedDecorativeFeatures,
   hasEmbroidery,
@@ -84,7 +84,10 @@ import {
   hasMonogramTrimming,
   TRADITIONAL_ACCESSORY_OPTIONS,
 } from "../utils/decorativePricing";
-import { getConstructionSewingCost } from "../utils/designPricing";
+import {
+  calculateDesignPricing,
+  isBatchPricingRoute,
+} from "../utils/designPricing";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
 import type {
   PricedSelection,
@@ -93,7 +96,6 @@ import type {
 import { resolvePersonalizedBatchShippingContext } from "../utils/personalizedBatchContext";
 import {
   getFabricPricingError,
-  getFabricSewingCost,
   getNormalizedFabricName,
   resolveFabricPrice,
 } from "../utils/fabricPricing";
@@ -489,6 +491,7 @@ export const getGarmentDetailsBreakdown = (
   value: string;
   price: number;
   originalId?: string;
+  selectionGroup: CustomDetailSelectionGroup;
 }[] => getCustomDetailsBreakdown(details, catalog);
 
 
@@ -774,6 +777,7 @@ const GarmentDetailSummaryItems = ({
   catalog = [],
   decorativeFeatures = [],
   accessories = [],
+  excludeClothingPriceSelections = false,
 }: {
   designSelections: DesignSelections;
   isLi?: boolean;
@@ -781,11 +785,18 @@ const GarmentDetailSummaryItems = ({
   catalog?: CustomDetailOption[];
   decorativeFeatures?: PricedSelection[];
   accessories?: PricedSelection[];
+  excludeClothingPriceSelections?: boolean;
 }) => {
-  const items = getGarmentDetailsBreakdown(designSelections, catalog).map(item => {
-    const display = item.price === 0 ? 'Included' : `+${currencySymbol}${item.price.toFixed(2)}`;
-    return { ...item, display };
-  });
+  const items = getGarmentDetailsBreakdown(designSelections, catalog)
+    .filter(
+      (item) =>
+        !excludeClothingPriceSelections ||
+        !isClothingPriceSelectionGroup(item.selectionGroup),
+    )
+    .map(item => {
+      const display = item.price === 0 ? 'Included' : `+${currencySymbol}${item.price.toFixed(2)}`;
+      return { ...item, display };
+    });
   const pricedItems = [
     ...decorativeFeatures.map((feature) => ({
       label: feature.includedByStyle ? "Design Feature" : "Decorative Detail",
@@ -917,6 +928,14 @@ export default function DesignStudioView({
       } else {
         const eligibility = BatchBusinessRules.canAcceptOrders(orderContext);
         if (!eligibility.canAcceptOrders) {
+          setNotification({
+            message:
+              "This batch is no longer accepting orders. Your order has been switched to individual pricing.",
+            type: "info",
+          });
+          window.setTimeout(() => setNotification(null), 4000);
+          // NOTE: The batch closed, so the user is rerouted to individual pricing.
+          // Keep the notification above synchronized with this pricing change.
           setBatchType("alone");
         } else {
           setBatchType("community");
@@ -925,7 +944,7 @@ export default function DesignStudioView({
     }
     
 
-  }, [orderContext, storeBatches]);
+  }, [orderContext, setNotification, storeBatches]);
 
   // STEP 1: Style Selection, Filtering & Pagination States
   const [selectedStyle, setSelectedStyle] = useState<StyleCategory | null>(null);
@@ -1452,9 +1471,14 @@ export default function DesignStudioView({
 
   // Centralized pricing helper. Design-style prices are intentionally excluded.
   const getPricingBreakdown = () => {
+    let clothingPrice = 0;
+    let includesFabricAndSewing = isBatchPricingRoute(batchType);
+    let includedFabricPrice = 0;
+    let includedSewingCost = 0;
     let fabricPrice = 0;
     let fabricSewingCost = 0;
     let constructionSewingCost = 0;
+    let constructionUpgradesPrice = 0;
     let customDetailsPrice = 0;
     let monogramPrice = 0;
     let traditionalAccessoriesPrice = 0;
@@ -1472,40 +1496,38 @@ export default function DesignStudioView({
     > | null = null;
     const resolvedFabricPrice = resolveFabricPrice(selectedFabric);
     const fabricPricingError = getFabricPricingError(selectedFabric);
+    const authoritativePricing = selectedFabric
+      ? calculateDesignPricing({
+          route: batchType,
+          design: {
+            ...designSelections,
+            hasLining: liningEligible ? hasLining : false,
+          },
+          fabric: selectedFabric,
+          style: selectedStyle,
+          catalog: customDetailCatalog,
+          businessSettings,
+        })
+      : null;
 
-    if (selectedFabric && resolvedFabricPrice !== null) {
-      fabricPrice = resolvedFabricPrice;
-      fabricSewingCost = getFabricSewingCost(selectedFabric);
-    }
-
-    if (
-      selectedFabric &&
-      resolvedFabricPrice !== null &&
-      selectedStyle &&
-      selectedGarment
-    ) {
-      constructionSewingCost = getConstructionSewingCost(designSelections);
-      // Custom Garment Details Pricing
-      const detailCosts = calculateGarmentDetailsPrice(designSelections, selectedStyle, customDetailCatalog);
-      let detailsPrice = detailCosts.total;
-      monogramPrice = detailCosts.monogramPrice;
-      decorativeFeatures = detailCosts.decorativeFeatures;
-      traditionalAccessories = detailCosts.accessories;
-      traditionalAccessoriesPrice = detailCosts.accessories.reduce(
-        (total, accessory) => total + accessory.price,
-        0,
-      );
-      
-      if (designSelections.additionalCap) {
-        detailsPrice += (businessSettings.pricingSettings?.standardAccessoryCharge ?? 10);
-      }
-      
-      if (hasLining && liningEligible) {
-        detailsPrice += 10.0;
-      }
-      
-      customDetailsPrice = detailsPrice;
-
+    if (authoritativePricing) {
+      clothingPrice = authoritativePricing.clothingPrice;
+      includesFabricAndSewing =
+        authoritativePricing.includesFabricAndSewing;
+      includedFabricPrice = authoritativePricing.includedFabricPrice;
+      includedSewingCost = authoritativePricing.includedSewingCost;
+      fabricPrice = authoritativePricing.fabricPrice;
+      fabricSewingCost = authoritativePricing.fabricSewingCost;
+      constructionSewingCost =
+        authoritativePricing.constructionSewingCost;
+      constructionUpgradesPrice =
+        authoritativePricing.constructionUpgradesPrice;
+      customDetailsPrice = authoritativePricing.customDetailsPrice;
+      monogramPrice = authoritativePricing.monogramPrice;
+      traditionalAccessoriesPrice =
+        authoritativePricing.traditionalAccessoriesPrice;
+      decorativeFeatures = authoritativePricing.decorativeFeatures;
+      traditionalAccessories = authoritativePricing.traditionalAccessories;
     }
 
     if (
@@ -1539,7 +1561,10 @@ export default function DesignStudioView({
           batchShipping = calculateBatchShipping({
             batchId: ctx.batchId || ctx.batchName || selectedBatchName,
             batchName: ctx.batchName || selectedBatchName,
-            plannedGarmentCapacity: ctx.expectedParticipants || 1,
+            plannedGarmentCapacity: Math.max(
+              BATCH_MINIMUM_GARMENTS,
+              ctx.expectedParticipants || BATCH_MINIMUM_GARMENTS,
+            ),
             garmentPieceCount,
           });
         }
@@ -1575,6 +1600,7 @@ export default function DesignStudioView({
         (eindhovenToDestinationShipping ?? 0),
     );
     const subtotal = roundMoney(
+      clothingPrice +
       fabricPrice +
       fabricSewingCost +
       constructionSewingCost +
@@ -1583,9 +1609,14 @@ export default function DesignStudioView({
     );
 
     return {
+      clothingPrice,
+      includesFabricAndSewing,
+      includedFabricPrice,
+      includedSewingCost,
       fabricPrice,
       fabricSewingCost,
       constructionSewingCost,
+      constructionUpgradesPrice,
       customDetailsPrice,
       monogramPrice,
       traditionalAccessoriesPrice,
@@ -1711,9 +1742,14 @@ export default function DesignStudioView({
         leftoverFabricChoice,
         hasLining,
         pricingBreakdown: {
+          clothingPrice: pricing.clothingPrice,
+          includesFabricAndSewing:
+            pricing.includesFabricAndSewing,
           fabricPrice: pricing.fabricPrice,
           fabricSewingCost: pricing.fabricSewingCost,
           constructionSewingCost: pricing.constructionSewingCost,
+          constructionUpgradesPrice:
+            pricing.constructionUpgradesPrice,
           customDetailsPrice: pricing.customDetailsPrice,
           lagosToEindhovenShipping:
             pricing.lagosToEindhovenShipping,
@@ -1753,9 +1789,12 @@ export default function DesignStudioView({
     specialInstructions,
     leftoverFabricChoice,
     hasLining,
+    pricing.clothingPrice,
+    pricing.includesFabricAndSewing,
     pricing.fabricPrice,
     pricing.fabricSewingCost,
     pricing.constructionSewingCost,
+    pricing.constructionUpgradesPrice,
     pricing.customDetailsPrice,
     pricing.lagosToEindhovenShipping,
     pricing.eindhovenToDestinationShipping,
@@ -2069,9 +2108,14 @@ export default function DesignStudioView({
       garment: {
         type: `${selectedGarment?.type || "Pending"} [Code: ${selectedPriceCode === "AUTO" ? getAutoDetectedPriceCode() : selectedPriceCode}]`,
         totalPrice: storedItemTotal,
+        clothingPrice: pricing.clothingPrice,
+        includesFabricAndSewing: pricing.includesFabricAndSewing,
+        includedFabricPrice: pricing.includedFabricPrice,
+        includedSewingCost: pricing.includedSewingCost,
         fabricSewingCost: pricing.fabricSewingCost,
         constructionSewingCost: pricing.constructionSewingCost,
         fabricPrice: pricing.fabricPrice,
+        constructionUpgradesPrice: pricing.constructionUpgradesPrice,
         customDetailsPrice: pricing.customDetailsPrice,
         monogramPrice: pricing.monogramPrice,
         traditionalAccessoriesPrice: pricing.traditionalAccessoriesPrice,
@@ -4510,6 +4554,19 @@ export default function DesignStudioView({
                         {selectedFabric?.name || "Pending"} ({selectedFabric?.code})
                       </strong>
                     </li>
+                    {pricing.includesFabricAndSewing && (
+                      <>
+                        <li>
+                          Selected Clothing Price:{" "}
+                          <strong>
+                            {currencySymbol}{pricing.clothingPrice.toFixed(2)}
+                          </strong>
+                        </li>
+                        <li className="font-semibold text-heritage-green/70">
+                          Includes fabric and sewing costs
+                        </li>
+                      </>
+                    )}
                     {pricing.fabricSewingCost > 0 && (
                       <li>
                         Fabric Sewing Cost: <strong>+{currencySymbol}{pricing.fabricSewingCost.toFixed(2)}</strong>
@@ -4525,6 +4582,9 @@ export default function DesignStudioView({
                       catalog={customDetailCatalog}
                       decorativeFeatures={pricing.decorativeFeatures}
                       accessories={pricing.traditionalAccessories}
+                      excludeClothingPriceSelections={
+                        pricing.includesFabricAndSewing
+                      }
                     />
                     {pricing.constructionSewingCost > 0 && (
                       <li>
@@ -4726,14 +4786,28 @@ export default function DesignStudioView({
                   <div className="flex justify-between items-center text-heritage-ink/70">
                     <span>Fabric Type: {getNormalizedFabricName(selectedFabric.category || selectedFabric.name || "")}</span>
                   </div>
-                  <div className="flex justify-between items-center text-heritage-ink/70">
-                    <span>Fabric Price:</span>
-                    <span className="font-semibold text-heritage-green">
-                      {selectedFabricPrice !== null
-                        ? `${currencySymbol}${selectedFabricPrice.toFixed(2)}`
-                        : "Pricing unavailable"}
-                    </span>
-                  </div>
+                  {pricing.includesFabricAndSewing ? (
+                    <div className="rounded-lg border border-heritage-gold/20 bg-heritage-cream/30 px-3 py-2">
+                      <div className="flex items-center justify-between gap-3 text-heritage-ink/80">
+                        <span className="font-semibold">Selected Clothing Price:</span>
+                        <span className="font-mono font-bold text-heritage-green">
+                          {currencySymbol}{pricing.clothingPrice.toFixed(2)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[10px] font-semibold text-heritage-green/70">
+                        Includes fabric and sewing costs
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between items-center text-heritage-ink/70">
+                      <span>Fabric Price:</span>
+                      <span className="font-semibold text-heritage-green">
+                        {selectedFabricPrice !== null
+                          ? `${currencySymbol}${selectedFabricPrice.toFixed(2)}`
+                          : "Pricing unavailable"}
+                      </span>
+                    </div>
+                  )}
                   {pricing.fabricPricingError && (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[10px] text-red-700">
                       {pricing.fabricPricingError}
@@ -4750,7 +4824,13 @@ export default function DesignStudioView({
                   )}
                 </>
               )}
-              {selectedFabric && getGarmentDetailsBreakdown(designSelections, customDetailCatalog).map((item, idx) => (
+              {selectedFabric && getGarmentDetailsBreakdown(designSelections, customDetailCatalog)
+                .filter(
+                  (item) =>
+                    !pricing.includesFabricAndSewing ||
+                    !isClothingPriceSelectionGroup(item.selectionGroup),
+                )
+                .map((item, idx) => (
                 <div key={idx} className="flex justify-between items-center text-heritage-ink/70">
                   <span>{item.label}{item.value ? ': ' + item.value : ''}</span>
                   <span className="font-semibold text-heritage-green">
@@ -4985,6 +5065,19 @@ export default function DesignStudioView({
                   {selectedGarment?.type || "Pending"}
                 </strong>
               </p>
+              {pricing.includesFabricAndSewing && (
+                <div className="rounded-lg border border-heritage-gold/20 bg-white/70 px-3 py-2">
+                  <p className="flex items-center justify-between gap-3">
+                    <span className="font-semibold">Selected Clothing Price:</span>
+                    <strong className="font-mono text-heritage-green">
+                      {currencySymbol}{pricing.clothingPrice.toFixed(2)}
+                    </strong>
+                  </p>
+                  <p className="mt-1 font-semibold text-heritage-green/70">
+                    Includes fabric and sewing costs
+                  </p>
+                </div>
+              )}
               <GarmentDetailSummaryItems
                 designSelections={designSelections}
                 isLi={false}
@@ -4992,6 +5085,9 @@ export default function DesignStudioView({
                 catalog={customDetailCatalog}
                 decorativeFeatures={pricing.decorativeFeatures}
                 accessories={pricing.traditionalAccessories}
+                excludeClothingPriceSelections={
+                  pricing.includesFabricAndSewing
+                }
               />
               {pricing.constructionSewingCost > 0 && (
                 <p>

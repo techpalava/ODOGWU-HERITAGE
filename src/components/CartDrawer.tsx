@@ -23,6 +23,7 @@ import {
   getDepositRatio,
   PRICING_CURRENCY_SYMBOL,
 } from "../utils/money";
+import { isBatchPricingRoute } from "../utils/designPricing";
 
 export function CartDrawer() {
   const [shippingEditorItemId, setShippingEditorItemId] = useState<
@@ -342,6 +343,7 @@ export function CartDrawer() {
                     item.garment.totalPrice -
                       getStoredShippingCost(item.garment),
                   );
+                  const isBatchItem = isBatchPricingRoute(item.batchType);
                   return (
                     <div
                       key={item.id}
@@ -365,6 +367,21 @@ export function CartDrawer() {
                           {itemTotal.toFixed(2)}
                         </span>
                       </div>
+
+                      {isBatchItem && (
+                        <div className="rounded-xl border border-heritage-gold/25 bg-heritage-cream/30 px-3 py-2.5 text-[10px]">
+                          <div className="flex items-center justify-between gap-3 font-semibold text-heritage-ink/80">
+                            <span>Selected Clothing Price:</span>
+                            <span className="font-mono font-bold text-heritage-green">
+                              {currencySymbol}
+                              {(item.garment.clothingPrice || 0).toFixed(2)}
+                            </span>
+                          </div>
+                          <p className="mt-1 font-semibold text-heritage-green/70">
+                            Includes fabric and sewing costs
+                          </p>
+                        </div>
+                      )}
 
                       <div className="bg-heritage-cream/30 p-2.5 rounded-xl text-[10px] space-y-1 text-heritage-ink/75 font-sans">
                         <p>
