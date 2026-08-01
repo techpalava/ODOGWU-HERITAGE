@@ -218,6 +218,7 @@ assert.equal(
 const joinMarkup = renderToStaticMarkup(
   createElement(HomepageOrderGateway, {
     state: openState,
+    onStartIndividualOrder: () => undefined,
     onJoinBatch: () => undefined,
     onCreatePrivateBatch: () => undefined,
     onBrowseGallery: () => undefined,
@@ -225,17 +226,24 @@ const joinMarkup = renderToStaticMarkup(
   }),
 );
 assert.match(joinMarkup, /Join Avatars/);
+assert.match(joinMarkup, /Order Type A/);
+assert.match(joinMarkup, /Individual Custom Order/);
+assert.match(joinMarkup, /Order Type D/);
+assert.match(joinMarkup, /Ready to Wear - Coming Soon/);
 assert.match(joinMarkup, /Manage Sourcing Batches/);
 
 const customerMarkup = renderToStaticMarkup(
   createElement(HomepageOrderGateway, {
     state: privateState,
+    onStartIndividualOrder: () => undefined,
     onJoinBatch: () => undefined,
     onCreatePrivateBatch: () => undefined,
     onBrowseGallery: () => undefined,
   }),
 );
 assert.doesNotMatch(customerMarkup, /Order Type B/);
+assert.match(customerMarkup, /Order Type A/);
+assert.match(customerMarkup, /Order Type D/);
 assert.doesNotMatch(customerMarkup, /Manage Sourcing Batches/);
 
 console.log(
