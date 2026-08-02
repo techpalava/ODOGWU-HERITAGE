@@ -10,6 +10,7 @@ import {
   isClothingPriceSelectionGroup,
   isLiningEligibleForStyle,
   normalizeCustomDetailCatalog,
+  groupCustomDetailGroupsByParentSection,
 } from "../utils/catalogHelpers";
 import React, { useState, useEffect } from "react";
 import {
@@ -537,6 +538,7 @@ const GarmentDetailSelector = ({
   const standardGroups = applicableGroups.filter(
     (group) => !isAdditionalClothesCostSection(group.id),
   );
+  const parentSections = groupCustomDetailGroupsByParentSection(standardGroups);
   const additionalGroups = applicableGroups.filter((group) =>
     isAdditionalClothesCostSection(group.id),
   );
@@ -659,16 +661,19 @@ const GarmentDetailSelector = ({
   const renderGroup = (
     groupId: CustomDetailSelectionGroup,
     options: CustomDetailOption[],
+    suppressHeading: boolean = false,
   ) => {
     const presentation = isAdditionalClothesCostSection(groupId)
       ? ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION[groupId]
       : CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION[groupId];
     return (
       <div className="space-y-2 mb-4 col-span-1" key={groupId}>
-        <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
-          {presentation.title}
-        </label>
-        {presentation.description && (
+        {!suppressHeading && (
+          <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+            {presentation.title}
+          </label>
+        )}
+        {!suppressHeading && presentation.description && (
           <p className="text-[10px] leading-tight text-heritage-ink/60">
             {presentation.description}
           </p>
@@ -763,9 +768,18 @@ const GarmentDetailSelector = ({
           applicable garment section below.
         </div>
       )}
-      {standardGroups.map((group) =>
-        renderGroup(group.id, group.options),
-      )}
+      {parentSections.map((section) => (
+        <fieldset key={section.id} className="col-span-1 md:col-span-2 space-y-4 border-t border-gray-100 pt-4 mt-2 first:border-t-0 first:pt-0 first:mt-0">
+          <legend className="block font-extrabold text-heritage-green uppercase tracking-widest text-xs border-b border-heritage-gold/30 pb-1 w-full mb-4">
+            {section.title}
+          </legend>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+            {section.groups.map((group) =>
+              renderGroup(group.id, group.options, group.id === "neck_design"),
+            )}
+          </div>
+        </fieldset>
+      ))}
 
       {standardGroups.length === 0 && (
         <div className="col-span-1 md:col-span-2 rounded-xl border border-heritage-gold/25 bg-heritage-cream/20 px-4 py-4">

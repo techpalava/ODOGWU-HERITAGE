@@ -16,6 +16,10 @@ import {
   SEED_CUSTOM_DETAIL_CATALOG,
   type AdditionalClothesCostSection,
   type StandardCustomDetailSelectionGroup,
+  type CustomDetailParentSectionId,
+  CUSTOM_DETAIL_PARENT_SECTION_ORDER,
+  CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION,
+  CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION,
 } from "../config/GarmentDetailsConfig";
 
 const VALID_GARMENT_GROUPS = new Set<CustomDetailGarmentGroup>([
@@ -1026,3 +1030,41 @@ export const isMaleCustomDetailGroup = (
 export const isFemaleCustomDetailGroup = (
   group: CustomDetailGarmentGroup,
 ): boolean => FEMALE_GROUPS.includes(group);
+
+export interface ParentCustomDetailSection {
+  id: CustomDetailParentSectionId;
+  title: string;
+  groups: ApplicableCustomDetailGroup[];
+}
+
+export const groupCustomDetailGroupsByParentSection = (
+  groups: ApplicableCustomDetailGroup[],
+): ParentCustomDetailSection[] => {
+  const parentMap = new Map<CustomDetailParentSectionId, ApplicableCustomDetailGroup[]>();
+
+  for (const group of groups) {
+    const parentId = CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION[
+      group.id as StandardCustomDetailSelectionGroup
+    ];
+    if (parentId) {
+      if (!parentMap.has(parentId)) {
+        parentMap.set(parentId, []);
+      }
+      parentMap.get(parentId)!.push(group);
+    }
+  }
+
+  const result: ParentCustomDetailSection[] = [];
+  for (const parentId of CUSTOM_DETAIL_PARENT_SECTION_ORDER) {
+    const sectionGroups = parentMap.get(parentId);
+    if (sectionGroups && sectionGroups.length > 0) {
+      result.push({
+        id: parentId,
+        title: CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION[parentId].title,
+        groups: sectionGroups,
+      });
+    }
+  }
+
+  return result;
+};
