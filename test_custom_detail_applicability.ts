@@ -11,6 +11,9 @@ import type {
 import {
   ADDITIONAL_CLOTHES_COST_SECTION_ORDER,
   SEED_CUSTOM_DETAIL_CATALOG,
+  CUSTOM_DETAIL_PARENT_SECTION_ORDER,
+  CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION,
+  type StandardCustomDetailSelectionGroup,
 } from "./src/config/GarmentDetailsConfig";
 import {
   calculateCustomDetailsPriceBreakdown,
@@ -19,6 +22,7 @@ import {
   groupApplicableCustomDetails,
   isAdditionalClothesCostSection,
   sortAdditionalClothesCostSections,
+  groupCustomDetailGroupsByParentSection,
 } from "./src/utils/catalogHelpers";
 import { calculateDesignPricing } from "./src/utils/designPricing";
 import {
@@ -662,5 +666,120 @@ assert.equal(
   65,
   "an inapplicable hidden trouser choice cannot reach authoritative pricing",
 );
+// Parent display section grouping tests
+const allApplicableGroups = groupApplicableCustomDetails(
+  allGarmentStyle,
+  SEED_CUSTOM_DETAIL_CATALOG,
+  null
+).filter((g) => !isAdditionalClothesCostSection(g.id));
+
+const parentSections = groupCustomDetailGroupsByParentSection(allApplicableGroups);
+
+// 1. exact canonical parent order
+assert.deepEqual(
+  parentSections.map((p) => p.id),
+  [...CUSTOM_DETAIL_PARENT_SECTION_ORDER]
+);
+
+// 2. exact selection-group-to-parent mapping
+for (const section of parentSections) {
+  for (const group of section.groups) {
+    assert.equal(
+      CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION[group.id as StandardCustomDetailSelectionGroup],
+      section.id
+    );
+  }
+}
+
+// 3. Shirt construction + Shirt pockets stay together
+const shirtSection = parentSections.find((p) => p.id === "shirt");
+assert.ok(shirtSection);
+assert.deepEqual(
+  shirtSection.groups.map((g) => g.id),
+  ["shirt_construction", "shirt_pockets"]
+);
+
+// 4. Dress construction + Dress pockets stay together
+const dressSection = parentSections.find((p) => p.id === "dress");
+assert.ok(dressSection);
+assert.deepEqual(
+  dressSection.groups.map((g) => g.id),
+  ["dress_construction", "dress_pockets"]
+);
+
+// 5. Neck Design remains its own parent
+const neckSection = parentSections.find((p) => p.id === "neck");
+assert.ok(neckSection);
+assert.deepEqual(
+  neckSection.groups.map((g) => g.id),
+  ["neck_design"]
+);
+
+// 6. Standard Shorts fastening + pockets stay together
+const stdShortsSection = parentSections.find((p) => p.id === "standard_shorts");
+assert.ok(stdShortsSection);
+assert.deepEqual(
+  stdShortsSection.groups.map((g) => g.id),
+  ["standard_shorts_fastening", "standard_shorts_pockets"]
+);
+
+// 7. Bum Shorts fastening + pockets stay together
+const bumShortsSection = parentSections.find((p) => p.id === "bum_shorts");
+assert.ok(bumShortsSection);
+assert.deepEqual(
+  bumShortsSection.groups.map((g) => g.id),
+  ["bum_shorts_fastening", "bum_shorts_pockets"]
+);
+
+// 8. Trouser fastening + pockets stay together
+const trousersSection = parentSections.find((p) => p.id === "trousers");
+assert.ok(trousersSection);
+assert.deepEqual(
+  trousersSection.groups.map((g) => g.id),
+  ["trouser_fastening", "trouser_pockets"]
+);
+
+// 9. Skirt length + pockets stay together
+const skirtsSection = parentSections.find((p) => p.id === "skirts");
+assert.ok(skirtsSection);
+assert.deepEqual(
+  skirtsSection.groups.map((g) => g.id),
+  ["skirt_length", "skirt_pockets"]
+);
+
+// 10. absent subgroups do not produce empty parent sections
+const partialGroups = allApplicableGroups.filter(
+  (g) => g.id !== "dress_construction" && g.id !== "dress_pockets"
+);
+const partialSections = groupCustomDetailGroupsByParentSection(partialGroups);
+assert.equal(partialSections.some((p) => p.id === "dress"), false);
+
+// 11. subgroup order inside each parent remains correct
+for (const section of parentSections) {
+  const originalSubgroups = allApplicableGroups
+    .filter((g) => CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION[g.id as StandardCustomDetailSelectionGroup] === section.id)
+    .map((g) => g.id);
+  assert.deepEqual(
+    section.groups.map((g) => g.id),
+    originalSubgroups
+  );
+}
+
+// 12. option arrays/options retain their existing order unchanged
+for (const section of parentSections) {
+  for (const group of section.groups) {
+    const originalGroup = allApplicableGroups.find((g) => g.id === group.id);
+    assert.ok(originalGroup);
+    assert.deepEqual(
+      group.options.map((o) => o.id),
+      originalGroup.options.map((o) => o.id)
+    );
+  }
+}
+
+// 13. grouping does not modify the input groups/options
+const inputBackup = JSON.stringify(allApplicableGroups);
+groupCustomDetailGroupsByParentSection(allApplicableGroups);
+assert.equal(JSON.stringify(allApplicableGroups), inputBackup);
 
 console.log("Custom-detail applicability verification passed.");

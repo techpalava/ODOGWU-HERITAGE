@@ -115,41 +115,92 @@ export const CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION: Readonly<
   shirt_construction: { title: "Shirt Length and Sleeve Length" },
   shirt_pockets: { title: "Shirt Pockets" },
   dress_construction: {
-    title: "Dress Length and Sleeve Length (Ladies)",
+    title: "Dress Length and Sleeve Length",
   },
   dress_pockets: { title: "Dress Pockets" },
   neck_design: { title: "Neck Design" },
   standard_shorts_fastening: {
-    title: "Standard Leg Shorts (Nikka) - Fastening",
+    title: "Fastening",
     description: "Just above the knee",
   },
   standard_shorts_pockets: {
-    title: "Standard Leg Shorts (Nikka) - Pockets",
+    title: "Pockets",
     description: "Just above the knee",
   },
   bum_shorts_fastening: {
-    title: "Bum (Leg) Shorts - Fastening",
+    title: "Fastening",
     description: "Just below the crotch at lap level",
   },
   bum_shorts_pockets: {
-    title: "Bum (Leg) Shorts - Pockets",
+    title: "Pockets",
     description: "Just below the crotch at lap level",
   },
   trouser_fastening: {
-    title: "Leg Pants (Trouser) - Fastening",
+    title: "Fastening",
     description: "Up to the ankle",
   },
   trouser_pockets: {
-    title: "Leg Pants (Trouser) - Pockets",
+    title: "Pockets",
     description: "Up to the ankle",
   },
   skirt_length: {
-    title: "Skirts (Ladies) - Length",
+    title: "Length",
   },
   skirt_pockets: {
-    title: "Skirts (Ladies) - Pockets",
+    title: "Pockets",
   },
 };
+
+export type CustomDetailParentSectionId =
+  | "shirt"
+  | "dress"
+  | "neck"
+  | "standard_shorts"
+  | "bum_shorts"
+  | "trousers"
+  | "skirts";
+
+export const CUSTOM_DETAIL_PARENT_SECTION_ORDER: readonly CustomDetailParentSectionId[] = [
+  "shirt",
+  "dress",
+  "neck",
+  "standard_shorts",
+  "bum_shorts",
+  "trousers",
+  "skirts"
+];
+
+export const CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION: Readonly<
+  Record<CustomDetailParentSectionId, { title: string }>
+> = {
+  shirt: { title: "SHIRT" },
+  dress: { title: "DRESS (LADIES)" },
+  neck: { title: "NECK DESIGN" },
+  standard_shorts: { title: "STANDARD LEG SHORTS (NIKKA)" },
+  bum_shorts: { title: "BUM (LEG) SHORTS" },
+  trousers: { title: "LEG PANTS (TROUSER)" },
+  skirts: { title: "SKIRTS (LADIES)" },
+};
+
+export const CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION: Readonly<
+  Record<StandardCustomDetailSelectionGroup, CustomDetailParentSectionId>
+> = {
+  shirt_construction: "shirt",
+  shirt_pockets: "shirt",
+  dress_construction: "dress",
+  dress_pockets: "dress",
+  neck_design: "neck",
+  standard_shorts_fastening: "standard_shorts",
+  standard_shorts_pockets: "standard_shorts",
+  bum_shorts_fastening: "bum_shorts",
+  bum_shorts_pockets: "bum_shorts",
+  trouser_fastening: "trousers",
+  trouser_pockets: "trousers",
+  skirt_length: "skirts",
+  skirt_pockets: "skirts",
+};
+
+
 
 export const ADDITIONAL_CLOTHES_COST_SECTION_ORDER = [
   "shirt_additional",
