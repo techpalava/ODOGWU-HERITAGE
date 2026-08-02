@@ -163,6 +163,7 @@ export const calculateDesignPricing = ({
     applicableDesign,
     style,
     catalog,
+    garment,
   );
   const catalogPricing = calculateCustomDetailsPriceBreakdown(
     applicableDesign,

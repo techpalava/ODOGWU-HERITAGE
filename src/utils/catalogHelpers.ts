@@ -501,9 +501,12 @@ const inferSelectedGarmentGroups = (
   ]);
 };
 
-export const inferLegacyGarmentGroups = (
+const getLegacyGarmentGroupResolution = (
   style: StyleCategory,
-): CustomDetailGarmentGroup[] => {
+): {
+  groups: CustomDetailGarmentGroup[];
+  usedDemographicDefault: boolean;
+} => {
   const { isFemale, explicitlyBoth } = getStyleDemographic(style);
   const groups = inferGarmentGroupsFromText(style, [
     style.name,
@@ -518,37 +521,71 @@ export const inferLegacyGarmentGroups = (
       : isFemale
         ? ["dress", "neck"]
         : ["shirt", "neck", "trousers"];
-    return defaults;
+    return { groups: defaults, usedDemographicDefault: true };
   }
 
-  return uniqueGarmentGroups(groups);
+  return {
+    groups: uniqueGarmentGroups(groups),
+    usedDemographicDefault: false,
+  };
+};
+
+export const inferLegacyGarmentGroups = (
+  style: StyleCategory,
+): CustomDetailGarmentGroup[] =>
+  getLegacyGarmentGroupResolution(style).groups;
+
+export type CustomDetailGroupResolutionSource =
+  | "selected_garment"
+  | "configured"
+  | "composition"
+  | "legacy_inference"
+  | "legacy_demographic_default"
+  | "disabled"
+  | "none";
+
+export interface CustomDetailGroupResolution {
+  groups: CustomDetailGarmentGroup[];
+  source: CustomDetailGroupResolutionSource;
+}
+
+export const getSupportedCustomDetailGroupResolution = (
+  style: StyleCategory | null,
+  garment?: CustomDetailGarmentContext | null,
+): CustomDetailGroupResolution => {
+  if (!style) return { groups: [], source: "none" };
+  const config = style.customDetailConfig;
+  if (config?.enabled === false) return { groups: [], source: "disabled" };
+
+  const selectedGarmentGroups = inferSelectedGarmentGroups(style, garment);
+  if (selectedGarmentGroups.length > 0) {
+    return { groups: selectedGarmentGroups, source: "selected_garment" };
+  }
+
+  const configuredGroups = getConfiguredGarmentGroups(style);
+  if (configuredGroups.length > 0) {
+    return { groups: configuredGroups, source: "configured" };
+  }
+
+  const compositionGroups = inferStyleCompositionGroups(style);
+  if (compositionGroups.length > 0) {
+    return { groups: compositionGroups, source: "composition" };
+  }
+
+  const legacy = getLegacyGarmentGroupResolution(style);
+  return {
+    groups: legacy.groups,
+    source: legacy.usedDemographicDefault
+      ? "legacy_demographic_default"
+      : "legacy_inference",
+  };
 };
 
 export const getSupportedCustomDetailGroups = (
   style: StyleCategory | null,
   garment?: CustomDetailGarmentContext | null,
-): CustomDetailGarmentGroup[] => {
-  if (!style) return [];
-  const config = style.customDetailConfig;
-  if (config?.enabled === false) return [];
-
-  const selectedGarmentGroups = inferSelectedGarmentGroups(style, garment);
-  if (selectedGarmentGroups.length > 0) {
-    return selectedGarmentGroups;
-  }
-
-  const configuredGroups = getConfiguredGarmentGroups(style);
-  if (configuredGroups.length > 0) {
-    return configuredGroups;
-  }
-
-  const compositionGroups = inferStyleCompositionGroups(style);
-  if (compositionGroups.length > 0) {
-    return compositionGroups;
-  }
-
-  return inferLegacyGarmentGroups(style);
-};
+): CustomDetailGarmentGroup[] =>
+  getSupportedCustomDetailGroupResolution(style, garment).groups;
 
 export const isLiningEligibleForStyle = (
   style: StyleCategory | null,

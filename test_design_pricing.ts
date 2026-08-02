@@ -94,6 +94,13 @@ const marketingCopyOnly = makeStyle({
 assert.deepEqual(getIncludedDecorativeFeatures(marketingCopyOnly), []);
 
 const embroideryStyle = makeStyle({
+  customDetailConfig: {
+    representedGenders: ["male"],
+    featuresMaleAndFemale: false,
+    supportedGarmentGroups: ["shirt", "neck"],
+    requiredSelectionGroups: [],
+    enabled: true,
+  },
   includedDesignFeatures: {
     hasMonogram: false,
     hasEmbroidery: true,
@@ -149,6 +156,13 @@ assert.equal(deduplicatedDetails.accessories.length, 2);
 assert.equal(deduplicatedDetails.total, 48);
 
 const overrideStyle = makeStyle({
+  customDetailConfig: {
+    representedGenders: ["male"],
+    featuresMaleAndFemale: false,
+    supportedGarmentGroups: ["shirt", "neck"],
+    requiredSelectionGroups: [],
+    enabled: true,
+  },
   includedDesignFeatures: { hasEmbroidery: true, hasMonogram: true },
   constructionDetails: [
     { type: "embroideryDesign", code: "Embroidery", price: 15 },

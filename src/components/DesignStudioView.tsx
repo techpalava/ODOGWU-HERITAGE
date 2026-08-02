@@ -51,6 +51,7 @@ import {
   DeliveryMethod,
   DeliverySelection,
   GuestDesignDraft,
+  MonogramPlacement,
 } from "../types";
 
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
@@ -81,9 +82,15 @@ import {
   roundMoney,
 } from "../utils/money";
 import {
-  DECORATIVE_FEATURE_OPTIONS,
   DECORATIVE_FEATURE_DESCRIPTIONS,
+  DEFAULT_MONOGRAM_PLACEMENT,
+  filterDesignSelectionsForDecorativeFeatures,
+  getApplicableDecorativeFeatures,
+  getAvailableMonogramPlacements,
+  getDecorativeFeaturePrice,
   getIncludedDecorativeFeatures,
+  getMonogramPlacementLabel,
+  hasHeavyEmbroideryMetadata,
   hasEmbroidery,
   hasMonogram,
   hasMonogramTrimming,
@@ -533,12 +540,24 @@ const GarmentDetailSelector = ({
   const additionalGroups = applicableGroups.filter((group) =>
     isAdditionalClothesCostSection(group.id),
   );
+  const applicableDecorativeFeatures = getApplicableDecorativeFeatures(
+    selectedStyle,
+    selectedGarment,
+  );
   const includedDecorativeFeatures = getIncludedDecorativeFeatures(
     selectedStyle,
-  );
+  ).filter((feature) => applicableDecorativeFeatures.includes(feature));
   const selectedDecorativeFeatures =
     designSelections.decorativeFeatures || [];
   const selectedAccessories = designSelections.accessories || [];
+  const nameMonogramSelected =
+    includedDecorativeFeatures.includes("Name Monogram") ||
+    selectedDecorativeFeatures.includes("Name Monogram");
+  const monogramPlacementOptions = getAvailableMonogramPlacements(
+    designSelections,
+    selectedStyle,
+    selectedGarment,
+  );
 
   const handleSelect = (
     groupId: CustomDetailSelectionGroup,
@@ -573,10 +592,10 @@ const GarmentDetailSelector = ({
         else delete nextCustomDetails[groupId];
       }
 
-      return {
+      return filterDesignSelectionsForDecorativeFeatures({
         ...previous,
         customDetails: nextCustomDetails,
-      };
+      }, selectedStyle, selectedGarment);
     });
   };
 
@@ -591,11 +610,27 @@ const GarmentDetailSelector = ({
       if (checked) nextFeatures.add(feature);
       else nextFeatures.delete(feature);
 
-      return {
+      return filterDesignSelectionsForDecorativeFeatures({
         ...prev,
         decorativeFeatures: sortDecorativeFeatures([...nextFeatures]),
-      };
+        hasMonogram:
+          feature === "Name Monogram" ? checked : prev.hasMonogram,
+        monogramPlacement:
+          feature === "Name Monogram" && checked
+            ? prev.monogramPlacement || DEFAULT_MONOGRAM_PLACEMENT
+            : prev.monogramPlacement,
+      }, selectedStyle, selectedGarment);
     });
+  };
+
+  const handleMonogramPlacementChange = (placement: MonogramPlacement) => {
+    setDesignSelections((previous: DesignSelections) =>
+      filterDesignSelectionsForDecorativeFeatures(
+        { ...previous, monogramPlacement: placement },
+        selectedStyle,
+        selectedGarment,
+      ),
+    );
   };
 
   const handleAccessoryToggle = (
@@ -763,12 +798,16 @@ const GarmentDetailSelector = ({
         </legend>
         <p className="text-[10px] text-heritage-ink/60">Optional</p>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-          {DECORATIVE_FEATURE_OPTIONS.map((feature) => {
+          {applicableDecorativeFeatures.map((feature) => {
             const includedByStyle =
               includedDecorativeFeatures.includes(feature);
             const checked =
               includedByStyle ||
               selectedDecorativeFeatures.includes(feature);
+            const featurePrice = getDecorativeFeaturePrice(
+              selectedStyle,
+              feature,
+            );
 
             return (
               <label
@@ -797,19 +836,61 @@ const GarmentDetailSelector = ({
                       {feature}
                     </span>
                     <span className="shrink-0 text-xs font-bold text-heritage-gold">
-                      +{currencySymbol}12.00
+                      +{currencySymbol}{featurePrice.toFixed(2)}
                     </span>
                   </span>
                   <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
-                    {includedByStyle
-                      ? "Required by the selected design and added automatically."
-                      : DECORATIVE_FEATURE_DESCRIPTIONS[feature]}
+                    {DECORATIVE_FEATURE_DESCRIPTIONS[feature]}
                   </span>
+                  {includedByStyle && (
+                    <span className="mt-1 block text-[10px] font-semibold leading-tight text-heritage-green/70">
+                      Required by the selected design and added automatically.
+                    </span>
+                  )}
                 </span>
               </label>
             );
           })}
         </div>
+        {nameMonogramSelected && (
+          <div className="rounded-xl border border-heritage-gold/25 bg-heritage-cream/20 p-3">
+            <label
+              htmlFor="monogram-placement"
+              className="block text-[10px] font-bold uppercase tracking-wider text-heritage-green"
+            >
+              Monogram Placement
+            </label>
+            <select
+              id="monogram-placement"
+              value={
+                designSelections.monogramPlacement ||
+                DEFAULT_MONOGRAM_PLACEMENT
+              }
+              onChange={(event) =>
+                handleMonogramPlacementChange(
+                  event.target.value as MonogramPlacement,
+                )
+              }
+              className="mt-2 min-h-[44px] w-full rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-heritage-green focus:border-heritage-gold focus:outline-none focus:ring-2 focus:ring-heritage-gold/20"
+            >
+              {monogramPlacementOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-[10px] leading-relaxed text-heritage-ink/60">
+              Left Chest is the recommended default placement. Placement does
+              not add another charge.
+            </p>
+            {hasHeavyEmbroideryMetadata(selectedStyle) && (
+              <p className="mt-2 rounded-lg border border-heritage-gold/20 bg-white/70 px-3 py-2 text-[10px] font-semibold leading-relaxed text-heritage-green/80">
+                Cuff or Hem placement may provide better visibility for your
+                monogram on this embroidered design.
+              </p>
+            )}
+          </div>
+        )}
       </fieldset>
 
       <fieldset className="col-span-1 space-y-2 md:col-span-2">
@@ -895,11 +976,30 @@ const GarmentDetailSummaryItems = ({
       return { ...item, display };
     });
   const pricedItems = [
-    ...decorativeFeatures.map((feature) => ({
-      label: feature.includedByStyle ? "Design Feature" : "Decorative Detail",
-      value: feature.label,
-      display: `+${currencySymbol}${feature.price.toFixed(2)}`,
-    })),
+    ...decorativeFeatures.flatMap((feature) => {
+      const placement =
+        feature.label === "Name Monogram"
+          ? getMonogramPlacementLabel(designSelections.monogramPlacement)
+          : null;
+      return [
+        {
+          label: feature.includedByStyle
+            ? "Design Feature"
+            : "Decorative Detail",
+          value: feature.label,
+          display: `+${currencySymbol}${feature.price.toFixed(2)}`,
+        },
+        ...(placement
+          ? [
+              {
+                label: "Monogram Placement",
+                value: placement,
+                display: "No additional charge",
+              },
+            ]
+          : []),
+      ];
+    }),
     ...accessories.map((accessory) => ({
       label: "Traditional Accessory",
       value: accessory.label,
@@ -1283,10 +1383,14 @@ export default function DesignStudioView({
               }
             : previous;
 
-          return filterDesignSelectionsForCustomDetails(
+          return filterDesignSelectionsForDecorativeFeatures(
+            filterDesignSelectionsForCustomDetails(
+              selectedStyle,
+              mergedSelections,
+              customDetailCatalog,
+              defaultGarment,
+            ),
             selectedStyle,
-            mergedSelections,
-            customDetailCatalog,
             defaultGarment,
           );
         });
@@ -1300,10 +1404,14 @@ export default function DesignStudioView({
     if (!selectedStyle) return;
 
     setDesignSelections((previous) =>
-      filterDesignSelectionsForCustomDetails(
+      filterDesignSelectionsForDecorativeFeatures(
+        filterDesignSelectionsForCustomDetails(
+          selectedStyle,
+          previous,
+          customDetailCatalog,
+          selectedGarment,
+        ),
         selectedStyle,
-        previous,
-        customDetailCatalog,
         selectedGarment,
       ),
     );
@@ -1597,10 +1705,14 @@ export default function DesignStudioView({
     };
     setSelectedGarment(defaultGarment);
     setDesignSelections((previous) =>
-      filterDesignSelectionsForCustomDetails(
+      filterDesignSelectionsForDecorativeFeatures(
+        filterDesignSelectionsForCustomDetails(
+          style,
+          previous,
+          customDetailCatalog,
+          defaultGarment,
+        ),
         style,
-        previous,
-        customDetailCatalog,
         defaultGarment,
       ),
     );
@@ -1841,10 +1953,14 @@ export default function DesignStudioView({
     const restoreSelections = window.setTimeout(() => {
       setSelectedGarment(draft.selectedGarment);
       setDesignSelections(
-        filterDesignSelectionsForCustomDetails(
+        filterDesignSelectionsForDecorativeFeatures(
+          filterDesignSelectionsForCustomDetails(
+            draftStyle,
+            draft.designSelections,
+            customDetailCatalog,
+            draft.selectedGarment,
+          ),
           draftStyle,
-          draft.designSelections,
-          customDetailCatalog,
           draft.selectedGarment,
         ),
       );
@@ -2232,10 +2348,14 @@ export default function DesignStudioView({
           : 0),
     );
     const applicableDesignSelections =
-      filterDesignSelectionsForCustomDetails(
+      filterDesignSelectionsForDecorativeFeatures(
+        filterDesignSelectionsForCustomDetails(
+          selectedStyle,
+          designSelections,
+          customDetailCatalog,
+          selectedGarment,
+        ),
         selectedStyle,
-        designSelections,
-        customDetailCatalog,
         selectedGarment,
       );
 
@@ -5003,18 +5123,30 @@ export default function DesignStudioView({
                 </div>
               ))}
               {selectedFabric && pricing.decorativeFeatures.map((feature) => (
-                <div
-                  key={`decorative-${feature.label}`}
-                  className="flex justify-between items-center text-heritage-ink/70"
-                >
-                  <span>
-                    {feature.includedByStyle ? "Design Feature" : "Decorative Detail"}:{" "}
-                    {feature.label}
-                  </span>
-                  <span className="font-semibold text-heritage-green">
-                    +{currencySymbol}{feature.price.toFixed(2)}
-                  </span>
-                </div>
+                <React.Fragment key={`decorative-${feature.label}`}>
+                  <div className="flex justify-between items-center text-heritage-ink/70">
+                    <span>
+                      {feature.includedByStyle ? "Design Feature" : "Decorative Detail"}:{" "}
+                      {feature.label}
+                    </span>
+                    <span className="font-semibold text-heritage-green">
+                      +{currencySymbol}{feature.price.toFixed(2)}
+                    </span>
+                  </div>
+                  {feature.label === "Name Monogram" &&
+                    getMonogramPlacementLabel(
+                      designSelections.monogramPlacement,
+                    ) && (
+                      <div className="flex justify-between items-center text-heritage-ink/70">
+                        <span>Monogram Placement</span>
+                        <span className="font-semibold text-heritage-green">
+                          {getMonogramPlacementLabel(
+                            designSelections.monogramPlacement,
+                          )}
+                        </span>
+                      </div>
+                    )}
+                </React.Fragment>
               ))}
               {selectedFabric && pricing.traditionalAccessories.map((accessory) => (
                 <div

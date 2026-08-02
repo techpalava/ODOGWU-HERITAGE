@@ -381,18 +381,21 @@ assert.deepEqual(
   "traditional accessories use deterministic business order",
 );
 
-const orderedOptionalPricing = calculateGarmentDetailsPrice({
-  decorativeFeatures: [
-    "Monogram Trimming",
-    "Name Monogram",
-    "Embroidery",
-  ],
-  accessories: [
-    "Traditional Stick",
-    "Traditional Hat",
-    "Traditional Bead",
-  ],
-});
+const orderedOptionalPricing = calculateGarmentDetailsPrice(
+  {
+    decorativeFeatures: [
+      "Monogram Trimming",
+      "Name Monogram",
+      "Embroidery",
+    ],
+    accessories: [
+      "Traditional Stick",
+      "Traditional Hat",
+      "Traditional Bead",
+    ],
+  },
+  allGarmentStyle,
+);
 assert.deepEqual(
   orderedOptionalPricing.decorativeFeatures.map((item) => item.label),
   DECORATIVE_FEATURE_OPTIONS,

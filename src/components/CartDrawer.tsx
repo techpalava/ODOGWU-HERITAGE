@@ -29,6 +29,10 @@ import {
   hasSelectedCustomDetailOption,
 } from "../utils/catalogHelpers";
 import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig";
+import {
+  getMonogramPlacementLabel,
+  filterDesignSelectionsForDecorativeFeatures,
+} from "../utils/decorativePricing";
 
 export function CartDrawer() {
   const [shippingEditorItemId, setShippingEditorItemId] = useState<
@@ -349,6 +353,11 @@ export function CartDrawer() {
                       getStoredShippingCost(item.garment),
                   );
                   const isBatchItem = isBatchPricingRoute(item.batchType);
+                  const normalizedDesign = filterDesignSelectionsForDecorativeFeatures(
+                    item.design,
+                    item.style,
+                    item.garment,
+                  );
                   return (
                     <div
                       key={item.id}
@@ -438,6 +447,16 @@ export function CartDrawer() {
                               </strong>
                             </p>
                           )}
+                        {normalizedDesign.monogramPlacement && (
+                          <p>
+                            Monogram placement:{" "}
+                            <strong>
+                              {getMonogramPlacementLabel(
+                                normalizedDesign.monogramPlacement,
+                              )}
+                            </strong>
+                          </p>
+                        )}
                         {item.design.accessories &&
                           item.design.accessories.length > 0 && (
                             <p>
