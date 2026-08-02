@@ -1,9 +1,12 @@
 import {
   filterDesignSelectionsForCustomDetails,
+  getCustomDetailSelectionOptionIds,
   getCustomDetailSnapshots,
   getCustomDetailsBreakdown,
   getMissingCustomDetailGroup,
   groupApplicableCustomDetails,
+  hasSelectedCustomDetailOption,
+  isAdditionalClothesCostSection,
   isClothingPriceSelectionGroup,
   isLiningEligibleForStyle,
   normalizeCustomDetailCatalog,
@@ -89,7 +92,11 @@ import {
   TRADITIONAL_ACCESSORY_DESCRIPTIONS,
   TRADITIONAL_ACCESSORY_OPTIONS,
 } from "../utils/decorativePricing";
-import { CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION } from "../config/GarmentDetailsConfig";
+import {
+  ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION,
+  CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION,
+  DRESS_LINING_OPTION_ID,
+} from "../config/GarmentDetailsConfig";
 import {
   calculateDesignPricing,
   isBatchPricingRoute,
@@ -498,6 +505,8 @@ export const getGarmentDetailsBreakdown = (
   price: number;
   originalId?: string;
   selectionGroup: CustomDetailSelectionGroup;
+  informational: boolean;
+  requiresEvaluation: boolean;
 }[] => getCustomDetailsBreakdown(details, catalog);
 
 
@@ -518,6 +527,12 @@ const GarmentDetailSelector = ({
     effectiveCatalog,
     selectedGarment,
   );
+  const standardGroups = applicableGroups.filter(
+    (group) => !isAdditionalClothesCostSection(group.id),
+  );
+  const additionalGroups = applicableGroups.filter((group) =>
+    isAdditionalClothesCostSection(group.id),
+  );
   const includedDecorativeFeatures = getIncludedDecorativeFeatures(
     selectedStyle,
   );
@@ -527,15 +542,42 @@ const GarmentDetailSelector = ({
 
   const handleSelect = (
     groupId: CustomDetailSelectionGroup,
-    optionId: string,
+    option: CustomDetailOption,
+    checked: boolean,
   ) => {
-    setDesignSelections((prev: any) => ({
-      ...prev,
-      customDetails: {
-        ...(prev.customDetails || {}),
-        [groupId]: optionId
+    if (option.informational) return;
+    if (option.id === DRESS_LINING_OPTION_ID) {
+      setHasLining(false);
+    }
+
+    setDesignSelections((previous: DesignSelections) => {
+      const nextCustomDetails = {
+        ...(previous.customDetails || {}),
+      };
+
+      if (!option.allowMultiple) {
+        nextCustomDetails[groupId] = option.id;
+      } else {
+        const selectedIds = new Set(
+          getCustomDetailSelectionOptionIds(nextCustomDetails[groupId]),
+        );
+        if (checked) selectedIds.add(option.id);
+        else selectedIds.delete(option.id);
+
+        const groupOptions =
+          applicableGroups.find((group) => group.id === groupId)?.options || [];
+        const orderedIds = groupOptions
+          .map((candidate) => candidate.id)
+          .filter((optionId) => selectedIds.has(optionId));
+        if (orderedIds.length > 0) nextCustomDetails[groupId] = orderedIds;
+        else delete nextCustomDetails[groupId];
       }
-    }));
+
+      return {
+        ...previous,
+        customDetails: nextCustomDetails,
+      };
+    });
   };
 
   const handleDecorativeFeatureToggle = (
@@ -581,9 +623,11 @@ const GarmentDetailSelector = ({
 
   const renderGroup = (
     groupId: CustomDetailSelectionGroup,
-    options: any[],
+    options: CustomDetailOption[],
   ) => {
-    const presentation = CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION[groupId];
+    const presentation = isAdditionalClothesCostSection(groupId)
+      ? ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION[groupId]
+      : CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION[groupId];
     return (
       <div className="space-y-2 mb-4 col-span-1" key={groupId}>
         <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
@@ -595,47 +639,100 @@ const GarmentDetailSelector = ({
           </p>
         )}
         <div className="space-y-2">
-          {options.map(opt => (
-            <label key={opt.id} className={`flex items-start gap-3 cursor-pointer p-3 border ${customDetails[groupId] === opt.id ? 'border-heritage-gold bg-heritage-cream/20' : 'border-gray-150 bg-white'} rounded-xl hover:border-heritage-gold/50 transition`}>
-              <input 
-                type="radio" 
-                name={groupId} 
-                checked={customDetails[groupId] === opt.id} 
-                onChange={() => handleSelect(groupId, opt.id)}
-                className="mt-1 h-4 w-4 text-heritage-green focus:ring-heritage-gold border-gray-300"
-              />
-              <div className="flex-1">
-                <div className="flex justify-between items-start">
-                  <span className="font-bold text-heritage-green text-xs block">{opt.label}</span>
-                  {opt.priceCents > 0 && <span className="text-heritage-gold font-bold text-xs">+{currencySymbol}{(opt.priceCents/100).toFixed(2)}</span>}
+          {options.map((opt) => {
+            const isSelected =
+              getCustomDetailSelectionOptionIds(customDetails[groupId]).includes(
+                opt.id,
+              ) ||
+              (opt.id === DRESS_LINING_OPTION_ID && hasLining);
+            const priceLabel = opt.requiresEvaluation
+              ? "Requires evaluation"
+              : opt.priceCents > 0
+                ? `+${currencySymbol}${(opt.priceCents / 100).toFixed(2)}`
+                : opt.informational
+                  ? "No additional charge"
+                  : "Included";
+
+            if (opt.informational) {
+              return (
+                <div
+                  key={opt.id}
+                  className="flex items-start gap-3 rounded-xl border border-gray-150 bg-heritage-cream/20 p-3"
+                >
+                  <Info
+                    aria-hidden="true"
+                    className="mt-0.5 shrink-0 text-heritage-gold"
+                    size={16}
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="block text-xs font-bold text-heritage-green">
+                        {opt.label}
+                      </span>
+                      <span className="shrink-0 text-[10px] font-semibold text-heritage-green/70">
+                        {priceLabel}
+                      </span>
+                    </div>
+                    <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                      {opt.description}
+                    </span>
+                  </div>
                 </div>
-                <span className="text-[10px] text-heritage-ink/60 block leading-tight mt-1">{opt.description}</span>
+              );
+            }
+
+            return (
+              <label
+                key={opt.id}
+                className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition hover:border-heritage-gold/50 ${
+                  isSelected
+                    ? "border-heritage-gold bg-heritage-cream/20"
+                    : "border-gray-150 bg-white"
+                }`}
+              >
+                <input
+                  type={opt.allowMultiple ? "checkbox" : "radio"}
+                  name={groupId}
+                  checked={isSelected}
+                  onChange={(event) =>
+                    handleSelect(groupId, opt, event.target.checked)
+                  }
+                  className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-gold"
+                />
+              <div className="flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="block text-xs font-bold text-heritage-green">
+                    {opt.label}
+                  </span>
+                  <span className="shrink-0 text-xs font-bold text-heritage-gold">
+                    {priceLabel}
+                  </span>
+                </div>
+                <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                  {opt.description}
+                </span>
               </div>
-            </label>
-          ))}
+              </label>
+            );
+          })}
         </div>
       </div>
     );
   };
 
-  const showLining = isLiningEligibleForStyle(
-    selectedStyle,
-    selectedGarment?.code,
-  );
-
   return (
     <>
-      {explicitBoth && applicableGroups.length > 0 && (
+      {explicitBoth && standardGroups.length > 0 && (
         <div className="col-span-1 md:col-span-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 px-4 py-3 text-[11px] text-heritage-ink/70">
           This design includes male and female garments. Complete every
           applicable garment section below.
         </div>
       )}
-      {applicableGroups.map((group) =>
+      {standardGroups.map((group) =>
         renderGroup(group.id, group.options),
       )}
 
-      {applicableGroups.length === 0 && !showLining && (
+      {standardGroups.length === 0 && (
         <div className="col-span-1 md:col-span-2 rounded-xl border border-heritage-gold/25 bg-heritage-cream/20 px-4 py-4">
           <p className="text-xs font-bold text-heritage-green">
             No construction choices are required for this design.
@@ -647,31 +744,15 @@ const GarmentDetailSelector = ({
         </div>
       )}
 
-      {showLining && (
+      {additionalGroups.length > 0 && (
         <fieldset className="col-span-1 space-y-3 md:col-span-2">
           <legend className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
             Additional Clothes Costs
           </legend>
-          <div className="space-y-2">
-            <p className="font-bold text-heritage-green text-[10px] uppercase tracking-wider">
-              Dress (Ladies) - Additional
-            </p>
-            <label className="flex items-center gap-3 cursor-pointer p-3 border border-gray-150 rounded-xl bg-heritage-cream/20 hover:border-heritage-gold/30 transition w-full md:w-1/2">
-              <input
-                type="checkbox"
-                checked={hasLining}
-                onChange={(event) => setHasLining(event.target.checked)}
-                className="h-4 w-4 text-heritage-green focus:ring-heritage-gold rounded border-gray-300 cursor-pointer"
-              />
-              <span>
-                <span className="font-bold text-heritage-green text-xs block">
-                  Add Inner Net / Lining (L5)
-                </span>
-                <span className="text-[10px] text-heritage-ink/50 block leading-tight">
-                  Provides structure and opacity (+{currencySymbol}10.00)
-                </span>
-              </span>
-            </label>
+          <div className="grid grid-cols-1 gap-x-4 md:grid-cols-2">
+            {additionalGroups.map((group) =>
+              renderGroup(group.id, group.options),
+            )}
           </div>
         </fieldset>
       )}
@@ -804,7 +885,13 @@ const GarmentDetailSummaryItems = ({
         !isClothingPriceSelectionGroup(item.selectionGroup),
     )
     .map(item => {
-      const display = item.price === 0 ? 'Included' : `+${currencySymbol}${item.price.toFixed(2)}`;
+      const display = item.requiresEvaluation
+        ? "Requires evaluation"
+        : item.price === 0
+          ? item.informational
+            ? "No additional charge"
+            : "Included"
+          : `+${currencySymbol}${item.price.toFixed(2)}`;
       return { ...item, display };
     });
   const pricedItems = [
@@ -1163,6 +1250,10 @@ export default function DesignStudioView({
   const liningEligible = isLiningEligibleForStyle(
     selectedStyle,
     selectedGarment?.code,
+  );
+  const hasCatalogDressLining = hasSelectedCustomDetailOption(
+    designSelections,
+    DRESS_LINING_OPTION_ID,
   );
 
   useEffect(() => {
@@ -4658,7 +4749,7 @@ export default function DesignStudioView({
                         Construction Sewing Cost: <strong>+{currencySymbol}{pricing.constructionSewingCost.toFixed(2)}</strong>
                       </li>
                     )}
-                    {liningEligible && hasLining && (
+                    {liningEligible && hasLining && !hasCatalogDressLining && (
                       <li>
                         Included Extra: <strong>Inner Lining/Net (L5)</strong> <span className="text-heritage-gold ml-1">(+{currencySymbol}10.00)</span>
                       </li>
@@ -4901,7 +4992,13 @@ export default function DesignStudioView({
                 <div key={idx} className="flex justify-between items-center text-heritage-ink/70">
                   <span>{item.label}{item.value ? ': ' + item.value : ''}</span>
                   <span className="font-semibold text-heritage-green">
-                    {item.price === 0 ? 'Included' : `+${currencySymbol}${item.price.toFixed(2)}`}
+                    {item.requiresEvaluation
+                      ? "Requires evaluation"
+                      : item.price === 0
+                        ? item.informational
+                          ? "No additional charge"
+                          : "Included"
+                        : `+${currencySymbol}${item.price.toFixed(2)}`}
                   </span>
                 </div>
               ))}
@@ -4938,7 +5035,10 @@ export default function DesignStudioView({
                   </span>
                 </div>
               )}
-              {selectedFabric && liningEligible && hasLining && (
+              {selectedFabric &&
+                liningEligible &&
+                hasLining &&
+                !hasCatalogDressLining && (
                 <div className="flex justify-between items-center text-heritage-ink/70">
                   <span>Inner Lining/Net (L5):</span>
                   <span className="font-semibold text-heritage-green">
@@ -5162,7 +5262,7 @@ export default function DesignStudioView({
                   <strong className="text-heritage-green">+{currencySymbol}{pricing.constructionSewingCost.toFixed(2)}</strong>
                 </p>
               )}
-              {liningEligible && hasLining && (
+              {liningEligible && hasLining && !hasCatalogDressLining && (
                 <p>
                   Lining/Inner Net:{" "}
                   <strong className="text-heritage-gold">Included (L5) (+{currencySymbol}10.00)</strong>

@@ -17,6 +17,7 @@ import {
   filterDesignSelectionsForCustomDetails,
   getSupportedCustomDetailGroups,
   groupApplicableCustomDetails,
+  isAdditionalClothesCostSection,
   sortAdditionalClothesCostSections,
 } from "./src/utils/catalogHelpers";
 import { calculateDesignPricing } from "./src/utils/designPricing";
@@ -48,6 +49,7 @@ const getSelectionGroups = (
     SEED_CUSTOM_DETAIL_CATALOG,
     garment,
   )
+    .filter((group) => !isAdditionalClothesCostSection(group.id))
     .map((group) => group.id);
 
 const expectGroups = (
@@ -69,10 +71,12 @@ const getOptionIdsByGroup = (
   garment?: CustomDetailGarmentContext | null,
 ): Record<string, string[]> =>
   Object.fromEntries(
-    groupApplicableCustomDetails(style, catalog, garment).map((group) => [
-      group.id,
-      group.options.map((option) => option.id),
-    ]),
+    groupApplicableCustomDetails(style, catalog, garment)
+      .filter((group) => !isAdditionalClothesCostSection(group.id))
+      .map((group) => [
+        group.id,
+        group.options.map((option) => option.id),
+      ]),
   );
 
 const deterministicallyShuffle = <T>(values: readonly T[]): T[] => {

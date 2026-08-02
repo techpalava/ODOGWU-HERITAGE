@@ -42,7 +42,8 @@ export type CustomDetailGarmentGroup =
   | "standard_shorts"
   | "bum_shorts"
   | "trousers"
-  | "skirt";
+  | "skirt"
+  | "personalized";
 
 export type CustomDetailSelectionGroup =
   | "shirt_construction"
@@ -57,7 +58,15 @@ export type CustomDetailSelectionGroup =
   | "trouser_fastening"
   | "trouser_pockets"
   | "skirt_length"
-  | "skirt_pockets";
+  | "skirt_pockets"
+  | "shirt_additional"
+  | "dress_additional"
+  | "neck_additional"
+  | "trouser_additional"
+  | "standard_shorts_additional"
+  | "bum_shorts_additional"
+  | "skirt_additional"
+  | "personalized_additional";
 
 export interface CustomDetailOption {
   id: string;
@@ -71,6 +80,8 @@ export interface CustomDetailOption {
   required: boolean;
   active: boolean;
   allowMultiple: boolean;
+  informational?: boolean;
+  requiresEvaluation?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -187,7 +198,9 @@ export interface DesignSelections {
   decorativeFeatures?: DecorativeFeature[];
 
   // New detailed garment fields
-  customDetails?: Partial<Record<CustomDetailSelectionGroup, string>>;
+  customDetails?: Partial<
+    Record<CustomDetailSelectionGroup, string | string[]>
+  >;
   customDetailSnapshots?: CustomDetailSelectionSnapshot[];
   topLength?: string;
   topPocket?: string;
@@ -216,6 +229,8 @@ export interface CustomDetailSelectionSnapshot {
   garmentGroup: CustomDetailGarmentGroup;
   selectionGroup: CustomDetailSelectionGroup;
   priceCents: number;
+  informational?: boolean;
+  requiresEvaluation?: boolean;
 }
 
 export interface IndividualShippingSnapshot {

@@ -8,11 +8,14 @@ import {
   StyleCategory,
 } from "../types";
 import {
+  ADDITIONAL_CLOTHES_COST_OPTION_ORDER,
   ADDITIONAL_CLOTHES_COST_SECTION_RANK,
+  ALL_CUSTOM_DETAIL_SELECTION_GROUPS,
   CUSTOM_DETAIL_OPTION_ORDER,
   CUSTOM_DETAIL_SELECTION_GROUP_ORDER,
   SEED_CUSTOM_DETAIL_CATALOG,
   type AdditionalClothesCostSection,
+  type StandardCustomDetailSelectionGroup,
 } from "../config/GarmentDetailsConfig";
 
 const VALID_GARMENT_GROUPS = new Set<CustomDetailGarmentGroup>([
@@ -23,23 +26,12 @@ const VALID_GARMENT_GROUPS = new Set<CustomDetailGarmentGroup>([
   "bum_shorts",
   "trousers",
   "skirt",
+  "personalized",
 ]);
 
-const VALID_SELECTION_GROUPS = new Set<CustomDetailSelectionGroup>([
-  "shirt_construction",
-  "shirt_pockets",
-  "dress_construction",
-  "dress_pockets",
-  "neck_design",
-  "standard_shorts_fastening",
-  "standard_shorts_pockets",
-  "bum_shorts_fastening",
-  "bum_shorts_pockets",
-  "trouser_fastening",
-  "trouser_pockets",
-  "skirt_length",
-  "skirt_pockets",
-]);
+const VALID_SELECTION_GROUPS = new Set<CustomDetailSelectionGroup>(
+  ALL_CUSTOM_DETAIL_SELECTION_GROUPS,
+);
 
 export const CLOTHING_PRICE_SELECTION_GROUPS: readonly CustomDetailSelectionGroup[] = [
   "shirt_construction",
@@ -73,8 +65,26 @@ const getOptionBusinessOrder = (
   displayOrder = 0,
 ): number =>
   CUSTOM_DETAIL_OPTION_ORDER[optionId] ??
+  ADDITIONAL_CLOTHES_COST_OPTION_ORDER[optionId] ??
   UNKNOWN_OPTION_ORDER_BASE +
     (Number.isFinite(displayOrder) ? Math.max(0, displayOrder) : 0);
+
+export const isAdditionalClothesCostSection = (
+  group: CustomDetailSelectionGroup,
+): group is AdditionalClothesCostSection =>
+  Object.prototype.hasOwnProperty.call(
+    ADDITIONAL_CLOTHES_COST_SECTION_RANK,
+    group,
+  );
+
+const getSelectionGroupBusinessOrder = (
+  group: CustomDetailSelectionGroup,
+): number =>
+  isAdditionalClothesCostSection(group)
+    ? 1_000 + ADDITIONAL_CLOTHES_COST_SECTION_RANK[group]
+    : CUSTOM_DETAIL_SELECTION_GROUP_ORDER[
+        group as StandardCustomDetailSelectionGroup
+      ];
 
 const getOptionContentOrder = (
   option: Pick<
@@ -96,8 +106,8 @@ export const sortCustomDetailOptions = (
 ): CustomDetailOption[] =>
   [...options].sort((left, right) => {
     const groupOrder =
-      CUSTOM_DETAIL_SELECTION_GROUP_ORDER[left.selectionGroup] -
-      CUSTOM_DETAIL_SELECTION_GROUP_ORDER[right.selectionGroup];
+      getSelectionGroupBusinessOrder(left.selectionGroup) -
+      getSelectionGroupBusinessOrder(right.selectionGroup);
     if (groupOrder !== 0) return groupOrder;
 
     const optionOrder =
@@ -182,6 +192,14 @@ const normalizeCatalogOption = (
       typeof merged.allowMultiple === "boolean"
         ? merged.allowMultiple
         : fallback?.allowMultiple || false,
+    informational:
+      typeof merged.informational === "boolean"
+        ? merged.informational
+        : fallback?.informational || false,
+    requiresEvaluation:
+      typeof merged.requiresEvaluation === "boolean"
+        ? merged.requiresEvaluation
+        : fallback?.requiresEvaluation || false,
     createdAt:
       typeof merged.createdAt === "string"
         ? merged.createdAt
@@ -574,7 +592,9 @@ export const getApplicableCustomDetailGroups = (
           ? ["female"]
           : ["male", "female"];
   const isEligible = (option: CustomDetailOption) =>
-    supportedGroups.includes(option.garmentGroup) &&
+    (option.garmentGroup === "personalized"
+      ? supportedGroups.length > 0
+      : supportedGroups.includes(option.garmentGroup)) &&
     option.eligibleDemographics.some(
       (demographic) =>
         demographic === "unisex" ||
@@ -622,8 +642,8 @@ export const sortApplicableCustomDetailGroups = (
     }))
     .sort(
       (left, right) =>
-        CUSTOM_DETAIL_SELECTION_GROUP_ORDER[left.id] -
-        CUSTOM_DETAIL_SELECTION_GROUP_ORDER[right.id],
+        getSelectionGroupBusinessOrder(left.id) -
+        getSelectionGroupBusinessOrder(right.id),
     );
 
 export const groupApplicableCustomDetails = (
@@ -679,6 +699,38 @@ export const getRequiredCustomDetailGroups = (
     .map((group) => group.id);
 };
 
+export const getCustomDetailSelectionOptionIds = (
+  selection: string | string[] | undefined,
+): string[] => {
+  const values = Array.isArray(selection) ? selection : [selection];
+  return [...new Set(values.filter((value): value is string =>
+    typeof value === "string" && value.trim().length > 0,
+  ))];
+};
+
+export const getSelectedCustomDetailOptionIds = (
+  selections: DesignSelections,
+): string[] => {
+  const hasLiveSelections = Object.prototype.hasOwnProperty.call(
+    selections,
+    "customDetails",
+  );
+  const optionIds = hasLiveSelections
+    ? Object.values(selections.customDetails || {}).flatMap(
+        getCustomDetailSelectionOptionIds,
+      )
+    : (selections.customDetailSnapshots || []).map(
+        (snapshot) => snapshot.optionId,
+      );
+
+  return [...new Set(optionIds)];
+};
+
+export const hasSelectedCustomDetailOption = (
+  selections: DesignSelections,
+  optionId: string,
+): boolean => getSelectedCustomDetailOptionIds(selections).includes(optionId);
+
 export const getMissingCustomDetailGroup = (
   style: StyleCategory | null,
   selections: DesignSelections,
@@ -686,7 +738,10 @@ export const getMissingCustomDetailGroup = (
   garment?: CustomDetailGarmentContext | null,
 ): CustomDetailSelectionGroup | null =>
   getRequiredCustomDetailGroups(style, catalog, garment).find(
-    (group) => !selections.customDetails?.[group],
+    (group) =>
+      getCustomDetailSelectionOptionIds(
+        selections.customDetails?.[group],
+      ).length === 0,
   ) || null;
 
 export const filterDesignSelectionsForCustomDetails = (
@@ -702,37 +757,71 @@ export const filterDesignSelectionsForCustomDetails = (
     catalog,
     garment,
   );
-  const applicableOptionIdsByGroup = new Map(
-    applicableGroups.map((group) => [
-      group.id,
-      new Set(group.options.map((option) => option.id)),
-    ]),
+  const applicableGroupsById = new Map(
+    applicableGroups.map((group) => [group.id, group]),
   );
   const isApplicableSelection = (
     group: CustomDetailSelectionGroup,
     optionId: string,
-  ): boolean => applicableOptionIdsByGroup.get(group)?.has(optionId) === true;
+  ): boolean =>
+    applicableGroupsById
+      .get(group)
+      ?.options.some((option) => option.id === optionId) === true;
   const hasLiveSelections = Object.prototype.hasOwnProperty.call(
     selections,
     "customDetails",
   );
   const currentCustomDetails = selections.customDetails || {};
-  const nextCustomDetails = Object.fromEntries(
-    Object.entries(currentCustomDetails).filter(([group, optionId]) =>
-      isApplicableSelection(
-        group as CustomDetailSelectionGroup,
-        optionId,
-      ),
-    ),
-  ) as Partial<Record<CustomDetailSelectionGroup, string>>;
+  const nextCustomDetails: NonNullable<DesignSelections["customDetails"]> = {};
+
+  for (const [rawGroup, rawSelection] of Object.entries(
+    currentCustomDetails,
+  )) {
+    const group = rawGroup as CustomDetailSelectionGroup;
+    const applicableGroup = applicableGroupsById.get(group);
+    if (!applicableGroup) continue;
+
+    const selectedIds = new Set(
+      getCustomDetailSelectionOptionIds(rawSelection),
+    );
+    const applicableSelectedIds = applicableGroup.options
+      .map((option) => option.id)
+      .filter((optionId) => selectedIds.has(optionId));
+    if (applicableSelectedIds.length === 0) continue;
+
+    const allowsMultiple = applicableGroup.options.some(
+      (option) => option.allowMultiple,
+    );
+    nextCustomDetails[group] =
+      allowsMultiple && Array.isArray(rawSelection)
+        ? applicableSelectedIds
+        : applicableSelectedIds[0];
+  }
+
+  const areSelectionValuesEqual = (
+    left: string | string[] | undefined,
+    right: string | string[] | undefined,
+  ): boolean => {
+    if (Array.isArray(left) || Array.isArray(right)) {
+      return (
+        Array.isArray(left) &&
+        Array.isArray(right) &&
+        left.length === right.length &&
+        left.every((value, index) => value === right[index])
+      );
+    }
+    return left === right;
+  };
   const currentCustomDetailKeys = Object.keys(currentCustomDetails);
   const customDetailsChanged =
     hasLiveSelections &&
     (currentCustomDetailKeys.length !== Object.keys(nextCustomDetails).length ||
       currentCustomDetailKeys.some(
         (group) =>
-          nextCustomDetails[group as CustomDetailSelectionGroup] !==
-          currentCustomDetails[group as CustomDetailSelectionGroup],
+          !areSelectionValuesEqual(
+            nextCustomDetails[group as CustomDetailSelectionGroup],
+            currentCustomDetails[group as CustomDetailSelectionGroup],
+          ),
       ));
   const nextSnapshots = selections.customDetailSnapshots
     ? sortCustomDetailSelectionSnapshots(
@@ -768,7 +857,7 @@ export const getCustomDetailSnapshots = (
   const effectiveCatalog = normalizeCustomDetailCatalog(catalog);
 
   return sortCustomDetailSelectionSnapshots(
-    Object.values(selections.customDetails || {}).flatMap((optionId) => {
+    getSelectedCustomDetailOptionIds(selections).flatMap((optionId) => {
       const option = effectiveCatalog.find(
         (candidate) => candidate.id === optionId,
       );
@@ -781,6 +870,8 @@ export const getCustomDetailSnapshots = (
           garmentGroup: option.garmentGroup,
           selectionGroup: option.selectionGroup,
           priceCents: option.priceCents,
+          informational: option.informational,
+          requiresEvaluation: option.requiresEvaluation,
         },
       ];
     }),
@@ -792,8 +883,8 @@ export const sortCustomDetailSelectionSnapshots = (
 ): CustomDetailSelectionSnapshot[] =>
   [...snapshots].sort((left, right) => {
     const groupOrder =
-      CUSTOM_DETAIL_SELECTION_GROUP_ORDER[left.selectionGroup] -
-      CUSTOM_DETAIL_SELECTION_GROUP_ORDER[right.selectionGroup];
+      getSelectionGroupBusinessOrder(left.selectionGroup) -
+      getSelectionGroupBusinessOrder(right.selectionGroup);
     if (groupOrder !== 0) return groupOrder;
 
     const optionOrder =
@@ -820,13 +911,19 @@ export const getSelectedCustomDetailSnapshots = (
     "customDetails",
   );
 
-  return hasLiveSelections
+  const snapshots = hasLiveSelections
     ? getCustomDetailSnapshots(selections, catalog)
     : selections.customDetailSnapshots?.length
       ? sortCustomDetailSelectionSnapshots(
           selections.customDetailSnapshots,
         )
       : [];
+
+  return sortCustomDetailSelectionSnapshots([
+    ...new Map(
+      snapshots.map((snapshot) => [snapshot.optionId, snapshot]),
+    ).values(),
+  ]);
 };
 
 export interface CustomDetailsPriceBreakdown {
@@ -871,6 +968,8 @@ export const getCustomDetailsBreakdown = (
     price: option.priceCents / 100,
     originalId: option.optionId,
     selectionGroup: option.selectionGroup,
+    informational: option.informational || false,
+    requiresEvaluation: option.requiresEvaluation || false,
   }));
 };
 

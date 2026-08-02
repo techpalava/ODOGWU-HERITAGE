@@ -10,7 +10,10 @@ import type {
 import {
   calculateCustomDetailsPriceBreakdown,
   filterDesignSelectionsForCustomDetails,
+  getSelectedCustomDetailOptionIds,
+  hasSelectedCustomDetailOption,
 } from "./catalogHelpers";
+import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig";
 import {
   calculateGarmentDetailsPrice,
 } from "./decorativePricing";
@@ -93,7 +96,7 @@ export const getConstructionSewingCost = (
     skirt_long: CONSTRUCTION_SEWING_COST_MAP.skirt.long,
   };
 
-  return Object.values(details.customDetails || {}).reduce(
+  return getSelectedCustomDetailOptionIds(details).reduce(
     (total, optionId) =>
       total + (optionId ? optionCosts[optionId] || 0 : 0),
     0,
@@ -174,7 +177,13 @@ export const calculateDesignPricing = ({
     constructionUpgradesPrice +=
       businessSettings.pricingSettings.standardAccessoryCharge;
   }
-  if (applicableDesign.hasLining) {
+  if (
+    applicableDesign.hasLining &&
+    !hasSelectedCustomDetailOption(
+      applicableDesign,
+      DRESS_LINING_OPTION_ID,
+    )
+  ) {
     constructionUpgradesPrice += 10;
   }
 

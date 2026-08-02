@@ -36,8 +36,15 @@ export const CatalogService = {
 
   async seedCatalog(): Promise<void> {
     try {
+       const existingSnapshot = await getDocs(
+         collection(db, CATALOG_COLLECTION),
+       );
+       const existingIds = new Set(
+         existingSnapshot.docs.map((catalogDocument) => catalogDocument.id),
+       );
        const batch = writeBatch(db);
        for (const opt of SEED_CUSTOM_DETAIL_CATALOG) {
+         if (existingIds.has(opt.id)) continue;
          const d = doc(db, CATALOG_COLLECTION, opt.id);
          batch.set(d, opt);
        }
