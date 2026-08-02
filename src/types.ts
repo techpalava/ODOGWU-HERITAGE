@@ -135,6 +135,8 @@ export interface StyleCategory {
   hasMonogram?: boolean;
   hasEmbroidery?: boolean;
   hasMonogramTrimming?: boolean;
+  monogramCuffEligible?: boolean;
+  embroideryProminence?: "standard" | "heavy";
   includedDesignFeatures?: {
     hasMonogram?: boolean;
     hasEmbroidery?: boolean;
@@ -196,6 +198,7 @@ export interface DesignSelections {
   hasEmbroidery?: boolean;
   hasMonogramTrimming?: boolean;
   decorativeFeatures?: DecorativeFeature[];
+  monogramPlacement?: MonogramPlacement;
 
   // New detailed garment fields
   customDetails?: Partial<
@@ -221,6 +224,14 @@ export type DecorativeFeature =
   | "Name Monogram"
   | "Embroidery"
   | "Monogram Trimming";
+
+export type MonogramPlacement =
+  | "left_chest"
+  | "right_chest"
+  | "cuff"
+  | "neckline"
+  | "upper_back"
+  | "hem";
 
 export interface CustomDetailSelectionSnapshot {
   optionId: string;

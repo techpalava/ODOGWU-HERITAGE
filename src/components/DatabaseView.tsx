@@ -1808,9 +1808,9 @@ export default function DatabaseView({
                         </h4>
                         <p className="mt-1 text-[10px] text-heritage-ink/60">
                           Checked features are required by this design and add
-                          {` ${PRICING_CURRENCY_SYMBOL}12.00`} automatically in
-                          Design Studio Step 3. Style names and descriptions do
-                          not control pricing.
+                          their configured price automatically in Design Studio
+                          Step 3. Style names and descriptions do not control
+                          pricing.
                         </p>
                       </div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">

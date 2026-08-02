@@ -1,10 +1,16 @@
 import type {
+  CustomDetailGarmentContext,
   CustomDetailOption,
   DecorativeFeature,
   DesignSelections,
+  MonogramPlacement,
   StyleCategory,
 } from "../types";
-import { calculateCustomDetailsPrice } from "./catalogHelpers";
+import {
+  calculateCustomDetailsPrice,
+  getSelectedCustomDetailOptionIds,
+  getSupportedCustomDetailGroupResolution,
+} from "./catalogHelpers";
 
 export const DECORATIVE_FEATURE_OPTIONS: readonly DecorativeFeature[] = [
   "Name Monogram",
@@ -16,12 +22,57 @@ export const DECORATIVE_FEATURE_DESCRIPTIONS: Readonly<
   Record<DecorativeFeature, string>
 > = {
   "Name Monogram":
-    "Add your name to your shirt on the left chest pocket area.",
+    "Add your name to an eligible upper-body garment. Left Chest is the recommended placement.",
   Embroidery:
-    "Additional special patterns based on the selected clothing design.",
+    "Additional decorative patterns on your clothing, depending on the selected design.",
   "Monogram Trimming":
-    "Additional special trim patterns based on the selected clothing design.",
+    "Additional decorative trimming or patterned finishing, depending on the selected design.",
 };
+
+export const DECORATIVE_FEATURE_PRICE_CENTS: Readonly<
+  Record<DecorativeFeature, number>
+> = {
+  "Name Monogram": 1200,
+  Embroidery: 1200,
+  "Monogram Trimming": 1200,
+};
+
+export interface MonogramPlacementOption {
+  value: MonogramPlacement;
+  label: string;
+}
+
+export const DEFAULT_MONOGRAM_PLACEMENT: MonogramPlacement = "left_chest";
+
+export const MONOGRAM_PLACEMENT_OPTIONS: readonly MonogramPlacementOption[] = [
+  { value: "left_chest", label: "Left Chest" },
+  { value: "right_chest", label: "Right Chest" },
+  { value: "cuff", label: "Cuff" },
+  { value: "neckline", label: "Neckline" },
+  { value: "upper_back", label: "Upper Back" },
+  { value: "hem", label: "Hem" },
+];
+
+const CUFF_ELIGIBLE_CONSTRUCTION_OPTION_IDS = new Set([
+  "shirt_std_midlong",
+  "shirt_long_midlong",
+  "dress_std_midlong",
+  "dress_long_midlong",
+]);
+
+
+const UPPER_BODY_CONSTRUCTION_OPTION_IDS = new Set([
+  "shirt_std_short",
+  "shirt_std_midlong",
+  "shirt_long_short",
+  "shirt_long_midlong",
+  "dress_std_sleeveless",
+  "dress_std_short",
+  "dress_std_midlong",
+  "dress_long_sleeveless",
+  "dress_long_short",
+  "dress_long_midlong",
+]);
 
 export const TRADITIONAL_ACCESSORY_OPTIONS = [
   "Traditional Hat",
@@ -61,7 +112,80 @@ export const sortTraditionalAccessories = (
   );
 };
 
-const DEFAULT_DECORATIVE_PRICE = 12;
+export const isNameMonogramApplicable = (
+  style?: StyleCategory | null,
+  garment?: CustomDetailGarmentContext | null,
+): boolean => {
+  const resolution = getSupportedCustomDetailGroupResolution(
+    style || null,
+    garment,
+  );
+
+  if (
+    resolution.source === "none" ||
+    resolution.source === "disabled" ||
+    resolution.source === "legacy_demographic_default"
+  ) {
+    return false;
+  }
+
+  return resolution.groups.some(
+    (group) => group === "shirt" || group === "dress",
+  );
+};
+
+export const getApplicableDecorativeFeatures = (
+  style?: StyleCategory | null,
+  garment?: CustomDetailGarmentContext | null,
+): DecorativeFeature[] =>
+  DECORATIVE_FEATURE_OPTIONS.filter(
+    (feature) =>
+      feature !== "Name Monogram" ||
+      isNameMonogramApplicable(style, garment),
+  );
+
+export const isMonogramCuffEligible = (
+  selections: DesignSelections,
+  style?: StyleCategory | null,
+  garment?: CustomDetailGarmentContext | null,
+): boolean => {
+  if (!isNameMonogramApplicable(style, garment)) return false;
+
+  const selectedOptionIds = getSelectedCustomDetailOptionIds(selections);
+  const selectedConstructionIds = selectedOptionIds.filter((optionId) =>
+    UPPER_BODY_CONSTRUCTION_OPTION_IDS.has(optionId),
+  );
+  if (selectedConstructionIds.length > 0) {
+    return selectedConstructionIds.some((optionId) =>
+      CUFF_ELIGIBLE_CONSTRUCTION_OPTION_IDS.has(optionId),
+    );
+  }
+
+  return style?.monogramCuffEligible === true;
+};
+
+export const getAvailableMonogramPlacements = (
+  selections: DesignSelections,
+  style?: StyleCategory | null,
+  garment?: CustomDetailGarmentContext | null,
+): MonogramPlacementOption[] => {
+  if (!isNameMonogramApplicable(style, garment)) return [];
+  const cuffEligible = isMonogramCuffEligible(selections, style, garment);
+  return MONOGRAM_PLACEMENT_OPTIONS.filter(
+    (option) => option.value !== "cuff" || cuffEligible,
+  );
+};
+
+export const getMonogramPlacementLabel = (
+  placement?: MonogramPlacement,
+): string | null =>
+  MONOGRAM_PLACEMENT_OPTIONS.find((option) => option.value === placement)
+    ?.label || null;
+
+export const hasHeavyEmbroideryMetadata = (
+  style?: StyleCategory | null,
+): boolean => style?.embroideryProminence === "heavy";
+
 const DEFAULT_ACCESSORY_PRICE = 12;
 
 type DecorativeFeatureFlag =
@@ -133,6 +257,62 @@ export const getIncludedDecorativeFeatures = (
   return sortDecorativeFeatures([...features]);
 };
 
+export const filterDesignSelectionsForDecorativeFeatures = (
+  selections: DesignSelections,
+  style?: StyleCategory | null,
+  garment?: CustomDetailGarmentContext | null,
+): DesignSelections => {
+  const applicableFeatures = new Set(
+    getApplicableDecorativeFeatures(style, garment),
+  );
+  const nextFeatures = sortDecorativeFeatures(
+    [
+      ...(selections.decorativeFeatures || []),
+      ...(selections.hasMonogram === true ? ["Name Monogram" as const] : []),
+    ].filter((feature) => applicableFeatures.has(feature)),
+  );
+  const legacyFeature = DECORATIVE_FEATURE_OPTIONS.includes(
+    selections.embroideryDesign as DecorativeFeature,
+  )
+    ? (selections.embroideryDesign as DecorativeFeature)
+    : null;
+  const validLegacyFeature =
+    legacyFeature && applicableFeatures.has(legacyFeature)
+      ? legacyFeature
+      : null;
+  const nameMonogramSelected =
+    applicableFeatures.has("Name Monogram") &&
+    (nextFeatures.includes("Name Monogram") ||
+      validLegacyFeature === "Name Monogram" ||
+      selections.hasMonogram === true ||
+      getIncludedDecorativeFeatures(style).includes("Name Monogram"));
+  const availablePlacements = getAvailableMonogramPlacements(
+    selections,
+    style,
+    garment,
+  );
+  const placementIsValid = availablePlacements.some(
+    (option) => option.value === selections.monogramPlacement,
+  );
+
+  return {
+    ...selections,
+    decorativeFeatures: nextFeatures,
+    embroideryDesign:
+      legacyFeature && !validLegacyFeature
+        ? undefined
+        : selections.embroideryDesign,
+    hasMonogram: applicableFeatures.has("Name Monogram")
+      ? selections.hasMonogram
+      : undefined,
+    monogramPlacement: nameMonogramSelected
+      ? placementIsValid
+        ? selections.monogramPlacement
+        : DEFAULT_MONOGRAM_PLACEMENT
+      : undefined,
+  };
+};
+
 export const hasMonogram = (style?: StyleCategory | null): boolean =>
   getIncludedDecorativeFeatures(style).includes("Name Monogram");
 
@@ -162,6 +342,17 @@ const getOverridePrice = (
     : fallback;
 };
 
+export const getDecorativeFeaturePrice = (
+  style: StyleCategory | null | undefined,
+  feature: DecorativeFeature,
+): number =>
+  getOverridePrice(
+    style,
+    "embroideryDesign",
+    feature,
+    DECORATIVE_FEATURE_PRICE_CENTS[feature] / 100,
+  );
+
 export interface PricedSelection {
   label: string;
   price: number;
@@ -179,19 +370,34 @@ export const calculateGarmentDetailsPrice = (
   details: DesignSelections,
   style?: StyleCategory | null,
   catalog: CustomDetailOption[] = [],
+  garment?: CustomDetailGarmentContext | null,
 ): GarmentDetailsPrice => {
-  const includedFeatures = new Set(getIncludedDecorativeFeatures(style));
+  const applicableDetails = filterDesignSelectionsForDecorativeFeatures(
+    details,
+    style,
+    garment,
+  );
+  const applicableFeatures = new Set(
+    getApplicableDecorativeFeatures(style, garment),
+  );
+  const includedFeatures = new Set(
+    getIncludedDecorativeFeatures(style).filter((feature) =>
+      applicableFeatures.has(feature),
+    ),
+  );
   const selectedFeatures = new Set<DecorativeFeature>(
-    details.decorativeFeatures || [],
+    applicableDetails.decorativeFeatures || [],
   );
 
   if (
-    details.embroideryDesign &&
+    applicableDetails.embroideryDesign &&
     DECORATIVE_FEATURE_OPTIONS.includes(
-      details.embroideryDesign as DecorativeFeature,
+      applicableDetails.embroideryDesign as DecorativeFeature,
     )
   ) {
-    selectedFeatures.add(details.embroideryDesign as DecorativeFeature);
+    selectedFeatures.add(
+      applicableDetails.embroideryDesign as DecorativeFeature,
+    );
   }
 
   const allFeatures = new Set<DecorativeFeature>([
@@ -200,16 +406,11 @@ export const calculateGarmentDetailsPrice = (
   ]);
   const decorativeFeatures = sortDecorativeFeatures([...allFeatures]).map((feature) => ({
     label: feature,
-    price: getOverridePrice(
-      style,
-      "embroideryDesign",
-      feature,
-      DEFAULT_DECORATIVE_PRICE,
-    ),
+    price: getDecorativeFeaturePrice(style, feature),
     includedByStyle: includedFeatures.has(feature),
   }));
   const accessories = sortTraditionalAccessories(
-    details.accessories || [],
+    applicableDetails.accessories || [],
   ).map((accessory) => ({
     label: accessory,
     price: getOverridePrice(
@@ -231,7 +432,7 @@ export const calculateGarmentDetailsPrice = (
 
   return {
     total:
-      calculateCustomDetailsPrice(details, catalog) +
+      calculateCustomDetailsPrice(applicableDetails, catalog) +
       monogramPrice +
       accessoryPrice,
     monogramPrice,

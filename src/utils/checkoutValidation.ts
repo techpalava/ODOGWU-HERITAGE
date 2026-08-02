@@ -13,6 +13,7 @@ import {
   filterDesignSelectionsForCustomDetails,
   getMissingCustomDetailGroup,
 } from "./catalogHelpers";
+import { filterDesignSelectionsForDecorativeFeatures } from "./decorativePricing";
 import {
   calculateAuthoritativeDesignPricing,
   CHECKOUT_DESIGN_PRICING_VERSION,
@@ -187,10 +188,14 @@ export const revalidateCartForCheckout = (
       return { ...item, fabric };
     }
 
-    const applicableDesign = filterDesignSelectionsForCustomDetails(
+    const applicableDesign = filterDesignSelectionsForDecorativeFeatures(
+      filterDesignSelectionsForCustomDetails(
+        style,
+        item.design,
+        context.customDetailCatalog,
+        item.garment,
+      ),
       style,
-      item.design,
-      context.customDetailCatalog,
       item.garment,
     );
     const pricingItem =
