@@ -25,6 +25,143 @@ export const CUSTOM_DETAIL_SELECTION_GROUPS: CustomDetailSelectionGroup[] = [
   "skirt_pockets",
 ];
 
+export const CUSTOM_DETAIL_SELECTION_GROUP_ORDER: Readonly<
+  Record<CustomDetailSelectionGroup, number>
+> = {
+  shirt_construction: 10,
+  shirt_pockets: 20,
+  dress_construction: 30,
+  dress_pockets: 40,
+  neck_design: 50,
+  standard_shorts_fastening: 60,
+  standard_shorts_pockets: 70,
+  bum_shorts_fastening: 80,
+  bum_shorts_pockets: 90,
+  trouser_fastening: 100,
+  trouser_pockets: 110,
+  skirt_length: 120,
+  skirt_pockets: 130,
+};
+
+export const CUSTOM_DETAIL_OPTION_ORDER: Readonly<Record<string, number>> = {
+  shirt_std_short: 10,
+  shirt_std_midlong: 20,
+  shirt_long_short: 30,
+  shirt_long_midlong: 40,
+  shirt_pocket_1: 10,
+  shirt_pocket_2: 20,
+  shirt_pocket_0: 30,
+  dress_std_sleeveless: 10,
+  dress_std_short: 20,
+  dress_std_midlong: 30,
+  dress_long_sleeveless: 40,
+  dress_long_short: 50,
+  dress_long_midlong: 60,
+  dress_pocket_1: 10,
+  dress_pocket_multi: 20,
+  dress_pocket_0: 30,
+  neck_no_round: 10,
+  neck_no_v: 20,
+  neck_no_u: 30,
+  neck_vert_round: 40,
+  neck_vert_v: 50,
+  neck_vert_u: 60,
+  neck_flat_round: 70,
+  neck_flat_v: 80,
+  neck_flat_u: 90,
+  shorts_std_rope: 10,
+  shorts_std_elastic: 20,
+  shorts_std_belt: 30,
+  shorts_std_pocket_regular: 10,
+  shorts_std_pocket_back: 20,
+  shorts_std_pocket_none: 30,
+  bum_rope: 10,
+  bum_elastic: 20,
+  bum_belt: 30,
+  bum_pocket_regular: 10,
+  bum_pocket_back: 20,
+  bum_pocket_none: 30,
+  trouser_rope: 10,
+  trouser_elastic: 20,
+  trouser_belt: 30,
+  trouser_pocket_regular: 10,
+  trouser_pocket_back: 20,
+  trouser_pocket_none: 30,
+  skirt_std: 10,
+  skirt_long: 20,
+  skirt_pocket_1: 10,
+  skirt_pocket_2: 20,
+  skirt_pocket_none: 30,
+};
+
+export const CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION: Readonly<
+  Record<
+    CustomDetailSelectionGroup,
+    { title: string; description?: string }
+  >
+> = {
+  shirt_construction: { title: "Shirt Length and Sleeve Length" },
+  shirt_pockets: { title: "Shirt Pockets" },
+  dress_construction: {
+    title: "Dress Length and Sleeve Length (Ladies)",
+  },
+  dress_pockets: { title: "Dress Pockets" },
+  neck_design: { title: "Neck Design" },
+  standard_shorts_fastening: {
+    title: "Standard Leg Shorts (Nikka) - Fastening",
+    description: "Just above the knee",
+  },
+  standard_shorts_pockets: {
+    title: "Standard Leg Shorts (Nikka) - Pockets",
+    description: "Just above the knee",
+  },
+  bum_shorts_fastening: {
+    title: "Bum (Leg) Shorts - Fastening",
+    description: "Just below the crotch at lap level",
+  },
+  bum_shorts_pockets: {
+    title: "Bum (Leg) Shorts - Pockets",
+    description: "Just below the crotch at lap level",
+  },
+  trouser_fastening: {
+    title: "Leg Pants (Trouser) - Fastening",
+    description: "Up to the ankle",
+  },
+  trouser_pockets: {
+    title: "Leg Pants (Trouser) - Pockets",
+    description: "Up to the ankle",
+  },
+  skirt_length: {
+    title: "Skirts (Ladies) - Length",
+  },
+  skirt_pockets: {
+    title: "Skirts (Ladies) - Pockets",
+  },
+};
+
+export const ADDITIONAL_CLOTHES_COST_SECTION_ORDER = [
+  "shirt_additional",
+  "dress_additional",
+  "neck_additional",
+  "trouser_additional",
+  "standard_shorts_additional",
+  "bum_shorts_additional",
+  "skirt_additional",
+  "personalized_additional",
+] as const;
+
+export type AdditionalClothesCostSection =
+  (typeof ADDITIONAL_CLOTHES_COST_SECTION_ORDER)[number];
+
+export const ADDITIONAL_CLOTHES_COST_SECTION_RANK: Readonly<
+  Record<AdditionalClothesCostSection, number>
+> = Object.fromEntries(
+  ADDITIONAL_CLOTHES_COST_SECTION_ORDER.map((section, index) => [
+    section,
+    (index + 1) * 10,
+  ]),
+) as Record<AdditionalClothesCostSection, number>;
+
 export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
 
   // SHIRT LENGTH AND SLEEVE LENGTH
