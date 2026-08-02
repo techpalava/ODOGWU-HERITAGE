@@ -24,6 +24,11 @@ import {
   PRICING_CURRENCY_SYMBOL,
 } from "../utils/money";
 import { isBatchPricingRoute } from "../utils/designPricing";
+import {
+  getCustomDetailSnapshots,
+  hasSelectedCustomDetailOption,
+} from "../utils/catalogHelpers";
+import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig";
 
 export function CartDrawer() {
   const [shippingEditorItemId, setShippingEditorItemId] = useState<
@@ -392,13 +397,15 @@ export function CartDrawer() {
                         </p>
                         {(item.design.customDetailSnapshots?.length
                           ? item.design.customDetailSnapshots
-                          : Object.values(item.design.customDetails || {})
+                          : getCustomDetailSnapshots(
+                              item.design,
+                              customDetailCatalog,
+                            )
                         ).map((selection) => {
-                          const opt =
-                            typeof selection === "string"
-                              ? customDetailCatalog.find((o) => o.id === selection)
-                              : { ...selection, id: selection.optionId };
-                          if (!opt) return null;
+                          const opt = {
+                            ...selection,
+                            id: selection.optionId,
+                          };
                           return (
                             <p key={opt.id}>
                               🪡 {opt.selectionGroup.replace(/_/g, ' ')}: <strong>{opt.label}</strong>
@@ -408,7 +415,11 @@ export function CartDrawer() {
                         <p>
                           👤 Recipient: <strong>{item.customer.name}</strong>
                         </p>
-                        {item.design.hasLining && (
+                        {item.design.hasLining &&
+                          !hasSelectedCustomDetailOption(
+                            item.design,
+                            DRESS_LINING_OPTION_ID,
+                          ) && (
                           <p>
                             ✨ L5 Lining: <strong className="text-heritage-gold">Included (+€10.00)</strong>
                           </p>

@@ -12,6 +12,17 @@ export const DECORATIVE_FEATURE_OPTIONS: readonly DecorativeFeature[] = [
   "Monogram Trimming",
 ];
 
+export const DECORATIVE_FEATURE_DESCRIPTIONS: Readonly<
+  Record<DecorativeFeature, string>
+> = {
+  "Name Monogram":
+    "Add your name to your shirt on the left chest pocket area.",
+  Embroidery:
+    "Additional special patterns based on the selected clothing design.",
+  "Monogram Trimming":
+    "Additional special trim patterns based on the selected clothing design.",
+};
+
 export const TRADITIONAL_ACCESSORY_OPTIONS = [
   "Traditional Hat",
   "Traditional Bead",
@@ -20,6 +31,35 @@ export const TRADITIONAL_ACCESSORY_OPTIONS = [
 
 export type TraditionalAccessory =
   (typeof TRADITIONAL_ACCESSORY_OPTIONS)[number];
+
+export const TRADITIONAL_ACCESSORY_DESCRIPTIONS: Readonly<
+  Record<TraditionalAccessory, string>
+> = {
+  "Traditional Hat":
+    "Complete the look of a traditional Nigerian chief or nobleman.",
+  "Traditional Bead":
+    "Complete the look of a traditional Nigerian chief or nobleman.",
+  "Traditional Stick":
+    "Complete the look of a traditional Nigerian chief or nobleman.",
+};
+
+export const sortDecorativeFeatures = (
+  features: readonly DecorativeFeature[],
+): DecorativeFeature[] => {
+  const selected = new Set(features);
+  return DECORATIVE_FEATURE_OPTIONS.filter((feature) =>
+    selected.has(feature),
+  );
+};
+
+export const sortTraditionalAccessories = (
+  accessories: readonly string[],
+): TraditionalAccessory[] => {
+  const selected = new Set(accessories);
+  return TRADITIONAL_ACCESSORY_OPTIONS.filter((accessory) =>
+    selected.has(accessory),
+  );
+};
 
 const DEFAULT_DECORATIVE_PRICE = 12;
 const DEFAULT_ACCESSORY_PRICE = 12;
@@ -90,7 +130,7 @@ export const getIncludedDecorativeFeatures = (
     features.add("Monogram Trimming");
   }
 
-  return [...features];
+  return sortDecorativeFeatures([...features]);
 };
 
 export const hasMonogram = (style?: StyleCategory | null): boolean =>
@@ -158,7 +198,7 @@ export const calculateGarmentDetailsPrice = (
     ...includedFeatures,
     ...selectedFeatures,
   ]);
-  const decorativeFeatures = [...allFeatures].map((feature) => ({
+  const decorativeFeatures = sortDecorativeFeatures([...allFeatures]).map((feature) => ({
     label: feature,
     price: getOverridePrice(
       style,
@@ -168,15 +208,9 @@ export const calculateGarmentDetailsPrice = (
     ),
     includedByStyle: includedFeatures.has(feature),
   }));
-  const accessories = [
-    ...new Set(
-      (details.accessories || []).filter((accessory) =>
-        TRADITIONAL_ACCESSORY_OPTIONS.includes(
-          accessory as TraditionalAccessory,
-        ),
-      ),
-    ),
-  ].map((accessory) => ({
+  const accessories = sortTraditionalAccessories(
+    details.accessories || [],
+  ).map((accessory) => ({
     label: accessory,
     price: getOverridePrice(
       style,

@@ -1,12 +1,19 @@
 import type {
   BusinessSettings,
   CartItem,
+  CustomDetailGarmentContext,
   CustomDetailOption,
   DesignSelections,
   Fabric,
   StyleCategory,
 } from "../types";
-import { calculateCustomDetailsPriceBreakdown } from "./catalogHelpers";
+import {
+  calculateCustomDetailsPriceBreakdown,
+  filterDesignSelectionsForCustomDetails,
+  getSelectedCustomDetailOptionIds,
+  hasSelectedCustomDetailOption,
+} from "./catalogHelpers";
+import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig";
 import {
   calculateGarmentDetailsPrice,
 } from "./decorativePricing";
@@ -89,7 +96,7 @@ export const getConstructionSewingCost = (
     skirt_long: CONSTRUCTION_SEWING_COST_MAP.skirt.long,
   };
 
-  return Object.values(details.customDetails || {}).reduce(
+  return getSelectedCustomDetailOptionIds(details).reduce(
     (total, optionId) =>
       total + (optionId ? optionCosts[optionId] || 0 : 0),
     0,
@@ -125,6 +132,7 @@ export interface DesignPricingInput {
   design: DesignSelections;
   fabric: Fabric;
   style?: StyleCategory | null;
+  garment?: CustomDetailGarmentContext | null;
   catalog: CustomDetailOption[];
   businessSettings: BusinessSettings;
 }
@@ -134,28 +142,48 @@ export const calculateDesignPricing = ({
   design,
   fabric,
   style,
+  garment,
   catalog,
   businessSettings,
 }: DesignPricingInput): AuthoritativeDesignPricing | null => {
   const resolvedFabricPrice = resolveFabricPrice(fabric);
   if (resolvedFabricPrice === null) return null;
 
+  const applicableDesign = filterDesignSelectionsForCustomDetails(
+    style || null,
+    design,
+    catalog,
+    garment,
+  );
   const rawFabricSewingCost = getFabricSewingCost(fabric);
   const rawConstructionSewingCost = style
-    ? getConstructionSewingCost(design)
+    ? getConstructionSewingCost(applicableDesign)
     : 0;
-  const detailPricing = calculateGarmentDetailsPrice(design, style, catalog);
-  const catalogPricing = calculateCustomDetailsPriceBreakdown(design, catalog);
+  const detailPricing = calculateGarmentDetailsPrice(
+    applicableDesign,
+    style,
+    catalog,
+  );
+  const catalogPricing = calculateCustomDetailsPriceBreakdown(
+    applicableDesign,
+    catalog,
+  );
   const traditionalAccessoriesPrice = detailPricing.accessories.reduce(
     (total, accessory) => total + accessory.price,
     0,
   );
   let constructionUpgradesPrice = catalogPricing.constructionUpgradesPrice;
-  if (design.additionalCap) {
+  if (applicableDesign.additionalCap) {
     constructionUpgradesPrice +=
       businessSettings.pricingSettings.standardAccessoryCharge;
   }
-  if (design.hasLining) {
+  if (
+    applicableDesign.hasLining &&
+    !hasSelectedCustomDetailOption(
+      applicableDesign,
+      DRESS_LINING_OPTION_ID,
+    )
+  ) {
     constructionUpgradesPrice += 10;
   }
 
@@ -215,6 +243,7 @@ export const calculateAuthoritativeDesignPricing = (
     design: item.design,
     fabric,
     style,
+    garment: item.garment,
     catalog,
     businessSettings,
   });

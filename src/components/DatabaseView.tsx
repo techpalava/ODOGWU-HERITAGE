@@ -61,7 +61,10 @@ import {
   DiscountPlanningRule,
   OutfitType,
 } from "../types";
-import { CUSTOM_DETAIL_SELECTION_GROUPS } from "../config/GarmentDetailsConfig";
+import {
+  ALL_CUSTOM_DETAIL_SELECTION_GROUPS,
+  CUSTOM_DETAIL_SELECTION_GROUPS,
+} from "../config/GarmentDetailsConfig";
 import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 import { BusinessIntelligenceEngine } from "../engine/BusinessIntelligenceEngine";
 import { CapacityService } from "../services/CapacityService";
@@ -1570,7 +1573,7 @@ export default function DatabaseView({
                         onChange={(e) => setEditingCatalogOption({ ...editingCatalogOption, garmentGroup: e.target.value })}
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
-                        {['shirt', 'dress', 'neck', 'standard_shorts', 'bum_shorts', 'trousers', 'skirt'].map(g => (
+                        {['shirt', 'dress', 'neck', 'standard_shorts', 'bum_shorts', 'trousers', 'skirt', 'personalized'].map(g => (
                           <option key={g} value={g}>{g}</option>
                         ))}
                       </select>
@@ -1583,7 +1586,7 @@ export default function DatabaseView({
                         onChange={(e) => setEditingCatalogOption({ ...editingCatalogOption, selectionGroup: e.target.value })}
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
-                        {['shirt_construction', 'shirt_pockets', 'dress_construction', 'dress_pockets', 'neck_design', 'standard_shorts_fastening', 'standard_shorts_pockets', 'bum_shorts_fastening', 'bum_shorts_pockets', 'trouser_fastening', 'trouser_pockets', 'skirt_length', 'skirt_pockets'].map(g => (
+                        {ALL_CUSTOM_DETAIL_SELECTION_GROUPS.map(g => (
                           <option key={g} value={g}>{g}</option>
                         ))}
                       </select>

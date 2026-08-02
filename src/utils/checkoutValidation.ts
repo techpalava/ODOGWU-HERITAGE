@@ -9,7 +9,10 @@ import type {
 } from "../types";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { OrderRoutingEngine } from "../engine/OrderRoutingEngine";
-import { getMissingCustomDetailGroup } from "./catalogHelpers";
+import {
+  filterDesignSelectionsForCustomDetails,
+  getMissingCustomDetailGroup,
+} from "./catalogHelpers";
 import {
   calculateAuthoritativeDesignPricing,
   CHECKOUT_DESIGN_PRICING_VERSION,
@@ -184,10 +187,21 @@ export const revalidateCartForCheckout = (
       return { ...item, fabric };
     }
 
-    const missingCustomDetail = getMissingCustomDetailGroup(
+    const applicableDesign = filterDesignSelectionsForCustomDetails(
       style,
       item.design,
       context.customDetailCatalog,
+      item.garment,
+    );
+    const pricingItem =
+      applicableDesign === item.design
+        ? item
+        : { ...item, design: applicableDesign };
+    const missingCustomDetail = getMissingCustomDetailGroup(
+      style,
+      applicableDesign,
+      context.customDetailCatalog,
+      item.garment,
     );
     if (missingCustomDetail) {
       blockers.push(
@@ -238,7 +252,7 @@ export const revalidateCartForCheckout = (
     }
 
     const authoritativePricing = calculateAuthoritativeDesignPricing(
-      item,
+      pricingItem,
       fabric,
       style,
       context.customDetailCatalog,
@@ -251,7 +265,7 @@ export const revalidateCartForCheckout = (
 
     const previousGarmentSubtotal = getCartItemGarmentSubtotal(item);
     const sourceFingerprint = getStableSourceFingerprint(
-      item,
+      pricingItem,
       fabric,
       style,
       context.customDetailCatalog,
@@ -304,7 +318,7 @@ export const revalidateCartForCheckout = (
               : undefined,
         };
     const updatedItem: CartItem = {
-      ...item,
+      ...pricingItem,
       fabric,
       style,
       garment: {

@@ -9,7 +9,19 @@ export type Demographic = CustomDetailDemographic;
 export type GarmentGroup = CustomDetailGarmentGroup;
 export type SelectionGroup = CustomDetailSelectionGroup;
 
-export const CUSTOM_DETAIL_SELECTION_GROUPS: CustomDetailSelectionGroup[] = [
+export type StandardCustomDetailSelectionGroup = Exclude<
+  CustomDetailSelectionGroup,
+  | "shirt_additional"
+  | "dress_additional"
+  | "neck_additional"
+  | "trouser_additional"
+  | "standard_shorts_additional"
+  | "bum_shorts_additional"
+  | "skirt_additional"
+  | "personalized_additional"
+>;
+
+export const CUSTOM_DETAIL_SELECTION_GROUPS: StandardCustomDetailSelectionGroup[] = [
   "shirt_construction",
   "shirt_pockets",
   "dress_construction",
@@ -24,6 +36,187 @@ export const CUSTOM_DETAIL_SELECTION_GROUPS: CustomDetailSelectionGroup[] = [
   "skirt_length",
   "skirt_pockets",
 ];
+
+export const CUSTOM_DETAIL_SELECTION_GROUP_ORDER: Readonly<
+  Record<StandardCustomDetailSelectionGroup, number>
+> = {
+  shirt_construction: 10,
+  shirt_pockets: 20,
+  dress_construction: 30,
+  dress_pockets: 40,
+  neck_design: 50,
+  standard_shorts_fastening: 60,
+  standard_shorts_pockets: 70,
+  bum_shorts_fastening: 80,
+  bum_shorts_pockets: 90,
+  trouser_fastening: 100,
+  trouser_pockets: 110,
+  skirt_length: 120,
+  skirt_pockets: 130,
+};
+
+export const CUSTOM_DETAIL_OPTION_ORDER: Readonly<Record<string, number>> = {
+  shirt_std_short: 10,
+  shirt_std_midlong: 20,
+  shirt_long_short: 30,
+  shirt_long_midlong: 40,
+  shirt_pocket_1: 10,
+  shirt_pocket_2: 20,
+  shirt_pocket_0: 30,
+  dress_std_sleeveless: 10,
+  dress_std_short: 20,
+  dress_std_midlong: 30,
+  dress_long_sleeveless: 40,
+  dress_long_short: 50,
+  dress_long_midlong: 60,
+  dress_pocket_1: 10,
+  dress_pocket_multi: 20,
+  dress_pocket_0: 30,
+  neck_no_round: 10,
+  neck_no_v: 20,
+  neck_no_u: 30,
+  neck_vert_round: 40,
+  neck_vert_v: 50,
+  neck_vert_u: 60,
+  neck_flat_round: 70,
+  neck_flat_v: 80,
+  neck_flat_u: 90,
+  shorts_std_rope: 10,
+  shorts_std_elastic: 20,
+  shorts_std_belt: 30,
+  shorts_std_pocket_regular: 10,
+  shorts_std_pocket_back: 20,
+  shorts_std_pocket_none: 30,
+  bum_rope: 10,
+  bum_elastic: 20,
+  bum_belt: 30,
+  bum_pocket_regular: 10,
+  bum_pocket_back: 20,
+  bum_pocket_none: 30,
+  trouser_rope: 10,
+  trouser_elastic: 20,
+  trouser_belt: 30,
+  trouser_pocket_regular: 10,
+  trouser_pocket_back: 20,
+  trouser_pocket_none: 30,
+  skirt_std: 10,
+  skirt_long: 20,
+  skirt_pocket_1: 10,
+  skirt_pocket_2: 20,
+  skirt_pocket_none: 30,
+};
+
+export const CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION: Readonly<
+  Record<
+    StandardCustomDetailSelectionGroup,
+    { title: string; description?: string }
+  >
+> = {
+  shirt_construction: { title: "Shirt Length and Sleeve Length" },
+  shirt_pockets: { title: "Shirt Pockets" },
+  dress_construction: {
+    title: "Dress Length and Sleeve Length (Ladies)",
+  },
+  dress_pockets: { title: "Dress Pockets" },
+  neck_design: { title: "Neck Design" },
+  standard_shorts_fastening: {
+    title: "Standard Leg Shorts (Nikka) - Fastening",
+    description: "Just above the knee",
+  },
+  standard_shorts_pockets: {
+    title: "Standard Leg Shorts (Nikka) - Pockets",
+    description: "Just above the knee",
+  },
+  bum_shorts_fastening: {
+    title: "Bum (Leg) Shorts - Fastening",
+    description: "Just below the crotch at lap level",
+  },
+  bum_shorts_pockets: {
+    title: "Bum (Leg) Shorts - Pockets",
+    description: "Just below the crotch at lap level",
+  },
+  trouser_fastening: {
+    title: "Leg Pants (Trouser) - Fastening",
+    description: "Up to the ankle",
+  },
+  trouser_pockets: {
+    title: "Leg Pants (Trouser) - Pockets",
+    description: "Up to the ankle",
+  },
+  skirt_length: {
+    title: "Skirts (Ladies) - Length",
+  },
+  skirt_pockets: {
+    title: "Skirts (Ladies) - Pockets",
+  },
+};
+
+export const ADDITIONAL_CLOTHES_COST_SECTION_ORDER = [
+  "shirt_additional",
+  "dress_additional",
+  "neck_additional",
+  "trouser_additional",
+  "standard_shorts_additional",
+  "bum_shorts_additional",
+  "skirt_additional",
+  "personalized_additional",
+] as const;
+
+export type AdditionalClothesCostSection =
+  (typeof ADDITIONAL_CLOTHES_COST_SECTION_ORDER)[number];
+
+export const ALL_CUSTOM_DETAIL_SELECTION_GROUPS: readonly CustomDetailSelectionGroup[] = [
+  ...CUSTOM_DETAIL_SELECTION_GROUPS,
+  ...ADDITIONAL_CLOTHES_COST_SECTION_ORDER,
+];
+
+export const ADDITIONAL_CLOTHES_COST_SECTION_RANK: Readonly<
+  Record<AdditionalClothesCostSection, number>
+> = Object.fromEntries(
+  ADDITIONAL_CLOTHES_COST_SECTION_ORDER.map((section, index) => [
+    section,
+    (index + 1) * 10,
+  ]),
+) as Record<AdditionalClothesCostSection, number>;
+
+export const ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION: Readonly<
+  Record<
+    AdditionalClothesCostSection,
+    { title: string; description?: string }
+  >
+> = {
+  shirt_additional: { title: "Shirts - Additional" },
+  dress_additional: { title: "Dress (Ladies) - Additional" },
+  neck_additional: { title: "Neck Design - Additional" },
+  trouser_additional: { title: "Leg Pants (Trouser) - Additional" },
+  standard_shorts_additional: {
+    title: "Standard Leg Shorts (Nikka) - Additional",
+  },
+  bum_shorts_additional: { title: "Bum (Leg) Shorts - Additional" },
+  skirt_additional: { title: "Skirts (Ladies) - Additional" },
+  personalized_additional: {
+    title: "Miscellaneous - Personalized Additional",
+  },
+};
+
+export const ADDITIONAL_CLOTHES_COST_OPTION_ORDER: Readonly<
+  Record<string, number>
+> = {
+  shirt_additional_no_cost: 10,
+  L5: 10,
+  dress_additional_net: 20,
+  dress_additional_head_wrap: 30,
+  dress_additional_shoulder_waist_wrap: 40,
+  neck_additional_no_cost: 10,
+  trouser_additional_no_cost: 10,
+  standard_shorts_additional_combat_pockets: 10,
+  bum_shorts_additional_no_cost: 10,
+  skirt_additional_lining: 10,
+  skirt_additional_net: 20,
+  personalized_additional_evaluation: 10,
+};
+
+export const DRESS_LINING_OPTION_ID = "L5";
 
 export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
 
@@ -763,6 +956,199 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
     allowMultiple: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
+  },
+
+  // ADDITIONAL CLOTHES COSTS
+  {
+    id: "shirt_additional_no_cost",
+    label: "No Additional Cost Listed",
+    description: "When additional costs are required, they will be listed.",
+    priceCents: 0,
+    garmentGroup: "shirt",
+    eligibleDemographics: ["male", "unisex"],
+    selectionGroup: "shirt_additional",
+    displayOrder: 0,
+    required: false,
+    active: true,
+    allowMultiple: false,
+    informational: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: DRESS_LINING_OPTION_ID,
+    label: "Lining in Dress - to keep dress firm (in shape)",
+    description:
+      "Lining is to prevent sheerness, provide a smooth barrier against the skin, and help the outer garment drape elegantly without clinging.",
+    priceCents: 1000,
+    garmentGroup: "dress",
+    eligibleDemographics: ["female", "unisex"],
+    selectionGroup: "dress_additional",
+    displayOrder: 0,
+    required: false,
+    active: true,
+    allowMultiple: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "dress_additional_net",
+    label: "Net - to keep dress firm (in shape)",
+    description:
+      "Netting (or tulle) is used to create dramatic volume, lift, and structure, transforming flat dresses into bouncy, fairytale silhouettes.",
+    priceCents: 1000,
+    garmentGroup: "dress",
+    eligibleDemographics: ["female", "unisex"],
+    selectionGroup: "dress_additional",
+    displayOrder: 0,
+    required: false,
+    active: true,
+    allowMultiple: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "dress_additional_head_wrap",
+    label: "Head Wrap / Gear / Scarf",
+    description: "Head-tie (traditional look).",
+    priceCents: 1000,
+    garmentGroup: "dress",
+    eligibleDemographics: ["female", "unisex"],
+    selectionGroup: "dress_additional",
+    displayOrder: 0,
+    required: false,
+    active: true,
+    allowMultiple: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "dress_additional_shoulder_waist_wrap",
+    label: "Shoulder or Waist Wrap / Scarf",
+    description:
+      "Over the shoulder, around both shoulders, or around the waist.",
+    priceCents: 1500,
+    garmentGroup: "dress",
+    eligibleDemographics: ["female", "unisex"],
+    selectionGroup: "dress_additional",
+    displayOrder: 0,
+    required: false,
+    active: true,
+    allowMultiple: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "neck_additional_no_cost",
+    label: "No Additional Cost Listed",
+    description: "When additional costs are required, they will be listed.",
+    priceCents: 0,
+    garmentGroup: "neck",
+    eligibleDemographics: ["male", "female", "unisex"],
+    selectionGroup: "neck_additional",
+    displayOrder: 0,
+    required: false,
+    active: true,
+    allowMultiple: false,
+    informational: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "trouser_additional_no_cost",
+    label: "No Additional Cost Listed",
+    description: "When additional costs are required, they will be listed.",
+    priceCents: 0,
+    garmentGroup: "trousers",
+    eligibleDemographics: ["male", "unisex"],
+    selectionGroup: "trouser_additional",
+    displayOrder: 0,
+    required: false,
+    active: true,
+    allowMultiple: false,
+    informational: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "standard_shorts_additional_combat_pockets",
+    label: "Combat (Extra side hip-pockets)",
+    description: "Additional combat-style pockets at the sides of the hips.",
+    priceCents: 500,
+    garmentGroup: "standard_shorts",
+    eligibleDemographics: ["male", "unisex"],
+    selectionGroup: "standard_shorts_additional",
+    displayOrder: 0,
+    required: false,
+    active: true,
+    allowMultiple: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "bum_shorts_additional_no_cost",
+    label: "No Additional Cost Listed",
+    description: "When additional costs are required, they will be listed.",
+    priceCents: 0,
+    garmentGroup: "bum_shorts",
+    eligibleDemographics: ["male", "female", "unisex"],
+    selectionGroup: "bum_shorts_additional",
+    displayOrder: 0,
+    required: false,
+    active: true,
+    allowMultiple: false,
+    informational: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "skirt_additional_lining",
+    label: "Lining in Skirt - to keep skirt firm (in shape)",
+    description:
+      "Lining is to prevent sheerness, provide a smooth barrier against the skin, and help the outer garment drape elegantly without clinging.",
+    priceCents: 1000,
+    garmentGroup: "skirt",
+    eligibleDemographics: ["female", "unisex"],
+    selectionGroup: "skirt_additional",
+    displayOrder: 0,
+    required: false,
+    active: true,
+    allowMultiple: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "skirt_additional_net",
+    label: "Net - to keep skirt firm (in shape)",
+    description:
+      "Netting (or tulle) is used to create dramatic volume, lift, and structure, transforming flat dresses into bouncy, fairytale silhouettes.",
+    priceCents: 1000,
+    garmentGroup: "skirt",
+    eligibleDemographics: ["female", "unisex"],
+    selectionGroup: "skirt_additional",
+    displayOrder: 0,
+    required: false,
+    active: true,
+    allowMultiple: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "personalized_additional_evaluation",
+    label: "Personalized Additional Requirement",
+    description:
+      "Additional cost will depend on evaluation of personalized needs.",
+    priceCents: 0,
+    garmentGroup: "personalized",
+    eligibleDemographics: ["male", "female", "unisex"],
+    selectionGroup: "personalized_additional",
+    displayOrder: 0,
+    required: false,
+    active: true,
+    allowMultiple: true,
+    requiresEvaluation: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   },
 
 ];

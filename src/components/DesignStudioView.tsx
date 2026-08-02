@@ -1,8 +1,12 @@
 import {
+  filterDesignSelectionsForCustomDetails,
+  getCustomDetailSelectionOptionIds,
   getCustomDetailSnapshots,
   getCustomDetailsBreakdown,
   getMissingCustomDetailGroup,
   groupApplicableCustomDetails,
+  hasSelectedCustomDetailOption,
+  isAdditionalClothesCostSection,
   isClothingPriceSelectionGroup,
   isLiningEligibleForStyle,
   normalizeCustomDetailCatalog,
@@ -78,12 +82,21 @@ import {
 } from "../utils/money";
 import {
   DECORATIVE_FEATURE_OPTIONS,
+  DECORATIVE_FEATURE_DESCRIPTIONS,
   getIncludedDecorativeFeatures,
   hasEmbroidery,
   hasMonogram,
   hasMonogramTrimming,
+  sortDecorativeFeatures,
+  sortTraditionalAccessories,
+  TRADITIONAL_ACCESSORY_DESCRIPTIONS,
   TRADITIONAL_ACCESSORY_OPTIONS,
 } from "../utils/decorativePricing";
+import {
+  ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION,
+  CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION,
+  DRESS_LINING_OPTION_ID,
+} from "../config/GarmentDetailsConfig";
 import {
   calculateDesignPricing,
   isBatchPricingRoute,
@@ -492,6 +505,8 @@ export const getGarmentDetailsBreakdown = (
   price: number;
   originalId?: string;
   selectionGroup: CustomDetailSelectionGroup;
+  informational: boolean;
+  requiresEvaluation: boolean;
 }[] => getCustomDetailsBreakdown(details, catalog);
 
 
@@ -510,6 +525,13 @@ const GarmentDetailSelector = ({
   const applicableGroups = groupApplicableCustomDetails(
     selectedStyle,
     effectiveCatalog,
+    selectedGarment,
+  );
+  const standardGroups = applicableGroups.filter(
+    (group) => !isAdditionalClothesCostSection(group.id),
+  );
+  const additionalGroups = applicableGroups.filter((group) =>
+    isAdditionalClothesCostSection(group.id),
   );
   const includedDecorativeFeatures = getIncludedDecorativeFeatures(
     selectedStyle,
@@ -520,15 +542,42 @@ const GarmentDetailSelector = ({
 
   const handleSelect = (
     groupId: CustomDetailSelectionGroup,
-    optionId: string,
+    option: CustomDetailOption,
+    checked: boolean,
   ) => {
-    setDesignSelections((prev: any) => ({
-      ...prev,
-      customDetails: {
-        ...(prev.customDetails || {}),
-        [groupId]: optionId
+    if (option.informational) return;
+    if (option.id === DRESS_LINING_OPTION_ID) {
+      setHasLining(false);
+    }
+
+    setDesignSelections((previous: DesignSelections) => {
+      const nextCustomDetails = {
+        ...(previous.customDetails || {}),
+      };
+
+      if (!option.allowMultiple) {
+        nextCustomDetails[groupId] = option.id;
+      } else {
+        const selectedIds = new Set(
+          getCustomDetailSelectionOptionIds(nextCustomDetails[groupId]),
+        );
+        if (checked) selectedIds.add(option.id);
+        else selectedIds.delete(option.id);
+
+        const groupOptions =
+          applicableGroups.find((group) => group.id === groupId)?.options || [];
+        const orderedIds = groupOptions
+          .map((candidate) => candidate.id)
+          .filter((optionId) => selectedIds.has(optionId));
+        if (orderedIds.length > 0) nextCustomDetails[groupId] = orderedIds;
+        else delete nextCustomDetails[groupId];
       }
-    }));
+
+      return {
+        ...previous,
+        customDetails: nextCustomDetails,
+      };
+    });
   };
 
   const handleDecorativeFeatureToggle = (
@@ -544,7 +593,7 @@ const GarmentDetailSelector = ({
 
       return {
         ...prev,
-        decorativeFeatures: [...nextFeatures],
+        decorativeFeatures: sortDecorativeFeatures([...nextFeatures]),
       };
     });
   };
@@ -560,7 +609,7 @@ const GarmentDetailSelector = ({
 
       return {
         ...prev,
-        accessories: [...nextAccessories],
+        accessories: sortTraditionalAccessories([...nextAccessories]),
       };
     });
   };
@@ -572,73 +621,118 @@ const GarmentDetailSelector = ({
     demo === "family" ||
     demo === "couple";
 
-  const groupTitles: Record<CustomDetailSelectionGroup, string> = {
-    shirt_construction: "Shirt Length & Sleeve",
-    shirt_pockets: "Shirt Pockets",
-    dress_construction: "Dress Length & Sleeve",
-    dress_pockets: "Dress Pockets",
-    neck_design: "Neck Design",
-    standard_shorts_fastening: "Standard Leg Shorts (Nikka)",
-    standard_shorts_pockets: "Standard Shorts Pockets",
-    bum_shorts_fastening: "Bum / Leg Shorts",
-    bum_shorts_pockets: "Bum Shorts Pockets",
-    trouser_fastening: "Trousers / Leg Pants",
-    trouser_pockets: "Trouser Pockets",
-    skirt_length: "Skirt Length",
-    skirt_pockets: "Skirt Pockets",
-  };
-
   const renderGroup = (
     groupId: CustomDetailSelectionGroup,
-    options: any[],
+    options: CustomDetailOption[],
   ) => {
+    const presentation = isAdditionalClothesCostSection(groupId)
+      ? ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION[groupId]
+      : CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION[groupId];
     return (
       <div className="space-y-2 mb-4 col-span-1" key={groupId}>
         <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
-          {groupTitles[groupId]}
+          {presentation.title}
         </label>
+        {presentation.description && (
+          <p className="text-[10px] leading-tight text-heritage-ink/60">
+            {presentation.description}
+          </p>
+        )}
         <div className="space-y-2">
-          {options.map(opt => (
-            <label key={opt.id} className={`flex items-start gap-3 cursor-pointer p-3 border ${customDetails[groupId] === opt.id ? 'border-heritage-gold bg-heritage-cream/20' : 'border-gray-150 bg-white'} rounded-xl hover:border-heritage-gold/50 transition`}>
-              <input 
-                type="radio" 
-                name={groupId} 
-                checked={customDetails[groupId] === opt.id} 
-                onChange={() => handleSelect(groupId, opt.id)}
-                className="mt-1 h-4 w-4 text-heritage-green focus:ring-heritage-gold border-gray-300"
-              />
-              <div className="flex-1">
-                <div className="flex justify-between items-start">
-                  <span className="font-bold text-heritage-green text-xs block">{opt.label}</span>
-                  {opt.priceCents > 0 && <span className="text-heritage-gold font-bold text-xs">+{currencySymbol}{(opt.priceCents/100).toFixed(2)}</span>}
+          {options.map((opt) => {
+            const isSelected =
+              getCustomDetailSelectionOptionIds(customDetails[groupId]).includes(
+                opt.id,
+              ) ||
+              (opt.id === DRESS_LINING_OPTION_ID && hasLining);
+            const priceLabel = opt.requiresEvaluation
+              ? "Requires evaluation"
+              : opt.priceCents > 0
+                ? `+${currencySymbol}${(opt.priceCents / 100).toFixed(2)}`
+                : opt.informational
+                  ? "No additional charge"
+                  : "Included";
+
+            if (opt.informational) {
+              return (
+                <div
+                  key={opt.id}
+                  className="flex items-start gap-3 rounded-xl border border-gray-150 bg-heritage-cream/20 p-3"
+                >
+                  <Info
+                    aria-hidden="true"
+                    className="mt-0.5 shrink-0 text-heritage-gold"
+                    size={16}
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="block text-xs font-bold text-heritage-green">
+                        {opt.label}
+                      </span>
+                      <span className="shrink-0 text-[10px] font-semibold text-heritage-green/70">
+                        {priceLabel}
+                      </span>
+                    </div>
+                    <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                      {opt.description}
+                    </span>
+                  </div>
                 </div>
-                <span className="text-[10px] text-heritage-ink/60 block leading-tight mt-1">{opt.description}</span>
+              );
+            }
+
+            return (
+              <label
+                key={opt.id}
+                className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition hover:border-heritage-gold/50 ${
+                  isSelected
+                    ? "border-heritage-gold bg-heritage-cream/20"
+                    : "border-gray-150 bg-white"
+                }`}
+              >
+                <input
+                  type={opt.allowMultiple ? "checkbox" : "radio"}
+                  name={groupId}
+                  checked={isSelected}
+                  onChange={(event) =>
+                    handleSelect(groupId, opt, event.target.checked)
+                  }
+                  className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-gold"
+                />
+              <div className="flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="block text-xs font-bold text-heritage-green">
+                    {opt.label}
+                  </span>
+                  <span className="shrink-0 text-xs font-bold text-heritage-gold">
+                    {priceLabel}
+                  </span>
+                </div>
+                <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                  {opt.description}
+                </span>
               </div>
-            </label>
-          ))}
+              </label>
+            );
+          })}
         </div>
       </div>
     );
   };
 
-  const showLining = isLiningEligibleForStyle(
-    selectedStyle,
-    selectedGarment?.code,
-  );
-
   return (
     <>
-      {explicitBoth && applicableGroups.length > 0 && (
+      {explicitBoth && standardGroups.length > 0 && (
         <div className="col-span-1 md:col-span-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 px-4 py-3 text-[11px] text-heritage-ink/70">
           This design includes male and female garments. Complete every
           applicable garment section below.
         </div>
       )}
-      {applicableGroups.map((group) =>
+      {standardGroups.map((group) =>
         renderGroup(group.id, group.options),
       )}
 
-      {applicableGroups.length === 0 && !showLining && (
+      {standardGroups.length === 0 && (
         <div className="col-span-1 md:col-span-2 rounded-xl border border-heritage-gold/25 bg-heritage-cream/20 px-4 py-4">
           <p className="text-xs font-bold text-heritage-green">
             No construction choices are required for this design.
@@ -650,10 +744,24 @@ const GarmentDetailSelector = ({
         </div>
       )}
 
+      {additionalGroups.length > 0 && (
+        <fieldset className="col-span-1 space-y-3 md:col-span-2">
+          <legend className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+            Additional Clothes Costs
+          </legend>
+          <div className="grid grid-cols-1 gap-x-4 md:grid-cols-2">
+            {additionalGroups.map((group) =>
+              renderGroup(group.id, group.options),
+            )}
+          </div>
+        </fieldset>
+      )}
+
       <fieldset className="col-span-1 space-y-2 md:col-span-2">
         <legend className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
-          Monogram, Embroidery & Trim
+          Monogram and Embroidery Design
         </legend>
+        <p className="text-[10px] text-heritage-ink/60">Optional</p>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
           {DECORATIVE_FEATURE_OPTIONS.map((feature) => {
             const includedByStyle =
@@ -695,7 +803,7 @@ const GarmentDetailSelector = ({
                   <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
                     {includedByStyle
                       ? "Required by the selected design and added automatically."
-                      : "Optional decorative finish."}
+                      : DECORATIVE_FEATURE_DESCRIPTIONS[feature]}
                   </span>
                 </span>
               </label>
@@ -706,8 +814,9 @@ const GarmentDetailSelector = ({
 
       <fieldset className="col-span-1 space-y-2 md:col-span-2">
         <legend className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
-          Traditional Accessories
+          Select Accessories (Optional)
         </legend>
+        <p className="text-[10px] text-heritage-ink/60">Optional</p>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
           {TRADITIONAL_ACCESSORY_OPTIONS.map((accessory) => {
             const checked = selectedAccessories.includes(accessory);
@@ -729,12 +838,17 @@ const GarmentDetailSelector = ({
                   }
                   className="mt-1 h-4 w-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-gold"
                 />
-                <span className="flex min-w-0 flex-1 items-start justify-between gap-2">
-                  <span className="text-xs font-bold text-heritage-green">
-                    {accessory}
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-start justify-between gap-2">
+                    <span className="text-xs font-bold text-heritage-green">
+                      {accessory}
+                    </span>
+                    <span className="shrink-0 text-xs font-bold text-heritage-gold">
+                      +{currencySymbol}12.00
+                    </span>
                   </span>
-                  <span className="shrink-0 text-xs font-bold text-heritage-gold">
-                    +{currencySymbol}12.00
+                  <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                    {TRADITIONAL_ACCESSORY_DESCRIPTIONS[accessory]}
                   </span>
                 </span>
               </label>
@@ -743,29 +857,6 @@ const GarmentDetailSelector = ({
         </div>
       </fieldset>
 
-      {showLining && (
-        <div className="space-y-2 mb-4 col-span-1 md:col-span-2">
-          <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
-            Dress Reinforcement
-          </label>
-          <label className="flex items-center gap-3 cursor-pointer p-3 border border-gray-150 rounded-xl bg-heritage-cream/20 hover:border-heritage-gold/30 transition w-full md:w-1/2">
-            <input
-              type="checkbox"
-              checked={hasLining}
-              onChange={(e) => setHasLining(e.target.checked)}
-              className="h-4 w-4 text-heritage-green focus:ring-heritage-gold rounded border-gray-300 cursor-pointer"
-            />
-            <div>
-              <span className="font-bold text-heritage-green text-xs block">
-                Add Inner Net / Lining (L5)
-              </span>
-              <span className="text-[10px] text-heritage-ink/50 block leading-tight">
-                Provides structure & opacity (+{currencySymbol}10.00)
-              </span>
-            </div>
-          </label>
-        </div>
-      )}
     </>
   );
 };
@@ -794,7 +885,13 @@ const GarmentDetailSummaryItems = ({
         !isClothingPriceSelectionGroup(item.selectionGroup),
     )
     .map(item => {
-      const display = item.price === 0 ? 'Included' : `+${currencySymbol}${item.price.toFixed(2)}`;
+      const display = item.requiresEvaluation
+        ? "Requires evaluation"
+        : item.price === 0
+          ? item.informational
+            ? "No additional charge"
+            : "Included"
+          : `+${currencySymbol}${item.price.toFixed(2)}`;
       return { ...item, display };
     });
   const pricedItems = [
@@ -1154,6 +1251,10 @@ export default function DesignStudioView({
     selectedStyle,
     selectedGarment?.code,
   );
+  const hasCatalogDressLining = hasSelectedCustomDetailOption(
+    designSelections,
+    DRESS_LINING_OPTION_ID,
+  );
 
   useEffect(() => {
     if (!liningEligible && hasLining) {
@@ -1166,14 +1267,52 @@ export default function DesignStudioView({
       const defaultGarment = garmentTypesForStyle(selectedStyle)[0];
       if (defaultGarment) {
         setSelectedGarment(defaultGarment);
-        if (defaultGarment.code === "EXACT" && selectedStyle.defaultGarmentDetails) {
-          setDesignSelections(selectedStyle.defaultGarmentDetails);
-        }
+        setDesignSelections((previous) => {
+          const defaults =
+            defaultGarment.code === "EXACT"
+              ? selectedStyle.defaultGarmentDetails
+              : undefined;
+          const mergedSelections = defaults
+            ? {
+                ...defaults,
+                ...previous,
+                customDetails: {
+                  ...(defaults.customDetails || {}),
+                  ...(previous.customDetails || {}),
+                },
+              }
+            : previous;
+
+          return filterDesignSelectionsForCustomDetails(
+            selectedStyle,
+            mergedSelections,
+            customDetailCatalog,
+            defaultGarment,
+          );
+        });
       }
     } else {
       setSelectedGarment(null);
     }
   }, [selectedStyle]);
+
+  useEffect(() => {
+    if (!selectedStyle) return;
+
+    setDesignSelections((previous) =>
+      filterDesignSelectionsForCustomDetails(
+        selectedStyle,
+        previous,
+        customDetailCatalog,
+        selectedGarment,
+      ),
+    );
+  }, [
+    selectedStyle,
+    selectedGarment?.code,
+    selectedGarment?.type,
+    customDetailCatalog,
+  ]);
 
   // STEP 5 & 6: Sizing Inputs and Estimation state
   const [sizingMode, setSizingMode] = useState<"ai" | "manual">("ai");
@@ -1451,17 +1590,20 @@ export default function DesignStudioView({
   // Helper to sync garment types when style changes
   const handleStyleChange = (style: StyleCategory) => {
     setSelectedStyle(style);
-    setDesignSelections({ customDetails: {} });
     const availableTypes = garmentTypesForStyle(style);
     const defaultGarment = availableTypes[0] || {
       type: "Standard Garment",
       fee: 0,
     };
     setSelectedGarment(defaultGarment);
-    
-    if (defaultGarment.code === "EXACT" && style.defaultGarmentDetails) {
-      setDesignSelections(style.defaultGarmentDetails);
-    }
+    setDesignSelections((previous) =>
+      filterDesignSelectionsForCustomDetails(
+        style,
+        previous,
+        customDetailCatalog,
+        defaultGarment,
+      ),
+    );
   };
 
   // Official Pricing List Helpers
@@ -1505,6 +1647,7 @@ export default function DesignStudioView({
           },
           fabric: selectedFabric,
           style: selectedStyle,
+          garment: selectedGarment,
           catalog: customDetailCatalog,
           businessSettings,
         })
@@ -1697,7 +1840,14 @@ export default function DesignStudioView({
 
     const restoreSelections = window.setTimeout(() => {
       setSelectedGarment(draft.selectedGarment);
-      setDesignSelections(draft.designSelections);
+      setDesignSelections(
+        filterDesignSelectionsForCustomDetails(
+          draftStyle,
+          draft.designSelections,
+          customDetailCatalog,
+          draft.selectedGarment,
+        ),
+      );
       setGuestDraftHydrated(true);
     }, 0);
     return () => window.clearTimeout(restoreSelections);
@@ -1841,6 +1991,7 @@ export default function DesignStudioView({
         selectedStyle,
         designSelections,
         customDetailCatalog,
+        selectedGarment,
       );
 
       if (missingGroup) {
@@ -2080,6 +2231,13 @@ export default function DesignStudioView({
           ? pricing.finalMileShipping.priceEur ?? 0
           : 0),
     );
+    const applicableDesignSelections =
+      filterDesignSelectionsForCustomDetails(
+        selectedStyle,
+        designSelections,
+        customDetailCatalog,
+        selectedGarment,
+      );
 
     const cartItemData = {
       customer: {
@@ -2091,12 +2249,12 @@ export default function DesignStudioView({
       style: selectedStyle,
       fabric: selectedFabric,
       design: {
-        ...designSelections,
+        ...applicableDesignSelections,
         decorativeFeatures: pricing.decorativeFeatures.map(
           (feature) => feature.label as DecorativeFeature,
         ),
         customDetailSnapshots: getCustomDetailSnapshots(
-          designSelections,
+          applicableDesignSelections,
           customDetailCatalog,
         ),
         hasLining: liningEligible ? hasLining : false,
@@ -4591,7 +4749,7 @@ export default function DesignStudioView({
                         Construction Sewing Cost: <strong>+{currencySymbol}{pricing.constructionSewingCost.toFixed(2)}</strong>
                       </li>
                     )}
-                    {liningEligible && hasLining && (
+                    {liningEligible && hasLining && !hasCatalogDressLining && (
                       <li>
                         Included Extra: <strong>Inner Lining/Net (L5)</strong> <span className="text-heritage-gold ml-1">(+{currencySymbol}10.00)</span>
                       </li>
@@ -4834,7 +4992,13 @@ export default function DesignStudioView({
                 <div key={idx} className="flex justify-between items-center text-heritage-ink/70">
                   <span>{item.label}{item.value ? ': ' + item.value : ''}</span>
                   <span className="font-semibold text-heritage-green">
-                    {item.price === 0 ? 'Included' : `+${currencySymbol}${item.price.toFixed(2)}`}
+                    {item.requiresEvaluation
+                      ? "Requires evaluation"
+                      : item.price === 0
+                        ? item.informational
+                          ? "No additional charge"
+                          : "Included"
+                        : `+${currencySymbol}${item.price.toFixed(2)}`}
                   </span>
                 </div>
               ))}
@@ -4871,7 +5035,10 @@ export default function DesignStudioView({
                   </span>
                 </div>
               )}
-              {selectedFabric && liningEligible && hasLining && (
+              {selectedFabric &&
+                liningEligible &&
+                hasLining &&
+                !hasCatalogDressLining && (
                 <div className="flex justify-between items-center text-heritage-ink/70">
                   <span>Inner Lining/Net (L5):</span>
                   <span className="font-semibold text-heritage-green">
@@ -5095,7 +5262,7 @@ export default function DesignStudioView({
                   <strong className="text-heritage-green">+{currencySymbol}{pricing.constructionSewingCost.toFixed(2)}</strong>
                 </p>
               )}
-              {liningEligible && hasLining && (
+              {liningEligible && hasLining && !hasCatalogDressLining && (
                 <p>
                   Lining/Inner Net:{" "}
                   <strong className="text-heritage-gold">Included (L5) (+{currencySymbol}10.00)</strong>
