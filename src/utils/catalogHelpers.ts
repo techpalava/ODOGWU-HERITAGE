@@ -1,4 +1,5 @@
 import {
+  CustomDetailGarmentContext,
   CustomDetailGarmentGroup,
   CustomDetailOption,
   CustomDetailSelectionGroup,
@@ -6,7 +7,13 @@ import {
   DesignSelections,
   StyleCategory,
 } from "../types";
-import { SEED_CUSTOM_DETAIL_CATALOG } from "../config/GarmentDetailsConfig";
+import {
+  ADDITIONAL_CLOTHES_COST_SECTION_RANK,
+  CUSTOM_DETAIL_OPTION_ORDER,
+  CUSTOM_DETAIL_SELECTION_GROUP_ORDER,
+  SEED_CUSTOM_DETAIL_CATALOG,
+  type AdditionalClothesCostSection,
+} from "../config/GarmentDetailsConfig";
 
 const VALID_GARMENT_GROUPS = new Set<CustomDetailGarmentGroup>([
   "shirt",
@@ -49,6 +56,68 @@ const CLOTHING_PRICE_SELECTION_GROUP_SET =
 export const isClothingPriceSelectionGroup = (
   group: CustomDetailSelectionGroup,
 ): boolean => CLOTHING_PRICE_SELECTION_GROUP_SET.has(group);
+
+const UNKNOWN_OPTION_ORDER_BASE = 10_000;
+
+const getStableContentHash = (value: string): number => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
+
+const getOptionBusinessOrder = (
+  optionId: string,
+  displayOrder = 0,
+): number =>
+  CUSTOM_DETAIL_OPTION_ORDER[optionId] ??
+  UNKNOWN_OPTION_ORDER_BASE +
+    (Number.isFinite(displayOrder) ? Math.max(0, displayOrder) : 0);
+
+const getOptionContentOrder = (
+  option: Pick<
+    CustomDetailOption,
+    "label" | "description" | "priceCents" | "eligibleDemographics"
+  >,
+): number =>
+  getStableContentHash(
+    JSON.stringify([
+      option.label,
+      option.description,
+      option.priceCents,
+      [...option.eligibleDemographics].sort(),
+    ]),
+  );
+
+export const sortCustomDetailOptions = (
+  options: readonly CustomDetailOption[],
+): CustomDetailOption[] =>
+  [...options].sort((left, right) => {
+    const groupOrder =
+      CUSTOM_DETAIL_SELECTION_GROUP_ORDER[left.selectionGroup] -
+      CUSTOM_DETAIL_SELECTION_GROUP_ORDER[right.selectionGroup];
+    if (groupOrder !== 0) return groupOrder;
+
+    const optionOrder =
+      getOptionBusinessOrder(left.id, left.displayOrder) -
+      getOptionBusinessOrder(right.id, right.displayOrder);
+    if (optionOrder !== 0) return optionOrder;
+
+    return getOptionContentOrder(left) - getOptionContentOrder(right);
+  });
+
+export const sortAdditionalClothesCostSections = <
+  T extends AdditionalClothesCostSection,
+>(
+  sections: readonly T[],
+): T[] =>
+  [...sections].sort(
+    (left, right) =>
+      ADDITIONAL_CLOTHES_COST_SECTION_RANK[left] -
+      ADDITIONAL_CLOTHES_COST_SECTION_RANK[right],
+  );
 
 const VALID_DEMOGRAPHICS = new Set(["male", "female", "unisex"]);
 
@@ -175,15 +244,24 @@ const FEMALE_GROUPS: CustomDetailGarmentGroup[] = [
   "skirt",
 ];
 
-const getStyleDemographic = (style: StyleCategory) => {
+const uniqueGarmentGroups = (
+  groups: CustomDetailGarmentGroup[],
+): CustomDetailGarmentGroup[] => [...new Set(groups)];
+
+export const getStyleDemographic = (style: StyleCategory) => {
   const raw = String(style.targetDemographic || style.gender || "unisex")
+    .trim()
+    .toLowerCase();
+  const declaredGender = String(style.gender || "unisex")
     .trim()
     .toLowerCase();
   const explicitlyBoth =
     style.customDetailConfig?.featuresMaleAndFemale === true ||
     style.featuresMaleAndFemale === true ||
     raw === "family" ||
-    raw === "couple";
+    raw === "couple" ||
+    declaredGender === "family" ||
+    declaredGender === "couple";
 
   return {
     raw,
@@ -194,81 +272,261 @@ const getStyleDemographic = (style: StyleCategory) => {
   };
 };
 
-const inferLegacyGarmentGroups = (
+const inferGarmentGroupsFromText = (
   style: StyleCategory,
+  values: Array<string | undefined>,
 ): CustomDetailGarmentGroup[] => {
   const { isMale, isFemale, isUnisex, explicitlyBoth } =
     getStyleDemographic(style);
   const supportsMale = isMale || isUnisex || explicitlyBoth;
   const supportsFemale = isFemale || isUnisex || explicitlyBoth;
-  const source = [
-    style.name,
-    style.description,
-    style.outfitType,
-    style.garmentComposition,
-    ...(style.garmentCompositionList || []),
-    ...(style.options || []),
-    ...(style.designCategories || []),
-  ]
+  const source = values
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-  const has = (...terms: string[]) => terms.some((term) => source.includes(term));
   const groups = new Set<CustomDetailGarmentGroup>();
+  const withoutShortSleeves = source.replace(
+    /\bshort(?:\s*|-)?sleeves?\b/g,
+    "",
+  );
+  const withoutShortPants = withoutShortSleeves.replace(
+    /\bleg\s+pants?\s*\(\s*shorts?\s*\)/g,
+    "",
+  );
+  const hasFemaleKaftan =
+    (isFemale && !explicitlyBoth && /\bkaftans?\b/.test(source)) ||
+    /\b(?:female|woman|women|lady|ladies)\s+kaftans?\b/.test(source);
+  const hasShirt =
+    /\b(shirts?|blouses?)\b/.test(source) ||
+    (supportsMale && /\b(senator|agbada|kaftans?|tunics?)\b/.test(source)) ||
+    /\btops?\s*(?:\+|and\b|with\b|only\b)/.test(source) ||
+    /\b(?:male|female|men'?s|women'?s)\s+tops?\b/.test(source);
+  const hasDress =
+    /\b(dress(?:es)?|gowns?|boubou|bubu)\b/.test(source) ||
+    hasFemaleKaftan;
+  const hasBumShorts =
+    /\bbum(?:\s+leg)?\s+shorts?\b|\bleg\s+shorts?\s*\(\s*bum\s*\)/.test(
+      withoutShortSleeves,
+    );
+  const hasStandardShorts =
+    !hasBumShorts &&
+    /\bnikka\b|\bstandard(?:\s+leg)?\s+shorts?\b|\bshorts?\s+only\b|\bleg\s+pants?\s*\(\s*shorts?\s*\)|\bshirts?\s*\+\s*(?:leg\s+pants?\s*)?\(?\s*shorts?\s*\)?/.test(
+      withoutShortSleeves,
+    );
+  const hasTrouser =
+    /\btrousers?\b|\bleg\s+pants?\b|\bpants?\s+only\b/.test(
+      withoutShortPants,
+    );
+  const hasSkirt = /\bskirts?|wrapper\b/.test(source);
+
+  if ((supportsMale || supportsFemale) && hasShirt) {
+    groups.add("shirt");
+    groups.add("neck");
+  }
 
   if (supportsMale) {
-    if (has("shirt", "top", "senator", "agbada", "kaftan", "kimono")) {
-      groups.add("shirt");
-      groups.add("neck");
-    }
-    if (
-      has(
-        "trouser",
-        "pant",
-        "2 piece",
-        "2-piece",
-        "two piece",
-        "two-piece",
-      )
-    ) {
-      groups.add("trousers");
-    }
-    if (has("short", "nikka") && !has("bum")) groups.add("standard_shorts");
-    if (has("bum")) groups.add("bum_shorts");
+    if (hasStandardShorts) groups.add("standard_shorts");
+    if (hasBumShorts) groups.add("bum_shorts");
   }
 
   if (supportsFemale) {
-    if (has("dress", "gown", "boubou", "bubu")) {
+    if (hasDress) {
       groups.add("dress");
       groups.add("neck");
     }
-    if (has("skirt", "wrapper")) groups.add("skirt");
-    if (has("bum")) groups.add("bum_shorts");
+    if (hasSkirt) groups.add("skirt");
+    if (hasBumShorts) groups.add("bum_shorts");
+    if (hasStandardShorts) groups.add("standard_shorts");
   }
 
-  if (groups.size === 0) {
-    const defaults: CustomDetailGarmentGroup[] = explicitlyBoth
-      ? ["shirt", "dress", "neck", "trousers", "skirt"]
-      : isFemale
-        ? ["dress", "neck"]
-        : ["shirt", "neck", "trousers"];
-    defaults.forEach((group) => groups.add(group as CustomDetailGarmentGroup));
+  if ((supportsMale || supportsFemale) && hasTrouser) {
+    groups.add("trousers");
+  }
+
+  if (supportsMale && /\b(senator|agbada)\b/.test(source)) {
+    groups.add("shirt");
+    groups.add("neck");
+    groups.add("trousers");
   }
 
   return [...groups];
 };
 
+const getConfiguredGarmentGroups = (
+  style: StyleCategory,
+): CustomDetailGarmentGroup[] =>
+  uniqueGarmentGroups(
+    (style.customDetailConfig?.supportedGarmentGroups || []).filter(
+      (group) => VALID_GARMENT_GROUPS.has(group),
+    ),
+  );
+
+const inferStyleCompositionGroups = (
+  style: StyleCategory,
+): CustomDetailGarmentGroup[] => {
+  const compositionValues = [
+    ...(style.garmentCompositionList || []),
+    style.garmentComposition,
+    style.outfitType,
+  ];
+  const groups = inferGarmentGroupsFromText(style, compositionValues);
+  const source = compositionValues.filter(Boolean).join(" ").toLowerCase();
+  const { isMale, explicitlyBoth } = getStyleDemographic(style);
+  const isMultiPiece = /\b(2|3|two|three)[ -]?piece\b/.test(source);
+  const explicitlySingle = /\bonly\b/.test(source);
+
+  if (
+    isMale &&
+    !explicitlyBoth &&
+    isMultiPiece &&
+    !explicitlySingle &&
+    !groups.some((group) =>
+      ["trousers", "standard_shorts", "bum_shorts"].includes(group),
+    )
+  ) {
+    groups.push("shirt", "neck", "trousers");
+  }
+
+  return uniqueGarmentGroups(groups);
+};
+
+const getSelectedGarmentCode = (
+  garment: CustomDetailGarmentContext,
+): string => {
+  const directCode = String(garment.code || "").trim().toUpperCase();
+  if (directCode) return directCode;
+
+  return (
+    String(garment.type || "")
+      .toUpperCase()
+      .match(/\b(?:G\d+(?:\.\d+)?|L\d+(?:\.\d+)?)\b/)?.[0] || ""
+  );
+};
+
+const getSelectedGarmentGender = (
+  garment?: CustomDetailGarmentContext | null,
+): "male" | "female" | null => {
+  if (!garment) return null;
+  const code = getSelectedGarmentCode(garment);
+  if (code.startsWith("G")) return "male";
+  if (code.startsWith("L")) return "female";
+
+  const source = `${garment.type || ""} ${garment.composition || ""}`
+    .trim()
+    .toLowerCase();
+  if (/\b(male|man|men|guy|guys)\b/.test(source)) return "male";
+  if (/\b(female|woman|women|lady|ladies)\b/.test(source)) {
+    return "female";
+  }
+  return null;
+};
+
+const getSelectedGarmentLowerGroups = (
+  style: StyleCategory,
+  garment: CustomDetailGarmentContext,
+): CustomDetailGarmentGroup[] => {
+  const lowerGroups = inferGarmentGroupsFromText(style, [
+    garment.composition,
+    garment.type,
+  ]).filter((group) =>
+    ["standard_shorts", "bum_shorts", "trousers", "skirt"].includes(group),
+  );
+  if (lowerGroups.length <= 1) return lowerGroups;
+
+  const configuredLowerGroups = getConfiguredGarmentGroups(style).filter(
+    (group) => lowerGroups.includes(group),
+  );
+  if (configuredLowerGroups.length > 0) return configuredLowerGroups;
+
+  const compositionLowerGroups = inferStyleCompositionGroups(style).filter(
+    (group) => lowerGroups.includes(group),
+  );
+  return compositionLowerGroups.length > 0
+    ? compositionLowerGroups
+    : lowerGroups;
+};
+
+const inferSelectedGarmentGroups = (
+  style: StyleCategory,
+  garment?: CustomDetailGarmentContext | null,
+): CustomDetailGarmentGroup[] => {
+  if (!garment) return [];
+  const code = getSelectedGarmentCode(garment);
+  if (code === "EXACT" || code === "AUTO") return [];
+
+  if (/^G[12]$/.test(code)) return ["shirt", "neck"];
+  if (code === "G3") return ["standard_shorts"];
+  if (code === "G4") return ["trousers"];
+  if (/^G[56]\.1$/.test(code)) {
+    return ["shirt", "neck", "standard_shorts"];
+  }
+  if (/^G[56]\.2$/.test(code)) {
+    return ["shirt", "neck", "trousers"];
+  }
+  if (/^L[1-4]$/.test(code)) return ["dress", "neck"];
+  if (/^L[67]$/.test(code)) {
+    return uniqueGarmentGroups(
+      getSelectedGarmentLowerGroups(style, garment),
+    );
+  }
+  if (/^L(?:8|9)(?:\.\d+)?$/.test(code)) {
+    return uniqueGarmentGroups([
+      "dress",
+      "neck",
+      ...getSelectedGarmentLowerGroups(style, garment),
+    ]);
+  }
+
+  return inferGarmentGroupsFromText(style, [
+    garment.composition,
+    garment.type,
+  ]);
+};
+
+export const inferLegacyGarmentGroups = (
+  style: StyleCategory,
+): CustomDetailGarmentGroup[] => {
+  const { isFemale, explicitlyBoth } = getStyleDemographic(style);
+  const groups = inferGarmentGroupsFromText(style, [
+    style.name,
+    style.description,
+    ...(style.options || []),
+    ...(style.designCategories || []),
+  ]);
+
+  if (groups.length === 0) {
+    const defaults: CustomDetailGarmentGroup[] = explicitlyBoth
+      ? ["shirt", "dress", "neck"]
+      : isFemale
+        ? ["dress", "neck"]
+        : ["shirt", "neck", "trousers"];
+    return defaults;
+  }
+
+  return uniqueGarmentGroups(groups);
+};
+
 export const getSupportedCustomDetailGroups = (
   style: StyleCategory | null,
+  garment?: CustomDetailGarmentContext | null,
 ): CustomDetailGarmentGroup[] => {
   if (!style) return [];
   const config = style.customDetailConfig;
+  if (config?.enabled === false) return [];
 
-  const configuredGroups = (config?.supportedGarmentGroups || []).filter(
-    (group) => VALID_GARMENT_GROUPS.has(group),
-  );
+  const selectedGarmentGroups = inferSelectedGarmentGroups(style, garment);
+  if (selectedGarmentGroups.length > 0) {
+    return selectedGarmentGroups;
+  }
+
+  const configuredGroups = getConfiguredGarmentGroups(style);
   if (configuredGroups.length > 0) {
-    return [...new Set(configuredGroups)];
+    return configuredGroups;
+  }
+
+  const compositionGroups = inferStyleCompositionGroups(style);
+  if (compositionGroups.length > 0) {
+    return compositionGroups;
   }
 
   return inferLegacyGarmentGroups(style);
@@ -293,18 +551,22 @@ export const isLiningEligibleForStyle = (
 export const getApplicableCustomDetailGroups = (
   style: StyleCategory | null,
   catalog: CustomDetailOption[],
+  garment?: CustomDetailGarmentContext | null,
 ): CustomDetailOption[] => {
   if (!style) return [];
-  const supportedGroups = getSupportedCustomDetailGroups(style);
+  const supportedGroups = getSupportedCustomDetailGroups(style, garment);
   const config = style.customDetailConfig;
   const { isMale, isFemale } = getStyleDemographic(style);
+  const selectedGarmentGender = getSelectedGarmentGender(garment);
   const configuredGenders = (config?.representedGenders || [])
     .map((value) => String(value).trim().toLowerCase())
     .filter((value): value is "male" | "female" =>
       value === "male" || value === "female",
     );
   const representedGenders: Array<"male" | "female"> =
-    configuredGenders.length > 0
+    selectedGarmentGender
+      ? [selectedGarmentGender]
+      : configuredGenders.length > 0
       ? configuredGenders
       : isMale
         ? ["male"]
@@ -341,22 +603,34 @@ export const getApplicableCustomDetailGroups = (
     ]),
   );
 
-  return [...recoveredById.values()]
-    .sort(
-      (a, b) =>
-        a.displayOrder - b.displayOrder ||
-        a.label.localeCompare(b.label),
-    );
+  return sortCustomDetailOptions([...recoveredById.values()]);
 };
+
+export interface ApplicableCustomDetailGroup {
+  id: CustomDetailSelectionGroup;
+  garmentGroup: CustomDetailGarmentGroup;
+  options: CustomDetailOption[];
+}
+
+export const sortApplicableCustomDetailGroups = (
+  groups: readonly ApplicableCustomDetailGroup[],
+): ApplicableCustomDetailGroup[] =>
+  [...groups]
+    .map((group) => ({
+      ...group,
+      options: sortCustomDetailOptions(group.options),
+    }))
+    .sort(
+      (left, right) =>
+        CUSTOM_DETAIL_SELECTION_GROUP_ORDER[left.id] -
+        CUSTOM_DETAIL_SELECTION_GROUP_ORDER[right.id],
+    );
 
 export const groupApplicableCustomDetails = (
   style: StyleCategory | null,
   catalog: CustomDetailOption[],
-): Array<{
-  id: CustomDetailSelectionGroup;
-  garmentGroup: CustomDetailGarmentGroup;
-  options: CustomDetailOption[];
-}> => {
+  garment?: CustomDetailGarmentContext | null,
+): ApplicableCustomDetailGroup[] => {
   const grouped = new Map<
     CustomDetailSelectionGroup,
     {
@@ -366,7 +640,11 @@ export const groupApplicableCustomDetails = (
     }
   >();
 
-  for (const option of getApplicableCustomDetailGroups(style, catalog)) {
+  for (const option of getApplicableCustomDetailGroups(
+    style,
+    catalog,
+    garment,
+  )) {
     const existing = grouped.get(option.selectionGroup);
     if (existing) {
       existing.options.push(option);
@@ -379,15 +657,16 @@ export const groupApplicableCustomDetails = (
     }
   }
 
-  return [...grouped.values()];
+  return sortApplicableCustomDetailGroups([...grouped.values()]);
 };
 
 export const getRequiredCustomDetailGroups = (
   style: StyleCategory | null,
   catalog: CustomDetailOption[],
+  garment?: CustomDetailGarmentContext | null,
 ): CustomDetailSelectionGroup[] => {
   if (!style) return [];
-  const applicable = groupApplicableCustomDetails(style, catalog);
+  const applicable = groupApplicableCustomDetails(style, catalog, garment);
   const applicableIds = new Set(applicable.map((group) => group.id));
   const configured = style.customDetailConfig?.requiredSelectionGroups || [];
 
@@ -404,10 +683,83 @@ export const getMissingCustomDetailGroup = (
   style: StyleCategory | null,
   selections: DesignSelections,
   catalog: CustomDetailOption[],
+  garment?: CustomDetailGarmentContext | null,
 ): CustomDetailSelectionGroup | null =>
-  getRequiredCustomDetailGroups(style, catalog).find(
+  getRequiredCustomDetailGroups(style, catalog, garment).find(
     (group) => !selections.customDetails?.[group],
   ) || null;
+
+export const filterDesignSelectionsForCustomDetails = (
+  style: StyleCategory | null,
+  selections: DesignSelections,
+  catalog: CustomDetailOption[],
+  garment?: CustomDetailGarmentContext | null,
+): DesignSelections => {
+  if (!style) return selections;
+
+  const applicableGroups = groupApplicableCustomDetails(
+    style,
+    catalog,
+    garment,
+  );
+  const applicableOptionIdsByGroup = new Map(
+    applicableGroups.map((group) => [
+      group.id,
+      new Set(group.options.map((option) => option.id)),
+    ]),
+  );
+  const isApplicableSelection = (
+    group: CustomDetailSelectionGroup,
+    optionId: string,
+  ): boolean => applicableOptionIdsByGroup.get(group)?.has(optionId) === true;
+  const hasLiveSelections = Object.prototype.hasOwnProperty.call(
+    selections,
+    "customDetails",
+  );
+  const currentCustomDetails = selections.customDetails || {};
+  const nextCustomDetails = Object.fromEntries(
+    Object.entries(currentCustomDetails).filter(([group, optionId]) =>
+      isApplicableSelection(
+        group as CustomDetailSelectionGroup,
+        optionId,
+      ),
+    ),
+  ) as Partial<Record<CustomDetailSelectionGroup, string>>;
+  const currentCustomDetailKeys = Object.keys(currentCustomDetails);
+  const customDetailsChanged =
+    hasLiveSelections &&
+    (currentCustomDetailKeys.length !== Object.keys(nextCustomDetails).length ||
+      currentCustomDetailKeys.some(
+        (group) =>
+          nextCustomDetails[group as CustomDetailSelectionGroup] !==
+          currentCustomDetails[group as CustomDetailSelectionGroup],
+      ));
+  const nextSnapshots = selections.customDetailSnapshots
+    ? sortCustomDetailSelectionSnapshots(
+        selections.customDetailSnapshots.filter((snapshot) =>
+          isApplicableSelection(snapshot.selectionGroup, snapshot.optionId),
+        ),
+      )
+    : undefined;
+  const snapshotsChanged =
+    Boolean(selections.customDetailSnapshots) &&
+    (nextSnapshots?.length !== selections.customDetailSnapshots?.length ||
+      nextSnapshots.some(
+        (snapshot, index) =>
+          snapshot.optionId !==
+          selections.customDetailSnapshots?.[index]?.optionId,
+      ));
+
+  if (!customDetailsChanged && !snapshotsChanged) return selections;
+
+  return {
+    ...selections,
+    ...(hasLiveSelections ? { customDetails: nextCustomDetails } : {}),
+    ...(selections.customDetailSnapshots
+      ? { customDetailSnapshots: nextSnapshots }
+      : {}),
+  };
+};
 
 export const getCustomDetailSnapshots = (
   selections: DesignSelections,
@@ -415,23 +767,49 @@ export const getCustomDetailSnapshots = (
 ): CustomDetailSelectionSnapshot[] => {
   const effectiveCatalog = normalizeCustomDetailCatalog(catalog);
 
-  return Object.values(selections.customDetails || {}).flatMap((optionId) => {
-    const option = effectiveCatalog.find(
-      (candidate) => candidate.id === optionId,
-    );
-    if (!option) return [];
-    return [
-      {
-        optionId: option.id,
-        label: option.label,
-        description: option.description,
-        garmentGroup: option.garmentGroup,
-        selectionGroup: option.selectionGroup,
-        priceCents: option.priceCents,
-      },
-    ];
-  });
+  return sortCustomDetailSelectionSnapshots(
+    Object.values(selections.customDetails || {}).flatMap((optionId) => {
+      const option = effectiveCatalog.find(
+        (candidate) => candidate.id === optionId,
+      );
+      if (!option) return [];
+      return [
+        {
+          optionId: option.id,
+          label: option.label,
+          description: option.description,
+          garmentGroup: option.garmentGroup,
+          selectionGroup: option.selectionGroup,
+          priceCents: option.priceCents,
+        },
+      ];
+    }),
+  );
 };
+
+export const sortCustomDetailSelectionSnapshots = (
+  snapshots: readonly CustomDetailSelectionSnapshot[],
+): CustomDetailSelectionSnapshot[] =>
+  [...snapshots].sort((left, right) => {
+    const groupOrder =
+      CUSTOM_DETAIL_SELECTION_GROUP_ORDER[left.selectionGroup] -
+      CUSTOM_DETAIL_SELECTION_GROUP_ORDER[right.selectionGroup];
+    if (groupOrder !== 0) return groupOrder;
+
+    const optionOrder =
+      getOptionBusinessOrder(left.optionId) -
+      getOptionBusinessOrder(right.optionId);
+    if (optionOrder !== 0) return optionOrder;
+
+    return (
+      getStableContentHash(
+        JSON.stringify([left.label, left.description, left.priceCents]),
+      ) -
+      getStableContentHash(
+        JSON.stringify([right.label, right.description, right.priceCents]),
+      )
+    );
+  });
 
 export const getSelectedCustomDetailSnapshots = (
   selections: DesignSelections,
@@ -445,7 +823,9 @@ export const getSelectedCustomDetailSnapshots = (
   return hasLiveSelections
     ? getCustomDetailSnapshots(selections, catalog)
     : selections.customDetailSnapshots?.length
-      ? selections.customDetailSnapshots
+      ? sortCustomDetailSelectionSnapshots(
+          selections.customDetailSnapshots,
+        )
       : [];
 };
 

@@ -83,6 +83,12 @@ export interface CustomDetailConfig {
   enabled: boolean;
 }
 
+export interface CustomDetailGarmentContext {
+  type?: string;
+  code?: string;
+  composition?: string;
+}
+
 export interface ConstructionDetail {
   code: string;
   type: string;
