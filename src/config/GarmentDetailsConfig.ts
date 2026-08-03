@@ -221,6 +221,32 @@ export const ALL_CUSTOM_DETAIL_SELECTION_GROUPS: readonly CustomDetailSelectionG
   ...ADDITIONAL_CLOTHES_COST_SECTION_ORDER,
 ];
 
+export const CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE: Readonly<
+  Record<CustomDetailSelectionGroup, string>
+> = {
+  shirt_construction: "Shirt Length and Sleeve Length",
+  shirt_pockets: "Shirt Pockets",
+  dress_construction: "Dress Length and Sleeve Length",
+  dress_pockets: "Dress Pockets",
+  neck_design: "Neck Design",
+  standard_shorts_fastening: "Standard Shorts Fastening",
+  standard_shorts_pockets: "Standard Shorts Pockets",
+  bum_shorts_fastening: "Bum Shorts Fastening",
+  bum_shorts_pockets: "Bum Shorts Pockets",
+  trouser_fastening: "Trouser Fastening",
+  trouser_pockets: "Trouser Pockets",
+  skirt_length: "Skirt Length",
+  skirt_pockets: "Skirt Pockets",
+  shirt_additional: "Shirts - Additional",
+  dress_additional: "Dress - Additional",
+  neck_additional: "Neck Design - Additional",
+  trouser_additional: "Trouser - Additional",
+  standard_shorts_additional: "Standard Shorts - Additional",
+  bum_shorts_additional: "Bum Shorts - Additional",
+  skirt_additional: "Skirts - Additional",
+  personalized_additional: "Personalized Additional",
+};
+
 export const ADDITIONAL_CLOTHES_COST_SECTION_RANK: Readonly<
   Record<AdditionalClothesCostSection, number>
 > = Object.fromEntries(

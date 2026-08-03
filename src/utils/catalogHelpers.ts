@@ -785,27 +785,59 @@ export const getMissingCustomDetailGroup = (
       ).length === 0,
   ) || null;
 
+export const getSelectableCustomDetailOptions = (
+  catalog: CustomDetailOption[],
+): CustomDetailOption[] => {
+  const normalizedCatalog = normalizeCustomDetailCatalog(catalog);
+  const activeOptions = normalizedCatalog.filter((option) => option.active);
+  return sortCustomDetailOptions(activeOptions);
+};
+
+export const getSelectableCustomDetailGroups = (
+  catalog: CustomDetailOption[],
+): ApplicableCustomDetailGroup[] => {
+  const grouped = new Map<
+    CustomDetailSelectionGroup,
+    {
+      id: CustomDetailSelectionGroup;
+      garmentGroup: CustomDetailGarmentGroup;
+      options: CustomDetailOption[];
+    }
+  >();
+
+  for (const option of getSelectableCustomDetailOptions(catalog)) {
+    const existing = grouped.get(option.selectionGroup);
+    if (existing) {
+      existing.options.push(option);
+    } else {
+      grouped.set(option.selectionGroup, {
+        id: option.selectionGroup,
+        garmentGroup: option.garmentGroup,
+        options: [option],
+      });
+    }
+  }
+
+  return sortApplicableCustomDetailGroups([...grouped.values()]);
+};
+
 export const filterDesignSelectionsForCustomDetails = (
   style: StyleCategory | null,
   selections: DesignSelections,
   catalog: CustomDetailOption[],
-  garment?: CustomDetailGarmentContext | null,
+  _garment?: CustomDetailGarmentContext | null,
 ): DesignSelections => {
   if (!style) return selections;
 
-  const applicableGroups = groupApplicableCustomDetails(
-    style,
-    catalog,
-    garment,
+  const selectableGroups = getSelectableCustomDetailGroups(catalog);
+  const selectableGroupsById = new Map(
+    selectableGroups.map((group) => [group.id, group]),
   );
-  const applicableGroupsById = new Map(
-    applicableGroups.map((group) => [group.id, group]),
-  );
-  const isApplicableSelection = (
+  const isSelectableSelection = (
     group: CustomDetailSelectionGroup,
     optionId: string,
   ): boolean =>
-    applicableGroupsById
+    selectableGroupsById
       .get(group)
       ?.options.some((option) => option.id === optionId) === true;
   const hasLiveSelections = Object.prototype.hasOwnProperty.call(
@@ -819,24 +851,24 @@ export const filterDesignSelectionsForCustomDetails = (
     currentCustomDetails,
   )) {
     const group = rawGroup as CustomDetailSelectionGroup;
-    const applicableGroup = applicableGroupsById.get(group);
-    if (!applicableGroup) continue;
+    const selectableGroup = selectableGroupsById.get(group);
+    if (!selectableGroup) continue;
 
     const selectedIds = new Set(
       getCustomDetailSelectionOptionIds(rawSelection),
     );
-    const applicableSelectedIds = applicableGroup.options
+    const selectableSelectedIds = selectableGroup.options
       .map((option) => option.id)
       .filter((optionId) => selectedIds.has(optionId));
-    if (applicableSelectedIds.length === 0) continue;
+    if (selectableSelectedIds.length === 0) continue;
 
-    const allowsMultiple = applicableGroup.options.some(
+    const allowsMultiple = selectableGroup.options.some(
       (option) => option.allowMultiple,
     );
     nextCustomDetails[group] =
       allowsMultiple && Array.isArray(rawSelection)
-        ? applicableSelectedIds
-        : applicableSelectedIds[0];
+        ? selectableSelectedIds
+        : selectableSelectedIds[0];
   }
 
   const areSelectionValuesEqual = (
@@ -867,7 +899,7 @@ export const filterDesignSelectionsForCustomDetails = (
   const nextSnapshots = selections.customDetailSnapshots
     ? sortCustomDetailSelectionSnapshots(
         selections.customDetailSnapshots.filter((snapshot) =>
-          isApplicableSelection(snapshot.selectionGroup, snapshot.optionId),
+          isSelectableSelection(snapshot.selectionGroup, snapshot.optionId),
         ),
       )
     : undefined;
@@ -1009,6 +1041,7 @@ export const getCustomDetailsBreakdown = (
     price: option.priceCents / 100,
     originalId: option.optionId,
     selectionGroup: option.selectionGroup,
+    garmentGroup: option.garmentGroup,
     informational: option.informational || false,
     requiresEvaluation: option.requiresEvaluation || false,
   }));
