@@ -4,13 +4,14 @@ import {
   getCustomDetailSnapshots,
   getCustomDetailsBreakdown,
   getMissingCustomDetailGroup,
-  groupApplicableCustomDetails,
   hasSelectedCustomDetailOption,
   isAdditionalClothesCostSection,
   isClothingPriceSelectionGroup,
   isLiningEligibleForStyle,
   normalizeCustomDetailCatalog,
   groupCustomDetailGroupsByParentSection,
+  getSelectableCustomDetailGroups,
+  getSupportedCustomDetailGroups,
 } from "../utils/catalogHelpers";
 import React, { useState, useEffect } from "react";
 import {
@@ -104,6 +105,7 @@ import {
   ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION,
   CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION,
   DRESS_LINING_OPTION_ID,
+  CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE,
 } from "../config/GarmentDetailsConfig";
 import {
   calculateDesignPricing,
@@ -513,9 +515,10 @@ export const getGarmentDetailsBreakdown = (
   price: number;
   originalId?: string;
   selectionGroup: CustomDetailSelectionGroup;
+  garmentGroup: any;
   informational: boolean;
   requiresEvaluation: boolean;
-}[] => getCustomDetailsBreakdown(details, catalog);
+}[] => getCustomDetailsBreakdown(details, catalog) as any;
 
 
 const GarmentDetailSelector = ({
@@ -530,16 +533,12 @@ const GarmentDetailSelector = ({
   const customDetailCatalog = useAppStore((state: any) => state.customDetailCatalog);
   const customDetails = designSelections.customDetails || {};
   const effectiveCatalog = normalizeCustomDetailCatalog(customDetailCatalog);
-  const applicableGroups = groupApplicableCustomDetails(
-    selectedStyle,
-    effectiveCatalog,
-    selectedGarment,
-  );
-  const standardGroups = applicableGroups.filter(
+  const selectableGroups = getSelectableCustomDetailGroups(effectiveCatalog);
+  const standardGroups = selectableGroups.filter(
     (group) => !isAdditionalClothesCostSection(group.id),
   );
   const parentSections = groupCustomDetailGroupsByParentSection(standardGroups);
-  const additionalGroups = applicableGroups.filter((group) =>
+  const additionalGroups = selectableGroups.filter((group) =>
     isAdditionalClothesCostSection(group.id),
   );
   const applicableDecorativeFeatures = getApplicableDecorativeFeatures(
@@ -586,7 +585,7 @@ const GarmentDetailSelector = ({
         else selectedIds.delete(option.id);
 
         const groupOptions =
-          applicableGroups.find((group) => group.id === groupId)?.options || [];
+          selectableGroups.find((group) => group.id === groupId)?.options || [];
         const orderedIds = groupOptions
           .map((candidate) => candidate.id)
           .filter((optionId) => selectedIds.has(optionId));
@@ -964,6 +963,9 @@ const GarmentDetailSummaryItems = ({
   decorativeFeatures = [],
   accessories = [],
   excludeClothingPriceSelections = false,
+  style = null,
+  garment = null,
+  mode = "all",
 }: {
   designSelections: DesignSelections;
   isLi?: boolean;
@@ -972,13 +974,30 @@ const GarmentDetailSummaryItems = ({
   decorativeFeatures?: PricedSelection[];
   accessories?: PricedSelection[];
   excludeClothingPriceSelections?: boolean;
+  style?: StyleCategory | null;
+  garment?: any;
+  mode?: "priced" | "non-priced" | "all";
 }) => {
-  const items = getGarmentDetailsBreakdown(designSelections, catalog)
+  const supportedGarmentGroups = style
+    ? getSupportedCustomDetailGroups(style, garment)
+    : [];
+  const rawItems = getGarmentDetailsBreakdown(designSelections, catalog)
     .filter(
       (item) =>
         !excludeClothingPriceSelections ||
-        !isClothingPriceSelectionGroup(item.selectionGroup),
-    )
+        !isClothingPriceSelectionGroup(item.selectionGroup) ||
+        !supportedGarmentGroups.includes(item.garmentGroup),
+    );
+  const items = rawItems
+    .filter((item) => {
+      if (mode === "priced") {
+        return item.price > 0;
+      }
+      if (mode === "non-priced") {
+        return item.price === 0;
+      }
+      return true;
+    })
     .map(item => {
       const display = item.requiresEvaluation
         ? "Requires evaluation"
@@ -987,51 +1006,85 @@ const GarmentDetailSummaryItems = ({
             ? "No additional charge"
             : "Included"
           : `+${currencySymbol}${item.price.toFixed(2)}`;
+      if (mode === "non-priced") {
+        return {
+          ...item,
+          label: CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE[item.selectionGroup] || item.label,
+          value: item.label + (item.requiresEvaluation ? " - Requires evaluation" : ""),
+          display,
+        };
+      }
       return { ...item, display };
     });
   const pricedItems = [
-    ...decorativeFeatures.flatMap((feature) => {
-      const placement =
-        feature.label === "Name Monogram"
-          ? getMonogramPlacementLabel(designSelections.monogramPlacement)
-          : null;
-      return [
-        {
-          label: feature.includedByStyle
-            ? "Design Feature"
-            : "Decorative Detail",
-          value: feature.label,
-          display: `+${currencySymbol}${feature.price.toFixed(2)}`,
-        },
-        ...(placement
-          ? [
-              {
-                label: "Monogram Placement",
-                value: placement,
-                display: "No additional charge",
-              },
-            ]
-          : []),
-      ];
-    }),
-    ...accessories.map((accessory) => ({
-      label: "Traditional Accessory",
-      value: accessory.label,
-      display: `+${currencySymbol}${accessory.price.toFixed(2)}`,
-    })),
+    ...decorativeFeatures
+      .filter((feature) => {
+        if (mode === "priced") {
+          return feature.price > 0;
+        }
+        if (mode === "non-priced") {
+          return feature.price === 0;
+        }
+        return true;
+      })
+      .map((feature) => ({
+        label: feature.includedByStyle
+          ? "Design Feature"
+          : "Decorative Detail",
+        value: feature.label,
+        display: `+${currencySymbol}${feature.price.toFixed(2)}`,
+        price: feature.price,
+      })),
+    ...((mode === "non-priced" || mode === "all")
+      ? (() => {
+          const hasMonogramSelected = decorativeFeatures.some(
+            (f) => f.label === "Name Monogram"
+          );
+          const placement = hasMonogramSelected
+            ? getMonogramPlacementLabel(designSelections.monogramPlacement)
+            : null;
+          return placement
+            ? [
+                {
+                  label: "Monogram Placement",
+                  value: placement,
+                  display: "No additional charge",
+                  price: 0,
+                },
+              ]
+            : [];
+        })()
+      : []),
+    ...accessories
+      .filter((accessory) => {
+        if (mode === "priced") {
+          return accessory.price > 0;
+        }
+        if (mode === "non-priced") {
+          return accessory.price === 0;
+        }
+        return true;
+      })
+      .map((accessory) => ({
+        label: "Traditional Accessory",
+        value: accessory.label,
+        display: `+${currencySymbol}${accessory.price.toFixed(2)}`,
+        price: accessory.price,
+      })),
   ];
   const allItems = [...items, ...pricedItems];
+  const showDisplay = mode !== "non-priced";
 
   return (
     <>
       {allItems.map((item: any, i: number) =>
         isLi ? (
           <li key={`${item.label}-${item.value}-${i}`}>
-            {item.label}{item.value ? ': ' : ' '}<strong>{item.value}</strong> <span className="text-heritage-gold ml-1">({item.display})</span>
+            {item.label}{item.value ? ': ' : ' '}<strong>{item.value}</strong>{showDisplay && <span className="text-heritage-gold ml-1"> ({item.display})</span>}
           </li>
         ) : (
           <p key={`${item.label}-${item.value}-${i}`}>
-            {item.label}{item.value ? ': ' : ' '}<strong className="text-heritage-green">{item.value}</strong> <span className="text-heritage-gold ml-1">({item.display})</span>
+            {item.label}{item.value ? ': ' : ' '}<strong className="text-heritage-green">{item.value}</strong>{showDisplay && <span className="text-heritage-gold ml-1"> ({item.display})</span>}
           </p>
         )
       )}
@@ -4877,6 +4930,8 @@ export default function DesignStudioView({
                       excludeClothingPriceSelections={
                         pricing.includesFabricAndSewing
                       }
+                      style={selectedStyle}
+                      garment={selectedGarment}
                     />
                     {pricing.constructionSewingCost > 0 && (
                       <li>
@@ -5116,29 +5171,30 @@ export default function DesignStudioView({
                   )}
                 </>
               )}
-              {selectedFabric && getGarmentDetailsBreakdown(designSelections, customDetailCatalog)
-                .filter(
-                  (item) =>
-                    !pricing.includesFabricAndSewing ||
-                    !isClothingPriceSelectionGroup(item.selectionGroup),
-                )
-                .map((item, idx) => (
+              {selectedFabric && (() => {
+                const supportedGarmentGroups = selectedStyle
+                  ? getSupportedCustomDetailGroups(selectedStyle, selectedGarment)
+                  : [];
+                return getGarmentDetailsBreakdown(designSelections, customDetailCatalog)
+                  .filter(
+                    (item) =>
+                      (!pricing.includesFabricAndSewing ||
+                       !isClothingPriceSelectionGroup(item.selectionGroup) ||
+                       !supportedGarmentGroups.includes(item.garmentGroup)) &&
+                      item.price > 0,
+                  );
+              })().map((item, idx) => (
                 <div key={idx} className="flex justify-between items-center text-heritage-ink/70">
                   <span>{item.label}{item.value ? ': ' + item.value : ''}</span>
                   <span className="font-semibold text-heritage-green">
-                    {item.requiresEvaluation
-                      ? "Requires evaluation"
-                      : item.price === 0
-                        ? item.informational
-                          ? "No additional charge"
-                          : "Included"
-                        : `+${currencySymbol}${item.price.toFixed(2)}`}
+                    +{currencySymbol}{item.price.toFixed(2)}
                   </span>
                 </div>
               ))}
-              {selectedFabric && pricing.decorativeFeatures.map((feature) => (
-                <React.Fragment key={`decorative-${feature.label}`}>
-                  <div className="flex justify-between items-center text-heritage-ink/70">
+              {selectedFabric && pricing.decorativeFeatures
+                .filter((feature) => feature.price > 0)
+                .map((feature) => (
+                  <div key={`decorative-${feature.label}`} className="flex justify-between items-center text-heritage-ink/70">
                     <span>
                       {feature.includedByStyle ? "Design Feature" : "Decorative Detail"}:{" "}
                       {feature.label}
@@ -5147,32 +5203,22 @@ export default function DesignStudioView({
                       +{currencySymbol}{feature.price.toFixed(2)}
                     </span>
                   </div>
-                  {feature.label === "Name Monogram" &&
-                    getMonogramPlacementLabel(
-                      designSelections.monogramPlacement,
-                    ) && (
-                      <div className="flex justify-between items-center text-heritage-ink/70">
-                        <span>Monogram Placement</span>
-                        <span className="font-semibold text-heritage-green">
-                          {getMonogramPlacementLabel(
-                            designSelections.monogramPlacement,
-                          )}
-                        </span>
-                      </div>
-                    )}
-                </React.Fragment>
-              ))}
-              {selectedFabric && pricing.traditionalAccessories.map((accessory) => (
-                <div
-                  key={`traditional-accessory-${accessory.label}`}
-                  className="flex justify-between items-center text-heritage-ink/70"
-                >
-                  <span>Traditional Accessory: {accessory.label}</span>
-                  <span className="font-semibold text-heritage-green">
-                    +{currencySymbol}{accessory.price.toFixed(2)}
-                  </span>
-                </div>
-              ))}
+                ))
+              }
+              {selectedFabric && pricing.traditionalAccessories
+                .filter((accessory) => accessory.price > 0)
+                .map((accessory) => (
+                  <div
+                    key={`traditional-accessory-${accessory.label}`}
+                    className="flex justify-between items-center text-heritage-ink/70"
+                  >
+                    <span>Traditional Accessory: {accessory.label}</span>
+                    <span className="font-semibold text-heritage-green">
+                      +{currencySymbol}{accessory.price.toFixed(2)}
+                    </span>
+                  </div>
+                ))
+              }
               {pricing.constructionSewingCost > 0 && (
                 <div className="flex justify-between items-center text-heritage-ink/70">
                   <span>Construction Sewing Cost:</span>
@@ -5378,19 +5424,6 @@ export default function DesignStudioView({
                   {selectedGarment?.type || "Pending"}
                 </strong>
               </p>
-              {pricing.includesFabricAndSewing && (
-                <div className="rounded-lg border border-heritage-gold/20 bg-white/70 px-3 py-2">
-                  <p className="flex items-center justify-between gap-3">
-                    <span className="font-semibold">Selected Clothing Price:</span>
-                    <strong className="font-mono text-heritage-green">
-                      {currencySymbol}{pricing.clothingPrice.toFixed(2)}
-                    </strong>
-                  </p>
-                  <p className="mt-1 font-semibold text-heritage-green/70">
-                    Includes fabric and sewing costs
-                  </p>
-                </div>
-              )}
               <GarmentDetailSummaryItems
                 designSelections={designSelections}
                 isLi={false}
@@ -5401,19 +5434,10 @@ export default function DesignStudioView({
                 excludeClothingPriceSelections={
                   pricing.includesFabricAndSewing
                 }
+                style={selectedStyle}
+                garment={selectedGarment}
+                mode="non-priced"
               />
-              {pricing.constructionSewingCost > 0 && (
-                <p>
-                  Construction Sewing Cost:{" "}
-                  <strong className="text-heritage-green">+{currencySymbol}{pricing.constructionSewingCost.toFixed(2)}</strong>
-                </p>
-              )}
-              {liningEligible && hasLining && !hasCatalogDressLining && (
-                <p>
-                  Lining/Inner Net:{" "}
-                  <strong className="text-heritage-gold">Included (L5) (+{currencySymbol}10.00)</strong>
-                </p>
-              )}
 
               <p>
                 Your Order Route:{" "}

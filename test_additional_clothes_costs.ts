@@ -499,6 +499,9 @@ const changedToDress = filterDesignSelectionsForCustomDetails(
   { code: "L1" },
 );
 assert.deepEqual(changedToDress.customDetails, {
+  standard_shorts_additional: [
+    "standard_shorts_additional_combat_pockets",
+  ],
   personalized_additional: ["personalized_additional_evaluation"],
 });
 assert.equal(
@@ -506,8 +509,8 @@ assert.equal(
     changedToDress,
     SEED_CUSTOM_DETAIL_CATALOG,
   ).constructionUpgradesPrice,
-  0,
-  "a hidden Combat selection cannot affect pricing after a style change",
+  5,
+  "a selectable Combat selection is included in pricing",
 );
 
 const femaleAdditionsChangedToMale = filterDesignSelectionsForCustomDetails(
@@ -525,6 +528,10 @@ const femaleAdditionsChangedToMale = filterDesignSelectionsForCustomDetails(
   { code: "G1" },
 );
 assert.deepEqual(femaleAdditionsChangedToMale.customDetails, {
+  dress_additional: [
+    DRESS_LINING_OPTION_ID,
+    "dress_additional_net",
+  ],
   personalized_additional: ["personalized_additional_evaluation"],
 });
 assert.equal(
@@ -532,8 +539,8 @@ assert.equal(
     femaleAdditionsChangedToMale,
     SEED_CUSTOM_DETAIL_CATALOG,
   ).constructionUpgradesPrice,
-  0,
-  "hidden Dress additions cannot affect pricing after switching to male",
+  20,
+  "selectable Dress additions affect pricing normally",
 );
 
 const restoredDraft = filterDesignSelectionsForCustomDetails(
@@ -557,13 +564,16 @@ assert.deepEqual(restoredDraft.customDetails, {
     DRESS_LINING_OPTION_ID,
     "dress_additional_net",
   ],
+  standard_shorts_additional: [
+    "standard_shorts_additional_combat_pockets",
+  ],
 });
 assert.equal(
   calculateCustomDetailsPriceBreakdown(
     restoredDraft,
     SEED_CUSTOM_DETAIL_CATALOG,
   ).constructionUpgradesPrice,
-  20,
+  25,
 );
 const restoredSnapshots = getCustomDetailSnapshots(
   restoredDraft,
@@ -571,7 +581,7 @@ const restoredSnapshots = getCustomDetailSnapshots(
 );
 assert.deepEqual(
   restoredSnapshots.map((snapshot) => snapshot.optionId),
-  [DRESS_LINING_OPTION_ID, "dress_additional_net"],
+  [DRESS_LINING_OPTION_ID, "dress_additional_net", "standard_shorts_additional_combat_pockets"],
   "restored multi-select drafts retain deterministic snapshot ordering",
 );
 
