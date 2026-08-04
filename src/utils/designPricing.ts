@@ -149,11 +149,15 @@ export const calculateDesignPricing = ({
   const resolvedFabricPrice = resolveFabricPrice(fabric);
   if (resolvedFabricPrice === null) return null;
 
+  const enrichedGarment = garment
+    ? { ...garment, lowerGarmentType: design.lowerGarmentType }
+    : { lowerGarmentType: design.lowerGarmentType };
+
   const applicableDesign = filterDesignSelectionsForCustomDetails(
     style || null,
     design,
     catalog,
-    garment,
+    enrichedGarment,
   );
   const rawFabricSewingCost = getFabricSewingCost(fabric);
   const rawConstructionSewingCost = style
@@ -163,7 +167,7 @@ export const calculateDesignPricing = ({
     applicableDesign,
     style,
     catalog,
-    garment,
+    enrichedGarment,
   );
   const catalogPricing = calculateCustomDetailsPriceBreakdown(
     applicableDesign,

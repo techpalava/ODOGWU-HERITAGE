@@ -404,6 +404,16 @@ export function CartDrawer() {
                             {item.fabric.name} ({item.fabric.code})
                           </strong>
                         </p>
+                        {item.design.lowerGarmentType && (
+                          <p>
+                            👖 Lower Garment Type:{" "}
+                            <strong className="uppercase">
+                              {item.design.lowerGarmentType === "trousers"
+                                ? "Trouser"
+                                : "Skirt"}
+                            </strong>
+                          </p>
+                        )}
                         {(item.design.customDetailSnapshots?.length
                           ? item.design.customDetailSnapshots
                           : getCustomDetailSnapshots(

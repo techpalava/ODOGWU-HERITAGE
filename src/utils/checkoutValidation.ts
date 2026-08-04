@@ -12,6 +12,8 @@ import { OrderRoutingEngine } from "../engine/OrderRoutingEngine";
 import {
   filterDesignSelectionsForCustomDetails,
   getMissingCustomDetailGroup,
+  isAmbiguousLowerGarment,
+  getSelectedGarmentCode,
 } from "./catalogHelpers";
 import { filterDesignSelectionsForDecorativeFeatures } from "./decorativePricing";
 import {
@@ -188,30 +190,41 @@ export const revalidateCartForCheckout = (
       return { ...item, fabric };
     }
 
+    const garmentCode = getSelectedGarmentCode(item.garment);
+    const enrichedGarment = item.garment
+      ? { ...item.garment, lowerGarmentType: item.design.lowerGarmentType }
+      : { lowerGarmentType: item.design.lowerGarmentType };
+
+    const isGarmentTypeUnresolved = isAmbiguousLowerGarment(garmentCode) && !item.design.lowerGarmentType;
+
     const applicableDesign = filterDesignSelectionsForDecorativeFeatures(
       filterDesignSelectionsForCustomDetails(
         style,
         item.design,
         context.customDetailCatalog,
-        item.garment,
+        enrichedGarment,
       ),
       style,
-      item.garment,
+      enrichedGarment,
     );
     const pricingItem =
       applicableDesign === item.design
         ? item
         : { ...item, design: applicableDesign };
+
     const missingCustomDetail = getMissingCustomDetailGroup(
       style,
       applicableDesign,
       context.customDetailCatalog,
-      item.garment,
+      enrichedGarment,
     );
+
     if (missingCustomDetail) {
       blockers.push(
         `${style.name} requires a ${missingCustomDetail.replace(/_/g, " ")} selection.`,
       );
+    } else if (isGarmentTypeUnresolved) {
+      blockers.push(`${style.name} requires a Garment Type selection.`);
     }
     if (!hasRequiredMeasurements(item)) {
       blockers.push(`${style.name} requires complete measurements.`);

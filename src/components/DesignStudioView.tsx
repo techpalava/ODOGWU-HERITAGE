@@ -12,6 +12,11 @@ import {
   groupCustomDetailGroupsByParentSection,
   getSelectableCustomDetailGroups,
   getSupportedCustomDetailGroups,
+  getRequiredCustomDetailGroups,
+  canClearCustomDetailSelectionGroup,
+  clearCustomDetailSelectionGroup,
+  getSelectedGarmentCode,
+  isAmbiguousLowerGarment,
 } from "../utils/catalogHelpers";
 import React, { useState, useEffect } from "react";
 import {
@@ -528,16 +533,41 @@ const GarmentDetailSelector = ({
   setDesignSelections,
   hasLining,
   setHasLining,
-  currencySymbol
+  currencySymbol,
+  invalidGroups = [],
+  setInvalidGroups,
 }: any) => {
   const customDetailCatalog = useAppStore((state: any) => state.customDetailCatalog);
   const customDetails = designSelections.customDetails || {};
   const effectiveCatalog = normalizeCustomDetailCatalog(customDetailCatalog);
+  const garmentCode = getSelectedGarmentCode(selectedGarment || {});
+  const isAmbiguous = isAmbiguousLowerGarment(garmentCode);
   const selectableGroups = getSelectableCustomDetailGroups(effectiveCatalog);
   const standardGroups = selectableGroups.filter(
     (group) => !isAdditionalClothesCostSection(group.id),
   );
   const parentSections = groupCustomDetailGroupsByParentSection(standardGroups);
+  const supportedGroups = getSupportedCustomDetailGroups(selectedStyle, selectedGarment);
+
+  const isParentSectionIncluded = (sectionId: string): boolean => {
+    if (sectionId === "skirts") {
+      return supportedGroups.includes("skirt");
+    }
+    return supportedGroups.includes(sectionId as any);
+  };
+
+  const getOptionalHeaderHelperText = (sectionId: string): string => {
+    switch (sectionId) {
+      case "shirt": return "Shirt";
+      case "dress": return "Dress";
+      case "standard_shorts": return "Shorts";
+      case "bum_shorts": return "Bum Shorts";
+      case "trousers": return "Trouser";
+      case "skirts": return "Skirt";
+      default: return "garment";
+    }
+  };
+
   const additionalGroups = selectableGroups.filter((group) =>
     isAdditionalClothesCostSection(group.id),
   );
@@ -567,7 +597,10 @@ const GarmentDetailSelector = ({
   ) => {
     if (option.informational) return;
     if (option.id === DRESS_LINING_OPTION_ID) {
-      setHasLining(false);
+      setHasLining(checked);
+    }
+    if (setInvalidGroups && invalidGroups.includes(groupId)) {
+      setInvalidGroups((prev: string[]) => prev.filter((id) => id !== groupId));
     }
 
     setDesignSelections((previous: DesignSelections) => {
@@ -596,7 +629,28 @@ const GarmentDetailSelector = ({
       return filterDesignSelectionsForDecorativeFeatures({
         ...previous,
         customDetails: nextCustomDetails,
+        ...(option.id === DRESS_LINING_OPTION_ID ? { hasLining: checked } : {}),
       }, selectedStyle, selectedGarment);
+    });
+  };
+
+  const handleClearGroup = (groupId: CustomDetailSelectionGroup) => {
+    const groupOptions = selectableGroups.find((g) => g.id === groupId)?.options || [];
+    const containsLining = groupOptions.some((opt) => opt.id === DRESS_LINING_OPTION_ID);
+
+    if (containsLining) {
+      setHasLining(false);
+    }
+
+    setDesignSelections((previous: DesignSelections) => {
+      const nextSelections = clearCustomDetailSelectionGroup(
+        previous,
+        groupId,
+        selectedStyle,
+        customDetailCatalog,
+        selectedGarment,
+      );
+      return filterDesignSelectionsForDecorativeFeatures(nextSelections, selectedStyle, selectedGarment);
     });
   };
 
@@ -665,12 +719,109 @@ const GarmentDetailSelector = ({
     const presentation = isAdditionalClothesCostSection(groupId)
       ? ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION[groupId]
       : CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION[groupId];
+
+    const enrichedGarment = selectedGarment
+      ? { ...selectedGarment, lowerGarmentType: designSelections.lowerGarmentType }
+      : { lowerGarmentType: designSelections.lowerGarmentType };
+
+    const requiredGroups = getRequiredCustomDetailGroups(
+      selectedStyle,
+      normalizeCustomDetailCatalog(customDetailCatalog),
+      enrichedGarment,
+    );
+    const isRequired = requiredGroups.includes(groupId);
+
+    const allowsMultiple = options.some((opt) => opt.allowMultiple);
+    const showClearButton = allowsMultiple && canClearCustomDetailSelectionGroup(
+      designSelections,
+      groupId,
+      selectedStyle,
+      customDetailCatalog,
+      enrichedGarment,
+    );
+
+    const clearButtonLabel = allowsMultiple ? "Clear all" : "Clear selection";
+    const ariaLabel = allowsMultiple
+      ? `Clear all ${presentation.title} selections`
+      : `Clear ${presentation.title} selection`;
+
+    const clearButton = showClearButton && (
+      <button
+        type="button"
+        onClick={() => handleClearGroup(groupId)}
+        aria-label={ariaLabel}
+        className="text-[10px] font-medium text-gray-400 hover:text-heritage-gold focus:outline-none focus:underline transition-colors cursor-pointer select-none"
+      >
+        {clearButtonLabel}
+      </button>
+    );
+
+    const hasSelectedOption = getCustomDetailSelectionOptionIds(customDetails[groupId]).length > 0;
+    const isNoneSelected = !hasSelectedOption;
+    const noneOptionElement = !isRequired && !allowsMultiple && (
+      <label
+        key={`${groupId}-none`}
+        className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
+          isNoneSelected
+            ? "border-heritage-gold/40 bg-heritage-cream/10"
+            : "border-gray-150 bg-white hover:border-heritage-gold/30 hover:bg-heritage-cream/5"
+        }`}
+      >
+        <input
+          type="radio"
+          name={groupId}
+          checked={isNoneSelected}
+          onChange={() => handleClearGroup(groupId)}
+          className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-green"
+        />
+        <div className="flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <span className="block text-xs font-bold text-heritage-green">
+              None
+            </span>
+          </div>
+          <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+            No selection for this category
+          </span>
+        </div>
+      </label>
+    );
+
+    const isInvalid = invalidGroups.includes(groupId);
+
     return (
-      <div className="space-y-2 mb-4 col-span-1" key={groupId}>
-        {!suppressHeading && (
-          <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
-            {presentation.title}
-          </label>
+      <div
+        id={`custom-detail-group-${groupId}`}
+        tabIndex={-1}
+        className={`space-y-2 mb-4 col-span-1 focus:outline-none p-3.5 rounded-2xl transition-all duration-300 ${
+          isInvalid
+            ? "border-2 border-red-300 bg-red-50/20 shadow-sm shadow-red-100"
+            : "border-2 border-transparent"
+        }`}
+        key={groupId}
+      >
+        {!suppressHeading ? (
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-1.5">
+              <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+                {presentation.title}
+              </label>
+              <span className={`text-[8px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                isRequired
+                  ? "bg-red-50 text-red-600 border border-red-150"
+                  : "bg-gray-50 text-gray-500 border border-gray-200"
+              }`}>
+                {isRequired ? "Required" : "Optional"}
+              </span>
+            </div>
+            {clearButton}
+          </div>
+        ) : (
+          showClearButton && (
+            <div className="flex justify-end mb-1">
+              {clearButton}
+            </div>
+          )
         )}
         {!suppressHeading && presentation.description && (
           <p className="text-[10px] leading-tight text-heritage-ink/60">
@@ -678,6 +829,7 @@ const GarmentDetailSelector = ({
           </p>
         )}
         <div className="space-y-2">
+          {noneOptionElement}
           {options.map((opt) => {
             const isSelected =
               getCustomDetailSelectionOptionIds(customDetails[groupId]).includes(
@@ -723,10 +875,10 @@ const GarmentDetailSelector = ({
             return (
               <label
                 key={opt.id}
-                className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition hover:border-heritage-gold/50 ${
+                className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
                   isSelected
-                    ? "border-heritage-gold bg-heritage-cream/20"
-                    : "border-gray-150 bg-white"
+                    ? "border-heritage-green bg-heritage-green/10"
+                    : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
                 }`}
               >
                 <input
@@ -736,7 +888,7 @@ const GarmentDetailSelector = ({
                   onChange={(event) =>
                     handleSelect(groupId, opt, event.target.checked)
                   }
-                  className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-gold"
+                  className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-green"
                 />
               <div className="flex-1">
                 <div className="flex items-start justify-between gap-3">
@@ -759,6 +911,8 @@ const GarmentDetailSelector = ({
     );
   };
 
+  const lowerGarmentType = designSelections.lowerGarmentType;
+
   return (
     <>
       {explicitBoth && standardGroups.length > 0 && (
@@ -767,18 +921,135 @@ const GarmentDetailSelector = ({
           applicable garment section below.
         </div>
       )}
-      {parentSections.map((section) => (
-        <fieldset key={section.id} className="col-span-1 md:col-span-2 space-y-4 border-t border-gray-100 pt-4 mt-2 first:border-t-0 first:pt-0 first:mt-0">
-          <legend className="block font-extrabold text-heritage-green uppercase tracking-widest text-xs border-b border-heritage-gold/30 pb-1 w-full mb-4">
-            {section.title}
-          </legend>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-            {section.groups.map((group) =>
-              renderGroup(group.id, group.options, group.id === "neck_design"),
-            )}
+      {isAmbiguous && (
+        <div
+          id="custom-detail-group-lowerGarmentType"
+          tabIndex={-1}
+          className={`col-span-1 md:col-span-2 space-y-2 mb-6 border-b pb-6 focus:outline-none p-3.5 rounded-2xl transition-all duration-300 ${
+            invalidGroups.includes("lowerGarmentType")
+              ? "border-2 border-red-300 bg-red-50/20 shadow-sm shadow-red-100"
+              : "border-2 border-transparent"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-1.5">
+              <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+                Garment Type
+              </label>
+              <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider bg-red-50 text-red-600 border border-red-150">
+                Required
+              </span>
+            </div>
           </div>
-        </fieldset>
-      ))}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label
+              className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
+                lowerGarmentType === "trousers"
+                  ? "border-heritage-green bg-heritage-green/10"
+                  : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
+              }`}
+            >
+              <input
+                type="radio"
+                name="lowerGarmentType"
+                checked={lowerGarmentType === "trousers"}
+                onChange={() => {
+                  if (setInvalidGroups) {
+                    setInvalidGroups((prev: string[]) => prev.filter((id) => id !== "lowerGarmentType"));
+                  }
+                  setDesignSelections((prev: DesignSelections) => ({
+                    ...prev,
+                    lowerGarmentType: "trousers",
+                  }));
+                }}
+                className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-green"
+              />
+              <div className="flex-1">
+                <span className="block text-xs font-bold text-heritage-green">
+                  Leg Pant / Trouser
+                </span>
+                <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                  Design custom trousers with fastening and pocket options.
+                </span>
+              </div>
+            </label>
+
+            <label
+              className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
+                lowerGarmentType === "skirt"
+                  ? "border-heritage-green bg-heritage-green/10"
+                  : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
+              }`}
+            >
+              <input
+                type="radio"
+                name="lowerGarmentType"
+                checked={lowerGarmentType === "skirt"}
+                onChange={() => {
+                  if (setInvalidGroups) {
+                    setInvalidGroups((prev: string[]) => prev.filter((id) => id !== "lowerGarmentType"));
+                  }
+                  setDesignSelections((prev: DesignSelections) => ({
+                    ...prev,
+                    lowerGarmentType: "skirt",
+                  }));
+                }}
+                className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-green"
+              />
+              <div className="flex-1">
+                <span className="block text-xs font-bold text-heritage-green">
+                  Skirt
+                </span>
+                <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                  Design custom skirt length and pocket options.
+                </span>
+              </div>
+            </label>
+          </div>
+        </div>
+      )}
+      {parentSections.map((section) => {
+        const isIncluded = isParentSectionIncluded(section.id);
+        const helperGarmentName = getOptionalHeaderHelperText(section.id);
+
+        return (
+          <fieldset key={section.id} className="col-span-1 md:col-span-2 space-y-4 border-t border-gray-100 pt-4 mt-2 first:border-t-0 first:pt-0 first:mt-0">
+            <legend className="block w-full border-b border-heritage-gold/30 pb-1.5 mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-heritage-green uppercase tracking-widest text-xs">
+                    {section.title}
+                  </span>
+                  {isIncluded ? (
+                    <span className="text-[8px] font-bold px-2 py-0.5 rounded-full bg-heritage-green/10 text-heritage-green border border-heritage-green/20 uppercase tracking-wider">
+                      Included
+                    </span>
+                  ) : (
+                    <span className="text-[8px] font-bold px-2 py-0.5 rounded-full bg-gray-50 text-gray-500 border border-gray-200 uppercase tracking-wider">
+                      Optional customization
+                    </span>
+                  )}
+                </div>
+                {isIncluded ? (
+                  <span className="text-[9px] font-medium text-heritage-green/70">
+                    Included in your outfit
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-medium text-heritage-ink/50">
+                    Not part of your selected outfit. Selecting details here does not add a {helperGarmentName} to your order.
+                  </span>
+                )}
+              </div>
+            </legend>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+              {section.groups.map((group) =>
+                renderGroup(group.id, group.options, group.id === "neck_design"),
+              )}
+            </div>
+          </fieldset>
+        );
+      })}
 
       {standardGroups.length === 0 && (
         <div className="col-span-1 md:col-span-2 rounded-xl border border-heritage-gold/25 bg-heritage-cream/20 px-4 py-4">
@@ -825,10 +1096,10 @@ const GarmentDetailSelector = ({
             return (
               <label
                 key={feature}
-                className={`flex min-h-[76px] items-start gap-3 rounded-xl border p-3 transition ${
+                className={`flex min-h-[76px] items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
                   checked
-                    ? "border-heritage-gold bg-heritage-cream/20"
-                    : "border-gray-150 bg-white hover:border-heritage-gold/50"
+                    ? "border-heritage-green bg-heritage-green/10"
+                    : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
                 } ${includedByStyle ? "cursor-default" : "cursor-pointer"}`}
               >
                 <input
@@ -841,7 +1112,7 @@ const GarmentDetailSelector = ({
                       event.target.checked,
                     )
                   }
-                  className="mt-1 h-4 w-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-gold"
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
                 />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-start justify-between gap-2">
@@ -918,10 +1189,10 @@ const GarmentDetailSelector = ({
             return (
               <label
                 key={accessory}
-                className={`flex min-h-[62px] cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+                className={`flex min-h-[62px] cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
                   checked
-                    ? "border-heritage-gold bg-heritage-cream/20"
-                    : "border-gray-150 bg-white hover:border-heritage-gold/50"
+                    ? "border-heritage-green bg-heritage-green/10"
+                    : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
                 }`}
               >
                 <input
@@ -930,7 +1201,7 @@ const GarmentDetailSelector = ({
                   onChange={(event) =>
                     handleAccessoryToggle(accessory, event.target.checked)
                   }
-                  className="mt-1 h-4 w-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-gold"
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
                 />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-start justify-between gap-2">
@@ -1107,6 +1378,7 @@ export default function DesignStudioView({
 }: DesignStudioViewProps) {
   // Current step state (1 to 9)
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const [invalidGroups, setInvalidGroups] = useState<string[]>([]);
   const [guestDraftHydrated, setGuestDraftHydrated] =
     useState<boolean>(false);
   const businessSettings = useAppStore((state) => state.businessSettings);
@@ -1414,6 +1686,9 @@ export default function DesignStudioView({
     discountFee?: number;
     code?: string;
   } | null>(null);
+
+  const garmentCode = getSelectedGarmentCode(selectedGarment || {});
+  const isAmbiguous = isAmbiguousLowerGarment(garmentCode);
   const liningEligible = isLiningEligibleForStyle(
     selectedStyle,
     selectedGarment?.code,
@@ -1424,10 +1699,24 @@ export default function DesignStudioView({
   );
 
   useEffect(() => {
-    if (!liningEligible && hasLining) {
-      setHasLining(false);
+    if (!liningEligible) {
+      if (hasLining) setHasLining(false);
+    } else {
+      if (hasCatalogDressLining && !hasLining) {
+        setHasLining(true);
+      } else if (!hasCatalogDressLining && hasLining) {
+        setDesignSelections((prev: DesignSelections) => {
+          const nextDetails = { ...(prev.customDetails || {}) };
+          nextDetails.dress_additional = DRESS_LINING_OPTION_ID;
+          return {
+            ...prev,
+            customDetails: nextDetails,
+            hasLining: true,
+          };
+        });
+      }
     }
-  }, [hasLining, liningEligible]);
+  }, [hasCatalogDressLining, hasLining, liningEligible, setDesignSelections]);
 
   useEffect(() => {
     if (selectedStyle) {
@@ -2139,9 +2428,27 @@ export default function DesignStudioView({
     ctx.batchName,
   ]);
 
+  const focusAndScrollToValidationTarget = (targetId: string) => {
+    const targetEl = document.getElementById(targetId);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(() => {
+        const input = targetEl.querySelector("input:not([disabled])") as HTMLElement;
+        if (input) {
+          input.focus();
+        } else {
+          targetEl.focus();
+        }
+      }, 300);
+    } else {
+      document.getElementById("design-studio-stepper")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
   // Handle step advances
   const handleNextStep = () => {
     setValidationError("");
+    setInvalidGroups([]);
 
     // Step validation checks
     if (currentStep === 1) {
@@ -2170,18 +2477,34 @@ export default function DesignStudioView({
       return;
     }
     if (currentStep === 3) {
+      const enrichedGarment = selectedGarment
+        ? { ...selectedGarment, lowerGarmentType: designSelections.lowerGarmentType }
+        : { lowerGarmentType: designSelections.lowerGarmentType };
+
       const missingGroup = getMissingCustomDetailGroup(
         selectedStyle,
         designSelections,
         customDetailCatalog,
-        selectedGarment,
+        enrichedGarment,
       );
 
       if (missingGroup) {
-        const missingLabel = missingGroup.replace(/_/g, " ");
-        setValidationError(`Please select a ${missingLabel} option.`);
+        const presentation = CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION[missingGroup] ||
+                             (ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION as any)[missingGroup];
+        const missingLabel = presentation?.title || missingGroup.replace(/_/g, " ");
+        setValidationError(`Please select a ${missingLabel.toLowerCase()} option.`);
+        setInvalidGroups([missingGroup]);
         setTimeout(() => {
-          document.getElementById("design-studio-stepper")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          focusAndScrollToValidationTarget(`custom-detail-group-${missingGroup}`);
+        }, 50);
+        return;
+      }
+
+      if (isAmbiguous && !designSelections.lowerGarmentType) {
+        setValidationError("Please select a Garment Type.");
+        setInvalidGroups(["lowerGarmentType"]);
+        setTimeout(() => {
+          focusAndScrollToValidationTarget("custom-detail-group-lowerGarmentType");
         }, 50);
         return;
       }
@@ -2746,7 +3069,7 @@ export default function DesignStudioView({
 
       {/* Validation feedback banners */}
       {validationError && (
-        <div className="p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl flex items-center gap-3 text-xs">
+        <div role="alert" aria-live="assertive" className="p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl flex items-center gap-3 text-xs">
           <AlertTriangle className="text-amber-700 shrink-0" size={16} />
           <p className="font-medium">{validationError}</p>
         </div>
@@ -3311,6 +3634,8 @@ export default function DesignStudioView({
                   hasLining={hasLining}
                   setHasLining={setHasLining}
                   currencySymbol={currencySymbol}
+                  invalidGroups={invalidGroups}
+                  setInvalidGroups={setInvalidGroups}
                 />
               </div>
             </div>
@@ -4920,6 +5245,18 @@ export default function DesignStudioView({
                     <li>
                       Garment Cut: <strong>{selectedGarment?.type || "Pending"}</strong>
                     </li>
+                    {isAmbiguous && (
+                      <li>
+                        Lower Garment Type:{" "}
+                        <strong className="uppercase">
+                          {designSelections.lowerGarmentType === "trousers"
+                            ? "Trouser"
+                            : designSelections.lowerGarmentType === "skirt"
+                            ? "Skirt"
+                            : "Pending"}
+                        </strong>
+                      </li>
+                    )}
                     <GarmentDetailSummaryItems
                       designSelections={designSelections}
                       isLi={true}
@@ -5424,6 +5761,18 @@ export default function DesignStudioView({
                   {selectedGarment?.type || "Pending"}
                 </strong>
               </p>
+              {isAmbiguous && (
+                <p>
+                  Lower Garment Type:{" "}
+                  <strong className="text-heritage-green font-bold uppercase">
+                    {designSelections.lowerGarmentType === "trousers"
+                      ? "Trouser"
+                      : designSelections.lowerGarmentType === "skirt"
+                      ? "Skirt"
+                      : "Pending"}
+                  </strong>
+                </p>
+              )}
               <GarmentDetailSummaryItems
                 designSelections={designSelections}
                 isLi={false}

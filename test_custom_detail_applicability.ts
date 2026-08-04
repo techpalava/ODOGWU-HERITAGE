@@ -29,6 +29,11 @@ import {
   getRequiredCustomDetailGroups,
   getCustomDetailsBreakdown,
   isClothingPriceSelectionGroup,
+  canClearCustomDetailSelectionGroup,
+  clearCustomDetailSelectionGroup,
+  normalizeCustomDetailCatalog,
+  isLiningEligibleForStyle,
+  getMissingCustomDetailGroup,
 } from "./src/utils/catalogHelpers";
 import { calculateDesignPricing } from "./src/utils/designPricing";
 import {
@@ -1277,5 +1282,765 @@ assert.equal(
     contextualPricing.customDetailsPrice,
   "Totals remain mathematically sound"
 );
+
+// ==========================================
+// Clear-Selection Controls Tests
+// ==========================================
+
+console.log("Running clear-selection tests...");
+
+// Setup mock style and catalog
+const testStyle: StyleCategory = {
+  id: "test-style",
+  name: "Test Style",
+  gender: "unisex",
+  clothingCategory: "senator",
+  supportedGarmentGroups: ["shirt"],
+  baseSewingPriceCents: 5000,
+  targetDemographic: "unisex",
+  pricingRules: [],
+  customDetailConfig: {
+    enabled: true,
+    requiredSelectionGroups: ["shirt_construction"],
+  },
+} as any;
+
+const testCatalog: CustomDetailOption[] = [
+  {
+    id: "sc_pocket_1",
+    label: "Pockets",
+    description: "Standard pocket option",
+    selectionGroup: "shirt_pockets",
+    allowMultiple: false,
+    priceCents: 1000,
+    active: true,
+    garmentGroup: "shirt",
+    eligibleDemographics: ["unisex"],
+    displayOrder: 0,
+    required: false,
+    createdAt: "",
+    updatedAt: "",
+  },
+  {
+    id: "sc_construction_1",
+    label: "Construction Required",
+    description: "Required option",
+    selectionGroup: "shirt_construction",
+    allowMultiple: false,
+    priceCents: 0,
+    active: true,
+    garmentGroup: "shirt",
+    eligibleDemographics: ["unisex"],
+    displayOrder: 0,
+    required: true,
+    createdAt: "",
+    updatedAt: "",
+  },
+  {
+    id: "sc_additional_1",
+    label: "Additional Upgrade",
+    description: "Additional cost",
+    selectionGroup: "shirt_additional",
+    allowMultiple: true,
+    priceCents: 1500,
+    active: true,
+    garmentGroup: "shirt",
+    eligibleDemographics: ["unisex"],
+    displayOrder: 0,
+    required: false,
+    createdAt: "",
+    updatedAt: "",
+  },
+  {
+    id: "sc_additional_2",
+    label: "Additional Upgrade 2",
+    description: "Additional cost 2",
+    selectionGroup: "shirt_additional",
+    allowMultiple: true,
+    priceCents: 2000,
+    active: true,
+    garmentGroup: "shirt",
+    eligibleDemographics: ["unisex"],
+    displayOrder: 0,
+    required: false,
+    createdAt: "",
+    updatedAt: "",
+  },
+  {
+    id: "L5", // Dress lining special case
+    label: "Dress Lining",
+    description: "Lining net",
+    selectionGroup: "dress_additional",
+    allowMultiple: true,
+    priceCents: 1000,
+    active: true,
+    garmentGroup: "dress",
+    eligibleDemographics: ["unisex"],
+    displayOrder: 0,
+    required: false,
+    createdAt: "",
+    updatedAt: "",
+  },
+] as any;
+
+const mockGarment = { code: "AUTO", type: "Senator Outfit" };
+
+// Scenario 1: REQUIRED-GROUP PROTECTION - cannot clear required group
+const selectionsWithRequired: DesignSelections = {
+  customDetails: {
+    shirt_construction: "sc_construction_1",
+    shirt_pockets: "sc_pocket_1",
+  },
+};
+
+const canClearRequired = canClearCustomDetailSelectionGroup(
+  selectionsWithRequired,
+  "shirt_construction",
+  testStyle,
+  testCatalog,
+  mockGarment,
+);
+assert.equal(canClearRequired, false, "Required group should not be clearable");
+
+const clearedRequiredResult = clearCustomDetailSelectionGroup(
+  selectionsWithRequired,
+  "shirt_construction",
+  testStyle,
+  testCatalog,
+  mockGarment,
+);
+assert.equal(clearedRequiredResult, selectionsWithRequired, "Clearing required group must return the original object unchanged");
+
+// Scenario 2: OPTIONAL GROUP CLEARING
+const selectionsWithOptional: DesignSelections = {
+  customDetails: {
+    shirt_construction: "sc_construction_1",
+    shirt_additional: "sc_additional_1",
+  },
+};
+
+const canClearOptional = canClearCustomDetailSelectionGroup(
+  selectionsWithOptional,
+  "shirt_additional",
+  testStyle,
+  testCatalog,
+  mockGarment,
+);
+assert.equal(canClearOptional, true, "Optional group with selection should be clearable");
+
+const clearedOptionalResult = clearCustomDetailSelectionGroup(
+  selectionsWithOptional,
+  "shirt_additional",
+  testStyle,
+  testCatalog,
+  mockGarment,
+);
+assert.ok(clearedOptionalResult !== selectionsWithOptional, "Clearing optional group must return a new object");
+assert.ok(clearedOptionalResult.customDetails, "customDetails should exist");
+assert.equal(clearedOptionalResult.customDetails.shirt_additional, undefined, "Cleared group key must be completely deleted");
+assert.equal(clearedOptionalResult.customDetails.shirt_construction, "sc_construction_1", "Unrelated selections must be preserved");
+
+// Scenario 3: IMMUTABILITY PROOFS
+assert.deepEqual(selectionsWithOptional.customDetails, {
+  shirt_construction: "sc_construction_1",
+  shirt_additional: "sc_additional_1",
+}, "Original selections object's customDetails must not be mutated");
+
+// Scenario 4: MULTI-SELECT CLEARING
+const selectionsMulti: DesignSelections = {
+  customDetails: {
+    shirt_additional: ["sc_additional_1", "sc_additional_2"],
+  },
+  customDetailSnapshots: [
+    { optionId: "sc_additional_1", selectionGroup: "shirt_additional", label: "Add 1", priceCents: 1500, requiresEvaluation: false },
+    { optionId: "sc_additional_2", selectionGroup: "shirt_additional", label: "Add 2", priceCents: 2000, requiresEvaluation: false },
+    { optionId: "sc_construction_1", selectionGroup: "shirt_construction", label: "Construction", priceCents: 0, requiresEvaluation: false },
+  ] as any,
+};
+
+const clearedMulti = clearCustomDetailSelectionGroup(
+  selectionsMulti,
+  "shirt_additional",
+  testStyle,
+  testCatalog,
+  mockGarment,
+);
+
+assert.equal(clearedMulti.customDetails.shirt_additional, undefined, "Multi-select clear removes key entirely");
+assert.ok(clearedMulti.customDetailSnapshots, "Snapshots list exists");
+const remainingSnapshots = clearedMulti.customDetailSnapshots;
+assert.equal(remainingSnapshots.length, 1, "Snapshots of cleared group must be removed");
+assert.equal(remainingSnapshots[0].optionId, "sc_construction_1", "Unrelated snapshots must remain untouched");
+
+// Scenario 5: DRESS LINING SPECIAL CASE
+const selectionsLining: DesignSelections = {
+  hasLining: true,
+  customDetails: {
+    dress_additional: ["L5"],
+  },
+  customDetailSnapshots: [
+    { optionId: "L5", selectionGroup: "dress_additional", label: "Lining", priceCents: 1000, requiresEvaluation: false },
+  ] as any,
+};
+
+const clearedLining = clearCustomDetailSelectionGroup(
+  selectionsLining,
+  "dress_additional",
+  testStyle,
+  testCatalog,
+  mockGarment,
+);
+
+assert.equal(clearedLining.hasLining, false, "Clearing dress_additional must synchronize hasLining to false");
+assert.equal(clearedLining.customDetails.dress_additional, undefined, "dress_additional key should be deleted");
+assert.equal(clearedLining.customDetailSnapshots?.length, 0, "dress_additional snapshot must be removed");
+
+// ==========================================
+// None state refinement tests
+// ==========================================
+
+console.log("Running None state refinement tests...");
+
+// 1. Optional single-choice group represents None when no selection exists
+const selectionsEmpty: DesignSelections = {};
+const canClearEmptyOptional = canClearCustomDetailSelectionGroup(
+  selectionsEmpty,
+  "shirt_pockets",
+  testStyle,
+  testCatalog,
+  mockGarment,
+);
+assert.equal(canClearEmptyOptional, false, "Should not be able to clear an empty group (it is already None)");
+
+// 2. None is UI-only and absent from catalog
+const normalizedCat = normalizeCustomDetailCatalog(testCatalog);
+const noneCatalogOption = normalizedCat.find(opt => opt.id === "none" || opt.label === "None");
+assert.equal(noneCatalogOption, undefined, "None option must not exist in catalog");
+
+// 3. None produces no customDetails key
+const clearedObj = clearCustomDetailSelectionGroup(
+  selectionsWithRequired,
+  "shirt_pockets",
+  testStyle,
+  testCatalog,
+  mockGarment,
+);
+assert.equal(clearedObj.customDetails?.shirt_pockets, undefined, "None state has no key in customDetails");
+
+// 4. None produces no customDetailSnapshots
+assert.ok(!clearedObj.customDetailSnapshots || clearedObj.customDetailSnapshots.length === 0, "None state produces no snapshots");
+
+// 5. None produces no price
+const selectionsForPricing1: DesignSelections = {
+  customDetails: {
+    shirt_construction: "sc_construction_1",
+    shirt_pockets: "sc_pocket_1",
+  },
+};
+const selectionsForPricing2 = clearCustomDetailSelectionGroup(
+  selectionsForPricing1,
+  "shirt_pockets",
+  testStyle,
+  testCatalog,
+  mockGarment,
+);
+const pricing1 = calculateDesignPricing({
+  route: "alone",
+  design: selectionsForPricing1,
+  fabric: {
+    code: "CTX-001",
+    category: "HiTarget Ankara",
+  } as any,
+  style: testStyle,
+  catalog: testCatalog,
+  garment: mockGarment,
+  businessSettings: {
+    pricingSettings: {
+      depositPercentage: 50,
+      balancePercentage: 50,
+      currency: "EUR",
+      vatTaxPercentage: 0,
+      discountRulesEnabled: false,
+      standardAccessoryCharge: 10,
+    },
+  } as any,
+});
+const pricing2 = calculateDesignPricing({
+  route: "alone",
+  design: selectionsForPricing2,
+  fabric: {
+    code: "CTX-001",
+    category: "HiTarget Ankara",
+  } as any,
+  style: testStyle,
+  catalog: testCatalog,
+  garment: mockGarment,
+  businessSettings: {
+    pricingSettings: {
+      depositPercentage: 50,
+      balancePercentage: 50,
+      currency: "EUR",
+      vatTaxPercentage: 0,
+      discountRulesEnabled: false,
+      standardAccessoryCharge: 10,
+    },
+  } as any,
+});
+assert.equal(pricing1.customDetailsPrice - pricing2.customDetailsPrice, 10, "Clearing standard pockets saves exactly 10.00 euros");
+
+// 6. Required groups do not permit None
+const requiredGroupsMock = getRequiredCustomDetailGroups(testStyle, normalizedCat, mockGarment);
+assert.ok(requiredGroupsMock.includes("shirt_construction"), "shirt_construction is required");
+const canClearReq = canClearCustomDetailSelectionGroup(
+  selectionsWithRequired,
+  "shirt_construction",
+  testStyle,
+  testCatalog,
+  mockGarment,
+);
+assert.equal(canClearReq, false, "Required group cannot be cleared (does not permit None)");
+
+// 7. Every active single-choice selection group has deterministic behavior
+const activeSingleChoiceGroups = getSelectableCustomDetailGroups(testCatalog).filter(g => !g.options.some(opt => opt.allowMultiple));
+assert.ok(activeSingleChoiceGroups.length > 0);
+for (const group of activeSingleChoiceGroups) {
+  const reqs = getRequiredCustomDetailGroups(testStyle, normalizedCat, mockGarment);
+  const isReq = reqs.includes(group.id);
+  console.log(`  - Group: ${group.id}, Required: ${isReq}`);
+}
+
+// 8. L6/L7 Garment Choice requirements test
+console.log("Running L6/L7 Garment Choice requirements tests...");
+const testStyleNoRequiredConfig: StyleCategory = {
+  id: "test-style-no-req",
+  name: "Test Style No Req",
+  gender: "unisex",
+  clothingCategory: "senator",
+  baseSewingPriceCents: 5000,
+  targetDemographic: "unisex",
+  pricingRules: [],
+  customDetailConfig: {
+    enabled: true,
+  },
+} as any;
+
+const l6GarmentUnresolved: CustomDetailGarmentContext = {
+  code: "L6",
+  type: "Leg Pant or Skirt, Short-Length (Up to Knee)",
+  composition: "Leg Pant or Skirt",
+};
+const l6GarmentTrousers: CustomDetailGarmentContext = {
+  ...l6GarmentUnresolved,
+  lowerGarmentType: "trousers",
+};
+const l6GarmentSkirt: CustomDetailGarmentContext = {
+  ...l6GarmentUnresolved,
+  lowerGarmentType: "skirt",
+};
+
+// When unresolved: neither trouser nor skirt groups are required/applicable
+const realNormalizedCat = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
+const requiredGroupsUnresolved = getRequiredCustomDetailGroups(testStyleNoRequiredConfig, realNormalizedCat, l6GarmentUnresolved);
+assert.ok(!requiredGroupsUnresolved.includes("trouser_fastening"), "trouser_fastening should not be required when lowerGarmentType is unresolved");
+assert.ok(!requiredGroupsUnresolved.includes("trouser_pockets"), "trouser_pockets should not be required when lowerGarmentType is unresolved");
+assert.ok(!requiredGroupsUnresolved.includes("skirt_length"), "skirt_length should not be required when lowerGarmentType is unresolved");
+assert.ok(!requiredGroupsUnresolved.includes("skirt_pockets"), "skirt_pockets should not be required when lowerGarmentType is unresolved");
+
+// When trousers: trouser fastening and trouser pockets should be required, skirt groups should not be
+const requiredGroupsTrousers = getRequiredCustomDetailGroups(testStyleNoRequiredConfig, realNormalizedCat, l6GarmentTrousers);
+console.log("supportedGroups:", getSupportedCustomDetailGroups(testStyleNoRequiredConfig, l6GarmentTrousers));
+console.log("requiredGroupsTrousers:", requiredGroupsTrousers);
+assert.ok(requiredGroupsTrousers.includes("trouser_fastening"), "trouser_fastening should be required when lowerGarmentType is trousers");
+assert.ok(requiredGroupsTrousers.includes("trouser_pockets"), "trouser_pockets should be required when lowerGarmentType is trousers");
+assert.ok(!requiredGroupsTrousers.includes("skirt_length"), "skirt_length should not be required when lowerGarmentType is trousers");
+assert.ok(!requiredGroupsTrousers.includes("skirt_pockets"), "skirt_pockets should not be required when lowerGarmentType is trousers");
+
+// When skirt: skirt length and skirt pockets should be required, trouser groups should not be
+const requiredGroupsSkirt = getRequiredCustomDetailGroups(testStyleNoRequiredConfig, realNormalizedCat, l6GarmentSkirt);
+assert.ok(!requiredGroupsSkirt.includes("trouser_fastening"), "trouser_fastening should not be required when lowerGarmentType is skirt");
+assert.ok(!requiredGroupsSkirt.includes("trouser_pockets"), "trouser_pockets should not be required when lowerGarmentType is skirt");
+assert.ok(requiredGroupsSkirt.includes("skirt_length"), "skirt_length should be required when lowerGarmentType is skirt");
+assert.ok(requiredGroupsSkirt.includes("skirt_pockets"), "skirt_pockets should be required when lowerGarmentType is skirt");
+
+console.log("L6/L7 Garment Choice tests passed!");
+
+// 9. L8/L9 Combination Preservation tests
+console.log("Running L8/L9 Combination Preservation tests...");
+const ladiesTestStyle: StyleCategory = {
+  id: "ladies-test-style",
+  name: "Ladies Test Style",
+  gender: "female",
+  clothingCategory: "senator",
+  baseSewingPriceCents: 6000,
+  targetDemographic: "female",
+  pricingRules: [],
+  customDetailConfig: {
+    enabled: true,
+  },
+} as any;
+
+const combinationCodes = ["L8.1", "L8.2", "L9.1", "L9.2"];
+for (const code of combinationCodes) {
+  const gUnresolved: CustomDetailGarmentContext = {
+    code,
+    type: `${code} Combination Garment`,
+    composition: `${code} Combination`,
+  };
+  const gTrousers: CustomDetailGarmentContext = { ...gUnresolved, lowerGarmentType: "trousers" };
+  const gSkirt: CustomDetailGarmentContext = { ...gUnresolved, lowerGarmentType: "skirt" };
+
+  // Unresolved preserves Dress, does not require trouser or skirt details
+  const reqsUnresolved = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, gUnresolved);
+  assert.ok(reqsUnresolved.includes("dress_construction"), `${code} unresolved must require dress_construction`);
+  assert.ok(reqsUnresolved.includes("dress_pockets"), `${code} unresolved must require dress_pockets`);
+  assert.ok(!reqsUnresolved.includes("trouser_fastening"), `${code} unresolved must not require trouser_fastening`);
+  assert.ok(!reqsUnresolved.includes("trouser_pockets"), `${code} unresolved must not require trouser_pockets`);
+  assert.ok(!reqsUnresolved.includes("skirt_length"), `${code} unresolved must not require skirt_length`);
+  assert.ok(!reqsUnresolved.includes("skirt_pockets"), `${code} unresolved must not require skirt_pockets`);
+
+  // Trouser selected: Dress required, Trouser required, Skirt optional
+  const reqsTrousers = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, gTrousers);
+  assert.ok(reqsTrousers.includes("dress_construction"), `${code} trousers must require dress_construction`);
+  assert.ok(reqsTrousers.includes("dress_pockets"), `${code} trousers must require dress_pockets`);
+  assert.ok(reqsTrousers.includes("trouser_fastening"), `${code} trousers must require trouser_fastening`);
+  assert.ok(reqsTrousers.includes("trouser_pockets"), `${code} trousers must require trouser_pockets`);
+  assert.ok(!reqsTrousers.includes("skirt_length"), `${code} trousers must not require skirt_length`);
+  assert.ok(!reqsTrousers.includes("skirt_pockets"), `${code} trousers must not require skirt_pockets`);
+
+  // Skirt selected: Dress required, Skirt required, Trouser optional
+  const reqsSkirt = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, gSkirt);
+  assert.ok(reqsSkirt.includes("dress_construction"), `${code} skirt must require dress_construction`);
+  assert.ok(reqsSkirt.includes("dress_pockets"), `${code} skirt must require dress_pockets`);
+  assert.ok(!reqsSkirt.includes("trouser_fastening"), `${code} skirt must not require trouser_fastening`);
+  assert.ok(!reqsSkirt.includes("trouser_pockets"), `${code} skirt must not require trouser_pockets`);
+  assert.ok(reqsSkirt.includes("skirt_length"), `${code} skirt must require skirt_length`);
+  assert.ok(reqsSkirt.includes("skirt_pockets"), `${code} skirt must require skirt_pockets`);
+}
+console.log("L8/L9 Combination Preservation tests passed!");
+
+// 10. Existing G1, G3, G4, G5.1 and L1 behavior remains unchanged
+console.log("Checking G1, G3, G4, G5.1 and L1 behaviors remain unchanged...");
+const g1Groups = getSupportedCustomDetailGroups(testStyle, { code: "G1" });
+assert.deepEqual(g1Groups, ["shirt", "neck"], "G1 should support shirt and neck");
+
+const g3Groups = getSupportedCustomDetailGroups(testStyle, { code: "G3" });
+assert.deepEqual(g3Groups, ["standard_shorts"], "G3 should support standard_shorts");
+
+const g4Groups = getSupportedCustomDetailGroups(testStyle, { code: "G4" });
+assert.deepEqual(g4Groups, ["trousers"], "G4 should support trousers");
+
+const g51Groups = getSupportedCustomDetailGroups(testStyle, { code: "G5.1" });
+assert.deepEqual(g51Groups, ["shirt", "neck", "standard_shorts"], "G5.1 should support shirt, neck, standard_shorts");
+
+const l1Groups = getSupportedCustomDetailGroups(testStyle, { code: "L1" });
+assert.deepEqual(l1Groups, ["dress", "neck"], "L1 should support dress and neck");
+console.log("Garment groups regression tests passed!");
+
+// 11. Price remains unchanged when switching Trouser vs Skirt
+console.log("Checking price remains unchanged when switching Trouser vs Skirt...");
+const pricingTrousers = calculateDesignPricing({
+  route: "alone",
+  design: {
+    lowerGarmentType: "trousers",
+    customDetails: {},
+  },
+  fabric: {
+    code: "CTX-001",
+    category: "HiTarget Ankara",
+  } as any,
+  style: testStyle,
+  catalog: SEED_CUSTOM_DETAIL_CATALOG,
+  garment: { code: "L6" },
+  businessSettings: {
+    pricingSettings: {
+      depositPercentage: 50,
+      balancePercentage: 50,
+      currency: "EUR",
+      vatTaxPercentage: 0,
+      discountRulesEnabled: false,
+      standardAccessoryCharge: 10,
+    },
+  } as any,
+});
+const pricingSkirt = calculateDesignPricing({
+  route: "alone",
+  design: {
+    lowerGarmentType: "skirt",
+    customDetails: {},
+  },
+  fabric: {
+    code: "CTX-001",
+    category: "HiTarget Ankara",
+  } as any,
+  style: testStyle,
+  catalog: SEED_CUSTOM_DETAIL_CATALOG,
+  garment: { code: "L6" },
+  businessSettings: {
+    pricingSettings: {
+      depositPercentage: 50,
+      balancePercentage: 50,
+      currency: "EUR",
+      vatTaxPercentage: 0,
+      discountRulesEnabled: false,
+      standardAccessoryCharge: 10,
+    },
+  } as any,
+});
+assert.ok(pricingTrousers !== null && pricingSkirt !== null);
+assert.equal(pricingTrousers.clothingPrice, pricingSkirt.clothingPrice, "Clothing price must remain identical for trousers vs skirt choice");
+assert.equal(pricingTrousers.garmentSubtotal, pricingSkirt.garmentSubtotal, "Total price must remain identical for trousers vs skirt choice");
+console.log("Price equality verification passed!");
+
+// 12. Composition-aware requiredness tests
+console.log("Running composition-aware requiredness regression tests...");
+
+// 1. Shirt-only order never requires Dress.
+const g1Garment = { code: "G1", type: "Shirt", composition: "Shirt" };
+const reqsG1 = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, g1Garment);
+assert.ok(!reqsG1.includes("dress_construction"), "G1 should not require dress_construction");
+assert.ok(!reqsG1.includes("dress_pockets"), "G1 should not require dress_pockets");
+
+// 2. Shirt-only order never requires Skirt.
+assert.ok(!reqsG1.includes("skirt_length"), "G1 should not require skirt_length");
+assert.ok(!reqsG1.includes("skirt_pockets"), "G1 should not require skirt_pockets");
+
+// 3. Shirt + Trouser never requires Dress.
+const g52Garment = { code: "G5.2", type: "Shirt + Trouser", composition: "Shirt + Trouser" };
+const reqsG52 = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, g52Garment);
+assert.ok(!reqsG52.includes("dress_construction"), "G5.2 should not require dress_construction");
+assert.ok(!reqsG52.includes("dress_pockets"), "G5.2 should not require dress_pockets");
+
+// 4. Shirt + Trouser never requires Skirt.
+assert.ok(!reqsG52.includes("skirt_length"), "G5.2 should not require skirt_length");
+assert.ok(!reqsG52.includes("skirt_pockets"), "G5.2 should not require skirt_pockets");
+
+// 5. Shirt + Shorts never requires Trouser.
+const g51Garment = { code: "G5.1", type: "Shirt + Shorts", composition: "Shirt + Shorts" };
+const reqsG51 = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, g51Garment);
+assert.ok(!reqsG51.includes("trouser_fastening"), "G5.1 should not require trouser_fastening");
+assert.ok(!reqsG51.includes("trouser_pockets"), "G5.1 should not require trouser_pockets");
+
+// 6. Dress-only never requires Shirt.
+const l1Garment = { code: "L1", type: "Dress", composition: "Dress" };
+const reqsL1 = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, l1Garment);
+assert.ok(!reqsL1.includes("shirt_construction"), "L1 should not require shirt_construction");
+assert.ok(!reqsL1.includes("shirt_pockets"), "L1 should not require shirt_pockets");
+
+// 7. Dress-only never requires Trouser/Skirt unless actually included.
+assert.ok(!reqsL1.includes("trouser_fastening"), "L1 should not require trouser_fastening");
+assert.ok(!reqsL1.includes("trouser_pockets"), "L1 should not require trouser_pockets");
+assert.ok(!reqsL1.includes("skirt_length"), "L1 should not require skirt_length");
+assert.ok(!reqsL1.includes("skirt_pockets"), "L1 should not require skirt_pockets");
+
+// 8. L6/L7 requirements follow lowerGarmentType.
+const l6UnresolvedReqs = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, { code: "L6" });
+assert.ok(!l6UnresolvedReqs.includes("trouser_fastening"), "L6 unresolved must not require trousers");
+assert.ok(!l6UnresolvedReqs.includes("skirt_length"), "L6 unresolved must not require skirt");
+
+const l6TrouserReqs = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, { code: "L6", lowerGarmentType: "trousers" });
+assert.ok(l6TrouserReqs.includes("trouser_fastening"), "L6 trousers must require trousers");
+assert.ok(!l6TrouserReqs.includes("skirt_length"), "L6 trousers must not require skirt");
+
+const l6SkirtReqs = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, { code: "L6", lowerGarmentType: "skirt" });
+assert.ok(!l6SkirtReqs.includes("trouser_fastening"), "L6 skirt must not require trousers");
+assert.ok(l6SkirtReqs.includes("skirt_length"), "L6 skirt must require skirt");
+
+// 9. L8/L9 preserve Dress + selected lower branch.
+const l8TrouserReqs = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, { code: "L8.1", lowerGarmentType: "trousers" });
+assert.ok(l8TrouserReqs.includes("dress_construction"), "L8.1 trousers must require dress");
+assert.ok(l8TrouserReqs.includes("trouser_fastening"), "L8.1 trousers must require trousers");
+assert.ok(!l8TrouserReqs.includes("skirt_length"), "L8.1 trousers must not require skirt");
+
+// 10. Non-included groups remain selectable & 11. Explicit unconventional selection persists.
+const unconventionalDesign: DesignSelections = {
+  customDetails: {
+    shirt_construction: "shirt_std_short",
+    dress_construction: "dress_std_short",
+  },
+};
+const filteredDesign = filterDesignSelectionsForCustomDetails(
+  ladiesTestStyle,
+  unconventionalDesign,
+  realNormalizedCat,
+  g52Garment,
+);
+assert.equal(filteredDesign.customDetails?.dress_construction, "dress_std_short", "Unconventional selection must persist");
+
+// 12. Explicit unconventional selection does NOT make that garment included.
+const resolvedGroups = getSupportedCustomDetailGroups(ladiesTestStyle, g52Garment);
+assert.ok(!resolvedGroups.includes("dress"), "Dress should not become included due to unconventional selection");
+
+// 13. Explicit unconventional selection does NOT activate unrelated required groups.
+const reqsWithUnconventional = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, g52Garment);
+assert.ok(!reqsWithUnconventional.includes("dress_construction"), "Dress required groups must not be activated by unconventional selection");
+
+// 14. Required included groups never show None & 15. Optional non-included groups show None
+const isRequiredIncluded = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, g52Garment).includes("shirt_construction");
+const isRequiredNonIncluded = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, g52Garment).includes("dress_construction");
+assert.equal(isRequiredIncluded, true, "shirt_construction (included required) must have isRequired true");
+assert.equal(isRequiredNonIncluded, false, "dress_construction (non-included optional) must have isRequired false");
+
+console.log("Composition-aware requiredness regression tests passed!");
+
+// --- STEP 3 AUDIT FIXES REGRESSION TESTS ---
+console.log("Running Step 3 Audit Fixes regression tests...");
+
+// A. Lining eligibility checks
+const femaleDressStyle = { ...ladiesTestStyle, demographic: "female" };
+
+// expected true
+const trueCodes = ["L1", "L2", "L3", "L4", "L8", "L8.1", "L8.2", "L9", "L9.1", "L9.2"];
+for (const code of trueCodes) {
+  assert.equal(isLiningEligibleForStyle(femaleDressStyle, code), true, `Code ${code} should be lining eligible`);
+}
+
+// expected false
+const falseCodes = ["G1", "G3", "G4", "G5.1", "G5.2", "L6", "L7"];
+for (const code of falseCodes) {
+  assert.equal(isLiningEligibleForStyle(femaleDressStyle, code), false, `Code ${code} should NOT be lining eligible`);
+}
+
+// L8/L9 lining selection synchronizes hasLining true / false / pricing counts lining once
+const catalog = realNormalizedCat;
+const l8Garment: CustomDetailGarmentContext = { code: "L8.1", lowerGarmentType: "trousers" };
+
+// 1. Can clear lining
+const initialSelections: DesignSelections = {
+  lowerGarmentType: "trousers",
+  hasLining: true,
+  customDetails: {
+    dress_additional: ["L5"]
+  }
+};
+assert.equal(canClearCustomDetailSelectionGroup(initialSelections, "dress_additional", femaleDressStyle, catalog, l8Garment), true, "Should be able to clear dress_additional if selected");
+
+// 2. Clearing synchronizes hasLining false
+const clearedSelections = clearCustomDetailSelectionGroup(initialSelections, "dress_additional", femaleDressStyle, catalog, l8Garment);
+assert.equal(clearedSelections.hasLining, false, "Clearing dress_additional must synchronize hasLining to false");
+assert.ok(!clearedSelections.customDetails?.dress_additional, "dress_additional key should be deleted");
+
+// 3. Pricing counts lining once
+const pricingLiningOptionOnly = calculateDesignPricing({
+  route: "alone",
+  design: {
+    lowerGarmentType: "trousers",
+    customDetails: {
+      dress_additional: "L5"
+    },
+    hasLining: false // customDetail has L5
+  },
+  fabric: { code: "CTX-001", category: "HiTarget Ankara" } as any,
+  style: femaleDressStyle,
+  catalog,
+  garment: l8Garment,
+  businessSettings: {
+    pricingSettings: {
+      depositPercentage: 50,
+      balancePercentage: 50,
+      currency: "EUR",
+      vatTaxPercentage: 0,
+      discountRulesEnabled: false,
+      standardAccessoryCharge: 10,
+    },
+  } as any,
+});
+
+const pricingLiningStateOnly = calculateDesignPricing({
+  route: "alone",
+  design: {
+    lowerGarmentType: "trousers",
+    customDetails: {},
+    hasLining: true // state has lining
+  },
+  fabric: { code: "CTX-001", category: "HiTarget Ankara" } as any,
+  style: femaleDressStyle,
+  catalog,
+  garment: l8Garment,
+  businessSettings: {
+    pricingSettings: {
+      depositPercentage: 50,
+      balancePercentage: 50,
+      currency: "EUR",
+      vatTaxPercentage: 0,
+      discountRulesEnabled: false,
+      standardAccessoryCharge: 10,
+    },
+  } as any,
+});
+
+const pricingLiningBoth = calculateDesignPricing({
+  route: "alone",
+  design: {
+    lowerGarmentType: "trousers",
+    customDetails: {
+      dress_additional: "L5"
+    },
+    hasLining: true // both selected
+  },
+  fabric: { code: "CTX-001", category: "HiTarget Ankara" } as any,
+  style: femaleDressStyle,
+  catalog,
+  garment: l8Garment,
+  businessSettings: {
+    pricingSettings: {
+      depositPercentage: 50,
+      balancePercentage: 50,
+      currency: "EUR",
+      vatTaxPercentage: 0,
+      discountRulesEnabled: false,
+      standardAccessoryCharge: 10,
+    },
+  } as any,
+});
+
+const pricingNoLining = calculateDesignPricing({
+  route: "alone",
+  design: {
+    lowerGarmentType: "trousers",
+    customDetails: {},
+    hasLining: false
+  },
+  fabric: { code: "CTX-001", category: "HiTarget Ankara" } as any,
+  style: femaleDressStyle,
+  catalog,
+  garment: l8Garment,
+  businessSettings: {
+    pricingSettings: {
+      depositPercentage: 50,
+      balancePercentage: 50,
+      currency: "EUR",
+      vatTaxPercentage: 0,
+      discountRulesEnabled: false,
+      standardAccessoryCharge: 10,
+    },
+  } as any,
+});
+
+assert.ok(pricingNoLining && pricingLiningOptionOnly && pricingLiningStateOnly && pricingLiningBoth);
+assert.equal(pricingNoLining.customDetailsPrice, 0, "No lining selected must add 0 custom details price");
+assert.equal(pricingLiningOptionOnly.customDetailsPrice, 10, "L5 selected must add exactly one lining charge of 10 EUR");
+assert.equal(pricingLiningStateOnly.customDetailsPrice, 10, "Legacy hasLining true must add exactly one lining charge of 10 EUR");
+assert.equal(pricingLiningBoth.customDetailsPrice, 10, "Both options active must add exactly one lining charge of 10 EUR");
+
+// B. Validation target resolution checks
+const missingSelections: DesignSelections = {
+  customDetails: {}
+};
+const missingGroup = getMissingCustomDetailGroup(femaleDressStyle, missingSelections, catalog, l8Garment);
+assert.equal(missingGroup, "dress_construction", "First missing group on dress should be dress_construction");
+
+const completeRequiredSelections: DesignSelections = {
+  customDetails: {
+    dress_construction: "dress_std_short",
+    dress_pockets: "dress_pocket_side",
+    neck_design: "neck_classic",
+    trouser_fastening: "trouser_zip",
+    trouser_pockets: "trouser_pocket_side"
+  }
+};
+const missingGroupOptional = getMissingCustomDetailGroup(femaleDressStyle, completeRequiredSelections, catalog, l8Garment);
+assert.equal(missingGroupOptional, null, "Should return null if all required groups are provided, even if optional groups are missing");
+
+console.log("Step 3 Audit Fixes regression tests passed!");
 
 console.log("Custom-detail applicability verification passed.");
