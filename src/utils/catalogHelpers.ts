@@ -20,6 +20,7 @@ import {
   CUSTOM_DETAIL_PARENT_SECTION_ORDER,
   CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION,
   CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION,
+  DRESS_LINING_OPTION_ID,
 } from "../config/GarmentDetailsConfig";
 
 const VALID_GARMENT_GROUPS = new Set<CustomDetailGarmentGroup>([
@@ -412,7 +413,7 @@ const inferStyleCompositionGroups = (
   return uniqueGarmentGroups(groups);
 };
 
-const getSelectedGarmentCode = (
+export const getSelectedGarmentCode = (
   garment: CustomDetailGarmentContext,
 ): string => {
   const directCode = String(garment.code || "").trim().toUpperCase();
@@ -423,6 +424,11 @@ const getSelectedGarmentCode = (
       .toUpperCase()
       .match(/\b(?:G\d+(?:\.\d+)?|L\d+(?:\.\d+)?)\b/)?.[0] || ""
   );
+};
+
+export const isAmbiguousLowerGarment = (code?: string): boolean => {
+  if (!code) return false;
+  return /^(?:L6|L7|L8(?:\.\d+)?|L9(?:\.\d+)?)$/.test(code);
 };
 
 const getSelectedGarmentGender = (
@@ -447,12 +453,34 @@ const getSelectedGarmentLowerGroups = (
   style: StyleCategory,
   garment: CustomDetailGarmentContext,
 ): CustomDetailGarmentGroup[] => {
-  const lowerGroups = inferGarmentGroupsFromText(style, [
-    garment.composition,
-    garment.type,
-  ]).filter((group) =>
-    ["standard_shorts", "bum_shorts", "trousers", "skirt"].includes(group),
-  );
+  const code = getSelectedGarmentCode(garment);
+  const isL8L9 = /^L(?:8|9)(?:\.\d+)?$/.test(code);
+  const isL6L7 = /^L[67]$/.test(code);
+
+  let lowerGroups: CustomDetailGarmentGroup[] = [];
+
+  if (isL8L9 || isL6L7) {
+    lowerGroups = ["trousers", "skirt"];
+  } else {
+    lowerGroups = inferGarmentGroupsFromText(style, [
+      garment.composition,
+      garment.type,
+    ]).filter((group) =>
+      ["standard_shorts", "bum_shorts", "trousers", "skirt"].includes(group),
+    );
+  }
+
+  const isAmbiguousLower = lowerGroups.includes("trousers") && lowerGroups.includes("skirt");
+  if (isAmbiguousLower) {
+    if (garment.lowerGarmentType === "trousers") {
+      return ["trousers"];
+    }
+    if (garment.lowerGarmentType === "skirt") {
+      return ["skirt"];
+    }
+    return [];
+  }
+
   if (lowerGroups.length <= 1) return lowerGroups;
 
   const configuredLowerGroups = getConfiguredGarmentGroups(style).filter(
@@ -562,7 +590,10 @@ export const getSupportedCustomDetailGroupResolution = (
   if (config?.enabled === false) return { groups: [], source: "disabled" };
 
   const selectedGarmentGroups = inferSelectedGarmentGroups(style, garment);
-  if (selectedGarmentGroups.length > 0) {
+  const code = garment ? getSelectedGarmentCode(garment) : "";
+  const hasSpecificCode = code && code !== "EXACT" && code !== "AUTO";
+
+  if (hasSpecificCode || selectedGarmentGroups.length > 0) {
     return { groups: selectedGarmentGroups, source: "selected_garment" };
   }
 
@@ -601,7 +632,7 @@ export const isLiningEligibleForStyle = (
   if (!isFemale && !isUnisex && !explicitlyBoth) return false;
 
   if (garmentCode && garmentCode !== "EXACT") {
-    return ["L1", "L2", "L3", "L4"].includes(garmentCode);
+    return getSupportedCustomDetailGroups(style, { code: garmentCode }).includes("dress");
   }
 
   return getSupportedCustomDetailGroups(style).includes("dress");
@@ -1100,4 +1131,101 @@ export const groupCustomDetailGroupsByParentSection = (
   }
 
   return result;
+};
+
+export const canClearCustomDetailSelectionGroup = (
+  selections: DesignSelections,
+  groupId: CustomDetailSelectionGroup,
+  style: StyleCategory | null,
+  catalog: CustomDetailOption[],
+  garment?: CustomDetailGarmentContext | null,
+): boolean => {
+  if (!style) return false;
+
+  const effectiveCatalog = normalizeCustomDetailCatalog(catalog);
+
+  // 1. A required group cannot be cleared.
+  const enrichedGarment = garment
+    ? { ...garment, lowerGarmentType: selections.lowerGarmentType }
+    : { lowerGarmentType: selections.lowerGarmentType };
+  const requiredGroups = getRequiredCustomDetailGroups(style, effectiveCatalog, enrichedGarment);
+  if (requiredGroups.includes(groupId)) {
+    return false;
+  }
+
+  // 2. Must contain at least one selected, active, genuine customer-selectable option.
+  const customDetails = selections.customDetails || {};
+  const selectedOptionIds = getCustomDetailSelectionOptionIds(customDetails[groupId]);
+  if (selectedOptionIds.length === 0 && !(groupId === "dress_additional" && selections.hasLining)) {
+    return false;
+  }
+
+  // Find all active, non-informational options for this group in the effective catalog
+  const selectableOptions = effectiveCatalog.filter(
+    (opt) => opt.selectionGroup === groupId && opt.active && !opt.informational
+  );
+  const selectableOptionIds = new Set(selectableOptions.map((opt) => opt.id));
+
+  // Legacy lining option is special case - check if L5 is selectable in the catalog
+  const isLiningSelectable = selectableOptionIds.has(DRESS_LINING_OPTION_ID);
+
+  // Check if any of the selected option IDs are actually selectable and active
+  const hasGenuineSelection = selectedOptionIds.some((id) => selectableOptionIds.has(id)) ||
+    (groupId === "dress_additional" && selections.hasLining && isLiningSelectable);
+
+  return hasGenuineSelection;
+};
+
+export const clearCustomDetailSelectionGroup = (
+  selections: DesignSelections,
+  groupId: CustomDetailSelectionGroup,
+  style: StyleCategory | null,
+  catalog: CustomDetailOption[],
+  garment?: CustomDetailGarmentContext | null,
+): DesignSelections => {
+  const effectiveCatalog = normalizeCustomDetailCatalog(catalog);
+
+  // 1. Confirm the group is not required.
+  // If a direct attempt is made to clear a required group, the helper should return the original selections object unchanged.
+  const enrichedGarment = garment
+    ? { ...garment, lowerGarmentType: selections.lowerGarmentType }
+    : { lowerGarmentType: selections.lowerGarmentType };
+  const requiredGroups = getRequiredCustomDetailGroups(style, effectiveCatalog, enrichedGarment);
+  if (requiredGroups.includes(groupId)) {
+    return selections;
+  }
+
+  // 2. Clone the current customDetails object and delete the group key.
+  const nextCustomDetails = selections.customDetails
+    ? { ...selections.customDetails }
+    : {};
+  delete nextCustomDetails[groupId];
+
+  // 3. Clone and filter snapshots (do not mutate the original snapshot array).
+  const nextSnapshots = selections.customDetailSnapshots
+    ? selections.customDetailSnapshots.filter(
+        (snapshot) => snapshot.selectionGroup !== groupId,
+      )
+    : undefined;
+
+  // 4. Synchronize Dress Lining legacy state
+  // Check if the cleared group contains DRESS_LINING_OPTION_ID (which is in dress_additional)
+  const isDressLiningCleared = groupId === "dress_additional";
+
+  let updatedSelections: DesignSelections = {
+    ...selections,
+    customDetails: nextCustomDetails,
+    ...(selections.customDetailSnapshots ? { customDetailSnapshots: nextSnapshots } : {}),
+    ...(isDressLiningCleared ? { hasLining: false } : {}),
+  };
+
+  // Run through the authoritative custom details sanitation pipeline
+  updatedSelections = filterDesignSelectionsForCustomDetails(
+    style,
+    updatedSelections,
+    effectiveCatalog,
+    garment,
+  );
+
+  return updatedSelections;
 };

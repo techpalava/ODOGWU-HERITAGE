@@ -98,6 +98,7 @@ export interface CustomDetailGarmentContext {
   type?: string;
   code?: string;
   composition?: string;
+  lowerGarmentType?: "trousers" | "skirt";
 }
 
 export interface ConstructionDetail {
@@ -218,6 +219,7 @@ export interface DesignSelections {
   skirtPocket?: string;
   embroideryDesign?: string;
   accessories?: string[];
+  lowerGarmentType?: "trousers" | "skirt";
 }
 
 export type DecorativeFeature =
