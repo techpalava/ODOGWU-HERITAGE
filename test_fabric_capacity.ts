@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { FabricCapacityEngine } from "./src/engine/FabricCapacityEngine";
-import type { FabricAllocation, FabricGarmentAssignment } from "./src/types";
+import type { FabricAllocation, FabricGarmentAssignment, FabricGarmentInputAssignment } from "./src/types";
 
 const summarize = (garments: FabricGarmentAssignment[]) =>
   garments.map((assignment) => {
@@ -35,9 +35,12 @@ const assertResolved = (
   }
 };
 
-const assertUnclassified = (allocation: FabricAllocation, expectedMessage: string) => {
-  const result = FabricCapacityEngine.resolveFabricAllocation(allocation);
-  assert.equal(result.status, "unclassified", "Allocation should be unclassified");
+const assertUnclassified = (
+  input: FabricGarmentInputAssignment,
+  expectedMessage: string,
+) => {
+  const result = FabricCapacityEngine.resolveGarmentAssignment(input);
+  assert.equal(result.status, "unclassified", "Garment input should be unclassified");
   assert.ok(
     result.reason.includes(expectedMessage),
     `Expected unclassified reason to include '${expectedMessage}', got '${result.reason}'`,
@@ -58,6 +61,20 @@ const assertCapacityExceeded = (
   assert.equal(result.attemptedGarment.garmentKey, expectedGarmentKey);
 };
 
+const resolveInputAllocation = (
+  allocationId: string,
+  fabricCode: string,
+  inputAssignments: Array<{ code: string; lowerGarmentType?: "trousers" | "skirt"; garmentSpec?: any }>,
+): FabricAllocation => {
+  const garmentAssignments: FabricGarmentAssignment[] = [];
+  for (const input of inputAssignments) {
+    const result = FabricCapacityEngine.resolveGarmentAssignment(input);
+    assert.equal(result.status, "resolved", `Expected ${input.code} to resolve`);
+    garmentAssignments.push(...result.assignments);
+  }
+  return { allocationId, fabricCode, garmentAssignments };
+};
+
 const assertCodeResolves = (
   code: string,
   expectedGarments: Array<{
@@ -68,11 +85,14 @@ const assertCodeResolves = (
     lowerGarmentType?: "trousers" | "skirt";
   }>,
 ) => {
+  const resolution = FabricCapacityEngine.resolveGarmentAssignment({ code });
+  assert.equal(resolution.status, "resolved", `Expected ${code} to resolve`);
+
   assertResolved(
     {
       allocationId: `resolve-${code}`,
       fabricCode: "FABRIC_TEST",
-      garmentAssignments: [{ code }],
+      garmentAssignments: resolution.assignments,
     },
     expectedGarments.reduce((sum, garment) => sum + garment.fabricUnits, 0),
     expectedGarments,
@@ -121,11 +141,9 @@ assertCodeResolves("L4", [
 ]);
 
 assertResolved(
-  {
-    allocationId: "L6-trouser",
-    fabricCode: "FABRIC_L6",
-    garmentAssignments: [{ code: "L6", lowerGarmentType: "trousers" }],
-  },
+  resolveInputAllocation("L6-trouser", "FABRIC_L6", [
+    { code: "L6", lowerGarmentType: "trousers" },
+  ]),
   1,
   [
     {
@@ -139,11 +157,9 @@ assertResolved(
 );
 
 assertResolved(
-  {
-    allocationId: "L7-skirt",
-    fabricCode: "FABRIC_L7",
-    garmentAssignments: [{ code: "L7", lowerGarmentType: "skirt" }],
-  },
+  resolveInputAllocation("L7-skirt", "FABRIC_L7", [
+    { code: "L7", lowerGarmentType: "skirt" },
+  ]),
   1,
   [
     {
@@ -157,11 +173,9 @@ assertResolved(
 );
 
 assertResolved(
-  {
-    allocationId: "L8.1-trouser",
-    fabricCode: "FABRIC_L8_1",
-    garmentAssignments: [{ code: "L8.1", lowerGarmentType: "trousers" }],
-  },
+  resolveInputAllocation("L8.1-trouser", "FABRIC_L8_1", [
+    { code: "L8.1", lowerGarmentType: "trousers" },
+  ]),
   2,
   [
     {
@@ -182,11 +196,9 @@ assertResolved(
 );
 
 assertResolved(
-  {
-    allocationId: "L8.2-skirt",
-    fabricCode: "FABRIC_L8_2",
-    garmentAssignments: [{ code: "L8.2", lowerGarmentType: "skirt" }],
-  },
+  resolveInputAllocation("L8.2-skirt", "FABRIC_L8_2", [
+    { code: "L8.2", lowerGarmentType: "skirt" },
+  ]),
   2,
   [
     {
@@ -207,11 +219,9 @@ assertResolved(
 );
 
 assertResolved(
-  {
-    allocationId: "L9.1-trouser",
-    fabricCode: "FABRIC_L9_1",
-    garmentAssignments: [{ code: "L9.1", lowerGarmentType: "trousers" }],
-  },
+  resolveInputAllocation("L9.1-trouser", "FABRIC_L9_1", [
+    { code: "L9.1", lowerGarmentType: "trousers" },
+  ]),
   2,
   [
     {
@@ -232,11 +242,9 @@ assertResolved(
 );
 
 assertResolved(
-  {
-    allocationId: "L9.2-skirt",
-    fabricCode: "FABRIC_L9_2",
-    garmentAssignments: [{ code: "L9.2", lowerGarmentType: "skirt" }],
-  },
+  resolveInputAllocation("L9.2-skirt", "FABRIC_L9_2", [
+    { code: "L9.2", lowerGarmentType: "skirt" },
+  ]),
   2,
   [
     {
@@ -257,48 +265,34 @@ assertResolved(
 );
 
 assertUnclassified(
-  {
-    allocationId: "L6-missing-lower",
-    fabricCode: "FABRIC_L6",
-    garmentAssignments: [{ code: "L6" }],
-  },
+  { code: "L6" },
   "L6 requires lowerGarmentType",
 );
 
 assertUnclassified(
-  {
-    allocationId: "L8.1-missing-lower",
-    fabricCode: "FABRIC_L8_1",
-    garmentAssignments: [{ code: "L8.1" }],
-  },
+  { code: "L8.1" },
   "L8.1 requires lowerGarmentType",
 );
 
 assertResolved(
-  {
-    allocationId: "standard-dress-L2",
-    fabricCode: "FABRIC_DRESS",
-    garmentAssignments: [{ code: "L2" }],
-  },
+  resolveInputAllocation("standard-dress-L2", "FABRIC_DRESS", [
+    { code: "L2" },
+  ]),
   1,
   [{ garmentKey: "L2:dress", code: "L2", garmentType: "dress", fabricUnits: 1 }],
 );
 
 assertResolved(
-  {
-    allocationId: "kaftan-explicit",
-    fabricCode: "FABRIC_KAFTAN",
-    garmentAssignments: [
-      {
-        code: "KAFTAN",
-        garmentSpec: {
-          key: "KAFTAN:kaftan",
-          garmentType: "kaftan",
-          fabricUnits: 2,
-        },
+  resolveInputAllocation("kaftan-explicit", "FABRIC_KAFTAN", [
+    {
+      code: "KAFTAN",
+      garmentSpec: {
+        key: "KAFTAN:kaftan",
+        garmentType: "kaftan",
+        fabricUnits: 2,
       },
-    ],
-  },
+    },
+  ]),
   2,
   [
     {
@@ -311,20 +305,16 @@ assertResolved(
 );
 
 assertResolved(
-  {
-    allocationId: "full-length-gown-explicit",
-    fabricCode: "FABRIC_GOWN",
-    garmentAssignments: [
-      {
-        code: "GOWN",
-        garmentSpec: {
-          key: "GOWN:full_length_gown",
-          garmentType: "full_length_gown",
-          fabricUnits: 2,
-        },
+  resolveInputAllocation("full-length-gown-explicit", "FABRIC_GOWN", [
+    {
+      code: "GOWN",
+      garmentSpec: {
+        key: "GOWN:full_length_gown",
+        garmentType: "full_length_gown",
+        fabricUnits: 2,
       },
-    ],
-  },
+    },
+  ]),
   2,
   [
     {
@@ -337,56 +327,24 @@ assertResolved(
 );
 
 assertUnclassified(
-  {
-    allocationId: "kaftan-explicit-invalid",
-    fabricCode: "FABRIC_KAFTAN",
-    garmentAssignments: [
-      {
-        code: "KAFTAN",
-        garmentSpec: {
-          key: "KAFTAN:kaftan",
-          garmentType: "kaftan",
-          fabricUnits: 1,
-        },
-      },
-    ],
-  },
+  { code: "KAFTAN", garmentSpec: { key: "KAFTAN:kaftan", garmentType: "kaftan", fabricUnits: 1 } },
   "kaftan explicit metadata must resolve to 2 fabric units",
 );
 
 assertUnclassified(
-  {
-    allocationId: "full-length-gown-explicit-invalid",
-    fabricCode: "FABRIC_GOWN",
-    garmentAssignments: [
-      {
-        code: "GOWN",
-        garmentSpec: {
-          key: "GOWN:full_length_gown",
-          garmentType: "full_length_gown",
-          fabricUnits: 1,
-        },
-      },
-    ],
-  },
+  { code: "GOWN", garmentSpec: { key: "GOWN:full_length_gown", garmentType: "full_length_gown", fabricUnits: 1 } },
   "full_length_gown explicit metadata must resolve to 2 fabric units",
 );
 
 assertUnclassified(
-  {
-    allocationId: "unknown-exact-rejected",
-    fabricCode: "FABRIC_UNKNOWN",
-    garmentAssignments: [{ code: "UNKNOWN" }],
-  },
+  { code: "UNKNOWN" },
   "unknown garment code UNKNOWN",
 );
 
 assertResolved(
-  {
-    allocationId: "shirt-trouser-valid",
-    fabricCode: "FABRIC_SET",
-    garmentAssignments: [{ code: "G5.2" }],
-  },
+  resolveInputAllocation("shirt-trouser-valid", "FABRIC_SET", [
+    { code: "G5.2" },
+  ]),
   2,
   [
     { garmentKey: "G5.2:shirt", code: "G5.2", garmentType: "shirt", fabricUnits: 1 },
@@ -395,53 +353,44 @@ assertResolved(
 );
 
 assertCapacityExceeded(
-  {
-    allocationId: "shirt-trouser-skirt-exceeds",
-    fabricCode: "FABRIC_OVERFLOW",
-    garmentAssignments: [{ code: "G5.2" }, { code: "L7", lowerGarmentType: "skirt" }],
-  },
+  resolveInputAllocation("shirt-trouser-skirt-exceeds", "FABRIC_OVERFLOW", [
+    { code: "G5.2" },
+    { code: "L7", lowerGarmentType: "skirt" },
+  ]),
   2,
   1,
   "L7:skirt",
 );
 
 assertCapacityExceeded(
-  {
-    allocationId: "kaftan-with-trouser",
-    fabricCode: "FABRIC_KAFTAN_SET",
-    garmentAssignments: [
-      {
-        code: "KAFTAN",
-        garmentSpec: {
-          key: "KAFTAN:kaftan",
-          garmentType: "kaftan",
-          fabricUnits: 2,
-        },
+  resolveInputAllocation("kaftan-with-trouser", "FABRIC_KAFTAN_SET", [
+    {
+      code: "KAFTAN",
+      garmentSpec: {
+        key: "KAFTAN:kaftan",
+        garmentType: "kaftan",
+        fabricUnits: 2,
       },
-      { code: "G4" },
-    ],
-  },
+    },
+    { code: "G4" },
+  ]),
   2,
   1,
   "G4:trouser",
 );
 
 assertResolved(
-  {
-    allocationId: "same-fabric-one",
-    fabricCode: "FABRIC_SHARED",
-    garmentAssignments: [{ code: "G1" }],
-  },
+  resolveInputAllocation("same-fabric-one", "FABRIC_SHARED", [
+    { code: "G1" },
+  ]),
   1,
   [{ garmentKey: "G1:shirt", code: "G1", garmentType: "shirt", fabricUnits: 1 }],
 );
 
 assertResolved(
-  {
-    allocationId: "same-fabric-two",
-    fabricCode: "FABRIC_SHARED",
-    garmentAssignments: [{ code: "G2" }],
-  },
+  resolveInputAllocation("same-fabric-two", "FABRIC_SHARED", [
+    { code: "G2" },
+  ]),
   1,
   [{ garmentKey: "G2:shirt", code: "G2", garmentType: "shirt", fabricUnits: 1 }],
 );

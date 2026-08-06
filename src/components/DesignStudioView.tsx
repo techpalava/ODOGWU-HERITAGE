@@ -59,6 +59,7 @@ import {
   DeliverySelection,
   GuestDesignDraft,
   MonogramPlacement,
+  FabricAllocationState,
 } from "../types";
 
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
@@ -69,6 +70,7 @@ import { CapacityService } from "../services/CapacityService";
 import { OrderRoutingEngine, OrderRoutingDecision } from "../engine/OrderRoutingEngine";
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 import { RoutingPresentationEngine } from "../engine/RoutingPresentationEngine";
+import { FabricAllocationStateEngine } from "../engine/FabricAllocationStateEngine";
 import OrderRoutingPanel from "./OrderRoutingPanel";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
@@ -1552,6 +1554,9 @@ export default function DesignStudioView({
 
   // STEP 2: Fabric Selection, Filtering & Pagination States
   const [selectedFabric, setSelectedFabric] = useState<Fabric | null>(null);
+  const [, setFabricAllocationState] = useState<FabricAllocationState>(
+    FabricAllocationStateEngine.initialize(),
+  );
 
   const [fabricSearchInput, setFabricSearchInput] = useState<string>("");
   const [fabricSearch, setFabricSearch] = useState<string>("");
@@ -1686,6 +1691,27 @@ export default function DesignStudioView({
     discountFee?: number;
     code?: string;
   } | null>(null);
+
+  useEffect(() => {
+    const selectedGarmentInput = selectedGarment
+      ? {
+          code: selectedGarment.code,
+          lowerGarmentType: designSelections.lowerGarmentType,
+        }
+      : null;
+
+    setFabricAllocationState((previousState) =>
+      FabricAllocationStateEngine.syncForSelectedFabric(
+        previousState,
+        selectedFabric?.code ?? null,
+        selectedGarmentInput,
+      ),
+    );
+  }, [
+    selectedFabric?.code,
+    selectedGarment?.code,
+    designSelections.lowerGarmentType,
+  ]);
 
   const garmentCode = getSelectedGarmentCode(selectedGarment || {});
   const isAmbiguous = isAmbiguousLowerGarment(garmentCode);

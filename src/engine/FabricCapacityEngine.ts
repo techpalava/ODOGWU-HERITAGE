@@ -20,41 +20,27 @@ export class FabricCapacityEngine {
     allocation: FabricAllocation,
   ): FabricCapacityResolution {
     let totalUnits = 0;
-    const resolvedAssignments: FabricGarmentAssignment[] = [];
 
     for (const assignment of allocation.garmentAssignments) {
-      const assignmentResolution = this.resolveGarmentAssignment(assignment);
-      if (assignmentResolution.status === "unclassified") {
+      const usedUnitsBeforeAttempt = totalUnits;
+      const attemptedUnits = assignment.fabricUnits;
+      if (usedUnitsBeforeAttempt + attemptedUnits > this.MAX_UNITS_PER_ALLOCATION) {
         return {
-          status: "unclassified",
-          reason: assignmentResolution.reason,
-          garmentCode: assignmentResolution.garmentCode,
+          status: "capacity_exceeded",
           allocationId: allocation.allocationId,
+          usedUnitsBeforeAttempt,
+          attemptedUnits,
+          maxUnits: this.MAX_UNITS_PER_ALLOCATION,
+          attemptedGarment: assignment,
         };
       }
 
-      for (const resolved of assignmentResolution.assignments) {
-        const usedUnitsBeforeAttempt = totalUnits;
-        const attemptedUnits = resolved.fabricUnits;
-        if (usedUnitsBeforeAttempt + attemptedUnits > this.MAX_UNITS_PER_ALLOCATION) {
-          return {
-            status: "capacity_exceeded",
-            allocationId: allocation.allocationId,
-            usedUnitsBeforeAttempt,
-            attemptedUnits,
-            maxUnits: this.MAX_UNITS_PER_ALLOCATION,
-            attemptedGarment: resolved,
-          };
-        }
-
-        totalUnits += attemptedUnits;
-        resolvedAssignments.push(resolved);
-      }
+      totalUnits += attemptedUnits;
     }
 
     return {
       status: "resolved",
-      garments: resolvedAssignments,
+      garments: [...allocation.garmentAssignments],
       totalUnits,
     };
   }

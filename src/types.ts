@@ -188,7 +188,13 @@ export interface FabricGarmentAssignment {
 export interface FabricAllocation {
  allocationId: string;
  fabricCode: string;
- garmentAssignments: FabricGarmentInputAssignment[];
+ garmentAssignments: FabricGarmentAssignment[];
+}
+
+export interface FabricAllocationState {
+ fabricAllocations: FabricAllocation[];
+ activeAllocationId: string | null;
+ pendingFabricGarment: FabricGarmentAssignment | null;
 }
 
 export type FabricCapacityResolution =
