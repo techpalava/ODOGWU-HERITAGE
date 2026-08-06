@@ -131,6 +131,8 @@ export interface DesignPricingInput {
   route: CartItem["batchType"];
   design: DesignSelections;
   fabric: Fabric;
+  additionalFabrics?: Fabric[];
+  fabricAllocations?: CartItem["fabricAllocations"];
   style?: StyleCategory | null;
   garment?: CustomDetailGarmentContext | null;
   catalog: CustomDetailOption[];
@@ -141,13 +143,27 @@ export const calculateDesignPricing = ({
   route,
   design,
   fabric,
+  additionalFabrics = [],
+  fabricAllocations,
   style,
   garment,
   catalog,
   businessSettings,
 }: DesignPricingInput): AuthoritativeDesignPricing | null => {
-  const resolvedFabricPrice = resolveFabricPrice(fabric);
-  if (resolvedFabricPrice === null) return null;
+  // Derive fabrics list from fabricAllocations if present, or primary + additionalFabrics
+  let allFabrics: Fabric[] = [];
+  if (fabricAllocations && fabricAllocations.length > 0) {
+    allFabrics = fabricAllocations.map((a) => a.fabric);
+  } else {
+    allFabrics = [fabric, ...additionalFabrics];
+  }
+
+  let resolvedFabricPrice = 0;
+  for (const fab of allFabrics) {
+    const price = resolveFabricPrice(fab);
+    if (price === null) return null;
+    resolvedFabricPrice += price;
+  }
 
   const enrichedGarment = garment
     ? { ...garment, lowerGarmentType: design.lowerGarmentType }
@@ -159,7 +175,9 @@ export const calculateDesignPricing = ({
     catalog,
     enrichedGarment,
   );
-  const rawFabricSewingCost = getFabricSewingCost(fabric);
+  
+  // Base fabric sewing cost is tied to the primary fabric tier
+  const rawFabricSewingCost = getFabricSewingCost(allFabrics[0] || fabric);
   const rawConstructionSewingCost = style
     ? getConstructionSewingCost(applicableDesign)
     : 0;
@@ -247,6 +265,8 @@ export const calculateAuthoritativeDesignPricing = (
     route: item.batchType,
     design: item.design,
     fabric,
+    additionalFabrics: item.additionalFabrics,
+    fabricAllocations: item.fabricAllocations,
     style,
     garment: item.garment,
     catalog,

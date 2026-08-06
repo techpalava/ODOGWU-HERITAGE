@@ -18,7 +18,7 @@ import {
   getSelectedGarmentCode,
   isAmbiguousLowerGarment,
 } from "../utils/catalogHelpers";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Sparkles,
   ArrowLeft,
@@ -42,9 +42,11 @@ import {
   
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { FabricCapacityEngine } from "../engine/FabricCapacityEngine";
 import {
   StyleCategory,
   Fabric,
+  FabricAllocation,
   Measurements,
   DesignSelections,
   CartItem,
@@ -1552,6 +1554,45 @@ export default function DesignStudioView({
 
   // STEP 2: Fabric Selection, Filtering & Pagination States
   const [selectedFabric, setSelectedFabric] = useState<Fabric | null>(null);
+  const [additionalFabrics, setAdditionalFabrics] = useState<Fabric[]>([]);
+  const [fabricAllocations, setFabricAllocations] = useState<FabricAllocation[]>([]);
+  const [showCapacityGuard, setShowCapacityGuard] = useState(false);
+  const [pendingCapacityAction, setPendingCapacityAction] = useState<any>(null);
+
+  const fabricUnits = useMemo(() => FabricCapacityEngine.calculateFabricUnits(selectedStyle, selectedGarment, designSelections), [selectedStyle, selectedGarment, designSelections]);
+  const requiredAllocations = useMemo(() => FabricCapacityEngine.calculateRequiredAllocations(fabricUnits), [fabricUnits]);
+
+  useEffect(() => {
+    if (selectedFabric && currentStep > 1) {
+      const currentAllocCount = Math.max(1, fabricAllocations.length, 1 + additionalFabrics.length);
+      if (currentAllocCount < requiredAllocations) {
+        setShowCapacityGuard(true);
+      } else {
+        setShowCapacityGuard(false);
+      }
+    }
+  }, [requiredAllocations, selectedFabric, additionalFabrics.length, fabricAllocations.length, currentStep]);
+
+  const handleUseSameFabricAgain = () => {
+    if (!selectedFabric) return;
+    const nextAllocId = `alloc-${Math.max(1, fabricAllocations.length + 1)}`;
+    const newAllocation = FabricCapacityEngine.createFabricAllocation(nextAllocId, selectedFabric);
+    setFabricAllocations((prev) => [...prev, newAllocation]);
+    setAdditionalFabrics((prev) => [...prev, selectedFabric]);
+    setShowCapacityGuard(false);
+    setPendingCapacityAction(null);
+  };
+
+  const handleChooseAnotherFabric = () => {
+    setShowCapacityGuard(false);
+    setCurrentStep(1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleCancelCapacityGuard = () => {
+    setShowCapacityGuard(false);
+    setPendingCapacityAction(null);
+  };
 
   const [fabricSearchInput, setFabricSearchInput] = useState<string>("");
   const [fabricSearch, setFabricSearch] = useState<string>("");
@@ -2114,6 +2155,7 @@ export default function DesignStudioView({
             hasLining: liningEligible ? hasLining : false,
           },
           fabric: selectedFabric,
+          additionalFabrics,
           style: selectedStyle,
           garment: selectedGarment,
           catalog: customDetailCatalog,
@@ -2290,6 +2332,15 @@ export default function DesignStudioView({
     setCurrentStep(Math.min(9, Math.max(1, draft.currentStep)));
     setSelectedStyle(draftStyle);
     setSelectedFabric(draftFabric);
+    
+    if (draft.fabricAllocations && draft.fabricAllocations.length > 1) {
+      const extraCodes = draft.fabricAllocations.slice(1);
+      const extras = extraCodes.map(code => fabrics.find(f => f.code === code)).filter(Boolean) as Fabric[];
+      setAdditionalFabrics(extras);
+    } else {
+      setAdditionalFabrics([]);
+    }
+
     setSizingMode(draft.sizingMode);
     setMeasurements(draft.measurements);
     setDeliveryMethod(draft.deliveryMethod);
@@ -2339,6 +2390,7 @@ export default function DesignStudioView({
       const guestDraft: GuestDesignDraft = {
         currentStep,
         selectedFabricCode: selectedFabric?.code || null,
+        fabricAllocations: [selectedFabric?.code, ...additionalFabrics.map(f => f.code)].filter(Boolean) as string[],
         selectedStyleId: selectedStyle?.id || null,
         selectedGarment,
         designSelections,
@@ -2395,6 +2447,7 @@ export default function DesignStudioView({
     guestDraftHydrated,
     currentStep,
     selectedFabric,
+    additionalFabrics,
     selectedStyle,
     selectedGarment,
     designSelections,
@@ -2463,6 +2516,13 @@ export default function DesignStudioView({
         setValidationError(
           "The selected fabric is Out of Stock. Please select an In Stock or Low Stock option to continue.",
         );
+        setTimeout(() => {
+          document.getElementById("design-studio-stepper")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 50);
+        return;
+      }
+      if (1 + additionalFabrics.length < requiredAllocations) {
+        setValidationError(`Your current design configuration requires ${requiredAllocations} fabric allocations. Please select additional fabrics.`);
         setTimeout(() => {
           document.getElementById("design-studio-stepper")?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 50);
@@ -2758,6 +2818,15 @@ export default function DesignStudioView({
       },
       style: selectedStyle,
       fabric: selectedFabric,
+      additionalFabrics,
+      fabricAllocations: FabricCapacityEngine.normalizeFabricAllocations({
+        fabric: selectedFabric,
+        additionalFabrics,
+        fabricAllocations,
+        style: selectedStyle,
+        garment: selectedGarment,
+        design: designSelections,
+      }),
       design: {
         ...applicableDesignSelections,
         decorativeFeatures: pricing.decorativeFeatures.map(
@@ -2852,6 +2921,7 @@ export default function DesignStudioView({
   const resetDesignStudio = () => {
     setSelectedStyle(styles[0] || ({ id: "", name: "", description: "", gender: "unisex", tags: [], garments: [], images: [] } as unknown as StyleCategory));
     setSelectedFabric(null);
+    setAdditionalFabrics([]);
     setDesignSelections({ accessories: [] });
     setSpecialInstructions("");
     setLeftoverFabricChoice(
@@ -3072,6 +3142,52 @@ export default function DesignStudioView({
         <div role="alert" aria-live="assertive" className="p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl flex items-center gap-3 text-xs">
           <AlertTriangle className="text-amber-700 shrink-0" size={16} />
           <p className="font-medium">{validationError}</p>
+        </div>
+      )}
+
+      {/* Capacity Guard Modal */}
+      {showCapacityGuard && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="capacity-modal-title"
+          aria-describedby="capacity-modal-description"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-heritage-ink/40 backdrop-blur-sm"
+        >
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative space-y-4 font-sans">
+            <h3 id="capacity-modal-title" className="text-lg sm:text-xl font-serif font-bold text-amber-600 flex items-center gap-2">
+              <AlertTriangle className="shrink-0" />
+              Another Fabric Selection Is Required
+            </h3>
+            <p id="capacity-modal-description" className="text-xs text-heritage-ink/75 leading-relaxed">
+              This fabric can be used for up to two standard garment pieces. A full-length gown, kaftan, or another fabric-intensive garment uses the full fabric allocation by itself.
+              <br /><br />
+              Your current design configuration requires <strong>{fabricUnits} fabric units</strong> (total <strong>{requiredAllocations} fabric allocations</strong>). To add this garment, create another fabric selection.
+            </p>
+            <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={handleUseSameFabricAgain}
+                className="px-3.5 py-2 bg-heritage-gold text-white rounded-xl text-xs font-semibold hover:bg-heritage-gold/90 transition shadow-sm cursor-pointer"
+              >
+                Use the Same Fabric Again
+              </button>
+              <button
+                type="button"
+                onClick={handleChooseAnotherFabric}
+                className="px-3.5 py-2 bg-heritage-green text-white rounded-xl text-xs font-semibold hover:bg-heritage-green/90 transition shadow-sm cursor-pointer"
+              >
+                Choose Another Fabric
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelCapacityGuard}
+                className="px-3.5 py-2 border border-gray-300 text-heritage-ink/70 rounded-xl text-xs font-semibold hover:bg-gray-100 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -3352,6 +3468,31 @@ export default function DesignStudioView({
               </div>
 
               {/* Filtering & Search Bar */}
+              {requiredAllocations > 1 && (
+                <div className="bg-heritage-gold/10 border border-heritage-gold/30 p-4 rounded-2xl mb-4 font-sans space-y-2">
+                  <div className="flex items-center gap-2 text-heritage-green font-bold text-sm">
+                    <span className="bg-heritage-gold text-white w-5 h-5 flex items-center justify-center rounded-full text-xs">{1 + additionalFabrics.length}</span>
+                    <span>of {requiredAllocations} Fabric Allocations Selected</span>
+                  </div>
+                  <div className="text-xs text-heritage-ink/80 flex flex-wrap gap-2">
+                    {Array.from({ length: requiredAllocations }).map((_, i) => {
+                      let fab = i === 0 ? selectedFabric : additionalFabrics[i - 1];
+                      return (
+                        <div key={i} className={`px-2 py-1 rounded border ${fab ? 'bg-white border-heritage-gold text-heritage-green font-bold' : 'bg-heritage-cream/20 border-dashed border-heritage-gold/40 text-heritage-ink/40'}`}>
+                          {i + 1}. {fab ? fab.name : "Select a fabric below"}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {1 + additionalFabrics.length < requiredAllocations && (
+                    <p className="text-[10px] text-amber-700 italic">Please select {requiredAllocations - (1 + additionalFabrics.length)} more fabric allocation(s).</p>
+                  )}
+                  {1 + additionalFabrics.length === requiredAllocations && (
+                    <p className="text-[10px] text-heritage-green font-bold flex items-center gap-1"><Check size={12}/> All required fabrics selected.</p>
+                  )}
+                </div>
+              )}
+
               <div className="bg-heritage-cream/30 border border-heritage-gold/10 p-4 rounded-2xl space-y-3">
                 <div className="flex flex-col sm:flex-row gap-3">
                   {/* Search */}
@@ -3539,16 +3680,32 @@ export default function DesignStudioView({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedFabric(fabric);
+                              if (!selectedFabric) {
+                                const alloc1 = FabricCapacityEngine.createFabricAllocation("alloc-1", fabric);
+                                setSelectedFabric(fabric);
+                                setFabricAllocations([alloc1]);
+                              } else if (requiredAllocations > 1 && (1 + additionalFabrics.length) < requiredAllocations) {
+                                const nextId = `alloc-${1 + additionalFabrics.length + 1}`;
+                                const nextAlloc = FabricCapacityEngine.createFabricAllocation(nextId, fabric);
+                                setFabricAllocations((prev) => [...prev, nextAlloc]);
+                                setAdditionalFabrics((prev) => [...prev, fabric]);
+                              } else {
+                                const alloc1 = FabricCapacityEngine.createFabricAllocation("alloc-1", fabric);
+                                setSelectedFabric(fabric);
+                                setAdditionalFabrics([]);
+                                setFabricAllocations([alloc1]);
+                              }
                             }}
                             className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all duration-200 cursor-pointer select-none flex items-center gap-1 border shadow-sm ${
-                              selectedFabric?.code === fabric?.code
+                              (selectedFabric?.code === fabric?.code || additionalFabrics.some(f => f.code === fabric.code))
                                 ? "bg-heritage-gold text-white border-heritage-gold"
                                 : "bg-white text-heritage-green border-[#E5E0D8] hover:border-heritage-gold hover:text-heritage-gold"
                             }`}
                           >
-                            {selectedFabric?.code === fabric?.code && <Check size={12} />}
-                            {selectedFabric?.code === fabric?.code ? "Selected" : "Select"}
+                            {(selectedFabric?.code === fabric?.code || additionalFabrics.some(f => f.code === fabric.code)) && <Check size={12} />}
+                            {(selectedFabric?.code === fabric?.code || additionalFabrics.some(f => f.code === fabric.code))
+                               ? (requiredAllocations > 1 ? `Selected (${[selectedFabric, ...additionalFabrics].filter(f => f?.code === fabric.code).length})` : "Selected")
+                               : "Select"}
                           </button>
                         </div>
                       </div>

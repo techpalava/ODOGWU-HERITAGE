@@ -9,6 +9,7 @@ import type {
 } from "../types";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { OrderRoutingEngine } from "../engine/OrderRoutingEngine";
+import { FabricCapacityEngine } from "../engine/FabricCapacityEngine";
 import {
   filterDesignSelectionsForCustomDetails,
   getMissingCustomDetailGroup,
@@ -234,6 +235,30 @@ export const revalidateCartForCheckout = (
     }
     if (!item.batchType) {
       blockers.push(`${style.name} requires a valid order route.`);
+    }
+
+    // Fabric capacity revalidation
+    const totalFabricUnits = FabricCapacityEngine.calculateFabricUnits(
+      style,
+      enrichedGarment,
+      applicableDesign,
+      1
+    );
+    const requiredAllocationsCount = FabricCapacityEngine.calculateRequiredAllocations(totalFabricUnits);
+    const normalizedAllocations = FabricCapacityEngine.normalizeFabricAllocations({
+      fabric,
+      additionalFabrics: item.additionalFabrics,
+      fabricAllocations: item.fabricAllocations,
+      style,
+      garment: enrichedGarment,
+      design: applicableDesign,
+    });
+    const hasOverCapacityAllocation = normalizedAllocations.some(
+      (alloc) => FabricCapacityEngine.getAllocationUsedUnits(alloc) > 2
+    );
+
+    if (normalizedAllocations.length < requiredAllocationsCount || hasOverCapacityAllocation) {
+      blockers.push("This order contains more garments than the selected fabric allocations can support. Please review your fabric selections.");
     }
 
     if (item.batchType === "community") {

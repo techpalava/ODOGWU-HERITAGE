@@ -24,6 +24,7 @@ import {
   PRICING_CURRENCY_SYMBOL,
 } from "../utils/money";
 import { isBatchPricingRoute } from "../utils/designPricing";
+import { FabricCapacityEngine } from "../engine/FabricCapacityEngine";
 import {
   getCustomDetailSnapshots,
   hasSelectedCustomDetailOption,
@@ -398,12 +399,22 @@ export function CartDrawer() {
                       )}
 
                       <div className="bg-heritage-cream/30 p-2.5 rounded-xl text-[10px] space-y-1 text-heritage-ink/75 font-sans">
-                        <p>
-                          🎨 Fabric:{" "}
-                          <strong>
-                            {item.fabric.name} ({item.fabric.code})
-                          </strong>
-                        </p>
+                        {FabricCapacityEngine.normalizeFabricAllocations(item).length > 1 ? (
+                          <div className="space-y-0.5">
+                            {FabricCapacityEngine.normalizeFabricAllocations(item).map((alloc, idx) => (
+                              <p key={alloc.id || idx}>
+                                🎨 Fabric Selection {idx + 1}: <strong>{alloc.fabric.name} ({alloc.fabric.code})</strong>
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p>
+                            🎨 Fabric:{" "}
+                            <strong>
+                              {item.fabric.name} ({item.fabric.code})
+                            </strong>
+                          </p>
+                        )}
                         {item.design.lowerGarmentType && (
                           <p>
                             👖 Lower Garment Type:{" "}

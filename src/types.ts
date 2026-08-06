@@ -125,6 +125,7 @@ export interface StyleCategory {
   };
   constructionDetails?: ConstructionDetail[];
   customDetailConfig?: CustomDetailConfig;
+  tags?: string[];
 
   // New metadata fields
   targetDemographic?: "male" | "female" | "unisex";
@@ -538,11 +539,35 @@ export interface HistoricalOrder {
   trackingId: string;
 }
 
+export interface FabricGarmentAssignment {
+  id: string;
+  garmentGroup: string;
+  garmentCode?: string;
+  fabricUnits: 1 | 2;
+  quantity?: number;
+}
+
+export interface FabricAllocation {
+  id: string;
+  fabric: Fabric;
+  garmentAssignments: FabricGarmentAssignment[];
+  unitsConsumed?: number;
+}
+
+export interface FabricAllocationSnapshot {
+  id: string;
+  fabricCode: string;
+  fabricSnapshot?: Fabric;
+  garmentAssignments: FabricGarmentAssignment[];
+}
+
 export interface CartItem {
   id: string;
   customer: Customer;
   style: StyleCategory;
   fabric: Fabric;
+  additionalFabrics?: Fabric[];
+  fabricAllocations?: FabricAllocation[];
   design: DesignSelections;
   garment: GarmentSelection;
   measurements: Measurements;
@@ -564,6 +589,7 @@ export interface CartItem {
 export interface GuestDesignDraft {
   currentStep: number;
   selectedFabricCode: string | null;
+  fabricAllocations?: FabricAllocationSnapshot[];
   selectedStyleId: string | null;
   selectedGarment: {
     type: string;

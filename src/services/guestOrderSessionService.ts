@@ -56,6 +56,12 @@ export const getCartItemConfigurationHash = (
   `cartcfg_${getStableHash({
     styleId: item.style.id,
     fabricCode: item.fabric.code,
+    additionalFabrics: item.additionalFabrics?.map((f) => f.code),
+    fabricAllocations: item.fabricAllocations?.map((a) => ({
+      id: a.id,
+      fabricCode: a.fabric.code,
+      assignments: a.garmentAssignments,
+    })),
     design: item.design,
     garmentType: item.garment.type,
     measurements: item.measurements,

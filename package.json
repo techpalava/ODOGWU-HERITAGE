@@ -18,7 +18,8 @@
     "test:additional-clothes-costs": "tsx test_additional_clothes_costs.ts",
     "test:guest-checkout": "tsx test_guest_checkout.ts",
     "test:homepage-gateway": "tsx test_homepage_order_gateway.ts",
-    "test:firestore-security": "tsx test_firestore_security.ts"
+    "test:firestore-security": "tsx test_firestore_security.ts",
+    "test:fabric-capacity": "tsx test_fabric_capacity.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "7.11.6",
