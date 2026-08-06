@@ -145,7 +145,68 @@ export interface StyleCategory {
   };
   
   defaultGarmentDetails?: DesignSelections;
+  fabricCapacityComposition?: FabricCapacityGarmentSpec[];
 }
+
+export type FabricUnitCount = 1 | 2;
+
+export type FabricGarmentType =
+ | "shirt"
+ | "trouser"
+ | "skirt"
+ | "standard_shorts"
+ | "bum_shorts"
+ | "dress"
+ | "kaftan"
+ | "full_length_gown"
+ | "agbada"
+ | "other";
+
+export interface FabricCapacityGarmentSpec {
+ key: string;
+ garmentType: FabricGarmentType;
+ fabricUnits: FabricUnitCount;
+ lowerGarmentType?: "trousers" | "skirt";
+}
+
+export interface FabricGarmentInputAssignment {
+ id?: string;
+ code: string;
+ lowerGarmentType?: "trousers" | "skirt";
+ garmentSpec?: FabricCapacityGarmentSpec;
+}
+
+export interface FabricGarmentAssignment {
+ garmentKey: string;
+ code: string;
+ garmentType: FabricGarmentType;
+ fabricUnits: FabricUnitCount;
+ lowerGarmentType?: "trousers" | "skirt";
+ garmentSpec?: FabricCapacityGarmentSpec;
+}
+
+export interface FabricAllocation {
+ allocationId: string;
+ fabricCode: string;
+ garmentAssignments: FabricGarmentInputAssignment[];
+}
+
+export type FabricCapacityResolution =
+ | { status: "resolved"; garments: FabricGarmentAssignment[]; totalUnits: number }
+ | {
+     status: "unclassified";
+     reason: string;
+     garmentCode?: string;
+     allocationId?: string;
+   }
+ | {
+     status: "capacity_exceeded";
+     allocationId: string;
+     usedUnitsBeforeAttempt: number;
+     attemptedUnits: number;
+     maxUnits: number;
+     attemptedGarment: FabricGarmentAssignment;
+   };
 
 export interface Fabric {
   id?: string;
