@@ -18,7 +18,7 @@ import {
   getSelectedGarmentCode,
   isAmbiguousLowerGarment,
 } from "../utils/catalogHelpers";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Sparkles,
   ArrowLeft,
@@ -129,6 +129,13 @@ import {
   getNormalizedFabricName,
   resolveFabricPrice,
 } from "../utils/fabricPricing";
+import {
+  cloneFabricAllocations,
+  getFabricAllocationSyncSignature,
+  inspectDraftFabricAllocations,
+  resolveDraftAutosaveFabricAllocations,
+  resolveDraftHydrationAllocations,
+} from "../utils/fabricAllocationPersistence";
 
 // Cache for loaded image URLs to prevent skeleton flicker across renders
 const loadedImageCache = new Set<string>();
@@ -1383,6 +1390,11 @@ export default function DesignStudioView({
   const [invalidGroups, setInvalidGroups] = useState<string[]>([]);
   const [guestDraftHydrated, setGuestDraftHydrated] =
     useState<boolean>(false);
+  const hydratedFabricSyncSignatureRef = useRef<string | null>(null);
+  const preservedInvalidHydratedDraftFabricAllocationsRef =
+    useRef<unknown | null>(null);
+  const preservedInvalidHydratedDraftSelectionSignatureRef =
+    useRef<string | null>(null);
   const businessSettings = useAppStore((state) => state.businessSettings);
   const isLoadingData = useAppStore((state) => state.isLoadingData);
   const storeBatches = useAppStore((state) => state.batches);
@@ -1714,6 +1726,22 @@ export default function DesignStudioView({
   } | null>(null);
 
   useEffect(() => {
+    if (!currentUser && !guestDraftHydrated) {
+      return;
+    }
+
+    const currentSelectionSignature = getFabricAllocationSyncSignature(
+      selectedFabric?.code ?? null,
+      selectedGarment?.code,
+      designSelections.lowerGarmentType,
+    );
+    if (hydratedFabricSyncSignatureRef.current) {
+      if (hydratedFabricSyncSignatureRef.current === currentSelectionSignature) {
+        return;
+      }
+      hydratedFabricSyncSignatureRef.current = null;
+    }
+
     const selectedGarmentInput = selectedGarment
       ? {
           code: selectedGarment.code,
@@ -1729,6 +1757,8 @@ export default function DesignStudioView({
       ),
     );
   }, [
+    currentUser,
+    guestDraftHydrated,
     selectedFabric?.code,
     selectedGarment?.code,
     designSelections.lowerGarmentType,
@@ -2350,13 +2380,56 @@ export default function DesignStudioView({
 
     const draftStyle =
       styles.find((style) => style.id === draft.selectedStyleId) || null;
+    const draftAllocationInspection = inspectDraftFabricAllocations(draft);
+    const draftAllocationHydration = resolveDraftHydrationAllocations(draft);
+    const draftPrimaryFabricCode = draftAllocationHydration.primaryFabricCode;
     const draftFabric =
-      fabrics.find(
-        (fabric) => fabric.code === draft.selectedFabricCode,
-      ) || null;
+      fabrics.find((fabric) => fabric.code === draftPrimaryFabricCode) || null;
+    const draftActiveAllocationId = draftAllocationHydration.hasValidModernAllocations
+      ? draftAllocationHydration.fabricAllocations.find(
+          (allocation) => allocation.fabricCode === draftPrimaryFabricCode,
+        )?.allocationId ||
+        draftAllocationHydration.fabricAllocations[0]?.allocationId ||
+        null
+      : null;
+
+    hydratedFabricSyncSignatureRef.current =
+      draftAllocationHydration.hasValidModernAllocations
+        ? getFabricAllocationSyncSignature(
+            draftFabric?.code ?? null,
+            draft.selectedGarment?.code,
+            draft.designSelections.lowerGarmentType,
+          )
+        : null;
+    const hydratedSelectionSignature = getFabricAllocationSyncSignature(
+      draftFabric?.code ?? null,
+      draft.selectedGarment?.code,
+      draft.designSelections.lowerGarmentType,
+    );
+    if (draftAllocationInspection.status === "invalid") {
+      preservedInvalidHydratedDraftFabricAllocationsRef.current =
+        draft.fabricAllocations;
+      preservedInvalidHydratedDraftSelectionSignatureRef.current =
+        hydratedSelectionSignature;
+    } else {
+      preservedInvalidHydratedDraftFabricAllocationsRef.current = null;
+      preservedInvalidHydratedDraftSelectionSignatureRef.current = null;
+    }
     setCurrentStep(Math.min(9, Math.max(1, draft.currentStep)));
     setSelectedStyle(draftStyle);
     setSelectedFabric(draftFabric);
+    setFabricAllocationState(
+      draftAllocationHydration.hasValidModernAllocations
+        ? {
+            fabricAllocations: cloneFabricAllocations(
+              draftAllocationHydration.fabricAllocations,
+            ) || [],
+            activeAllocationId: draftActiveAllocationId,
+            pendingFabricGarment: null,
+            awaitingFabricForPendingGarment: false,
+          }
+        : FabricAllocationStateEngine.initialize(),
+    );
     setSizingMode(draft.sizingMode);
     setMeasurements(draft.measurements);
     setDeliveryMethod(draft.deliveryMethod);
@@ -2403,6 +2476,26 @@ export default function DesignStudioView({
     if (currentUser || !guestDraftHydrated) return;
 
     const persistTimer = window.setTimeout(() => {
+      const currentSelectionSignature = getFabricAllocationSyncSignature(
+        selectedFabric?.code ?? null,
+        selectedGarment?.code,
+        designSelections.lowerGarmentType,
+      );
+      const autosaveAllocationResolution = resolveDraftAutosaveFabricAllocations(
+        {
+          preservedInvalidHydratedFabricAllocations:
+            preservedInvalidHydratedDraftFabricAllocationsRef.current,
+          preservedInvalidHydratedSelectionSignature:
+            preservedInvalidHydratedDraftSelectionSignatureRef.current,
+          currentSelectionSignature,
+          generatedFabricAllocations: fabricAllocationState.fabricAllocations,
+        },
+      );
+      if (!autosaveAllocationResolution.preserveInvalidHydratedModernData) {
+        preservedInvalidHydratedDraftFabricAllocationsRef.current = null;
+        preservedInvalidHydratedDraftSelectionSignatureRef.current = null;
+      }
+
       const guestDraft: GuestDesignDraft = {
         currentStep,
         selectedFabricCode: selectedFabric?.code || null,
@@ -2451,6 +2544,7 @@ export default function DesignStudioView({
           batch: pricing.batchShipping || undefined,
           finalMile: pricing.finalMileShipping || undefined,
         },
+        fabricAllocations: autosaveAllocationResolution.fabricAllocations,
         updatedAt: new Date().toISOString(),
       };
       GuestOrderSessionService.saveGuestDesignDraft(guestDraft);
@@ -2491,6 +2585,7 @@ export default function DesignStudioView({
     pricing.individualShipping,
     pricing.batchShipping,
     pricing.finalMileShipping,
+    fabricAllocationState.fabricAllocations,
     ctx.batchId,
     ctx.batchName,
   ]);
@@ -2873,6 +2968,9 @@ export default function DesignStudioView({
         batchType === "personalized"
           ? pricing.batchShipping?.batchId
           : customGroupCode,
+      fabricAllocations: cloneFabricAllocations(
+        fabricAllocationState.fabricAllocations,
+      ),
     };
 
     onAddToCart(cartItemData);

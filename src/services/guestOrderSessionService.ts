@@ -6,6 +6,14 @@ import type {
 } from "../types";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 import { migrateLegacyCartShippingItems } from "../utils/shippingPricing";
+import {
+  cloneFabricAllocations,
+  inspectCartItemFabricAllocations,
+  inspectDraftFabricAllocations,
+  resolveLegacyCartItemFabricAllocations,
+  resolveLegacyDraftFabricAllocations,
+  toDeterministicFabricAllocationHashInput,
+} from "../utils/fabricAllocationPersistence";
 import { StorageService } from "./storageService";
 
 export const GUEST_ORDER_SESSION_VERSION = "2026-07-30-guest-order-v1";
@@ -50,12 +58,100 @@ const createGuestCartId = (): string => {
   return `guest_${token}`;
 };
 
+const normalizeDesignDraft = (designDraft: GuestDesignDraft): GuestDesignDraft => {
+  const modernInspection = inspectDraftFabricAllocations(designDraft);
+  if (modernInspection.status === "valid") {
+    return {
+      ...designDraft,
+      fabricAllocations: cloneFabricAllocations(modernInspection.fabricAllocations),
+    };
+  }
+  if (modernInspection.status === "invalid") {
+    return designDraft;
+  }
+
+  const legacyAllocations = resolveLegacyDraftFabricAllocations(designDraft);
+  if (!legacyAllocations) return designDraft;
+  return {
+    ...designDraft,
+    fabricAllocations: cloneFabricAllocations(legacyAllocations),
+  };
+};
+
+const normalizeCartItemForPersistence = (item: CartItem): CartItem => {
+  const modernInspection = inspectCartItemFabricAllocations(item);
+  if (modernInspection.status === "valid") {
+    return {
+      ...item,
+      fabricAllocations: cloneFabricAllocations(modernInspection.fabricAllocations),
+    };
+  }
+  if (modernInspection.status === "invalid") {
+    return item;
+  }
+
+  const legacyAllocations = resolveLegacyCartItemFabricAllocations(item);
+  if (!legacyAllocations) return item;
+  return {
+    ...item,
+    fabricAllocations: cloneFabricAllocations(legacyAllocations),
+  };
+};
+
+const normalizeCartItemsForPersistence = (items: CartItem[]): CartItem[] =>
+  items.map((item) => {
+    const normalizedItem = normalizeCartItemForPersistence(item);
+    return {
+      ...normalizedItem,
+      configurationHash: getCartItemConfigurationHash(normalizedItem),
+    };
+  });
+
+const normalizeSessionForPersistence = (
+  session: GuestOrderSession,
+): GuestOrderSession => {
+  const normalizedCartItems = normalizeCartItemsForPersistence(session.cartItems);
+  const normalizedDraft = session.designDraft
+    ? normalizeDesignDraft(session.designDraft)
+    : undefined;
+  if (normalizedDraft === undefined) {
+    const { designDraft: _designDraft, ...sessionWithoutDraft } = session;
+    return {
+      ...sessionWithoutDraft,
+      cartItems: normalizedCartItems,
+    };
+  }
+  return {
+    ...session,
+    cartItems: normalizedCartItems,
+    designDraft: normalizedDraft,
+  };
+};
+
+const persistNormalizedSessionIfChanged = (
+  session: GuestOrderSession,
+): GuestOrderSession => {
+  const normalized = normalizeSessionForPersistence(session);
+  if (stableSerialize(normalized) !== stableSerialize(session)) {
+    StorageService.saveGuestOrderSession(normalized);
+  }
+  return normalized;
+};
+
 export const getCartItemConfigurationHash = (
   item: CartItem,
-): string =>
-  `cartcfg_${getStableHash({
+): string => {
+  const modernInspection = inspectCartItemFabricAllocations(item);
+  const hasValidModernAllocations = modernInspection.status === "valid";
+  return `cartcfg_${getStableHash({
     styleId: item.style.id,
-    fabricCode: item.fabric.code,
+    fabricCode: hasValidModernAllocations ? null : item.fabric.code,
+    fabricAllocations:
+      toDeterministicFabricAllocationHashInput(
+        hasValidModernAllocations
+          ? modernInspection.fabricAllocations
+          : undefined,
+      ),
     design: item.design,
     garmentType: item.garment.type,
     measurements: item.measurements,
@@ -68,18 +164,21 @@ export const getCartItemConfigurationHash = (
     garmentPieceCount: item.garmentPieceCount,
     deliverySelection: item.deliverySelection,
   })}`;
+};
 
 export const createGuestOrderSession = (
   cartItems: CartItem[] = [],
   createdAt = new Date().toISOString(),
 ): GuestOrderSession => {
   const guestCartId = createGuestCartId();
-  const migratedItems = migrateLegacyCartShippingItems(
+  const normalizedItems = normalizeCartItemsForPersistence(
     cartItems.map((item) => ({
       ...item,
       guestCartId,
-      configurationHash: getCartItemConfigurationHash(item),
     })),
+  );
+  const migratedItems = migrateLegacyCartShippingItems(
+    normalizedItems,
     createdAt,
   ).items;
 
@@ -100,7 +199,7 @@ const getOrCreateActiveGuestSession = (): GuestOrderSession => {
     stored?.schemaVersion === GUEST_ORDER_SESSION_VERSION &&
     stored.status === "ACTIVE"
   ) {
-    return stored;
+    return persistNormalizedSessionIfChanged(stored);
   }
 
   const legacyItems = StorageService.getCartItems();
@@ -133,14 +232,12 @@ const mergeCartItems = (
       .filter((item) => item.guestCartId === guestCartId)
       .map((item) => getCartItemConfigurationHash(item)),
   );
-  const merged = accountItems.map((item) => ({
-    ...item,
-    configurationHash: getCartItemConfigurationHash(item),
-  }));
+  const merged = normalizeCartItemsForPersistence(accountItems);
   let addedItemCount = 0;
 
   guestItems.forEach((item) => {
-    const configurationHash = getCartItemConfigurationHash(item);
+    const normalizedItem = normalizeCartItemForPersistence(item);
+    const configurationHash = getCartItemConfigurationHash(normalizedItem);
     if (
       existingIds.has(item.id) ||
       previouslyClaimedHashes.has(configurationHash)
@@ -148,12 +245,12 @@ const mergeCartItems = (
       return;
     }
     merged.push({
-      ...item,
+      ...normalizedItem,
       customer: {
-        ...item.customer,
-        name: customer.name || item.customer.name,
+        ...normalizedItem.customer,
+        name: customer.name || normalizedItem.customer.name,
         email: canonicalEmail,
-        phone: item.customer.phone || customer.phone,
+        phone: normalizedItem.customer.phone || customer.phone,
       },
       guestCartId,
       configurationHash,
@@ -179,12 +276,14 @@ export const GuestOrderSessionService = {
   saveGuestCartItems: (items: CartItem[]): CartItem[] => {
     const session = getOrCreateActiveGuestSession();
     const now = new Date().toISOString();
-    const migratedItems = migrateLegacyCartShippingItems(
+    const normalizedItems = normalizeCartItemsForPersistence(
       items.map((item) => ({
         ...item,
         guestCartId: session.guestCartId,
-        configurationHash: getCartItemConfigurationHash(item),
       })),
+    );
+    const migratedItems = migrateLegacyCartShippingItems(
+      normalizedItems,
       now,
     ).items;
     StorageService.saveGuestOrderSession({
@@ -202,7 +301,7 @@ export const GuestOrderSessionService = {
     const session = getOrCreateActiveGuestSession();
     StorageService.saveGuestOrderSession({
       ...session,
-      designDraft,
+      designDraft: normalizeDesignDraft(designDraft),
       updatedAt: designDraft.updatedAt,
     });
   },
@@ -230,9 +329,10 @@ export const GuestOrderSessionService = {
 
   getAccountCartItems: (email: string): CartItem[] => {
     const canonicalEmail = AuthorizationEngine.getCanonicalEmail(email);
-    return migrateLegacyCartShippingItems(
+    const normalizedItems = normalizeCartItemsForPersistence(
       StorageService.getAccountCartItems(canonicalEmail),
-    ).items;
+    );
+    return migrateLegacyCartShippingItems(normalizedItems).items;
   },
 
   saveAccountCartItems: (
@@ -240,11 +340,9 @@ export const GuestOrderSessionService = {
     items: CartItem[],
   ): CartItem[] => {
     const canonicalEmail = AuthorizationEngine.getCanonicalEmail(email);
+    const normalizedItems = normalizeCartItemsForPersistence(items);
     const migratedItems = migrateLegacyCartShippingItems(
-      items.map((item) => ({
-        ...item,
-        configurationHash: getCartItemConfigurationHash(item),
-      })),
+      normalizedItems,
     ).items;
     StorageService.saveAccountCartItems(canonicalEmail, migratedItems);
     return migratedItems;
@@ -254,7 +352,10 @@ export const GuestOrderSessionService = {
     const canonicalEmail = AuthorizationEngine.getCanonicalEmail(
       customer.email,
     );
-    const storedSession = StorageService.getGuestOrderSession();
+    const rawStoredSession = StorageService.getGuestOrderSession();
+    const storedSession = rawStoredSession
+      ? normalizeSessionForPersistence(rawStoredSession)
+      : null;
     const accountItems = GuestOrderSessionService.getAccountCartItems(
       canonicalEmail,
     );

@@ -288,6 +288,7 @@ export interface DesignSelections {
   embroideryDesign?: string;
   accessories?: string[];
   lowerGarmentType?: "trousers" | "skirt";
+  priceCode?: string;
 }
 
 export type DecorativeFeature =
@@ -592,6 +593,7 @@ export interface MasterOrder {
   deliverySelection?: DeliverySelection;
   finalMileShipping?: FinalMileShippingSnapshot;
   shippingBreakdown?: ShippingBreakdownSnapshot;
+  fabricAllocations?: FabricAllocation[];
 }
 
 export interface HistoricalOrder {
@@ -627,6 +629,7 @@ export interface CartItem {
   guestCartId?: string;
   configurationHash?: string;
   claimedByEmail?: string;
+  fabricAllocations?: FabricAllocation[];
 }
 
 export interface GuestDesignDraft {
@@ -673,6 +676,7 @@ export interface GuestDesignDraft {
     batch?: BatchShippingSnapshot;
     finalMile?: FinalMileShippingSnapshot;
   };
+  fabricAllocations?: FabricAllocation[];
   updatedAt: string;
 }
 

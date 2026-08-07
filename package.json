@@ -20,6 +20,7 @@
     "test:homepage-gateway": "tsx test_homepage_order_gateway.ts",
     "test:fabric-capacity": "tsx test_fabric_capacity.ts",
     "test:fabric-allocation-state": "tsx test_fabric_allocation_state.ts",
+    "test:fabric-allocation-persistence": "tsx test_fabric_allocation_persistence.ts",
     "test:firestore-security": "tsx test_firestore_security.ts"
   },
   "dependencies": {

@@ -39,6 +39,9 @@ import {
   getDepositRatio,
   PRICING_CURRENCY_SYMBOL,
 } from "./utils/money";
+import {
+  getPersistableCartItemFabricAllocationsForOrder,
+} from "./utils/fabricAllocationPersistence";
 import { revalidateCartForCheckout } from "./utils/checkoutValidation";
 import { isBatchPricingRoute } from "./utils/designPricing";
 
@@ -408,11 +411,16 @@ export default function App() {
       const shipmentGroupId = getFinalMileShipmentGroupId(item);
       const finalMileShipping =
         finalMileQuoteByGroup.get(shipmentGroupId);
+      const persistableFabricAllocations =
+        getPersistableCartItemFabricAllocationsForOrder(item);
 
       return {
         customer: item.customer,
         style: item.style,
         fabric: item.fabric,
+        ...(persistableFabricAllocations !== undefined
+          ? { fabricAllocations: persistableFabricAllocations }
+          : {}),
         design: item.design,
         garment: {
           ...item.garment,
