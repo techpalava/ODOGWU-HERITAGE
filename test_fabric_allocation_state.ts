@@ -54,29 +54,87 @@ const assertPendingGarment = (
   assert.equal(state.pendingFabricGarment.garmentKey, expectedGarmentKey);
 };
 
+const assertNoPendingGarment = (state: FabricAllocationState) => {
+  assert.equal(state.pendingFabricGarment, null);
+  assert.equal(state.awaitingFabricForPendingGarment, false);
+};
+
+const findAllocation = (state: FabricAllocationState, allocationId: string) => {
+  const allocation = state.fabricAllocations.find(
+    (candidate) => candidate.allocationId === allocationId,
+  );
+  assert(allocation, `Missing allocation ${allocationId}`);
+  return allocation;
+};
+
 const emptyState = FabricAllocationStateEngine.initialize();
 
-const stateG1 = FabricAllocationStateEngine.syncForSelectedFabric(emptyState, "FABRIC_TEST", {
-  code: "G1",
-});
+const stateG1 = FabricAllocationStateEngine.syncForSelectedFabric(
+  emptyState,
+  "FABRIC_TEST",
+  {
+    code: "G1",
+  },
+);
 assert.equal(stateG1.fabricAllocations.length, 1);
 assert.equal(stateG1.activeAllocationId, stateG1.fabricAllocations[0].allocationId);
 assertAllocationAssignment(stateG1, 1, [
   { garmentKey: "G1:shirt", code: "G1", garmentType: "shirt", fabricUnits: 1 },
 ]);
-assert.equal(stateG1.pendingFabricGarment, null);
+assertNoPendingGarment(stateG1);
 
 const resolvedG1 = resolveActiveAllocation(stateG1);
 assert.equal(resolvedG1.status, "resolved");
 assert.equal(resolvedG1.totalUnits, 1);
-assert.deepEqual(summarize(resolvedG1.garments[0]), {
-  garmentKey: "G1:shirt",
-  code: "G1",
-  garmentType: "shirt",
-  fabricUnits: 1,
-});
+assert.deepEqual(resolvedG1.garments.map(summarize), [
+  { garmentKey: "G1:shirt", code: "G1", garmentType: "shirt", fabricUnits: 1 },
+]);
 
-const stateG5 = FabricAllocationStateEngine.syncForSelectedFabric(emptyState, "FABRIC_TEST", {
+const stateG1Repeated = FabricAllocationStateEngine.syncForSelectedFabric(
+  stateG1,
+  "FABRIC_TEST",
+  {
+    code: "G1",
+  },
+);
+assert.equal(stateG1Repeated.fabricAllocations.length, 1);
+assert.equal(stateG1Repeated.activeAllocationId, stateG1.activeAllocationId);
+assertAllocationAssignment(stateG1Repeated, 1, [
+  { garmentKey: "G1:shirt", code: "G1", garmentType: "shirt", fabricUnits: 1 },
+]);
+assertNoPendingGarment(stateG1Repeated);
+
+const stateG5FromG1 = FabricAllocationStateEngine.syncForSelectedFabric(
+  stateG1,
+  "FABRIC_TEST",
+  {
+    code: "G5.2",
+  },
+);
+assert.equal(stateG5FromG1.fabricAllocations.length, 1);
+assert.equal(stateG5FromG1.activeAllocationId, stateG1.activeAllocationId);
+assertAllocationAssignment(stateG5FromG1, 2, [
+  { garmentKey: "G5.2:shirt", code: "G5.2", garmentType: "shirt", fabricUnits: 1 },
+  { garmentKey: "G5.2:trouser", code: "G5.2", garmentType: "trouser", fabricUnits: 1 },
+]);
+assertNoPendingGarment(stateG5FromG1);
+
+const stateUnknownFromG5 = FabricAllocationStateEngine.syncForSelectedFabric(
+  stateG5FromG1,
+  "FABRIC_TEST",
+  {
+    code: "UNKNOWN",
+  },
+);
+assert.equal(stateUnknownFromG5.fabricAllocations.length, 1);
+assert.equal(stateUnknownFromG5.activeAllocationId, stateG5FromG1.activeAllocationId);
+assertAllocationAssignment(stateUnknownFromG5, 2, [
+  { garmentKey: "G5.2:shirt", code: "G5.2", garmentType: "shirt", fabricUnits: 1 },
+  { garmentKey: "G5.2:trouser", code: "G5.2", garmentType: "trouser", fabricUnits: 1 },
+]);
+assertNoPendingGarment(stateUnknownFromG5);
+
+const stateG5 = FabricAllocationStateEngine.syncForSelectedFabric(emptyState, "FABRIC_A", {
   code: "G5.2",
 });
 assert.equal(stateG5.fabricAllocations.length, 1);
@@ -84,6 +142,8 @@ assertAllocationAssignment(stateG5, 2, [
   { garmentKey: "G5.2:shirt", code: "G5.2", garmentType: "shirt", fabricUnits: 1 },
   { garmentKey: "G5.2:trouser", code: "G5.2", garmentType: "trouser", fabricUnits: 1 },
 ]);
+assertNoPendingGarment(stateG5);
+
 const resolvedG5 = resolveActiveAllocation(stateG5);
 assert.equal(resolvedG5.status, "resolved");
 assert.equal(resolvedG5.totalUnits, 2);
@@ -92,25 +152,19 @@ assert.deepEqual(resolvedG5.garments.map(summarize), [
   { garmentKey: "G5.2:trouser", code: "G5.2", garmentType: "trouser", fabricUnits: 1 },
 ]);
 
-const stateG1Again = FabricAllocationStateEngine.syncForSelectedFabric(stateG1, "FABRIC_TEST", {
-  code: "G1",
-});
-assert.equal(stateG1Again.fabricAllocations.length, 1);
-assert.equal(stateG1Again.activeAllocationId, stateG1.activeAllocationId);
-assertAllocationAssignment(stateG1Again, 1, [
-  { garmentKey: "G1:shirt", code: "G1", garmentType: "shirt", fabricUnits: 1 },
-]);
-
-const stateG5FromG1 = FabricAllocationStateEngine.syncForSelectedFabric(stateG1, "FABRIC_TEST", {
-  code: "G5.2",
-});
-assert.equal(stateG5FromG1.fabricAllocations.length, 1);
-assert.equal(stateG5FromG1.activeAllocationId, stateG1.activeAllocationId);
-assertAllocationAssignment(stateG5FromG1, 2, [
+const stateL7WithoutLowerType = FabricAllocationStateEngine.syncForSelectedFabric(
+  stateG5,
+  "FABRIC_A",
+  {
+    code: "L7",
+  },
+);
+assert.equal(stateL7WithoutLowerType.fabricAllocations.length, 1);
+assertAllocationAssignment(stateL7WithoutLowerType, 2, [
   { garmentKey: "G5.2:shirt", code: "G5.2", garmentType: "shirt", fabricUnits: 1 },
   { garmentKey: "G5.2:trouser", code: "G5.2", garmentType: "trouser", fabricUnits: 1 },
 ]);
-assert.equal(stateG5FromG1.pendingFabricGarment, null);
+assertNoPendingGarment(stateL7WithoutLowerType);
 
 const stateOverflow = FabricAllocationStateEngine.attemptAppendGarment(stateG5, {
   code: "L7",
@@ -122,6 +176,115 @@ assertAllocationAssignment(stateOverflow, 2, [
   { garmentKey: "G5.2:trouser", code: "G5.2", garmentType: "trouser", fabricUnits: 1 },
 ]);
 assertPendingGarment(stateOverflow, "L7:skirt");
+assert.equal(stateOverflow.awaitingFabricForPendingGarment, false);
+
+const stateSameFabric = FabricAllocationStateEngine.useSameFabricForPendingGarment(
+  stateOverflow,
+);
+assert.equal(stateSameFabric.fabricAllocations.length, 2);
+const originalAllocationId = stateOverflow.fabricAllocations[0].allocationId;
+const originalFromSameFabric = findAllocation(stateSameFabric, originalAllocationId);
+assert.deepEqual(
+  originalFromSameFabric.garmentAssignments.map(summarize),
+  [
+    { garmentKey: "G5.2:shirt", code: "G5.2", garmentType: "shirt", fabricUnits: 1 },
+    { garmentKey: "G5.2:trouser", code: "G5.2", garmentType: "trouser", fabricUnits: 1 },
+  ],
+);
+const sameFabricOverflowAllocation = stateSameFabric.fabricAllocations.find(
+  (allocation) => allocation.allocationId === stateSameFabric.activeAllocationId,
+);
+assert(sameFabricOverflowAllocation, "Expected active same-fabric allocation");
+assert.equal(sameFabricOverflowAllocation.fabricCode, "FABRIC_A");
+assert.notEqual(sameFabricOverflowAllocation.allocationId, originalAllocationId);
+assert.deepEqual(
+  sameFabricOverflowAllocation.garmentAssignments.map(summarize),
+  [
+    { garmentKey: "L7:skirt", code: "L7", garmentType: "skirt", fabricUnits: 1, lowerGarmentType: "skirt" },
+  ],
+);
+assertNoPendingGarment(stateSameFabric);
+
+const secondOverflowFromG52 = FabricAllocationStateEngine.attemptAppendGarment(stateG5, {
+  code: "L7",
+  lowerGarmentType: "skirt",
+});
+const chooseAnotherStarted = FabricAllocationStateEngine.beginChooseAnotherFabric(
+  secondOverflowFromG52,
+);
+assert.equal(chooseAnotherStarted.awaitingFabricForPendingGarment, true);
+assertPendingGarment(chooseAnotherStarted, "L7:skirt");
+
+const chooseAnotherSameCodeResolved = FabricAllocationStateEngine.syncForSelectedFabric(
+  chooseAnotherStarted,
+  "FABRIC_A",
+  {
+    code: "G5.2",
+  },
+);
+assert.equal(chooseAnotherSameCodeResolved.fabricAllocations.length, 2);
+const sameCodeNewAllocation = chooseAnotherSameCodeResolved.fabricAllocations.find(
+  (allocation) => allocation.allocationId === chooseAnotherSameCodeResolved.activeAllocationId,
+);
+assert(sameCodeNewAllocation, "Expected active allocation after same-code pending assignment");
+assert.notEqual(sameCodeNewAllocation.allocationId, originalAllocationId);
+assert.equal(sameCodeNewAllocation.fabricCode, "FABRIC_A");
+assert.deepEqual(
+  sameCodeNewAllocation.garmentAssignments.map(summarize),
+  [
+    { garmentKey: "L7:skirt", code: "L7", garmentType: "skirt", fabricUnits: 1, lowerGarmentType: "skirt" },
+  ],
+);
+assertNoPendingGarment(chooseAnotherSameCodeResolved);
+
+const chooseAnotherResolved = FabricAllocationStateEngine.syncForSelectedFabric(
+  chooseAnotherStarted,
+  "FABRIC_B",
+  {
+    code: "G5.2",
+  },
+);
+assert.equal(chooseAnotherResolved.fabricAllocations.length, 2);
+const originalFromAnotherFlow = findAllocation(
+  chooseAnotherResolved,
+  originalAllocationId,
+);
+assert.deepEqual(
+  originalFromAnotherFlow.garmentAssignments.map(summarize),
+  [
+    { garmentKey: "G5.2:shirt", code: "G5.2", garmentType: "shirt", fabricUnits: 1 },
+    { garmentKey: "G5.2:trouser", code: "G5.2", garmentType: "trouser", fabricUnits: 1 },
+  ],
+);
+const anotherFabricAllocation = chooseAnotherResolved.fabricAllocations.find(
+  (allocation) => allocation.fabricCode === "FABRIC_B",
+);
+assert(anotherFabricAllocation, "Expected a new FABRIC_B allocation");
+assert.deepEqual(
+  anotherFabricAllocation.garmentAssignments.map(summarize),
+  [
+    { garmentKey: "L7:skirt", code: "L7", garmentType: "skirt", fabricUnits: 1, lowerGarmentType: "skirt" },
+  ],
+);
+assert.equal(
+  chooseAnotherResolved.activeAllocationId,
+  anotherFabricAllocation.allocationId,
+);
+assertNoPendingGarment(chooseAnotherResolved);
+
+const cancelledOverflow = FabricAllocationStateEngine.cancelPendingGarment(
+  stateOverflow,
+);
+assert.equal(cancelledOverflow.fabricAllocations.length, 1);
+assert.equal(cancelledOverflow.activeAllocationId, stateOverflow.activeAllocationId);
+assert.deepEqual(
+  cancelledOverflow.fabricAllocations[0].garmentAssignments.map(summarize),
+  [
+    { garmentKey: "G5.2:shirt", code: "G5.2", garmentType: "shirt", fabricUnits: 1 },
+    { garmentKey: "G5.2:trouser", code: "G5.2", garmentType: "trouser", fabricUnits: 1 },
+  ],
+);
+assertNoPendingGarment(cancelledOverflow);
 
 const stateKaftan = FabricAllocationStateEngine.syncForSelectedFabric(emptyState, "FABRIC_KAFTAN", {
   code: "KAFTAN",
@@ -151,12 +314,30 @@ assertAllocationAssignment(stateKaftanOverflow, 1, [
 ]);
 assertPendingGarment(stateKaftanOverflow, "G4:trouser");
 
+const stateKaftanSameFabric = FabricAllocationStateEngine.useSameFabricForPendingGarment(
+  stateKaftanOverflow,
+);
+assert.equal(stateKaftanSameFabric.fabricAllocations.length, 2);
+const kaftanOverflowAllocation = stateKaftanSameFabric.fabricAllocations.find(
+  (allocation) => allocation.allocationId === stateKaftanSameFabric.activeAllocationId,
+);
+assert(kaftanOverflowAllocation, "Expected active kaftan overflow allocation");
+assert.equal(kaftanOverflowAllocation.fabricCode, "FABRIC_KAFTAN");
+assert.deepEqual(
+  kaftanOverflowAllocation.garmentAssignments.map(summarize),
+  [{ garmentKey: "G4:trouser", code: "G4", garmentType: "trouser", fabricUnits: 1 }],
+);
+assertNoPendingGarment(stateKaftanSameFabric);
+
 const stateSharedOne = FabricAllocationStateEngine.syncForSelectedFabric(emptyState, "FAB_SHARED", {
-  code: "G1",
+  code: "G5.2",
 });
-const stateSharedTwo = FabricAllocationStateEngine.createAllocationForFabric(
-  stateSharedOne,
-  "FAB_SHARED",
+const stateSharedOverflow = FabricAllocationStateEngine.attemptAppendGarment(stateSharedOne, {
+  code: "L7",
+  lowerGarmentType: "skirt",
+});
+const stateSharedTwo = FabricAllocationStateEngine.useSameFabricForPendingGarment(
+  stateSharedOverflow,
 );
 assert.equal(stateSharedTwo.fabricAllocations.length, 2);
 assert.notEqual(
@@ -167,14 +348,15 @@ assert.equal(stateSharedTwo.fabricAllocations[0].fabricCode, "FAB_SHARED");
 assert.equal(stateSharedTwo.fabricAllocations[1].fabricCode, "FAB_SHARED");
 assert.equal(stateSharedTwo.activeAllocationId, stateSharedTwo.fabricAllocations[1].allocationId);
 
-const stateUnknown = FabricAllocationStateEngine.syncForSelectedFabric(stateG1, "FABRIC_TEST", {
+const stateUnknown = FabricAllocationStateEngine.syncForSelectedFabric(stateG5, "FABRIC_A", {
   code: "UNKNOWN",
 });
 assert.equal(stateUnknown.fabricAllocations.length, 1);
-assert.equal(stateUnknown.activeAllocationId, stateG1.activeAllocationId);
-assertAllocationAssignment(stateUnknown, 1, [
-  { garmentKey: "G1:shirt", code: "G1", garmentType: "shirt", fabricUnits: 1 },
+assert.equal(stateUnknown.activeAllocationId, stateG5.activeAllocationId);
+assertAllocationAssignment(stateUnknown, 2, [
+  { garmentKey: "G5.2:shirt", code: "G5.2", garmentType: "shirt", fabricUnits: 1 },
+  { garmentKey: "G5.2:trouser", code: "G5.2", garmentType: "trouser", fabricUnits: 1 },
 ]);
-assert.equal(stateUnknown.pendingFabricGarment, null);
+assertNoPendingGarment(stateUnknown);
 
 console.log("All fabric allocation state tests passed.");

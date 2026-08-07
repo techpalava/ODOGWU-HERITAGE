@@ -195,6 +195,7 @@ export interface FabricAllocationState {
  fabricAllocations: FabricAllocation[];
  activeAllocationId: string | null;
  pendingFabricGarment: FabricGarmentAssignment | null;
+ awaitingFabricForPendingGarment: boolean;
 }
 
 export type FabricCapacityResolution =

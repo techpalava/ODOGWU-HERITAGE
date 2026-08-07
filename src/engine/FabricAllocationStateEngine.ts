@@ -19,6 +19,7 @@ export class FabricAllocationStateEngine {
       fabricAllocations: [],
       activeAllocationId: null,
       pendingFabricGarment: null,
+      awaitingFabricForPendingGarment: false,
     };
   }
 
@@ -27,11 +28,20 @@ export class FabricAllocationStateEngine {
     selectedFabricCode: string | null,
     selectedGarment: FabricAllocationSelection | null,
   ): FabricAllocationState {
+    if (state.awaitingFabricForPendingGarment) {
+      if (!selectedFabricCode || !state.pendingFabricGarment) {
+        return state;
+      }
+
+      return this.assignPendingGarmentToFabric(state, selectedFabricCode);
+    }
+
     if (!selectedFabricCode) {
       return {
         fabricAllocations: state.fabricAllocations,
         activeAllocationId: null,
         pendingFabricGarment: null,
+        awaitingFabricForPendingGarment: false,
       };
     }
 
@@ -57,6 +67,7 @@ export class FabricAllocationStateEngine {
         ),
         activeAllocationId: nextActiveAllocationId,
         pendingFabricGarment: null,
+        awaitingFabricForPendingGarment: false,
       };
     }
 
@@ -65,6 +76,7 @@ export class FabricAllocationStateEngine {
         fabricAllocations,
         activeAllocationId: nextActiveAllocationId,
         pendingFabricGarment: null,
+        awaitingFabricForPendingGarment: false,
       };
     }
 
@@ -86,6 +98,7 @@ export class FabricAllocationStateEngine {
         ),
         activeAllocationId: nextActiveAllocationId,
         pendingFabricGarment: null,
+        awaitingFabricForPendingGarment: false,
       };
     }
 
@@ -94,6 +107,7 @@ export class FabricAllocationStateEngine {
         fabricAllocations,
         activeAllocationId: nextActiveAllocationId,
         pendingFabricGarment: resolution.attemptedGarment,
+        awaitingFabricForPendingGarment: false,
       };
     }
 
@@ -101,6 +115,7 @@ export class FabricAllocationStateEngine {
       fabricAllocations,
       activeAllocationId: nextActiveAllocationId,
       pendingFabricGarment: null,
+      awaitingFabricForPendingGarment: false,
     };
   }
 
@@ -125,6 +140,7 @@ export class FabricAllocationStateEngine {
         fabricAllocations: state.fabricAllocations,
         activeAllocationId: state.activeAllocationId,
         pendingFabricGarment: null,
+        awaitingFabricForPendingGarment: false,
       };
     }
 
@@ -151,6 +167,7 @@ export class FabricAllocationStateEngine {
         ),
         activeAllocationId: state.activeAllocationId,
         pendingFabricGarment: null,
+        awaitingFabricForPendingGarment: false,
       };
     }
 
@@ -159,6 +176,7 @@ export class FabricAllocationStateEngine {
         fabricAllocations: state.fabricAllocations,
         activeAllocationId: state.activeAllocationId,
         pendingFabricGarment: resolution.attemptedGarment,
+        awaitingFabricForPendingGarment: false,
       };
     }
 
@@ -166,6 +184,96 @@ export class FabricAllocationStateEngine {
       fabricAllocations: state.fabricAllocations,
       activeAllocationId: state.activeAllocationId,
       pendingFabricGarment: null,
+      awaitingFabricForPendingGarment: false,
+    };
+  }
+
+  static useSameFabricForPendingGarment(
+    state: FabricAllocationState,
+  ): FabricAllocationState {
+    if (!state.pendingFabricGarment || !state.activeAllocationId) {
+      return state;
+    }
+
+    const activeAllocation = state.fabricAllocations.find(
+      (allocation) => allocation.allocationId === state.activeAllocationId,
+    );
+    if (!activeAllocation) {
+      return state;
+    }
+
+    const allocationId = this.generateAllocationId(
+      activeAllocation.fabricCode,
+      state.fabricAllocations,
+    );
+    const newAllocation: FabricAllocation = {
+      allocationId,
+      fabricCode: activeAllocation.fabricCode,
+      garmentAssignments: [state.pendingFabricGarment],
+    };
+
+    return {
+      fabricAllocations: [...state.fabricAllocations, newAllocation],
+      activeAllocationId: allocationId,
+      pendingFabricGarment: null,
+      awaitingFabricForPendingGarment: false,
+    };
+  }
+
+  static beginChooseAnotherFabric(
+    state: FabricAllocationState,
+  ): FabricAllocationState {
+    if (!state.pendingFabricGarment) {
+      return state;
+    }
+
+    return {
+      fabricAllocations: state.fabricAllocations,
+      activeAllocationId: state.activeAllocationId,
+      pendingFabricGarment: state.pendingFabricGarment,
+      awaitingFabricForPendingGarment: true,
+    };
+  }
+
+  static assignPendingGarmentToFabric(
+    state: FabricAllocationState,
+    fabricCode: string,
+  ): FabricAllocationState {
+    if (!state.pendingFabricGarment) {
+      return {
+        fabricAllocations: state.fabricAllocations,
+        activeAllocationId: state.activeAllocationId,
+        pendingFabricGarment: null,
+        awaitingFabricForPendingGarment: false,
+      };
+    }
+
+    const allocationId = this.generateAllocationId(
+      fabricCode,
+      state.fabricAllocations,
+    );
+    const newAllocation: FabricAllocation = {
+      allocationId,
+      fabricCode,
+      garmentAssignments: [state.pendingFabricGarment],
+    };
+
+    return {
+      fabricAllocations: [...state.fabricAllocations, newAllocation],
+      activeAllocationId: allocationId,
+      pendingFabricGarment: null,
+      awaitingFabricForPendingGarment: false,
+    };
+  }
+
+  static cancelPendingGarment(
+    state: FabricAllocationState,
+  ): FabricAllocationState {
+    return {
+      fabricAllocations: state.fabricAllocations,
+      activeAllocationId: state.activeAllocationId,
+      pendingFabricGarment: null,
+      awaitingFabricForPendingGarment: false,
     };
   }
 
@@ -187,6 +295,7 @@ export class FabricAllocationStateEngine {
       fabricAllocations: [...state.fabricAllocations, allocation],
       activeAllocationId: allocationId,
       pendingFabricGarment: null,
+      awaitingFabricForPendingGarment: false,
     };
   }
 

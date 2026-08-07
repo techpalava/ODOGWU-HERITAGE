@@ -1554,9 +1554,12 @@ export default function DesignStudioView({
 
   // STEP 2: Fabric Selection, Filtering & Pagination States
   const [selectedFabric, setSelectedFabric] = useState<Fabric | null>(null);
-  const [, setFabricAllocationState] = useState<FabricAllocationState>(
+  const [fabricAllocationState, setFabricAllocationState] = useState<FabricAllocationState>(
     FabricAllocationStateEngine.initialize(),
   );
+  const showFabricSelectionLimitModal =
+    fabricAllocationState.pendingFabricGarment !== null &&
+    !fabricAllocationState.awaitingFabricForPendingGarment;
 
   const [fabricSearchInput, setFabricSearchInput] = useState<string>("");
   const [fabricSearch, setFabricSearch] = useState<string>("");
@@ -1641,6 +1644,24 @@ export default function DesignStudioView({
     setFabricPage(1);
   };
 
+  const handleSelectFabric = (fabric: Fabric) => {
+    if (fabricAllocationState.awaitingFabricForPendingGarment) {
+      if (selectedFabric?.code === fabric.code) {
+        setFabricAllocationState((previousState) =>
+          FabricAllocationStateEngine.assignPendingGarmentToFabric(
+            previousState,
+            fabric.code,
+          ),
+        );
+      }
+
+      setSelectedFabric(fabric);
+      return;
+    }
+
+    setSelectedFabric(fabric);
+  };
+
   // STEP 3: Design Details
   const [designSelections, setDesignSelections] = useState<DesignSelections>({
     accessories: []
@@ -1712,6 +1733,26 @@ export default function DesignStudioView({
     selectedGarment?.code,
     designSelections.lowerGarmentType,
   ]);
+
+  const handleUseSameFabricAgain = () => {
+    setFabricAllocationState((previousState) =>
+      FabricAllocationStateEngine.useSameFabricForPendingGarment(previousState),
+    );
+  };
+
+  const handleChooseAnotherFabric = () => {
+    setFabricAllocationState((previousState) =>
+      FabricAllocationStateEngine.beginChooseAnotherFabric(previousState),
+    );
+    setCurrentStep(1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleCancelPendingGarment = () => {
+    setFabricAllocationState((previousState) =>
+      FabricAllocationStateEngine.cancelPendingGarment(previousState),
+    );
+  };
 
   const garmentCode = getSelectedGarmentCode(selectedGarment || {});
   const isAmbiguous = isAmbiguousLowerGarment(garmentCode);
@@ -3565,7 +3606,7 @@ export default function DesignStudioView({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedFabric(fabric);
+                              handleSelectFabric(fabric);
                             }}
                             className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all duration-200 cursor-pointer select-none flex items-center gap-1 border shadow-sm ${
                               selectedFabric?.code === fabric?.code
@@ -5952,6 +5993,66 @@ export default function DesignStudioView({
         </div>
       )}
 
+      {/* Fabric Selection Limit Modal */}
+      <AnimatePresence>
+        {showFabricSelectionLimitModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/65 backdrop-blur-sm"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              transition={{ type: "spring", duration: 0.35 }}
+              className="relative z-10 w-full max-w-md rounded-3xl border-2 border-heritage-gold/30 bg-white p-6 shadow-2xl"
+            >
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-full border border-heritage-gold/30 bg-heritage-cream/50 p-2 text-heritage-gold">
+                  <AlertTriangle size={18} />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-lg font-bold font-serif text-heritage-green">
+                    Fabric Selection Limit
+                  </h3>
+                  <p className="text-xs leading-relaxed text-heritage-ink/75 font-sans">
+                    This fabric selection can cover up to 2 fabric units. The selected garment requires another fabric allocation.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleUseSameFabricAgain}
+                  className="w-full rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest"
+                >
+                  Use the Same Fabric Again
+                </button>
+                <button
+                  type="button"
+                  onClick={handleChooseAnotherFabric}
+                  className="w-full rounded-xl border border-heritage-gold/40 bg-heritage-gold/10 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-gold/20"
+                >
+                  Choose Another Fabric
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelPendingGarment}
+                  className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-heritage-ink/70 transition hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Biometric Consent Modal */}
       <AnimatePresence>
         {showConsentModal && (
@@ -6310,7 +6411,7 @@ export default function DesignStudioView({
                  <button
                     type="button"
                     onClick={() => {
-                      setSelectedFabric(zoomedFabric);
+                      handleSelectFabric(zoomedFabric);
                       setShowFabricZoomModal(false);
                     }}
                     className="mt-2 px-8 py-2.5 bg-heritage-gold hover:bg-yellow-600 text-white font-bold rounded-full transition-colors shadow-lg shadow-heritage-gold/20 flex items-center gap-2 text-sm"
