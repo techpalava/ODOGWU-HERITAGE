@@ -632,6 +632,20 @@ export interface CartItem {
   fabricAllocations?: FabricAllocation[];
 }
 
+export type CustomerDesignImageMimeType =
+  | "image/jpeg"
+  | "image/png"
+  | "image/webp";
+
+export interface CustomerDesignUploadReference {
+  designReferenceId: string;
+  ownerUid: string;
+  storagePath: string;
+  mimeType: CustomerDesignImageMimeType;
+  originalFileName?: string;
+  createdAt: string;
+}
+
 export interface GuestDesignDraft {
   currentStep: number;
   selectedFabricCode: string | null;
