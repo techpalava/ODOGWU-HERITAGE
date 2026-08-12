@@ -59,3 +59,31 @@ export const getPreviousCustomerFlowStep = (step: number): number | null => {
     ? DESIGN_STUDIO_CUSTOMER_FLOW_STEPS[index - 1].internalStep
     : null;
 };
+
+export type DesignStudioStepNavigationState =
+  | "current"
+  | "completed"
+  | "locked";
+
+export const getFurthestReachedCustomerFlowStepIndex = (
+  currentIndex: number,
+  furthestReachedIndex: number,
+): number => Math.max(0, currentIndex, furthestReachedIndex);
+
+export const getCustomerFlowStepNavigationState = ({
+  targetIndex,
+  currentIndex,
+  furthestReachedIndex,
+}: {
+  targetIndex: number;
+  currentIndex: number;
+  furthestReachedIndex: number;
+}): DesignStudioStepNavigationState => {
+  if (targetIndex === currentIndex) return "current";
+  if (targetIndex <= furthestReachedIndex) return "completed";
+  return "locked";
+};
+
+export const canNavigateToCustomerFlowStep = (
+  navigationState: DesignStudioStepNavigationState,
+): boolean => navigationState === "completed";
