@@ -1,3 +1,5 @@
+import { applyLegacyStyleFabricCapacityConfig } from "../config/StyleFabricCapacityConfig";
+
 export function legacyCompatMap<T>(collectionName: string, data: T): T {
   if (!data) return data;
   const item = { ...data } as any;
@@ -106,5 +108,7 @@ export function legacyCompatMap<T>(collectionName: string, data: T): T {
     if (item.category) item.category = mapValue(item.category);
   }
 
-  return item as T;
+  return (collectionName === "styles"
+    ? applyLegacyStyleFabricCapacityConfig(item)
+    : item) as T;
 }

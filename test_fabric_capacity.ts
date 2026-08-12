@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { FabricCapacityEngine } from "./src/engine/FabricCapacityEngine";
+import {
+  FABRIC_APPEND_GARMENT_CHOICES,
+  FabricCapacityEngine,
+} from "./src/engine/FabricCapacityEngine";
 import type { FabricAllocation, FabricGarmentAssignment, FabricGarmentInputAssignment } from "./src/types";
 
 const summarize = (garments: FabricGarmentAssignment[]) =>
@@ -98,6 +101,45 @@ const assertCodeResolves = (
     expectedGarments,
   );
 };
+
+const appendChoiceUnits = new Map([
+  ["shirt", 1],
+  ["trouser", 1],
+  ["skirt", 1],
+  ["standard_shorts", 1],
+  ["bum_shorts", 1],
+  ["dress", 1],
+  ["kaftan", 2],
+  ["full_length_gown", 2],
+]);
+
+assert.deepEqual(
+  FABRIC_APPEND_GARMENT_CHOICES.map((choice) => choice.id),
+  [...appendChoiceUnits.keys()],
+  "the append picker must expose only supported physical garment types",
+);
+for (const choice of FABRIC_APPEND_GARMENT_CHOICES) {
+  assert.notEqual(choice.id, "other");
+  assert.notEqual(choice.id, "agbada");
+  const resolution = FabricCapacityEngine.resolveGarmentAssignment(
+    choice.selection,
+  );
+  assert.equal(
+    resolution.status,
+    "resolved",
+    `${choice.label} must resolve through the capacity engine`,
+  );
+  assert.equal(
+    resolution.assignments.length,
+    1,
+    `${choice.label} must append exactly one physical garment`,
+  );
+  assert.equal(resolution.assignments[0].garmentType, choice.id);
+  assert.equal(
+    resolution.assignments[0].fabricUnits,
+    appendChoiceUnits.get(choice.id),
+  );
+}
 
 assertCodeResolves("G1", [
   { garmentKey: "G1:shirt", code: "G1", garmentType: "shirt", fabricUnits: 1 },
