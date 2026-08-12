@@ -403,15 +403,12 @@ assert.equal(
 );
 
 const shuffledCatalog = deterministicallyShuffle(
-  SEED_CUSTOM_DETAIL_CATALOG.map((option, index) => ({
-    ...option,
-    displayOrder: index % 3,
-  })),
+  SEED_CUSTOM_DETAIL_CATALOG.map((option) => ({ ...option })),
 );
 assert.deepEqual(
   getOptionIdsByGroup(allGarmentStyle, shuffledCatalog),
   expectedOptionIdsByGroup,
-  "Firestore order and legacy displayOrder values cannot change canonical presentation",
+  "Firestore document order cannot override configured Admin displayOrder",
 );
 
 assert.deepEqual(

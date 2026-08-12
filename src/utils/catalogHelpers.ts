@@ -89,6 +89,13 @@ const getOptionBusinessOrder = (
   UNKNOWN_OPTION_ORDER_BASE +
     (Number.isFinite(displayOrder) ? Math.max(0, displayOrder) : 0);
 
+const getConfiguredDisplayOrder = (
+  displayOrder: number | undefined,
+): number | null =>
+  Number.isFinite(displayOrder) && Number(displayOrder) >= 0
+    ? Number(displayOrder)
+    : null;
+
 export const isAdditionalClothesCostSection = (
   group: CustomDetailSelectionGroup,
 ): group is AdditionalClothesCostSection =>
@@ -130,10 +137,24 @@ export const sortCustomDetailOptions = (
       getSelectionGroupBusinessOrder(right.selectionGroup);
     if (groupOrder !== 0) return groupOrder;
 
-    const optionOrder =
+    const leftDisplayOrder = getConfiguredDisplayOrder(left.displayOrder);
+    const rightDisplayOrder = getConfiguredDisplayOrder(right.displayOrder);
+    if (
+      leftDisplayOrder !== null &&
+      rightDisplayOrder !== null &&
+      leftDisplayOrder !== rightDisplayOrder
+    ) {
+      return leftDisplayOrder - rightDisplayOrder;
+    }
+    if (leftDisplayOrder !== null && rightDisplayOrder === null) return -1;
+    if (leftDisplayOrder === null && rightDisplayOrder !== null) return 1;
+
+    // Canonical ID order remains a deterministic legacy fallback for records
+    // whose configured display order is missing or tied.
+    const fallbackOrder =
       getOptionBusinessOrder(left.id, left.displayOrder) -
       getOptionBusinessOrder(right.id, right.displayOrder);
-    if (optionOrder !== 0) return optionOrder;
+    if (fallbackOrder !== 0) return fallbackOrder;
 
     return getOptionContentOrder(left) - getOptionContentOrder(right);
   });
