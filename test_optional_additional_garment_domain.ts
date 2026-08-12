@@ -67,8 +67,8 @@ assert.deepEqual(
     ...mainComposition,
     createStyleBaseGarmentSpec("skirt"),
   ]).map((garment) => garment.garmentType),
-  ["shirt", "trouser", "skirt"],
-  "Main composition extensions are the only source of extra-garment eligibility",
+  ["shirt", "skirt", "trouser"],
+  "Additional garment choices follow the centralized garment display order",
 );
 assert.deepEqual(
   getAllowedAdditionalGarmentLabels(mainComposition),

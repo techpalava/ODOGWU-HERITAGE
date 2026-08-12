@@ -1,6 +1,7 @@
 import { FabricCapacityEngine } from "./FabricCapacityEngine";
 import type {
   AdditionalGarmentDependencyStatus,
+  AdditionalGarmentEligibilityRule,
   FabricAllocation,
   FabricAllocationState,
   FabricCapacityGarmentSpec,
@@ -17,6 +18,7 @@ export interface FabricAllocationSelection {
   sourceRole?: FabricGarmentRole;
   mainGarmentKey?: string;
   mainGarmentType?: FabricGarmentType;
+  eligibilityRule?: AdditionalGarmentEligibilityRule;
   dependencyStatus?: AdditionalGarmentDependencyStatus;
 }
 
@@ -235,6 +237,7 @@ export class FabricAllocationStateEngine {
               sourceRole: "additional" as const,
               mainGarmentKey: assignment.mainGarmentKey,
               mainGarmentType: assignment.mainGarmentType || assignment.garmentType,
+              eligibilityRule: assignment.eligibilityRule || "same_type",
               dependencyStatus: assignment.dependencyStatus || "valid",
             }];
           },
@@ -634,6 +637,9 @@ export class FabricAllocationStateEngine {
     }
     if (selectedGarment.mainGarmentType) {
       assignment.mainGarmentType = selectedGarment.mainGarmentType;
+    }
+    if (selectedGarment.eligibilityRule) {
+      assignment.eligibilityRule = selectedGarment.eligibilityRule;
     }
     if (selectedGarment.dependencyStatus) {
       assignment.dependencyStatus = selectedGarment.dependencyStatus;

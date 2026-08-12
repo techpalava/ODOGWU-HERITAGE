@@ -3,6 +3,7 @@ import type {
   CartItem,
   FabricAllocation,
   AdditionalGarmentDependencyStatus,
+  AdditionalGarmentEligibilityRule,
   FabricCapacityGarmentSpec,
   FabricGarmentAssignment,
   FabricGarmentType,
@@ -50,6 +51,13 @@ const normalizeAdditionalDependencyStatus = (
   value: unknown,
 ): AdditionalGarmentDependencyStatus | undefined =>
   value === "valid" || value === "orphaned" ? value : undefined;
+
+const normalizeAdditionalEligibilityRule = (
+  value: unknown,
+): AdditionalGarmentEligibilityRule | undefined =>
+  value === "same_type" || value === "demographic_policy"
+    ? value
+    : undefined;
 
 const normalizeGarmentSpecStrict = (
   value: unknown,
@@ -120,11 +128,20 @@ const normalizeGarmentAssignmentStrict = (
     value.dependencyStatus,
   );
   if (hasOwn(value, "dependencyStatus") && !dependencyStatus) return null;
-  if (sourceRole === "additional" && !mainGarmentType) return null;
+  const eligibilityRule = normalizeAdditionalEligibilityRule(
+    value.eligibilityRule,
+  );
+  if (hasOwn(value, "eligibilityRule") && !eligibilityRule) return null;
+  if (
+    sourceRole === "additional" &&
+    !mainGarmentType &&
+    eligibilityRule !== "demographic_policy"
+  ) return null;
 
   if (sourceRole) assignment.sourceRole = sourceRole;
   if (mainGarmentKey) assignment.mainGarmentKey = mainGarmentKey;
   if (mainGarmentType) assignment.mainGarmentType = mainGarmentType;
+  if (eligibilityRule) assignment.eligibilityRule = eligibilityRule;
   if (dependencyStatus) assignment.dependencyStatus = dependencyStatus;
 
   if (hasOwn(value, "garmentSpec")) {
@@ -144,6 +161,7 @@ const normalizeGarmentAssignmentStrict = (
   if (isLegacyAdditionalGarment) {
     assignment.sourceRole = "additional";
     assignment.mainGarmentType = garmentType;
+    assignment.eligibilityRule = "same_type";
     assignment.dependencyStatus = "valid";
   }
 
@@ -284,6 +302,9 @@ export const cloneFabricAllocations = (
         : {}),
       ...(assignment.mainGarmentType
         ? { mainGarmentType: assignment.mainGarmentType }
+        : {}),
+      ...(assignment.eligibilityRule
+        ? { eligibilityRule: assignment.eligibilityRule }
         : {}),
       ...(assignment.dependencyStatus
         ? { dependencyStatus: assignment.dependencyStatus }
@@ -465,6 +486,7 @@ export const toDeterministicFabricAllocationHashInput = (
           sourceRole: assignment.sourceRole || null,
           mainGarmentKey: assignment.mainGarmentKey || null,
           mainGarmentType: assignment.mainGarmentType || null,
+          eligibilityRule: assignment.eligibilityRule || null,
           dependencyStatus: assignment.dependencyStatus || null,
           garmentSpec: assignment.garmentSpec
             ? {

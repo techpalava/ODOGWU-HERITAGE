@@ -39,6 +39,8 @@ import {
 } from "./cartDesignDomain";
 import { getCartItemConfigurationHash } from "../services/guestOrderSessionService";
 import type { PreparedUploadedDesignReference } from "./uploadedDesignCheckoutPreparation";
+import { getStyleBaseFabricCapacityComposition } from "../config/StyleFabricCapacityConfig";
+import { isAdditionalGarmentAllowed } from "./additionalGarmentDomain";
 
 export interface CheckoutRevalidationContext {
   fabrics: Fabric[];
@@ -245,6 +247,31 @@ export const revalidateCartForCheckout = (
       return item;
     }
     const designContext = isUploadedDesign ? designSource : style;
+    const baseGarmentComposition = isUploadedDesign
+      ? designSource.fabricCapacityComposition
+      : getStyleBaseFabricCapacityComposition(style);
+    const persistedAdditionalAssignments = (item.fabricAllocations || [])
+      .flatMap((allocation) => allocation.garmentAssignments)
+      .filter((assignment) => assignment.sourceRole === "additional");
+    const invalidAdditionalAssignments = persistedAdditionalAssignments.filter(
+      (assignment) =>
+        assignment.dependencyStatus === "orphaned" ||
+        !isAdditionalGarmentAllowed(
+          assignment.garmentType,
+          baseGarmentComposition,
+          designContext,
+        ),
+    );
+    if (invalidAdditionalAssignments.length > 0) {
+      blockers.push("An Additional garment configuration needs review.");
+    }
+    const activeAdditionalGarmentTypes = persistedAdditionalAssignments
+      .filter(
+        (assignment) =>
+          assignment.dependencyStatus !== "orphaned" &&
+          !invalidAdditionalAssignments.includes(assignment),
+      )
+      .map((assignment) => assignment.garmentType);
 
     const garmentCode = getSelectedGarmentCode(item.garment);
     const enrichedGarment = item.garment
@@ -259,6 +286,7 @@ export const revalidateCartForCheckout = (
         item.design,
         context.customDetailCatalog,
         enrichedGarment,
+        activeAdditionalGarmentTypes,
       ),
       style,
       enrichedGarment,
@@ -273,6 +301,7 @@ export const revalidateCartForCheckout = (
       applicableDesign,
       context.customDetailCatalog,
       enrichedGarment,
+      activeAdditionalGarmentTypes,
     );
 
     if (missingCustomDetail) {
@@ -364,9 +393,7 @@ export const revalidateCartForCheckout = (
       materialPricing,
       style,
       designContext,
-      baseGarmentComposition: isUploadedDesign
-        ? designSource.fabricCapacityComposition
-        : undefined,
+      baseGarmentComposition,
       additionalGarments: allocationAssignments.filter(
         (assignment) => assignment.sourceRole === "additional",
       ),

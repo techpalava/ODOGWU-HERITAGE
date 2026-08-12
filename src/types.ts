@@ -168,6 +168,10 @@ export type FabricGarmentRole = "main" | "additional";
 
 export type AdditionalGarmentDependencyStatus = "valid" | "orphaned";
 
+export type AdditionalGarmentEligibilityRule =
+  | "same_type"
+  | "demographic_policy";
+
 export interface FabricCapacityGarmentSpec {
  key: string;
  garmentType: FabricGarmentType;
@@ -183,6 +187,7 @@ export interface FabricGarmentInputAssignment {
   sourceRole?: FabricGarmentRole;
   mainGarmentKey?: string;
   mainGarmentType?: FabricGarmentType;
+  eligibilityRule?: AdditionalGarmentEligibilityRule;
   dependencyStatus?: AdditionalGarmentDependencyStatus;
 }
 
@@ -196,6 +201,7 @@ export interface FabricGarmentAssignment {
   sourceRole?: FabricGarmentRole;
   mainGarmentKey?: string;
   mainGarmentType?: FabricGarmentType;
+  eligibilityRule?: AdditionalGarmentEligibilityRule;
   dependencyStatus?: AdditionalGarmentDependencyStatus;
 }
 

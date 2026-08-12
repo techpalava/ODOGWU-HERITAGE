@@ -289,6 +289,13 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
     designWithStructuredDefaults,
     catalog,
     enrichedGarment,
+    additionalGarments
+      .filter(
+        (assignment) =>
+          assignment.sourceRole === "additional" &&
+          assignment.dependencyStatus !== "orphaned",
+      )
+      .map((assignment) => assignment.garmentType),
   );
   const rawFabricSewingCost = hasResolvedMaterialPricing
     ? resolvedMaterialPricing.baseFabricSewingCost
@@ -325,7 +332,6 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
     constructionUpgradesPrice += 10;
   }
 
-  const baseClothingPrice = roundMoney(catalogPricing.clothingPrice);
   const candidateBaseGarmentPriceRows = structuredBaseGarmentPricing
     ? resolveStructuredBaseGarmentPriceRows(
         baseGarmentComposition || [],
@@ -333,16 +339,29 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
         catalog,
       )
     : [];
+  const candidateBaseClothingPrice = roundMoney(
+    candidateBaseGarmentPriceRows.reduce((total, row) => total + row.price, 0),
+  );
+  const hasDemographicPolicyAdditionalGarment = additionalGarments.some(
+    (assignment) =>
+      assignment.sourceRole === "additional" &&
+      assignment.eligibilityRule === "demographic_policy",
+  );
   const baseGarmentPriceRows =
     candidateBaseGarmentPriceRows.length > 0 &&
-    roundMoney(
-      candidateBaseGarmentPriceRows.reduce((total, row) => total + row.price, 0),
-    ) === baseClothingPrice
+    (candidateBaseClothingPrice === roundMoney(catalogPricing.clothingPrice) ||
+      hasDemographicPolicyAdditionalGarment)
       ? candidateBaseGarmentPriceRows
       : [];
+  const baseClothingPrice = roundMoney(
+    baseGarmentPriceRows.length > 0
+      ? candidateBaseClothingPrice
+      : catalogPricing.clothingPrice,
+  );
   const resolvedAdditionalGarmentPricing = resolveAdditionalGarmentPriceRows({
     additionalAssignments: additionalGarments,
     mainGarmentPriceRows: baseGarmentPriceRows,
+    designSelections: applicableDesign,
   });
   const additionalGarmentPriceRows =
     resolvedAdditionalGarmentPricing.unresolvedAssignmentIds.length === 0

@@ -1,16 +1,25 @@
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import type {
+  CustomDetailDesignContext,
+  DesignSelections,
   FabricAllocationState,
   FabricCapacityGarmentSpec,
   FabricGarmentAssignment,
   FabricGarmentType,
 } from "../types";
 import type { FabricAllocationSelection } from "../engine/FabricAllocationStateEngine";
+import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
+import {
+  resolveAdditionalGarmentPolicyCandidates,
+  resolveShortsGarmentUnitPriceCents,
+} from "../config/AdditionalGarmentPolicy";
 
 export interface AllowedAdditionalGarment {
   garmentType: FabricGarmentType;
   label: string;
-  mainGarmentSpec: FabricCapacityGarmentSpec;
+  garmentSpec: FabricCapacityGarmentSpec;
+  mainGarmentSpec?: FabricCapacityGarmentSpec;
+  eligibilityRule: "same_type" | "demographic_policy";
 }
 
 export interface AdditionalGarmentPriceRow {
@@ -20,41 +29,37 @@ export interface AdditionalGarmentPriceRow {
   price: number;
 }
 
-const isPhysicalMainGarmentType = (
-  garmentType: FabricGarmentType,
-): boolean => garmentType !== "other";
-
 export const resolveAllowedAdditionalGarments = (
   mainComposition: readonly FabricCapacityGarmentSpec[],
-): AllowedAdditionalGarment[] => {
-  const seen = new Set<FabricGarmentType>();
-  return mainComposition.flatMap((mainGarmentSpec) => {
-    if (
-      !isPhysicalMainGarmentType(mainGarmentSpec.garmentType) ||
-      seen.has(mainGarmentSpec.garmentType)
-    ) {
-      return [];
-    }
-    seen.add(mainGarmentSpec.garmentType);
-    return [{
-      garmentType: mainGarmentSpec.garmentType,
-      label: getFabricGarmentLabel(mainGarmentSpec.garmentType),
-      mainGarmentSpec: { ...mainGarmentSpec },
-    }];
-  });
-};
+  design?: CustomDetailDesignContext | null,
+): AllowedAdditionalGarment[] =>
+  resolveAdditionalGarmentPolicyCandidates(mainComposition, design).map(
+    (candidate) => ({
+      garmentType: candidate.garmentType,
+      label: getFabricGarmentLabel(candidate.garmentType),
+      garmentSpec:
+        candidate.mainGarmentSpec ||
+        createStyleBaseGarmentSpec(candidate.garmentType),
+      ...(candidate.mainGarmentSpec
+        ? { mainGarmentSpec: { ...candidate.mainGarmentSpec } }
+        : {}),
+      eligibilityRule: candidate.eligibilityRule,
+    }),
+  );
 
 export const getAllowedAdditionalGarmentLabels = (
   mainComposition: readonly FabricCapacityGarmentSpec[],
-): string[] => resolveAllowedAdditionalGarments(mainComposition).map(
+  design?: CustomDetailDesignContext | null,
+): string[] => resolveAllowedAdditionalGarments(mainComposition, design).map(
   (garment) => garment.label,
 );
 
 export const isAdditionalGarmentAllowed = (
   garmentType: FabricGarmentType,
   mainComposition: readonly FabricCapacityGarmentSpec[],
+  design?: CustomDetailDesignContext | null,
 ): boolean =>
-  resolveAllowedAdditionalGarments(mainComposition).some(
+  resolveAllowedAdditionalGarments(mainComposition, design).some(
     (garment) => garment.garmentType === garmentType,
   );
 
@@ -65,7 +70,7 @@ const getAdditionalAssignmentSequence = (
   existingAssignments.filter(
     (assignment) =>
       assignment.sourceRole === "additional" &&
-      assignment.mainGarmentType === garmentType,
+      assignment.garmentType === garmentType,
   ).length + 1;
 
 export type AdditionalGarmentSelectionResolution =
@@ -87,17 +92,22 @@ export type AdditionalGarmentSelectionResolution =
 export const createAdditionalGarmentSelection = ({
   garmentType,
   mainComposition,
+  design,
   existingAssignments,
 }: {
   garmentType: FabricGarmentType;
   mainComposition: readonly FabricCapacityGarmentSpec[];
+  design?: CustomDetailDesignContext | null;
   existingAssignments: readonly FabricGarmentAssignment[];
 }): AdditionalGarmentSelectionResolution => {
-  const allowedGarments = resolveAllowedAdditionalGarments(mainComposition);
-  const matchingMain = allowedGarments.find(
+  const allowedGarments = resolveAllowedAdditionalGarments(
+    mainComposition,
+    design,
+  );
+  const allowedGarment = allowedGarments.find(
     (garment) => garment.garmentType === garmentType,
   );
-  if (!matchingMain) {
+  if (!allowedGarment) {
     return { status: "invalid", attemptedGarmentType: garmentType, allowedGarments };
   }
 
@@ -114,14 +124,19 @@ export const createAdditionalGarmentSelection = ({
       garmentSpec: {
         key: assignmentId,
         garmentType,
-        fabricUnits: matchingMain.mainGarmentSpec.fabricUnits,
-        ...(matchingMain.mainGarmentSpec.lowerGarmentType
-          ? { lowerGarmentType: matchingMain.mainGarmentSpec.lowerGarmentType }
+        fabricUnits: allowedGarment.garmentSpec.fabricUnits,
+        ...(allowedGarment.garmentSpec.lowerGarmentType
+          ? { lowerGarmentType: allowedGarment.garmentSpec.lowerGarmentType }
           : {}),
       },
       sourceRole: "additional",
-      mainGarmentKey: matchingMain.mainGarmentSpec.key,
-      mainGarmentType: garmentType,
+      ...(allowedGarment.mainGarmentSpec
+        ? {
+            mainGarmentKey: allowedGarment.mainGarmentSpec.key,
+            mainGarmentType: allowedGarment.mainGarmentSpec.garmentType,
+          }
+        : {}),
+      eligibilityRule: allowedGarment.eligibilityRule,
       dependencyStatus: "valid",
     },
   };
@@ -130,14 +145,15 @@ export const createAdditionalGarmentSelection = ({
 export const reconcileAdditionalGarmentDependencies = (
   state: FabricAllocationState,
   mainComposition: readonly FabricCapacityGarmentSpec[],
+  design?: CustomDetailDesignContext | null,
 ): FabricAllocationState => {
   const allowedTypes = new Set(
-    resolveAllowedAdditionalGarments(mainComposition).map(
+    resolveAllowedAdditionalGarments(mainComposition, design).map(
       (garment) => garment.garmentType,
     ),
   );
   const getDependencyStatus = (assignment: FabricGarmentAssignment) =>
-    allowedTypes.has(assignment.mainGarmentType!) ? "valid" : "orphaned";
+    allowedTypes.has(assignment.garmentType) ? "valid" : "orphaned";
 
   return {
     ...state,
@@ -175,12 +191,14 @@ export const getInvalidAdditionalGarmentAssignments = (
 export const resolveAdditionalGarmentPriceRows = ({
   additionalAssignments,
   mainGarmentPriceRows,
+  designSelections,
 }: {
   additionalAssignments: readonly FabricGarmentAssignment[];
   mainGarmentPriceRows: readonly {
     garmentType: FabricGarmentType;
     price: number;
   }[];
+  designSelections?: DesignSelections;
 }): {
   rows: AdditionalGarmentPriceRow[];
   unresolvedAssignmentIds: string[];
@@ -191,14 +209,22 @@ export const resolveAdditionalGarmentPriceRows = ({
     if (assignment.sourceRole !== "additional") {
       continue;
     }
-    if (assignment.dependencyStatus === "orphaned" || !assignment.mainGarmentType) {
+    if (assignment.dependencyStatus === "orphaned") {
       unresolvedAssignmentIds.push(assignment.garmentKey);
       continue;
     }
     const mainRow = mainGarmentPriceRows.find(
-      (row) => row.garmentType === assignment.mainGarmentType,
+      (row) => row.garmentType === assignment.garmentType,
     );
-    if (!mainRow) {
+    const canonicalShortsPriceCents = resolveShortsGarmentUnitPriceCents(
+      assignment.garmentType,
+      designSelections || {},
+    );
+    const price = mainRow?.price ??
+      (canonicalShortsPriceCents === null
+        ? null
+        : canonicalShortsPriceCents / 100);
+    if (price === null) {
       unresolvedAssignmentIds.push(assignment.garmentKey);
       continue;
     }
@@ -206,7 +232,7 @@ export const resolveAdditionalGarmentPriceRows = ({
       assignmentId: assignment.garmentKey,
       garmentType: assignment.garmentType,
       label: getFabricGarmentLabel(assignment.garmentType),
-      price: mainRow.price,
+      price,
     });
   }
   return { rows, unresolvedAssignmentIds };

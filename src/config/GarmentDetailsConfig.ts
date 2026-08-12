@@ -49,14 +49,14 @@ export const CUSTOM_DETAIL_SELECTION_GROUP_ORDER: Readonly<
   dress_construction: 30,
   dress_pockets: 40,
   neck_design: 50,
-  standard_shorts_fastening: 60,
-  standard_shorts_pockets: 70,
+  skirt_length: 60,
+  skirt_pockets: 70,
   bum_shorts_fastening: 80,
   bum_shorts_pockets: 90,
   trouser_fastening: 100,
   trouser_pockets: 110,
-  skirt_length: 120,
-  skirt_pockets: 130,
+  standard_shorts_fastening: 120,
+  standard_shorts_pockets: 130,
 };
 
 export const CUSTOM_DETAIL_OPTION_ORDER: Readonly<Record<string, number>> = {
@@ -137,19 +137,19 @@ export const CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION: Readonly<
   neck_design: { title: "Neck Design" },
   standard_shorts_fastening: {
     title: "Fastening",
-    description: "Just above the knee",
+    description: "Just above the Knee",
   },
   standard_shorts_pockets: {
     title: "Pockets",
-    description: "Just above the knee",
+    description: "Just above the Knee",
   },
   bum_shorts_fastening: {
     title: "Fastening",
-    description: "Just below the crotch at lap level",
+    description: "Just below the Crotch (At Lap level)",
   },
   bum_shorts_pockets: {
     title: "Pockets",
-    description: "Just below the crotch at lap level",
+    description: "Just below the Crotch (At Lap level)",
   },
   trouser_fastening: {
     title: "Fastening",
@@ -207,10 +207,10 @@ export const CUSTOM_DETAIL_PARENT_SECTION_ORDER: readonly CustomDetailParentSect
   "shirt",
   "dress",
   "neck",
-  "standard_shorts",
+  "skirts",
   "bum_shorts",
   "trousers",
-  "skirts"
+  "standard_shorts"
 ];
 
 export const CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION: Readonly<

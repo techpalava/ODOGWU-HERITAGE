@@ -8,6 +8,7 @@ import type {
   FabricGarmentType,
   FabricGarmentRole,
   AdditionalGarmentDependencyStatus,
+  AdditionalGarmentEligibilityRule,
 } from "../types";
 import { FABRIC_GARMENT_CAPACITY_UNITS } from "../config/StyleFabricCapacityConfig";
 
@@ -309,6 +310,7 @@ export class FabricCapacityEngine {
     sourceRole?: FabricGarmentRole,
     mainGarmentKey?: string,
     mainGarmentType?: FabricGarmentType,
+    eligibilityRule?: AdditionalGarmentEligibilityRule,
     dependencyStatus?: AdditionalGarmentDependencyStatus,
   ): FabricGarmentAssignment {
     return {
@@ -321,6 +323,7 @@ export class FabricCapacityEngine {
       ...(sourceRole ? { sourceRole } : {}),
       ...(mainGarmentKey ? { mainGarmentKey } : {}),
       ...(mainGarmentType ? { mainGarmentType } : {}),
+      ...(eligibilityRule ? { eligibilityRule } : {}),
       ...(dependencyStatus ? { dependencyStatus } : {}),
     };
   }
@@ -331,7 +334,11 @@ export class FabricCapacityEngine {
     requestedLowerGarmentType?: LowerGarmentType,
     metadata?: Pick<
       FabricGarmentInputAssignment,
-      "sourceRole" | "mainGarmentKey" | "mainGarmentType" | "dependencyStatus"
+      | "sourceRole"
+      | "mainGarmentKey"
+      | "mainGarmentType"
+      | "eligibilityRule"
+      | "dependencyStatus"
     >,
   ):
     | { status: "resolved"; assignments: FabricGarmentAssignment[] }
@@ -378,6 +385,7 @@ export class FabricCapacityEngine {
           metadata?.sourceRole,
           metadata?.mainGarmentKey,
           metadata?.mainGarmentType,
+          metadata?.eligibilityRule,
           metadata?.dependencyStatus,
         ),
       ],

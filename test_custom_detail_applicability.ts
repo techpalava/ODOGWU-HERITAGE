@@ -291,14 +291,14 @@ expectGroups("master selection-group order", allGarmentStyle, null, [
   "dress_construction",
   "dress_pockets",
   "neck_design",
-  "standard_shorts_fastening",
-  "standard_shorts_pockets",
+  "skirt_length",
+  "skirt_pockets",
   "bum_shorts_fastening",
   "bum_shorts_pockets",
   "trouser_fastening",
   "trouser_pockets",
-  "skirt_length",
-  "skirt_pockets",
+  "standard_shorts_fastening",
+  "standard_shorts_pockets",
 ]);
 
 const expectedOptionIdsByGroup: Record<string, string[]> = {
@@ -873,14 +873,14 @@ assert.deepEqual(
     "dress_construction",
     "dress_pockets",
     "neck_design",
-    "standard_shorts_fastening",
-    "standard_shorts_pockets",
+    "skirt_length",
+    "skirt_pockets",
     "bum_shorts_fastening",
     "bum_shorts_pockets",
     "trouser_fastening",
     "trouser_pockets",
-    "skirt_length",
-    "skirt_pockets",
+    "standard_shorts_fastening",
+    "standard_shorts_pockets",
   ],
   "standard selectable groups are in canonical order"
 );

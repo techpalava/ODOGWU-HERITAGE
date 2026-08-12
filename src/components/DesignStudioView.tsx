@@ -1,5 +1,6 @@
 import {
   filterDesignSelectionsForCustomDetails,
+  filterDesignSelectionsForActivePhysicalGarments,
   getCustomDetailSelectionOptionIds,
   getCustomDetailSnapshots,
   getCustomDetailsBreakdown,
@@ -80,7 +81,11 @@ import { FabricAllocationStateEngine } from "../engine/FabricAllocationStateEngi
 import {
   getFabricGarmentLabel,
 } from "../engine/FabricCapacityEngine";
-import { getCustomDetailGroupsForFabricGarmentType } from "../config/StyleFabricCapacityConfig";
+import {
+  getCustomDetailGroupsForFabricGarmentType,
+  getDefaultGarmentDetailsForSpec,
+} from "../config/StyleFabricCapacityConfig";
+import { resolveShortsGarmentUnitPriceCents } from "../config/AdditionalGarmentPolicy";
 import OrderRoutingPanel from "./OrderRoutingPanel";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
@@ -644,6 +649,7 @@ const OptionalAdditionalGarmentSection = ({
   assignments,
   basePriceRows,
   priceRows,
+  designSelections,
   currencySymbol,
   onAdd,
   onRemove,
@@ -653,6 +659,7 @@ const OptionalAdditionalGarmentSection = ({
   assignments: readonly FabricGarmentAssignment[];
   basePriceRows: readonly CustomerDesignBaseGarmentPriceRow[];
   priceRows: readonly CustomerDesignAdditionalGarmentPriceRow[];
+  designSelections: DesignSelections;
   currencySymbol: string;
   onAdd: (garmentType: FabricGarmentType) => void;
   onRemove: (garmentKey: string) => void;
@@ -671,16 +678,26 @@ const OptionalAdditionalGarmentSection = ({
         Add Another Garment
       </legend>
       <p className="text-[10px] leading-relaxed text-heritage-ink/60">
-        Add another piece supported by this design. Each additional garment uses
-        the matching main-garment price and needs a fabric assignment.
+        Add another piece supported by this design. Its authoritative garment
+        price and fabric assignment are added separately.
       </p>
 
       {allowedGarments.length > 0 ? (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {allowedGarments.map((garment) => {
-            const referencePrice = basePriceRows.find(
+            const inheritedReferencePrice = basePriceRows.find(
               (row) => row.garmentType === garment.garmentType,
             )?.price;
+            const shortsReferencePriceCents =
+              resolveShortsGarmentUnitPriceCents(
+                garment.garmentType,
+                designSelections,
+              );
+            const referencePrice =
+              inheritedReferencePrice ??
+              (shortsReferencePriceCents === null
+                ? undefined
+                : shortsReferencePriceCents / 100);
             return (
               <button
                 key={garment.garmentType}
@@ -797,6 +814,14 @@ const GarmentDetailSelector = ({
     effectiveCatalog,
     selectedGarment,
     designSelections,
+    additionalGarmentAssignments
+      .filter(
+        (assignment: FabricGarmentAssignment) =>
+          assignment.dependencyStatus !== "orphaned",
+      )
+      .map(
+        (assignment: FabricGarmentAssignment) => assignment.garmentType,
+      ),
   );
   const standardGroups = selectableGroups.filter(
     (group) =>
@@ -804,7 +829,6 @@ const GarmentDetailSelector = ({
       group.id !== "additional_physical_garment",
   );
   const parentSections = groupCustomDetailGroupsByParentSection(standardGroups);
-  const primaryParentSections = parentSections;
   const baseGarmentGroups = customDetailDesignContext?.kind === "uploaded"
     ? getSupportedCustomDetailGroups(customDetailDesignContext)
     : getStyleBaseCustomDetailGroups(selectedStyle);
@@ -832,6 +856,11 @@ const GarmentDetailSelector = ({
     selectedAdditionalGarmentGroups.includes(
       getSectionGarmentGroup(sectionId) as any,
     );
+
+  const primaryParentSections = parentSections.filter(
+    (section) =>
+      isParentSectionIncluded(section.id) || isParentSectionAdded(section.id),
+  );
 
   const getOptionalHeaderHelperText = (sectionId: string): string => {
     switch (sectionId) {
@@ -896,8 +925,15 @@ const GarmentDetailSelector = ({
     );
   };
 
-  const additionalGroups = selectableGroups.filter((group) =>
-    isAdditionalClothesCostSection(group.id),
+  const visibleGarmentGroups = new Set([
+    ...baseGarmentGroups,
+    ...selectedAdditionalGarmentGroups,
+  ]);
+  const additionalGroups = selectableGroups.filter(
+    (group) =>
+      isAdditionalClothesCostSection(group.id) &&
+      (group.garmentGroup === "personalized" ||
+        visibleGarmentGroups.has(group.garmentGroup)),
   );
   const applicableDecorativeFeatures = getApplicableDecorativeFeatures(
     selectedStyle,
@@ -1060,6 +1096,14 @@ const GarmentDetailSelector = ({
       normalizeCustomDetailCatalog(customDetailCatalog),
       enrichedGarment,
       designSelections,
+      additionalGarmentAssignments
+        .filter(
+          (assignment: FabricGarmentAssignment) =>
+            assignment.dependencyStatus !== "orphaned",
+        )
+        .map(
+          (assignment: FabricGarmentAssignment) => assignment.garmentType,
+        ),
     );
     const isRequired = requiredGroups.includes(groupId);
     const selectedOptionCount = getCustomDetailSelectionOptionIds(
@@ -1567,6 +1611,7 @@ const GarmentDetailSelector = ({
         assignments={additionalGarmentAssignments}
         basePriceRows={baseGarmentPriceRows}
         priceRows={additionalGarmentPriceRows}
+        designSelections={designSelections}
         currencySymbol={currencySymbol}
         onAdd={onAddAdditionalGarment}
         onRemove={onRemoveAdditionalGarment}
@@ -2099,11 +2144,19 @@ export default function DesignStudioView({
   const additionalGarmentAssignments = fabricAllocationState.fabricAllocations
     .flatMap((allocation) => allocation.garmentAssignments)
     .filter((assignment) => assignment.sourceRole === "additional");
+  const activeAdditionalGarmentTypes = additionalGarmentAssignments
+    .filter((assignment) => assignment.dependencyStatus !== "orphaned")
+    .map((assignment) => assignment.garmentType);
+  const activeAdditionalGarmentTypeSignature = activeAdditionalGarmentTypes.join(",");
   const invalidAdditionalGarmentAssignments =
     getInvalidAdditionalGarmentAssignments(fabricAllocationState);
   const allowedAdditionalGarments = resolveAllowedAdditionalGarments(
     activeDesignComposition,
+    activeCustomDetailDesignContext,
   );
+  const allowedAdditionalGarmentSignature = allowedAdditionalGarments
+    .map((garment) => `${garment.garmentType}:${garment.eligibilityRule}`)
+    .join(",");
   const additionalGarmentDisplayLabels = getAdditionalGarmentDisplayLabels(
     additionalGarmentAssignments,
   );
@@ -2362,6 +2415,7 @@ export default function DesignStudioView({
       return reconcileAdditionalGarmentDependencies(
         syncedState,
         activeDesignComposition,
+        activeCustomDetailDesignContext,
       );
     });
   }, [
@@ -2370,6 +2424,7 @@ export default function DesignStudioView({
     selectedFabric?.code,
     activeDesignSourceKey,
     activeDesignCompositionSignature,
+    allowedAdditionalGarmentSignature,
     selectedGarment?.code,
     designSelections.lowerGarmentType,
   ]);
@@ -2436,6 +2491,7 @@ export default function DesignStudioView({
     const selection = createAdditionalGarmentSelection({
       garmentType,
       mainComposition: activeDesignComposition,
+      design: activeCustomDetailDesignContext,
       existingAssignments: fabricAllocationState.fabricAllocations.flatMap(
         (allocation) => allocation.garmentAssignments,
       ),
@@ -2443,6 +2499,7 @@ export default function DesignStudioView({
     if (selection.status === "invalid") {
       const allowedLabels = getAllowedAdditionalGarmentLabels(
         activeDesignComposition,
+        activeCustomDetailDesignContext,
       );
       setNotification({
         message:
@@ -2466,14 +2523,44 @@ export default function DesignStudioView({
       });
       return;
     }
+    const defaultDetails = selection.selection.garmentSpec
+      ? getDefaultGarmentDetailsForSpec(selection.selection.garmentSpec)
+      : null;
+    if (defaultDetails) {
+      setDesignSelections((previous) => ({
+        ...previous,
+        customDetails: {
+          ...defaultDetails,
+          ...(previous.customDetails || {}),
+        },
+      }));
+    }
     setFabricAllocationState(nextState);
   };
 
   const handleRemoveAdditionalGarment = (garmentKey: string) => {
-    setFabricAllocationState((previousState) =>
-      FabricAllocationStateEngine.removeGarmentAssignments(previousState, [
-        garmentKey,
-      ]),
+    const nextState = FabricAllocationStateEngine.removeGarmentAssignments(
+      fabricAllocationState,
+      [garmentKey],
+    );
+    const remainingAdditionalTypes = nextState.fabricAllocations
+      .flatMap((allocation) => allocation.garmentAssignments)
+      .filter(
+        (assignment) =>
+          assignment.sourceRole === "additional" &&
+          assignment.dependencyStatus !== "orphaned",
+      )
+      .map((assignment) => assignment.garmentType);
+    setFabricAllocationState(nextState);
+    setDesignSelections((previous) =>
+      filterDesignSelectionsForActivePhysicalGarments(
+        previous,
+        customDetailCatalog,
+        [
+          ...activeDesignComposition.map((spec) => spec.garmentType),
+          ...remainingAdditionalTypes,
+        ],
+      ),
     );
   };
 
@@ -2556,6 +2643,9 @@ export default function DesignStudioView({
           previous,
           customDetailCatalog,
           selectedGarment,
+          additionalGarmentAssignments.map(
+            (assignment) => assignment.garmentType,
+          ),
         ),
         selectedStyle,
         selectedGarment,
@@ -2566,6 +2656,8 @@ export default function DesignStudioView({
     selectedGarment?.code,
     selectedGarment?.type,
     customDetailCatalog,
+    activeAdditionalGarmentTypeSignature,
+    additionalGarmentAssignments.length,
   ]);
 
   // STEP 5 & 6: Sizing Inputs and Estimation state
@@ -3531,6 +3623,11 @@ export default function DesignStudioView({
     setHasLining(draft.hasLining);
 
     const restoreSelections = window.setTimeout(() => {
+      const restoredAdditionalGarmentTypes =
+        draftAllocationHydration.fabricAllocations
+          .flatMap((allocation) => allocation.garmentAssignments)
+          .filter((assignment) => assignment.sourceRole === "additional")
+          .map((assignment) => assignment.garmentType);
       setSelectedGarment(draftSource?.kind === "uploaded" ? null : draft.selectedGarment);
       setDesignSelections(
         filterDesignSelectionsForDecorativeFeatures(
@@ -3539,6 +3636,7 @@ export default function DesignStudioView({
             draft.designSelections,
             customDetailCatalog,
             draft.selectedGarment,
+            restoredAdditionalGarmentTypes,
           ),
           draftStyle,
           draft.selectedGarment,
@@ -3728,6 +3826,7 @@ export default function DesignStudioView({
       customDetailCatalog,
       enrichedGarment,
       designSelections,
+      activeAdditionalGarmentTypes,
     );
     const missingRequiredGroups = requiredGroups.filter(
       (groupId) =>
@@ -4141,6 +4240,7 @@ export default function DesignStudioView({
           designSelections,
           customDetailCatalog,
           selectedGarment,
+          activeAdditionalGarmentTypes,
         ),
         selectedStyle,
         selectedGarment,

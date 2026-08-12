@@ -23,6 +23,7 @@ import {
   getCatalogDesignSourceKey,
   isValidUploadedDesignSource,
 } from "./designSourceState";
+import { isAdditionalGarmentAllowed } from "./additionalGarmentDomain";
 
 export const UPLOADED_DESIGN_TRUSTED_TRANSFER_BLOCKER =
   "Trusted uploaded-design image transfer is required before checkout.";
@@ -118,6 +119,9 @@ const normalizeAssignmentForCart = (
       ? {
           mainGarmentKey: assignment.mainGarmentKey,
           mainGarmentType: assignment.mainGarmentType,
+          eligibilityRule:
+            assignment.eligibilityRule ||
+            (assignment.mainGarmentType ? "same_type" : undefined),
           dependencyStatus: assignment.dependencyStatus || "orphaned",
         }
       : {}),
@@ -232,19 +236,28 @@ const validateUploadedAllocations = (
         reasons.push("Uploaded design is missing canonical garment specifications.");
       }
       if (assignment.sourceRole === "additional") {
+        const isPolicyEligible = isAdditionalGarmentAllowed(
+          assignment.garmentType,
+          source.fabricCapacityComposition,
+          source,
+        );
+        const hasValidSameTypeDependency =
+          assignment.eligibilityRule === "demographic_policy" ||
+          (Boolean(assignment.mainGarmentKey) &&
+            Boolean(assignment.mainGarmentType) &&
+            mainTypes.has(assignment.mainGarmentType!) &&
+            fabricAllocations.some((candidateAllocation) =>
+              candidateAllocation.garmentAssignments.some(
+                (candidate) =>
+                  (candidate.sourceRole || "main") === "main" &&
+                  candidate.garmentKey === assignment.mainGarmentKey &&
+                  candidate.garmentType === assignment.mainGarmentType,
+              ),
+            ));
         if (
-          !assignment.mainGarmentKey ||
-          !assignment.mainGarmentType ||
           assignment.dependencyStatus !== "valid" ||
-          !mainTypes.has(assignment.mainGarmentType) ||
-          !fabricAllocations.some((candidateAllocation) =>
-            candidateAllocation.garmentAssignments.some(
-              (candidate) =>
-                (candidate.sourceRole || "main") === "main" &&
-                candidate.garmentKey === assignment.mainGarmentKey &&
-                candidate.garmentType === assignment.mainGarmentType,
-            ),
-          )
+          !isPolicyEligible ||
+          !hasValidSameTypeDependency
         ) {
           reasons.push("Uploaded design has an orphaned Additional garment.");
         }
@@ -396,6 +409,7 @@ const resolveCartDesignAllocationsForFingerprint = (item: CartItem) => {
       sourceRole: assignment.sourceRole || "main",
       mainGarmentKey: assignment.mainGarmentKey,
       mainGarmentType: assignment.mainGarmentType,
+      eligibilityRule: assignment.eligibilityRule,
       dependencyStatus: assignment.dependencyStatus,
     })),
   }));
