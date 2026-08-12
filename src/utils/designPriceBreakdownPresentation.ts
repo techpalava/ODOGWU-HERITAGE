@@ -1,5 +1,8 @@
 import type { AuthoritativeDesignPricing } from "./designPricing";
 
+export const SELECTED_DESIGN_PRICE_SUPPORTING_TEXT =
+  "Includes fabric(s), sewing, tax, and shipping from Lagos to Eindhoven.";
+
 /**
  * Presentation-only mapping of the pricing engine's explanatory garment rows.
  * It deliberately owns no monetary arithmetic.

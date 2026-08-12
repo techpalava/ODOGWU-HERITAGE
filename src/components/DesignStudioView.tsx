@@ -133,12 +133,16 @@ import {
   NECK_DESIGN_SUBCATEGORY_ORDER,
 } from "../config/GarmentDetailsConfig";
 import {
+  calculateSelectedDesignPrice,
   calculateDesignPricing,
   isBatchPricingRoute,
   type CustomerDesignBaseGarmentPriceRow,
   type CustomerDesignAdditionalGarmentPriceRow,
 } from "../utils/designPricing";
-import { resolveCustomerDesignPriceBreakdown } from "../utils/designPriceBreakdownPresentation";
+import {
+  resolveCustomerDesignPriceBreakdown,
+  SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
+} from "../utils/designPriceBreakdownPresentation";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
 import type {
   PricedSelection,
@@ -2165,6 +2169,7 @@ export default function DesignStudioView({
       fabricAllocationState,
       baseFabricGarmentSelections,
     );
+
   const hasUnassignedPhysicalGarments =
     unassignedPhysicalGarments.unassignedGarments.length > 0;
   const fabricAssignmentSummary = resolveCustomerFabricAssignmentSummary({
@@ -3395,24 +3400,26 @@ export default function DesignStudioView({
     }
 
     const lagosToEindhovenShipping =
-      individualShipping?.priceEur ?? batchShipping?.priceEur ?? 0;
+      individualShipping?.priceEur ?? batchShipping?.priceEur ?? null;
     const eindhovenToDestinationShipping =
       finalMileShipping?.status === "READY"
         ? finalMileShipping.priceEur
         : null;
-    const rawShippingCost = roundMoney(
-      lagosToEindhovenShipping +
+    const selectedDesignPriceBreakdown = calculateSelectedDesignPrice({
+      preTaxDesignSubtotal: authoritativePricing?.garmentSubtotal ?? 0,
+      taxPercentage:
+        businessSettings.pricingSettings.vatTaxPercentage,
+      lagosToEindhovenShipping,
+      eindhovenToDestinationShipping,
+    });
+    const shippingCost = roundMoney(
+      (lagosToEindhovenShipping ?? 0) +
         (eindhovenToDestinationShipping ?? 0),
     );
-    const shippingCost = showShippingSummary ? rawShippingCost : 0;
-    const subtotal = roundMoney(
-      clothingPrice +
-      fabricPrice +
-      fabricSewingCost +
-      constructionSewingCost +
-      customDetailsPrice +
-      shippingCost,
-    );
+    const subtotal =
+      selectedDesignPriceBreakdown.finalOrderSubtotal ??
+      selectedDesignPriceBreakdown.selectedDesignPrice ??
+      selectedDesignPriceBreakdown.taxInclusiveDesignSubtotal;
 
     return {
       clothingPrice,
@@ -3466,7 +3473,7 @@ export default function DesignStudioView({
       individualShipping,
       batchShipping,
       finalMileShipping,
-      lagosToEindhovenShipping,
+      ...selectedDesignPriceBreakdown,
       eindhovenToDestinationShipping,
       shippingCost,
       subtotal
@@ -3487,7 +3494,7 @@ export default function DesignStudioView({
     businessSettings.pricingSettings.depositPercentage,
   );
   const depositRatio = getDepositRatio(depositPercentage);
-  const garmentSubtotal = roundMoney(subtotal - pricing.shippingCost);
+  const garmentSubtotal = pricing.taxInclusiveDesignSubtotal;
   const garmentDeposit = roundMoney(garmentSubtotal * depositRatio);
   const depositRequired = roundMoney(
     garmentDeposit + pricing.shippingCost,
@@ -3734,8 +3741,13 @@ export default function DesignStudioView({
           constructionUpgradesPrice:
             pricing.constructionUpgradesPrice,
           customDetailsPrice: pricing.customDetailsPrice,
+          preTaxDesignSubtotal: pricing.preTaxDesignSubtotal,
+          taxPercentage: pricing.taxPercentage,
+          taxAmount: pricing.taxAmount,
+          taxInclusiveDesignSubtotal: pricing.taxInclusiveDesignSubtotal,
+          selectedDesignPrice: pricing.selectedDesignPrice,
           lagosToEindhovenShipping:
-            pricing.lagosToEindhovenShipping,
+            pricing.lagosToEindhovenShipping ?? 0,
           eindhovenToDestinationShipping:
             pricing.eindhovenToDestinationShipping,
           total: pricing.subtotal,
@@ -3785,6 +3797,11 @@ export default function DesignStudioView({
     pricing.constructionSewingCost,
     pricing.constructionUpgradesPrice,
     pricing.customDetailsPrice,
+    pricing.preTaxDesignSubtotal,
+    pricing.taxPercentage,
+    pricing.taxAmount,
+    pricing.taxInclusiveDesignSubtotal,
+    pricing.selectedDesignPrice,
     pricing.lagosToEindhovenShipping,
     pricing.eindhovenToDestinationShipping,
     pricing.subtotal,
@@ -4175,6 +4192,15 @@ export default function DesignStudioView({
       return;
     }
 
+    if (pricing.selectedDesignPrice === null) {
+      setValidationError(
+        pricing.batchShippingPendingReason ||
+          "Lagos to Eindhoven shipping must be priced before adding this order to cart.",
+      );
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
     if (batchType === "personalized") {
       const personalizedContext =
         resolvePersonalizedBatchShippingContext(ctx, customGroupCode);
@@ -4201,6 +4227,15 @@ export default function DesignStudioView({
   };
 
   const proceedToCart = () => {
+    if (pricing.selectedDesignPrice === null) {
+      setValidationError(
+        pricing.batchShippingPendingReason ||
+          "Lagos to Eindhoven shipping must be priced before adding this order to cart.",
+      );
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
     const cartDesignSource = createCartDesignSource(
       resolvedDesignSource,
       selectedStyle,
@@ -4227,12 +4262,7 @@ export default function DesignStudioView({
               .filter(Boolean)
               .join(", ")
           : "";
-    const storedItemTotal = roundMoney(
-      subtotal -
-        (pricing.finalMileShipping?.status === "READY"
-          ? pricing.finalMileShipping.priceEur ?? 0
-          : 0),
-    );
+    const storedItemTotal = pricing.selectedDesignPrice;
     const applicableDesignSelections =
       filterDesignSelectionsForDecorativeFeatures(
         filterDesignSelectionsForCustomDetails(
@@ -4279,6 +4309,11 @@ export default function DesignStudioView({
       garment: {
         type: `${selectedGarment?.type || "Pending"} [Code: ${selectedPriceCode === "AUTO" ? getAutoDetectedPriceCode() : selectedPriceCode}]`,
         totalPrice: storedItemTotal,
+        preTaxDesignSubtotal: pricing.preTaxDesignSubtotal,
+        taxPercentage: pricing.taxPercentage,
+        taxAmount: pricing.taxAmount,
+        taxInclusiveDesignSubtotal: pricing.taxInclusiveDesignSubtotal,
+        selectedDesignPrice: storedItemTotal,
         clothingPrice: pricing.clothingPrice,
         includesFabricAndSewing: pricing.includesFabricAndSewing,
         includedFabricPrice: pricing.includedFabricPrice,
@@ -7429,11 +7464,13 @@ export default function DesignStudioView({
                     <span className="font-semibold text-heritage-green">
                       {pricing.designPricingError
                         ? "Pricing review required"
-                        : `${currencySymbol}${pricing.clothingPrice.toFixed(2)}`}
+                        : pricing.selectedDesignPrice === null
+                          ? "Inbound shipping pending"
+                          : `${currencySymbol}${pricing.selectedDesignPrice.toFixed(2)}`}
                     </span>
                   </div>
                   <p className="text-[10px] text-heritage-ink/55">
-                    Includes fabric, sewing, and tax
+                    {SELECTED_DESIGN_PRICE_SUPPORTING_TEXT}
                   </p>
                   {customerDesignPriceBreakdown.baseGarmentRows.map((row) => (
                     <div
@@ -7562,48 +7599,6 @@ export default function DesignStudioView({
                 </div>
               )}
 
-              {pricing.showShippingSummary && pricing.individualShipping && (
-                <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
-                  <div className="flex justify-between items-center">
-                    <span>Lagos &rarr; Eindhoven shipping:</span>
-                    <span className="font-mono">
-                      +{currencySymbol}
-                      {pricing.individualShipping.priceEur.toFixed(2)}
-                    </span>
-                  </div>
-                  <span className="text-[9px] text-amber-600/80 mt-0.5">
-                    {pricing.individualShipping.garmentPieceCount} garment piece
-                    {pricing.individualShipping.garmentPieceCount === 1 ? "" : "s"} ·{" "}
-                    {pricing.individualShipping.estimatedWeightKg.toFixed(2)} kg estimated ·{" "}
-                    {pricing.individualShipping.weightBand}
-                  </span>
-                </div>
-              )}
-
-              {pricing.showShippingSummary && pricing.batchShipping && (
-                <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
-                  <div className="flex justify-between items-center">
-                    <span>Lagos &rarr; Eindhoven shipping:</span>
-                    <span className="font-mono">
-                      +{currencySymbol}
-                      {pricing.batchShipping.priceEur.toFixed(2)}
-                    </span>
-                  </div>
-                  <span className="text-[9px] text-amber-600/80 mt-0.5">
-                    {pricing.batchShipping.garmentPieceCount} garment piece
-                    {pricing.batchShipping.garmentPieceCount === 1 ? "" : "s"} ·{" "}
-                    {currencySymbol}
-                    {pricing.batchShipping.exactRateEurPerGarment.toFixed(2)} each ·{" "}
-                    {pricing.batchShipping.minimumBatchGarments ??
-                      BATCH_MINIMUM_GARMENTS}
-                    -garment batch minimum
-                    {pricing.batchShipping.allowsSplitShipments
-                      ? " · split shipments available for large batches"
-                      : ""}
-                  </span>
-                </div>
-              )}
-
               {pricing.showShippingSummary &&
                 batchType === "personalized" &&
                 !pricing.batchShipping &&
@@ -7613,17 +7608,6 @@ export default function DesignStudioView({
                       Personalized batch shipping is pending
                     </span>
                     <span>{pricing.batchShippingPendingReason}</span>
-                  </div>
-                )}
-
-              {pricing.showShippingSummary &&
-                batchType !== "alone" &&
-                batchType !== "personalized" &&
-                !pricing.batchShipping &&
-                (!selectedStyle || !selectedGarment) && (
-                  <div className="flex justify-between items-center text-heritage-ink/60 text-[10px]">
-                    <span>Lagos &rarr; Eindhoven shipping:</span>
-                    <span className="font-semibold">Pending garment selection</span>
                   </div>
                 )}
 
@@ -7662,15 +7646,6 @@ export default function DesignStudioView({
                     )}
                   </div>
 
-                  {isShippingReady && (
-                    <div className="flex justify-between border-t border-dashed pt-2 text-[10px] font-bold text-heritage-ink/75">
-                      <span>Total shipping:</span>
-                      <span className="font-mono">
-                        {currencySymbol}
-                        {pricing.shippingCost.toFixed(2)}
-                      </span>
-                    </div>
-                  )}
                 </>
               )}
 
@@ -7683,7 +7658,9 @@ export default function DesignStudioView({
                 <span className="font-mono text-emerald-800">
                   {pricing.fabricAssignmentsIncomplete
                     ? "Complete fabric assignments"
-                    : `${currencySymbol}${subtotal.toFixed(2)}`}
+                    : pricing.selectedDesignPrice === null
+                      ? "Inbound shipping pending"
+                      : `${currencySymbol}${subtotal.toFixed(2)}`}
                 </span>
               </div>
               {!isShippingReady && (

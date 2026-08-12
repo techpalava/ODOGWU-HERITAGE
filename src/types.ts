@@ -482,6 +482,11 @@ export interface CartPricingReview {
 export interface GarmentSelection {
   type: string; // e.g., "Shirt Only", "Shirt + Trouser", "Complete Set", "Gown Only"
   totalPrice: number;
+  preTaxDesignSubtotal?: number;
+  taxPercentage?: number;
+  taxAmount?: number;
+  taxInclusiveDesignSubtotal?: number;
+  selectedDesignPrice?: number;
   clothingPrice?: number;
   includesFabricAndSewing?: boolean;
   includedFabricPrice?: number;
@@ -830,6 +835,11 @@ export interface GuestDesignDraft {
     constructionSewingCost: number;
     constructionUpgradesPrice?: number;
     customDetailsPrice: number;
+    preTaxDesignSubtotal?: number;
+    taxPercentage?: number;
+    taxAmount?: number;
+    taxInclusiveDesignSubtotal?: number;
+    selectedDesignPrice?: number | null;
     lagosToEindhovenShipping: number;
     eindhovenToDestinationShipping: number | null;
     total: number;

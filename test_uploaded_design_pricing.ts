@@ -358,7 +358,7 @@ const studioSource = readFileSync(
 );
 assert.match(studioSource, /isDesignSourcePricingActive\(\{/);
 assert.match(studioSource, /Selected Design Price:/);
-assert.match(studioSource, /Includes fabric, sewing, and tax/);
+assert.match(studioSource, /SELECTED_DESIGN_PRICE_SUPPORTING_TEXT/);
 assert.match(studioSource, /resolveCustomerFabricAssignmentSummary/);
 assert.match(studioSource, /Garments &amp; Fabrics/);
 assert.match(studioSource, /Fabric Quantities/);

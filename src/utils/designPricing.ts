@@ -32,7 +32,89 @@ import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import { resolveAdditionalGarmentPriceRows } from "./additionalGarmentDomain";
 
 export const CHECKOUT_DESIGN_PRICING_VERSION =
-  "2026-08-01-design-checkout-v2";
+  "2026-08-12-design-checkout-v3";
+
+export type SelectedDesignPriceStatus =
+  | "READY"
+  | "INBOUND_SHIPPING_PENDING";
+
+export interface SelectedDesignPriceBreakdown {
+  status: SelectedDesignPriceStatus;
+  preTaxDesignSubtotal: number;
+  taxPercentage: number;
+  taxAmount: number;
+  taxInclusiveDesignSubtotal: number;
+  lagosToEindhovenShipping: number | null;
+  selectedDesignPrice: number | null;
+  eindhovenToDestinationShipping: number | null;
+  finalOrderSubtotal: number | null;
+}
+
+export const sanitizeTaxPercentage = (value: number): number => {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(100, Math.max(0, value));
+};
+
+const sanitizeMoneyInput = (value: number): number =>
+  Number.isFinite(value) ? roundMoney(Math.max(0, value)) : 0;
+
+/**
+ * Selected Design Price includes the taxable design and inbound shipping only.
+ * Final-mile delivery remains separate and is added exactly once to the final
+ * order subtotal when its quote is ready.
+ */
+export const calculateSelectedDesignPrice = ({
+  preTaxDesignSubtotal,
+  taxPercentage,
+  lagosToEindhovenShipping,
+  eindhovenToDestinationShipping = null,
+}: {
+  preTaxDesignSubtotal: number;
+  taxPercentage: number;
+  lagosToEindhovenShipping: number | null;
+  eindhovenToDestinationShipping?: number | null;
+}): SelectedDesignPriceBreakdown => {
+  const sanitizedPreTaxSubtotal = sanitizeMoneyInput(preTaxDesignSubtotal);
+  const sanitizedTaxPercentage = sanitizeTaxPercentage(taxPercentage);
+  const taxAmount = roundMoney(
+    sanitizedPreTaxSubtotal * sanitizedTaxPercentage / 100,
+  );
+  const taxInclusiveDesignSubtotal = roundMoney(
+    sanitizedPreTaxSubtotal + taxAmount,
+  );
+  const inboundShipping =
+    typeof lagosToEindhovenShipping === "number" &&
+    Number.isFinite(lagosToEindhovenShipping) &&
+    lagosToEindhovenShipping >= 0
+      ? roundMoney(lagosToEindhovenShipping)
+      : null;
+  const finalMileShipping =
+    typeof eindhovenToDestinationShipping === "number" &&
+    Number.isFinite(eindhovenToDestinationShipping) &&
+    eindhovenToDestinationShipping >= 0
+      ? roundMoney(eindhovenToDestinationShipping)
+      : null;
+  const selectedDesignPrice =
+    inboundShipping === null
+      ? null
+      : roundMoney(taxInclusiveDesignSubtotal + inboundShipping);
+
+  return {
+    status:
+      selectedDesignPrice === null ? "INBOUND_SHIPPING_PENDING" : "READY",
+    preTaxDesignSubtotal: sanitizedPreTaxSubtotal,
+    taxPercentage: sanitizedTaxPercentage,
+    taxAmount,
+    taxInclusiveDesignSubtotal,
+    lagosToEindhovenShipping: inboundShipping,
+    selectedDesignPrice,
+    eindhovenToDestinationShipping: finalMileShipping,
+    finalOrderSubtotal:
+      selectedDesignPrice !== null && finalMileShipping !== null
+        ? roundMoney(selectedDesignPrice + finalMileShipping)
+        : null,
+  };
+};
 
 export const CONSTRUCTION_SEWING_COST_MAP = {
   default: 4.06,

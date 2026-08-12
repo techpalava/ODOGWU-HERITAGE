@@ -17,6 +17,7 @@ import {
 } from "./catalogHelpers";
 import { filterDesignSelectionsForDecorativeFeatures } from "./decorativePricing";
 import {
+  calculateSelectedDesignPrice,
   calculateDesignPricing,
   CHECKOUT_DESIGN_PRICING_VERSION,
 } from "./designPricing";
@@ -98,6 +99,8 @@ const getStableSourceFingerprint = (
     })),
     standardAccessoryCharge:
       businessSettings.pricingSettings.standardAccessoryCharge,
+    vatTaxPercentage:
+      businessSettings.pricingSettings.vatTaxPercentage,
   });
   let hash = 2166136261;
   for (let index = 0; index < source.length; index += 1) {
@@ -134,6 +137,8 @@ const getUploadedSourceFingerprint = (
     })),
     standardAccessoryCharge:
       businessSettings.pricingSettings.standardAccessoryCharge,
+    vatTaxPercentage:
+      businessSettings.pricingSettings.vatTaxPercentage,
   });
   let hash = 2166136261;
   for (let index = 0; index < input.length; index += 1) {
@@ -416,6 +421,16 @@ export const revalidateCartForCheckout = (
       return style ? { ...item, style } : item;
     }
 
+    const inboundShipping = getStoredShippingCost(item.garment);
+    const selectedDesignPricing = calculateSelectedDesignPrice({
+      preTaxDesignSubtotal: authoritativePricing.garmentSubtotal,
+      taxPercentage:
+        context.businessSettings.pricingSettings.vatTaxPercentage,
+      lagosToEindhovenShipping: inboundShipping,
+    });
+    const currentGarmentSubtotal =
+      selectedDesignPricing.taxInclusiveDesignSubtotal;
+
     // The upload snapshot is useful only to tell a customer the price changed.
     // Fresh structured pricing above remains the sole pricing authority.
     const previousGarmentSubtotal = isUploadedDesign
@@ -446,7 +461,7 @@ export const revalidateCartForCheckout = (
     }
     const amountChanged =
       Math.abs(
-        authoritativePricing.garmentSubtotal -
+        currentGarmentSubtotal -
           previousGarmentSubtotal,
       ) >= 0.005;
     const existingConfirmationStillPending =
@@ -454,7 +469,7 @@ export const revalidateCartForCheckout = (
       item.pricingReview.sourceFingerprint === sourceFingerprint &&
       Math.abs(
         item.pricingReview.updatedGarmentSubtotal -
-          authoritativePricing.garmentSubtotal,
+          currentGarmentSubtotal,
       ) < 0.005;
     const pricingStatus =
       amountChanged || existingConfirmationStillPending
@@ -464,13 +479,12 @@ export const revalidateCartForCheckout = (
       blockers.push("Confirm the updated garment price before payment.");
     }
 
-    const inboundShipping = getStoredShippingCost(item.garment);
     const canPreservePricingReview =
       item.pricingReview?.sourceFingerprint === sourceFingerprint &&
       item.pricingReview.status === pricingStatus &&
       Math.abs(
         item.pricingReview.updatedGarmentSubtotal -
-          authoritativePricing.garmentSubtotal,
+          currentGarmentSubtotal,
       ) < 0.005;
     const pricingReview: CartPricingReview = canPreservePricingReview
       ? item.pricingReview
@@ -483,8 +497,7 @@ export const revalidateCartForCheckout = (
             existingConfirmationStillPending && item.pricingReview
               ? item.pricingReview.previousGarmentSubtotal
               : previousGarmentSubtotal,
-          updatedGarmentSubtotal:
-            authoritativePricing.garmentSubtotal,
+          updatedGarmentSubtotal: currentGarmentSubtotal,
           confirmedAt:
             pricingStatus === "CURRENT"
               ? item.pricingReview?.confirmedAt
@@ -514,11 +527,19 @@ export const revalidateCartForCheckout = (
         monogramPrice: authoritativePricing.monogramPrice,
         traditionalAccessoriesPrice:
           authoritativePricing.traditionalAccessoriesPrice,
+        preTaxDesignSubtotal:
+          selectedDesignPricing.preTaxDesignSubtotal,
+        taxPercentage: selectedDesignPricing.taxPercentage,
+        taxAmount: selectedDesignPricing.taxAmount,
+        taxInclusiveDesignSubtotal:
+          selectedDesignPricing.taxInclusiveDesignSubtotal,
+        selectedDesignPrice:
+          selectedDesignPricing.selectedDesignPrice ?? undefined,
         totalPrice: roundMoney(
-          authoritativePricing.garmentSubtotal + inboundShipping,
+          currentGarmentSubtotal + inboundShipping,
         ),
         checkoutTotal: roundMoney(
-          authoritativePricing.garmentSubtotal + inboundShipping,
+          currentGarmentSubtotal + inboundShipping,
         ),
       },
       pricingReview,

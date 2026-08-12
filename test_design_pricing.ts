@@ -28,11 +28,17 @@ import {
   roundMoney,
 } from "./src/utils/money";
 import { resolvePersonalizedBatchShippingContext } from "./src/utils/personalizedBatchContext";
-import { calculateCartPricing } from "./src/utils/shippingPricing";
 import {
+  calculateBatchShipping,
+  calculateCartPricing,
+  calculateIndividualShipping,
+} from "./src/utils/shippingPricing";
+import {
+  calculateSelectedDesignPrice,
   calculateDesignPricing,
   isBatchPricingRoute,
 } from "./src/utils/designPricing";
+import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "./src/utils/designPriceBreakdownPresentation";
 import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAllocationPricing";
 
 const makeStyle = (
@@ -495,6 +501,179 @@ assert.equal(
 assert.equal(
   multiAddOnBatch.customDetailsPrice,
   singleAddOnBatch.customDetailsPrice,
+);
+
+const individualInbound = calculateIndividualShipping(3).priceEur;
+const batchInbound = calculateBatchShipping({
+  batchId: "BATCH-PRICE-TEST",
+  batchName: "Price Test",
+  plannedGarmentCapacity: 10,
+  garmentPieceCount: 3,
+}).priceEur;
+const selectedDesignAtTwentyOnePercent = calculateSelectedDesignPrice({
+  preTaxDesignSubtotal: mixedIndividual.garmentSubtotal,
+  taxPercentage: 21,
+  lagosToEindhovenShipping: individualInbound,
+  eindhovenToDestinationShipping: 9.75,
+});
+assert.equal(selectedDesignAtTwentyOnePercent.preTaxDesignSubtotal, 105.16);
+assert.equal(selectedDesignAtTwentyOnePercent.taxAmount, 22.08);
+assert.equal(selectedDesignAtTwentyOnePercent.taxInclusiveDesignSubtotal, 127.24);
+assert.equal(
+  selectedDesignAtTwentyOnePercent.selectedDesignPrice,
+  roundMoney(127.24 + individualInbound),
+);
+assert.equal(
+  selectedDesignAtTwentyOnePercent.finalOrderSubtotal,
+  roundMoney(127.24 + individualInbound + 9.75),
+);
+
+const selectedDesignAtZeroPercent = calculateSelectedDesignPrice({
+  preTaxDesignSubtotal: mixedBatch.garmentSubtotal,
+  taxPercentage: 0,
+  lagosToEindhovenShipping: batchInbound,
+});
+assert.equal(selectedDesignAtZeroPercent.taxAmount, 0);
+assert.equal(selectedDesignAtZeroPercent.taxInclusiveDesignSubtotal, 93.13);
+assert.equal(
+  selectedDesignAtZeroPercent.selectedDesignPrice,
+  roundMoney(93.13 + batchInbound),
+);
+assert.equal(selectedDesignAtZeroPercent.finalOrderSubtotal, null);
+
+for (const invalidTaxPercentage of [-21, Number.NaN, Number.POSITIVE_INFINITY]) {
+  const sanitizedTax = calculateSelectedDesignPrice({
+    preTaxDesignSubtotal: 100,
+    taxPercentage: invalidTaxPercentage,
+    lagosToEindhovenShipping: 15,
+  });
+  assert.equal(sanitizedTax.taxPercentage, 0);
+  assert.equal(sanitizedTax.taxAmount, 0);
+  assert.equal(sanitizedTax.selectedDesignPrice, 115);
+}
+
+const personalizedShippingPending = calculateSelectedDesignPrice({
+  preTaxDesignSubtotal: 99,
+  taxPercentage: 21,
+  lagosToEindhovenShipping: null,
+});
+assert.equal(personalizedShippingPending.status, "INBOUND_SHIPPING_PENDING");
+assert.equal(personalizedShippingPending.selectedDesignPrice, null);
+assert.equal(personalizedShippingPending.finalOrderSubtotal, null);
+
+const oneGarmentIndividual = calculateSelectedDesignPrice({
+  preTaxDesignSubtotal: individualDesignPricing.garmentSubtotal,
+  taxPercentage: 21,
+  lagosToEindhovenShipping: calculateIndividualShipping(1).priceEur,
+});
+const thirteenGarmentIndividual = calculateSelectedDesignPrice({
+  preTaxDesignSubtotal: individualDesignPricing.garmentSubtotal,
+  taxPercentage: 21,
+  lagosToEindhovenShipping: calculateIndividualShipping(13).priceEur,
+});
+assert.notEqual(
+  oneGarmentIndividual.selectedDesignPrice,
+  thirteenGarmentIndividual.selectedDesignPrice,
+  "garment quantity changes propagate through inbound shipping to Selected Design Price",
+);
+
+const singleAllocationSelectedPrice = calculateSelectedDesignPrice({
+  preTaxDesignSubtotal: individualDesignPricing.garmentSubtotal,
+  taxPercentage: 21,
+  lagosToEindhovenShipping: individualInbound,
+});
+const mixedAllocationSelectedPrice = calculateSelectedDesignPrice({
+  preTaxDesignSubtotal: mixedIndividual.garmentSubtotal,
+  taxPercentage: 21,
+  lagosToEindhovenShipping: individualInbound,
+});
+assert.notEqual(
+  singleAllocationSelectedPrice.selectedDesignPrice,
+  mixedAllocationSelectedPrice.selectedDesignPrice,
+  "fabric allocation changes propagate to Selected Design Price",
+);
+
+const baseBatchSelectedPrice = calculateSelectedDesignPrice({
+  preTaxDesignSubtotal: 65,
+  taxPercentage: 21,
+  lagosToEindhovenShipping: batchInbound,
+});
+const addOnBatchSelectedPrice = calculateSelectedDesignPrice({
+  preTaxDesignSubtotal: batchWithSeparateAddOns.garmentSubtotal,
+  taxPercentage: 21,
+  lagosToEindhovenShipping: batchInbound,
+});
+assert.ok(
+  (addOnBatchSelectedPrice.selectedDesignPrice ?? 0) >
+    (baseBatchSelectedPrice.selectedDesignPrice ?? 0),
+  "custom options and add-ons increase the taxable Selected Design Price",
+);
+
+assert.equal(
+  SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
+  "Includes fabric(s), sewing, tax, and shipping from Lagos to Eindhoven.",
+);
+const designStudioSource = readFileSync(
+  "src/components/DesignStudioView.tsx",
+  "utf8",
+);
+assert.match(designStudioSource, /SELECTED_DESIGN_PRICE_SUPPORTING_TEXT/);
+assert.doesNotMatch(
+  designStudioSource,
+  /Lagos &rarr; Eindhoven shipping:/,
+  "Live Price Summary must not itemize inbound shipping below Selected Design Price",
+);
+assert.doesNotMatch(
+  designStudioSource,
+  /<span>Total shipping:<\/span>/,
+  "Live Price Summary must not repeat inbound shipping in a total-shipping row",
+);
+
+const taxInclusiveCartItem = {
+  id: "tax-inclusive-cart-test",
+  batchType: "alone",
+  garmentPieceCount: 3,
+  deliverySelection: {
+    method: "DELIVERY",
+    address: {
+      addressLine1: "1 Test Street",
+      postalCode: "5611AA",
+      city: "Eindhoven",
+      countryCode: "NL",
+    },
+  },
+  garment: {
+    type: "Three garments",
+    totalPrice: selectedDesignAtTwentyOnePercent.selectedDesignPrice,
+    preTaxDesignSubtotal: selectedDesignAtTwentyOnePercent.preTaxDesignSubtotal,
+    taxPercentage: selectedDesignAtTwentyOnePercent.taxPercentage,
+    taxAmount: selectedDesignAtTwentyOnePercent.taxAmount,
+    taxInclusiveDesignSubtotal:
+      selectedDesignAtTwentyOnePercent.taxInclusiveDesignSubtotal,
+    selectedDesignPrice: selectedDesignAtTwentyOnePercent.selectedDesignPrice,
+    individualShipping: calculateIndividualShipping(3),
+  },
+} as CartItem;
+const taxInclusiveCartPricing = calculateCartPricing(
+  [taxInclusiveCartItem],
+  0.5,
+);
+assert.equal(
+  taxInclusiveCartPricing.garmentSubtotal,
+  selectedDesignAtTwentyOnePercent.taxInclusiveDesignSubtotal,
+);
+assert.equal(
+  taxInclusiveCartPricing.lagosToEindhovenShipping,
+  individualInbound,
+);
+assert.equal(taxInclusiveCartPricing.eindhovenToDestinationShipping, 7.5);
+assert.equal(
+  taxInclusiveCartPricing.total,
+  roundMoney(
+    selectedDesignAtTwentyOnePercent.taxInclusiveDesignSubtotal +
+      individualInbound +
+      7.5,
+  ),
 );
 
 for (const summaryFile of [

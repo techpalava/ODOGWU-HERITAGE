@@ -440,6 +440,42 @@ assert.equal(
   "unchanged authoritative pricing is idempotent across retries",
 );
 
+const taxInclusiveValidation = revalidateCartForCheckout(
+  currentValidation.items,
+  {
+    ...checkoutContext,
+    businessSettings: {
+      ...businessSettings,
+      pricingSettings: {
+        ...businessSettings.pricingSettings,
+        vatTaxPercentage: 21,
+      },
+    },
+  },
+  "2026-07-30T10:07:00.000Z",
+);
+assert.equal(taxInclusiveValidation.items[0].garment.preTaxDesignSubtotal, 7.97);
+assert.equal(taxInclusiveValidation.items[0].garment.taxPercentage, 21);
+assert.equal(taxInclusiveValidation.items[0].garment.taxAmount, 1.67);
+assert.equal(
+  taxInclusiveValidation.items[0].garment.taxInclusiveDesignSubtotal,
+  9.64,
+);
+assert.equal(
+  getCartItemGarmentSubtotal(taxInclusiveValidation.items[0]),
+  9.64,
+  "checkout treats tax-inclusive design pricing as the garment subtotal",
+);
+assert.equal(
+  taxInclusiveValidation.pricing.lagosToEindhovenShipping,
+  131.25,
+);
+assert.equal(
+  taxInclusiveValidation.pricing.total,
+  140.89,
+  "checkout adds tax and inbound shipping exactly once",
+);
+
 const batchCartItem = makeCartItem("batch-pricing-item", {
   batchType: "personalized",
   batchId: "PRIVATE-PRICE-001",

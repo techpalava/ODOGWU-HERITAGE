@@ -747,13 +747,24 @@ interface FinalMileCartGroup {
   allItemsHaveActualWeight: boolean;
 }
 
-export const getCartItemGarmentSubtotal = (item: CartItem): number =>
-  roundMoney(
+export const getCartItemGarmentSubtotal = (item: CartItem): number => {
+  const persistedTaxInclusiveSubtotal =
+    item.garment.taxInclusiveDesignSubtotal;
+  if (
+    typeof persistedTaxInclusiveSubtotal === "number" &&
+    Number.isFinite(persistedTaxInclusiveSubtotal) &&
+    persistedTaxInclusiveSubtotal >= 0
+  ) {
+    return roundMoney(persistedTaxInclusiveSubtotal);
+  }
+
+  return roundMoney(
     Math.max(
       0,
       item.garment.totalPrice - getStoredShippingCost(item.garment),
     ),
   );
+};
 
 export interface CartShippingMigrationResult {
   items: CartItem[];
@@ -894,6 +905,7 @@ const prepareCartItemWithCurrentInboundShipping = (
       ...item.garment,
       totalPrice: roundMoney(garmentSubtotal + inboundShipping),
       checkoutTotal: roundMoney(garmentSubtotal + inboundShipping),
+      selectedDesignPrice: roundMoney(garmentSubtotal + inboundShipping),
       individualShipping,
       batchShipping,
       courierSurcharge: undefined,

@@ -294,8 +294,8 @@ assert.doesNotMatch(
 );
 assert.match(
   liveSummarySource,
-  /Includes fabric, sewing, and tax/,
-  "Selected Design Price should include the fabric/sewing/tax helper directly beneath it",
+  /SELECTED_DESIGN_PRICE_SUPPORTING_TEXT/,
+  "Selected Design Price should render the centralized all-inclusive helper directly beneath it",
 );
 assert.match(
   activeSummarySource,
@@ -457,15 +457,15 @@ assert.match(
   /if \(missingGroupIds\.length === 0\) \{[\s\S]*?setCustomDetailRequiredWarningCount\(null\);[\s\S]*?setValidationError\(""\);/,
   "Custom Details top warning should clear automatically once required groups become valid",
 );
-assert.match(
+assert.doesNotMatch(
   liveSummarySource,
   /pricing\.showShippingSummary && pricing\.individualShipping/,
-  "Live Price Summary inbound shipping block must be hidden before Shipping & Delivery",
+  "Live Price Summary must not repeat individual inbound shipping below Selected Design Price",
 );
-assert.match(
+assert.doesNotMatch(
   liveSummarySource,
   /pricing\.showShippingSummary && pricing\.batchShipping/,
-  "Live Price Summary batch shipping block must be hidden before Shipping & Delivery",
+  "Live Price Summary must not repeat batch inbound shipping below Selected Design Price",
 );
 assert.doesNotMatch(
   designStudioSource,
