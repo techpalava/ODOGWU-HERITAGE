@@ -1122,7 +1122,7 @@ const GarmentDetailSelector = ({
     const noneOptionElement = (
       <label
         key={`${groupId}-none`}
-        className={`flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
+        className={`flex w-full min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
           isNoneSelected
             ? "border-heritage-gold/40 bg-heritage-cream/10"
             : "border-gray-150 bg-white hover:border-heritage-gold/30 hover:bg-heritage-cream/5"
@@ -1167,7 +1167,7 @@ const GarmentDetailSelector = ({
         return (
           <div
             key={opt.id}
-            className="flex min-w-0 items-start gap-3 rounded-xl border border-gray-150 bg-heritage-cream/20 p-3"
+            className="flex w-full min-w-0 items-start gap-3 rounded-xl border border-gray-150 bg-heritage-cream/20 p-3"
           >
             <Info
               aria-hidden="true"
@@ -1175,11 +1175,11 @@ const GarmentDetailSelector = ({
               size={16}
             />
             <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+              <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-3">
                 <span className="min-w-0 break-words text-xs font-bold text-heritage-green">
                   {opt.label}
                 </span>
-                <span className="shrink-0 text-[10px] font-semibold text-heritage-green/70">
+                <span className="w-fit max-w-full shrink-0 self-start text-[10px] font-semibold leading-tight text-heritage-green/70">
                   {priceLabel}
                 </span>
               </div>
@@ -1194,7 +1194,7 @@ const GarmentDetailSelector = ({
       return (
         <label
           key={opt.id}
-          className={`flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
+          className={`flex w-full min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
             isSelected
               ? "border-heritage-green bg-heritage-green/10"
               : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
@@ -1210,11 +1210,11 @@ const GarmentDetailSelector = ({
             className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-green"
           />
           <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-3">
               <span className="min-w-0 break-words text-xs font-bold text-heritage-green">
                 {opt.label}
               </span>
-              <span className="shrink-0 text-xs font-bold text-heritage-gold">
+              <span className="w-fit max-w-full shrink-0 self-start text-xs font-bold leading-tight text-heritage-gold">
                 {priceLabel}
               </span>
             </div>
@@ -1240,7 +1240,7 @@ const GarmentDetailSelector = ({
       <div
         id={`custom-detail-group-${groupId}`}
         tabIndex={-1}
-        className={`col-span-1 mb-4 min-w-0 space-y-2 rounded-2xl p-3.5 transition-all duration-300 focus:outline-none ${
+        className={`${isNeckDesignGroup ? "col-span-1 md:col-span-2" : "col-span-1"} mb-4 min-w-0 space-y-2 rounded-2xl p-3.5 transition-all duration-300 focus:outline-none ${
           isInvalid
             ? "border-2 border-red-300 bg-red-50/20 shadow-sm shadow-red-100"
             : "border-2 border-transparent"
@@ -1305,11 +1305,11 @@ const GarmentDetailSelector = ({
           {isNeckDesignGroup ? (
             <>
               {noneOptionElement}
-              <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+              <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-3">
                 {neckSubcategorySections.map(({ subcategory, subcategoryOptions }) => (
                   <div
                     key={subcategory}
-                    className="min-w-0 rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-3"
+                    className="h-full min-w-0 rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-3"
                   >
                     <p className="mb-2 break-words text-[10px] font-semibold uppercase tracking-wider text-heritage-ink/70">
                       {subcategory}
@@ -1471,7 +1471,7 @@ const GarmentDetailSelector = ({
           Monogram and Embroidery Design
         </legend>
         <p className="text-[10px] text-heritage-ink/60">Optional</p>
-        <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-3">
+        <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-2">
           {applicableDecorativeFeatures.map((feature) => {
             const includedByStyle =
               includedDecorativeFeatures.includes(feature);
@@ -1517,7 +1517,7 @@ const GarmentDetailSelector = ({
                     {DECORATIVE_FEATURE_DESCRIPTIONS[feature]}
                   </span>
                   {includedByStyle && (
-                    <span className="mt-1 block text-[10px] font-semibold leading-tight text-heritage-green/70">
+                    <span className="mt-1 block break-words text-[10px] font-semibold leading-tight text-heritage-green/70">
                       Required by the selected design and added automatically.
                     </span>
                   )}
@@ -1572,7 +1572,7 @@ const GarmentDetailSelector = ({
           Select Accessories (Optional)
         </legend>
         <p className="text-[10px] text-heritage-ink/60">Optional</p>
-        <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-3">
+        <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-2">
           {TRADITIONAL_ACCESSORY_OPTIONS.map((accessory) => {
             const checked = selectedAccessories.includes(accessory);
 

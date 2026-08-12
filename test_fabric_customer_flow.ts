@@ -456,8 +456,13 @@ assert.match(
 );
 assert.match(
   designStudioSource,
-  /isNeckDesignGroup \? \([\s\S]*?grid min-w-0[\s\S]*?lg:grid-cols-2[\s\S]*?2xl:grid-cols-3/,
-  "Neck option subcategories should use a shrink-safe responsive 1/2/3-column layout",
+  /isNeckDesignGroup \? "col-span-1 md:col-span-2" : "col-span-1"/,
+  "The nested Neck group must span the shared Custom Details grid",
+);
+assert.match(
+  designStudioSource,
+  /grid-cols-\[repeat\(auto-fit,minmax\(min\(100%,18rem\),1fr\)\)\]/,
+  "Neck subcategories must auto-fit from their real container width",
 );
 assert.match(
   designStudioSource,
