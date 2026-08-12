@@ -33,6 +33,7 @@ import {
   getMonogramPlacementLabel,
   filterDesignSelectionsForDecorativeFeatures,
 } from "../utils/decorativePricing";
+import { inspectCartItemFabricAllocations } from "../utils/fabricAllocationPersistence";
 
 export function CartDrawer() {
   const [shippingEditorItemId, setShippingEditorItemId] = useState<
@@ -353,6 +354,31 @@ export function CartDrawer() {
                       getStoredShippingCost(item.garment),
                   );
                   const isBatchItem = isBatchPricingRoute(item.batchType);
+                  const fabricAllocationInspection =
+                    inspectCartItemFabricAllocations(item);
+                  const selectedFabrics =
+                    fabricAllocationInspection.status === "valid"
+                      ? fabricAllocationInspection.fabricAllocations.map(
+                          (allocation) => {
+                            const currentFabric =
+                              fabrics.find(
+                                (candidate) =>
+                                  candidate.code === allocation.fabricCode,
+                              ) || item.fabric;
+                            return {
+                              allocationId: allocation.allocationId,
+                              fabricName: currentFabric.name,
+                              fabricCode: allocation.fabricCode,
+                            };
+                          },
+                        )
+                      : [
+                          {
+                            allocationId: "legacy",
+                            fabricName: item.fabric.name,
+                            fabricCode: item.fabric.code,
+                          },
+                        ];
                   const normalizedDesign = filterDesignSelectionsForDecorativeFeatures(
                     item.design,
                     item.style,
@@ -392,18 +418,32 @@ export function CartDrawer() {
                             </span>
                           </div>
                           <p className="mt-1 font-semibold text-heritage-green/70">
-                            Includes fabric and sewing costs
+                            {selectedFabrics.length > 1
+                              ? "Includes Fabric Selection 1 and sewing costs"
+                              : "Includes fabric and sewing costs"}
                           </p>
+                          {selectedFabrics.length > 1 && (
+                            <div className="mt-1 flex items-center justify-between gap-3 font-semibold text-heritage-ink/80">
+                              <span>Additional Fabric Material:</span>
+                              <span className="font-mono font-bold text-heritage-green">
+                                {currencySymbol}
+                                {(item.garment.fabricPrice || 0).toFixed(2)}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       )}
 
                       <div className="bg-heritage-cream/30 p-2.5 rounded-xl text-[10px] space-y-1 text-heritage-ink/75 font-sans">
-                        <p>
-                          🎨 Fabric:{" "}
-                          <strong>
-                            {item.fabric.name} ({item.fabric.code})
-                          </strong>
-                        </p>
+                        {selectedFabrics.map((fabricSelection, index) => (
+                          <p key={fabricSelection.allocationId}>
+                            🎨 Fabric Selection {index + 1}:{" "}
+                            <strong>
+                              {fabricSelection.fabricName} (
+                              {fabricSelection.fabricCode})
+                            </strong>
+                          </p>
+                        ))}
                         {item.design.lowerGarmentType && (
                           <p>
                             👖 Lower Garment Type:{" "}

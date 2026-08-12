@@ -416,6 +416,7 @@ const hydratedInvalidSelectionSignature = getFabricAllocationSyncSignature(
   "FABRIC-A",
   "G5.2",
   "trousers",
+  style.id,
 );
 const preservedAutosaveAllocations = resolveDraftAutosaveFabricAllocations({
   preservedInvalidHydratedFabricAllocations: malformedModernAllocations,
@@ -436,6 +437,7 @@ const replacedAutosaveAllocations = resolveDraftAutosaveFabricAllocations({
     "FABRIC-B",
     "G5.2",
     "trousers",
+    style.id,
   ),
   generatedFabricAllocations: multiAllocationFixture,
 });
@@ -444,6 +446,11 @@ assert.deepEqual(
   replacedAutosaveAllocations.fabricAllocations,
   multiAllocationFixture,
   "a real allocation-relevant selection change should allow regenerated valid allocations",
+);
+assert.notEqual(
+  getFabricAllocationSyncSignature("FABRIC-A", "EXACT", undefined, "style-a"),
+  getFabricAllocationSyncSignature("FABRIC-A", "EXACT", undefined, "style-b"),
+  "an exact-style replacement must invalidate the previous allocation signature",
 );
 
 const legacyStructured = GuestOrderSessionService.saveGuestCartItems([

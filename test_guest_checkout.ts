@@ -92,6 +92,16 @@ const fabric: Fabric = {
   category: "HiTarget Ankara",
   stockStatus: "IN_STOCK",
 };
+const laceFabric: Fabric = {
+  code: "GUEST-LACE",
+  name: "Royal Lace",
+  description: "Guest lace",
+  color: "White",
+  colorHex: "#f5f5f5",
+  priceMultiplier: 1,
+  category: "Lace",
+  stockStatus: "IN_STOCK",
+};
 
 const businessSettings = {
   pricingSettings: {
@@ -160,13 +170,29 @@ const makeCartItem = (
 };
 
 const checkoutContext = {
-  fabrics: [fabric],
+  fabrics: [fabric, laceFabric],
   styles: [style],
   batches: [] as Batch[],
   customDetailCatalog: [],
   businessSettings,
   depositRatio: 0.5,
 };
+
+const allocationFor = (
+  allocationId: string,
+  targetFabric: Fabric,
+): NonNullable<CartItem["fabricAllocations"]>[number] => ({
+  allocationId,
+  fabricCode: targetFabric.code,
+  garmentAssignments: [
+    {
+      garmentKey: `${allocationId}:shirt`,
+      code: allocationId,
+      garmentType: "shirt",
+      fabricUnits: 1,
+    },
+  ],
+});
 
 assert.equal(
   AuthorizationEngine.canAccessRoute("design", null),
@@ -449,6 +475,146 @@ assert.equal(repricedBatchGarment.includedFabricPrice, 3.91);
 assert.equal(repricedBatchGarment.includedSewingCost, 8.12);
 assert.equal(getCartItemGarmentSubtotal(batchPricingValidation.items[0]), 65);
 assert.equal(batchPricingValidation.pricing.garmentSubtotal, 65);
+
+const modernMixedItem = makeCartItem("modern-mixed", {
+  fabric: fabric,
+  fabricAllocations: [
+    allocationFor("alloc-1", fabric),
+    allocationFor("alloc-2", laceFabric),
+  ],
+});
+const modernMixedValidation = revalidateCartForCheckout(
+  [modernMixedItem],
+  checkoutContext,
+  "2026-08-01T11:00:00.000Z",
+);
+assert.equal(
+  modernMixedValidation.items[0].pricingReview?.status,
+  "CONFIRMATION_REQUIRED",
+);
+assert.equal(modernMixedValidation.items[0].garment.fabricPrice, 32.04);
+assert.equal(modernMixedValidation.items[0].garment.fabricSewingCost, 4.06);
+
+const modernSameFabricTwice = makeCartItem("modern-same-fabric", {
+  fabric: laceFabric,
+  fabricAllocations: [
+    allocationFor("alloc-a", fabric),
+    allocationFor("alloc-b", fabric),
+  ],
+});
+const modernSameFabricValidation = revalidateCartForCheckout(
+  [modernSameFabricTwice],
+  checkoutContext,
+  "2026-08-01T11:05:00.000Z",
+);
+assert.equal(modernSameFabricValidation.items[0].garment.fabricPrice, 7.82);
+
+const modernWithStaleLegacyA = makeCartItem("modern-stale-a", {
+  fabric: laceFabric,
+  fabricAllocations: [
+    allocationFor("alloc-1", fabric),
+    allocationFor("alloc-2", laceFabric),
+  ],
+});
+const modernWithStaleLegacyB = {
+  ...modernWithStaleLegacyA,
+  fabric: fabric,
+};
+const modernStaleAValidation = revalidateCartForCheckout(
+  [modernWithStaleLegacyA],
+  checkoutContext,
+  "2026-08-01T11:10:00.000Z",
+);
+const modernStaleBValidation = revalidateCartForCheckout(
+  [modernWithStaleLegacyB],
+  checkoutContext,
+  "2026-08-01T11:10:30.000Z",
+);
+assert.equal(
+  modernStaleAValidation.items[0].garment.fabricPrice,
+  modernStaleBValidation.items[0].garment.fabricPrice,
+);
+assert.equal(
+  modernStaleAValidation.items[0].pricingReview?.sourceFingerprint,
+  modernStaleBValidation.items[0].pricingReview?.sourceFingerprint,
+);
+
+const modernChangedSecondAllocation = makeCartItem("modern-change-second", {
+  fabric: laceFabric,
+  fabricAllocations: [
+    allocationFor("alloc-1", fabric),
+    allocationFor("alloc-2", laceFabric),
+  ],
+});
+const modernChangedSecondAllocationUpdated = {
+  ...modernChangedSecondAllocation,
+  fabricAllocations: [
+    allocationFor("alloc-1", fabric),
+    allocationFor("alloc-2", fabric),
+  ],
+};
+const modernChangedOriginalValidation = revalidateCartForCheckout(
+  [modernChangedSecondAllocation],
+  checkoutContext,
+  "2026-08-01T11:20:00.000Z",
+);
+const modernChangedUpdatedValidation = revalidateCartForCheckout(
+  [modernChangedSecondAllocationUpdated],
+  checkoutContext,
+  "2026-08-01T11:20:30.000Z",
+);
+assert.notEqual(
+  modernChangedOriginalValidation.items[0].pricingReview?.sourceFingerprint,
+  modernChangedUpdatedValidation.items[0].pricingReview?.sourceFingerprint,
+);
+
+const invalidModernItem = makeCartItem("modern-invalid", {
+  fabricAllocations: [
+    {
+      allocationId: "invalid",
+      fabricCode: fabric.code,
+      garmentAssignments: [
+        {
+          garmentKey: "invalid",
+          code: "invalid",
+          fabricUnits: 1,
+        } as never,
+      ],
+    },
+  ],
+});
+const invalidModernValidation = revalidateCartForCheckout(
+  [invalidModernItem],
+  checkoutContext,
+  "2026-08-01T11:21:00.000Z",
+);
+assert.equal(invalidModernValidation.canProceed, false);
+assert.ok(
+  invalidModernValidation.blockers.some((reason) =>
+    /review fabric selections/i.test(reason),
+  ),
+);
+
+const unavailableAllocationValidation = revalidateCartForCheckout(
+  [modernMixedItem],
+  {
+    ...checkoutContext,
+    fabrics: [
+      fabric,
+      {
+        ...laceFabric,
+        stockStatus: "OUT_OF_STOCK",
+      },
+    ],
+  },
+  "2026-08-01T11:22:00.000Z",
+);
+assert.equal(unavailableAllocationValidation.canProceed, false);
+assert.ok(
+  unavailableAllocationValidation.blockers.some((reason) =>
+    /currently unavailable/i.test(reason),
+  ),
+);
 
 const updatedFabric: Fabric = {
   ...fabric,

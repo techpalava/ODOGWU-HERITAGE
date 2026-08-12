@@ -127,8 +127,11 @@ import { resolvePersonalizedBatchShippingContext } from "../utils/personalizedBa
 import {
   getFabricPricingError,
   getNormalizedFabricName,
-  resolveFabricPrice,
 } from "../utils/fabricPricing";
+import {
+  getFabricAllocationPricingErrorMessage,
+  resolveDesignStudioFabricAllocationPricing,
+} from "../utils/fabricAllocationPricing";
 import {
   cloneFabricAllocations,
   getFabricAllocationSyncSignature,
@@ -1734,6 +1737,7 @@ export default function DesignStudioView({
       selectedFabric?.code ?? null,
       selectedGarment?.code,
       designSelections.lowerGarmentType,
+      selectedStyle?.id,
     );
     if (hydratedFabricSyncSignatureRef.current) {
       if (hydratedFabricSyncSignatureRef.current === currentSelectionSignature) {
@@ -1760,6 +1764,7 @@ export default function DesignStudioView({
     currentUser,
     guestDraftHydrated,
     selectedFabric?.code,
+    selectedStyle?.id,
     selectedGarment?.code,
     designSelections.lowerGarmentType,
   ]);
@@ -2201,22 +2206,46 @@ export default function DesignStudioView({
     let finalMileShipping: ReturnType<
       typeof calculateFinalMileShipping
     > | null = null;
-    const resolvedFabricPrice = resolveFabricPrice(selectedFabric);
-    const fabricPricingError = getFabricPricingError(selectedFabric);
-    const authoritativePricing = selectedFabric
-      ? calculateDesignPricing({
-          route: batchType,
-          design: {
-            ...designSelections,
-            hasLining: liningEligible ? hasLining : false,
-          },
-          fabric: selectedFabric,
-          style: selectedStyle,
-          garment: selectedGarment,
-          catalog: customDetailCatalog,
-          businessSettings,
-        })
-      : null;
+    const currentSelectionSignature = getFabricAllocationSyncSignature(
+      selectedFabric?.code ?? null,
+      selectedGarment?.code,
+      designSelections.lowerGarmentType,
+      selectedStyle?.id,
+    );
+    const preserveInvalidHydratedModernData =
+      preservedInvalidHydratedDraftFabricAllocationsRef.current !== null &&
+      preservedInvalidHydratedDraftSelectionSignatureRef.current ===
+        currentSelectionSignature;
+    const materialPricing = resolveDesignStudioFabricAllocationPricing({
+      fabricAllocationState,
+      fabrics,
+      selectedFabric,
+      preserveInvalidHydratedModernData,
+    });
+    const allocationPricingError = getFabricAllocationPricingErrorMessage(
+      materialPricing,
+    );
+    const fabricPricingError =
+      materialPricing.status === "unresolved" &&
+      materialPricing.reason === "INVALID_MODERN_ALLOCATIONS"
+        ? "Please review your fabric selections."
+        : allocationPricingError || getFabricPricingError(selectedFabric);
+    const authoritativePricing =
+      materialPricing.status === "resolved"
+        ? calculateDesignPricing({
+            route: batchType,
+            design: {
+              ...designSelections,
+              hasLining: liningEligible ? hasLining : false,
+            },
+            fabric: materialPricing.baseFabric,
+            materialPricing,
+            style: selectedStyle,
+            garment: selectedGarment,
+            catalog: customDetailCatalog,
+            businessSettings,
+          })
+        : null;
 
     if (authoritativePricing) {
       clothingPrice = authoritativePricing.clothingPrice;
@@ -2238,12 +2267,7 @@ export default function DesignStudioView({
       traditionalAccessories = authoritativePricing.traditionalAccessories;
     }
 
-    if (
-      selectedFabric &&
-      resolvedFabricPrice !== null &&
-      selectedStyle &&
-      selectedGarment
-    ) {
+    if (materialPricing.status === "resolved" && selectedStyle && selectedGarment) {
       const garmentComposition = getGarmentCompositionFromCode(
         selectedGarment.code || "",
         selectedStyle.garmentComposition,
@@ -2319,6 +2343,31 @@ export default function DesignStudioView({
     return {
       clothingPrice,
       includesFabricAndSewing,
+      materialPricingStatus: materialPricing.status,
+      fabricAllocationCount:
+        authoritativePricing?.fabricAllocationCount ||
+        (materialPricing.status === "resolved"
+          ? materialPricing.allocationCount
+          : 0),
+      totalFabricMaterialPrice:
+        authoritativePricing?.totalFabricMaterialPrice ||
+        (materialPricing.status === "resolved"
+          ? materialPricing.totalMaterialPrice
+          : 0),
+      additionalFabricPrice:
+        authoritativePricing?.additionalFabricPrice ||
+        (materialPricing.status === "resolved"
+          ? materialPricing.additionalMaterialPrice
+          : 0),
+      fabricSelections:
+        materialPricing.status === "resolved"
+          ? materialPricing.allocationLines.map((line) => ({
+              allocationId: line.allocationId,
+              fabricCode: line.fabricCode,
+              fabricName: line.fabric.name,
+              materialPrice: line.materialPrice,
+            }))
+          : [],
       includedFabricPrice,
       includedSewingCost,
       fabricPrice,
@@ -2343,7 +2392,6 @@ export default function DesignStudioView({
   };
 
   const pricing = getPricingBreakdown();
-  const selectedFabricPrice = resolveFabricPrice(selectedFabric);
   const subtotal = pricing.subtotal;
   const personalizedGroupLabel =
     pricing.batchShipping?.batchName ||
@@ -2399,12 +2447,14 @@ export default function DesignStudioView({
             draftFabric?.code ?? null,
             draft.selectedGarment?.code,
             draft.designSelections.lowerGarmentType,
+            draft.selectedStyleId,
           )
         : null;
     const hydratedSelectionSignature = getFabricAllocationSyncSignature(
       draftFabric?.code ?? null,
       draft.selectedGarment?.code,
       draft.designSelections.lowerGarmentType,
+      draft.selectedStyleId,
     );
     if (draftAllocationInspection.status === "invalid") {
       preservedInvalidHydratedDraftFabricAllocationsRef.current =
@@ -2480,6 +2530,7 @@ export default function DesignStudioView({
         selectedFabric?.code ?? null,
         selectedGarment?.code,
         designSelections.lowerGarmentType,
+        selectedStyle?.id,
       );
       const autosaveAllocationResolution = resolveDraftAutosaveFabricAllocations(
         {
@@ -5630,11 +5681,37 @@ export default function DesignStudioView({
             </div>
 
             <div className="space-y-2 text-xs font-sans">
-              {selectedFabric && (
+              {(selectedFabric || pricing.fabricSelections.length > 0) && (
                 <>
                   <div className="flex justify-between items-center text-heritage-ink/70">
-                    <span>Fabric Type: {getNormalizedFabricName(selectedFabric.category || selectedFabric.name || "")}</span>
+                    <span>
+                      Fabric Type:{" "}
+                      {pricing.fabricSelections.length > 0
+                        ? getNormalizedFabricName(
+                            pricing.fabricSelections[0].fabricName,
+                          )
+                        : getNormalizedFabricName(
+                            selectedFabric?.category ||
+                              selectedFabric?.name ||
+                              "",
+                          )}
+                    </span>
                   </div>
+                  {pricing.fabricSelections.map((selection, index) => (
+                    <div
+                      key={selection.allocationId}
+                      className="flex justify-between items-center text-heritage-ink/70"
+                    >
+                      <span>
+                        Fabric Selection {index + 1}: {selection.fabricName} (
+                        {selection.fabricCode})
+                      </span>
+                      <span className="font-semibold text-heritage-green">
+                        {currencySymbol}
+                        {selection.materialPrice.toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
                   {pricing.includesFabricAndSewing ? (
                     <div className="rounded-lg border border-heritage-gold/20 bg-heritage-cream/30 px-3 py-2">
                       <div className="flex items-center justify-between gap-3 text-heritage-ink/80">
@@ -5644,15 +5721,32 @@ export default function DesignStudioView({
                         </span>
                       </div>
                       <p className="mt-1 text-[10px] font-semibold text-heritage-green/70">
-                        Includes fabric and sewing costs
+                        {pricing.fabricAllocationCount > 1
+                          ? "Includes Fabric Selection 1 and sewing costs"
+                          : "Includes fabric and sewing costs"}
                       </p>
+                      {pricing.fabricAllocationCount > 1 && (
+                        <div className="mt-1 flex items-center justify-between text-heritage-ink/80">
+                          <span className="text-[10px] font-semibold">
+                            Additional Fabric Material:
+                          </span>
+                          <span className="font-mono font-bold text-heritage-green">
+                            {currencySymbol}
+                            {pricing.additionalFabricPrice.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex justify-between items-center text-heritage-ink/70">
-                      <span>Fabric Price:</span>
+                      <span>
+                        {pricing.fabricAllocationCount > 1
+                          ? "Fabric Material Total:"
+                          : "Fabric Price:"}
+                      </span>
                       <span className="font-semibold text-heritage-green">
-                        {selectedFabricPrice !== null
-                          ? `${currencySymbol}${selectedFabricPrice.toFixed(2)}`
+                        {pricing.materialPricingStatus === "resolved"
+                          ? `${currencySymbol}${pricing.totalFabricMaterialPrice.toFixed(2)}`
                           : "Pricing unavailable"}
                       </span>
                     </div>
@@ -5707,7 +5801,7 @@ export default function DesignStudioView({
                   </div>
                 ))
               }
-              {selectedFabric && pricing.traditionalAccessories
+              {(selectedFabric || pricing.fabricSelections.length > 0) && pricing.traditionalAccessories
                 .filter((accessory) => accessory.price > 0)
                 .map((accessory) => (
                   <div
@@ -5729,7 +5823,7 @@ export default function DesignStudioView({
                   </span>
                 </div>
               )}
-              {selectedFabric &&
+              {(selectedFabric || pricing.fabricSelections.length > 0) &&
                 liningEligible &&
                 hasLining &&
                 !hasCatalogDressLining && (
@@ -5741,7 +5835,8 @@ export default function DesignStudioView({
                 </div>
               )}
 
-              {selectedFabric && designSelections.additionalCap && (
+              {(selectedFabric || pricing.fabricSelections.length > 0) &&
+                designSelections.additionalCap && (
                 <div className="flex justify-between items-center text-heritage-ink/70">
                   <span>Custom Matching Fila (Accessory):</span>
                   <span className="font-semibold text-heritage-green">

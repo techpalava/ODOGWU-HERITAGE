@@ -33,6 +33,7 @@ import {
   calculateDesignPricing,
   isBatchPricingRoute,
 } from "./src/utils/designPricing";
+import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAllocationPricing";
 
 const makeStyle = (
   overrides: Partial<StyleCategory> = {},
@@ -253,6 +254,12 @@ assert.equal(seedFallbackBreakdown[0].price, 65);
 const hiTarget = makeFabric({
   category: "HiTarget Ankara",
   name: "Imperial Sapphire",
+  code: "HI-TARGET",
+});
+const lace = makeFabric({
+  category: "Lace",
+  name: "Royal Lace",
+  code: "LACE-001",
 });
 assert.equal(resolveFabricPrice(hiTarget), 3.91);
 assert.equal(getFabricSewingCost(hiTarget), 4.06);
@@ -281,6 +288,30 @@ const selectedClothing = {
     shirt_construction: "shirt_std_short",
     shirt_pockets: "shirt_pocket_0",
   },
+};
+const materialPricingFor = (...fabricCodes: string[]) => {
+  const fabricMap = new Map([
+    [hiTarget.code, hiTarget],
+    [lace.code, lace],
+  ]);
+  const allocations = fabricCodes.map((fabricCode, index) => ({
+    allocationId: `alloc-${index + 1}`,
+    fabricCode,
+    garmentAssignments: [
+      {
+        garmentKey: `G${index + 1}:shirt`,
+        code: `G${index + 1}`,
+        garmentType: "shirt" as const,
+        fabricUnits: 1 as const,
+      },
+    ],
+  }));
+  const result = resolveFabricAllocationMaterialPricing(
+    allocations,
+    Array.from(fabricMap.values()),
+  );
+  assert.equal(result.status, "resolved");
+  return result;
 };
 const individualDesignPricing = calculateDesignPricing({
   route: "alone",
@@ -339,6 +370,132 @@ assert.equal(batchWithSeparateAddOns.monogramPrice, 12);
 assert.equal(batchWithSeparateAddOns.traditionalAccessoriesPrice, 12);
 assert.equal(batchWithSeparateAddOns.customDetailsPrice, 34);
 assert.equal(batchWithSeparateAddOns.garmentSubtotal, 99);
+
+const twoHiTargetIndividual = calculateDesignPricing({
+  route: "alone",
+  design: selectedClothing,
+  fabric: hiTarget,
+  materialPricing: materialPricingFor(hiTarget.code, hiTarget.code),
+  style: makeStyle(),
+  catalog: [],
+  businessSettings: pricingSettings,
+});
+assert.ok(twoHiTargetIndividual);
+assert.equal(twoHiTargetIndividual.garmentSubtotal, 80.94);
+
+const mixedIndividual = calculateDesignPricing({
+  route: "alone",
+  design: selectedClothing,
+  fabric: hiTarget,
+  materialPricing: materialPricingFor(hiTarget.code, lace.code),
+  style: makeStyle(),
+  catalog: [],
+  businessSettings: pricingSettings,
+});
+assert.ok(mixedIndividual);
+assert.equal(mixedIndividual.garmentSubtotal, 105.16);
+assert.equal(mixedIndividual.fabricSewingCost, 4.06);
+
+const reversedMixedIndividual = calculateDesignPricing({
+  route: "alone",
+  design: selectedClothing,
+  fabric: lace,
+  materialPricing: materialPricingFor(lace.code, hiTarget.code),
+  style: makeStyle(),
+  catalog: [],
+  businessSettings: pricingSettings,
+});
+assert.ok(reversedMixedIndividual);
+assert.equal(reversedMixedIndividual.garmentSubtotal, 101.1);
+assert.equal(reversedMixedIndividual.fabricSewingCost, 0);
+
+const twoHiTargetBatch = calculateDesignPricing({
+  route: "community",
+  design: selectedClothing,
+  fabric: hiTarget,
+  materialPricing: materialPricingFor(hiTarget.code, hiTarget.code),
+  style: makeStyle(),
+  catalog: [],
+  businessSettings: pricingSettings,
+});
+assert.ok(twoHiTargetBatch);
+assert.equal(twoHiTargetBatch.includedFabricPrice, 3.91);
+assert.equal(twoHiTargetBatch.fabricPrice, 3.91);
+assert.equal(twoHiTargetBatch.includedSewingCost, 8.12);
+assert.equal(twoHiTargetBatch.garmentSubtotal, 68.91);
+
+const mixedBatch = calculateDesignPricing({
+  route: "community",
+  design: selectedClothing,
+  fabric: hiTarget,
+  materialPricing: materialPricingFor(hiTarget.code, lace.code),
+  style: makeStyle(),
+  catalog: [],
+  businessSettings: pricingSettings,
+});
+assert.ok(mixedBatch);
+assert.equal(mixedBatch.includedFabricPrice, 3.91);
+assert.equal(mixedBatch.fabricPrice, 28.13);
+assert.equal(mixedBatch.includedSewingCost, 8.12);
+assert.equal(mixedBatch.garmentSubtotal, 93.13);
+
+const reversedMixedBatch = calculateDesignPricing({
+  route: "community",
+  design: selectedClothing,
+  fabric: lace,
+  materialPricing: materialPricingFor(lace.code, hiTarget.code),
+  style: makeStyle(),
+  catalog: [],
+  businessSettings: pricingSettings,
+});
+assert.ok(reversedMixedBatch);
+assert.equal(reversedMixedBatch.includedFabricPrice, 28.13);
+assert.equal(reversedMixedBatch.fabricPrice, 3.91);
+assert.equal(reversedMixedBatch.includedSewingCost, 4.06);
+assert.equal(reversedMixedBatch.garmentSubtotal, 68.91);
+
+const singleAddOnBatch = calculateDesignPricing({
+  route: "community",
+  design: {
+    ...selectedClothing,
+    decorativeFeatures: ["Embroidery"],
+    accessories: ["Traditional Hat"],
+    additionalCap: true,
+  },
+  fabric: hiTarget,
+  materialPricing: materialPricingFor(hiTarget.code),
+  style: makeStyle(),
+  catalog: [],
+  businessSettings: pricingSettings,
+});
+const multiAddOnBatch = calculateDesignPricing({
+  route: "community",
+  design: {
+    ...selectedClothing,
+    decorativeFeatures: ["Embroidery"],
+    accessories: ["Traditional Hat"],
+    additionalCap: true,
+  },
+  fabric: hiTarget,
+  materialPricing: materialPricingFor(hiTarget.code, lace.code, hiTarget.code),
+  style: makeStyle(),
+  catalog: [],
+  businessSettings: pricingSettings,
+});
+assert.ok(singleAddOnBatch && multiAddOnBatch);
+assert.equal(
+  multiAddOnBatch.constructionUpgradesPrice,
+  singleAddOnBatch.constructionUpgradesPrice,
+);
+assert.equal(multiAddOnBatch.monogramPrice, singleAddOnBatch.monogramPrice);
+assert.equal(
+  multiAddOnBatch.traditionalAccessoriesPrice,
+  singleAddOnBatch.traditionalAccessoriesPrice,
+);
+assert.equal(
+  multiAddOnBatch.customDetailsPrice,
+  singleAddOnBatch.customDetailsPrice,
+);
 
 for (const summaryFile of [
   "src/components/DesignStudioView.tsx",

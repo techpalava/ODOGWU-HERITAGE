@@ -18,11 +18,11 @@ import {
   calculateGarmentDetailsPrice,
 } from "./decorativePricing";
 import type { PricedSelection } from "./decorativePricing";
-import {
-  getFabricSewingCost,
-  resolveFabricPrice,
-} from "./fabricPricing";
 import { roundMoney } from "./money";
+import {
+  resolveLegacyFabricMaterialPricing,
+  type ResolvedFabricAllocationPricing,
+} from "./fabricAllocationPricing";
 
 export const CHECKOUT_DESIGN_PRICING_VERSION =
   "2026-08-01-design-checkout-v2";
@@ -106,6 +106,9 @@ export const getConstructionSewingCost = (
 export interface AuthoritativeDesignPricing {
   clothingPrice: number;
   includesFabricAndSewing: boolean;
+  fabricAllocationCount: number;
+  totalFabricMaterialPrice: number;
+  additionalFabricPrice: number;
   includedFabricPrice: number;
   includedSewingCost: number;
   fabricPrice: number;
@@ -130,7 +133,8 @@ export const isBatchPricingRoute = (
 export interface DesignPricingInput {
   route: CartItem["batchType"];
   design: DesignSelections;
-  fabric: Fabric;
+  fabric?: Fabric | null;
+  materialPricing?: ResolvedFabricAllocationPricing;
   style?: StyleCategory | null;
   garment?: CustomDetailGarmentContext | null;
   catalog: CustomDetailOption[];
@@ -141,13 +145,19 @@ export const calculateDesignPricing = ({
   route,
   design,
   fabric,
+  materialPricing,
   style,
   garment,
   catalog,
   businessSettings,
-}: DesignPricingInput): AuthoritativeDesignPricing | null => {
-  const resolvedFabricPrice = resolveFabricPrice(fabric);
-  if (resolvedFabricPrice === null) return null;
+  }: DesignPricingInput): AuthoritativeDesignPricing | null => {
+const resolvedMaterialPricing =
+  materialPricing ??
+  (fabric ? resolveLegacyFabricMaterialPricing(fabric) : null);
+
+if (!resolvedMaterialPricing || resolvedMaterialPricing.status !== "resolved") {
+  return null;
+}
 
   const enrichedGarment = garment
     ? { ...garment, lowerGarmentType: design.lowerGarmentType }
@@ -159,7 +169,7 @@ export const calculateDesignPricing = ({
     catalog,
     enrichedGarment,
   );
-  const rawFabricSewingCost = getFabricSewingCost(fabric);
+  const rawFabricSewingCost = resolvedMaterialPricing.baseFabricSewingCost;
   const rawConstructionSewingCost = style
     ? getConstructionSewingCost(applicableDesign)
     : 0;
@@ -200,7 +210,9 @@ export const calculateDesignPricing = ({
     constructionUpgradesPrice + monogramPrice + roundedAccessoriesPrice,
   );
   const includesFabricAndSewing = isBatchPricingRoute(route);
-  const fabricPrice = includesFabricAndSewing ? 0 : resolvedFabricPrice;
+  const fabricPrice = includesFabricAndSewing
+    ? resolvedMaterialPricing.additionalMaterialPrice
+    : resolvedMaterialPricing.totalMaterialPrice;
   const fabricSewingCost = includesFabricAndSewing
     ? 0
     : rawFabricSewingCost;
@@ -211,8 +223,15 @@ export const calculateDesignPricing = ({
   return {
     clothingPrice,
     includesFabricAndSewing,
+    fabricAllocationCount: resolvedMaterialPricing.allocationCount,
+    totalFabricMaterialPrice: roundMoney(
+      resolvedMaterialPricing.totalMaterialPrice,
+    ),
+    additionalFabricPrice: roundMoney(
+      resolvedMaterialPricing.additionalMaterialPrice,
+    ),
     includedFabricPrice: includesFabricAndSewing
-      ? roundMoney(resolvedFabricPrice)
+      ? roundMoney(resolvedMaterialPricing.baseMaterialPrice)
       : 0,
     includedSewingCost: includesFabricAndSewing
       ? roundMoney(rawFabricSewingCost + rawConstructionSewingCost)
@@ -238,15 +257,24 @@ export const calculateDesignPricing = ({
 
 export const calculateAuthoritativeDesignPricing = (
   item: CartItem,
-  fabric: Fabric,
+  materialPricingOrFabric: ResolvedFabricAllocationPricing | Fabric,
   style: StyleCategory,
   catalog: CustomDetailOption[],
   businessSettings: BusinessSettings,
 ): AuthoritativeDesignPricing | null => {
+  const materialPricing =
+    "status" in materialPricingOrFabric
+      ? materialPricingOrFabric
+      : undefined;
+  const fallbackFabric =
+    "status" in materialPricingOrFabric
+      ? materialPricingOrFabric.baseFabric
+      : materialPricingOrFabric;
   return calculateDesignPricing({
     route: item.batchType,
     design: item.design,
-    fabric,
+    fabric: fallbackFabric,
+    materialPricing,
     style,
     garment: item.garment,
     catalog,

@@ -20,6 +20,11 @@ import {
   calculateAuthoritativeDesignPricing,
   CHECKOUT_DESIGN_PRICING_VERSION,
 } from "./designPricing";
+import {
+  getFabricAllocationPricingErrorMessage,
+  resolveCartItemFabricAllocationPricing,
+  type ResolvedFabricAllocationPricing,
+} from "./fabricAllocationPricing";
 import { roundMoney } from "./money";
 import {
   calculateCartPricing,
@@ -48,21 +53,23 @@ export interface CheckoutRevalidationResult {
 
 const getStableSourceFingerprint = (
   item: CartItem,
-  fabric: Fabric,
+  materialPricing: ResolvedFabricAllocationPricing,
   style: StyleCategory,
   catalog: CustomDetailOption[],
   businessSettings: BusinessSettings,
 ): string => {
+  const materialSources = materialPricing.allocationLines.map((line) => ({
+    fabricCode: line.fabricCode,
+    category: line.fabric.category,
+    materialPrice: line.materialPrice,
+    stockStatus: line.fabric.stockStatus,
+  }));
   const source = JSON.stringify({
     version: CHECKOUT_DESIGN_PRICING_VERSION,
     itemId: item.id,
     batchType: item.batchType,
-    fabric: {
-      code: fabric.code,
-      category: fabric.category,
-      price: fabric.price,
-      stockStatus: fabric.stockStatus,
-    },
+    materialSourceType: materialPricing.source,
+    materialSources,
     style: {
       id: style.id,
       constructionDetails: style.constructionDetails,
@@ -168,26 +175,12 @@ export const revalidateCartForCheckout = (
   let changed = false;
 
   const repricedItems = cartItems.map((item): CartItem => {
-    const fabric = context.fabrics.find(
-      (candidate) => candidate.code === item.fabric.code,
-    );
-    if (!fabric) {
-      blockers.push(`${item.fabric.name} is no longer available.`);
-      return item;
-    }
-    if (
-      fabric.stockStatus === "OUT_OF_STOCK" ||
-      fabric.stockStatus === "HIDDEN"
-    ) {
-      blockers.push(`${fabric.name} is currently unavailable.`);
-    }
-
     const style = context.styles.find(
       (candidate) => candidate.id === item.style.id,
     );
     if (!style) {
       blockers.push(`${item.style.name} is no longer available.`);
-      return { ...item, fabric };
+      return item;
     }
 
     const garmentCode = getSelectedGarmentCode(item.garment);
@@ -269,22 +262,51 @@ export const revalidateCartForCheckout = (
       blockers.push(`${style.name} requires a valid batch identifier.`);
     }
 
+    const materialPricing = resolveCartItemFabricAllocationPricing(
+      pricingItem,
+      context.fabrics,
+    );
+    if (materialPricing.status === "unresolved") {
+      const message = getFabricAllocationPricingErrorMessage(materialPricing);
+      if (message) {
+        blockers.push(message);
+      }
+      return item;
+    }
+    const hasUnavailableFabric = materialPricing.allocationLines.some(
+      (line) =>
+        line.fabric.stockStatus === "OUT_OF_STOCK" ||
+        line.fabric.stockStatus === "HIDDEN",
+    );
+    if (hasUnavailableFabric) {
+      materialPricing.allocationLines.forEach((line) => {
+        if (
+          line.fabric.stockStatus === "OUT_OF_STOCK" ||
+          line.fabric.stockStatus === "HIDDEN"
+        ) {
+          blockers.push(`${line.fabric.name} is currently unavailable.`);
+        }
+      });
+    }
+
     const authoritativePricing = calculateAuthoritativeDesignPricing(
       pricingItem,
-      fabric,
+      materialPricing,
       style,
       context.customDetailCatalog,
       context.businessSettings,
     );
     if (!authoritativePricing) {
-      blockers.push(`Pricing is not configured for ${fabric.name}.`);
-      return { ...item, fabric, style };
+      blockers.push(
+        `Pricing is not configured for ${materialPricing.baseFabric.name}.`,
+      );
+      return { ...item, style };
     }
 
     const previousGarmentSubtotal = getCartItemGarmentSubtotal(item);
     const sourceFingerprint = getStableSourceFingerprint(
       pricingItem,
-      fabric,
+      materialPricing,
       style,
       context.customDetailCatalog,
       context.businessSettings,
@@ -337,7 +359,10 @@ export const revalidateCartForCheckout = (
         };
     const updatedItem: CartItem = {
       ...pricingItem,
-      fabric,
+      fabric:
+        materialPricing.source === "legacy"
+          ? materialPricing.baseFabric
+          : item.fabric,
       style,
       garment: {
         ...item.garment,

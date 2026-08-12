@@ -279,8 +279,9 @@ export const getFabricAllocationSyncSignature = (
   fabricCode: string | null,
   garmentCode: string | null | undefined,
   lowerGarmentType: LowerGarmentType | undefined,
+  styleId?: string | null,
 ): string =>
-  `${fabricCode || ""}|${garmentCode || ""}|${lowerGarmentType || ""}`;
+  `${fabricCode || ""}|${garmentCode || ""}|${lowerGarmentType || ""}|${styleId || ""}`;
 
 export const resolveDraftFabricAllocations = (
   draft: GuestDesignDraft,
