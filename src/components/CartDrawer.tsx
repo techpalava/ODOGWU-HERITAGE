@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ShoppingBag, X, Trash2, CreditCard } from "lucide-react";
+import { auth } from "../services/firebase";
 import { useAppStore } from "../store/useAppStore";
 import {
   BATCH_MINIMUM_GARMENTS,
@@ -34,6 +35,15 @@ import {
   filterDesignSelectionsForDecorativeFeatures,
 } from "../utils/decorativePricing";
 import { inspectCartItemFabricAllocations } from "../utils/fabricAllocationPersistence";
+import {
+  getCartFabricQuantity,
+  getCartGarmentAssignmentPresentation,
+  getCartDesignDemographicLabel,
+  getCartDesignLabel,
+  inspectCartDesignDomain,
+} from "../utils/cartDesignDomain";
+import { customerDesignOrderTransferClient } from "../services/customerDesignOrderTransfer";
+import { createAnonymousUploadedDesignClaims } from "../utils/uploadedDesignCheckoutPreparation";
 
 export function CartDrawer() {
   const [shippingEditorItemId, setShippingEditorItemId] = useState<
@@ -55,6 +65,8 @@ export function CartDrawer() {
   const [shippingEditorBatchId, setShippingEditorBatchId] = useState("");
   const [shippingEditorBatchName, setShippingEditorBatchName] = useState("");
   const [rerouteItemIds, setRerouteItemIds] = useState<string[]>([]);
+  const [isPreparingUploadedDesign, setIsPreparingUploadedDesign] =
+    useState(false);
   const isCartOpen = useAppStore((state) => state.isCartOpen);
   const setIsCartOpen = useAppStore((state) => state.setIsCartOpen);
   const cartItems = useAppStore((state) => state.cartItems);
@@ -204,7 +216,7 @@ export function CartDrawer() {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (cartItems.length === 0) return;
     const validation = revalidateCartForCheckout(cartItems, {
       fabrics,
@@ -213,6 +225,7 @@ export function CartDrawer() {
       customDetailCatalog,
       businessSettings,
       depositRatio,
+      allowPendingUploadedDesignTransfer: true,
     });
     if (validation.changed) {
       setCartItems(validation.items);
@@ -232,6 +245,27 @@ export function CartDrawer() {
     }
 
     if (!currentUser) {
+      const anonymousIdentity = auth.currentUser;
+      if (anonymousIdentity?.isAnonymous) {
+        try {
+          setIsPreparingUploadedDesign(true);
+          await createAnonymousUploadedDesignClaims({
+            items: validation.items,
+            identity: anonymousIdentity,
+            client: customerDesignOrderTransferClient,
+          });
+        } catch {
+          setNotification({
+            message:
+              "We couldn't securely prepare your uploaded design for checkout. Please try again.",
+            type: "info",
+          });
+          setTimeout(() => setNotification(null), 5000);
+          return;
+        } finally {
+          setIsPreparingUploadedDesign(false);
+        }
+      }
       setCheckoutIntent(true);
       setIsCartOpen(false);
       setActiveTab("login");
@@ -354,6 +388,9 @@ export function CartDrawer() {
                       getStoredShippingCost(item.garment),
                   );
                   const isBatchItem = isBatchPricingRoute(item.batchType);
+                  const isUploadedDesign =
+                    item.cartDesignSource?.kind === "uploaded";
+                  const designInspection = inspectCartDesignDomain(item);
                   const fabricAllocationInspection =
                     inspectCartItemFabricAllocations(item);
                   const selectedFabrics =
@@ -392,10 +429,10 @@ export function CartDrawer() {
                       <div className="flex justify-between items-start">
                         <div>
                           <span className="px-2 py-0.5 bg-heritage-gold/10 text-heritage-green border border-heritage-gold/20 rounded text-[8px] uppercase tracking-wider font-extrabold">
-                            {item.style.gender}
+                            {getCartDesignDemographicLabel(item)}
                           </span>
                           <h4 className="font-serif font-bold text-heritage-green text-xs mt-1.5 leading-tight">
-                            {item.style.name}
+                            {getCartDesignLabel(item)}
                           </h4>
                           <p className="text-[10px] text-heritage-ink/60 font-semibold mt-0.5">
                             {item.garment.type} (
@@ -435,6 +472,35 @@ export function CartDrawer() {
                       )}
 
                       <div className="bg-heritage-cream/30 p-2.5 rounded-xl text-[10px] space-y-1 text-heritage-ink/75 font-sans">
+                        {isUploadedDesign && (
+                          <>
+                            <p className="font-bold text-heritage-green">
+                              Design: <strong>Your Uploaded Design</strong>
+                            </p>
+                            <p>
+                              Fabric Quantity: <strong>{getCartFabricQuantity(item)}</strong>
+                            </p>
+                            <div className="pt-1">
+                              <p className="font-bold text-heritage-green">Garments</p>
+                              {getCartGarmentAssignmentPresentation(item).map(
+                                (garment) => {
+                                  const fabricSelection = selectedFabrics.find(
+                                    (selection) =>
+                                      selection.allocationId === garment.allocationId,
+                                  );
+                                  return (
+                                    <p key={garment.garmentKey}>
+                                      {garment.label} - <strong>{garment.role}</strong>
+                                      {fabricSelection
+                                        ? ` - ${fabricSelection.fabricName} (${fabricSelection.fabricCode})`
+                                        : ""}
+                                    </p>
+                                  );
+                                },
+                              )}
+                            </div>
+                          </>
+                        )}
                         {selectedFabrics.map((fabricSelection, index) => (
                           <p key={fabricSelection.allocationId}>
                             🎨 Fabric Selection {index + 1}:{" "}
@@ -546,6 +612,33 @@ export function CartDrawer() {
                       </div>
 
                       <div className="border-t border-amber-200 pt-3 space-y-3">
+                        {designInspection.status === "invalid" && (
+                          <div className="text-[10px] text-amber-800">
+                            <p className="font-bold">Design configuration needs review</p>
+                            <p className="mt-0.5">
+                              {designInspection.reasons[0] ||
+                                "Review this design before checkout."}
+                            </p>
+                          </div>
+                        )}
+                        {isUploadedDesign && designInspection.status === "valid" && (
+                          <div className="text-[10px] text-heritage-ink/70">
+                            <p className="font-bold text-heritage-green">
+                              Design image transfer pending
+                            </p>
+                            <p className="mt-0.5">
+                              Your design details are saved. Its private image will be transferred securely before payment becomes available.
+                            </p>
+                          </div>
+                        )}
+                        {item.pricingReview?.status === "CONFIRMATION_REQUIRED" && (
+                          <div className="text-[10px] text-amber-800">
+                            <p className="font-bold">Price review required</p>
+                            <p className="mt-0.5">
+                              This design was repriced using current configuration. Confirm the updated garment price before payment.
+                            </p>
+                          </div>
+                        )}
                         {item.shippingSnapshot?.status ===
                           "REVIEW_REQUIRED" && (
                           <div className="text-[10px] text-amber-800">
@@ -1004,11 +1097,13 @@ export function CartDrawer() {
               <button
                 type="button"
                 onClick={handleCheckout}
-                disabled={!cartPricing.canCheckout}
+                disabled={!cartPricing.canCheckout || isPreparingUploadedDesign}
                 className="w-full bg-heritage-gold text-heritage-forest hover:bg-heritage-green hover:text-white transition py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <CreditCard size={12} />{" "}
-                {!cartPricing.canCheckout
+                {isPreparingUploadedDesign
+                  ? "Preparing your uploaded design..."
+                  : !cartPricing.canCheckout
                   ? cartPricing.requiresShippingReview
                     ? "Review Shipping Details"
                     : cartPricing.requiresPriceConfirmation

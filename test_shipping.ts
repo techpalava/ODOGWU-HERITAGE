@@ -20,7 +20,9 @@ import {
   confirmCartShippingReprice,
   getGarmentPieceCount,
   migrateLegacyCartShippingItems,
+  resolveAuthoritativeGarmentPieceCount,
   resolveFinalMileWeight,
+  resolveShippingGarmentPieceCount,
 } from "./src/utils/shippingPricing";
 
 const closeTo = (
@@ -112,6 +114,155 @@ const makeItem = (
 
 assert.equal(getGarmentPieceCount("3-Piece Set"), 3);
 assert.equal(getGarmentPieceCount("Family Look"), 4);
+
+const makeAssignment = (
+  garmentKey: string,
+  garmentType: "shirt" | "trouser" | "skirt" | "dress" | "kaftan",
+  fabricUnits: 1 | 2,
+) => ({
+  garmentKey,
+  code: `APPEND_${garmentType.toUpperCase()}`,
+  garmentType,
+  fabricUnits,
+});
+
+const legacyThreePieceItem = makeItem(
+  "legacy-three-piece",
+  "alone",
+  100,
+  { pieces: 3 },
+);
+delete legacyThreePieceItem.garmentPieceCount;
+assert.equal(
+  resolveAuthoritativeGarmentPieceCount(legacyThreePieceItem),
+  3,
+  "legacy composition remains authoritative when modern allocations are absent",
+);
+
+const modernThreePieceItem = makeItem(
+  "modern-three-piece",
+  "alone",
+  100,
+  { pieces: 2 },
+);
+modernThreePieceItem.fabricAllocations = [
+  {
+    allocationId: "allocation-1",
+    fabricCode: "FABRIC-A",
+    garmentAssignments: [
+      makeAssignment("shirt-1", "shirt", 1),
+      makeAssignment("trouser-1", "trouser", 1),
+    ],
+  },
+  {
+    allocationId: "allocation-2",
+    fabricCode: "FABRIC-B",
+    garmentAssignments: [makeAssignment("skirt-1", "skirt", 1)],
+  },
+];
+assert.equal(
+  resolveShippingGarmentPieceCount({
+    fabricAllocations: [modernThreePieceItem.fabricAllocations[0]],
+    legacyComposition: "1-Piece Set",
+  }),
+  2,
+  "Shirt and Trouser in one allocation are two physical pieces",
+);
+assert.equal(
+  resolveAuthoritativeGarmentPieceCount(modernThreePieceItem),
+  3,
+  "modern assignments override a stale stored two-piece count",
+);
+assert.equal(
+  resolveShippingGarmentPieceCount({
+    fabricAllocations: modernThreePieceItem.fabricAllocations,
+    legacyComposition: "2-Piece Set",
+  }),
+  3,
+);
+const migratedModernThreePiece = migrateLegacyCartShippingItems(
+  [modernThreePieceItem],
+  "2026-08-09T10:00:00.000Z",
+);
+assert.equal(migratedModernThreePiece.items[0].garmentPieceCount, 3);
+assert.equal(
+  migratedModernThreePiece.items[0].shippingSnapshot?.garmentPieceCount,
+  3,
+  "cart shipping reconstruction persists the modern allocation piece count",
+);
+
+const modernFourPieceItem = structuredClone(modernThreePieceItem);
+modernFourPieceItem.id = "modern-four-piece";
+modernFourPieceItem.fabricAllocations?.push({
+  allocationId: "allocation-3",
+  fabricCode: "FABRIC-C",
+  garmentAssignments: [makeAssignment("dress-1", "dress", 1)],
+});
+assert.equal(resolveAuthoritativeGarmentPieceCount(modernFourPieceItem), 4);
+
+const kaftanOnlyItem = makeItem("kaftan-only", "alone", 100);
+kaftanOnlyItem.fabricAllocations = [
+  {
+    allocationId: "kaftan-allocation",
+    fabricCode: "FABRIC-A",
+    garmentAssignments: [makeAssignment("kaftan-1", "kaftan", 2)],
+  },
+];
+assert.equal(
+  resolveAuthoritativeGarmentPieceCount(kaftanOnlyItem),
+  1,
+  "two fabric units for a Kaftan still represent one physical shipping piece",
+);
+
+const kaftanAndTrouserItem = structuredClone(kaftanOnlyItem);
+kaftanAndTrouserItem.id = "kaftan-and-trouser";
+kaftanAndTrouserItem.fabricAllocations?.push({
+  allocationId: "trouser-allocation",
+  fabricCode: "FABRIC-B",
+  garmentAssignments: [makeAssignment("trouser-2", "trouser", 1)],
+});
+assert.equal(resolveAuthoritativeGarmentPieceCount(kaftanAndTrouserItem), 2);
+
+const sameFabricTwoAllocations = structuredClone(kaftanAndTrouserItem);
+sameFabricTwoAllocations.fabricAllocations![1].fabricCode = "FABRIC-A";
+assert.equal(
+  resolveAuthoritativeGarmentPieceCount(sameFabricTwoAllocations),
+  2,
+  "same-fabric allocations count garment assignments rather than unique fabrics",
+);
+
+const customDetailItem = structuredClone(modernThreePieceItem);
+customDetailItem.design.customDetails = {
+  shirt_pockets: "shirt-pocket-option",
+};
+assert.equal(
+  resolveAuthoritativeGarmentPieceCount(customDetailItem),
+  3,
+  "custom details do not add physical shipping pieces",
+);
+
+const restoredModernItem = JSON.parse(
+  JSON.stringify(modernFourPieceItem),
+) as CartItem;
+assert.equal(
+  resolveAuthoritativeGarmentPieceCount(restoredModernItem),
+  4,
+  "serialized modern allocations retain the authoritative piece count",
+);
+
+const invalidModernItem = structuredClone(modernThreePieceItem);
+invalidModernItem.fabricAllocations = [
+  {
+    allocationId: "invalid-allocation",
+    fabricCode: "FABRIC-A",
+    garmentAssignments: [{ garmentKey: "broken" }],
+  },
+] as CartItem["fabricAllocations"];
+assert.equal(
+  resolveAuthoritativeGarmentPieceCount(invalidModernItem),
+  null,
+  "invalid modern allocations must not fall back to a partial or legacy count",
+);
 
 const makeAddress = (
   countryCode: string,

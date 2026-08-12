@@ -10,6 +10,8 @@ import {
   handlePinLogin,
   handlePinRegister,
 } from "./src/server/authHttp";
+import { handleUploadedDesignTransfer } from "./src/server/uploadedDesignTransferHttp";
+import { handleCreateUploadedDesignOwnershipClaim } from "./src/server/uploadedDesignOwnershipClaimHttp";
 
 dotenv.config();
 
@@ -40,6 +42,11 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.post("/api/auth/bootstrap", handleAuthBootstrap);
 app.post("/api/auth/pin-login", handlePinLogin);
 app.post("/api/auth/pin-register", handlePinRegister);
+app.post("/api/orders/transfer-uploaded-design", handleUploadedDesignTransfer);
+app.post(
+  "/api/orders/create-uploaded-design-ownership-claim",
+  handleCreateUploadedDesignOwnershipClaim,
+);
 
 // API route for AI sizing estimation using Gemini 3.5 Flash
 app.post("/api/estimate-measurements", async (req, res) => {

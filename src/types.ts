@@ -46,6 +46,7 @@ export type CustomDetailGarmentGroup =
   | "personalized";
 
 export type CustomDetailSelectionGroup =
+  | "additional_physical_garment"
   | "shirt_construction"
   | "shirt_pockets"
   | "dress_construction"
@@ -82,6 +83,7 @@ export interface CustomDetailOption {
   allowMultiple: boolean;
   informational?: boolean;
   requiresEvaluation?: boolean;
+  fabricCapacityGarmentSpec?: FabricCapacityGarmentSpec;
   createdAt: string;
   updatedAt: string;
 }
@@ -160,7 +162,11 @@ export type FabricGarmentType =
  | "kaftan"
  | "full_length_gown"
  | "agbada"
- | "other";
+  | "other";
+
+export type FabricGarmentRole = "main" | "additional";
+
+export type AdditionalGarmentDependencyStatus = "valid" | "orphaned";
 
 export interface FabricCapacityGarmentSpec {
  key: string;
@@ -170,10 +176,14 @@ export interface FabricCapacityGarmentSpec {
 }
 
 export interface FabricGarmentInputAssignment {
- id?: string;
- code: string;
- lowerGarmentType?: "trousers" | "skirt";
- garmentSpec?: FabricCapacityGarmentSpec;
+  id?: string;
+  code: string;
+  lowerGarmentType?: "trousers" | "skirt";
+  garmentSpec?: FabricCapacityGarmentSpec;
+  sourceRole?: FabricGarmentRole;
+  mainGarmentKey?: string;
+  mainGarmentType?: FabricGarmentType;
+  dependencyStatus?: AdditionalGarmentDependencyStatus;
 }
 
 export interface FabricGarmentAssignment {
@@ -181,8 +191,12 @@ export interface FabricGarmentAssignment {
  code: string;
  garmentType: FabricGarmentType;
  fabricUnits: FabricUnitCount;
- lowerGarmentType?: "trousers" | "skirt";
- garmentSpec?: FabricCapacityGarmentSpec;
+  lowerGarmentType?: "trousers" | "skirt";
+  garmentSpec?: FabricCapacityGarmentSpec;
+  sourceRole?: FabricGarmentRole;
+  mainGarmentKey?: string;
+  mainGarmentType?: FabricGarmentType;
+  dependencyStatus?: AdditionalGarmentDependencyStatus;
 }
 
 export interface FabricAllocation {
@@ -577,7 +591,14 @@ export interface ShipmentTracking {
 export interface MasterOrder {
   ownerUid?: string;
   customer: Customer;
-  style: StyleCategory;
+  /** Legacy catalogue orders retain the full style snapshot. */
+  style?: StyleCategory;
+  /**
+   * Durable source identity for catalogue and customer-uploaded designs.
+   * Uploaded draft images are deliberately not represented as immutable order
+   * images until the trusted ownership/copy phase exists.
+   */
+  orderDesignSource?: StoredOrderDesignSource;
   fabric: Fabric;
   design: DesignSelections;
   garment: GarmentSelection;
@@ -611,7 +632,14 @@ export interface HistoricalOrder {
 export interface CartItem {
   id: string;
   customer: Customer;
-  style: StyleCategory;
+  /** Present for catalogue items and legacy carts; never faked for uploads. */
+  style?: StyleCategory;
+  /** Durable, JSON-safe design identity independent of the mutable Studio draft. */
+  cartDesignSource?: CartDesignSource;
+  /** Display-only snapshot captured when the item entered the cart. */
+  cartDesignPricingSnapshot?: CartDesignPricingSnapshot;
+  /** Deterministic hydration result; invalid items remain reviewable instead of guessed. */
+  cartDesignValidation?: CartDesignValidation;
   fabric: Fabric;
   design: DesignSelections;
   garment: GarmentSelection;
@@ -646,10 +674,125 @@ export interface CustomerDesignUploadReference {
   createdAt: string;
 }
 
+/** A durable, non-catalog design selected by the customer. */
+export interface UploadedDesignSource {
+  kind: "uploaded";
+  sourceKey: string;
+  uploadReference: CustomerDesignUploadReference;
+  fabricCapacityComposition: FabricCapacityGarmentSpec[];
+  demographic: CustomDetailDemographic;
+  displayLabel: string;
+}
+
+/**
+ * Structured applicability data for a customer-uploaded design. This is
+ * intentionally distinct from a catalogue StyleCategory.
+ */
+export interface UploadedDesignCustomDetailContext {
+  kind: "uploaded";
+  sourceKey: string;
+  fabricCapacityComposition: FabricCapacityGarmentSpec[];
+  demographic: CustomDetailDemographic;
+  displayLabel: string;
+}
+
+export type CustomDetailDesignContext =
+  | StyleCategory
+  | UploadedDesignCustomDetailContext;
+
+/** A real catalogue style remains the authoritative source for catalogue flows. */
+export interface CatalogDesignSource {
+  kind: "catalog";
+  sourceKey: string;
+  styleId: string;
+}
+
+export type DesignSource = CatalogDesignSource | UploadedDesignSource;
+
+/** Source-aware snapshot retained by a cart item. */
+export interface CatalogCartDesignSource {
+  kind: "catalog";
+  sourceKey: string;
+  styleId: string;
+}
+
+/** A private draft reference is safe for cart storage, but is not an order asset. */
+export interface UploadedCartDesignSource {
+  kind: "uploaded";
+  sourceKey: string;
+  displayLabel: string;
+  uploadReference: CustomerDesignUploadReference;
+  fabricCapacityComposition: FabricCapacityGarmentSpec[];
+  demographic: CustomDetailDemographic;
+}
+
+export type CartDesignSource =
+  | CatalogCartDesignSource
+  | UploadedCartDesignSource;
+
+export interface CartDesignPricingSnapshot {
+  status: "resolved" | "unresolved";
+  capturedAt: string;
+  garmentSubtotal?: number;
+  /** Explicitly non-authoritative: checkout must revalidate before payment. */
+  authority: "display_snapshot_only";
+}
+
+export interface CartDesignValidation {
+  status: "valid" | "invalid";
+  reasons: string[];
+}
+
+export interface CatalogStoredOrderDesignSource {
+  kind: "catalog";
+  sourceKey: string;
+  styleId: string;
+}
+
+export interface UploadedOrderDraftDesignSource {
+  kind: "uploaded";
+  sourceKey: string;
+  displayLabel: string;
+  fabricCapacityComposition: FabricCapacityGarmentSpec[];
+  demographic: CustomDetailDemographic;
+  imageState: {
+    kind: "draft_pending_trusted_transfer";
+    draftReference: CustomerDesignUploadReference;
+  };
+}
+
+export interface ImmutableUploadedOrderDesignReference {
+  orderId: string;
+  storagePath: string;
+  mimeType: CustomerDesignImageMimeType;
+  createdAt: string;
+}
+
+export interface UploadedOrderImmutableDesignSource {
+  kind: "uploaded";
+  sourceKey: string;
+  displayLabel: string;
+  fabricCapacityComposition: FabricCapacityGarmentSpec[];
+  demographic: CustomDetailDemographic;
+  imageState: {
+    kind: "immutable_order_asset";
+    orderReference: ImmutableUploadedOrderDesignReference;
+  };
+}
+
+export type StoredOrderDesignSource =
+  | CatalogStoredOrderDesignSource
+  | UploadedOrderDraftDesignSource
+  | UploadedOrderImmutableDesignSource;
+
 export interface GuestDesignDraft {
   currentStep: number;
   selectedFabricCode: string | null;
   selectedStyleId: string | null;
+  designSource?: DesignSource | null;
+  confirmedStyleId?: string | null;
+  confirmedDesignSourceKey?: string | null;
+  priceActivatedFabricCode?: string | null;
   selectedGarment: {
     type: string;
     fee: number;

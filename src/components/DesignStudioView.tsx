@@ -3,18 +3,18 @@ import {
   getCustomDetailSelectionOptionIds,
   getCustomDetailSnapshots,
   getCustomDetailsBreakdown,
-  getMissingCustomDetailGroup,
   hasSelectedCustomDetailOption,
   isAdditionalClothesCostSection,
   isClothingPriceSelectionGroup,
   isLiningEligibleForStyle,
   normalizeCustomDetailCatalog,
+  groupApplicableCustomDetails,
   groupCustomDetailGroupsByParentSection,
-  getSelectableCustomDetailGroups,
   getSupportedCustomDetailGroups,
   getRequiredCustomDetailGroups,
-  canClearCustomDetailSelectionGroup,
   clearCustomDetailSelectionGroup,
+  clearCustomDetailPhysicalGarmentSelections,
+  getCustomDetailSelectionGroupCustomerTitle,
   getSelectedGarmentCode,
   isAmbiguousLowerGarment,
 } from "../utils/catalogHelpers";
@@ -58,8 +58,14 @@ import {
   DeliveryMethod,
   DeliverySelection,
   GuestDesignDraft,
+  DesignSource,
   MonogramPlacement,
   FabricAllocationState,
+  CustomerDesignUploadReference,
+  CustomDetailDemographic,
+  FabricCapacityGarmentSpec,
+  FabricGarmentAssignment,
+  FabricGarmentType,
 } from "../types";
 
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
@@ -71,6 +77,10 @@ import { OrderRoutingEngine, OrderRoutingDecision } from "../engine/OrderRouting
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 import { RoutingPresentationEngine } from "../engine/RoutingPresentationEngine";
 import { FabricAllocationStateEngine } from "../engine/FabricAllocationStateEngine";
+import {
+  getFabricGarmentLabel,
+} from "../engine/FabricCapacityEngine";
+import { getCustomDetailGroupsForFabricGarmentType } from "../config/StyleFabricCapacityConfig";
 import OrderRoutingPanel from "./OrderRoutingPanel";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
@@ -83,6 +93,7 @@ import {
   calculateIndividualShipping,
   FINAL_MILE_COUNTRY_OPTIONS,
   getGarmentPieceCount,
+  resolveShippingGarmentPieceCount,
 } from "../utils/shippingPricing";
 import {
   clampDepositPercentage,
@@ -113,11 +124,16 @@ import {
   CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION,
   DRESS_LINING_OPTION_ID,
   CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE,
+  NECK_DESIGN_SUBCATEGORY_BY_OPTION_ID,
+  NECK_DESIGN_SUBCATEGORY_ORDER,
 } from "../config/GarmentDetailsConfig";
 import {
   calculateDesignPricing,
   isBatchPricingRoute,
+  type CustomerDesignBaseGarmentPriceRow,
+  type CustomerDesignAdditionalGarmentPriceRow,
 } from "../utils/designPricing";
+import { resolveCustomerDesignPriceBreakdown } from "../utils/designPriceBreakdownPresentation";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
 import type {
   PricedSelection,
@@ -126,12 +142,12 @@ import type {
 import { resolvePersonalizedBatchShippingContext } from "../utils/personalizedBatchContext";
 import {
   getFabricPricingError,
-  getNormalizedFabricName,
 } from "../utils/fabricPricing";
 import {
   getFabricAllocationPricingErrorMessage,
   resolveDesignStudioFabricAllocationPricing,
 } from "../utils/fabricAllocationPricing";
+import { resolveCustomerFabricAssignmentSummary } from "../utils/fabricAssignmentSummary";
 import {
   cloneFabricAllocations,
   getFabricAllocationSyncSignature,
@@ -139,6 +155,62 @@ import {
   resolveDraftAutosaveFabricAllocations,
   resolveDraftHydrationAllocations,
 } from "../utils/fabricAllocationPersistence";
+import { appendCustomerFabricGarment } from "../utils/fabricGarmentAppendFlow";
+import {
+  createAdditionalGarmentSelection,
+  getAllowedAdditionalGarmentLabels,
+  getInvalidAdditionalGarmentAssignments,
+  reconcileAdditionalGarmentDependencies,
+  resolveAllowedAdditionalGarments,
+  type AllowedAdditionalGarment,
+} from "../utils/additionalGarmentDomain";
+import { createClearedDesignSelectionStateSnapshot } from "../utils/designStyleClearState";
+import {
+  createCatalogDesignSource,
+  getActiveDesignSelectionPresentation,
+  getConfirmedDesignSourceKeyAfterChange,
+  hasValidActiveDesignSource,
+  reconcileGuestDesignDraftDesignSource,
+  resolveActiveCustomDetailDesignContext,
+  resolveActiveDesignComposition,
+  resolveActiveDesignSource,
+  resolveActiveDesignSourceKey,
+} from "../utils/designSourceState";
+import {
+  DESIGN_STUDIO_CUSTOMER_FLOW_STEPS as CUSTOMER_FLOW_STEPS,
+  getCustomerFlowStepInternal,
+  getNextCustomerFlowStep,
+  getPreviousCustomerFlowStep,
+  normalizeCustomerFlowStep,
+} from "../utils/designSourceJourney";
+import {
+  getConfirmedStyleIdAfterSelection,
+  getPriceActivatedFabricCodeAfterDesignSourceChange,
+  getPriceActivatedFabricCodeAfterSelection,
+  isDesignSourcePricingActive,
+} from "../utils/designStylePricingActivation";
+import {
+  getStyleBaseCustomDetailGroups,
+  getConfiguredStyleDefaultGarmentDetails,
+  getFabricCapacityCompositionSignature,
+  getFabricGarmentSelectionsForComposition,
+} from "../config/StyleFabricCapacityConfig";
+import {
+  CustomerDesignUploadError,
+  CustomerDesignUploadService,
+} from "../services/customerDesignUploadService";
+import { CUSTOMER_DESIGN_IMAGE_MIME_TYPES } from "../services/customerDesignUploadReference";
+import {
+  createUploadedDesignSourceWhenReady,
+  getUploadedDesignCapacitySummary,
+  getUploadedDesignStep1Readiness,
+  toggleUploadedDesignGarmentComposition,
+  UPLOADED_DESIGN_GARMENT_OPTIONS,
+} from "../utils/uploadedDesignStep1";
+import {
+  createCartDesignPricingSnapshot,
+  createCartDesignSource,
+} from "../utils/cartDesignDomain";
 
 // Cache for loaded image URLs to prevent skeleton flicker across renders
 const loadedImageCache = new Set<string>();
@@ -537,9 +609,165 @@ export const getGarmentDetailsBreakdown = (
   requiresEvaluation: boolean;
 }[] => getCustomDetailsBreakdown(details, catalog) as any;
 
+const getAdditionalGarmentDisplayLabels = (
+  assignments: readonly FabricGarmentAssignment[],
+): Map<string, string> => {
+  const totals = new Map<FabricGarmentType, number>();
+  for (const assignment of assignments) {
+    totals.set(
+      assignment.garmentType,
+      (totals.get(assignment.garmentType) || 0) + 1,
+    );
+  }
+
+  const seen = new Map<FabricGarmentType, number>();
+  return new Map(
+    assignments.map((assignment) => {
+      const sequence = (seen.get(assignment.garmentType) || 0) + 1;
+      seen.set(assignment.garmentType, sequence);
+      const suffix = (totals.get(assignment.garmentType) || 0) > 1
+        ? ` ${sequence}`
+        : "";
+      return [
+        assignment.garmentKey,
+        `Additional ${getFabricGarmentLabel(assignment.garmentType)}${suffix}`,
+      ];
+    }),
+  );
+};
+
+const OptionalAdditionalGarmentSection = ({
+  allowedGarments,
+  assignments,
+  basePriceRows,
+  priceRows,
+  currencySymbol,
+  onAdd,
+  onRemove,
+  onChangeFabric,
+}: {
+  allowedGarments: readonly AllowedAdditionalGarment[];
+  assignments: readonly FabricGarmentAssignment[];
+  basePriceRows: readonly CustomerDesignBaseGarmentPriceRow[];
+  priceRows: readonly CustomerDesignAdditionalGarmentPriceRow[];
+  currencySymbol: string;
+  onAdd: (garmentType: FabricGarmentType) => void;
+  onRemove: (garmentKey: string) => void;
+  onChangeFabric: (garmentKey: string) => void;
+}) => {
+  const displayLabels = getAdditionalGarmentDisplayLabels(assignments);
+  const priceByAssignmentId = new Map(
+    priceRows.map((row) => [row.assignmentId, row.price]),
+  );
+
+  if (allowedGarments.length === 0 && assignments.length === 0) return null;
+
+  return (
+    <fieldset className="col-span-1 space-y-3 border-t border-gray-100 pt-5 md:col-span-2">
+      <legend className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+        Add Another Garment
+      </legend>
+      <p className="text-[10px] leading-relaxed text-heritage-ink/60">
+        Add another piece supported by this design. Each additional garment uses
+        the matching main-garment price and needs a fabric assignment.
+      </p>
+
+      {allowedGarments.length > 0 ? (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {allowedGarments.map((garment) => {
+            const referencePrice = basePriceRows.find(
+              (row) => row.garmentType === garment.garmentType,
+            )?.price;
+            return (
+              <button
+                key={garment.garmentType}
+                type="button"
+                onClick={() => onAdd(garment.garmentType)}
+                className="flex min-h-[74px] items-center justify-between gap-3 rounded-xl border-2 border-heritage-gold/25 bg-white px-3 py-3 text-left transition hover:border-heritage-green hover:bg-heritage-green/[0.03]"
+              >
+                <span>
+                  <span className="block text-xs font-bold text-heritage-green">
+                    + Add {garment.label}
+                  </span>
+                  <span className="mt-1 block text-[10px] text-heritage-ink/60">
+                    Matches your selected design
+                  </span>
+                </span>
+                <span className="shrink-0 text-xs font-bold text-heritage-gold">
+                  {referencePrice === undefined
+                    ? "Price pending"
+                    : `${currencySymbol}${referencePrice.toFixed(2)}`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[10px] text-heritage-ink/60">
+          Select a design with a physical garment before adding another piece.
+        </p>
+      )}
+
+      {assignments.length > 0 && (
+        <div className="space-y-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-green">
+            Additional garments
+          </p>
+          {assignments.map((assignment) => {
+            const isOrphaned = assignment.dependencyStatus === "orphaned";
+            const price = priceByAssignmentId.get(assignment.garmentKey);
+            return (
+              <div
+                key={assignment.garmentKey}
+                className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2 text-xs ${
+                  isOrphaned
+                    ? "border-amber-300 bg-amber-50"
+                    : "border-gray-200 bg-white"
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="font-semibold text-heritage-ink">
+                    {displayLabels.get(assignment.garmentKey)}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-heritage-ink/60">
+                    {isOrphaned
+                      ? "This garment is no longer supported by the selected design."
+                      : price === undefined
+                        ? "Price needs review before checkout."
+                        : `${currencySymbol}${price.toFixed(2)} selected clothing price`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!isOrphaned && (
+                    <button
+                      type="button"
+                      onClick={() => onChangeFabric(assignment.garmentKey)}
+                      className="min-h-8 rounded-md border border-heritage-green/25 px-2 text-[9px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white"
+                    >
+                      Change fabric
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onRemove(assignment.garmentKey)}
+                    className="min-h-8 rounded-md border border-red-200 px-2 text-[9px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </fieldset>
+  );
+};
+
 
 const GarmentDetailSelector = ({
   selectedStyle,
+  customDetailDesignContext,
   selectedGarment,
   designSelections,
   setDesignSelections,
@@ -548,25 +776,59 @@ const GarmentDetailSelector = ({
   currencySymbol,
   invalidGroups = [],
   setInvalidGroups,
+  allowedAdditionalGarments = [],
+  additionalGarmentAssignments = [],
+  baseGarmentPriceRows = [],
+  additionalGarmentPriceRows = [],
+  onAddAdditionalGarment,
+  onRemoveAdditionalGarment,
+  onChangeAdditionalGarmentFabric,
 }: any) => {
   const customDetailCatalog = useAppStore((state: any) => state.customDetailCatalog);
   const customDetails = designSelections.customDetails || {};
   const effectiveCatalog = normalizeCustomDetailCatalog(customDetailCatalog);
   const garmentCode = getSelectedGarmentCode(selectedGarment || {});
   const isAmbiguous = isAmbiguousLowerGarment(garmentCode);
-  const selectableGroups = getSelectableCustomDetailGroups(effectiveCatalog);
+  const selectableGroups = groupApplicableCustomDetails(
+    customDetailDesignContext,
+    effectiveCatalog,
+    selectedGarment,
+    designSelections,
+  );
   const standardGroups = selectableGroups.filter(
-    (group) => !isAdditionalClothesCostSection(group.id),
+    (group) =>
+      !isAdditionalClothesCostSection(group.id) &&
+      group.id !== "additional_physical_garment",
   );
   const parentSections = groupCustomDetailGroupsByParentSection(standardGroups);
-  const supportedGroups = getSupportedCustomDetailGroups(selectedStyle, selectedGarment);
+  const primaryParentSections = parentSections;
+  const baseGarmentGroups = customDetailDesignContext?.kind === "uploaded"
+    ? getSupportedCustomDetailGroups(customDetailDesignContext)
+    : getStyleBaseCustomDetailGroups(selectedStyle);
+  const selectedAdditionalGarmentGroups = [
+    ...new Set(
+      additionalGarmentAssignments
+        .filter(
+          (assignment: FabricGarmentAssignment) =>
+            assignment.dependencyStatus !== "orphaned",
+        )
+        .flatMap((assignment: FabricGarmentAssignment) =>
+          getCustomDetailGroupsForFabricGarmentType(assignment.garmentType),
+        ),
+    ),
+  ];
+
+  const getSectionGarmentGroup = (sectionId: string): string =>
+    sectionId === "skirts" ? "skirt" : sectionId;
 
   const isParentSectionIncluded = (sectionId: string): boolean => {
-    if (sectionId === "skirts") {
-      return supportedGroups.includes("skirt");
-    }
-    return supportedGroups.includes(sectionId as any);
+    return baseGarmentGroups.includes(getSectionGarmentGroup(sectionId) as any);
   };
+
+  const isParentSectionAdded = (sectionId: string): boolean =>
+    selectedAdditionalGarmentGroups.includes(
+      getSectionGarmentGroup(sectionId) as any,
+    );
 
   const getOptionalHeaderHelperText = (sectionId: string): string => {
     switch (sectionId) {
@@ -578,6 +840,57 @@ const GarmentDetailSelector = ({
       case "skirts": return "Skirt";
       default: return "garment";
     }
+  };
+
+  const renderParentSection = (section: (typeof parentSections)[number]) => {
+    const isIncluded = isParentSectionIncluded(section.id);
+    const isAdded = isParentSectionAdded(section.id);
+    const helperGarmentName = getOptionalHeaderHelperText(section.id);
+
+    return (
+      <fieldset key={section.id} className="col-span-1 md:col-span-2 space-y-4 border-t border-gray-100 pt-4 mt-2 first:border-t-0 first:pt-0 first:mt-0">
+        <legend className="block w-full border-b border-heritage-gold/30 pb-1.5 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-heritage-green uppercase tracking-widest text-xs">
+                {section.title}
+              </span>
+              {isIncluded ? (
+                <span className="text-[8px] font-bold px-2 py-0.5 rounded-full bg-heritage-green/10 text-heritage-green border border-heritage-green/20 uppercase tracking-wider">
+                  Base garment
+                </span>
+              ) : isAdded ? (
+                <span className="text-[8px] font-bold px-2 py-0.5 rounded-full bg-heritage-gold/10 text-heritage-green border border-heritage-gold/30 uppercase tracking-wider">
+                  Added garment
+                </span>
+              ) : (
+                <span className="text-[8px] font-bold px-2 py-0.5 rounded-full bg-gray-50 text-gray-500 border border-gray-200 uppercase tracking-wider">
+                  Optional customization
+                </span>
+              )}
+            </div>
+            {isIncluded ? (
+              <span className="text-[9px] font-medium text-heritage-green/70">
+                Included in your selected design
+              </span>
+            ) : isAdded ? (
+              <span className="text-[9px] font-medium text-heritage-green/70">
+                Added to your garment order
+              </span>
+            ) : (
+              <span className="text-[9px] font-medium text-heritage-ink/50">
+                Configure the selected {helperGarmentName}.
+              </span>
+            )}
+          </div>
+        </legend>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+          {section.groups.map((group) =>
+            renderGroup(group.id, group.options, group.id === "neck_design"),
+          )}
+        </div>
+      </fieldset>
+    );
   };
 
   const additionalGroups = selectableGroups.filter((group) =>
@@ -627,7 +940,9 @@ const GarmentDetailSelector = ({
           getCustomDetailSelectionOptionIds(nextCustomDetails[groupId]),
         );
         if (checked) selectedIds.add(option.id);
-        else selectedIds.delete(option.id);
+        else {
+          selectedIds.delete(option.id);
+        }
 
         const groupOptions =
           selectableGroups.find((group) => group.id === groupId)?.options || [];
@@ -658,9 +973,10 @@ const GarmentDetailSelector = ({
       const nextSelections = clearCustomDetailSelectionGroup(
         previous,
         groupId,
-        selectedStyle,
+        customDetailDesignContext,
         customDetailCatalog,
         selectedGarment,
+        true,
       );
       return filterDesignSelectionsForDecorativeFeatures(nextSelections, selectedStyle, selectedGarment);
     });
@@ -737,40 +1053,20 @@ const GarmentDetailSelector = ({
       : { lowerGarmentType: designSelections.lowerGarmentType };
 
     const requiredGroups = getRequiredCustomDetailGroups(
-      selectedStyle,
+      customDetailDesignContext,
       normalizeCustomDetailCatalog(customDetailCatalog),
       enrichedGarment,
+      designSelections,
     );
     const isRequired = requiredGroups.includes(groupId);
-
-    const allowsMultiple = options.some((opt) => opt.allowMultiple);
-    const showClearButton = allowsMultiple && canClearCustomDetailSelectionGroup(
-      designSelections,
-      groupId,
-      selectedStyle,
-      customDetailCatalog,
-      enrichedGarment,
-    );
-
-    const clearButtonLabel = allowsMultiple ? "Clear all" : "Clear selection";
-    const ariaLabel = allowsMultiple
-      ? `Clear all ${presentation.title} selections`
-      : `Clear ${presentation.title} selection`;
-
-    const clearButton = showClearButton && (
-      <button
-        type="button"
-        onClick={() => handleClearGroup(groupId)}
-        aria-label={ariaLabel}
-        className="text-[10px] font-medium text-gray-400 hover:text-heritage-gold focus:outline-none focus:underline transition-colors cursor-pointer select-none"
-      >
-        {clearButtonLabel}
-      </button>
-    );
-
-    const hasSelectedOption = getCustomDetailSelectionOptionIds(customDetails[groupId]).length > 0;
+    const selectedOptionCount = getCustomDetailSelectionOptionIds(
+      customDetails[groupId],
+    ).length;
+    const hasSelectedOption = selectedOptionCount > 0;
+    const isRequiredComplete = isRequired && hasSelectedOption;
+    const isNeckDesignGroup = groupId === "neck_design";
     const isNoneSelected = !hasSelectedOption;
-    const noneOptionElement = !isRequired && !allowsMultiple && (
+    const noneOptionElement = (
       <label
         key={`${groupId}-none`}
         className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
@@ -800,6 +1096,92 @@ const GarmentDetailSelector = ({
     );
 
     const isInvalid = invalidGroups.includes(groupId);
+    const renderSelectableOption = (opt: CustomDetailOption) => {
+      const isSelected =
+        getCustomDetailSelectionOptionIds(customDetails[groupId]).includes(
+          opt.id,
+        ) ||
+        (opt.id === DRESS_LINING_OPTION_ID && hasLining);
+      const priceLabel = opt.requiresEvaluation
+        ? "Requires evaluation"
+        : opt.priceCents > 0
+          ? `+${currencySymbol}${(opt.priceCents / 100).toFixed(2)}`
+          : opt.informational
+            ? "No additional charge"
+            : "Included";
+
+      if (opt.informational) {
+        return (
+          <div
+            key={opt.id}
+            className="flex items-start gap-3 rounded-xl border border-gray-150 bg-heritage-cream/20 p-3"
+          >
+            <Info
+              aria-hidden="true"
+              className="mt-0.5 shrink-0 text-heritage-gold"
+              size={16}
+            />
+            <div className="flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <span className="block text-xs font-bold text-heritage-green">
+                  {opt.label}
+                </span>
+                <span className="shrink-0 text-[10px] font-semibold text-heritage-green/70">
+                  {priceLabel}
+                </span>
+              </div>
+              <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                {opt.description}
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <label
+          key={opt.id}
+          className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
+            isSelected
+              ? "border-heritage-green bg-heritage-green/10"
+              : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
+          }`}
+        >
+          <input
+            type={opt.allowMultiple ? "checkbox" : "radio"}
+            name={groupId}
+            checked={isSelected}
+            onChange={(event) =>
+              handleSelect(groupId, opt, event.target.checked)
+            }
+            className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-green"
+          />
+          <div className="flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <span className="block text-xs font-bold text-heritage-green">
+                {opt.label}
+              </span>
+              <span className="shrink-0 text-xs font-bold text-heritage-gold">
+                {priceLabel}
+              </span>
+            </div>
+            <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+              {opt.description}
+            </span>
+          </div>
+        </label>
+      );
+    };
+
+    const neckSubcategorySections = isNeckDesignGroup
+      ? NECK_DESIGN_SUBCATEGORY_ORDER.map((subcategory) => ({
+          subcategory,
+          subcategoryOptions: options.filter(
+            (opt) =>
+              NECK_DESIGN_SUBCATEGORY_BY_OPTION_ID[opt.id] === subcategory,
+          ),
+        })).filter(({ subcategoryOptions }) => subcategoryOptions.length > 0)
+      : [];
 
     return (
       <div
@@ -820,18 +1202,44 @@ const GarmentDetailSelector = ({
               </label>
               <span className={`text-[8px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider ${
                 isRequired
-                  ? "bg-red-50 text-red-600 border border-red-150"
-                  : "bg-gray-50 text-gray-500 border border-gray-200"
+                 ? isRequiredComplete
+                   ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                   : "bg-red-50 text-red-600 border border-red-150"
+                 : "bg-gray-50 text-gray-500 border border-gray-200"
               }`}>
-                {isRequired ? "Required" : "Optional"}
+               {isRequired
+                 ? isRequiredComplete
+                   ? "Complete"
+                   : "Required"
+                 : "Optional"}
               </span>
             </div>
-            {clearButton}
           </div>
         ) : (
-          showClearButton && (
-            <div className="flex justify-end mb-1">
-              {clearButton}
+          isNeckDesignGroup && (
+            <div className="mb-1 flex items-center justify-between">
+              {isNeckDesignGroup && (
+                <div className="flex items-center gap-1.5">
+                  <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+                    Neck
+                  </label>
+                  <span
+                    className={`text-[8px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                      isRequired
+                        ? isRequiredComplete
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : "bg-red-50 text-red-600 border border-red-150"
+                        : "bg-gray-50 text-gray-500 border border-gray-200"
+                    }`}
+                  >
+                    {isRequired
+                      ? isRequiredComplete
+                        ? "Complete"
+                        : "Required"
+                      : "Optional"}
+                  </span>
+                </div>
+              )}
             </div>
           )
         )}
@@ -841,89 +1249,40 @@ const GarmentDetailSelector = ({
           </p>
         )}
         <div className="space-y-2">
-          {noneOptionElement}
-          {options.map((opt) => {
-            const isSelected =
-              getCustomDetailSelectionOptionIds(customDetails[groupId]).includes(
-                opt.id,
-              ) ||
-              (opt.id === DRESS_LINING_OPTION_ID && hasLining);
-            const priceLabel = opt.requiresEvaluation
-              ? "Requires evaluation"
-              : opt.priceCents > 0
-                ? `+${currencySymbol}${(opt.priceCents / 100).toFixed(2)}`
-                : opt.informational
-                  ? "No additional charge"
-                  : "Included";
-
-            if (opt.informational) {
-              return (
-                <div
-                  key={opt.id}
-                  className="flex items-start gap-3 rounded-xl border border-gray-150 bg-heritage-cream/20 p-3"
-                >
-                  <Info
-                    aria-hidden="true"
-                    className="mt-0.5 shrink-0 text-heritage-gold"
-                    size={16}
-                  />
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="block text-xs font-bold text-heritage-green">
-                        {opt.label}
-                      </span>
-                      <span className="shrink-0 text-[10px] font-semibold text-heritage-green/70">
-                        {priceLabel}
-                      </span>
+          {isNeckDesignGroup ? (
+            <>
+              {noneOptionElement}
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {neckSubcategorySections.map(({ subcategory, subcategoryOptions }) => (
+                  <div
+                    key={subcategory}
+                    className="rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-3"
+                  >
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-heritage-ink/70">
+                      {subcategory}
+                    </p>
+                    <div className="space-y-2">
+                      {subcategoryOptions.map((opt) => renderSelectableOption(opt))}
                     </div>
-                    <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
-                      {opt.description}
-                    </span>
                   </div>
-                </div>
-              );
-            }
-
-            return (
-              <label
-                key={opt.id}
-                className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
-                  isSelected
-                    ? "border-heritage-green bg-heritage-green/10"
-                    : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
-                }`}
-              >
-                <input
-                  type={opt.allowMultiple ? "checkbox" : "radio"}
-                  name={groupId}
-                  checked={isSelected}
-                  onChange={(event) =>
-                    handleSelect(groupId, opt, event.target.checked)
-                  }
-                  className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-green"
-                />
-              <div className="flex-1">
-                <div className="flex items-start justify-between gap-3">
-                  <span className="block text-xs font-bold text-heritage-green">
-                    {opt.label}
-                  </span>
-                  <span className="shrink-0 text-xs font-bold text-heritage-gold">
-                    {priceLabel}
-                  </span>
-                </div>
-                <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
-                  {opt.description}
-                </span>
+                ))}
               </div>
-              </label>
-            );
-          })}
+            </>
+          ) : (
+            <>
+              <>
+                {noneOptionElement}
+                {options.map((opt) => renderSelectableOption(opt))}
+              </>
+            </>
+          )}
         </div>
       </div>
     );
   };
 
   const lowerGarmentType = designSelections.lowerGarmentType;
+  const lowerGarmentTypeComplete = Boolean(lowerGarmentType);
 
   return (
     <>
@@ -948,8 +1307,14 @@ const GarmentDetailSelector = ({
               <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
                 Garment Type
               </label>
-              <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider bg-red-50 text-red-600 border border-red-150">
-                Required
+              <span
+                className={`text-[8px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                  lowerGarmentTypeComplete
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-red-50 text-red-600 border border-red-150"
+                }`}
+              >
+                {lowerGarmentTypeComplete ? "Complete" : "Required"}
               </span>
             </div>
           </div>
@@ -1021,47 +1386,7 @@ const GarmentDetailSelector = ({
           </div>
         </div>
       )}
-      {parentSections.map((section) => {
-        const isIncluded = isParentSectionIncluded(section.id);
-        const helperGarmentName = getOptionalHeaderHelperText(section.id);
-
-        return (
-          <fieldset key={section.id} className="col-span-1 md:col-span-2 space-y-4 border-t border-gray-100 pt-4 mt-2 first:border-t-0 first:pt-0 first:mt-0">
-            <legend className="block w-full border-b border-heritage-gold/30 pb-1.5 mb-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-extrabold text-heritage-green uppercase tracking-widest text-xs">
-                    {section.title}
-                  </span>
-                  {isIncluded ? (
-                    <span className="text-[8px] font-bold px-2 py-0.5 rounded-full bg-heritage-green/10 text-heritage-green border border-heritage-green/20 uppercase tracking-wider">
-                      Included
-                    </span>
-                  ) : (
-                    <span className="text-[8px] font-bold px-2 py-0.5 rounded-full bg-gray-50 text-gray-500 border border-gray-200 uppercase tracking-wider">
-                      Optional customization
-                    </span>
-                  )}
-                </div>
-                {isIncluded ? (
-                  <span className="text-[9px] font-medium text-heritage-green/70">
-                    Included in your outfit
-                  </span>
-                ) : (
-                  <span className="text-[9px] font-medium text-heritage-ink/50">
-                    Not part of your selected outfit. Selecting details here does not add a {helperGarmentName} to your order.
-                  </span>
-                )}
-              </div>
-            </legend>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-              {section.groups.map((group) =>
-                renderGroup(group.id, group.options, group.id === "neck_design"),
-              )}
-            </div>
-          </fieldset>
-        );
-      })}
+      {primaryParentSections.map(renderParentSection)}
 
       {standardGroups.length === 0 && (
         <div className="col-span-1 md:col-span-2 rounded-xl border border-heritage-gold/25 bg-heritage-cream/20 px-4 py-4">
@@ -1234,6 +1559,17 @@ const GarmentDetailSelector = ({
         </div>
       </fieldset>
 
+      <OptionalAdditionalGarmentSection
+        allowedGarments={allowedAdditionalGarments}
+        assignments={additionalGarmentAssignments}
+        basePriceRows={baseGarmentPriceRows}
+        priceRows={additionalGarmentPriceRows}
+        currencySymbol={currencySymbol}
+        onAdd={onAddAdditionalGarment}
+        onRemove={onRemoveAdditionalGarment}
+        onChangeFabric={onChangeAdditionalGarmentFabric}
+      />
+
     </>
   );
 };
@@ -1375,6 +1711,40 @@ const GarmentDetailSummaryItems = ({
   );
 };
 
+const CUSTOM_DETAILS_INTERNAL_STEP = getCustomerFlowStepInternal(
+  "Custom Details",
+);
+const SHIPPING_DELIVERY_INTERNAL_STEP = getCustomerFlowStepInternal(
+  "Shipping & Delivery",
+);
+
+const getCustomerDesignUploadErrorMessage = (error: unknown): string => {
+  if (!(error instanceof CustomerDesignUploadError)) {
+    return "We could not update your design image. Please try again.";
+  }
+
+  switch (error.code) {
+    case "UNSUPPORTED_FILE_TYPE":
+      return "Please upload a JPEG, PNG, or WebP image.";
+    case "FILE_TOO_LARGE":
+      return "Your image must be 5 MB or smaller.";
+    case "IMAGE_DIMENSIONS_TOO_LARGE":
+      return "Your image is too large. Please use an image no larger than 4096px on either side.";
+    case "IMAGE_DECODE_FAILED":
+      return "We couldn't read this image. Please choose another file.";
+    case "UPLOAD_IDENTITY_UNAVAILABLE":
+      return "Secure uploads are unavailable right now. Please try again.";
+    case "READ_NOT_AUTHORIZED":
+    case "READ_FAILED":
+      return "Your design preview is unavailable right now. Your saved design is still available.";
+    case "DELETE_NOT_AUTHORIZED":
+    case "DELETE_FAILED":
+      return "Your design was cleared, but its private image could not be removed. Please try again later.";
+    default:
+      return "We could not upload your design. Please try again.";
+  }
+};
+
 export default function DesignStudioView({
   onAddToCart,
   openCartDrawer,
@@ -1501,6 +1871,77 @@ export default function DesignStudioView({
 
   // STEP 1: Style Selection, Filtering & Pagination States
   const [selectedStyle, setSelectedStyle] = useState<StyleCategory | null>(null);
+  const [designSource, setDesignSource] = useState<DesignSource | null>(null);
+  const [confirmedStyleId, setConfirmedStyleId] = useState<string | null>(null);
+  const [confirmedDesignSourceKey, setConfirmedDesignSourceKey] =
+    useState<string | null>(null);
+  const [priceActivatedFabricCode, setPriceActivatedFabricCode] =
+    useState<string | null>(null);
+  const [uploadedDesignReference, setUploadedDesignReference] =
+    useState<CustomerDesignUploadReference | null>(null);
+  const [uploadedDesignComposition, setUploadedDesignComposition] = useState<
+    FabricCapacityGarmentSpec[]
+  >([]);
+  const [uploadedDesignDemographic, setUploadedDesignDemographic] =
+    useState<CustomDetailDemographic | null>(null);
+  const [uploadedDesignPreviewUrl, setUploadedDesignPreviewUrl] = useState<
+    string | null
+  >(null);
+  const uploadedDesignPreviewUrlRef = useRef<string | null>(null);
+  const [uploadedDesignPreviewReferenceId, setUploadedDesignPreviewReferenceId] =
+    useState<string | null>(null);
+  const [uploadedDesignError, setUploadedDesignError] = useState<string>("");
+  const [isUploadingDesign, setIsUploadingDesign] = useState(false);
+  const [isReplacingDesign, setIsReplacingDesign] = useState(false);
+  const [isRemovingDesign, setIsRemovingDesign] = useState(false);
+  const [isLoadingUploadedDesignPreview, setIsLoadingUploadedDesignPreview] =
+    useState(false);
+  const uploadDesignInputRef = useRef<HTMLInputElement | null>(null);
+  const replaceDesignInputRef = useRef<HTMLInputElement | null>(null);
+  const resolvedDesignSource = resolveActiveDesignSource(
+    designSource,
+    selectedStyle,
+  );
+  const hasValidDesignSource = hasValidActiveDesignSource(
+    designSource,
+    selectedStyle,
+  );
+  const activeDesignSourceKey = resolveActiveDesignSourceKey(
+    designSource,
+    selectedStyle,
+  );
+  const activeDesignComposition = resolveActiveDesignComposition(
+    designSource,
+    selectedStyle,
+  );
+  const activeDesignCompositionSignature =
+    getFabricCapacityCompositionSignature(activeDesignComposition);
+  const activeCustomDetailDesignContext =
+    resolveActiveCustomDetailDesignContext(designSource, selectedStyle);
+  const activeSelectionPresentation = getActiveDesignSelectionPresentation(
+    designSource,
+    selectedStyle,
+  );
+  const activeUploadedDesignReference =
+    resolvedDesignSource?.kind === "uploaded"
+      ? resolvedDesignSource.uploadReference
+      : uploadedDesignReference;
+  const uploadedDesignFormReadiness = getUploadedDesignStep1Readiness({
+    uploadReference: activeUploadedDesignReference,
+    fabricCapacityComposition:
+      resolvedDesignSource?.kind === "uploaded"
+        ? resolvedDesignSource.fabricCapacityComposition
+        : uploadedDesignComposition,
+    demographic:
+      resolvedDesignSource?.kind === "uploaded"
+        ? resolvedDesignSource.demographic
+        : uploadedDesignDemographic,
+  });
+  const uploadedDesignCapacitySummary = getUploadedDesignCapacitySummary(
+    resolvedDesignSource?.kind === "uploaded"
+      ? resolvedDesignSource.fabricCapacityComposition
+      : uploadedDesignComposition,
+  );
   const [styleSearchInput, setStyleSearchInput] = useState<string>("");
   const [styleSearch, setStyleSearch] = useState<string>("");
   const [designCategoryFilter, setDesignCategoryFilter] = useState<string>("All Designs");
@@ -1510,8 +1951,79 @@ export default function DesignStudioView({
   useEffect(() => {
     if (selectedStyle && styles.length > 0 && !styles.some((s) => s.id === selectedStyle.id)) {
       setSelectedStyle(null);
+      if (designSource?.kind === "catalog") {
+        setDesignSource(null);
+      }
+      setConfirmedStyleId(null);
+      setConfirmedDesignSourceKey(null);
+      setPriceActivatedFabricCode(null);
     }
-  }, [styles, selectedStyle]);
+  }, [styles, selectedStyle, designSource]);
+
+  const revokeUploadedDesignPreview = () => {
+    if (uploadedDesignPreviewUrlRef.current) {
+      URL.revokeObjectURL(uploadedDesignPreviewUrlRef.current);
+      uploadedDesignPreviewUrlRef.current = null;
+    }
+    setUploadedDesignPreviewUrl(null);
+    setUploadedDesignPreviewReferenceId(null);
+  };
+
+  const setUploadedDesignPreviewFromBlob = (
+    blob: Blob,
+    referenceId: string,
+  ) => {
+    if (uploadedDesignPreviewUrlRef.current) {
+      URL.revokeObjectURL(uploadedDesignPreviewUrlRef.current);
+    }
+    const nextPreviewUrl = URL.createObjectURL(blob);
+    uploadedDesignPreviewUrlRef.current = nextPreviewUrl;
+    setUploadedDesignPreviewUrl(nextPreviewUrl);
+    setUploadedDesignPreviewReferenceId(referenceId);
+  };
+
+  useEffect(
+    () => () => {
+      if (uploadedDesignPreviewUrlRef.current) {
+        URL.revokeObjectURL(uploadedDesignPreviewUrlRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const reference = resolvedDesignSource?.kind === "uploaded"
+      ? resolvedDesignSource.uploadReference
+      : null;
+    if (!reference || uploadedDesignPreviewReferenceId === reference.designReferenceId) {
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingUploadedDesignPreview(true);
+    setUploadedDesignError("");
+    void CustomerDesignUploadService.readCustomerDesignDraft(reference)
+      .then((blob) => {
+        if (!cancelled) {
+          setUploadedDesignPreviewFromBlob(blob, reference.designReferenceId);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setUploadedDesignError(getCustomerDesignUploadErrorMessage(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingUploadedDesignPreview(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    resolvedDesignSource,
+    uploadedDesignPreviewReferenceId,
+  ]);
 
   // Debounce Style Search
   useEffect(() => {
@@ -1572,9 +2084,47 @@ export default function DesignStudioView({
   const [fabricAllocationState, setFabricAllocationState] = useState<FabricAllocationState>(
     FabricAllocationStateEngine.initialize(),
   );
+  const handledFabricSelectionCodeRef = useRef<string | null>(null);
+  const fabricReassignmentSnapshotRef = useRef<FabricAllocationState | null>(
+    null,
+  );
+  const baseFabricGarmentSelections = getFabricGarmentSelectionsForComposition(
+    activeDesignComposition,
+  );
+  const additionalGarmentAssignments = fabricAllocationState.fabricAllocations
+    .flatMap((allocation) => allocation.garmentAssignments)
+    .filter((assignment) => assignment.sourceRole === "additional");
+  const invalidAdditionalGarmentAssignments =
+    getInvalidAdditionalGarmentAssignments(fabricAllocationState);
+  const allowedAdditionalGarments = resolveAllowedAdditionalGarments(
+    activeDesignComposition,
+  );
+  const additionalGarmentDisplayLabels = getAdditionalGarmentDisplayLabels(
+    additionalGarmentAssignments,
+  );
+  const unassignedPhysicalGarments =
+    FabricAllocationStateEngine.resolveUnassignedPhysicalGarments(
+      fabricAllocationState,
+      baseFabricGarmentSelections,
+    );
+  const hasUnassignedPhysicalGarments =
+    unassignedPhysicalGarments.unassignedGarments.length > 0;
+  const fabricAssignmentSummary = resolveCustomerFabricAssignmentSummary({
+    fabricAllocations: fabricAllocationState.fabricAllocations,
+    fabrics,
+    unassignedGarments: unassignedPhysicalGarments.unassignedGarments,
+  });
+  const hasIncompleteFabricAssignments =
+    fabricAssignmentSummary.unresolvedGarmentCount > 0 ||
+    invalidAdditionalGarmentAssignments.length > 0 ||
+    fabricAllocationState.pendingFabricGarment !== null ||
+    fabricAllocationState.awaitingFabricForPendingGarment;
   const showFabricSelectionLimitModal =
     fabricAllocationState.pendingFabricGarment !== null &&
     !fabricAllocationState.awaitingFabricForPendingGarment;
+  const allocatedGarmentRows = fabricAssignmentSummary.garmentRows.filter(
+    (garment) => garment.isAssigned,
+  );
 
   const [fabricSearchInput, setFabricSearchInput] = useState<string>("");
   const [fabricSearch, setFabricSearch] = useState<string>("");
@@ -1590,6 +2140,7 @@ export default function DesignStudioView({
       !fabrics.some((f) => f?.code === selectedFabric?.code)
     ) {
       setSelectedFabric(null);
+      setPriceActivatedFabricCode(null);
     }
   }, [fabrics, selectedFabric]);
 
@@ -1618,6 +2169,7 @@ export default function DesignStudioView({
       const match = fabrics.find((f) => f?.code === initialFabricCode);
       if (match) {
         setSelectedFabric(match);
+        setPriceActivatedFabricCode(null);
       }
     }
     if (initialStyleId || initialFabricCode) {
@@ -1661,19 +2213,47 @@ export default function DesignStudioView({
 
   const handleSelectFabric = (fabric: Fabric) => {
     if (fabricAllocationState.awaitingFabricForPendingGarment) {
-      if (selectedFabric?.code === fabric.code) {
-        setFabricAllocationState((previousState) =>
-          FabricAllocationStateEngine.assignPendingGarmentToFabric(
-            previousState,
-            fabric.code,
-          ),
+      const nextAllocationState =
+        FabricAllocationStateEngine.assignPendingGarmentToFabricAndContinue(
+          fabricAllocationState,
+          fabric.code,
+          baseFabricGarmentSelections,
         );
-      }
-
-      setSelectedFabric(fabric);
+      setFabricAllocationState(nextAllocationState);
+      fabricReassignmentSnapshotRef.current = null;
+      setCurrentStep(2);
+      window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
 
+    const selectedGarmentInput = selectedGarment
+      ? {
+          code: selectedGarment.code,
+          lowerGarmentType: designSelections.lowerGarmentType,
+        }
+      : null;
+    setFabricAllocationState((previousState) =>
+      baseFabricGarmentSelections.length > 0
+        ? FabricAllocationStateEngine.syncPrimaryGarmentComposition(
+            previousState,
+            fabric.code,
+            baseFabricGarmentSelections,
+          )
+        : FabricAllocationStateEngine.selectPrimaryFabric(
+            previousState,
+            fabric.code,
+            selectedGarmentInput,
+          ),
+    );
+    if (selectedFabric?.code !== fabric.code) {
+      handledFabricSelectionCodeRef.current = fabric.code;
+    }
+    setPriceActivatedFabricCode((currentPriceActivatedFabricCode) =>
+      getPriceActivatedFabricCodeAfterSelection(
+        currentPriceActivatedFabricCode,
+        fabric.code,
+      ),
+    );
     setSelectedFabric(fabric);
   };
 
@@ -1733,11 +2313,19 @@ export default function DesignStudioView({
       return;
     }
 
+    if (
+      handledFabricSelectionCodeRef.current &&
+      handledFabricSelectionCodeRef.current === selectedFabric?.code
+    ) {
+      handledFabricSelectionCodeRef.current = null;
+      return;
+    }
+
     const currentSelectionSignature = getFabricAllocationSyncSignature(
       selectedFabric?.code ?? null,
-      selectedGarment?.code,
+      activeDesignCompositionSignature || selectedGarment?.code,
       designSelections.lowerGarmentType,
-      selectedStyle?.id,
+      activeDesignSourceKey,
     );
     if (hydratedFabricSyncSignatureRef.current) {
       if (hydratedFabricSyncSignatureRef.current === currentSelectionSignature) {
@@ -1753,25 +2341,40 @@ export default function DesignStudioView({
         }
       : null;
 
-    setFabricAllocationState((previousState) =>
-      FabricAllocationStateEngine.syncForSelectedFabric(
-        previousState,
-        selectedFabric?.code ?? null,
-        selectedGarmentInput,
-      ),
-    );
+    setFabricAllocationState((previousState) => {
+      const syncedState =
+        baseFabricGarmentSelections.length > 0
+          ? FabricAllocationStateEngine.syncPrimaryGarmentComposition(
+              previousState,
+              selectedFabric?.code ?? null,
+              baseFabricGarmentSelections,
+            )
+          : FabricAllocationStateEngine.syncPrimaryGarmentSelection(
+              previousState,
+              selectedFabric?.code ?? null,
+              selectedGarmentInput,
+            );
+      return reconcileAdditionalGarmentDependencies(
+        syncedState,
+        activeDesignComposition,
+      );
+    });
   }, [
     currentUser,
     guestDraftHydrated,
     selectedFabric?.code,
-    selectedStyle?.id,
+    activeDesignSourceKey,
+    activeDesignCompositionSignature,
     selectedGarment?.code,
     designSelections.lowerGarmentType,
   ]);
 
   const handleUseSameFabricAgain = () => {
-    setFabricAllocationState((previousState) =>
-      FabricAllocationStateEngine.useSameFabricForPendingGarment(previousState),
+    setFabricAllocationState(
+      FabricAllocationStateEngine.useSameFabricForPendingGarmentAndContinue(
+        fabricAllocationState,
+        baseFabricGarmentSelections,
+      ),
     );
   };
 
@@ -1779,20 +2382,100 @@ export default function DesignStudioView({
     setFabricAllocationState((previousState) =>
       FabricAllocationStateEngine.beginChooseAnotherFabric(previousState),
     );
-    setCurrentStep(1);
+    setCurrentStep(2);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleCancelPendingGarment = () => {
+    setFabricAllocationState(
+      fabricReassignmentSnapshotRef.current
+        ? fabricReassignmentSnapshotRef.current
+        : FabricAllocationStateEngine.cancelPendingGarment(
+            fabricAllocationState,
+          ),
+    );
+    fabricReassignmentSnapshotRef.current = null;
+  };
+
+  const handleResumeFabricAssignments = () => {
     setFabricAllocationState((previousState) =>
-      FabricAllocationStateEngine.cancelPendingGarment(previousState),
+      FabricAllocationStateEngine.continueUnassignedPhysicalGarments(
+        previousState,
+        baseFabricGarmentSelections,
+      ),
+    );
+  };
+
+  const handleChangeAssignedGarmentFabric = (garmentKey: string) => {
+    if (fabricAllocationState.pendingFabricGarment) return;
+    fabricReassignmentSnapshotRef.current = fabricAllocationState;
+    setFabricAllocationState((previousState) =>
+      FabricAllocationStateEngine.beginReassignGarmentToAnotherFabric(
+        previousState,
+        garmentKey,
+      ),
+    );
+    setCurrentStep(2);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleAddAdditionalGarment = (garmentType: FabricGarmentType) => {
+    setValidationError("");
+    if (!selectedFabric) {
+      setValidationError("Please select fabric.");
+      setCurrentStep(2);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    const selection = createAdditionalGarmentSelection({
+      garmentType,
+      mainComposition: activeDesignComposition,
+      existingAssignments: fabricAllocationState.fabricAllocations.flatMap(
+        (allocation) => allocation.garmentAssignments,
+      ),
+    });
+    if (selection.status === "invalid") {
+      const allowedLabels = getAllowedAdditionalGarmentLabels(
+        activeDesignComposition,
+      );
+      setNotification({
+        message:
+          allowedLabels.length > 0
+            ? `Additional garments must match your selected design: ${allowedLabels.join(", ")}.`
+            : "Select a physical garment in your design before adding another.",
+        type: "info",
+      });
+      return;
+    }
+
+    const nextState = appendCustomerFabricGarment(
+      fabricAllocationState,
+      selectedFabric.code,
+      selection.selection,
+    );
+    if (nextState === fabricAllocationState) {
+      setNotification({
+        message: "Complete or cancel the pending garment before adding another.",
+        type: "info",
+      });
+      return;
+    }
+    setFabricAllocationState(nextState);
+  };
+
+  const handleRemoveAdditionalGarment = (garmentKey: string) => {
+    setFabricAllocationState((previousState) =>
+      FabricAllocationStateEngine.removeGarmentAssignments(previousState, [
+        garmentKey,
+      ]),
     );
   };
 
   const garmentCode = getSelectedGarmentCode(selectedGarment || {});
   const isAmbiguous = isAmbiguousLowerGarment(garmentCode);
   const liningEligible = isLiningEligibleForStyle(
-    selectedStyle,
+    activeCustomDetailDesignContext,
     selectedGarment?.code,
   );
   const hasCatalogDressLining = hasSelectedCustomDetailOption(
@@ -1828,7 +2511,7 @@ export default function DesignStudioView({
         setDesignSelections((previous) => {
           const defaults =
             defaultGarment.code === "EXACT"
-              ? selectedStyle.defaultGarmentDetails
+              ? getConfiguredStyleDefaultGarmentDetails(selectedStyle)
               : undefined;
           const mergedSelections = defaults
             ? {
@@ -1859,12 +2542,12 @@ export default function DesignStudioView({
   }, [selectedStyle]);
 
   useEffect(() => {
-    if (!selectedStyle) return;
+    if (!activeCustomDetailDesignContext) return;
 
     setDesignSelections((previous) =>
       filterDesignSelectionsForDecorativeFeatures(
         filterDesignSelectionsForCustomDetails(
-          selectedStyle,
+          activeCustomDetailDesignContext,
           previous,
           customDetailCatalog,
           selectedGarment,
@@ -2101,9 +2784,11 @@ export default function DesignStudioView({
 
   // Validation feedback
   const [validationError, setValidationError] = useState<string>("");
+  const [customDetailRequiredWarningCount, setCustomDetailRequiredWarningCount] =
+    useState<number | null>(null);
 
   useEffect(() => {
-    if (selectedFabric && currentStep === 1) {
+    if (selectedFabric && currentStep === 2) {
       if (validationError === "Please select fabric.") {
         setValidationError("");
       } else if (
@@ -2114,7 +2799,7 @@ export default function DesignStudioView({
         setValidationError("");
       }
     }
-    if (selectedStyle && currentStep === 2 && validationError === "Please select design style.") {
+    if (selectedStyle && currentStep === 1 && validationError === "Please select design style.") {
       setValidationError("");
     }
   }, [selectedFabric, selectedStyle, validationError, currentStep]);
@@ -2153,8 +2838,187 @@ export default function DesignStudioView({
     }
   };
 
+  const applyUploadedDesignSource = (
+    nextSource: DesignSource | null,
+  ) => {
+    setFabricAllocationState(FabricAllocationStateEngine.initialize());
+    setDesignSource(nextSource);
+    setSelectedStyle(null);
+    setSelectedGarment(null);
+    setConfirmedStyleId(null);
+    setConfirmedDesignSourceKey((currentConfirmedSourceKey) =>
+      getConfirmedDesignSourceKeyAfterChange(
+        currentConfirmedSourceKey,
+        nextSource,
+      ),
+    );
+    setPriceActivatedFabricCode((currentPriceActivatedFabricCode) =>
+      getPriceActivatedFabricCodeAfterDesignSourceChange({
+        currentSource: resolvedDesignSource,
+        currentConfirmedDesignSourceKey: confirmedDesignSourceKey,
+        currentPriceActivatedFabricCode,
+        nextSource,
+      }),
+    );
+    setDesignSelections((previous) =>
+      filterDesignSelectionsForDecorativeFeatures(
+        filterDesignSelectionsForCustomDetails(
+          nextSource?.kind === "uploaded" ? nextSource : null,
+          clearCustomDetailPhysicalGarmentSelections(
+            previous,
+            customDetailCatalog,
+          ),
+          customDetailCatalog,
+          null,
+        ),
+        null,
+        null,
+      ),
+    );
+  };
+
+  const applyUploadedDesignForm = ({
+    reference,
+    composition,
+    demographic,
+  }: {
+    reference: CustomerDesignUploadReference | null;
+    composition: FabricCapacityGarmentSpec[];
+    demographic: CustomDetailDemographic | null;
+  }) => {
+    setUploadedDesignReference(reference);
+    setUploadedDesignComposition(composition);
+    setUploadedDesignDemographic(demographic);
+    const nextSource = createUploadedDesignSourceWhenReady({
+      uploadReference: reference,
+      fabricCapacityComposition: composition,
+      demographic,
+    });
+    if (nextSource) {
+      applyUploadedDesignSource(nextSource);
+    } else if (resolvedDesignSource?.kind === "uploaded") {
+      applyUploadedDesignSource(null);
+    }
+  };
+
+  const handleUploadedDesignFile = async (
+    file: File,
+    isReplacement: boolean,
+  ) => {
+    setUploadedDesignError("");
+    try {
+      // Validate before Firebase identity creation or any Storage request.
+      await CustomerDesignUploadService.validateCustomerDesignFile(file);
+      if (isReplacement) setIsReplacingDesign(true);
+      else setIsUploadingDesign(true);
+
+      const currentReference = activeUploadedDesignReference;
+      const replacement = isReplacement && currentReference
+        ? await CustomerDesignUploadService.replaceCustomerDesignDraft(
+            currentReference,
+            file,
+          )
+        : { reference: await CustomerDesignUploadService.uploadCustomerDesignDraft(file) };
+
+      setUploadedDesignPreviewFromBlob(
+        file,
+        replacement.reference.designReferenceId,
+      );
+      const composition = resolvedDesignSource?.kind === "uploaded"
+        ? resolvedDesignSource.fabricCapacityComposition.map((spec) => ({ ...spec }))
+        : uploadedDesignComposition;
+      const demographic = resolvedDesignSource?.kind === "uploaded"
+        ? resolvedDesignSource.demographic
+        : uploadedDesignDemographic;
+      applyUploadedDesignForm({
+        reference: replacement.reference,
+        composition,
+        demographic,
+      });
+      if (replacement.previousDraftCleanupError) {
+        setUploadedDesignError(
+          "Your new image was saved, but the previous private image could not be removed.",
+        );
+      }
+    } catch (error) {
+      setUploadedDesignError(getCustomerDesignUploadErrorMessage(error));
+    } finally {
+      setIsUploadingDesign(false);
+      setIsReplacingDesign(false);
+    }
+  };
+
+  const handleUploadedDesignCompositionToggle = (
+    garmentType: FabricCapacityGarmentSpec["garmentType"],
+  ) => {
+    const composition = toggleUploadedDesignGarmentComposition(
+      resolvedDesignSource?.kind === "uploaded"
+        ? resolvedDesignSource.fabricCapacityComposition
+        : uploadedDesignComposition,
+      garmentType,
+    );
+    applyUploadedDesignForm({
+      reference: activeUploadedDesignReference,
+      composition,
+      demographic:
+        resolvedDesignSource?.kind === "uploaded"
+          ? resolvedDesignSource.demographic
+          : uploadedDesignDemographic,
+    });
+  };
+
+  const handleUploadedDesignDemographicChange = (
+    demographic: CustomDetailDemographic,
+  ) => {
+    applyUploadedDesignForm({
+      reference: activeUploadedDesignReference,
+      composition:
+        resolvedDesignSource?.kind === "uploaded"
+          ? resolvedDesignSource.fabricCapacityComposition.map((spec) => ({ ...spec }))
+          : uploadedDesignComposition,
+      demographic,
+    });
+  };
+
+  const clearUploadedDesignLocalState = () => {
+    revokeUploadedDesignPreview();
+    setUploadedDesignReference(null);
+    setUploadedDesignComposition([]);
+    setUploadedDesignDemographic(null);
+    setUploadedDesignError("");
+  };
+
   // Helper to sync garment types when style changes
   const handleStyleChange = (style: StyleCategory) => {
+    const uploadedReferenceToCleanup = activeUploadedDesignReference;
+    if (uploadedReferenceToCleanup) {
+      void CustomerDesignUploadService.deleteCustomerDesignDraft(
+        uploadedReferenceToCleanup,
+      ).catch((error: unknown) => {
+        setUploadedDesignError(getCustomerDesignUploadErrorMessage(error));
+      });
+      clearUploadedDesignLocalState();
+    }
+    setFabricAllocationState(FabricAllocationStateEngine.initialize());
+    const nextSource = createCatalogDesignSource(style.id);
+    setDesignSource(nextSource);
+    setConfirmedDesignSourceKey((currentConfirmedSourceKey) =>
+      getConfirmedDesignSourceKeyAfterChange(
+        currentConfirmedSourceKey,
+        nextSource,
+      ),
+    );
+    setConfirmedStyleId((currentConfirmedStyleId) =>
+      getConfirmedStyleIdAfterSelection(currentConfirmedStyleId, style.id),
+    );
+    setPriceActivatedFabricCode((currentPriceActivatedFabricCode) =>
+      getPriceActivatedFabricCodeAfterDesignSourceChange({
+        currentSource: resolvedDesignSource,
+        currentConfirmedDesignSourceKey: confirmedDesignSourceKey,
+        currentPriceActivatedFabricCode,
+        nextSource,
+      }),
+    );
     setSelectedStyle(style);
     const availableTypes = garmentTypesForStyle(style);
     const defaultGarment = availableTypes[0] || {
@@ -2166,7 +3030,10 @@ export default function DesignStudioView({
       filterDesignSelectionsForDecorativeFeatures(
         filterDesignSelectionsForCustomDetails(
           style,
-          previous,
+          clearCustomDetailPhysicalGarmentSelections(
+            previous,
+            customDetailCatalog,
+          ),
           customDetailCatalog,
           defaultGarment,
         ),
@@ -2174,6 +3041,61 @@ export default function DesignStudioView({
         defaultGarment,
       ),
     );
+  };
+
+  const handleClearSelectedDesignStyle = async () => {
+    const activeReference =
+      resolvedDesignSource?.kind === "uploaded"
+        ? resolvedDesignSource.uploadReference
+        : null;
+    if (activeReference) {
+      setIsRemovingDesign(true);
+      try {
+        await CustomerDesignUploadService.deleteCustomerDesignDraft(activeReference);
+      } catch (error) {
+        setUploadedDesignError(getCustomerDesignUploadErrorMessage(error));
+      } finally {
+        setIsRemovingDesign(false);
+        clearUploadedDesignLocalState();
+      }
+    }
+    const cleared = createClearedDesignSelectionStateSnapshot(
+      CUSTOMER_FLOW_STEPS[0].internalStep,
+    );
+    setFabricAllocationState(cleared.fabricAllocationState);
+    setSelectedStyle(cleared.selectedStyle);
+    setDesignSource(cleared.designSource);
+    setConfirmedStyleId(cleared.confirmedStyleId);
+    setConfirmedDesignSourceKey(cleared.confirmedDesignSourceKey);
+    setPriceActivatedFabricCode(cleared.priceActivatedFabricCode);
+    setSelectedGarment(cleared.selectedGarment);
+    setSelectedFabric(cleared.selectedFabric);
+    setDesignSelections(cleared.designSelections);
+    setHasLining(cleared.hasLining);
+    preservedInvalidHydratedDraftFabricAllocationsRef.current = null;
+    preservedInvalidHydratedDraftSelectionSignatureRef.current = null;
+    handledFabricSelectionCodeRef.current = null;
+    setValidationError("");
+    setCurrentStep(cleared.currentStep);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleRemoveUploadedDesign = async () => {
+    const reference = activeUploadedDesignReference;
+    if (!reference) return;
+    setIsRemovingDesign(true);
+    setUploadedDesignError("");
+    try {
+      await CustomerDesignUploadService.deleteCustomerDesignDraft(reference);
+    } catch (error) {
+      setUploadedDesignError(getCustomerDesignUploadErrorMessage(error));
+    } finally {
+      setIsRemovingDesign(false);
+      clearUploadedDesignLocalState();
+      if (resolvedDesignSource?.kind === "uploaded") {
+        applyUploadedDesignSource(null);
+      }
+    }
   };
 
   // Official Pricing List Helpers
@@ -2194,6 +3116,8 @@ export default function DesignStudioView({
     let customDetailsPrice = 0;
     let monogramPrice = 0;
     let traditionalAccessoriesPrice = 0;
+    let baseGarmentPriceRows: CustomerDesignBaseGarmentPriceRow[] = [];
+    let additionalGarmentPriceRows: CustomerDesignAdditionalGarmentPriceRow[] = [];
     let decorativeFeatures: PricedSelection[] = [];
     let traditionalAccessories: PricedSelection[] = [];
     let batchShippingPendingReason: string | null = null;
@@ -2208,9 +3132,9 @@ export default function DesignStudioView({
     > | null = null;
     const currentSelectionSignature = getFabricAllocationSyncSignature(
       selectedFabric?.code ?? null,
-      selectedGarment?.code,
+      activeDesignCompositionSignature || selectedGarment?.code,
       designSelections.lowerGarmentType,
-      selectedStyle?.id,
+      activeDesignSourceKey,
     );
     const preserveInvalidHydratedModernData =
       preservedInvalidHydratedDraftFabricAllocationsRef.current !== null &&
@@ -2230,17 +3154,42 @@ export default function DesignStudioView({
       materialPricing.reason === "INVALID_MODERN_ALLOCATIONS"
         ? "Please review your fabric selections."
         : allocationPricingError || getFabricPricingError(selectedFabric);
+    const designPricingIsActive =
+      !hasIncompleteFabricAssignments &&
+      currentStep >= CUSTOM_DETAILS_INTERNAL_STEP &&
+      isDesignSourcePricingActive({
+        designSource: resolvedDesignSource,
+        selectedStyle,
+        confirmedStyleId,
+        confirmedDesignSourceKey,
+        selectedFabricCode: selectedFabric?.code,
+        priceActivatedFabricCode,
+      });
+    const showShippingSummary = currentStep >= SHIPPING_DELIVERY_INTERNAL_STEP;
     const authoritativePricing =
-      materialPricing.status === "resolved"
+      designPricingIsActive
         ? calculateDesignPricing({
             route: batchType,
             design: {
               ...designSelections,
               hasLining: liningEligible ? hasLining : false,
             },
-            fabric: materialPricing.baseFabric,
-            materialPricing,
+            fabric:
+              materialPricing.status === "resolved"
+                ? materialPricing.baseFabric
+                : null,
+            materialPricing:
+              materialPricing.status === "resolved"
+                ? materialPricing
+                : undefined,
+            allowUnresolvedMaterialPricing: true,
             style: selectedStyle,
+            designContext: activeCustomDetailDesignContext,
+            baseGarmentComposition:
+              activeDesignComposition.length > 0
+                ? activeDesignComposition
+                : undefined,
+            additionalGarments: additionalGarmentAssignments,
             garment: selectedGarment,
             catalog: customDetailCatalog,
             businessSettings,
@@ -2263,16 +3212,42 @@ export default function DesignStudioView({
       monogramPrice = authoritativePricing.monogramPrice;
       traditionalAccessoriesPrice =
         authoritativePricing.traditionalAccessoriesPrice;
+      baseGarmentPriceRows = authoritativePricing.baseGarmentPriceRows;
+      additionalGarmentPriceRows = authoritativePricing.additionalGarmentPriceRows;
       decorativeFeatures = authoritativePricing.decorativeFeatures;
       traditionalAccessories = authoritativePricing.traditionalAccessories;
     }
 
-    if (materialPricing.status === "resolved" && selectedStyle && selectedGarment) {
+    const uploadedDesignShippingReady =
+      resolvedDesignSource?.kind === "uploaded" &&
+      activeDesignComposition.length > 0 &&
+      materialPricing.status === "resolved" &&
+      materialPricing.source === "modern" &&
+      fabricAllocationState.fabricAllocations.some(
+        (allocation) => allocation.garmentAssignments.length > 0,
+      ) &&
+      !fabricAllocationState.pendingFabricGarment;
+    const catalogShippingReady =
+      designPricingIsActive && Boolean(selectedStyle && selectedGarment);
+
+    if (
+      materialPricing.status === "resolved" &&
+      (uploadedDesignShippingReady || catalogShippingReady)
+    ) {
       const garmentComposition = getGarmentCompositionFromCode(
-        selectedGarment.code || "",
-        selectedStyle.garmentComposition,
+        selectedGarment?.code || "",
+        selectedStyle?.garmentComposition,
       );
-      const garmentPieceCount = getGarmentPieceCount(garmentComposition);
+      const garmentPieceCount = resolveShippingGarmentPieceCount({
+        fabricAllocations:
+          materialPricing.source === "modern"
+            ? fabricAllocationState.fabricAllocations
+            : undefined,
+        legacyComposition:
+          resolvedDesignSource?.kind === "uploaded"
+            ? undefined
+            : garmentComposition,
+      });
 
       if (batchType === "alone") {
         individualShipping = calculateIndividualShipping(garmentPieceCount);
@@ -2327,10 +3302,11 @@ export default function DesignStudioView({
       finalMileShipping?.status === "READY"
         ? finalMileShipping.priceEur
         : null;
-    const shippingCost = roundMoney(
+    const rawShippingCost = roundMoney(
       lagosToEindhovenShipping +
         (eindhovenToDestinationShipping ?? 0),
     );
+    const shippingCost = showShippingSummary ? rawShippingCost : 0;
     const subtotal = roundMoney(
       clothingPrice +
       fabricPrice +
@@ -2342,6 +3318,21 @@ export default function DesignStudioView({
 
     return {
       clothingPrice,
+      designPricingActive: designPricingIsActive,
+      baseGarmentPricingStatus:
+        authoritativePricing?.baseGarmentPricingStatus || "resolved",
+      additionalGarmentPricingStatus:
+        authoritativePricing?.additionalGarmentPricingStatus || "resolved",
+      fabricAssignmentsIncomplete: hasIncompleteFabricAssignments,
+      designPricingError:
+        authoritativePricing?.baseGarmentPricingStatus === "unresolved"
+          ? `Pricing needs review for ${authoritativePricing.unresolvedBaseGarmentTypes
+              .map(getFabricGarmentLabel)
+              .join(", ")}.`
+          : authoritativePricing?.additionalGarmentPricingStatus === "unresolved"
+            ? "Review additional garments that no longer match the selected design."
+          : null,
+      showShippingSummary,
       includesFabricAndSewing,
       materialPricingStatus: materialPricing.status,
       fabricAllocationCount:
@@ -2359,15 +3350,6 @@ export default function DesignStudioView({
         (materialPricing.status === "resolved"
           ? materialPricing.additionalMaterialPrice
           : 0),
-      fabricSelections:
-        materialPricing.status === "resolved"
-          ? materialPricing.allocationLines.map((line) => ({
-              allocationId: line.allocationId,
-              fabricCode: line.fabricCode,
-              fabricName: line.fabric.name,
-              materialPrice: line.materialPrice,
-            }))
-          : [],
       includedFabricPrice,
       includedSewingCost,
       fabricPrice,
@@ -2377,6 +3359,8 @@ export default function DesignStudioView({
       customDetailsPrice,
       monogramPrice,
       traditionalAccessoriesPrice,
+      baseGarmentPriceRows,
+      additionalGarmentPriceRows,
       decorativeFeatures,
       traditionalAccessories,
       batchShippingPendingReason,
@@ -2392,7 +3376,11 @@ export default function DesignStudioView({
   };
 
   const pricing = getPricingBreakdown();
+  const customerDesignPriceBreakdown = resolveCustomerDesignPriceBreakdown(
+    pricing.designPricingActive ? pricing : null,
+  );
   const subtotal = pricing.subtotal;
+  const showCustomerDesignSummary = pricing.designPricingActive;
   const personalizedGroupLabel =
     pricing.batchShipping?.batchName ||
     customGroupCode ||
@@ -2420,14 +3408,33 @@ export default function DesignStudioView({
     if (currentUser || guestDraftHydrated || isLoadingData) return;
     if (styles.length === 0 || fabrics.length === 0) return;
 
-    const draft = GuestOrderSessionService.getGuestDesignDraft();
-    if (!draft) {
+    const storedDraft = GuestOrderSessionService.getGuestDesignDraft();
+    if (!storedDraft) {
       setGuestDraftHydrated(true);
       return;
     }
+    const draft = reconcileGuestDesignDraftDesignSource(storedDraft);
+    const persistedDraftSource = draft.designSource || null;
+    const draftSource =
+      persistedDraftSource?.kind === "catalog" &&
+      !styles.some((style) => style.id === persistedDraftSource.styleId)
+        ? null
+        : persistedDraftSource;
 
     const draftStyle =
-      styles.find((style) => style.id === draft.selectedStyleId) || null;
+      draftSource?.kind === "catalog"
+        ? styles.find((style) => style.id === draftSource.styleId) || null
+        : null;
+    const draftDesignComposition = resolveActiveDesignComposition(
+      draftSource,
+      draftStyle,
+    );
+    const draftDesignSourceKey = resolveActiveDesignSourceKey(
+      draftSource,
+      draftStyle,
+    );
+    const draftCustomDetailDesignContext =
+      resolveActiveCustomDetailDesignContext(draftSource, draftStyle);
     const draftAllocationInspection = inspectDraftFabricAllocations(draft);
     const draftAllocationHydration = resolveDraftHydrationAllocations(draft);
     const draftPrimaryFabricCode = draftAllocationHydration.primaryFabricCode;
@@ -2445,16 +3452,18 @@ export default function DesignStudioView({
       draftAllocationHydration.hasValidModernAllocations
         ? getFabricAllocationSyncSignature(
             draftFabric?.code ?? null,
-            draft.selectedGarment?.code,
+            getFabricCapacityCompositionSignature(draftDesignComposition) ||
+              draft.selectedGarment?.code,
             draft.designSelections.lowerGarmentType,
-            draft.selectedStyleId,
+            draftDesignSourceKey,
           )
         : null;
     const hydratedSelectionSignature = getFabricAllocationSyncSignature(
       draftFabric?.code ?? null,
-      draft.selectedGarment?.code,
+      getFabricCapacityCompositionSignature(draftDesignComposition) ||
+        draft.selectedGarment?.code,
       draft.designSelections.lowerGarmentType,
-      draft.selectedStyleId,
+      draftDesignSourceKey,
     );
     if (draftAllocationInspection.status === "invalid") {
       preservedInvalidHydratedDraftFabricAllocationsRef.current =
@@ -2465,8 +3474,27 @@ export default function DesignStudioView({
       preservedInvalidHydratedDraftFabricAllocationsRef.current = null;
       preservedInvalidHydratedDraftSelectionSignatureRef.current = null;
     }
-    setCurrentStep(Math.min(9, Math.max(1, draft.currentStep)));
+    setCurrentStep(normalizeCustomerFlowStep(draft.currentStep));
     setSelectedStyle(draftStyle);
+    setDesignSource(draftSource);
+    setConfirmedStyleId(
+      draft.confirmedStyleId === draftStyle?.id
+        ? draft.confirmedStyleId
+        : null,
+    );
+    setConfirmedDesignSourceKey(
+      draftSource && draft.confirmedDesignSourceKey === draftSource.sourceKey
+        ? draft.confirmedDesignSourceKey
+        : null,
+    );
+    setPriceActivatedFabricCode(
+      draft.priceActivatedFabricCode === draftFabric?.code &&
+        (draftSource?.kind === "uploaded"
+          ? draft.confirmedDesignSourceKey === draftSource.sourceKey
+          : draft.confirmedStyleId === draftStyle?.id)
+        ? draft.priceActivatedFabricCode
+        : null,
+    );
     setSelectedFabric(draftFabric);
     setFabricAllocationState(
       draftAllocationHydration.hasValidModernAllocations
@@ -2497,11 +3525,11 @@ export default function DesignStudioView({
     setHasLining(draft.hasLining);
 
     const restoreSelections = window.setTimeout(() => {
-      setSelectedGarment(draft.selectedGarment);
+      setSelectedGarment(draftSource?.kind === "uploaded" ? null : draft.selectedGarment);
       setDesignSelections(
         filterDesignSelectionsForDecorativeFeatures(
           filterDesignSelectionsForCustomDetails(
-            draftStyle,
+            draftCustomDetailDesignContext,
             draft.designSelections,
             customDetailCatalog,
             draft.selectedGarment,
@@ -2528,9 +3556,9 @@ export default function DesignStudioView({
     const persistTimer = window.setTimeout(() => {
       const currentSelectionSignature = getFabricAllocationSyncSignature(
         selectedFabric?.code ?? null,
-        selectedGarment?.code,
+        activeDesignCompositionSignature || selectedGarment?.code,
         designSelections.lowerGarmentType,
-        selectedStyle?.id,
+        activeDesignSourceKey,
       );
       const autosaveAllocationResolution = resolveDraftAutosaveFabricAllocations(
         {
@@ -2547,10 +3575,28 @@ export default function DesignStudioView({
         preservedInvalidHydratedDraftSelectionSignatureRef.current = null;
       }
 
+      const activeDesignSource =
+        designSource || createCatalogDesignSource(selectedStyle?.id || "");
+      const activeCatalogStyleId =
+        activeDesignSource?.kind === "catalog"
+          ? activeDesignSource.styleId
+          : null;
+      const activeConfirmationKey =
+        activeDesignSource &&
+        confirmedDesignSourceKey === activeDesignSource.sourceKey
+          ? confirmedDesignSourceKey
+          : null;
       const guestDraft: GuestDesignDraft = {
         currentStep,
         selectedFabricCode: selectedFabric?.code || null,
-        selectedStyleId: selectedStyle?.id || null,
+        selectedStyleId: activeCatalogStyleId,
+        designSource: activeDesignSource,
+        confirmedStyleId:
+          activeCatalogStyleId && confirmedStyleId === activeCatalogStyleId
+            ? confirmedStyleId
+            : null,
+        confirmedDesignSourceKey: activeConfirmationKey,
+        priceActivatedFabricCode,
         selectedGarment,
         designSelections,
         measurements,
@@ -2607,7 +3653,12 @@ export default function DesignStudioView({
     guestDraftHydrated,
     currentStep,
     selectedFabric,
-    selectedStyle,
+    activeDesignSourceKey,
+    activeDesignCompositionSignature,
+    designSource,
+    confirmedStyleId,
+    confirmedDesignSourceKey,
+    priceActivatedFabricCode,
     selectedGarment,
     designSelections,
     measurements,
@@ -2658,13 +3709,76 @@ export default function DesignStudioView({
     }
   };
 
+  const getMissingCustomDetailValidationGroups = (): {
+    missingGroupIds: string[];
+    firstMissingGroupId: string | null;
+  } => {
+    const enrichedGarment = selectedGarment
+      ? { ...selectedGarment, lowerGarmentType: designSelections.lowerGarmentType }
+      : { lowerGarmentType: designSelections.lowerGarmentType };
+
+    const requiredGroups = getRequiredCustomDetailGroups(
+      activeCustomDetailDesignContext,
+      customDetailCatalog,
+      enrichedGarment,
+      designSelections,
+    );
+    const missingRequiredGroups = requiredGroups.filter(
+      (groupId) =>
+        getCustomDetailSelectionOptionIds(
+          designSelections.customDetails?.[groupId],
+        ).length === 0,
+    );
+    const lowerGarmentMissing = isAmbiguous && !designSelections.lowerGarmentType;
+
+    return {
+      missingGroupIds: lowerGarmentMissing
+        ? [...missingRequiredGroups, "lowerGarmentType"]
+        : missingRequiredGroups,
+      firstMissingGroupId: missingRequiredGroups[0]
+        ? missingRequiredGroups[0]
+        : lowerGarmentMissing
+          ? "lowerGarmentType"
+          : null,
+    };
+  };
+
+  useEffect(() => {
+    if (currentStep !== 3) {
+      if (customDetailRequiredWarningCount !== null) {
+        setCustomDetailRequiredWarningCount(null);
+      }
+      return;
+    }
+
+    if (customDetailRequiredWarningCount === null) return;
+
+    const { missingGroupIds } = getMissingCustomDetailValidationGroups();
+    if (missingGroupIds.length === 0) {
+      setCustomDetailRequiredWarningCount(null);
+      if (validationError.startsWith("Please complete ")) {
+        setValidationError("");
+      }
+      setInvalidGroups([]);
+    }
+  }, [
+    currentStep,
+    customDetailRequiredWarningCount,
+    selectedStyle,
+    selectedGarment,
+    designSelections,
+    customDetailCatalog,
+    isAmbiguous,
+    validationError,
+  ]);
+
   // Handle step advances
   const handleNextStep = () => {
     setValidationError("");
     setInvalidGroups([]);
 
     // Step validation checks
-    if (currentStep === 1) {
+    if (currentStep === 2) {
       if (!selectedFabric) {
         setValidationError("Please select fabric.");
         setTimeout(() => {
@@ -2681,46 +3795,84 @@ export default function DesignStudioView({
         }, 50);
         return;
       }
+      if (
+        fabricAllocationState.pendingFabricGarment ||
+        fabricAllocationState.awaitingFabricForPendingGarment ||
+        hasUnassignedPhysicalGarments
+      ) {
+        setValidationError(
+          "Complete the remaining garment-to-fabric assignments before continuing.",
+        );
+        if (
+          !fabricAllocationState.pendingFabricGarment &&
+          hasUnassignedPhysicalGarments
+        ) {
+          handleResumeFabricAssignments();
+        }
+        return;
+      }
+      setPriceActivatedFabricCode(selectedFabric.code);
     }
-    if (currentStep === 2 && !selectedStyle) {
-      setValidationError("Please select design style.");
+    const hasValidUploadedDesign =
+      hasValidDesignSource && resolvedDesignSource?.kind === "uploaded";
+    if (currentStep === 1 && !hasValidDesignSource) {
+      setValidationError(
+        activeUploadedDesignReference
+          ? "Complete your uploaded design details before continuing."
+          : "Please select design style.",
+      );
       setTimeout(() => {
         document.getElementById("design-studio-stepper")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 50);
       return;
     }
-    if (currentStep === 3) {
-      const enrichedGarment = selectedGarment
-        ? { ...selectedGarment, lowerGarmentType: designSelections.lowerGarmentType }
-        : { lowerGarmentType: designSelections.lowerGarmentType };
-
-      const missingGroup = getMissingCustomDetailGroup(
-        selectedStyle,
-        designSelections,
-        customDetailCatalog,
-        enrichedGarment,
+    if (currentStep === 1 && resolvedDesignSource?.kind === "catalog") {
+      const catalogStyle = selectedStyle;
+      if (!catalogStyle) return;
+      setConfirmedStyleId(catalogStyle.id);
+      setConfirmedDesignSourceKey(
+        (designSource || createCatalogDesignSource(catalogStyle.id))?.sourceKey ||
+          null,
       );
+    }
+    if (currentStep === 1 && hasValidUploadedDesign) {
+      setConfirmedStyleId(null);
+      setConfirmedDesignSourceKey(resolvedDesignSource.sourceKey);
+    }
+    if (currentStep === 3) {
+      setCustomDetailRequiredWarningCount(null);
+      if (fabricAllocationState.pendingFabricGarment) {
+        setValidationError(
+          fabricAllocationState.awaitingFabricForPendingGarment
+            ? "Choose a fabric for the pending garment before continuing."
+            : "Complete or cancel the pending garment before continuing.",
+        );
+        return;
+      }
 
-      if (missingGroup) {
-        const presentation = CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION[missingGroup] ||
-                             (ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION as any)[missingGroup];
-        const missingLabel = presentation?.title || missingGroup.replace(/_/g, " ");
-        setValidationError(`Please select a ${missingLabel.toLowerCase()} option.`);
-        setInvalidGroups([missingGroup]);
+      const { missingGroupIds, firstMissingGroupId } =
+        getMissingCustomDetailValidationGroups();
+
+      if (missingGroupIds.length > 0) {
+        const missingCount = missingGroupIds.length;
+        setCustomDetailRequiredWarningCount(missingCount);
+        setValidationError(
+          `Please complete ${missingCount} required option${missingCount === 1 ? "" : "s"} before continuing.`,
+        );
+        setInvalidGroups(missingGroupIds);
         setTimeout(() => {
-          focusAndScrollToValidationTarget(`custom-detail-group-${missingGroup}`);
+          if (firstMissingGroupId) {
+            focusAndScrollToValidationTarget(
+              `custom-detail-group-${firstMissingGroupId}`,
+            );
+          }
         }, 50);
         return;
       }
 
-      if (isAmbiguous && !designSelections.lowerGarmentType) {
-        setValidationError("Please select a Garment Type.");
-        setInvalidGroups(["lowerGarmentType"]);
-        setTimeout(() => {
-          focusAndScrollToValidationTarget("custom-detail-group-lowerGarmentType");
-        }, 50);
-        return;
-      }
+      setCurrentStep(getNextCustomerFlowStep(currentStep) ?? currentStep);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
     }
     if (currentStep === 5) {
       // was 4
@@ -2781,17 +3933,27 @@ export default function DesignStudioView({
         );
         return;
       }
+
+      setCurrentStep(getNextCustomerFlowStep(currentStep) ?? currentStep);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
     }
 
-    if (currentStep < 9) {
-      // was 8
-      setCurrentStep((prev) => prev + 1);
+    const nextCustomerFlowStep = getNextCustomerFlowStep(currentStep);
+    if (nextCustomerFlowStep !== null) {
+      setCurrentStep(nextCustomerFlowStep);
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
 
   const handlePrevStep = () => {
     setValidationError("");
+    const previousCustomerFlowStep = getPreviousCustomerFlowStep(currentStep);
+    if (previousCustomerFlowStep !== null) {
+      setCurrentStep(previousCustomerFlowStep);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
     if (currentStep > 1) {
       if (currentStep === 5) {
         if (
@@ -2886,6 +4048,28 @@ export default function DesignStudioView({
 
   // Dispatch custom garment choice to tailoring Cart
   const handleAddToCartAction = () => {
+    if (fabricAllocationState.pendingFabricGarment) {
+      setValidationError(
+        fabricAllocationState.awaitingFabricForPendingGarment
+          ? "Choose a fabric for the pending garment before adding this order to cart."
+          : "Complete or cancel the pending garment before adding this order to cart.",
+      );
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    if (pricing.fabricPricingError) {
+      setValidationError(pricing.fabricPricingError);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    if (pricing.designPricingError) {
+      setValidationError(pricing.designPricingError);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
     if (batchType === "personalized") {
       const personalizedContext =
         resolvePersonalizedBatchShippingContext(ctx, customGroupCode);
@@ -2895,16 +4079,6 @@ export default function DesignStudioView({
             "Complete the personalized group setup before placing this order.",
         );
         window.scrollTo({ top: 0, behavior: "smooth" });
-        return;
-      }
-      const fabricPricingError = getFabricPricingError(selectedFabric);
-      if (fabricPricingError) {
-        setValidationError(fabricPricingError);
-        setTimeout(() => {
-          document
-            .getElementById("design-studio-stepper")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 50);
         return;
       }
     }
@@ -2922,6 +4096,10 @@ export default function DesignStudioView({
   };
 
   const proceedToCart = () => {
+    const cartDesignSource = createCartDesignSource(
+      resolvedDesignSource,
+      selectedStyle,
+    );
     const finalBatchName =
       batchType === "community"
         ? (draftCommunityBatchName || ctx.batchName)
@@ -2953,7 +4131,7 @@ export default function DesignStudioView({
     const applicableDesignSelections =
       filterDesignSelectionsForDecorativeFeatures(
         filterDesignSelectionsForCustomDetails(
-          selectedStyle,
+          activeCustomDetailDesignContext,
           designSelections,
           customDetailCatalog,
           selectedGarment,
@@ -2969,7 +4147,13 @@ export default function DesignStudioView({
         phone: customerPhone,
         location: deliveryLocation,
       },
-      style: selectedStyle,
+      ...(cartDesignSource?.kind === "catalog" && selectedStyle
+        ? { style: selectedStyle }
+        : {}),
+      ...(cartDesignSource ? { cartDesignSource } : {}),
+      cartDesignPricingSnapshot: createCartDesignPricingSnapshot({
+        garmentSubtotal,
+      }),
       fabric: selectedFabric,
       design: {
         ...applicableDesignSelections,
@@ -3066,6 +4250,7 @@ export default function DesignStudioView({
   };
 
   const resetDesignStudio = () => {
+    setFabricAllocationState(FabricAllocationStateEngine.initialize());
     setSelectedStyle(styles[0] || ({ id: "", name: "", description: "", gender: "unisex", tags: [], garments: [], images: [] } as unknown as StyleCategory));
     setSelectedFabric(null);
     setDesignSelections({ accessories: [] });
@@ -3079,17 +4264,32 @@ export default function DesignStudioView({
   };
 
   // Visual helper for stepper header
-  const stepTitles = [
-    "Fabric Selection",
-    "Style Choice",
-    "Custom Accents",
-    "Virtual Try-On",
-    "Sizing Input",
-    "Calibrated Dimensions",
-    "Delivery Coordinates",
-    "Special Directives",
-    "Premium Review",
-  ];
+  const currentFlowStepIndex = Math.max(
+    0,
+    CUSTOMER_FLOW_STEPS.findIndex(
+      (item) => item.internalStep === currentStep,
+    ),
+  );
+  const currentFlowStepNumber = currentFlowStepIndex + 1;
+  const currentFlowStep = CUSTOMER_FLOW_STEPS[currentFlowStepIndex];
+  const showStyleProceedDock =
+    currentStep === 1 &&
+    hasValidDesignSource &&
+    resolvedDesignSource?.kind === "catalog";
+  const showUploadedDesignProceedDock =
+    currentStep === 1 &&
+    hasValidDesignSource &&
+    resolvedDesignSource?.kind === "uploaded" &&
+    uploadedDesignFormReadiness.isReady;
+  const showFabricProceedDock =
+    currentStep === 2 &&
+    Boolean(selectedFabric) &&
+    !fabricAllocationState.pendingFabricGarment &&
+    !fabricAllocationState.awaitingFabricForPendingGarment &&
+    !hasUnassignedPhysicalGarments;
+  const showContextualProceedDock =
+    showStyleProceedDock || showUploadedDesignProceedDock || showFabricProceedDock;
+  const hideFooterNextAction = currentStep === 1 || currentStep === 2;
 
   return (
     <div id="design-studio-stepper" className="space-y-8 font-sans">
@@ -3108,18 +4308,20 @@ export default function DesignStudioView({
         </div>
       )}
 
-      {/* 9-step progress visualizer */}
+      {/* Primary five-step customer flow */}
       {/* MOBILE STEPPER (Hidden on md and up) */}
       <div className="md:hidden bg-white border border-heritage-gold/15 p-4 rounded-3xl shadow-sm space-y-3 select-none">
         <div className="flex flex-col sm:flex-row sm:justify-between items-center gap-1.5 sm:gap-0 text-center sm:text-left">
           <span className="font-bold text-heritage-green text-xs sm:text-xs">
-            Step {currentStep} of 9:{" "}
+            Step {currentFlowStepNumber} of {CUSTOMER_FLOW_STEPS.length}:{" "}
             <span className="text-heritage-gold font-serif text-xs sm:text-sm font-semibold block sm:inline mt-0.5 sm:mt-0">
-              {stepTitles[currentStep - 1]}
+              {currentFlowStep.title}
             </span>
           </span>
           <span className="font-mono text-heritage-ink/40 font-bold text-[10px] sm:text-xs">
-            {Math.round((currentStep / 9) * 100)}% Complete
+            {Math.round(
+              (currentFlowStepNumber / CUSTOMER_FLOW_STEPS.length) * 100,
+            )}% Complete
           </span>
         </div>
 
@@ -3127,51 +4329,32 @@ export default function DesignStudioView({
         <div className="h-1.5 w-full bg-heritage-cream rounded-full overflow-hidden">
           <div
             className="h-full bg-heritage-gold transition-all duration-300"
-            style={{ width: `${(currentStep / 9) * 100}%` }}
+            style={{
+              width: `${(currentFlowStepNumber / CUSTOMER_FLOW_STEPS.length) * 100}%`,
+            }}
           ></div>
         </div>
 
         {/* Minimal horizontal list showing step dots (fully clickable for passed steps) */}
         <div className="flex justify-between items-start text-[9px] sm:text-[10px] text-heritage-ink/50 uppercase tracking-widest font-semibold pt-1.5 px-0.5 sm:px-1">
-          {stepTitles.map((title, idx) => {
-            const isPassed = idx + 1 < currentStep;
-            const isCurrent = idx + 1 === currentStep;
-            const shortLabels = ["Fabric", "Style", "Accents", "Try-On", "Sizing", "Dims", "Delivery", "Notes", "Review"];
-            const shortLabel = shortLabels[idx];
+          {CUSTOMER_FLOW_STEPS.map((step, idx) => {
+            const isPassed = idx < currentFlowStepIndex;
+            const isCurrent = step.internalStep === currentStep;
             return (
               <button
-                key={idx}
+                key={step.internalStep}
                 type="button"
                 onClick={() => {
                   if (isPassed) {
-                    const targetStep = idx + 1;
-                    if (
-                      targetStep === 4 &&
-                      (localBiometricConsent === "declined" ||
-                        storeUser?.biometricConsent?.status === "declined")
-                    ) {
-                      // Prevent accessing step 4 if declined
-                      return;
-                    }
-                    setCurrentStep(targetStep);
+                    setCurrentStep(step.internalStep);
                     setValidationError("");
                   }
                 }}
-                disabled={
-                  !isPassed ||
-                  (idx + 1 === 4 &&
-                    (localBiometricConsent === "declined" ||
-                      storeUser?.biometricConsent?.status === "declined"))
-                }
+                disabled={!isPassed}
                 className={`group relative flex flex-col items-center justify-start transition-all duration-200 p-0.5 sm:p-1 rounded-lg focus:outline-none focus:ring-1 focus:ring-heritage-gold/30 ${
                   isCurrent
                     ? "text-heritage-gold font-bold scale-110 cursor-default"
-                    : isPassed &&
-                        !(
-                          idx + 1 === 4 &&
-                          (localBiometricConsent === "declined" ||
-                            storeUser?.biometricConsent?.status === "declined")
-                        )
+                    : isPassed
                       ? "text-heritage-green cursor-pointer hover:scale-110 hover:text-heritage-forest hover:bg-heritage-cream/30"
                       : "text-heritage-ink/30 cursor-not-allowed"
                 }`}
@@ -3180,16 +4363,16 @@ export default function DesignStudioView({
                   {idx + 1}
                 </span>
                 <span className="mt-1 text-[7px] sm:text-[8px] uppercase tracking-wider hidden sm:block whitespace-nowrap">
-                  {shortLabel}
+                  {step.shortLabel}
                 </span>
                 <span className="mt-1 text-[6px] uppercase tracking-wide block sm:hidden whitespace-nowrap overflow-hidden text-ellipsis max-w-[32px]">
-                  {shortLabel}
+                  {step.shortLabel}
                 </span>
 
                 {/* Custom Tooltip */}
                 <div className="absolute bottom-full mb-2.5 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-heritage-green text-white text-[10px] font-sans font-medium tracking-normal normal-case rounded-lg shadow-xl opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 pointer-events-none whitespace-nowrap z-50">
                   <div className="font-serif font-bold text-[11px]">
-                    {title}
+                    {step.title}
                   </div>
                   {isPassed && (
                     <div className="text-[9px] text-heritage-gold font-semibold mt-0.5 font-sans tracking-wide">
@@ -3209,13 +4392,15 @@ export default function DesignStudioView({
       <div className="hidden md:block bg-white border border-heritage-gold/15 py-3 px-5 rounded-2xl shadow-sm select-none">
         <div className="flex justify-between items-end mb-2">
           <div className="text-heritage-green font-bold text-sm">
-            Step {currentStep} of 9:{" "}
+            Step {currentFlowStepNumber} of {CUSTOMER_FLOW_STEPS.length}:{" "}
             <span className="text-heritage-gold font-serif ml-1">
-              {stepTitles[currentStep - 1]}
+              {currentFlowStep.title}
             </span>
           </div>
           <div className="font-mono text-heritage-ink/50 text-[11px] font-bold">
-            {Math.round((currentStep / 9) * 100)}% Complete
+            {Math.round(
+              (currentFlowStepNumber / CUSTOMER_FLOW_STEPS.length) * 100,
+            )}% Complete
           </div>
         </div>
 
@@ -3223,50 +4408,32 @@ export default function DesignStudioView({
         <div className="h-[3px] w-full bg-heritage-cream rounded-full overflow-hidden mb-2.5">
           <div
             className="h-full bg-heritage-gold transition-all duration-300"
-            style={{ width: `${(currentStep / 9) * 100}%` }}
+            style={{
+              width: `${(currentFlowStepNumber / CUSTOMER_FLOW_STEPS.length) * 100}%`,
+            }}
           ></div>
         </div>
 
         {/* Labels row */}
         <div className="flex justify-between items-start text-[10px] uppercase tracking-wider font-semibold">
-          {stepTitles.map((_title, idx) => {
-            const isPassed = idx + 1 < currentStep;
-            const isCurrent = idx + 1 === currentStep;
-            const shortLabels = ["Fabric", "Style", "Accents", "Try-On", "Sizing", "Dims", "Delivery", "Notes", "Review"];
-            const shortLabel = shortLabels[idx];
+          {CUSTOMER_FLOW_STEPS.map((step, idx) => {
+            const isPassed = idx < currentFlowStepIndex;
+            const isCurrent = step.internalStep === currentStep;
             return (
               <button
-                key={idx}
+                key={step.internalStep}
                 type="button"
                 onClick={() => {
                   if (isPassed) {
-                    const targetStep = idx + 1;
-                    if (
-                      targetStep === 4 &&
-                      (localBiometricConsent === "declined" ||
-                        storeUser?.biometricConsent?.status === "declined")
-                    ) {
-                      return;
-                    }
-                    setCurrentStep(targetStep);
+                    setCurrentStep(step.internalStep);
                     setValidationError("");
                   }
                 }}
-                disabled={
-                  !isPassed ||
-                  (idx + 1 === 4 &&
-                    (localBiometricConsent === "declined" ||
-                      storeUser?.biometricConsent?.status === "declined"))
-                }
+                disabled={!isPassed}
                 className={`flex flex-col items-center sm:items-start gap-0.5 transition-colors duration-200 focus:outline-none w-14 ${
                   isCurrent
                     ? "text-heritage-gold"
-                    : isPassed &&
-                        !(
-                          idx + 1 === 4 &&
-                          (localBiometricConsent === "declined" ||
-                            storeUser?.biometricConsent?.status === "declined")
-                        )
+                    : isPassed
                       ? "text-heritage-green/70 cursor-pointer hover:text-heritage-gold"
                       : "text-heritage-ink/25 cursor-not-allowed"
                 }`}
@@ -3275,7 +4442,7 @@ export default function DesignStudioView({
                   {idx + 1}
                 </span>
                 <span className={`leading-tight text-center sm:text-left text-[9px] ${isCurrent ? "font-bold" : "font-medium"}`}>
-                  {shortLabel}
+                  {step.shortLabel}
                 </span>
               </button>
             );
@@ -3287,19 +4454,28 @@ export default function DesignStudioView({
       {validationError && (
         <div role="alert" aria-live="assertive" className="p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl flex items-center gap-3 text-xs">
           <AlertTriangle className="text-amber-700 shrink-0" size={16} />
-          <p className="font-medium">{validationError}</p>
+          <div>
+            <p className="font-medium">{validationError}</p>
+            {currentStep === 3 && customDetailRequiredWarningCount !== null && (
+              <p className="mt-1 text-[11px] text-amber-800">
+                Complete the fields still marked Required below.
+              </p>
+            )}
+          </div>
         </div>
       )}
 
       {/* RENDER DYNAMIC STEPS CONTAINER */}
       <main className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-8 bg-white border border-heritage-gold/15 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
-          {/* STEP 2: Style Template Selection */}
-          {currentStep === 2 && (
-            <div className="space-y-6">
+          {/* STEP 1: Style Template Selection */}
+          {currentStep === 1 && (
+            <div
+              className={`space-y-6 ${showStyleProceedDock ? "pb-36 sm:pb-32" : ""}`}
+            >
               <div className="space-y-1 text-center sm:text-left">
                 <span className="text-[10px] uppercase font-mono text-heritage-gold tracking-wider block">
-                  Step 2 of 9
+                  Step 1 of 5
                 </span>
                 <h2 className="text-lg sm:text-2xl font-serif font-bold text-heritage-green">
                   Choose Design Style
@@ -3309,6 +4485,207 @@ export default function DesignStudioView({
                   templates.
                 </p>
               </div>
+
+              <section
+                aria-labelledby="upload-your-design-heading"
+                data-testid="upload-your-design-panel"
+                className="rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4 sm:p-5"
+              >
+                <div className="flex flex-col gap-3 border-b border-heritage-gold/20 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+                      Or use your own reference
+                    </span>
+                    <h3
+                      id="upload-your-design-heading"
+                      className="mt-1 font-serif text-lg font-bold text-heritage-green"
+                    >
+                      Upload Your Design
+                    </h3>
+                    <p className="mt-1 max-w-2xl text-xs leading-relaxed text-heritage-ink/75">
+                      Have a style in mind? Upload a clear reference image, then tell us which garments are included.
+                    </p>
+                  </div>
+                  <span className="inline-flex w-fit rounded-full border border-heritage-gold/30 bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green">
+                    Use Uploaded Design as Reference
+                  </span>
+                </div>
+
+                <p className="mt-3 text-[11px] leading-relaxed text-heritage-ink/70">
+                  We will use your uploaded image as a reference. Final construction details and pricing are based on the garment options you select.
+                </p>
+
+                <input
+                  ref={uploadDesignInputRef}
+                  type="file"
+                  accept={CUSTOMER_DESIGN_IMAGE_MIME_TYPES.join(",")}
+                  className="sr-only"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.currentTarget.value = "";
+                    if (file) void handleUploadedDesignFile(file, false);
+                  }}
+                />
+                <input
+                  ref={replaceDesignInputRef}
+                  type="file"
+                  accept={CUSTOMER_DESIGN_IMAGE_MIME_TYPES.join(",")}
+                  className="sr-only"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.currentTarget.value = "";
+                    if (file) void handleUploadedDesignFile(file, true);
+                  }}
+                />
+
+                {!activeUploadedDesignReference ? (
+                  <div className="mt-4 flex flex-col gap-3 rounded-xl border border-dashed border-heritage-gold/40 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-start gap-3">
+                      <ImageIcon className="mt-0.5 shrink-0 text-heritage-gold" size={20} />
+                      <div>
+                        <p className="text-xs font-bold text-heritage-green">Your visual reference</p>
+                        <p className="mt-1 text-[11px] text-heritage-ink/65">JPEG, PNG, or WebP. Maximum 5 MB.</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => uploadDesignInputRef.current?.click()}
+                      disabled={isUploadingDesign || isReplacingDesign || isRemovingDesign}
+                      className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-gold hover:text-heritage-forest disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isUploadingDesign ? "Uploading..." : "Choose Image"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
+                    <div className="rounded-xl border border-heritage-gold/20 bg-white p-3">
+                      <div className="flex min-h-48 items-center justify-center overflow-hidden rounded-lg bg-heritage-cream/50">
+                        {isLoadingUploadedDesignPreview ? (
+                          <span className="text-xs font-semibold text-heritage-ink/60">Loading preview...</span>
+                        ) : uploadedDesignPreviewUrl ? (
+                          <img
+                            src={uploadedDesignPreviewUrl}
+                            alt="Your uploaded design reference"
+                            className="max-h-72 w-full object-contain"
+                          />
+                        ) : (
+                          <span className="px-4 text-center text-xs text-heritage-ink/60">Preview unavailable. Your private design reference is still saved.</span>
+                        )}
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => replaceDesignInputRef.current?.click()}
+                          disabled={isUploadingDesign || isReplacingDesign || isRemovingDesign}
+                          className="min-h-10 rounded-lg border border-heritage-gold/35 bg-white px-3 text-xs font-bold text-heritage-green transition hover:bg-heritage-gold/10 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isReplacingDesign ? "Replacing..." : "Replace Image"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleRemoveUploadedDesign()}
+                          disabled={isUploadingDesign || isReplacingDesign || isRemovingDesign}
+                          className="min-h-10 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isRemovingDesign ? "Removing..." : "Remove Image"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 rounded-xl border border-heritage-gold/20 bg-white p-4">
+                      <fieldset>
+                        <legend className="text-xs font-bold text-heritage-green">
+                          What garments are included in your design?
+                        </legend>
+                        <p className="mt-1 text-[11px] text-heritage-ink/65">
+                          Select every physical garment shown in your reference.
+                        </p>
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                          {UPLOADED_DESIGN_GARMENT_OPTIONS.map((option) => {
+                            const selected = (
+                              resolvedDesignSource?.kind === "uploaded"
+                                ? resolvedDesignSource.fabricCapacityComposition
+                                : uploadedDesignComposition
+                            ).some((spec) => spec.garmentType === option.garmentType);
+                            return (
+                              <label
+                                key={option.garmentType}
+                                className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs transition ${
+                                  selected
+                                    ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green"
+                                    : "border-gray-200 text-heritage-ink hover:border-heritage-gold/45"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selected}
+                                  onChange={() => handleUploadedDesignCompositionToggle(option.garmentType)}
+                                  className="h-4 w-4 accent-heritage-green"
+                                />
+                                <span className="font-semibold">{option.label}</span>
+                                {option.fabricUnits === 2 && (
+                                  <span className="ml-auto text-[10px] text-heritage-gold">Full fabric quantity</span>
+                                )}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </fieldset>
+
+                      <div className="rounded-lg bg-heritage-cream/45 px-3 py-2 text-[11px] text-heritage-ink/75">
+                        {uploadedDesignCapacitySummary.garmentCount > 0 ? (
+                          <>
+                            <strong className="text-heritage-green">{uploadedDesignCapacitySummary.garmentCount} garment{uploadedDesignCapacitySummary.garmentCount === 1 ? "" : "s"} • {uploadedDesignCapacitySummary.fabricQuantity} fabric quantit{uploadedDesignCapacitySummary.fabricQuantity === 1 ? "y" : "ies"}</strong>
+                            {uploadedDesignCapacitySummary.requiresAdditionalAllocation && (
+                              <p className="mt-1">This design will require more than one fabric allocation. You’ll choose how to handle the additional garment during Fabric Selection.</p>
+                            )}
+                          </>
+                        ) : "Select the garments in your reference to continue."}
+                      </div>
+
+                      <fieldset>
+                        <legend className="text-xs font-bold text-heritage-green">Who is this design for?</legend>
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                          {([
+                            ["male", "Male"],
+                            ["female", "Female"],
+                            ["unisex", "Unisex / Family"],
+                          ] as const).map(([value, label]) => {
+                            const selectedDemographic = resolvedDesignSource?.kind === "uploaded"
+                              ? resolvedDesignSource.demographic
+                              : uploadedDesignDemographic;
+                            return (
+                              <label key={value} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${selectedDemographic === value ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green" : "border-gray-200 text-heritage-ink hover:border-heritage-gold/45"}`}>
+                                <input
+                                  type="radio"
+                                  name="uploaded-design-demographic"
+                                  value={value}
+                                  checked={selectedDemographic === value}
+                                  onChange={() => handleUploadedDesignDemographicChange(value)}
+                                  className="h-4 w-4 accent-heritage-green"
+                                />
+                                {label}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </fieldset>
+
+                      <p className={`text-[11px] ${uploadedDesignFormReadiness.isReady ? "text-heritage-green" : "text-heritage-ink/60"}`}>
+                        {uploadedDesignFormReadiness.isReady
+                          ? "Uploaded design complete. Continue with the single action below."
+                          : "Image, garment composition, and recipient context are required."}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {uploadedDesignError && (
+                  <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                    {uploadedDesignError}
+                  </p>
+                )}
+              </section>
 
               {/* Filtering & Search Bar */}
               <div className="bg-heritage-cream/30 border border-heritage-gold/10 p-4 rounded-2xl space-y-3 font-sans">
@@ -3493,6 +4870,30 @@ export default function DesignStudioView({
                         <p className="text-[10px] sm:text-[11px] text-heritage-ink/75 leading-relaxed line-clamp-2 mt-auto">
                           {style.description}
                         </p>
+                        {selectedStyle?.id === style.id && (
+                          <div
+                            data-testid="selected-style-garment-actions"
+                            onClick={(event) => event.stopPropagation()}
+                            className="mt-4 border-t border-heritage-gold/20 pt-3"
+                          >
+                            <p className="text-[10px] leading-relaxed text-heritage-ink/65">
+                              This is your primary style. Choosing another style
+                              replaces it.
+                            </p>
+                            <button
+                              type="button"
+                              data-testid="selected-style-clear-design"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleClearSelectedDesignStyle();
+                              }}
+                              className="mt-2 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60"
+                            >
+                              <X size={15} aria-hidden="true" />
+                              Clear Design
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))
@@ -3551,12 +4952,14 @@ export default function DesignStudioView({
             </div>
           )}
 
-          {/* STEP 1: Fabric Swatches Selection */}
-          {currentStep === 1 && (
-            <div className="space-y-6 font-sans">
+          {/* STEP 2: Fabric Swatches Selection */}
+          {currentStep === 2 && (
+            <div
+              className={`space-y-6 font-sans ${showFabricProceedDock ? "pb-36 sm:pb-32" : ""}`}
+            >
               <div className="space-y-1 text-center sm:text-left">
                 <span className="text-[10px] uppercase font-mono text-heritage-gold tracking-wider block">
-                  Step 1 of 9
+                  Step 2 of 5
                 </span>
                 <h2 className="text-lg sm:text-2xl font-serif font-bold text-heritage-green">
                   Select Fabric
@@ -3566,6 +4969,49 @@ export default function DesignStudioView({
                   options with detailed weaves.
                 </p>
               </div>
+
+              {selectedFabric &&
+                unassignedPhysicalGarments.totalGarmentCount > 0 && (
+                  <section
+                    data-testid="fabric-assignment-progress"
+                    className="rounded-xl border border-heritage-gold/25 bg-heritage-cream/35 px-4 py-3 text-xs text-heritage-ink/75"
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-bold text-heritage-green">
+                          Fabric assignment progress: {unassignedPhysicalGarments.assignedGarmentCount} of {unassignedPhysicalGarments.totalGarmentCount} garments assigned
+                        </p>
+                        {fabricAllocationState.awaitingFabricForPendingGarment &&
+                          fabricAllocationState.pendingFabricGarment && (
+                            <p className="mt-1">
+                              Choose another fabric for {getFabricGarmentLabel(
+                                fabricAllocationState.pendingFabricGarment.garmentType,
+                              )}.
+                            </p>
+                          )}
+                        {hasUnassignedPhysicalGarments &&
+                          !fabricAllocationState.pendingFabricGarment && (
+                            <p className="mt-1">
+                              Remaining: {unassignedPhysicalGarments.unassignedGarments
+                                .map((garment) => getFabricGarmentLabel(garment.garmentType))
+                                .join(", ")}.
+                            </p>
+                          )}
+                      </div>
+                      {hasUnassignedPhysicalGarments &&
+                        !fabricAllocationState.pendingFabricGarment &&
+                        !fabricAllocationState.awaitingFabricForPendingGarment && (
+                          <button
+                            type="button"
+                            onClick={handleResumeFabricAssignments}
+                            className="min-h-10 shrink-0 rounded-lg border border-heritage-green/30 bg-white px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white"
+                          >
+                            Complete Fabric Assignments
+                          </button>
+                        )}
+                    </div>
+                  </section>
+                )}
 
               {/* Filtering & Search Bar */}
               <div className="bg-heritage-cream/30 border border-heritage-gold/10 p-4 rounded-2xl space-y-3">
@@ -3668,24 +5114,24 @@ export default function DesignStudioView({
                         setZoomedFabric(fabric);
                         setShowFabricZoomModal(true);
                       }}
-                      className={`p-4 rounded-xl border flex flex-col justify-between space-y-4 transition-all duration-300 cursor-zoom-in hover:-translate-y-1 ${
+                      className={`group flex h-full cursor-zoom-in flex-col overflow-hidden rounded-2xl border-2 transition-all duration-300 ${
                         selectedFabric?.code === fabric?.code
-                          ? "border-heritage-gold shadow-[0_0_15px_rgba(197,168,92,0.15)] bg-[#FFFCF6]"
-                          : "border-[#E5E0D8] bg-[#FAFAF8] hover:shadow-lg hover:border-heritage-gold/50"
+                          ? "border-heritage-gold bg-[#FFFCF6] shadow-[0_0_0_1px_rgba(197,168,92,0.18),0_14px_26px_rgba(27,77,62,0.08)]"
+                          : "border-[#E5E0D8] bg-[#FAFAF8] shadow-sm hover:-translate-y-1 hover:border-heritage-gold/50 hover:shadow-lg"
                       }`}
                     >
-                      <div className="space-y-3">
+                      <div className="flex flex-1 flex-col">
                         {/* Interactive Color Box / Full Fabric Image */}
                         <div 
-                          className="h-44 w-full rounded-lg relative overflow-hidden flex items-start justify-between p-2 select-none group border border-[#E5E0D8] bg-white shadow-sm"
+                          className="relative h-48 w-full shrink-0 overflow-hidden border-b border-[#E5E0D8] bg-white"
                         >
                           {fabric.image ? (
-                            <div className="absolute inset-0 w-full h-full transition-transform duration-500 group-hover:scale-110">
+                            <div className="absolute inset-0 h-full w-full transition-transform duration-500 group-hover:scale-105">
                                <LazyFabricImage fabric={fabric} />
                             </div>
                           ) : (
                             <div
-                              className="absolute inset-0 w-full h-full transition-transform duration-500 group-hover:scale-110"
+                              className="absolute inset-0 h-full w-full transition-transform duration-500 group-hover:scale-105"
                               style={{
                                 background: `linear-gradient(135deg, ${fabric.colorHex}cc, ${fabric.colorHex}ff)`,
                               }}
@@ -3695,12 +5141,9 @@ export default function DesignStudioView({
                           <div className="absolute inset-0 bg-[radial-gradient(#C5A85C_1px,transparent_1px)] [background-size:12px_12px] opacity-[0.03]"></div>
                           <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
                           
-                          <div className="relative z-10 flex flex-col items-start gap-1 pointer-events-none">
-                              <span className="text-[10px] bg-white/95 backdrop-blur-sm border border-[#E5E0D8] font-bold px-2 py-0.5 rounded shadow-sm text-heritage-green font-mono">
-                                {fabric?.code}
-                              </span>
+                          <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col items-start gap-1">
                               <span
-                                className={`text-[9px] bg-white/95 backdrop-blur-sm border border-[#E5E0D8] font-bold px-1.5 py-0.5 rounded font-sans uppercase shadow-sm ${
+                                className={`rounded-full border border-[#E5E0D8] bg-white/95 px-2 py-0.5 text-[9px] font-bold uppercase shadow-sm backdrop-blur-sm ${
                                   fabric.stockStatus === "OUT_OF_STOCK"
                                     ? "text-red-600"
                                     : fabric.stockStatus === "LOW_STOCK"
@@ -3721,51 +5164,66 @@ export default function DesignStudioView({
                           </div>
                         </div>
 
-                        <div className="space-y-1.5 px-0.5">
-                          <div className="flex justify-between items-start gap-2">
-                            <h4 className="font-serif text-[13px] font-bold text-heritage-green leading-snug line-clamp-2">
+                        <div className="flex flex-1 flex-col p-4 sm:p-5">
+                          <div className="space-y-1.5">
+                            <h4 className="font-serif text-[14px] font-bold leading-snug text-heritage-green sm:text-[15px]">
                               {fabric.name}
                             </h4>
-                            <span className="shrink-0 text-[9px] font-sans bg-[#F2EDE4] text-heritage-green font-semibold px-2 py-0.5 rounded border border-[#E5E0D8]">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-heritage-ink/55 font-mono">
+                              {fabric.code}
+                            </p>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <span className="shrink-0 rounded-full border border-[#E5E0D8] bg-[#F2EDE4] px-2.5 py-1 text-[9px] font-semibold text-heritage-green">
                               {fabric.color}
                             </span>
                           </div>
-                          <p className="text-[10px] text-heritage-ink/70 leading-relaxed h-8 line-clamp-2">
+
+                          <p className="mt-3 text-[10px] leading-relaxed text-heritage-ink/72 sm:text-[11px] line-clamp-3">
                             {fabric.description}
                           </p>
-                        </div>
-                      </div>
 
-                      <div className="border-t border-[#E5E0D8] pt-3 flex justify-between items-center text-[10px] font-sans px-0.5">
-                        <span className="text-heritage-ink/60 font-medium">Width: {fabric.width || "45 inches"}</span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setZoomedFabric(fabric);
-                              setShowFabricZoomModal(true);
-                            }}
-                            className="p-1.5 rounded bg-white text-heritage-green hover:bg-[#F2EDE4] transition-colors border border-[#E5E0D8] cursor-pointer shadow-sm"
-                            title="Zoom Swatch Texture"
-                          >
-                            <ZoomIn size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelectFabric(fabric);
-                            }}
-                            className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all duration-200 cursor-pointer select-none flex items-center gap-1 border shadow-sm ${
-                              selectedFabric?.code === fabric?.code
-                                ? "bg-heritage-gold text-white border-heritage-gold"
-                                : "bg-white text-heritage-green border-[#E5E0D8] hover:border-heritage-gold hover:text-heritage-gold"
-                            }`}
-                          >
-                            {selectedFabric?.code === fabric?.code && <Check size={12} />}
-                            {selectedFabric?.code === fabric?.code ? "Selected" : "Select"}
-                          </button>
+                          <div className="mt-auto border-t border-[#E5E0D8] pt-3.5">
+                            <div className="flex items-center justify-between gap-3 text-[10px] font-sans">
+                              <span className="font-medium text-heritage-ink/60">
+                                Width: {fabric.width || "45 inches"}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setZoomedFabric(fabric);
+                                    setShowFabricZoomModal(true);
+                                  }}
+                                  className="rounded-md border border-[#E5E0D8] bg-white p-1.5 text-heritage-green shadow-sm transition-colors hover:bg-[#F2EDE4] cursor-pointer"
+                                  title="Zoom Swatch Texture"
+                                >
+                                  <ZoomIn size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSelectFabric(fabric);
+                                  }}
+                                  className={`flex min-h-[30px] min-w-[84px] items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-[10px] font-bold transition-all duration-200 cursor-pointer select-none ${
+                                    selectedFabric?.code === fabric?.code
+                                      ? "border-heritage-gold bg-heritage-gold text-white shadow-[0_4px_10px_rgba(197,168,92,0.25)]"
+                                      : "border-[#E5E0D8] bg-white text-heritage-green shadow-sm hover:border-heritage-gold hover:text-heritage-gold"
+                                  }`}
+                                >
+                                  {selectedFabric?.code === fabric?.code && (
+                                    <Check size={12} />
+                                  )}
+                                  {selectedFabric?.code === fabric?.code
+                                    ? "Selected"
+                                    : "Select"}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -3832,7 +5290,7 @@ export default function DesignStudioView({
             <div className="space-y-6">
               <div className="space-y-1 text-center sm:text-left">
                 <span className="text-[10px] uppercase font-mono text-heritage-gold tracking-wider block">
-                  Step 3 of 9
+                  Step 3 of 5
                 </span>
                 <h2 className="text-lg sm:text-2xl font-serif font-bold text-heritage-green">
                   Customize Garment Details
@@ -3841,9 +5299,61 @@ export default function DesignStudioView({
                   Select lengths, pockets, embroideries, and accessories for your outfit.
                 </p>
               </div>
+
+              <section
+                aria-labelledby="fabric-garments-heading"
+                className="space-y-3 border-y border-heritage-gold/20 py-4"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h3
+                    id="fabric-garments-heading"
+                    className="text-xs font-bold uppercase tracking-wider text-heritage-green"
+                  >
+                    Garments
+                  </h3>
+                </div>
+
+                {allocatedGarmentRows.length > 0 && (
+                  <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {allocatedGarmentRows.map((garment) => (
+                      <li
+                        key={garment.garmentKey}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs"
+                      >
+                        <span className="font-semibold text-heritage-ink">
+                          {garment.garmentLabel}
+                        </span>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span className="rounded bg-heritage-green/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-heritage-green">
+                            {garment.roleLabel}
+                          </span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+                            {garment.fabricLabel}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleChangeAssignedGarmentFabric(garment.garmentKey)
+                            }
+                            disabled={
+                              fabricAllocationState.pendingFabricGarment !== null
+                            }
+                            className="min-h-8 rounded-md border border-heritage-green/25 px-2 text-[9px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Change fabric
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+              </section>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <GarmentDetailSelector
                   selectedStyle={selectedStyle}
+                  customDetailDesignContext={activeCustomDetailDesignContext}
                   selectedGarment={selectedGarment}
                   designSelections={designSelections}
                   setDesignSelections={setDesignSelections}
@@ -3852,6 +5362,15 @@ export default function DesignStudioView({
                   currencySymbol={currencySymbol}
                   invalidGroups={invalidGroups}
                   setInvalidGroups={setInvalidGroups}
+                  allowedAdditionalGarments={allowedAdditionalGarments}
+                  additionalGarmentAssignments={additionalGarmentAssignments}
+                  baseGarmentPriceRows={pricing.baseGarmentPriceRows}
+                  additionalGarmentPriceRows={pricing.additionalGarmentPriceRows}
+                  onAddAdditionalGarment={handleAddAdditionalGarment}
+                  onRemoveAdditionalGarment={handleRemoveAdditionalGarment}
+                  onChangeAdditionalGarmentFabric={
+                    handleChangeAssignedGarmentFabric
+                  }
                 />
               </div>
             </div>
@@ -5029,7 +6548,7 @@ export default function DesignStudioView({
             <div className="space-y-6 font-sans">
               <div className="space-y-1 text-center sm:text-left">
                 <span className="text-[10px] uppercase font-mono text-heritage-gold tracking-wider block">
-                  Step 7 of 9
+                  Step 4 of 5
                 </span>
                 <h2 className="text-lg sm:text-2xl font-serif font-bold text-heritage-green">
                   Final Delivery Details
@@ -5413,7 +6932,7 @@ export default function DesignStudioView({
             <div className="space-y-6 font-sans">
               <div className="space-y-1 text-center sm:text-left">
                 <span className="text-[10px] uppercase font-mono text-heritage-gold tracking-wider block">
-                  Step 9 of 9
+                  Step 5 of 5
                 </span>
                 <h2 className="text-lg sm:text-2xl font-serif font-bold text-heritage-green">
                   Review Your Order
@@ -5646,13 +7165,17 @@ export default function DesignStudioView({
             )}
 
             {currentStep < 9 ? (
-              <button
-                type="button"
-                onClick={handleNextStep}
-                className="bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest transition min-h-[44px] px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
-              >
-                {journey.stepperNextLabel} <ArrowRight size={14} />
-              </button>
+              hideFooterNextAction ? (
+                <div />
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleNextStep}
+                  className="bg-heritage-green text-white hover:bg-heritage-gold hover:text-heritage-forest transition min-h-[44px] px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
+                >
+                  {journey.stepperNextLabel} <ArrowRight size={14} />
+                </button>
+              )
             ) : (
               <button
                 type="button"
@@ -5681,113 +7204,98 @@ export default function DesignStudioView({
             </div>
 
             <div className="space-y-2 text-xs font-sans">
-              {(selectedFabric || pricing.fabricSelections.length > 0) && (
+              {pricing.fabricAssignmentsIncomplete && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] text-amber-800">
+                  Complete fabric assignments to see the final design total.
+                </div>
+              )}
+              {showCustomerDesignSummary && (
                 <>
                   <div className="flex justify-between items-center text-heritage-ink/70">
-                    <span>
-                      Fabric Type:{" "}
-                      {pricing.fabricSelections.length > 0
-                        ? getNormalizedFabricName(
-                            pricing.fabricSelections[0].fabricName,
-                          )
-                        : getNormalizedFabricName(
-                            selectedFabric?.category ||
-                              selectedFabric?.name ||
-                              "",
-                          )}
+                    <span>Selected Design Price:</span>
+                    <span className="font-semibold text-heritage-green">
+                      {pricing.designPricingError
+                        ? "Pricing review required"
+                        : `${currencySymbol}${pricing.clothingPrice.toFixed(2)}`}
                     </span>
                   </div>
-                  {pricing.fabricSelections.map((selection, index) => (
+                  <p className="text-[10px] text-heritage-ink/55">
+                    Includes fabric, sewing, and tax
+                  </p>
+                  {customerDesignPriceBreakdown.baseGarmentRows.map((row) => (
                     <div
-                      key={selection.allocationId}
-                      className="flex justify-between items-center text-heritage-ink/70"
+                      key={`base-garment-${row.garmentKey}`}
+                      className="flex items-center justify-between gap-3 text-heritage-ink/70"
                     >
-                      <span>
-                        Fabric Selection {index + 1}: {selection.fabricName} (
-                        {selection.fabricCode})
-                      </span>
+                      <span>{row.label}</span>
                       <span className="font-semibold text-heritage-green">
-                        {currencySymbol}
-                        {selection.materialPrice.toFixed(2)}
+                        {currencySymbol}{row.price.toFixed(2)}
                       </span>
                     </div>
                   ))}
-                  {pricing.includesFabricAndSewing ? (
-                    <div className="rounded-lg border border-heritage-gold/20 bg-heritage-cream/30 px-3 py-2">
-                      <div className="flex items-center justify-between gap-3 text-heritage-ink/80">
-                        <span className="font-semibold">Selected Clothing Price:</span>
-                        <span className="font-mono font-bold text-heritage-green">
-                          {currencySymbol}{pricing.clothingPrice.toFixed(2)}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-[10px] font-semibold text-heritage-green/70">
-                        {pricing.fabricAllocationCount > 1
-                          ? "Includes Fabric Selection 1 and sewing costs"
-                          : "Includes fabric and sewing costs"}
-                      </p>
-                      {pricing.fabricAllocationCount > 1 && (
-                        <div className="mt-1 flex items-center justify-between text-heritage-ink/80">
-                          <span className="text-[10px] font-semibold">
-                            Additional Fabric Material:
-                          </span>
-                          <span className="font-mono font-bold text-heritage-green">
-                            {currencySymbol}
-                            {pricing.additionalFabricPrice.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex justify-between items-center text-heritage-ink/70">
+                  {customerDesignPriceBreakdown.additionalGarmentRows.map((row) => (
+                    <div
+                      key={`additional-garment-${row.assignmentId}`}
+                      className="flex items-center justify-between gap-3 text-heritage-ink/70"
+                    >
                       <span>
-                        {pricing.fabricAllocationCount > 1
-                          ? "Fabric Material Total:"
-                          : "Fabric Price:"}
+                        {additionalGarmentDisplayLabels.get(row.assignmentId) ||
+                          `Additional ${row.label}`}
                       </span>
                       <span className="font-semibold text-heritage-green">
-                        {pricing.materialPricingStatus === "resolved"
-                          ? `${currencySymbol}${pricing.totalFabricMaterialPrice.toFixed(2)}`
-                          : "Pricing unavailable"}
+                        {currencySymbol}{row.price.toFixed(2)}
                       </span>
                     </div>
-                  )}
+                  ))}
                   {pricing.fabricPricingError && (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[10px] text-red-700">
                       {pricing.fabricPricingError}
                     </div>
                   )}
-                  {pricing.fabricSewingCost > 0 && (
-                    <div className="flex justify-between items-center text-heritage-ink/70">
-                      <span>Fabric Sewing Cost:</span>
-                      <span className="font-semibold text-heritage-green">
-                        +{currencySymbol}
-                        {pricing.fabricSewingCost.toFixed(2)}
-                      </span>
+                  {pricing.designPricingError && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[10px] text-red-700">
+                      {pricing.designPricingError}
                     </div>
                   )}
                 </>
               )}
-              {selectedFabric && (() => {
-                const supportedGarmentGroups = selectedStyle
-                  ? getSupportedCustomDetailGroups(selectedStyle, selectedGarment)
-                  : [];
-                return getGarmentDetailsBreakdown(designSelections, customDetailCatalog)
+              {showCustomerDesignSummary &&
+                getGarmentDetailsBreakdown(
+                  designSelections,
+                  customDetailCatalog,
+                )
                   .filter(
                     (item) =>
-                      (!pricing.includesFabricAndSewing ||
-                       !isClothingPriceSelectionGroup(item.selectionGroup) ||
-                       !supportedGarmentGroups.includes(item.garmentGroup)) &&
-                      item.price > 0,
-                  );
-              })().map((item, idx) => (
-                <div key={idx} className="flex justify-between items-center text-heritage-ink/70">
-                  <span>{item.label}{item.value ? ': ' + item.value : ''}</span>
-                  <span className="font-semibold text-heritage-green">
-                    +{currencySymbol}{item.price.toFixed(2)}
-                  </span>
-                </div>
-              ))}
-              {selectedFabric && pricing.decorativeFeatures
+                      item.price > 0 &&
+                      (customerDesignPriceBreakdown.baseGarmentRows.length === 0 ||
+                        !isClothingPriceSelectionGroup(item.selectionGroup)),
+                  )
+                  .map((item) => {
+                    const categoryTitle =
+                      getCustomDetailSelectionGroupCustomerTitle(
+                        item.selectionGroup,
+                      );
+                    return (
+                      <div
+                        key={
+                          item.originalId ||
+                          `${item.selectionGroup}-${item.label}`
+                        }
+                        className="text-heritage-ink/70"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span>
+                            {categoryTitle}: {item.label}
+                          </span>
+                          <span className="font-semibold text-heritage-green">
+                            {currencySymbol}
+                            {item.price.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              {showCustomerDesignSummary && pricing.decorativeFeatures
                 .filter((feature) => feature.price > 0)
                 .map((feature) => (
                   <div key={`decorative-${feature.label}`} className="flex justify-between items-center text-heritage-ink/70">
@@ -5801,7 +7309,7 @@ export default function DesignStudioView({
                   </div>
                 ))
               }
-              {(selectedFabric || pricing.fabricSelections.length > 0) && pricing.traditionalAccessories
+              {showCustomerDesignSummary && pricing.traditionalAccessories
                 .filter((accessory) => accessory.price > 0)
                 .map((accessory) => (
                   <div
@@ -5815,15 +7323,7 @@ export default function DesignStudioView({
                   </div>
                 ))
               }
-              {pricing.constructionSewingCost > 0 && (
-                <div className="flex justify-between items-center text-heritage-ink/70">
-                  <span>Construction Sewing Cost:</span>
-                  <span className="font-semibold text-heritage-green">
-                    +{currencySymbol}{pricing.constructionSewingCost.toFixed(2)}
-                  </span>
-                </div>
-              )}
-              {(selectedFabric || pricing.fabricSelections.length > 0) &&
+              {showCustomerDesignSummary &&
                 liningEligible &&
                 hasLining &&
                 !hasCatalogDressLining && (
@@ -5835,7 +7335,7 @@ export default function DesignStudioView({
                 </div>
               )}
 
-              {(selectedFabric || pricing.fabricSelections.length > 0) &&
+              {showCustomerDesignSummary &&
                 designSelections.additionalCap && (
                 <div className="flex justify-between items-center text-heritage-ink/70">
                   <span>Custom Matching Fila (Accessory):</span>
@@ -5849,7 +7349,7 @@ export default function DesignStudioView({
                 </div>
               )}
 
-              {pricing.individualShipping && (
+              {pricing.showShippingSummary && pricing.individualShipping && (
                 <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
                   <div className="flex justify-between items-center">
                     <span>Lagos &rarr; Eindhoven shipping:</span>
@@ -5867,7 +7367,7 @@ export default function DesignStudioView({
                 </div>
               )}
 
-              {pricing.batchShipping && (
+              {pricing.showShippingSummary && pricing.batchShipping && (
                 <div className="flex flex-col text-amber-700 font-semibold text-[10px]">
                   <div className="flex justify-between items-center">
                     <span>Lagos &rarr; Eindhoven shipping:</span>
@@ -5891,7 +7391,8 @@ export default function DesignStudioView({
                 </div>
               )}
 
-              {batchType === "personalized" &&
+              {pricing.showShippingSummary &&
+                batchType === "personalized" &&
                 !pricing.batchShipping &&
                 pricing.batchShippingPendingReason && (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] text-amber-800">
@@ -5902,7 +7403,8 @@ export default function DesignStudioView({
                   </div>
                 )}
 
-              {batchType !== "alone" &&
+              {pricing.showShippingSummary &&
+                batchType !== "alone" &&
                 batchType !== "personalized" &&
                 !pricing.batchShipping &&
                 (!selectedStyle || !selectedGarment) && (
@@ -5912,47 +7414,51 @@ export default function DesignStudioView({
                   </div>
                 )}
 
-              <div className="flex flex-col text-[10px]">
-                <div className="flex justify-between items-center text-heritage-ink/70">
-                  <span>
-                    {pricing.finalMileShipping?.method === "PICKUP"
-                      ? `${pricing.finalMileShipping.pickupLocation || "Configured location"} pickup:`
-                      : pricing.finalMileShipping?.status === "READY"
-                        ? `Eindhoven → ${pricing.finalMileShipping.zoneLabel} (${pricing.finalMileShipping.weightBand}):`
-                        : "Final delivery:"}
-                  </span>
-                  {pricing.finalMileShipping?.status === "READY" ? (
-                    <span className="font-mono font-semibold text-heritage-green">
-                      +{currencySymbol}
-                      {(pricing.finalMileShipping.priceEur ?? 0).toFixed(2)}
-                    </span>
-                  ) : pricing.finalMileShipping?.status ===
-                    "MANUAL_QUOTE_REQUIRED" ? (
-                    <span className="font-semibold text-amber-700">
-                      Shipping quote required
-                    </span>
-                  ) : (
-                    <span className="font-semibold text-heritage-ink/50">
-                      Select in Step 7
-                    </span>
-                  )}
-                </div>
-                {pricing.finalMileShipping?.status ===
-                  "MANUAL_QUOTE_REQUIRED" && (
-                  <span className="mt-0.5 text-[9px] text-amber-700">
-                    {pricing.finalMileShipping.manualQuoteReason}
-                  </span>
-                )}
-              </div>
+              {pricing.showShippingSummary && (
+                <>
+                  <div className="flex flex-col text-[10px]">
+                    <div className="flex justify-between items-center text-heritage-ink/70">
+                      <span>
+                        {pricing.finalMileShipping?.method === "PICKUP"
+                          ? `${pricing.finalMileShipping.pickupLocation || "Configured location"} pickup:`
+                          : pricing.finalMileShipping?.status === "READY"
+                            ? `Eindhoven → ${pricing.finalMileShipping.zoneLabel} (${pricing.finalMileShipping.weightBand}):`
+                            : "Final delivery:"}
+                      </span>
+                      {pricing.finalMileShipping?.status === "READY" ? (
+                        <span className="font-mono font-semibold text-heritage-green">
+                          +{currencySymbol}
+                          {(pricing.finalMileShipping.priceEur ?? 0).toFixed(2)}
+                        </span>
+                      ) : pricing.finalMileShipping?.status ===
+                        "MANUAL_QUOTE_REQUIRED" ? (
+                        <span className="font-semibold text-amber-700">
+                          Shipping quote required
+                        </span>
+                      ) : (
+                        <span className="font-semibold text-heritage-ink/50">
+                          Select in Shipping &amp; Delivery
+                        </span>
+                      )}
+                    </div>
+                    {pricing.finalMileShipping?.status ===
+                      "MANUAL_QUOTE_REQUIRED" && (
+                      <span className="mt-0.5 text-[9px] text-amber-700">
+                        {pricing.finalMileShipping.manualQuoteReason}
+                      </span>
+                    )}
+                  </div>
 
-              {isShippingReady && (
-                <div className="flex justify-between border-t border-dashed pt-2 text-[10px] font-bold text-heritage-ink/75">
-                  <span>Total shipping:</span>
-                  <span className="font-mono">
-                    {currencySymbol}
-                    {pricing.shippingCost.toFixed(2)}
-                  </span>
-                </div>
+                  {isShippingReady && (
+                    <div className="flex justify-between border-t border-dashed pt-2 text-[10px] font-bold text-heritage-ink/75">
+                      <span>Total shipping:</span>
+                      <span className="font-mono">
+                        {currencySymbol}
+                        {pricing.shippingCost.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
 
               <div className="flex justify-between border-t pt-2.5 font-bold text-sm text-heritage-green font-serif">
@@ -5962,8 +7468,9 @@ export default function DesignStudioView({
                     : "Estimated Total So Far:"}
                 </span>
                 <span className="font-mono text-emerald-800">
-                  {currencySymbol}
-                  {subtotal.toFixed(2)}
+                  {pricing.fabricAssignmentsIncomplete
+                    ? "Complete fabric assignments"
+                    : `${currencySymbol}${subtotal.toFixed(2)}`}
                 </span>
               </div>
               {!isShippingReady && (
@@ -5982,7 +7489,9 @@ export default function DesignStudioView({
                   Garment Deposit{pricing.shippingCost > 0 ? " + Shipping" : ""})
                 </span>
                 <span className="text-sm font-bold text-heritage-green font-mono">
-                  {isShippingReady
+                  {pricing.fabricAssignmentsIncomplete
+                    ? "Pending assignments"
+                    : isShippingReady
                     ? `${currencySymbol}${depositRequired.toFixed(2)}`
                     : "Pending final delivery"}
                 </span>
@@ -5992,8 +7501,9 @@ export default function DesignStudioView({
                   Due on Hand-off
                 </span>
                 <span className="text-sm font-bold text-heritage-green font-mono">
-                  {currencySymbol}
-                  {remainingDue.toFixed(2)}
+                  {pricing.fabricAssignmentsIncomplete
+                    ? "Pending assignments"
+                    : `${currencySymbol}${remainingDue.toFixed(2)}`}
                 </span>
               </div>
             </div>
@@ -6004,23 +7514,69 @@ export default function DesignStudioView({
                 Active Selection Summary
               </span>
               <p>
-                Style:{" "}
+                {activeSelectionPresentation.isUploaded ? "Design" : "Style"}:{" "}
                 <strong className="text-heritage-green font-serif">
-                  {selectedStyle?.name || "Pending"}
+                  {activeSelectionPresentation.label}
                 </strong>
               </p>
-              <p>
-                Fabric:{" "}
-                <strong className="text-heritage-green">
-                  {selectedFabric?.name || "Pending"}
-                </strong>
-              </p>
-              <p>
-                Garment Cut:{" "}
-                <strong className="text-heritage-green">
-                  {selectedGarment?.type || "Pending"}
-                </strong>
-              </p>
+              {fabricAssignmentSummary.garmentCount > 0 && (
+                <div className="space-y-2 border-t border-heritage-gold/20 pt-2">
+                  <span className="block text-[8px] font-bold uppercase tracking-wider text-heritage-green">
+                    Garments &amp; Fabrics
+                  </span>
+                  {fabricAssignmentSummary.garmentRows.map((garment) => (
+                    <div key={garment.garmentKey} className="space-y-0.5">
+                      <p className="font-semibold text-heritage-ink">
+                        {garment.garmentLabel}
+                      </p>
+                      <p
+                        className={
+                          garment.isAssigned
+                            ? "text-heritage-green"
+                            : "text-amber-700"
+                        }
+                      >
+                        {garment.isAssigned
+                          ? garment.fabricLabel
+                          : "Fabric not assigned"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {fabricAssignmentSummary.fabricQuantityRows.length > 0 && (
+                <div className="space-y-1 border-t border-heritage-gold/20 pt-2">
+                  <span className="block text-[8px] font-bold uppercase tracking-wider text-heritage-green">
+                    Fabric Quantities
+                  </span>
+                  {fabricAssignmentSummary.fabricQuantityRows.map((fabric) => (
+                    <p key={fabric.fabricCode} className="flex justify-between gap-3">
+                      <span className="text-heritage-green">{fabric.fabricLabel}</span>
+                      <strong className="shrink-0 text-heritage-ink">
+                        {fabric.fabricQuantity}
+                      </strong>
+                    </p>
+                  ))}
+                  <p className="pt-1 text-[10px] font-semibold text-heritage-ink">
+                    {fabricAssignmentSummary.garmentCount} garment
+                    {fabricAssignmentSummary.garmentCount === 1 ? "" : "s"} • {fabricAssignmentSummary.fabricQuantity} fabric quantit
+                    {fabricAssignmentSummary.fabricQuantity === 1 ? "y" : "ies"}
+                  </p>
+                </div>
+              )}
+              {fabricAssignmentSummary.unresolvedGarmentCount > 0 && (
+                <p className="text-[10px] font-medium text-amber-700">
+                  Fabric assignments are incomplete. Complete them before proceeding.
+                </p>
+              )}
+              {!activeSelectionPresentation.isUploaded && (
+                <p>
+                  Garment Cut:{" "}
+                  <strong className="text-heritage-green">
+                    {selectedGarment?.type || "Pending"}
+                  </strong>
+                </p>
+              )}
               {isAmbiguous && (
                 <p>
                   Lower Garment Type:{" "}
@@ -6064,7 +7620,7 @@ export default function DesignStudioView({
                 Final Delivery:{" "}
                 <strong className="text-heritage-green">
                   {!pricing.finalMileShipping
-                    ? "Select in Step 7"
+                    ? "Select in Shipping & Delivery"
                     : pricing.finalMileShipping.status ===
                         "MANUAL_QUOTE_REQUIRED"
                       ? "Shipping quote required"
@@ -6072,7 +7628,7 @@ export default function DesignStudioView({
                         ? `${pricing.finalMileShipping.pickupLocation} pickup`
                         : pricing.finalMileShipping.status === "READY"
                           ? pricing.finalMileShipping.zoneLabel
-                          : "Select in Step 7"}
+                          : "Select in Shipping & Delivery"}
                 </strong>
               </p>
             </div>
@@ -6092,6 +7648,39 @@ export default function DesignStudioView({
           </div>
         </div>
       </main>
+
+      {showContextualProceedDock && (
+        <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3">
+          <div
+            data-testid="contextual-proceed-dock"
+            className="mx-auto w-full max-w-3xl rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm sm:px-4 sm:py-3.5"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs font-semibold text-heritage-green">
+                <span className="font-serif">{showUploadedDesignProceedDock ? "Your Uploaded Design" : showStyleProceedDock ? selectedStyle?.name : selectedFabric?.name}</span>{" "}
+                selected
+              </p>
+              <button
+                type="button"
+                data-testid={
+                  showUploadedDesignProceedDock
+                    ? "contextual-uploaded-design-proceed"
+                    : showStyleProceedDock
+                    ? "contextual-style-proceed"
+                    : "contextual-fabric-proceed"
+                }
+                onClick={handleNextStep}
+                className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl bg-heritage-green px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-gold hover:text-heritage-forest sm:w-auto"
+              >
+                {showUploadedDesignProceedDock
+                  ? "Continue with Uploaded Design"
+                  : journey.stepperNextLabel}
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* BESPOKE ATTIRE ADDED SUCCESS MODAL */}
       {showAddedModal && (
@@ -6213,8 +7802,25 @@ export default function DesignStudioView({
                     Fabric Selection Limit
                   </h3>
                   <p className="text-xs leading-relaxed text-heritage-ink/75 font-sans">
-                    This fabric selection can cover up to 2 fabric units. The selected garment requires another fabric allocation.
+                    {selectedFabric?.name || "Your current fabric selection"} has
+                    reached its current garment allocation. Choose how you would
+                    like to assign{" "}
+                    <strong>
+                      {fabricAllocationState.pendingFabricGarment
+                        ? getFabricGarmentLabel(
+                            fabricAllocationState.pendingFabricGarment
+                              .garmentType,
+                          )
+                        : "the selected garment"}
+                    </strong>
+                    .
                   </p>
+                  {unassignedPhysicalGarments.totalGarmentCount > 0 && (
+                    <p className="pt-1 text-[11px] font-medium text-heritage-ink/60">
+                      {unassignedPhysicalGarments.assignedGarmentCount} of{" "}
+                      {unassignedPhysicalGarments.totalGarmentCount} garments assigned
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -6224,14 +7830,14 @@ export default function DesignStudioView({
                   onClick={handleUseSameFabricAgain}
                   className="w-full rounded-xl bg-heritage-green px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest"
                 >
-                  Use the Same Fabric Again
+                  Apply Same Fabric
                 </button>
                 <button
                   type="button"
                   onClick={handleChooseAnotherFabric}
                   className="w-full rounded-xl border border-heritage-gold/40 bg-heritage-gold/10 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-gold/20"
                 >
-                  Choose Another Fabric
+                  Add / Choose Another Fabric
                 </button>
                 <button
                   type="button"

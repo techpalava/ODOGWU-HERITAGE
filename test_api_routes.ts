@@ -6,6 +6,8 @@ import healthHandler from "./api/health.js";
 import bootstrapHandler from "./api/auth/bootstrap.js";
 import pinLoginHandler from "./api/auth/pin-login.js";
 import pinRegisterHandler from "./api/auth/pin-register.js";
+import uploadedDesignTransferHandler from "./api/orders/transfer-uploaded-design.js";
+import uploadedDesignOwnershipClaimHandler from "./api/orders/create-uploaded-design-ownership-claim.js";
 import type {
   HttpRequest,
   HttpResponse,
@@ -107,12 +109,16 @@ async function run() {
     "./api/auth/bootstrap.ts",
     "./api/auth/pin-login.ts",
     "./api/auth/pin-register.ts",
+    "./api/orders/transfer-uploaded-design.ts",
+    "./api/orders/create-uploaded-design-ownership-claim.ts",
   ]);
 
   assert.equal(typeof healthHandler, "function");
   assert.equal(typeof bootstrapHandler, "function");
   assert.equal(typeof pinLoginHandler, "function");
   assert.equal(typeof pinRegisterHandler, "function");
+  assert.equal(typeof uploadedDesignTransferHandler, "function");
+  assert.equal(typeof uploadedDesignOwnershipClaimHandler, "function");
 
   const health = createResponse();
   await healthHandler(request("GET"), health.response);
@@ -143,6 +149,28 @@ async function run() {
   assert.equal(register.state.headers.allow, "POST");
   assert.deepEqual(register.state.body, {
     error: "Method not allowed.",
+  });
+
+  const transfer = createResponse();
+  await uploadedDesignTransferHandler(
+    request("POST", { body: {} }),
+    transfer.response,
+  );
+  assert.equal(transfer.state.status, 401);
+  assert.deepEqual(transfer.state.body, {
+    error: "Firebase authentication is required.",
+    code: "AUTH_FAILED",
+  });
+
+  const ownershipClaim = createResponse();
+  await uploadedDesignOwnershipClaimHandler(
+    request("POST", { body: {} }),
+    ownershipClaim.response,
+  );
+  assert.equal(ownershipClaim.state.status, 401);
+  assert.deepEqual(ownershipClaim.state.body, {
+    error: "Firebase authentication is required.",
+    code: "CLAIM_AUTH_REQUIRED",
   });
 
   console.log(

@@ -22,6 +22,13 @@
     "test:fabric-allocation-state": "tsx test_fabric_allocation_state.ts",
     "test:fabric-allocation-persistence": "tsx test_fabric_allocation_persistence.ts",
     "test:fabric-allocation-pricing": "tsx test_fabric_allocation_pricing.ts",
+    "test:fabric-customer-flow": "tsx test_fabric_customer_flow.ts",
+    "test:custom-detail-physical-garments": "tsx test_custom_detail_physical_garments.ts",
+    "test:fabric-primary-replacement": "tsx test_fabric_primary_replacement.ts",
+    "test:uploaded-design-transfer": "tsx test_uploaded_design_transfer.ts",
+    "test:uploaded-design-ownership-claim": "tsx test_uploaded_design_ownership_claim.ts",
+    "test:uploaded-design-checkout-preparation": "tsx test_uploaded_design_checkout_preparation.ts",
+    "test:uploaded-design-order-regression": "tsx test_uploaded_design_order_regression.ts",
     "test:firestore-security": "tsx test_firestore_security.ts"
   },
   "dependencies": {

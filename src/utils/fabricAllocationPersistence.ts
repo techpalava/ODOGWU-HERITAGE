@@ -2,9 +2,11 @@ import { FabricCapacityEngine } from "../engine/FabricCapacityEngine";
 import type {
   CartItem,
   FabricAllocation,
+  AdditionalGarmentDependencyStatus,
   FabricCapacityGarmentSpec,
   FabricGarmentAssignment,
   FabricGarmentType,
+  FabricGarmentRole,
   GuestDesignDraft,
   MasterOrder,
 } from "../types";
@@ -18,6 +20,7 @@ const GARMENT_TYPES: readonly FabricGarmentType[] = [
   "skirt",
   "kaftan",
   "full_length_gown",
+  "bum_shorts",
   "agbada",
   "other",
 ];
@@ -39,6 +42,14 @@ const normalizeLowerGarmentType = (
   value: unknown,
 ): LowerGarmentType | undefined =>
   value === "trousers" || value === "skirt" ? value : undefined;
+
+const normalizeGarmentRole = (value: unknown): FabricGarmentRole | undefined =>
+  value === "main" || value === "additional" ? value : undefined;
+
+const normalizeAdditionalDependencyStatus = (
+  value: unknown,
+): AdditionalGarmentDependencyStatus | undefined =>
+  value === "valid" || value === "orphaned" ? value : undefined;
 
 const normalizeGarmentSpecStrict = (
   value: unknown,
@@ -96,12 +107,44 @@ const normalizeGarmentAssignmentStrict = (
     ...(lowerGarmentType ? { lowerGarmentType } : {}),
   };
 
+  const sourceRole = normalizeGarmentRole(value.sourceRole);
+  if (hasOwn(value, "sourceRole") && !sourceRole) return null;
+  const mainGarmentKey =
+    typeof value.mainGarmentKey === "string" && value.mainGarmentKey
+      ? value.mainGarmentKey
+      : undefined;
+  if (hasOwn(value, "mainGarmentKey") && !mainGarmentKey) return null;
+  const mainGarmentType = normalizeGarmentType(value.mainGarmentType);
+  if (hasOwn(value, "mainGarmentType") && !mainGarmentType) return null;
+  const dependencyStatus = normalizeAdditionalDependencyStatus(
+    value.dependencyStatus,
+  );
+  if (hasOwn(value, "dependencyStatus") && !dependencyStatus) return null;
+  if (sourceRole === "additional" && !mainGarmentType) return null;
+
+  if (sourceRole) assignment.sourceRole = sourceRole;
+  if (mainGarmentKey) assignment.mainGarmentKey = mainGarmentKey;
+  if (mainGarmentType) assignment.mainGarmentType = mainGarmentType;
+  if (dependencyStatus) assignment.dependencyStatus = dependencyStatus;
+
   if (hasOwn(value, "garmentSpec")) {
     const garmentSpec = normalizeGarmentSpecStrict(value.garmentSpec);
     if (!garmentSpec) {
       return null;
     }
     assignment.garmentSpec = garmentSpec;
+  }
+
+  const isLegacyAdditionalGarment =
+    !sourceRole &&
+    (code.startsWith("CUSTOM_DETAIL_ADDITIONAL_GARMENT_") ||
+      assignment.garmentSpec?.key.startsWith(
+        "custom-detail:additional_physical_garment:",
+      ));
+  if (isLegacyAdditionalGarment) {
+    assignment.sourceRole = "additional";
+    assignment.mainGarmentType = garmentType;
+    assignment.dependencyStatus = "valid";
   }
 
   return assignment;
@@ -234,6 +277,16 @@ export const cloneFabricAllocations = (
         : {}),
       ...(assignment.garmentSpec
         ? { garmentSpec: { ...assignment.garmentSpec } }
+        : {}),
+      ...(assignment.sourceRole ? { sourceRole: assignment.sourceRole } : {}),
+      ...(assignment.mainGarmentKey
+        ? { mainGarmentKey: assignment.mainGarmentKey }
+        : {}),
+      ...(assignment.mainGarmentType
+        ? { mainGarmentType: assignment.mainGarmentType }
+        : {}),
+      ...(assignment.dependencyStatus
+        ? { dependencyStatus: assignment.dependencyStatus }
         : {}),
     })),
   }));
@@ -409,6 +462,10 @@ export const toDeterministicFabricAllocationHashInput = (
           garmentType: assignment.garmentType,
           fabricUnits: assignment.fabricUnits,
           lowerGarmentType: assignment.lowerGarmentType || null,
+          sourceRole: assignment.sourceRole || null,
+          mainGarmentKey: assignment.mainGarmentKey || null,
+          mainGarmentType: assignment.mainGarmentType || null,
+          dependencyStatus: assignment.dependencyStatus || null,
           garmentSpec: assignment.garmentSpec
             ? {
                 key: assignment.garmentSpec.key,

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type {
   BusinessSettings,
   CustomDetailGarmentContext,
@@ -15,6 +16,8 @@ import {
   CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION,
   type StandardCustomDetailSelectionGroup,
   CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE,
+  NECK_DESIGN_SUBCATEGORY_BY_OPTION_ID,
+  NECK_DESIGN_SUBCATEGORY_ORDER,
 } from "./src/config/GarmentDetailsConfig";
 import {
   calculateCustomDetailsPriceBreakdown,
@@ -66,6 +69,7 @@ const getSelectionGroups = (
     garment,
   )
     .filter((group) => !isAdditionalClothesCostSection(group.id))
+    .filter((group) => group.id !== "additional_physical_garment")
     .map((group) => group.id);
 
 const expectGroups = (
@@ -89,6 +93,7 @@ const getOptionIdsByGroup = (
   Object.fromEntries(
     groupApplicableCustomDetails(style, catalog, garment)
       .filter((group) => !isAdditionalClothesCostSection(group.id))
+      .filter((group) => group.id !== "additional_physical_garment")
       .map((group) => [
         group.id,
         group.options.map((option) => option.id),
@@ -359,6 +364,44 @@ assert.deepEqual(
   "every selection group follows its centralized option order",
 );
 
+const neckOptionIds = expectedOptionIdsByGroup.neck_design;
+assert.deepEqual(
+  NECK_DESIGN_SUBCATEGORY_ORDER,
+  ["No Collar", "Vertical Collar", "Flat Collar"],
+  "Neck subcategory display order must remain customer-facing and deterministic",
+);
+assert.deepEqual(
+  neckOptionIds.filter(
+    (optionId) =>
+      NECK_DESIGN_SUBCATEGORY_BY_OPTION_ID[optionId] === "No Collar",
+  ),
+  ["neck_no_round", "neck_no_v", "neck_no_u"],
+  "No Collar subcategory should include only collarless neck options",
+);
+assert.deepEqual(
+  neckOptionIds.filter(
+    (optionId) =>
+      NECK_DESIGN_SUBCATEGORY_BY_OPTION_ID[optionId] === "Vertical Collar",
+  ),
+  ["neck_vert_round", "neck_vert_v", "neck_vert_u"],
+  "Vertical Collar subcategory should include only vertical-collar neck options",
+);
+assert.deepEqual(
+  neckOptionIds.filter(
+    (optionId) =>
+      NECK_DESIGN_SUBCATEGORY_BY_OPTION_ID[optionId] === "Flat Collar",
+  ),
+  ["neck_flat_round", "neck_flat_v", "neck_flat_u"],
+  "Flat Collar subcategory should include only flat-collar neck options",
+);
+assert.equal(
+  neckOptionIds.filter(
+    (optionId) => NECK_DESIGN_SUBCATEGORY_BY_OPTION_ID[optionId] !== undefined,
+  ).length,
+  neckOptionIds.length,
+  "Every configured neck option must be assigned to exactly one customer-facing subcategory",
+);
+
 const shuffledCatalog = deterministicallyShuffle(
   SEED_CUSTOM_DETAIL_CATALOG.map((option, index) => ({
     ...option,
@@ -476,8 +519,6 @@ assert.deepEqual(changedToShorts.customDetails, {
   shirt_construction: "shirt_std_short",
   shirt_pockets: "shirt_pocket_0",
   neck_design: "neck_no_round",
-  trouser_fastening: "trouser_rope",
-  trouser_pockets: "trouser_pocket_none",
 });
 assert.deepEqual(changedToShorts.decorativeFeatures, ["Embroidery"]);
 assert.deepEqual(changedToShorts.accessories, ["Traditional Hat"]);
@@ -489,11 +530,7 @@ const changedToDress = filterDesignSelectionsForCustomDetails(
   { code: "L1" },
 );
 assert.deepEqual(changedToDress.customDetails, {
-  shirt_construction: "shirt_std_short",
-  shirt_pockets: "shirt_pocket_0",
   neck_design: "neck_no_round",
-  trouser_fastening: "trouser_rope",
-  trouser_pockets: "trouser_pocket_none",
 });
 assert.deepEqual(changedToDress.decorativeFeatures, ["Embroidery"]);
 assert.deepEqual(changedToDress.accessories, ["Traditional Hat"]);
@@ -535,22 +572,20 @@ assert.deepEqual(Object.keys(restoredFemaleDraft.customDetails || {}).sort(), [
   "dress_construction",
   "dress_pockets",
   "neck_design",
-  "shirt_construction",
-  "trouser_fastening",
 ].sort());
 assert.deepEqual(
   restoredFemaleDraft.customDetailSnapshots?.map(
     (snapshot) => snapshot.selectionGroup,
   ).sort(),
-  ["dress_construction", "shirt_construction"].sort(),
+  ["dress_construction"],
 );
 assert.equal(
   calculateCustomDetailsPriceBreakdown(
     restoredFemaleDraft,
     SEED_CUSTOM_DETAIL_CATALOG,
   ).clothingPrice,
-  225,
-  "selectable restored selections affect pricing normally",
+  70,
+  "only applicable restored selections affect pricing",
 );
 
 const femaleOnlyNeckOption: CustomDetailOption = {
@@ -594,22 +629,20 @@ const staleSameGroupSelection = filterDesignSelectionsForCustomDetails(
 );
 assert.deepEqual(
   staleSameGroupSelection.customDetails,
-  {
-    neck_design: femaleOnlyNeckOption.id,
-  },
-  "demographic eligibility does not prevent manual selection",
+  {},
+  "demographically ineligible selections are removed",
 );
 assert.deepEqual(
   staleSameGroupSelection.customDetailSnapshots?.map((s) => s.optionId),
-  [femaleOnlyNeckOption.id],
+  [],
 );
 assert.equal(
   calculateCustomDetailsPriceBreakdown(
     staleSameGroupSelection,
     demographicCatalog,
   ).total,
-  9,
-  "manual demographic selections affect pricing normally",
+  0,
+  "ineligible hidden selections do not affect pricing",
 );
 
 const validShirtSelections: DesignSelections = {
@@ -688,8 +721,8 @@ const protectedPricing = calculateDesignPricing({
 assert.ok(protectedPricing);
 assert.equal(
   protectedPricing.clothingPrice,
-  145,
-  "a selectable trouser choice is included in authoritative pricing",
+  65,
+  "a hidden trouser choice is excluded from authoritative pricing",
 );
 // Parent display section grouping tests
 const allApplicableGroups = groupApplicableCustomDetails(
@@ -834,6 +867,7 @@ const standardSelectableGroupIds = selectableGroups
 assert.deepEqual(
   standardSelectableGroupIds,
   [
+    "additional_physical_garment",
     "shirt_construction",
     "shirt_pockets",
     "dress_construction",
@@ -859,7 +893,7 @@ assert.deepEqual(
   "required groups remain based on base garment"
 );
 
-// 7. An unconventional valid selection survives filterDesignSelectionsForCustomDetails(...)
+// 7. A valid but inapplicable selection is removed during sanitation.
 const unconventionalSelections: DesignSelections = {
   customDetails: {
     shirt_construction: "shirt_std_short",
@@ -876,9 +910,8 @@ assert.deepEqual(
   filteredUnconventional.customDetails,
   {
     shirt_construction: "shirt_std_short",
-    dress_construction: "dress_std_short",
   },
-  "unconventional valid selections survive sanitation"
+  "inapplicable selections are removed during sanitation"
 );
 
 // 8. Invalid/nonexistent/inactive selections are still removed
@@ -956,14 +989,17 @@ const testDesignSelections: DesignSelections = {
   },
 };
 
-// 1. Preserved: unconventional selections survive sanitation
+// 1. Inapplicable selections are removed during sanitation.
 const sanitizedSelections = filterDesignSelectionsForCustomDetails(
   femaleStyle,
   testDesignSelections,
   SEED_CUSTOM_DETAIL_CATALOG,
   { code: "L1" }
 );
-assert.deepEqual(sanitizedSelections.customDetails, testDesignSelections.customDetails);
+assert.deepEqual(sanitizedSelections.customDetails, {
+  dress_construction: "dress_std_short",
+  dress_pockets: "dress_pocket_0",
+});
 
 // 2 & 4. Authoritative pricing contributes exactly once (no duplicate charge)
 const pricingResult = calculateDesignPricing({
@@ -995,10 +1031,8 @@ const pricingResult = calculateDesignPricing({
 });
 
 assert.ok(pricingResult);
-// Base dress construction (€70) + unconventional shirt construction (€65) = €135 clothingPrice
-assert.equal(pricingResult.clothingPrice, 135);
-// Unconventional additional pocket upgrade (€5) = €5 constructionUpgradesPrice
-assert.equal(pricingResult.constructionUpgradesPrice, 5);
+assert.equal(pricingResult.clothingPrice, 70);
+assert.equal(pricingResult.constructionUpgradesPrice, 0);
 assert.equal(
   pricingResult.garmentSubtotal,
   pricingResult.clothingPrice +
@@ -1009,7 +1043,7 @@ assert.equal(
   "custom details contribute exactly once to subtotal"
 );
 
-// 3. Breakdown/source consumed by Active Selection Summary includes unconventional options
+// 3. Breakdown/source contains only applicable options.
 const customBreakdown = getCustomDetailsBreakdown(sanitizedSelections, SEED_CUSTOM_DETAIL_CATALOG);
 const baseGarmentGroups = getSupportedCustomDetailGroups(femaleStyle, { code: "L1" });
 
@@ -1022,20 +1056,11 @@ const summaryItems = customBreakdown.filter(
 
 // Under L1 (Dress) base garment:
 // - dress_construction (garmentGroup "dress") is in baseGarmentGroups, so it is filtered out (as its price is in the base Selected Clothing Price).
-// - shirt_construction (garmentGroup "shirt") is NOT in baseGarmentGroups, so it is PRESERVED and DISPLAYED!
-// - dress_pockets (garmentGroup "dress", not clothing price) is PRESERVED and DISPLAYED!
-// - standard_shorts_additional (garmentGroup "standard_shorts", not clothing price) is PRESERVED and DISPLAYED!
+// - dress_pockets (garmentGroup "dress", not clothing price) is displayed.
 
 const summarySelectionGroups = summaryItems.map((item) => item.selectionGroup);
 assert.ok(!summarySelectionGroups.includes("dress_construction"), "Base dress_construction is hidden");
-assert.ok(summarySelectionGroups.includes("shirt_construction"), "Unconventional shirt_construction is shown");
 assert.ok(summarySelectionGroups.includes("dress_pockets"), "Conventional dress_pockets is shown");
-assert.ok(summarySelectionGroups.includes("standard_shorts_additional"), "Unconventional standard_shorts_additional is shown");
-
-// 5. Additional Clothes Costs selected from unconventional garment category also appear in breakdown and displayed items
-const shortsAdditionalItem = summaryItems.find((item) => item.selectionGroup === "standard_shorts_additional");
-assert.ok(shortsAdditionalItem);
-assert.equal(shortsAdditionalItem.price, 5);
 
 // 6. Existing conventional selections remain unchanged
 const dressPocketsItem = summaryItems.find((item) => item.selectionGroup === "dress_pockets");
@@ -1046,9 +1071,7 @@ assert.equal(dressPocketsItem.price, 0);
 const separationDesign: DesignSelections = {
   customDetails: {
     dress_construction: "dress_std_short", // €70 (base garment L1)
-    shirt_construction: "shirt_long_midlong", // €75 (unconventional priced custom detail)
     dress_pockets: "dress_pocket_0", // €0 (zero-cost "No Pockets")
-    standard_shorts_additional: ["standard_shorts_additional_combat_pockets"], // €5 (unconventional priced additional cost)
     personalized_additional: ["personalized_additional_evaluation"], // €0 (requires evaluation / zero-cost additional cost)
   },
   decorativeFeatures: ["Name Monogram"], // €12
@@ -1085,10 +1108,8 @@ const separationPricing = calculateDesignPricing({
 });
 
 assert.ok(separationPricing);
-// Authoritative customDetailsPrice = 5 (shorts_additional) + 12 (monogram) = 17
-assert.equal(separationPricing.customDetailsPrice, 17);
-// Authoritative clothingPrice = 70 (dress_construction) + 75 (shirt_construction) = 145
-assert.equal(separationPricing.clothingPrice, 145);
+assert.equal(separationPricing.customDetailsPrice, 12);
+assert.equal(separationPricing.clothingPrice, 70);
 
 const breakdownForSeparation = getCustomDetailsBreakdown(separationDesign, SEED_CUSTOM_DETAIL_CATALOG);
 
@@ -1098,35 +1119,25 @@ const pricedSummaryItems = breakdownForSeparation.filter((item) => item.price > 
 // Active Selection Summary filtering (non-priced items)
 const nonPricedSummaryItems = breakdownForSeparation.filter((item) => item.price === 0);
 
-// 1. +€75 Custom Detail remains in monetary breakdown
-const shirtConstructionItem = pricedSummaryItems.find((i) => i.selectionGroup === "shirt_construction");
-assert.ok(shirtConstructionItem);
-assert.equal(shirtConstructionItem.price, 75);
-
-// 2. €0 "No Pockets" does not appear in monetary breakdown
+// 1. €0 "No Pockets" does not appear in monetary breakdown
 const dressPocketsInPriced = pricedSummaryItems.find((i) => i.selectionGroup === "dress_pockets");
 assert.ok(!dressPocketsInPriced);
 
-// 3. €0 "No Pockets" remains available for Active Selection Summary
+// 2. €0 "No Pockets" remains available for Active Selection Summary
 const dressPocketsInNonPriced = nonPricedSummaryItems.find((i) => i.selectionGroup === "dress_pockets");
 assert.ok(dressPocketsInNonPriced);
 assert.equal(dressPocketsInNonPriced.price, 0);
 
-// 4. Name Monogram +€12 remains in monetary breakdown
+// 3. Name Monogram +€12 remains in monetary breakdown
 const monogramFeature = separationPricing.decorativeFeatures.find((f) => f.label === "Name Monogram");
 assert.ok(monogramFeature);
 assert.equal(monogramFeature.price, 12);
 
-// 5. Monogram Placement €0 is excluded from monetary breakdown but remains available as a selection detail
+// 4. Monogram Placement €0 is excluded from monetary breakdown but remains available as a selection detail
 const placementLabel = getMonogramPlacementLabel(separationDesign.monogramPlacement);
 assert.equal(placementLabel, "Left Chest");
 
-// 6. +€5 Additional Clothes Cost remains in monetary breakdown
-const combatPocketsItem = pricedSummaryItems.find((i) => i.selectionGroup === "standard_shorts_additional");
-assert.ok(combatPocketsItem);
-assert.equal(combatPocketsItem.price, 5);
-
-// 7. €0 Additional Clothes Cost is excluded from monetary breakdown but remains available as selection detail
+// 5. €0 Additional Clothes Cost is excluded from monetary breakdown but remains available as selection detail
 const evaluationInPriced = pricedSummaryItems.find((i) => i.selectionGroup === "personalized_additional");
 assert.ok(!evaluationInPriced);
 const evaluationInNonPriced = nonPricedSummaryItems.find((i) => i.selectionGroup === "personalized_additional");
@@ -1152,7 +1163,7 @@ const displayedPriceSummaryItems = breakdownForSeparation.filter(
     item.price > 0
 );
 const sumPricedBreakdown = displayedPriceSummaryItems.reduce((acc, item) => acc + item.price, 0);
-assert.equal(sumPricedBreakdown, 75 + 5);
+assert.equal(sumPricedBreakdown, 0);
 
 // Contextual Summary Titles Tests
 const contextualTestDesign: DesignSelections = {
@@ -1588,7 +1599,8 @@ const pricing2 = calculateDesignPricing({
 });
 assert.equal(pricing1.customDetailsPrice - pricing2.customDetailsPrice, 10, "Clearing standard pockets saves exactly 10.00 euros");
 
-// 6. Required groups do not permit None
+// 6. Required groups retain protected helper behavior by default, while the
+// Step 3 UI can explicitly clear them to represent its UI-only None state.
 const requiredGroupsMock = getRequiredCustomDetailGroups(testStyle, normalizedCat, mockGarment);
 assert.ok(requiredGroupsMock.includes("shirt_construction"), "shirt_construction is required");
 const canClearReq = canClearCustomDetailSelectionGroup(
@@ -1599,6 +1611,102 @@ const canClearReq = canClearCustomDetailSelectionGroup(
   mockGarment,
 );
 assert.equal(canClearReq, false, "Required group cannot be cleared (does not permit None)");
+const requiredNoneSelection = clearCustomDetailSelectionGroup(
+  selectionsWithRequired,
+  "shirt_construction",
+  testStyle,
+  testCatalog,
+  mockGarment,
+  true,
+);
+assert.equal(
+  requiredNoneSelection.customDetails?.shirt_construction,
+  undefined,
+  "Step 3 None can clear a required group without creating a synthetic option",
+);
+
+const legacyNotedSelection = {
+  customDetails: { shirt_pockets: "sc_pocket_1" },
+  customDetailNotes: { sc_pocket_1: "Place on the left side." },
+  customDetailSnapshots: [
+    {
+      optionId: "sc_pocket_1",
+      label: "With 1 chest pocket",
+      description: "On the left or right side of the chest",
+      garmentGroup: "shirt",
+      selectionGroup: "shirt_pockets",
+      priceCents: 0,
+      note: "Place on the left side.",
+    },
+  ],
+} as unknown as DesignSelections & {
+  customDetailNotes: Record<string, string>;
+};
+const sanitizedLegacySelection = filterDesignSelectionsForCustomDetails(
+  testStyle,
+  legacyNotedSelection,
+  testCatalog,
+  mockGarment,
+);
+assert.equal(
+  Object.prototype.hasOwnProperty.call(
+    sanitizedLegacySelection,
+    "customDetailNotes",
+  ),
+  false,
+  "Legacy per-detail note maps are ignored and removed during hydration",
+);
+assert.equal(
+  Object.prototype.hasOwnProperty.call(
+    sanitizedLegacySelection.customDetailSnapshots?.[0] || {},
+    "note",
+  ),
+  false,
+  "Legacy per-detail snapshot notes are ignored and removed during hydration",
+);
+const legacyBreakdown = getCustomDetailsBreakdown(
+  legacyNotedSelection,
+  testCatalog,
+);
+const authoritativePocketOption = normalizedCat.find(
+  (option) => option.id === "sc_pocket_1",
+);
+assert.equal(legacyBreakdown[0]?.label, authoritativePocketOption?.label);
+assert.equal(
+  legacyBreakdown[0]?.price,
+  (authoritativePocketOption?.priceCents || 0) / 100,
+);
+assert.equal(
+  Object.prototype.hasOwnProperty.call(legacyBreakdown[0] || {}, "note"),
+  false,
+  "Price Summary breakdown rows contain only the selected option and price",
+);
+const clearedLegacySelection = clearCustomDetailSelectionGroup(
+  legacyNotedSelection,
+  "shirt_pockets",
+  testStyle,
+  testCatalog,
+  mockGarment,
+);
+assert.equal(
+  getCustomDetailsBreakdown(clearedLegacySelection, testCatalog).length,
+  0,
+  "The UI-only None action removes the selected option from Price Summary",
+);
+const designStudioSource = readFileSync(
+  "src/components/DesignStudioView.tsx",
+  "utf8",
+);
+assert.doesNotMatch(
+  designStudioSource,
+  /Note for \{opt\.label\}|Add a tailoring note for this selection/,
+  "Step 3 renders Custom Detail options without per-option note controls",
+);
+assert.doesNotMatch(
+  designStudioSource,
+  /customDetailNotes|handleNoteChange/,
+  "Design Studio no longer owns per-custom-detail note state or handlers",
+);
 
 // 7. Every active single-choice selection group has deterministic behavior
 const activeSingleChoiceGroups = getSelectableCustomDetailGroups(testCatalog).filter(g => !g.options.some(opt => opt.allowMultiple));
@@ -1851,7 +1959,7 @@ assert.ok(l8TrouserReqs.includes("dress_construction"), "L8.1 trousers must requ
 assert.ok(l8TrouserReqs.includes("trouser_fastening"), "L8.1 trousers must require trousers");
 assert.ok(!l8TrouserReqs.includes("skirt_length"), "L8.1 trousers must not require skirt");
 
-// 10. Non-included groups remain selectable & 11. Explicit unconventional selection persists.
+// 10. Non-included garment selections are removed.
 const unconventionalDesign: DesignSelections = {
   customDetails: {
     shirt_construction: "shirt_std_short",
@@ -1864,7 +1972,11 @@ const filteredDesign = filterDesignSelectionsForCustomDetails(
   realNormalizedCat,
   g52Garment,
 );
-assert.equal(filteredDesign.customDetails?.dress_construction, "dress_std_short", "Unconventional selection must persist");
+assert.equal(
+  filteredDesign.customDetails?.dress_construction,
+  undefined,
+  "Inapplicable garment selections must be removed",
+);
 
 // 12. Explicit unconventional selection does NOT make that garment included.
 const resolvedGroups = getSupportedCustomDetailGroups(ladiesTestStyle, g52Garment);
@@ -1874,7 +1986,7 @@ assert.ok(!resolvedGroups.includes("dress"), "Dress should not become included d
 const reqsWithUnconventional = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, g52Garment);
 assert.ok(!reqsWithUnconventional.includes("dress_construction"), "Dress required groups must not be activated by unconventional selection");
 
-// 14. Required included groups never show None & 15. Optional non-included groups show None
+// 14. Requiredness follows only the included garment groups.
 const isRequiredIncluded = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, g52Garment).includes("shirt_construction");
 const isRequiredNonIncluded = getRequiredCustomDetailGroups(ladiesTestStyle, realNormalizedCat, g52Garment).includes("dress_construction");
 assert.equal(isRequiredIncluded, true, "shirt_construction (included required) must have isRequired true");

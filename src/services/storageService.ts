@@ -21,6 +21,10 @@ import { normalizeCustomDetailCatalog } from "../utils/catalogHelpers";
 import { ImageService } from "./imageService";
 import { legacyCompatMap } from "../utils/legacyCompat";
 import {
+  normalizeCartItemDesignDomain,
+  normalizeMasterOrderDesignDomain,
+} from "../utils/cartDesignDomain";
+import {
   collection,
   doc,
   getDoc,
@@ -437,7 +441,9 @@ export const StorageService = {
   getCartItems: (): CartItem[] => {
     if (typeof window === "undefined") return [];
     const saved = localStorage.getItem("odogwu_cart_items");
-    return StorageService.safeParse<CartItem[]>(saved) || [];
+    return (StorageService.safeParse<CartItem[]>(saved) || []).map(
+      normalizeCartItemDesignDomain,
+    );
   },
   saveCartItems: (items: CartItem[]) => {
     if (typeof window === "undefined") return;
@@ -470,7 +476,7 @@ export const StorageService = {
           getAccountCartStorageKey(canonicalEmail),
         ),
       ) || []
-    );
+    ).map(normalizeCartItemDesignDomain);
   },
   saveAccountCartItems: (
     canonicalEmail: string,
@@ -544,7 +550,9 @@ export const StorageService = {
 
   // Orders
   getOrders: async (): Promise<MasterOrder[]> => {
-    return await StorageService.fetchCollection<MasterOrder>("orders");
+    return (await StorageService.fetchCollection<MasterOrder>("orders")).map(
+      normalizeMasterOrderDesignDomain,
+    );
   },
   saveOrders: async (orders: MasterOrder[]) => {
     await StorageService.saveCollection(
@@ -597,7 +605,9 @@ export const StorageService = {
         callback(
           snapshot.docs.map(
             (orderDocument) =>
-              orderDocument.data() as MasterOrder,
+              normalizeMasterOrderDesignDomain(
+                orderDocument.data() as MasterOrder,
+              ),
           ),
         );
       },

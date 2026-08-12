@@ -179,6 +179,7 @@ assert.deepEqual(
     { code: "L1" },
   ).map((group) => group.id),
   [
+    "additional_physical_garment",
     "dress_construction",
     "dress_pockets",
     "neck_design",
@@ -499,9 +500,6 @@ const changedToDress = filterDesignSelectionsForCustomDetails(
   { code: "L1" },
 );
 assert.deepEqual(changedToDress.customDetails, {
-  standard_shorts_additional: [
-    "standard_shorts_additional_combat_pockets",
-  ],
   personalized_additional: ["personalized_additional_evaluation"],
 });
 assert.equal(
@@ -509,8 +507,8 @@ assert.equal(
     changedToDress,
     SEED_CUSTOM_DETAIL_CATALOG,
   ).constructionUpgradesPrice,
-  5,
-  "a selectable Combat selection is included in pricing",
+  0,
+  "inapplicable Combat selections are excluded from pricing",
 );
 
 const femaleAdditionsChangedToMale = filterDesignSelectionsForCustomDetails(
@@ -528,10 +526,6 @@ const femaleAdditionsChangedToMale = filterDesignSelectionsForCustomDetails(
   { code: "G1" },
 );
 assert.deepEqual(femaleAdditionsChangedToMale.customDetails, {
-  dress_additional: [
-    DRESS_LINING_OPTION_ID,
-    "dress_additional_net",
-  ],
   personalized_additional: ["personalized_additional_evaluation"],
 });
 assert.equal(
@@ -539,8 +533,8 @@ assert.equal(
     femaleAdditionsChangedToMale,
     SEED_CUSTOM_DETAIL_CATALOG,
   ).constructionUpgradesPrice,
-  20,
-  "selectable Dress additions affect pricing normally",
+  0,
+  "inapplicable Dress additions are excluded from pricing",
 );
 
 const restoredDraft = filterDesignSelectionsForCustomDetails(
@@ -564,16 +558,13 @@ assert.deepEqual(restoredDraft.customDetails, {
     DRESS_LINING_OPTION_ID,
     "dress_additional_net",
   ],
-  standard_shorts_additional: [
-    "standard_shorts_additional_combat_pockets",
-  ],
 });
 assert.equal(
   calculateCustomDetailsPriceBreakdown(
     restoredDraft,
     SEED_CUSTOM_DETAIL_CATALOG,
   ).constructionUpgradesPrice,
-  25,
+  20,
 );
 const restoredSnapshots = getCustomDetailSnapshots(
   restoredDraft,
@@ -581,7 +572,7 @@ const restoredSnapshots = getCustomDetailSnapshots(
 );
 assert.deepEqual(
   restoredSnapshots.map((snapshot) => snapshot.optionId),
-  [DRESS_LINING_OPTION_ID, "dress_additional_net", "standard_shorts_additional_combat_pockets"],
+  [DRESS_LINING_OPTION_ID, "dress_additional_net"],
   "restored multi-select drafts retain deterministic snapshot ordering",
 );
 

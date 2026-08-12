@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
-import { FabricCapacityEngine } from "./src/engine/FabricCapacityEngine";
-import type { FabricAllocationState, FabricGarmentAssignment } from "./src/types";
+import {
+  FABRIC_APPEND_GARMENT_CHOICES,
+  FabricCapacityEngine,
+  type AppendableFabricGarmentType,
+} from "./src/engine/FabricCapacityEngine";
+import type {
+  FabricAllocationState,
+  FabricGarmentAssignment,
+} from "./src/types";
 
 const summarize = (assignment: FabricGarmentAssignment) => {
   const summary: Record<string, unknown> = {
@@ -67,9 +74,17 @@ const findAllocation = (state: FabricAllocationState, allocationId: string) => {
   return allocation;
 };
 
+const getAppendChoice = (garmentType: AppendableFabricGarmentType) => {
+  const choice = FABRIC_APPEND_GARMENT_CHOICES.find(
+    (candidate) => candidate.id === garmentType,
+  );
+  assert(choice, `Missing append choice for ${garmentType}`);
+  return choice;
+};
+
 const emptyState = FabricAllocationStateEngine.initialize();
 
-const stateG1 = FabricAllocationStateEngine.syncForSelectedFabric(
+const stateG1 = FabricAllocationStateEngine.syncPrimaryGarmentSelection(
   emptyState,
   "FABRIC_TEST",
   {
@@ -90,7 +105,7 @@ assert.deepEqual(resolvedG1.garments.map(summarize), [
   { garmentKey: "G1:shirt", code: "G1", garmentType: "shirt", fabricUnits: 1 },
 ]);
 
-const stateG1Repeated = FabricAllocationStateEngine.syncForSelectedFabric(
+const stateG1Repeated = FabricAllocationStateEngine.syncPrimaryGarmentSelection(
   stateG1,
   "FABRIC_TEST",
   {
@@ -104,7 +119,7 @@ assertAllocationAssignment(stateG1Repeated, 1, [
 ]);
 assertNoPendingGarment(stateG1Repeated);
 
-const stateG5FromG1 = FabricAllocationStateEngine.syncForSelectedFabric(
+const stateG5FromG1 = FabricAllocationStateEngine.syncPrimaryGarmentSelection(
   stateG1,
   "FABRIC_TEST",
   {
@@ -119,7 +134,7 @@ assertAllocationAssignment(stateG5FromG1, 2, [
 ]);
 assertNoPendingGarment(stateG5FromG1);
 
-const stateUnknownFromG5 = FabricAllocationStateEngine.syncForSelectedFabric(
+const stateUnknownFromG5 = FabricAllocationStateEngine.syncPrimaryGarmentSelection(
   stateG5FromG1,
   "FABRIC_TEST",
   {
@@ -134,7 +149,7 @@ assertAllocationAssignment(stateUnknownFromG5, 2, [
 ]);
 assertNoPendingGarment(stateUnknownFromG5);
 
-const stateG5 = FabricAllocationStateEngine.syncForSelectedFabric(emptyState, "FABRIC_A", {
+const stateG5 = FabricAllocationStateEngine.syncPrimaryGarmentSelection(emptyState, "FABRIC_A", {
   code: "G5.2",
 });
 assert.equal(stateG5.fabricAllocations.length, 1);
@@ -152,7 +167,131 @@ assert.deepEqual(resolvedG5.garments.map(summarize), [
   { garmentKey: "G5.2:trouser", code: "G5.2", garmentType: "trouser", fabricUnits: 1 },
 ]);
 
-const stateL7WithoutLowerType = FabricAllocationStateEngine.syncForSelectedFabric(
+const explicitAppendStart = FabricAllocationStateEngine.createAllocationForFabric(
+  emptyState,
+  "FABRIC_APPEND",
+);
+const explicitAppendShirt = FabricAllocationStateEngine.attemptAppendGarment(
+  explicitAppendStart,
+  getAppendChoice("shirt").selection,
+);
+const explicitAppendShirtTrouser =
+  FabricAllocationStateEngine.attemptAppendGarment(
+    explicitAppendShirt,
+    getAppendChoice("trouser").selection,
+  );
+assertAllocationAssignment(explicitAppendShirtTrouser, 2, [
+  {
+    garmentKey: "append:shirt",
+    code: "APPEND_SHIRT",
+    garmentType: "shirt",
+    fabricUnits: 1,
+  },
+  {
+    garmentKey: "append:trouser",
+    code: "APPEND_TROUSER",
+    garmentType: "trouser",
+    fabricUnits: 1,
+  },
+]);
+assertNoPendingGarment(explicitAppendShirtTrouser);
+
+const explicitAppendOverflow = FabricAllocationStateEngine.attemptAppendGarment(
+  explicitAppendShirtTrouser,
+  getAppendChoice("skirt").selection,
+);
+assertAllocationAssignment(explicitAppendOverflow, 2, [
+  {
+    garmentKey: "append:shirt",
+    code: "APPEND_SHIRT",
+    garmentType: "shirt",
+    fabricUnits: 1,
+  },
+  {
+    garmentKey: "append:trouser",
+    code: "APPEND_TROUSER",
+    garmentType: "trouser",
+    fabricUnits: 1,
+  },
+]);
+assertPendingGarment(explicitAppendOverflow, "append:skirt");
+
+const explicitAppendSameFabric =
+  FabricAllocationStateEngine.useSameFabricForPendingGarment(
+    explicitAppendOverflow,
+  );
+assert.equal(explicitAppendSameFabric.fabricAllocations.length, 2);
+assert.equal(
+  explicitAppendSameFabric.fabricAllocations[0].fabricCode,
+  "FABRIC_APPEND",
+);
+assert.equal(
+  explicitAppendSameFabric.fabricAllocations[1].fabricCode,
+  "FABRIC_APPEND",
+);
+assert.notEqual(
+  explicitAppendSameFabric.fabricAllocations[0].allocationId,
+  explicitAppendSameFabric.fabricAllocations[1].allocationId,
+);
+assert.deepEqual(
+  explicitAppendSameFabric.fabricAllocations[1].garmentAssignments.map(summarize),
+  [
+    {
+      garmentKey: "append:skirt",
+      code: "APPEND_SKIRT",
+      garmentType: "skirt",
+      fabricUnits: 1,
+    },
+  ],
+);
+
+const explicitAppendChooseAnotherStarted =
+  FabricAllocationStateEngine.beginChooseAnotherFabric(
+    explicitAppendOverflow,
+  );
+assertPendingGarment(explicitAppendChooseAnotherStarted, "append:skirt");
+assert.equal(
+  explicitAppendChooseAnotherStarted.awaitingFabricForPendingGarment,
+  true,
+);
+const explicitAppendChooseAnotherResolved =
+  FabricAllocationStateEngine.assignPendingGarmentToFabric(
+    explicitAppendChooseAnotherStarted,
+    "FABRIC_APPEND_B",
+  );
+assert.equal(explicitAppendChooseAnotherResolved.fabricAllocations.length, 2);
+assert.equal(
+  explicitAppendChooseAnotherResolved.fabricAllocations[0].fabricCode,
+  "FABRIC_APPEND",
+);
+assert.equal(
+  explicitAppendChooseAnotherResolved.fabricAllocations[1].fabricCode,
+  "FABRIC_APPEND_B",
+);
+assert.deepEqual(
+  explicitAppendChooseAnotherResolved.fabricAllocations[1].garmentAssignments.map(
+    summarize,
+  ),
+  [
+    {
+      garmentKey: "append:skirt",
+      code: "APPEND_SKIRT",
+      garmentType: "skirt",
+      fabricUnits: 1,
+    },
+  ],
+);
+assertNoPendingGarment(explicitAppendChooseAnotherResolved);
+
+const explicitAppendCancelled =
+  FabricAllocationStateEngine.cancelPendingGarment(explicitAppendOverflow);
+assert.deepEqual(
+  explicitAppendCancelled.fabricAllocations,
+  explicitAppendOverflow.fabricAllocations,
+);
+assertNoPendingGarment(explicitAppendCancelled);
+
+const stateL7WithoutLowerType = FabricAllocationStateEngine.syncPrimaryGarmentSelection(
   stateG5,
   "FABRIC_A",
   {
@@ -215,12 +354,9 @@ const chooseAnotherStarted = FabricAllocationStateEngine.beginChooseAnotherFabri
 assert.equal(chooseAnotherStarted.awaitingFabricForPendingGarment, true);
 assertPendingGarment(chooseAnotherStarted, "L7:skirt");
 
-const chooseAnotherSameCodeResolved = FabricAllocationStateEngine.syncForSelectedFabric(
+const chooseAnotherSameCodeResolved = FabricAllocationStateEngine.assignPendingGarmentToFabric(
   chooseAnotherStarted,
   "FABRIC_A",
-  {
-    code: "G5.2",
-  },
 );
 assert.equal(chooseAnotherSameCodeResolved.fabricAllocations.length, 2);
 const sameCodeNewAllocation = chooseAnotherSameCodeResolved.fabricAllocations.find(
@@ -237,12 +373,9 @@ assert.deepEqual(
 );
 assertNoPendingGarment(chooseAnotherSameCodeResolved);
 
-const chooseAnotherResolved = FabricAllocationStateEngine.syncForSelectedFabric(
+const chooseAnotherResolved = FabricAllocationStateEngine.assignPendingGarmentToFabric(
   chooseAnotherStarted,
   "FABRIC_B",
-  {
-    code: "G5.2",
-  },
 );
 assert.equal(chooseAnotherResolved.fabricAllocations.length, 2);
 const originalFromAnotherFlow = findAllocation(
@@ -286,7 +419,7 @@ assert.deepEqual(
 );
 assertNoPendingGarment(cancelledOverflow);
 
-const stateKaftan = FabricAllocationStateEngine.syncForSelectedFabric(emptyState, "FABRIC_KAFTAN", {
+const stateKaftan = FabricAllocationStateEngine.syncPrimaryGarmentSelection(emptyState, "FABRIC_KAFTAN", {
   code: "KAFTAN",
   garmentSpec: {
     key: "KAFTAN:kaftan",
@@ -329,7 +462,7 @@ assert.deepEqual(
 );
 assertNoPendingGarment(stateKaftanSameFabric);
 
-const stateSharedOne = FabricAllocationStateEngine.syncForSelectedFabric(emptyState, "FAB_SHARED", {
+const stateSharedOne = FabricAllocationStateEngine.syncPrimaryGarmentSelection(emptyState, "FAB_SHARED", {
   code: "G5.2",
 });
 const stateSharedOverflow = FabricAllocationStateEngine.attemptAppendGarment(stateSharedOne, {
@@ -348,7 +481,7 @@ assert.equal(stateSharedTwo.fabricAllocations[0].fabricCode, "FAB_SHARED");
 assert.equal(stateSharedTwo.fabricAllocations[1].fabricCode, "FAB_SHARED");
 assert.equal(stateSharedTwo.activeAllocationId, stateSharedTwo.fabricAllocations[1].allocationId);
 
-const stateUnknown = FabricAllocationStateEngine.syncForSelectedFabric(stateG5, "FABRIC_A", {
+const stateUnknown = FabricAllocationStateEngine.syncPrimaryGarmentSelection(stateG5, "FABRIC_A", {
   code: "UNKNOWN",
 });
 assert.equal(stateUnknown.fabricAllocations.length, 1);

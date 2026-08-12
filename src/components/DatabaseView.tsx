@@ -59,6 +59,7 @@ import {
   FutureDiscount,
   DiscountSettings,
   DiscountPlanningRule,
+  FabricGarmentType,
   OutfitType,
 } from "../types";
 import {
@@ -112,6 +113,14 @@ import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { BatchManagementPanel } from "./BatchManagementPanel";
+import {
+  getFabricGarmentLabel,
+} from "../engine/FabricCapacityEngine";
+import {
+  FABRIC_GARMENT_CAPACITY_UNITS,
+  STYLE_BASE_GARMENT_TYPES,
+  createStyleBaseGarmentSpec,
+} from "../config/StyleFabricCapacityConfig";
 
 type TabType =
   | "documentation"
@@ -1583,7 +1592,23 @@ export default function DatabaseView({
                       <select
                         required
                         value={editingCatalogOption?.selectionGroup || ""}
-                        onChange={(e) => setEditingCatalogOption({ ...editingCatalogOption, selectionGroup: e.target.value })}
+                        onChange={(e) => {
+                          const selectionGroup = e.target.value;
+                          const garmentSpec =
+                            editingCatalogOption?.fabricCapacityGarmentSpec;
+                          setEditingCatalogOption({
+                            ...editingCatalogOption,
+                            selectionGroup,
+                            ...(garmentSpec
+                              ? {
+                                  fabricCapacityGarmentSpec: {
+                                    ...garmentSpec,
+                                    key: `custom-detail:${selectionGroup}:${garmentSpec.garmentType}`,
+                                  },
+                                }
+                              : {}),
+                          });
+                        }}
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       >
                         {ALL_CUSTOM_DETAIL_SELECTION_GROUPS.map(g => (
@@ -1683,6 +1708,93 @@ export default function DatabaseView({
                           Allow Multiple
                         </span>
                       </label>
+                    </div>
+
+                    <div className="space-y-3 sm:col-span-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 p-3">
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(
+                            editingCatalogOption?.fabricCapacityGarmentSpec,
+                          )}
+                          onChange={(event) => {
+                            if (!event.target.checked) {
+                              const nextOption = { ...editingCatalogOption };
+                              delete nextOption.fabricCapacityGarmentSpec;
+                              setEditingCatalogOption(nextOption);
+                              return;
+                            }
+                            const garmentType: FabricGarmentType = "shirt";
+                            setEditingCatalogOption({
+                              ...editingCatalogOption,
+                              allowMultiple: false,
+                              informational: false,
+                              fabricCapacityGarmentSpec: {
+                                key: `custom-detail:${editingCatalogOption?.selectionGroup || "additional_physical_garment"}:${garmentType}`,
+                                garmentType,
+                                fabricUnits:
+                                  FABRIC_GARMENT_CAPACITY_UNITS[garmentType],
+                              },
+                            });
+                          }}
+                          className="h-4 w-4 rounded text-heritage-green"
+                        />
+                        <span className="font-bold text-heritage-green">
+                          Adds one physical garment
+                        </span>
+                      </label>
+                      {editingCatalogOption?.fabricCapacityGarmentSpec && (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <label className="font-bold text-heritage-green">
+                              Physical Garment Type
+                            </label>
+                            <select
+                              value={
+                                editingCatalogOption.fabricCapacityGarmentSpec
+                                  .garmentType
+                              }
+                              onChange={(event) => {
+                                const garmentType = event.target
+                                  .value as FabricGarmentType;
+                                setEditingCatalogOption({
+                                  ...editingCatalogOption,
+                                  allowMultiple: false,
+                                  fabricCapacityGarmentSpec: {
+                                    key: `custom-detail:${editingCatalogOption.selectionGroup}:${garmentType}`,
+                                    garmentType,
+                                    fabricUnits:
+                                      FABRIC_GARMENT_CAPACITY_UNITS[
+                                        garmentType
+                                      ],
+                                  },
+                                });
+                              }}
+                              className="w-full rounded-lg border border-heritage-gold/20 bg-white px-3 py-2"
+                            >
+                              {STYLE_BASE_GARMENT_TYPES.filter(
+                                (garmentType) => garmentType !== "agbada",
+                              ).map((garmentType) => (
+                                <option key={garmentType} value={garmentType}>
+                                  {getFabricGarmentLabel(garmentType)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="font-bold text-heritage-green">
+                              Fabric Capacity
+                            </label>
+                            <div className="rounded-lg border border-heritage-gold/20 bg-white px-3 py-2">
+                              {
+                                editingCatalogOption.fabricCapacityGarmentSpec
+                                  .fabricUnits
+                              }{" "}
+                              fabric unit(s)
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     
                     <div className="col-span-1 sm:col-span-2 flex justify-end gap-3 mt-4 pt-4 border-t border-heritage-gold/20">
@@ -1886,6 +1998,71 @@ export default function DatabaseView({
                       <h4 className="font-bold text-heritage-green text-sm mb-2 border-b border-heritage-gold/20 pb-2">Step 3 Custom Detail Configuration</h4>
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2 col-span-1 sm:col-span-2">
+                          <label className="font-bold text-heritage-green block">
+                            Base Physical Garments
+                          </label>
+                          <p className="text-[10px] text-heritage-ink/60">
+                            These garments are included automatically when the
+                            customer selects this design style. They drive
+                            Custom Details, fabric capacity, and shipping pieces.
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {STYLE_BASE_GARMENT_TYPES.map((garmentType) => {
+                              const checked = Boolean(
+                                editingItem.fabricCapacityComposition?.some(
+                                  (spec: any) =>
+                                    spec.garmentType === garmentType,
+                                ),
+                              );
+                              return (
+                                <label
+                                  key={garmentType}
+                                  className="flex cursor-pointer items-center gap-2 rounded border border-gray-150 bg-white px-3 py-1.5 text-xs"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(event) => {
+                                      const current = Array.isArray(
+                                        editingItem.fabricCapacityComposition,
+                                      )
+                                        ? editingItem.fabricCapacityComposition
+                                        : [];
+                                      const fabricCapacityComposition = event
+                                        .target.checked
+                                        ? [
+                                            ...current.filter(
+                                              (spec: any) =>
+                                                spec.garmentType !== garmentType,
+                                            ),
+                                            createStyleBaseGarmentSpec(
+                                              garmentType,
+                                            ),
+                                          ]
+                                        : current.filter(
+                                            (spec: any) =>
+                                              spec.garmentType !== garmentType,
+                                          );
+                                      setEditingItem({
+                                        ...editingItem,
+                                        fabricCapacityComposition,
+                                      });
+                                    }}
+                                    className="h-4 w-4 rounded text-heritage-green"
+                                  />
+                                  <span>
+                                    {getFabricGarmentLabel(garmentType)} ({
+                                      FABRIC_GARMENT_CAPACITY_UNITS[
+                                        garmentType
+                                      ]
+                                    })
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
                         <div className="space-y-2">
                           <label className="font-bold text-heritage-green block">Represented Genders</label>
                           <div className="flex gap-4">
@@ -3994,6 +4171,10 @@ export default function DatabaseView({
                         ],
                         outfitType: "Senator Set",
                         garmentComposition: "2-Piece Set",
+                        fabricCapacityComposition: [
+                          createStyleBaseGarmentSpec("shirt"),
+                          createStyleBaseGarmentSpec("trouser"),
+                        ],
                         customDetailConfig: {
                           representedGenders: ["male", "female"],
                           featuresMaleAndFemale: true,

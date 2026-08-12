@@ -18,6 +18,7 @@ import {
   CustomGroup,
   OrderContext,
   Customer,
+  ImmutableUploadedOrderDesignReference,
 } from "./types";
 import { StorageService } from "./services/storageService";
 import { auth } from "./services/firebase";
@@ -42,8 +43,17 @@ import {
 import {
   getPersistableCartItemFabricAllocationsForOrder,
 } from "./utils/fabricAllocationPersistence";
+import { getCartDesignLabel } from "./utils/cartDesignDomain";
 import { revalidateCartForCheckout } from "./utils/checkoutValidation";
 import { isBatchPricingRoute } from "./utils/designPricing";
+import {
+  customerDesignOrderTransferClient,
+  UploadedDesignTransferClientError,
+} from "./services/customerDesignOrderTransfer";
+import {
+  clearUploadedDesignCheckoutPreparation,
+  prepareUploadedDesignOrderReferences,
+} from "./utils/uploadedDesignCheckoutPreparation";
 
 // Lazy load modular view components for performance optimization
 const HomeView = lazy(() => import("./components/HomeView"));
@@ -244,6 +254,7 @@ export default function App() {
   const [checkoutCardCvc, setCheckoutCardCvc] = useState<string>("315");
   const [isPaymentProcessing, setIsPaymentProcessing] =
     useState<boolean>(false);
+  const checkoutSubmissionInProgress = React.useRef(false);
 
   const triggerNotification = (
     message: string,
@@ -323,12 +334,15 @@ export default function App() {
     const currentItem = stampCurrentCartShippingItem(newItem);
     setCartItems((prev) => [...prev, currentItem]);
     triggerNotification(
-      `"${item.style.name}" added to your tailoring cart!`,
+      `"${getCartDesignLabel(currentItem)}" added to your tailoring cart!`,
       "success",
     );
   };
 
-  const handleExecuteDepositPayment = () => {
+  const handleExecuteDepositPayment = async () => {
+    if (checkoutSubmissionInProgress.current) {
+      return;
+    }
     if (!currentUser) {
       setIsCheckoutPaymentOpen(false);
       setCheckoutIntent(true);
@@ -347,6 +361,7 @@ export default function App() {
       customDetailCatalog: store.customDetailCatalog,
       businessSettings,
       depositRatio: checkoutDepositRatio,
+      allowPendingUploadedDesignTransfer: true,
     });
     if (validation.changed) {
       setCartItems(validation.items);
@@ -366,8 +381,83 @@ export default function App() {
       return;
     }
 
-    const checkoutItems = [...validation.items];
-    const pricingSnapshot = validation.pricing;
+    const checkoutIdentity = auth.currentUser;
+    if (!checkoutIdentity) {
+      setIsCheckoutPaymentOpen(false);
+      setCheckoutIntent(true);
+      setActiveTab("login");
+      triggerNotification(
+        "Sign in or create an account to securely complete your order.",
+        "info",
+      );
+      return;
+    }
+
+    checkoutSubmissionInProgress.current = true;
+    setIsPaymentProcessing(true);
+    let immutableReferencesByItemId: Record<
+      string,
+      {
+        sourceKey: string;
+        designReferenceId: string;
+        orderReference: ImmutableUploadedOrderDesignReference;
+      }
+    >;
+    let preparedCheckoutId: string;
+    try {
+      const prepared = await prepareUploadedDesignOrderReferences({
+        items: validation.items,
+        identity: checkoutIdentity,
+        client: customerDesignOrderTransferClient,
+      });
+      immutableReferencesByItemId = prepared.preparedByItemId;
+      preparedCheckoutId = prepared.checkoutId;
+    } catch (error) {
+      checkoutSubmissionInProgress.current = false;
+      setIsPaymentProcessing(false);
+      setIsCheckoutPaymentOpen(false);
+      setIsCartOpen(true);
+      triggerNotification(
+        error instanceof UploadedDesignTransferClientError &&
+          (error.code === "CLAIM_EXPIRED" || error.code === "CLAIM_INVALID")
+          ? "Your secure design authorization needs to be refreshed. Your cart is still saved."
+          : "We couldn't securely prepare your uploaded design for checkout. Please try again.",
+        "info",
+      );
+      return;
+    }
+
+    const preparedValidation = revalidateCartForCheckout(validation.items, {
+      fabrics,
+      styles,
+      batches,
+      customDetailCatalog: store.customDetailCatalog,
+      businessSettings,
+      depositRatio: checkoutDepositRatio,
+      preparedUploadedDesignReferences: immutableReferencesByItemId,
+    });
+    if (preparedValidation.changed) {
+      setCartItems(preparedValidation.items);
+    }
+    if (
+      !preparedValidation.canProceed ||
+      preparedValidation.pricing.total === null ||
+      preparedValidation.pricing.depositDueNow === null
+    ) {
+      checkoutSubmissionInProgress.current = false;
+      setIsPaymentProcessing(false);
+      setIsCheckoutPaymentOpen(false);
+      setIsCartOpen(true);
+      triggerNotification(
+        preparedValidation.blockers[0] ||
+          "Review the latest pricing and shipping details before payment.",
+        "info",
+      );
+      return;
+    }
+
+    const checkoutItems = [...preparedValidation.items];
+    const pricingSnapshot = preparedValidation.pricing;
     let paymentAllocations: ReturnType<
       typeof calculateCartPaymentAllocations
     >;
@@ -379,6 +469,10 @@ export default function App() {
       );
     } catch (error) {
       console.error("Payment allocation failed:", error);
+      checkoutSubmissionInProgress.current = false;
+      setIsPaymentProcessing(false);
+      setIsCheckoutPaymentOpen(false);
+      setIsCartOpen(true);
       triggerNotification(
         "The checkout totals could not be reconciled. Please review the cart before payment.",
         "info",
@@ -391,9 +485,7 @@ export default function App() {
         allocation,
       ]),
     );
-    const checkoutId = `CHECKOUT-${Date.now()}-${Math.floor(
-      Math.random() * 10000,
-    )}`;
+    const checkoutId = preparedCheckoutId;
     const transactionId = `TXN-${Date.now()}`;
     const paymentDate = new Date().toISOString();
     const finalMileQuoteByGroup = new Map(
@@ -408,6 +500,10 @@ export default function App() {
       if (!allocation) {
         throw new Error(`Missing payment allocation for ${item.id}.`);
       }
+      const immutableReference = immutableReferencesByItemId[item.id];
+      if (item.cartDesignSource?.kind === "uploaded" && !immutableReference) {
+        throw new Error("Uploaded design transfer preparation is missing.");
+      }
       const shipmentGroupId = getFinalMileShipmentGroupId(item);
       const finalMileShipping =
         finalMileQuoteByGroup.get(shipmentGroupId);
@@ -415,8 +511,37 @@ export default function App() {
         getPersistableCartItemFabricAllocationsForOrder(item);
 
       return {
+        ownerUid: checkoutIdentity.uid,
         customer: item.customer,
-        style: item.style,
+        ...(item.style ? { style: item.style } : {}),
+        ...(item.cartDesignSource?.kind === "uploaded"
+          ? {
+              orderDesignSource: {
+                kind: "uploaded" as const,
+                sourceKey: item.cartDesignSource.sourceKey,
+                displayLabel: item.cartDesignSource.displayLabel,
+                fabricCapacityComposition:
+                  item.cartDesignSource.fabricCapacityComposition.map((spec) => ({
+                    ...spec,
+                  })),
+                demographic: item.cartDesignSource.demographic,
+                imageState: {
+                  kind: "immutable_order_asset" as const,
+                  orderReference: {
+                    ...immutableReference!.orderReference,
+                  },
+                },
+              },
+            }
+          : item.cartDesignSource?.kind === "catalog"
+            ? {
+                orderDesignSource: {
+                  kind: "catalog" as const,
+                  sourceKey: item.cartDesignSource.sourceKey,
+                  styleId: item.cartDesignSource.styleId,
+                },
+              }
+            : {}),
         fabric: item.fabric,
         ...(persistableFabricAllocations !== undefined
           ? { fabricAllocations: persistableFabricAllocations }
@@ -471,27 +596,42 @@ export default function App() {
       };
     });
 
-    setIsPaymentProcessing(true);
     // Simulate payment processing...
-    setTimeout(() => {
-      setOrders((previous) => [...previous, ...completedOrders]);
-      setIsPaymentProcessing(false);
-      setIsCheckoutPaymentOpen(false);
-      setIsCartOpen(false);
-      setCartItems([]);
-      triggerNotification(
-        "Deposit authorized securely! Atelier notified.",
-        "success"
-      );
-      // Re-evaluate journey to determine post-checkout destination
-      const nextJourney = CustomerJourneyEngine.getCurrentJourney({
-        currentUser: store.currentUser as any,
-        drafts: [],
-        activeOrders: [...store.orders, ...completedOrders],
-        historicalOrders: store.historicalOrders,
-        allBatches: store.batches,
-      });
-      setActiveTab(nextJourney.destination as any);
+    setTimeout(async () => {
+      try {
+        // The immutable asset already exists. Persist the order reference before
+        // declaring the simulated payment flow successful or clearing the cart.
+        await Promise.all(completedOrders.map((order) => StorageService.saveOrder(order)));
+        setOrders((previous) => [...previous, ...completedOrders]);
+        checkoutSubmissionInProgress.current = false;
+        setIsPaymentProcessing(false);
+        setIsCheckoutPaymentOpen(false);
+        setIsCartOpen(false);
+        setCartItems([]);
+        clearUploadedDesignCheckoutPreparation();
+        triggerNotification(
+          "Deposit authorized securely! Atelier notified.",
+          "success"
+        );
+        // Re-evaluate journey to determine post-checkout destination
+        const nextJourney = CustomerJourneyEngine.getCurrentJourney({
+          currentUser: store.currentUser as any,
+          drafts: [],
+          activeOrders: [...store.orders, ...completedOrders],
+          historicalOrders: store.historicalOrders,
+          allBatches: store.batches,
+        });
+        setActiveTab(nextJourney.destination as any);
+      } catch {
+        checkoutSubmissionInProgress.current = false;
+        setIsPaymentProcessing(false);
+        setIsCheckoutPaymentOpen(false);
+        setIsCartOpen(true);
+        triggerNotification(
+          "We couldn't save your prepared order. Your cart is still available to retry.",
+          "info",
+        );
+      }
     }, 2000);
   };
 
@@ -679,6 +819,7 @@ export default function App() {
       customDetailCatalog: store.customDetailCatalog,
       businessSettings,
       depositRatio: checkoutDepositRatio,
+      allowPendingUploadedDesignTransfer: true,
     });
     if (validation.changed) {
       setCartItems(validation.items);
@@ -1401,7 +1542,7 @@ export default function App() {
                 {isPaymentProcessing ? (
                   <>
                     <span className="animate-spin inline-block h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
-                    Authorizing Escrow...
+                    Preparing your uploaded design...
                   </>
                 ) : (
                   <>

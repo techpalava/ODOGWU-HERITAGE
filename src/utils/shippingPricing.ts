@@ -4,6 +4,7 @@ import type {
   CartShippingSnapshot,
   DeliveryAddress,
   DeliverySelection,
+  FabricAllocation,
   FinalMileDestinationZone,
   FinalMileShippingSnapshot,
   FinalMileWeightBand,
@@ -12,6 +13,7 @@ import type {
   ShippingQuoteStatus,
 } from "../types";
 import { clampRatio, roundMoney } from "./money";
+import { inspectCartItemFabricAllocations } from "./fabricAllocationPersistence";
 
 export const LAGOS_EINDHOVEN_EXCHANGE_RATE_NGN_PER_EUR = 1600;
 export const GARMENT_WEIGHT_KG = 5 / 12;
@@ -227,9 +229,43 @@ export const getGarmentPieceCount = (composition?: string): number => {
   return 1;
 };
 
+export const countPhysicalGarmentAssignments = (
+  fabricAllocations: FabricAllocation[] | undefined,
+): number =>
+  fabricAllocations?.reduce(
+    (total, allocation) => total + allocation.garmentAssignments.length,
+    0,
+  ) ?? 0;
+
+export const resolveShippingGarmentPieceCount = ({
+  fabricAllocations,
+  legacyComposition,
+}: {
+  fabricAllocations?: FabricAllocation[];
+  legacyComposition?: string;
+}): number => {
+  const modernPieceCount = countPhysicalGarmentAssignments(fabricAllocations);
+  return modernPieceCount > 0
+    ? modernPieceCount
+    : getGarmentPieceCount(legacyComposition);
+};
+
 export const resolveAuthoritativeGarmentPieceCount = (
   item: CartItem,
 ): number | null => {
+  const allocationInspection = inspectCartItemFabricAllocations(item);
+  if (allocationInspection.status === "invalid") {
+    return null;
+  }
+  if (allocationInspection.status === "valid") {
+    const modernPieceCount = countPhysicalGarmentAssignments(
+      allocationInspection.fabricAllocations,
+    );
+    if (modernPieceCount > 0) {
+      return modernPieceCount;
+    }
+  }
+
   if (
     typeof item.garmentPieceCount === "number" &&
     Number.isInteger(item.garmentPieceCount) &&

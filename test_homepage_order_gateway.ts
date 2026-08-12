@@ -248,14 +248,24 @@ const joinMarkup = renderToStaticMarkup(
     onManageSourcingBatches: () => undefined,
   }),
 );
-assert.match(joinMarkup, /Join Avatars/);
+assert.match(joinMarkup, /Join an Existing Batch \(Avatars\)/);
+assert.match(joinMarkup, /Join Current Batch/);
 assert.match(joinMarkup, /Individual Custom Order/);
 assert.match(joinMarkup, /Ready to Wear/);
 assert.match(joinMarkup, /Ready to Wear - Coming Soon/);
+assert.match(
+  joinMarkup,
+  /1-9 Garments \| Ships from Eindhoven \(Additional Cost Applies\)/,
+);
+assert.equal(
+  (joinMarkup.match(/Ships from Eindhoven/g) || []).length,
+  1,
+  "Only Ready to Wear should show the Eindhoven shipping copy",
+);
 assert.doesNotMatch(joinMarkup, /Order Type [ABCD]/);
 assert.match(joinMarkup, /Manage Sourcing Batches/);
 assert.ok(
-  joinMarkup.indexOf("Join Avatars") <
+  joinMarkup.indexOf("Join an Existing Batch (Avatars)") <
     joinMarkup.indexOf("Create a Private Batch") &&
     joinMarkup.indexOf("Create a Private Batch") <
       joinMarkup.indexOf("Individual Custom Order") &&
@@ -263,6 +273,21 @@ assert.ok(
       joinMarkup.indexOf("Ready to Wear"),
   "Batch actions must appear before individual and ready-to-wear actions",
 );
+
+const unnamedBatchMarkup = renderToStaticMarkup(
+  createElement(HomepageOrderGateway, {
+    state: {
+      ...openState,
+      joinBatch: { ...openState.joinBatch!, name: " " },
+    },
+    onStartIndividualOrder: () => undefined,
+    onJoinBatch: () => undefined,
+    onCreatePrivateBatch: () => undefined,
+    onBrowseGallery: () => undefined,
+  }),
+);
+assert.match(unnamedBatchMarkup, /Join an Existing Batch/);
+assert.doesNotMatch(unnamedBatchMarkup, /Join an Existing Batch \(\s*\)/);
 
 const customerMarkup = renderToStaticMarkup(
   createElement(HomepageOrderGateway, {

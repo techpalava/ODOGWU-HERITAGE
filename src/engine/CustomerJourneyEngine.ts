@@ -68,9 +68,9 @@ export class CustomerJourneyEngine {
             if (currentStep === 1) {
                 stepperPreviousLabel = "";
             } else if (currentStep === 2) {
-                stepperPreviousLabel = "Back to Fabric";
+                stepperPreviousLabel = "Back to Garment / Style";
             } else if (currentStep === 3) {
-                stepperPreviousLabel = "Back to Style";
+                stepperPreviousLabel = "Back to Fabric";
             } else if (currentStep === 4) {
                 stepperPreviousLabel = "Back to Custom Details";
             } else if (currentStep === 5) {
@@ -78,16 +78,18 @@ export class CustomerJourneyEngine {
             } else if (currentStep === 6) {
                 stepperPreviousLabel = "Back to Sizing Method";
             } else if (currentStep === 7) {
-                stepperPreviousLabel = "Back to Measurements";
+                stepperPreviousLabel = "Back to Custom Details";
             } else if (currentStep === 8) {
                 stepperPreviousLabel = "Back to Delivery Details";
             } else if (currentStep === totalSteps) {
-                stepperPreviousLabel = "Back to Special Directives";
+                stepperPreviousLabel = "Back to Shipping & Delivery";
             }
             
             stepperNextLabel = "Continue to Next Step";
-            if (currentStep === 1) stepperNextLabel = "Proceed with this Fabric";
-            if (currentStep === 2) stepperNextLabel = "Proceed with this Style";
+            if (currentStep === 1) stepperNextLabel = "Proceed with this Garment / Style";
+            if (currentStep === 2) stepperNextLabel = "Proceed with this Fabric";
+            if (currentStep === 3) stepperNextLabel = "Continue to Shipping & Delivery";
+            if (currentStep === 7) stepperNextLabel = "Review Order Details";
             if (currentStep === totalSteps - 1) stepperNextLabel = "Review Order Details";
             
             stepperSubmitLabel = "Secure My Order Selection";

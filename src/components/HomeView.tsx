@@ -72,17 +72,10 @@ export default function HomeView({
   };
   const isBatchGatewayLoading = !hasLoadedBatches;
   const canJoinActiveBatch = Boolean(orderGatewayState.joinBatch);
-  const activeBatchName = orderGatewayState.joinBatch?.name || "";
   const heroPrimaryAction = isBatchGatewayLoading
     ? "Loading Order Options"
-    : canJoinActiveBatch
-      ? `Join ${activeBatchName}`
-      : "Create Custom Order";
-  const firstHeroPrimaryAction = isBatchGatewayLoading
-    ? "Loading Order Options"
-    : canJoinActiveBatch
-      ? `Join ${activeBatchName}`
-      : "Create Group";
+    : "Explore Options";
+  const firstHeroPrimaryAction = heroPrimaryAction;
   const handleHeroPrimaryAction = isBatchGatewayLoading
     ? undefined
     : canJoinActiveBatch

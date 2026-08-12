@@ -17,7 +17,7 @@ import {
 } from "./catalogHelpers";
 import { filterDesignSelectionsForDecorativeFeatures } from "./decorativePricing";
 import {
-  calculateAuthoritativeDesignPricing,
+  calculateDesignPricing,
   CHECKOUT_DESIGN_PRICING_VERSION,
 } from "./designPricing";
 import {
@@ -32,6 +32,13 @@ import {
   getStoredShippingCost,
   migrateLegacyCartShippingItems,
 } from "./shippingPricing";
+import {
+  getCartDesignLabel,
+  inspectCartDesignDomain,
+  UPLOADED_DESIGN_TRUSTED_TRANSFER_BLOCKER,
+} from "./cartDesignDomain";
+import { getCartItemConfigurationHash } from "../services/guestOrderSessionService";
+import type { PreparedUploadedDesignReference } from "./uploadedDesignCheckoutPreparation";
 
 export interface CheckoutRevalidationContext {
   fabrics: Fabric[];
@@ -40,6 +47,12 @@ export interface CheckoutRevalidationContext {
   customDetailCatalog: CustomDetailOption[];
   businessSettings: BusinessSettings;
   depositRatio: number;
+  /** Only the checkout coordinator may use this while it is about to transfer. */
+  allowPendingUploadedDesignTransfer?: boolean;
+  /** Exact immutable references returned by the trusted transfer endpoint. */
+  preparedUploadedDesignReferences?: Readonly<
+    Record<string, PreparedUploadedDesignReference>
+  >;
 }
 
 export interface CheckoutRevalidationResult {
@@ -90,6 +103,42 @@ const getStableSourceFingerprint = (
     hash = Math.imul(hash, 16777619);
   }
   return `PRICE-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+};
+
+const getUploadedSourceFingerprint = (
+  item: CartItem,
+  materialPricing: ResolvedFabricAllocationPricing,
+  catalog: CustomDetailOption[],
+  businessSettings: BusinessSettings,
+): string => {
+  const source = inspectCartDesignDomain(item).source;
+  const materialSources = materialPricing.allocationLines.map((line) => ({
+    allocationId: line.allocationId,
+    fabricCode: line.fabricCode,
+    materialPrice: line.materialPrice,
+    stockStatus: line.fabric.stockStatus,
+  }));
+  const input = JSON.stringify({
+    version: CHECKOUT_DESIGN_PRICING_VERSION,
+    itemId: item.id,
+    batchType: item.batchType,
+    source,
+    materialSources,
+    design: item.design,
+    catalog: catalog.map((option) => ({
+      id: option.id,
+      priceCents: option.priceCents,
+      active: option.active,
+    })),
+    standardAccessoryCharge:
+      businessSettings.pricingSettings.standardAccessoryCharge,
+  });
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `UPLOADED-PRICE-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 };
 
 const hasRequiredMeasurements = (item: CartItem): boolean =>
@@ -175,13 +224,27 @@ export const revalidateCartForCheckout = (
   let changed = false;
 
   const repricedItems = cartItems.map((item): CartItem => {
-    const style = context.styles.find(
-      (candidate) => candidate.id === item.style.id,
-    );
-    if (!style) {
-      blockers.push(`${item.style.name} is no longer available.`);
+    const designInspection = inspectCartDesignDomain(item);
+    if (designInspection.status === "invalid") {
+      blockers.push(...designInspection.reasons);
       return item;
     }
+    const designSource = designInspection.source;
+    const isUploadedDesign = designSource?.kind === "uploaded";
+    const designLabel = getCartDesignLabel(item);
+
+    if (!isUploadedDesign && !item.style) {
+      blockers.push("Catalog design details are missing.");
+      return item;
+    }
+    const style = isUploadedDesign
+      ? null
+      : context.styles.find((candidate) => candidate.id === item.style?.id);
+    if (!isUploadedDesign && !style) {
+      blockers.push(`${designLabel} is no longer available.`);
+      return item;
+    }
+    const designContext = isUploadedDesign ? designSource : style;
 
     const garmentCode = getSelectedGarmentCode(item.garment);
     const enrichedGarment = item.garment
@@ -192,7 +255,7 @@ export const revalidateCartForCheckout = (
 
     const applicableDesign = filterDesignSelectionsForDecorativeFeatures(
       filterDesignSelectionsForCustomDetails(
-        style,
+        designContext,
         item.design,
         context.customDetailCatalog,
         enrichedGarment,
@@ -206,7 +269,7 @@ export const revalidateCartForCheckout = (
         : { ...item, design: applicableDesign };
 
     const missingCustomDetail = getMissingCustomDetailGroup(
-      style,
+      designContext,
       applicableDesign,
       context.customDetailCatalog,
       enrichedGarment,
@@ -214,19 +277,19 @@ export const revalidateCartForCheckout = (
 
     if (missingCustomDetail) {
       blockers.push(
-        `${style.name} requires a ${missingCustomDetail.replace(/_/g, " ")} selection.`,
+        `${designLabel} requires a ${missingCustomDetail.replace(/_/g, " ")} selection.`,
       );
     } else if (isGarmentTypeUnresolved) {
-      blockers.push(`${style.name} requires a Garment Type selection.`);
+      blockers.push(`${designLabel} requires a Garment Type selection.`);
     }
     if (!hasRequiredMeasurements(item)) {
-      blockers.push(`${style.name} requires complete measurements.`);
+      blockers.push(`${designLabel} requires complete measurements.`);
     }
     if (!item.deliverySelection) {
       blockers.push("Review shipping details");
     }
     if (!item.batchType) {
-      blockers.push(`${style.name} requires a valid order route.`);
+      blockers.push(`${designLabel} requires a valid order route.`);
     }
 
     if (item.batchType === "community") {
@@ -259,7 +322,7 @@ export const revalidateCartForCheckout = (
       !item.batchId &&
       !item.customGroupCode
     ) {
-      blockers.push(`${style.name} requires a valid batch identifier.`);
+      blockers.push(`${designLabel} requires a valid batch identifier.`);
     }
 
     const materialPricing = resolveCartItemFabricAllocationPricing(
@@ -289,28 +352,71 @@ export const revalidateCartForCheckout = (
       });
     }
 
-    const authoritativePricing = calculateAuthoritativeDesignPricing(
-      pricingItem,
+    const allocationAssignments = materialPricing.allocationLines.flatMap(
+      (line) =>
+        (pricingItem.fabricAllocations || [])
+          .find((allocation) => allocation.allocationId === line.allocationId)
+          ?.garmentAssignments || [],
+    );
+    const authoritativePricing = calculateDesignPricing({
+      route: pricingItem.batchType,
+      design: pricingItem.design,
       materialPricing,
       style,
-      context.customDetailCatalog,
-      context.businessSettings,
-    );
+      designContext,
+      baseGarmentComposition: isUploadedDesign
+        ? designSource.fabricCapacityComposition
+        : undefined,
+      additionalGarments: allocationAssignments.filter(
+        (assignment) => assignment.sourceRole === "additional",
+      ),
+      garment: pricingItem.garment,
+      catalog: context.customDetailCatalog,
+      businessSettings: context.businessSettings,
+    });
     if (!authoritativePricing) {
       blockers.push(
         `Pricing is not configured for ${materialPricing.baseFabric.name}.`,
       );
-      return { ...item, style };
+      return style ? { ...item, style } : item;
+    }
+    if (authoritativePricing.baseGarmentPricingStatus === "unresolved") {
+      blockers.push("Pricing review required for this design.");
+      return style ? { ...item, style } : item;
+    }
+    if (authoritativePricing.additionalGarmentPricingStatus === "unresolved") {
+      blockers.push("An Additional garment configuration needs review.");
+      return style ? { ...item, style } : item;
     }
 
-    const previousGarmentSubtotal = getCartItemGarmentSubtotal(item);
-    const sourceFingerprint = getStableSourceFingerprint(
-      pricingItem,
-      materialPricing,
-      style,
-      context.customDetailCatalog,
-      context.businessSettings,
+    // The upload snapshot is useful only to tell a customer the price changed.
+    // Fresh structured pricing above remains the sole pricing authority.
+    const previousGarmentSubtotal = isUploadedDesign
+      ? item.cartDesignPricingSnapshot?.garmentSubtotal ??
+        getCartItemGarmentSubtotal(item)
+      : getCartItemGarmentSubtotal(item);
+    const sourceFingerprint = isUploadedDesign
+      ? getUploadedSourceFingerprint(
+          pricingItem,
+          materialPricing,
+          context.customDetailCatalog,
+          context.businessSettings,
+        )
+      : getStableSourceFingerprint(
+          pricingItem,
+          materialPricing,
+          style!,
+          context.customDetailCatalog,
+          context.businessSettings,
+        );
+    const configurationHashChanged = Boolean(
+      isUploadedDesign &&
+        item.configurationHash &&
+        item.configurationHash !== getCartItemConfigurationHash(item),
     );
+    if (configurationHashChanged) {
+      blockers.push("Design configuration needs review.");
+    }
     const amountChanged =
       Math.abs(
         authoritativePricing.garmentSubtotal -
@@ -363,7 +469,7 @@ export const revalidateCartForCheckout = (
         materialPricing.source === "legacy"
           ? materialPricing.baseFabric
           : item.fabric,
-      style,
+      ...(style ? { style } : {}),
       garment: {
         ...item.garment,
         clothingPrice: authoritativePricing.clothingPrice,
@@ -390,6 +496,24 @@ export const revalidateCartForCheckout = (
       },
       pricingReview,
     };
+    const preparedReference = context.preparedUploadedDesignReferences?.[item.id];
+    const hasMatchingPreparedReference = Boolean(
+      isUploadedDesign &&
+        preparedReference &&
+        preparedReference.sourceKey === designSource.sourceKey &&
+        preparedReference.designReferenceId ===
+          designSource.uploadReference.designReferenceId,
+    );
+    if (
+      isUploadedDesign &&
+      !configurationHashChanged &&
+      !hasUnavailableFabric &&
+      !context.allowPendingUploadedDesignTransfer &&
+      !hasMatchingPreparedReference
+    ) {
+      // Structural/pricing checks intentionally complete before this 8I-C boundary.
+      blockers.push(UPLOADED_DESIGN_TRUSTED_TRANSFER_BLOCKER);
+    }
     if (JSON.stringify(updatedItem) !== JSON.stringify(item)) {
       changed = true;
     }

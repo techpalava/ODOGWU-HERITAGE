@@ -1,8 +1,123 @@
 rules_version = '2';
+
 service firebase.storage {
   match /b/{bucket}/o {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Matches the custom claim already enforced by the Firestore rules.
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isAllowedCustomerDesignImage() {
+      return request.resource.contentType == "image/jpeg"
+        || request.resource.contentType == "image/png"
+        || request.resource.contentType == "image/webp";
+    }
+
+    function isWithinCustomerDesignSizeLimit() {
+      return request.resource.size <= 5 * 1024 * 1024;
+    }
+
+    // Published storefront media. Only users with the server-issued admin claim
+    // can change these assets; visitors can continue to load them without login.
+    match /fabrics/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /styles/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /showpieces/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /communityPhotos/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /batches/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /customGroups/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /logos/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /gallery/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /hero/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /designs/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // New customer-upload path. Files are isolated by Firebase Auth UID and
+    // constrained before any future client upload feature is introduced.
+    match /customer-design-drafts/{uid}/{designReferenceId}/{fileName} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create, update: if isOwner(uid)
+        && isAllowedCustomerDesignImage()
+        && isWithinCustomerDesignSizeLimit();
+      allow delete: if isOwner(uid);
+    }
+
+    // Historical order references are readable by their owner but are never
+    // writable or removable by customer clients.
+    match /customer-order-designs/{ownerUid}/{orderId}/{designReferenceId}/{fileName} {
+      allow read: if isOwner(ownerUid) || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Existing generic collection roots that can contain customer or order
+    // data remain staff-only rather than inheriting public media access.
+    match /customers/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+
+    match /orders/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // ImageService has a legacy default "images" prefix. It has no public
+    // storefront consumer, so preserve it only for authorized staff.
+    match /images/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // Any unclassified Storage path is denied by default.
     match /{allPaths=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

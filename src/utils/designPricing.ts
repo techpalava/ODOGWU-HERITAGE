@@ -1,10 +1,14 @@
 import type {
   BusinessSettings,
   CartItem,
+  CustomDetailDesignContext,
   CustomDetailGarmentContext,
   CustomDetailOption,
   DesignSelections,
   Fabric,
+  FabricCapacityGarmentSpec,
+  FabricGarmentAssignment,
+  FabricGarmentType,
   StyleCategory,
 } from "../types";
 import {
@@ -23,6 +27,9 @@ import {
   resolveLegacyFabricMaterialPricing,
   type ResolvedFabricAllocationPricing,
 } from "./fabricAllocationPricing";
+import { getDefaultGarmentDetailsForSpec } from "../config/StyleFabricCapacityConfig";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import { resolveAdditionalGarmentPriceRows } from "./additionalGarmentDomain";
 
 export const CHECKOUT_DESIGN_PRICING_VERSION =
   "2026-08-01-design-checkout-v2";
@@ -104,6 +111,12 @@ export const getConstructionSewingCost = (
 };
 
 export interface AuthoritativeDesignPricing {
+  baseGarmentPricingStatus: "resolved" | "unresolved";
+  unresolvedBaseGarmentTypes: FabricGarmentType[];
+  baseGarmentPriceRows: CustomerDesignBaseGarmentPriceRow[];
+  additionalGarmentPricingStatus: "resolved" | "unresolved";
+  unresolvedAdditionalGarmentIds: string[];
+  additionalGarmentPriceRows: CustomerDesignAdditionalGarmentPriceRow[];
   clothingPrice: number;
   includesFabricAndSewing: boolean;
   fabricAllocationCount: number;
@@ -135,18 +148,110 @@ export interface DesignPricingInput {
   design: DesignSelections;
   fabric?: Fabric | null;
   materialPricing?: ResolvedFabricAllocationPricing;
+  allowUnresolvedMaterialPricing?: boolean;
   style?: StyleCategory | null;
+  designContext?: CustomDetailDesignContext | null;
+  baseGarmentComposition?: readonly FabricCapacityGarmentSpec[];
+  additionalGarments?: readonly FabricGarmentAssignment[];
   garment?: CustomDetailGarmentContext | null;
   catalog: CustomDetailOption[];
   businessSettings: BusinessSettings;
 }
+
+/** Explanatory rows that reconcile exactly to the structured clothing price. */
+export interface CustomerDesignBaseGarmentPriceRow {
+  garmentKey: string;
+  garmentType: FabricGarmentType;
+  label: string;
+  price: number;
+}
+
+export interface CustomerDesignAdditionalGarmentPriceRow {
+  assignmentId: string;
+  garmentType: FabricGarmentType;
+  label: string;
+  price: number;
+}
+
+export interface StructuredBaseGarmentPricingResolution {
+  status: "resolved" | "unresolved";
+  defaultSelections: DesignSelections;
+  unresolvedGarmentTypes: FabricGarmentType[];
+}
+
+/**
+ * Structured design sources price the physical garments the capacity domain
+ * already defines. Fabric units remain capacity only, never a price multiplier.
+ */
+export const resolveStructuredBaseGarmentPricing = (
+  composition: readonly FabricCapacityGarmentSpec[],
+): StructuredBaseGarmentPricingResolution => {
+  const unresolvedGarmentTypes: FabricGarmentType[] = [];
+  const defaultSelections = composition.reduce<DesignSelections>(
+    (resolved, garmentSpec) => {
+      const garmentDefaults = getDefaultGarmentDetailsForSpec(garmentSpec);
+      if (!garmentDefaults) {
+        unresolvedGarmentTypes.push(garmentSpec.garmentType);
+        return resolved;
+      }
+      return {
+        ...resolved,
+        customDetails: {
+          ...(resolved.customDetails || {}),
+          ...garmentDefaults,
+        },
+      };
+    },
+    { customDetails: {} },
+  );
+
+  return {
+    status: unresolvedGarmentTypes.length === 0 ? "resolved" : "unresolved",
+    defaultSelections,
+    unresolvedGarmentTypes: [...new Set(unresolvedGarmentTypes)],
+  };
+};
+
+const resolveStructuredBaseGarmentPriceRows = (
+  composition: readonly FabricCapacityGarmentSpec[],
+  design: DesignSelections,
+  catalog: CustomDetailOption[],
+): CustomerDesignBaseGarmentPriceRow[] =>
+  composition.flatMap((garmentSpec) => {
+    const defaultDetails = getDefaultGarmentDetailsForSpec(garmentSpec);
+    if (!defaultDetails) return [];
+
+    const customDetails = Object.fromEntries(
+      Object.entries(defaultDetails).map(([groupId, defaultOptionId]) => [
+        groupId,
+        design.customDetails?.[groupId] ?? defaultOptionId,
+      ]),
+    );
+    const price = calculateCustomDetailsPriceBreakdown(
+      { customDetails },
+      catalog,
+    ).clothingPrice;
+
+    return [
+      {
+        garmentKey: garmentSpec.key,
+        garmentType: garmentSpec.garmentType,
+        label: getFabricGarmentLabel(garmentSpec.garmentType),
+        price: roundMoney(price),
+      },
+    ];
+  });
 
 export const calculateDesignPricing = ({
   route,
   design,
   fabric,
   materialPricing,
+  allowUnresolvedMaterialPricing = false,
   style,
+  designContext,
+  baseGarmentComposition,
+  additionalGarments = [],
   garment,
   catalog,
   businessSettings,
@@ -155,22 +260,40 @@ const resolvedMaterialPricing =
   materialPricing ??
   (fabric ? resolveLegacyFabricMaterialPricing(fabric) : null);
 
-if (!resolvedMaterialPricing || resolvedMaterialPricing.status !== "resolved") {
+const hasResolvedMaterialPricing =
+  resolvedMaterialPricing?.status === "resolved";
+
+if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
   return null;
 }
 
+  const structuredBaseGarmentPricing = baseGarmentComposition
+    ? resolveStructuredBaseGarmentPricing(baseGarmentComposition)
+    : null;
+  const designWithStructuredDefaults = structuredBaseGarmentPricing
+    ? {
+        ...design,
+        customDetails: {
+          ...(structuredBaseGarmentPricing.defaultSelections.customDetails || {}),
+          ...(design.customDetails || {}),
+        },
+      }
+    : design;
+  const pricingDesignContext = designContext ?? style ?? null;
   const enrichedGarment = garment
     ? { ...garment, lowerGarmentType: design.lowerGarmentType }
     : { lowerGarmentType: design.lowerGarmentType };
 
   const applicableDesign = filterDesignSelectionsForCustomDetails(
-    style || null,
-    design,
+    pricingDesignContext,
+    designWithStructuredDefaults,
     catalog,
     enrichedGarment,
   );
-  const rawFabricSewingCost = resolvedMaterialPricing.baseFabricSewingCost;
-  const rawConstructionSewingCost = style
+  const rawFabricSewingCost = hasResolvedMaterialPricing
+    ? resolvedMaterialPricing.baseFabricSewingCost
+    : 0;
+  const rawConstructionSewingCost = pricingDesignContext
     ? getConstructionSewingCost(applicableDesign)
     : 0;
   const detailPricing = calculateGarmentDetailsPrice(
@@ -202,7 +325,33 @@ if (!resolvedMaterialPricing || resolvedMaterialPricing.status !== "resolved") {
     constructionUpgradesPrice += 10;
   }
 
-  const clothingPrice = roundMoney(catalogPricing.clothingPrice);
+  const baseClothingPrice = roundMoney(catalogPricing.clothingPrice);
+  const candidateBaseGarmentPriceRows = structuredBaseGarmentPricing
+    ? resolveStructuredBaseGarmentPriceRows(
+        baseGarmentComposition || [],
+        applicableDesign,
+        catalog,
+      )
+    : [];
+  const baseGarmentPriceRows =
+    candidateBaseGarmentPriceRows.length > 0 &&
+    roundMoney(
+      candidateBaseGarmentPriceRows.reduce((total, row) => total + row.price, 0),
+    ) === baseClothingPrice
+      ? candidateBaseGarmentPriceRows
+      : [];
+  const resolvedAdditionalGarmentPricing = resolveAdditionalGarmentPriceRows({
+    additionalAssignments: additionalGarments,
+    mainGarmentPriceRows: baseGarmentPriceRows,
+  });
+  const additionalGarmentPriceRows =
+    resolvedAdditionalGarmentPricing.unresolvedAssignmentIds.length === 0
+      ? resolvedAdditionalGarmentPricing.rows
+      : [];
+  const clothingPrice = roundMoney(
+    baseClothingPrice +
+      additionalGarmentPriceRows.reduce((total, row) => total + row.price, 0),
+  );
   const monogramPrice = roundMoney(detailPricing.monogramPrice);
   const roundedAccessoriesPrice = roundMoney(traditionalAccessoriesPrice);
   constructionUpgradesPrice = roundMoney(constructionUpgradesPrice);
@@ -210,9 +359,11 @@ if (!resolvedMaterialPricing || resolvedMaterialPricing.status !== "resolved") {
     constructionUpgradesPrice + monogramPrice + roundedAccessoriesPrice,
   );
   const includesFabricAndSewing = isBatchPricingRoute(route);
-  const fabricPrice = includesFabricAndSewing
-    ? resolvedMaterialPricing.additionalMaterialPrice
-    : resolvedMaterialPricing.totalMaterialPrice;
+  const fabricPrice = !hasResolvedMaterialPricing
+    ? 0
+    : includesFabricAndSewing
+      ? resolvedMaterialPricing.additionalMaterialPrice
+      : resolvedMaterialPricing.totalMaterialPrice;
   const fabricSewingCost = includesFabricAndSewing
     ? 0
     : rawFabricSewingCost;
@@ -221,17 +372,39 @@ if (!resolvedMaterialPricing || resolvedMaterialPricing.status !== "resolved") {
     : rawConstructionSewingCost;
 
   return {
+    baseGarmentPricingStatus:
+      structuredBaseGarmentPricing?.status || "resolved",
+    unresolvedBaseGarmentTypes:
+      structuredBaseGarmentPricing?.unresolvedGarmentTypes || [],
+    baseGarmentPriceRows,
+    additionalGarmentPricingStatus:
+      resolvedAdditionalGarmentPricing.unresolvedAssignmentIds.length === 0
+        ? "resolved"
+        : "unresolved",
+    unresolvedAdditionalGarmentIds:
+      resolvedAdditionalGarmentPricing.unresolvedAssignmentIds,
+    additionalGarmentPriceRows,
     clothingPrice,
     includesFabricAndSewing,
-    fabricAllocationCount: resolvedMaterialPricing.allocationCount,
+    fabricAllocationCount: hasResolvedMaterialPricing
+      ? resolvedMaterialPricing.allocationCount
+      : 0,
     totalFabricMaterialPrice: roundMoney(
-      resolvedMaterialPricing.totalMaterialPrice,
+      hasResolvedMaterialPricing
+        ? resolvedMaterialPricing.totalMaterialPrice
+        : 0,
     ),
     additionalFabricPrice: roundMoney(
-      resolvedMaterialPricing.additionalMaterialPrice,
+      hasResolvedMaterialPricing
+        ? resolvedMaterialPricing.additionalMaterialPrice
+        : 0,
     ),
     includedFabricPrice: includesFabricAndSewing
-      ? roundMoney(resolvedMaterialPricing.baseMaterialPrice)
+      ? roundMoney(
+          hasResolvedMaterialPricing
+            ? resolvedMaterialPricing.baseMaterialPrice
+            : 0,
+        )
       : 0,
     includedSewingCost: includesFabricAndSewing
       ? roundMoney(rawFabricSewingCost + rawConstructionSewingCost)

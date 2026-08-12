@@ -3,7 +3,9 @@ import {
   CustomDetailGarmentGroup,
   CustomDetailOption,
   CustomDetailSelectionGroup,
+  FabricGarmentType,
 } from "../types";
+import { FABRIC_GARMENT_CAPACITY_UNITS } from "./StyleFabricCapacityConfig";
 
 export type Demographic = CustomDetailDemographic;
 export type GarmentGroup = CustomDetailGarmentGroup;
@@ -22,6 +24,7 @@ export type StandardCustomDetailSelectionGroup = Exclude<
 >;
 
 export const CUSTOM_DETAIL_SELECTION_GROUPS: StandardCustomDetailSelectionGroup[] = [
+  "additional_physical_garment",
   "shirt_construction",
   "shirt_pockets",
   "dress_construction",
@@ -40,6 +43,7 @@ export const CUSTOM_DETAIL_SELECTION_GROUPS: StandardCustomDetailSelectionGroup[
 export const CUSTOM_DETAIL_SELECTION_GROUP_ORDER: Readonly<
   Record<StandardCustomDetailSelectionGroup, number>
 > = {
+  additional_physical_garment: 5,
   shirt_construction: 10,
   shirt_pockets: 20,
   dress_construction: 30,
@@ -56,6 +60,14 @@ export const CUSTOM_DETAIL_SELECTION_GROUP_ORDER: Readonly<
 };
 
 export const CUSTOM_DETAIL_OPTION_ORDER: Readonly<Record<string, number>> = {
+  additional_garment_shirt: 10,
+  additional_garment_trouser: 20,
+  additional_garment_skirt: 30,
+  additional_garment_standard_shorts: 40,
+  additional_garment_bum_shorts: 50,
+  additional_garment_dress: 60,
+  additional_garment_kaftan: 70,
+  additional_garment_full_length_gown: 80,
   shirt_std_short: 10,
   shirt_std_midlong: 20,
   shirt_long_short: 30,
@@ -112,6 +124,10 @@ export const CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION: Readonly<
     { title: string; description?: string }
   >
 > = {
+  additional_physical_garment: {
+    title: "Optional Extra Garment",
+    description: "Add an extra garment to your design if required.",
+  },
   shirt_construction: { title: "Shirt Length and Sleeve Length" },
   shirt_pockets: { title: "Shirt Pockets" },
   dress_construction: {
@@ -151,7 +167,33 @@ export const CUSTOM_DETAIL_SELECTION_GROUP_PRESENTATION: Readonly<
   },
 };
 
+export type NeckDesignSubcategory =
+  | "No Collar"
+  | "Vertical Collar"
+  | "Flat Collar";
+
+export const NECK_DESIGN_SUBCATEGORY_ORDER: readonly NeckDesignSubcategory[] = [
+  "No Collar",
+  "Vertical Collar",
+  "Flat Collar",
+];
+
+export const NECK_DESIGN_SUBCATEGORY_BY_OPTION_ID: Readonly<
+  Record<string, NeckDesignSubcategory>
+> = {
+  neck_no_round: "No Collar",
+  neck_no_v: "No Collar",
+  neck_no_u: "No Collar",
+  neck_vert_round: "Vertical Collar",
+  neck_vert_v: "Vertical Collar",
+  neck_vert_u: "Vertical Collar",
+  neck_flat_round: "Flat Collar",
+  neck_flat_v: "Flat Collar",
+  neck_flat_u: "Flat Collar",
+};
+
 export type CustomDetailParentSectionId =
+  | "additional_garment"
   | "shirt"
   | "dress"
   | "neck"
@@ -161,6 +203,7 @@ export type CustomDetailParentSectionId =
   | "skirts";
 
 export const CUSTOM_DETAIL_PARENT_SECTION_ORDER: readonly CustomDetailParentSectionId[] = [
+  "additional_garment",
   "shirt",
   "dress",
   "neck",
@@ -173,6 +216,7 @@ export const CUSTOM_DETAIL_PARENT_SECTION_ORDER: readonly CustomDetailParentSect
 export const CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION: Readonly<
   Record<CustomDetailParentSectionId, { title: string }>
 > = {
+  additional_garment: { title: "OPTIONAL EXTRA GARMENT" },
   shirt: { title: "SHIRT" },
   dress: { title: "DRESS (LADIES)" },
   neck: { title: "NECK DESIGN" },
@@ -185,6 +229,7 @@ export const CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION: Readonly<
 export const CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION: Readonly<
   Record<StandardCustomDetailSelectionGroup, CustomDetailParentSectionId>
 > = {
+  additional_physical_garment: "additional_garment",
   shirt_construction: "shirt",
   shirt_pockets: "shirt",
   dress_construction: "dress",
@@ -224,6 +269,7 @@ export const ALL_CUSTOM_DETAIL_SELECTION_GROUPS: readonly CustomDetailSelectionG
 export const CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE: Readonly<
   Record<CustomDetailSelectionGroup, string>
 > = {
+  additional_physical_garment: "Optional Extra Garment",
   shirt_construction: "Shirt Length and Sleeve Length",
   shirt_pockets: "Shirt Pockets",
   dress_construction: "Dress Length and Sleeve Length",
@@ -293,9 +339,92 @@ export const ADDITIONAL_CLOTHES_COST_OPTION_ORDER: Readonly<
   personalized_additional_evaluation: 10,
 };
 
+const ADDITIONAL_PHYSICAL_GARMENT_OPTION_ORDER: Readonly<
+  Record<string, number>
+> = {
+  additional_garment_shirt: 10,
+  additional_garment_trouser: 20,
+  additional_garment_skirt: 30,
+  additional_garment_standard_shorts: 40,
+  additional_garment_bum_shorts: 50,
+  additional_garment_dress: 60,
+  additional_garment_kaftan: 70,
+  additional_garment_full_length_gown: 80,
+};
+
+const createAdditionalPhysicalGarmentOption = (
+  garmentType: Exclude<FabricGarmentType, "agbada" | "other">,
+  label: string,
+  description: string,
+): CustomDetailOption => ({
+  id: `additional_garment_${garmentType}`,
+  label,
+  description,
+  garmentGroup: "personalized",
+  selectionGroup: "additional_physical_garment",
+  priceCents: 0,
+  eligibleDemographics: ["unisex"],
+  displayOrder:
+    ADDITIONAL_PHYSICAL_GARMENT_OPTION_ORDER[
+      `additional_garment_${garmentType}`
+    ],
+  required: false,
+  active: true,
+  allowMultiple: false,
+  fabricCapacityGarmentSpec: {
+    key: `custom-detail:additional_physical_garment:${garmentType}`,
+    garmentType,
+    fabricUnits: FABRIC_GARMENT_CAPACITY_UNITS[garmentType],
+  },
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+});
+
 export const DRESS_LINING_OPTION_ID = "L5";
 
 export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
+
+  // OPTIONAL PHYSICAL GARMENT
+  createAdditionalPhysicalGarmentOption(
+    "shirt",
+    "Shirt",
+    "Add one separately tailored shirt to this design.",
+  ),
+  createAdditionalPhysicalGarmentOption(
+    "trouser",
+    "Trouser",
+    "Add one separately tailored trouser to this design.",
+  ),
+  createAdditionalPhysicalGarmentOption(
+    "skirt",
+    "Skirt",
+    "Add one separately tailored skirt to this design.",
+  ),
+  createAdditionalPhysicalGarmentOption(
+    "standard_shorts",
+    "Nikka / Standard Shorts",
+    "Add one pair of standard-length shorts.",
+  ),
+  createAdditionalPhysicalGarmentOption(
+    "bum_shorts",
+    "Bum Shorts",
+    "Add one pair of bum shorts.",
+  ),
+  createAdditionalPhysicalGarmentOption(
+    "dress",
+    "Dress",
+    "Add one separately tailored dress.",
+  ),
+  createAdditionalPhysicalGarmentOption(
+    "kaftan",
+    "Kaftan",
+    "Add one kaftan using two fabric units.",
+  ),
+  createAdditionalPhysicalGarmentOption(
+    "full_length_gown",
+    "Full-length Gown",
+    "Add one full-length gown using two fabric units.",
+  ),
 
   // SHIRT LENGTH AND SLEEVE LENGTH
 {

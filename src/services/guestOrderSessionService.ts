@@ -12,8 +12,12 @@ import {
   inspectDraftFabricAllocations,
   resolveLegacyCartItemFabricAllocations,
   resolveLegacyDraftFabricAllocations,
-  toDeterministicFabricAllocationHashInput,
 } from "../utils/fabricAllocationPersistence";
+import { reconcileGuestDesignDraftDesignSource } from "../utils/designSourceState";
+import {
+  getCartDesignConfigurationFingerprintInput,
+  normalizeCartItemDesignDomain,
+} from "../utils/cartDesignDomain";
 import { StorageService } from "./storageService";
 
 export const GUEST_ORDER_SESSION_VERSION = "2026-07-30-guest-order-v1";
@@ -59,21 +63,22 @@ const createGuestCartId = (): string => {
 };
 
 const normalizeDesignDraft = (designDraft: GuestDesignDraft): GuestDesignDraft => {
-  const modernInspection = inspectDraftFabricAllocations(designDraft);
+  const sourceReconciledDraft = reconcileGuestDesignDraftDesignSource(designDraft);
+  const modernInspection = inspectDraftFabricAllocations(sourceReconciledDraft);
   if (modernInspection.status === "valid") {
     return {
-      ...designDraft,
+      ...sourceReconciledDraft,
       fabricAllocations: cloneFabricAllocations(modernInspection.fabricAllocations),
     };
   }
   if (modernInspection.status === "invalid") {
-    return designDraft;
+    return sourceReconciledDraft;
   }
 
-  const legacyAllocations = resolveLegacyDraftFabricAllocations(designDraft);
-  if (!legacyAllocations) return designDraft;
+  const legacyAllocations = resolveLegacyDraftFabricAllocations(sourceReconciledDraft);
+  if (!legacyAllocations) return sourceReconciledDraft;
   return {
-    ...designDraft,
+    ...sourceReconciledDraft,
     fabricAllocations: cloneFabricAllocations(legacyAllocations),
   };
 };
@@ -81,21 +86,21 @@ const normalizeDesignDraft = (designDraft: GuestDesignDraft): GuestDesignDraft =
 const normalizeCartItemForPersistence = (item: CartItem): CartItem => {
   const modernInspection = inspectCartItemFabricAllocations(item);
   if (modernInspection.status === "valid") {
-    return {
+    return normalizeCartItemDesignDomain({
       ...item,
       fabricAllocations: cloneFabricAllocations(modernInspection.fabricAllocations),
-    };
+    });
   }
   if (modernInspection.status === "invalid") {
-    return item;
+    return normalizeCartItemDesignDomain(item);
   }
 
   const legacyAllocations = resolveLegacyCartItemFabricAllocations(item);
-  if (!legacyAllocations) return item;
-  return {
+  if (!legacyAllocations) return normalizeCartItemDesignDomain(item);
+  return normalizeCartItemDesignDomain({
     ...item,
     fabricAllocations: cloneFabricAllocations(legacyAllocations),
-  };
+  });
 };
 
 const normalizeCartItemsForPersistence = (items: CartItem[]): CartItem[] =>
@@ -141,29 +146,7 @@ const persistNormalizedSessionIfChanged = (
 export const getCartItemConfigurationHash = (
   item: CartItem,
 ): string => {
-  const modernInspection = inspectCartItemFabricAllocations(item);
-  const hasValidModernAllocations = modernInspection.status === "valid";
-  return `cartcfg_${getStableHash({
-    styleId: item.style.id,
-    fabricCode: hasValidModernAllocations ? null : item.fabric.code,
-    fabricAllocations:
-      toDeterministicFabricAllocationHashInput(
-        hasValidModernAllocations
-          ? modernInspection.fabricAllocations
-          : undefined,
-      ),
-    design: item.design,
-    garmentType: item.garment.type,
-    measurements: item.measurements,
-    specialInstructions: item.specialInstructions,
-    notesAboutLeftoverFabric: item.notesAboutLeftoverFabric,
-    batchType: item.batchType,
-    batchId: item.batchId,
-    batchName: item.batchName,
-    customGroupCode: item.customGroupCode,
-    garmentPieceCount: item.garmentPieceCount,
-    deliverySelection: item.deliverySelection,
-  })}`;
+  return `cartcfg_${getStableHash(getCartDesignConfigurationFingerprintInput(item))}`;
 };
 
 export const createGuestOrderSession = (

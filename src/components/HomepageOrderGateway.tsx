@@ -29,6 +29,10 @@ export default function HomepageOrderGateway({
   onManageSourcingBatches,
 }: HomepageOrderGatewayProps) {
   const { joinBatch, minimumGarments } = state;
+  const currentBatchName = joinBatch?.name?.trim();
+  const existingBatchTitle = currentBatchName
+    ? `Join an Existing Batch (${currentBatchName})`
+    : "Join an Existing Batch";
 
   return (
     <section
@@ -92,7 +96,7 @@ export default function HomepageOrderGateway({
                 </span>
                 <div className="min-w-0 self-center">
                   <h3 className="font-display text-xl font-bold leading-tight text-heritage-green">
-                    Join {joinBatch.name}
+                    {existingBatchTitle}
                   </h3>
                 </div>
               </div>
@@ -113,7 +117,7 @@ export default function HomepageOrderGateway({
                 disabled={isLoading}
                 className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-heritage-green px-4 py-2.5 text-[11px] font-bold uppercase text-white transition-colors hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
               >
-                Join {joinBatch.name}
+                Join Current Batch
                 <ArrowRight size={15} aria-hidden="true" />
               </button>
             </article>
@@ -199,7 +203,7 @@ export default function HomepageOrderGateway({
               without entering the custom design flow.
             </p>
             <p className="mt-2 text-[10px] font-bold uppercase text-heritage-green/70">
-              1-9 garments: EUR 131 shipping | 10+: EUR 15 per garment
+              1-9 Garments | Ships from Eindhoven (Additional Cost Applies)
             </p>
 
             <button

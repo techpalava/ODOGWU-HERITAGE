@@ -548,6 +548,38 @@ assert.equal(
   "FABRIC-B",
   "conflicting selectedFabricCode must not override authoritative modern allocation ownership",
 );
+const customDetailGarmentDraft = makeGuestDraft({
+  fabricAllocations: [
+    multiAllocationFixture[0],
+    {
+      allocationId: "draft-bum-shorts-2",
+      fabricCode: "FABRIC-B",
+      garmentAssignments: [
+        {
+          garmentKey: "custom-detail:additional_physical_garment:bum-shorts",
+          code: "additional_garment_bum_shorts",
+          garmentType: "bum_shorts",
+          fabricUnits: 1,
+          garmentSpec: {
+            key: "additional-garment-bum-shorts",
+            garmentType: "bum_shorts",
+            fabricUnits: 1,
+          },
+        },
+      ],
+    },
+  ],
+});
+const customDetailGarmentHydration =
+  resolveDraftHydrationAllocations(customDetailGarmentDraft);
+assert.equal(customDetailGarmentHydration.hasValidModernAllocations, true);
+assert.equal(customDetailGarmentHydration.fabricAllocations.length, 2);
+assert.equal(
+  customDetailGarmentHydration.fabricAllocations[1]?.garmentAssignments[0]
+    ?.garmentType,
+  "bum_shorts",
+  "Custom Detail physical garments must survive strict draft hydration",
+);
 GuestOrderSessionService.saveGuestDesignDraft(conflictingDraft);
 const restoredDraft = GuestOrderSessionService.getGuestDesignDraft();
 assert(restoredDraft, "Expected a guest draft to be restored");
