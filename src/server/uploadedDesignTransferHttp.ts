@@ -21,7 +21,7 @@ type TransferAdminServices = {
 
 export interface UploadedDesignTransferHttpDependencies {
   getServices?: () => TransferAdminServices;
-  now?: () => string;
+  now?: () => Date;
   log?: (message: string) => void;
 }
 
@@ -59,6 +59,7 @@ export const createUploadedDesignTransferHandler = (
   dependencies: UploadedDesignTransferHttpDependencies = {},
 ) => {
   const getServices = dependencies.getServices || getAdminServices;
+  const now = dependencies.now || (() => new Date());
   const log = dependencies.log || ((message: string) => console.info(message));
 
   return async (req: HttpRequest, res: HttpResponse) => {
@@ -113,6 +114,7 @@ export const createUploadedDesignTransferHandler = (
                     orderId: request.orderId,
                     draftReference: request.draftReference,
                     store: services.db as unknown as OwnershipClaimStore,
+                    now,
                   });
                   return ownership.sourceOwnerUid;
                 } catch (error) {
@@ -127,7 +129,7 @@ export const createUploadedDesignTransferHandler = (
               })(),
             }
           : {}),
-        now: dependencies.now,
+        now: () => now().toISOString(),
       });
       log(`uploaded-design-transfer status=${result.status}`);
       return setNoStore(res).status(200).json(result);

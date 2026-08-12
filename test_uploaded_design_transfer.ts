@@ -265,7 +265,7 @@ async function run() {
       },
       storage: { bucket: () => handlerBucket },
     }),
-    now: () => "2026-08-12T12:00:00.000Z",
+    now: () => new Date("2026-08-12T12:00:00.000Z"),
     log: () => undefined,
   });
 

@@ -380,7 +380,7 @@ async function run() {
   };
   const transferHandler = createUploadedDesignTransferHandler({
     getServices: () => services,
-    now: () => NOW.toISOString(),
+    now: () => NOW,
     log: () => undefined,
   });
   const withoutClaim = createResponse();
@@ -413,7 +413,11 @@ async function run() {
     },
     withClaim.response,
   );
-  assert.equal(withClaim.state.status, 200);
+  assert.equal(
+    withClaim.state.status,
+    200,
+    "The HTTP handler must redeem ownership claims using its injected clock.",
+  );
   assert.deepEqual(withClaim.state.body, {
     status: "SUCCESS",
     orderReference: {
@@ -424,6 +428,11 @@ async function run() {
       createdAt: NOW.toISOString(),
     },
   });
+  assert.equal(
+    [...integrationStore.records.values()][0]?.redeemedAt,
+    NOW.toISOString(),
+    "Claim redemption must persist the same injected time used by the transfer.",
+  );
   assert.equal(integrationBucket.file(reference.storagePath).existsValue, true);
 
   const invalidClaim = createResponse();
