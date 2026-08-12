@@ -248,24 +248,24 @@ const joinMarkup = renderToStaticMarkup(
     onManageSourcingBatches: () => undefined,
   }),
 );
-assert.match(joinMarkup, /Join an Existing Batch \(Avatars\)/);
-assert.match(joinMarkup, /Join Current Batch/);
+assert.match(joinMarkup, /Join an Existing Batch or Group \(Avatars\)/);
+assert.match(joinMarkup, /Join an Existing Batch or Group/);
 assert.match(joinMarkup, /Individual Custom Order/);
 assert.match(joinMarkup, /Ready to Wear/);
 assert.match(joinMarkup, /Ready to Wear - Coming Soon/);
 assert.match(
   joinMarkup,
-  /1-9 Garments \| Ships from Eindhoven \(Additional Cost Applies\)/,
+  /Shipping from Lagos to Location applies\./,
 );
 assert.equal(
-  (joinMarkup.match(/Ships from Eindhoven/g) || []).length,
+  (joinMarkup.match(/Shipping from Lagos to Location applies\./g) || []).length,
   1,
-  "Only Ready to Wear should show the Eindhoven shipping copy",
+  "Only Ready to Wear should show the Lagos-to-location shipping copy",
 );
 assert.doesNotMatch(joinMarkup, /Order Type [ABCD]/);
 assert.match(joinMarkup, /Manage Sourcing Batches/);
 assert.ok(
-  joinMarkup.indexOf("Join an Existing Batch (Avatars)") <
+  joinMarkup.indexOf("Join an Existing Batch or Group (Avatars)") <
     joinMarkup.indexOf("Create a Private Batch") &&
     joinMarkup.indexOf("Create a Private Batch") <
       joinMarkup.indexOf("Individual Custom Order") &&
@@ -286,8 +286,8 @@ const unnamedBatchMarkup = renderToStaticMarkup(
     onBrowseGallery: () => undefined,
   }),
 );
-assert.match(unnamedBatchMarkup, /Join an Existing Batch/);
-assert.doesNotMatch(unnamedBatchMarkup, /Join an Existing Batch \(\s*\)/);
+assert.match(unnamedBatchMarkup, /Join an Existing Batch or Group/);
+assert.doesNotMatch(unnamedBatchMarkup, /Join an Existing Batch or Group \(\s*\)/);
 
 const customerMarkup = renderToStaticMarkup(
   createElement(HomepageOrderGateway, {
