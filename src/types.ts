@@ -796,7 +796,20 @@ export type StoredOrderDesignSource =
   | UploadedOrderDraftDesignSource
   | UploadedOrderImmutableDesignSource;
 
+export type DesignStudioStageId =
+  | "garment_type"
+  | "fabric"
+  | "design_style"
+  | "custom_details"
+  | "try_on"
+  | "measurement"
+  | "summary"
+  | "shipping"
+  | "payment";
+
 export interface GuestDesignDraft {
+  journeySchemaVersion?: number;
+  currentStageId?: DesignStudioStageId;
   currentStep: number;
   selectedFabricCode: string | null;
   selectedStyleId: string | null;

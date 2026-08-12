@@ -16,6 +16,7 @@ import {
 } from "./src/utils/designSourceState";
 import {
   DESIGN_STUDIO_CUSTOMER_FLOW_STEPS,
+  DESIGN_STUDIO_NINE_STAGE_FOUNDATION,
   canNavigateToCustomerFlowStep,
   getCustomerFlowStepNavigationState,
   getFurthestReachedCustomerFlowStepIndex,
@@ -94,6 +95,34 @@ assert.deepEqual(
 );
 assert.equal(normalizeCustomerFlowStep(4), 7);
 assert.equal(normalizeCustomerFlowStep(8), 9);
+
+assert.deepEqual(
+  DESIGN_STUDIO_NINE_STAGE_FOUNDATION.map((stage) => stage.id),
+  [
+    "garment_type",
+    "fabric",
+    "design_style",
+    "custom_details",
+    "try_on",
+    "measurement",
+    "summary",
+    "shipping",
+    "payment",
+  ],
+);
+assert.deepEqual(
+  DESIGN_STUDIO_NINE_STAGE_FOUNDATION.map((stage) => stage.position),
+  [1, 2, 3, 4, 5, 6, 7, 8, 9],
+);
+assert.equal(
+  new Set(DESIGN_STUDIO_NINE_STAGE_FOUNDATION.map((stage) => stage.id)).size,
+  9,
+);
+assert.equal(
+  new Set(DESIGN_STUDIO_NINE_STAGE_FOUNDATION.map((stage) => stage.position))
+    .size,
+  9,
+);
 
 assert.equal(
   getFurthestReachedCustomerFlowStepIndex(3, 1),
@@ -237,5 +266,10 @@ assert.match(studioSource, /data-step-state/);
 assert.match(studioSource, /disabled=\{isLocked\}/);
 assert.match(studioSource, /focus-visible:ring-2/);
 assert.match(studioSource, /Back one step/);
+assert.doesNotMatch(
+  studioSource,
+  /DESIGN_STUDIO_NINE_STAGE_FOUNDATION/,
+  "The future journey foundation must not be activated by the live runtime.",
+);
 
 console.log("PASS: catalog and uploaded design sources share the canonical customer journey");

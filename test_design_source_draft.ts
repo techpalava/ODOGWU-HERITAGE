@@ -14,6 +14,47 @@ import {
 } from "./src/utils/designSourceState";
 import { createCustomerDesignUploadReference } from "./src/services/customerDesignUploadReference";
 import { isDesignStylePricingActive } from "./src/utils/designStylePricingActivation";
+import {
+  DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+  migrateLegacyDesignStudioStage,
+  prepareLegacyDraftForNineStageJourney,
+} from "./src/utils/designSourceJourney";
+
+const expectedNumericStages = [
+  "design_style",
+  "fabric",
+  "custom_details",
+  "try_on",
+  "measurement",
+  "measurement",
+  "shipping",
+  "summary",
+  "summary",
+] as const;
+expectedNumericStages.forEach((expectedStage, index) => {
+  assert.equal(migrateLegacyDesignStudioStage(index + 1), expectedStage);
+});
+assert.deepEqual(
+  ["style", "fabric", "details", "shipping", "review"].map((stage) =>
+    migrateLegacyDesignStudioStage(stage),
+  ),
+  ["design_style", "fabric", "custom_details", "shipping", "summary"],
+);
+[undefined, null, -1, 0, 1.5, 10, "", "4", "unknown", {}, []].forEach(
+  (value) => {
+    assert.equal(migrateLegacyDesignStudioStage(value), "garment_type");
+  },
+);
+const preparedDraft = prepareLegacyDraftForNineStageJourney(
+  { currentStep: 7, unrelated: { preserved: true } },
+  7,
+);
+assert.equal(preparedDraft.currentStageId, "shipping");
+assert.equal(
+  preparedDraft.journeySchemaVersion,
+  DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+);
+assert.deepEqual(preparedDraft.unrelated, { preserved: true });
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -122,8 +163,11 @@ const uploadedSource = createUploadedDesignSource({
 });
 
 const legacyCatalog = reconcileGuestDesignDraftDesignSource(baseDraft());
-assert.equal(legacyCatalog.designSource?.kind, "catalog");
-assert.equal(legacyCatalog.designSource?.sourceKey, getCatalogDesignSourceKey("catalog-style-1"));
+assert.equal(
+  legacyCatalog.designSource,
+  undefined,
+  "Legacy drafts remain byte-compatible until the future journey is activated.",
+);
 assert.equal(legacyCatalog.selectedStyleId, "catalog-style-1");
 
 const confirmedCatalog = reconcileGuestDesignDraftDesignSource(
