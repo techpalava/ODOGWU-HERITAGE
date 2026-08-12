@@ -96,6 +96,38 @@ const designStudioSource = readFileSync(
   fileURLToPath(new URL("./src/components/DesignStudioView.tsx", import.meta.url)),
   "utf8",
 );
+const garmentAssignmentSectionStart = designStudioSource.indexOf(
+  'aria-labelledby="fabric-garments-heading"',
+);
+const garmentAssignmentSectionEnd = designStudioSource.indexOf(
+  "<GarmentDetailSelector",
+  garmentAssignmentSectionStart,
+);
+assert.ok(
+  garmentAssignmentSectionStart >= 0 &&
+    garmentAssignmentSectionEnd > garmentAssignmentSectionStart,
+  "Expected to isolate the Step 3 garment assignment cards",
+);
+const garmentAssignmentSectionSource = designStudioSource.slice(
+  garmentAssignmentSectionStart,
+  garmentAssignmentSectionEnd,
+);
+const additionalGarmentSectionStart = designStudioSource.indexOf(
+  "const OptionalAdditionalGarmentSection",
+);
+const additionalGarmentSectionEnd = designStudioSource.indexOf(
+  "const GarmentDetailSelector",
+  additionalGarmentSectionStart,
+);
+assert.ok(
+  additionalGarmentSectionStart >= 0 &&
+    additionalGarmentSectionEnd > additionalGarmentSectionStart,
+  "Expected to isolate the Additional Garment composer",
+);
+const additionalGarmentSectionSource = designStudioSource.slice(
+  additionalGarmentSectionStart,
+  additionalGarmentSectionEnd,
+);
 const garmentDetailsConfigSource = readFileSync(
   fileURLToPath(new URL("./src/config/GarmentDetailsConfig.ts", import.meta.url)),
   "utf8",
@@ -424,13 +456,13 @@ assert.match(
 );
 assert.match(
   designStudioSource,
-  /grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3/,
-  "Neck option subcategories should use responsive 1/2/3-column layout",
+  /isNeckDesignGroup \? \([\s\S]*?grid min-w-0[\s\S]*?lg:grid-cols-2[\s\S]*?2xl:grid-cols-3/,
+  "Neck option subcategories should use a shrink-safe responsive 1/2/3-column layout",
 );
 assert.match(
   designStudioSource,
-  /<p className="mb-2 text-\[10px\] font-semibold uppercase tracking-wider text-heritage-ink\/70">\s*\{subcategory\}\s*<\/p>/,
-  "Neck subcategory headings should be rendered above grouped options",
+  /<p className="[^"]*break-words[^"]*">\s*\{subcategory\}\s*<\/p>/,
+  "Neck subcategory headings should wrap safely above grouped options",
 );
 assert.match(
   designStudioSource,
@@ -438,9 +470,39 @@ assert.match(
   "Neck section must render the None option once before grouped subcategories",
 );
 assert.match(
-  designStudioSource,
-  /grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3[\s\S]*?allowedGarments\.map\(\(garment\) =>/,
-  "The additional garment composer should use a responsive physical-garment button grid",
+  additionalGarmentSectionSource,
+  /allowedGarments\.map\(\(garment\) =>[\s\S]*?min-w-0[\s\S]*?break-words/,
+  "Additional garment choices must allow dynamic garment labels to wrap inside a shrink-safe card",
+);
+assert.match(
+  additionalGarmentSectionSource,
+  /flex-col[\s\S]*?sm:flex-row[\s\S]*?min-h-11/,
+  "Additional garment actions must stack safely on narrow cards and retain touch-sized controls",
+);
+assert.match(
+  garmentAssignmentSectionSource,
+  /allocatedGarmentRows\.map\(\(garment\) =>[\s\S]*?min-w-0[\s\S]*?break-words/,
+  "Garment assignment cards must let long garment and fabric labels wrap inside the card",
+);
+assert.match(
+  garmentAssignmentSectionSource,
+  /flex-col[\s\S]*?sm:flex-row[\s\S]*?sm:w-auto/,
+  "Change Fabric must move below assignment details until the card has enough width",
+);
+assert.match(
+  garmentAssignmentSectionSource,
+  /\{garment\.roleLabel\}/,
+  "Garment assignment cards must keep the MAIN or ADDITIONAL role visible",
+);
+assert.match(
+  garmentAssignmentSectionSource,
+  /aria-label=\{`Change fabric for \$\{garment\.garmentLabel\}`\}/,
+  "Change Fabric must expose a garment-specific accessible name",
+);
+assert.match(
+  garmentAssignmentSectionSource,
+  /handleChangeAssignedGarmentFabric\(garment\.garmentKey\)/,
+  "Change Fabric must keep passing the selected garment key to the existing handler",
 );
 assert.match(
   designStudioSource,

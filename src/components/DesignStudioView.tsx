@@ -677,17 +677,17 @@ const OptionalAdditionalGarmentSection = ({
   if (allowedGarments.length === 0 && assignments.length === 0) return null;
 
   return (
-    <fieldset className="col-span-1 space-y-3 border-t border-gray-100 pt-5 md:col-span-2">
+    <fieldset className="col-span-1 min-w-0 space-y-3 border-t border-gray-100 pt-5 md:col-span-2">
       <legend className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
         Add Another Garment
       </legend>
-      <p className="text-[10px] leading-relaxed text-heritage-ink/60">
+      <p className="break-words text-[10px] leading-relaxed text-heritage-ink/60">
         Add another piece supported by this design. Its authoritative garment
         price and fabric assignment are added separately.
       </p>
 
       {allowedGarments.length > 0 ? (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 2xl:grid-cols-3">
           {allowedGarments.map((garment) => {
             const inheritedReferencePrice = basePriceRows.find(
               (row) => row.garmentType === garment.garmentType,
@@ -707,17 +707,17 @@ const OptionalAdditionalGarmentSection = ({
                 key={garment.garmentType}
                 type="button"
                 onClick={() => onAdd(garment.garmentType)}
-                className="flex min-h-[74px] items-center justify-between gap-3 rounded-xl border-2 border-heritage-gold/25 bg-white px-3 py-3 text-left transition hover:border-heritage-green hover:bg-heritage-green/[0.03]"
+                className="flex min-h-11 min-w-0 flex-col items-stretch gap-2 rounded-xl border-2 border-heritage-gold/25 bg-white px-3 py-3 text-left transition hover:border-heritage-green hover:bg-heritage-green/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:min-h-[74px] sm:flex-row sm:items-center sm:justify-between"
               >
-                <span>
-                  <span className="block text-xs font-bold text-heritage-green">
+                <span className="min-w-0">
+                  <span className="block break-words text-xs font-bold text-heritage-green">
                     + Add {garment.label}
                   </span>
-                  <span className="mt-1 block text-[10px] text-heritage-ink/60">
+                  <span className="mt-1 block break-words text-[10px] text-heritage-ink/60">
                     Matches your selected design
                   </span>
                 </span>
-                <span className="shrink-0 text-xs font-bold text-heritage-gold">
+                <span className="shrink-0 self-start text-xs font-bold text-heritage-gold sm:self-auto">
                   {referencePrice === undefined
                     ? "Price pending"
                     : `${currencySymbol}${referencePrice.toFixed(2)}`}
@@ -733,7 +733,7 @@ const OptionalAdditionalGarmentSection = ({
       )}
 
       {assignments.length > 0 && (
-        <div className="space-y-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-3">
+        <div className="min-w-0 space-y-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-3">
           <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-green">
             Additional garments
           </p>
@@ -743,17 +743,17 @@ const OptionalAdditionalGarmentSection = ({
             return (
               <div
                 key={assignment.garmentKey}
-                className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2 text-xs ${
+                className={`flex min-w-0 flex-col gap-3 rounded-lg border px-3 py-3 text-xs sm:flex-row sm:items-center sm:justify-between ${
                   isOrphaned
                     ? "border-amber-300 bg-amber-50"
                     : "border-gray-200 bg-white"
                 }`}
               >
-                <div className="min-w-0">
-                  <p className="font-semibold text-heritage-ink">
+                <div className="min-w-0 flex-1">
+                  <p className="break-words font-semibold text-heritage-ink">
                     {displayLabels.get(assignment.garmentKey)}
                   </p>
-                  <p className="mt-0.5 text-[10px] text-heritage-ink/60">
+                  <p className="mt-0.5 break-words text-[10px] text-heritage-ink/60">
                     {isOrphaned
                       ? "This garment is no longer supported by the selected design."
                       : price === undefined
@@ -761,12 +761,13 @@ const OptionalAdditionalGarmentSection = ({
                         : `${currencySymbol}${price.toFixed(2)} selected clothing price`}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-none">
                   {!isOrphaned && (
                     <button
                       type="button"
                       onClick={() => onChangeFabric(assignment.garmentKey)}
-                      className="min-h-8 rounded-md border border-heritage-green/25 px-2 text-[9px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white"
+                      aria-label={`Change fabric for ${displayLabels.get(assignment.garmentKey) || getFabricGarmentLabel(assignment.garmentType)}`}
+                      className="min-h-11 rounded-md border border-heritage-green/25 px-2 text-[9px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                     >
                       Change fabric
                     </button>
@@ -774,7 +775,8 @@ const OptionalAdditionalGarmentSection = ({
                   <button
                     type="button"
                     onClick={() => onRemove(assignment.garmentKey)}
-                    className="min-h-8 rounded-md border border-red-200 px-2 text-[9px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50"
+                    aria-label={`Remove ${displayLabels.get(assignment.garmentKey) || getFabricGarmentLabel(assignment.garmentType)}`}
+                    className="min-h-11 rounded-md border border-red-200 px-2 text-[9px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2"
                   >
                     Remove
                   </button>
@@ -884,11 +886,11 @@ const GarmentDetailSelector = ({
     const helperGarmentName = getOptionalHeaderHelperText(section.id);
 
     return (
-      <fieldset key={section.id} className="col-span-1 md:col-span-2 space-y-4 border-t border-gray-100 pt-4 mt-2 first:border-t-0 first:pt-0 first:mt-0">
-        <legend className="block w-full border-b border-heritage-gold/30 pb-1.5 mb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-heritage-green uppercase tracking-widest text-xs">
+      <fieldset key={section.id} className="col-span-1 min-w-0 space-y-4 border-t border-gray-100 pt-4 mt-2 first:border-t-0 first:pt-0 first:mt-0 md:col-span-2">
+        <legend className="block min-w-0 w-full border-b border-heritage-gold/30 pb-1.5 mb-4">
+          <div className="flex min-w-0 flex-col justify-between gap-2 sm:flex-row sm:items-center">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="break-words font-extrabold text-heritage-green uppercase tracking-widest text-xs">
                 {section.title}
               </span>
               {isIncluded ? (
@@ -906,21 +908,21 @@ const GarmentDetailSelector = ({
               )}
             </div>
             {isIncluded ? (
-              <span className="text-[9px] font-medium text-heritage-green/70">
+              <span className="min-w-0 break-words text-[9px] font-medium text-heritage-green/70">
                 Included in your selected design
               </span>
             ) : isAdded ? (
-              <span className="text-[9px] font-medium text-heritage-green/70">
+              <span className="min-w-0 break-words text-[9px] font-medium text-heritage-green/70">
                 Added to your garment order
               </span>
             ) : (
-              <span className="text-[9px] font-medium text-heritage-ink/50">
+              <span className="min-w-0 break-words text-[9px] font-medium text-heritage-ink/50">
                 Configure the selected {helperGarmentName}.
               </span>
             )}
           </div>
         </legend>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+        <div className="grid min-w-0 grid-cols-1 gap-6 pt-2 md:grid-cols-2">
           {section.groups.map((group) =>
             renderGroup(group.id, group.options, group.id === "neck_design"),
           )}
@@ -1120,7 +1122,7 @@ const GarmentDetailSelector = ({
     const noneOptionElement = (
       <label
         key={`${groupId}-none`}
-        className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
+        className={`flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
           isNoneSelected
             ? "border-heritage-gold/40 bg-heritage-cream/10"
             : "border-gray-150 bg-white hover:border-heritage-gold/30 hover:bg-heritage-cream/5"
@@ -1133,13 +1135,13 @@ const GarmentDetailSelector = ({
           onChange={() => handleClearGroup(groupId)}
           className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-green"
         />
-        <div className="flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <span className="block text-xs font-bold text-heritage-green">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+            <span className="min-w-0 break-words text-xs font-bold text-heritage-green">
               None
             </span>
           </div>
-          <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+          <span className="mt-1 block break-words text-[10px] leading-tight text-heritage-ink/60">
             No selection for this category
           </span>
         </div>
@@ -1165,23 +1167,23 @@ const GarmentDetailSelector = ({
         return (
           <div
             key={opt.id}
-            className="flex items-start gap-3 rounded-xl border border-gray-150 bg-heritage-cream/20 p-3"
+            className="flex min-w-0 items-start gap-3 rounded-xl border border-gray-150 bg-heritage-cream/20 p-3"
           >
             <Info
               aria-hidden="true"
               className="mt-0.5 shrink-0 text-heritage-gold"
               size={16}
             />
-            <div className="flex-1">
-              <div className="flex items-start justify-between gap-3">
-                <span className="block text-xs font-bold text-heritage-green">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                <span className="min-w-0 break-words text-xs font-bold text-heritage-green">
                   {opt.label}
                 </span>
                 <span className="shrink-0 text-[10px] font-semibold text-heritage-green/70">
                   {priceLabel}
                 </span>
               </div>
-              <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+              <span className="mt-1 block break-words text-[10px] leading-tight text-heritage-ink/60">
                 {opt.description}
               </span>
             </div>
@@ -1192,7 +1194,7 @@ const GarmentDetailSelector = ({
       return (
         <label
           key={opt.id}
-          className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
+          className={`flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
             isSelected
               ? "border-heritage-green bg-heritage-green/10"
               : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
@@ -1207,16 +1209,16 @@ const GarmentDetailSelector = ({
             }
             className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-green"
           />
-          <div className="flex-1">
-            <div className="flex items-start justify-between gap-3">
-              <span className="block text-xs font-bold text-heritage-green">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+              <span className="min-w-0 break-words text-xs font-bold text-heritage-green">
                 {opt.label}
               </span>
               <span className="shrink-0 text-xs font-bold text-heritage-gold">
                 {priceLabel}
               </span>
             </div>
-            <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+            <span className="mt-1 block break-words text-[10px] leading-tight text-heritage-ink/60">
               {opt.description}
             </span>
           </div>
@@ -1238,7 +1240,7 @@ const GarmentDetailSelector = ({
       <div
         id={`custom-detail-group-${groupId}`}
         tabIndex={-1}
-        className={`space-y-2 mb-4 col-span-1 focus:outline-none p-3.5 rounded-2xl transition-all duration-300 ${
+        className={`col-span-1 mb-4 min-w-0 space-y-2 rounded-2xl p-3.5 transition-all duration-300 focus:outline-none ${
           isInvalid
             ? "border-2 border-red-300 bg-red-50/20 shadow-sm shadow-red-100"
             : "border-2 border-transparent"
@@ -1246,9 +1248,9 @@ const GarmentDetailSelector = ({
         key={groupId}
       >
         {!suppressHeading ? (
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-1.5">
-              <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+          <div className="mb-1 flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <label className="break-words font-bold text-heritage-green uppercase tracking-wider text-[10px]">
                 {presentation.title}
               </label>
               <span className={`text-[8px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider ${
@@ -1268,10 +1270,10 @@ const GarmentDetailSelector = ({
           </div>
         ) : (
           isNeckDesignGroup && (
-            <div className="mb-1 flex items-center justify-between">
+            <div className="mb-1 flex min-w-0 flex-wrap items-center justify-between gap-2">
               {isNeckDesignGroup && (
-                <div className="flex items-center gap-1.5">
-                  <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <label className="break-words font-bold text-heritage-green uppercase tracking-wider text-[10px]">
                     Neck
                   </label>
                   <span
@@ -1295,7 +1297,7 @@ const GarmentDetailSelector = ({
           )
         )}
         {!suppressHeading && presentation.description && (
-          <p className="text-[10px] leading-tight text-heritage-ink/60">
+          <p className="break-words text-[10px] leading-tight text-heritage-ink/60">
             {presentation.description}
           </p>
         )}
@@ -1303,13 +1305,13 @@ const GarmentDetailSelector = ({
           {isNeckDesignGroup ? (
             <>
               {noneOptionElement}
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
                 {neckSubcategorySections.map(({ subcategory, subcategoryOptions }) => (
                   <div
                     key={subcategory}
-                    className="rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-3"
+                    className="min-w-0 rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-3"
                   >
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-heritage-ink/70">
+                    <p className="mb-2 break-words text-[10px] font-semibold uppercase tracking-wider text-heritage-ink/70">
                       {subcategory}
                     </p>
                     <div className="space-y-2">
@@ -1347,15 +1349,15 @@ const GarmentDetailSelector = ({
         <div
           id="custom-detail-group-lowerGarmentType"
           tabIndex={-1}
-          className={`col-span-1 md:col-span-2 space-y-2 mb-6 border-b pb-6 focus:outline-none p-3.5 rounded-2xl transition-all duration-300 ${
+          className={`col-span-1 mb-6 min-w-0 space-y-2 rounded-2xl border-b p-3.5 pb-6 transition-all duration-300 focus:outline-none md:col-span-2 ${
             invalidGroups.includes("lowerGarmentType")
               ? "border-2 border-red-300 bg-red-50/20 shadow-sm shadow-red-100"
               : "border-2 border-transparent"
           }`}
         >
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-1.5">
-              <label className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
+          <div className="mb-1 flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <label className="break-words font-bold text-heritage-green uppercase tracking-wider text-[10px]">
                 Garment Type
               </label>
               <span
@@ -1370,9 +1372,9 @@ const GarmentDetailSelector = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
             <label
-              className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
+              className={`flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
                 lowerGarmentType === "trousers"
                   ? "border-heritage-green bg-heritage-green/10"
                   : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
@@ -1393,18 +1395,18 @@ const GarmentDetailSelector = ({
                 }}
                 className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-green"
               />
-              <div className="flex-1">
-                <span className="block text-xs font-bold text-heritage-green">
+              <div className="min-w-0 flex-1">
+                <span className="block break-words text-xs font-bold text-heritage-green">
                   Leg Pant / Trouser
                 </span>
-                <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                <span className="mt-1 block break-words text-[10px] leading-tight text-heritage-ink/60">
                   Design custom trousers with fastening and pocket options.
                 </span>
               </div>
             </label>
 
             <label
-              className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
+              className={`flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
                 lowerGarmentType === "skirt"
                   ? "border-heritage-green bg-heritage-green/10"
                   : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
@@ -1425,11 +1427,11 @@ const GarmentDetailSelector = ({
                 }}
                 className="mt-1 h-4 w-4 border-gray-300 text-heritage-green focus:ring-heritage-green"
               />
-              <div className="flex-1">
-                <span className="block text-xs font-bold text-heritage-green">
+              <div className="min-w-0 flex-1">
+                <span className="block break-words text-xs font-bold text-heritage-green">
                   Skirt
                 </span>
-                <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                <span className="mt-1 block break-words text-[10px] leading-tight text-heritage-ink/60">
                   Design custom skirt length and pocket options.
                 </span>
               </div>
@@ -1452,11 +1454,11 @@ const GarmentDetailSelector = ({
       )}
 
       {additionalGroups.length > 0 && (
-        <fieldset className="col-span-1 space-y-3 md:col-span-2">
+        <fieldset className="col-span-1 min-w-0 space-y-3 md:col-span-2">
           <legend className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
             Additional Clothes Costs
           </legend>
-          <div className="grid grid-cols-1 gap-x-4 md:grid-cols-2">
+          <div className="grid min-w-0 grid-cols-1 gap-x-4 md:grid-cols-2">
             {additionalGroups.map((group) =>
               renderGroup(group.id, group.options),
             )}
@@ -1464,12 +1466,12 @@ const GarmentDetailSelector = ({
         </fieldset>
       )}
 
-      <fieldset className="col-span-1 space-y-2 md:col-span-2">
+      <fieldset className="col-span-1 min-w-0 space-y-2 md:col-span-2">
         <legend className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
           Monogram and Embroidery Design
         </legend>
         <p className="text-[10px] text-heritage-ink/60">Optional</p>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+        <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-3">
           {applicableDecorativeFeatures.map((feature) => {
             const includedByStyle =
               includedDecorativeFeatures.includes(feature);
@@ -1484,7 +1486,7 @@ const GarmentDetailSelector = ({
             return (
               <label
                 key={feature}
-                className={`flex min-h-[76px] items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
+                className={`flex min-h-[76px] min-w-0 items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
                   checked
                     ? "border-heritage-green bg-heritage-green/10"
                     : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
@@ -1503,15 +1505,15 @@ const GarmentDetailSelector = ({
                   className="mt-1 h-4 w-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-start justify-between gap-2">
-                    <span className="text-xs font-bold text-heritage-green">
+                  <span className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                    <span className="min-w-0 break-words text-xs font-bold text-heritage-green">
                       {feature}
                     </span>
                     <span className="shrink-0 text-xs font-bold text-heritage-gold">
                       +{currencySymbol}{featurePrice.toFixed(2)}
                     </span>
                   </span>
-                  <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                  <span className="mt-1 block break-words text-[10px] leading-tight text-heritage-ink/60">
                     {DECORATIVE_FEATURE_DESCRIPTIONS[feature]}
                   </span>
                   {includedByStyle && (
@@ -1565,19 +1567,19 @@ const GarmentDetailSelector = ({
         )}
       </fieldset>
 
-      <fieldset className="col-span-1 space-y-2 md:col-span-2">
+      <fieldset className="col-span-1 min-w-0 space-y-2 md:col-span-2">
         <legend className="block font-bold text-heritage-green uppercase tracking-wider text-[10px]">
           Select Accessories (Optional)
         </legend>
         <p className="text-[10px] text-heritage-ink/60">Optional</p>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+        <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-3">
           {TRADITIONAL_ACCESSORY_OPTIONS.map((accessory) => {
             const checked = selectedAccessories.includes(accessory);
 
             return (
               <label
                 key={accessory}
-                className={`flex min-h-[62px] cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
+                className={`flex min-h-[62px] min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
                   checked
                     ? "border-heritage-green bg-heritage-green/10"
                     : "border-gray-150 bg-white hover:border-heritage-green/30 hover:bg-heritage-green/[0.03]"
@@ -1592,15 +1594,15 @@ const GarmentDetailSelector = ({
                   className="mt-1 h-4 w-4 rounded border-gray-300 text-heritage-green focus:ring-heritage-green"
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-start justify-between gap-2">
-                    <span className="text-xs font-bold text-heritage-green">
+                  <span className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                    <span className="min-w-0 break-words text-xs font-bold text-heritage-green">
                       {accessory}
                     </span>
                     <span className="shrink-0 text-xs font-bold text-heritage-gold">
                       +{currencySymbol}12.00
                     </span>
                   </span>
-                  <span className="mt-1 block text-[10px] leading-tight text-heritage-ink/60">
+                  <span className="mt-1 block break-words text-[10px] leading-tight text-heritage-ink/60">
                     {TRADITIONAL_ACCESSORY_DESCRIPTIONS[accessory]}
                   </span>
                 </span>
@@ -5550,9 +5552,9 @@ export default function DesignStudioView({
 
               <section
                 aria-labelledby="fabric-garments-heading"
-                className="space-y-3 border-y border-heritage-gold/20 py-4"
+                className="min-w-0 space-y-3 border-y border-heritage-gold/20 py-4"
               >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <h3
                     id="fabric-garments-heading"
                     className="text-xs font-bold uppercase tracking-wider text-heritage-green"
@@ -5562,31 +5564,36 @@ export default function DesignStudioView({
                 </div>
 
                 {allocatedGarmentRows.length > 0 && (
-                  <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <ul className="grid min-w-0 grid-cols-1 gap-3 2xl:grid-cols-2">
                     {allocatedGarmentRows.map((garment) => (
                       <li
                         key={garment.garmentKey}
-                        className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs"
+                        className="min-w-0 rounded-xl border border-gray-200 bg-white p-3 text-xs shadow-sm"
                       >
-                        <span className="font-semibold text-heritage-ink">
-                          {garment.garmentLabel}
-                        </span>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <span className="rounded bg-heritage-green/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-heritage-green">
-                            {garment.roleLabel}
-                          </span>
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
-                            {garment.fabricLabel}
-                          </span>
+                        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                              <span className="min-w-0 break-words font-semibold text-heritage-ink">
+                                {garment.garmentLabel}
+                              </span>
+                              <span className="shrink-0 rounded-full bg-heritage-green/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-heritage-green">
+                                {garment.roleLabel}
+                              </span>
+                            </div>
+                            <p className="break-words text-[10px] leading-relaxed text-heritage-ink/65">
+                              {garment.fabricLabel}
+                            </p>
+                          </div>
                           <button
                             type="button"
                             onClick={() =>
                               handleChangeAssignedGarmentFabric(garment.garmentKey)
                             }
+                            aria-label={`Change fabric for ${garment.garmentLabel}`}
                             disabled={
                               fabricAllocationState.pendingFabricGarment !== null
                             }
-                            className="min-h-8 rounded-md border border-heritage-green/25 px-2 text-[9px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            className="min-h-11 w-full shrink-0 rounded-md border border-heritage-green/25 px-3 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                           >
                             Change fabric
                           </button>
@@ -5598,7 +5605,7 @@ export default function DesignStudioView({
 
               </section>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid min-w-0 grid-cols-1 gap-6 md:grid-cols-2">
                 <GarmentDetailSelector
                   selectedStyle={selectedStyle}
                   customDetailDesignContext={activeCustomDetailDesignContext}
@@ -7437,13 +7444,13 @@ export default function DesignStudioView({
           </div>
         </div>
         {/* RIGHT COLUMN: Real-time billing estimation block */}
-        <div className="lg:col-span-4 space-y-6">
-          <div className="rounded-3xl border border-heritage-gold/25 bg-white p-6 shadow-sm space-y-6">
-            <div className="border-b pb-3 border-gray-100 flex items-center justify-between">
-              <h3 className="text-base font-bold text-heritage-green uppercase tracking-wider font-serif">
+        <div className="min-w-0 space-y-6 lg:col-span-4">
+          <div className="min-w-0 space-y-6 rounded-3xl border border-heritage-gold/25 bg-white p-6 shadow-sm">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+              <h3 className="min-w-0 break-words font-serif text-base font-bold uppercase tracking-wider text-heritage-green">
                 Live Price Summary
               </h3>
-              <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded">
+              <span className="min-w-0 break-words rounded border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 font-mono text-[9px] font-bold text-emerald-700">
                 Code:{" "}
                 {selectedPriceCode === "AUTO"
                   ? getAutoDetectedPriceCode()
@@ -7451,7 +7458,7 @@ export default function DesignStudioView({
               </span>
             </div>
 
-            <div className="space-y-2 text-xs font-sans">
+            <div className="min-w-0 space-y-2 font-sans text-xs">
               {pricing.fabricAssignmentsIncomplete && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] text-amber-800">
                   Complete fabric assignments to see the final design total.
@@ -7459,9 +7466,9 @@ export default function DesignStudioView({
               )}
               {showCustomerDesignSummary && (
                 <>
-                  <div className="flex justify-between items-center text-heritage-ink/70">
-                    <span>Selected Design Price:</span>
-                    <span className="font-semibold text-heritage-green">
+                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-heritage-ink/70">
+                    <span className="min-w-0 break-words">Selected Design Price:</span>
+                    <span className="shrink-0 font-semibold text-heritage-green">
                       {pricing.designPricingError
                         ? "Pricing review required"
                         : pricing.selectedDesignPrice === null
@@ -7469,16 +7476,16 @@ export default function DesignStudioView({
                           : `${currencySymbol}${pricing.selectedDesignPrice.toFixed(2)}`}
                     </span>
                   </div>
-                  <p className="text-[10px] text-heritage-ink/55">
+                  <p className="break-words text-[10px] text-heritage-ink/55">
                     {SELECTED_DESIGN_PRICE_SUPPORTING_TEXT}
                   </p>
                   {customerDesignPriceBreakdown.baseGarmentRows.map((row) => (
                     <div
                       key={`base-garment-${row.garmentKey}`}
-                      className="flex items-center justify-between gap-3 text-heritage-ink/70"
+                      className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-heritage-ink/70"
                     >
-                      <span>{row.label}</span>
-                      <span className="font-semibold text-heritage-green">
+                      <span className="min-w-0 break-words">{row.label}</span>
+                      <span className="shrink-0 font-semibold text-heritage-green">
                         {currencySymbol}{row.price.toFixed(2)}
                       </span>
                     </div>
@@ -7486,13 +7493,13 @@ export default function DesignStudioView({
                   {customerDesignPriceBreakdown.additionalGarmentRows.map((row) => (
                     <div
                       key={`additional-garment-${row.assignmentId}`}
-                      className="flex items-center justify-between gap-3 text-heritage-ink/70"
+                      className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-heritage-ink/70"
                     >
-                      <span>
+                      <span className="min-w-0 break-words">
                         {additionalGarmentDisplayLabels.get(row.assignmentId) ||
                           `Additional ${row.label}`}
                       </span>
-                      <span className="font-semibold text-heritage-green">
+                      <span className="shrink-0 font-semibold text-heritage-green">
                         {currencySymbol}{row.price.toFixed(2)}
                       </span>
                     </div>
@@ -7533,11 +7540,11 @@ export default function DesignStudioView({
                         }
                         className="text-heritage-ink/70"
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <span>
+                        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                          <span className="min-w-0 break-words">
                             {categoryTitle}: {item.label}
                           </span>
-                          <span className="font-semibold text-heritage-green">
+                          <span className="shrink-0 font-semibold text-heritage-green">
                             {currencySymbol}
                             {item.price.toFixed(2)}
                           </span>
@@ -7548,12 +7555,12 @@ export default function DesignStudioView({
               {showCustomerDesignSummary && pricing.decorativeFeatures
                 .filter((feature) => feature.price > 0)
                 .map((feature) => (
-                  <div key={`decorative-${feature.label}`} className="flex justify-between items-center text-heritage-ink/70">
-                    <span>
+                  <div key={`decorative-${feature.label}`} className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-heritage-ink/70">
+                    <span className="min-w-0 break-words">
                       {feature.includedByStyle ? "Design Feature" : "Decorative Detail"}:{" "}
                       {feature.label}
                     </span>
-                    <span className="font-semibold text-heritage-green">
+                    <span className="shrink-0 font-semibold text-heritage-green">
                       +{currencySymbol}{feature.price.toFixed(2)}
                     </span>
                   </div>
@@ -7564,10 +7571,10 @@ export default function DesignStudioView({
                 .map((accessory) => (
                   <div
                     key={`traditional-accessory-${accessory.label}`}
-                    className="flex justify-between items-center text-heritage-ink/70"
+                    className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-heritage-ink/70"
                   >
-                    <span>Traditional Accessory: {accessory.label}</span>
-                    <span className="font-semibold text-heritage-green">
+                    <span className="min-w-0 break-words">Traditional Accessory: {accessory.label}</span>
+                    <span className="shrink-0 font-semibold text-heritage-green">
                       +{currencySymbol}{accessory.price.toFixed(2)}
                     </span>
                   </div>
@@ -7577,9 +7584,9 @@ export default function DesignStudioView({
                 liningEligible &&
                 hasLining &&
                 !hasCatalogDressLining && (
-                <div className="flex justify-between items-center text-heritage-ink/70">
-                  <span>Inner Lining/Net (L5):</span>
-                  <span className="font-semibold text-heritage-green">
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-heritage-ink/70">
+                  <span className="min-w-0 break-words">Inner Lining/Net (L5):</span>
+                  <span className="shrink-0 font-semibold text-heritage-green">
                     +{currencySymbol}10.00
                   </span>
                 </div>
@@ -7587,9 +7594,9 @@ export default function DesignStudioView({
 
               {showCustomerDesignSummary &&
                 designSelections.additionalCap && (
-                <div className="flex justify-between items-center text-heritage-ink/70">
-                  <span>Custom Matching Fila (Accessory):</span>
-                  <span className="font-semibold text-heritage-green">
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-heritage-ink/70">
+                  <span className="min-w-0 break-words">Custom Matching Fila (Accessory):</span>
+                  <span className="shrink-0 font-semibold text-heritage-green">
                     +{currencySymbol}
                     {(
                       businessSettings.pricingSettings
@@ -7613,9 +7620,9 @@ export default function DesignStudioView({
 
               {pricing.showShippingSummary && (
                 <>
-                  <div className="flex flex-col text-[10px]">
-                    <div className="flex justify-between items-center text-heritage-ink/70">
-                      <span>
+                  <div className="flex min-w-0 flex-col text-[10px]">
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-heritage-ink/70">
+                      <span className="min-w-0 break-words">
                         {pricing.finalMileShipping?.method === "PICKUP"
                           ? `${pricing.finalMileShipping.pickupLocation || "Configured location"} pickup:`
                           : pricing.finalMileShipping?.status === "READY"
@@ -7623,24 +7630,24 @@ export default function DesignStudioView({
                             : "Final delivery:"}
                       </span>
                       {pricing.finalMileShipping?.status === "READY" ? (
-                        <span className="font-mono font-semibold text-heritage-green">
+                        <span className="shrink-0 font-mono font-semibold text-heritage-green">
                           +{currencySymbol}
                           {(pricing.finalMileShipping.priceEur ?? 0).toFixed(2)}
                         </span>
                       ) : pricing.finalMileShipping?.status ===
                         "MANUAL_QUOTE_REQUIRED" ? (
-                        <span className="font-semibold text-amber-700">
+                        <span className="shrink-0 font-semibold text-amber-700">
                           Shipping quote required
                         </span>
                       ) : (
-                        <span className="font-semibold text-heritage-ink/50">
+                        <span className="shrink-0 font-semibold text-heritage-ink/50">
                           Select in Shipping &amp; Delivery
                         </span>
                       )}
                     </div>
                     {pricing.finalMileShipping?.status ===
                       "MANUAL_QUOTE_REQUIRED" && (
-                      <span className="mt-0.5 text-[9px] text-amber-700">
+                  <span className="mt-0.5 break-words text-[9px] text-amber-700">
                         {pricing.finalMileShipping.manualQuoteReason}
                       </span>
                     )}
@@ -7649,13 +7656,13 @@ export default function DesignStudioView({
                 </>
               )}
 
-              <div className="flex justify-between border-t pt-2.5 font-bold text-sm text-heritage-green font-serif">
-                <span>
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-t pt-2.5 font-serif text-sm font-bold text-heritage-green">
+                <span className="min-w-0 break-words">
                   {isShippingReady
                     ? "Total Subtotal:"
                     : "Estimated Total So Far:"}
                 </span>
-                <span className="font-mono text-emerald-800">
+                <span className="shrink-0 font-mono text-emerald-800">
                   {pricing.fabricAssignmentsIncomplete
                     ? "Complete fabric assignments"
                     : pricing.selectedDesignPrice === null
@@ -7664,7 +7671,7 @@ export default function DesignStudioView({
                 </span>
               </div>
               {!isShippingReady && (
-                <p className="text-[9px] leading-relaxed text-heritage-ink/50">
+              <p className="break-words text-[9px] leading-relaxed text-heritage-ink/50">
                   Final total and payment amount will be available after
                   final delivery is selected and priced.
                 </p>
@@ -7672,13 +7679,13 @@ export default function DesignStudioView({
             </div>
 
             {/* Split payments */}
-            <div className="grid grid-cols-2 gap-3 text-center pt-1.5">
-              <div className="bg-heritage-cream/60 border border-heritage-gold/20 p-3 rounded-xl">
-                <span className="block text-[8px] uppercase tracking-wider text-heritage-ink/50 font-bold">
+            <div className="grid min-w-0 grid-cols-1 gap-3 pt-1.5 text-center sm:grid-cols-2">
+              <div className="min-w-0 rounded-xl border border-heritage-gold/20 bg-heritage-cream/60 p-3">
+                <span className="block break-words text-[8px] font-bold uppercase tracking-wider text-heritage-ink/50">
                   Due Now ({depositPercentage}%
                   Garment Deposit{pricing.shippingCost > 0 ? " + Shipping" : ""})
                 </span>
-                <span className="text-sm font-bold text-heritage-green font-mono">
+                <span className="block break-words font-mono text-sm font-bold text-heritage-green">
                   {pricing.fabricAssignmentsIncomplete
                     ? "Pending assignments"
                     : isShippingReady
@@ -7686,11 +7693,11 @@ export default function DesignStudioView({
                     : "Pending final delivery"}
                 </span>
               </div>
-              <div className="bg-heritage-cream/60 border border-heritage-gold/20 p-3 rounded-xl">
-                <span className="block text-[8px] uppercase tracking-wider text-heritage-ink/50 font-bold">
+              <div className="min-w-0 rounded-xl border border-heritage-gold/20 bg-heritage-cream/60 p-3">
+                <span className="block break-words text-[8px] font-bold uppercase tracking-wider text-heritage-ink/50">
                   Due on Hand-off
                 </span>
-                <span className="text-sm font-bold text-heritage-green font-mono">
+                <span className="block break-words font-mono text-sm font-bold text-heritage-green">
                   {pricing.fabricAssignmentsIncomplete
                     ? "Pending assignments"
                     : `${currencySymbol}${remainingDue.toFixed(2)}`}
@@ -7699,31 +7706,31 @@ export default function DesignStudioView({
             </div>
 
             {/* Selected summary badges */}
-            <div className="p-4 bg-heritage-cream/30 border rounded-2xl text-[11px] space-y-2 text-heritage-ink/70">
-              <span className="block font-bold text-heritage-green uppercase tracking-wider text-[8px]">
+            <div className="min-w-0 space-y-2 rounded-2xl border bg-heritage-cream/30 p-4 text-[11px] text-heritage-ink/70">
+              <span className="block break-words text-[8px] font-bold uppercase tracking-wider text-heritage-green">
                 Active Selection Summary
               </span>
-              <p>
+              <p className="break-words">
                 {activeSelectionPresentation.isUploaded ? "Design" : "Style"}:{" "}
-                <strong className="text-heritage-green font-serif">
+                <strong className="break-words font-serif text-heritage-green">
                   {activeSelectionPresentation.label}
                 </strong>
               </p>
               {fabricAssignmentSummary.garmentCount > 0 && (
-                <div className="space-y-2 border-t border-heritage-gold/20 pt-2">
-                  <span className="block text-[8px] font-bold uppercase tracking-wider text-heritage-green">
+                <div className="min-w-0 space-y-2 border-t border-heritage-gold/20 pt-2">
+                  <span className="block break-words text-[8px] font-bold uppercase tracking-wider text-heritage-green">
                     Garments &amp; Fabrics
                   </span>
                   {fabricAssignmentSummary.garmentRows.map((garment) => (
-                    <div key={garment.garmentKey} className="space-y-0.5">
-                      <p className="font-semibold text-heritage-ink">
+                    <div key={garment.garmentKey} className="min-w-0 space-y-0.5">
+                      <p className="break-words font-semibold text-heritage-ink">
                         {garment.garmentLabel}
                       </p>
                       <p
                         className={
                           garment.isAssigned
-                            ? "text-heritage-green"
-                            : "text-amber-700"
+                            ? "break-words text-heritage-green"
+                            : "break-words text-amber-700"
                         }
                       >
                         {garment.isAssigned
@@ -7735,19 +7742,19 @@ export default function DesignStudioView({
                 </div>
               )}
               {fabricAssignmentSummary.fabricQuantityRows.length > 0 && (
-                <div className="space-y-1 border-t border-heritage-gold/20 pt-2">
-                  <span className="block text-[8px] font-bold uppercase tracking-wider text-heritage-green">
+                <div className="min-w-0 space-y-1 border-t border-heritage-gold/20 pt-2">
+                  <span className="block break-words text-[8px] font-bold uppercase tracking-wider text-heritage-green">
                     Fabric Quantities
                   </span>
                   {fabricAssignmentSummary.fabricQuantityRows.map((fabric) => (
-                    <p key={fabric.fabricCode} className="flex justify-between gap-3">
-                      <span className="text-heritage-green">{fabric.fabricLabel}</span>
+                    <p key={fabric.fabricCode} className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                      <span className="min-w-0 break-words text-heritage-green">{fabric.fabricLabel}</span>
                       <strong className="shrink-0 text-heritage-ink">
                         {fabric.fabricQuantity}
                       </strong>
                     </p>
                   ))}
-                  <p className="pt-1 text-[10px] font-semibold text-heritage-ink">
+                  <p className="break-words pt-1 text-[10px] font-semibold text-heritage-ink">
                     {fabricAssignmentSummary.garmentCount} garment
                     {fabricAssignmentSummary.garmentCount === 1 ? "" : "s"} • {fabricAssignmentSummary.fabricQuantity} fabric quantit
                     {fabricAssignmentSummary.fabricQuantity === 1 ? "y" : "ies"}
@@ -7755,22 +7762,22 @@ export default function DesignStudioView({
                 </div>
               )}
               {fabricAssignmentSummary.unresolvedGarmentCount > 0 && (
-                <p className="text-[10px] font-medium text-amber-700">
+                <p className="break-words text-[10px] font-medium text-amber-700">
                   Fabric assignments are incomplete. Complete them before proceeding.
                 </p>
               )}
               {!activeSelectionPresentation.isUploaded && (
-                <p>
+                <p className="break-words">
                   Garment Cut:{" "}
-                  <strong className="text-heritage-green">
+                  <strong className="break-words text-heritage-green">
                     {selectedGarment?.type || "Pending"}
                   </strong>
                 </p>
               )}
               {isAmbiguous && (
-                <p>
+                <p className="break-words">
                   Lower Garment Type:{" "}
-                  <strong className="text-heritage-green font-bold uppercase">
+                  <strong className="break-words font-bold uppercase text-heritage-green">
                     {designSelections.lowerGarmentType === "trousers"
                       ? "Trouser"
                       : designSelections.lowerGarmentType === "skirt"
@@ -7794,9 +7801,9 @@ export default function DesignStudioView({
                 mode="non-priced"
               />
 
-              <p>
+              <p className="break-words">
                 Your Order Route:{" "}
-                <strong className="text-heritage-gold font-bold">
+                <strong className="break-words font-bold text-heritage-gold">
                   {batchType === "community"
                     ? (ctx.batchName || "Community Batch")
                     : batchType === "alone"
@@ -7806,9 +7813,9 @@ export default function DesignStudioView({
                         : "Custom Order"}
                 </strong>
               </p>
-              <p>
+              <p className="break-words">
                 Final Delivery:{" "}
-                <strong className="text-heritage-green">
+                <strong className="break-words text-heritage-green">
                   {!pricing.finalMileShipping
                     ? "Select in Shipping & Delivery"
                     : pricing.finalMileShipping.status ===
