@@ -16,6 +16,9 @@ import {
 } from "./src/utils/designSourceState";
 import {
   DESIGN_STUDIO_CUSTOMER_FLOW_STEPS,
+  canNavigateToCustomerFlowStep,
+  getCustomerFlowStepNavigationState,
+  getFurthestReachedCustomerFlowStepIndex,
   getNextCustomerFlowStep,
   getPreviousCustomerFlowStep,
   normalizeCustomerFlowStep,
@@ -91,6 +94,55 @@ assert.deepEqual(
 );
 assert.equal(normalizeCustomerFlowStep(4), 7);
 assert.equal(normalizeCustomerFlowStep(8), 9);
+
+assert.equal(
+  getFurthestReachedCustomerFlowStepIndex(3, 1),
+  3,
+  "Advancing must unlock each newly reached step.",
+);
+assert.equal(
+  getFurthestReachedCustomerFlowStepIndex(1, 4),
+  4,
+  "Moving backward must not relock previously reached steps.",
+);
+assert.equal(
+  getCustomerFlowStepNavigationState({
+    targetIndex: 1,
+    currentIndex: 3,
+    furthestReachedIndex: 3,
+  }),
+  "completed",
+  "Previously completed steps remain available for backward jumps.",
+);
+assert.equal(
+  getCustomerFlowStepNavigationState({
+    targetIndex: 3,
+    currentIndex: 1,
+    furthestReachedIndex: 3,
+  }),
+  "completed",
+  "Users can move forward again through a previously reached step.",
+);
+assert.equal(
+  getCustomerFlowStepNavigationState({
+    targetIndex: 4,
+    currentIndex: 1,
+    furthestReachedIndex: 3,
+  }),
+  "locked",
+  "An untouched future step remains locked.",
+);
+assert.equal(
+  getCustomerFlowStepNavigationState({
+    targetIndex: 1,
+    currentIndex: 1,
+    furthestReachedIndex: 3,
+  }),
+  "current",
+);
+assert.equal(canNavigateToCustomerFlowStep("completed"), true);
+assert.equal(canNavigateToCustomerFlowStep("current"), false);
+assert.equal(canNavigateToCustomerFlowStep("locked"), false);
 
 const fabricCode = "JOURNEY-FABRIC";
 assert.equal(
@@ -177,5 +229,13 @@ assert.match(studioSource, /hasValidActiveDesignSource\(/);
 assert.match(studioSource, /getNextCustomerFlowStep\(currentStep\)/);
 assert.match(studioSource, /getPreviousCustomerFlowStep\(currentStep\)/);
 assert.match(studioSource, /DESIGN_STUDIO_CUSTOMER_FLOW_STEPS as CUSTOMER_FLOW_STEPS/);
+assert.match(studioSource, /furthestReachedFlowStepIndex/);
+assert.match(studioSource, /handleStepNavigation/);
+assert.match(studioSource, /aria-current=/);
+assert.match(studioSource, /aria-label=\{`Step/);
+assert.match(studioSource, /data-step-state/);
+assert.match(studioSource, /disabled=\{isLocked\}/);
+assert.match(studioSource, /focus-visible:ring-2/);
+assert.match(studioSource, /Back one step/);
 
 console.log("PASS: catalog and uploaded design sources share the canonical customer journey");
