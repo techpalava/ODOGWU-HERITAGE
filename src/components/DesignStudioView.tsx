@@ -178,7 +178,10 @@ import {
 } from "../utils/designSourceState";
 import {
   DESIGN_STUDIO_CUSTOMER_FLOW_STEPS as CUSTOMER_FLOW_STEPS,
+  canNavigateToCustomerFlowStep,
   getCustomerFlowStepInternal,
+  getCustomerFlowStepNavigationState,
+  getFurthestReachedCustomerFlowStepIndex,
   getNextCustomerFlowStep,
   getPreviousCustomerFlowStep,
   normalizeCustomerFlowStep,
@@ -1760,6 +1763,8 @@ export default function DesignStudioView({
 }: DesignStudioViewProps) {
   // Current step state (1 to 9)
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const [furthestReachedFlowStepIndex, setFurthestReachedFlowStepIndex] =
+    useState<number>(0);
   const [invalidGroups, setInvalidGroups] = useState<string[]>([]);
   const [guestDraftHydrated, setGuestDraftHydrated] =
     useState<boolean>(false);
@@ -3077,6 +3082,7 @@ export default function DesignStudioView({
     handledFabricSelectionCodeRef.current = null;
     setValidationError("");
     setCurrentStep(cleared.currentStep);
+    setFurthestReachedFlowStepIndex(0);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -4260,6 +4266,7 @@ export default function DesignStudioView({
     );
     setValidationError("");
     setCurrentStep(1);
+    setFurthestReachedFlowStepIndex(0);
     setShowAddedModal(false);
   };
 
@@ -4270,8 +4277,35 @@ export default function DesignStudioView({
       (item) => item.internalStep === currentStep,
     ),
   );
+  useEffect(() => {
+    setFurthestReachedFlowStepIndex((previousIndex) =>
+      getFurthestReachedCustomerFlowStepIndex(
+        currentFlowStepIndex,
+        previousIndex,
+      ),
+    );
+  }, [currentFlowStepIndex]);
+
   const currentFlowStepNumber = currentFlowStepIndex + 1;
   const currentFlowStep = CUSTOMER_FLOW_STEPS[currentFlowStepIndex];
+  const previousFlowStep = CUSTOMER_FLOW_STEPS[currentFlowStepIndex - 1];
+
+  const handleStepNavigation = (
+    targetIndex: number,
+    targetInternalStep: number,
+  ) => {
+    const navigationState = getCustomerFlowStepNavigationState({
+      targetIndex,
+      currentIndex: currentFlowStepIndex,
+      furthestReachedIndex: furthestReachedFlowStepIndex,
+    });
+    if (!canNavigateToCustomerFlowStep(navigationState)) return;
+
+    setCurrentStep(targetInternalStep);
+    setValidationError("");
+    setInvalidGroups([]);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const showStyleProceedDock =
     currentStep === 1 &&
     hasValidDesignSource &&
@@ -4311,22 +4345,47 @@ export default function DesignStudioView({
       {/* Primary five-step customer flow */}
       {/* MOBILE STEPPER (Hidden on md and up) */}
       <div className="md:hidden bg-white border border-heritage-gold/15 p-4 rounded-3xl shadow-sm space-y-3 select-none">
-        <div className="flex flex-col sm:flex-row sm:justify-between items-center gap-1.5 sm:gap-0 text-center sm:text-left">
-          <span className="font-bold text-heritage-green text-xs sm:text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="min-w-0 font-bold text-heritage-green text-xs">
             Step {currentFlowStepNumber} of {CUSTOMER_FLOW_STEPS.length}:{" "}
-            <span className="text-heritage-gold font-serif text-xs sm:text-sm font-semibold block sm:inline mt-0.5 sm:mt-0">
+            <span className="text-heritage-gold font-serif text-sm font-semibold">
               {currentFlowStep.title}
             </span>
           </span>
-          <span className="font-mono text-heritage-ink/40 font-bold text-[10px] sm:text-xs">
-            {Math.round(
-              (currentFlowStepNumber / CUSTOMER_FLOW_STEPS.length) * 100,
-            )}% Complete
-          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrevStep}
+              disabled={!previousFlowStep}
+              aria-label={
+                previousFlowStep
+                  ? `Go back one step to ${previousFlowStep.title}`
+                  : "Already at the first step"
+              }
+              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-heritage-gold/25 px-2.5 text-[9px] font-bold uppercase tracking-wide text-heritage-green transition-colors hover:border-heritage-gold hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <ArrowLeft size={12} aria-hidden="true" />
+              Back
+            </button>
+            <span className="font-mono text-heritage-ink/40 font-bold text-[10px]">
+              {Math.round(
+                (currentFlowStepNumber / CUSTOMER_FLOW_STEPS.length) * 100,
+              )}% Complete
+            </span>
+          </div>
         </div>
 
         {/* Dynamic bar */}
-        <div className="h-1.5 w-full bg-heritage-cream rounded-full overflow-hidden">
+        <div
+          role="progressbar"
+          aria-label="Design form progress"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(
+            (currentFlowStepNumber / CUSTOMER_FLOW_STEPS.length) * 100,
+          )}
+          className="h-1.5 w-full bg-heritage-cream rounded-full overflow-hidden"
+        >
           <div
             className="h-full bg-heritage-gold transition-all duration-300"
             style={{
@@ -4335,77 +4394,105 @@ export default function DesignStudioView({
           ></div>
         </div>
 
-        {/* Minimal horizontal list showing step dots (fully clickable for passed steps) */}
-        <div className="flex justify-between items-start text-[9px] sm:text-[10px] text-heritage-ink/50 uppercase tracking-widest font-semibold pt-1.5 px-0.5 sm:px-1">
-          {CUSTOMER_FLOW_STEPS.map((step, idx) => {
-            const isPassed = idx < currentFlowStepIndex;
-            const isCurrent = step.internalStep === currentStep;
-            return (
-              <button
-                key={step.internalStep}
-                type="button"
-                onClick={() => {
-                  if (isPassed) {
-                    setCurrentStep(step.internalStep);
-                    setValidationError("");
-                  }
-                }}
-                disabled={!isPassed}
-                className={`group relative flex flex-col items-center justify-start transition-all duration-200 p-0.5 sm:p-1 rounded-lg focus:outline-none focus:ring-1 focus:ring-heritage-gold/30 ${
-                  isCurrent
-                    ? "text-heritage-gold font-bold scale-110 cursor-default"
-                    : isPassed
-                      ? "text-heritage-green cursor-pointer hover:scale-110 hover:text-heritage-forest hover:bg-heritage-cream/30"
-                      : "text-heritage-ink/30 cursor-not-allowed"
-                }`}
-              >
-                <span className="font-mono text-[11px] sm:text-xs leading-none">
-                  {idx + 1}
-                </span>
-                <span className="mt-1 text-[7px] sm:text-[8px] uppercase tracking-wider hidden sm:block whitespace-nowrap">
-                  {step.shortLabel}
-                </span>
-                <span className="mt-1 text-[6px] uppercase tracking-wide block sm:hidden whitespace-nowrap overflow-hidden text-ellipsis max-w-[32px]">
-                  {step.shortLabel}
-                </span>
+        {/* Compact, keyboard-accessible mobile step navigation */}
+        <nav
+          aria-label="Design form steps"
+          className="-mx-1 overflow-x-auto px-1 pb-1"
+        >
+          <ol className="grid min-w-[300px] grid-cols-5 gap-1 pt-1.5 text-[9px] uppercase tracking-widest font-semibold">
+            {CUSTOMER_FLOW_STEPS.map((step, idx) => {
+              const navigationState = getCustomerFlowStepNavigationState({
+                targetIndex: idx,
+                currentIndex: currentFlowStepIndex,
+                furthestReachedIndex: furthestReachedFlowStepIndex,
+              });
+              const isCurrent = navigationState === "current";
+              const isCompleted = navigationState === "completed";
+              const isLocked = navigationState === "locked";
 
-                {/* Custom Tooltip */}
-                <div className="absolute bottom-full mb-2.5 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-heritage-green text-white text-[10px] font-sans font-medium tracking-normal normal-case rounded-lg shadow-xl opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 pointer-events-none whitespace-nowrap z-50">
-                  <div className="font-serif font-bold text-[11px]">
-                    {step.title}
-                  </div>
-                  {isPassed && (
-                    <div className="text-[9px] text-heritage-gold font-semibold mt-0.5 font-sans tracking-wide">
-                      Click to jump back
-                    </div>
-                  )}
-                  {/* Arrow */}
-                  <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-heritage-green"></div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+              return (
+                <li key={step.internalStep} className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleStepNavigation(idx, step.internalStep)
+                    }
+                    disabled={isLocked}
+                    aria-current={isCurrent ? "step" : undefined}
+                    aria-label={`Step ${idx + 1}: ${step.title}, ${navigationState}`}
+                    data-step-state={navigationState}
+                    className={`group relative flex min-h-11 w-full flex-col items-center justify-center rounded-lg px-1 py-1 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+                      isCurrent
+                        ? "bg-heritage-gold/10 text-heritage-gold font-bold ring-1 ring-heritage-gold/30 cursor-default"
+                        : isCompleted
+                          ? "text-heritage-green cursor-pointer hover:bg-heritage-cream/50 hover:text-heritage-gold"
+                          : "text-heritage-ink/25 cursor-not-allowed"
+                    }`}
+                  >
+                    <span className="font-mono text-[11px] leading-none" aria-hidden="true">
+                      {idx + 1}
+                    </span>
+                    <span className="mt-1 block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[7px] uppercase tracking-wide">
+                      {step.shortLabel}
+                    </span>
+                    <span className="sr-only">
+                      {isCurrent
+                        ? "Current step"
+                        : isCompleted
+                          ? "Completed step; activate to navigate"
+                          : "Locked until preceding steps are completed"}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
       </div>
 
       {/* DESKTOP/TABLET STEPPER (Hidden on mobile) */}
       <div className="hidden md:block bg-white border border-heritage-gold/15 py-3 px-5 rounded-2xl shadow-sm select-none">
-        <div className="flex justify-between items-end mb-2">
+        <div className="flex items-center justify-between gap-4 mb-2">
           <div className="text-heritage-green font-bold text-sm">
             Step {currentFlowStepNumber} of {CUSTOMER_FLOW_STEPS.length}:{" "}
             <span className="text-heritage-gold font-serif ml-1">
               {currentFlowStep.title}
             </span>
           </div>
-          <div className="font-mono text-heritage-ink/50 text-[11px] font-bold">
-            {Math.round(
-              (currentFlowStepNumber / CUSTOMER_FLOW_STEPS.length) * 100,
-            )}% Complete
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handlePrevStep}
+              disabled={!previousFlowStep}
+              aria-label={
+                previousFlowStep
+                  ? `Go back one step to ${previousFlowStep.title}`
+                  : "Already at the first step"
+              }
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-heritage-gold/25 px-3 text-[10px] font-bold uppercase tracking-wide text-heritage-green transition-colors hover:border-heritage-gold hover:text-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <ArrowLeft size={13} aria-hidden="true" />
+              Back one step
+            </button>
+            <div className="font-mono text-heritage-ink/50 text-[11px] font-bold">
+              {Math.round(
+                (currentFlowStepNumber / CUSTOMER_FLOW_STEPS.length) * 100,
+              )}% Complete
+            </div>
           </div>
         </div>
 
         {/* Dynamic bar */}
-        <div className="h-[3px] w-full bg-heritage-cream rounded-full overflow-hidden mb-2.5">
+        <div
+          role="progressbar"
+          aria-label="Design form progress"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(
+            (currentFlowStepNumber / CUSTOMER_FLOW_STEPS.length) * 100,
+          )}
+          className="h-[3px] w-full bg-heritage-cream rounded-full overflow-hidden mb-2.5"
+        >
           <div
             className="h-full bg-heritage-gold transition-all duration-300"
             style={{
@@ -4415,39 +4502,65 @@ export default function DesignStudioView({
         </div>
 
         {/* Labels row */}
-        <div className="flex justify-between items-start text-[10px] uppercase tracking-wider font-semibold">
-          {CUSTOMER_FLOW_STEPS.map((step, idx) => {
-            const isPassed = idx < currentFlowStepIndex;
-            const isCurrent = step.internalStep === currentStep;
-            return (
-              <button
-                key={step.internalStep}
-                type="button"
-                onClick={() => {
-                  if (isPassed) {
-                    setCurrentStep(step.internalStep);
-                    setValidationError("");
-                  }
-                }}
-                disabled={!isPassed}
-                className={`flex flex-col items-center sm:items-start gap-0.5 transition-colors duration-200 focus:outline-none w-14 ${
-                  isCurrent
-                    ? "text-heritage-gold"
-                    : isPassed
-                      ? "text-heritage-green/70 cursor-pointer hover:text-heritage-gold"
-                      : "text-heritage-ink/25 cursor-not-allowed"
-                }`}
-              >
-                <span className={`font-mono text-[11px] leading-none ${isCurrent ? "font-bold" : "font-medium"}`}>
-                  {idx + 1}
-                </span>
-                <span className={`leading-tight text-center sm:text-left text-[9px] ${isCurrent ? "font-bold" : "font-medium"}`}>
-                  {step.shortLabel}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <nav aria-label="Design form steps">
+          <ol className="grid grid-cols-5 gap-2 text-[10px] uppercase tracking-wider font-semibold">
+            {CUSTOMER_FLOW_STEPS.map((step, idx) => {
+              const navigationState = getCustomerFlowStepNavigationState({
+                targetIndex: idx,
+                currentIndex: currentFlowStepIndex,
+                furthestReachedIndex: furthestReachedFlowStepIndex,
+              });
+              const isCurrent = navigationState === "current";
+              const isCompleted = navigationState === "completed";
+              const isLocked = navigationState === "locked";
+
+              return (
+                <li key={step.internalStep} className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleStepNavigation(idx, step.internalStep)
+                    }
+                    disabled={isLocked}
+                    aria-current={isCurrent ? "step" : undefined}
+                    aria-label={`Step ${idx + 1}: ${step.title}, ${navigationState}`}
+                    data-step-state={navigationState}
+                    className={`flex min-h-11 w-full flex-col items-start justify-center gap-0.5 rounded-lg px-2 py-1.5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+                      isCurrent
+                        ? "bg-heritage-gold/10 text-heritage-gold ring-1 ring-heritage-gold/30 cursor-default"
+                        : isCompleted
+                          ? "text-heritage-green/80 cursor-pointer hover:bg-heritage-cream/50 hover:text-heritage-gold"
+                          : "text-heritage-ink/25 cursor-not-allowed"
+                    }`}
+                  >
+                    <span
+                      className={`font-mono text-[11px] leading-none ${
+                        isCurrent ? "font-bold" : "font-medium"
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {idx + 1}
+                    </span>
+                    <span
+                      className={`leading-tight text-[9px] ${
+                        isCurrent ? "font-bold" : "font-medium"
+                      }`}
+                    >
+                      {step.shortLabel}
+                    </span>
+                    <span className="sr-only">
+                      {isCurrent
+                        ? "Current step"
+                        : isCompleted
+                          ? "Completed step; activate to navigate"
+                          : "Locked until preceding steps are completed"}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
       </div>
 
       {/* Validation feedback banners */}
