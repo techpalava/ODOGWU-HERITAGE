@@ -113,7 +113,7 @@ const garmentAssignmentSectionSource = designStudioSource.slice(
   garmentAssignmentSectionEnd,
 );
 const additionalGarmentSectionStart = designStudioSource.indexOf(
-  "const OptionalAdditionalGarmentSection",
+  "const AdditionalGarmentChoiceCard",
 );
 const additionalGarmentSectionEnd = designStudioSource.indexOf(
   "const GarmentDetailSelector",
@@ -161,7 +161,7 @@ const activeSummarySource = designStudioSource.slice(
 const accessoriesSectionIndex = designStudioSource.indexOf(
   "Select Accessories (Optional)",
 );
-  const optionalExtraGarmentRenderIndex = designStudioSource.indexOf(
+const optionalExtraGarmentRenderIndex = designStudioSource.indexOf(
   "<OptionalAdditionalGarmentSection",
 );
 assert.ok(
@@ -271,13 +271,18 @@ assert.match(
 );
 assert.match(
   designStudioSource,
-  /primaryParentSections\.map\(renderParentSection\)/,
-  "Normal applicable customization groups should render before Optional Extra Garment",
+  /garmentSectionComposition\.map\(\(entry\) =>/,
+  "Normal garment details and inline optional shorts must use one deterministic composition",
 );
 assert.match(
   designStudioSource,
-  /<OptionalAdditionalGarmentSection[\s\S]*?onChangeFabric=\{onChangeAdditionalGarmentFabric\}/,
-  "The additional garment composer must render as the final customization section before continuing",
+  /data-testid=\{`inline-optional-garment-\$\{garmentType\}`\}[\s\S]*?onAdd=\{onAddAdditionalGarment\}/,
+  "Eligible Nikka and Bum Shorts cards must render inline through the existing add handler",
+);
+assert.match(
+  designStudioSource,
+  /<OptionalAdditionalGarmentSection[\s\S]*?allowedGarments=\{genericAllowedAdditionalGarments\}[\s\S]*?onChangeFabric=\{onChangeAdditionalGarmentFabric\}/,
+  "The generic additional garment composer must remain available for non-inline garments",
 );
 assert.match(
   designStudioSource,
@@ -476,7 +481,7 @@ assert.match(
 );
 assert.match(
   additionalGarmentSectionSource,
-  /allowedGarments\.map\(\(garment\) =>[\s\S]*?min-w-0[\s\S]*?break-words/,
+  /const AdditionalGarmentChoiceCard[\s\S]*?w-full min-w-0[\s\S]*?break-words/,
   "Additional garment choices must allow dynamic garment labels to wrap inside a shrink-safe card",
 );
 assert.match(
@@ -541,5 +546,5 @@ assert.doesNotMatch(
 );
 
 console.log(
-  "PASS: Optional extra garment remains structured and is moved to end of Custom Details",
+  "PASS: Optional shorts render inline while the generic garment composer remains structured",
 );

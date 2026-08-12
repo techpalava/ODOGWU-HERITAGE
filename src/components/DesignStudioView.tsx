@@ -173,6 +173,11 @@ import {
   resolveAllowedAdditionalGarments,
   type AllowedAdditionalGarment,
 } from "../utils/additionalGarmentDomain";
+import {
+  composeInlineOptionalShortsSections,
+  INLINE_OPTIONAL_SHORTS_LABELS,
+  isInlineOptionalShortsGarmentType,
+} from "../utils/optionalShortsPresentation";
 import { createClearedDesignSelectionStateSnapshot } from "../utils/designStyleClearState";
 import {
   createCatalogDesignSource,
@@ -648,6 +653,158 @@ const getAdditionalGarmentDisplayLabels = (
   );
 };
 
+const getAdditionalGarmentReferencePrice = ({
+  garment,
+  basePriceRows,
+  designSelections,
+}: {
+  garment: AllowedAdditionalGarment;
+  basePriceRows: readonly CustomerDesignBaseGarmentPriceRow[];
+  designSelections: DesignSelections;
+}): number | undefined => {
+  const inheritedReferencePrice = basePriceRows.find(
+    (row) => row.garmentType === garment.garmentType,
+  )?.price;
+  const shortsReferencePriceCents = resolveShortsGarmentUnitPriceCents(
+    garment.garmentType,
+    designSelections,
+  );
+  return (
+    inheritedReferencePrice ??
+    (shortsReferencePriceCents === null
+      ? undefined
+      : shortsReferencePriceCents / 100)
+  );
+};
+
+const AdditionalGarmentChoiceCard = ({
+  garment,
+  basePriceRows,
+  designSelections,
+  currencySymbol,
+  displayLabel = garment.label,
+  showStartingPrice = false,
+  onAdd,
+}: {
+  garment: AllowedAdditionalGarment;
+  basePriceRows: readonly CustomerDesignBaseGarmentPriceRow[];
+  designSelections: DesignSelections;
+  currencySymbol: string;
+  displayLabel?: string;
+  showStartingPrice?: boolean;
+  onAdd: (garmentType: FabricGarmentType) => void;
+}) => {
+  const referencePrice = getAdditionalGarmentReferencePrice({
+    garment,
+    basePriceRows,
+    designSelections,
+  });
+
+  return (
+    <button
+      type="button"
+      onClick={() => onAdd(garment.garmentType)}
+      aria-label={`Add ${displayLabel}`}
+      className="flex min-h-11 w-full min-w-0 flex-col items-stretch gap-2 rounded-xl border-2 border-heritage-gold/25 bg-white px-3 py-3 text-left transition hover:border-heritage-green hover:bg-heritage-green/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:min-h-[74px] sm:flex-row sm:items-center sm:justify-between"
+    >
+      <span className="min-w-0">
+        <span className="block break-words text-xs font-bold text-heritage-green">
+          + Add {displayLabel}
+        </span>
+        <span className="mt-1 block break-words text-[10px] leading-relaxed text-heritage-ink/60">
+          Matches your selected design
+        </span>
+      </span>
+      <span className="shrink-0 self-start text-xs font-bold text-heritage-gold sm:self-auto">
+        {referencePrice === undefined
+          ? "Price pending"
+          : `${showStartingPrice ? "From " : ""}${currencySymbol}${referencePrice.toFixed(2)}`}
+      </span>
+    </button>
+  );
+};
+
+const AdditionalGarmentAssignmentList = ({
+  assignments,
+  priceRows,
+  currencySymbol,
+  heading = "Additional garments",
+  onRemove,
+  onChangeFabric,
+}: {
+  assignments: readonly FabricGarmentAssignment[];
+  priceRows: readonly CustomerDesignAdditionalGarmentPriceRow[];
+  currencySymbol: string;
+  heading?: string;
+  onRemove: (garmentKey: string) => void;
+  onChangeFabric: (garmentKey: string) => void;
+}) => {
+  if (assignments.length === 0) return null;
+
+  const displayLabels = getAdditionalGarmentDisplayLabels(assignments);
+  const priceByAssignmentId = new Map(
+    priceRows.map((row) => [row.assignmentId, row.price]),
+  );
+
+  return (
+    <div className="min-w-0 space-y-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-3">
+      <p className="break-words text-[10px] font-bold uppercase tracking-wider text-heritage-green">
+        {heading}
+      </p>
+      {assignments.map((assignment) => {
+        const isOrphaned = assignment.dependencyStatus === "orphaned";
+        const price = priceByAssignmentId.get(assignment.garmentKey);
+        const displayLabel =
+          displayLabels.get(assignment.garmentKey) ||
+          getFabricGarmentLabel(assignment.garmentType);
+        return (
+          <div
+            key={assignment.garmentKey}
+            className={`flex min-w-0 flex-col gap-3 rounded-lg border px-3 py-3 text-xs sm:flex-row sm:items-center sm:justify-between ${
+              isOrphaned
+                ? "border-amber-300 bg-amber-50"
+                : "border-gray-200 bg-white"
+            }`}
+          >
+            <div className="min-w-0 flex-1">
+              <p className="break-words font-semibold text-heritage-ink">
+                {displayLabel}
+              </p>
+              <p className="mt-0.5 break-words text-[10px] leading-relaxed text-heritage-ink/60">
+                {isOrphaned
+                  ? "This garment is no longer supported by the selected design."
+                  : price === undefined
+                    ? "Price needs review before checkout."
+                    : `${currencySymbol}${price.toFixed(2)} selected clothing price`}
+              </p>
+            </div>
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-none">
+              {!isOrphaned && (
+                <button
+                  type="button"
+                  onClick={() => onChangeFabric(assignment.garmentKey)}
+                  aria-label={`Change fabric for ${displayLabel}`}
+                  className="min-h-11 rounded-md border border-heritage-green/25 px-2 text-[9px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  Change fabric
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onRemove(assignment.garmentKey)}
+                aria-label={`Remove ${displayLabel}`}
+                className="min-h-11 rounded-md border border-red-200 px-2 text-[9px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const OptionalAdditionalGarmentSection = ({
   allowedGarments,
   assignments,
@@ -669,11 +826,6 @@ const OptionalAdditionalGarmentSection = ({
   onRemove: (garmentKey: string) => void;
   onChangeFabric: (garmentKey: string) => void;
 }) => {
-  const displayLabels = getAdditionalGarmentDisplayLabels(assignments);
-  const priceByAssignmentId = new Map(
-    priceRows.map((row) => [row.assignmentId, row.price]),
-  );
-
   if (allowedGarments.length === 0 && assignments.length === 0) return null;
 
   return (
@@ -688,43 +840,16 @@ const OptionalAdditionalGarmentSection = ({
 
       {allowedGarments.length > 0 ? (
         <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 2xl:grid-cols-3">
-          {allowedGarments.map((garment) => {
-            const inheritedReferencePrice = basePriceRows.find(
-              (row) => row.garmentType === garment.garmentType,
-            )?.price;
-            const shortsReferencePriceCents =
-              resolveShortsGarmentUnitPriceCents(
-                garment.garmentType,
-                designSelections,
-              );
-            const referencePrice =
-              inheritedReferencePrice ??
-              (shortsReferencePriceCents === null
-                ? undefined
-                : shortsReferencePriceCents / 100);
-            return (
-              <button
-                key={garment.garmentType}
-                type="button"
-                onClick={() => onAdd(garment.garmentType)}
-                className="flex min-h-11 min-w-0 flex-col items-stretch gap-2 rounded-xl border-2 border-heritage-gold/25 bg-white px-3 py-3 text-left transition hover:border-heritage-green hover:bg-heritage-green/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:min-h-[74px] sm:flex-row sm:items-center sm:justify-between"
-              >
-                <span className="min-w-0">
-                  <span className="block break-words text-xs font-bold text-heritage-green">
-                    + Add {garment.label}
-                  </span>
-                  <span className="mt-1 block break-words text-[10px] text-heritage-ink/60">
-                    Matches your selected design
-                  </span>
-                </span>
-                <span className="shrink-0 self-start text-xs font-bold text-heritage-gold sm:self-auto">
-                  {referencePrice === undefined
-                    ? "Price pending"
-                    : `${currencySymbol}${referencePrice.toFixed(2)}`}
-                </span>
-              </button>
-            );
-          })}
+          {allowedGarments.map((garment) => (
+            <AdditionalGarmentChoiceCard
+              key={garment.garmentType}
+              garment={garment}
+              basePriceRows={basePriceRows}
+              designSelections={designSelections}
+              currencySymbol={currencySymbol}
+              onAdd={onAdd}
+            />
+          ))}
         </div>
       ) : (
         <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[10px] text-heritage-ink/60">
@@ -732,60 +857,13 @@ const OptionalAdditionalGarmentSection = ({
         </p>
       )}
 
-      {assignments.length > 0 && (
-        <div className="min-w-0 space-y-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-green">
-            Additional garments
-          </p>
-          {assignments.map((assignment) => {
-            const isOrphaned = assignment.dependencyStatus === "orphaned";
-            const price = priceByAssignmentId.get(assignment.garmentKey);
-            return (
-              <div
-                key={assignment.garmentKey}
-                className={`flex min-w-0 flex-col gap-3 rounded-lg border px-3 py-3 text-xs sm:flex-row sm:items-center sm:justify-between ${
-                  isOrphaned
-                    ? "border-amber-300 bg-amber-50"
-                    : "border-gray-200 bg-white"
-                }`}
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="break-words font-semibold text-heritage-ink">
-                    {displayLabels.get(assignment.garmentKey)}
-                  </p>
-                  <p className="mt-0.5 break-words text-[10px] text-heritage-ink/60">
-                    {isOrphaned
-                      ? "This garment is no longer supported by the selected design."
-                      : price === undefined
-                        ? "Price needs review before checkout."
-                        : `${currencySymbol}${price.toFixed(2)} selected clothing price`}
-                  </p>
-                </div>
-                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-none">
-                  {!isOrphaned && (
-                    <button
-                      type="button"
-                      onClick={() => onChangeFabric(assignment.garmentKey)}
-                      aria-label={`Change fabric for ${displayLabels.get(assignment.garmentKey) || getFabricGarmentLabel(assignment.garmentType)}`}
-                      className="min-h-11 rounded-md border border-heritage-green/25 px-2 text-[9px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-                    >
-                      Change fabric
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => onRemove(assignment.garmentKey)}
-                    aria-label={`Remove ${displayLabels.get(assignment.garmentKey) || getFabricGarmentLabel(assignment.garmentType)}`}
-                    className="min-h-11 rounded-md border border-red-200 px-2 text-[9px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <AdditionalGarmentAssignmentList
+        assignments={assignments}
+        priceRows={priceRows}
+        currencySymbol={currencySymbol}
+        onRemove={onRemove}
+        onChangeFabric={onChangeFabric}
+      />
     </fieldset>
   );
 };
@@ -867,6 +945,37 @@ const GarmentDetailSelector = ({
     (section) =>
       isParentSectionIncluded(section.id) || isParentSectionAdded(section.id),
   );
+  const inlineOptionalShortsGarments = allowedAdditionalGarments.filter(
+    (garment: AllowedAdditionalGarment) =>
+      isInlineOptionalShortsGarmentType(garment.garmentType),
+  );
+  const inlineOptionalShortsTypes = new Set(
+    inlineOptionalShortsGarments.map(
+      (garment: AllowedAdditionalGarment) => garment.garmentType,
+    ),
+  );
+  const inlineOptionalShortsAssignments = additionalGarmentAssignments.filter(
+    (assignment: FabricGarmentAssignment) =>
+      inlineOptionalShortsTypes.has(assignment.garmentType) &&
+      assignment.dependencyStatus !== "orphaned",
+  );
+  const genericAllowedAdditionalGarments = allowedAdditionalGarments.filter(
+    (garment: AllowedAdditionalGarment) =>
+      !isInlineOptionalShortsGarmentType(garment.garmentType),
+  );
+  const genericAdditionalGarmentAssignments = additionalGarmentAssignments.filter(
+    (assignment: FabricGarmentAssignment) =>
+      !isInlineOptionalShortsGarmentType(assignment.garmentType) ||
+      assignment.dependencyStatus === "orphaned" ||
+      !inlineOptionalShortsTypes.has(assignment.garmentType),
+  );
+  const garmentSectionComposition = composeInlineOptionalShortsSections({
+    sections: primaryParentSections,
+    baseSectionIds: primaryParentSections
+      .filter((section) => isParentSectionIncluded(section.id))
+      .map((section) => section.id),
+    allowedGarments: inlineOptionalShortsGarments,
+  });
 
   const getOptionalHeaderHelperText = (sectionId: string): string => {
     switch (sectionId) {
@@ -1439,7 +1548,62 @@ const GarmentDetailSelector = ({
           </div>
         </div>
       )}
-      {primaryParentSections.map(renderParentSection)}
+      {garmentSectionComposition.map((entry) => {
+        if (entry.kind === "detail-section") {
+          return renderParentSection(entry.section);
+        }
+
+        const garmentType = entry.garment
+          .garmentType as keyof typeof INLINE_OPTIONAL_SHORTS_LABELS;
+        const displayLabel = INLINE_OPTIONAL_SHORTS_LABELS[garmentType];
+        const assignments = inlineOptionalShortsAssignments.filter(
+          (assignment: FabricGarmentAssignment) =>
+            assignment.garmentType === garmentType,
+        );
+
+        return (
+          <section
+            key={`inline-optional-${garmentType}`}
+            data-testid={`inline-optional-garment-${garmentType}`}
+            className="col-span-1 min-w-0 space-y-4 md:col-span-2"
+            aria-labelledby={`inline-optional-garment-heading-${garmentType}`}
+          >
+            <fieldset className="min-w-0 space-y-3 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/10 p-3 sm:p-4">
+              <legend
+                id={`inline-optional-garment-heading-${garmentType}`}
+                className="max-w-full break-words px-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green"
+              >
+                Optional garment
+              </legend>
+              <p className="break-words text-[10px] leading-relaxed text-heritage-ink/60">
+                Add this garment only when you want it included in your order.
+                Its details, fabric, garment count, and price activate after it
+                is added.
+              </p>
+              <AdditionalGarmentChoiceCard
+                garment={entry.garment}
+                basePriceRows={baseGarmentPriceRows}
+                designSelections={designSelections}
+                currencySymbol={currencySymbol}
+                displayLabel={displayLabel}
+                showStartingPrice
+                onAdd={onAddAdditionalGarment}
+              />
+              <AdditionalGarmentAssignmentList
+                assignments={assignments}
+                priceRows={additionalGarmentPriceRows}
+                currencySymbol={currencySymbol}
+                heading={`${displayLabel} added to your order`}
+                onRemove={onRemoveAdditionalGarment}
+                onChangeFabric={onChangeAdditionalGarmentFabric}
+              />
+            </fieldset>
+            {entry.detailSection
+              ? renderParentSection(entry.detailSection)
+              : null}
+          </section>
+        );
+      })}
 
       {standardGroups.length === 0 && (
         <div className="col-span-1 md:col-span-2 rounded-xl border border-heritage-gold/25 bg-heritage-cream/20 px-4 py-4">
@@ -1613,8 +1777,8 @@ const GarmentDetailSelector = ({
       </fieldset>
 
       <OptionalAdditionalGarmentSection
-        allowedGarments={allowedAdditionalGarments}
-        assignments={additionalGarmentAssignments}
+        allowedGarments={genericAllowedAdditionalGarments}
+        assignments={genericAdditionalGarmentAssignments}
         basePriceRows={baseGarmentPriceRows}
         priceRows={additionalGarmentPriceRows}
         designSelections={designSelections}
