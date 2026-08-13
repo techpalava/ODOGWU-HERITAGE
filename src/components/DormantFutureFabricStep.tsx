@@ -10,6 +10,20 @@ import { resolveFabricPrice } from "../utils/fabricPricing";
 import type { FutureFabricStageCompletion } from "../utils/designStudioFutureFabricStage";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 
+const blockerMessages: Record<
+  FutureFabricStageCompletion["blockers"][number]["code"],
+  string
+> = {
+  GARMENT_TYPE_INCOMPLETE: "Complete Garment Type before assigning fabric.",
+  GARMENT_ASSIGNMENT_REQUIRED: "Choose a fabric for every selected garment.",
+  PENDING_GARMENT_ASSIGNMENT: "Finish the pending fabric assignment before continuing.",
+  FABRIC_NOT_FOUND: "A previously selected fabric is no longer in the catalogue. Choose another fabric.",
+  FABRIC_UNAVAILABLE: "A selected fabric is currently unavailable. Choose another fabric.",
+  FABRIC_PRICE_UNAVAILABLE: "A selected fabric needs a current catalogue price before this step can continue.",
+  INVALID_ALLOCATION_CAPACITY: "One fabric assignment exceeds the permitted fabric capacity. Review the allocation.",
+  MALFORMED_ASSIGNMENT: "One garment assignment needs review before this step can continue.",
+};
+
 interface DormantFutureFabricStepProps {
   fabrics: Fabric[];
   garmentTypeSelection: GarmentTypeStepSelection;
@@ -18,6 +32,7 @@ interface DormantFutureFabricStepProps {
   constructionPrice: number;
   stagePrice: number | null;
   onSelectFabric: (fabric: Fabric) => void;
+  onChangeFabricForGarment: (garmentKey: string) => void;
   onBack: () => void;
   onUseSameFabric: () => void;
   onChooseAnotherFabric: () => void;
@@ -32,6 +47,7 @@ export const DormantFutureFabricStep = ({
   constructionPrice,
   stagePrice,
   onSelectFabric,
+  onChangeFabricForGarment,
   onBack,
   onUseSameFabric,
   onChooseAnotherFabric,
@@ -46,6 +62,19 @@ export const DormantFutureFabricStep = ({
   );
   const primaryFabricCode =
     fabricAllocationState.fabricAllocations[0]?.fabricCode || null;
+  const assignmentByGarmentKey = new Map(
+    fabricAllocationState.fabricAllocations.flatMap((allocation) =>
+      allocation.garmentAssignments.map((assignment) => [
+        assignment.garmentKey,
+        { assignment, allocation },
+      ]),
+    ),
+  );
+  const uniqueBlockers = Array.from(
+    new Set(
+      completion.blockers.map((blocker) => blockerMessages[blocker.code]),
+    ),
+  );
 
   return (
     <section
@@ -70,7 +99,7 @@ export const DormantFutureFabricStep = ({
           id="future-fabric-step-title"
           className="mt-2 font-serif text-2xl font-bold text-heritage-green sm:text-3xl"
         >
-          Select Fabric
+          Fabric
         </h2>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
           Assign fabric to every garment selected in Step 1. Garments may share
@@ -78,18 +107,65 @@ export const DormantFutureFabricStep = ({
         </p>
 
         <div className="mt-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {garmentTypeSelection.garmentTypes.map((garmentType) => (
-            <div
-              key={garmentType}
-              className="min-w-0 rounded-xl border border-heritage-gold/20 bg-heritage-cream/25 p-3"
-            >
-              <span className="break-words text-xs font-bold text-heritage-green">
-                {getFabricGarmentLabel(garmentType)}
-              </span>
-            </div>
-          ))}
+          {garmentTypeSelection.garmentTypes.map((garmentType) => {
+            const garmentKey = `base:${garmentType}`;
+            const assigned = assignmentByGarmentKey.get(garmentKey);
+            const fabricName = assigned
+              ? fabrics.find(
+                  (fabric) => fabric.code === assigned.allocation.fabricCode,
+                )?.name || "Unavailable fabric"
+              : "Fabric not assigned";
+            return (
+              <div
+                key={garmentKey}
+                className="min-w-0 rounded-xl border border-heritage-gold/20 bg-heritage-cream/25 p-3"
+              >
+                <p className="break-words text-xs font-bold text-heritage-green">
+                  {getFabricGarmentLabel(garmentType)}
+                </p>
+                <p className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/65">
+                  {fabricName}
+                  {assigned
+                    ? ` · Fabric Selection ${
+                        fabricAllocationState.fabricAllocations.findIndex(
+                          (allocation) =>
+                            allocation.allocationId ===
+                            assigned.allocation.allocationId,
+                        ) + 1
+                      }`
+                    : ""}
+                </p>
+                {assigned && (
+                  <button
+                    type="button"
+                    onClick={() => onChangeFabricForGarment(garmentKey)}
+                    disabled={Boolean(fabricAllocationState.pendingFabricGarment)}
+                    aria-label={`Change fabric for ${getFabricGarmentLabel(garmentType)}`}
+                    className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-[10px] font-bold uppercase tracking-wide text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    Change Fabric
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
+
       </div>
+
+      {uniqueBlockers.length > 0 && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4"
+        >
+          <p className="text-sm font-bold text-heritage-green">Fabric needs attention</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-heritage-ink/70">
+            {uniqueBlockers.map((message) => (
+              <li key={message}>{message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {fabricAllocationState.pendingFabricGarment &&
         !fabricAllocationState.awaitingFabricForPendingGarment && (

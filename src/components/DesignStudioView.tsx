@@ -90,6 +90,7 @@ import { resolveShortsGarmentUnitPriceCents } from "../config/AdditionalGarmentP
 import OrderRoutingPanel from "./OrderRoutingPanel";
 import { GarmentTypeStep } from "./GarmentTypeStep";
 import { DormantFutureFabricStep } from "./DormantFutureFabricStep";
+import { DormantFutureJourneyStepper } from "./DormantFutureJourneyStepper";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
@@ -4876,6 +4877,17 @@ export default function DesignStudioView({
       FabricAllocationStateEngine.cancelPendingGarment(current),
     );
   };
+  const handleChangeFutureGarmentFabric = (garmentKey: string) => {
+    setFabricAllocationState((current) =>
+      FabricAllocationStateEngine.beginReassignGarmentToAnotherFabric(
+        current,
+        garmentKey,
+      ),
+    );
+  };
+  const garmentTypeBlockerMessage = !garmentTypeStageCompletion.isComplete
+    ? "Select at least one garment, choose who the order is for, and resolve every construction price to continue to Fabric."
+    : null;
 
   if (isFutureNineStageMode) {
     return (
@@ -4890,6 +4902,12 @@ export default function DesignStudioView({
         }
         className="font-sans"
       >
+        <DormantFutureJourneyStepper
+          currentStageId={futureStageId}
+          canEnterFabric={garmentTypeStageCompletion.isComplete}
+          onSelectGarmentType={() => setFutureStageId("garment_type")}
+          onSelectFabric={handleOpenDormantFabricStage}
+        />
         {futureStageId === "garment_type" ? (
           <div className="space-y-5">
             <GarmentTypeStep
@@ -4901,6 +4919,7 @@ export default function DesignStudioView({
               onConstructionDefaultsChange={
                 handleDormantConstructionDefaultsChange
               }
+              statusMessage={garmentTypeBlockerMessage}
               idPrefix="future-garment-type-step"
             />
             <div className="flex justify-end">
@@ -4925,6 +4944,7 @@ export default function DesignStudioView({
               futureFabricAuthoritativePricing?.garmentSubtotal ?? null
             }
             onSelectFabric={handleSelectFabric}
+            onChangeFabricForGarment={handleChangeFutureGarmentFabric}
             onBack={() => setFutureStageId("garment_type")}
             onUseSameFabric={handleUseSameFutureFabric}
             onChooseAnotherFabric={handleChooseAnotherFutureFabric}

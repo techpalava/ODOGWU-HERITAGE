@@ -61,6 +61,7 @@ export interface GarmentTypeStepProps {
   onConstructionDefaultsChange: (
     resolutions: GarmentConstructionPricingResolution[],
   ) => void;
+  statusMessage?: string | null;
   idPrefix?: string;
 }
 
@@ -144,6 +145,7 @@ export const GarmentTypeStep = ({
   onGarmentTypesChange,
   onDemographicChange,
   onConstructionDefaultsChange,
+  statusMessage = null,
   idPrefix = "garment-type-step",
 }: GarmentTypeStepProps) => {
   const presentation = getGarmentTypeStepPresentation({
@@ -379,6 +381,15 @@ export const GarmentTypeStep = ({
               <span className="min-w-0 break-words">
                 One or more garment construction prices need administrator review before this order can continue.
               </span>
+            </div>
+          )}
+
+          {statusMessage && (
+            <div
+              role="status"
+              className="mt-4 rounded-xl border border-heritage-gold/25 bg-heritage-cream/35 p-3 text-xs leading-relaxed text-heritage-ink/70"
+            >
+              {statusMessage}
             </div>
           )}
 
