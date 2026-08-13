@@ -17,6 +17,7 @@
     "test:custom-details": "tsx test_custom_detail_applicability.ts",
     "test:custom-detail-catalog-provenance": "tsx test_custom_detail_catalog_provenance.ts",
     "test:garment-scoped-custom-details-domain": "tsx test_garment_scoped_custom_details_domain.ts",
+    "test:garment-scoped-personalized-inputs": "tsx test_garment_scoped_personalized_inputs.ts",
     "test:additional-clothes-costs": "tsx test_additional_clothes_costs.ts",
     "test:guest-checkout": "tsx test_guest_checkout.ts",
     "test:homepage-gateway": "tsx test_homepage_order_gateway.ts",

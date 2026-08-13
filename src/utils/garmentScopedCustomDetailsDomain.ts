@@ -5,6 +5,7 @@ import type {
   CustomDetailOption,
   CustomDetailSelectionGroup,
   GarmentScopedCustomDetailSelection,
+  GarmentScopedCustomDetailInputsV1,
   GarmentScopedCustomDetailsStateV1,
   GarmentTypeStepSelection,
   StyleCategory,
@@ -32,6 +33,13 @@ import {
   setGarmentScopedCustomDetailSelection,
   setGarmentScopedCustomDetailSnapshot,
 } from "./garmentScopedCustomDetailsState";
+import {
+  enumerateGarmentScopedCustomDetailInputs,
+  normalizeGarmentScopedCustomDetailInputs,
+  PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
+  retainGarmentScopedCustomDetailInputIdentities,
+  validateGarmentScopedCustomDetailText,
+} from "./garmentScopedCustomDetailInputsState";
 
 const FUTURE_CUSTOM_DETAIL_GARMENT_ORDER: readonly CanonicalPhysicalGarmentType[] = [
   "shirt",
@@ -105,6 +113,23 @@ export type GarmentScopedCustomDetailsDomainDiagnosticCode =
   | "option_missing"
   | "malformed_selection"
   | "malformed_catalog_option";
+
+export type GarmentScopedPersonalizedTextDiagnosticCode =
+  | "personalized_text_garment_removed"
+  | "personalized_text_group_removed"
+  | "personalized_text_option_deselected"
+  | "personalized_text_option_deleted"
+  | "personalized_text_option_disabled"
+  | "personalized_text_no_longer_required"
+  | "personalized_text_malformed"
+  | "personalized_text_too_long";
+
+export interface GarmentScopedPersonalizedTextDiagnostic {
+  code: GarmentScopedPersonalizedTextDiagnosticCode;
+  garmentKey?: string;
+  selectionGroup?: CustomDetailSelectionGroup;
+  optionId?: string;
+}
 
 export interface GarmentScopedCustomDetailsDomainDiagnostic {
   code: GarmentScopedCustomDetailsDomainDiagnosticCode;
@@ -358,6 +383,124 @@ export interface GarmentScopedCustomDetailsReconciliationResult {
   stateChanged: boolean;
 }
 
+export interface GarmentScopedPersonalizedInputsReconciliationResult {
+  state: GarmentScopedCustomDetailInputsV1;
+  diagnostics: readonly GarmentScopedPersonalizedTextDiagnostic[];
+  stateChanged: boolean;
+}
+
+export const reconcileGarmentScopedPersonalizedInputs = ({
+  reconciliation,
+  catalogInspection,
+  existingInputs,
+}: {
+  reconciliation: GarmentScopedCustomDetailsReconciliationResult;
+  catalogInspection: CustomDetailCatalogInspection;
+  existingInputs: unknown;
+}): GarmentScopedPersonalizedInputsReconciliationResult => {
+  const normalized = normalizeGarmentScopedCustomDetailInputs(existingInputs);
+  const diagnostics: GarmentScopedPersonalizedTextDiagnostic[] =
+    normalized.diagnostics.map((diagnostic) =>
+      diagnostic.code === "TEXT_TOO_LONG"
+        ? { code: "personalized_text_too_long" as const }
+        : { code: "personalized_text_malformed" as const },
+    );
+  const subjectKeys = new Set(
+    reconciliation.subjects.map((subject) => subject.garmentKey),
+  );
+  const retained = enumerateGarmentScopedCustomDetailInputs(normalized.state)
+    .flatMap((entry) => {
+      if (!subjectKeys.has(entry.garmentKey)) {
+        diagnostics.push({
+          code: "personalized_text_garment_removed",
+          garmentKey: entry.garmentKey,
+          selectionGroup: entry.selectionGroup,
+          optionId: entry.optionId,
+        });
+        return [];
+      }
+      const applicability = reconciliation.applicabilityByGarmentKey.get(
+        entry.garmentKey,
+      );
+      const catalogEntry = catalogInspection.byOptionId.get(entry.optionId);
+      if (catalogEntry?.lifecycleStatus === "explicitly_deleted") {
+        diagnostics.push({
+          code: "personalized_text_option_deleted",
+          garmentKey: entry.garmentKey,
+          selectionGroup: entry.selectionGroup,
+          optionId: entry.optionId,
+        });
+        return [];
+      }
+      if (!catalogEntry?.option?.active) {
+        diagnostics.push({
+          code: "personalized_text_option_disabled",
+          garmentKey: entry.garmentKey,
+          selectionGroup: entry.selectionGroup,
+          optionId: entry.optionId,
+        });
+        return [];
+      }
+      if (
+        catalogEntry.option.id !== PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID ||
+        !catalogEntry.option.requiresEvaluation
+      ) {
+        diagnostics.push({
+          code: "personalized_text_no_longer_required",
+          garmentKey: entry.garmentKey,
+          selectionGroup: entry.selectionGroup,
+          optionId: entry.optionId,
+        });
+        return [];
+      }
+      const group = applicability?.groups.find(
+        (candidate) => candidate.selectionGroup === entry.selectionGroup,
+      );
+      if (!group) {
+        diagnostics.push({
+          code: "personalized_text_group_removed",
+          garmentKey: entry.garmentKey,
+          selectionGroup: entry.selectionGroup,
+          optionId: entry.optionId,
+        });
+        return [];
+      }
+      const selection = reconciliation.state.selectionsByGarmentKey[
+        entry.garmentKey
+      ]?.[entry.selectionGroup];
+      if (!selection || !getSelectionOptionIds(selection).includes(entry.optionId)) {
+        diagnostics.push({
+          code: "personalized_text_option_deselected",
+          garmentKey: entry.garmentKey,
+          selectionGroup: entry.selectionGroup,
+          optionId: entry.optionId,
+        });
+        return [];
+      }
+      const validation = validateGarmentScopedCustomDetailText(entry.text);
+      if (validation.status === "too_long") {
+        diagnostics.push({
+          code: "personalized_text_too_long",
+          garmentKey: entry.garmentKey,
+          selectionGroup: entry.selectionGroup,
+          optionId: entry.optionId,
+        });
+      }
+      return [entry];
+    });
+  const state = retainGarmentScopedCustomDetailInputIdentities(
+    normalized.state,
+    retained,
+  );
+  return {
+    state,
+    diagnostics,
+    stateChanged:
+      normalized.diagnostics.length > 0 ||
+      stableSerialize(normalized.state) !== stableSerialize(state),
+  };
+};
+
 const classifyUnavailableOption = ({
   entry,
   optionId,
@@ -563,6 +706,8 @@ export interface GarmentScopedCustomDetailsCompletionBlocker {
     | "required_selection_missing"
     | "selection_reconciled"
     | "snapshot_missing"
+    | "personalized_requirement_missing"
+    | "personalized_requirement_invalid"
     | "pricing_evaluation_required";
   message: string;
   garmentKey?: string;
@@ -591,9 +736,11 @@ const RECONCILIATION_SELECTION_CODES = new Set<
 export const validateGarmentScopedCustomDetailsCompletion = ({
   earlierStagesComplete,
   reconciliation,
+  personalizedInputs,
 }: {
   earlierStagesComplete: boolean;
   reconciliation: GarmentScopedCustomDetailsReconciliationResult;
+  personalizedInputs?: GarmentScopedPersonalizedInputsReconciliationResult;
 }): GarmentScopedCustomDetailsCompletionResult => {
   const blockers: GarmentScopedCustomDetailsCompletionBlocker[] = [];
   if (!earlierStagesComplete) {
@@ -669,22 +816,71 @@ export const validateGarmentScopedCustomDetailsCompletion = ({
     },
   );
 
+  const inputEntries = new Map(
+    (personalizedInputs
+      ? enumerateGarmentScopedCustomDetailInputs(personalizedInputs.state)
+      : []
+    ).map((entry) => [
+      `${entry.garmentKey}\u0000${entry.selectionGroup}\u0000${entry.optionId}`,
+      entry,
+    ]),
+  );
+  enumerateGarmentScopedCustomDetails(reconciliation.state).forEach(
+    (occurrence) => {
+      if (
+        occurrence.optionId !==
+          PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID ||
+        !occurrence.snapshot?.requiresEvaluation
+      ) {
+        return;
+      }
+      const input = inputEntries.get(
+        `${occurrence.garmentKey}\u0000${occurrence.selectionGroup}\u0000${occurrence.optionId}`,
+      );
+      const text = input && validateGarmentScopedCustomDetailText(input.text);
+      if (!text || text.status === "empty") {
+        blockers.push({
+          code: "personalized_requirement_missing",
+          message: "Describe your personalized requirement before continuing.",
+          garmentKey: occurrence.garmentKey,
+          selectionGroup: occurrence.selectionGroup,
+          optionId: occurrence.optionId,
+        });
+      } else if (text.status !== "valid") {
+        blockers.push({
+          code: "personalized_requirement_invalid",
+          message: "Your personalized requirement needs attention before continuing.",
+          garmentKey: occurrence.garmentKey,
+          selectionGroup: occurrence.selectionGroup,
+          optionId: occurrence.optionId,
+        });
+      }
+    },
+  );
+
   const hasInvalid = blockers.some(
     (blocker) =>
       blocker.code === "physical_subject_invalid" ||
       blocker.code === "selection_reconciled" ||
-      blocker.code === "snapshot_missing",
+      blocker.code === "snapshot_missing" ||
+      blocker.code === "personalized_requirement_invalid",
   );
   const hasPending = blockers.some(
     (blocker) => blocker.code === "pricing_evaluation_required",
   );
+  const hasIncomplete = blockers.some(
+    (blocker) =>
+      blocker.code === "earlier_stage_incomplete" ||
+      blocker.code === "required_selection_missing" ||
+      blocker.code === "personalized_requirement_missing",
+  );
   return {
     status: hasInvalid
       ? "invalid"
-      : hasPending
-        ? "pricing_pending"
-        : blockers.length > 0
-          ? "incomplete"
+      : hasIncomplete
+        ? "incomplete"
+        : hasPending
+          ? "pricing_pending"
           : "complete",
     blockers,
   };

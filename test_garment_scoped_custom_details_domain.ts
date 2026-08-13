@@ -513,7 +513,8 @@ assert.equal(
     earlierStagesComplete: true,
     reconciliation: evaluationReconciliation,
   }).status,
-  "pricing_pending",
+  "incomplete",
+  "an evaluation-required personalized option remains incomplete until its scoped text is supplied",
 );
 assert.equal(
   calculateGarmentScopedCustomDetailsPricing({

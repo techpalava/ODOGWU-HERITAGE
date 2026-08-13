@@ -348,6 +348,7 @@ export interface DesignSelections {
   >;
   customDetailSnapshots?: CustomDetailSelectionSnapshot[];
   garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1;
+  garmentScopedCustomDetailInputs?: GarmentScopedCustomDetailInputsV1;
   topLength?: string;
   topPocket?: string;
   dressLength?: string;
@@ -412,6 +413,23 @@ export interface GarmentScopedCustomDetailsStateV1 {
     string,
     Partial<
       Record<CustomDetailSelectionGroup, GarmentScopedCustomDetailSnapshot[]>
+    >
+  >;
+}
+
+/**
+ * Future-only customer-authored text for garment-scoped Custom Details.
+ * V1 selection state remains unchanged so existing drafts retain their schema.
+ */
+export interface GarmentScopedCustomDetailInputsV1 {
+  schemaVersion: 1;
+  textByGarmentKey: Record<
+    string,
+    Partial<
+      Record<
+        CustomDetailSelectionGroup,
+        Record<CustomDetailOptionId, string>
+      >
     >
   >;
 }

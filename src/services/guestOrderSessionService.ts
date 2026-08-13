@@ -16,6 +16,7 @@ import {
 import { reconcileGuestDesignDraftDesignSource } from "../utils/designSourceState";
 import { reconcileGuestDesignDraftGarmentTypeSelection } from "../utils/garmentTypeStepState";
 import { normalizeGarmentScopedCustomDetailsState } from "../utils/garmentScopedCustomDetailsState";
+import { normalizeGarmentScopedCustomDetailInputs } from "../utils/garmentScopedCustomDetailInputsState";
 import {
   getCartDesignConfigurationFingerprintInput,
   normalizeCartItemDesignDomain,
@@ -71,16 +72,30 @@ const normalizeDesignDraft = (designDraft: GuestDesignDraft): GuestDesignDraft =
   );
   const scopedCustomDetails =
     garmentTypeReconciledDraft.designSelections.garmentScopedCustomDetails;
+  const scopedCustomDetailInputs =
+    garmentTypeReconciledDraft.designSelections.garmentScopedCustomDetailInputs;
   const reconciledDraft =
-    scopedCustomDetails === undefined
+    scopedCustomDetails === undefined && scopedCustomDetailInputs === undefined
       ? garmentTypeReconciledDraft
       : {
           ...garmentTypeReconciledDraft,
           designSelections: {
             ...garmentTypeReconciledDraft.designSelections,
-            garmentScopedCustomDetails:
-              normalizeGarmentScopedCustomDetailsState(scopedCustomDetails)
-                .state,
+            ...(scopedCustomDetails === undefined
+              ? {}
+              : {
+                  garmentScopedCustomDetails:
+                    normalizeGarmentScopedCustomDetailsState(scopedCustomDetails)
+                      .state,
+                }),
+            ...(scopedCustomDetailInputs === undefined
+              ? {}
+              : {
+                  garmentScopedCustomDetailInputs:
+                    normalizeGarmentScopedCustomDetailInputs(
+                      scopedCustomDetailInputs,
+                    ).state,
+                }),
           },
         };
   const modernInspection = inspectDraftFabricAllocations(reconciledDraft);
