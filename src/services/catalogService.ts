@@ -2,7 +2,11 @@ import { db } from './firebase';
 import { collection, getDocs, doc, setDoc, writeBatch } from 'firebase/firestore';
 import { CustomDetailOption } from '../types';
 import { SEED_CUSTOM_DETAIL_CATALOG } from '../config/GarmentDetailsConfig';
-import { normalizeCustomDetailCatalog } from '../utils/catalogHelpers';
+import {
+  attachCustomDetailCatalogDocumentId,
+  createCustomDetailCatalogTombstone,
+  normalizeCustomDetailCatalog,
+} from '../utils/catalogHelpers';
 
 const CATALOG_COLLECTION = 'custom_detail_catalog';
 
@@ -10,9 +14,14 @@ export const CatalogService = {
   async getCatalog(): Promise<CustomDetailOption[]> {
     try {
       const querySnapshot = await getDocs(collection(db, CATALOG_COLLECTION));
-      const catalog: CustomDetailOption[] = [];
-      querySnapshot.forEach((doc) => {
-        catalog.push(doc.data() as CustomDetailOption);
+      const catalog: unknown[] = [];
+      querySnapshot.forEach((catalogDocument) => {
+        catalog.push(
+          attachCustomDetailCatalogDocumentId(
+            catalogDocument.id,
+            catalogDocument.data(),
+          ),
+        );
       });
       
       if (catalog.length === 0) {
@@ -21,7 +30,7 @@ export const CatalogService = {
       return normalizeCustomDetailCatalog(catalog);
     } catch (e) {
       console.error('Failed to load catalog, using fallback', e);
-      return normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
+      return normalizeCustomDetailCatalog([]);
     }
   },
 
@@ -30,6 +39,19 @@ export const CatalogService = {
       await setDoc(doc(db, CATALOG_COLLECTION, option.id), option);
     } catch (e) {
       console.error('Failed to save catalog option', e);
+      throw e;
+    }
+  },
+
+  async deleteOption(optionId: string): Promise<void> {
+    try {
+      const tombstone = createCustomDetailCatalogTombstone(optionId);
+      await setDoc(
+        doc(db, CATALOG_COLLECTION, tombstone.optionId),
+        tombstone,
+      );
+    } catch (e) {
+      console.error('Failed to delete catalog option', e);
       throw e;
     }
   },

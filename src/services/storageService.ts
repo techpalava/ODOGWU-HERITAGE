@@ -16,8 +16,11 @@ import { CustomDetailOption, CustomGroup,
   BusinessSettings,
 } from "../types";
 import { auth, db } from "./firebase";
-import { SEED_CUSTOM_DETAIL_CATALOG } from "../config/GarmentDetailsConfig";
-import { normalizeCustomDetailCatalog } from "../utils/catalogHelpers";
+import {
+  attachCustomDetailCatalogDocumentId,
+  createCustomDetailCatalogTombstone,
+  normalizeCustomDetailCatalog,
+} from "../utils/catalogHelpers";
 import { ImageService } from "./imageService";
 import { legacyCompatMap } from "../utils/legacyCompat";
 import {
@@ -101,8 +104,15 @@ export const StorageService = {
   async getCatalog(): Promise<CustomDetailOption[]> {
     try {
       const snap = await getDocs(collection(db, "custom_detail_catalog"));
-      const catalog: CustomDetailOption[] = [];
-      snap.forEach((doc) => catalog.push(doc.data() as CustomDetailOption));
+      const catalog: unknown[] = [];
+      snap.forEach((catalogDocument) =>
+        catalog.push(
+          attachCustomDetailCatalogDocumentId(
+            catalogDocument.id,
+            catalogDocument.data(),
+          ),
+        ),
+      );
       
       if (catalog.length === 0) {
         console.warn("Catalog empty, using fallback seed...");
@@ -110,12 +120,20 @@ export const StorageService = {
       return normalizeCustomDetailCatalog(catalog);
     } catch (e) {
       console.error("Failed to load catalog, using fallback", e);
-      return normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
+      return normalizeCustomDetailCatalog([]);
     }
   },
 
   async saveCatalogOption(option: CustomDetailOption): Promise<void> {
     await setDoc(doc(db, "custom_detail_catalog", option.id), option);
+  },
+
+  async deleteCatalogOption(optionId: string): Promise<void> {
+    const tombstone = createCustomDetailCatalogTombstone(optionId);
+    await setDoc(
+      doc(db, "custom_detail_catalog", tombstone.optionId),
+      tombstone,
+    );
   },
 
   safeParse: <T>(saved: string | null): T | null => {

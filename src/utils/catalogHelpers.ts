@@ -207,11 +207,133 @@ const normalizeFabricCapacityGarmentSpec = (
   };
 };
 
+export const CUSTOM_DETAIL_CATALOG_TOMBSTONE_SCHEMA_VERSION = 1 as const;
+
+export interface CustomDetailCatalogTombstoneV1 {
+  schemaVersion: typeof CUSTOM_DETAIL_CATALOG_TOMBSTONE_SCHEMA_VERSION;
+  optionId: string;
+  lifecycleStatus: "deleted";
+}
+
+export type CustomDetailCatalogEntrySource = "admin" | "seed_fallback";
+export type CustomDetailCatalogLifecycleStatus =
+  | "active"
+  | "explicitly_deleted"
+  | "malformed";
+export type CustomDetailCatalogPriceStatus =
+  | "exact"
+  | "evaluation_required"
+  | "missing"
+  | "invalid";
+
+export interface ProvenanceAwareCustomDetailCatalogEntry {
+  optionId: string;
+  source: CustomDetailCatalogEntrySource;
+  lifecycleStatus: CustomDetailCatalogLifecycleStatus;
+  priceStatus: CustomDetailCatalogPriceStatus;
+  priceCents?: number;
+  option?: CustomDetailOption;
+}
+
+export interface CustomDetailCatalogInspection {
+  entries: ProvenanceAwareCustomDetailCatalogEntry[];
+  activeOptions: CustomDetailOption[];
+  byOptionId: ReadonlyMap<string, ProvenanceAwareCustomDetailCatalogEntry>;
+  malformedRecordsWithoutId: number;
+}
+
+const hasOwn = (value: object, key: PropertyKey): boolean =>
+  Object.prototype.hasOwnProperty.call(value, key);
+
+export const createCustomDetailCatalogTombstone = (
+  optionId: string,
+): CustomDetailCatalogTombstoneV1 => {
+  const stableId = optionId.trim();
+  if (!stableId) {
+    throw new Error("A stable Custom Details option ID is required.");
+  }
+  return {
+    schemaVersion: CUSTOM_DETAIL_CATALOG_TOMBSTONE_SCHEMA_VERSION,
+    optionId: stableId,
+    lifecycleStatus: "deleted",
+  };
+};
+
+export const isCustomDetailCatalogTombstone = (
+  value: unknown,
+): value is CustomDetailCatalogTombstoneV1 =>
+  Boolean(
+    value &&
+      typeof value === "object" &&
+      (value as { schemaVersion?: unknown }).schemaVersion ===
+        CUSTOM_DETAIL_CATALOG_TOMBSTONE_SCHEMA_VERSION &&
+      (value as { lifecycleStatus?: unknown }).lifecycleStatus === "deleted" &&
+      typeof (value as { optionId?: unknown }).optionId === "string" &&
+      (value as { optionId: string }).optionId.trim(),
+  );
+
+export const attachCustomDetailCatalogDocumentId = (
+  documentId: string,
+  value: unknown,
+): unknown => {
+  if (!value || typeof value !== "object") return value;
+  const stableId = documentId.trim();
+  if (!stableId) return { ...value };
+  return isCustomDetailCatalogTombstone(value)
+    ? { ...value, optionId: stableId }
+    : { ...value, id: stableId };
+};
+
+const getCatalogRecordId = (value: unknown): string | null => {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as { id?: unknown; optionId?: unknown };
+  const rawId =
+    typeof candidate.id === "string"
+      ? candidate.id
+      : typeof candidate.optionId === "string"
+        ? candidate.optionId
+        : "";
+  return rawId.trim() || null;
+};
+
+const getCatalogPriceStatus = (
+  candidate: Record<string, unknown>,
+): {
+  status: CustomDetailCatalogPriceStatus;
+  priceCents?: number;
+} => {
+  const requiresEvaluation = candidate.requiresEvaluation === true;
+  if (
+    !hasOwn(candidate, "priceCents") ||
+    candidate.priceCents === undefined ||
+    candidate.priceCents === null
+  ) {
+    return requiresEvaluation
+      ? { status: "evaluation_required" }
+      : { status: "missing" };
+  }
+  if (
+    typeof candidate.priceCents !== "number" ||
+    !Number.isFinite(candidate.priceCents) ||
+    !Number.isInteger(candidate.priceCents) ||
+    candidate.priceCents < 0
+  ) {
+    return { status: "invalid" };
+  }
+  return requiresEvaluation
+    ? {
+        status: "evaluation_required",
+        priceCents: candidate.priceCents,
+      }
+    : { status: "exact", priceCents: candidate.priceCents };
+};
+
 const normalizeCatalogOption = (
   candidate: unknown,
   fallback?: CustomDetailOption,
+  resolvedPriceCents?: number,
 ): CustomDetailOption | null => {
-  if (!candidate || typeof candidate !== "object") return fallback || null;
+  if (!candidate || typeof candidate !== "object") return null;
 
   const saved = candidate as Partial<CustomDetailOption>;
   const merged = { ...(fallback || {}), ...saved } as Partial<CustomDetailOption>;
@@ -234,11 +356,10 @@ const normalizeCatalogOption = (
       merged.selectionGroup as CustomDetailSelectionGroup,
     )
   ) {
-    return fallback || null;
+    return null;
   }
 
   const fallbackDemographics = fallback?.eligibleDemographics || [];
-  const configuredPriceCents = Number(merged.priceCents);
   const canonicalShortsPriceCents = getCanonicalShortsPriceCents(merged.id);
   const displayOrder = Number(merged.displayOrder);
   const fabricCapacityGarmentSpec = normalizeFabricCapacityGarmentSpec(
@@ -254,9 +375,9 @@ const normalizeCatalogOption = (
     selectionGroup: merged.selectionGroup as CustomDetailSelectionGroup,
     priceCents:
       canonicalShortsPriceCents ??
-      (Number.isFinite(configuredPriceCents) && configuredPriceCents >= 0
-        ? Math.round(configuredPriceCents)
-        : fallback?.priceCents || 0),
+      resolvedPriceCents ??
+      fallback?.priceCents ??
+      0,
     eligibleDemographics:
       demographics.length > 0 ? demographics : fallbackDemographics,
     displayOrder: Number.isFinite(displayOrder)
@@ -294,40 +415,124 @@ const normalizeCatalogOption = (
   };
 };
 
-export const normalizeCustomDetailCatalog = (
+const inspectActiveCatalogRecord = (
+  candidate: unknown,
+  source: CustomDetailCatalogEntrySource,
+  fallback?: CustomDetailOption,
+): ProvenanceAwareCustomDetailCatalogEntry => {
+  const optionId = getCatalogRecordId(candidate) || fallback?.id || "";
+  if (!candidate || typeof candidate !== "object") {
+    return {
+      optionId,
+      source,
+      lifecycleStatus: "malformed",
+      priceStatus: "missing",
+    };
+  }
+  const raw = candidate as Record<string, unknown>;
+  const price = getCatalogPriceStatus(raw);
+  if (
+    (hasOwn(raw, "lifecycleStatus") && raw.lifecycleStatus !== "active") ||
+    (hasOwn(raw, "optionId") && !hasOwn(raw, "id"))
+  ) {
+    return {
+      optionId,
+      source,
+      lifecycleStatus: "malformed",
+      priceStatus: price.status,
+    };
+  }
+  const effectivePriceCents =
+    getCanonicalShortsPriceCents(optionId) ??
+    price.priceCents ??
+    (price.status === "evaluation_required" ? 0 : undefined);
+  const option = normalizeCatalogOption(candidate, fallback, effectivePriceCents);
+  if (!option) {
+    return {
+      optionId,
+      source,
+      lifecycleStatus: "malformed",
+      priceStatus: price.status,
+      ...(effectivePriceCents !== undefined
+        ? { priceCents: effectivePriceCents }
+        : {}),
+    };
+  }
+  const isSelectablePrice =
+    price.status === "exact" || price.status === "evaluation_required";
+  return {
+    optionId,
+    source,
+    lifecycleStatus: "active",
+    priceStatus: price.status,
+    ...(effectivePriceCents !== undefined
+      ? { priceCents: effectivePriceCents }
+      : {}),
+    ...(isSelectablePrice ? { option } : {}),
+  };
+};
+
+export const inspectCustomDetailCatalog = (
   catalog: unknown,
-): CustomDetailOption[] => {
+): CustomDetailCatalogInspection => {
   const savedOptions = Array.isArray(catalog) ? catalog : [];
   const savedById = new Map<string, unknown>();
+  let malformedRecordsWithoutId = 0;
 
   for (const option of savedOptions) {
-    if (
-      option &&
-      typeof option === "object" &&
-      typeof (option as { id?: unknown }).id === "string"
-    ) {
-      savedById.set((option as { id: string }).id, option);
-    }
+    const optionId = getCatalogRecordId(option);
+    if (optionId) savedById.set(optionId, option);
+    else malformedRecordsWithoutId += 1;
   }
 
   const canonicalIds = new Set(
     SEED_CUSTOM_DETAIL_CATALOG.map((option) => option.id),
   );
-  const canonical = SEED_CUSTOM_DETAIL_CATALOG.map((seed) =>
-    normalizeCatalogOption(savedById.get(seed.id), seed),
-  ).filter((option): option is CustomDetailOption => option !== null);
-  const validCustomOptions = savedOptions
-    .filter(
-      (option) =>
-        option &&
-        typeof option === "object" &&
-        typeof (option as { id?: unknown }).id === "string" &&
-        !canonicalIds.has((option as { id: string }).id),
-    )
-    .map((option) => normalizeCatalogOption(option))
-    .filter((option): option is CustomDetailOption => option !== null);
+  const entries = SEED_CUSTOM_DETAIL_CATALOG.map((seed) => {
+    const saved = savedById.get(seed.id);
+    if (saved === undefined) {
+      return inspectActiveCatalogRecord(seed, "seed_fallback");
+    }
+    if (isCustomDetailCatalogTombstone(saved)) {
+      return {
+        optionId: seed.id,
+        source: "admin",
+        lifecycleStatus: "explicitly_deleted",
+        priceStatus: "missing",
+      } satisfies ProvenanceAwareCustomDetailCatalogEntry;
+    }
+    return inspectActiveCatalogRecord(saved, "admin", seed);
+  });
 
-  return [...canonical, ...validCustomOptions];
+  for (const [optionId, saved] of savedById) {
+    if (canonicalIds.has(optionId)) continue;
+    if (isCustomDetailCatalogTombstone(saved)) {
+      entries.push({
+        optionId,
+        source: "admin",
+        lifecycleStatus: "explicitly_deleted",
+        priceStatus: "missing",
+      });
+      continue;
+    }
+    entries.push(inspectActiveCatalogRecord(saved, "admin"));
+  }
+
+  const activeOptions = entries.flatMap((entry) =>
+    entry.lifecycleStatus === "active" && entry.option ? [entry.option] : [],
+  );
+  return {
+    entries,
+    activeOptions,
+    byOptionId: new Map(entries.map((entry) => [entry.optionId, entry])),
+    malformedRecordsWithoutId,
+  };
+};
+
+export const normalizeCustomDetailCatalog = (
+  catalog: unknown,
+): CustomDetailOption[] => {
+  return inspectCustomDetailCatalog(catalog).activeOptions;
 };
 
 const MALE_GROUPS: CustomDetailGarmentGroup[] = [

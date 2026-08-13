@@ -1209,6 +1209,20 @@ export default function DatabaseView({
     }
   };
 
+  const handleDeleteCatalogOption = async (id: string) => {
+    if (!window.confirm("Delete this Custom Details option?")) return;
+    try {
+      await StorageService.deleteCatalogOption(id);
+      setCustomDetailCatalog((previous) =>
+        previous.filter((option) => option.id !== id),
+      );
+      triggerStatus("Custom Details option deleted.", "info");
+    } catch (err) {
+      console.error("Failed to delete Custom Details option", err);
+      triggerStatus("Failed to delete Custom Details option.", "error");
+    }
+  };
+
   // ----------------------------------------------------
   // Render Filters & Helpers
   // ----------------------------------------------------
@@ -1526,6 +1540,14 @@ export default function DatabaseView({
                         alert("An option with this ID already exists.");
                         return;
                       }
+                      if (
+                        item.requiresEvaluation !== true &&
+                        (!Number.isInteger(item.priceCents) ||
+                          item.priceCents < 0)
+                      ) {
+                        alert("Price must be a non-negative whole number of cents.");
+                        return;
+                      }
                       try {
                         item.updatedAt = new Date().toISOString();
                         item.createdAt = item.createdAt || item.updatedAt;
@@ -1622,8 +1644,15 @@ export default function DatabaseView({
                         type="number"
                         min="0"
                         required
-                        value={editingCatalogOption?.priceCents || 0}
-                        onChange={(e) => setEditingCatalogOption({ ...editingCatalogOption, priceCents: parseInt(e.target.value) || 0 })}
+                        value={editingCatalogOption?.priceCents ?? ""}
+                        onChange={(e) => {
+                          const rawPrice = e.target.value;
+                          setEditingCatalogOption({
+                            ...editingCatalogOption,
+                            priceCents:
+                              rawPrice === "" ? undefined : Number(rawPrice),
+                          });
+                        }}
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       />
                     </div>
@@ -4403,18 +4432,33 @@ export default function DatabaseView({
                             </div>
                             <div className="flex items-center justify-between pt-3 border-t border-gray-100 mt-2">
                               <span className="font-bold text-heritage-green text-sm">
-                                {opt.priceCents === 0 ? "Included" : `€${(opt.priceCents / 100).toFixed(2)}`}
+                                {opt.requiresEvaluation
+                                  ? "Requires evaluation"
+                                  : opt.priceCents === 0
+                                    ? "Included"
+                                    : `€${(opt.priceCents / 100).toFixed(2)}`}
                               </span>
-                              <button
-                                onClick={() => {
-                                  setEditingCatalogOption({ ...opt });
-                                  setIsNewCatalogOption(false);
-                                  setEditingType("catalog_option");
-                                }}
-                                className="text-heritage-gold bg-heritage-green px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-emerald-800 flex items-center gap-1 cursor-pointer"
-                              >
-                                <Pen size={12} /> Edit
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setEditingCatalogOption({ ...opt });
+                                    setIsNewCatalogOption(false);
+                                    setEditingType("catalog_option");
+                                  }}
+                                  className="text-heritage-gold bg-heritage-green px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-emerald-800 flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Pen size={12} /> Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCatalogOption(opt.id)}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-700 transition hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2"
+                                  aria-label={`Delete ${opt.label}`}
+                                  title="Delete Custom Details option"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}

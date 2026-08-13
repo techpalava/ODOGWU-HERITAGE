@@ -117,8 +117,8 @@ const withOption = (
   );
 
 const reordered = normalizeCustomDetailCatalog([
-  { id: "shirt_std_short", displayOrder: 20 },
-  { id: "shirt_std_midlong", displayOrder: 10 },
+  { id: "shirt_std_short", displayOrder: 20, priceCents: 6500 },
+  { id: "shirt_std_midlong", displayOrder: 10, priceCents: 7000 },
 ]);
 const reorderedResult = resolveGarmentConstructionPricing("shirt", reordered);
 assert.equal(reorderedResult.status, "resolved");
