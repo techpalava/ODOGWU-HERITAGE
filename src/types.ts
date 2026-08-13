@@ -213,6 +213,10 @@ export interface GarmentTypeStepSelection {
   >;
 }
 
+export type GarmentConstructionSelectionMode =
+  | "legacy_custom_details"
+  | "garment_type_locked";
+
 export type FabricGarmentRole = "main" | "additional";
 
 export type AdditionalGarmentDependencyStatus = "valid" | "orphaned";

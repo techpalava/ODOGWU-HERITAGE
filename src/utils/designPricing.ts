@@ -9,6 +9,8 @@ import type {
   FabricCapacityGarmentSpec,
   FabricGarmentAssignment,
   FabricGarmentType,
+  GarmentConstructionSelectionMode,
+  GarmentTypeStepSelection,
   StyleCategory,
 } from "../types";
 import {
@@ -30,6 +32,10 @@ import {
 import { getDefaultGarmentDetailsForSpec } from "../config/StyleFabricCapacityConfig";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import { resolveAdditionalGarmentPriceRows } from "./additionalGarmentDomain";
+import {
+  LEGACY_GARMENT_CONSTRUCTION_SELECTION_MODE,
+  resolveLockedGarmentConstructionBridge,
+} from "./garmentConstructionCustomDetails";
 
 export const CHECKOUT_DESIGN_PRICING_VERSION =
   "2026-08-12-design-checkout-v3";
@@ -192,6 +198,18 @@ export const getConstructionSewingCost = (
   );
 };
 
+const getConstructionSewingCostForOptionIds = (
+  optionIds: readonly string[],
+): number =>
+  optionIds.reduce(
+    (total, optionId) =>
+      total +
+      getConstructionSewingCost({
+        customDetails: { shirt_construction: optionId },
+      }),
+    0,
+  );
+
 export interface AuthoritativeDesignPricing {
   baseGarmentPricingStatus: "resolved" | "unresolved";
   unresolvedBaseGarmentTypes: FabricGarmentType[];
@@ -238,6 +256,8 @@ export interface DesignPricingInput {
   garment?: CustomDetailGarmentContext | null;
   catalog: CustomDetailOption[];
   businessSettings: BusinessSettings;
+  garmentConstructionSelectionMode?: GarmentConstructionSelectionMode;
+  garmentTypeSelection?: GarmentTypeStepSelection;
 }
 
 /** Explanatory rows that reconcile exactly to the structured clothing price. */
@@ -337,6 +357,8 @@ export const calculateDesignPricing = ({
   garment,
   catalog,
   businessSettings,
+  garmentConstructionSelectionMode,
+  garmentTypeSelection,
   }: DesignPricingInput): AuthoritativeDesignPricing | null => {
 const resolvedMaterialPricing =
   materialPricing ??
@@ -349,7 +371,16 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
   return null;
 }
 
-  const structuredBaseGarmentPricing = baseGarmentComposition
+  const constructionBridge = resolveLockedGarmentConstructionBridge({
+    mode: garmentConstructionSelectionMode,
+    garmentTypeSelection,
+    catalog,
+    selections: design,
+  });
+  const isLockedConstructionMode =
+    constructionBridge.mode !== LEGACY_GARMENT_CONSTRUCTION_SELECTION_MODE;
+  const structuredBaseGarmentPricing =
+    !isLockedConstructionMode && baseGarmentComposition
     ? resolveStructuredBaseGarmentPricing(baseGarmentComposition)
     : null;
   const designWithStructuredDefaults = structuredBaseGarmentPricing
@@ -360,7 +391,7 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
           ...(design.customDetails || {}),
         },
       }
-    : design;
+    : constructionBridge.cleanedSelections;
   const pricingDesignContext = designContext ?? style ?? null;
   const enrichedGarment = garment
     ? { ...garment, lowerGarmentType: design.lowerGarmentType }
@@ -382,9 +413,14 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
   const rawFabricSewingCost = hasResolvedMaterialPricing
     ? resolvedMaterialPricing.baseFabricSewingCost
     : 0;
-  const rawConstructionSewingCost = pricingDesignContext
-    ? getConstructionSewingCost(applicableDesign)
-    : 0;
+  const lockedConstructionOptionIds = isLockedConstructionMode
+    ? constructionBridge.readOnlyConstructionRows.flatMap((row) =>
+        row.components.map((component) => component.optionId),
+      )
+    : [];
+  const rawConstructionSewingCost =
+    (pricingDesignContext ? getConstructionSewingCost(applicableDesign) : 0) +
+    getConstructionSewingCostForOptionIds(lockedConstructionOptionIds);
   const detailPricing = calculateGarmentDetailsPrice(
     applicableDesign,
     style,
@@ -414,13 +450,20 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
     constructionUpgradesPrice += 10;
   }
 
-  const candidateBaseGarmentPriceRows = structuredBaseGarmentPricing
-    ? resolveStructuredBaseGarmentPriceRows(
+  const candidateBaseGarmentPriceRows = isLockedConstructionMode
+    ? constructionBridge.readOnlyConstructionRows.map((row, index) => ({
+        garmentKey: `garment-type:${row.garmentType}:${index + 1}`,
+        garmentType: row.garmentType,
+        label: row.garmentLabel,
+        price: roundMoney(row.price),
+      }))
+    : structuredBaseGarmentPricing
+      ? resolveStructuredBaseGarmentPriceRows(
         baseGarmentComposition || [],
         applicableDesign,
         catalog,
       )
-    : [];
+      : [];
   const candidateBaseClothingPrice = roundMoney(
     candidateBaseGarmentPriceRows.reduce((total, row) => total + row.price, 0),
   );
@@ -429,8 +472,9 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
       assignment.sourceRole === "additional" &&
       assignment.eligibilityRule === "demographic_policy",
   );
-  const baseGarmentPriceRows =
-    candidateBaseGarmentPriceRows.length > 0 &&
+  const baseGarmentPriceRows = isLockedConstructionMode
+    ? candidateBaseGarmentPriceRows
+    : candidateBaseGarmentPriceRows.length > 0 &&
     (candidateBaseClothingPrice === roundMoney(catalogPricing.clothingPrice) ||
       hasDemographicPolicyAdditionalGarment)
       ? candidateBaseGarmentPriceRows
@@ -438,7 +482,9 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
   const baseClothingPrice = roundMoney(
     baseGarmentPriceRows.length > 0
       ? candidateBaseClothingPrice
-      : catalogPricing.clothingPrice,
+      : isLockedConstructionMode
+        ? candidateBaseClothingPrice
+        : catalogPricing.clothingPrice,
   );
   const resolvedAdditionalGarmentPricing = resolveAdditionalGarmentPriceRows({
     additionalAssignments: additionalGarments,
@@ -473,10 +519,14 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
     : rawConstructionSewingCost;
 
   return {
-    baseGarmentPricingStatus:
-      structuredBaseGarmentPricing?.status || "resolved",
-    unresolvedBaseGarmentTypes:
-      structuredBaseGarmentPricing?.unresolvedGarmentTypes || [],
+    baseGarmentPricingStatus: isLockedConstructionMode
+      ? constructionBridge.unresolvedGarmentTypes.length === 0
+        ? "resolved"
+        : "unresolved"
+      : structuredBaseGarmentPricing?.status || "resolved",
+    unresolvedBaseGarmentTypes: isLockedConstructionMode
+      ? constructionBridge.unresolvedGarmentTypes
+      : structuredBaseGarmentPricing?.unresolvedGarmentTypes || [],
     baseGarmentPriceRows,
     additionalGarmentPricingStatus:
       resolvedAdditionalGarmentPricing.unresolvedAssignmentIds.length === 0
