@@ -14,21 +14,29 @@ export type DormantFutureJourneyStageId =
   (typeof FUTURE_JOURNEY_STEPS)[number]["id"];
 
 interface DormantFutureJourneyStepperProps {
-  currentStageId: "garment_type" | "fabric" | "design_style";
+  currentStageId:
+    | "garment_type"
+    | "fabric"
+    | "design_style"
+    | "custom_details";
   canEnterFabric: boolean;
   canEnterDesignStyle: boolean;
+  canEnterCustomDetails: boolean;
   onSelectGarmentType: () => void;
   onSelectFabric: () => void;
   onSelectDesignStyle: () => void;
+  onSelectCustomDetails: () => void;
 }
 
 export const DormantFutureJourneyStepper = ({
   currentStageId,
   canEnterFabric,
   canEnterDesignStyle,
+  canEnterCustomDetails,
   onSelectGarmentType,
   onSelectFabric,
   onSelectDesignStyle,
+  onSelectCustomDetails,
 }: DormantFutureJourneyStepperProps) => (
   <nav
     aria-label="Future Design Studio steps"
@@ -39,11 +47,15 @@ export const DormantFutureJourneyStepper = ({
         const isCurrent = currentStageId === step.id;
         const isCompleted =
           (step.id === "garment_type" && currentStageId !== "garment_type") ||
-          (step.id === "fabric" && currentStageId === "design_style");
+          (step.id === "fabric" &&
+            (currentStageId === "design_style" ||
+              currentStageId === "custom_details")) ||
+          (step.id === "design_style" && currentStageId === "custom_details");
         const isAvailable =
           step.id === "garment_type" ||
           (step.id === "fabric" && canEnterFabric) ||
-          (step.id === "design_style" && canEnterDesignStyle);
+          (step.id === "design_style" && canEnterDesignStyle) ||
+          (step.id === "custom_details" && canEnterCustomDetails);
         const onClick =
           step.id === "garment_type"
             ? onSelectGarmentType
@@ -51,7 +63,9 @@ export const DormantFutureJourneyStepper = ({
               ? onSelectFabric
               : step.id === "design_style"
                 ? onSelectDesignStyle
-                : undefined;
+                : step.id === "custom_details"
+                  ? onSelectCustomDetails
+                  : undefined;
         const state = isCurrent ? "current" : isCompleted ? "completed" : isAvailable ? "available" : "locked";
 
         return (

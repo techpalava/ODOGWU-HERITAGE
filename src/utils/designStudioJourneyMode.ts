@@ -47,7 +47,7 @@ export interface DormantGarmentTypeStageCompletion {
 export interface DormantDesignStudioJourneyState {
   mode: DesignStudioJourneyMode;
   currentStageId: DesignStudioStageId | null;
-  nextStageId: "fabric" | null;
+  nextStageId: "fabric" | "design_style" | "custom_details" | null;
   canAdvance: boolean;
   constructionSelectionMode: GarmentConstructionSelectionMode;
   garmentTypeSelection: GarmentTypeStepSelection;
@@ -105,12 +105,19 @@ export const createDormantDesignStudioJourneyState = ({
   const requestedStageId = persistedDraft?.currentStageId;
   const currentStageId =
     normalizedMode === "future_nine_stage" &&
-    requestedStageId === "design_style" &&
+    requestedStageId === "custom_details" &&
     completion.isComplete &&
     isFabricStageComplete
-      ? "design_style"
+      ? "custom_details"
       : normalizedMode === "future_nine_stage" &&
-          (requestedStageId === "fabric" || requestedStageId === "design_style") &&
+          requestedStageId === "design_style" &&
+          completion.isComplete &&
+          isFabricStageComplete
+        ? "design_style"
+      : normalizedMode === "future_nine_stage" &&
+          (requestedStageId === "fabric" ||
+            requestedStageId === "design_style" ||
+            requestedStageId === "custom_details") &&
           completion.isComplete
         ? "fabric"
       : normalizedMode === "future_nine_stage"
@@ -193,7 +200,11 @@ export const persistDormantGarmentTypeStage = <T extends GuestDesignDraft>({
   mode?: unknown;
   draft: T;
   garmentTypeSelection: GarmentTypeStepSelection;
-  currentStageId?: "garment_type" | "fabric" | "design_style";
+  currentStageId?:
+    | "garment_type"
+    | "fabric"
+    | "design_style"
+    | "custom_details";
 }): T => {
   if (normalizeDesignStudioJourneyMode(mode) !== "future_nine_stage") {
     return draft;

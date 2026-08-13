@@ -15,6 +15,7 @@ interface DormantFutureDesignStyleStepProps {
   onSelectStyle: (styleId: string) => void;
   onBack: () => void;
   onReturnToGarmentType: () => void;
+  onContinue: () => void;
 }
 
 export const DormantFutureDesignStyleStep = ({
@@ -25,6 +26,7 @@ export const DormantFutureDesignStyleStep = ({
   onSelectStyle,
   onBack,
   onReturnToGarmentType,
+  onContinue,
 }: DormantFutureDesignStyleStepProps) => {
   const selection = reconcileFutureDesignStyleSelection({
     selectedStyleId,
@@ -255,9 +257,10 @@ export const DormantFutureDesignStyleStep = ({
         </button>
         <button
           type="button"
-          disabled
-          aria-label="Continue to Custom Details is locked"
-          className="inline-flex min-h-11 cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-heritage-green/35 px-5 text-xs font-bold uppercase tracking-wider text-white"
+          onClick={onContinue}
+          disabled={selection.status !== "selected"}
+          aria-label="Continue to Custom Details"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35"
         >
           <LockKeyhole aria-hidden="true" size={14} />
           Continue to Custom Details

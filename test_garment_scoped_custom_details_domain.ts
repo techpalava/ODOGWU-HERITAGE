@@ -554,9 +554,16 @@ const designStudioSource = readFileSync(
   "src/components/DesignStudioView.tsx",
   "utf8",
 );
-assert.doesNotMatch(
+const appSource = readFileSync("src/App.tsx", "utf8");
+assert.match(
   designStudioSource,
   /garmentScopedCustomDetailsDomain/,
+  "the dormant future controller must use the garment-scoped domain engine",
+);
+assert.match(designStudioSource, /isFutureNineStageMode/);
+assert.equal(
+  appSource.includes("future_nine_stage"),
+  false,
   "the future domain engine must not activate production UI mode",
 );
 

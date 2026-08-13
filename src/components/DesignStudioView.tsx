@@ -17,6 +17,7 @@ import {
   clearCustomDetailPhysicalGarmentSelections,
   getCustomDetailSelectionGroupCustomerTitle,
   getSelectedGarmentCode,
+  inspectCustomDetailCatalog,
   isAmbiguousLowerGarment,
 } from "../utils/catalogHelpers";
 import React, { useState, useEffect, useRef } from "react";
@@ -92,6 +93,7 @@ import { GarmentTypeStep } from "./GarmentTypeStep";
 import { DormantFutureFabricStep } from "./DormantFutureFabricStep";
 import { DormantFutureDesignStyleStep } from "./DormantFutureDesignStyleStep";
 import { DormantFutureJourneyStepper } from "./DormantFutureJourneyStepper";
+import { DormantFutureCustomDetailsStep } from "./DormantFutureCustomDetailsStep";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
@@ -187,6 +189,19 @@ import {
   selectFutureFabric,
 } from "../utils/designStudioFutureFabricStage";
 import { reconcileFutureDesignStyleSelection } from "../utils/designStudioFutureDesignStyle";
+import {
+  calculateGarmentScopedCustomDetailsPricing,
+  reconcileGarmentScopedCustomDetails,
+  reconcileGarmentScopedPersonalizedInputs,
+  validateGarmentScopedCustomDetailsCompletion,
+} from "../utils/garmentScopedCustomDetailsDomain";
+import {
+  getGarmentScopedCustomDetailSelection,
+  setGarmentScopedCustomDetailSelection,
+} from "../utils/garmentScopedCustomDetailsState";
+import {
+  setGarmentScopedCustomDetailText,
+} from "../utils/garmentScopedCustomDetailInputsState";
 import {
   createAdditionalGarmentSelection,
   getAllowedAdditionalGarmentLabels,
@@ -2034,7 +2049,7 @@ export default function DesignStudioView({
     garmentTypeSelection,
   );
   const [futureStageId, setFutureStageId] = useState<
-    "garment_type" | "fabric" | "design_style"
+    "garment_type" | "fabric" | "design_style" | "custom_details"
   >("garment_type");
   const [futureSelectedStyleId, setFutureSelectedStyleId] = useState<
     string | null
@@ -2562,6 +2577,40 @@ export default function DesignStudioView({
   const [designSelections, setDesignSelections] = useState<DesignSelections>({
     accessories: []
   });
+  const futureCatalogInspection = inspectCustomDetailCatalog(
+    customDetailCatalog,
+  );
+  const futureScopedCustomDetailsReconciliation = isFutureNineStageMode
+    ? reconcileGarmentScopedCustomDetails({
+        garmentTypeSelection,
+        style: futureDesignStyleSelection.selectedStyle,
+        catalogInspection: futureCatalogInspection,
+        existingState: designSelections.garmentScopedCustomDetails,
+      })
+    : null;
+  const futureScopedPersonalizedInputsReconciliation =
+    futureScopedCustomDetailsReconciliation
+      ? reconcileGarmentScopedPersonalizedInputs({
+          reconciliation: futureScopedCustomDetailsReconciliation,
+          catalogInspection: futureCatalogInspection,
+          existingInputs: designSelections.garmentScopedCustomDetailInputs,
+        })
+      : null;
+  const futureCustomDetailsCompletion = futureScopedCustomDetailsReconciliation
+    ? validateGarmentScopedCustomDetailsCompletion({
+        earlierStagesComplete:
+          futureFabricStageCompletion.isComplete &&
+          futureDesignStyleSelection.status === "selected",
+        reconciliation: futureScopedCustomDetailsReconciliation,
+        personalizedInputs: futureScopedPersonalizedInputsReconciliation || undefined,
+      })
+    : null;
+  const futureCustomDetailsPricing = futureScopedCustomDetailsReconciliation
+    ? calculateGarmentScopedCustomDetailsPricing({
+        reconciliation: futureScopedCustomDetailsReconciliation,
+        catalogInspection: futureCatalogInspection,
+      })
+    : null;
 
   // Price List States
   const [hasLining, setHasLining] = useState(false);
@@ -3791,8 +3840,17 @@ export default function DesignStudioView({
       fabricAllocationState: reconciledFabricState,
       fabrics,
     });
+    const restoredStyleSelection = reconcileFutureDesignStyleSelection({
+      selectedStyleId: storedDraft?.selectedStyleId || null,
+      styles,
+      garmentTypeSelection: futureJourney.garmentTypeSelection,
+    });
     setFutureStageId(
-      storedDraft?.currentStageId === "design_style" &&
+      storedDraft?.currentStageId === "custom_details" &&
+        restoredFabricCompletion.isComplete &&
+        restoredStyleSelection.status === "selected"
+        ? "custom_details"
+        : storedDraft?.currentStageId === "design_style" &&
         restoredFabricCompletion.isComplete
         ? "design_style"
         : futureJourney.currentStageId === "fabric"
@@ -3800,6 +3858,7 @@ export default function DesignStudioView({
           : "garment_type",
     );
     setFutureSelectedStyleId(storedDraft?.selectedStyleId || null);
+    setDesignSelections(storedDraft?.designSelections || { accessories: [] });
     setFabricAllocationState(reconciledFabricState);
     setSelectedFabric(
       fabrics.find(
@@ -3829,6 +3888,31 @@ export default function DesignStudioView({
   }, [isFutureNineStageMode, guestDraftHydrated, customDetailCatalog]);
 
   useEffect(() => {
+    if (
+      !isFutureNineStageMode ||
+      !guestDraftHydrated ||
+      !futureScopedCustomDetailsReconciliation ||
+      !futureScopedPersonalizedInputsReconciliation ||
+      (!futureScopedCustomDetailsReconciliation.stateChanged &&
+        !futureScopedPersonalizedInputsReconciliation.stateChanged)
+    ) {
+      return;
+    }
+    setDesignSelections((current) => ({
+      ...current,
+      garmentScopedCustomDetails:
+        futureScopedCustomDetailsReconciliation.state,
+      garmentScopedCustomDetailInputs:
+        futureScopedPersonalizedInputsReconciliation.state,
+    }));
+  }, [
+    isFutureNineStageMode,
+    guestDraftHydrated,
+    futureScopedCustomDetailsReconciliation,
+    futureScopedPersonalizedInputsReconciliation,
+  ]);
+
+  useEffect(() => {
     if (!isFutureNineStageMode || !guestDraftHydrated) return;
     if (!garmentTypeStageCompletion.isComplete) {
       setFutureStageId("garment_type");
@@ -3849,19 +3933,27 @@ export default function DesignStudioView({
   useEffect(() => {
     if (
       !isFutureNineStageMode ||
-      futureStageId !== "design_style" ||
-      futureFabricStageCompletion.isComplete
+      (futureStageId !== "design_style" &&
+        futureStageId !== "custom_details") ||
+      (futureFabricStageCompletion.isComplete &&
+        (futureStageId !== "custom_details" ||
+          futureDesignStyleSelection.status === "selected"))
     ) {
       return;
     }
     setFutureStageId(
-      garmentTypeStageCompletion.isComplete ? "fabric" : "garment_type",
+      !garmentTypeStageCompletion.isComplete
+        ? "garment_type"
+        : futureFabricStageCompletion.isComplete
+          ? "design_style"
+          : "fabric",
     );
   }, [
     isFutureNineStageMode,
     futureStageId,
     futureFabricStageCompletion.isComplete,
     garmentTypeStageCompletion.isComplete,
+    futureDesignStyleSelection.status,
   ]);
 
   useEffect(() => {
@@ -4906,6 +4998,115 @@ export default function DesignStudioView({
     if (!futureFabricStageCompletion.isComplete) return;
     setFutureStageId("design_style");
   };
+  const handleOpenDormantCustomDetailsStage = () => {
+    if (
+      !futureFabricStageCompletion.isComplete ||
+      futureDesignStyleSelection.status !== "selected"
+    ) {
+      return;
+    }
+    setFutureStageId("custom_details");
+  };
+  const updateFutureScopedCustomDetails = (
+    update: (current: DesignSelections) => DesignSelections,
+  ) => {
+    setDesignSelections((current) => {
+      const proposed = update(current);
+      const reconciliation = reconcileGarmentScopedCustomDetails({
+        garmentTypeSelection,
+        style: futureDesignStyleSelection.selectedStyle,
+        catalogInspection: futureCatalogInspection,
+        existingState: proposed.garmentScopedCustomDetails,
+      });
+      const personalizedInputs = reconcileGarmentScopedPersonalizedInputs({
+        reconciliation,
+        catalogInspection: futureCatalogInspection,
+        existingInputs: proposed.garmentScopedCustomDetailInputs,
+      });
+      return {
+        ...proposed,
+        garmentScopedCustomDetails: reconciliation.state,
+        garmentScopedCustomDetailInputs: personalizedInputs.state,
+      };
+    });
+  };
+  const handleFutureSingleCustomDetailSelect = (
+    garmentKey: string,
+    selectionGroup: CustomDetailSelectionGroup,
+    optionId: string,
+  ) => {
+    updateFutureScopedCustomDetails((current) => ({
+      ...current,
+      garmentScopedCustomDetails: setGarmentScopedCustomDetailSelection(
+        current.garmentScopedCustomDetails || {
+          schemaVersion: 1,
+          selectionsByGarmentKey: {},
+          snapshotsByGarmentKey: {},
+        },
+        garmentKey,
+        selectionGroup,
+        optionId,
+      ),
+    }));
+  };
+  const handleFutureMultiCustomDetailToggle = (
+    garmentKey: string,
+    selectionGroup: CustomDetailSelectionGroup,
+    optionId: string,
+  ) => {
+    updateFutureScopedCustomDetails((current) => {
+      const state = current.garmentScopedCustomDetails || {
+        schemaVersion: 1 as const,
+        selectionsByGarmentKey: {},
+        snapshotsByGarmentKey: {},
+      };
+      const selection = getGarmentScopedCustomDetailSelection(
+        state,
+        garmentKey,
+        selectionGroup,
+      );
+      const selectedIds = Array.isArray(selection)
+        ? selection
+        : selection
+          ? [selection]
+          : [];
+      const nextSelection = selectedIds.includes(optionId)
+        ? selectedIds.filter((id) => id !== optionId)
+        : [...selectedIds, optionId];
+      return {
+        ...current,
+        garmentScopedCustomDetails: setGarmentScopedCustomDetailSelection(
+          state,
+          garmentKey,
+          selectionGroup,
+          nextSelection,
+        ),
+      };
+    });
+  };
+  const handleFuturePersonalizedTextChange = (
+    garmentKey: string,
+    selectionGroup: CustomDetailSelectionGroup,
+    optionId: string,
+    text: string,
+  ) => {
+    updateFutureScopedCustomDetails((current) => {
+      const updated = setGarmentScopedCustomDetailText({
+        state: current.garmentScopedCustomDetailInputs || {
+          schemaVersion: 1,
+          textByGarmentKey: {},
+        },
+        garmentKey,
+        selectionGroup,
+        optionId,
+        text,
+      });
+      return {
+        ...current,
+        garmentScopedCustomDetailInputs: updated.state,
+      };
+    });
+  };
   const handleUseSameFutureFabric = () => {
     setFabricAllocationState((current) =>
       FabricAllocationStateEngine.useSameFabricForPendingGarmentAndContinue(
@@ -4947,7 +5148,9 @@ export default function DesignStudioView({
             ? garmentTypeStageCompletion.isComplete
             : futureStageId === "fabric"
               ? futureFabricStageCompletion.isComplete
-              : futureDesignStyleSelection.status === "selected"
+              : futureStageId === "design_style"
+                ? futureDesignStyleSelection.status === "selected"
+                : futureCustomDetailsCompletion?.status === "complete"
         }
         className="font-sans"
       >
@@ -4955,9 +5158,13 @@ export default function DesignStudioView({
           currentStageId={futureStageId}
           canEnterFabric={garmentTypeStageCompletion.isComplete}
           canEnterDesignStyle={futureFabricStageCompletion.isComplete}
+          canEnterCustomDetails={
+            futureDesignStyleSelection.status === "selected"
+          }
           onSelectGarmentType={() => setFutureStageId("garment_type")}
           onSelectFabric={handleOpenDormantFabricStage}
           onSelectDesignStyle={handleOpenDormantDesignStyleStage}
+          onSelectCustomDetails={handleOpenDormantCustomDetailsStage}
         />
         {futureStageId === "garment_type" ? (
           <div className="space-y-5">
@@ -5002,7 +5209,7 @@ export default function DesignStudioView({
             onChooseAnotherFabric={handleChooseAnotherFutureFabric}
             onCancelPendingFabric={handleCancelFuturePendingFabric}
           />
-        ) : (
+        ) : futureStageId === "design_style" ? (
           <DormantFutureDesignStyleStep
             styles={styles}
             garmentTypeSelection={garmentTypeSelection}
@@ -5013,8 +5220,29 @@ export default function DesignStudioView({
             onSelectStyle={setFutureSelectedStyleId}
             onBack={() => setFutureStageId("fabric")}
             onReturnToGarmentType={() => setFutureStageId("garment_type")}
+            onContinue={handleOpenDormantCustomDetailsStage}
           />
-        )}
+        ) : futureScopedCustomDetailsReconciliation &&
+          futureScopedPersonalizedInputsReconciliation &&
+          futureCustomDetailsCompletion &&
+          futureCustomDetailsPricing ? (
+          <DormantFutureCustomDetailsStep
+            reconciliation={futureScopedCustomDetailsReconciliation}
+            personalizedInputs={futureScopedPersonalizedInputsReconciliation.state}
+            completion={futureCustomDetailsCompletion}
+            pricing={futureCustomDetailsPricing}
+            constructionSubtotal={futureConstructionPrice}
+            fabricSubtotal={
+              futureFabricMaterialPricing?.status === "resolved"
+                ? futureFabricMaterialPricing.totalMaterialPrice
+                : null
+            }
+            onSingleSelect={handleFutureSingleCustomDetailSelect}
+            onToggleMultiSelect={handleFutureMultiCustomDetailToggle}
+            onPersonalizedTextChange={handleFuturePersonalizedTextChange}
+            onBack={() => setFutureStageId("design_style")}
+          />
+        ) : null}
       </div>
     );
   }
