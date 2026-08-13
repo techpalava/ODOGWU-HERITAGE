@@ -83,6 +83,7 @@ export const createDormantDesignStudioJourneyState = ({
   persistedDraft,
   normalizedCustomDetailCatalog,
   isFabricStageComplete = false,
+  isCustomDetailsStageReady = false,
 }: {
   mode?: unknown;
   persistedDraft?: Pick<
@@ -91,6 +92,7 @@ export const createDormantDesignStudioJourneyState = ({
   > | null;
   normalizedCustomDetailCatalog: readonly CustomDetailOption[];
   isFabricStageComplete?: boolean;
+  isCustomDetailsStageReady?: boolean;
 }): DormantDesignStudioJourneyState => {
   const normalizedMode = normalizeDesignStudioJourneyMode(mode);
   const garmentTypeSelection =
@@ -105,6 +107,17 @@ export const createDormantDesignStudioJourneyState = ({
   const requestedStageId = persistedDraft?.currentStageId;
   const currentStageId =
     normalizedMode === "future_nine_stage" &&
+    requestedStageId === "try_on" &&
+    completion.isComplete &&
+    isFabricStageComplete &&
+    isCustomDetailsStageReady
+      ? "try_on"
+      : normalizedMode === "future_nine_stage" &&
+          requestedStageId === "try_on" &&
+          completion.isComplete &&
+          isFabricStageComplete
+        ? "custom_details"
+      : normalizedMode === "future_nine_stage" &&
     requestedStageId === "custom_details" &&
     completion.isComplete &&
     isFabricStageComplete
@@ -204,7 +217,8 @@ export const persistDormantGarmentTypeStage = <T extends GuestDesignDraft>({
     | "garment_type"
     | "fabric"
     | "design_style"
-    | "custom_details";
+    | "custom_details"
+    | "try_on";
 }): T => {
   if (normalizeDesignStudioJourneyMode(mode) !== "future_nine_stage") {
     return draft;

@@ -1,4 +1,4 @@
-import { ArrowLeft, LockKeyhole } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE } from "../config/GarmentDetailsConfig";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
@@ -24,6 +24,7 @@ import {
   validateGarmentScopedCustomDetailText,
 } from "../utils/garmentScopedCustomDetailInputsState";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+import { isFutureCustomDetailsContentReady } from "../utils/aiTryOnWorkflow";
 
 interface DormantFutureCustomDetailsStepProps {
   reconciliation: GarmentScopedCustomDetailsReconciliationResult;
@@ -49,6 +50,7 @@ interface DormantFutureCustomDetailsStepProps {
     text: string,
   ) => void;
   onBack: () => void;
+  onContinue: () => void;
 }
 
 const getSubjectLabel = (
@@ -98,6 +100,7 @@ export const DormantFutureCustomDetailsStep = ({
   onToggleMultiSelect,
   onPersonalizedTextChange,
   onBack,
+  onContinue,
 }: DormantFutureCustomDetailsStepProps) => {
   const [overLimitText, setOverLimitText] = useState<Record<string, string>>(
     {},
@@ -161,12 +164,13 @@ export const DormantFutureCustomDetailsStep = ({
       getSubjectLabel(subject),
     ]),
   );
+  const canContinue = isFutureCustomDetailsContentReady(completion);
 
   return (
     <section
       aria-labelledby="future-custom-details-title"
       data-stage-id="custom_details"
-      data-stage-complete={completion.status === "complete"}
+      data-stage-complete={canContinue}
       className="space-y-6 font-sans"
     >
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
@@ -510,12 +514,17 @@ export const DormantFutureCustomDetailsStep = ({
         </button>
         <button
           type="button"
-          disabled
-          aria-label="Continue to AI Try-on is locked"
-          className="inline-flex min-h-11 cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-heritage-green/35 px-5 text-xs font-bold uppercase tracking-wider text-white"
+          onClick={onContinue}
+          disabled={!canContinue}
+          aria-label={
+            canContinue
+              ? "Continue to AI Try-on"
+              : "Continue to AI Try-on is locked until Custom Details are complete"
+          }
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
         >
-          <LockKeyhole aria-hidden="true" size={14} />
           Continue to AI Try-on
+          <ArrowRight aria-hidden="true" size={14} />
         </button>
       </div>
     </section>

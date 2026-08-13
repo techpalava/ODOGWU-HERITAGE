@@ -17,6 +17,7 @@ import { reconcileGuestDesignDraftDesignSource } from "../utils/designSourceStat
 import { reconcileGuestDesignDraftGarmentTypeSelection } from "../utils/garmentTypeStepState";
 import { normalizeGarmentScopedCustomDetailsState } from "../utils/garmentScopedCustomDetailsState";
 import { normalizeGarmentScopedCustomDetailInputs } from "../utils/garmentScopedCustomDetailInputsState";
+import { normalizeAiTryOnWorkflowState } from "../utils/aiTryOnWorkflow";
 import {
   getCartDesignConfigurationFingerprintInput,
   normalizeCartItemDesignDomain,
@@ -70,17 +71,30 @@ const normalizeDesignDraft = (designDraft: GuestDesignDraft): GuestDesignDraft =
   const garmentTypeReconciledDraft = reconcileGuestDesignDraftGarmentTypeSelection(
     sourceReconciledDraft,
   );
+  const normalizedAiTryOnWorkflow = normalizeAiTryOnWorkflowState(
+    garmentTypeReconciledDraft.aiTryOnWorkflow,
+  );
+  const {
+    aiTryOnWorkflow: _discardedAiTryOnWorkflow,
+    ...draftWithoutAiTryOnWorkflow
+  } = garmentTypeReconciledDraft;
+  const workflowReconciledDraft: GuestDesignDraft = {
+    ...draftWithoutAiTryOnWorkflow,
+    ...(normalizedAiTryOnWorkflow
+      ? { aiTryOnWorkflow: normalizedAiTryOnWorkflow }
+      : {}),
+  };
   const scopedCustomDetails =
-    garmentTypeReconciledDraft.designSelections.garmentScopedCustomDetails;
+    workflowReconciledDraft.designSelections.garmentScopedCustomDetails;
   const scopedCustomDetailInputs =
-    garmentTypeReconciledDraft.designSelections.garmentScopedCustomDetailInputs;
+    workflowReconciledDraft.designSelections.garmentScopedCustomDetailInputs;
   const reconciledDraft =
     scopedCustomDetails === undefined && scopedCustomDetailInputs === undefined
-      ? garmentTypeReconciledDraft
+      ? workflowReconciledDraft
       : {
-          ...garmentTypeReconciledDraft,
+          ...workflowReconciledDraft,
           designSelections: {
-            ...garmentTypeReconciledDraft.designSelections,
+            ...workflowReconciledDraft.designSelections,
             ...(scopedCustomDetails === undefined
               ? {}
               : {

@@ -261,6 +261,42 @@ assert.deepEqual(
   "Uploaded composition must survive guest draft persistence.",
 );
 
+const tryOnDraft = baseDraft({
+  journeySchemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+  currentStageId: "try_on",
+  aiTryOnWorkflow: {
+    schemaVersion: 1,
+    status: "skipped",
+    inputFingerprint: "tryon-v1-1234567890abcdef",
+  },
+});
+GuestOrderSessionService.saveGuestDesignDraft(tryOnDraft);
+assert.deepEqual(
+  GuestOrderSessionService.getGuestDesignDraft()?.aiTryOnWorkflow,
+  tryOnDraft.aiTryOnWorkflow,
+  "Future Try-on workflow state must round-trip through the canonical guest draft.",
+);
+GuestOrderSessionService.saveGuestDesignDraft(
+  baseDraft({
+    aiTryOnWorkflow: {
+      schemaVersion: 1,
+      status: "completed",
+      inputFingerprint: "tryon-v1-1234567890abcdef",
+      resultReference: {
+        kind: "verified_private_try_on_result",
+        assetId: "blob:unsafe-result",
+        ownerBindingId: "owner-1",
+      },
+      rawPhoto: "data:image/png;base64,AAAA",
+    } as never,
+  }),
+);
+assert.equal(
+  GuestOrderSessionService.getGuestDesignDraft()?.aiTryOnWorkflow,
+  undefined,
+  "Malformed or raw-asset Try-on state must become inert during persistence.",
+);
+
 const catalogAfterUploaded = reconcileGuestDesignDraftDesignSource(
   baseDraft({
     designSource: createCatalogDesignSource("catalog-style-2"),

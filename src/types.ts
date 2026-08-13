@@ -434,6 +434,49 @@ export interface GarmentScopedCustomDetailInputsV1 {
   >;
 }
 
+export type AiTryOnWorkflowStatus =
+  | "not_started"
+  | "awaiting_input"
+  | "ready"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "stale"
+  | "unavailable";
+
+export type AiTryOnFailureCode =
+  | "interrupted"
+  | "provider_unavailable"
+  | "provider_rejected"
+  | "processing_failed";
+
+export interface AiTryOnResumableJobReference {
+  kind: "resumable_job";
+  jobId: string;
+}
+
+export interface AiTryOnVerifiedPrivateResultReference {
+  kind: "verified_private_try_on_result";
+  assetId: string;
+  ownerBindingId: string;
+}
+
+export interface AiTryOnWorkflowFailure {
+  code: AiTryOnFailureCode;
+  retryable: boolean;
+}
+
+/** Future-only state. It deliberately stores no image bytes, URLs, or provider payloads. */
+export interface AiTryOnWorkflowStateV1 {
+  schemaVersion: 1;
+  status: AiTryOnWorkflowStatus;
+  inputFingerprint: string | null;
+  jobReference?: AiTryOnResumableJobReference;
+  resultReference?: AiTryOnVerifiedPrivateResultReference;
+  failure?: AiTryOnWorkflowFailure;
+}
+
 export interface IndividualShippingSnapshot {
   routeId: "LAGOS_EINDHOVEN";
   pricingVersion: string;
@@ -911,6 +954,7 @@ export interface GuestDesignDraft {
   currentStageId?: DesignStudioStageId;
   currentStep: number;
   garmentTypeSelection?: GarmentTypeStepSelection;
+  aiTryOnWorkflow?: AiTryOnWorkflowStateV1;
   selectedFabricCode: string | null;
   selectedStyleId: string | null;
   designSource?: DesignSource | null;
