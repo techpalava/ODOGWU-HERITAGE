@@ -164,6 +164,55 @@ export type FabricGarmentType =
  | "agbada"
   | "other";
 
+export type CanonicalPhysicalGarmentType = Exclude<
+  FabricGarmentType,
+  "other"
+>;
+
+export interface GarmentConstructionPriceComponent {
+  componentKey: string;
+  optionId: string;
+  selectionGroup: CustomDetailSelectionGroup;
+  priceCents: number;
+  price: number;
+}
+
+export interface ResolvedGarmentConstructionPricing {
+  status: "resolved";
+  garmentType: CanonicalPhysicalGarmentType;
+  components: GarmentConstructionPriceComponent[];
+  totalPriceCents: number;
+  totalPrice: number;
+}
+
+export type GarmentConstructionPricingFailureCode =
+  | "unsupported_garment"
+  | "missing_construction_configuration"
+  | "missing_catalog_option";
+
+export interface UnresolvedGarmentConstructionPricing {
+  status: "unresolved";
+  garmentType: FabricGarmentType;
+  code: GarmentConstructionPricingFailureCode;
+  selectionGroup?: CustomDetailSelectionGroup;
+  expectedOptionId?: string;
+}
+
+export type GarmentConstructionPricingResolution =
+  | ResolvedGarmentConstructionPricing
+  | UnresolvedGarmentConstructionPricing;
+
+export interface GarmentTypeStepSelection {
+  garmentTypes: CanonicalPhysicalGarmentType[];
+  demographic: CustomDetailDemographic | null;
+  constructionByGarment: Partial<
+    Record<
+      CanonicalPhysicalGarmentType,
+      GarmentConstructionPricingResolution
+    >
+  >;
+}
+
 export type FabricGarmentRole = "main" | "additional";
 
 export type AdditionalGarmentDependencyStatus = "valid" | "orphaned";
@@ -811,6 +860,7 @@ export interface GuestDesignDraft {
   journeySchemaVersion?: number;
   currentStageId?: DesignStudioStageId;
   currentStep: number;
+  garmentTypeSelection?: GarmentTypeStepSelection;
   selectedFabricCode: string | null;
   selectedStyleId: string | null;
   designSource?: DesignSource | null;

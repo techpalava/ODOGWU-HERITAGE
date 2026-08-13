@@ -1,7 +1,17 @@
 import type {
+  CanonicalPhysicalGarmentType,
   CustomDetailOption,
   CustomDetailSelectionGroup,
   FabricGarmentType,
+  GarmentConstructionPriceComponent,
+  GarmentConstructionPricingResolution,
+} from "../types";
+export type {
+  GarmentConstructionPriceComponent,
+  GarmentConstructionPricingFailureCode,
+  GarmentConstructionPricingResolution,
+  ResolvedGarmentConstructionPricing,
+  UnresolvedGarmentConstructionPricing,
 } from "../types";
 import {
   STYLE_BASE_GARMENT_TYPES,
@@ -13,12 +23,9 @@ import {
   sortCustomDetailOptions,
 } from "./catalogHelpers";
 
-export const CANONICAL_PHYSICAL_GARMENT_TYPES = [
+export const CANONICAL_PHYSICAL_GARMENT_TYPES: readonly CanonicalPhysicalGarmentType[] = [
   ...STYLE_BASE_GARMENT_TYPES,
-] as const;
-
-type CanonicalPhysicalGarmentType =
-  (typeof CANONICAL_PHYSICAL_GARMENT_TYPES)[number];
+] as CanonicalPhysicalGarmentType[];
 
 const CANONICAL_PHYSICAL_GARMENT_TYPE_SET = new Set<FabricGarmentType>(
   CANONICAL_PHYSICAL_GARMENT_TYPES,
@@ -29,39 +36,6 @@ const DERIVED_CONSTRUCTION_GARMENT_TYPES = new Set<FabricGarmentType>([
   "full_length_gown",
   "agbada",
 ]);
-
-export interface GarmentConstructionPriceComponent {
-  componentKey: string;
-  optionId: string;
-  selectionGroup: CustomDetailSelectionGroup;
-  priceCents: number;
-  price: number;
-}
-
-export interface ResolvedGarmentConstructionPricing {
-  status: "resolved";
-  garmentType: CanonicalPhysicalGarmentType;
-  components: GarmentConstructionPriceComponent[];
-  totalPriceCents: number;
-  totalPrice: number;
-}
-
-export type GarmentConstructionPricingFailureCode =
-  | "unsupported_garment"
-  | "missing_construction_configuration"
-  | "missing_catalog_option";
-
-export interface UnresolvedGarmentConstructionPricing {
-  status: "unresolved";
-  garmentType: FabricGarmentType;
-  code: GarmentConstructionPricingFailureCode;
-  selectionGroup?: CustomDetailSelectionGroup;
-  expectedOptionId?: string;
-}
-
-export type GarmentConstructionPricingResolution =
-  | ResolvedGarmentConstructionPricing
-  | UnresolvedGarmentConstructionPricing;
 
 const isValidConstructionOption = (
   option: CustomDetailOption,
@@ -91,9 +65,10 @@ export const resolveGarmentConstructionPricing = (
       code: "unsupported_garment",
     };
   }
+  const canonicalGarmentType = garmentType as CanonicalPhysicalGarmentType;
 
   const configuredDetails = getDefaultGarmentDetailsForSpec(
-    createStyleBaseGarmentSpec(garmentType),
+    createStyleBaseGarmentSpec(canonicalGarmentType),
   );
   const constructionComponents = Object.entries(configuredDetails || {}).filter(
     ([selectionGroup]) =>
@@ -120,7 +95,7 @@ export const resolveGarmentConstructionPricing = (
         isValidConstructionOption(option, selectionGroup),
       ),
     );
-    const option = DERIVED_CONSTRUCTION_GARMENT_TYPES.has(garmentType)
+    const option = DERIVED_CONSTRUCTION_GARMENT_TYPES.has(canonicalGarmentType)
       ? candidates.find((candidate) => candidate.id === configuredOptionId)
       : candidates[0];
 
@@ -130,14 +105,14 @@ export const resolveGarmentConstructionPricing = (
         garmentType,
         code: "missing_catalog_option",
         selectionGroup,
-        ...(DERIVED_CONSTRUCTION_GARMENT_TYPES.has(garmentType)
+        ...(DERIVED_CONSTRUCTION_GARMENT_TYPES.has(canonicalGarmentType)
           ? { expectedOptionId: configuredOptionId }
           : {}),
       };
     }
 
     resolvedComponents.push({
-      componentKey: `${garmentType}:${selectionGroup}:${option.id}`,
+      componentKey: `${canonicalGarmentType}:${selectionGroup}:${option.id}`,
       optionId: option.id,
       selectionGroup,
       priceCents: option.priceCents,
@@ -152,7 +127,7 @@ export const resolveGarmentConstructionPricing = (
 
   return {
     status: "resolved",
-    garmentType,
+    garmentType: canonicalGarmentType,
     components: resolvedComponents,
     totalPriceCents,
     totalPrice: totalPriceCents / 100,

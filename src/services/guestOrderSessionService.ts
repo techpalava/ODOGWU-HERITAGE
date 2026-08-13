@@ -14,6 +14,7 @@ import {
   resolveLegacyDraftFabricAllocations,
 } from "../utils/fabricAllocationPersistence";
 import { reconcileGuestDesignDraftDesignSource } from "../utils/designSourceState";
+import { reconcileGuestDesignDraftGarmentTypeSelection } from "../utils/garmentTypeStepState";
 import {
   getCartDesignConfigurationFingerprintInput,
   normalizeCartItemDesignDomain,
@@ -64,21 +65,24 @@ const createGuestCartId = (): string => {
 
 const normalizeDesignDraft = (designDraft: GuestDesignDraft): GuestDesignDraft => {
   const sourceReconciledDraft = reconcileGuestDesignDraftDesignSource(designDraft);
-  const modernInspection = inspectDraftFabricAllocations(sourceReconciledDraft);
+  const reconciledDraft = reconcileGuestDesignDraftGarmentTypeSelection(
+    sourceReconciledDraft,
+  );
+  const modernInspection = inspectDraftFabricAllocations(reconciledDraft);
   if (modernInspection.status === "valid") {
     return {
-      ...sourceReconciledDraft,
+      ...reconciledDraft,
       fabricAllocations: cloneFabricAllocations(modernInspection.fabricAllocations),
     };
   }
   if (modernInspection.status === "invalid") {
-    return sourceReconciledDraft;
+    return reconciledDraft;
   }
 
-  const legacyAllocations = resolveLegacyDraftFabricAllocations(sourceReconciledDraft);
-  if (!legacyAllocations) return sourceReconciledDraft;
+  const legacyAllocations = resolveLegacyDraftFabricAllocations(reconciledDraft);
+  if (!legacyAllocations) return reconciledDraft;
   return {
-    ...sourceReconciledDraft,
+    ...reconciledDraft,
     fabricAllocations: cloneFabricAllocations(legacyAllocations),
   };
 };
