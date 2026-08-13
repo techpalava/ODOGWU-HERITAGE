@@ -170,10 +170,17 @@ const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8")
 const appSource = readFileSync("src/App.tsx", "utf8");
 
 assert.match(componentSource, /Step 4 of 9/);
-assert.match(componentSource, /Base garment construction is locked from Step 1/);
+assert.match(
+  componentSource,
+  /Base garment construction was selected in Garment Type and is already included in your price/,
+);
 assert.match(componentSource, /Price requires evaluation\./);
+assert.match(componentSource, /Confirmed after tailoring review/);
 assert.match(componentSource, /Describe your personalized requirement/);
 assert.match(componentSource, /type=\{group\.allowMultiple \? "checkbox" : "radio"\}/);
+assert.match(componentSource, /xl:grid-cols-\[minmax\(0,1fr\)_minmax\(19rem,24rem\)\]/);
+assert.match(componentSource, /xl:sticky xl:top-4/);
+assert.match(componentSource, /min-w-0 break-words/);
 assert.equal(componentSource.includes("Add Nikka"), false);
 assert.equal(componentSource.includes("Add Bum Shorts"), false);
 assert.match(stepperSource, /canEnterCustomDetails/);

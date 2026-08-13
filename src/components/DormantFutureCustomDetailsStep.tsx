@@ -189,7 +189,7 @@ export const DormantFutureCustomDetailsStep = ({
         </h2>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
           Select the finishing details for each garment. Base garment construction
-          was already selected in Garment Type.
+          was selected in Garment Type and is already included in your price.
         </p>
       </div>
 
@@ -211,23 +211,38 @@ export const DormantFutureCustomDetailsStep = ({
         </div>
       )}
 
-      <div className="space-y-5">
+      <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] xl:items-start xl:gap-6">
+        <div className="min-w-0 space-y-5">
         {reconciliation.subjects.map((subject) => {
           const applicability = reconciliation.applicabilityByGarmentKey.get(
             subject.garmentKey,
           );
+          const subjectNeedsAttention = completion.blockers.some(
+            (blocker) => blocker.garmentKey === subject.garmentKey,
+          );
           return (
             <article
               key={subject.garmentKey}
-              className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
+              className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
             >
-              <header className="border-b border-heritage-gold/15 pb-3">
-                <h3 className="font-serif text-lg font-bold text-heritage-green">
-                  {getSubjectLabel(subject)}
-                </h3>
-                <p className="mt-1 text-xs text-heritage-ink/60">
-                  Base garment construction is locked from Step 1.
-                </p>
+              <header className="flex min-w-0 flex-col gap-2 border-b border-heritage-gold/15 pb-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <h3 className="break-words font-serif text-lg font-bold text-heritage-green">
+                    {getSubjectLabel(subject)}
+                  </h3>
+                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-heritage-ink/60">
+                    Base garment construction was selected in Garment Type and is already included in your price.
+                  </p>
+                </div>
+                <span
+                  className={`w-fit shrink-0 rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide ${
+                    subjectNeedsAttention
+                      ? "border-heritage-gold/35 bg-heritage-cream/70 text-heritage-gold"
+                      : "border-heritage-green/20 bg-heritage-green/5 text-heritage-green"
+                  }`}
+                >
+                  {subjectNeedsAttention ? "Needs attention" : "Ready"}
+                </span>
               </header>
               <div className="mt-4 space-y-5">
                 {applicability?.groups.map((group) => {
@@ -240,11 +255,18 @@ export const DormantFutureCustomDetailsStep = ({
                   return (
                     <fieldset key={group.selectionGroup} className="min-w-0">
                       <legend className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-bold text-heritage-green">
-                        <span>{CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE[group.selectionGroup]}</span>
+                        <span className="min-w-0 break-words">
+                          {CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE[group.selectionGroup]}
+                        </span>
                         <span className="rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold">
                           {group.required ? "Required" : "Optional"}
                         </span>
                       </legend>
+                      <p className="mt-1 text-[11px] text-heritage-ink/55">
+                        {group.allowMultiple
+                          ? "Choose all that apply."
+                          : "Choose one option."}
+                      </p>
                       {groupBlocker && (
                         <p id={`${groupId}-error`} className="mt-1 text-xs text-red-700">
                           {groupBlocker.message}
@@ -289,7 +311,7 @@ export const DormantFutureCustomDetailsStep = ({
                             <div key={option.id} className="min-w-0">
                               <label
                                 htmlFor={optionId}
-                                className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border p-3 text-left transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                                className={`flex min-h-12 min-w-0 cursor-pointer items-start gap-3 rounded-xl border p-3 text-left transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
                                   checked
                                     ? "border-heritage-gold bg-heritage-gold/10"
                                     : "border-heritage-green/15 hover:border-heritage-gold/45"
@@ -320,16 +342,21 @@ export const DormantFutureCustomDetailsStep = ({
                                 />
                                 <span className="min-w-0 flex-1">
                                   <span className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-                                    <span className="min-w-0 break-words text-xs font-bold text-heritage-green">
+                                    <span className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">
                                       {option.label}
                                     </span>
-                                    <span className="shrink-0 font-mono text-[11px] font-bold text-heritage-gold">
+                                    <span className="shrink-0 rounded-md bg-heritage-cream/60 px-1.5 py-0.5 font-mono text-[11px] font-bold text-heritage-gold">
                                       {getOptionPriceLabel(option)}
                                     </span>
                                   </span>
                                   {option.description && (
-                                    <span className="mt-1 block break-words text-[11px] leading-relaxed text-heritage-ink/65">
+                                    <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">
                                       {option.description}
+                                    </span>
+                                  )}
+                                  {option.requiresEvaluation && (
+                                    <span className="mt-2 block text-[10px] font-semibold uppercase tracking-wide text-heritage-ink/50">
+                                      Confirmed after tailoring review
                                     </span>
                                   )}
                                 </span>
@@ -398,71 +425,79 @@ export const DormantFutureCustomDetailsStep = ({
               </div>
             </article>
           );
-        })}
-      </div>
+          })}
+        </div>
 
-      <aside className="rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm">
-        <h3 className="font-serif text-lg font-bold text-heritage-green">
-          Future Price Summary
-        </h3>
-        <div className="mt-4 space-y-2 text-sm">
-          <div className="flex items-start justify-between gap-3">
-            <span className="text-heritage-ink/70">Base garment construction</span>
-            <span className="shrink-0 font-mono font-bold text-heritage-green">
-              {PRICING_CURRENCY_SYMBOL}{constructionSubtotal.toFixed(2)}
-            </span>
-          </div>
-          <div className="flex items-start justify-between gap-3">
-            <span className="text-heritage-ink/70">Fabric subtotal</span>
-            <span className="shrink-0 font-mono font-bold text-heritage-green">
-              {fabricSubtotal === null
-                ? "Pending"
-                : `${PRICING_CURRENCY_SYMBOL}${fabricSubtotal.toFixed(2)}`}
-            </span>
-          </div>
-          <div className="flex items-start justify-between gap-3">
-            <span className="text-heritage-ink/70">Custom Details subtotal</span>
-            <span className="shrink-0 font-mono font-bold text-heritage-green">
-              {PRICING_CURRENCY_SYMBOL}{customDetailsSubtotal.toFixed(2)}
-            </span>
-          </div>
-          {pricing.lines.map((line) => (
-            <div
-              key={line.occurrenceKey}
-              className="flex min-w-0 items-start justify-between gap-3 text-xs"
-            >
-              <span className="min-w-0 break-words text-heritage-ink/60">
-                {subjectLabelByGarmentKey.get(line.garmentKey) || "Garment"}: {line.label}
-              </span>
-              <span className="shrink-0 font-mono text-heritage-green">
-                {line.status === "evaluation_required"
-                  ? "Evaluation"
-                  : line.status === "exact" && line.lineTotalCents !== undefined
-                    ? `${PRICING_CURRENCY_SYMBOL}${(line.lineTotalCents / 100).toFixed(2)}`
-                    : "Review"}
+        <aside className="mt-5 min-w-0 rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm xl:sticky xl:top-4 xl:mt-0">
+          <h3 className="font-serif text-lg font-bold text-heritage-green">
+            Future Price Summary
+          </h3>
+          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
+            Updates from your eligible Custom Details appear here.
+          </p>
+          <div className="mt-4 space-y-2.5 text-sm">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <span className="min-w-0 break-words text-heritage-ink/70">Base garment construction</span>
+              <span className="shrink-0 font-mono font-bold text-heritage-green">
+                {PRICING_CURRENCY_SYMBOL}{constructionSubtotal.toFixed(2)}
               </span>
             </div>
-          ))}
-          {pricing.status === "pending" && (
-            <p className="rounded-lg bg-heritage-cream/50 p-2 text-xs text-heritage-ink/70">
-              A personalized requirement needs price evaluation before an exact total is available.
-            </p>
-          )}
-          {pricing.status === "invalid" && (
-            <p className="rounded-lg bg-red-50 p-2 text-xs text-red-700">
-              A saved Custom Details price needs review.
-            </p>
-          )}
-          <div className="flex items-start justify-between gap-3 border-t border-heritage-gold/15 pt-3 font-bold text-heritage-green">
-            <span>Estimated total so far</span>
-            <span className="shrink-0 font-mono">
-              {estimatedTotal === null
-                ? "Pending"
-                : `${PRICING_CURRENCY_SYMBOL}${estimatedTotal.toFixed(2)}`}
-            </span>
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <span className="min-w-0 break-words text-heritage-ink/70">Fabric subtotal</span>
+              <span className="shrink-0 font-mono font-bold text-heritage-green">
+                {fabricSubtotal === null
+                  ? "Pending"
+                  : `${PRICING_CURRENCY_SYMBOL}${fabricSubtotal.toFixed(2)}`}
+              </span>
+            </div>
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <span className="min-w-0 break-words text-heritage-ink/70">Custom Details subtotal</span>
+              <span className="shrink-0 font-mono font-bold text-heritage-green">
+                {PRICING_CURRENCY_SYMBOL}{customDetailsSubtotal.toFixed(2)}
+              </span>
+            </div>
+            {pricing.lines.length > 0 && (
+              <div className="space-y-2 border-t border-heritage-gold/15 pt-3">
+                {pricing.lines.map((line) => (
+                  <div
+                    key={line.occurrenceKey}
+                    className="flex min-w-0 items-start justify-between gap-3 text-xs"
+                  >
+                    <span className="min-w-0 break-words leading-relaxed text-heritage-ink/60">
+                      {subjectLabelByGarmentKey.get(line.garmentKey) || "Garment"}: {line.label}
+                    </span>
+                    <span className="shrink-0 font-mono text-heritage-green">
+                      {line.status === "evaluation_required"
+                        ? "Evaluation"
+                        : line.status === "exact" && line.lineTotalCents !== undefined
+                          ? `${PRICING_CURRENCY_SYMBOL}${(line.lineTotalCents / 100).toFixed(2)}`
+                          : "Review"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {pricing.status === "pending" && (
+              <p className="rounded-lg bg-heritage-cream/50 p-2 text-xs leading-relaxed text-heritage-ink/70">
+                A personalized requirement needs price evaluation before an exact total is available.
+              </p>
+            )}
+            {pricing.status === "invalid" && (
+              <p className="rounded-lg bg-red-50 p-2 text-xs leading-relaxed text-red-700">
+                A saved Custom Details price needs review.
+              </p>
+            )}
+            <div className="flex min-w-0 items-start justify-between gap-3 border-t border-heritage-gold/15 pt-3 font-bold text-heritage-green">
+              <span className="min-w-0 break-words">Estimated total so far</span>
+              <span className="shrink-0 font-mono">
+                {estimatedTotal === null
+                  ? "Pending"
+                  : `${PRICING_CURRENCY_SYMBOL}${estimatedTotal.toFixed(2)}`}
+              </span>
+            </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+      </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button
