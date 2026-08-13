@@ -90,6 +90,7 @@ import { resolveShortsGarmentUnitPriceCents } from "../config/AdditionalGarmentP
 import OrderRoutingPanel from "./OrderRoutingPanel";
 import { GarmentTypeStep } from "./GarmentTypeStep";
 import { DormantFutureFabricStep } from "./DormantFutureFabricStep";
+import { DormantFutureDesignStyleStep } from "./DormantFutureDesignStyleStep";
 import { DormantFutureJourneyStepper } from "./DormantFutureJourneyStepper";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
@@ -185,6 +186,7 @@ import {
   reconcileFutureFabricAllocationState,
   selectFutureFabric,
 } from "../utils/designStudioFutureFabricStage";
+import { reconcileFutureDesignStyleSelection } from "../utils/designStudioFutureDesignStyle";
 import {
   createAdditionalGarmentSelection,
   getAllowedAdditionalGarmentLabels,
@@ -2032,8 +2034,11 @@ export default function DesignStudioView({
     garmentTypeSelection,
   );
   const [futureStageId, setFutureStageId] = useState<
-    "garment_type" | "fabric"
+    "garment_type" | "fabric" | "design_style"
   >("garment_type");
+  const [futureSelectedStyleId, setFutureSelectedStyleId] = useState<
+    string | null
+  >(null);
   const cartItems = useAppStore((state) => state.cartItems);
   const historicalOrders = useAppStore((state) => state.historicalOrders);
   const activeOrders = useAppStore((state) => state.orders);
@@ -2400,6 +2405,11 @@ export default function DesignStudioView({
     garmentTypeSelection,
     fabricAllocationState,
     fabrics,
+  });
+  const futureDesignStyleSelection = reconcileFutureDesignStyleSelection({
+    selectedStyleId: futureSelectedStyleId,
+    styles,
+    garmentTypeSelection,
   });
 
   const [fabricSearchInput, setFabricSearchInput] = useState<string>("");
@@ -3759,9 +3769,6 @@ export default function DesignStudioView({
       normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
     });
     setGarmentTypeSelection(futureJourney.garmentTypeSelection);
-    setFutureStageId(
-      futureJourney.currentStageId === "fabric" ? "fabric" : "garment_type",
-    );
     const storedDraft = GuestOrderSessionService.getGuestDesignDraft();
     const hydratedAllocations = storedDraft
       ? resolveDraftHydrationAllocations(storedDraft)
@@ -3779,6 +3786,20 @@ export default function DesignStudioView({
         : FabricAllocationStateEngine.initialize(),
       garmentTypeSelection: futureJourney.garmentTypeSelection,
     });
+    const restoredFabricCompletion = getFutureFabricStageCompletion({
+      garmentTypeSelection: futureJourney.garmentTypeSelection,
+      fabricAllocationState: reconciledFabricState,
+      fabrics,
+    });
+    setFutureStageId(
+      storedDraft?.currentStageId === "design_style" &&
+        restoredFabricCompletion.isComplete
+        ? "design_style"
+        : futureJourney.currentStageId === "fabric"
+          ? "fabric"
+          : "garment_type",
+    );
+    setFutureSelectedStyleId(storedDraft?.selectedStyleId || null);
     setFabricAllocationState(reconciledFabricState);
     setSelectedFabric(
       fabrics.find(
@@ -3822,6 +3843,24 @@ export default function DesignStudioView({
     isFutureNineStageMode,
     guestDraftHydrated,
     garmentTypeSelection,
+    garmentTypeStageCompletion.isComplete,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isFutureNineStageMode ||
+      futureStageId !== "design_style" ||
+      futureFabricStageCompletion.isComplete
+    ) {
+      return;
+    }
+    setFutureStageId(
+      garmentTypeStageCompletion.isComplete ? "fabric" : "garment_type",
+    );
+  }, [
+    isFutureNineStageMode,
+    futureStageId,
+    futureFabricStageCompletion.isComplete,
     garmentTypeStageCompletion.isComplete,
   ]);
 
@@ -4010,10 +4049,13 @@ export default function DesignStudioView({
         preservedInvalidHydratedDraftSelectionSignatureRef.current = null;
       }
 
-      const activeDesignSource =
-        designSource || createCatalogDesignSource(selectedStyle?.id || "");
+      const activeDesignSource = isFutureNineStageMode
+        ? null
+        : designSource || createCatalogDesignSource(selectedStyle?.id || "");
       const activeCatalogStyleId =
-        activeDesignSource?.kind === "catalog"
+        isFutureNineStageMode
+          ? futureSelectedStyleId
+          : activeDesignSource?.kind === "catalog"
           ? activeDesignSource.styleId
           : null;
       const activeConfirmationKey =
@@ -4139,6 +4181,7 @@ export default function DesignStudioView({
     normalizedJourneyMode,
     garmentTypeSelection,
     futureStageId,
+    futureSelectedStyleId,
   ]);
 
   const focusAndScrollToValidationTarget = (targetId: string) => {
@@ -4859,6 +4902,10 @@ export default function DesignStudioView({
     if (!garmentTypeStageCompletion.isComplete) return;
     setFutureStageId("fabric");
   };
+  const handleOpenDormantDesignStyleStage = () => {
+    if (!futureFabricStageCompletion.isComplete) return;
+    setFutureStageId("design_style");
+  };
   const handleUseSameFutureFabric = () => {
     setFabricAllocationState((current) =>
       FabricAllocationStateEngine.useSameFabricForPendingGarmentAndContinue(
@@ -4898,15 +4945,19 @@ export default function DesignStudioView({
         data-stage-complete={
           futureStageId === "garment_type"
             ? garmentTypeStageCompletion.isComplete
-            : futureFabricStageCompletion.isComplete
+            : futureStageId === "fabric"
+              ? futureFabricStageCompletion.isComplete
+              : futureDesignStyleSelection.status === "selected"
         }
         className="font-sans"
       >
         <DormantFutureJourneyStepper
           currentStageId={futureStageId}
           canEnterFabric={garmentTypeStageCompletion.isComplete}
+          canEnterDesignStyle={futureFabricStageCompletion.isComplete}
           onSelectGarmentType={() => setFutureStageId("garment_type")}
           onSelectFabric={handleOpenDormantFabricStage}
+          onSelectDesignStyle={handleOpenDormantDesignStyleStage}
         />
         {futureStageId === "garment_type" ? (
           <div className="space-y-5">
@@ -4933,7 +4984,7 @@ export default function DesignStudioView({
               </button>
             </div>
           </div>
-        ) : (
+        ) : futureStageId === "fabric" ? (
           <DormantFutureFabricStep
             fabrics={fabrics}
             garmentTypeSelection={garmentTypeSelection}
@@ -4946,9 +4997,21 @@ export default function DesignStudioView({
             onSelectFabric={handleSelectFabric}
             onChangeFabricForGarment={handleChangeFutureGarmentFabric}
             onBack={() => setFutureStageId("garment_type")}
+            onContinue={handleOpenDormantDesignStyleStage}
             onUseSameFabric={handleUseSameFutureFabric}
             onChooseAnotherFabric={handleChooseAnotherFutureFabric}
             onCancelPendingFabric={handleCancelFuturePendingFabric}
+          />
+        ) : (
+          <DormantFutureDesignStyleStep
+            styles={styles}
+            garmentTypeSelection={garmentTypeSelection}
+            selectedStyleId={futureSelectedStyleId}
+            stagePrice={
+              futureFabricAuthoritativePricing?.garmentSubtotal ?? null
+            }
+            onSelectStyle={setFutureSelectedStyleId}
+            onBack={() => setFutureStageId("fabric")}
           />
         )}
       </div>

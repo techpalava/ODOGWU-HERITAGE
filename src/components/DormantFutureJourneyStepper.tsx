@@ -14,17 +14,21 @@ export type DormantFutureJourneyStageId =
   (typeof FUTURE_JOURNEY_STEPS)[number]["id"];
 
 interface DormantFutureJourneyStepperProps {
-  currentStageId: "garment_type" | "fabric";
+  currentStageId: "garment_type" | "fabric" | "design_style";
   canEnterFabric: boolean;
+  canEnterDesignStyle: boolean;
   onSelectGarmentType: () => void;
   onSelectFabric: () => void;
+  onSelectDesignStyle: () => void;
 }
 
 export const DormantFutureJourneyStepper = ({
   currentStageId,
   canEnterFabric,
+  canEnterDesignStyle,
   onSelectGarmentType,
   onSelectFabric,
+  onSelectDesignStyle,
 }: DormantFutureJourneyStepperProps) => (
   <nav
     aria-label="Future Design Studio steps"
@@ -33,9 +37,21 @@ export const DormantFutureJourneyStepper = ({
     <ol className="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-5 lg:grid-cols-9">
       {FUTURE_JOURNEY_STEPS.map((step, index) => {
         const isCurrent = currentStageId === step.id;
-        const isCompleted = step.id === "garment_type" && currentStageId === "fabric";
-        const isAvailable = step.id === "garment_type" || (step.id === "fabric" && canEnterFabric);
-        const onClick = step.id === "garment_type" ? onSelectGarmentType : step.id === "fabric" ? onSelectFabric : undefined;
+        const isCompleted =
+          (step.id === "garment_type" && currentStageId !== "garment_type") ||
+          (step.id === "fabric" && currentStageId === "design_style");
+        const isAvailable =
+          step.id === "garment_type" ||
+          (step.id === "fabric" && canEnterFabric) ||
+          (step.id === "design_style" && canEnterDesignStyle);
+        const onClick =
+          step.id === "garment_type"
+            ? onSelectGarmentType
+            : step.id === "fabric"
+              ? onSelectFabric
+              : step.id === "design_style"
+                ? onSelectDesignStyle
+                : undefined;
         const state = isCurrent ? "current" : isCompleted ? "completed" : isAvailable ? "available" : "locked";
 
         return (

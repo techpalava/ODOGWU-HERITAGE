@@ -34,6 +34,7 @@ interface DormantFutureFabricStepProps {
   onSelectFabric: (fabric: Fabric) => void;
   onChangeFabricForGarment: (garmentKey: string) => void;
   onBack: () => void;
+  onContinue: () => void;
   onUseSameFabric: () => void;
   onChooseAnotherFabric: () => void;
   onCancelPendingFabric: () => void;
@@ -49,6 +50,7 @@ export const DormantFutureFabricStep = ({
   onSelectFabric,
   onChangeFabricForGarment,
   onBack,
+  onContinue,
   onUseSameFabric,
   onChooseAnotherFabric,
   onCancelPendingFabric,
@@ -312,6 +314,25 @@ export const DormantFutureFabricStep = ({
           </div>
         )}
       </aside>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/25 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+        >
+          <ArrowLeft aria-hidden="true" size={15} />
+          Back to Garment Type
+        </button>
+        <button
+          type="button"
+          onClick={onContinue}
+          disabled={!completion.isComplete}
+          className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          Continue to Design Style
+        </button>
+      </div>
     </section>
   );
 };

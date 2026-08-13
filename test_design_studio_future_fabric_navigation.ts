@@ -42,7 +42,8 @@ const appSource = readFileSync("src/App.tsx", "utf8");
 assert.match(studioSource, /onSelectGarmentType=\{\(\) => setFutureStageId\("garment_type"\)\}/);
 assert.match(studioSource, /onSelectFabric=\{handleOpenDormantFabricStage\}/);
 assert.match(studioSource, /setFutureStageId\("fabric"\)/);
-assert.equal(studioSource.includes('setFutureStageId("design_style")'), false);
+assert.match(studioSource, /setFutureStageId\("design_style"\)/);
+assert.match(studioSource, /onContinue=\{handleOpenDormantDesignStyleStage\}/);
 assert.equal(appSource.includes("future_nine_stage"), false);
 
 console.log("PASS: future Fabric navigation and legacy boundary");
