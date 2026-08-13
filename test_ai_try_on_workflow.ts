@@ -12,6 +12,7 @@ import {
   createAiTryOnVisualInputFingerprint,
   createEmptyAiTryOnWorkflowState,
   createUnavailableAiTryOnGateway,
+  getAiTryOnWorkflowAllowedActions,
   normalizeAiTryOnWorkflowState,
   reconcileAiTryOnWorkflow,
   transitionAiTryOnWorkflow,
@@ -121,6 +122,10 @@ const unavailable = reconcileAiTryOnWorkflow({
   policy: { gatewayAvailable: false, skipAllowed: true },
 });
 assert.equal(unavailable.status, "unavailable");
+assert.deepEqual(
+  getAiTryOnWorkflowAllowedActions({ state: unavailable, skipAllowed: true }),
+  { canRetry: false, canSkip: true },
+);
 const ready = reconcileAiTryOnWorkflow({
   state: empty,
   currentInputFingerprint: fingerprint,
@@ -221,6 +226,27 @@ const nonRetryable = transitionAiTryOnWorkflow({
   skipAllowed: true,
 });
 assert.equal(nonRetryable.ok, false);
+assert.deepEqual(
+  getAiTryOnWorkflowAllowedActions({
+    state: {
+      schemaVersion: 1,
+      status: "failed",
+      inputFingerprint: fingerprint,
+      failure: { code: "provider_rejected", retryable: false },
+    },
+    skipAllowed: true,
+  }),
+  { canRetry: false, canSkip: true },
+  "The UI must only show retry when the same transition authority permits it.",
+);
+assert.deepEqual(
+  getAiTryOnWorkflowAllowedActions({
+    state: started.ok ? started.state : ready,
+    skipAllowed: true,
+  }),
+  { canRetry: false, canSkip: false },
+  "Processing must not expose a skip or retry control.",
+);
 assert.equal(
   transitionAiTryOnWorkflow({
     state: unavailable,
@@ -235,6 +261,14 @@ const skipped = transitionAiTryOnWorkflow({
   skipAllowed: true,
 });
 assert.equal(skipped.ok && skipped.state.status, "skipped");
+assert.deepEqual(
+  getAiTryOnWorkflowAllowedActions({
+    state: skipped.ok ? skipped.state : unavailable,
+    skipAllowed: true,
+  }),
+  { canRetry: false, canSkip: false },
+  "A completed skip transition must not offer another skip.",
+);
 assert.equal(
   reconcileAiTryOnWorkflow({
     state: skipped.ok ? skipped.state : empty,

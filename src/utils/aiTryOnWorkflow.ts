@@ -322,6 +322,31 @@ export type AiTryOnTransitionResult =
       };
     };
 
+export interface AiTryOnWorkflowAllowedActions {
+  canRetry: boolean;
+  canSkip: boolean;
+}
+
+/** Keeps customer controls aligned with the workflow transitions. */
+export const getAiTryOnWorkflowAllowedActions = ({
+  state,
+  skipAllowed,
+}: {
+  state: AiTryOnWorkflowStateV1;
+  skipAllowed: boolean;
+}): AiTryOnWorkflowAllowedActions => {
+  const current = normalizeAiTryOnWorkflowState(state);
+  if (!current) return { canRetry: false, canSkip: false };
+
+  return {
+    canRetry:
+      current.status === "failed" && Boolean(current.failure?.retryable),
+    canSkip:
+      skipAllowed &&
+      !["processing", "completed", "skipped"].includes(current.status),
+  };
+};
+
 export const transitionAiTryOnWorkflow = ({
   state,
   event,
@@ -335,9 +360,13 @@ export const transitionAiTryOnWorkflow = ({
   if (!current) {
     return { ok: false, error: { code: "invalid_transition" } };
   }
+  const allowedActions = getAiTryOnWorkflowAllowedActions({
+    state: current,
+    skipAllowed,
+  });
   if (event.type === "skip") {
     if (!skipAllowed) return { ok: false, error: { code: "skip_not_allowed" } };
-    if (["processing", "completed"].includes(current.status)) {
+    if (!allowedActions.canSkip) {
       return { ok: false, error: { code: "invalid_transition" } };
     }
     return {
@@ -414,8 +443,7 @@ export const transitionAiTryOnWorkflow = ({
   }
   if (
     event.type === "retry" &&
-    current.status === "failed" &&
-    current.failure?.retryable
+    allowedActions.canRetry
   ) {
     return {
       ok: true,

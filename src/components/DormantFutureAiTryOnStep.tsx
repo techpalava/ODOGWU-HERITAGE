@@ -7,6 +7,7 @@ import {
   SkipForward,
 } from "lucide-react";
 import type { AiTryOnWorkflowStateV1 } from "../types";
+import { getAiTryOnWorkflowAllowedActions } from "../utils/aiTryOnWorkflow";
 
 interface DormantFutureAiTryOnStepProps {
   workflow: AiTryOnWorkflowStateV1;
@@ -43,8 +44,9 @@ const STATUS_PRESENTATION: Readonly<
     description: "A verified private Try-on result is available.",
   },
   failed: {
-    title: "Try-on failed",
-    description: "The Try-on could not be completed. No provider details were stored.",
+    title: "AI Try-on could not be completed",
+    description:
+      "No Try-on preview is available right now. You can continue without it or try again when this service is available.",
   },
   skipped: {
     title: "Skipped",
@@ -55,8 +57,9 @@ const STATUS_PRESENTATION: Readonly<
     description: "Your design changed, so the previous Try-on result is no longer current.",
   },
   unavailable: {
-    title: "Currently unavailable",
-    description: "Secure customer-photo processing and an AI provider are not configured yet.",
+    title: "AI Try-on is currently unavailable",
+    description:
+      "You can continue with your order without a Try-on preview. AI Try-on will be available when secure private-photo processing is ready.",
   },
 };
 
@@ -68,10 +71,10 @@ export const DormantFutureAiTryOnStep = ({
   onSkip,
 }: DormantFutureAiTryOnStepProps) => {
   const presentation = STATUS_PRESENTATION[workflow.status];
-  const canRetry = workflow.status === "failed" && workflow.failure?.retryable;
-  const canSkip =
-    skipAllowed &&
-    !["processing", "completed", "skipped"].includes(workflow.status);
+  const { canRetry, canSkip } = getAiTryOnWorkflowAllowedActions({
+    state: workflow,
+    skipAllowed,
+  });
 
   return (
     <section
@@ -131,17 +134,16 @@ export const DormantFutureAiTryOnStep = ({
             <p className="mt-1 break-words text-sm leading-relaxed text-heritage-ink/70">
               {presentation.description}
             </p>
-            {workflow.status === "failed" && workflow.failure && (
-              <p id="future-ai-try-on-error" className="mt-2 text-xs text-red-700">
-                Reference: {workflow.failure.code.replaceAll("_", " ")}.
+            {workflow.status === "failed" && (
+              <p id="future-ai-try-on-error" className="mt-2 text-xs font-medium text-heritage-ink/70">
+                You can continue without AI Try-on.
               </p>
             )}
           </div>
         </div>
 
         <p className="mt-4 text-xs leading-relaxed text-heritage-ink/60">
-          No body photo is requested or stored by this dormant stage. A real
-          Try-on will require private ownership-bound photo and result storage.
+          AI Try-on is optional. You can continue your order without it.
         </p>
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -163,7 +165,7 @@ export const DormantFutureAiTryOnStep = ({
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-gold/40 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-gold/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
             >
               <SkipForward aria-hidden="true" size={14} />
-              Skip AI Try-on
+              Continue without AI Try-on
             </button>
           )}
         </div>
@@ -185,7 +187,7 @@ export const DormantFutureAiTryOnStep = ({
           className="inline-flex min-h-11 cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-heritage-green/35 px-5 text-xs font-bold uppercase tracking-wider text-white"
         >
           <LockKeyhole aria-hidden="true" size={14} />
-          Continue to Measurement
+          Measurement is locked
         </button>
       </div>
     </section>
