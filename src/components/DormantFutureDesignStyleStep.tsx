@@ -1,6 +1,7 @@
 import { ArrowLeft, Check, LockKeyhole } from "lucide-react";
 import type { GarmentTypeStepSelection, StyleCategory } from "../types";
 import {
+  getFutureDesignStyleCompositionLabel,
   reconcileFutureDesignStyleSelection,
   resolveFutureDesignStyleCompatibility,
 } from "../utils/designStudioFutureDesignStyle";
@@ -13,6 +14,7 @@ interface DormantFutureDesignStyleStepProps {
   stagePrice: number | null;
   onSelectStyle: (styleId: string) => void;
   onBack: () => void;
+  onReturnToGarmentType: () => void;
 }
 
 export const DormantFutureDesignStyleStep = ({
@@ -22,12 +24,23 @@ export const DormantFutureDesignStyleStep = ({
   stagePrice,
   onSelectStyle,
   onBack,
+  onReturnToGarmentType,
 }: DormantFutureDesignStyleStepProps) => {
   const selection = reconcileFutureDesignStyleSelection({
     selectedStyleId,
     styles,
     garmentTypeSelection,
   });
+  const compatibilityByStyle = styles.map((style) => ({
+    style,
+    compatibility: resolveFutureDesignStyleCompatibility({
+      garmentTypeSelection,
+      style,
+    }),
+  }));
+  const compatibleStyleCount = compatibilityByStyle.filter(
+    ({ compatibility }) => compatibility.status === "compatible",
+  ).length;
 
   return (
     <section
@@ -55,8 +68,8 @@ export const DormantFutureDesignStyleStep = ({
           Design Style
         </h2>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
-          Choose a visual design that matches the garments and demographic set
-          in Step 1. Your garment and fabric assignments will not change.
+          Choose a visual design that matches the garments selected in Step 1.
+          Your garment and fabric assignments will not change.
         </p>
 
         {selection.status === "reselection_required" && (
@@ -71,9 +84,31 @@ export const DormantFutureDesignStyleStep = ({
           </div>
         )}
 
-        <div className="mt-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {styles.length > 0 && compatibleStyleCount === 0 && (
+          <div
+            role="status"
+            className="mt-5 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4"
+          >
+            <p className="font-bold text-heritage-green">
+              No matching design styles are available yet
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-heritage-ink/70">
+              Return to Garment Type to adjust your selection, then choose from
+              the matching styles.
+            </p>
+            <button
+              type="button"
+              onClick={onReturnToGarmentType}
+              className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-heritage-green/25 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              Return to Garment Type
+            </button>
+          </div>
+        )}
+
+        <div className="mt-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {styles.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-heritage-gold/30 bg-heritage-cream/25 p-6 text-center sm:col-span-2 lg:col-span-3">
+            <div className="rounded-2xl border border-dashed border-heritage-gold/30 bg-heritage-cream/25 p-6 text-center sm:col-span-2 xl:col-span-3">
               <p className="font-serif text-base font-bold text-heritage-green">
                 No catalogue designs are available
               </p>
@@ -83,14 +118,19 @@ export const DormantFutureDesignStyleStep = ({
               </p>
             </div>
           )}
-          {styles.map((style) => {
-            const compatibility = resolveFutureDesignStyleCompatibility({
-              garmentTypeSelection,
-              style,
-            });
+          {compatibilityByStyle.map(({ style, compatibility }) => {
             const isCompatible = compatibility.status === "compatible";
             const isSelected =
               isCompatible && selection.selectedStyleId === style.id;
+            const isUnavailable = compatibility.code === "STYLE_DISABLED";
+            const statusLabel = isSelected
+              ? "Selected"
+              : isCompatible
+                ? "Compatible"
+                : isUnavailable
+                  ? "Unavailable"
+                  : "Not compatible";
+            const reasonId = `future-style-reason-${style.id}`;
             return (
               <article
                 key={style.id}
@@ -105,43 +145,67 @@ export const DormantFutureDesignStyleStep = ({
               >
                 <div className="relative aspect-[4/5] overflow-hidden bg-heritage-cream/35">
                   {style.image ? (
-                    <img
-                      src={style.image}
-                      alt={style.name}
-                      loading="lazy"
-                      className="h-full w-full object-contain"
-                      referrerPolicy="no-referrer"
-                    />
+                    <>
+                      <img
+                        src={style.image}
+                        alt={`${style.name} design`}
+                        loading="lazy"
+                        className="h-full w-full object-contain"
+                        referrerPolicy="no-referrer"
+                        onError={(event) => {
+                          event.currentTarget.classList.add("hidden");
+                          event.currentTarget.nextElementSibling?.classList.remove(
+                            "hidden",
+                          );
+                        }}
+                      />
+                      <div className="hidden h-full items-center justify-center px-4 text-center text-xs text-heritage-ink/45">
+                        Image unavailable
+                      </div>
+                    </>
                   ) : (
                     <div className="flex h-full items-center justify-center px-4 text-center text-xs text-heritage-ink/45">
                       Image unavailable
                     </div>
                   )}
                   {isSelected && (
-                    <span className="absolute right-3 top-3 rounded-full bg-heritage-gold p-2 text-white shadow-sm">
+                    <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">
                       <Check aria-hidden="true" size={15} strokeWidth={3} />
+                      <span>Selected</span>
                     </span>
                   )}
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col p-4">
-                  <h3 className="break-words font-serif text-base font-bold text-heritage-green">
+                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                    <h3 className="min-w-0 break-words font-serif text-base font-bold text-heritage-green">
                     {style.name}
-                  </h3>
+                    </h3>
+                    <span
+                      className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wide ${
+                        isCompatible
+                          ? "border-heritage-green/20 bg-heritage-green/5 text-heritage-green"
+                          : "border-heritage-gold/25 bg-heritage-cream/55 text-heritage-ink/65"
+                      }`}
+                    >
+                      {statusLabel}
+                    </span>
+                  </div>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     <span className="rounded border border-heritage-green/15 bg-heritage-green/5 px-2 py-1 text-[9px] font-bold uppercase text-heritage-green">
                       {style.gender}
                     </span>
-                    {style.outfitType && (
-                      <span className="rounded border border-heritage-gold/20 bg-heritage-gold/5 px-2 py-1 text-[9px] font-bold uppercase text-heritage-gold">
-                        {style.outfitType}
-                      </span>
-                    )}
+                    <span className="rounded border border-heritage-gold/20 bg-heritage-gold/5 px-2 py-1 text-[9px] font-bold uppercase text-heritage-gold">
+                      {getFutureDesignStyleCompositionLabel(style)}
+                    </span>
                   </div>
                   <p className="mt-3 break-words text-xs leading-relaxed text-heritage-ink/65">
                     {style.description}
                   </p>
                   {!isCompatible && (
-                    <p className="mt-3 rounded-lg bg-heritage-cream/50 p-2 text-[11px] leading-relaxed text-heritage-ink/70">
+                    <p
+                      id={reasonId}
+                      className="mt-3 rounded-lg bg-heritage-cream/50 p-2 text-[11px] leading-relaxed text-heritage-ink/70"
+                    >
                       {compatibility.customerReason}
                     </p>
                   )}
@@ -149,7 +213,10 @@ export const DormantFutureDesignStyleStep = ({
                     type="button"
                     disabled={!isCompatible}
                     onClick={() => onSelectStyle(style.id)}
-                    aria-label={`Select ${style.name} design style`}
+                    aria-label={`${isSelected ? "Selected" : "Select"} ${style.name} design style`}
+                    aria-pressed={isSelected}
+                    aria-disabled={!isCompatible}
+                    aria-describedby={!isCompatible ? reasonId : undefined}
                     className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-heritage-ink/45"
                   >
                     {isSelected ? "Selected" : "Select Design"}

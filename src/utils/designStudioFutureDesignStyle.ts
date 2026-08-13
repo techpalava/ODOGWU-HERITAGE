@@ -3,6 +3,7 @@ import {
   applyLegacyStyleFabricCapacityConfig,
   getStyleBaseFabricCapacityComposition,
 } from "../config/StyleFabricCapacityConfig";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import type {
   CanonicalPhysicalGarmentType,
   CustomDetailDemographic,
@@ -81,6 +82,22 @@ const normalizeStyleComposition = (
   }
 
   return { status: "resolved", garmentTypes: garmentTypes.sort() };
+};
+
+/** Customer-facing composition copy. Compatibility still uses the resolver below. */
+export const getFutureDesignStyleCompositionLabel = (
+  style: StyleCategory,
+): string => {
+  const composition = normalizeStyleComposition(style);
+  if (composition.status === "resolved") {
+    return composition.garmentTypes.map(getFabricGarmentLabel).join(" + ");
+  }
+
+  return (
+    style.garmentComposition?.trim() ||
+    style.outfitType?.trim() ||
+    "Garment details to be confirmed"
+  );
 };
 
 const isValidPhysicalGarmentSpec = (

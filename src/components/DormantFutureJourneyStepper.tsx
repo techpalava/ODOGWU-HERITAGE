@@ -61,6 +61,7 @@ export const DormantFutureJourneyStepper = ({
               onClick={onClick}
               disabled={!isAvailable || isCurrent}
               aria-current={isCurrent ? "step" : undefined}
+              aria-disabled={!isAvailable || isCurrent}
               aria-label={`Step ${index + 1}: ${step.label}, ${state}`}
               data-step-state={state}
               className={`flex min-h-11 w-full min-w-0 flex-col items-start justify-center rounded-xl px-2 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${

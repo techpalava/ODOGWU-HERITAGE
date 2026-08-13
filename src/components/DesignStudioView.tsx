@@ -5012,6 +5012,7 @@ export default function DesignStudioView({
             }
             onSelectStyle={setFutureSelectedStyleId}
             onBack={() => setFutureStageId("fabric")}
+            onReturnToGarmentType={() => setFutureStageId("garment_type")}
           />
         )}
       </div>
