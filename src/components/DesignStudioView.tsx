@@ -67,6 +67,7 @@ import {
   FabricCapacityGarmentSpec,
   FabricGarmentAssignment,
   FabricGarmentType,
+  GarmentTypeStepSelection,
 } from "../types";
 
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
@@ -87,6 +88,7 @@ import {
 } from "../config/StyleFabricCapacityConfig";
 import { resolveShortsGarmentUnitPriceCents } from "../config/AdditionalGarmentPolicy";
 import OrderRoutingPanel from "./OrderRoutingPanel";
+import { GarmentTypeStep } from "./GarmentTypeStep";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
@@ -165,6 +167,15 @@ import {
   resolveDraftHydrationAllocations,
 } from "../utils/fabricAllocationPersistence";
 import { appendCustomerFabricGarment } from "../utils/fabricGarmentAppendFlow";
+import {
+  acceptDormantGarmentConstructionDefaults,
+  createDormantDesignStudioJourneyState,
+  getGarmentTypeStageCompletion,
+  normalizeDesignStudioJourneyMode,
+  persistDormantGarmentTypeStage,
+  updateDormantGarmentTypeSelection,
+  type DesignStudioJourneyMode,
+} from "../utils/designStudioJourneyMode";
 import {
   createAdditionalGarmentSelection,
   getAllowedAdditionalGarmentLabels,
@@ -285,7 +296,7 @@ const FabricSkeleton = () => (
   </div>
 );
 
-interface DesignStudioViewProps {
+export interface DesignStudioViewProps {
   onAddToCart: (item: Omit<CartItem, "id">) => void;
   openCartDrawer: () => void;
   currentUser?: { email?: string; phone?: string; name: string } | null;
@@ -297,6 +308,7 @@ interface DesignStudioViewProps {
   initialStyleId?: string | null;
   initialFabricCode?: string | null;
   clearInitialPreset?: () => void;
+  journeyMode?: DesignStudioJourneyMode;
 }
 
 const GUIDE_STEPS = [
@@ -1975,6 +1987,7 @@ export default function DesignStudioView({
   initialStyleId,
   initialFabricCode,
   clearInitialPreset,
+  journeyMode = "legacy_five_stage",
 }: DesignStudioViewProps) {
   // Current step state (1 to 9)
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -1995,6 +2008,20 @@ export default function DesignStudioView({
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const setNotification = useAppStore((state) => state.setNotification);
   const customDetailCatalog = useAppStore((state: any) => state.customDetailCatalog);
+  const normalizedJourneyMode = normalizeDesignStudioJourneyMode(journeyMode);
+  const isFutureNineStageMode = normalizedJourneyMode === "future_nine_stage";
+  const normalizedGarmentTypeCatalog = normalizeCustomDetailCatalog(
+    customDetailCatalog,
+  );
+  const [garmentTypeSelection, setGarmentTypeSelection] =
+    useState<GarmentTypeStepSelection>(() =>
+      createDormantDesignStudioJourneyState({
+        normalizedCustomDetailCatalog: normalizeCustomDetailCatalog([]),
+      }).garmentTypeSelection,
+    );
+  const garmentTypeStageCompletion = getGarmentTypeStageCompletion(
+    garmentTypeSelection,
+  );
   const cartItems = useAppStore((state) => state.cartItems);
   const historicalOrders = useAppStore((state) => state.historicalOrders);
   const activeOrders = useAppStore((state) => state.orders);
@@ -3462,6 +3489,13 @@ export default function DesignStudioView({
             garment: selectedGarment,
             catalog: customDetailCatalog,
             businessSettings,
+            ...(isFutureNineStageMode
+              ? {
+                  garmentConstructionSelectionMode:
+                    "garment_type_locked" as const,
+                  garmentTypeSelection,
+                }
+              : {}),
           })
         : null;
 
@@ -3676,7 +3710,49 @@ export default function DesignStudioView({
   const currencySymbol = PRICING_CURRENCY_SYMBOL;
 
   useEffect(() => {
-    if (currentUser || guestDraftHydrated || isLoadingData) return;
+    if (
+      !isFutureNineStageMode ||
+      currentUser ||
+      guestDraftHydrated ||
+      isLoadingData
+    ) {
+      return;
+    }
+    const futureJourney = createDormantDesignStudioJourneyState({
+      mode: normalizedJourneyMode,
+      persistedDraft: GuestOrderSessionService.getGuestDesignDraft(),
+      normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+    });
+    setGarmentTypeSelection(futureJourney.garmentTypeSelection);
+    setGuestDraftHydrated(true);
+  }, [
+    isFutureNineStageMode,
+    normalizedJourneyMode,
+    currentUser,
+    guestDraftHydrated,
+    isLoadingData,
+    customDetailCatalog,
+  ]);
+
+  useEffect(() => {
+    if (!isFutureNineStageMode || !guestDraftHydrated) return;
+    setGarmentTypeSelection((current) =>
+      updateDormantGarmentTypeSelection({
+        currentSelection: current,
+        normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+      }),
+    );
+  }, [isFutureNineStageMode, guestDraftHydrated, customDetailCatalog]);
+
+  useEffect(() => {
+    if (
+      isFutureNineStageMode ||
+      currentUser ||
+      guestDraftHydrated ||
+      isLoadingData
+    ) {
+      return;
+    }
     if (styles.length === 0 || fabrics.length === 0) return;
 
     const storedDraft = GuestOrderSessionService.getGuestDesignDraft();
@@ -3825,6 +3901,7 @@ export default function DesignStudioView({
     styles,
     fabrics,
     orderContext,
+    isFutureNineStageMode,
   ]);
 
   useEffect(() => {
@@ -3863,69 +3940,69 @@ export default function DesignStudioView({
         confirmedDesignSourceKey === activeDesignSource.sourceKey
           ? confirmedDesignSourceKey
           : null;
-      const guestDraft: GuestDesignDraft = {
-        currentStep,
-        selectedFabricCode: selectedFabric?.code || null,
-        selectedStyleId: activeCatalogStyleId,
-        designSource: activeDesignSource,
-        confirmedStyleId:
-          activeCatalogStyleId && confirmedStyleId === activeCatalogStyleId
-            ? confirmedStyleId
-            : null,
-        confirmedDesignSourceKey: activeConfirmationKey,
-        priceActivatedFabricCode,
-        selectedGarment,
-        designSelections,
-        measurements,
-        sizingMode,
-        deliveryMethod,
-        deliveryAddress,
-        pickupTime,
-        customerName,
-        customerEmail,
-        customerPhone,
-        batchType,
-        batchId:
-          pricing.batchShipping?.batchId || ctx.batchId,
-        batchName:
-          pricing.batchShipping?.batchName || ctx.batchName,
-        customGroupCode,
-        garmentPieceCount:
-          pricing.individualShipping?.garmentPieceCount ??
-          pricing.batchShipping?.garmentPieceCount ??
-          null,
-        specialInstructions,
-        leftoverFabricChoice,
-        hasLining,
-        pricingBreakdown: {
-          clothingPrice: pricing.clothingPrice,
-          includesFabricAndSewing:
-            pricing.includesFabricAndSewing,
-          fabricPrice: pricing.fabricPrice,
-          fabricSewingCost: pricing.fabricSewingCost,
-          constructionSewingCost: pricing.constructionSewingCost,
-          constructionUpgradesPrice:
-            pricing.constructionUpgradesPrice,
-          customDetailsPrice: pricing.customDetailsPrice,
-          preTaxDesignSubtotal: pricing.preTaxDesignSubtotal,
-          taxPercentage: pricing.taxPercentage,
-          taxAmount: pricing.taxAmount,
-          taxInclusiveDesignSubtotal: pricing.taxInclusiveDesignSubtotal,
-          selectedDesignPrice: pricing.selectedDesignPrice,
-          lagosToEindhovenShipping:
-            pricing.lagosToEindhovenShipping ?? 0,
-          eindhovenToDestinationShipping:
-            pricing.eindhovenToDestinationShipping,
-          total: pricing.subtotal,
-        },
-        shippingSnapshot: {
-          individual: pricing.individualShipping || undefined,
-          batch: pricing.batchShipping || undefined,
-          finalMile: pricing.finalMileShipping || undefined,
-        },
-        fabricAllocations: autosaveAllocationResolution.fabricAllocations,
-        updatedAt: new Date().toISOString(),
-      };
+      const guestDraft = persistDormantGarmentTypeStage({
+        mode: normalizedJourneyMode,
+        garmentTypeSelection,
+        draft: {
+          currentStep,
+          selectedFabricCode: selectedFabric?.code || null,
+          selectedStyleId: activeCatalogStyleId,
+          designSource: activeDesignSource,
+          confirmedStyleId:
+            activeCatalogStyleId && confirmedStyleId === activeCatalogStyleId
+              ? confirmedStyleId
+              : null,
+          confirmedDesignSourceKey: activeConfirmationKey,
+          priceActivatedFabricCode,
+          selectedGarment,
+          designSelections,
+          measurements,
+          sizingMode,
+          deliveryMethod,
+          deliveryAddress,
+          pickupTime,
+          customerName,
+          customerEmail,
+          customerPhone,
+          batchType,
+          batchId: pricing.batchShipping?.batchId || ctx.batchId,
+          batchName: pricing.batchShipping?.batchName || ctx.batchName,
+          customGroupCode,
+          garmentPieceCount:
+            pricing.individualShipping?.garmentPieceCount ??
+            pricing.batchShipping?.garmentPieceCount ??
+            null,
+          specialInstructions,
+          leftoverFabricChoice,
+          hasLining,
+          pricingBreakdown: {
+            clothingPrice: pricing.clothingPrice,
+            includesFabricAndSewing: pricing.includesFabricAndSewing,
+            fabricPrice: pricing.fabricPrice,
+            fabricSewingCost: pricing.fabricSewingCost,
+            constructionSewingCost: pricing.constructionSewingCost,
+            constructionUpgradesPrice: pricing.constructionUpgradesPrice,
+            customDetailsPrice: pricing.customDetailsPrice,
+            preTaxDesignSubtotal: pricing.preTaxDesignSubtotal,
+            taxPercentage: pricing.taxPercentage,
+            taxAmount: pricing.taxAmount,
+            taxInclusiveDesignSubtotal: pricing.taxInclusiveDesignSubtotal,
+            selectedDesignPrice: pricing.selectedDesignPrice,
+            lagosToEindhovenShipping:
+              pricing.lagosToEindhovenShipping ?? 0,
+            eindhovenToDestinationShipping:
+              pricing.eindhovenToDestinationShipping,
+            total: pricing.subtotal,
+          },
+          shippingSnapshot: {
+            individual: pricing.individualShipping || undefined,
+            batch: pricing.batchShipping || undefined,
+            finalMile: pricing.finalMileShipping || undefined,
+          },
+          fabricAllocations: autosaveAllocationResolution.fabricAllocations,
+          updatedAt: new Date().toISOString(),
+        } as GuestDesignDraft,
+      });
       GuestOrderSessionService.saveGuestDesignDraft(guestDraft);
     }, 250);
 
@@ -3977,6 +4054,8 @@ export default function DesignStudioView({
     fabricAllocationState.fabricAllocations,
     ctx.batchId,
     ctx.batchName,
+    normalizedJourneyMode,
+    garmentTypeSelection,
   ]);
 
   const focusAndScrollToValidationTarget = (targetId: string) => {
@@ -4625,6 +4704,66 @@ export default function DesignStudioView({
   const showContextualProceedDock =
     showStyleProceedDock || showUploadedDesignProceedDock || showFabricProceedDock;
   const hideFooterNextAction = currentStep === 1 || currentStep === 2;
+
+  const handleDormantGarmentTypesChange = (
+    garmentTypes: FabricGarmentType[],
+  ) => {
+    setGarmentTypeSelection((current) =>
+      updateDormantGarmentTypeSelection({
+        currentSelection: current,
+        normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+        selectedGarmentTypes: garmentTypes,
+      }),
+    );
+  };
+  const handleDormantGarmentDemographicChange = (
+    demographic: CustomDetailDemographic,
+  ) => {
+    setGarmentTypeSelection((current) =>
+      updateDormantGarmentTypeSelection({
+        currentSelection: current,
+        normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+        selectedDemographic: demographic,
+      }),
+    );
+  };
+  const handleDormantConstructionDefaultsChange = (
+    resolutions: Parameters<
+      typeof acceptDormantGarmentConstructionDefaults
+    >[0]["resolutions"],
+  ) => {
+    setGarmentTypeSelection((current) =>
+      acceptDormantGarmentConstructionDefaults({
+        currentSelection: current,
+        resolutions,
+        normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+      }),
+    );
+  };
+
+  if (isFutureNineStageMode) {
+    return (
+      <div
+        id="design-studio-future-garment-type-stage"
+        data-journey-mode={normalizedJourneyMode}
+        data-stage-id="garment_type"
+        data-stage-complete={garmentTypeStageCompletion.isComplete}
+        className="font-sans"
+      >
+        <GarmentTypeStep
+          selectedGarmentTypes={garmentTypeSelection.garmentTypes}
+          selectedDemographic={garmentTypeSelection.demographic}
+          normalizedCustomDetailCatalog={normalizedGarmentTypeCatalog}
+          onGarmentTypesChange={handleDormantGarmentTypesChange}
+          onDemographicChange={handleDormantGarmentDemographicChange}
+          onConstructionDefaultsChange={
+            handleDormantConstructionDefaultsChange
+          }
+          idPrefix="future-garment-type-step"
+        />
+      </div>
+    );
+  }
 
   return (
     <div id="design-studio-stepper" className="space-y-8 font-sans">
