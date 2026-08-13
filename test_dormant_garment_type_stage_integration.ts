@@ -88,8 +88,8 @@ const future = createDormantDesignStudioJourneyState({
 });
 assert.equal(future.currentStageId, "garment_type");
 assert.equal(future.constructionSelectionMode, "garment_type_locked");
-assert.equal(future.nextStageId, null);
-assert.equal(future.canAdvance, false);
+assert.equal(future.nextStageId, "fabric");
+assert.equal(future.canAdvance, true);
 assert.equal(future.completion.isComplete, true);
 
 const presentation = getGarmentTypeStepPresentation({
@@ -261,6 +261,6 @@ assert.match(
   /journeyMode\s*=\s*["']legacy_five_stage["']/,
 );
 assert.match(studioSource, /if \(isFutureNineStageMode\)/);
-assert.match(studioSource, /data-stage-id=["']garment_type["']/);
+assert.match(studioSource, /data-stage-id=\{futureStageId\}/);
 
 console.log("PASS: dormant Garment Type stage integration");

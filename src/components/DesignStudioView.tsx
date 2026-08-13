@@ -89,6 +89,7 @@ import {
 import { resolveShortsGarmentUnitPriceCents } from "../config/AdditionalGarmentPolicy";
 import OrderRoutingPanel from "./OrderRoutingPanel";
 import { GarmentTypeStep } from "./GarmentTypeStep";
+import { DormantFutureFabricStep } from "./DormantFutureFabricStep";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
@@ -176,6 +177,13 @@ import {
   updateDormantGarmentTypeSelection,
   type DesignStudioJourneyMode,
 } from "../utils/designStudioJourneyMode";
+import {
+  getFutureFabricCapacityComposition,
+  getFutureFabricGarmentSelections,
+  getFutureFabricStageCompletion,
+  reconcileFutureFabricAllocationState,
+  selectFutureFabric,
+} from "../utils/designStudioFutureFabricStage";
 import {
   createAdditionalGarmentSelection,
   getAllowedAdditionalGarmentLabels,
@@ -2022,6 +2030,9 @@ export default function DesignStudioView({
   const garmentTypeStageCompletion = getGarmentTypeStageCompletion(
     garmentTypeSelection,
   );
+  const [futureStageId, setFutureStageId] = useState<
+    "garment_type" | "fabric"
+  >("garment_type");
   const cartItems = useAppStore((state) => state.cartItems);
   const historicalOrders = useAppStore((state) => state.historicalOrders);
   const activeOrders = useAppStore((state) => state.orders);
@@ -2335,9 +2346,12 @@ export default function DesignStudioView({
   const fabricReassignmentSnapshotRef = useRef<FabricAllocationState | null>(
     null,
   );
-  const baseFabricGarmentSelections = getFabricGarmentSelectionsForComposition(
-    activeDesignComposition,
+  const futureFabricComposition = getFutureFabricCapacityComposition(
+    garmentTypeSelection,
   );
+  const baseFabricGarmentSelections = isFutureNineStageMode
+    ? getFutureFabricGarmentSelections(garmentTypeSelection)
+    : getFabricGarmentSelectionsForComposition(activeDesignComposition);
   const additionalGarmentAssignments = fabricAllocationState.fabricAllocations
     .flatMap((allocation) => allocation.garmentAssignments)
     .filter((assignment) => assignment.sourceRole === "additional");
@@ -2381,6 +2395,11 @@ export default function DesignStudioView({
   const allocatedGarmentRows = fabricAssignmentSummary.garmentRows.filter(
     (garment) => garment.isAssigned,
   );
+  const futureFabricStageCompletion = getFutureFabricStageCompletion({
+    garmentTypeSelection,
+    fabricAllocationState,
+    fabrics,
+  });
 
   const [fabricSearchInput, setFabricSearchInput] = useState<string>("");
   const [fabricSearch, setFabricSearch] = useState<string>("");
@@ -2468,6 +2487,21 @@ export default function DesignStudioView({
   };
 
   const handleSelectFabric = (fabric: Fabric) => {
+    if (isFutureNineStageMode) {
+      const assigningPendingFabric =
+        fabricAllocationState.awaitingFabricForPendingGarment;
+      setFabricAllocationState((previousState) =>
+        selectFutureFabric({
+          state: previousState,
+          fabricCode: fabric.code,
+          garmentTypeSelection,
+        }),
+      );
+      if (!assigningPendingFabric) {
+        setSelectedFabric(fabric);
+      }
+      return;
+    }
     if (fabricAllocationState.awaitingFabricForPendingGarment) {
       const nextAllocationState =
         FabricAllocationStateEngine.assignPendingGarmentToFabricAndContinue(
@@ -3724,6 +3758,33 @@ export default function DesignStudioView({
       normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
     });
     setGarmentTypeSelection(futureJourney.garmentTypeSelection);
+    setFutureStageId(
+      futureJourney.currentStageId === "fabric" ? "fabric" : "garment_type",
+    );
+    const storedDraft = GuestOrderSessionService.getGuestDesignDraft();
+    const hydratedAllocations = storedDraft
+      ? resolveDraftHydrationAllocations(storedDraft)
+      : null;
+    const reconciledFabricState = reconcileFutureFabricAllocationState({
+      state: hydratedAllocations?.hasValidModernAllocations
+        ? {
+            fabricAllocations:
+              cloneFabricAllocations(hydratedAllocations.fabricAllocations) || [],
+            activeAllocationId:
+              hydratedAllocations.fabricAllocations[0]?.allocationId || null,
+            pendingFabricGarment: null,
+            awaitingFabricForPendingGarment: false,
+          }
+        : FabricAllocationStateEngine.initialize(),
+      garmentTypeSelection: futureJourney.garmentTypeSelection,
+    });
+    setFabricAllocationState(reconciledFabricState);
+    setSelectedFabric(
+      fabrics.find(
+        (fabric) =>
+          fabric.code === reconciledFabricState.fabricAllocations[0]?.fabricCode,
+      ) || null,
+    );
     setGuestDraftHydrated(true);
   }, [
     isFutureNineStageMode,
@@ -3732,6 +3793,7 @@ export default function DesignStudioView({
     guestDraftHydrated,
     isLoadingData,
     customDetailCatalog,
+    fabrics,
   ]);
 
   useEffect(() => {
@@ -3743,6 +3805,24 @@ export default function DesignStudioView({
       }),
     );
   }, [isFutureNineStageMode, guestDraftHydrated, customDetailCatalog]);
+
+  useEffect(() => {
+    if (!isFutureNineStageMode || !guestDraftHydrated) return;
+    if (!garmentTypeStageCompletion.isComplete) {
+      setFutureStageId("garment_type");
+    }
+    setFabricAllocationState((current) =>
+      reconcileFutureFabricAllocationState({
+        state: current,
+        garmentTypeSelection,
+      }),
+    );
+  }, [
+    isFutureNineStageMode,
+    guestDraftHydrated,
+    garmentTypeSelection,
+    garmentTypeStageCompletion.isComplete,
+  ]);
 
   useEffect(() => {
     if (
@@ -3943,6 +4023,7 @@ export default function DesignStudioView({
       const guestDraft = persistDormantGarmentTypeStage({
         mode: normalizedJourneyMode,
         garmentTypeSelection,
+        currentStageId: futureStageId,
         draft: {
           currentStep,
           selectedFabricCode: selectedFabric?.code || null,
@@ -4056,6 +4137,7 @@ export default function DesignStudioView({
     ctx.batchName,
     normalizedJourneyMode,
     garmentTypeSelection,
+    futureStageId,
   ]);
 
   const focusAndScrollToValidationTarget = (targetId: string) => {
@@ -4741,26 +4823,114 @@ export default function DesignStudioView({
     );
   };
 
+  const futureFabricMaterialPricing =
+    fabricAllocationState.fabricAllocations.length > 0
+      ? resolveDesignStudioFabricAllocationPricing({
+          fabricAllocationState,
+          fabrics,
+          selectedFabric,
+          preserveInvalidHydratedModernData: false,
+        })
+      : null;
+  const futureFabricAuthoritativePricing =
+    isFutureNineStageMode &&
+    futureFabricMaterialPricing?.status === "resolved"
+      ? calculateDesignPricing({
+          route: batchType,
+          design: {},
+          materialPricing: futureFabricMaterialPricing,
+          baseGarmentComposition: futureFabricComposition,
+          catalog: customDetailCatalog,
+          businessSettings,
+          garmentConstructionSelectionMode: "garment_type_locked",
+          garmentTypeSelection,
+        })
+      : null;
+  const futureConstructionPrice = garmentTypeSelection.garmentTypes.reduce(
+    (total, garmentType) => {
+      const resolution = garmentTypeSelection.constructionByGarment[garmentType];
+      return total + (resolution?.status === "resolved" ? resolution.totalPrice : 0);
+    },
+    0,
+  );
+
+  const handleOpenDormantFabricStage = () => {
+    if (!garmentTypeStageCompletion.isComplete) return;
+    setFutureStageId("fabric");
+  };
+  const handleUseSameFutureFabric = () => {
+    setFabricAllocationState((current) =>
+      FabricAllocationStateEngine.useSameFabricForPendingGarmentAndContinue(
+        current,
+        getFutureFabricGarmentSelections(garmentTypeSelection),
+      ),
+    );
+  };
+  const handleChooseAnotherFutureFabric = () => {
+    setFabricAllocationState((current) =>
+      FabricAllocationStateEngine.beginChooseAnotherFabric(current),
+    );
+  };
+  const handleCancelFuturePendingFabric = () => {
+    setFabricAllocationState((current) =>
+      FabricAllocationStateEngine.cancelPendingGarment(current),
+    );
+  };
+
   if (isFutureNineStageMode) {
     return (
       <div
-        id="design-studio-future-garment-type-stage"
+        id="design-studio-future-journey"
         data-journey-mode={normalizedJourneyMode}
-        data-stage-id="garment_type"
-        data-stage-complete={garmentTypeStageCompletion.isComplete}
+        data-stage-id={futureStageId}
+        data-stage-complete={
+          futureStageId === "garment_type"
+            ? garmentTypeStageCompletion.isComplete
+            : futureFabricStageCompletion.isComplete
+        }
         className="font-sans"
       >
-        <GarmentTypeStep
-          selectedGarmentTypes={garmentTypeSelection.garmentTypes}
-          selectedDemographic={garmentTypeSelection.demographic}
-          normalizedCustomDetailCatalog={normalizedGarmentTypeCatalog}
-          onGarmentTypesChange={handleDormantGarmentTypesChange}
-          onDemographicChange={handleDormantGarmentDemographicChange}
-          onConstructionDefaultsChange={
-            handleDormantConstructionDefaultsChange
-          }
-          idPrefix="future-garment-type-step"
-        />
+        {futureStageId === "garment_type" ? (
+          <div className="space-y-5">
+            <GarmentTypeStep
+              selectedGarmentTypes={garmentTypeSelection.garmentTypes}
+              selectedDemographic={garmentTypeSelection.demographic}
+              normalizedCustomDetailCatalog={normalizedGarmentTypeCatalog}
+              onGarmentTypesChange={handleDormantGarmentTypesChange}
+              onDemographicChange={handleDormantGarmentDemographicChange}
+              onConstructionDefaultsChange={
+                handleDormantConstructionDefaultsChange
+              }
+              idPrefix="future-garment-type-step"
+            />
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleOpenDormantFabricStage}
+                disabled={!garmentTypeStageCompletion.isComplete}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Continue to Fabric
+              </button>
+            </div>
+          </div>
+        ) : (
+          <DormantFutureFabricStep
+            fabrics={fabrics}
+            garmentTypeSelection={garmentTypeSelection}
+            fabricAllocationState={fabricAllocationState}
+            completion={futureFabricStageCompletion}
+            constructionPrice={futureConstructionPrice}
+            stagePrice={
+              futureFabricAuthoritativePricing?.garmentSubtotal ?? null
+            }
+            onSelectFabric={handleSelectFabric}
+            onBack={() => setFutureStageId("garment_type")}
+            onUseSameFabric={handleUseSameFutureFabric}
+            onChooseAnotherFabric={handleChooseAnotherFutureFabric}
+            onCancelPendingFabric={handleCancelFuturePendingFabric}
+          />
+        )}
       </div>
     );
   }
