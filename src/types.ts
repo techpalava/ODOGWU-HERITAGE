@@ -347,6 +347,7 @@ export interface DesignSelections {
     Record<CustomDetailSelectionGroup, string | string[]>
   >;
   customDetailSnapshots?: CustomDetailSelectionSnapshot[];
+  garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1;
   topLength?: string;
   topPocket?: string;
   dressLength?: string;
@@ -386,6 +387,33 @@ export interface CustomDetailSelectionSnapshot {
   priceCents: number;
   informational?: boolean;
   requiresEvaluation?: boolean;
+}
+
+export type CustomDetailOptionId = string;
+
+export type GarmentScopedCustomDetailSelection =
+  | CustomDetailOptionId
+  | CustomDetailOptionId[];
+
+export interface GarmentScopedCustomDetailSnapshot
+  extends CustomDetailSelectionSnapshot {
+  garmentKey: string;
+}
+
+export interface GarmentScopedCustomDetailsStateV1 {
+  schemaVersion: 1;
+  selectionsByGarmentKey: Record<
+    string,
+    Partial<
+      Record<CustomDetailSelectionGroup, GarmentScopedCustomDetailSelection>
+    >
+  >;
+  snapshotsByGarmentKey: Record<
+    string,
+    Partial<
+      Record<CustomDetailSelectionGroup, GarmentScopedCustomDetailSnapshot[]>
+    >
+  >;
 }
 
 export interface IndividualShippingSnapshot {

@@ -15,6 +15,7 @@ import {
 } from "../utils/fabricAllocationPersistence";
 import { reconcileGuestDesignDraftDesignSource } from "../utils/designSourceState";
 import { reconcileGuestDesignDraftGarmentTypeSelection } from "../utils/garmentTypeStepState";
+import { normalizeGarmentScopedCustomDetailsState } from "../utils/garmentScopedCustomDetailsState";
 import {
   getCartDesignConfigurationFingerprintInput,
   normalizeCartItemDesignDomain,
@@ -65,9 +66,23 @@ const createGuestCartId = (): string => {
 
 const normalizeDesignDraft = (designDraft: GuestDesignDraft): GuestDesignDraft => {
   const sourceReconciledDraft = reconcileGuestDesignDraftDesignSource(designDraft);
-  const reconciledDraft = reconcileGuestDesignDraftGarmentTypeSelection(
+  const garmentTypeReconciledDraft = reconcileGuestDesignDraftGarmentTypeSelection(
     sourceReconciledDraft,
   );
+  const scopedCustomDetails =
+    garmentTypeReconciledDraft.designSelections.garmentScopedCustomDetails;
+  const reconciledDraft =
+    scopedCustomDetails === undefined
+      ? garmentTypeReconciledDraft
+      : {
+          ...garmentTypeReconciledDraft,
+          designSelections: {
+            ...garmentTypeReconciledDraft.designSelections,
+            garmentScopedCustomDetails:
+              normalizeGarmentScopedCustomDetailsState(scopedCustomDetails)
+                .state,
+          },
+        };
   const modernInspection = inspectDraftFabricAllocations(reconciledDraft);
   if (modernInspection.status === "valid") {
     return {
