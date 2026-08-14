@@ -14,7 +14,7 @@ export type DormantFutureJourneyStageId =
   (typeof FUTURE_JOURNEY_STEPS)[number]["id"];
 
 interface DormantFutureJourneyStepperProps {
-  currentStageId: Exclude<DormantFutureJourneyStageId, "payment">;
+  currentStageId: DormantFutureJourneyStageId;
   canEnterFabric: boolean;
   canEnterDesignStyle: boolean;
   canEnterCustomDetails: boolean;
@@ -22,6 +22,7 @@ interface DormantFutureJourneyStepperProps {
   canEnterMeasurement: boolean;
   canEnterSummary: boolean;
   canEnterShipping: boolean;
+  canEnterPayment: boolean;
   onSelectGarmentType: () => void;
   onSelectFabric: () => void;
   onSelectDesignStyle: () => void;
@@ -30,6 +31,7 @@ interface DormantFutureJourneyStepperProps {
   onSelectMeasurement: () => void;
   onSelectSummary: () => void;
   onSelectShipping: () => void;
+  onSelectPayment: () => void;
 }
 
 export const DormantFutureJourneyStepper = ({
@@ -41,6 +43,7 @@ export const DormantFutureJourneyStepper = ({
   canEnterMeasurement,
   canEnterSummary,
   canEnterShipping,
+  canEnterPayment,
   onSelectGarmentType,
   onSelectFabric,
   onSelectDesignStyle,
@@ -49,6 +52,7 @@ export const DormantFutureJourneyStepper = ({
   onSelectMeasurement,
   onSelectSummary,
   onSelectShipping,
+  onSelectPayment,
 }: DormantFutureJourneyStepperProps) => (
   <nav
     aria-label="Future Design Studio steps"
@@ -69,7 +73,8 @@ export const DormantFutureJourneyStepper = ({
           (step.id === "try_on" && canEnterTryOn) ||
           (step.id === "measurement" && canEnterMeasurement) ||
           (step.id === "summary" && canEnterSummary) ||
-          (step.id === "shipping" && canEnterShipping);
+          (step.id === "shipping" && canEnterShipping) ||
+          (step.id === "payment" && canEnterPayment);
         const onClick =
           step.id === "garment_type"
             ? onSelectGarmentType
@@ -87,7 +92,9 @@ export const DormantFutureJourneyStepper = ({
                         ? onSelectSummary
                         : step.id === "shipping"
                           ? onSelectShipping
-                        : undefined;
+                          : step.id === "payment"
+                            ? onSelectPayment
+                            : undefined;
         const state = isCurrent ? "current" : isCompleted ? "completed" : isAvailable ? "available" : "locked";
 
         return (

@@ -28,6 +28,8 @@ interface DormantFutureShippingStepProps {
   onChange: (state: FutureShippingStateV1) => void;
   onRefreshQuote: () => void;
   onBack: () => void;
+  canContinueToReview: boolean;
+  onContinueToReview: () => void;
 }
 
 const moneyFromCents = (amountCents: number): string =>
@@ -47,6 +49,8 @@ export const DormantFutureShippingStep = ({
   onChange,
   onRefreshQuote,
   onBack,
+  canContinueToReview,
+  onContinueToReview,
 }: DormantFutureShippingStepProps) => {
   const customer = state.customerInformation;
   const address = customer.deliveryAddress;
@@ -457,16 +461,23 @@ export const DormantFutureShippingStep = ({
           </button>
           <div className="min-w-0 sm:text-right">
             <p id="future-payment-lock-reason" className="mb-2 text-xs leading-relaxed text-heritage-ink/60">
-              Payment will become available after the future Payment stage is implemented and all Shipping requirements are complete.
+              {canContinueToReview
+                ? "Your order review is ready. Online payment remains unavailable."
+                : "Complete all Shipping requirements before reviewing your order."}
             </p>
             <button
               type="button"
-              disabled
+              onClick={onContinueToReview}
+              disabled={!canContinueToReview}
               aria-describedby="future-payment-lock-reason"
-              className="inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-heritage-green/35 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 sm:w-auto"
             >
-              <LockKeyhole aria-hidden="true" size={14} />
-              Continue to Payment
+              {canContinueToReview ? (
+                <PackageCheck aria-hidden="true" size={14} />
+              ) : (
+                <LockKeyhole aria-hidden="true" size={14} />
+              )}
+              Review Order
             </button>
           </div>
         </div>

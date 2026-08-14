@@ -309,7 +309,9 @@ assert.match(shippingSource, /Shipping from Lagos to Eindhoven is already includ
 assert.match(shippingSource, /Collect in Eindhoven/);
 assert.match(shippingSource, /Deliver to another location/);
 assert.match(shippingSource, /Pending confirmation/);
-assert.match(shippingSource, /Continue to Payment/);
+assert.match(shippingSource, /Review Order/);
+assert.match(shippingSource, /canContinueToReview/);
+assert.match(shippingSource, /onContinueToReview/);
 assert.match(shippingSource, /disabled/);
 assert.match(shippingSource, /aria-live="polite"/);
 assert.match(shippingSource, /min-h-11/);

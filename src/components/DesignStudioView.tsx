@@ -73,6 +73,7 @@ import {
   FutureMeasurementStateV1,
   FutureShippingStateV1,
   MeasurementRiskRoute,
+  DesignStudioStageId,
 } from "../types";
 
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
@@ -102,6 +103,7 @@ import { DormantFutureAiTryOnStep } from "./DormantFutureAiTryOnStep";
 import { DormantFutureMeasurementStep } from "./DormantFutureMeasurementStep";
 import { DormantFutureSummaryStep } from "./DormantFutureSummaryStep";
 import { DormantFutureShippingStep } from "./DormantFutureShippingStep";
+import { DormantFuturePaymentReviewStep } from "./DormantFuturePaymentReviewStep";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
@@ -235,6 +237,8 @@ import {
   reconcileFutureShippingState,
   refreshFutureShippingQuote,
 } from "../utils/designStudioFutureShipping";
+import { buildFutureOrderCandidate } from "../utils/futureOrderCandidate";
+import { isFuturePaymentReviewStageUnlocked } from "../utils/designStudioFuturePaymentReview";
 import {
   createAdditionalGarmentSelection,
   getAllowedAdditionalGarmentLabels,
@@ -2081,16 +2085,8 @@ export default function DesignStudioView({
   const garmentTypeStageCompletion = getGarmentTypeStageCompletion(
     garmentTypeSelection,
   );
-  const [futureStageId, setFutureStageId] = useState<
-    | "garment_type"
-    | "fabric"
-    | "design_style"
-    | "custom_details"
-    | "try_on"
-    | "measurement"
-    | "summary"
-    | "shipping"
-  >("garment_type");
+  const [futureStageId, setFutureStageId] =
+    useState<DesignStudioStageId>("garment_type");
   const [futureAiTryOnWorkflow, setFutureAiTryOnWorkflow] =
     useState<AiTryOnWorkflowStateV1>(createEmptyAiTryOnWorkflowState);
   const [futureMeasurementState, setFutureMeasurementState] =
@@ -5252,7 +5248,7 @@ export default function DesignStudioView({
       garmentPieceCount: futureGarmentPieceCount,
     }).priceEur;
   })();
-  const futureSummary = projectFutureDesignStudioSummary({
+  const futureSummaryInput = {
     garmentTypeSelection,
     catalogInspection: futureCatalogInspection,
     fabricAllocationState,
@@ -5270,7 +5266,8 @@ export default function DesignStudioView({
     basePricing: futureFabricAuthoritativePricing,
     taxPercentage: businessSettings.pricingSettings.vatTaxPercentage,
     lagosToEindhovenShipping: futureLagosToEindhovenShipping,
-  });
+  };
+  const futureSummary = projectFutureDesignStudioSummary(futureSummaryInput);
   const isFutureSummaryStageUnlocked =
     (futureSummary.status === "ready" ||
       futureSummary.status === "pricing_pending") &&
@@ -5297,6 +5294,13 @@ export default function DesignStudioView({
       futureSelectedDesignPrice,
     ],
   );
+  const futureOrderCandidateResult = buildFutureOrderCandidate({
+    ...futureSummaryInput,
+    source: createCatalogDesignSource(futureSelectedStyleId || ""),
+    shippingResolution: futureShippingResolution,
+  });
+  const isFuturePaymentReviewUnlocked =
+    isFuturePaymentReviewStageUnlocked(futureOrderCandidateResult);
 
   useEffect(() => {
     if (!isFutureNineStageMode) return;
@@ -5321,6 +5325,20 @@ export default function DesignStudioView({
       setFutureStageId("summary");
     }
   }, [isFutureNineStageMode, futureStageId, isFutureShippingUnlocked]);
+
+  useEffect(() => {
+    if (
+      isFutureNineStageMode &&
+      futureStageId === "payment" &&
+      !isFuturePaymentReviewUnlocked
+    ) {
+      setFutureStageId("shipping");
+    }
+  }, [
+    isFutureNineStageMode,
+    futureStageId,
+    isFuturePaymentReviewUnlocked,
+  ]);
 
   const handleOpenDormantFabricStage = () => {
     if (!garmentTypeStageCompletion.isComplete) return;
@@ -5354,6 +5372,10 @@ export default function DesignStudioView({
   const handleOpenDormantShippingStage = () => {
     if (!isFutureShippingUnlocked) return;
     setFutureStageId("shipping");
+  };
+  const handleOpenDormantPaymentReviewStage = () => {
+    if (!isFuturePaymentReviewUnlocked) return;
+    setFutureStageId("payment");
   };
   const handleRefreshDormantShippingQuote = () => {
     setFutureShippingState(
@@ -5554,7 +5576,9 @@ export default function DesignStudioView({
                         "complete"
                       : futureStageId === "summary"
                         ? futureSummary.status === "ready"
-                        : futureShippingResolution.formComplete
+                        : futureStageId === "shipping"
+                          ? futureShippingResolution.formComplete
+                          : isFuturePaymentReviewUnlocked
         }
         className="font-sans"
       >
@@ -5571,6 +5595,7 @@ export default function DesignStudioView({
           )}
           canEnterSummary={isFutureSummaryStageUnlocked}
           canEnterShipping={isFutureShippingUnlocked}
+          canEnterPayment={isFuturePaymentReviewUnlocked}
           onSelectGarmentType={() => setFutureStageId("garment_type")}
           onSelectFabric={handleOpenDormantFabricStage}
           onSelectDesignStyle={handleOpenDormantDesignStyleStage}
@@ -5579,6 +5604,7 @@ export default function DesignStudioView({
           onSelectMeasurement={handleOpenDormantMeasurementStage}
           onSelectSummary={handleOpenDormantSummaryStage}
           onSelectShipping={handleOpenDormantShippingStage}
+          onSelectPayment={handleOpenDormantPaymentReviewStage}
         />
         {futureStageId === "garment_type" ? (
           <div className="space-y-5">
@@ -5698,6 +5724,14 @@ export default function DesignStudioView({
             onChange={setFutureShippingState}
             onRefreshQuote={handleRefreshDormantShippingQuote}
             onBack={() => setFutureStageId("summary")}
+            canContinueToReview={isFuturePaymentReviewUnlocked}
+            onContinueToReview={handleOpenDormantPaymentReviewStage}
+          />
+        ) : futureStageId === "payment" ? (
+          <DormantFuturePaymentReviewStep
+            result={futureOrderCandidateResult}
+            onBack={() => setFutureStageId("shipping")}
+            onEditStage={(stage) => setFutureStageId(stage)}
           />
         ) : null}
       </div>

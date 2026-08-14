@@ -228,15 +228,7 @@ export const persistDormantGarmentTypeStage = <T extends GuestDesignDraft>({
   mode?: unknown;
   draft: T;
   garmentTypeSelection: GarmentTypeStepSelection;
-  currentStageId?:
-    | "garment_type"
-    | "fabric"
-    | "design_style"
-    | "custom_details"
-    | "try_on"
-    | "measurement"
-    | "summary"
-    | "shipping";
+  currentStageId?: DesignStudioStageId;
 }): T => {
   if (normalizeDesignStudioJourneyMode(mode) !== "future_nine_stage") {
     return draft;
