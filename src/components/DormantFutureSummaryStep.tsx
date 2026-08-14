@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   CheckCircle2,
   LockKeyhole,
   Pencil,
@@ -19,6 +20,8 @@ interface DormantFutureSummaryStepProps {
   onEditCustomDetails: () => void;
   onEditAiTryOn: () => void;
   onEditMeasurements: () => void;
+  canContinueToShipping: boolean;
+  onContinueToShipping: () => void;
 }
 
 const money = (value: number): string =>
@@ -82,6 +85,8 @@ export const DormantFutureSummaryStep = ({
   onEditCustomDetails,
   onEditAiTryOn,
   onEditMeasurements,
+  canContinueToShipping,
+  onContinueToShipping,
 }: DormantFutureSummaryStepProps) => {
   const isReady = summary.status === "ready";
   const firstBlocker = summary.blockers[0] || null;
@@ -496,15 +501,22 @@ export const DormantFutureSummaryStep = ({
           </button>
           <div className="min-w-0 sm:text-right">
             <p id="summary-shipping-lock-reason" className="mb-2 text-xs leading-relaxed text-heritage-ink/60">
-              Shipping will become available after this Summary stage is approved.
+              {canContinueToShipping
+                ? "Your Summary is ready. Continue to choose collection or post-Eindhoven delivery."
+                : "Shipping becomes available when this Summary is fully ready."}
             </p>
             <button
               type="button"
-              disabled
+              onClick={onContinueToShipping}
+              disabled={!canContinueToShipping}
               aria-describedby="summary-shipping-lock-reason"
-              className="inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-heritage-green/35 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 sm:w-auto"
             >
-              <LockKeyhole aria-hidden="true" size={14} />
+              {canContinueToShipping ? (
+                <ArrowRight aria-hidden="true" size={14} />
+              ) : (
+                <LockKeyhole aria-hidden="true" size={14} />
+              )}
               Continue to Shipping
             </button>
           </div>

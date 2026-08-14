@@ -1,4 +1,13 @@
-import type { DeliveryAddress } from "../types";
+import type {
+  DeliveryAddress,
+  FutureShippingDestinationZone,
+  FutureShippingFulfilmentSelection,
+} from "../types";
+
+export type {
+  FutureShippingDestinationZone,
+  FutureShippingFulfilmentSelection,
+} from "../types";
 
 export const FUTURE_SHIPPING_TARIFF_VERSION =
   "2026-08-14-future-shipping-tariff-v1" as const;
@@ -12,17 +21,7 @@ export type FutureShippingLeg =
 export type FutureShippingFulfilmentMethod =
   | "individual_order"
   | "batch_order"
-  | "eindhoven_pickup"
-  | "destination_delivery";
-
-export type FutureShippingDestinationZone =
-  | "EINDHOVEN"
-  | "NETHERLANDS_OTHER"
-  | "EUROPE"
-  | "NORTH_AMERICA"
-  | "SOUTH_AMERICA"
-  | "AFRICA"
-  | "ASIA";
+  | FutureShippingFulfilmentSelection;
 
 export type FutureShippingPricingUnit =
   | "per_parcel"

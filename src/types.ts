@@ -551,6 +551,47 @@ export interface DeliveryAddress {
   countryCode: string;
 }
 
+export type FutureShippingFulfilmentSelection =
+  | "eindhoven_pickup"
+  | "destination_delivery";
+
+export type FutureShippingDestinationZone =
+  | "EINDHOVEN"
+  | "NETHERLANDS_OTHER"
+  | "EUROPE"
+  | "NORTH_AMERICA"
+  | "SOUTH_AMERICA"
+  | "AFRICA"
+  | "ASIA";
+
+export interface FutureShippingCustomerInformationV1 {
+  fullName: string;
+  phone: string;
+  email: string;
+  deliveryAddress: DeliveryAddress;
+  comment: string;
+}
+
+/** Stores tariff identity only. Current configuration remains price authority. */
+export interface FutureShippingQuoteReferenceV1 {
+  tariffVersion: string;
+  ruleId: string;
+  ruleFingerprint: string;
+  inputFingerprint: string;
+  garmentCount: number;
+  weightKg: number;
+  destinationZoneId: FutureShippingDestinationZone;
+}
+
+export interface FutureShippingStateV1 {
+  schemaVersion: 1;
+  fulfilmentMethod: FutureShippingFulfilmentSelection | null;
+  customerInformation: FutureShippingCustomerInformationV1;
+  destinationZoneId: FutureShippingDestinationZone | null;
+  destinationZoneSource: "customer_provisional" | null;
+  quoteReference: FutureShippingQuoteReferenceV1 | null;
+}
+
 export interface DeliverySelection {
   method: DeliveryMethod;
   pickupLocation?: string;
@@ -1020,6 +1061,7 @@ export interface GuestDesignDraft {
   garmentTypeSelection?: GarmentTypeStepSelection;
   aiTryOnWorkflow?: AiTryOnWorkflowStateV1;
   futureMeasurementState?: FutureMeasurementStateV1;
+  futureShippingState?: FutureShippingStateV1;
   selectedFabricCode: string | null;
   selectedStyleId: string | null;
   designSource?: DesignSource | null;

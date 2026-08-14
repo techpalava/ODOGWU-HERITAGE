@@ -14,20 +14,14 @@ export type DormantFutureJourneyStageId =
   (typeof FUTURE_JOURNEY_STEPS)[number]["id"];
 
 interface DormantFutureJourneyStepperProps {
-  currentStageId:
-    | "garment_type"
-    | "fabric"
-    | "design_style"
-    | "custom_details"
-    | "try_on"
-    | "measurement"
-    | "summary";
+  currentStageId: Exclude<DormantFutureJourneyStageId, "payment">;
   canEnterFabric: boolean;
   canEnterDesignStyle: boolean;
   canEnterCustomDetails: boolean;
   canEnterTryOn: boolean;
   canEnterMeasurement: boolean;
   canEnterSummary: boolean;
+  canEnterShipping: boolean;
   onSelectGarmentType: () => void;
   onSelectFabric: () => void;
   onSelectDesignStyle: () => void;
@@ -35,6 +29,7 @@ interface DormantFutureJourneyStepperProps {
   onSelectTryOn: () => void;
   onSelectMeasurement: () => void;
   onSelectSummary: () => void;
+  onSelectShipping: () => void;
 }
 
 export const DormantFutureJourneyStepper = ({
@@ -45,6 +40,7 @@ export const DormantFutureJourneyStepper = ({
   canEnterTryOn,
   canEnterMeasurement,
   canEnterSummary,
+  canEnterShipping,
   onSelectGarmentType,
   onSelectFabric,
   onSelectDesignStyle,
@@ -52,6 +48,7 @@ export const DormantFutureJourneyStepper = ({
   onSelectTryOn,
   onSelectMeasurement,
   onSelectSummary,
+  onSelectShipping,
 }: DormantFutureJourneyStepperProps) => (
   <nav
     aria-label="Future Design Studio steps"
@@ -60,26 +57,10 @@ export const DormantFutureJourneyStepper = ({
     <ol className="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-5 lg:grid-cols-9">
       {FUTURE_JOURNEY_STEPS.map((step, index) => {
         const isCurrent = currentStageId === step.id;
-        const isCompleted =
-          (step.id === "garment_type" && currentStageId !== "garment_type") ||
-          (step.id === "fabric" &&
-            (currentStageId === "design_style" ||
-              currentStageId === "custom_details" ||
-              currentStageId === "try_on" ||
-              currentStageId === "measurement" ||
-              currentStageId === "summary")) ||
-          (step.id === "design_style" &&
-            (currentStageId === "custom_details" ||
-              currentStageId === "try_on" ||
-              currentStageId === "measurement" ||
-              currentStageId === "summary")) ||
-          (step.id === "custom_details" &&
-            (currentStageId === "try_on" ||
-              currentStageId === "measurement" ||
-              currentStageId === "summary")) ||
-          (step.id === "try_on" &&
-            (currentStageId === "measurement" || currentStageId === "summary")) ||
-          (step.id === "measurement" && currentStageId === "summary");
+        const currentStageIndex = FUTURE_JOURNEY_STEPS.findIndex(
+          (candidate) => candidate.id === currentStageId,
+        );
+        const isCompleted = index < currentStageIndex;
         const isAvailable =
           step.id === "garment_type" ||
           (step.id === "fabric" && canEnterFabric) ||
@@ -87,7 +68,8 @@ export const DormantFutureJourneyStepper = ({
           (step.id === "custom_details" && canEnterCustomDetails) ||
           (step.id === "try_on" && canEnterTryOn) ||
           (step.id === "measurement" && canEnterMeasurement) ||
-          (step.id === "summary" && canEnterSummary);
+          (step.id === "summary" && canEnterSummary) ||
+          (step.id === "shipping" && canEnterShipping);
         const onClick =
           step.id === "garment_type"
             ? onSelectGarmentType
@@ -103,6 +85,8 @@ export const DormantFutureJourneyStepper = ({
                       ? onSelectMeasurement
                       : step.id === "summary"
                         ? onSelectSummary
+                        : step.id === "shipping"
+                          ? onSelectShipping
                         : undefined;
         const state = isCurrent ? "current" : isCompleted ? "completed" : isAvailable ? "available" : "locked";
 

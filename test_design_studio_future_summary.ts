@@ -437,7 +437,7 @@ assert.match(studioSource, /handleOpenDormantSummaryStage/);
 assert.match(studioSource, /futureStageId === "summary"/);
 assert.match(studioSource, /onEditGarments/);
 assert.match(stepperSource, /canEnterSummary/);
-assert.equal(stepperSource.includes('step.id === "shipping" &&'), false);
+assert.equal(stepperSource.includes('step.id === "shipping" &&'), true);
 assert.equal(stepperSource.includes('step.id === "payment" &&'), false);
 assert.match(summarySource, /Continue to Shipping/);
 assert.match(summarySource, /disabled/);
@@ -453,10 +453,9 @@ assert.match(
   summarySource,
   /One or more personalised requirements must be evaluated before an exact total can be confirmed\./,
 );
-assert.match(
-  summarySource,
-  /Shipping will become available after this Summary stage is approved\./,
-);
+assert.match(summarySource, /canContinueToShipping/);
+assert.match(summarySource, /onContinueToShipping/);
+assert.match(summarySource, /Your Summary is ready\./);
 assert.match(summarySource, /aria-label=\{label\}/);
 assert.match(summarySource, /min-h-11/);
 assert.match(summarySource, /min-w-0/);

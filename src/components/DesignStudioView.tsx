@@ -71,6 +71,7 @@ import {
   GarmentTypeStepSelection,
   AiTryOnWorkflowStateV1,
   FutureMeasurementStateV1,
+  FutureShippingStateV1,
   MeasurementRiskRoute,
 } from "../types";
 
@@ -100,6 +101,7 @@ import { DormantFutureCustomDetailsStep } from "./DormantFutureCustomDetailsStep
 import { DormantFutureAiTryOnStep } from "./DormantFutureAiTryOnStep";
 import { DormantFutureMeasurementStep } from "./DormantFutureMeasurementStep";
 import { DormantFutureSummaryStep } from "./DormantFutureSummaryStep";
+import { DormantFutureShippingStep } from "./DormantFutureShippingStep";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
@@ -225,6 +227,14 @@ import {
   reconcileFutureMeasurementState,
 } from "../utils/measurementBlueprint";
 import { projectFutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
+import {
+  createEmptyFutureShippingState,
+  isFutureShippingStageUnlocked,
+  normalizeFutureShippingState,
+  persistFutureShippingState,
+  reconcileFutureShippingState,
+  refreshFutureShippingQuote,
+} from "../utils/designStudioFutureShipping";
 import {
   createAdditionalGarmentSelection,
   getAllowedAdditionalGarmentLabels,
@@ -2079,11 +2089,14 @@ export default function DesignStudioView({
     | "try_on"
     | "measurement"
     | "summary"
+    | "shipping"
   >("garment_type");
   const [futureAiTryOnWorkflow, setFutureAiTryOnWorkflow] =
     useState<AiTryOnWorkflowStateV1>(createEmptyAiTryOnWorkflowState);
   const [futureMeasurementState, setFutureMeasurementState] =
     useState<FutureMeasurementStateV1>(createEmptyFutureMeasurementState);
+  const [futureShippingState, setFutureShippingState] =
+    useState<FutureShippingStateV1>(createEmptyFutureShippingState);
   const [futureSelectedStyleId, setFutureSelectedStyleId] = useState<
     string | null
   >(null);
@@ -3934,6 +3947,9 @@ export default function DesignStudioView({
     const restoredMeasurementState =
       normalizeFutureMeasurementState(storedDraft?.futureMeasurementState) ||
       createEmptyFutureMeasurementState();
+    const restoredShippingState = normalizeFutureShippingState(
+      storedDraft?.futureShippingState,
+    ).state;
     const restoredCustomDetails = reconcileGarmentScopedCustomDetails({
       garmentTypeSelection: futureJourney.garmentTypeSelection,
       style: restoredStyleSelection.selectedStyle,
@@ -3977,8 +3993,21 @@ export default function DesignStudioView({
       isFutureMeasurementStageUnlocked(restoredAiTryOnWorkflow) &&
       restoredReconciledMeasurementState.route === "low_risk" &&
       restoredReconciledMeasurementState.calculationStatus === "complete";
+    const restoredShippingResolution = reconcileFutureShippingState({
+      state: restoredShippingState,
+      garmentCount: restoredFabricCompletion.requiredGarmentCount,
+      selectedDesignPrice:
+        typeof storedDraft?.pricingBreakdown?.selectedDesignPrice === "number"
+          ? storedDraft.pricingBreakdown.selectedDesignPrice
+          : null,
+    });
+    const canRestoreShipping =
+      canRestoreSummary &&
+      typeof storedDraft?.pricingBreakdown?.selectedDesignPrice === "number";
     setFutureStageId(
-      storedDraft?.currentStageId === "summary" && canRestoreSummary
+      storedDraft?.currentStageId === "shipping" && canRestoreShipping
+        ? "shipping"
+        : storedDraft?.currentStageId === "summary" && canRestoreSummary
         ? "summary"
         : storedDraft?.currentStageId === "measurement" &&
         restoredFabricCompletion.isComplete &&
@@ -4002,6 +4031,7 @@ export default function DesignStudioView({
     );
     setFutureAiTryOnWorkflow(restoredAiTryOnWorkflow);
     setFutureMeasurementState(restoredReconciledMeasurementState);
+    setFutureShippingState(restoredShippingResolution.state);
     setFutureSelectedStyleId(storedDraft?.selectedStyleId || null);
     setDesignSelections(storedDraft?.designSelections || { accessories: [] });
     setFabricAllocationState(reconciledFabricState);
@@ -4341,11 +4371,7 @@ export default function DesignStudioView({
         confirmedDesignSourceKey === activeDesignSource.sourceKey
           ? confirmedDesignSourceKey
           : null;
-      const guestDraft = persistDormantGarmentTypeStage({
-        mode: normalizedJourneyMode,
-        garmentTypeSelection,
-        currentStageId: futureStageId,
-        draft: {
+      const baseDraft = {
           currentStep,
           aiTryOnWorkflow: isFutureNineStageMode
             ? futureAiTryOnWorkflow
@@ -4409,7 +4435,18 @@ export default function DesignStudioView({
           },
           fabricAllocations: autosaveAllocationResolution.fabricAllocations,
           updatedAt: new Date().toISOString(),
-        } as GuestDesignDraft,
+        } as GuestDesignDraft;
+      const futureDraft = isFutureNineStageMode
+        ? persistFutureShippingState({
+            draft: baseDraft,
+            state: futureShippingState,
+          })
+        : baseDraft;
+      const guestDraft = persistDormantGarmentTypeStage({
+        mode: normalizedJourneyMode,
+        garmentTypeSelection,
+        currentStageId: futureStageId,
+        draft: futureDraft,
       });
       GuestOrderSessionService.saveGuestDesignDraft(guestDraft);
     }, 250);
@@ -4468,6 +4505,7 @@ export default function DesignStudioView({
     futureSelectedStyleId,
     futureAiTryOnWorkflow,
     reconciledFutureMeasurementState,
+    futureShippingState,
   ]);
 
   const focusAndScrollToValidationTarget = (targetId: string) => {
@@ -5237,6 +5275,51 @@ export default function DesignStudioView({
       futureSummary.status === "pricing_pending") &&
     reconciledFutureMeasurementState.route === "low_risk" &&
     reconciledFutureMeasurementState.calculationStatus === "complete";
+  const isFutureShippingUnlocked = isFutureShippingStageUnlocked(
+    futureSummary.status,
+  );
+  const futureSelectedDesignPrice =
+    futureSummary.pricingSummary.status === "exact"
+      ? futureSummary.pricingSummary.selectedDesignPrice?.selectedDesignPrice ??
+        null
+      : null;
+  const futureShippingResolution = useMemo(
+    () =>
+      reconcileFutureShippingState({
+        state: futureShippingState,
+        garmentCount: futureFabricStageCompletion.requiredGarmentCount,
+        selectedDesignPrice: futureSelectedDesignPrice,
+      }),
+    [
+      futureShippingState,
+      futureFabricStageCompletion.requiredGarmentCount,
+      futureSelectedDesignPrice,
+    ],
+  );
+
+  useEffect(() => {
+    if (!isFutureNineStageMode) return;
+    if (
+      JSON.stringify(futureShippingState) !==
+      JSON.stringify(futureShippingResolution.state)
+    ) {
+      setFutureShippingState(futureShippingResolution.state);
+    }
+  }, [
+    isFutureNineStageMode,
+    futureShippingState,
+    futureShippingResolution.state,
+  ]);
+
+  useEffect(() => {
+    if (
+      isFutureNineStageMode &&
+      futureStageId === "shipping" &&
+      !isFutureShippingUnlocked
+    ) {
+      setFutureStageId("summary");
+    }
+  }, [isFutureNineStageMode, futureStageId, isFutureShippingUnlocked]);
 
   const handleOpenDormantFabricStage = () => {
     if (!garmentTypeStageCompletion.isComplete) return;
@@ -5266,6 +5349,19 @@ export default function DesignStudioView({
   const handleOpenDormantSummaryStage = () => {
     if (!isFutureSummaryStageUnlocked) return;
     setFutureStageId("summary");
+  };
+  const handleOpenDormantShippingStage = () => {
+    if (!isFutureShippingUnlocked) return;
+    setFutureStageId("shipping");
+  };
+  const handleRefreshDormantShippingQuote = () => {
+    setFutureShippingState(
+      refreshFutureShippingQuote({
+        state: futureShippingResolution.state,
+        garmentCount: futureFabricStageCompletion.requiredGarmentCount,
+        selectedDesignPrice: futureSelectedDesignPrice,
+      }).state,
+    );
   };
   const handleRetryDormantAiTryOn = () => {
     setFutureAiTryOnWorkflow((current) => {
@@ -5455,8 +5551,9 @@ export default function DesignStudioView({
                     : futureStageId === "measurement"
                       ? reconciledFutureMeasurementState.calculationStatus ===
                         "complete"
-                      : futureSummary.status === "ready" ||
-                        futureSummary.status === "pricing_pending"
+                      : futureStageId === "summary"
+                        ? futureSummary.status === "ready"
+                        : futureShippingResolution.formComplete
         }
         className="font-sans"
       >
@@ -5472,6 +5569,7 @@ export default function DesignStudioView({
             futureAiTryOnWorkflow,
           )}
           canEnterSummary={isFutureSummaryStageUnlocked}
+          canEnterShipping={isFutureShippingUnlocked}
           onSelectGarmentType={() => setFutureStageId("garment_type")}
           onSelectFabric={handleOpenDormantFabricStage}
           onSelectDesignStyle={handleOpenDormantDesignStyleStage}
@@ -5479,6 +5577,7 @@ export default function DesignStudioView({
           onSelectTryOn={handleOpenDormantAiTryOnStage}
           onSelectMeasurement={handleOpenDormantMeasurementStage}
           onSelectSummary={handleOpenDormantSummaryStage}
+          onSelectShipping={handleOpenDormantShippingStage}
         />
         {futureStageId === "garment_type" ? (
           <div className="space-y-5">
@@ -5586,6 +5685,18 @@ export default function DesignStudioView({
             onEditCustomDetails={handleOpenDormantCustomDetailsStage}
             onEditAiTryOn={handleOpenDormantAiTryOnStage}
             onEditMeasurements={handleOpenDormantMeasurementStage}
+            canContinueToShipping={isFutureShippingUnlocked}
+            onContinueToShipping={handleOpenDormantShippingStage}
+          />
+        ) : futureStageId === "shipping" ? (
+          <DormantFutureShippingStep
+            state={futureShippingResolution.state}
+            resolution={futureShippingResolution}
+            selectedDesignPrice={futureSelectedDesignPrice}
+            garmentCount={futureFabricStageCompletion.requiredGarmentCount}
+            onChange={setFutureShippingState}
+            onRefreshQuote={handleRefreshDormantShippingQuote}
+            onBack={() => setFutureStageId("summary")}
           />
         ) : null}
       </div>
