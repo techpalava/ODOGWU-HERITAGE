@@ -38,7 +38,8 @@
     "test:future-measurement-stage": "tsx test_design_studio_future_measurement_stage.ts",
     "test:future-summary-stage": "tsx test_design_studio_future_summary.ts",
     "test:future-shipping-tariff": "tsx test_future_shipping_tariff.ts",
-    "test:future-shipping-stage": "tsx test_design_studio_future_shipping.ts"
+    "test:future-shipping-stage": "tsx test_design_studio_future_shipping.ts",
+    "test:future-order-candidate": "tsx test_future_order_candidate.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "7.11.6",
