@@ -443,6 +443,26 @@ assert.match(summarySource, /Continue to Shipping/);
 assert.match(summarySource, /disabled/);
 assert.match(summarySource, /Back to Measurements/);
 assert.match(summarySource, /SELECTED_DESIGN_PRICE_SUPPORTING_TEXT/);
+assert.match(summarySource, /Your design summary is ready/);
+assert.match(
+  summarySource,
+  /Review your selections below\. You can return to any completed step to make changes\./,
+);
+assert.match(summarySource, /Price evaluation required/);
+assert.match(
+  summarySource,
+  /One or more personalised requirements must be evaluated before an exact total can be confirmed\./,
+);
+assert.match(
+  summarySource,
+  /Shipping will become available after this Summary stage is approved\./,
+);
+assert.match(summarySource, /aria-label=\{label\}/);
+assert.match(summarySource, /min-h-11/);
+assert.match(summarySource, /min-w-0/);
+assert.match(summarySource, /break-words/);
+assert.match(summarySource, /Known priced selections:/);
+assert.match(summarySource, /This is not a final total\./);
 assert.equal(appSource.includes("future_nine_stage"), false);
 assert.match(studioSource, /journeyMode = "legacy_five_stage"/);
 

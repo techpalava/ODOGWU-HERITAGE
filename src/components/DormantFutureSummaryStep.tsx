@@ -34,7 +34,8 @@ const EditButton = ({
   <button
     type="button"
     onClick={onClick}
-    className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-heritage-green/20 px-3 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+    aria-label={label}
+    className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-heritage-green/20 px-3 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
   >
     <Pencil aria-hidden="true" size={13} />
     {label}
@@ -43,20 +44,29 @@ const EditButton = ({
 
 const Section = ({
   title,
+  description,
   editLabel,
   onEdit,
   children,
 }: {
   title: string;
+  description?: string;
   editLabel: string;
   onEdit: () => void;
   children: React.ReactNode;
 }) => (
   <section className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
-    <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-      <h3 className="min-w-0 font-serif text-lg font-bold text-heritage-green">
-        {title}
-      </h3>
+    <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+      <div className="min-w-0">
+        <h3 className="font-serif text-lg font-bold text-heritage-green">
+          {title}
+        </h3>
+        {description && (
+          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
+            {description}
+          </p>
+        )}
+      </div>
       <EditButton label={editLabel} onClick={onEdit} />
     </div>
     <div className="mt-4 min-w-0">{children}</div>
@@ -74,22 +84,44 @@ export const DormantFutureSummaryStep = ({
   onEditMeasurements,
 }: DormantFutureSummaryStepProps) => {
   const isReady = summary.status === "ready";
+  const firstBlocker = summary.blockers[0] || null;
+  const blockerEditAction = firstBlocker
+    ? {
+        garments: { label: "Edit Garments", onClick: onEditGarments },
+        fabrics: { label: "Edit Fabrics", onClick: onEditFabrics },
+        design_style: { label: "Edit Design Style", onClick: onEditDesignStyle },
+        custom_details: { label: "Edit Custom Details", onClick: onEditCustomDetails },
+        ai_try_on: { label: "Edit AI Try-on", onClick: onEditAiTryOn },
+        measurements: { label: "Edit Measurements", onClick: onEditMeasurements },
+        pricing: { label: "Edit Custom Details", onClick: onEditCustomDetails },
+      }[firstBlocker.section]
+    : null;
   const statusTitle = isReady
-    ? "Your design is ready to review"
+    ? "Your design summary is ready"
     : summary.status === "pricing_pending"
-      ? "Price requires evaluation"
+      ? "Price evaluation required"
       : summary.status === "measurement_calculation_pending"
         ? "Measurement calculation pending"
         : summary.status === "profile_mapping_pending"
           ? "Measurement setup pending"
           : "Review needed";
+  const statusDescription = isReady
+    ? "Review your selections below. You can return to any completed step to make changes."
+    : summary.status === "pricing_pending"
+      ? "One or more personalised requirements must be evaluated before an exact total can be confirmed."
+      : firstBlocker?.message || "Review the first incomplete selection before continuing.";
+  const knownConfirmedPrice =
+    summary.pricingSummary.baseDesignSubtotal === null
+      ? null
+      : summary.pricingSummary.baseDesignSubtotal +
+        summary.pricingSummary.customDetailsExactSubtotal;
 
   return (
     <section
       aria-labelledby="future-summary-title"
       data-stage-id="summary"
       data-summary-status={summary.status}
-      className="space-y-5 font-sans"
+      className="mx-auto max-w-6xl space-y-5 font-sans"
     >
       <header className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
         <button
@@ -142,24 +174,27 @@ export const DormantFutureSummaryStep = ({
             <h3 className="font-serif text-lg font-bold text-heritage-green">
               {statusTitle}
             </h3>
-            {summary.blockers.length > 0 ? (
-              <ul className="mt-2 space-y-1 text-sm leading-relaxed text-heritage-ink/70">
-                {summary.blockers.map((blocker, index) => (
-                  <li key={`${blocker.section}:${blocker.code}:${index}`}>
-                    {blocker.message}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-1 text-sm text-heritage-ink/70">
-                Every completed stage is represented below.
-              </p>
+            <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
+              {statusDescription}
+            </p>
+            {firstBlocker && !isReady && blockerEditAction && (
+              <div className="mt-3">
+                <EditButton
+                  label={blockerEditAction.label}
+                  onClick={blockerEditAction.onClick}
+                />
+              </div>
             )}
           </div>
         </div>
       </div>
 
-      <Section title="Garments" editLabel="Edit Garments" onEdit={onEditGarments}>
+      <Section
+        title="Garments"
+        description="Each garment keeps its own construction and fabric requirements."
+        editLabel="Edit Garments"
+        onEdit={onEditGarments}
+      >
         <div className="space-y-3">
           {summary.garmentSummary.map((garment) => (
             <article
@@ -200,7 +235,12 @@ export const DormantFutureSummaryStep = ({
         </div>
       </Section>
 
-      <Section title="Fabrics" editLabel="Edit Fabrics" onEdit={onEditFabrics}>
+      <Section
+        title="Fabrics"
+        description="Each fabric selection is shown once for its assigned garments."
+        editLabel="Edit Fabrics"
+        onEdit={onEditFabrics}
+      >
         <div className="space-y-3">
           {summary.fabricSummary.map((allocation, index) => (
             <article
@@ -213,14 +253,35 @@ export const DormantFutureSummaryStep = ({
                     Fabric Selection {index + 1}
                   </p>
                   <h4 className="mt-1 break-words font-bold text-heritage-green">
-                    {allocation.fabricName} ({allocation.fabricCode})
+                    {allocation.fabricName}
                   </h4>
+                  <p
+                    title={allocation.fabricCode}
+                    className="mt-1 break-words font-mono text-xs text-heritage-ink/60"
+                  >
+                    {allocation.fabricCode}
+                  </p>
                 </div>
-                <span className="shrink-0 font-mono font-bold text-heritage-green">
-                  {allocation.materialPrice === null
-                    ? "Price unavailable"
-                    : money(allocation.materialPrice)}
-                </span>
+                <div className="shrink-0 text-right">
+                  <span className="block font-mono font-bold text-heritage-green">
+                    {allocation.materialPrice === null
+                      ? "Price unavailable"
+                      : money(allocation.materialPrice)}
+                  </span>
+                  <span
+                    className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                      allocation.availability === "available"
+                        ? "bg-heritage-green/10 text-heritage-green"
+                        : "bg-heritage-gold/15 text-heritage-ink/70"
+                    }`}
+                  >
+                    {allocation.availability === "available"
+                      ? "Available"
+                      : allocation.availability === "unavailable"
+                        ? "Unavailable"
+                        : "Needs review"}
+                  </span>
+                </div>
               </div>
               <p className="mt-2 text-xs text-heritage-ink/65">
                 {allocation.garments.map((garment) => garment.label).join(", ")} | {allocation.capacityUnits} capacity unit{allocation.capacityUnits === 1 ? "" : "s"}
@@ -232,6 +293,7 @@ export const DormantFutureSummaryStep = ({
 
       <Section
         title="Design Style"
+        description="Your selected style remains separate from garment and fabric pricing."
         editLabel="Edit Design Style"
         onEdit={onEditDesignStyle}
       >
@@ -279,6 +341,7 @@ export const DormantFutureSummaryStep = ({
 
       <Section
         title="Custom Details"
+        description="Selections remain grouped with the garment they apply to."
         editLabel="Edit Custom Details"
         onEdit={onEditCustomDetails}
       >
@@ -326,13 +389,19 @@ export const DormantFutureSummaryStep = ({
       </Section>
 
       <div className="grid min-w-0 gap-5 lg:grid-cols-2">
-        <Section title="AI Try-on" editLabel="Edit AI Try-on" onEdit={onEditAiTryOn}>
+        <Section
+          title="AI Try-on"
+          description="Your private try-on status is shown without exposing any image or provider details."
+          editLabel="Edit AI Try-on"
+          onEdit={onEditAiTryOn}
+        >
           <p className="text-sm font-semibold text-heritage-green">
             {summary.aiTryOnSummary.label}
           </p>
         </Section>
         <Section
           title="Measurements"
+          description="Measurements are displayed using the unit selected in Step 6."
           editLabel="Edit Measurements"
           onEdit={onEditMeasurements}
         >
@@ -392,6 +461,11 @@ export const DormantFutureSummaryStep = ({
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-white/75">
               {SELECTED_DESIGN_PRICE_SUPPORTING_TEXT}
             </p>
+            {summary.pricingSummary.status === "pending" && knownConfirmedPrice !== null && (
+              <p className="mt-3 text-xs leading-relaxed text-white/75">
+                Known priced selections: {money(knownConfirmedPrice)}. This is not a final total.
+              </p>
+            )}
           </div>
           {summary.pricingSummary.selectedDesignPrice && (
             <dl className="grid shrink-0 grid-cols-2 gap-x-4 gap-y-1 text-xs">
@@ -422,7 +496,7 @@ export const DormantFutureSummaryStep = ({
           </button>
           <div className="min-w-0 sm:text-right">
             <p id="summary-shipping-lock-reason" className="mb-2 text-xs leading-relaxed text-heritage-ink/60">
-              Shipping is the next stage and remains locked in this preview.
+              Shipping will become available after this Summary stage is approved.
             </p>
             <button
               type="button"
