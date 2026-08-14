@@ -20,6 +20,7 @@ import {
   FUTURE_PAYMENT_UNAVAILABLE_MESSAGE,
   getFuturePaymentReviewAiStatusLabel,
   getFuturePaymentReviewContentBlockers,
+  getFuturePaymentReviewContentStatusLabel,
   getFuturePaymentReviewEditLabel,
   getFuturePaymentReviewEditStage,
   getFuturePaymentReviewGarments,
@@ -210,14 +211,14 @@ const GarmentReview = ({
                     <dt className="min-w-0 break-words text-heritage-ink/70">
                       {component.label}
                     </dt>
-                    <dd className="shrink-0 font-mono font-bold text-heritage-green">
+                    <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
                       {moneyFromCents(component.priceCents)}
                     </dd>
                   </div>
                 ))}
                 <div className="flex min-w-0 flex-wrap justify-between gap-2 border-t border-heritage-green/10 pt-2">
                   <dt className="font-bold text-heritage-green">Construction total</dt>
-                  <dd className="shrink-0 font-mono font-bold text-heritage-green">
+                  <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
                     {garment.constructionTotalCents === null ? (
                       <PendingAmount />
                     ) : (
@@ -286,7 +287,7 @@ const GarmentReview = ({
                             {detail.selectionGroupTitle}
                           </p>
                         </div>
-                        <span className="shrink-0 font-mono text-sm font-bold text-heritage-green">
+                        <span className="min-w-0 max-w-full break-words text-right font-mono text-sm font-bold text-heritage-green">
                           {detail.priceStatus === "evaluation_required" ? (
                             <span className="font-sans text-xs text-heritage-gold">
                               Price requires evaluation.
@@ -299,9 +300,14 @@ const GarmentReview = ({
                         </span>
                       </div>
                       {detail.personalizedText && (
-                        <p className="mt-2 whitespace-pre-wrap break-words rounded-lg border border-heritage-gold/15 bg-heritage-cream/30 p-2 text-xs leading-relaxed text-heritage-ink/70">
-                          {detail.personalizedText}
-                        </p>
+                        <div className="mt-2 rounded-lg border border-heritage-gold/15 bg-heritage-cream/30 p-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
+                            Personalized requirement
+                          </p>
+                          <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-heritage-ink/70">
+                            {detail.personalizedText}
+                          </p>
+                        </div>
                       )}
                     </li>
                   ))}
@@ -451,7 +457,7 @@ export const DormantFuturePaymentReviewStep = ({
                     Catalog style: {candidate.source.styleId}
                   </p>
                   <p className="mt-2 text-xs font-semibold text-heritage-green">
-                    Status: {candidate.contentStatus}
+                    Status: {getFuturePaymentReviewContentStatusLabel(candidate)}
                   </p>
                 </div>
               </div>
@@ -503,7 +509,7 @@ export const DormantFuturePaymentReviewStep = ({
                     </div>
                     <div className="flex min-w-0 flex-wrap justify-between gap-2">
                       <dt>Material price</dt>
-                      <dd className="shrink-0 font-mono font-bold text-heritage-green">
+                      <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
                         {allocation.materialPriceCents === null ? (
                           <PendingAmount />
                         ) : (
@@ -582,7 +588,7 @@ export const DormantFuturePaymentReviewStep = ({
                               ({item.provenanceLabel})
                             </span>
                           </dt>
-                          <dd className="shrink-0 font-mono font-bold text-heritage-green">
+                          <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
                             {item.displayValue} {item.unitLabel}
                           </dd>
                         </div>
@@ -666,7 +672,7 @@ export const DormantFuturePaymentReviewStep = ({
                   className="flex min-w-0 flex-wrap justify-between gap-2"
                 >
                   <dt className="min-w-0 break-words text-heritage-ink/70">{row.label}</dt>
-                  <dd className="shrink-0 font-mono font-bold text-heritage-green">
+                  <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
                     {row.amountCents === null ? (
                       <PendingAmount />
                     ) : (
@@ -677,7 +683,7 @@ export const DormantFuturePaymentReviewStep = ({
               ))}
               <div className="flex min-w-0 flex-wrap justify-between gap-2 border-t border-heritage-green/15 pt-4 text-base">
                 <dt className="font-bold text-heritage-green">Exact total</dt>
-                <dd className="shrink-0 font-mono text-lg font-bold text-heritage-green">
+                <dd className="min-w-0 max-w-full break-words text-right font-mono text-lg font-bold text-heritage-green">
                   {candidate.pricing.status === "exact" &&
                   candidate.pricing.exactTotalCents !== null ? (
                     moneyFromCents(candidate.pricing.exactTotalCents)
@@ -713,7 +719,7 @@ export const DormantFuturePaymentReviewStep = ({
             <button
               type="button"
               disabled
-              aria-describedby="future-payment-pending-explanation"
+              aria-describedby="future-payment-unavailable-title future-payment-pending-explanation"
               className="mt-4 inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-white/20 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
             >
               <LockKeyhole aria-hidden="true" size={14} />

@@ -10,6 +10,7 @@ import {
   FUTURE_ORDER_NOT_SUBMITTED_MESSAGE,
   FUTURE_PAYMENT_UNAVAILABLE_MESSAGE,
   getFuturePaymentReviewContentBlockers,
+  getFuturePaymentReviewContentStatusLabel,
   getFuturePaymentReviewEditStage,
   getFuturePaymentReviewGarments,
   getFuturePaymentReviewPricingRows,
@@ -294,6 +295,7 @@ const reviewableResult: FutureOrderCandidateBuildResult = {
 
 assert.equal(isFuturePaymentReviewStageUnlocked(reviewableResult), true);
 assert.deepEqual(getFuturePaymentReviewContentBlockers(reviewableResult), []);
+assert.equal(getFuturePaymentReviewContentStatusLabel(candidate), "Ready to review");
 assert.equal(getFuturePaymentReviewGarments(candidate).length, 3);
 assert.equal(getFuturePaymentReviewGarments(candidate)[0].customDetails.length, 1);
 assert.equal(getFuturePaymentReviewGarments(candidate)[1].customDetails.length, 1);
@@ -323,6 +325,8 @@ for (const expected of [
   "Outer Robe",
   "A. Heritage - left cuff",
   "K. Heritage - chest",
+  "Personalized requirement",
+  "Status: Ready to review",
   "Shared measurements",
   "Chest",
   "Garment Length",
@@ -342,6 +346,11 @@ assert.equal((reviewMarkup.match(/€131\.25/g) || []).length, 1);
 assert.equal((reviewMarkup.match(/€26\.60/g) || []).length, 1);
 assert.equal((reviewMarkup.match(/€527\.65/g) || []).length, 1);
 assert.ok(reviewMarkup.includes("disabled=\"\""));
+assert.ok(
+  reviewMarkup.includes(
+    'aria-describedby="future-payment-unavailable-title future-payment-pending-explanation"',
+  ),
+);
 for (const forbidden of [
   "card number",
   "expiry",
@@ -403,6 +412,7 @@ const blockedResult: FutureOrderCandidateBuildResult = {
   blockers: evaluationCandidate.blockers,
 };
 assert.equal(isFuturePaymentReviewStageUnlocked(blockedResult), false);
+assert.equal(getFuturePaymentReviewContentStatusLabel(evaluationCandidate), "Needs attention");
 assert.equal(getFuturePaymentReviewContentBlockers(blockedResult).length, 1);
 assert.equal(
   getFuturePaymentReviewEditStage(evaluationCandidate.blockers[0]),

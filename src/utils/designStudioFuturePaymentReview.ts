@@ -68,6 +68,15 @@ export const getFuturePaymentReviewContentBlockers = (
     (blocker) => blocker.code !== "PAYMENT_PROVIDER_UNAVAILABLE",
   );
 
+export const getFuturePaymentReviewContentStatusLabel = (
+  candidate: FutureOrderCandidateV1,
+): "Ready to review" | "Needs attention" | "Review unavailable" =>
+  candidate.contentStatus === "reviewable"
+    ? "Ready to review"
+    : candidate.contentStatus === "blocked"
+      ? "Needs attention"
+      : "Review unavailable";
+
 export const getFuturePaymentReviewEditStage = (
   blocker: FutureOrderCandidateBlocker,
 ): Exclude<DesignStudioStageId, "payment"> | null =>
