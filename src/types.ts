@@ -949,12 +949,74 @@ export type DesignStudioStageId =
   | "shipping"
   | "payment";
 
+export type MeasurementRiskRoute =
+  | "low_risk"
+  | "medium_risk"
+  | "high_risk";
+
+export type MeasurementUnit = "inch" | "cm";
+
+export type MeasurementValueProvenance =
+  | "customer_entered"
+  | "system_derived";
+
+export interface FutureMeasurementValueV1 {
+  /** Canonical storage is centimetres; display units are presentation only. */
+  valueCm: number;
+  provenance: MeasurementValueProvenance;
+}
+
+export type FutureMeasurementDiagnosticCode =
+  | "invalid_state"
+  | "invalid_route"
+  | "invalid_unit"
+  | "invalid_measurement_id"
+  | "invalid_measurement_value"
+  | "measurement_profile_unmapped"
+  | "applicability_unresolved"
+  | "calculation_configuration_pending"
+  | "required_measurement_missing"
+  | "stale_derived_value";
+
+export interface FutureMeasurementDiagnostic {
+  code: FutureMeasurementDiagnosticCode;
+  garmentKey?: string;
+  garmentType?: FabricGarmentType;
+  measurementId?: string;
+  profileId?: string;
+}
+
+export interface FutureMeasurementStateV1 {
+  schemaVersion: 1;
+  route: MeasurementRiskRoute;
+  unit: MeasurementUnit;
+  entered: {
+    shared: Record<string, FutureMeasurementValueV1>;
+    byGarmentKey: Record<string, Record<string, FutureMeasurementValueV1>>;
+  };
+  derived: {
+    shared: Record<string, FutureMeasurementValueV1>;
+    byGarmentKey: Record<string, Record<string, FutureMeasurementValueV1>>;
+  };
+  blueprintVersion: string;
+  formulaVersion: string | null;
+  inputFingerprint: string;
+  calculationStatus:
+    | "not_required"
+    | "configuration_pending"
+    | "incomplete"
+    | "complete"
+    | "invalid";
+  diagnostics: FutureMeasurementDiagnostic[];
+}
+
 export interface GuestDesignDraft {
   journeySchemaVersion?: number;
   currentStageId?: DesignStudioStageId;
   currentStep: number;
   garmentTypeSelection?: GarmentTypeStepSelection;
   aiTryOnWorkflow?: AiTryOnWorkflowStateV1;
+  futureMeasurementState?: FutureMeasurementStateV1;
   selectedFabricCode: string | null;
   selectedStyleId: string | null;
   designSource?: DesignSource | null;

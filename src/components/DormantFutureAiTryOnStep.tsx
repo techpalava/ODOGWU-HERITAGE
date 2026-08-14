@@ -15,6 +15,7 @@ interface DormantFutureAiTryOnStepProps {
   onBack: () => void;
   onRetry: () => void;
   onSkip: () => void;
+  onContinue: () => void;
 }
 
 const STATUS_PRESENTATION: Readonly<
@@ -69,6 +70,7 @@ export const DormantFutureAiTryOnStep = ({
   onBack,
   onRetry,
   onSkip,
+  onContinue,
 }: DormantFutureAiTryOnStepProps) => {
   const presentation = STATUS_PRESENTATION[workflow.status];
   const { canRetry, canSkip } = getAiTryOnWorkflowAllowedActions({
@@ -180,15 +182,25 @@ export const DormantFutureAiTryOnStep = ({
           <ArrowLeft aria-hidden="true" size={15} />
           Back to Custom Details
         </button>
-        <button
-          type="button"
-          disabled
-          aria-label="Continue to Measurement is locked"
-          className="inline-flex min-h-11 cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-heritage-green/35 px-5 text-xs font-bold uppercase tracking-wider text-white"
-        >
-          <LockKeyhole aria-hidden="true" size={14} />
-          Measurement is locked
-        </button>
+        {workflow.status === "completed" || workflow.status === "skipped" ? (
+          <button
+            type="button"
+            onClick={onContinue}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+          >
+            Continue to Measurement
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled
+            aria-label="Continue to Measurement is locked"
+            className="inline-flex min-h-11 cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-heritage-green/35 px-5 text-xs font-bold uppercase tracking-wider text-white"
+          >
+            <LockKeyhole aria-hidden="true" size={14} />
+            Measurement is locked
+          </button>
+        )}
       </div>
     </section>
   );

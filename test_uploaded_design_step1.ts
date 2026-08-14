@@ -228,7 +228,7 @@ assert.doesNotMatch(studioSource, /fabric unit\{uploadedDesignCapacitySummary/);
 assert.match(studioSource, /setConfirmedStyleId\(null\)/);
 assert.match(studioSource, /setConfirmedDesignSourceKey\(resolvedDesignSource\.sourceKey\)/);
 assert.match(studioSource, /URL\.revokeObjectURL/);
-assert.match(studioSource, /Uploaded design checkout is not available yet/);
+assert.doesNotMatch(studioSource, /Uploaded design checkout is not available yet/);
 assert.doesNotMatch(studioSource, /getDownloadURL/);
 assert.doesNotMatch(studioSource, /storagePath\}/);
 

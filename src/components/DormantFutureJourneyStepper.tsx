@@ -19,16 +19,19 @@ interface DormantFutureJourneyStepperProps {
     | "fabric"
     | "design_style"
     | "custom_details"
-    | "try_on";
+    | "try_on"
+    | "measurement";
   canEnterFabric: boolean;
   canEnterDesignStyle: boolean;
   canEnterCustomDetails: boolean;
   canEnterTryOn: boolean;
+  canEnterMeasurement: boolean;
   onSelectGarmentType: () => void;
   onSelectFabric: () => void;
   onSelectDesignStyle: () => void;
   onSelectCustomDetails: () => void;
   onSelectTryOn: () => void;
+  onSelectMeasurement: () => void;
 }
 
 export const DormantFutureJourneyStepper = ({
@@ -37,11 +40,13 @@ export const DormantFutureJourneyStepper = ({
   canEnterDesignStyle,
   canEnterCustomDetails,
   canEnterTryOn,
+  canEnterMeasurement,
   onSelectGarmentType,
   onSelectFabric,
   onSelectDesignStyle,
   onSelectCustomDetails,
   onSelectTryOn,
+  onSelectMeasurement,
 }: DormantFutureJourneyStepperProps) => (
   <nav
     aria-label="Future Design Studio steps"
@@ -55,17 +60,22 @@ export const DormantFutureJourneyStepper = ({
           (step.id === "fabric" &&
             (currentStageId === "design_style" ||
               currentStageId === "custom_details" ||
-              currentStageId === "try_on")) ||
+              currentStageId === "try_on" ||
+              currentStageId === "measurement")) ||
           (step.id === "design_style" &&
             (currentStageId === "custom_details" ||
-              currentStageId === "try_on")) ||
-          (step.id === "custom_details" && currentStageId === "try_on");
+              currentStageId === "try_on" ||
+              currentStageId === "measurement")) ||
+          (step.id === "custom_details" &&
+            (currentStageId === "try_on" || currentStageId === "measurement")) ||
+          (step.id === "try_on" && currentStageId === "measurement");
         const isAvailable =
           step.id === "garment_type" ||
           (step.id === "fabric" && canEnterFabric) ||
           (step.id === "design_style" && canEnterDesignStyle) ||
           (step.id === "custom_details" && canEnterCustomDetails) ||
-          (step.id === "try_on" && canEnterTryOn);
+          (step.id === "try_on" && canEnterTryOn) ||
+          (step.id === "measurement" && canEnterMeasurement);
         const onClick =
           step.id === "garment_type"
             ? onSelectGarmentType
@@ -77,7 +87,9 @@ export const DormantFutureJourneyStepper = ({
                   ? onSelectCustomDetails
                   : step.id === "try_on"
                     ? onSelectTryOn
-                  : undefined;
+                    : step.id === "measurement"
+                      ? onSelectMeasurement
+                    : undefined;
         const state = isCurrent ? "current" : isCompleted ? "completed" : isAvailable ? "available" : "locked";
 
         return (

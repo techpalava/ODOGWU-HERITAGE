@@ -13,6 +13,8 @@ import {
   normalizePersistedGarmentTypeStepSelection,
   reconcileGarmentTypeStepSelection,
 } from "./garmentTypeStepState";
+import { normalizeAiTryOnWorkflowState } from "./aiTryOnWorkflow";
+import { isFutureMeasurementStageUnlocked } from "./measurementBlueprint";
 
 export type DesignStudioJourneyMode =
   | "legacy_five_stage"
@@ -88,7 +90,7 @@ export const createDormantDesignStudioJourneyState = ({
   mode?: unknown;
   persistedDraft?: Pick<
     GuestDesignDraft,
-    "garmentTypeSelection" | "currentStageId"
+    "garmentTypeSelection" | "currentStageId" | "aiTryOnWorkflow"
   > | null;
   normalizedCustomDetailCatalog: readonly CustomDetailOption[];
   isFabricStageComplete?: boolean;
@@ -105,8 +107,21 @@ export const createDormantDesignStudioJourneyState = ({
 
   const completion = getGarmentTypeStageCompletion(garmentTypeSelection);
   const requestedStageId = persistedDraft?.currentStageId;
+  const aiTryOnWorkflow = normalizeAiTryOnWorkflowState(
+    persistedDraft?.aiTryOnWorkflow,
+  );
+  const canEnterMeasurement = Boolean(
+    aiTryOnWorkflow && isFutureMeasurementStageUnlocked(aiTryOnWorkflow),
+  );
   const currentStageId =
     normalizedMode === "future_nine_stage" &&
+    requestedStageId === "measurement" &&
+    completion.isComplete &&
+    isFabricStageComplete &&
+    isCustomDetailsStageReady &&
+    canEnterMeasurement
+      ? "measurement"
+      : normalizedMode === "future_nine_stage" &&
     requestedStageId === "try_on" &&
     completion.isComplete &&
     isFabricStageComplete &&
@@ -218,7 +233,8 @@ export const persistDormantGarmentTypeStage = <T extends GuestDesignDraft>({
     | "fabric"
     | "design_style"
     | "custom_details"
-    | "try_on";
+    | "try_on"
+    | "measurement";
 }): T => {
   if (normalizeDesignStudioJourneyMode(mode) !== "future_nine_stage") {
     return draft;

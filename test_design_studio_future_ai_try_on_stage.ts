@@ -119,7 +119,10 @@ assert.equal(tryOnSource.includes("<input"), false);
 assert.equal(tryOnSource.includes("type=\"file\""), false);
 assert.match(stepperSource, /\{ id: "try_on", label: "AI Try-on" \}/);
 assert.match(stepperSource, /canEnterTryOn/);
-assert.match(stepperSource, /step\.id === "custom_details" && currentStageId === "try_on"/);
+assert.match(
+  stepperSource,
+  /step\.id === "custom_details"[\s\S]*currentStageId === "try_on"[\s\S]*currentStageId === "measurement"/,
+);
 assert.match(studioSource, /handleOpenDormantAiTryOnStage/);
 assert.match(studioSource, /onBack=\{\(\) => setFutureStageId\("custom_details"\)\}/);
 assert.match(studioSource, /gatewayAvailable: false/);

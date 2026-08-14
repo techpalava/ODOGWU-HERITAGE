@@ -18,6 +18,12 @@ import { reconcileGuestDesignDraftGarmentTypeSelection } from "../utils/garmentT
 import { normalizeGarmentScopedCustomDetailsState } from "../utils/garmentScopedCustomDetailsState";
 import { normalizeGarmentScopedCustomDetailInputs } from "../utils/garmentScopedCustomDetailInputsState";
 import { normalizeAiTryOnWorkflowState } from "../utils/aiTryOnWorkflow";
+import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "../utils/designSourceJourney";
+import {
+  createEmptyFutureMeasurementState,
+  migrateLegacyManualMeasurements,
+  normalizeFutureMeasurementState,
+} from "../utils/measurementBlueprint";
 import {
   getCartDesignConfigurationFingerprintInput,
   normalizeCartItemDesignDomain,
@@ -74,14 +80,30 @@ const normalizeDesignDraft = (designDraft: GuestDesignDraft): GuestDesignDraft =
   const normalizedAiTryOnWorkflow = normalizeAiTryOnWorkflowState(
     garmentTypeReconciledDraft.aiTryOnWorkflow,
   );
+  const normalizedMeasurementState =
+    garmentTypeReconciledDraft.futureMeasurementState === undefined
+      ? garmentTypeReconciledDraft.journeySchemaVersion ===
+        DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION
+        ? migrateLegacyManualMeasurements(
+            garmentTypeReconciledDraft.measurements,
+            garmentTypeReconciledDraft.sizingMode,
+          )
+        : null
+      : normalizeFutureMeasurementState(
+          garmentTypeReconciledDraft.futureMeasurementState,
+        ) || createEmptyFutureMeasurementState();
   const {
     aiTryOnWorkflow: _discardedAiTryOnWorkflow,
+    futureMeasurementState: _discardedFutureMeasurementState,
     ...draftWithoutAiTryOnWorkflow
   } = garmentTypeReconciledDraft;
   const workflowReconciledDraft: GuestDesignDraft = {
     ...draftWithoutAiTryOnWorkflow,
     ...(normalizedAiTryOnWorkflow
       ? { aiTryOnWorkflow: normalizedAiTryOnWorkflow }
+      : {}),
+    ...(normalizedMeasurementState
+      ? { futureMeasurementState: normalizedMeasurementState }
       : {}),
   };
   const scopedCustomDetails =

@@ -20,7 +20,7 @@ import {
   inspectCustomDetailCatalog,
   isAmbiguousLowerGarment,
 } from "../utils/catalogHelpers";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Sparkles,
   ArrowLeft,
@@ -70,6 +70,8 @@ import {
   FabricGarmentType,
   GarmentTypeStepSelection,
   AiTryOnWorkflowStateV1,
+  FutureMeasurementStateV1,
+  MeasurementRiskRoute,
 } from "../types";
 
 import { OFFICIAL_PRICE_LIST } from "../data/pricingData";
@@ -96,6 +98,7 @@ import { DormantFutureDesignStyleStep } from "./DormantFutureDesignStyleStep";
 import { DormantFutureJourneyStepper } from "./DormantFutureJourneyStepper";
 import { DormantFutureCustomDetailsStep } from "./DormantFutureCustomDetailsStep";
 import { DormantFutureAiTryOnStep } from "./DormantFutureAiTryOnStep";
+import { DormantFutureMeasurementStep } from "./DormantFutureMeasurementStep";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { SelectField } from "./ui/FormControls";
 import VirtualTryOnIntegrationCard from "./VirtualTryOnIntegrationCard";
@@ -212,6 +215,14 @@ import {
   reconcileAiTryOnWorkflow,
   transitionAiTryOnWorkflow,
 } from "../utils/aiTryOnWorkflow";
+import {
+  createEmptyFutureMeasurementState,
+  getMeasurementPhysicalGarments,
+  isFutureMeasurementStageUnlocked,
+  normalizeFutureMeasurementState,
+  planMeasurementRequirements,
+  reconcileFutureMeasurementState,
+} from "../utils/measurementBlueprint";
 import {
   createAdditionalGarmentSelection,
   getAllowedAdditionalGarmentLabels,
@@ -2059,10 +2070,17 @@ export default function DesignStudioView({
     garmentTypeSelection,
   );
   const [futureStageId, setFutureStageId] = useState<
-    "garment_type" | "fabric" | "design_style" | "custom_details" | "try_on"
+    | "garment_type"
+    | "fabric"
+    | "design_style"
+    | "custom_details"
+    | "try_on"
+    | "measurement"
   >("garment_type");
   const [futureAiTryOnWorkflow, setFutureAiTryOnWorkflow] =
     useState<AiTryOnWorkflowStateV1>(createEmptyAiTryOnWorkflowState);
+  const [futureMeasurementState, setFutureMeasurementState] =
+    useState<FutureMeasurementStateV1>(createEmptyFutureMeasurementState);
   const [futureSelectedStyleId, setFutureSelectedStyleId] = useState<
     string | null
   >(null);
@@ -2639,6 +2657,40 @@ export default function DesignStudioView({
             futureScopedCustomDetailsReconciliation.state,
         })
       : null;
+  const futureMeasurementPhysicalGarments = useMemo(
+    () =>
+      getMeasurementPhysicalGarments({
+        garmentTypeSelection,
+        fabricGarments: fabricAllocationState.fabricAllocations.flatMap(
+          (allocation) => allocation.garmentAssignments,
+        ),
+      }),
+    [garmentTypeSelection, fabricAllocationState.fabricAllocations],
+  );
+  const futureMeasurementPlan = useMemo(
+    () =>
+      planMeasurementRequirements({
+        route: futureMeasurementState.route,
+        garmentTypeSelection,
+        physicalGarments: futureMeasurementPhysicalGarments,
+        garmentScopedCustomDetails:
+          designSelections.garmentScopedCustomDetails,
+      }),
+    [
+      futureMeasurementState.route,
+      garmentTypeSelection,
+      futureMeasurementPhysicalGarments,
+      designSelections.garmentScopedCustomDetails,
+    ],
+  );
+  const reconciledFutureMeasurementState = useMemo(
+    () =>
+      reconcileFutureMeasurementState({
+        state: futureMeasurementState,
+        plan: futureMeasurementPlan,
+      }),
+    [futureMeasurementState, futureMeasurementPlan],
+  );
 
   // Price List States
   const [hasLining, setHasLining] = useState(false);
@@ -3873,8 +3925,19 @@ export default function DesignStudioView({
       styles,
       garmentTypeSelection: futureJourney.garmentTypeSelection,
     });
+    const restoredAiTryOnWorkflow =
+      normalizeAiTryOnWorkflowState(storedDraft?.aiTryOnWorkflow) ||
+      createEmptyAiTryOnWorkflowState();
+    const restoredMeasurementState =
+      normalizeFutureMeasurementState(storedDraft?.futureMeasurementState) ||
+      createEmptyFutureMeasurementState();
     setFutureStageId(
-      storedDraft?.currentStageId === "try_on" &&
+      storedDraft?.currentStageId === "measurement" &&
+        restoredFabricCompletion.isComplete &&
+        restoredStyleSelection.status === "selected" &&
+        isFutureMeasurementStageUnlocked(restoredAiTryOnWorkflow)
+        ? "measurement"
+        : storedDraft?.currentStageId === "try_on" &&
         restoredFabricCompletion.isComplete &&
         restoredStyleSelection.status === "selected"
         ? "try_on"
@@ -3889,10 +3952,8 @@ export default function DesignStudioView({
           ? "fabric"
           : "garment_type",
     );
-    setFutureAiTryOnWorkflow(
-      normalizeAiTryOnWorkflowState(storedDraft?.aiTryOnWorkflow) ||
-        createEmptyAiTryOnWorkflowState(),
-    );
+    setFutureAiTryOnWorkflow(restoredAiTryOnWorkflow);
+    setFutureMeasurementState(restoredMeasurementState);
     setFutureSelectedStyleId(storedDraft?.selectedStyleId || null);
     setDesignSelections(storedDraft?.designSelections || { accessories: [] });
     setFabricAllocationState(reconciledFabricState);
@@ -3971,14 +4032,18 @@ export default function DesignStudioView({
       !isFutureNineStageMode ||
       (futureStageId !== "design_style" &&
         futureStageId !== "custom_details" &&
-        futureStageId !== "try_on")
+        futureStageId !== "try_on" &&
+        futureStageId !== "measurement")
     ) {
       return;
     }
     if (
       futureFabricStageCompletion.isComplete &&
       futureDesignStyleSelection.status === "selected" &&
-      (futureStageId !== "try_on" || isFutureCustomDetailsStageReady)
+      ((futureStageId !== "try_on" && futureStageId !== "measurement") ||
+        isFutureCustomDetailsStageReady) &&
+      (futureStageId !== "measurement" ||
+        isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow))
     ) {
       return;
     }
@@ -3998,6 +4063,7 @@ export default function DesignStudioView({
     garmentTypeStageCompletion.isComplete,
     futureDesignStyleSelection.status,
     isFutureCustomDetailsStageReady,
+    futureAiTryOnWorkflow,
   ]);
 
   useEffect(() => {
@@ -4223,6 +4289,9 @@ export default function DesignStudioView({
           aiTryOnWorkflow: isFutureNineStageMode
             ? futureAiTryOnWorkflow
             : undefined,
+          futureMeasurementState: isFutureNineStageMode
+            ? reconciledFutureMeasurementState
+            : undefined,
           selectedFabricCode: selectedFabric?.code || null,
           selectedStyleId: activeCatalogStyleId,
           designSource: activeDesignSource,
@@ -4337,6 +4406,7 @@ export default function DesignStudioView({
     futureStageId,
     futureSelectedStyleId,
     futureAiTryOnWorkflow,
+    reconciledFutureMeasurementState,
   ]);
 
   const focusAndScrollToValidationTarget = (targetId: string) => {
@@ -5074,6 +5144,10 @@ export default function DesignStudioView({
     if (!isFutureCustomDetailsStageReady) return;
     setFutureStageId("try_on");
   };
+  const handleOpenDormantMeasurementStage = () => {
+    if (!isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow)) return;
+    setFutureStageId("measurement");
+  };
   const handleRetryDormantAiTryOn = () => {
     setFutureAiTryOnWorkflow((current) => {
       const transition = transitionAiTryOnWorkflow({
@@ -5091,14 +5165,25 @@ export default function DesignStudioView({
     });
   };
   const handleSkipDormantAiTryOn = () => {
-    setFutureAiTryOnWorkflow((current) => {
-      const transition = transitionAiTryOnWorkflow({
-        state: current,
-        event: { type: "skip" },
-        skipAllowed: true,
-      });
-      return transition.ok ? transition.state : current;
+    const transition = transitionAiTryOnWorkflow({
+      state: futureAiTryOnWorkflow,
+      event: { type: "skip" },
+      skipAllowed: true,
     });
+    if (!transition.ok) return;
+    setFutureAiTryOnWorkflow(transition.state);
+    setFutureStageId("measurement");
+  };
+  const handleFutureMeasurementRouteChange = (
+    route: MeasurementRiskRoute,
+  ) => {
+    setFutureMeasurementState((current) => ({
+      ...current,
+      route,
+      derived: { shared: {}, byGarmentKey: {} },
+      calculationStatus: "incomplete",
+      diagnostics: [],
+    }));
   };
   const updateFutureScopedCustomDetails = (
     update: (current: DesignSelections) => DesignSelections,
@@ -5243,10 +5328,13 @@ export default function DesignStudioView({
               ? futureFabricStageCompletion.isComplete
               : futureStageId === "design_style"
                 ? futureDesignStyleSelection.status === "selected"
-                : futureStageId === "custom_details"
+              : futureStageId === "custom_details"
                   ? isFutureCustomDetailsStageReady
-                  : futureAiTryOnWorkflow.status === "completed" ||
-                    futureAiTryOnWorkflow.status === "skipped"
+                  : futureStageId === "try_on"
+                    ? futureAiTryOnWorkflow.status === "completed" ||
+                      futureAiTryOnWorkflow.status === "skipped"
+                    : reconciledFutureMeasurementState.calculationStatus ===
+                      "complete"
         }
         className="font-sans"
       >
@@ -5258,11 +5346,15 @@ export default function DesignStudioView({
             futureDesignStyleSelection.status === "selected"
           }
           canEnterTryOn={isFutureCustomDetailsStageReady}
+          canEnterMeasurement={isFutureMeasurementStageUnlocked(
+            futureAiTryOnWorkflow,
+          )}
           onSelectGarmentType={() => setFutureStageId("garment_type")}
           onSelectFabric={handleOpenDormantFabricStage}
           onSelectDesignStyle={handleOpenDormantDesignStyleStage}
           onSelectCustomDetails={handleOpenDormantCustomDetailsStage}
           onSelectTryOn={handleOpenDormantAiTryOnStage}
+          onSelectMeasurement={handleOpenDormantMeasurementStage}
         />
         {futureStageId === "garment_type" ? (
           <div className="space-y-5">
@@ -5349,6 +5441,15 @@ export default function DesignStudioView({
             onBack={() => setFutureStageId("custom_details")}
             onRetry={handleRetryDormantAiTryOn}
             onSkip={handleSkipDormantAiTryOn}
+            onContinue={handleOpenDormantMeasurementStage}
+          />
+        ) : futureStageId === "measurement" ? (
+          <DormantFutureMeasurementStep
+            plan={futureMeasurementPlan}
+            state={reconciledFutureMeasurementState}
+            onChange={setFutureMeasurementState}
+            onRouteChange={handleFutureMeasurementRouteChange}
+            onBack={() => setFutureStageId("try_on")}
           />
         ) : null}
       </div>
