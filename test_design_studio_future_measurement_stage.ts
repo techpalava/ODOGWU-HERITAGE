@@ -32,10 +32,15 @@ assert.match(measurementSource, /aria-invalid/);
 assert.match(measurementSource, /Enter a positive measurement value\./);
 assert.match(measurementSource, /Current route status/);
 assert.match(measurementSource, /Calculation pending/);
-assert.match(measurementSource, /aria-describedby="measurement-summary-lock-reason"/);
+assert.match(measurementSource, /aria-describedby="measurement-summary-status-reason"/);
 assert.match(measurementSource, /Back to AI Try-on/);
 assert.match(measurementSource, /Continue to Summary/);
-assert.match(measurementSource, /Summary remains locked while the future measurement calculation is awaiting approval\./);
+assert.match(measurementSource, /resolvedState\.route === "low_risk"/);
+assert.match(measurementSource, /resolvedState\.calculationStatus === "complete"/);
+assert.match(
+  measurementSource,
+  /Summary remains locked until Low Risk measurements are complete\. Mid and High Risk calculations are still pending\./,
+);
 assert.match(measurementSource, /aria-live="polite"/);
 assert.equal(measurementSource.includes("calculated value"), false);
 assert.match(stepperSource, /canEnterMeasurement/);

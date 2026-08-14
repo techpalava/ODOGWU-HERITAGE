@@ -19,6 +19,7 @@ interface DormantFutureMeasurementStepProps {
   onChange: (state: FutureMeasurementStateV1) => void;
   onRouteChange: (route: MeasurementRiskRoute) => void;
   onBack: () => void;
+  onContinue: () => void;
 }
 
 const ROUTES: ReadonlyArray<{
@@ -191,6 +192,7 @@ export const DormantFutureMeasurementStep = ({
   onChange,
   onRouteChange,
   onBack,
+  onContinue,
 }: DormantFutureMeasurementStepProps) => {
   const resolvedState = reconcileFutureMeasurementState({ state, plan });
   const directRequirements = plan.requirements.filter(
@@ -246,6 +248,9 @@ export const DormantFutureMeasurementStep = ({
     state.route,
     resolvedState.calculationStatus,
   );
+  const canContinueToSummary =
+    resolvedState.route === "low_risk" &&
+    resolvedState.calculationStatus === "complete";
 
   return (
     <section
@@ -495,16 +500,19 @@ export const DormantFutureMeasurementStep = ({
             Back to AI Try-on
           </button>
           <div className="min-w-0 sm:text-right">
-            <p id="measurement-summary-lock-reason" className="mb-2 text-xs leading-relaxed text-heritage-ink/60">
-              Summary remains locked while the future measurement calculation is awaiting approval.
+            <p id="measurement-summary-status-reason" className="mb-2 text-xs leading-relaxed text-heritage-ink/60">
+              {canContinueToSummary
+                ? "Your completed Low Risk measurements are ready for review."
+                : "Summary remains locked until Low Risk measurements are complete. Mid and High Risk calculations are still pending."}
             </p>
             <button
               type="button"
-              disabled
-              aria-describedby="measurement-summary-lock-reason"
-              className="inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-heritage-green/35 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
+              onClick={onContinue}
+              disabled={!canContinueToSummary}
+              aria-describedby="measurement-summary-status-reason"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 sm:w-auto"
             >
-              <LockKeyhole aria-hidden="true" size={14} />
+              {!canContinueToSummary && <LockKeyhole aria-hidden="true" size={14} />}
               Continue to Summary
             </button>
           </div>

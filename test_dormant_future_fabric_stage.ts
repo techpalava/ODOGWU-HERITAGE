@@ -336,7 +336,7 @@ const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8")
 assert.equal(appSource.includes("future_nine_stage"), false);
 assert.match(studioSource, /journeyMode\s*=\s*["']legacy_five_stage["']/);
 assert.match(studioSource, /futureStageId === ["']garment_type["']/);
-assert.equal(studioSource.includes("setFutureStageId(\"design_style\")"), false);
+assert.match(studioSource, /setFutureStageId\("design_style"\)/);
 assert.match(studioSource, /getFutureFabricGarmentSelections\(garmentTypeSelection\)/);
 
 console.log("PASS: dormant future Fabric stage integration");

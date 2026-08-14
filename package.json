@@ -35,7 +35,8 @@
     "test:uploaded-design-order-regression": "tsx test_uploaded_design_order_regression.ts",
     "test:firestore-security": "tsx test_firestore_security.ts",
     "test:measurement-blueprint": "tsx test_measurement_blueprint.ts",
-    "test:future-measurement-stage": "tsx test_design_studio_future_measurement_stage.ts"
+    "test:future-measurement-stage": "tsx test_design_studio_future_measurement_stage.ts",
+    "test:future-summary-stage": "tsx test_design_studio_future_summary.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "7.11.6",
