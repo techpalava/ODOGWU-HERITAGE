@@ -3904,7 +3904,10 @@ export default function DesignStudioView({
       !isFutureNineStageMode ||
       currentUser ||
       guestDraftHydrated ||
-      isLoadingData
+      isLoadingData ||
+      styles.length === 0 ||
+      fabrics.length === 0 ||
+      normalizedGarmentTypeCatalog.length === 0
     ) {
       return;
     }
@@ -4001,9 +4004,7 @@ export default function DesignStudioView({
           ? storedDraft.pricingBreakdown.selectedDesignPrice
           : null,
     });
-    const canRestoreShipping =
-      canRestoreSummary &&
-      typeof storedDraft?.pricingBreakdown?.selectedDesignPrice === "number";
+    const canRestoreShipping = canRestoreSummary;
     setFutureStageId(
       storedDraft?.currentStageId === "shipping" && canRestoreShipping
         ? "shipping"

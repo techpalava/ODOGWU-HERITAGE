@@ -296,6 +296,11 @@ assert.match(studioSource, /futureStageId === "shipping"/);
 assert.match(studioSource, /handleOpenDormantShippingStage/);
 assert.match(studioSource, /futureShippingState/);
 assert.match(studioSource, /persistFutureShippingState/);
+assert.match(studioSource, /const canRestoreShipping = canRestoreSummary;/);
+assert.match(
+  studioSource,
+  /!isFutureNineStageMode[\s\S]*?isLoadingData[\s\S]*?styles\.length === 0[\s\S]*?fabrics\.length === 0[\s\S]*?normalizedGarmentTypeCatalog\.length === 0/,
+);
 assert.match(summarySource, /canContinueToShipping/);
 assert.match(summarySource, /onContinueToShipping/);
 assert.match(stepperSource, /canEnterShipping/);
