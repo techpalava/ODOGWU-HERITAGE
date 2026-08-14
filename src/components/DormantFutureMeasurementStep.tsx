@@ -53,8 +53,12 @@ const getBlockerMessage = (
       return "A measurement choice cannot be resolved from the selected construction details yet.";
     case "calculation_configuration_pending":
       return "Automatic measurement calculations are awaiting an approved formula.";
+    case "calculation_basis_unresolved":
+      return "The required height basis is not configured for one selected garment profile.";
     case "required_measurement_missing":
       return "Complete every required measurement shown below.";
+    case "invalid_measurement_value":
+      return "Use a positive measurement value.";
     default:
       return "Measurement details need review before this step can be completed.";
   }
@@ -71,7 +75,24 @@ export const DormantFutureMeasurementStep = ({
   const directRequirements = plan.requirements.filter(
     (requirement) => requirement.directInput,
   );
+  const completedManualInputCount = directRequirements.filter((requirement) => {
+    const value = requirement.scope === "shared"
+      ? resolvedState.entered.shared[requirement.measurementId]
+      : resolvedState.entered.byGarmentKey[requirement.garmentKey || ""]?.[
+          requirement.measurementId
+        ];
+    return Boolean(value && Number.isFinite(value.valueCm) && value.valueCm > 0);
+  }).length;
+  const factorlessManualCount = directRequirements.filter(
+    (requirement) => requirement.inputSource === "factorless_manual",
+  ).length;
   const blockerMessages = [...new Set(resolvedState.diagnostics.map(getBlockerMessage))];
+  const pendingFormulaMessage =
+    resolvedState.calculationStatus === "calculation_formula_pending"
+      ? state.route === "medium_risk"
+        ? "Your required measurements can be saved, but the assisted calculation method is still being finalised."
+        : "Your quick measurements can be saved, but the remaining calculation method is still being finalised."
+      : null;
 
   const handleUnitChange = (unit: MeasurementUnit) => {
     onChange(setFutureMeasurementUnit(resolvedState, unit));
@@ -193,8 +214,13 @@ export const DormantFutureMeasurementStep = ({
           <div className="min-w-0">
             <h3 className="font-serif text-lg font-bold text-heritage-green">Required direct measurements</h3>
             <p className="text-xs text-heritage-ink/60">
-              {directRequirements.length} field{directRequirements.length === 1 ? "" : "s"} for the selected garments.
+              {completedManualInputCount} of {directRequirements.length} required manual input{directRequirements.length === 1 ? "" : "s"} saved.
             </p>
+            {factorlessManualCount > 0 && (
+              <p className="mt-1 text-xs text-heritage-ink/60">
+                {factorlessManualCount} required field{factorlessManualCount === 1 ? " has" : "s have"} no approved calculation factor and must be entered manually.
+              </p>
+            )}
           </div>
         </div>
 
@@ -256,6 +282,16 @@ export const DormantFutureMeasurementStep = ({
           })}
         </div>
       </div>
+
+      {pendingFormulaMessage && (
+        <p
+          role="status"
+          aria-live="polite"
+          className="rounded-xl border border-heritage-gold/30 bg-heritage-gold/8 px-4 py-3 text-sm text-heritage-ink/75"
+        >
+          {pendingFormulaMessage}
+        </p>
+      )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button

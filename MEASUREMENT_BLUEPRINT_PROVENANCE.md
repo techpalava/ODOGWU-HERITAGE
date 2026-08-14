@@ -8,6 +8,8 @@
 - Header and definitions: rows 3-11
 - Imported profile data: columns E-I and K, rows 13-266
 - Blueprint version: `measurements-steps-website-v1@8b59ab07`
+- Green route-marker conditional format: `G13:H405`, `containsText:Yes, Provide`, fill ARGB `FF66FFCC`
+- Mid Risk uses the green-marked values in column G; High Risk uses column H.
 
 The runtime does not parse the workbook. Its approved A-M profiles are encoded as typed configuration in `src/config/MeasurementBlueprintConfig.ts`, with the original profile code, source row, source label, route markers, notes, conditional or alternative status, and Average Factor provenance retained for auditability.
 

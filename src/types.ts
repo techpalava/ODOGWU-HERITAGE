@@ -974,6 +974,7 @@ export type FutureMeasurementDiagnosticCode =
   | "invalid_measurement_value"
   | "measurement_profile_unmapped"
   | "applicability_unresolved"
+  | "calculation_basis_unresolved"
   | "calculation_configuration_pending"
   | "required_measurement_missing"
   | "stale_derived_value";
@@ -1003,11 +1004,13 @@ export interface FutureMeasurementStateV1 {
   inputFingerprint: string;
   calculationStatus:
     | "not_required"
-    | "configuration_pending"
+    | "calculation_formula_pending"
+    | "profile_mapping_pending"
     | "incomplete"
     | "complete"
     | "invalid";
   diagnostics: FutureMeasurementDiagnostic[];
+  invalidInputKeys: string[];
 }
 
 export interface GuestDesignDraft {

@@ -6,6 +6,7 @@ import {
   MEASUREMENT_DEFINITIONS,
   MEASUREMENT_FORMULA_VERSION,
   MEASUREMENT_PROFILES,
+  MEASUREMENT_ROUTE_MARKER_STYLE,
 } from "./src/config/MeasurementBlueprintConfig";
 import type {
   FutureMeasurementStateV1,
@@ -68,6 +69,18 @@ assert.equal(
 );
 assert.equal(JSON.stringify(MEASUREMENT_PROFILES).includes("#REF!"), false);
 assert.equal(MEASUREMENT_DEFINITIONS.length, 38);
+assert.equal(
+  MEASUREMENT_DEFINITIONS.find(({ id }) => id === "total_height")
+    ?.futureCalculationBasis,
+  "height",
+);
+assert.deepEqual(MEASUREMENT_ROUTE_MARKER_STYLE, {
+  conditionalFormattingRange: "G13:H405",
+  rule: "containsText:Yes, Provide",
+  fillArgb: "FF66FFCC",
+  mediumRiskColumn: "G",
+  highRiskColumn: "H",
+});
 
 for (const profile of MEASUREMENT_PROFILES) {
   for (const route of ["low_risk", "medium_risk", "high_risk"] as const) {
@@ -77,6 +90,16 @@ for (const profile of MEASUREMENT_PROFILES) {
       `${profile.id} ${route} source-marker count`,
     );
   }
+  assert.equal(
+    profile.fields.some(
+      ({ measurementId, directRoutes }) =>
+        measurementId === "total_height" &&
+        directRoutes.includes("medium_risk") &&
+        directRoutes.includes("high_risk"),
+    ),
+    true,
+    `${profile.id} has the canonical height basis for pending routes`,
+  );
 }
 
 const markerDigest = createHash("sha256")
@@ -202,7 +225,38 @@ for (const route of ["medium_risk", "high_risk"] as MeasurementRiskRoute[]) {
     true,
   );
   assert.equal(plan.canCalculate, false);
+  assert.equal(
+    plan.requirements.some((requirement) => requirement.measurementId === "total_height" && requirement.directInput),
+    true,
+    "Height remains an explicit future-calculation basis.",
+  );
 }
+
+const longDressSelection: GarmentTypeStepSelection = {
+  garmentTypes: ["dress"],
+  demographic: "female",
+  constructionByGarment: {
+    dress: construction("dress", "dress_long_short", "dress_construction"),
+  },
+};
+const factorlessManualPlan = planMeasurementRequirements({
+  route: "medium_risk",
+  garmentTypeSelection: longDressSelection,
+  physicalGarments: [{ garmentKey: "dress:1", garmentType: "dress" }],
+});
+assert.deepEqual(
+  factorlessManualPlan.requirements.find(
+    ({ measurementId }) => measurementId === "dress_length_long",
+  ) && {
+    directInput: factorlessManualPlan.requirements.find(
+      ({ measurementId }) => measurementId === "dress_length_long",
+    )?.directInput,
+    inputSource: factorlessManualPlan.requirements.find(
+      ({ measurementId }) => measurementId === "dress_length_long",
+    )?.inputSource,
+  },
+  { directInput: true, inputSource: "factorless_manual" },
+);
 
 let state = createEmptyFutureMeasurementState("low_risk", "inch");
 for (const requirement of lowPlan.requirements.filter(({ directInput }) => directInput)) {
@@ -223,10 +277,61 @@ const staleState: FutureMeasurementStateV1 = {
     shared: { total_height: { valueCm: 180, provenance: "system_derived" } },
     byGarmentKey: {},
   },
+  invalidInputKeys: [],
 };
 assert.deepEqual(
   reconcileFutureMeasurementState({ state: staleState, plan: lowPlan }).derived,
   { shared: {}, byGarmentKey: {} },
+);
+
+const mediumPlan = planMeasurementRequirements({
+  route: "medium_risk",
+  garmentTypeSelection: selection,
+  physicalGarments,
+});
+let mediumState = createEmptyFutureMeasurementState("medium_risk", "cm");
+for (const requirement of mediumPlan.requirements.filter(({ directInput }) => directInput)) {
+  mediumState = setFutureMeasurementInput({ state: mediumState, requirement, displayValue: 10 });
+}
+mediumState = reconcileFutureMeasurementState({ state: mediumState, plan: mediumPlan });
+assert.equal(mediumState.calculationStatus, "calculation_formula_pending");
+assert.equal(Object.keys(mediumState.derived.shared).length, 0);
+
+const highPlan = planMeasurementRequirements({
+  route: "high_risk",
+  garmentTypeSelection: selection,
+  physicalGarments,
+});
+let highState = createEmptyFutureMeasurementState("high_risk", "cm");
+for (const requirement of highPlan.requirements.filter(({ directInput }) => directInput)) {
+  highState = setFutureMeasurementInput({ state: highState, requirement, displayValue: 10 });
+}
+highState = reconcileFutureMeasurementState({ state: highState, plan: highPlan });
+assert.equal(highState.calculationStatus, "calculation_formula_pending");
+
+const unmappedPlan = planMeasurementRequirements({
+  route: "low_risk",
+  garmentTypeSelection: selection,
+  physicalGarments: [{ garmentKey: "kaftan:1", garmentType: "kaftan" }],
+});
+assert.equal(
+  reconcileFutureMeasurementState({
+    state: createEmptyFutureMeasurementState(),
+    plan: unmappedPlan,
+  }).calculationStatus,
+  "profile_mapping_pending",
+);
+
+const invalidState = setFutureMeasurementInput({
+  state: createEmptyFutureMeasurementState(),
+  requirement: factorlessManualPlan.requirements.find(
+    ({ inputSource }) => inputSource === "factorless_manual",
+  )!,
+  displayValue: 0,
+});
+assert.equal(
+  reconcileFutureMeasurementState({ state: invalidState, plan: factorlessManualPlan }).calculationStatus,
+  "invalid",
 );
 
 const inches = 70.25;
@@ -261,6 +366,21 @@ const migratedLegacyManual = migrateLegacyManualMeasurements(
 );
 assert.equal(migratedLegacyManual?.entered.shared.total_height?.valueCm, 178);
 assert.equal(migratedLegacyManual?.entered.shared.neck_circumference?.valueCm, 38.1);
+assert.deepEqual(
+  normalizeFutureMeasurementState(JSON.parse(JSON.stringify(mediumState)))?.entered,
+  mediumState.entered,
+  "Formula-pending Mid Risk inputs survive draft JSON persistence.",
+);
+assert.deepEqual(
+  normalizeFutureMeasurementState(JSON.parse(JSON.stringify(highState)))?.entered,
+  highState.entered,
+  "Formula-pending High Risk inputs survive draft JSON persistence.",
+);
+assert.deepEqual(
+  { ...mediumState, route: "high_risk" as const }.entered,
+  mediumState.entered,
+  "Changing route preserves entered values for later reconciliation.",
+);
 
 const catalog = inspectCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const journeySelection: GarmentTypeStepSelection = {

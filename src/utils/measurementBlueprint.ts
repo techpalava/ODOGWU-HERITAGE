@@ -190,6 +190,7 @@ export interface PlannedMeasurementRequirement {
   profileId: MeasurementProfileId;
   sourceRow: number;
   directInput: boolean;
+  inputSource: "route_marker" | "factorless_manual";
   averageFactor: number | null;
 }
 
@@ -297,7 +298,12 @@ export const planMeasurementRequirements = ({
       }
       const definition = DEFINITION_BY_ID.get(field.measurementId);
       if (!definition) return;
-      const directInput = field.directRoutes.includes(route);
+      const routeMarkerInput = field.directRoutes.includes(route);
+      const factorlessManualInput =
+        route !== "low_risk" &&
+        field.averageFactor === null &&
+        field.directRoutes.includes("low_risk");
+      const directInput = routeMarkerInput || factorlessManualInput;
       const key = definition.scope === "shared_body"
         ? `shared:${field.measurementId}`
         : `${resolution.garmentKey}:${field.measurementId}`;
@@ -316,8 +322,22 @@ export const planMeasurementRequirements = ({
           profileId: resolution.profile.id,
           sourceRow: field.sourceRow,
           directInput,
+          inputSource: factorlessManualInput
+            ? "factorless_manual"
+            : "route_marker",
           averageFactor: field.averageFactor,
         });
+      } else if (directInput) {
+        const current = requirements.get(key)!;
+        if (!current.directInput) {
+          requirements.set(key, {
+            ...current,
+            directInput: true,
+            inputSource: factorlessManualInput
+              ? "factorless_manual"
+              : "route_marker",
+          });
+        }
       }
       if (!directInput && field.directRoutes.includes("low_risk")) {
         diagnostics.push({
@@ -329,6 +349,27 @@ export const planMeasurementRequirements = ({
         });
       }
     });
+    const requiresFutureCalculation =
+      route !== "low_risk" &&
+      resolution.profile.fields.some(
+        (field) =>
+          field.directRoutes.includes("low_risk") &&
+          !field.directRoutes.includes(route) &&
+          field.averageFactor !== null,
+      );
+    const hasCanonicalHeightInput = resolution.profile.fields.some(
+      (field) =>
+        field.measurementId === "total_height" &&
+        field.directRoutes.includes(route),
+    );
+    if (requiresFutureCalculation && !hasCanonicalHeightInput) {
+      diagnostics.push({
+        code: "calculation_basis_unresolved",
+        garmentKey: resolution.garmentKey,
+        garmentType: resolution.garmentType,
+        profileId: resolution.profile.id,
+      });
+    }
   });
 
   const orderedRequirements = [...requirements.values()].sort((left, right) =>
@@ -346,6 +387,7 @@ export const planMeasurementRequirements = ({
     requirements: orderedRequirements.map((requirement) => [
       requirement.key,
       requirement.directInput,
+      requirement.inputSource,
       requirement.averageFactor,
     ]),
     diagnostics: diagnostics.map((diagnostic) => [
@@ -392,6 +434,7 @@ export const createEmptyFutureMeasurementState = (
   inputFingerprint: "",
   calculationStatus: "incomplete",
   diagnostics: [],
+  invalidInputKeys: [],
 });
 
 const normalizeValueMap = (
@@ -454,6 +497,11 @@ export const normalizeFutureMeasurementState = (
     inputFingerprint: typeof value.inputFingerprint === "string" ? value.inputFingerprint : "",
     calculationStatus: "incomplete",
     diagnostics: [],
+    invalidInputKeys: Array.isArray(value.invalidInputKeys)
+      ? value.invalidInputKeys.filter(
+          (key): key is string => typeof key === "string" && key.trim().length > 0,
+        )
+      : [],
   };
 };
 
@@ -510,15 +558,26 @@ export const setFutureMeasurementInput = ({
   const target = requirement.scope === "shared"
     ? entered.shared
     : (entered.byGarmentKey[requirement.garmentKey || ""] ||= {});
-  if (displayValue === null || !Number.isFinite(displayValue) || displayValue <= 0) {
+  const invalidInputKeys = state.invalidInputKeys.filter(
+    (key) => key !== requirement.key,
+  );
+  if (displayValue === null) {
     delete target[requirement.measurementId];
+  } else if (!Number.isFinite(displayValue) || displayValue <= 0) {
+    delete target[requirement.measurementId];
+    invalidInputKeys.push(requirement.key);
   } else {
     target[requirement.measurementId] = {
       valueCm: toCanonicalCentimetres(displayValue, state.unit),
       provenance: "customer_entered",
     };
   }
-  return { ...state, entered, derived: { shared: {}, byGarmentKey: {} } };
+  return {
+    ...state,
+    entered,
+    derived: { shared: {}, byGarmentKey: {} },
+    invalidInputKeys,
+  };
 };
 
 export const setFutureMeasurementUnit = (
@@ -539,6 +598,20 @@ export const reconcileFutureMeasurementState = ({
 }): FutureMeasurementStateV1 => {
   const diagnostics = [...plan.diagnostics];
   const requiredDirect = plan.requirements.filter((requirement) => requirement.directInput);
+  const invalidInputKeys = state.invalidInputKeys.filter((key) =>
+    plan.requirements.some((requirement) => requirement.key === key),
+  );
+  invalidInputKeys.forEach((key) => {
+    const requirement = plan.requirements.find((item) => item.key === key);
+    if (!requirement) return;
+    diagnostics.push({
+      code: "invalid_measurement_value",
+      garmentKey: requirement.garmentKey,
+      garmentType: requirement.garmentType,
+      measurementId: requirement.measurementId,
+      profileId: requirement.profileId,
+    });
+  });
   requiredDirect.forEach((requirement) => {
     const value = requirement.scope === "shared"
       ? state.entered.shared[requirement.measurementId]
@@ -556,6 +629,15 @@ export const reconcileFutureMeasurementState = ({
   const configurationPending = diagnostics.some(
     (diagnostic) => diagnostic.code === "calculation_configuration_pending",
   );
+  const profileMappingPending = diagnostics.some(
+    (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
+  );
+  const invalid = diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "invalid_measurement_value" ||
+      diagnostic.code === "invalid_state" ||
+      diagnostic.code === "invalid_measurement_id",
+  );
   const complete = diagnostics.length === 0;
   return {
     ...state,
@@ -566,12 +648,17 @@ export const reconcileFutureMeasurementState = ({
       state.inputFingerprint === plan.inputFingerprint
         ? state.derived
         : { shared: {}, byGarmentKey: {} },
-    calculationStatus: configurationPending
-      ? "configuration_pending"
-      : complete
-        ? "complete"
-        : "incomplete",
+    calculationStatus: invalid
+      ? "invalid"
+      : profileMappingPending
+        ? "profile_mapping_pending"
+        : configurationPending
+          ? "calculation_formula_pending"
+          : complete
+            ? "complete"
+            : "incomplete",
     diagnostics,
+    invalidInputKeys,
   };
 };
 

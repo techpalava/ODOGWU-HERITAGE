@@ -10,6 +10,15 @@ export const MEASUREMENT_FORMULA_VERSION = null;
 export const MEASUREMENT_SOURCE_SHA256 =
   "8B59AB078BDA1A7376CA3A6A77AA24CC3AFA760CCCD0B037C163A886FA919DF7" as const;
 
+/** Source-only provenance. Runtime route selection uses the typed markers below. */
+export const MEASUREMENT_ROUTE_MARKER_STYLE = {
+  conditionalFormattingRange: "G13:H405",
+  rule: "containsText:Yes, Provide",
+  fillArgb: "FF66FFCC",
+  mediumRiskColumn: "G",
+  highRiskColumn: "H",
+} as const;
+
 export type MeasurementProfileId =
   | "A" | "B" | "C" | "D" | "E" | "F" | "G"
   | "H" | "I" | "J" | "K" | "L" | "M";
@@ -68,6 +77,7 @@ export interface MeasurementDefinition {
   kind: MeasurementKind;
   scope: "shared_body" | "garment";
   unitCompatibility: readonly ["inch", "cm"];
+  futureCalculationBasis?: "height";
   instructions?: string;
 }
 
@@ -131,7 +141,10 @@ export const MEASUREMENT_DEFINITIONS: readonly MeasurementDefinition[] = [
   definition("bicep_circumference", "Bicep Circumference (Center Between Shoulder and Elbow)", "Bicep Circumference", "circumference"),
   definition("elbow_circumference", "Elbow Circumference", "Elbow Circumference", "circumference"),
   definition("armhole_circumference", "Arm Hole Circumference (Around Arm-pit)", "Armhole Circumference", "circumference"),
-  definition("total_height", "Height (Total Height)", "Total Height", "total_height"),
+  {
+    ...definition("total_height", "Height (Total Height)", "Total Height", "total_height"),
+    futureCalculationBasis: "height",
+  },
   definition("height_head_to_lower_neck", "Height Length 1: Head Top to Lower Neck (Measure from backside)", "Head Top to Lower Neck", "vertical_length"),
   definition("height_lower_neck_to_waist", "Height Length 2: Lower Neck to Waist (Measure from backside)", "Lower Neck to Waist", "vertical_length"),
   definition("height_waist_to_feet", "Height Length 3: Waist to Feet (Just Below Ankle)", "Waist to Feet", "vertical_length"),

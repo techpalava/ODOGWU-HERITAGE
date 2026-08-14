@@ -14,6 +14,16 @@ assert.match(measurementSource, /Dimension \/ Measurement/);
 assert.match(measurementSource, /Low Risk — Complete Measurement Set/);
 assert.match(measurementSource, /Mid Risk — Minimum Measurement Set/);
 assert.match(measurementSource, /High Risk — Minimal Measurement Set/);
+assert.match(
+  measurementSource,
+  /Your required measurements can be saved, but the assisted calculation method is still being finalised\./,
+);
+assert.match(
+  measurementSource,
+  /Your quick measurements can be saved, but the remaining calculation method is still being finalised\./,
+);
+assert.match(measurementSource, /required manual input/);
+assert.match(measurementSource, /no approved calculation factor/);
 assert.match(measurementSource, /Back to AI Try-on/);
 assert.match(measurementSource, /Summary is locked/);
 assert.match(measurementSource, /aria-live="polite"/);
