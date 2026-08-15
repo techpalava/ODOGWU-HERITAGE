@@ -15,15 +15,23 @@ A missing, malformed, revoked, or revision-mismatched record/claim pair is denie
 
 ## Offline command
 
-The maintenance command uses existing Firebase Admin credentials and accepts a
-Firebase UID only:
+The maintenance command uses existing Firebase Admin credentials for
+authentication, but the target project and Firebase UID must both be explicit:
 
 ```text
-npm run staff-preview:entitlement -- inspect <firebaseUid>
-npm run staff-preview:entitlement -- grant <firebaseUid> --confirm=<firebaseUid>
-npm run staff-preview:entitlement -- revoke <firebaseUid> --confirm=<firebaseUid>
-npm run staff-preview:entitlement -- reconcile <firebaseUid> --confirm=<firebaseUid>
+npm run staff-preview:entitlement -- inspect --project=<projectId> --uid=<firebaseUid>
+npm run staff-preview:entitlement -- grant --project=<projectId> --uid=<firebaseUid> --confirm-project=<projectId> --confirm-uid=<firebaseUid>
+npm run staff-preview:entitlement -- revoke --project=<projectId> --uid=<firebaseUid> --confirm-project=<projectId> --confirm-uid=<firebaseUid>
+npm run staff-preview:entitlement -- reconcile --project=<projectId> --uid=<firebaseUid> --confirm-project=<projectId> --confirm-uid=<firebaseUid>
 ```
+
+Obtain the Firebase UID from Firebase Authentication before running a command.
+Email addresses and positional identifiers are rejected. Mutating commands
+require exact project and UID confirmations. The CLI initializes a dedicated
+Admin app with the supplied project ID and verifies that resolved project before
+performing any Auth or Firestore operation. Environment credentials may
+authenticate the operation, but environment or Firebase configuration values do
+not choose the CLI target project.
 
 `grant` and `revoke` update the entitlement record first. Claim or token failures
 therefore remain fail-closed and are reported as partial failures. `reconcile`

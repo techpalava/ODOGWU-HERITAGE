@@ -370,8 +370,10 @@ assert.doesNotMatch(
   securitySource + serviceSource + cliSource,
   /gen-lang-client|FIREBASE_ADMIN_PRIVATE_KEY|@gmail\.com/i,
 );
-assert.match(cliSource, /inspect <firebaseUid>/);
-assert.match(cliSource, /--confirm=<firebaseUid>/);
+assert.match(cliSource, /inspect --project=<projectId> --uid=<firebaseUid>/);
+assert.match(cliSource, /--confirm-project=<projectId>/);
+assert.match(cliSource, /--confirm-uid=<firebaseUid>/);
+assert.doesNotMatch(cliSource, /inspect <firebaseUid>/);
 assert.doesNotMatch(appSource, /journeyMode=["{']*future_nine_stage/);
 
 console.log("Staff preview entitlement foundation tests passed.");
