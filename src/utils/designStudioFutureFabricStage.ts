@@ -1,6 +1,10 @@
 import { createStyleBaseGarmentSpec, getFabricGarmentSelectionsForComposition } from "../config/StyleFabricCapacityConfig";
 import { FabricAllocationStateEngine } from "../engine/FabricAllocationStateEngine";
-import { FabricCapacityEngine } from "../engine/FabricCapacityEngine";
+import {
+  FabricCapacityEngine,
+  getCustomerFacingFabricQuantityForAllocations,
+  getCustomerFacingFabricQuantityForAssignments,
+} from "../engine/FabricCapacityEngine";
 import type {
   Fabric,
   FabricAllocationState,
@@ -59,6 +63,56 @@ const resolveRequiredAssignments = (
     const resolution = FabricCapacityEngine.resolveGarmentAssignment(garment);
     return resolution.status === "resolved" ? resolution.assignments : [];
   });
+
+export interface FutureGarmentFabricPlanning {
+  requiredGarmentCount: number;
+  requiredFabricQuantity: number;
+  selectedFabricQuantity: number;
+}
+
+/**
+ * Step 1 planning includes its base garments plus physical garments already
+ * appended later in the journey. Capacity units remain the authority for the
+ * required quantity; committed allocation IDs remain the authority for the
+ * selected quantity.
+ */
+export const getFutureGarmentFabricPlanning = ({
+  garmentTypeSelection,
+  fabricAllocationState,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+}): FutureGarmentFabricPlanning => {
+  const assignmentsByKey = new Map<string, FabricGarmentAssignment>();
+  resolveRequiredAssignments(garmentTypeSelection).forEach((assignment) =>
+    assignmentsByKey.set(assignment.garmentKey, assignment),
+  );
+  fabricAllocationState.fabricAllocations.forEach((allocation) =>
+    allocation.garmentAssignments.forEach((assignment) => {
+      if (!assignmentsByKey.has(assignment.garmentKey)) {
+        assignmentsByKey.set(assignment.garmentKey, assignment);
+      }
+    }),
+  );
+  if (fabricAllocationState.pendingFabricGarment) {
+    assignmentsByKey.set(
+      fabricAllocationState.pendingFabricGarment.garmentKey,
+      fabricAllocationState.pendingFabricGarment,
+    );
+  }
+
+  const required = getCustomerFacingFabricQuantityForAssignments([
+    ...assignmentsByKey.values(),
+  ]);
+  const selected = getCustomerFacingFabricQuantityForAllocations(
+    fabricAllocationState.fabricAllocations,
+  );
+  return {
+    requiredGarmentCount: required.garmentCount,
+    requiredFabricQuantity: required.fabricQuantity,
+    selectedFabricQuantity: selected.allocations.length,
+  };
+};
 
 /**
  * Reconciles committed assignments against Step 1 without choosing a fabric on

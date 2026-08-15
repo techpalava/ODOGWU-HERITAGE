@@ -71,12 +71,14 @@ import {
   updateDormantGarmentTypeSelection,
 } from "../utils/designStudioJourneyMode";
 import {
+  getFutureGarmentFabricPlanning,
   getFutureFabricCapacityComposition,
   getFutureFabricGarmentSelections,
   getFutureFabricStageCompletion,
   reconcileFutureFabricAllocationState,
   selectFutureFabric,
 } from "../utils/designStudioFutureFabricStage";
+import { getGarmentTypeSelectedDemographics } from "../utils/garmentTypeStepState";
 import { reconcileFutureDesignStyleSelection } from "../utils/designStudioFutureDesignStyle";
 import {
   calculateGarmentScopedCustomDetailsPricing,
@@ -279,6 +281,10 @@ export default function DesignStudioView({
     garmentTypeSelection,
     fabricAllocationState,
     fabrics,
+  });
+  const futureGarmentFabricPlanning = getFutureGarmentFabricPlanning({
+    garmentTypeSelection,
+    fabricAllocationState,
   });
   const futureDesignStyleSelection = reconcileFutureDesignStyleSelection({
     selectedStyleId: futureSelectedStyleId,
@@ -1189,14 +1195,14 @@ export default function DesignStudioView({
       }),
     );
   };
-  const handleDormantGarmentDemographicChange = (
-    demographic: CustomDetailDemographic,
+  const handleDormantGarmentDemographicsChange = (
+    demographics: CustomDetailDemographic[],
   ) => {
     setGarmentTypeSelection((current) =>
       updateDormantGarmentTypeSelection({
         currentSelection: current,
         normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
-        selectedDemographic: demographic,
+        selectedDemographics: demographics,
       }),
     );
   };
@@ -1479,10 +1485,21 @@ export default function DesignStudioView({
         <div className="space-y-5">
           <GarmentTypeStep
             selectedGarmentTypes={garmentTypeSelection.garmentTypes}
-            selectedDemographic={garmentTypeSelection.demographic}
+            selectedDemographics={getGarmentTypeSelectedDemographics(
+              garmentTypeSelection,
+            )}
+            requiredGarmentCount={
+              futureGarmentFabricPlanning.requiredGarmentCount
+            }
+            requiredFabricQuantity={
+              futureGarmentFabricPlanning.requiredFabricQuantity
+            }
+            selectedFabricQuantity={
+              futureGarmentFabricPlanning.selectedFabricQuantity
+            }
             normalizedCustomDetailCatalog={normalizedGarmentTypeCatalog}
             onGarmentTypesChange={handleDormantGarmentTypesChange}
-            onDemographicChange={handleDormantGarmentDemographicChange}
+            onDemographicsChange={handleDormantGarmentDemographicsChange}
             onConstructionDefaultsChange={
               handleDormantConstructionDefaultsChange
             }

@@ -132,17 +132,20 @@ export const updateDormantGarmentTypeSelection = ({
   currentSelection,
   normalizedCustomDetailCatalog,
   selectedGarmentTypes,
+  selectedDemographics,
   selectedDemographic,
 }: {
   currentSelection: GarmentTypeStepSelection;
   normalizedCustomDetailCatalog: readonly CustomDetailOption[];
   selectedGarmentTypes?: readonly FabricGarmentType[];
+  selectedDemographics?: readonly CustomDetailDemographic[];
   selectedDemographic?: CustomDetailDemographic;
 }): GarmentTypeStepSelection =>
   reconcileGarmentTypeStepSelection({
     persistedSelection: currentSelection,
     normalizedCustomDetailCatalog,
     ...(selectedGarmentTypes !== undefined ? { selectedGarmentTypes } : {}),
+    ...(selectedDemographics !== undefined ? { selectedDemographics } : {}),
     ...(selectedDemographic !== undefined ? { selectedDemographic } : {}),
   }).selection;
 

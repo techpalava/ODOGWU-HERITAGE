@@ -202,8 +202,15 @@ export type GarmentConstructionPricingResolution =
   | ResolvedGarmentConstructionPricing
   | UnresolvedGarmentConstructionPricing;
 
+export interface GarmentTypeAudienceSelectionV1 {
+  schemaVersion: 1;
+  demographics: CustomDetailDemographic[];
+}
+
 export interface GarmentTypeStepSelection {
   garmentTypes: CanonicalPhysicalGarmentType[];
+  audienceSelection?: GarmentTypeAudienceSelectionV1;
+  /** Compatibility projection for downstream rules that still consume one value. */
   demographic: CustomDetailDemographic | null;
   constructionByGarment: Partial<
     Record<

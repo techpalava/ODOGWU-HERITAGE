@@ -10,7 +10,6 @@ import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig"
 import {
   FabricCapacityEngine,
   getCustomerFacingFabricQuantityForAssignments,
-  getFabricGarmentLabel,
 } from "../engine/FabricCapacityEngine";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
@@ -33,6 +32,25 @@ const DEMOGRAPHIC_OPTIONS: ReadonlyArray<{
   },
 ];
 
+const GARMENT_TYPE_STEP_LABELS: Record<
+  Exclude<FabricGarmentType, "other">,
+  string
+> = {
+  shirt: "Standard Shirt",
+  trouser: "Trouser",
+  skirt: "Standard Skirt",
+  standard_shorts: "Standard Shorts (Nikka)",
+  bum_shorts: "Bum Shorts",
+  dress: "Standard Dress",
+  kaftan: "Long Shirt (Kaftan)",
+  full_length_gown: "Long Dress (Gown)",
+  agbada: "Long Shirt (Agbada)",
+};
+
+export const getGarmentTypeStepLabel = (
+  garmentType: Exclude<FabricGarmentType, "other">,
+): string => GARMENT_TYPE_STEP_LABELS[garmentType];
+
 export interface GarmentTypeStepCategoryPresentation {
   garmentType: FabricGarmentType;
   label: string;
@@ -54,10 +72,13 @@ export interface GarmentTypeStepPresentation {
 
 export interface GarmentTypeStepProps {
   selectedGarmentTypes: readonly FabricGarmentType[];
-  selectedDemographic: CustomDetailDemographic | null;
+  selectedDemographics: readonly CustomDetailDemographic[];
+  requiredGarmentCount?: number;
+  requiredFabricQuantity?: number;
+  selectedFabricQuantity?: number;
   normalizedCustomDetailCatalog: readonly CustomDetailOption[];
   onGarmentTypesChange: (garmentTypes: FabricGarmentType[]) => void;
-  onDemographicChange: (demographic: CustomDetailDemographic) => void;
+  onDemographicsChange: (demographics: CustomDetailDemographic[]) => void;
   onConstructionDefaultsChange: (
     resolutions: GarmentConstructionPricingResolution[],
   ) => void;
@@ -79,6 +100,19 @@ export const updateGarmentTypeSelection = (
 
   return CANONICAL_PHYSICAL_GARMENT_TYPES.filter((type) =>
     currentSet.has(type),
+  );
+};
+
+export const updateGarmentTypeDemographics = (
+  current: readonly CustomDetailDemographic[],
+  demographic: CustomDetailDemographic,
+  selected: boolean,
+): CustomDetailDemographic[] => {
+  const currentSet = new Set(current);
+  if (selected) currentSet.add(demographic);
+  else currentSet.delete(demographic);
+  return DEMOGRAPHIC_OPTIONS.map((option) => option.value).filter((value) =>
+    currentSet.has(value),
   );
 };
 
@@ -114,7 +148,7 @@ export const getGarmentTypeStepPresentation = ({
   return {
     categories: CANONICAL_PHYSICAL_GARMENT_TYPES.map((garmentType) => ({
       garmentType,
-      label: getFabricGarmentLabel(garmentType),
+      label: getGarmentTypeStepLabel(garmentType),
       fabricUnits: createStyleBaseGarmentSpec(garmentType).fabricUnits,
       selected: selectedSet.has(garmentType),
       constructionPricing:
@@ -140,10 +174,13 @@ export const getGarmentTypeStepPresentation = ({
 
 export const GarmentTypeStep = ({
   selectedGarmentTypes,
-  selectedDemographic,
+  selectedDemographics,
+  requiredGarmentCount,
+  requiredFabricQuantity,
+  selectedFabricQuantity = 0,
   normalizedCustomDetailCatalog,
   onGarmentTypesChange,
-  onDemographicChange,
+  onDemographicsChange,
   onConstructionDefaultsChange,
   statusMessage = null,
   idPrefix = "garment-type-step",
@@ -155,6 +192,8 @@ export const GarmentTypeStep = ({
   const hasUnresolvedConstructionPricing = presentation.constructionPricing.some(
     (resolution) => resolution.status === "unresolved",
   );
+  const garmentCount = requiredGarmentCount ?? presentation.garmentCount;
+  const fabricQuantity = requiredFabricQuantity ?? presentation.fabricQuantity;
 
   const handleGarmentChange = (
     garmentType: FabricGarmentType,
@@ -173,6 +212,19 @@ export const GarmentTypeStep = ({
     onConstructionDefaultsChange(nextPresentation.constructionPricing);
   };
 
+  const handleDemographicChange = (
+    demographic: CustomDetailDemographic,
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    onDemographicsChange(
+      updateGarmentTypeDemographics(
+        selectedDemographics,
+        demographic,
+        event.currentTarget.checked,
+      ),
+    );
+  };
+
   return (
     <section
       aria-labelledby={`${idPrefix}-title`}
@@ -187,7 +239,7 @@ export const GarmentTypeStep = ({
             id={`${idPrefix}-title`}
             className="mt-1 font-serif text-3xl font-bold text-heritage-green"
           >
-            Garment Type
+            What garment type do you want to order?
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-heritage-ink/70">
             Select every physical garment included in this order, then choose who it is for.
@@ -196,7 +248,7 @@ export const GarmentTypeStep = ({
 
         <fieldset className="mt-6 min-w-0">
           <legend className="font-serif text-lg font-bold text-heritage-green">
-            Garment composition
+            Garment Type
           </legend>
           <p className="mt-1 text-xs text-heritage-ink/60">
             Choose one or more garments. Construction pricing is selected from the current catalogue.
@@ -260,12 +312,12 @@ export const GarmentTypeStep = ({
 
         <fieldset className="mt-7 min-w-0 border-t border-heritage-gold/15 pt-6">
           <legend className="font-serif text-lg font-bold text-heritage-green">
-            Who is this order for?
+            Who is this design for?
           </legend>
           <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
             {DEMOGRAPHIC_OPTIONS.map((option) => {
               const inputId = `${idPrefix}-demographic-${option.value}`;
-              const selected = selectedDemographic === option.value;
+              const selected = selectedDemographics.includes(option.value);
               return (
                 <label
                   key={option.value}
@@ -278,11 +330,12 @@ export const GarmentTypeStep = ({
                 >
                   <input
                     id={inputId}
-                    name={`${idPrefix}-demographic`}
-                    type="radio"
+                    type="checkbox"
                     value={option.value}
                     checked={selected}
-                    onChange={() => onDemographicChange(option.value)}
+                    onChange={(event) =>
+                      handleDemographicChange(option.value, event)
+                    }
                     className="mt-0.5 h-5 w-5 shrink-0 accent-heritage-green"
                   />
                   <span className="min-w-0">
@@ -303,14 +356,19 @@ export const GarmentTypeStep = ({
           <Layers3 aria-hidden="true" size={20} className="mt-0.5 shrink-0 text-heritage-gold" />
           <div className="min-w-0 flex-1">
             <p className="break-words text-sm font-bold text-heritage-green">
-              {presentation.garmentCount > 0
-                ? `${presentation.garmentCount} ${presentation.garmentCount === 1 ? "garment" : "garments"} • ${presentation.fabricQuantity} ${presentation.fabricQuantity === 1 ? "fabric quantity" : "fabric quantities"}`
+              {garmentCount > 0
+                ? `${fabricQuantity} ${fabricQuantity === 1 ? "fabric" : "fabrics"} · ${garmentCount} ${garmentCount === 1 ? "garment" : "garments"}`
                 : "Select garment types to see fabric quantities."}
             </p>
-            {presentation.requiresMultipleFabricAllocations && (
-              <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/65">
-                This composition requires multiple fabric allocations.
-              </p>
+            {garmentCount > 0 && (
+              <>
+                <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/65">
+                  You need {fabricQuantity} {fabricQuantity === 1 ? "fabric" : "fabrics"} for your {garmentCount} {garmentCount === 1 ? "garment" : "garments"}.
+                </p>
+                <p className="mt-2 break-words text-xs font-semibold text-heritage-green">
+                  Fabrics selected: {selectedFabricQuantity} / {fabricQuantity}
+                </p>
+              </>
             )}
           </div>
         </div>

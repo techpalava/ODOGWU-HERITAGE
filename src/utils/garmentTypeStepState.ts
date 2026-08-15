@@ -24,6 +24,12 @@ const DEMOGRAPHIC_SET = new Set<CustomDetailDemographic>([
   "female",
   "unisex",
 ]);
+const DEMOGRAPHIC_ORDER: readonly CustomDetailDemographic[] = [
+  "male",
+  "female",
+  "unisex",
+];
+export const GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION = 1 as const;
 const FAILURE_CODE_SET = new Set<GarmentConstructionPricingFailureCode>([
   "unsupported_garment",
   "missing_construction_configuration",
@@ -57,6 +63,46 @@ const normalizeDemographic = (
   DEMOGRAPHIC_SET.has(value as CustomDetailDemographic)
     ? (value as CustomDetailDemographic)
     : null;
+
+const normalizeVersionedDemographics = (value: unknown) => {
+  if (!isRecord(value) || value.schemaVersion !== GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION) {
+    return null;
+  }
+  if (
+    !Array.isArray(value.demographics) ||
+    value.demographics.some(
+      (entry) =>
+        typeof entry !== "string" ||
+        !DEMOGRAPHIC_SET.has(entry as CustomDetailDemographic),
+    )
+  ) {
+    return [];
+  }
+  const selected = new Set(
+    value.demographics as CustomDetailDemographic[],
+  );
+  return DEMOGRAPHIC_ORDER.filter((demographic) => selected.has(demographic));
+};
+
+export const getGarmentTypeSelectedDemographics = (
+  selection: Pick<GarmentTypeStepSelection, "audienceSelection" | "demographic">,
+): CustomDetailDemographic[] => {
+  const versioned = normalizeVersionedDemographics(selection.audienceSelection);
+  if (selection.audienceSelection !== undefined) return versioned || [];
+  const legacy = normalizeDemographic(selection.demographic);
+  return legacy ? [legacy] : [];
+};
+
+export const getGarmentTypeCompatibilityDemographic = (
+  demographics: readonly CustomDetailDemographic[],
+): CustomDetailDemographic | null => {
+  const normalized = normalizeVersionedDemographics({
+    schemaVersion: GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
+    demographics,
+  });
+  if (!normalized || normalized.length === 0) return null;
+  return normalized.length === 1 ? normalized[0] : "unisex";
+};
 
 const clonePersistedComponent = (
   value: unknown,
@@ -145,9 +191,24 @@ export const normalizePersistedGarmentTypeStepSelection = (
     if (resolution) constructionByGarment[garmentType] = resolution;
   });
 
+  const versionedDemographics = normalizeVersionedDemographics(
+    candidate.audienceSelection,
+  );
+  const legacyDemographic = normalizeDemographic(candidate.demographic);
+  const demographics =
+    candidate.audienceSelection !== undefined
+      ? versionedDemographics || []
+      : legacyDemographic
+        ? [legacyDemographic]
+        : [];
+
   return {
     garmentTypes,
-    demographic: normalizeDemographic(candidate.demographic),
+    audienceSelection: {
+      schemaVersion: GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
+      demographics,
+    },
+    demographic: getGarmentTypeCompatibilityDemographic(demographics),
     constructionByGarment,
   };
 };
@@ -221,6 +282,7 @@ export interface GarmentTypeStepReconciliationResult {
 
 export interface ReconcileGarmentTypeStepSelectionInput {
   selectedGarmentTypes?: unknown;
+  selectedDemographics?: unknown;
   selectedDemographic?: unknown;
   normalizedCustomDetailCatalog: readonly CustomDetailOption[];
   persistedSelection?: unknown;
@@ -228,6 +290,7 @@ export interface ReconcileGarmentTypeStepSelectionInput {
 
 export const reconcileGarmentTypeStepSelection = ({
   selectedGarmentTypes,
+  selectedDemographics,
   selectedDemographic,
   normalizedCustomDetailCatalog,
   persistedSelection,
@@ -237,10 +300,19 @@ export const reconcileGarmentTypeStepSelection = ({
     selectedGarmentTypes === undefined
       ? previous.garmentTypes
       : normalizeGarmentTypes(selectedGarmentTypes);
-  const demographic =
-    selectedDemographic === undefined
-      ? previous.demographic
-      : normalizeDemographic(selectedDemographic);
+  const demographics =
+    selectedDemographics !== undefined
+      ? normalizeVersionedDemographics({
+          schemaVersion: GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
+          demographics: selectedDemographics,
+        }) || []
+      : selectedDemographic !== undefined
+        ? (() => {
+            const normalized = normalizeDemographic(selectedDemographic);
+            return normalized ? [normalized] : [];
+          })()
+        : getGarmentTypeSelectedDemographics(previous);
+  const demographic = getGarmentTypeCompatibilityDemographic(demographics);
   const constructionByGarment: GarmentTypeStepSelection["constructionByGarment"] = {};
   const priceChanges: GarmentTypeStepPriceChange[] = [];
   const unresolvedGarmentTypes: CanonicalPhysicalGarmentType[] = [];
@@ -279,7 +351,15 @@ export const reconcileGarmentTypeStepSelection = ({
   });
 
   return {
-    selection: { garmentTypes, demographic, constructionByGarment },
+    selection: {
+      garmentTypes,
+      audienceSelection: {
+        schemaVersion: GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
+        demographics,
+      },
+      demographic,
+      constructionByGarment,
+    },
     priceChanges,
     unresolvedGarmentTypes,
   };
@@ -308,6 +388,7 @@ export const reconcileGuestDesignDraftGarmentTypeSelection = <
 
 export interface GarmentTypeStepControlledState {
   selectedGarmentTypes: CanonicalPhysicalGarmentType[];
+  selectedDemographics: CustomDetailDemographic[];
   selectedDemographic: CustomDetailDemographic | null;
   constructionDefaults: GarmentConstructionPricingResolution[];
 }
@@ -316,6 +397,7 @@ export const getGarmentTypeStepControlledState = (
   selection: GarmentTypeStepSelection,
 ): GarmentTypeStepControlledState => ({
   selectedGarmentTypes: [...selection.garmentTypes],
+  selectedDemographics: getGarmentTypeSelectedDemographics(selection),
   selectedDemographic: selection.demographic,
   constructionDefaults: selection.garmentTypes.flatMap((garmentType) => {
     const resolution = selection.constructionByGarment[garmentType];
@@ -325,6 +407,7 @@ export const getGarmentTypeStepControlledState = (
 
 export type GarmentTypeStepSelectionAction =
   | { type: "set_garment_types"; garmentTypes: unknown }
+  | { type: "set_demographics"; demographics: unknown }
   | { type: "set_demographic"; demographic: unknown };
 
 export const reduceGarmentTypeStepSelection = (
@@ -337,5 +420,7 @@ export const reduceGarmentTypeStepSelection = (
     normalizedCustomDetailCatalog,
     ...(action.type === "set_garment_types"
       ? { selectedGarmentTypes: action.garmentTypes }
-      : { selectedDemographic: action.demographic }),
+      : action.type === "set_demographics"
+        ? { selectedDemographics: action.demographics }
+        : { selectedDemographic: action.demographic }),
   });

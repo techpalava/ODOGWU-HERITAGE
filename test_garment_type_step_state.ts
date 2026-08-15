@@ -5,9 +5,15 @@ import type {
   GuestDesignDraft,
 } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
-import { DESIGN_STUDIO_NINE_STAGE_FOUNDATION } from "./src/utils/designSourceJourney";
+import {
+  DESIGN_STUDIO_NINE_STAGE_FOUNDATION,
+  DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+} from "./src/utils/designSourceJourney";
 import {
   getGarmentTypeStepControlledState,
+  GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
+  getGarmentTypeCompatibilityDemographic,
+  getGarmentTypeSelectedDemographics,
   normalizePersistedGarmentTypeStepSelection,
   reconcileGarmentTypeStepSelection,
   reconcileGuestDesignDraftGarmentTypeSelection,
@@ -37,6 +43,10 @@ const initial = reconcileGarmentTypeStepSelection({
 });
 assert.deepEqual(initial.selection.garmentTypes, allGarments);
 assert.equal(initial.selection.demographic, "unisex");
+assert.deepEqual(initial.selection.audienceSelection, {
+  schemaVersion: GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
+  demographics: ["unisex"],
+});
 assert.equal(Object.keys(initial.selection.constructionByGarment).length, 9);
 
 const shirt = initial.selection.constructionByGarment.shirt;
@@ -213,11 +223,79 @@ assert.deepEqual(
     garmentTypes: [null, "shirt", "shirt", "other", 12],
     demographic: "unknown",
   }),
-  { garmentTypes: ["shirt"], demographic: null, constructionByGarment: {} },
+  {
+    garmentTypes: ["shirt"],
+    audienceSelection: { schemaVersion: 1, demographics: [] },
+    demographic: null,
+    constructionByGarment: {},
+  },
+);
+
+const migratedLegacyAudience = normalizePersistedGarmentTypeStepSelection({
+  garmentTypes: ["shirt"],
+  demographic: "female",
+});
+assert.deepEqual(migratedLegacyAudience.audienceSelection, {
+  schemaVersion: 1,
+  demographics: ["female"],
+});
+assert.equal(migratedLegacyAudience.demographic, "female");
+
+const restoredMultipleAudiences = normalizePersistedGarmentTypeStepSelection({
+  garmentTypes: ["shirt"],
+  audienceSelection: {
+    schemaVersion: 1,
+    demographics: ["female", "male"],
+  },
+  demographic: "female",
+});
+assert.deepEqual(getGarmentTypeSelectedDemographics(restoredMultipleAudiences), [
+  "male",
+  "female",
+]);
+assert.equal(
+  restoredMultipleAudiences.demographic,
+  "unisex",
+  "Multiple explicit audiences project to the existing inclusive compatibility value.",
+);
+assert.equal(
+  getGarmentTypeCompatibilityDemographic(["male", "female"]),
+  "unisex",
+);
+
+const malformedVersionedAudience = normalizePersistedGarmentTypeStepSelection({
+  garmentTypes: ["shirt"],
+  audienceSelection: {
+    schemaVersion: 1,
+    demographics: ["female", "unknown"],
+  },
+  demographic: "female",
+});
+assert.deepEqual(
+  malformedVersionedAudience.audienceSelection?.demographics,
+  [],
+  "Malformed versioned audience data must fail closed rather than guess from a legacy field.",
+);
+assert.equal(malformedVersionedAudience.demographic, null);
+
+const unsupportedVersionedAudience = normalizePersistedGarmentTypeStepSelection({
+  garmentTypes: ["shirt"],
+  audienceSelection: {
+    schemaVersion: 2,
+    demographics: ["female"],
+  },
+  demographic: "female",
+});
+assert.deepEqual(unsupportedVersionedAudience.audienceSelection?.demographics, []);
+assert.equal(
+  unsupportedVersionedAudience.demographic,
+  null,
+  "An unsupported audience schema must not fall back to a legacy guess.",
 );
 
 const controlled = getGarmentTypeStepControlledState(initial.selection);
 assert.deepEqual(controlled.selectedGarmentTypes, allGarments);
+assert.deepEqual(controlled.selectedDemographics, ["unisex"]);
 assert.equal(controlled.selectedDemographic, "unisex");
 assert.equal(controlled.constructionDefaults.length, 9);
 
@@ -229,7 +307,20 @@ const demographicChanged = reduceGarmentTypeStepSelection(
 assert.deepEqual(demographicChanged.selection.garmentTypes, allGarments);
 assert.equal(demographicChanged.selection.demographic, "female");
 
+const demographicsChanged = reduceGarmentTypeStepSelection(
+  demographicChanged.selection,
+  { type: "set_demographics", demographics: ["male", "female"] },
+  catalog,
+);
+assert.deepEqual(
+  demographicsChanged.selection.audienceSelection?.demographics,
+  ["male", "female"],
+);
+assert.equal(demographicsChanged.selection.demographic, "unisex");
+
 const baseDraft = {
+  journeySchemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+  currentStageId: "garment_type" as const,
   currentStep: 1,
   selectedFabricCode: null,
   selectedStyleId: null,
