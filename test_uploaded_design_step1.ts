@@ -208,28 +208,39 @@ const studioSource = readFileSync(
   fileURLToPath(new URL("./src/components/DesignStudioView.tsx", import.meta.url)),
   "utf8",
 );
-assert.match(studioSource, /data-testid="upload-your-design-panel"/);
-assert(
-  studioSource.indexOf('data-testid="upload-your-design-panel"') <
-    studioSource.indexOf("{/* Filtering & Search Bar */}"),
-  "The upload panel must appear above catalog search and filters.",
+const designStyleStepSource = readFileSync(
+  fileURLToPath(
+    new URL("./src/components/DormantFutureDesignStyleStep.tsx", import.meta.url),
+  ),
+  "utf8",
 );
-assert.match(studioSource, /Upload Your Design/);
-assert.match(studioSource, /Use Uploaded Design as Reference/);
+assert.match(designStyleStepSource, /data-testid="upload-your-design-panel"/);
+assert(
+  designStyleStepSource.indexOf("compatibilityByStyle.map") <
+    designStyleStepSource.indexOf('data-testid="upload-your-design-panel"'),
+  "The upload panel must appear below the Design Style catalogue.",
+);
+assert.match(designStyleStepSource, /Upload Your Design/);
 assert.match(studioSource, /CustomerDesignUploadService\.validateCustomerDesignFile/);
 assert.match(studioSource, /CustomerDesignUploadService\.uploadCustomerDesignDraft/);
 assert.match(studioSource, /CustomerDesignUploadService\.replaceCustomerDesignDraft/);
 assert.match(studioSource, /CustomerDesignUploadService\.readCustomerDesignDraft/);
 assert.match(studioSource, /CustomerDesignUploadService\.deleteCustomerDesignDraft/);
-assert.match(studioSource, /CUSTOMER_DESIGN_IMAGE_MIME_TYPES\.join/);
-assert.match(studioSource, /Continue with Uploaded Design/);
-assert.match(studioSource, /fabric quantit/);
-assert.doesNotMatch(studioSource, /fabric unit\{uploadedDesignCapacitySummary/);
-assert.match(studioSource, /setConfirmedStyleId\(null\)/);
-assert.match(studioSource, /setConfirmedDesignSourceKey\(resolvedDesignSource\.sourceKey\)/);
+assert.match(designStyleStepSource, /CUSTOMER_DESIGN_IMAGE_MIME_TYPES\.join/);
+assert.match(designStyleStepSource, /Continue with Uploaded Design/);
+assert.match(designStyleStepSource, /fabric quantit/);
+assert.match(studioSource, /setFutureConfirmedDesignSourceKey\(activeUploadedDesignSource\.sourceKey\)/);
+assert.match(studioSource, /setFuturePriceActivatedFabricCode\(null\)/);
+assert.match(studioSource, /reconcileFutureFabricAllocationState/);
+assert.match(studioSource, /selectedGarmentTypes:[\s\S]*fabricCapacityComposition/);
 assert.match(studioSource, /URL\.revokeObjectURL/);
-assert.doesNotMatch(studioSource, /Uploaded design checkout is not available yet/);
 assert.doesNotMatch(studioSource, /getDownloadURL/);
-assert.doesNotMatch(studioSource, /storagePath\}/);
+assert.doesNotMatch(designStyleStepSource, /storagePath/);
+assert.match(studioSource, /case "READ_NOT_AUTHORIZED":/);
+assert.doesNotMatch(
+  studioSource,
+  /CustomerDesignUploadError[\s\S]{0,120}\? error\.message/,
+  "Customer-facing upload errors must not expose raw ownership or storage details.",
+);
 
 console.log("PASS: uploaded design Step 1 readiness, composition, capacity, and secure UI wiring");

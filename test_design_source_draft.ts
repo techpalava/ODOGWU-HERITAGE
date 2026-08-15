@@ -413,11 +413,19 @@ const uploadServiceSource = readFileSync(
   ),
   "utf8",
 );
-assert.doesNotMatch(
-  designStudioSource,
-  /CustomerDesignUploadService|type=["']file["']/,
-  "Uploaded designs must remain isolated until their nine-stage placement is approved.",
+const designStyleStepSource = readFileSync(
+  fileURLToPath(
+    new URL("./src/components/DormantFutureDesignStyleStep.tsx", import.meta.url),
+  ),
+  "utf8",
 );
+assert.match(designStudioSource, /CustomerDesignUploadService/);
+assert.match(designStudioSource, /designSource: activeDesignSource/);
+assert.match(designStudioSource, /confirmedDesignSourceKey:/);
+assert.match(designStudioSource, /priceActivatedFabricCode:/);
+assert.match(designStyleStepSource, /type="file"/);
+assert.match(designStyleStepSource, /data-testid="upload-your-design-panel"/);
+assert.doesNotMatch(designStyleStepSource, /getDownloadURL|storagePath/);
 assert.match(uploadServiceSource, /uploadCustomerDesignDraft/);
 assert.match(uploadServiceSource, /readCustomerDesignDraft/);
 assert.match(uploadServiceSource, /deleteCustomerDesignDraft/);

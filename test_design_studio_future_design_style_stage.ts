@@ -87,7 +87,15 @@ assert.match(
   componentSource,
   /Supports: \{getFutureDesignStyleCompositionLabel\(style\)\}/,
 );
-assert.equal(componentSource.includes("Upload Your Own Design"), false);
+assert.match(componentSource, /Upload Your Own Design/);
+assert.match(componentSource, /data-testid="upload-your-design-panel"/);
+assert(
+  componentSource.indexOf("compatibilityByStyle.map") <
+    componentSource.indexOf('data-testid="upload-your-design-panel"'),
+  "The catalogue must remain before the uploaded-design module.",
+);
+assert.match(componentSource, /Continue with Uploaded Design/);
+assert.match(componentSource, /Final review and payment for uploaded designs remain unavailable/);
 assert.equal(componentSource.includes("handleStyleChange"), false);
 assert.equal(componentSource.includes("setFabricAllocationState"), false);
 assert.match(componentSource, /Continue to Custom Details/);

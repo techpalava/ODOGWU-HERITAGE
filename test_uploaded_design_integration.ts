@@ -16,6 +16,7 @@ import {
   resolveActiveCustomDetailDesignContext,
   resolveActiveDesignComposition,
 } from "./src/utils/designSourceState";
+import { buildFutureOrderCandidate } from "./src/utils/futureOrderCandidate";
 import { resolveShippingGarmentPieceCount } from "./src/utils/shippingPricing";
 
 const createUploadedContext = (
@@ -183,9 +184,20 @@ const studioSource = readFileSync(
   fileURLToPath(new URL("./src/components/DesignStudioView.tsx", import.meta.url)),
   "utf8",
 );
-assert.match(studioSource, /resolveActiveDesignComposition\(/);
-assert.match(studioSource, /resolveActiveCustomDetailDesignContext\(/);
-assert.match(studioSource, /syncPrimaryGarmentComposition\(/);
-assert.match(studioSource, /uploadedDesignShippingReady/);
+const designStyleStepSource = readFileSync(
+  fileURLToPath(
+    new URL("./src/components/DormantFutureDesignStyleStep.tsx", import.meta.url),
+  ),
+  "utf8",
+);
+assert.match(studioSource, /createUploadedDesignSourceWhenReady/);
+assert.match(studioSource, /reconcileFutureFabricAllocationState/);
+assert.match(studioSource, /activeFutureDesignSource/);
+assert.match(studioSource, /source: activeFutureDesignSource/);
+assert.match(studioSource, /isFutureDesignSourceReadyForCustomDetails/);
+assert.match(designStyleStepSource, /data-testid="upload-your-design-panel"/);
+assert.match(designStyleStepSource, /Final review and payment for uploaded designs remain unavailable/);
+assert.equal(typeof buildFutureOrderCandidate, "function");
+assert.doesNotMatch(studioSource, /uploadedDesignShippingReady/);
 
 console.log("PASS: uploaded design capacity, shipping, and custom-detail integration");

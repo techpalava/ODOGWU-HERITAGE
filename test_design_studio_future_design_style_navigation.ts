@@ -88,7 +88,8 @@ const stepperSource = readFileSync(
 const appSource = readFileSync("src/App.tsx", "utf8");
 
 assert.match(studioSource, /setFutureSelectedStyleId/);
-assert.match(studioSource, /onSelectStyle=\{setFutureSelectedStyleId\}/);
+assert.match(studioSource, /onSelectStyle=\{handleSelectFutureStyle\}/);
+assert.match(studioSource, /onContinueUploadedDesign=\{handleContinueWithUploadedDesign\}/);
 assert.match(studioSource, /onContinue=\{handleOpenDormantDesignStyleStage\}/);
 assert.match(studioSource, /futureFabricStageCompletion\.isComplete/);
 const futureFabricSelectionHandler = studioSource.slice(
@@ -107,7 +108,8 @@ const futurePricingBlock = studioSource.slice(
 assert.equal(futurePricingBlock.includes("style:"), false);
 assert.equal(styleStepSource.includes("handleStyleChange"), false);
 assert.equal(styleStepSource.includes("setFabricAllocationState"), false);
-assert.equal(styleStepSource.includes("Upload Your Own Design"), false);
+assert.match(styleStepSource, /Upload Your Own Design/);
+assert.match(styleStepSource, /Continue with Uploaded Design/);
 assert.match(styleStepSource, /Continue to Custom Details/);
 assert.match(styleStepSource, /disabled/);
 assert.match(stepperSource, /canEnterDesignStyle/);

@@ -360,12 +360,15 @@ const candidateSource = readFileSync(
   fileURLToPath(new URL("./src/utils/futureOrderCandidate.ts", import.meta.url)),
   "utf8",
 );
-assert.match(studioSource, /createCatalogDesignSource\(futureSelectedStyleId/);
-assert.doesNotMatch(
+assert.match(studioSource, /createUploadedDesignSourceWhenReady/);
+assert.match(studioSource, /source: activeFutureDesignSource/);
+assert.match(
   studioSource,
-  /createUploadedDesignSource/,
-  "The active nine-stage journey must not silently create an uploaded source.",
+  /!activeUploadedDesignSource \|\| isFutureUploadedDesignPricingActive/,
+  "Uploaded construction pricing must remain inactive until Fabric confirmation.",
 );
+assert.match(studioSource, /setFuturePriceActivatedFabricCode\(null\)/);
+assert.match(studioSource, /setFuturePriceActivatedFabricCode\(futurePrimaryFabricCode\)/);
 assert.match(candidateSource, /UNSUPPORTED_FUTURE_SOURCE/);
 assert.match(candidateSource, /source\?\.kind === "catalog"/);
 assert.match(
