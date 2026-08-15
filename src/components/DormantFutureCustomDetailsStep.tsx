@@ -279,8 +279,11 @@ export const DormantFutureCustomDetailsStep = ({
       (element) =>
         element.dataset.parentGarmentKey === focusAdditionalGarmentKey,
     );
-    target?.scrollIntoView({ behavior: "smooth", block: "center" });
-    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    (
+      target?.querySelector<HTMLElement>("[data-added-garment-heading]") ||
+      target
+    )?.focus({ preventScroll: true });
   }, [focusAdditionalGarmentKey, catalogue.coreGroups]);
 
   const closeAdditionalGarmentChoice = () => {
@@ -546,10 +549,17 @@ export const DormantFutureCustomDetailsStep = ({
                         <div
                           key={occurrence.subject.garmentKey}
                           data-parent-garment-key={occurrence.subject.parentGarmentKey}
-                          tabIndex={-1}
                           className="min-w-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                         >
-                          {group.occurrences.length > 1 && <p className="mb-2 break-words text-xs font-bold uppercase tracking-wide text-heritage-green">{getSubjectLabel(occurrence.subject)} {occurrence.role === "additional" ? "- Added garment" : "- Base garment"}</p>}
+                          <h4
+                            data-added-garment-heading={
+                              occurrence.role === "additional" ? "true" : undefined
+                            }
+                            tabIndex={occurrence.role === "additional" ? -1 : undefined}
+                            className={`mb-2 break-words text-xs font-bold uppercase tracking-wide outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${occurrence.role === "additional" ? "text-heritage-gold" : "text-heritage-green"}`}
+                          >
+                            {getSubjectLabel(occurrence.subject)} - {occurrence.role === "additional" ? "Added garment" : "Base garment"}
+                          </h4>
                           {renderOptions(group, occurrence)}
                         </div>
                       ))
@@ -587,24 +597,26 @@ export const DormantFutureCustomDetailsStep = ({
         <div ref={contentRef} className="min-w-0 space-y-5">
           {coreSections.map(renderCatalogueSection)}
 
-          <section data-custom-detail-section="additional-clothes-costs" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
-            <header className="border-b border-heritage-gold/35 pb-3"><h3 className="font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Additional Clothes Costs</h3>
-            <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">Optional enhancements apply only to included garment occurrences.</p>
-            </header>
-            <div className="mt-5 space-y-6">
-              {catalogue.additionalCostGroups.map((group) => (
-                <fieldset key={group.selectionGroup} className="min-w-0 border-t border-heritage-gold/15 pt-4 first:border-0 first:pt-0">
-                  <legend className="flex min-w-0 flex-wrap items-center gap-2 font-serif text-base font-bold text-heritage-green"><span className="min-w-0 break-words">{group.title}</span><span className="rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold">{group.occurrences.length > 0 ? "Optional" : "Not currently included"}</span></legend>
-                  <p className="mt-1 text-xs text-heritage-ink/60">{group.occurrences.length > 0 ? "Available for your included garments." : "Not currently included."}</p>
-                  <div className="mt-3 space-y-4">
-                    {group.occurrences.length > 0
-                      ? group.occurrences.map((occurrence) => <div key={occurrence.subject.garmentKey} className="min-w-0"><p className="mb-2 break-words text-xs font-bold text-heritage-green">{getSubjectLabel(occurrence.subject)}</p>{renderOptions(group, occurrence)}</div>)
-                      : renderOptions(group, null)}
-                  </div>
-                </fieldset>
-              ))}
-            </div>
-          </section>
+          {catalogue.additionalCostGroups.length > 0 && (
+            <section data-custom-detail-section="additional-clothes-costs" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
+              <header className="border-b border-heritage-gold/35 pb-3"><h3 className="font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Additional Clothes Costs</h3>
+              <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">Optional enhancements apply only to included garment occurrences.</p>
+              </header>
+              <div className="mt-5 space-y-6">
+                {catalogue.additionalCostGroups.map((group) => (
+                  <fieldset key={group.selectionGroup} className="min-w-0 border-t border-heritage-gold/15 pt-4 first:border-0 first:pt-0">
+                    <legend className="flex min-w-0 flex-wrap items-center gap-2 font-serif text-base font-bold text-heritage-green"><span className="min-w-0 break-words">{group.title}</span><span className="rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold">{group.occurrences.length > 0 ? "Optional" : "Not currently included"}</span></legend>
+                    <p className="mt-1 text-xs text-heritage-ink/60">{group.occurrences.length > 0 ? "Available for your included garments." : "Not currently included."}</p>
+                    <div className="mt-3 space-y-4">
+                      {group.occurrences.length > 0
+                        ? group.occurrences.map((occurrence) => <div key={occurrence.subject.garmentKey} className="min-w-0"><p className="mb-2 break-words text-xs font-bold text-heritage-green">{getSubjectLabel(occurrence.subject)}</p>{renderOptions(group, occurrence)}</div>)
+                        : renderOptions(group, null)}
+                    </div>
+                  </fieldset>
+                ))}
+              </div>
+            </section>
+          )}
 
           {renderCatalogueSection({
             title: "Miscellaneous - Personalized Additional",
@@ -667,8 +679,8 @@ export const DormantFutureCustomDetailsStep = ({
       </div>
 
       {additionalGarmentChoice && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/55 p-4"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) closeAdditionalGarmentChoice();
           }}
@@ -679,7 +691,7 @@ export const DormantFutureCustomDetailsStep = ({
             aria-modal="true"
             aria-labelledby="additional-garment-choice-title"
             onKeyDown={handleChoiceDialogKeyDown}
-            className="w-full max-w-lg rounded-2xl border border-heritage-gold/30 bg-white p-5 shadow-2xl sm:p-6"
+            className="my-auto w-full max-w-lg overflow-y-auto rounded-2xl border border-heritage-gold/30 bg-white p-5 shadow-2xl sm:p-6"
           >
             <div className="flex min-w-0 items-start justify-between gap-4">
               <div className="min-w-0">
@@ -687,7 +699,7 @@ export const DormantFutureCustomDetailsStep = ({
                   Add {getFabricGarmentLabel(additionalGarmentChoice.garmentType)}
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-heritage-ink/70">
-                  Choose how to configure Custom Details for this new garment.
+                  Choose how you would like to configure this garment.
                 </p>
               </div>
               <button type="button" onClick={closeAdditionalGarmentChoice} aria-label="Close additional garment choices" className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/20 text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><X aria-hidden="true" size={18} /></button>
@@ -707,9 +719,15 @@ export const DormantFutureCustomDetailsStep = ({
               </fieldset>
             )}
 
-            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <button type="button" disabled={!selectedCopySource} onClick={() => selectedCopySource && submitAdditionalGarmentChoice({ mode: "copy", sourceParentGarmentKey: selectedCopySource })} className="inline-flex min-h-11 items-center justify-center rounded-xl border-2 border-heritage-green px-4 text-sm font-bold text-heritage-green transition hover:bg-heritage-green/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Use Same Custom Details</button>
-              <button type="button" onClick={() => submitAdditionalGarmentChoice({ mode: "choose" })} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-4 text-sm font-bold text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">Choose Custom Details</button>
+            <div className="mt-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="min-w-0 rounded-xl border border-heritage-green/20 bg-heritage-cream/20 p-3">
+                <button type="button" disabled={!selectedCopySource} onClick={() => selectedCopySource && submitAdditionalGarmentChoice({ mode: "copy", sourceParentGarmentKey: selectedCopySource })} aria-describedby="additional-garment-copy-description" className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border-2 border-heritage-green px-4 text-sm font-bold text-heritage-green transition hover:bg-heritage-green/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Use Same Custom Details</button>
+                <p id="additional-garment-copy-description" className="mt-2 break-words text-xs leading-relaxed text-heritage-ink/65">Copy the construction and available garment details from an existing matching garment.</p>
+              </div>
+              <div className="min-w-0 rounded-xl border border-heritage-green/20 bg-heritage-green/5 p-3">
+                <button type="button" onClick={() => submitAdditionalGarmentChoice({ mode: "choose" })} aria-describedby="additional-garment-choose-description" className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 text-sm font-bold text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">Choose Custom Details</button>
+                <p id="additional-garment-choose-description" className="mt-2 break-words text-xs leading-relaxed text-heritage-ink/65">Add this garment and choose its construction and details separately.</p>
+              </div>
             </div>
             {!selectedCopySource && compatibleCopySources.length === 0 && <p className="mt-3 text-xs leading-relaxed text-heritage-ink/60">Use Same Custom Details is unavailable because no active garment of this type exists.</p>}
             {compatibleCopySources.length > 1 && !selectedCopySource && <p className="mt-3 text-xs leading-relaxed text-heritage-ink/60">Select the garment whose Custom Details you want to copy.</p>}

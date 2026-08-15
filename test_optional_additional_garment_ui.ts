@@ -302,6 +302,36 @@ assert.match(
 );
 assert.match(customDetailsSource, /Use Same Custom Details/);
 assert.match(customDetailsSource, /Choose Custom Details/);
+assert.match(
+  customDetailsSource,
+  /Copy the construction and available garment details from an existing matching garment\./,
+  "the reuse choice must explain its scoped copy behavior in customer language",
+);
+assert.match(
+  customDetailsSource,
+  /Add this garment and choose its construction and details separately\./,
+  "the separate-details choice must explain its independent setup behavior",
+);
+assert.match(
+  customDetailsSource,
+  /data-added-garment-heading/,
+  "a newly added garment must expose a stable focus target",
+);
+assert.match(
+  customDetailsSource,
+  /block: "nearest"/,
+  "moving focus to a newly added garment must avoid a disorienting centered jump",
+);
+assert.match(
+  customDetailsSource,
+  /catalogue\.additionalCostGroups\.length > 0/,
+  "an empty relevance projection must not render an Additional Clothes Costs placeholder",
+);
+assert.match(
+  customDetailsSource,
+  /overflow-y-auto bg-black\/55/,
+  "the existing choice dialog must remain usable when its mobile content exceeds the viewport",
+);
 assert.match(customDetailsSource, /resolveCompatibleGarmentScopedCopySources/);
 assert.match(customDetailsSource, /compatibleCopySources\.length === 1/);
 assert.match(customDetailsSource, /Select the garment whose Custom Details you want to copy/);
