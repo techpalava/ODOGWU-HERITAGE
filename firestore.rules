@@ -27,6 +27,23 @@ service cloud.firestore {
         || data.lifecycleStatus == "cleared";
     }
 
+    function hasValidFutureDraftPayload(draft) {
+      return draft is map
+        && draft.journeySchemaVersion == 1
+        && draft.currentStageId is string
+        && draft.currentStageId in [
+          "garment_type",
+          "fabric",
+          "design_style",
+          "custom_details",
+          "try_on",
+          "measurement",
+          "summary",
+          "shipping",
+          "payment"
+        ];
+    }
+
     function hasValidFutureDraftShape(data) {
       return data.schemaVersion == 1
         && data.revision is int
@@ -53,7 +70,7 @@ service cloud.firestore {
           (
             data.lifecycleStatus == "active"
             && data.keys().hasAll(["draft"])
-            && data.draft is map
+            && hasValidFutureDraftPayload(data.draft)
           )
           || (
             data.lifecycleStatus == "cleared"
