@@ -579,6 +579,8 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
     additionalAssignments: additionalGarments,
     mainGarmentPriceRows: baseGarmentPriceRows,
     designSelections: applicableDesign,
+    constructionByGarmentKey:
+      applicableDesign.additionalGarmentConstructions?.byGarmentKey,
   });
   const additionalGarmentPriceRows =
     resolvedAdditionalGarmentPricing.unresolvedAssignmentIds.length === 0

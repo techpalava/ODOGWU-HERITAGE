@@ -369,8 +369,8 @@ const buildPricing = ({
     summary.pricingSummary.garmentConstructionSubtotal,
   );
   const customDetailsCents =
-    input.customDetailsPricing?.status === "exact"
-      ? input.customDetailsPricing.subtotalCents
+    summary.pricingSummary.status === "exact"
+      ? moneyToCents(summary.pricingSummary.customDetailsExactSubtotal)
       : null;
   const selectedTotalCents = selected
     ? moneyToCents(selected.selectedDesignPrice)
@@ -485,7 +485,7 @@ const buildPricing = ({
       },
       customDetails: {
         status:
-          input.customDetailsPricing?.status === "exact"
+          summary.pricingSummary.status === "exact"
             ? "separately_charged"
             : "pricing_pending",
         amountCents: customDetailsCents,

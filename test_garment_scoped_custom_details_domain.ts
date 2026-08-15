@@ -127,8 +127,8 @@ assert.equal(
   maleBumShorts.diagnostics.some(
     (diagnostic) => diagnostic.code === "demographic_mismatch",
   ),
-  true,
-  "male Bum Shorts must return an explicit blocker",
+  false,
+  "audience must not hide a physically selected garment from Custom Details",
 );
 
 const shirtAndKaftan = buildStepSelection(["shirt", "kaftan"], "male");
@@ -491,8 +491,8 @@ assert.equal(
     earlierStagesComplete: true,
     reconciliation: incompleteShirt,
   }).status,
-  "incomplete",
-  "missing required groups block completion",
+  "complete",
+  "all optional groups default to the UI-only None state",
 );
 
 const evaluationRecord = { ...findSeed("personalized_additional_evaluation") };

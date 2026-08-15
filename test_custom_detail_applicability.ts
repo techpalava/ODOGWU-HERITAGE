@@ -1235,7 +1235,7 @@ assert.ok(trouserPocketSummary.label.includes("Trouser"));
 const stdShortsPocketOption = contextualBreakdown.find((i) => i.selectionGroup === "standard_shorts_pockets");
 assert.ok(stdShortsPocketOption);
 const stdShortsPocketSummary = getContextualizedSummary(stdShortsPocketOption);
-assert.equal(stdShortsPocketSummary.label, "Standard Shorts Pockets");
+assert.equal(stdShortsPocketSummary.label, "Nikka Pockets");
 
 const bumShortsPocketOption = contextualBreakdown.find((i) => i.selectionGroup === "bum_shorts_pockets");
 assert.ok(bumShortsPocketOption);

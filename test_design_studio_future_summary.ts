@@ -316,6 +316,30 @@ assert.equal(
   "included_in_garment_construction",
 );
 
+const decorativeInput = {
+  ...exactInput,
+  basePricing: {
+    ...exactInput.basePricing!,
+    customDetailsPrice: 12,
+    monogramPrice: 12,
+    decorativeFeatures: [
+      { label: "Embroidery", price: 12, includedByStyle: false },
+    ],
+  },
+};
+const decorativeSummary = projectFutureDesignStudioSummary(decorativeInput);
+assert.equal(
+  decorativeSummary.pricingSummary.customDetailsExactSubtotal,
+  exactSummary.pricingSummary.customDetailsExactSubtotal + 12,
+  "central decorative pricing is included once in the future Custom Details subtotal",
+);
+assert.equal(
+  decorativeSummary.customDetailsSummary
+    .flatMap((group) => group.occurrences)
+    .filter((occurrence) => occurrence.optionLabel === "Embroidery").length,
+  1,
+);
+
 const shirtKaftanState = setGarmentScopedCustomDetailSelection(
   setGarmentScopedCustomDetailSelection(
     completeShirtDetails(

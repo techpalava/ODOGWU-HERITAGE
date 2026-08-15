@@ -211,20 +211,27 @@ const studioSource = readFileSync(
 );
 assert.match(
   studioSource,
-  /baseGarmentComposition:\s*activeDesignComposition\.length > 0/,
+  /baseGarmentComposition:\s*futureFabricComposition/,
   "The Design Studio passes the same active composition to both catalog and uploaded pricing.",
 );
 assert.match(
   studioSource,
-  /resolveCustomerDesignPriceBreakdown\(\s*pricing\.designPricingActive \? pricing : null/s,
-  "The summary consumes the pricing engine result without recomputing row totals.",
+  /const futureSummaryInput = \{[\s\S]*?basePricing:\s*futureFabricAuthoritativePricing/,
+  "The future summary consumes the authoritative pricing engine result without recomputing row totals.",
 );
-const livePriceSummarySource = studioSource.slice(
-  studioSource.indexOf("Live Price Summary"),
-  studioSource.indexOf("Active Selection Summary"),
+assert.match(
+  studioSource,
+  /projectFutureDesignStudioSummary\(futureSummaryInput\)/,
+  "The future summary projector receives the shared authoritative input.",
+);
+const customDetailsSource = readFileSync(
+  fileURLToPath(
+    new URL("./src/components/DormantFutureCustomDetailsStep.tsx", import.meta.url),
+  ),
+  "utf8",
 );
 assert.doesNotMatch(
-  livePriceSummarySource,
+  customDetailsSource,
   /Fabric Selection \d|Fabric Price:|Fabric Sewing Cost:/,
   "The customer price summary does not restore raw internal fabric-cost rows.",
 );

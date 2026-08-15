@@ -23,6 +23,10 @@ import {
   FutureShippingStateV1,
   MeasurementRiskRoute,
   DesignStudioStageId,
+  CanonicalPhysicalGarmentType,
+  DecorativeFeature,
+  MonogramPlacement,
+  GarmentConstructionPricingResolution,
 } from "../types";
 import { useAppStore } from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
@@ -74,7 +78,10 @@ import {
   getFutureFabricStageCompletion,
   reconcileFutureFabricAllocationState,
 } from "../utils/designStudioFutureFabricStage";
-import { getGarmentTypeSelectedDemographics } from "../utils/garmentTypeStepState";
+import {
+  getGarmentTypeSelectedDemographics,
+  selectGarmentConstructionOption,
+} from "../utils/garmentTypeStepState";
 import { reconcileFutureDesignStyleSelection } from "../utils/designStudioFutureDesignStyle";
 import {
   calculateGarmentScopedCustomDetailsPricing,
@@ -83,10 +90,15 @@ import {
   validateGarmentScopedCustomDetailsCompletion,
 } from "../utils/garmentScopedCustomDetailsDomain";
 import {
+  clearGarmentScopedCustomDetailSelection,
   getGarmentScopedCustomDetailSelection,
+  removeGarmentScopedCustomDetails,
   setGarmentScopedCustomDetailSelection,
 } from "../utils/garmentScopedCustomDetailsState";
-import { setGarmentScopedCustomDetailText } from "../utils/garmentScopedCustomDetailInputsState";
+import {
+  removeGarmentScopedCustomDetailInputs,
+  setGarmentScopedCustomDetailText,
+} from "../utils/garmentScopedCustomDetailInputsState";
 import {
   createAiTryOnVisualInputFingerprint,
   createEmptyAiTryOnWorkflowState,
@@ -115,6 +127,20 @@ import {
 import { buildFutureOrderCandidate } from "../utils/futureOrderCandidate";
 import { isFuturePaymentReviewStageUnlocked } from "../utils/designStudioFuturePaymentReview";
 import { createCatalogDesignSource } from "../utils/designSourceState";
+import {
+  createEmptyAdditionalGarmentConstructionState,
+  reconcileAdditionalGarmentConstructionState,
+  removeAdditionalGarmentConstruction,
+  selectAdditionalGarmentConstructionOption,
+} from "../utils/additionalGarmentConstructionState";
+import { createCatalogueAdditionalGarmentSelection } from "../utils/additionalGarmentDomain";
+import { resolveGarmentConstructionPricing } from "../utils/garmentConstructionPricing";
+import { projectFutureCustomDetailsCatalogue } from "../utils/futureCustomDetailsCatalogue";
+import {
+  sortDecorativeFeatures,
+  sortTraditionalAccessories,
+  type TraditionalAccessory,
+} from "../utils/decorativePricing";
 
 export interface DesignStudioViewProps {
   onAddToCart: (item: Omit<CartItem, "id">) => void;
@@ -271,6 +297,10 @@ export default function DesignStudioView({
   const [selectedFabric, setSelectedFabric] = useState<Fabric | null>(null);
   const [fabricAllocationState, setFabricAllocationState] =
     useState<FabricAllocationState>(FabricAllocationStateEngine.initialize());
+  const pendingAdditionalConstructionRef = useRef<{
+    garmentKey: string;
+    resolution: GarmentConstructionPricingResolution;
+  } | null>(null);
   const futureFabricComposition =
     getFutureFabricCapacityComposition(garmentTypeSelection);
   const futureFabricStageCompletion = getFutureFabricStageCompletion({
@@ -377,15 +407,59 @@ export default function DesignStudioView({
   const [designSelections, setDesignSelections] = useState<DesignSelections>({
     accessories: [],
   });
+  const futureAdditionalGarments = fabricAllocationState.fabricAllocations
+    .flatMap((allocation) => allocation.garmentAssignments)
+    .filter((assignment) => assignment.sourceRole === "additional");
+  const futureAdditionalConstructionReconciliation =
+    reconcileAdditionalGarmentConstructionState({
+      existingState: designSelections.additionalGarmentConstructions,
+      assignments: futureAdditionalGarments,
+      normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+    });
   const futureCatalogInspection =
     inspectCustomDetailCatalog(customDetailCatalog);
   const futureScopedCustomDetailsReconciliation =
     reconcileGarmentScopedCustomDetails({
       garmentTypeSelection,
+      additionalGarments: futureAdditionalGarments,
+      additionalGarmentConstructions:
+        futureAdditionalConstructionReconciliation.state,
       style: futureDesignStyleSelection.selectedStyle,
       catalogInspection: futureCatalogInspection,
       existingState: designSelections.garmentScopedCustomDetails,
     });
+  const futureCustomDetailsCatalogue = projectFutureCustomDetailsCatalogue({
+    garmentTypeSelection,
+    style: futureDesignStyleSelection.selectedStyle,
+    reconciliation: futureScopedCustomDetailsReconciliation,
+    activeOptions: futureCatalogInspection.activeOptions,
+    additionalGarments: futureAdditionalGarments,
+    additionalGarmentConstructions:
+      futureAdditionalConstructionReconciliation.state,
+  });
+
+  useEffect(() => {
+    const pending = pendingAdditionalConstructionRef.current;
+    if (!pending) return;
+    const committed = fabricAllocationState.fabricAllocations.some(
+      (allocation) =>
+        allocation.garmentAssignments.some(
+          (assignment) => assignment.garmentKey === pending.garmentKey,
+        ),
+    );
+    if (!committed) return;
+    pendingAdditionalConstructionRef.current = null;
+    setDesignSelections((current) => ({
+      ...current,
+      additionalGarmentConstructions: {
+        schemaVersion: 1,
+        byGarmentKey: {
+          ...(current.additionalGarmentConstructions?.byGarmentKey || {}),
+          [pending.garmentKey]: pending.resolution,
+        },
+      },
+    }));
+  }, [fabricAllocationState.fabricAllocations]);
   const futureScopedPersonalizedInputsReconciliation =
     futureScopedCustomDetailsReconciliation
       ? reconcileGarmentScopedPersonalizedInputs({
@@ -500,9 +574,14 @@ export default function DesignStudioView({
     futureFabricMaterialPricing?.status === "resolved"
       ? calculateDesignPricing({
           route: batchType,
-          design: {},
+          design: {
+            ...designSelections,
+            additionalGarmentConstructions:
+              futureAdditionalConstructionReconciliation.state,
+          },
           materialPricing: futureFabricMaterialPricing,
           baseGarmentComposition: futureFabricComposition,
+          additionalGarments: futureAdditionalGarments,
           catalog: customDetailCatalog,
           businessSettings,
           garmentConstructionSelectionMode: "garment_type_locked",
@@ -517,6 +596,12 @@ export default function DesignStudioView({
         total + (resolution?.status === "resolved" ? resolution.totalPrice : 0)
       );
     },
+    0,
+  ) + Object.values(
+    futureAdditionalConstructionReconciliation.state.byGarmentKey,
+  ).reduce(
+    (total, resolution) =>
+      total + (resolution.status === "resolved" ? resolution.totalPrice : 0),
     0,
   );
   const futureGarmentPieceCount = resolveShippingGarmentPieceCount({
@@ -753,8 +838,22 @@ export default function DesignStudioView({
       const restoredShippingState = normalizeFutureShippingState(
         storedDraft?.futureShippingState,
       ).state;
+      const restoredAdditionalGarments =
+        reconciledFabricState.fabricAllocations
+          .flatMap((allocation) => allocation.garmentAssignments)
+          .filter((assignment) => assignment.sourceRole === "additional");
+      const restoredAdditionalConstructions =
+        reconcileAdditionalGarmentConstructionState({
+          existingState:
+            storedDraft?.designSelections?.additionalGarmentConstructions,
+          assignments: restoredAdditionalGarments,
+          normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+        });
       const restoredCustomDetails = reconcileGarmentScopedCustomDetails({
         garmentTypeSelection: futureJourney.garmentTypeSelection,
+        additionalGarments: restoredAdditionalGarments,
+        additionalGarmentConstructions:
+          restoredAdditionalConstructions.state,
         style: restoredStyleSelection.selectedStyle,
         catalogInspection: futureCatalogInspection,
         existingState:
@@ -836,7 +935,13 @@ export default function DesignStudioView({
       setFutureMeasurementState(restoredReconciledMeasurementState);
       setFutureShippingState(restoredShippingResolution.state);
       setFutureSelectedStyleId(storedDraft?.selectedStyleId || null);
-      setDesignSelections(storedDraft?.designSelections || { accessories: [] });
+      setDesignSelections({
+        ...(storedDraft?.designSelections || { accessories: [] }),
+        additionalGarmentConstructions:
+          restoredAdditionalConstructions.state,
+        garmentScopedCustomDetails: restoredCustomDetails.state,
+        garmentScopedCustomDetailInputs: restoredPersonalizedInputs.state,
+      });
       setFabricAllocationState(reconciledFabricState);
       setSelectedFabric(
         fabrics.find(
@@ -880,12 +985,15 @@ export default function DesignStudioView({
       !futureScopedCustomDetailsReconciliation ||
       !futureScopedPersonalizedInputsReconciliation ||
       (!futureScopedCustomDetailsReconciliation.stateChanged &&
-        !futureScopedPersonalizedInputsReconciliation.stateChanged)
+        !futureScopedPersonalizedInputsReconciliation.stateChanged &&
+        !futureAdditionalConstructionReconciliation.stateChanged)
     ) {
       return;
     }
     setDesignSelections((current) => ({
       ...current,
+      additionalGarmentConstructions:
+        futureAdditionalConstructionReconciliation.state,
       garmentScopedCustomDetails: futureScopedCustomDetailsReconciliation.state,
       garmentScopedCustomDetailInputs:
         futureScopedPersonalizedInputsReconciliation.state,
@@ -894,6 +1002,7 @@ export default function DesignStudioView({
     guestDraftHydrated,
     futureScopedCustomDetailsReconciliation,
     futureScopedPersonalizedInputsReconciliation,
+    futureAdditionalConstructionReconciliation,
   ]);
 
   useEffect(() => {
@@ -1284,6 +1393,9 @@ export default function DesignStudioView({
       const proposed = update(current);
       const reconciliation = reconcileGarmentScopedCustomDetails({
         garmentTypeSelection,
+        additionalGarments: futureAdditionalGarments,
+        additionalGarmentConstructions:
+          futureAdditionalConstructionReconciliation.state,
         style: futureDesignStyleSelection.selectedStyle,
         catalogInspection: futureCatalogInspection,
         existingState: proposed.garmentScopedCustomDetails,
@@ -1317,6 +1429,65 @@ export default function DesignStudioView({
         selectionGroup,
         optionId,
       ),
+    }));
+  };
+  const handleFutureCustomDetailClear = (
+    garmentKey: string,
+    selectionGroup: CustomDetailSelectionGroup,
+  ) => {
+    updateFutureScopedCustomDetails((current) => ({
+      ...current,
+      garmentScopedCustomDetails: clearGarmentScopedCustomDetailSelection(
+        current.garmentScopedCustomDetails || {
+          schemaVersion: 1,
+          selectionsByGarmentKey: {},
+          snapshotsByGarmentKey: {},
+        },
+        garmentKey,
+        selectionGroup,
+      ),
+    }));
+  };
+  const handleFutureConstructionSelect = (
+    parentGarmentKey: string,
+    garmentType: CanonicalPhysicalGarmentType,
+    selectionGroup: CustomDetailSelectionGroup,
+    optionId: string,
+  ) => {
+    if (parentGarmentKey.startsWith("base:")) {
+      setGarmentTypeSelection((current) => {
+        const resolution = current.constructionByGarment[garmentType];
+        if (!resolution) return current;
+        const selected = selectGarmentConstructionOption({
+          resolution,
+          selectionGroup,
+          optionId,
+          normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+        });
+        return selected.status === "selected"
+          ? {
+              ...current,
+              constructionByGarment: {
+                ...current.constructionByGarment,
+                [garmentType]: selected.resolution,
+              },
+            }
+          : current;
+      });
+      return;
+    }
+    setDesignSelections((current) => ({
+      ...current,
+      additionalGarmentConstructions:
+        selectAdditionalGarmentConstructionOption({
+          state:
+            current.additionalGarmentConstructions ||
+            createEmptyAdditionalGarmentConstructionState(),
+          garmentKey: parentGarmentKey,
+          selectionGroup,
+          optionId,
+          normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+        }),
     }));
   };
   const handleFutureMultiCustomDetailToggle = (
@@ -1377,6 +1548,141 @@ export default function DesignStudioView({
       };
     });
   };
+  const handleFutureDecorativeFeatureToggle = (
+    feature: DecorativeFeature,
+  ) => {
+    setDesignSelections((current) => {
+      const selected = new Set(current.decorativeFeatures || []);
+      if (selected.has(feature)) selected.delete(feature);
+      else selected.add(feature);
+      return {
+        ...current,
+        decorativeFeatures: sortDecorativeFeatures([...selected]),
+      };
+    });
+  };
+  const handleClearFutureDecorativeFeatures = () => {
+    setDesignSelections((current) => ({
+      ...current,
+      decorativeFeatures: [],
+      monogramPlacement: undefined,
+    }));
+  };
+  const handleFutureMonogramPlacementChange = (
+    placement: MonogramPlacement,
+  ) => {
+    setDesignSelections((current) => ({
+      ...current,
+      monogramPlacement: placement,
+    }));
+  };
+  const handleFutureAccessoryToggle = (accessory: TraditionalAccessory) => {
+    setDesignSelections((current) => {
+      const selected = new Set(current.accessories || []);
+      if (selected.has(accessory)) selected.delete(accessory);
+      else selected.add(accessory);
+      return {
+        ...current,
+        accessories: sortTraditionalAccessories([...selected]),
+      };
+    });
+  };
+  const handleClearFutureAccessories = () => {
+    setDesignSelections((current) => ({ ...current, accessories: [] }));
+  };
+  const handleAddFutureAdditionalGarment = (
+    garmentType: CanonicalPhysicalGarmentType,
+  ) => {
+    if (
+      fabricAllocationState.pendingFabricGarment ||
+      fabricAllocationState.awaitingFabricForPendingGarment
+    ) {
+      setNotification({
+        message: "Finish the current fabric assignment before adding another garment.",
+        type: "info",
+      });
+      return;
+    }
+    const existingAssignments = fabricAllocationState.fabricAllocations.flatMap(
+      (allocation) => allocation.garmentAssignments,
+    );
+    const addition = createCatalogueAdditionalGarmentSelection({
+      garmentType,
+      existingAssignments,
+    });
+    const construction = resolveGarmentConstructionPricing(
+      garmentType,
+      normalizedGarmentTypeCatalog,
+    );
+    if (addition.status !== "resolved" || construction.status !== "resolved") {
+      setNotification({
+        message: "This garment construction price is not ready yet.",
+        type: "info",
+      });
+      return;
+    }
+    const activeAllocation = fabricAllocationState.fabricAllocations.find(
+      (allocation) =>
+        allocation.allocationId === fabricAllocationState.activeAllocationId,
+    ) || fabricAllocationState.fabricAllocations[0];
+    if (!activeAllocation) {
+      setNotification({
+        message: "Select a fabric before adding another garment.",
+        type: "info",
+      });
+      setFutureStageId("fabric");
+      return;
+    }
+    const readyState = FabricAllocationStateEngine.activateAllocation(
+      fabricAllocationState,
+      activeAllocation.allocationId,
+    );
+    pendingAdditionalConstructionRef.current = {
+      garmentKey: addition.selection.garmentSpec!.key,
+      resolution: construction,
+    };
+    const nextState = FabricAllocationStateEngine.attemptAppendGarment(
+      readyState,
+      addition.selection,
+    );
+    setFabricAllocationState(nextState);
+    if (nextState.pendingFabricGarment) {
+      setFutureStageId("fabric");
+    }
+  };
+  const handleRemoveFutureAdditionalGarment = (garmentKey: string) => {
+    if (pendingAdditionalConstructionRef.current?.garmentKey === garmentKey) {
+      pendingAdditionalConstructionRef.current = null;
+    }
+    setFabricAllocationState((current) =>
+      FabricAllocationStateEngine.removeGarmentAssignments(current, [
+        garmentKey,
+      ]),
+    );
+    setDesignSelections((current) => ({
+      ...current,
+      additionalGarmentConstructions: removeAdditionalGarmentConstruction(
+        current.additionalGarmentConstructions ||
+          createEmptyAdditionalGarmentConstructionState(),
+        garmentKey,
+      ),
+      garmentScopedCustomDetails: removeGarmentScopedCustomDetails(
+        current.garmentScopedCustomDetails || {
+          schemaVersion: 1,
+          selectionsByGarmentKey: {},
+          snapshotsByGarmentKey: {},
+        },
+        garmentKey,
+      ),
+      garmentScopedCustomDetailInputs: removeGarmentScopedCustomDetailInputs(
+        current.garmentScopedCustomDetailInputs || {
+          schemaVersion: 1,
+          textByGarmentKey: {},
+        },
+        garmentKey,
+      ),
+    }));
+  };
   const handleUseSameFutureFabric = () => {
     setFabricAllocationState((current) =>
       FabricAllocationStateEngine.useSameFabricForPendingGarmentAndContinue(
@@ -1405,6 +1711,7 @@ export default function DesignStudioView({
     );
   };
   const handleCancelFuturePendingFabric = () => {
+    pendingAdditionalConstructionRef.current = null;
     setFabricAllocationState((current) =>
       FabricAllocationStateEngine.cancelPendingGarment(current),
     );
@@ -1541,15 +1848,31 @@ export default function DesignStudioView({
         futureCustomDetailsPricing ? (
         <DormantFutureCustomDetailsStep
           reconciliation={futureScopedCustomDetailsReconciliation}
+          catalogue={futureCustomDetailsCatalogue}
           personalizedInputs={
             futureScopedPersonalizedInputsReconciliation.state
           }
           completion={futureCustomDetailsCompletion}
           pricing={futureCustomDetailsPricing}
+          orderLevelCustomDetailsPrice={
+            futureFabricAuthoritativePricing?.customDetailsPrice || 0
+          }
           constructionSubtotal={futureConstructionPrice}
+          designSelections={designSelections}
+          selectedStyle={futureDesignStyleSelection.selectedStyle}
+          additionalGarments={futureAdditionalGarments}
           onSingleSelect={handleFutureSingleCustomDetailSelect}
+          onClearSelection={handleFutureCustomDetailClear}
+          onConstructionSelect={handleFutureConstructionSelect}
           onToggleMultiSelect={handleFutureMultiCustomDetailToggle}
           onPersonalizedTextChange={handleFuturePersonalizedTextChange}
+          onDecorativeFeatureToggle={handleFutureDecorativeFeatureToggle}
+          onClearDecorativeFeatures={handleClearFutureDecorativeFeatures}
+          onMonogramPlacementChange={handleFutureMonogramPlacementChange}
+          onAccessoryToggle={handleFutureAccessoryToggle}
+          onClearAccessories={handleClearFutureAccessories}
+          onAddAdditionalGarment={handleAddFutureAdditionalGarment}
+          onRemoveAdditionalGarment={handleRemoveFutureAdditionalGarment}
           onBack={() => setFutureStageId("design_style")}
           onContinue={handleOpenDormantAiTryOnStage}
         />

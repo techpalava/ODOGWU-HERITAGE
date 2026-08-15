@@ -213,7 +213,7 @@ export const normalizePersistedGarmentTypeStepSelection = (
   };
 };
 
-const resolvePersistedConstructionFromCurrentCatalog = (
+export const reconcileGarmentConstructionResolution = (
   previous: GarmentConstructionPricingResolution | undefined,
   canonicalDefault: GarmentConstructionPricingResolution,
   normalizedCustomDetailCatalog: readonly CustomDetailOption[],
@@ -324,7 +324,7 @@ export const reconcileGarmentTypeStepSelection = ({
     );
     const saved = previous.constructionByGarment[garmentType];
     const current =
-      resolvePersistedConstructionFromCurrentCatalog(
+      reconcileGarmentConstructionResolution(
         saved,
         canonicalDefault,
         normalizedCustomDetailCatalog,
@@ -362,6 +362,85 @@ export const reconcileGarmentTypeStepSelection = ({
     },
     priceChanges,
     unresolvedGarmentTypes,
+  };
+};
+
+export type GarmentConstructionOptionSelectionResult =
+  | {
+      status: "selected";
+      resolution: GarmentConstructionPricingResolution;
+    }
+  | {
+      status: "blocked";
+      reason:
+        | "CONSTRUCTION_UNRESOLVED"
+        | "GROUP_NOT_OWNED"
+        | "OPTION_NOT_AVAILABLE";
+      resolution: GarmentConstructionPricingResolution;
+    };
+
+export const selectGarmentConstructionOption = ({
+  resolution,
+  selectionGroup,
+  optionId,
+  normalizedCustomDetailCatalog,
+}: {
+  resolution: GarmentConstructionPricingResolution;
+  selectionGroup: CustomDetailSelectionGroup;
+  optionId: string;
+  normalizedCustomDetailCatalog: readonly CustomDetailOption[];
+}): GarmentConstructionOptionSelectionResult => {
+  if (resolution.status !== "resolved") {
+    return {
+      status: "blocked",
+      reason: "CONSTRUCTION_UNRESOLVED",
+      resolution,
+    };
+  }
+  const componentIndex = resolution.components.findIndex(
+    (component) => component.selectionGroup === selectionGroup,
+  );
+  if (componentIndex < 0) {
+    return { status: "blocked", reason: "GROUP_NOT_OWNED", resolution };
+  }
+  const option = normalizedCustomDetailCatalog.find(
+    (candidate) =>
+      candidate.id === optionId &&
+      candidate.selectionGroup === selectionGroup &&
+      candidate.active &&
+      isClothingPriceSelectionGroup(candidate.selectionGroup) &&
+      !candidate.informational &&
+      !candidate.requiresEvaluation &&
+      Number.isFinite(candidate.priceCents) &&
+      candidate.priceCents > 0,
+  );
+  if (!option) {
+    return { status: "blocked", reason: "OPTION_NOT_AVAILABLE", resolution };
+  }
+  const components = resolution.components.map((component, index) =>
+    index === componentIndex
+      ? {
+          componentKey: `${resolution.garmentType}:${selectionGroup}:${option.id}`,
+          optionId: option.id,
+          selectionGroup,
+          priceCents: option.priceCents,
+          price: option.priceCents / 100,
+        }
+      : { ...component },
+  );
+  const totalPriceCents = components.reduce(
+    (total, component) => total + component.priceCents,
+    0,
+  );
+  return {
+    status: "selected",
+    resolution: {
+      status: "resolved",
+      garmentType: resolution.garmentType,
+      components,
+      totalPriceCents,
+      totalPrice: totalPriceCents / 100,
+    },
   };
 };
 

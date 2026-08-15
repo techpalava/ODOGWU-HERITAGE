@@ -64,6 +64,38 @@ const resolveRequiredAssignments = (
     return resolution.status === "resolved" ? resolution.assignments : [];
   });
 
+const resolveRequiredAssignmentsWithAdditional = (
+  selection: GarmentTypeStepSelection,
+  state: FabricAllocationState,
+): FabricGarmentAssignment[] => {
+  const byKey = new Map(
+    resolveRequiredAssignments(selection).map((assignment) => [
+      assignment.garmentKey,
+      assignment,
+    ]),
+  );
+  state.fabricAllocations.forEach((allocation) =>
+    allocation.garmentAssignments.forEach((assignment) => {
+      if (
+        assignment.sourceRole === "additional" &&
+        assignment.dependencyStatus !== "orphaned"
+      ) {
+        byKey.set(assignment.garmentKey, assignment);
+      }
+    }),
+  );
+  if (
+    state.pendingFabricGarment?.sourceRole === "additional" &&
+    state.pendingFabricGarment.dependencyStatus !== "orphaned"
+  ) {
+    byKey.set(
+      state.pendingFabricGarment.garmentKey,
+      state.pendingFabricGarment,
+    );
+  }
+  return [...byKey.values()];
+};
+
 export interface FutureGarmentFabricPlanning {
   requiredGarmentCount: number;
   requiredFabricQuantity: number;
@@ -371,6 +403,25 @@ export const reconcileFutureFabricAllocationState = ({
   const requiredByKey = new Map(
     requiredAssignments.map((assignment) => [assignment.garmentKey, assignment]),
   );
+  state.fabricAllocations.forEach((allocation) =>
+    allocation.garmentAssignments.forEach((assignment) => {
+      if (
+        assignment.sourceRole === "additional" &&
+        assignment.dependencyStatus !== "orphaned"
+      ) {
+        requiredByKey.set(assignment.garmentKey, assignment);
+      }
+    }),
+  );
+  if (
+    state.pendingFabricGarment?.sourceRole === "additional" &&
+    state.pendingFabricGarment.dependencyStatus !== "orphaned"
+  ) {
+    requiredByKey.set(
+      state.pendingFabricGarment.garmentKey,
+      state.pendingFabricGarment,
+    );
+  }
   const retainedKeys = new Set<string>();
   const fabricAllocations = state.fabricAllocations.flatMap((allocation) => {
     const garmentAssignments = allocation.garmentAssignments.flatMap(
@@ -465,7 +516,10 @@ export const getFutureFabricStageCompletion = ({
   fabricAllocationState: FabricAllocationState;
   fabrics: Fabric[];
 }): FutureFabricStageCompletion => {
-  const requiredAssignments = resolveRequiredAssignments(garmentTypeSelection);
+  const requiredAssignments = resolveRequiredAssignmentsWithAdditional(
+    garmentTypeSelection,
+    fabricAllocationState,
+  );
   const requiredByKey = new Map(
     requiredAssignments.map((assignment) => [assignment.garmentKey, assignment]),
   );

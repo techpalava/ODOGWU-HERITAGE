@@ -388,7 +388,8 @@ assert.equal(
   groupRemovedInputs.diagnostics.some(
     (diagnostic) => diagnostic.code === "personalized_text_group_removed",
   ),
-  true,
+  false,
+  "style metadata must not hide the complete Custom Details catalogue",
 );
 
 const persistedOverLimitInputs = reconcileGarmentScopedPersonalizedInputs({

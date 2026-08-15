@@ -255,56 +255,55 @@ assert.equal(
 assert.equal(INLINE_OPTIONAL_SHORTS_LABELS.bum_shorts, "Bum Shorts");
 
 const source = readFileSync("src/components/DesignStudioView.tsx", "utf8");
-const stepNavigationSource = source.slice(
-  source.indexOf("const handleStepNavigation"),
-  source.indexOf("const showStyleProceedDock"),
+const futureNavigationSource = source.slice(
+  source.indexOf("const handleOpenDormantFabricStage"),
+  source.indexOf("const handleRefreshDormantShippingQuote"),
 );
 assert.match(
-  stepNavigationSource,
-  /setCurrentStep\(targetInternalStep\)/,
-  "completed-step navigation must update the current step",
+  futureNavigationSource,
+  /setFutureStageId\("custom_details"\)/,
+  "completed-step navigation must update the authoritative nine-stage state",
 );
 assert.doesNotMatch(
-  stepNavigationSource,
+  futureNavigationSource,
   /setFabricAllocationState|setDesignSelections|setSelectedFabric/,
   "completed-step navigation must preserve added garments and their selections",
 );
 assert.ok(
-  source.includes("onAddAdditionalGarment={handleAddAdditionalGarment}"),
+  source.includes("onAddAdditionalGarment={handleAddFutureAdditionalGarment}"),
   "the customer selector must call the UI-facing additional garment handler",
 );
 assert.ok(
-  source.includes("appendCustomerFabricGarment("),
+  source.includes("FabricAllocationStateEngine.attemptAppendGarment("),
   "the UI-facing handler must delegate append behavior to the centralized allocation flow",
 );
 assert.ok(
   !source.includes("additionalGarmentParentSection"),
   "the old additional physical garment radio section must not remain active",
 );
-assert.match(
-  source,
-  /garmentSectionComposition\.map\(\(entry\) =>/,
-  "Step 3 must compose inline shorts and garment detail sections together",
+const customDetailsSource = readFileSync(
+  "src/components/DormantFutureCustomDetailsStep.tsx",
+  "utf8",
 );
 assert.match(
-  source,
-  /data-testid=\{`inline-optional-garment-\$\{garmentType\}`\}/,
-  "eligible shorts must expose a stable inline customer card",
+  customDetailsSource,
+  /data-custom-detail-section="add-additional-garment"/,
+  "Custom Details must expose one explicit additional-garment section",
 );
 assert.match(
-  source,
-  /displayLabel=\{displayLabel\}[\s\S]*?showStartingPrice[\s\S]*?onAdd=\{onAddAdditionalGarment\}/,
-  "the inline card must show the customer label and reuse the authoritative add handler",
+  customDetailsSource,
+  /CANONICAL_PHYSICAL_GARMENT_TYPES\.map\(\(garmentType\) =>/,
+  "the additional-garment section must offer canonical physical garments",
 );
 assert.match(
-  source,
-  /entry\.detailSection[\s\S]*?renderParentSection\(entry\.detailSection\)/,
-  "added shorts details must render directly beneath their inline card",
+  customDetailsSource,
+  /onClick=\{\(\) => onAddAdditionalGarment\(garmentType\)\}/,
+  "the customer control must invoke the authoritative additional-garment handler",
 );
 assert.match(
-  source,
-  /allowedGarments=\{genericAllowedAdditionalGarments\}[\s\S]*?assignments=\{genericAdditionalGarmentAssignments\}/,
-  "the generic bottom composer must exclude eligible inline shorts controls",
+  customDetailsSource,
+  /onClick=\{\(\) => onRemoveAdditionalGarment\(garment\.garmentKey\)\}/,
+  "removal must target only the selected physical garment occurrence",
 );
 
 console.log("Optional additional garment UI regression checks passed.");

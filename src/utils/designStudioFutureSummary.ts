@@ -448,6 +448,7 @@ const mapCustomDetails = ({
   customDetailsCompletion,
   customDetailsPricing,
   personalizedInputs,
+  basePricing,
   blockers,
 }: Pick<
   FutureDesignStudioSummaryInput,
@@ -455,6 +456,7 @@ const mapCustomDetails = ({
   | "customDetailsCompletion"
   | "customDetailsPricing"
   | "personalizedInputs"
+  | "basePricing"
 > & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureDesignStudioSummary["customDetailsSummary"] => {
   if (!customDetailsReconciliation || !customDetailsCompletion || !customDetailsPricing) {
     blockers.push({
@@ -538,7 +540,7 @@ const mapCustomDetails = ({
         occurrence,
       ]);
     });
-  return [...grouped.entries()]
+  const scopedGroups = [...grouped.entries()]
     .sort(
       ([left], [right]) =>
         (subjectOrder.get(left) ?? Number.MAX_SAFE_INTEGER) -
@@ -550,6 +552,31 @@ const mapCustomDetails = ({
       garmentLabel: occurrences[0]?.garmentLabel || "Garment",
       occurrences,
     }));
+  const orderLevelOccurrences: FutureSummaryCustomDetailOccurrence[] = [
+    ...(basePricing?.decorativeFeatures || []),
+    ...(basePricing?.traditionalAccessories || []),
+  ].map((item, index) => ({
+    occurrenceKey: `order-detail:${index + 1}:${item.label}`,
+    garmentKey: "order",
+    garmentLabel: "Order",
+    selectionGroup: "order_optional_detail",
+    selectionGroupTitle: "Monogram, Embroidery and Accessories",
+    optionId: item.label,
+    optionLabel: item.label,
+    priceStatus: "exact",
+    priceCents: Math.round(item.price * 100),
+    personalizedText: null,
+  }));
+  return orderLevelOccurrences.length > 0
+    ? [
+        ...scopedGroups,
+        {
+          garmentKey: "order",
+          garmentLabel: "Order",
+          occurrences: orderLevelOccurrences,
+        },
+      ]
+    : scopedGroups;
 };
 
 const mapMeasurements = ({
@@ -660,10 +687,12 @@ const mapPricing = ({
       selectedDesignPrice: null,
     };
   }
-  const customDetailsExactSubtotal =
+  const scopedCustomDetailsExactSubtotal =
     customDetailsPricing.status === "exact"
       ? customDetailsPricing.subtotal
       : customDetailsPricing.exactSubtotalCents / 100;
+  const customDetailsExactSubtotal =
+    scopedCustomDetailsExactSubtotal + basePricing.customDetailsPrice;
   if (customDetailsPricing.status === "pending") {
     return {
       status: "pending",
@@ -728,6 +757,7 @@ export const projectFutureDesignStudioSummary = (
     customDetailsCompletion: input.customDetailsCompletion,
     customDetailsPricing: input.customDetailsPricing,
     personalizedInputs: input.personalizedInputs,
+    basePricing: input.basePricing,
     blockers,
   });
   const aiTryOnSummary = getAiTryOnSummary(input.aiTryOnWorkflow);

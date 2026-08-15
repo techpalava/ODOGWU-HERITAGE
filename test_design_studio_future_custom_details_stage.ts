@@ -180,8 +180,12 @@ assert.match(componentSource, /type=\{group\.allowMultiple \? "checkbox" : "radi
 assert.match(componentSource, /xl:grid-cols-\[minmax\(0,1fr\)_minmax\(19rem,24rem\)\]/);
 assert.match(componentSource, /xl:sticky xl:top-4/);
 assert.match(componentSource, /min-w-0 break-words/);
-assert.equal(componentSource.includes("Add Nikka"), false);
-assert.equal(componentSource.includes("Add Bum Shorts"), false);
+assert.match(componentSource, /Not currently included/);
+assert.match(componentSource, /Included in your selected design/);
+assert.match(componentSource, /Added garment/);
+assert.match(componentSource, /Add Additional Garment/);
+assert.match(componentSource, /onConstructionSelect/);
+assert.match(componentSource, /onClearSelection/);
 assert.match(stepperSource, /canEnterCustomDetails/);
 assert.match(styleSource, /onContinue/);
 assert.match(studioSource, /handleOpenDormantCustomDetailsStage/);

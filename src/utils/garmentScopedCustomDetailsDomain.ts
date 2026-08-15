@@ -4,6 +4,9 @@ import type {
   CustomDetailGarmentGroup,
   CustomDetailOption,
   CustomDetailSelectionGroup,
+  AdditionalGarmentConstructionStateV1,
+  FabricGarmentAssignment,
+  GarmentConstructionPricingResolution,
   GarmentScopedCustomDetailSelection,
   GarmentScopedCustomDetailInputsV1,
   GarmentScopedCustomDetailsStateV1,
@@ -163,6 +166,13 @@ const resolveLockedGroupsForSubject = (
   subjectGroups: readonly CustomDetailGarmentGroup[],
 ): CustomDetailSelectionGroup[] => {
   const construction = selection.constructionByGarment[parentGarmentType];
+  return resolveLockedGroupsForConstruction(construction, subjectGroups);
+};
+
+const resolveLockedGroupsForConstruction = (
+  construction: GarmentConstructionPricingResolution | undefined,
+  subjectGroups: readonly CustomDetailGarmentGroup[],
+): CustomDetailSelectionGroup[] => {
   const groups =
     construction?.status === "resolved"
       ? construction.components.map((component) => component.selectionGroup)
@@ -178,6 +188,10 @@ const resolveLockedGroupsForSubject = (
 
 export const resolveFutureCustomDetailPhysicalSubjects = (
   garmentTypeSelection: unknown,
+  options: {
+    additionalGarments?: readonly FabricGarmentAssignment[];
+    additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+  } = {},
 ): FutureCustomDetailPhysicalSubjectResolution => {
   const selection = normalizePersistedGarmentTypeStepSelection(
     garmentTypeSelection,
@@ -208,16 +222,6 @@ export const resolveFutureCustomDetailPhysicalSubjects = (
       return;
     }
 
-    if (
-      parentGarmentType === "bum_shorts" &&
-      selection.demographic === "male"
-    ) {
-      diagnostics.push({
-        code: "demographic_mismatch",
-        garmentKey: parentGarmentKey,
-        detail: "Bum Shorts require a female or unisex/family demographic.",
-      });
-    }
     const construction = selection.constructionByGarment[parentGarmentType];
     if (!construction || construction.status === "unresolved") {
       diagnostics.push({
@@ -250,6 +254,56 @@ export const resolveFutureCustomDetailPhysicalSubjects = (
     });
   });
 
+  (options.additionalGarments || []).forEach((assignment, assignmentIndex) => {
+    if (
+      assignment.sourceRole !== "additional" ||
+      assignment.dependencyStatus === "orphaned" ||
+      assignment.garmentType === "other"
+    ) {
+      return;
+    }
+    const parentGarmentType = assignment.garmentType as CanonicalPhysicalGarmentType;
+    const components = resolveCustomDetailPhysicalComponents({
+      parentGarmentKey: assignment.garmentKey,
+      garmentType: parentGarmentType,
+    });
+    if (components.status !== "resolved") {
+      diagnostics.push({
+        code: "invalid_physical_component_configuration",
+        garmentKey: assignment.garmentKey,
+        detail: components.code,
+      });
+      return;
+    }
+    const construction =
+      options.additionalGarmentConstructions?.byGarmentKey[
+        assignment.garmentKey
+      ];
+    if (!construction || construction.status !== "resolved") {
+      diagnostics.push({
+        code: "construction_unresolved",
+        garmentKey: assignment.garmentKey,
+        detail: "missing_additional_garment_construction",
+      });
+    }
+    components.components.forEach((component) => {
+      subjects.push({
+        garmentKey: component.garmentKey,
+        parentGarmentKey: assignment.garmentKey,
+        parentGarmentType,
+        garmentType: component.garmentType,
+        garmentGroups: [...component.garmentGroups],
+        demographic: selection.demographic,
+        order: 10_000 + assignmentIndex * 100 + component.order,
+        componentOrder: component.order,
+        lockedSelectionGroups: resolveLockedGroupsForConstruction(
+          construction,
+          component.garmentGroups,
+        ),
+      });
+    });
+  });
+
   return {
     garmentTypeSelection: selection,
     subjects: subjects.sort(
@@ -275,72 +329,32 @@ export interface GarmentScopedCustomDetailApplicability {
   diagnostics: readonly GarmentScopedCustomDetailsDomainDiagnostic[];
 }
 
-const optionMatchesDemographic = (
-  option: CustomDetailOption,
-  demographic: CustomDetailDemographic | null,
-): boolean => {
-  if (!demographic) return false;
-  if (demographic === "unisex") return true;
-  return (
-    option.eligibleDemographics.includes("unisex") ||
-    option.eligibleDemographics.includes(demographic)
-  );
-};
-
 const optionMatchesSubject = (
   option: CustomDetailOption,
   subject: FutureCustomDetailPhysicalSubject,
-  style: StyleCategory | null,
 ): boolean => {
-  if (
-    subject.parentGarmentType === "bum_shorts" &&
-    subject.demographic === "male"
-  ) {
-    return false;
-  }
   if (option.selectionGroup === "additional_physical_garment") return false;
   const isPersonalized = option.garmentGroup === "personalized";
   if (!isPersonalized && !subject.garmentGroups.includes(option.garmentGroup)) {
     return false;
   }
-  const configuredGroups = style?.customDetailConfig?.supportedGarmentGroups || [];
-  if (
-    !isPersonalized &&
-    configuredGroups.length > 0 &&
-    !configuredGroups.includes(option.garmentGroup)
-  ) {
-    return false;
-  }
-  return optionMatchesDemographic(option, subject.demographic);
+  return true;
 };
 
 export const resolveGarmentScopedCustomDetailApplicability = ({
   subject,
-  style,
   catalogInspection,
 }: {
   subject: FutureCustomDetailPhysicalSubject;
   style?: StyleCategory | null;
   catalogInspection: CustomDetailCatalogInspection;
 }): GarmentScopedCustomDetailApplicability => {
-  if (style?.customDetailConfig?.enabled === false) {
-    return {
-      subject,
-      groups: [],
-      diagnostics: [
-        {
-          code: "style_custom_details_disabled",
-          garmentKey: subject.garmentKey,
-        },
-      ],
-    };
-  }
   const lockedGroups = new Set(subject.lockedSelectionGroups);
   const applicableOptions = catalogInspection.activeOptions.filter(
     (option) =>
       option.active &&
       !lockedGroups.has(option.selectionGroup) &&
-      optionMatchesSubject(option, subject, style || null),
+      optionMatchesSubject(option, subject),
   );
   const optionsByGroup = new Map<
     CustomDetailSelectionGroup,
@@ -351,9 +365,6 @@ export const resolveGarmentScopedCustomDetailApplicability = ({
     options.push(option);
     optionsByGroup.set(option.selectionGroup, options);
   });
-  const configuredRequired = new Set(
-    style?.customDetailConfig?.requiredSelectionGroups || [],
-  );
   const groups = [...optionsByGroup.entries()]
     .sort(([left], [right]) => compareSelectionGroups(left, right))
     .map(([selectionGroup, options]) => {
@@ -362,9 +373,7 @@ export const resolveGarmentScopedCustomDetailApplicability = ({
         garmentKey: subject.garmentKey,
         selectionGroup,
         garmentGroup: sortedOptions[0].garmentGroup,
-        required:
-          configuredRequired.has(selectionGroup) ||
-          sortedOptions.some((option) => option.required),
+        required: false,
         allowMultiple: sortedOptions.some((option) => option.allowMultiple),
         options: sortedOptions,
       };
@@ -506,13 +515,11 @@ const classifyUnavailableOption = ({
   optionId,
   subject,
   selectionGroup,
-  style,
 }: {
   entry: ProvenanceAwareCustomDetailCatalogEntry | undefined;
   optionId: string;
   subject: FutureCustomDetailPhysicalSubject;
   selectionGroup: CustomDetailSelectionGroup;
-  style: StyleCategory | null;
 }): GarmentScopedCustomDetailsDomainDiagnostic => {
   const base = { garmentKey: subject.garmentKey, selectionGroup, optionId };
   if (!entry) return { ...base, code: "option_missing" };
@@ -523,10 +530,7 @@ const classifyUnavailableOption = ({
     return { ...base, code: "malformed_catalog_option" };
   }
   if (!entry.option.active) return { ...base, code: "option_disabled" };
-  if (!optionMatchesDemographic(entry.option, subject.demographic)) {
-    return { ...base, code: "demographic_mismatch" };
-  }
-  if (!optionMatchesSubject(entry.option, subject, style)) {
+  if (!optionMatchesSubject(entry.option, subject)) {
     return { ...base, code: "group_no_longer_applicable" };
   }
   return { ...base, code: "group_no_longer_applicable" };
@@ -534,17 +538,22 @@ const classifyUnavailableOption = ({
 
 export const reconcileGarmentScopedCustomDetails = ({
   garmentTypeSelection,
+  additionalGarments,
+  additionalGarmentConstructions,
   style,
   catalogInspection,
   existingState,
 }: {
   garmentTypeSelection: unknown;
+  additionalGarments?: readonly FabricGarmentAssignment[];
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
   style?: StyleCategory | null;
   catalogInspection: CustomDetailCatalogInspection;
   existingState: unknown;
 }): GarmentScopedCustomDetailsReconciliationResult => {
   const subjectResolution = resolveFutureCustomDetailPhysicalSubjects(
     garmentTypeSelection,
+    { additionalGarments, additionalGarmentConstructions },
   );
   const normalizedExisting = normalizeGarmentScopedCustomDetailsState(existingState);
   const diagnostics: GarmentScopedCustomDetailsDomainDiagnostic[] = [
@@ -612,7 +621,6 @@ export const reconcileGarmentScopedCustomDetails = ({
                   optionId,
                   subject,
                   selectionGroup,
-                  style: style || null,
                 }),
               ),
             );
@@ -639,7 +647,6 @@ export const reconcileGarmentScopedCustomDetails = ({
                 optionId,
                 subject,
                 selectionGroup,
-                style: style || null,
               }),
             );
             return [];

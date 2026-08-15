@@ -353,6 +353,16 @@ export const getDecorativeFeaturePrice = (
     DECORATIVE_FEATURE_PRICE_CENTS[feature] / 100,
   );
 
+export const getTraditionalAccessoryPrice = (
+  style: StyleCategory | null | undefined,
+  accessory: TraditionalAccessory,
+): number => getOverridePrice(
+  style,
+  "accessories",
+  accessory,
+  DEFAULT_ACCESSORY_PRICE,
+);
+
 export interface PricedSelection {
   label: string;
   price: number;
@@ -413,12 +423,7 @@ export const calculateGarmentDetailsPrice = (
     applicableDetails.accessories || [],
   ).map((accessory) => ({
     label: accessory,
-    price: getOverridePrice(
-      style,
-      "accessories",
-      accessory,
-      DEFAULT_ACCESSORY_PRICE,
-    ),
+    price: getTraditionalAccessoryPrice(style, accessory),
     includedByStyle: false,
   }));
   const monogramPrice = decorativeFeatures.reduce(

@@ -6,6 +6,7 @@ import type {
   FabricCapacityGarmentSpec,
   FabricGarmentAssignment,
   FabricGarmentType,
+  GarmentConstructionPricingResolution,
 } from "../types";
 import type { FabricAllocationSelection } from "../engine/FabricAllocationStateEngine";
 import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
@@ -13,13 +14,17 @@ import {
   resolveAdditionalGarmentPolicyCandidates,
   resolveShortsGarmentUnitPriceCents,
 } from "../config/AdditionalGarmentPolicy";
+import {
+  CANONICAL_PHYSICAL_GARMENT_TYPES,
+  isCanonicalPhysicalGarmentType,
+} from "./garmentConstructionPricing";
 
 export interface AllowedAdditionalGarment {
   garmentType: FabricGarmentType;
   label: string;
   garmentSpec: FabricCapacityGarmentSpec;
   mainGarmentSpec?: FabricCapacityGarmentSpec;
-  eligibilityRule: "same_type" | "demographic_policy";
+  eligibilityRule: "same_type" | "demographic_policy" | "catalog_all";
 }
 
 export interface AdditionalGarmentPriceRow {
@@ -142,6 +147,49 @@ export const createAdditionalGarmentSelection = ({
   };
 };
 
+/**
+ * The nine-stage Custom Details catalogue may add any canonical physical
+ * garment. Capacity and allocation still run through the existing append
+ * transaction; this helper only creates its stable occurrence identity.
+ */
+export const createCatalogueAdditionalGarmentSelection = ({
+  garmentType,
+  existingAssignments,
+}: {
+  garmentType: FabricGarmentType;
+  existingAssignments: readonly FabricGarmentAssignment[];
+}): AdditionalGarmentSelectionResolution => {
+  if (!isCanonicalPhysicalGarmentType(garmentType)) {
+    return {
+      status: "invalid",
+      attemptedGarmentType: garmentType,
+      allowedGarments: [],
+    };
+  }
+  const sequence = getAdditionalAssignmentSequence(
+    garmentType,
+    existingAssignments,
+  );
+  const assignmentId = `additional:${garmentType}:${sequence}`;
+  const garmentSpec = createStyleBaseGarmentSpec(garmentType);
+  return {
+    status: "resolved",
+    allowedGarments: CANONICAL_PHYSICAL_GARMENT_TYPES.map((candidate) => ({
+      garmentType: candidate,
+      label: getFabricGarmentLabel(candidate),
+      garmentSpec: createStyleBaseGarmentSpec(candidate),
+      eligibilityRule: "catalog_all" as const,
+    })),
+    selection: {
+      code: `ADDITIONAL_${garmentType.toUpperCase()}_${sequence}`,
+      garmentSpec: { ...garmentSpec, key: assignmentId },
+      sourceRole: "additional",
+      eligibilityRule: "catalog_all",
+      dependencyStatus: "valid",
+    },
+  };
+};
+
 export const reconcileAdditionalGarmentDependencies = (
   state: FabricAllocationState,
   mainComposition: readonly FabricCapacityGarmentSpec[],
@@ -153,7 +201,12 @@ export const reconcileAdditionalGarmentDependencies = (
     ),
   );
   const getDependencyStatus = (assignment: FabricGarmentAssignment) =>
-    allowedTypes.has(assignment.garmentType) ? "valid" : "orphaned";
+    assignment.eligibilityRule === "catalog_all" &&
+    isCanonicalPhysicalGarmentType(assignment.garmentType)
+      ? "valid"
+      : allowedTypes.has(assignment.garmentType)
+        ? "valid"
+        : "orphaned";
 
   return {
     ...state,
@@ -192,6 +245,7 @@ export const resolveAdditionalGarmentPriceRows = ({
   additionalAssignments,
   mainGarmentPriceRows,
   designSelections,
+  constructionByGarmentKey,
 }: {
   additionalAssignments: readonly FabricGarmentAssignment[];
   mainGarmentPriceRows: readonly {
@@ -199,6 +253,9 @@ export const resolveAdditionalGarmentPriceRows = ({
     price: number;
   }[];
   designSelections?: DesignSelections;
+  constructionByGarmentKey?: Readonly<
+    Record<string, GarmentConstructionPricingResolution>
+  >;
 }): {
   rows: AdditionalGarmentPriceRow[];
   unresolvedAssignmentIds: string[];
@@ -213,6 +270,9 @@ export const resolveAdditionalGarmentPriceRows = ({
       unresolvedAssignmentIds.push(assignment.garmentKey);
       continue;
     }
+    const occurrenceConstruction = constructionByGarmentKey?.[
+      assignment.garmentKey
+    ];
     const mainRow = mainGarmentPriceRows.find(
       (row) => row.garmentType === assignment.garmentType,
     );
@@ -220,7 +280,10 @@ export const resolveAdditionalGarmentPriceRows = ({
       assignment.garmentType,
       designSelections || {},
     );
-    const price = mainRow?.price ??
+    const price =
+      occurrenceConstruction?.status === "resolved"
+        ? occurrenceConstruction.totalPrice
+        : mainRow?.price ??
       (canonicalShortsPriceCents === null
         ? null
         : canonicalShortsPriceCents / 100);

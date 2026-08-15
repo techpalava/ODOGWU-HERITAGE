@@ -31,6 +31,11 @@ const CANONICAL_PHYSICAL_GARMENT_TYPE_SET = new Set<FabricGarmentType>(
   CANONICAL_PHYSICAL_GARMENT_TYPES,
 );
 
+export const isCanonicalPhysicalGarmentType = (
+  garmentType: FabricGarmentType,
+): garmentType is CanonicalPhysicalGarmentType =>
+  CANONICAL_PHYSICAL_GARMENT_TYPE_SET.has(garmentType);
+
 const DERIVED_CONSTRUCTION_GARMENT_TYPES = new Set<FabricGarmentType>([
   "kaftan",
   "full_length_gown",

@@ -230,7 +230,8 @@ export type AdditionalGarmentDependencyStatus = "valid" | "orphaned";
 
 export type AdditionalGarmentEligibilityRule =
   | "same_type"
-  | "demographic_policy";
+  | "demographic_policy"
+  | "catalog_all";
 
 export interface FabricCapacityGarmentSpec {
  key: string;
@@ -356,6 +357,7 @@ export interface DesignSelections {
   customDetailSnapshots?: CustomDetailSelectionSnapshot[];
   garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1;
   garmentScopedCustomDetailInputs?: GarmentScopedCustomDetailInputsV1;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
   topLength?: string;
   topPocket?: string;
   dressLength?: string;
@@ -395,6 +397,11 @@ export interface CustomDetailSelectionSnapshot {
   priceCents: number;
   informational?: boolean;
   requiresEvaluation?: boolean;
+}
+
+export interface AdditionalGarmentConstructionStateV1 {
+  schemaVersion: 1;
+  byGarmentKey: Record<string, GarmentConstructionPricingResolution>;
 }
 
 export type CustomDetailOptionId = string;
