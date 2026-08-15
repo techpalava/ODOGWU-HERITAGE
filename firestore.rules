@@ -183,6 +183,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /staffPreviewEntitlements/{ownerUid} {
+      allow get: if ownsDocumentPath(ownerUid);
+      allow list, create, update, delete: if false;
+    }
+
     match /futureDesignStudioDrafts/{ownerUid} {
       allow read: if isAdmin() || ownsDocumentPath(ownerUid);
       allow create: if (isAdmin() || ownsDocumentPath(ownerUid))

@@ -7,9 +7,11 @@ import {
   type RulesTestContext,
 } from "@firebase/rules-unit-testing";
 import {
+  collection,
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -17,6 +19,7 @@ import {
 
 const PROJECT_ID = "demo-odogwu-future-drafts";
 const COLLECTION = "futureDesignStudioDrafts";
+const STAFF_PREVIEW_COLLECTION = "staffPreviewEntitlements";
 const OWNER_UID = "future-draft-owner";
 const OTHER_UID = "different-future-draft-owner";
 
@@ -42,6 +45,11 @@ const anonymous = (): RulesTestContext =>
 
 const reference = (context: RulesTestContext, ownerUid = OWNER_UID) =>
   doc(context.firestore(), COLLECTION, ownerUid);
+
+const staffPreviewReference = (
+  context: RulesTestContext,
+  ownerUid = OWNER_UID,
+) => doc(context.firestore(), STAFF_PREVIEW_COLLECTION, ownerUid);
 
 const validDraft = (overrides: Record<string, unknown> = {}) => ({
   journeySchemaVersion: 1,
@@ -85,6 +93,21 @@ const seedRecord = async ({
     });
   });
   return createdAt;
+};
+
+const seedStaffPreviewEntitlement = async (ownerUid = OWNER_UID) => {
+  const timestamp = Timestamp.fromDate(new Date("2026-08-15T10:00:00.000Z"));
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(staffPreviewReference(context, ownerUid), {
+      schemaVersion: 1,
+      capability: "design_studio_nine_stage_preview",
+      status: "active",
+      revision: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      grantedAt: timestamp,
+    });
+  });
 };
 
 const updateEnvelope = ({
@@ -348,6 +371,70 @@ try {
     await assertFails(getDoc(reference(signedIn(OTHER_UID), OWNER_UID)));
   });
 
+  await runCase("owner can read only their staff preview entitlement", async () => {
+    await seedStaffPreviewEntitlement();
+    const snapshot = await assertSucceeds(
+      getDoc(staffPreviewReference(signedIn(OWNER_UID))),
+    );
+    assert.equal(snapshot.exists(), true);
+    await assertFails(
+      getDoc(staffPreviewReference(signedIn(OTHER_UID), OWNER_UID)),
+    );
+    await assertFails(
+      getDoc(
+        staffPreviewReference(
+          testEnvironment.authenticatedContext(OTHER_UID, {
+            admin: true,
+            firebase: { sign_in_provider: "password" },
+          }),
+          OWNER_UID,
+        ),
+      ),
+    );
+  });
+
+  await runCase("anonymous and signed-out entitlement reads are denied", async () => {
+    await seedStaffPreviewEntitlement();
+    await assertFails(
+      getDoc(staffPreviewReference(testEnvironment.unauthenticatedContext())),
+    );
+    await assertFails(getDoc(staffPreviewReference(anonymous())));
+  });
+
+  await runCase("staff preview entitlement listing is denied", async () => {
+    await seedStaffPreviewEntitlement();
+    await assertFails(
+      getDocs(
+        collection(
+          signedIn(OWNER_UID).firestore(),
+          STAFF_PREVIEW_COLLECTION,
+        ),
+      ),
+    );
+  });
+
+  await runCase("owner cannot create a staff preview entitlement", async () => {
+    const timestamp = Timestamp.fromDate(new Date("2026-08-15T10:00:00.000Z"));
+    await assertFails(
+      setDoc(staffPreviewReference(signedIn(OWNER_UID)), {
+        schemaVersion: 1,
+        capability: "design_studio_nine_stage_preview",
+        status: "active",
+        revision: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        grantedAt: timestamp,
+      }),
+    );
+  });
+
+  await runCase("owner cannot update, revoke, or delete an entitlement", async () => {
+    await seedStaffPreviewEntitlement();
+    const ownerReference = staffPreviewReference(signedIn(OWNER_UID));
+    await assertFails(setDoc(ownerReference, { status: "revoked" }, { merge: true }));
+    await assertFails(deleteDoc(ownerReference));
+  });
+
   await runCase("representative unrelated collection rules are unchanged", async () => {
     const publicFabric = doc(
       testEnvironment.unauthenticatedContext().firestore(),
@@ -363,8 +450,8 @@ try {
     await assertFails(setDoc(publicFabric, { name: "Tampered fabric" }));
   });
 
-  assert.equal(passed, 24);
-  console.log(`Firestore emulator owner-isolation matrix passed (${passed}/24).`);
+  assert.equal(passed, 29);
+  console.log(`Firestore emulator security matrix passed (${passed}/29).`);
 } finally {
   await testEnvironment.cleanup();
 }

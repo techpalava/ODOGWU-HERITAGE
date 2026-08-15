@@ -73,5 +73,9 @@ assert.match(
   rules,
   /match \/futureDesignStudioDrafts\/\{ownerUid\}[\s\S]*?allow delete: if false/,
 );
+assert.match(
+  rules,
+  /match \/staffPreviewEntitlements\/\{ownerUid\} \{\s*allow get: if ownsDocumentPath\(ownerUid\);\s*allow list, create, update, delete: if false;/,
+);
 
 console.log("PASS: Firebase identity and Firestore rule security checks");
