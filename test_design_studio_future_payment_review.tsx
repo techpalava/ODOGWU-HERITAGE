@@ -183,6 +183,7 @@ const candidate: FutureOrderCandidateV1 = {
       availability: "available",
       capacityUnits: 2,
       materialPriceCents: 1000,
+      pricingTreatment: "included_in_garment_construction",
       garmentAssignments: [
         {
           garmentKey: "base:shirt",
@@ -208,6 +209,7 @@ const candidate: FutureOrderCandidateV1 = {
       availability: "available",
       capacityUnits: 2,
       materialPriceCents: 1000,
+      pricingTreatment: "included_in_garment_construction",
       garmentAssignments: [
         {
           garmentKey: "base:agbada",
@@ -263,17 +265,28 @@ const candidate: FutureOrderCandidateV1 = {
     parcelWeightKg: 2,
   },
   pricing: {
+    schemaVersion: 2,
+    model: "all_inclusive_garment_construction",
     status: "exact",
-    constructionAndSewingCents: 30000,
-    fabricMaterialCents: 2000,
+    garmentConstructionSubtotalCents: 30000,
     customDetailsCents: 2400,
-    preTaxDesignSubtotalCents: 34400,
-    taxPercentage: 7.5,
-    taxCents: 2580,
-    lagosToEindhovenShippingCents: 13125,
-    selectedDesignTotalCents: 50105,
+    selectedDesignTotalCents: 32400,
     postEindhovenAdjustmentCents: 2660,
-    exactTotalCents: 52765,
+    exactTotalCents: 35060,
+    components: {
+      fabric: { status: "included_in_garment_construction", amountCents: null },
+      sewing: { status: "included_in_garment_construction", amountCents: null },
+      tax: { status: "included_in_garment_construction", amountCents: null },
+      lagosToEindhovenShipping: {
+        status: "included_in_garment_construction",
+        amountCents: null,
+      },
+      customDetails: { status: "separately_charged", amountCents: 2400 },
+      postEindhovenDelivery: {
+        status: "separately_charged",
+        amountCents: 2660,
+      },
+    },
   },
   contentStatus: "reviewable",
   paymentStatus: "payment_provider_unavailable",
@@ -301,7 +314,7 @@ assert.equal(getFuturePaymentReviewGarments(candidate)[0].customDetails.length, 
 assert.equal(getFuturePaymentReviewGarments(candidate)[1].customDetails.length, 1);
 assert.equal(
   getFuturePaymentReviewPricingRows(candidate.pricing).filter(
-    (row) => row.id === "lagos_to_eindhoven",
+    (row) => row.id === "included_components",
   ).length,
   1,
 );
@@ -341,10 +354,11 @@ for (const expected of [
   assert.ok(reviewMarkup.includes(expected), `Missing review text: ${expected}`);
 }
 assert.equal((reviewMarkup.match(/Fabric Selection/g) || []).length, 2);
-assert.equal((reviewMarkup.match(/data-pricing-row="lagos_to_eindhoven"/g) || []).length, 1);
-assert.equal((reviewMarkup.match(/€131\.25/g) || []).length, 1);
+assert.equal((reviewMarkup.match(/data-pricing-row="included_components"/g) || []).length, 1);
+assert.equal((reviewMarkup.match(/€131\.25/g) || []).length, 0);
 assert.equal((reviewMarkup.match(/€26\.60/g) || []).length, 1);
-assert.equal((reviewMarkup.match(/€527\.65/g) || []).length, 1);
+assert.equal((reviewMarkup.match(/€350\.60/g) || []).length, 1);
+assert.ok(reviewMarkup.includes("Included in Garment Construction"));
 assert.ok(reviewMarkup.includes("disabled=\"\""));
 assert.ok(
   reviewMarkup.includes(
@@ -389,10 +403,12 @@ const evaluationCandidate: FutureOrderCandidateV1 = {
     ...candidate.pricing,
     status: "pending",
     customDetailsCents: null,
-    preTaxDesignSubtotalCents: null,
-    taxCents: null,
     selectedDesignTotalCents: null,
     exactTotalCents: null,
+    components: {
+      ...candidate.pricing.components,
+      customDetails: { status: "pricing_pending", amountCents: null },
+    },
   },
   contentStatus: "blocked",
   blockers: [
@@ -428,7 +444,7 @@ const blockedMarkup = renderToStaticMarkup(
 assert.ok(blockedMarkup.includes("Your order needs attention"));
 assert.ok(blockedMarkup.includes("Price requires evaluation."));
 assert.ok(blockedMarkup.includes("Edit Custom Details"));
-assert.equal(blockedMarkup.includes("€527.65"), false);
+assert.equal(blockedMarkup.includes("€350.60"), false);
 assert.ok(blockedMarkup.includes("Available after all prices are confirmed"));
 
 const componentSource = readFileSync(

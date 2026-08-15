@@ -40,7 +40,6 @@ interface DormantFutureFabricStepProps {
   requiredFabricQuantity: number;
   selectedFabricQuantity: number;
   constructionPrice: number;
-  stagePrice: number | null;
   onAssignFabricToGarment: (fabric: Fabric, garmentKey: string) => void;
   onUseSameFabricForGarment: (garmentKey: string) => void;
   onBack: () => void;
@@ -76,7 +75,6 @@ export const DormantFutureFabricStep = ({
   requiredFabricQuantity,
   selectedFabricQuantity,
   constructionPrice,
-  stagePrice,
   onAssignFabricToGarment,
   onUseSameFabricForGarment,
   onBack,
@@ -396,12 +394,15 @@ export const DormantFutureFabricStep = ({
           <div className="mt-4 space-y-2 border-t border-heritage-gold/15 pt-4 text-sm">
             <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
               <span className="min-w-0 break-words text-heritage-ink/70">
-                Garment construction
+                Garment Construction Subtotal
               </span>
               <span className="shrink-0 self-end font-mono font-bold text-heritage-green sm:self-auto">
                 {PRICING_CURRENCY_SYMBOL}{constructionPrice.toFixed(2)}
               </span>
             </div>
+            <p className="text-xs leading-relaxed text-heritage-ink/60">
+              Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.
+            </p>
             {pricing.allocationLines.map((line, index) => (
               <div
                 key={line.allocationId}
@@ -411,18 +412,10 @@ export const DormantFutureFabricStep = ({
                   Fabric Selection {index + 1}: {line.fabric.name}
                 </span>
                 <span className="shrink-0 self-end font-mono font-bold text-heritage-green sm:self-auto">
-                  {PRICING_CURRENCY_SYMBOL}{line.materialPrice.toFixed(2)}
+                  Included
                 </span>
               </div>
             ))}
-            {stagePrice !== null && (
-              <div className="flex min-w-0 flex-col gap-1 border-t border-heritage-gold/15 pt-3 font-bold text-heritage-green sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                <span>Garment and fabric total</span>
-                <span className="shrink-0 self-end font-mono sm:self-auto">
-                  {PRICING_CURRENCY_SYMBOL}{stagePrice.toFixed(2)}
-                </span>
-              </div>
-            )}
           </div>
         )}
       </aside>

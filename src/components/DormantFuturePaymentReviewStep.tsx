@@ -654,7 +654,7 @@ export const DormantFuturePaymentReviewStep = ({
               </div>
             )}
             <p className="mt-4 break-words text-sm font-semibold text-heritage-green">
-              Shipping from Lagos to Eindhoven is already included in your Selected Design Price.
+              Lagos-to-Eindhoven shipping: Included in Garment Construction.
             </p>
             <p className="mt-2 text-xs leading-relaxed text-heritage-ink/60">
               {candidate.pricing.postEindhovenAdjustmentCents === null
@@ -673,7 +673,9 @@ export const DormantFuturePaymentReviewStep = ({
                 >
                   <dt className="min-w-0 break-words text-heritage-ink/70">{row.label}</dt>
                   <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
-                    {row.amountCents === null ? (
+                    {row.valueLabel ? (
+                      row.valueLabel
+                    ) : row.amountCents === null ? (
                       <PendingAmount />
                     ) : (
                       moneyFromCents(row.amountCents)

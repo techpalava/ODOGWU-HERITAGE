@@ -59,10 +59,7 @@ import {
   reconcileFutureMeasurementState,
   setFutureMeasurementInput,
 } from "./src/utils/measurementBlueprint";
-import {
-  calculateIndividualShipping,
-  resolveShippingGarmentPieceCount,
-} from "./src/utils/shippingPricing";
+import { resolveShippingGarmentPieceCount } from "./src/utils/shippingPricing";
 
 const inspection = inspectCustomDetailCatalog([]);
 const fabric: Fabric = {
@@ -288,9 +285,6 @@ const buildSummaryAuthority = ({
     garmentConstructionSelectionMode: "garment_type_locked",
     garmentTypeSelection,
   });
-  const garmentPieceCount = resolveShippingGarmentPieceCount({
-    fabricAllocations: fabricAllocationState.fabricAllocations,
-  });
   return {
     garmentTypeSelection,
     catalogInspection: inspection,
@@ -306,9 +300,6 @@ const buildSummaryAuthority = ({
     measurementPlan,
     measurementState,
     basePricing,
-    taxPercentage: businessSettings.pricingSettings.vatTaxPercentage,
-    lagosToEindhovenShipping:
-      calculateIndividualShipping(garmentPieceCount).priceEur,
   };
 };
 
@@ -410,20 +401,23 @@ assert.ok(
   ),
 );
 assert.equal(candidate.pricing.status, "exact");
+assert.equal(candidate.pricing.schemaVersion, 2);
+assert.equal(candidate.pricing.model, "all_inclusive_garment_construction");
 assert.equal(
-  candidate.pricing.constructionAndSewingCents! +
-    candidate.pricing.fabricMaterialCents! +
+  candidate.pricing.garmentConstructionSubtotalCents! +
     candidate.pricing.customDetailsCents!,
-  candidate.pricing.preTaxDesignSubtotalCents,
-  "construction, fabric, and occurrence pricing reconcile once",
-);
-assert.equal(
-  candidate.pricing.preTaxDesignSubtotalCents! +
-    candidate.pricing.taxCents! +
-    candidate.pricing.lagosToEindhovenShippingCents!,
   candidate.pricing.selectedDesignTotalCents,
-  "tax and Lagos-to-Eindhoven shipping occur exactly once",
+  "all-inclusive construction and occurrence pricing reconcile once",
 );
+for (const component of [
+  candidate.pricing.components.fabric,
+  candidate.pricing.components.sewing,
+  candidate.pricing.components.tax,
+  candidate.pricing.components.lagosToEindhovenShipping,
+]) {
+  assert.equal(component.status, "included_in_garment_construction");
+  assert.equal(component.amountCents, null);
+}
 assert.equal(
   candidate.pricing.selectedDesignTotalCents! +
     candidate.pricing.postEindhovenAdjustmentCents!,
@@ -498,12 +492,13 @@ assert.deepEqual(
   [["base:shirt", "shirt"], ["base:kaftan", "kaftan"]],
 );
 assert.equal(shirtKaftan.candidate.fabricAllocations.length, 2);
-assert.equal(
-  shirtKaftan.candidate.fabricAllocations.reduce(
-    (total, allocation) => total + (allocation.materialPriceCents || 0),
-    0,
+assert.ok(
+  shirtKaftan.candidate.fabricAllocations.every(
+    (allocation) =>
+      allocation.pricingTreatment === "included_in_garment_construction" &&
+      allocation.materialPriceCents !== null,
   ),
-  shirtKaftan.candidate.pricing.fabricMaterialCents,
+  "resolved fabric prices remain available for validation but are marked included",
 );
 assert.equal(
   shirtKaftan.candidate.customDetails.filter(
@@ -671,7 +666,10 @@ assert.ok(stale.blockers.some((blocker) => blocker.code === "STALE_SHIPPING_QUOT
 
 const malformedCandidate = {
   ...candidate,
-  pricing: { ...candidate.pricing, taxCents: Number.NaN },
+  pricing: {
+    ...candidate.pricing,
+    garmentConstructionSubtotalCents: Number.NaN,
+  },
 };
 assert.equal(normalizeFutureOrderCandidate(malformedCandidate).status, "invalid");
 assert.equal(
@@ -692,7 +690,10 @@ assert.equal(
 );
 const malformedMoneyInput: FutureOrderCandidateBuildInput = {
   ...buildInput(),
-  taxPercentage: Number.NaN,
+  basePricing: {
+    ...buildInput().basePricing!,
+    garmentConstructionSubtotal: Number.NaN,
+  },
 };
 const malformedMoney = buildFutureOrderCandidate(malformedMoneyInput);
 assert.equal(malformedMoney.status, "invalid");

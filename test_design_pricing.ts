@@ -10,6 +10,7 @@ import type {
 } from "./src/types";
 import {
   getCustomDetailsBreakdown,
+  inspectCustomDetailCatalog,
   isLiningEligibleForStyle,
 } from "./src/utils/catalogHelpers";
 import {
@@ -40,6 +41,7 @@ import {
 } from "./src/utils/designPricing";
 import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "./src/utils/designPriceBreakdownPresentation";
 import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAllocationPricing";
+import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 
 const makeStyle = (
   overrides: Partial<StyleCategory> = {},
@@ -319,6 +321,109 @@ const materialPricingFor = (...fabricCodes: string[]) => {
   assert.equal(result.status, "resolved");
   return result;
 };
+const constructionCatalog = inspectCustomDetailCatalog([]).activeOptions;
+const shirtTrouserSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["shirt", "trouser"],
+  selectedDemographic: "male",
+  normalizedCustomDetailCatalog: constructionCatalog,
+}).selection;
+const allInclusiveShirtTrouser = calculateDesignPricing({
+  route: "alone",
+  design: {},
+  materialPricing: materialPricingFor(hiTarget.code, lace.code),
+  catalog: constructionCatalog,
+  businessSettings: pricingSettings,
+  garmentConstructionSelectionMode: "garment_type_locked",
+  garmentTypeSelection: shirtTrouserSelection,
+});
+assert.ok(allInclusiveShirtTrouser);
+assert.equal(allInclusiveShirtTrouser.pricingModel, "all_inclusive_garment_construction");
+assert.equal(allInclusiveShirtTrouser.garmentConstructionSubtotal, 140);
+assert.equal(allInclusiveShirtTrouser.garmentSubtotal, 140);
+assert.equal(allInclusiveShirtTrouser.fabricPrice, 0);
+assert.equal(allInclusiveShirtTrouser.fabricSewingCost, 0);
+assert.equal(allInclusiveShirtTrouser.constructionSewingCost, 0);
+assert.ok(allInclusiveShirtTrouser.totalFabricMaterialPrice > 0);
+
+const shirtSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["shirt"],
+  selectedDemographic: "male",
+  normalizedCustomDetailCatalog: constructionCatalog,
+}).selection;
+const priceLockedShirt = (fabricCodes: string[], additionalShirts = 0) =>
+  calculateDesignPricing({
+    route: "alone",
+    design: {},
+    materialPricing: materialPricingFor(...fabricCodes),
+    additionalGarments: Array.from({ length: additionalShirts }, (_, index) => ({
+      garmentKey: `additional:shirt:${index + 1}`,
+      code: "ADDITIONAL_SHIRT",
+      garmentType: "shirt" as const,
+      fabricUnits: 1 as const,
+      sourceRole: "additional" as const,
+      dependencyStatus: "valid" as const,
+    })),
+    catalog: constructionCatalog,
+    businessSettings: pricingSettings,
+    garmentConstructionSelectionMode: "garment_type_locked",
+    garmentTypeSelection: shirtSelection,
+  });
+const oneFabricShirt = priceLockedShirt([hiTarget.code]);
+const twoAllocationShirt = priceLockedShirt([hiTarget.code, lace.code]);
+const twoShirts = priceLockedShirt([hiTarget.code], 1);
+assert.equal(oneFabricShirt?.garmentSubtotal, 65);
+assert.equal(twoAllocationShirt?.garmentSubtotal, 65);
+assert.equal(twoShirts?.garmentSubtotal, 130);
+
+for (const [garmentType, expectedPrice] of [
+  ["shirt", 65],
+  ["dress", 70],
+  ["standard_shorts", 70],
+  ["bum_shorts", 70],
+  ["trouser", 75],
+  ["skirt", 75],
+] as const) {
+  const selection = reconcileGarmentTypeStepSelection({
+    selectedGarmentTypes: [garmentType],
+    selectedDemographic:
+      garmentType === "dress" || garmentType === "skirt" ||
+      garmentType === "bum_shorts"
+        ? "female"
+        : "male",
+    normalizedCustomDetailCatalog: constructionCatalog,
+  }).selection;
+  const pricing = calculateDesignPricing({
+    route: "alone",
+    design: {},
+    materialPricing: materialPricingFor(hiTarget.code),
+    catalog: constructionCatalog,
+    businessSettings: pricingSettings,
+    garmentConstructionSelectionMode: "garment_type_locked",
+    garmentTypeSelection: selection,
+  });
+  assert.equal(
+    pricing?.garmentConstructionSubtotal,
+    expectedPrice,
+    `${garmentType} retains its all-inclusive construction price`,
+  );
+}
+
+const allInclusiveSelectedDesign = calculateSelectedDesignPrice({
+  pricingModel: "all_inclusive_garment_construction",
+  garmentConstructionSubtotal: 65,
+  customDetailsSubtotal: 10,
+  eindhovenToDestinationShipping: 7.5,
+});
+assert.equal(allInclusiveSelectedDesign.selectedDesignPrice, 75);
+assert.equal(allInclusiveSelectedDesign.finalOrderSubtotal, 82.5);
+assert.equal(
+  allInclusiveSelectedDesign.includedComponents.tax,
+  "INCLUDED_IN_GARMENT_CONSTRUCTION",
+);
+assert.equal(
+  allInclusiveSelectedDesign.includedComponents.lagosToEindhovenShipping,
+  "INCLUDED_IN_GARMENT_CONSTRUCTION",
+);
 const individualDesignPricing = calculateDesignPricing({
   route: "alone",
   design: selectedClothing,
@@ -611,7 +716,7 @@ assert.ok(
 
 assert.equal(
   SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
-  "Includes fabric(s), sewing, tax, and shipping from Lagos to Eindhoven.",
+  "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.",
 );
 const summaryStepSource = readFileSync(
   "src/components/DormantFutureSummaryStep.tsx",

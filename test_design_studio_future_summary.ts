@@ -40,10 +40,6 @@ import {
   reconcileFutureMeasurementState,
   setFutureMeasurementInput,
 } from "./src/utils/measurementBlueprint";
-import {
-  calculateIndividualShipping,
-  resolveShippingGarmentPieceCount,
-} from "./src/utils/shippingPricing";
 
 const inspection = inspectCustomDetailCatalog([]);
 const fabric: Fabric = {
@@ -226,9 +222,6 @@ const buildSummaryInput = ({
     garmentConstructionSelectionMode: "garment_type_locked",
     garmentTypeSelection,
   });
-  const garmentPieceCount = resolveShippingGarmentPieceCount({
-    fabricAllocations: fabricAllocationState.fabricAllocations,
-  });
   return {
     garmentTypeSelection,
     catalogInspection: inspection,
@@ -244,9 +237,6 @@ const buildSummaryInput = ({
     measurementPlan,
     measurementState,
     basePricing,
-    taxPercentage: businessSettings.pricingSettings.vatTaxPercentage,
-    lagosToEindhovenShipping:
-      calculateIndividualShipping(garmentPieceCount).priceEur,
   };
 };
 
@@ -306,10 +296,24 @@ assert.equal(
 assert.equal(
   exactSummary.pricingSummary.selectedDesignPrice?.selectedDesignPrice,
   Number((
-    exactSummary.pricingSummary.selectedDesignPrice!.taxInclusiveDesignSubtotal +
-    exactInput.lagosToEindhovenShipping
+    exactSummary.pricingSummary.garmentConstructionSubtotal! +
+    exactSummary.pricingSummary.customDetailsExactSubtotal
   ).toFixed(2)),
-  "Lagos to Eindhoven shipping is added exactly once",
+  "construction and occurrence-priced Custom Details reconcile exactly once",
+);
+assert.equal(
+  exactSummary.pricingSummary.garmentConstructionSubtotal,
+  65,
+  "Standard Shirt construction remains the all-inclusive €65 price",
+);
+assert.equal(
+  exactSummary.pricingSummary.selectedDesignPrice?.includedComponents
+    .lagosToEindhovenShipping,
+  "INCLUDED_IN_GARMENT_CONSTRUCTION",
+);
+assert.equal(
+  exactSummary.fabricSummary[0].pricingTreatment,
+  "included_in_garment_construction",
 );
 
 const shirtKaftanState = setGarmentScopedCustomDetailSelection(

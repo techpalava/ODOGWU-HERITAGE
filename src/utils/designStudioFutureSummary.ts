@@ -23,8 +23,8 @@ import {
 } from "./designStudioFutureDesignStyle";
 import {
   calculateSelectedDesignPrice,
+  type AllInclusiveSelectedDesignPriceBreakdown,
   type AuthoritativeDesignPricing,
-  type SelectedDesignPriceBreakdown,
 } from "./designPricing";
 import {
   type GarmentScopedCustomDetailsCompletionResult,
@@ -94,6 +94,7 @@ export interface FutureSummaryFabricAllocation {
   availability: "available" | "unavailable" | "missing";
   capacityUnits: number;
   materialPrice: number | null;
+  pricingTreatment: "included_in_garment_construction";
   garments: Array<{
     garmentKey: string;
     garmentType: string;
@@ -151,9 +152,9 @@ export interface FutureSummaryMeasurements {
 
 export interface FutureSummaryPricing {
   status: "exact" | "pending" | "invalid";
-  baseDesignSubtotal: number | null;
+  garmentConstructionSubtotal: number | null;
   customDetailsExactSubtotal: number;
-  selectedDesignPrice: SelectedDesignPriceBreakdown | null;
+  selectedDesignPrice: AllInclusiveSelectedDesignPriceBreakdown | null;
 }
 
 export interface FutureDesignStudioSummary {
@@ -187,8 +188,6 @@ export interface FutureDesignStudioSummaryInput {
   measurementPlan: MeasurementRequirementPlan;
   measurementState: FutureMeasurementStateV1;
   basePricing: AuthoritativeDesignPricing | null;
-  taxPercentage: number;
-  lagosToEindhovenShipping: number | null;
 }
 
 const getPhysicalSubjectLabel = (
@@ -412,6 +411,7 @@ const mapFabrics = ({
         0,
       ),
       materialPrice: line?.materialPrice ?? null,
+      pricingTreatment: "included_in_garment_construction",
       garments: allocation.garmentAssignments.map((assignment) => ({
         garmentKey: assignment.garmentKey,
         garmentType: assignment.garmentType,
@@ -624,18 +624,14 @@ const mapMeasurements = ({
 const mapPricing = ({
   basePricing,
   customDetailsPricing,
-  taxPercentage,
-  lagosToEindhovenShipping,
   blockers,
 }: Pick<
   FutureDesignStudioSummaryInput,
-  | "basePricing"
-  | "customDetailsPricing"
-  | "taxPercentage"
-  | "lagosToEindhovenShipping"
+  "basePricing" | "customDetailsPricing"
 > & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureSummaryPricing => {
   if (
     !basePricing ||
+    basePricing.pricingModel !== "all_inclusive_garment_construction" ||
     basePricing.baseGarmentPricingStatus !== "resolved" ||
     basePricing.additionalGarmentPricingStatus !== "resolved"
   ) {
@@ -646,7 +642,7 @@ const mapPricing = ({
     });
     return {
       status: "invalid",
-      baseDesignSubtotal: null,
+      garmentConstructionSubtotal: null,
       customDetailsExactSubtotal: 0,
       selectedDesignPrice: null,
     };
@@ -659,7 +655,7 @@ const mapPricing = ({
     });
     return {
       status: "invalid",
-      baseDesignSubtotal: basePricing.garmentSubtotal,
+      garmentConstructionSubtotal: basePricing.garmentConstructionSubtotal,
       customDetailsExactSubtotal: 0,
       selectedDesignPrice: null,
     };
@@ -671,34 +667,33 @@ const mapPricing = ({
   if (customDetailsPricing.status === "pending") {
     return {
       status: "pending",
-      baseDesignSubtotal: basePricing.garmentSubtotal,
+      garmentConstructionSubtotal: basePricing.garmentConstructionSubtotal,
       customDetailsExactSubtotal,
       selectedDesignPrice: null,
     };
   }
   const selectedDesignPrice = calculateSelectedDesignPrice({
-    preTaxDesignSubtotal:
-      basePricing.garmentSubtotal + customDetailsExactSubtotal,
-    taxPercentage,
-    lagosToEindhovenShipping,
+    pricingModel: "all_inclusive_garment_construction",
+    garmentConstructionSubtotal: basePricing.garmentConstructionSubtotal,
+    customDetailsSubtotal: customDetailsExactSubtotal,
     eindhovenToDestinationShipping: null,
   });
   if (selectedDesignPrice.status !== "READY") {
     blockers.push({
-      code: "PRICING_INBOUND_SHIPPING_INCOMPLETE",
+      code: "PRICING_INVALID",
       section: "pricing",
-      message: "Lagos to Eindhoven shipping pricing is not ready.",
+      message: "The garment construction or Custom Details total needs review.",
     });
     return {
       status: "invalid",
-      baseDesignSubtotal: basePricing.garmentSubtotal,
+      garmentConstructionSubtotal: basePricing.garmentConstructionSubtotal,
       customDetailsExactSubtotal,
       selectedDesignPrice,
     };
   }
   return {
     status: "exact",
-    baseDesignSubtotal: basePricing.garmentSubtotal,
+    garmentConstructionSubtotal: basePricing.garmentConstructionSubtotal,
     customDetailsExactSubtotal,
     selectedDesignPrice,
   };
@@ -751,8 +746,6 @@ export const projectFutureDesignStudioSummary = (
   const pricingSummary = mapPricing({
     basePricing: input.basePricing,
     customDetailsPricing: input.customDetailsPricing,
-    taxPercentage: input.taxPercentage,
-    lagosToEindhovenShipping: input.lagosToEindhovenShipping,
     blockers,
   });
   return {

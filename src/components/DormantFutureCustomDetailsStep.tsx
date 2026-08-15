@@ -32,7 +32,6 @@ interface DormantFutureCustomDetailsStepProps {
   completion: GarmentScopedCustomDetailsCompletionResult;
   pricing: GarmentScopedCustomDetailsPricingResult;
   constructionSubtotal: number;
-  fabricSubtotal: number | null;
   onSingleSelect: (
     garmentKey: string,
     selectionGroup: CustomDetailSelectionGroup,
@@ -95,7 +94,6 @@ export const DormantFutureCustomDetailsStep = ({
   completion,
   pricing,
   constructionSubtotal,
-  fabricSubtotal,
   onSingleSelect,
   onToggleMultiSelect,
   onPersonalizedTextChange,
@@ -155,9 +153,9 @@ export const DormantFutureCustomDetailsStep = ({
       ? pricing.subtotal
       : pricing.exactSubtotalCents / 100;
   const estimatedTotal =
-    fabricSubtotal === null || pricing.status !== "exact"
+    pricing.status !== "exact"
       ? null
-      : constructionSubtotal + fabricSubtotal + customDetailsSubtotal;
+      : constructionSubtotal + customDetailsSubtotal;
   const subjectLabelByGarmentKey = new Map(
     reconciliation.subjects.map((subject) => [
       subject.garmentKey,
@@ -434,26 +432,21 @@ export const DormantFutureCustomDetailsStep = ({
 
         <aside className="mt-5 min-w-0 rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm xl:sticky xl:top-4 xl:mt-0">
           <h3 className="font-serif text-lg font-bold text-heritage-green">
-            Future Price Summary
+            Live Price Summary
           </h3>
           <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
             Updates from your eligible Custom Details appear here.
           </p>
           <div className="mt-4 space-y-2.5 text-sm">
             <div className="flex min-w-0 items-start justify-between gap-3">
-              <span className="min-w-0 break-words text-heritage-ink/70">Base garment construction</span>
+              <span className="min-w-0 break-words text-heritage-ink/70">Garment Construction Subtotal</span>
               <span className="shrink-0 font-mono font-bold text-heritage-green">
                 {PRICING_CURRENCY_SYMBOL}{constructionSubtotal.toFixed(2)}
               </span>
             </div>
-            <div className="flex min-w-0 items-start justify-between gap-3">
-              <span className="min-w-0 break-words text-heritage-ink/70">Fabric subtotal</span>
-              <span className="shrink-0 font-mono font-bold text-heritage-green">
-                {fabricSubtotal === null
-                  ? "Pending"
-                  : `${PRICING_CURRENCY_SYMBOL}${fabricSubtotal.toFixed(2)}`}
-              </span>
-            </div>
+            <p className="text-xs leading-relaxed text-heritage-ink/60">
+              Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.
+            </p>
             <div className="flex min-w-0 items-start justify-between gap-3">
               <span className="min-w-0 break-words text-heritage-ink/70">Custom Details subtotal</span>
               <span className="shrink-0 font-mono font-bold text-heritage-green">

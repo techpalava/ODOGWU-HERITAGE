@@ -40,11 +40,10 @@ import {
 export const CHECKOUT_DESIGN_PRICING_VERSION =
   "2026-08-12-design-checkout-v3";
 
-export type SelectedDesignPriceStatus =
-  | "READY"
-  | "INBOUND_SHIPPING_PENDING";
+export type SelectedDesignPriceStatus = "READY" | "INBOUND_SHIPPING_PENDING";
 
-export interface SelectedDesignPriceBreakdown {
+export interface LegacySelectedDesignPriceBreakdown {
+  pricingModel: "legacy_additive";
   status: SelectedDesignPriceStatus;
   preTaxDesignSubtotal: number;
   taxPercentage: number;
@@ -56,6 +55,29 @@ export interface SelectedDesignPriceBreakdown {
   finalOrderSubtotal: number | null;
 }
 
+export const ALL_INCLUSIVE_CONSTRUCTION_COMPONENT_STATUS =
+  "INCLUDED_IN_GARMENT_CONSTRUCTION" as const;
+
+export interface AllInclusiveSelectedDesignPriceBreakdown {
+  pricingModel: "all_inclusive_garment_construction";
+  status: "READY" | "INVALID";
+  garmentConstructionSubtotal: number | null;
+  customDetailsSubtotal: number | null;
+  selectedDesignPrice: number | null;
+  includedComponents: Readonly<{
+    fabric: typeof ALL_INCLUSIVE_CONSTRUCTION_COMPONENT_STATUS;
+    sewing: typeof ALL_INCLUSIVE_CONSTRUCTION_COMPONENT_STATUS;
+    tax: typeof ALL_INCLUSIVE_CONSTRUCTION_COMPONENT_STATUS;
+    lagosToEindhovenShipping: typeof ALL_INCLUSIVE_CONSTRUCTION_COMPONENT_STATUS;
+  }>;
+  eindhovenToDestinationShipping: number | null;
+  finalOrderSubtotal: number | null;
+}
+
+export type SelectedDesignPriceBreakdown =
+  | LegacySelectedDesignPriceBreakdown
+  | AllInclusiveSelectedDesignPriceBreakdown;
+
 export const sanitizeTaxPercentage = (value: number): number => {
   if (!Number.isFinite(value)) return 0;
   return Math.min(100, Math.max(0, value));
@@ -65,21 +87,85 @@ const sanitizeMoneyInput = (value: number): number =>
   Number.isFinite(value) ? roundMoney(Math.max(0, value)) : 0;
 
 /**
- * Selected Design Price includes the taxable design and inbound shipping only.
- * Final-mile delivery remains separate and is added exactly once to the final
- * order subtotal when its quote is ready.
+ * Legacy additive pricing keeps tax and inbound shipping explicit. New
+ * garment-construction pricing uses the all-inclusive input below instead.
+ * Final-mile delivery remains separate in both models.
  */
-export const calculateSelectedDesignPrice = ({
-  preTaxDesignSubtotal,
-  taxPercentage,
-  lagosToEindhovenShipping,
-  eindhovenToDestinationShipping = null,
-}: {
+interface LegacySelectedDesignPriceInput {
+  pricingModel?: "legacy_additive";
   preTaxDesignSubtotal: number;
   taxPercentage: number;
   lagosToEindhovenShipping: number | null;
   eindhovenToDestinationShipping?: number | null;
-}): SelectedDesignPriceBreakdown => {
+}
+
+interface AllInclusiveSelectedDesignPriceInput {
+  pricingModel: "all_inclusive_garment_construction";
+  garmentConstructionSubtotal: number;
+  customDetailsSubtotal: number;
+  eindhovenToDestinationShipping?: number | null;
+}
+
+export function calculateSelectedDesignPrice(
+  input: AllInclusiveSelectedDesignPriceInput,
+): AllInclusiveSelectedDesignPriceBreakdown;
+export function calculateSelectedDesignPrice(
+  input: LegacySelectedDesignPriceInput,
+): LegacySelectedDesignPriceBreakdown;
+export function calculateSelectedDesignPrice(
+  input: LegacySelectedDesignPriceInput | AllInclusiveSelectedDesignPriceInput,
+): SelectedDesignPriceBreakdown;
+export function calculateSelectedDesignPrice(
+  input: LegacySelectedDesignPriceInput | AllInclusiveSelectedDesignPriceInput,
+): SelectedDesignPriceBreakdown {
+  if (input.pricingModel === "all_inclusive_garment_construction") {
+    const garmentConstructionSubtotal =
+      Number.isFinite(input.garmentConstructionSubtotal) &&
+      input.garmentConstructionSubtotal >= 0
+        ? roundMoney(input.garmentConstructionSubtotal)
+        : null;
+    const customDetailsSubtotal =
+      Number.isFinite(input.customDetailsSubtotal) &&
+      input.customDetailsSubtotal >= 0
+        ? roundMoney(input.customDetailsSubtotal)
+        : null;
+    const finalMileShipping =
+      typeof input.eindhovenToDestinationShipping === "number" &&
+      Number.isFinite(input.eindhovenToDestinationShipping) &&
+      input.eindhovenToDestinationShipping >= 0
+        ? roundMoney(input.eindhovenToDestinationShipping)
+        : null;
+    const selectedDesignPrice =
+      garmentConstructionSubtotal === null || customDetailsSubtotal === null
+        ? null
+        : roundMoney(garmentConstructionSubtotal + customDetailsSubtotal);
+    return {
+      pricingModel: "all_inclusive_garment_construction",
+      status: selectedDesignPrice === null ? "INVALID" : "READY",
+      garmentConstructionSubtotal,
+      customDetailsSubtotal,
+      selectedDesignPrice,
+      includedComponents: {
+        fabric: ALL_INCLUSIVE_CONSTRUCTION_COMPONENT_STATUS,
+        sewing: ALL_INCLUSIVE_CONSTRUCTION_COMPONENT_STATUS,
+        tax: ALL_INCLUSIVE_CONSTRUCTION_COMPONENT_STATUS,
+        lagosToEindhovenShipping:
+          ALL_INCLUSIVE_CONSTRUCTION_COMPONENT_STATUS,
+      },
+      eindhovenToDestinationShipping: finalMileShipping,
+      finalOrderSubtotal:
+        selectedDesignPrice === null || finalMileShipping === null
+          ? null
+          : roundMoney(selectedDesignPrice + finalMileShipping),
+    };
+  }
+
+  const {
+    preTaxDesignSubtotal,
+    taxPercentage,
+    lagosToEindhovenShipping,
+    eindhovenToDestinationShipping = null,
+  } = input;
   const sanitizedPreTaxSubtotal = sanitizeMoneyInput(preTaxDesignSubtotal);
   const sanitizedTaxPercentage = sanitizeTaxPercentage(taxPercentage);
   const taxAmount = roundMoney(
@@ -106,6 +192,7 @@ export const calculateSelectedDesignPrice = ({
       : roundMoney(taxInclusiveDesignSubtotal + inboundShipping);
 
   return {
+    pricingModel: "legacy_additive",
     status:
       selectedDesignPrice === null ? "INBOUND_SHIPPING_PENDING" : "READY",
     preTaxDesignSubtotal: sanitizedPreTaxSubtotal,
@@ -120,7 +207,7 @@ export const calculateSelectedDesignPrice = ({
         ? roundMoney(selectedDesignPrice + finalMileShipping)
         : null,
   };
-};
+}
 
 export const CONSTRUCTION_SEWING_COST_MAP = {
   default: 4.06,
@@ -211,6 +298,7 @@ const getConstructionSewingCostForOptionIds = (
   );
 
 export interface AuthoritativeDesignPricing {
+  pricingModel: "legacy_additive" | "all_inclusive_garment_construction";
   baseGarmentPricingStatus: "resolved" | "unresolved";
   unresolvedBaseGarmentTypes: FabricGarmentType[];
   baseGarmentPriceRows: CustomerDesignBaseGarmentPriceRow[];
@@ -218,6 +306,7 @@ export interface AuthoritativeDesignPricing {
   unresolvedAdditionalGarmentIds: string[];
   additionalGarmentPriceRows: CustomerDesignAdditionalGarmentPriceRow[];
   clothingPrice: number;
+  garmentConstructionSubtotal: number;
   includesFabricAndSewing: boolean;
   fabricAllocationCount: number;
   totalFabricMaterialPrice: number;
@@ -505,10 +594,14 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
   const customDetailsPrice = roundMoney(
     constructionUpgradesPrice + monogramPrice + roundedAccessoriesPrice,
   );
-  const includesFabricAndSewing = isBatchPricingRoute(route);
+  const usesAllInclusiveConstruction = isLockedConstructionMode;
+  const includesFabricAndSewing =
+    usesAllInclusiveConstruction || isBatchPricingRoute(route);
   const fabricPrice = !hasResolvedMaterialPricing
     ? 0
-    : includesFabricAndSewing
+    : usesAllInclusiveConstruction
+      ? 0
+      : includesFabricAndSewing
       ? resolvedMaterialPricing.additionalMaterialPrice
       : resolvedMaterialPricing.totalMaterialPrice;
   const fabricSewingCost = includesFabricAndSewing
@@ -519,6 +612,9 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
     : rawConstructionSewingCost;
 
   return {
+    pricingModel: usesAllInclusiveConstruction
+      ? "all_inclusive_garment_construction"
+      : "legacy_additive",
     baseGarmentPricingStatus: isLockedConstructionMode
       ? constructionBridge.unresolvedGarmentTypes.length === 0
         ? "resolved"
@@ -536,6 +632,7 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
       resolvedAdditionalGarmentPricing.unresolvedAssignmentIds,
     additionalGarmentPriceRows,
     clothingPrice,
+    garmentConstructionSubtotal: clothingPrice,
     includesFabricAndSewing,
     fabricAllocationCount: hasResolvedMaterialPricing
       ? resolvedMaterialPricing.allocationCount
@@ -553,7 +650,9 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
     includedFabricPrice: includesFabricAndSewing
       ? roundMoney(
           hasResolvedMaterialPricing
-            ? resolvedMaterialPricing.baseMaterialPrice
+            ? usesAllInclusiveConstruction
+              ? resolvedMaterialPricing.totalMaterialPrice
+              : resolvedMaterialPricing.baseMaterialPrice
             : 0,
         )
       : 0,

@@ -40,14 +40,13 @@ export interface FuturePaymentReviewMeasurementGroup {
 
 export interface FuturePaymentReviewPricingRow {
   readonly id:
-    | "construction_and_sewing"
-    | "fabric_material"
+    | "garment_construction"
+    | "included_components"
     | "custom_details"
-    | "tax"
-    | "lagos_to_eindhoven"
     | "post_eindhoven";
   readonly label: string;
   readonly amountCents: number | null;
+  readonly valueLabel?: string;
 }
 
 const humanizeIdentifier = (value: string): string =>
@@ -215,32 +214,20 @@ export const getFuturePaymentReviewPricingRows = (
 ): readonly FuturePaymentReviewPricingRow[] => {
   const rows: FuturePaymentReviewPricingRow[] = [
     {
-      id: "construction_and_sewing",
-      label: "Construction and sewing",
-      amountCents: pricing.constructionAndSewingCents,
+      id: "garment_construction",
+      label: "Garment Construction Subtotal",
+      amountCents: pricing.garmentConstructionSubtotalCents,
     },
     {
-      id: "fabric_material",
-      label: "Fabric and material",
-      amountCents: pricing.fabricMaterialCents,
+      id: "included_components",
+      label: "Fabric, tax, Lagos-to-Eindhoven shipping, and sewing",
+      amountCents: null,
+      valueLabel: "Included in Garment Construction",
     },
     {
       id: "custom_details",
       label: "Custom Details",
       amountCents: pricing.customDetailsCents,
-    },
-    {
-      id: "tax",
-      label:
-        pricing.taxPercentage === null
-          ? "Applicable tax"
-          : `Applicable tax (${pricing.taxPercentage}%)`,
-      amountCents: pricing.taxCents,
-    },
-    {
-      id: "lagos_to_eindhoven",
-      label: "Lagos to Eindhoven shipping",
-      amountCents: pricing.lagosToEindhovenShippingCents,
     },
   ];
   if (pricing.postEindhovenAdjustmentCents !== null) {

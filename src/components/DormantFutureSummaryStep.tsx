@@ -116,9 +116,9 @@ export const DormantFutureSummaryStep = ({
       ? "One or more personalised requirements must be evaluated before an exact total can be confirmed."
       : firstBlocker?.message || "Review the first incomplete selection before continuing.";
   const knownConfirmedPrice =
-    summary.pricingSummary.baseDesignSubtotal === null
+    summary.pricingSummary.garmentConstructionSubtotal === null
       ? null
-      : summary.pricingSummary.baseDesignSubtotal +
+      : summary.pricingSummary.garmentConstructionSubtotal +
         summary.pricingSummary.customDetailsExactSubtotal;
 
   return (
@@ -271,7 +271,7 @@ export const DormantFutureSummaryStep = ({
                   <span className="block font-mono font-bold text-heritage-green">
                     {allocation.materialPrice === null
                       ? "Price unavailable"
-                      : money(allocation.materialPrice)}
+                      : "Included"}
                   </span>
                   <span
                     className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
@@ -451,17 +451,14 @@ export const DormantFutureSummaryStep = ({
 
       <section className="rounded-2xl border border-heritage-gold/30 bg-heritage-green p-5 text-white shadow-sm sm:p-6">
         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-heritage-gold">
-          Selected Design Price
+          Garment Construction Subtotal
         </p>
-        <div className="mt-2 flex min-w-0 flex-wrap items-end justify-between gap-3">
+        <div className="mt-2 flex min-w-0 flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="font-serif text-xl font-bold sm:text-2xl">
-              {summary.pricingSummary.status === "exact" &&
-              summary.pricingSummary.selectedDesignPrice?.selectedDesignPrice !== null
-                ? money(summary.pricingSummary.selectedDesignPrice!.selectedDesignPrice!)
-                : summary.pricingSummary.status === "pending"
-                  ? "Price requires evaluation"
-                  : "Price unavailable"}
+              {summary.pricingSummary.garmentConstructionSubtotal === null
+                ? "Price unavailable"
+                : money(summary.pricingSummary.garmentConstructionSubtotal)}
             </p>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-white/75">
               {SELECTED_DESIGN_PRICE_SUPPORTING_TEXT}
@@ -472,20 +469,21 @@ export const DormantFutureSummaryStep = ({
               </p>
             )}
           </div>
-          {summary.pricingSummary.selectedDesignPrice && (
-            <dl className="grid shrink-0 grid-cols-2 gap-x-4 gap-y-1 text-xs">
-              <dt className="text-white/65">Tax</dt>
-              <dd className="text-right font-mono">
-                {money(summary.pricingSummary.selectedDesignPrice.taxAmount)}
-              </dd>
-              <dt className="text-white/65">Lagos to Eindhoven</dt>
-              <dd className="text-right font-mono">
-                {summary.pricingSummary.selectedDesignPrice.lagosToEindhovenShipping === null
-                  ? "Pending"
-                  : money(summary.pricingSummary.selectedDesignPrice.lagosToEindhovenShipping)}
-              </dd>
-            </dl>
-          )}
+          <dl className="grid shrink-0 grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <dt className="text-white/65">Custom Details</dt>
+            <dd className="text-right font-mono">
+              {summary.pricingSummary.status === "pending"
+                ? "Evaluation required"
+                : money(summary.pricingSummary.customDetailsExactSubtotal)}
+            </dd>
+            <dt className="text-white/65">Selected Design Total</dt>
+            <dd className="text-right font-mono font-bold">
+              {summary.pricingSummary.status === "exact" &&
+              summary.pricingSummary.selectedDesignPrice
+                ? money(summary.pricingSummary.selectedDesignPrice.selectedDesignPrice)
+                : "Pending"}
+            </dd>
+          </dl>
         </div>
       </section>
 

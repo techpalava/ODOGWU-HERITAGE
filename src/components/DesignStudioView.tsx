@@ -41,9 +41,6 @@ import { DormantFutureShippingStep } from "./DormantFutureShippingStep";
 import { DormantFuturePaymentReviewStep } from "./DormantFuturePaymentReviewStep";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import {
-  BATCH_MINIMUM_GARMENTS,
-  calculateBatchShipping,
-  calculateIndividualShipping,
   resolveShippingGarmentPieceCount,
 } from "../utils/shippingPricing";
 import { calculateDesignPricing } from "../utils/designPricing";
@@ -55,7 +52,6 @@ import {
   type AuthenticatedFutureDraftIntegrationStatus,
   type AuthenticatedFutureDraftIdentity,
 } from "../services/authenticatedFutureDraftService";
-import { resolvePersonalizedBatchShippingContext } from "../utils/personalizedBatchContext";
 import { resolveDesignStudioFabricAllocationPricing } from "../utils/fabricAllocationPricing";
 import {
   cloneFabricAllocations,
@@ -469,8 +465,6 @@ export default function DesignStudioView({
     "community" | "alone" | "personalized" | "actual"
   >("community");
   const [initialRouteSet, setInitialRouteSet] = useState(false);
-  const [selectedBatchName, _setSelectedBatchName] =
-    useState<string>("August Batch");
   const [customGroupCode, setCustomGroupCode] = useState<string>("");
 
   useEffect(() => {
@@ -528,33 +522,6 @@ export default function DesignStudioView({
   const futureGarmentPieceCount = resolveShippingGarmentPieceCount({
     fabricAllocations: fabricAllocationState.fabricAllocations,
   });
-  const futureLagosToEindhovenShipping = (() => {
-    if (!futureFabricStageCompletion.isComplete) return null;
-    if (batchType === "alone") {
-      return calculateIndividualShipping(futureGarmentPieceCount).priceEur;
-    }
-    if (batchType === "personalized") {
-      const personalizedContext = resolvePersonalizedBatchShippingContext(
-        ctx,
-        customGroupCode,
-      );
-      return personalizedContext.context
-        ? calculateBatchShipping({
-            ...personalizedContext.context,
-            garmentPieceCount: futureGarmentPieceCount,
-          }).priceEur
-        : null;
-    }
-    return calculateBatchShipping({
-      batchId: ctx.batchId || ctx.batchName || selectedBatchName,
-      batchName: ctx.batchName || selectedBatchName,
-      plannedGarmentCapacity: Math.max(
-        BATCH_MINIMUM_GARMENTS,
-        ctx.expectedParticipants || BATCH_MINIMUM_GARMENTS,
-      ),
-      garmentPieceCount: futureGarmentPieceCount,
-    }).priceEur;
-  })();
   const futureSummaryInput = {
     garmentTypeSelection,
     catalogInspection: futureCatalogInspection,
@@ -571,8 +538,6 @@ export default function DesignStudioView({
     measurementPlan: futureMeasurementPlan,
     measurementState: reconciledFutureMeasurementState,
     basePricing: futureFabricAuthoritativePricing,
-    taxPercentage: businessSettings.pricingSettings.vatTaxPercentage,
-    lagosToEindhovenShipping: futureLagosToEindhovenShipping,
   };
   const futureSummary = projectFutureDesignStudioSummary(futureSummaryInput);
   const isFutureSummaryStageUnlocked =
@@ -1045,7 +1010,6 @@ export default function DesignStudioView({
       const activeDesignSource = activeCatalogStyleId
         ? createCatalogDesignSource(activeCatalogStyleId)
         : null;
-      const candidatePricing = futureOrderCandidateResult.candidate?.pricing ?? null;
       const selectedDesignPricing =
         futureSummary.pricingSummary.selectedDesignPrice;
       const baseDraft = {
@@ -1083,39 +1047,30 @@ export default function DesignStudioView({
         leftoverFabricChoice: "Return leftover fabric pieces with garment",
         hasLining: false,
         pricingBreakdown: {
+          pricingModel: "all_inclusive_garment_construction",
+          garmentConstructionSubtotal:
+            futureSummary.pricingSummary.garmentConstructionSubtotal ??
+            undefined,
           clothingPrice:
-            candidatePricing?.preTaxDesignSubtotalCents == null
-              ? 0
-              : candidatePricing.preTaxDesignSubtotalCents / 100,
+            futureSummary.pricingSummary.garmentConstructionSubtotal ??
+            undefined,
           includesFabricAndSewing: true,
-          fabricPrice:
-            candidatePricing?.fabricMaterialCents == null
-              ? 0
-              : candidatePricing.fabricMaterialCents / 100,
-          fabricSewingCost: 0,
-          constructionSewingCost:
-            candidatePricing?.constructionAndSewingCents == null
-              ? 0
-              : candidatePricing.constructionAndSewingCents / 100,
-          constructionUpgradesPrice: 0,
+          includedComponents: {
+            fabric: "included_in_garment_construction",
+            sewing: "included_in_garment_construction",
+            tax: "included_in_garment_construction",
+            lagosToEindhovenShipping:
+              "included_in_garment_construction",
+          },
           customDetailsPrice:
-            candidatePricing?.customDetailsCents == null
-              ? 0
-              : candidatePricing.customDetailsCents / 100,
-          preTaxDesignSubtotal: selectedDesignPricing?.preTaxDesignSubtotal,
-          taxPercentage: selectedDesignPricing?.taxPercentage,
-          taxAmount: selectedDesignPricing?.taxAmount,
-          taxInclusiveDesignSubtotal:
-            selectedDesignPricing?.taxInclusiveDesignSubtotal,
+            futureSummary.pricingSummary.customDetailsExactSubtotal,
           selectedDesignPrice: selectedDesignPricing?.selectedDesignPrice,
-          lagosToEindhovenShipping:
-            selectedDesignPricing?.lagosToEindhovenShipping ?? 0,
           eindhovenToDestinationShipping:
             selectedDesignPricing?.eindhovenToDestinationShipping ?? null,
           total:
             selectedDesignPricing?.finalOrderSubtotal ??
             selectedDesignPricing?.selectedDesignPrice ??
-            0,
+            undefined,
         },
         shippingSnapshot: {},
         fabricAllocations: autosaveAllocationResolution.fabricAllocations,
@@ -1557,7 +1512,6 @@ export default function DesignStudioView({
             futureGarmentFabricPlanning.selectedFabricQuantity
           }
           constructionPrice={futureConstructionPrice}
-          stagePrice={futureFabricAuthoritativePricing?.garmentSubtotal ?? null}
           onAssignFabricToGarment={handleAssignFutureFabricToGarment}
           onUseSameFabricForGarment={handleUseSameFutureFabricForGarment}
           onBack={() => setFutureStageId("garment_type")}
@@ -1571,7 +1525,10 @@ export default function DesignStudioView({
           styles={styles}
           garmentTypeSelection={garmentTypeSelection}
           selectedStyleId={futureSelectedStyleId}
-          stagePrice={futureFabricAuthoritativePricing?.garmentSubtotal ?? null}
+          stagePrice={
+            futureFabricAuthoritativePricing?.garmentConstructionSubtotal ??
+            null
+          }
           onSelectStyle={setFutureSelectedStyleId}
           onBack={() => setFutureStageId("fabric")}
           onReturnToGarmentType={() => setFutureStageId("garment_type")}
@@ -1590,11 +1547,6 @@ export default function DesignStudioView({
           completion={futureCustomDetailsCompletion}
           pricing={futureCustomDetailsPricing}
           constructionSubtotal={futureConstructionPrice}
-          fabricSubtotal={
-            futureFabricMaterialPricing?.status === "resolved"
-              ? futureFabricMaterialPricing.totalMaterialPrice
-              : null
-          }
           onSingleSelect={handleFutureSingleCustomDetailSelect}
           onToggleMultiSelect={handleFutureMultiCustomDetailToggle}
           onPersonalizedTextChange={handleFuturePersonalizedTextChange}

@@ -130,7 +130,7 @@ export const DormantFutureShippingStep = ({
       <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-heritage-green/20 bg-heritage-green/5 p-4 sm:p-5">
         <Info aria-hidden="true" className="mt-0.5 shrink-0 text-heritage-green" size={19} />
         <p className="min-w-0 text-sm font-semibold leading-relaxed text-heritage-green">
-          Shipping from Lagos to Eindhoven is already included in your Selected Design Price.
+          Lagos-to-Eindhoven shipping: Included in Garment Construction.
         </p>
       </div>
 
@@ -421,7 +421,8 @@ export const DormantFutureShippingStep = ({
             </dd>
           </div>
           <p className="text-xs leading-relaxed text-white/70">
-            Includes fabric, sewing, applicable tax, and shipping from Lagos to Eindhoven.
+            Garment construction includes fabric, tax, Lagos-to-Eindhoven
+            shipping, and sewing.
           </p>
           <div className="border-t border-white/15 pt-3">
             <div className="flex min-w-0 flex-wrap justify-between gap-2">

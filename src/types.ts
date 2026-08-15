@@ -1099,11 +1099,19 @@ export interface GuestDesignDraft {
   leftoverFabricChoice: string;
   hasLining: boolean;
   pricingBreakdown: {
+    pricingModel?: "legacy_additive" | "all_inclusive_garment_construction";
+    garmentConstructionSubtotal?: number;
+    includedComponents?: {
+      fabric: "included_in_garment_construction";
+      sewing: "included_in_garment_construction";
+      tax: "included_in_garment_construction";
+      lagosToEindhovenShipping: "included_in_garment_construction";
+    };
     clothingPrice?: number;
     includesFabricAndSewing?: boolean;
-    fabricPrice: number;
-    fabricSewingCost: number;
-    constructionSewingCost: number;
+    fabricPrice?: number;
+    fabricSewingCost?: number;
+    constructionSewingCost?: number;
     constructionUpgradesPrice?: number;
     customDetailsPrice: number;
     preTaxDesignSubtotal?: number;
@@ -1111,9 +1119,9 @@ export interface GuestDesignDraft {
     taxAmount?: number;
     taxInclusiveDesignSubtotal?: number;
     selectedDesignPrice?: number | null;
-    lagosToEindhovenShipping: number;
+    lagosToEindhovenShipping?: number | null;
     eindhovenToDestinationShipping: number | null;
-    total: number;
+    total?: number;
   };
   shippingSnapshot: {
     individual?: IndividualShippingSnapshot;

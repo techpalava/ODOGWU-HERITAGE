@@ -305,7 +305,10 @@ assert.match(summarySource, /canContinueToShipping/);
 assert.match(summarySource, /onContinueToShipping/);
 assert.match(stepperSource, /canEnterShipping/);
 assert.match(stepperSource, /onSelectShipping/);
-assert.match(shippingSource, /Shipping from Lagos to Eindhoven is already included in your Selected Design Price\./);
+assert.match(
+  shippingSource,
+  /Lagos-to-Eindhoven shipping: Included in Garment Construction\./,
+);
 assert.match(shippingSource, /Collect in Eindhoven/);
 assert.match(shippingSource, /Deliver to another location/);
 assert.match(shippingSource, /Pending confirmation/);

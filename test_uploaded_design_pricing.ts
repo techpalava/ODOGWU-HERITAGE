@@ -356,20 +356,22 @@ const studioSource = readFileSync(
   fileURLToPath(new URL("./src/components/DesignStudioView.tsx", import.meta.url)),
   "utf8",
 );
-assert.match(studioSource, /isDesignSourcePricingActive\(\{/);
-assert.match(studioSource, /Selected Design Price:/);
-assert.match(studioSource, /SELECTED_DESIGN_PRICE_SUPPORTING_TEXT/);
-assert.match(studioSource, /resolveCustomerFabricAssignmentSummary/);
-assert.match(studioSource, /Garments &amp; Fabrics/);
-assert.match(studioSource, /Fabric Quantities/);
-const livePriceSummaryStart = studioSource.indexOf("Live Price Summary");
-const activeSelectionStart = studioSource.indexOf("Active Selection Summary");
-assert.equal(
-  studioSource
-    .slice(livePriceSummaryStart, activeSelectionStart)
-    .includes("Fabric Selection"),
-  false,
-  "Fabric rows remain exclusively in Active Selection.",
+const candidateSource = readFileSync(
+  fileURLToPath(new URL("./src/utils/futureOrderCandidate.ts", import.meta.url)),
+  "utf8",
+);
+assert.match(studioSource, /createCatalogDesignSource\(futureSelectedStyleId/);
+assert.doesNotMatch(
+  studioSource,
+  /createUploadedDesignSource/,
+  "The active nine-stage journey must not silently create an uploaded source.",
+);
+assert.match(candidateSource, /UNSUPPORTED_FUTURE_SOURCE/);
+assert.match(candidateSource, /source\?\.kind === "catalog"/);
+assert.match(
+  candidateSource,
+  /This design source is not supported in the future order review yet\./,
+  "Uploaded designs remain fail-closed until their secure future adapter exists.",
 );
 
-console.log("PASS: uploaded design pricing, activation, invalidation, and presentation");
+console.log("PASS: uploaded design pricing domain and future fail-closed boundary");

@@ -65,6 +65,7 @@ export interface FutureOrderCandidateFabricAllocationV1 {
   readonly availability: "available" | "unavailable" | "missing";
   readonly capacityUnits: number;
   readonly materialPriceCents: number | null;
+  readonly pricingTreatment: "included_in_garment_construction";
   readonly garmentAssignments: readonly FabricGarmentAssignment[];
 }
 
@@ -88,18 +89,34 @@ export interface FutureOrderCandidateCustomDetailV1 {
   }> | null;
 }
 
+export type FutureOrderCandidatePricingComponentStatus =
+  | "included_in_garment_construction"
+  | "separately_charged"
+  | "pricing_pending"
+  | "not_applicable";
+
+export interface FutureOrderCandidatePricingComponentV2 {
+  readonly status: FutureOrderCandidatePricingComponentStatus;
+  readonly amountCents: number | null;
+}
+
 export interface FutureOrderCandidatePricingV1 {
+  readonly schemaVersion: 2;
+  readonly model: "all_inclusive_garment_construction";
   readonly status: "exact" | "pending" | "invalid";
-  readonly constructionAndSewingCents: number | null;
-  readonly fabricMaterialCents: number | null;
+  readonly garmentConstructionSubtotalCents: number | null;
   readonly customDetailsCents: number | null;
-  readonly preTaxDesignSubtotalCents: number | null;
-  readonly taxPercentage: number | null;
-  readonly taxCents: number | null;
-  readonly lagosToEindhovenShippingCents: number | null;
   readonly selectedDesignTotalCents: number | null;
   readonly postEindhovenAdjustmentCents: number | null;
   readonly exactTotalCents: number | null;
+  readonly components: Readonly<{
+    fabric: FutureOrderCandidatePricingComponentV2;
+    sewing: FutureOrderCandidatePricingComponentV2;
+    tax: FutureOrderCandidatePricingComponentV2;
+    lagosToEindhovenShipping: FutureOrderCandidatePricingComponentV2;
+    customDetails: FutureOrderCandidatePricingComponentV2;
+    postEindhovenDelivery: FutureOrderCandidatePricingComponentV2;
+  }>;
 }
 
 export interface FutureOrderCandidateV1 {
@@ -348,50 +365,28 @@ const buildPricing = ({
 }): FutureOrderCandidatePricingV1 => {
   const summary = projectFutureDesignStudioSummary(input);
   const selected = summary.pricingSummary.selectedDesignPrice;
-  const baseSubtotalCents = moneyToCents(summary.pricingSummary.baseDesignSubtotal);
-  const materialCents =
-    input.materialPricing?.status === "resolved"
-      ? moneyToCents(input.materialPricing.totalMaterialPrice)
-      : null;
+  const constructionSubtotalCents = moneyToCents(
+    summary.pricingSummary.garmentConstructionSubtotal,
+  );
   const customDetailsCents =
     input.customDetailsPricing?.status === "exact"
       ? input.customDetailsPricing.subtotalCents
       : null;
-  const constructionAndSewingCents =
-    baseSubtotalCents !== null && materialCents !== null && baseSubtotalCents >= materialCents
-      ? baseSubtotalCents - materialCents
-      : null;
-  const preTaxCents = selected
-    ? moneyToCents(selected.preTaxDesignSubtotal)
-    : null;
-  const taxCents = selected ? moneyToCents(selected.taxAmount) : null;
-  const inboundCents = selected
-    ? moneyToCents(selected.lagosToEindhovenShipping)
-    : null;
   const selectedTotalCents = selected
     ? moneyToCents(selected.selectedDesignPrice)
     : null;
   const postEindhovenCents = input.shippingResolution.postEindhovenAdjustmentCents;
   const exactTotalCents = input.shippingResolution.projectedTotalCents;
   const moneyValues = [
-    baseSubtotalCents,
-    materialCents,
-    constructionAndSewingCents,
+    constructionSubtotalCents,
     customDetailsCents,
-    preTaxCents,
-    taxCents,
-    inboundCents,
     selectedTotalCents,
     postEindhovenCents,
     exactTotalCents,
   ];
   const hasMalformedSourceMoney =
-    typeof input.taxPercentage !== "number" ||
-    !Number.isFinite(input.taxPercentage) ||
-    input.taxPercentage < 0 ||
-    input.taxPercentage > 100 ||
-    (input.lagosToEindhovenShipping !== null &&
-      moneyToCents(input.lagosToEindhovenShipping) === null) ||
+    !input.basePricing ||
+    moneyToCents(input.basePricing.garmentConstructionSubtotal) === null ||
     (input.materialPricing?.status === "resolved" &&
       input.materialPricing.allocationLines.some(
         (line) => moneyToCents(line.materialPrice) === null,
@@ -417,18 +412,11 @@ const buildPricing = ({
   const hasMalformedCents = hasMalformedSourceMoney || moneyValues.some(
     (value) => value !== null && !isMoneyCents(value),
   );
-  const preTaxMatches =
-    constructionAndSewingCents !== null &&
-    materialCents !== null &&
-    customDetailsCents !== null &&
-    preTaxCents !== null &&
-    constructionAndSewingCents + materialCents + customDetailsCents === preTaxCents;
   const selectedMatches =
-    preTaxCents !== null &&
-    taxCents !== null &&
-    inboundCents !== null &&
+    constructionSubtotalCents !== null &&
+    customDetailsCents !== null &&
     selectedTotalCents !== null &&
-    preTaxCents + taxCents + inboundCents === selectedTotalCents;
+    constructionSubtotalCents + customDetailsCents === selectedTotalCents;
   const finalMatches =
     selectedTotalCents !== null &&
     postEindhovenCents !== null &&
@@ -444,7 +432,7 @@ const buildPricing = ({
   }
   if (
     summary.pricingSummary.status === "exact" &&
-    (!preTaxMatches || !selectedMatches)
+    !selectedMatches
   ) {
     blockers.push({
       code: "NON_AUTHORITATIVE_TOTAL",
@@ -471,31 +459,48 @@ const buildPricing = ({
     ? "invalid"
     : summary.pricingSummary.status === "exact" &&
         input.shippingResolution.status === "quote_ready" &&
-        preTaxMatches && selectedMatches && finalMatches
+        selectedMatches && finalMatches
       ? "exact"
       : "pending";
 
   return {
+    schemaVersion: 2,
+    model: "all_inclusive_garment_construction",
     status,
-    constructionAndSewingCents,
-    fabricMaterialCents: materialCents,
+    garmentConstructionSubtotalCents: constructionSubtotalCents,
     customDetailsCents,
-    preTaxDesignSubtotalCents: preTaxCents,
-    taxPercentage:
-      typeof input.taxPercentage === "number" &&
-      Number.isFinite(input.taxPercentage) &&
-      input.taxPercentage >= 0 &&
-      input.taxPercentage <= 100
-        ? input.taxPercentage
-        : null,
-    taxCents,
-    lagosToEindhovenShippingCents: inboundCents,
     selectedDesignTotalCents: selectedTotalCents,
     postEindhovenAdjustmentCents:
       isMoneyCents(postEindhovenCents) ? postEindhovenCents : null,
     exactTotalCents: status === "exact" && isMoneyCents(exactTotalCents)
       ? exactTotalCents
       : null,
+    components: {
+      fabric: { status: "included_in_garment_construction", amountCents: null },
+      sewing: { status: "included_in_garment_construction", amountCents: null },
+      tax: { status: "included_in_garment_construction", amountCents: null },
+      lagosToEindhovenShipping: {
+        status: "included_in_garment_construction",
+        amountCents: null,
+      },
+      customDetails: {
+        status:
+          input.customDetailsPricing?.status === "exact"
+            ? "separately_charged"
+            : "pricing_pending",
+        amountCents: customDetailsCents,
+      },
+      postEindhovenDelivery: {
+        status:
+          input.shippingResolution.status === "quote_ready"
+            ? "separately_charged"
+            : input.shippingResolution.state.fulfilmentMethod === null
+              ? "not_applicable"
+              : "pricing_pending",
+        amountCents:
+          isMoneyCents(postEindhovenCents) ? postEindhovenCents : null,
+      },
+    },
   };
 };
 
@@ -618,6 +623,7 @@ export const buildFutureOrderCandidate = (
         availability: fabric.availability,
         capacityUnits: fabric.capacityUnits,
         materialPriceCents: moneyToCents(fabric.materialPrice),
+        pricingTreatment: "included_in_garment_construction",
         garmentAssignments: cloneJsonValue(allocation?.garmentAssignments || []),
       };
     });
@@ -843,13 +849,20 @@ export const normalizeFutureOrderCandidate = (
       "The saved order review contains invalid data.",
     );
   }
+  const pricingComponents = parsed.pricing.components;
+  if (
+    parsed.pricing.schemaVersion !== 2 ||
+    parsed.pricing.model !== "all_inclusive_garment_construction" ||
+    !isRecord(pricingComponents)
+  ) {
+    return invalidNormalization(
+      "MALFORMED_CANDIDATE",
+      "The saved order review uses an unsupported pricing ledger.",
+    );
+  }
   const moneyFields = [
-    "constructionAndSewingCents",
-    "fabricMaterialCents",
+    "garmentConstructionSubtotalCents",
     "customDetailsCents",
-    "preTaxDesignSubtotalCents",
-    "taxCents",
-    "lagosToEindhovenShippingCents",
     "selectedDesignTotalCents",
     "postEindhovenAdjustmentCents",
     "exactTotalCents",
@@ -873,6 +886,7 @@ export const normalizeFutureOrderCandidate = (
     parsed.fabricAllocations.some(
       (allocation) =>
         !isRecord(allocation) ||
+        allocation.pricingTreatment !== "included_in_garment_construction" ||
         (allocation.materialPriceCents !== null &&
           !isMoneyCents(allocation.materialPriceCents)),
     ) ||
@@ -888,31 +902,69 @@ export const normalizeFutureOrderCandidate = (
     );
   }
   const pricingStatus = parsed.pricing.status;
-  const constructionCents = parsed.pricing.constructionAndSewingCents;
-  const materialCents = parsed.pricing.fabricMaterialCents;
+  const constructionCents = parsed.pricing.garmentConstructionSubtotalCents;
   const customDetailsCents = parsed.pricing.customDetailsCents;
-  const preTaxCents = parsed.pricing.preTaxDesignSubtotalCents;
-  const taxCents = parsed.pricing.taxCents;
-  const inboundCents = parsed.pricing.lagosToEindhovenShippingCents;
   const selectedTotalCents = parsed.pricing.selectedDesignTotalCents;
   const finalMileCents = parsed.pricing.postEindhovenAdjustmentCents;
   const exactTotalCents = parsed.pricing.exactTotalCents;
+  const includedComponentKeys = [
+    "fabric",
+    "sewing",
+    "tax",
+    "lagosToEindhovenShipping",
+  ];
+  const includedComponentsAreValid = includedComponentKeys.every((key) => {
+    const component = pricingComponents[key];
+    return isRecord(component) &&
+      component.status === "included_in_garment_construction" &&
+      component.amountCents === null;
+  });
+  const customDetailsComponent = pricingComponents.customDetails;
+  const finalMileComponent = pricingComponents.postEindhovenDelivery;
+  const separatelyTrackedComponentsAreValid =
+    isRecord(customDetailsComponent) &&
+    ["separately_charged", "pricing_pending"].includes(
+      String(customDetailsComponent.status),
+    ) &&
+    (customDetailsComponent.amountCents === null ||
+      isMoneyCents(customDetailsComponent.amountCents)) &&
+    isRecord(finalMileComponent) &&
+    ["separately_charged", "pricing_pending", "not_applicable"].includes(
+      String(finalMileComponent.status),
+    ) &&
+    (finalMileComponent.amountCents === null ||
+      isMoneyCents(finalMileComponent.amountCents));
+  const garmentConstructionCents = parsed.garments.reduce(
+    (total, garment) =>
+      total +
+      (isRecord(garment) && isMoneyCents(garment.constructionTotalCents)
+        ? Number(garment.constructionTotalCents)
+        : 0),
+    0,
+  );
+  if (!includedComponentsAreValid || !separatelyTrackedComponentsAreValid) {
+    return invalidNormalization(
+      "MALFORMED_CANDIDATE",
+      "The saved order review contains invalid pricing component states.",
+    );
+  }
   const exactPricingReconciles =
     pricingStatus === "exact" &&
     [
       constructionCents,
-      materialCents,
       customDetailsCents,
-      preTaxCents,
-      taxCents,
-      inboundCents,
       selectedTotalCents,
       finalMileCents,
       exactTotalCents,
     ].every(isMoneyCents) &&
-    Number(constructionCents) + Number(materialCents) +
-      Number(customDetailsCents) === Number(preTaxCents) &&
-    Number(preTaxCents) + Number(taxCents) + Number(inboundCents) ===
+    includedComponentsAreValid &&
+    separatelyTrackedComponentsAreValid &&
+    customDetailsComponent.status === "separately_charged" &&
+    Number(customDetailsComponent.amountCents) === Number(customDetailsCents) &&
+    finalMileComponent.status === "separately_charged" &&
+    Number(finalMileComponent.amountCents) === Number(finalMileCents) &&
+    garmentConstructionCents === Number(constructionCents) &&
+    Number(constructionCents) + Number(customDetailsCents) ===
       Number(selectedTotalCents) &&
     Number(selectedTotalCents) + Number(finalMileCents) ===
       Number(exactTotalCents);

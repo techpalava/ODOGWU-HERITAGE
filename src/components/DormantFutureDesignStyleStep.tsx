@@ -233,7 +233,7 @@ export const DormantFutureDesignStyleStep = ({
       <aside className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm">
         <div className="flex min-w-0 items-start justify-between gap-3 text-sm">
           <span className="min-w-0 text-heritage-ink/70">
-            Authoritative garment and fabric total
+            Garment Construction Subtotal
           </span>
           <span className="shrink-0 font-mono font-bold text-heritage-green">
             {stagePrice === null
@@ -242,7 +242,8 @@ export const DormantFutureDesignStyleStep = ({
           </span>
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-heritage-ink/55">
-          Design Style does not add garment construction or fabric charges.
+          Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing. Design
+          Style does not add another charge.
         </p>
       </aside>
 
