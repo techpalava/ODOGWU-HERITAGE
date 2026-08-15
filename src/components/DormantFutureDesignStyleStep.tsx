@@ -197,7 +197,7 @@ export const DormantFutureDesignStyleStep = ({
                       {style.gender}
                     </span>
                     <span className="rounded border border-heritage-gold/20 bg-heritage-gold/5 px-2 py-1 text-[9px] font-bold uppercase text-heritage-gold">
-                      {getFutureDesignStyleCompositionLabel(style)}
+                      Supports: {getFutureDesignStyleCompositionLabel(style)}
                     </span>
                   </div>
                   <p className="mt-3 break-words text-xs leading-relaxed text-heritage-ink/65">

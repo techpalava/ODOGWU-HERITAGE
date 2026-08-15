@@ -4,6 +4,7 @@ import {
   getStyleBaseFabricCapacityComposition,
 } from "../config/StyleFabricCapacityConfig";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import { getGarmentTypeSelectedDemographics } from "./garmentTypeStepState";
 import type {
   CanonicalPhysicalGarmentType,
   CustomDetailDemographic,
@@ -201,32 +202,40 @@ export const resolveFutureDesignStyleCompatibility = ({
     );
   }
 
-  const selectedGarments = [...garmentTypeSelection.garmentTypes].sort();
-  if (
-    selectedGarments.length !== composition.garmentTypes.length ||
-    selectedGarments.some(
-      (garmentType, index) => garmentType !== composition.garmentTypes[index],
-    )
-  ) {
+  const selectedGarments = [
+    ...new Set(garmentTypeSelection.garmentTypes),
+  ].sort();
+  const supportedGarments = new Set(composition.garmentTypes);
+  const unsupportedGarments = selectedGarments.filter(
+    (garmentType) => !supportedGarments.has(garmentType),
+  );
+  if (selectedGarments.length === 0 || unsupportedGarments.length > 0) {
+    const unsupportedLabels = unsupportedGarments
+      .map(getFabricGarmentLabel)
+      .join(", ");
     return unavailableResult(
       "GARMENT_COMPOSITION_MISMATCH",
-      "This design does not match the garments selected in Step 1.",
-      `Selected garments [${selectedGarments.join(", ")}] do not exactly match style composition [${composition.garmentTypes.join(", ")}].`,
+      unsupportedLabels
+        ? `This design does not support ${unsupportedLabels}.`
+        : "Select at least one supported garment in Step 1.",
+      `Selected garments [${selectedGarments.join(", ")}] are not a subset of style-supported garments [${composition.garmentTypes.join(", ")}].`,
       "incompatible",
     );
   }
 
+  const selectedDemographics = getGarmentTypeSelectedDemographics(
+    garmentTypeSelection,
+  );
   if (
-    !garmentTypeSelection.demographic ||
-    !isDemographicCompatible(
-      garmentTypeSelection.demographic,
-      representedDemographics,
+    selectedDemographics.length === 0 ||
+    !selectedDemographics.some((demographic) =>
+      isDemographicCompatible(demographic, representedDemographics),
     )
   ) {
     return unavailableResult(
       "DEMOGRAPHIC_MISMATCH",
       "This design does not match who the order is for.",
-      `Selected demographic ${garmentTypeSelection.demographic || "missing"} is not represented by style demographics [${representedDemographics.join(", ")}].`,
+      `Selected demographics [${selectedDemographics.join(", ") || "missing"}] are not represented by style demographics [${representedDemographics.join(", ")}].`,
       "incompatible",
     );
   }
@@ -235,7 +244,7 @@ export const resolveFutureDesignStyleCompatibility = ({
     status: "compatible",
     code: "COMPATIBLE",
     customerReason: "Compatible with your garment and demographic selections.",
-    developerReason: `Catalog style ${style.id} matches canonical Step 1 metadata.`,
+    developerReason: `Canonical Step 1 garments are a supported subset of catalog style ${style.id}, with at least one compatible demographic.`,
   };
 };
 

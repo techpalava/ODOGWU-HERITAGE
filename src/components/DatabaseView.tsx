@@ -2029,12 +2029,14 @@ export default function DatabaseView({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2 col-span-1 sm:col-span-2">
                           <label className="font-bold text-heritage-green block">
-                            Base Physical Garments
+                            Compatible Physical Garments
                           </label>
                           <p className="text-[10px] text-heritage-ink/60">
-                            These garments are included automatically when the
-                            customer selects this design style. They drive
-                            Custom Details, fabric capacity, and shipping pieces.
+                            Select every garment type that this design style can
+                            support. Customers may select any one supported
+                            garment or a compatible combination. These
+                            selections do not automatically add garments to the
+                            customer&apos;s order.
                           </p>
                           <div className="flex flex-wrap gap-2">
                             {STYLE_BASE_GARMENT_TYPES.map((garmentType) => {

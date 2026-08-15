@@ -74,6 +74,7 @@ const stepperSource = readFileSync(
 );
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const appSource = readFileSync("src/App.tsx", "utf8");
+const adminSource = readFileSync("src/components/DatabaseView.tsx", "utf8");
 
 assert.match(componentSource, /No matching design styles are available yet/);
 assert.match(componentSource, /Return to Garment Type/);
@@ -82,6 +83,10 @@ assert.match(componentSource, /aria-describedby=\{!isCompatible \? reasonId : un
 assert.match(componentSource, /min-h-11/);
 assert.match(componentSource, /sm:grid-cols-2 xl:grid-cols-3/);
 assert.match(componentSource, /Image unavailable/);
+assert.match(
+  componentSource,
+  /Supports: \{getFutureDesignStyleCompositionLabel\(style\)\}/,
+);
 assert.equal(componentSource.includes("Upload Your Own Design"), false);
 assert.equal(componentSource.includes("handleStyleChange"), false);
 assert.equal(componentSource.includes("setFabricAllocationState"), false);
@@ -90,5 +95,14 @@ assert.match(stepperSource, /aria-current=\{isCurrent \? "step" : undefined\}/);
 assert.match(stepperSource, /aria-disabled=\{!isAvailable \|\| isCurrent\}/);
 assert.match(studioSource, /onReturnToGarmentType=\{\(\) => setFutureStageId\("garment_type"\)\}/);
 assert.equal(appSource.includes("future_nine_stage"), false);
+assert.match(adminSource, /Compatible Physical Garments/);
+assert.match(
+  adminSource,
+  /Customers may select any one supported[\s\S]*compatible combination/,
+);
+assert.match(
+  adminSource,
+  /selections do not automatically add garments to the[\s\S]*customer&apos;s order/,
+);
 
 console.log("PASS: future Design Style stage presentation and accessibility contract");

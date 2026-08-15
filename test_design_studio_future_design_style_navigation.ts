@@ -55,6 +55,27 @@ const restoredWithFabric = createDormantDesignStudioJourneyState({
 });
 assert.equal(restoredWithFabric.currentStageId, "design_style");
 
+const shirtOnlyDraft = persistDormantGarmentTypeStage({
+  currentStageId: "design_style",
+  garmentTypeSelection: reconcileGarmentTypeStepSelection({
+    selectedGarmentTypes: ["shirt"],
+    selectedDemographic: "male",
+    normalizedCustomDetailCatalog: catalog,
+  }).selection,
+  draft: {
+    selectedStyleId: "royal-senator-1",
+  } as GuestDesignDraft,
+});
+assert.equal(
+  createDormantDesignStudioJourneyState({
+    persistedDraft: JSON.parse(JSON.stringify(shirtOnlyDraft)),
+    normalizedCustomDetailCatalog: catalog,
+    isFabricStageComplete: true,
+  }).currentStageId,
+  "design_style",
+  "A valid Shirt-only draft must restore without adopting Trouser from the selected style",
+);
+
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const styleStepSource = readFileSync(
   "src/components/DormantFutureDesignStyleStep.tsx",
