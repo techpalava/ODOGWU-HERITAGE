@@ -46,6 +46,7 @@
     "test:firestore-emulator": "firebase emulators:exec --only firestore --project demo-odogwu-future-drafts --config firebase.emulator.json \"tsx test_firestore_emulator.ts\"",
     "test:staff-preview-entitlement": "tsx test_staff_preview_entitlement.ts",
     "test:staff-preview-entitlement-cli": "tsx test_staff_preview_entitlement_cli.ts",
+    "test:staff-preview-client-gate": "tsx test_staff_preview_client_gate.ts",
     "staff-preview:entitlement": "tsx src/scripts/manageStaffPreviewEntitlement.ts"
   },
   "dependencies": {
