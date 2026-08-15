@@ -771,6 +771,12 @@ assert.equal(candidateSource.includes("StorageService"), false);
 const appSource = readFileSync("src/App.tsx", "utf8");
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 assert.equal(appSource.includes("future_nine_stage"), false);
-assert.match(studioSource, /journeyMode = "legacy_five_stage"/);
+assert.equal(studioSource.includes("legacy_five_stage"), false);
+assert.doesNotMatch(
+  studioSource,
+  /futureOrderCandidateResult\.candidate\.pricing/,
+  "An incomplete journey must not dereference a missing order candidate",
+);
+assert.match(studioSource, /futureOrderCandidateResult\.candidate\?\.pricing/);
 
 console.log("PASS: future order candidate contract and security boundary");

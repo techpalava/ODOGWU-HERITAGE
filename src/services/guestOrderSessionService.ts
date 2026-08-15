@@ -79,10 +79,10 @@ const createGuestCartId = (): string => {
 export const normalizeGuestDesignDraft = (
   designDraft: GuestDesignDraft,
 ): GuestDesignDraft => {
-  const sourceReconciledDraft = reconcileGuestDesignDraftDesignSource(designDraft);
-  const garmentTypeReconciledDraft = reconcileGuestDesignDraftGarmentTypeSelection(
-    sourceReconciledDraft,
-  );
+  const sourceReconciledDraft =
+    reconcileGuestDesignDraftDesignSource(designDraft);
+  const garmentTypeReconciledDraft =
+    reconcileGuestDesignDraftGarmentTypeSelection(sourceReconciledDraft);
   const normalizedAiTryOnWorkflow = normalizeAiTryOnWorkflowState(
     garmentTypeReconciledDraft.aiTryOnWorkflow,
   );
@@ -127,8 +127,9 @@ export const normalizeGuestDesignDraft = (
               ? {}
               : {
                   garmentScopedCustomDetails:
-                    normalizeGarmentScopedCustomDetailsState(scopedCustomDetails)
-                      .state,
+                    normalizeGarmentScopedCustomDetailsState(
+                      scopedCustomDetails,
+                    ).state,
                 }),
             ...(scopedCustomDetailInputs === undefined
               ? {}
@@ -144,14 +145,17 @@ export const normalizeGuestDesignDraft = (
   if (modernInspection.status === "valid") {
     return {
       ...reconciledDraft,
-      fabricAllocations: cloneFabricAllocations(modernInspection.fabricAllocations),
+      fabricAllocations: cloneFabricAllocations(
+        modernInspection.fabricAllocations,
+      ),
     };
   }
   if (modernInspection.status === "invalid") {
     return reconciledDraft;
   }
 
-  const legacyAllocations = resolveLegacyDraftFabricAllocations(reconciledDraft);
+  const legacyAllocations =
+    resolveLegacyDraftFabricAllocations(reconciledDraft);
   if (!legacyAllocations) return reconciledDraft;
   return {
     ...reconciledDraft,
@@ -164,7 +168,9 @@ const normalizeCartItemForPersistence = (item: CartItem): CartItem => {
   if (modernInspection.status === "valid") {
     return normalizeCartItemDesignDomain({
       ...item,
-      fabricAllocations: cloneFabricAllocations(modernInspection.fabricAllocations),
+      fabricAllocations: cloneFabricAllocations(
+        modernInspection.fabricAllocations,
+      ),
     });
   }
   if (modernInspection.status === "invalid") {
@@ -191,7 +197,9 @@ const normalizeCartItemsForPersistence = (items: CartItem[]): CartItem[] =>
 const normalizeSessionForPersistence = (
   session: GuestOrderSession,
 ): GuestOrderSession => {
-  const normalizedCartItems = normalizeCartItemsForPersistence(session.cartItems);
+  const normalizedCartItems = normalizeCartItemsForPersistence(
+    session.cartItems,
+  );
   const normalizedDraft = session.designDraft
     ? normalizeGuestDesignDraft(session.designDraft)
     : undefined;
@@ -219,9 +227,7 @@ const persistNormalizedSessionIfChanged = (
   return normalized;
 };
 
-export const getCartItemConfigurationHash = (
-  item: CartItem,
-): string => {
+export const getCartItemConfigurationHash = (item: CartItem): string => {
   return `cartcfg_${getStableHash(getCartDesignConfigurationFingerprintInput(item))}`;
 };
 
@@ -270,27 +276,6 @@ const getOrCreateActiveGuestSession = (): GuestOrderSession => {
   return session;
 };
 
-const loadLegacyDesignDraft = (): GuestDesignDraft | null =>
-  getOrCreateActiveGuestSession().designDraft || null;
-
-const saveLegacyDesignDraft = (designDraft: GuestDesignDraft): void => {
-  const session = getOrCreateActiveGuestSession();
-  StorageService.saveGuestOrderSession({
-    ...session,
-    designDraft: normalizeGuestDesignDraft(designDraft),
-    updatedAt: designDraft.updatedAt,
-  });
-};
-
-const clearLegacyDesignDraft = (): void => {
-  const session = getOrCreateActiveGuestSession();
-  const { designDraft: _discarded, ...sessionWithoutDraft } = session;
-  StorageService.saveGuestOrderSession({
-    ...sessionWithoutDraft,
-    updatedAt: new Date().toISOString(),
-  });
-};
-
 const getDesignStudioDraftRepository =
   (): DesignStudioDraftRepository | null => {
     if (typeof window === "undefined") return null;
@@ -299,8 +284,6 @@ const getDesignStudioDraftRepository =
       legacy: {
         // Migration inspects the stored source without normalizing or rewriting it.
         load: () => StorageService.getGuestOrderSession()?.designDraft || null,
-        save: saveLegacyDesignDraft,
-        clear: clearLegacyDesignDraft,
       },
       normalizeDraft: normalizeGuestDesignDraft,
       legacySourceVersion: GUEST_ORDER_SESSION_VERSION,
@@ -319,9 +302,7 @@ const mergeCartItems = (
   customer: Customer,
   guestCartId: string,
 ): { items: CartItem[]; addedItemCount: number } => {
-  const canonicalEmail = AuthorizationEngine.getCanonicalEmail(
-    customer.email,
-  );
+  const canonicalEmail = AuthorizationEngine.getCanonicalEmail(customer.email);
   const existingIds = new Set(accountItems.map((item) => item.id));
   const previouslyClaimedHashes = new Set(
     accountItems
@@ -361,8 +342,7 @@ const mergeCartItems = (
 };
 
 export const GuestOrderSessionService = {
-  getActiveSession: (): GuestOrderSession =>
-    getOrCreateActiveGuestSession(),
+  getActiveSession: (): GuestOrderSession => getOrCreateActiveGuestSession(),
 
   getGuestCartItems: (): CartItem[] => {
     const session = getOrCreateActiveGuestSession();
@@ -388,17 +368,6 @@ export const GuestOrderSessionService = {
       cartItems: migratedItems,
     });
     return migratedItems;
-  },
-
-  getLegacyDesignDraft: (): GuestDesignDraft | null =>
-    loadLegacyDesignDraft(),
-
-  saveLegacyDesignDraft: (designDraft: GuestDesignDraft): void => {
-    saveLegacyDesignDraft(designDraft);
-  },
-
-  clearLegacyDesignDraft: (): void => {
-    clearLegacyDesignDraft();
   },
 
   getFutureDesignDraft: (): GuestDesignDraft | null => {
@@ -435,18 +404,6 @@ export const GuestOrderSessionService = {
     getDesignStudioDraftRepository()?.clearFutureDraftAfterCloudSynchronization() ||
     false,
 
-  // Compatibility aliases remain legacy-only for existing production callers.
-  getGuestDesignDraft: (): GuestDesignDraft | null =>
-    loadLegacyDesignDraft(),
-
-  saveGuestDesignDraft: (designDraft: GuestDesignDraft): void => {
-    saveLegacyDesignDraft(designDraft);
-  },
-
-  clearGuestDesignDraft: (): void => {
-    clearLegacyDesignDraft();
-  },
-
   setCheckoutIntent: (checkoutIntent: boolean): void => {
     const session = getOrCreateActiveGuestSession();
     StorageService.saveGuestOrderSession({
@@ -467,15 +424,10 @@ export const GuestOrderSessionService = {
     return migrateLegacyCartShippingItems(normalizedItems).items;
   },
 
-  saveAccountCartItems: (
-    email: string,
-    items: CartItem[],
-  ): CartItem[] => {
+  saveAccountCartItems: (email: string, items: CartItem[]): CartItem[] => {
     const canonicalEmail = AuthorizationEngine.getCanonicalEmail(email);
     const normalizedItems = normalizeCartItemsForPersistence(items);
-    const migratedItems = migrateLegacyCartShippingItems(
-      normalizedItems,
-    ).items;
+    const migratedItems = migrateLegacyCartShippingItems(normalizedItems).items;
     StorageService.saveAccountCartItems(canonicalEmail, migratedItems);
     return migratedItems;
   },
@@ -488,9 +440,8 @@ export const GuestOrderSessionService = {
     const storedSession = rawStoredSession
       ? normalizeSessionForPersistence(rawStoredSession)
       : null;
-    const accountItems = GuestOrderSessionService.getAccountCartItems(
-      canonicalEmail,
-    );
+    const accountItems =
+      GuestOrderSessionService.getAccountCartItems(canonicalEmail);
 
     if (
       !storedSession ||

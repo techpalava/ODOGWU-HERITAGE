@@ -437,7 +437,7 @@ const componentSource = readFileSync(
 );
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const stepperSource = readFileSync(
-  "src/components/DormantFutureJourneyStepper.tsx",
+  "src/components/DesignStudioJourneyStepper.tsx",
   "utf8",
 );
 const shippingSource = readFileSync(

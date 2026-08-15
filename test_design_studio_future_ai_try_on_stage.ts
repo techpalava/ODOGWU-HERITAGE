@@ -4,9 +4,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import {
-  DormantFutureJourneyStepper,
-  FUTURE_JOURNEY_STEPS,
-} from "./src/components/DormantFutureJourneyStepper";
+  DesignStudioJourneyStepper,
+  DESIGN_STUDIO_STEPS,
+} from "./src/components/DesignStudioJourneyStepper";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
   createEmptyAiTryOnWorkflowState,
@@ -72,7 +72,6 @@ const garmentTypeSelection: GarmentTypeStepSelection = {
 };
 assert.equal(
   createDormantDesignStudioJourneyState({
-    mode: "future_nine_stage",
     persistedDraft: { currentStageId: "try_on", garmentTypeSelection },
     normalizedCustomDetailCatalog: catalog.activeOptions,
     isFabricStageComplete: true,
@@ -82,7 +81,6 @@ assert.equal(
 );
 assert.equal(
   createDormantDesignStudioJourneyState({
-    mode: "future_nine_stage",
     persistedDraft: { currentStageId: "try_on", garmentTypeSelection },
     normalizedCustomDetailCatalog: catalog.activeOptions,
     isFabricStageComplete: true,
@@ -93,7 +91,7 @@ assert.equal(
 );
 
 assert.deepEqual(
-  FUTURE_JOURNEY_STEPS.map((step) => step.id),
+  DESIGN_STUDIO_STEPS.map((step) => step.id),
   [
     "garment_type",
     "fabric",
@@ -106,7 +104,7 @@ assert.deepEqual(
     "payment",
   ],
 );
-assert.deepEqual(FUTURE_JOURNEY_STEPS[4], {
+assert.deepEqual(DESIGN_STUDIO_STEPS[4], {
   id: "try_on",
   label: "AI Try-on",
 });
@@ -206,7 +204,7 @@ assert.deepEqual(
 );
 
 const stepperMarkup = renderToStaticMarkup(
-  createElement(DormantFutureJourneyStepper, {
+  createElement(DesignStudioJourneyStepper, {
     currentStageId: "measurement",
     canEnterFabric: true,
     canEnterDesignStyle: true,
@@ -234,7 +232,10 @@ assert.match(
 );
 assert.match(stepperMarkup, /aria-label="Step 7: Summary, locked"/);
 assert.match(stepperMarkup, /aria-label="Step 8: Shipping, locked"/);
-assert.match(stepperMarkup, /aria-label="Step 9: Payment, locked"/);
+assert.match(
+  stepperMarkup,
+  /aria-label="Step 9: Order Review &amp; Payment, locked"/,
+);
 
 const customDetailsSource = readFileSync(
   "src/components/DormantFutureCustomDetailsStep.tsx",
@@ -245,7 +246,7 @@ const tryOnSource = readFileSync(
   "utf8",
 );
 const stepperSource = readFileSync(
-  "src/components/DormantFutureJourneyStepper.tsx",
+  "src/components/DesignStudioJourneyStepper.tsx",
   "utf8",
 );
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
@@ -273,7 +274,7 @@ assert.equal(tryOnSource.includes("assetId"), false);
 assert.equal(tryOnSource.includes("setTimeout"), false);
 assert.equal(tryOnSource.includes("<input"), false);
 assert.equal(tryOnSource.includes("type=\"file\""), false);
-assert.match(stepperSource, /\{ id: "try_on", label: "AI Try-on" \}/);
+assert.match(stepperSource, /DESIGN_STUDIO_NINE_STAGE_FOUNDATION\.map/);
 assert.match(stepperSource, /canEnterTryOn/);
 assert.match(stepperSource, /canEnterMeasurement/);
 assert.match(stepperSource, /data-step-state=\{state\}/);

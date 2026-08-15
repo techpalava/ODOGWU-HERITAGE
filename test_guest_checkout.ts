@@ -20,6 +20,7 @@ import {
   getCartItemGarmentSubtotal,
   stampCurrentCartShippingItem,
 } from "./src/utils/shippingPricing";
+import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./src/utils/designSourceJourney";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -258,6 +259,8 @@ assert.match(
 );
 
 const guestDraft = {
+  journeySchemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+  currentStageId: "shipping",
   currentStep: 7,
   selectedFabricCode: fabric.code,
   selectedStyleId: style.id,
@@ -297,11 +300,21 @@ const guestDraft = {
   shippingSnapshot: {},
   updatedAt: "2026-07-30T10:00:00.000Z",
 } satisfies GuestDesignDraft;
-GuestOrderSessionService.saveGuestDesignDraft(guestDraft);
-assert.deepEqual(
-  GuestOrderSessionService.getGuestDesignDraft(),
-  guestDraft,
-  "guest design step and configuration survive storage reload",
+GuestOrderSessionService.saveFutureDesignDraft(guestDraft);
+const restoredGuestDraft = GuestOrderSessionService.getFutureDesignDraft();
+assert(restoredGuestDraft, "guest design draft survives storage reload");
+assert.equal(restoredGuestDraft.currentStageId, "shipping");
+assert.equal(restoredGuestDraft.selectedFabricCode, guestDraft.selectedFabricCode);
+assert.equal(restoredGuestDraft.selectedStyleId, guestDraft.selectedStyleId);
+assert.deepEqual(restoredGuestDraft.designSelections, guestDraft.designSelections);
+assert.deepEqual(restoredGuestDraft.measurements, guestDraft.measurements);
+assert.equal(restoredGuestDraft.specialInstructions, guestDraft.specialInstructions);
+assert.equal(restoredGuestDraft.futureMeasurementState?.route, "low_risk");
+assert.equal(
+  restoredGuestDraft.futureMeasurementState?.entered.shared
+    .chest_bust_circumference?.valueCm,
+  106.68,
+  "legacy measurement values are normalized into the authoritative Step 6 state",
 );
 
 const firstItem = makeCartItem("guest-item-1");

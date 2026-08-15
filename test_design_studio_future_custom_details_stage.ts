@@ -143,7 +143,6 @@ assert.equal(
 
 assert.equal(
   createDormantDesignStudioJourneyState({
-    mode: "future_nine_stage",
     persistedDraft: {
       currentStageId: "custom_details",
       garmentTypeSelection,
@@ -159,7 +158,7 @@ const componentSource = readFileSync(
   "utf8",
 );
 const stepperSource = readFileSync(
-  "src/components/DormantFutureJourneyStepper.tsx",
+  "src/components/DesignStudioJourneyStepper.tsx",
   "utf8",
 );
 const styleSource = readFileSync(

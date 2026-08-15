@@ -558,13 +558,13 @@ const appSource = readFileSync("src/App.tsx", "utf8");
 assert.match(
   designStudioSource,
   /garmentScopedCustomDetailsDomain/,
-  "the dormant future controller must use the garment-scoped domain engine",
+  "the active controller must use the garment-scoped domain engine",
 );
-assert.match(designStudioSource, /isFutureNineStageMode/);
+assert.doesNotMatch(designStudioSource, /isFutureNineStageMode|legacy_five_stage/);
 assert.equal(
   appSource.includes("future_nine_stage"),
   false,
-  "the future domain engine must not activate production UI mode",
+  "App must not contain a journey-mode selector",
 );
 
 console.log(

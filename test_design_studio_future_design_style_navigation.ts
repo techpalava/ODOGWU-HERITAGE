@@ -17,7 +17,6 @@ const garmentTypeSelection = reconcileGarmentTypeStepSelection({
 }).selection;
 
 const persisted = persistDormantGarmentTypeStage({
-  mode: "future_nine_stage",
   currentStageId: "design_style",
   garmentTypeSelection,
   draft: {
@@ -29,7 +28,6 @@ assert.equal(serialized.selectedStyleId, "royal-senator-1");
 assert.equal(serialized.currentStageId, "design_style");
 
 const blockedWithoutFabric = createDormantDesignStudioJourneyState({
-  mode: "future_nine_stage",
   persistedDraft: serialized,
   normalizedCustomDetailCatalog: catalog,
   isFabricStageComplete: false,
@@ -37,7 +35,6 @@ const blockedWithoutFabric = createDormantDesignStudioJourneyState({
 assert.equal(blockedWithoutFabric.currentStageId, "fabric");
 
 const blockedWithIncompleteGarment = createDormantDesignStudioJourneyState({
-  mode: "future_nine_stage",
   persistedDraft: {
     ...serialized,
     garmentTypeSelection: {
@@ -52,7 +49,6 @@ const blockedWithIncompleteGarment = createDormantDesignStudioJourneyState({
 assert.equal(blockedWithIncompleteGarment.currentStageId, "garment_type");
 
 const restoredWithFabric = createDormantDesignStudioJourneyState({
-  mode: "future_nine_stage",
   persistedDraft: serialized,
   normalizedCustomDetailCatalog: catalog,
   isFabricStageComplete: true,
@@ -65,7 +61,7 @@ const styleStepSource = readFileSync(
   "utf8",
 );
 const stepperSource = readFileSync(
-  "src/components/DormantFutureJourneyStepper.tsx",
+  "src/components/DesignStudioJourneyStepper.tsx",
   "utf8",
 );
 const appSource = readFileSync("src/App.tsx", "utf8");
@@ -95,6 +91,6 @@ assert.match(styleStepSource, /Continue to Custom Details/);
 assert.match(styleStepSource, /disabled/);
 assert.match(stepperSource, /canEnterDesignStyle/);
 assert.equal(appSource.includes("future_nine_stage"), false);
-assert.match(studioSource, /journeyMode = "legacy_five_stage"/);
+assert.equal(studioSource.includes("legacy_five_stage"), false);
 
 console.log("PASS: future Design Style navigation, persistence, and legacy boundary");

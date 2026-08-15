@@ -93,7 +93,8 @@ export const parseStaffPreviewFeatureFlag = (value: unknown): boolean =>
 
 export const readStaffPreviewFeatureFlag = (
   environment: Readonly<Record<string, unknown>>,
-): boolean => parseStaffPreviewFeatureFlag(environment[STAFF_PREVIEW_FEATURE_FLAG]);
+): boolean =>
+  parseStaffPreviewFeatureFlag(environment[STAFF_PREVIEW_FEATURE_FLAG]);
 
 export const resolveStaffPreviewGateIdentity = ({
   featureFlagValue,
@@ -144,9 +145,7 @@ export const resolveStaffPreviewGateIdentity = ({
 
 const deniedReason = (
   reason: StaffPreviewAuthorizationReason,
-): Extract<StaffPreviewClientGateState, { status: "denied" }>[
-  "reason"
-] => {
+): Extract<StaffPreviewClientGateState, { status: "denied" }>["reason"] => {
   switch (reason) {
     case "ENTITLEMENT_MISSING":
     case "ENTITLEMENT_MALFORMED":
@@ -223,8 +222,3 @@ export const resolveStaffPreviewClientAuthorization = ({
 export const isStaffPreviewFutureDraftLoadAllowed = (
   state: StaffPreviewClientGateState,
 ): boolean => state.status === "authorized";
-
-export const resolveStaffPreviewJourneyMode = (
-  state: StaffPreviewClientGateState,
-): "legacy_five_stage" | "future_nine_stage" =>
-  state.status === "authorized" ? "future_nine_stage" : "legacy_five_stage";

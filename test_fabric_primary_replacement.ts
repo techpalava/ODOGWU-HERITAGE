@@ -163,18 +163,22 @@ const designStudioSource = readFileSync(
   new URL("./src/components/DesignStudioView.tsx", import.meta.url),
   "utf8",
 );
-assert.match(
-  designStudioSource,
-  /handleSelectFabric[\s\S]*FabricAllocationStateEngine\.selectPrimaryFabric/,
+const futureFabricStageSource = readFileSync(
+  new URL("./src/utils/designStudioFutureFabricStage.ts", import.meta.url),
+  "utf8",
 );
 assert.match(
   designStudioSource,
-  /awaitingFabricForPendingGarment[\s\S]*FabricAllocationStateEngine\.assignPendingGarmentToFabric/,
+  /handleSelectFabric[\s\S]*selectFutureFabric/,
 );
 assert.match(
-  designStudioSource,
-  /FabricAllocationStateEngine\.syncPrimaryGarmentSelection/,
+  futureFabricStageSource,
+  /awaitingFabricForPendingGarment[\s\S]*FabricAllocationStateEngine\.assignPendingGarmentToFabricAndContinue/,
 );
-assert.doesNotMatch(designStudioSource, /syncForSelectedFabric/);
+assert.match(
+  futureFabricStageSource,
+  /FabricAllocationStateEngine\.selectPrimaryFabric/,
+);
+assert.doesNotMatch(futureFabricStageSource, /syncForSelectedFabric/);
 
 console.log("PASS: primary fabric replacement preserves allocation identity and pricing semantics");

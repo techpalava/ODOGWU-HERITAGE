@@ -13,6 +13,7 @@ import {
   resolveDraftAutosaveFabricAllocations,
   resolveDraftHydrationAllocations,
 } from "./src/utils/fabricAllocationPersistence";
+import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./src/utils/designSourceJourney";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -194,6 +195,8 @@ const makeCartItem = (
 const makeGuestDraft = (
   overrides: Partial<GuestDesignDraft> = {},
 ): GuestDesignDraft => ({
+  journeySchemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+  currentStageId: "fabric",
   currentStep: 4,
   selectedFabricCode: "FABRIC-A",
   selectedStyleId: style.id,
@@ -580,8 +583,8 @@ assert.equal(
   "bum_shorts",
   "Custom Detail physical garments must survive strict draft hydration",
 );
-GuestOrderSessionService.saveGuestDesignDraft(conflictingDraft);
-const restoredDraft = GuestOrderSessionService.getGuestDesignDraft();
+GuestOrderSessionService.saveFutureDesignDraft(conflictingDraft);
+const restoredDraft = GuestOrderSessionService.getFutureDesignDraft();
 assert(restoredDraft, "Expected a guest draft to be restored");
 assert.equal(restoredDraft.fabricAllocations?.[0].fabricCode, "FABRIC-B");
 assert.equal(

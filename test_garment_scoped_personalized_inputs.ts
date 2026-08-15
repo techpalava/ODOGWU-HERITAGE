@@ -489,6 +489,8 @@ const { GuestOrderSessionService } = await import(
   "./src/services/guestOrderSessionService"
 );
 const draft: GuestDesignDraft = {
+  journeySchemaVersion: 1,
+  currentStageId: "custom_details",
   currentStep: 4,
   selectedFabricCode: null,
   selectedStyleId: null,
@@ -544,18 +546,18 @@ const draft: GuestDesignDraft = {
   updatedAt: "2026-08-13T00:00:00.000Z",
 };
 StorageService.clearGuestOrderSession();
-GuestOrderSessionService.saveGuestDesignDraft(draft);
-const restored = GuestOrderSessionService.getGuestDesignDraft();
+GuestOrderSessionService.saveFutureDesignDraft(draft);
+const restored = GuestOrderSessionService.getFutureDesignDraft();
 assert.deepEqual(restored?.designSelections.garmentScopedCustomDetailInputs, inputState.state);
 assert.deepEqual(restored?.designSelections.customDetails, {
   neck_design: "legacy-preserved",
 });
-assert.equal(restored?.journeySchemaVersion, undefined);
-assert.equal(restored?.currentStageId, undefined);
+assert.equal(restored?.journeySchemaVersion, 1);
+assert.equal(restored?.currentStageId, "custom_details");
 assert.equal(restored?.specialInstructions, "unrelated note");
 
 StorageService.clearGuestOrderSession();
-GuestOrderSessionService.saveGuestDesignDraft({
+GuestOrderSessionService.saveFutureDesignDraft({
   ...draft,
   designSelections: {
     ...draft.designSelections,
@@ -566,7 +568,7 @@ GuestOrderSessionService.saveGuestDesignDraft({
   },
 });
 assert.deepEqual(
-  GuestOrderSessionService.getGuestDesignDraft()?.designSelections
+  GuestOrderSessionService.getFutureDesignDraft()?.designSelections
     .garmentScopedCustomDetailInputs,
   createEmptyGarmentScopedCustomDetailInputs(),
   "malformed persisted inputs are inert and never crash loading",

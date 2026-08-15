@@ -201,7 +201,7 @@ const studioSource = fs.readFileSync(
   new URL("./src/components/DesignStudioView.tsx", import.meta.url),
   "utf8",
 );
-assert.match(studioSource, /journeyMode\s*=\s*["']legacy_five_stage["']/);
+assert.equal(studioSource.includes("legacy_five_stage"), false);
 assert.doesNotMatch(studioSource, /futureShippingTariff/);
 
 console.log("PASS: dormant future shipping tariff foundation");

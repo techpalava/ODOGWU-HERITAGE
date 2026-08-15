@@ -57,7 +57,6 @@ const selection = (
   }).selection;
 
 const incompleteJourney = createDormantDesignStudioJourneyState({
-  mode: "future_nine_stage",
   normalizedCustomDetailCatalog: catalog,
 });
 assert.equal(incompleteJourney.currentStageId, "garment_type");
@@ -66,13 +65,12 @@ assert.equal(incompleteJourney.nextStageId, null);
 assert.equal(
   createDormantDesignStudioJourneyState({
     normalizedCustomDetailCatalog: catalog,
-  }).mode,
-  "legacy_five_stage",
+  }).currentStageId,
+  "garment_type",
 );
 
 const shirtTrouser = selection(["shirt", "trouser"]);
 const completedJourney = createDormantDesignStudioJourneyState({
-  mode: "future_nine_stage",
   persistedDraft: { garmentTypeSelection: shirtTrouser },
   normalizedCustomDetailCatalog: catalog,
 });
@@ -144,9 +142,8 @@ overflowState = selectFutureFabric({
   garmentTypeSelection: threeGarments,
 });
 assert.equal(overflowState.pendingFabricGarment?.garmentKey, "base:skirt");
-overflowState = FabricAllocationStateEngine.beginChooseAnotherFabric(
-  overflowState,
-);
+overflowState =
+  FabricAllocationStateEngine.beginChooseAnotherFabric(overflowState);
 overflowState = selectFutureFabric({
   state: overflowState,
   fabricCode: "FAB-B",
@@ -212,14 +209,22 @@ assert.equal(
   true,
 );
 
-const oldPrice = resolveFabricAllocationMaterialPricing(sharedState.fabricAllocations, fabrics);
+const oldPrice = resolveFabricAllocationMaterialPricing(
+  sharedState.fabricAllocations,
+  fabrics,
+);
 const refreshedPrice = resolveFabricAllocationMaterialPricing(
   sharedState.fabricAllocations,
   [fabric("FAB-A", "Future Fabric A", 37)],
 );
-assert.equal(oldPrice.status === "resolved" ? oldPrice.totalMaterialPrice : null, 10);
 assert.equal(
-  refreshedPrice.status === "resolved" ? refreshedPrice.totalMaterialPrice : null,
+  oldPrice.status === "resolved" ? oldPrice.totalMaterialPrice : null,
+  10,
+);
+assert.equal(
+  refreshedPrice.status === "resolved"
+    ? refreshedPrice.totalMaterialPrice
+    : null,
   37,
 );
 assert.equal(oldPrice.status, "resolved");
@@ -264,7 +269,8 @@ if (oldPrice.status === "resolved" && refreshedPrice.status === "resolved") {
   assert.equal(priceAfterAdminUpdate.totalFabricMaterialPrice, 37);
   assert.equal(priceAfterAdminUpdate.fabricPrice, 37);
   assert.equal(
-    priceAfterAdminUpdate.garmentSubtotal - priceWithCurrentCatalog.garmentSubtotal,
+    priceAfterAdminUpdate.garmentSubtotal -
+      priceWithCurrentCatalog.garmentSubtotal,
     27,
   );
 }
@@ -275,9 +281,11 @@ const agbadaState = selectFutureFabric({
   fabricCode: "FAB-A",
   garmentTypeSelection: agbadaSelection,
 });
-assert.equal(agbadaState.fabricAllocations[0].garmentAssignments[0].fabricUnits, 2);
+assert.equal(
+  agbadaState.fabricAllocations[0].garmentAssignments[0].fabricUnits,
+  2,
+);
 const persistedDraft = persistDormantGarmentTypeStage({
-  mode: "future_nine_stage",
   currentStageId: "fabric",
   garmentTypeSelection: agbadaSelection,
   draft: {
@@ -319,12 +327,16 @@ const persistedDraft = persistDormantGarmentTypeStage({
     updatedAt: "2026-08-13T12:00:00.000Z",
   } as GuestDesignDraft,
 });
-const reloadedDraft = JSON.parse(JSON.stringify(persistedDraft)) as GuestDesignDraft;
+const reloadedDraft = JSON.parse(
+  JSON.stringify(persistedDraft),
+) as GuestDesignDraft;
 assert.equal(reloadedDraft.currentStageId, "fabric");
-assert.equal(reloadedDraft.fabricAllocations?.[0].garmentAssignments[0].fabricUnits, 2);
+assert.equal(
+  reloadedDraft.fabricAllocations?.[0].garmentAssignments[0].fabricUnits,
+  2,
+);
 assert.equal(
   createDormantDesignStudioJourneyState({
-    mode: "future_nine_stage",
     persistedDraft: reloadedDraft,
     normalizedCustomDetailCatalog: catalog,
   }).currentStageId,
@@ -332,11 +344,17 @@ assert.equal(
 );
 
 const appSource = readFileSync("src/App.tsx", "utf8");
-const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
+const studioSource = readFileSync(
+  "src/components/DesignStudioView.tsx",
+  "utf8",
+);
 assert.equal(appSource.includes("future_nine_stage"), false);
-assert.match(studioSource, /journeyMode\s*=\s*["']legacy_five_stage["']/);
+assert.equal(studioSource.includes("legacy_five_stage"), false);
 assert.match(studioSource, /futureStageId === ["']garment_type["']/);
 assert.match(studioSource, /setFutureStageId\("design_style"\)/);
-assert.match(studioSource, /getFutureFabricGarmentSelections\(garmentTypeSelection\)/);
+assert.match(
+  studioSource,
+  /getFutureFabricGarmentSelections\(garmentTypeSelection\)/,
+);
 
 console.log("PASS: dormant future Fabric stage integration");

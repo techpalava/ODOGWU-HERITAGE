@@ -11,7 +11,6 @@ import type { GuestDesignDraft } from "./src/types";
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const incomplete = createDormantDesignStudioJourneyState({
-  mode: "future_nine_stage",
   normalizedCustomDetailCatalog: catalog,
 });
 assert.equal(incomplete.currentStageId, "garment_type");
@@ -24,13 +23,11 @@ const garmentTypeSelection = reconcileGarmentTypeStepSelection({
   normalizedCustomDetailCatalog: catalog,
 }).selection;
 const draft = persistDormantGarmentTypeStage({
-  mode: "future_nine_stage",
   currentStageId: "fabric",
   garmentTypeSelection,
   draft: {} as GuestDesignDraft,
 });
 const restored = createDormantDesignStudioJourneyState({
-  mode: "future_nine_stage",
   persistedDraft: draft,
   normalizedCustomDetailCatalog: catalog,
 });

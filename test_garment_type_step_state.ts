@@ -5,7 +5,7 @@ import type {
   GuestDesignDraft,
 } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
-import { DESIGN_STUDIO_CUSTOMER_FLOW_STEPS } from "./src/utils/designSourceJourney";
+import { DESIGN_STUDIO_NINE_STAGE_FOUNDATION } from "./src/utils/designSourceJourney";
 import {
   getGarmentTypeStepControlledState,
   normalizePersistedGarmentTypeStepSelection,
@@ -314,8 +314,8 @@ const { GuestOrderSessionService } = await import(
   "./src/services/guestOrderSessionService"
 );
 StorageService.clearGuestOrderSession();
-GuestOrderSessionService.saveGuestDesignDraft(draftWithSelection);
-const persistedDraft = GuestOrderSessionService.getGuestDesignDraft();
+GuestOrderSessionService.saveFutureDesignDraft(draftWithSelection);
+const persistedDraft = GuestOrderSessionService.getFutureDesignDraft();
 assert.deepEqual(
   persistedDraft?.garmentTypeSelection,
   draftWithSelection.garmentTypeSelection,
@@ -328,15 +328,19 @@ assert.equal(
 );
 
 assert.deepEqual(
-  DESIGN_STUDIO_CUSTOMER_FLOW_STEPS.map((step) => step.title),
+  DESIGN_STUDIO_NINE_STAGE_FOUNDATION.map((step) => step.title),
   [
-    "Garment / Style",
+    "Garment Type",
     "Fabric",
+    "Design Style",
     "Custom Details",
-    "Shipping & Delivery",
-    "Review / Add to Cart",
+    "AI Try-on",
+    "Measurement",
+    "Summary",
+    "Shipping",
+    "Order Review & Payment",
   ],
-  "The current five-stage runtime must remain unchanged.",
+  "The active Design Studio must expose the approved nine-stage journey.",
 );
 
 console.log("PASS: authoritative Garment Type Step state and draft persistence");

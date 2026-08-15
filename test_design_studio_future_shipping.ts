@@ -290,7 +290,7 @@ assert.equal(JSON.stringify(roundTrip.futureShippingState).includes("amountCents
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const summarySource = readFileSync("src/components/DormantFutureSummaryStep.tsx", "utf8");
 const shippingSource = readFileSync("src/components/DormantFutureShippingStep.tsx", "utf8");
-const stepperSource = readFileSync("src/components/DormantFutureJourneyStepper.tsx", "utf8");
+const stepperSource = readFileSync("src/components/DesignStudioJourneyStepper.tsx", "utf8");
 const appSource = readFileSync("src/App.tsx", "utf8");
 assert.match(studioSource, /futureStageId === "shipping"/);
 assert.match(studioSource, /handleOpenDormantShippingStage/);
@@ -299,7 +299,7 @@ assert.match(studioSource, /persistFutureShippingState/);
 assert.match(studioSource, /const canRestoreShipping = canRestoreSummary;/);
 assert.match(
   studioSource,
-  /!isFutureNineStageMode[\s\S]*?isLoadingData[\s\S]*?styles\.length === 0[\s\S]*?fabrics\.length === 0[\s\S]*?normalizedGarmentTypeCatalog\.length === 0/,
+  /guestDraftHydrated \|\|[\s\S]*?isLoadingData[\s\S]*?styles\.length === 0[\s\S]*?fabrics\.length === 0[\s\S]*?normalizedGarmentTypeCatalog\.length === 0/,
 );
 assert.match(summarySource, /canContinueToShipping/);
 assert.match(summarySource, /onContinueToShipping/);
@@ -319,6 +319,6 @@ assert.doesNotMatch(shippingSource, /calculateIndividualShipping/);
 assert.doesNotMatch(shippingSource, /calculateFinalMileShipping/);
 assert.doesNotMatch(shippingSource, /€0\.00/);
 assert.equal(appSource.includes("future_nine_stage"), false);
-assert.match(studioSource, /journeyMode = "legacy_five_stage"/);
+assert.equal(studioSource.includes("legacy_five_stage"), false);
 
 console.log("PASS: dormant future Shipping state and Step 8 integration");

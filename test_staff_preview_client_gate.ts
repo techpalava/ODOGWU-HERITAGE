@@ -7,7 +7,6 @@ import {
   readStaffPreviewFeatureFlag,
   resolveStaffPreviewClientAuthorization,
   resolveStaffPreviewGateIdentity,
-  resolveStaffPreviewJourneyMode,
   type StaffPreviewClientGateState,
 } from "./src/security/staffPreviewClientGate";
 import {
@@ -384,12 +383,11 @@ const nonAuthorizedStates: StaffPreviewClientGateState[] = [
   { status: "error", reason: "ENTITLEMENT_LISTENER_FAILED", uid: UID_A },
 ];
 nonAuthorizedStates.forEach((state) => {
-  assert.equal(resolveStaffPreviewJourneyMode(state), "legacy_five_stage");
   assert.equal(isStaffPreviewFutureDraftLoadAllowed(state), false);
 });
 assert.equal(
-  resolveStaffPreviewJourneyMode(authorizationFixture()),
-  "future_nine_stage",
+  isStaffPreviewFutureDraftLoadAllowed(authorizationFixture()),
+  true,
 );
 
 const gateSource = readFileSync(
@@ -412,7 +410,6 @@ assert.doesNotMatch(
 assert.match(serviceSource, /getIdTokenResult\(true\)/);
 assert.match(serviceSource, /doc\(db, STAFF_PREVIEW_ENTITLEMENT_COLLECTION, uid\)/);
 assert.match(hookSource, /controller\.cancel\(\)/);
-assert.doesNotMatch(appSource, /future_nine_stage/);
 assert.doesNotMatch(appSource, /useStaffPreviewClientGate/);
 
 console.log("PASS: dormant staff preview client authorization gate");

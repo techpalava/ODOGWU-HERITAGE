@@ -8,7 +8,6 @@ import {
   FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE,
   LEGACY_DESIGN_STUDIO_DRAFT_NAMESPACE,
 } from "./src/utils/designStudioDraftPersistence";
-import { DEFAULT_DESIGN_STUDIO_JOURNEY_MODE } from "./src/utils/designStudioJourneyMode";
 
 class MemoryStorage {
   readonly values = new Map<string, string>();
@@ -195,12 +194,6 @@ const createFixture = ({
     storage,
     legacy: {
       load: () => (legacy ? clone(legacy) : null),
-      save: (draft) => {
-        legacy = clone(draft);
-      },
-      clear: () => {
-        legacy = null;
-      },
     },
     normalizeDraft: clone,
     legacySourceVersion: "2026-07-30-guest-order-v1",
@@ -210,6 +203,9 @@ const createFixture = ({
     storage,
     repository,
     getLegacy: () => (legacy ? clone(legacy) : null),
+    setLegacy: (draft: GuestDesignDraft | null) => {
+      legacy = draft ? clone(draft) : null;
+    },
   };
 };
 
@@ -228,7 +224,8 @@ const cloudSyncMarker = isolation.repository.recordCloudSynchronization({
 assert.equal(cloudSyncMarker?.cloudRevision, 3);
 assert.deepEqual(isolation.repository.readCloudSyncResult(), cloudSyncMarker);
 assert.doesNotMatch(
-  isolation.storage.getItem(FUTURE_DESIGN_STUDIO_DRAFT_CLOUD_SYNC_NAMESPACE) || "",
+  isolation.storage.getItem(FUTURE_DESIGN_STUDIO_DRAFT_CLOUD_SYNC_NAMESPACE) ||
+    "",
   /Future Customer|Private street|Personalized requirement/,
 );
 assert.equal(isolation.repository.saveFutureDraftV1(future).status, "saved");
@@ -238,8 +235,8 @@ assert.equal(
 );
 assert.equal(isolation.repository.loadFutureDraftV1().status, "empty");
 assert.deepEqual(isolation.repository.readCloudSyncResult(), cloudSyncMarker);
-isolation.repository.saveLegacyDraft(legacyOnly);
-assert.deepEqual(isolation.repository.loadLegacyDraft(), legacyOnly);
+isolation.setLegacy(legacyOnly);
+assert.deepEqual(isolation.getLegacy(), legacyOnly);
 assert.equal(
   isolation.storage.getItem(FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE),
   null,
@@ -254,7 +251,7 @@ assert.notEqual(
 
 const futureBeforeLegacySave = isolation.repository.loadFutureDraftV1();
 assert.equal(futureBeforeLegacySave.status, "loaded");
-isolation.repository.saveLegacyDraft({
+isolation.setLegacy({
   ...legacyOnly,
   customerName: "Changed Legacy Customer",
 });
@@ -266,13 +263,10 @@ assert.deepEqual(
 isolation.repository.clearFutureDraftV1();
 assert.equal(isolation.repository.loadFutureDraftV1().status, "empty");
 assert.equal(isolation.getLegacy()?.customerName, "Changed Legacy Customer");
-assert.equal(
-  isolation.repository.readMigrationResult()?.resultCode,
-  "cleared",
-);
+assert.equal(isolation.repository.readMigrationResult()?.resultCode, "cleared");
 
 assert.equal(isolation.repository.saveFutureDraftV1(future).status, "saved");
-isolation.repository.clearLegacyDraft();
+isolation.setLegacy(null);
 assert.equal(isolation.getLegacy(), null);
 assert.equal(isolation.repository.loadFutureDraftV1().status, "loaded");
 
@@ -300,8 +294,9 @@ const firstMigration = migration.repository.migrateHistoricalFutureDraft();
 assert.equal(firstMigration.resultCode, "migrated");
 assert.equal(firstMigration.wroteDestination, true);
 assert.deepEqual(migration.getLegacy(), sourceBeforeMigration);
-const destinationAfterFirstMigration =
-  migration.storage.getItem(FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE);
+const destinationAfterFirstMigration = migration.storage.getItem(
+  FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE,
+);
 const secondMigration = migration.repository.migrateHistoricalFutureDraft();
 assert.equal(secondMigration.resultCode, "migrated");
 assert.equal(secondMigration.wroteDestination, false);
@@ -321,7 +316,9 @@ assert.ok(journalRaw);
   "+31000000001",
   "Sensitive personalization",
   "Private street",
-].forEach((privateValue) => assert.equal(journalRaw.includes(privateValue), false));
+].forEach((privateValue) =>
+  assert.equal(journalRaw.includes(privateValue), false),
+);
 assert.deepEqual(Object.keys(JSON.parse(journalRaw)).sort(), [
   "completedAt",
   "destinationNamespace",
@@ -369,8 +366,6 @@ const strictNormalizer = createDesignStudioDraftRepository({
   storage: malformedMarkedSource.storage,
   legacy: {
     load: malformedMarkedSource.getLegacy,
-    save: () => undefined,
-    clear: () => undefined,
   },
   normalizeDraft: (draft) => {
     if (!draft.designSelections) throw new Error("Malformed draft");
@@ -397,24 +392,28 @@ const allStages: DesignStudioStageId[] = [
 allStages.forEach((stage) => {
   const roundTrip = createFixture();
   const stageDraft = makeDraft(stage);
-  assert.equal(roundTrip.repository.saveFutureDraftV1(stageDraft).status, "saved");
+  assert.equal(
+    roundTrip.repository.saveFutureDraftV1(stageDraft).status,
+    "saved",
+  );
   const reloaded = roundTrip.repository.loadFutureDraftV1();
   assert.equal(reloaded.status, "loaded");
   assert.deepEqual(reloaded.draft, stageDraft);
 });
 
-assert.equal(DEFAULT_DESIGN_STUDIO_JOURNEY_MODE, "legacy_five_stage");
 assert.equal(
   LEGACY_DESIGN_STUDIO_DRAFT_NAMESPACE,
   "odogwu_guest_order_session_v1.designDraft",
 );
 const appSource = readFileSync("src/App.tsx", "utf8");
-assert.doesNotMatch(appSource, /future_nine_stage/);
-const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
+assert.doesNotMatch(appSource, /journeyMode=/);
+const studioSource = readFileSync(
+  "src/components/DesignStudioView.tsx",
+  "utf8",
+);
 assert.match(studioSource, /getFutureDesignDraft\(\)/);
-assert.match(studioSource, /getLegacyDesignDraft\(\)/);
 assert.match(studioSource, /saveFutureDesignDraft\(guestDraft\)/);
-assert.match(studioSource, /saveLegacyDesignDraft\(guestDraft\)/);
+assert.doesNotMatch(studioSource, /saveLegacyDesignDraft/);
 
 const browserStorage = new MemoryStorage();
 Object.defineProperty(globalThis, "localStorage", {
@@ -426,11 +425,13 @@ Object.defineProperty(globalThis, "window", {
   value: { localStorage: browserStorage },
 });
 const { StorageService } = await import("./src/services/storageService");
-const { GuestOrderSessionService } = await import(
-  "./src/services/guestOrderSessionService"
-);
+const { GuestOrderSessionService } =
+  await import("./src/services/guestOrderSessionService");
 StorageService.clearGuestOrderSession();
-GuestOrderSessionService.saveLegacyDesignDraft(legacyOnly);
+StorageService.saveGuestOrderSession({
+  ...GuestOrderSessionService.getActiveSession(),
+  designDraft: legacyOnly,
+});
 const persistedLegacyBeforeFuture = clone(
   StorageService.getGuestOrderSession()?.designDraft,
 );
@@ -449,8 +450,11 @@ assert.deepEqual(
   persistedLegacyBeforeFuture,
 );
 GuestOrderSessionService.saveFutureDesignDraft(future);
-GuestOrderSessionService.clearLegacyDesignDraft();
-assert.equal(StorageService.getGuestOrderSession()?.designDraft, undefined);
+assert.deepEqual(
+  StorageService.getGuestOrderSession()?.designDraft,
+  persistedLegacyBeforeFuture,
+  "The active service must not mutate the read-only legacy migration source.",
+);
 assert.equal(
   GuestOrderSessionService.getFutureDesignDraft()?.currentStageId,
   "shipping",

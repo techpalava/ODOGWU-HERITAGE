@@ -9,31 +9,12 @@ import type {
   GuestDesignDraft,
 } from "../types";
 import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./designSourceJourney";
-import {
-  normalizePersistedGarmentTypeStepSelection,
-  reconcileGarmentTypeStepSelection,
-} from "./garmentTypeStepState";
+import { reconcileGarmentTypeStepSelection } from "./garmentTypeStepState";
 import { normalizeAiTryOnWorkflowState } from "./aiTryOnWorkflow";
 import { isFutureMeasurementStageUnlocked } from "./measurementBlueprint";
 
-export type DesignStudioJourneyMode =
-  | "legacy_five_stage"
-  | "future_nine_stage";
-
-export const DEFAULT_DESIGN_STUDIO_JOURNEY_MODE =
-  "legacy_five_stage" as const;
-
-export const normalizeDesignStudioJourneyMode = (
-  value: unknown,
-): DesignStudioJourneyMode =>
-  value === "future_nine_stage"
-    ? "future_nine_stage"
-    : DEFAULT_DESIGN_STUDIO_JOURNEY_MODE;
-
 export type GarmentTypeStageBlockerCode =
-  | "GARMENT_REQUIRED"
-  | "DEMOGRAPHIC_REQUIRED"
-  | "CONSTRUCTION_UNRESOLVED";
+  "GARMENT_REQUIRED" | "DEMOGRAPHIC_REQUIRED" | "CONSTRUCTION_UNRESOLVED";
 
 export interface GarmentTypeStageBlocker {
   code: GarmentTypeStageBlockerCode;
@@ -47,8 +28,7 @@ export interface DormantGarmentTypeStageCompletion {
 }
 
 export interface DormantDesignStudioJourneyState {
-  mode: DesignStudioJourneyMode;
-  currentStageId: DesignStudioStageId | null;
+  currentStageId: DesignStudioStageId;
   nextStageId: "fabric" | "design_style" | "custom_details" | null;
   canAdvance: boolean;
   constructionSelectionMode: GarmentConstructionSelectionMode;
@@ -81,13 +61,11 @@ export const getGarmentTypeStageCompletion = (
 };
 
 export const createDormantDesignStudioJourneyState = ({
-  mode,
   persistedDraft,
   normalizedCustomDetailCatalog,
   isFabricStageComplete = false,
   isCustomDetailsStageReady = false,
 }: {
-  mode?: unknown;
   persistedDraft?: Pick<
     GuestDesignDraft,
     "garmentTypeSelection" | "currentStageId" | "aiTryOnWorkflow"
@@ -96,14 +74,10 @@ export const createDormantDesignStudioJourneyState = ({
   isFabricStageComplete?: boolean;
   isCustomDetailsStageReady?: boolean;
 }): DormantDesignStudioJourneyState => {
-  const normalizedMode = normalizeDesignStudioJourneyMode(mode);
-  const garmentTypeSelection =
-    normalizedMode === "future_nine_stage"
-      ? reconcileGarmentTypeStepSelection({
-          persistedSelection: persistedDraft?.garmentTypeSelection,
-          normalizedCustomDetailCatalog,
-        }).selection
-      : normalizePersistedGarmentTypeStepSelection(undefined);
+  const garmentTypeSelection = reconcileGarmentTypeStepSelection({
+    persistedSelection: persistedDraft?.garmentTypeSelection,
+    normalizedCustomDetailCatalog,
+  }).selection;
 
   const completion = getGarmentTypeStageCompletion(garmentTypeSelection);
   const requestedStageId = persistedDraft?.currentStageId;
@@ -114,57 +88,41 @@ export const createDormantDesignStudioJourneyState = ({
     aiTryOnWorkflow && isFutureMeasurementStageUnlocked(aiTryOnWorkflow),
   );
   const currentStageId =
-    normalizedMode === "future_nine_stage" &&
     requestedStageId === "measurement" &&
     completion.isComplete &&
     isFabricStageComplete &&
     isCustomDetailsStageReady &&
     canEnterMeasurement
       ? "measurement"
-      : normalizedMode === "future_nine_stage" &&
-    requestedStageId === "try_on" &&
-    completion.isComplete &&
-    isFabricStageComplete &&
-    isCustomDetailsStageReady
-      ? "try_on"
-      : normalizedMode === "future_nine_stage" &&
-          requestedStageId === "try_on" &&
+      : requestedStageId === "try_on" &&
           completion.isComplete &&
-          isFabricStageComplete
-        ? "custom_details"
-      : normalizedMode === "future_nine_stage" &&
-    requestedStageId === "custom_details" &&
-    completion.isComplete &&
-    isFabricStageComplete
-      ? "custom_details"
-      : normalizedMode === "future_nine_stage" &&
-          requestedStageId === "design_style" &&
-          completion.isComplete &&
-          isFabricStageComplete
-        ? "design_style"
-      : normalizedMode === "future_nine_stage" &&
-          (requestedStageId === "fabric" ||
-            requestedStageId === "design_style" ||
-            requestedStageId === "custom_details") &&
-          completion.isComplete
-        ? "fabric"
-      : normalizedMode === "future_nine_stage"
-        ? "garment_type"
-        : null;
+          isFabricStageComplete &&
+          isCustomDetailsStageReady
+        ? "try_on"
+        : requestedStageId === "try_on" &&
+            completion.isComplete &&
+            isFabricStageComplete
+          ? "custom_details"
+          : requestedStageId === "custom_details" &&
+              completion.isComplete &&
+              isFabricStageComplete
+            ? "custom_details"
+            : requestedStageId === "design_style" &&
+                completion.isComplete &&
+                isFabricStageComplete
+              ? "design_style"
+              : (requestedStageId === "fabric" ||
+                    requestedStageId === "design_style" ||
+                    requestedStageId === "custom_details") &&
+                  completion.isComplete
+                ? "fabric"
+                : "garment_type";
 
   return {
-    mode: normalizedMode,
     currentStageId,
-    nextStageId:
-      normalizedMode === "future_nine_stage" && completion.isComplete
-        ? "fabric"
-        : null,
-    canAdvance:
-      normalizedMode === "future_nine_stage" && completion.isComplete,
-    constructionSelectionMode:
-      normalizedMode === "future_nine_stage"
-        ? "garment_type_locked"
-        : "legacy_custom_details",
+    nextStageId: completion.isComplete ? "fabric" : null,
+    canAdvance: completion.isComplete,
+    constructionSelectionMode: "garment_type_locked",
     garmentTypeSelection,
     completion,
   };
@@ -184,12 +142,8 @@ export const updateDormantGarmentTypeSelection = ({
   reconcileGarmentTypeStepSelection({
     persistedSelection: currentSelection,
     normalizedCustomDetailCatalog,
-    ...(selectedGarmentTypes !== undefined
-      ? { selectedGarmentTypes }
-      : {}),
-    ...(selectedDemographic !== undefined
-      ? { selectedDemographic }
-      : {}),
+    ...(selectedGarmentTypes !== undefined ? { selectedGarmentTypes } : {}),
+    ...(selectedDemographic !== undefined ? { selectedDemographic } : {}),
   }).selection;
 
 export const acceptDormantGarmentConstructionDefaults = ({
@@ -220,19 +174,14 @@ export const acceptDormantGarmentConstructionDefaults = ({
 };
 
 export const persistDormantGarmentTypeStage = <T extends GuestDesignDraft>({
-  mode,
   draft,
   garmentTypeSelection,
   currentStageId = "garment_type",
 }: {
-  mode?: unknown;
   draft: T;
   garmentTypeSelection: GarmentTypeStepSelection;
   currentStageId?: DesignStudioStageId;
 }): T => {
-  if (normalizeDesignStudioJourneyMode(mode) !== "future_nine_stage") {
-    return draft;
-  }
   return {
     ...draft,
     journeySchemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,

@@ -69,7 +69,7 @@ const componentSource = readFileSync(
   "utf8",
 );
 const stepperSource = readFileSync(
-  "src/components/DormantFutureJourneyStepper.tsx",
+  "src/components/DesignStudioJourneyStepper.tsx",
   "utf8",
 );
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");

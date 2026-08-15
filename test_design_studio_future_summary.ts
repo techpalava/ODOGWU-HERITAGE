@@ -430,7 +430,7 @@ assert.deepEqual(
 );
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
-const stepperSource = readFileSync("src/components/DormantFutureJourneyStepper.tsx", "utf8");
+const stepperSource = readFileSync("src/components/DesignStudioJourneyStepper.tsx", "utf8");
 const summarySource = readFileSync("src/components/DormantFutureSummaryStep.tsx", "utf8");
 const appSource = readFileSync("src/App.tsx", "utf8");
 assert.match(studioSource, /handleOpenDormantSummaryStage/);
@@ -465,6 +465,6 @@ assert.match(summarySource, /break-words/);
 assert.match(summarySource, /Known priced selections:/);
 assert.match(summarySource, /This is not a final total\./);
 assert.equal(appSource.includes("future_nine_stage"), false);
-assert.match(studioSource, /journeyMode = "legacy_five_stage"/);
+assert.equal(studioSource.includes("legacy_five_stage"), false);
 
 console.log("PASS: dormant future Summary projection and Step 7 integration");

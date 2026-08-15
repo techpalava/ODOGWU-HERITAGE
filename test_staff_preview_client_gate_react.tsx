@@ -7,7 +7,6 @@ import {
 } from "react-test-renderer";
 import { useStaffPreviewClientGate } from "./src/hooks/useStaffPreviewClientGate";
 import {
-  resolveStaffPreviewJourneyMode,
   type StaffPreviewGateApplicationCustomer,
 } from "./src/security/staffPreviewClientGate";
 import type {
@@ -125,7 +124,6 @@ const GateProbe = (props: ProbeProps) => {
     <output
       data-status={state.status}
       data-reason={state.reason}
-      data-mode={resolveStaffPreviewJourneyMode(state)}
     />
   );
 };
@@ -156,7 +154,6 @@ const renderedState = (renderer: ReactTestRenderer) => {
   return {
     status: output.props["data-status"] as string,
     reason: output.props["data-reason"] as string,
-    mode: output.props["data-mode"] as string,
   };
 };
 
@@ -197,7 +194,6 @@ const baseProps: ProbeProps = {
   const renderer = await authorize(baseProps, baseSubscriber);
   const unchanged = updateBeforePassiveEffects(renderer, { ...baseProps });
   assert.equal(unchanged.status, "authorized");
-  assert.equal(unchanged.mode, "future_nine_stage");
   assert.equal(baseUser.getRefreshCount(), 1);
   await act(async () => renderer.unmount());
 }
@@ -222,7 +218,6 @@ const assertImmediateInvalidation = async ({
   const immediate = updateBeforePassiveEffects(renderer, nextProps(initialProps));
   assert.equal(immediate.status, expectedStatus);
   if (expectedReason) assert.equal(immediate.reason, expectedReason);
-  assert.equal(immediate.mode, "legacy_five_stage");
   await act(async () => renderer.unmount());
 };
 
@@ -283,7 +278,6 @@ await assertImmediateInvalidation({
   };
   const immediate = updateBeforePassiveEffects(renderer, replacementProps);
   assert.equal(immediate.status, "checking");
-  assert.equal(immediate.mode, "legacy_five_stage");
   assert.equal(replacementSubscriber.getSubscriptionCount(), 0);
   await act(async () => undefined);
   assert.equal(replacementSubscriber.getSubscriptionCount(), 1);
@@ -309,7 +303,6 @@ await assertImmediateInvalidation({
   };
   const immediate = updateBeforePassiveEffects(renderer, nextProps);
   assert.equal(immediate.status, "checking");
-  assert.equal(immediate.mode, "legacy_five_stage");
   await act(async () => undefined);
   await act(async () => subscriber.emit(UID_A, activeEntitlement()));
   assert.equal(renderedState(renderer).status, "authorized");
@@ -337,7 +330,6 @@ await assertImmediateInvalidation({
   };
   const immediate = updateBeforePassiveEffects(renderer, propsB);
   assert.equal(immediate.status, "checking");
-  assert.equal(immediate.mode, "legacy_five_stage");
   await act(async () => undefined);
   deferred.resolve({ claims: { staffPreview: claim() } });
   await act(async () => undefined);

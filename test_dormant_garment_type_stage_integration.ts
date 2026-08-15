@@ -8,7 +8,6 @@ import {
   acceptDormantGarmentConstructionDefaults,
   createDormantDesignStudioJourneyState,
   getGarmentTypeStageCompletion,
-  normalizeDesignStudioJourneyMode,
   persistDormantGarmentTypeStage,
   updateDormantGarmentTypeSelection,
 } from "./src/utils/designStudioJourneyMode";
@@ -60,32 +59,11 @@ const baseDraft = {
   updatedAt: "2026-08-13T12:00:00.000Z",
 } as GuestDesignDraft;
 
-assert.equal(
-  normalizeDesignStudioJourneyMode(undefined),
-  "legacy_five_stage",
-);
-assert.equal(
-  normalizeDesignStudioJourneyMode("unexpected"),
-  "legacy_five_stage",
-);
-
-const legacyWithFutureDraftData = createDormantDesignStudioJourneyState({
+const activeJourney = createDormantDesignStudioJourneyState({
   persistedDraft: baseDraft,
   normalizedCustomDetailCatalog: catalog,
 });
-assert.equal(legacyWithFutureDraftData.mode, "legacy_five_stage");
-assert.equal(legacyWithFutureDraftData.currentStageId, null);
-assert.equal(
-  legacyWithFutureDraftData.constructionSelectionMode,
-  "legacy_custom_details",
-);
-assert.deepEqual(legacyWithFutureDraftData.garmentTypeSelection.garmentTypes, []);
-
-const future = createDormantDesignStudioJourneyState({
-  mode: "future_nine_stage",
-  persistedDraft: baseDraft,
-  normalizedCustomDetailCatalog: catalog,
-});
+const future = activeJourney;
 assert.equal(future.currentStageId, "garment_type");
 assert.equal(future.constructionSelectionMode, "garment_type_locked");
 assert.equal(future.nextStageId, "fabric");
@@ -209,24 +187,22 @@ assert.equal(
 );
 
 const futureDraft = persistDormantGarmentTypeStage({
-  mode: "future_nine_stage",
   draft: baseDraft,
   garmentTypeSelection: changedDemographic,
 });
 const reloaded = createDormantDesignStudioJourneyState({
-  mode: "future_nine_stage",
   persistedDraft: JSON.parse(JSON.stringify(futureDraft)),
   normalizedCustomDetailCatalog: catalog,
 });
 assert.equal(futureDraft.currentStageId, "garment_type");
 assert.deepEqual(reloaded.garmentTypeSelection, changedDemographic);
-assert.equal(
+assert.deepEqual(
   persistDormantGarmentTypeStage({
     draft: baseDraft,
     garmentTypeSelection: changedDemographic,
-  }),
-  baseDraft,
-  "Legacy mode must not write future stage metadata or Step 1 state.",
+  }).garmentTypeSelection,
+  changedDemographic,
+  "The only active journey must persist authoritative Step 1 state.",
 );
 
 const uploadedDraft = {
@@ -247,20 +223,19 @@ const uploadedDraft = {
   },
 };
 const persistedUploadedDraft = persistDormantGarmentTypeStage({
-  mode: "future_nine_stage",
   draft: uploadedDraft,
   garmentTypeSelection: changedDemographic,
 });
 assert.equal(persistedUploadedDraft.designSource, uploadedDraft.designSource);
 
 const appSource = readFileSync("src/App.tsx", "utf8");
-const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
-assert.equal(appSource.includes("future_nine_stage"), false);
-assert.match(
-  studioSource,
-  /journeyMode\s*=\s*["']legacy_five_stage["']/,
+const studioSource = readFileSync(
+  "src/components/DesignStudioView.tsx",
+  "utf8",
 );
-assert.match(studioSource, /if \(isFutureNineStageMode\)/);
+assert.equal(appSource.includes("future_nine_stage"), false);
+assert.equal(studioSource.includes("legacy_five_stage"), false);
+assert.equal(studioSource.includes("isFutureNineStageMode"), false);
 assert.match(studioSource, /data-stage-id=\{futureStageId\}/);
 
 console.log("PASS: dormant Garment Type stage integration");

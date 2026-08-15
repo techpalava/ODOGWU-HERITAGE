@@ -6,8 +6,7 @@ import {
 
 export const GUEST_ORDER_SESSION_STORAGE_NAMESPACE =
   "odogwu_guest_order_session_v1";
-export const LEGACY_DESIGN_STUDIO_DRAFT_NAMESPACE =
-  `${GUEST_ORDER_SESSION_STORAGE_NAMESPACE}.designDraft`;
+export const LEGACY_DESIGN_STUDIO_DRAFT_NAMESPACE = `${GUEST_ORDER_SESSION_STORAGE_NAMESPACE}.designDraft`;
 export const FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE =
   "odogwu_design_studio_future_draft_v1";
 export const FUTURE_DESIGN_STUDIO_DRAFT_MIGRATION_NAMESPACE =
@@ -29,8 +28,6 @@ export interface DesignStudioDraftStorageAdapter {
 
 export interface LegacyDesignStudioDraftAdapter {
   load(): GuestDesignDraft | null;
-  save(draft: GuestDesignDraft): void;
-  clear(): void;
 }
 
 export interface FutureDesignStudioDraftEnvelopeV1 {
@@ -173,10 +170,6 @@ export const createDesignStudioDraftRepository = ({
 }: FutureDesignStudioDraftRepositoryDependencies) => {
   const loadLegacyDraft = (): GuestDesignDraft | null => legacy.load();
 
-  const saveLegacyDraft = (draft: GuestDesignDraft): void => legacy.save(draft);
-
-  const clearLegacyDraft = (): void => legacy.clear();
-
   const readMigrationResult = (): FutureDraftMigrationJournalV1 | null => {
     const raw = storage.getItem(FUTURE_DESIGN_STUDIO_DRAFT_MIGRATION_NAMESPACE);
     if (!raw) return null;
@@ -206,7 +199,9 @@ export const createDesignStudioDraftRepository = ({
   };
 
   const readCloudSyncResult = (): FutureDraftCloudSyncJournalV1 | null => {
-    const raw = storage.getItem(FUTURE_DESIGN_STUDIO_DRAFT_CLOUD_SYNC_NAMESPACE);
+    const raw = storage.getItem(
+      FUTURE_DESIGN_STUDIO_DRAFT_CLOUD_SYNC_NAMESPACE,
+    );
     if (!raw) return null;
     const parsed = parseJson(raw);
     return isRecord(parsed) &&
@@ -227,7 +222,11 @@ export const createDesignStudioDraftRepository = ({
     ownerUid: string;
     cloudRevision: number;
   }): FutureDraftCloudSyncJournalV1 | null => {
-    if (!ownerUid || !Number.isSafeInteger(cloudRevision) || cloudRevision < 1) {
+    if (
+      !ownerUid ||
+      !Number.isSafeInteger(cloudRevision) ||
+      cloudRevision < 1
+    ) {
       return null;
     }
     const journal: FutureDraftCloudSyncJournalV1 = {
@@ -397,19 +396,17 @@ export const createDesignStudioDraftRepository = ({
       };
     };
 
-  const loadFutureDraftWithMigration = (): FutureDesignStudioDraftLoadResult => {
-    const loaded = loadFutureDraftV1();
-    if (loaded.status !== "empty") return loaded;
-    const migration = migrateHistoricalFutureDraft();
-    return migration.draft
-      ? { status: "loaded", draft: migration.draft }
-      : { status: "empty", draft: null };
-  };
+  const loadFutureDraftWithMigration =
+    (): FutureDesignStudioDraftLoadResult => {
+      const loaded = loadFutureDraftV1();
+      if (loaded.status !== "empty") return loaded;
+      const migration = migrateHistoricalFutureDraft();
+      return migration.draft
+        ? { status: "loaded", draft: migration.draft }
+        : { status: "empty", draft: null };
+    };
 
   return {
-    loadLegacyDraft,
-    saveLegacyDraft,
-    clearLegacyDraft,
     loadFutureDraftV1,
     loadFutureDraftWithMigration,
     saveFutureDraftV1,

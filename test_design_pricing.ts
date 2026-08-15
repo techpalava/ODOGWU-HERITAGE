@@ -613,18 +613,18 @@ assert.equal(
   SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
   "Includes fabric(s), sewing, tax, and shipping from Lagos to Eindhoven.",
 );
-const designStudioSource = readFileSync(
-  "src/components/DesignStudioView.tsx",
+const summaryStepSource = readFileSync(
+  "src/components/DormantFutureSummaryStep.tsx",
   "utf8",
 );
-assert.match(designStudioSource, /SELECTED_DESIGN_PRICE_SUPPORTING_TEXT/);
+assert.match(summaryStepSource, /SELECTED_DESIGN_PRICE_SUPPORTING_TEXT/);
 assert.doesNotMatch(
-  designStudioSource,
+  summaryStepSource,
   /Lagos &rarr; Eindhoven shipping:/,
   "Live Price Summary must not itemize inbound shipping below Selected Design Price",
 );
 assert.doesNotMatch(
-  designStudioSource,
+  summaryStepSource,
   /<span>Total shipping:<\/span>/,
   "Live Price Summary must not repeat inbound shipping in a total-shipping row",
 );
@@ -676,11 +676,12 @@ assert.equal(
   ),
 );
 
-for (const summaryFile of [
-  "src/components/DesignStudioView.tsx",
-  "src/components/CartDrawer.tsx",
-  "src/App.tsx",
-]) {
+assert.match(
+  summaryStepSource,
+  /SELECTED_DESIGN_PRICE_SUPPORTING_TEXT/,
+  "The active Design Studio Summary explains that fabric and sewing are included",
+);
+for (const summaryFile of ["src/components/CartDrawer.tsx", "src/App.tsx"]) {
   assert.match(
     readFileSync(summaryFile, "utf8"),
     /Includes fabric and sewing costs/,

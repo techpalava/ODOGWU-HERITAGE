@@ -392,7 +392,6 @@ const journeySelection: GarmentTypeStepSelection = {
 };
 assert.equal(
   createDormantDesignStudioJourneyState({
-    mode: "future_nine_stage",
     persistedDraft: {
       currentStageId: "measurement",
       garmentTypeSelection: journeySelection,
@@ -406,7 +405,6 @@ assert.equal(
 );
 assert.equal(
   createDormantDesignStudioJourneyState({
-    mode: "future_nine_stage",
     persistedDraft: {
       currentStageId: "measurement",
       garmentTypeSelection: journeySelection,

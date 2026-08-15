@@ -16,9 +16,11 @@ import { createCustomerDesignUploadReference } from "./src/services/customerDesi
 import { isDesignStylePricingActive } from "./src/utils/designStylePricingActivation";
 import {
   DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+} from "./src/utils/designSourceJourney";
+import {
   migrateLegacyDesignStudioStage,
   prepareLegacyDraftForNineStageJourney,
-} from "./src/utils/designSourceJourney";
+} from "./src/utils/legacyDesignStudioDraftMigration";
 
 const expectedNumericStages = [
   "design_style",
@@ -185,6 +187,8 @@ assert.equal(
 
 const hydratedUploaded = reconcileGuestDesignDraftDesignSource(
   baseDraft({
+    journeySchemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+    currentStageId: "design_style",
     designSource: uploadedSource,
     selectedStyleId: "catalog-style-1",
     confirmedStyleId: "catalog-style-1",
@@ -243,8 +247,8 @@ assert.equal(
 );
 
 StorageService.clearGuestOrderSession();
-GuestOrderSessionService.saveGuestDesignDraft(hydratedUploaded);
-const persistedUploaded = GuestOrderSessionService.getGuestDesignDraft();
+GuestOrderSessionService.saveFutureDesignDraft(hydratedUploaded);
+const persistedUploaded = GuestOrderSessionService.getFutureDesignDraft();
 assert.equal(persistedUploaded?.designSource?.kind, "uploaded");
 assert.equal(
   persistedUploaded?.designSource?.kind === "uploaded"
@@ -270,14 +274,16 @@ const tryOnDraft = baseDraft({
     inputFingerprint: "tryon-v1-1234567890abcdef",
   },
 });
-GuestOrderSessionService.saveGuestDesignDraft(tryOnDraft);
+GuestOrderSessionService.saveFutureDesignDraft(tryOnDraft);
 assert.deepEqual(
-  GuestOrderSessionService.getGuestDesignDraft()?.aiTryOnWorkflow,
+  GuestOrderSessionService.getFutureDesignDraft()?.aiTryOnWorkflow,
   tryOnDraft.aiTryOnWorkflow,
   "Future Try-on workflow state must round-trip through the canonical guest draft.",
 );
-GuestOrderSessionService.saveGuestDesignDraft(
+GuestOrderSessionService.saveFutureDesignDraft(
   baseDraft({
+    journeySchemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+    currentStageId: "try_on",
     aiTryOnWorkflow: {
       schemaVersion: 1,
       status: "completed",
@@ -292,7 +298,7 @@ GuestOrderSessionService.saveGuestDesignDraft(
   }),
 );
 assert.equal(
-  GuestOrderSessionService.getGuestDesignDraft()?.aiTryOnWorkflow,
+  GuestOrderSessionService.getFutureDesignDraft()?.aiTryOnWorkflow,
   undefined,
   "Malformed or raw-asset Try-on state must become inert during persistence.",
 );
@@ -401,13 +407,20 @@ const designStudioSource = readFileSync(
   fileURLToPath(new URL("./src/components/DesignStudioView.tsx", import.meta.url)),
   "utf8",
 );
-assert.match(
-  designStudioSource,
-  /CustomerDesignUploadService\.uploadCustomerDesignDraft/,
-  "Step 1 must use the existing secure upload service once the Upload Your Design UI exists.",
+const uploadServiceSource = readFileSync(
+  fileURLToPath(
+    new URL("./src/services/customerDesignUploadService.ts", import.meta.url),
+  ),
+  "utf8",
 );
-assert.match(designStudioSource, /CustomerDesignUploadService\.readCustomerDesignDraft/);
-assert.match(designStudioSource, /CustomerDesignUploadService\.deleteCustomerDesignDraft/);
-assert.match(designStudioSource, /CustomerDesignUploadService\.replaceCustomerDesignDraft/);
+assert.doesNotMatch(
+  designStudioSource,
+  /CustomerDesignUploadService|type=["']file["']/,
+  "Uploaded designs must remain isolated until their nine-stage placement is approved.",
+);
+assert.match(uploadServiceSource, /uploadCustomerDesignDraft/);
+assert.match(uploadServiceSource, /readCustomerDesignDraft/);
+assert.match(uploadServiceSource, /deleteCustomerDesignDraft/);
+assert.match(uploadServiceSource, /replaceCustomerDesignDraft/);
 
 console.log("PASS: typed design-source draft persistence foundation");

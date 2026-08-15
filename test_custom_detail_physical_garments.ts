@@ -310,22 +310,44 @@ const designStudioSource = readFileSync(
   ),
   "utf8",
 );
+const garmentTypeStepSource = readFileSync(
+  fileURLToPath(
+    new URL("./src/components/GarmentTypeStep.tsx", import.meta.url),
+  ),
+  "utf8",
+);
+const futureFabricStageSource = readFileSync(
+  fileURLToPath(
+    new URL("./src/utils/designStudioFutureFabricStage.ts", import.meta.url),
+  ),
+  "utf8",
+);
 assert.doesNotMatch(
   designStudioSource,
   /onPhysicalGarmentOptionChange/,
   "The retired custom-detail radio handler must not remain active",
 );
 assert.match(
-  designStudioSource,
-  /handleAddAdditionalGarment[\s\S]*?createAdditionalGarmentSelection[\s\S]*?appendCustomerFabricGarment/,
-  "The UI-facing additional garment composer must route through centralized orchestration",
+  garmentTypeStepSource,
+  /Select every physical garment included in this order/,
+  "The active Garment Type stage must own the complete physical garment composition",
 );
 assert.match(
   designStudioSource,
-  /onAddAdditionalGarment=\{handleAddAdditionalGarment\}/,
-  "The rendered selector must receive the allocation-aware composer handler",
+  /onGarmentTypesChange=\{handleDormantGarmentTypesChange\}/,
+  "The active Design Studio must receive physical garment changes from Step 1",
+);
+assert.match(
+  futureFabricStageSource,
+  /const selectedGarments = getFutureFabricGarmentSelections\(/,
+  "The Fabric stage must resolve the customer-selected physical garment composition",
+);
+assert.match(
+  futureFabricStageSource,
+  /FabricAllocationStateEngine\.attemptAppendGarment/,
+  "The Fabric stage must route physical garment allocation through the centralized engine",
 );
 
 console.log(
-  "PASS: Additional garment composition uses style base composition and centralized allocation transitions",
+  "PASS: Physical garment composition uses Step 1 and centralized allocation transitions",
 );

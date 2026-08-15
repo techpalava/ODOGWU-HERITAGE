@@ -32,6 +32,7 @@ import {
   calculateDesignPricing,
 } from "./src/utils/designPricing";
 import { calculateCartPricing } from "./src/utils/shippingPricing";
+import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./src/utils/designSourceJourney";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -723,6 +724,8 @@ const { GuestOrderSessionService } = await import(
   "./src/services/guestOrderSessionService"
 );
 const draft: GuestDesignDraft = {
+  journeySchemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+  currentStageId: "custom_details",
   currentStep: 3,
   selectedFabricCode: fabric.code,
   selectedStyleId: "monogram-test-style",
@@ -767,8 +770,8 @@ const draft: GuestDesignDraft = {
   shippingSnapshot: {},
   updatedAt: "2026-08-02T00:00:00.000Z",
 };
-GuestOrderSessionService.saveGuestDesignDraft(draft);
-const restoredDraft = GuestOrderSessionService.getGuestDesignDraft();
+GuestOrderSessionService.saveFutureDesignDraft(draft);
+const restoredDraft = GuestOrderSessionService.getFutureDesignDraft();
 assert.deepEqual(
   restoredDraft?.designSelections.decorativeFeatures,
   allFeatures,
@@ -795,9 +798,9 @@ const stalePlacementDraft: GuestDesignDraft = {
     monogramPlacement: "cuff",
   },
 };
-GuestOrderSessionService.saveGuestDesignDraft(stalePlacementDraft);
+GuestOrderSessionService.saveFutureDesignDraft(stalePlacementDraft);
 const restoredStalePlacementDraft =
-  GuestOrderSessionService.getGuestDesignDraft();
+  GuestOrderSessionService.getFutureDesignDraft();
 const revalidatedStalePlacement =
   filterDesignSelectionsForDecorativeFeatures(
     restoredStalePlacementDraft?.designSelections || {},

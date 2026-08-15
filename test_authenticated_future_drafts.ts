@@ -7,7 +7,6 @@ import {
   type AuthenticatedFutureDraftIdentity,
   type AuthenticatedFutureDraftPersistenceAdapter,
 } from "./src/services/authenticatedFutureDraftService";
-import { DEFAULT_DESIGN_STUDIO_JOURNEY_MODE } from "./src/utils/designStudioJourneyMode";
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -315,8 +314,8 @@ assert.equal(
 
 const appSource = readFileSync("src/App.tsx", "utf8");
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
-assert.doesNotMatch(appSource, /journeyMode=["']future_nine_stage["']/);
-assert.equal(DEFAULT_DESIGN_STUDIO_JOURNEY_MODE, "legacy_five_stage");
+assert.doesNotMatch(appSource, /journeyMode=/);
+assert.doesNotMatch(studioSource, /legacy_five_stage/);
 assert.match(studioSource, /synchronization\.status === "cloud_cleared"/);
 assert.match(
   studioSource,
@@ -326,12 +325,10 @@ assert.match(
 assert.match(
   studioSource,
   /futureDraftPersistenceStatus !== "ready"/,
-  "A cleared or conflicted cloud record must block dormant autosave.",
+  "A cleared or conflicted cloud record must block autosave.",
 );
-assert.match(
-  studioSource,
-  /if \(!isFutureNineStageMode && currentUser\) return;/,
-  "Legacy signed-in draft behavior must remain unchanged.",
-);
+assert.match(studioSource, /createFirebaseAuthenticatedFutureDraftRepository/);
+assert.match(studioSource, /futureDraftIdentity\.status === "authenticated"/);
+assert.doesNotMatch(studioSource, /isFutureNineStageMode/);
 
 console.log("PASS: authenticated future draft persistence and isolation");

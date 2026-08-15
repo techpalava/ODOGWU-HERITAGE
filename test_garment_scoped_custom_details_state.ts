@@ -472,8 +472,8 @@ const futureDraft = baseDraft({
   customDetails: { shirt_construction: "legacy-stays-intact" },
   garmentScopedCustomDetails: repeatedOption,
 });
-GuestOrderSessionService.saveGuestDesignDraft(futureDraft);
-const restored = GuestOrderSessionService.getGuestDesignDraft();
+GuestOrderSessionService.saveFutureDesignDraft(futureDraft);
+const restored = GuestOrderSessionService.getFutureDesignDraft();
 assert.deepEqual(
   restored?.designSelections.garmentScopedCustomDetails,
   repeatedOption,
@@ -496,18 +496,18 @@ assert.equal(
 );
 
 StorageService.clearGuestOrderSession();
-GuestOrderSessionService.saveGuestDesignDraft(
+GuestOrderSessionService.saveFutureDesignDraft(
   baseDraft({ customDetails: { neck_design: "legacy-only" } }),
 );
 assert.equal(
-  GuestOrderSessionService.getGuestDesignDraft()?.designSelections
+  GuestOrderSessionService.getFutureDesignDraft()?.designSelections
     .garmentScopedCustomDetails,
   undefined,
   "Legacy drafts without the future field must remain field-compatible.",
 );
 
 StorageService.clearGuestOrderSession();
-GuestOrderSessionService.saveGuestDesignDraft(
+GuestOrderSessionService.saveFutureDesignDraft(
   baseDraft({
     garmentScopedCustomDetails: {
       schemaVersion: 1,
@@ -517,7 +517,7 @@ GuestOrderSessionService.saveGuestDesignDraft(
   }),
 );
 assert.deepEqual(
-  GuestOrderSessionService.getGuestDesignDraft()?.designSelections
+  GuestOrderSessionService.getFutureDesignDraft()?.designSelections
     .garmentScopedCustomDetails,
   createEmptyGarmentScopedCustomDetailsState(),
   "Malformed future state must normalize to an inert empty state.",
