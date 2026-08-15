@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Batch, OrderContext } from "./src/types";
-import HomepageOrderGateway from "./src/components/HomepageOrderGateway";
+import HomepageOrderGateway, {
+  getJoinCurrentBatchButtonLabel,
+} from "./src/components/HomepageOrderGateway";
 import { getHomepageOrderGatewayState } from "./src/utils/homepageOrderGateway";
 import { BatchBusinessRules } from "./src/engine/BatchBusinessRules";
 import { OrderRoutingEngine } from "./src/engine/OrderRoutingEngine";
@@ -31,6 +33,52 @@ const openState = getHomepageOrderGatewayState([makeBatch()]);
 assert.equal(openState.joinBatch?.id, "batch-6");
 assert.equal(openState.joinBatch?.name, "Avatars");
 assert.equal(openState.minimumGarments, 10);
+assert.equal(getJoinCurrentBatchButtonLabel("Avatars"), "Join Avatars");
+assert.equal(
+  getJoinCurrentBatchButtonLabel("  Summer Heritage Group  "),
+  "Join Summer Heritage Group",
+);
+assert.equal(
+  getJoinCurrentBatchButtonLabel("A Very Long Community Batch Name For Every Family"),
+  "Join A Very Long Community Batch Name For Every Family",
+);
+assert.equal(
+  getJoinCurrentBatchButtonLabel("Avatars", true),
+  "Join Current Batch",
+);
+assert.equal(getJoinCurrentBatchButtonLabel(" "), "Join Current Batch");
+assert.equal(getJoinCurrentBatchButtonLabel(null), "Join Current Batch");
+assert.equal(
+  getJoinCurrentBatchButtonLabel({} as unknown as string),
+  "Join Current Batch",
+);
+
+const findElementById = (node: any, id: string): any => {
+  if (!node || typeof node !== "object") return null;
+  if (node.props?.id === id) return node;
+  const children = node.props?.children;
+  if (Array.isArray(children)) {
+    return children.map((child) => findElementById(child, id)).find(Boolean);
+  }
+  return findElementById(children, id);
+};
+
+let joinCallbackCalls = 0;
+const joinCallback = () => {
+  joinCallbackCalls += 1;
+};
+const joinGatewayTree = HomepageOrderGateway({
+  state: openState,
+  onStartIndividualOrder: () => undefined,
+  onJoinBatch: joinCallback,
+  onCreatePrivateBatch: () => undefined,
+  onBrowseGallery: () => undefined,
+});
+const joinButton = findElementById(joinGatewayTree, "btn-quick-join-cohort");
+assert.equal(joinButton?.props.onClick, joinCallback);
+assert.equal(joinButton?.props.disabled, false);
+joinButton.props.onClick();
+assert.equal(joinCallbackCalls, 1, "The existing join callback must remain intact");
 
 const openCommunityContext: OrderContext = {
   orderType: "Community",
@@ -249,6 +297,7 @@ const joinMarkup = renderToStaticMarkup(
   }),
 );
 assert.match(joinMarkup, /Join an Existing Batch or Group \(Avatars\)/);
+assert.match(joinMarkup, /Join Avatars/);
 assert.match(joinMarkup, /Join an Existing Batch or Group/);
 assert.match(joinMarkup, /Individual Custom Order/);
 assert.match(joinMarkup, /Ready to Wear/);

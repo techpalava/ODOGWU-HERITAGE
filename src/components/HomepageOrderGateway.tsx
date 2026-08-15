@@ -9,6 +9,16 @@ import {
 } from "lucide-react";
 import type { HomepageOrderGatewayState } from "../utils/homepageOrderGateway";
 
+export const getJoinCurrentBatchButtonLabel = (
+  batchName: string | null | undefined,
+  isLoading = false,
+): string => {
+  const trimmedBatchName = typeof batchName === "string" ? batchName.trim() : "";
+  return !isLoading && trimmedBatchName
+    ? `Join ${trimmedBatchName}`
+    : "Join Current Batch";
+};
+
 interface HomepageOrderGatewayProps {
   state: HomepageOrderGatewayState;
   isLoading?: boolean;
@@ -30,6 +40,10 @@ export default function HomepageOrderGateway({
 }: HomepageOrderGatewayProps) {
   const { joinBatch, minimumGarments } = state;
   const currentBatchName = joinBatch?.name?.trim();
+  const joinCurrentBatchButtonLabel = getJoinCurrentBatchButtonLabel(
+    joinBatch?.name,
+    isLoading,
+  );
   const existingBatchTitle = currentBatchName
     ? `Join an Existing Batch or Group (${currentBatchName})`
     : "Join an Existing Batch or Group";
@@ -115,9 +129,9 @@ export default function HomepageOrderGateway({
                 type="button"
                 onClick={isLoading ? undefined : onJoinBatch}
                 disabled={isLoading}
-                className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-heritage-green px-4 py-2.5 text-[11px] font-bold uppercase text-white transition-colors hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                className="mt-auto inline-flex min-h-11 w-full min-w-0 items-center justify-center gap-2 break-words rounded-lg bg-heritage-green px-4 py-2.5 text-center text-[11px] font-bold uppercase text-white transition-colors hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
               >
-                Join an Existing Batch or Group
+                {joinCurrentBatchButtonLabel}
                 <ArrowRight size={15} aria-hidden="true" />
               </button>
             </article>
