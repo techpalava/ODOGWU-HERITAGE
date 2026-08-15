@@ -1,13 +1,25 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
+import {
+  DormantFutureJourneyStepper,
+  FUTURE_JOURNEY_STEPS,
+} from "./src/components/DormantFutureJourneyStepper";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
+  createEmptyAiTryOnWorkflowState,
+  getAiTryOnWorkflowAllowedActions,
   isFutureCustomDetailsContentReady,
+  normalizeAiTryOnWorkflowState,
+  reconcileAiTryOnWorkflow,
+  transitionAiTryOnWorkflow,
 } from "./src/utils/aiTryOnWorkflow";
 import {
   createDormantDesignStudioJourneyState,
 } from "./src/utils/designStudioJourneyMode";
+import { isFutureMeasurementStageUnlocked } from "./src/utils/measurementBlueprint";
 import type { GarmentTypeStepSelection } from "./src/types";
 
 assert.equal(
@@ -80,6 +92,150 @@ assert.equal(
   "Step 5 must remain locked until Step 4 content is valid.",
 );
 
+assert.deepEqual(
+  FUTURE_JOURNEY_STEPS.map((step) => step.id),
+  [
+    "garment_type",
+    "fabric",
+    "design_style",
+    "custom_details",
+    "try_on",
+    "measurement",
+    "summary",
+    "shipping",
+    "payment",
+  ],
+);
+assert.deepEqual(FUTURE_JOURNEY_STEPS[4], {
+  id: "try_on",
+  label: "AI Try-on",
+});
+
+const inputFingerprint = "tryon-v1-test-input";
+const unavailableWorkflow = reconcileAiTryOnWorkflow({
+  state: createEmptyAiTryOnWorkflowState(),
+  currentInputFingerprint: inputFingerprint,
+  policy: { gatewayAvailable: false, skipAllowed: true },
+});
+const skippedTransition = transitionAiTryOnWorkflow({
+  state: unavailableWorkflow,
+  event: { type: "skip" },
+  skipAllowed: true,
+});
+assert.equal(skippedTransition.ok, true);
+const skippedWorkflow = skippedTransition.ok
+  ? skippedTransition.state
+  : unavailableWorkflow;
+assert.equal(isFutureMeasurementStageUnlocked(skippedWorkflow), true);
+assert.deepEqual(
+  normalizeAiTryOnWorkflowState(JSON.parse(JSON.stringify(skippedWorkflow))),
+  skippedWorkflow,
+  "A skipped Step 5 must remain complete after draft JSON restoration.",
+);
+
+const readyWorkflow = reconcileAiTryOnWorkflow({
+  state: createEmptyAiTryOnWorkflowState(),
+  currentInputFingerprint: inputFingerprint,
+  policy: { gatewayAvailable: true, skipAllowed: true },
+});
+const processingTransition = transitionAiTryOnWorkflow({
+  state: readyWorkflow,
+  event: {
+    type: "start",
+    jobReference: { kind: "resumable_job", jobId: "try-on-job-1" },
+  },
+  skipAllowed: true,
+});
+assert.equal(processingTransition.ok, true);
+const processingWorkflow = processingTransition.ok
+  ? processingTransition.state
+  : readyWorkflow;
+const completedTransition = transitionAiTryOnWorkflow({
+  state: processingWorkflow,
+  event: {
+    type: "complete",
+    resultReference: {
+      kind: "verified_private_try_on_result",
+      assetId: "private-result-1",
+      ownerBindingId: "owner-binding-1",
+    },
+  },
+  skipAllowed: true,
+});
+assert.equal(completedTransition.ok, true);
+assert.equal(
+  isFutureMeasurementStageUnlocked(
+    completedTransition.ok ? completedTransition.state : processingWorkflow,
+  ),
+  true,
+  "Only a verified completion transition may complete AI Try-on.",
+);
+
+[
+  unavailableWorkflow,
+  processingWorkflow,
+  {
+    schemaVersion: 1 as const,
+    status: "failed" as const,
+    inputFingerprint,
+    failure: { code: "interrupted" as const, retryable: true },
+  },
+  {
+    schemaVersion: 1 as const,
+    status: "stale" as const,
+    inputFingerprint,
+  },
+  {
+    schemaVersion: 1 as const,
+    status: "awaiting_input" as const,
+    inputFingerprint: null,
+  },
+].forEach((workflow) => {
+  assert.equal(
+    isFutureMeasurementStageUnlocked(workflow),
+    false,
+    `${workflow.status} must not unlock Step 6.`,
+  );
+});
+assert.deepEqual(
+  getAiTryOnWorkflowAllowedActions({
+    state: processingWorkflow,
+    skipAllowed: true,
+  }),
+  { canRetry: false, canSkip: false },
+);
+
+const stepperMarkup = renderToStaticMarkup(
+  createElement(DormantFutureJourneyStepper, {
+    currentStageId: "measurement",
+    canEnterFabric: true,
+    canEnterDesignStyle: true,
+    canEnterCustomDetails: true,
+    canEnterTryOn: true,
+    canEnterMeasurement: true,
+    canEnterSummary: false,
+    canEnterShipping: false,
+    canEnterPayment: false,
+    onSelectGarmentType: () => undefined,
+    onSelectFabric: () => undefined,
+    onSelectDesignStyle: () => undefined,
+    onSelectCustomDetails: () => undefined,
+    onSelectTryOn: () => undefined,
+    onSelectMeasurement: () => undefined,
+    onSelectSummary: () => undefined,
+    onSelectShipping: () => undefined,
+    onSelectPayment: () => undefined,
+  }),
+);
+assert.match(
+  stepperMarkup,
+  /aria-label="Step 5: AI Try-on, completed"/,
+  "Earlier completed steps must remain represented as navigable completed stages.",
+);
+assert.match(stepperMarkup, /aria-label="Step 7: Summary, locked"/);
+assert.match(stepperMarkup, /aria-label="Step 8: Shipping, locked"/);
+assert.match(stepperMarkup, /aria-label="Step 9: Payment, locked"/);
+
 const customDetailsSource = readFileSync(
   "src/components/DormantFutureCustomDetailsStep.tsx",
   "utf8",
@@ -119,10 +275,8 @@ assert.equal(tryOnSource.includes("<input"), false);
 assert.equal(tryOnSource.includes("type=\"file\""), false);
 assert.match(stepperSource, /\{ id: "try_on", label: "AI Try-on" \}/);
 assert.match(stepperSource, /canEnterTryOn/);
-assert.match(
-  stepperSource,
-  /step\.id === "custom_details"[\s\S]*currentStageId === "try_on"[\s\S]*currentStageId === "measurement"/,
-);
+assert.match(stepperSource, /canEnterMeasurement/);
+assert.match(stepperSource, /data-step-state=\{state\}/);
 assert.match(studioSource, /handleOpenDormantAiTryOnStage/);
 assert.match(studioSource, /onBack=\{\(\) => setFutureStageId\("custom_details"\)\}/);
 assert.match(studioSource, /gatewayAvailable: false/);
