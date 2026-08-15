@@ -117,7 +117,7 @@ assert.match(futureFabricStepSource, /Choose Another Fabric/);
 assert.match(futureFabricStepSource, />\s*Cancel\s*</);
 assert.match(
   futureFabricStepSource,
-  /aria-label=\{`Change fabric for \$\{getFabricGarmentLabel\(garmentType\)\}`\}/,
+  /aria-label=\{`\$\{assigned \? "Change" : "Add"\} fabric for \$\{garmentLabel\}`\}/,
 );
 assert.doesNotMatch(designStudioSource, /onPhysicalGarmentOptionChange/);
 assert.doesNotMatch(designStudioSource, /<OptionalAdditionalGarmentSection/);

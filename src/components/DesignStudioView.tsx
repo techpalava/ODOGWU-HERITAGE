@@ -71,12 +71,12 @@ import {
   updateDormantGarmentTypeSelection,
 } from "../utils/designStudioJourneyMode";
 import {
+  assignFutureFabricToGarment,
   getFutureGarmentFabricPlanning,
   getFutureFabricCapacityComposition,
   getFutureFabricGarmentSelections,
   getFutureFabricStageCompletion,
   reconcileFutureFabricAllocationState,
-  selectFutureFabric,
 } from "../utils/designStudioFutureFabricStage";
 import { getGarmentTypeSelectedDemographics } from "../utils/garmentTypeStepState";
 import { reconcileFutureDesignStyleSelection } from "../utils/designStudioFutureDesignStyle";
@@ -308,6 +308,18 @@ export default function DesignStudioView({
     }
   }, [fabrics, selectedFabric]);
 
+  useEffect(() => {
+    const primaryFabricCode =
+      fabricAllocationState.fabricAllocations[0]?.fabricCode;
+    if (!primaryFabricCode) return;
+    const primaryFabric = fabrics.find(
+      (fabric) => fabric.code === primaryFabricCode,
+    );
+    setSelectedFabric((current) =>
+      current?.code === primaryFabricCode ? current : primaryFabric || null,
+    );
+  }, [fabricAllocationState.fabricAllocations, fabrics]);
+
   // Debounce Fabric Search
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -341,19 +353,28 @@ export default function DesignStudioView({
     }
   }, [initialStyleId, initialFabricCode, styles, fabrics, clearInitialPreset]);
 
-  const handleSelectFabric = (fabric: Fabric) => {
-    const assigningPendingFabric =
-      fabricAllocationState.awaitingFabricForPendingGarment;
-    setFabricAllocationState((previousState) =>
-      selectFutureFabric({
-        state: previousState,
-        fabricCode: fabric.code,
+  const handleAssignFutureFabricToGarment = (
+    fabric: Fabric,
+    garmentKey: string,
+  ) => {
+    setFabricAllocationState((current) => {
+      if (
+        current.awaitingFabricForPendingGarment &&
+        current.pendingFabricGarment?.garmentKey === garmentKey
+      ) {
+        return FabricAllocationStateEngine.assignPendingGarmentToFabric(
+          current,
+          fabric.code,
+        );
+      }
+      const result = assignFutureFabricToGarment({
+        state: current,
         garmentTypeSelection,
-      }),
-    );
-    if (!assigningPendingFabric) {
-      setSelectedFabric(fabric);
-    }
+        garmentKey,
+        fabricCode: fabric.code,
+      });
+      return result.state;
+    });
   };
 
   // STEP 3: Design Details
@@ -1409,6 +1430,20 @@ export default function DesignStudioView({
       ),
     );
   };
+  const handleUseSameFutureFabricForGarment = (garmentKey: string) => {
+    setFabricAllocationState((current) => {
+      const activeAllocation = current.fabricAllocations.find(
+        (allocation) => allocation.allocationId === current.activeAllocationId,
+      );
+      if (!activeAllocation) return current;
+      return assignFutureFabricToGarment({
+        state: current,
+        garmentTypeSelection,
+        garmentKey,
+        fabricCode: activeAllocation.fabricCode,
+      }).state;
+    });
+  };
   const handleChooseAnotherFutureFabric = () => {
     setFabricAllocationState((current) =>
       FabricAllocationStateEngine.beginChooseAnotherFabric(current),
@@ -1417,14 +1452,6 @@ export default function DesignStudioView({
   const handleCancelFuturePendingFabric = () => {
     setFabricAllocationState((current) =>
       FabricAllocationStateEngine.cancelPendingGarment(current),
-    );
-  };
-  const handleChangeFutureGarmentFabric = (garmentKey: string) => {
-    setFabricAllocationState((current) =>
-      FabricAllocationStateEngine.beginReassignGarmentToAnotherFabric(
-        current,
-        garmentKey,
-      ),
     );
   };
   const garmentTypeBlockerMessage = !garmentTypeStageCompletion.isComplete
@@ -1523,10 +1550,16 @@ export default function DesignStudioView({
           garmentTypeSelection={garmentTypeSelection}
           fabricAllocationState={fabricAllocationState}
           completion={futureFabricStageCompletion}
+          requiredFabricQuantity={
+            futureGarmentFabricPlanning.requiredFabricQuantity
+          }
+          selectedFabricQuantity={
+            futureGarmentFabricPlanning.selectedFabricQuantity
+          }
           constructionPrice={futureConstructionPrice}
           stagePrice={futureFabricAuthoritativePricing?.garmentSubtotal ?? null}
-          onSelectFabric={handleSelectFabric}
-          onChangeFabricForGarment={handleChangeFutureGarmentFabric}
+          onAssignFabricToGarment={handleAssignFutureFabricToGarment}
+          onUseSameFabricForGarment={handleUseSameFutureFabricForGarment}
           onBack={() => setFutureStageId("garment_type")}
           onContinue={handleOpenDormantDesignStyleStage}
           onUseSameFabric={handleUseSameFutureFabric}

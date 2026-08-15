@@ -169,7 +169,7 @@ const futureFabricStageSource = readFileSync(
 );
 assert.match(
   designStudioSource,
-  /handleSelectFabric[\s\S]*selectFutureFabric/,
+  /handleAssignFutureFabricToGarment[\s\S]*assignFutureFabricToGarment/,
 );
 assert.match(
   futureFabricStageSource,
