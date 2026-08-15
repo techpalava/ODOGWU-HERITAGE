@@ -134,7 +134,10 @@ import {
   selectAdditionalGarmentConstructionOption,
 } from "../utils/additionalGarmentConstructionState";
 import { createCatalogueAdditionalGarmentSelection } from "../utils/additionalGarmentDomain";
-import { resolveGarmentConstructionPricing } from "../utils/garmentConstructionPricing";
+import {
+  CANONICAL_PHYSICAL_GARMENT_TYPES,
+  resolveGarmentConstructionPricing,
+} from "../utils/garmentConstructionPricing";
 import { projectFutureCustomDetailsCatalogue } from "../utils/futureCustomDetailsCatalogue";
 import {
   sortDecorativeFeatures,
@@ -416,6 +419,14 @@ export default function DesignStudioView({
       assignments: futureAdditionalGarments,
       normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
     });
+  const futureAdditionalGarmentConstructionOptions =
+    CANONICAL_PHYSICAL_GARMENT_TYPES.map((garmentType) => ({
+      garmentType,
+      construction: resolveGarmentConstructionPricing(
+        garmentType,
+        normalizedGarmentTypeCatalog,
+      ),
+    }));
   const futureCatalogInspection =
     inspectCustomDetailCatalog(customDetailCatalog);
   const futureScopedCustomDetailsReconciliation =
@@ -1861,6 +1872,9 @@ export default function DesignStudioView({
           designSelections={designSelections}
           selectedStyle={futureDesignStyleSelection.selectedStyle}
           additionalGarments={futureAdditionalGarments}
+          additionalGarmentConstructionOptions={
+            futureAdditionalGarmentConstructionOptions
+          }
           onSingleSelect={handleFutureSingleCustomDetailSelect}
           onClearSelection={handleFutureCustomDetailClear}
           onConstructionSelect={handleFutureConstructionSelect}
