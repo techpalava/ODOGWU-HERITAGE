@@ -44,6 +44,7 @@ interface DormantFutureDesignStyleStepProps {
   selectedStyleId: string | null;
   stagePrice: number | null;
   uploadedDesign: UploadedDesignPanelState;
+  pendingCatalogStyleName: string | null;
   onSelectStyle: (styleId: string) => void;
   onUploadDesignFile: (file: File, isReplacement: boolean) => void;
   onToggleUploadedGarment: (garmentType: FabricGarmentType) => void;
@@ -51,6 +52,7 @@ interface DormantFutureDesignStyleStepProps {
     demographic: CustomDetailDemographic,
   ) => void;
   onRemoveUploadedDesign: () => void;
+  onRetryUploadedDesignDeletion: () => void;
   onContinueUploadedDesign: () => void;
   onBack: () => void;
   onReturnToGarmentType: () => void;
@@ -63,11 +65,13 @@ export const DormantFutureDesignStyleStep = ({
   selectedStyleId,
   stagePrice,
   uploadedDesign,
+  pendingCatalogStyleName,
   onSelectStyle,
   onUploadDesignFile,
   onToggleUploadedGarment,
   onUploadedDemographicChange,
   onRemoveUploadedDesign,
+  onRetryUploadedDesignDeletion,
   onContinueUploadedDesign,
   onBack,
   onReturnToGarmentType,
@@ -296,11 +300,11 @@ export const DormantFutureDesignStyleStep = ({
                   )}
                   <button
                     type="button"
-                    disabled={!isCompatible}
+                    disabled={!isCompatible || uploadBusy}
                     onClick={() => onSelectStyle(style.id)}
                     aria-label={`${isSelected ? "Selected" : "Select"} ${style.name} design style`}
                     aria-pressed={isSelected}
-                    aria-disabled={!isCompatible}
+                    aria-disabled={!isCompatible || uploadBusy}
                     aria-describedby={!isCompatible ? reasonId : undefined}
                     className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-heritage-ink/45"
                   >
@@ -323,6 +327,7 @@ export const DormantFutureDesignStyleStep = ({
         <section
           data-testid="upload-your-design-panel"
           aria-labelledby="upload-your-design-title"
+          aria-busy={uploadBusy}
           className={`min-w-0 rounded-2xl border-2 p-4 sm:p-5 ${
             uploadedSourceSelected
               ? "border-heritage-gold bg-heritage-gold/5"
@@ -356,6 +361,7 @@ export const DormantFutureDesignStyleStep = ({
           <input
             ref={uploadInputRef}
             type="file"
+            disabled={uploadBusy}
             accept={CUSTOMER_DESIGN_IMAGE_MIME_TYPES.join(",")}
             aria-label="Upload your private design reference"
             className="sr-only"
@@ -364,6 +370,7 @@ export const DormantFutureDesignStyleStep = ({
           <input
             ref={replacementInputRef}
             type="file"
+            disabled={uploadBusy}
             accept={CUSTOMER_DESIGN_IMAGE_MIME_TYPES.join(",")}
             aria-label="Replace your private design reference"
             className="sr-only"
@@ -439,7 +446,11 @@ export const DormantFutureDesignStyleStep = ({
                       return (
                         <label
                           key={option.garmentType}
-                          className={`flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                          className={`flex min-h-11 min-w-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                            uploadBusy
+                              ? "cursor-not-allowed opacity-60"
+                              : "cursor-pointer"
+                          } ${
                             checked
                               ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green"
                               : "border-gray-200 text-heritage-ink hover:border-heritage-gold/45"
@@ -447,6 +458,7 @@ export const DormantFutureDesignStyleStep = ({
                         >
                           <input
                             type="checkbox"
+                            disabled={uploadBusy}
                             checked={checked}
                             onChange={() =>
                               onToggleUploadedGarment(option.garmentType)
@@ -500,7 +512,11 @@ export const DormantFutureDesignStyleStep = ({
                     ] as const).map(([value, label]) => (
                       <label
                         key={value}
-                        className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                        className={`flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                          uploadBusy
+                            ? "cursor-not-allowed opacity-60"
+                            : "cursor-pointer"
+                        } ${
                           uploadedDesign.demographic === value
                             ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green"
                             : "border-gray-200 text-heritage-ink hover:border-heritage-gold/45"
@@ -508,6 +524,7 @@ export const DormantFutureDesignStyleStep = ({
                       >
                         <input
                           type="radio"
+                          disabled={uploadBusy}
                           name="uploaded-design-demographic"
                           checked={uploadedDesign.demographic === value}
                           onChange={() => onUploadedDemographicChange(value)}
@@ -535,12 +552,23 @@ export const DormantFutureDesignStyleStep = ({
           )}
 
           {uploadedDesign.error && (
-            <p
+            <div
               role="alert"
-              className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium leading-relaxed text-red-700"
+              className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-xs font-medium leading-relaxed text-red-700"
             >
-              {uploadedDesign.error}
-            </p>
+              <p>{uploadedDesign.error}</p>
+              {pendingCatalogStyleName && (
+                <button
+                  type="button"
+                  disabled={uploadBusy}
+                  onClick={onRetryUploadedDesignDeletion}
+                  aria-label={`Retry deleting uploaded design and switch to ${pendingCatalogStyleName}`}
+                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-red-300 bg-white px-4 text-xs font-bold text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+                >
+                  Retry and switch to {pendingCatalogStyleName}
+                </button>
+              )}
+            </div>
           )}
         </section>
       </div>
@@ -573,9 +601,10 @@ export const DormantFutureDesignStyleStep = ({
               : onContinue
           }
           disabled={
-            uploadedSourceSelected
+            uploadBusy ||
+            (uploadedSourceSelected
               ? !uploadReadiness.isReady
-              : selection.status !== "selected"
+              : selection.status !== "selected")
           }
           aria-label={
             uploadedSourceSelected &&

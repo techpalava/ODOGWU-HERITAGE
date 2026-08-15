@@ -148,6 +148,7 @@ import {
   CustomerDesignUploadError,
   CustomerDesignUploadService,
 } from "../services/customerDesignUploadService";
+import { deleteUploadedDesignBeforeSourceChange } from "../utils/uploadedDesignDeletionOrchestration";
 import {
   cloneGarmentConstructionPricingResolution,
   createEmptyAdditionalGarmentConstructionState,
@@ -300,6 +301,11 @@ export default function DesignStudioView({
   const [isUploadingDesign, setIsUploadingDesign] = useState(false);
   const [isReplacingDesign, setIsReplacingDesign] = useState(false);
   const [isRemovingDesign, setIsRemovingDesign] = useState(false);
+  const uploadedDesignDeletionInFlightRef = useRef(false);
+  const uploadedDesignDeletionGenerationRef = useRef(0);
+  const [pendingCatalogStyleId, setPendingCatalogStyleId] = useState<
+    string | null
+  >(null);
   const [isLoadingUploadedDesignPreview, setIsLoadingUploadedDesignPreview] =
     useState(false);
 
@@ -645,6 +651,7 @@ export default function DesignStudioView({
         composition: isReplacement ? [] : uploadedDesignComposition,
         demographic: isReplacement ? null : uploadedDesignDemographic,
       });
+      setPendingCatalogStyleId(null);
       if (replacement.previousDraftCleanupError) {
         setUploadedDesignError(
           "Your new image was saved, but the previous private image could not be removed.",
@@ -689,38 +696,93 @@ export default function DesignStudioView({
     });
   };
 
-  const handleRemoveUploadedDesign = async () => {
-    const reference =
-      activeUploadedDesignSource?.uploadReference || uploadedDesignReference;
-    if (!reference) return;
-    setIsRemovingDesign(true);
-    setUploadedDesignError("");
-    try {
-      await CustomerDesignUploadService.deleteCustomerDesignDraft(reference);
-      clearUploadedDesignLocalState();
-      if (activeUploadedDesignSource) applyUploadedDesignSource(null);
-    } catch (error) {
-      setUploadedDesignError(getCustomerDesignUploadErrorMessage(error));
-    } finally {
-      setIsRemovingDesign(false);
-    }
-  };
-
-  const handleSelectFutureStyle = (styleId: string) => {
-    const previousUploadedReference = activeUploadedDesignSource?.uploadReference;
+  const activateFutureCatalogStyle = (styleId: string) => {
     setFutureSelectedStyleId(styleId);
     const nextSource = createCatalogDesignSource(styleId);
     setFutureDesignSource(nextSource);
     setFutureConfirmedDesignSourceKey(nextSource?.sourceKey || null);
     setFuturePriceActivatedFabricCode(futurePrimaryFabricCode);
-    if (previousUploadedReference) {
-      clearUploadedDesignLocalState();
-      void CustomerDesignUploadService.deleteCustomerDesignDraft(
-        previousUploadedReference,
-      ).catch((error: unknown) => {
-        setUploadedDesignError(getCustomerDesignUploadErrorMessage(error));
-      });
+  };
+
+  const deleteUploadedDesign = async ({
+    reference,
+    catalogStyleIdAfterDelete,
+  }: {
+    reference: CustomerDesignUploadReference;
+    catalogStyleIdAfterDelete: string | null;
+  }) => {
+    if (uploadedDesignDeletionInFlightRef.current) return;
+    const deletionGeneration =
+      ++uploadedDesignDeletionGenerationRef.current;
+    uploadedDesignDeletionInFlightRef.current = true;
+    setIsRemovingDesign(true);
+    setUploadedDesignError("");
+
+    const result = await deleteUploadedDesignBeforeSourceChange({
+      reference,
+      deleteDraft: CustomerDesignUploadService.deleteCustomerDesignDraft,
+      commitSourceChange: () => {
+        if (
+          deletionGeneration !== uploadedDesignDeletionGenerationRef.current
+        ) {
+          return;
+        }
+        clearUploadedDesignLocalState();
+        setPendingCatalogStyleId(null);
+        if (catalogStyleIdAfterDelete) {
+          activateFutureCatalogStyle(catalogStyleIdAfterDelete);
+        } else if (activeUploadedDesignSource) {
+          applyUploadedDesignSource(null);
+        }
+      },
+    });
+
+    if (deletionGeneration !== uploadedDesignDeletionGenerationRef.current) {
+      return;
     }
+    if (result.status === "failed") {
+      setUploadedDesignError(
+        getCustomerDesignUploadErrorMessage(result.error),
+      );
+    }
+    uploadedDesignDeletionInFlightRef.current = false;
+    setIsRemovingDesign(false);
+  };
+
+  const handleRemoveUploadedDesign = () => {
+    const reference =
+      activeUploadedDesignSource?.uploadReference || uploadedDesignReference;
+    if (!reference) return;
+    void deleteUploadedDesign({
+      reference,
+      catalogStyleIdAfterDelete: null,
+    });
+  };
+
+  const handleSelectFutureStyle = (styleId: string) => {
+    if (uploadedDesignDeletionInFlightRef.current) return;
+    const previousUploadedReference =
+      activeUploadedDesignSource?.uploadReference || uploadedDesignReference;
+    if (!previousUploadedReference) {
+      activateFutureCatalogStyle(styleId);
+      return;
+    }
+
+    setPendingCatalogStyleId(styleId);
+    void deleteUploadedDesign({
+      reference: previousUploadedReference,
+      catalogStyleIdAfterDelete: styleId,
+    });
+  };
+
+  const handleRetryUploadedDesignDeletion = () => {
+    const reference =
+      activeUploadedDesignSource?.uploadReference || uploadedDesignReference;
+    if (!reference || !pendingCatalogStyleId) return;
+    void deleteUploadedDesign({
+      reference,
+      catalogStyleIdAfterDelete: pendingCatalogStyleId,
+    });
   };
 
   const handleAssignFutureFabricToGarment = (
@@ -1084,6 +1146,10 @@ export default function DesignStudioView({
     setFutureDesignSource(null);
     setFutureConfirmedDesignSourceKey(null);
     setFuturePriceActivatedFabricCode(null);
+    uploadedDesignDeletionGenerationRef.current += 1;
+    uploadedDesignDeletionInFlightRef.current = false;
+    setIsRemovingDesign(false);
+    setPendingCatalogStyleId(null);
     clearUploadedDesignLocalState();
     setDesignSelections({ accessories: [] });
     setFabricAllocationState(FabricAllocationStateEngine.initialize());
@@ -2380,6 +2446,10 @@ export default function DesignStudioView({
             isConfirmed: isFutureUploadedDesignConfirmed,
             isPricingActive: isFutureUploadedDesignPricingActive,
           }}
+          pendingCatalogStyleName={
+            styles.find((style) => style.id === pendingCatalogStyleId)?.name ||
+            null
+          }
           onSelectStyle={handleSelectFutureStyle}
           onUploadDesignFile={(file, isReplacement) =>
             void handleUploadedDesignFile(file, isReplacement)
@@ -2389,6 +2459,9 @@ export default function DesignStudioView({
             handleUploadedDesignDemographicChange
           }
           onRemoveUploadedDesign={() => void handleRemoveUploadedDesign()}
+          onRetryUploadedDesignDeletion={
+            handleRetryUploadedDesignDeletion
+          }
           onContinueUploadedDesign={handleContinueWithUploadedDesign}
           onBack={() => setFutureStageId("fabric")}
           onReturnToGarmentType={() => setFutureStageId("garment_type")}
