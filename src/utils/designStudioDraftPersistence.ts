@@ -12,6 +12,8 @@ export const FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE =
   "odogwu_design_studio_future_draft_v1";
 export const FUTURE_DESIGN_STUDIO_DRAFT_MIGRATION_NAMESPACE =
   "odogwu_design_studio_future_draft_migration_v1";
+export const FUTURE_DESIGN_STUDIO_DRAFT_CLOUD_SYNC_NAMESPACE =
+  "odogwu_design_studio_future_draft_cloud_sync_v1";
 export const FUTURE_DESIGN_STUDIO_DRAFT_STORAGE_VERSION = 1 as const;
 export const FUTURE_DESIGN_STUDIO_DRAFT_MIGRATION_VERSION = 1 as const;
 
@@ -53,6 +55,13 @@ export interface FutureDraftMigrationJournalV1 {
   destinationVersion: 1;
   resultCode: FutureDraftMigrationJournalResultCode;
   completedAt: string;
+}
+
+export interface FutureDraftCloudSyncJournalV1 {
+  schemaVersion: 1;
+  ownerUid: string;
+  cloudRevision: number;
+  synchronizedAt: string;
 }
 
 export type FutureDesignStudioDraftLoadResult =
@@ -194,6 +203,50 @@ export const createDesignStudioDraftRepository = ({
       JSON.stringify(journal),
     );
     return journal;
+  };
+
+  const readCloudSyncResult = (): FutureDraftCloudSyncJournalV1 | null => {
+    const raw = storage.getItem(FUTURE_DESIGN_STUDIO_DRAFT_CLOUD_SYNC_NAMESPACE);
+    if (!raw) return null;
+    const parsed = parseJson(raw);
+    return isRecord(parsed) &&
+      parsed.schemaVersion === 1 &&
+      typeof parsed.ownerUid === "string" &&
+      parsed.ownerUid.length > 0 &&
+      Number.isSafeInteger(parsed.cloudRevision) &&
+      (parsed.cloudRevision as number) > 0 &&
+      typeof parsed.synchronizedAt === "string"
+      ? (parsed as unknown as FutureDraftCloudSyncJournalV1)
+      : null;
+  };
+
+  const recordCloudSynchronization = ({
+    ownerUid,
+    cloudRevision,
+  }: {
+    ownerUid: string;
+    cloudRevision: number;
+  }): FutureDraftCloudSyncJournalV1 | null => {
+    if (!ownerUid || !Number.isSafeInteger(cloudRevision) || cloudRevision < 1) {
+      return null;
+    }
+    const journal: FutureDraftCloudSyncJournalV1 = {
+      schemaVersion: 1,
+      ownerUid,
+      cloudRevision,
+      synchronizedAt: now(),
+    };
+    storage.setItem(
+      FUTURE_DESIGN_STUDIO_DRAFT_CLOUD_SYNC_NAMESPACE,
+      JSON.stringify(journal),
+    );
+    return journal;
+  };
+
+  const clearFutureDraftAfterCloudSynchronization = (): boolean => {
+    if (!readCloudSyncResult()) return false;
+    storage.removeItem(FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE);
+    return true;
   };
 
   const loadFutureDraftV1 = (): FutureDesignStudioDraftLoadResult => {
@@ -363,6 +416,9 @@ export const createDesignStudioDraftRepository = ({
     clearFutureDraftV1,
     migrateHistoricalFutureDraft,
     readMigrationResult,
+    readCloudSyncResult,
+    recordCloudSynchronization,
+    clearFutureDraftAfterCloudSynchronization,
   };
 };
 

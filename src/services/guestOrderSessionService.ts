@@ -419,6 +419,22 @@ export const GuestOrderSessionService = {
   getFutureDesignDraftMigrationResult: () =>
     getDesignStudioDraftRepository()?.readMigrationResult() || null,
 
+  recordFutureDesignDraftCloudSynchronization: (
+    ownerUid: string,
+    cloudRevision: number,
+  ) =>
+    getDesignStudioDraftRepository()?.recordCloudSynchronization({
+      ownerUid,
+      cloudRevision,
+    }) || null,
+
+  getFutureDesignDraftCloudSynchronization: () =>
+    getDesignStudioDraftRepository()?.readCloudSyncResult() || null,
+
+  clearFutureDesignDraftAfterCloudSynchronization: () =>
+    getDesignStudioDraftRepository()?.clearFutureDraftAfterCloudSynchronization() ||
+    false,
+
   // Compatibility aliases remain legacy-only for existing production callers.
   getGuestDesignDraft: (): GuestDesignDraft | null =>
     loadLegacyDesignDraft(),

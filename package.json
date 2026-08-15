@@ -41,7 +41,8 @@
     "test:future-shipping-stage": "tsx test_design_studio_future_shipping.ts",
     "test:future-order-candidate": "tsx test_future_order_candidate.ts",
     "test:future-payment-review": "tsx test_design_studio_future_payment_review.tsx",
-    "test:design-studio-draft-isolation": "tsx test_design_studio_draft_isolation.ts"
+    "test:design-studio-draft-isolation": "tsx test_design_studio_draft_isolation.ts",
+    "test:authenticated-future-drafts": "tsx test_authenticated_future_drafts.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "7.11.6",

@@ -45,5 +45,33 @@ assert.match(
   rules,
   /match \/fabric_drafts\/\{document=\*\*\}[\s\S]*?allow read, write: if isAdmin\(\)/,
 );
+assert.match(
+  rules,
+  /match \/futureDesignStudioDrafts\/\{ownerUid\} \{[\s\S]*?allow read: if isAdmin\(\) \|\| ownsDocumentPath\(ownerUid\)/,
+);
+assert.match(
+  rules,
+  /request\.auth\.uid == ownerUid/,
+);
+assert.match(
+  rules,
+  /request\.resource\.data\.revision == resource\.data\.revision \+ 1/,
+);
+assert.match(
+  rules,
+  /request\.resource\.data\.createdAt == resource\.data\.createdAt/,
+);
+assert.match(
+  rules,
+  /request\.resource\.data\.updatedAt == request\.time/,
+);
+assert.match(
+  rules,
+  /data\.lifecycleStatus == "cleared"[\s\S]*?!data\.keys\(\)\.hasAny\(\["draft"\]\)/,
+);
+assert.match(
+  rules,
+  /match \/futureDesignStudioDrafts\/\{ownerUid\}[\s\S]*?allow delete: if false/,
+);
 
 console.log("PASS: Firebase identity and Firestore rule security checks");

@@ -18,6 +18,50 @@ service cloud.firestore {
       return isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
     }
 
+    function ownsDocumentPath(ownerUid) {
+      return isSignedIn() && request.auth.uid == ownerUid;
+    }
+
+    function hasValidFutureDraftLifecycle(data) {
+      return data.lifecycleStatus == "active"
+        || data.lifecycleStatus == "cleared";
+    }
+
+    function hasValidFutureDraftShape(data) {
+      return data.schemaVersion == 1
+        && data.revision is int
+        && data.revision > 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && hasValidFutureDraftLifecycle(data)
+        && data.keys().hasOnly([
+          "schemaVersion",
+          "lifecycleStatus",
+          "revision",
+          "createdAt",
+          "updatedAt",
+          "draft"
+        ])
+        && data.keys().hasAll([
+          "schemaVersion",
+          "lifecycleStatus",
+          "revision",
+          "createdAt",
+          "updatedAt"
+        ])
+        && (
+          (
+            data.lifecycleStatus == "active"
+            && data.keys().hasAll(["draft"])
+            && data.draft is map
+          )
+          || (
+            data.lifecycleStatus == "cleared"
+            && !data.keys().hasAny(["draft"])
+          )
+        );
+    }
+
     match /fabrics/{fabricId} {
       allow read: if true;
       allow write: if isAdmin();
@@ -120,6 +164,21 @@ service cloud.firestore {
     match /custom_detail_catalog/{document=**} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    match /futureDesignStudioDrafts/{ownerUid} {
+      allow read: if isAdmin() || ownsDocumentPath(ownerUid);
+      allow create: if (isAdmin() || ownsDocumentPath(ownerUid))
+        && hasValidFutureDraftShape(request.resource.data)
+        && request.resource.data.revision == 1
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if (isAdmin() || ownsDocumentPath(ownerUid))
+        && hasValidFutureDraftShape(request.resource.data)
+        && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
     }
 
     match /media/{mediaId} {

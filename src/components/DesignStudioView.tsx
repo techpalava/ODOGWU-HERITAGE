@@ -21,6 +21,7 @@ import {
   isAmbiguousLowerGarment,
 } from "../utils/catalogHelpers";
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   Sparkles,
   ArrowLeft,
@@ -161,6 +162,13 @@ import {
   SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
 } from "../utils/designPriceBreakdownPresentation";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
+import { auth } from "../services/firebase";
+import {
+  createFirebaseAuthenticatedFutureDraftRepository,
+  resolveAuthenticatedFutureDraftIdentity,
+  type AuthenticatedFutureDraftIntegrationStatus,
+  type AuthenticatedFutureDraftIdentity,
+} from "../services/authenticatedFutureDraftService";
 import type {
   PricedSelection,
   TraditionalAccessory,
@@ -2059,6 +2067,15 @@ export default function DesignStudioView({
   const [invalidGroups, setInvalidGroups] = useState<string[]>([]);
   const [guestDraftHydrated, setGuestDraftHydrated] =
     useState<boolean>(false);
+  const [firebaseDraftAuth, setFirebaseDraftAuth] = useState<{
+    resolved: boolean;
+    user: User | null;
+  }>({ resolved: false, user: null });
+  const [futureDraftPersistenceStatus, setFutureDraftPersistenceStatus] =
+    useState<AuthenticatedFutureDraftIntegrationStatus>("resolving");
+  const cloudFutureDraftRevisionRef = useRef<number | null>(null);
+  const cloudFutureDraftSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const futureDraftIdentityGenerationRef = useRef(0);
   const hydratedFabricSyncSignatureRef = useRef<string | null>(null);
   const preservedInvalidHydratedDraftFabricAllocationsRef =
     useRef<unknown | null>(null);
@@ -2073,6 +2090,21 @@ export default function DesignStudioView({
   const customDetailCatalog = useAppStore((state: any) => state.customDetailCatalog);
   const normalizedJourneyMode = normalizeDesignStudioJourneyMode(journeyMode);
   const isFutureNineStageMode = normalizedJourneyMode === "future_nine_stage";
+  const futureDraftIdentity = useMemo<AuthenticatedFutureDraftIdentity>(
+    () =>
+      resolveAuthenticatedFutureDraftIdentity({
+        authResolved: firebaseDraftAuth.resolved,
+        firebaseUser: firebaseDraftAuth.user,
+        customer: currentUser,
+      }),
+    [firebaseDraftAuth, currentUser],
+  );
+  const futureDraftIdentityKey =
+    futureDraftIdentity.status === "authenticated"
+      ? `authenticated:${futureDraftIdentity.ownerUid}`
+      : futureDraftIdentity.status === "blocked"
+        ? `blocked:${futureDraftIdentity.reason}`
+        : futureDraftIdentity.status;
   const normalizedGarmentTypeCatalog = normalizeCustomDetailCatalog(
     customDetailCatalog,
   );
@@ -3895,19 +3927,125 @@ export default function DesignStudioView({
   const isShippingReady = isInboundShippingReady && isFinalMileReady;
   const currencySymbol = PRICING_CURRENCY_SYMBOL;
 
+  useEffect(
+    () =>
+      onAuthStateChanged(auth, (firebaseUser) => {
+        setFirebaseDraftAuth({ resolved: true, user: firebaseUser });
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    if (!isFutureNineStageMode) return;
+    futureDraftIdentityGenerationRef.current += 1;
+    cloudFutureDraftRevisionRef.current = null;
+    cloudFutureDraftSaveQueueRef.current = Promise.resolve();
+    setFutureDraftPersistenceStatus("resolving");
+    setGuestDraftHydrated(false);
+
+    // Remove the previous identity's dormant draft from rendered state before
+    // any local or owner-scoped cloud hydration is allowed to begin.
+    setGarmentTypeSelection(
+      createDormantDesignStudioJourneyState({
+        normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+      }).garmentTypeSelection,
+    );
+    setFutureStageId("garment_type");
+    setFutureAiTryOnWorkflow(createEmptyAiTryOnWorkflowState());
+    setFutureMeasurementState(createEmptyFutureMeasurementState());
+    setFutureShippingState(createEmptyFutureShippingState());
+    setFutureSelectedStyleId(null);
+    setDesignSelections({ accessories: [] });
+    setFabricAllocationState(FabricAllocationStateEngine.initialize());
+    setSelectedFabric(null);
+    setSelectedGarment(null);
+    setDeliveryMethod(null);
+    setDeliveryAddress({
+      addressLine1: "",
+      addressLine2: "",
+      city: "",
+      postalCode: "",
+      countryCode: "",
+    });
+    setSpecialInstructions("");
+  }, [isFutureNineStageMode, futureDraftIdentityKey]);
+
   useEffect(() => {
     if (
       !isFutureNineStageMode ||
-      currentUser ||
       guestDraftHydrated ||
       isLoadingData ||
       styles.length === 0 ||
       fabrics.length === 0 ||
-      normalizedGarmentTypeCatalog.length === 0
+      normalizedGarmentTypeCatalog.length === 0 ||
+      futureDraftIdentity.status === "resolving"
     ) {
       return;
     }
-    const storedDraft = GuestOrderSessionService.getFutureDesignDraft();
+    if (futureDraftIdentity.status === "blocked") {
+      setFutureDraftPersistenceStatus("blocked");
+      return;
+    }
+    const identityGeneration = futureDraftIdentityGenerationRef.current;
+    let cancelled = false;
+    void (async () => {
+      const localDraft = GuestOrderSessionService.getFutureDesignDraft();
+      let storedDraft = localDraft;
+      let hydratedPersistenceStatus: "ready" | "cleared" = "ready";
+      if (futureDraftIdentity.status === "authenticated") {
+        const repository = createFirebaseAuthenticatedFutureDraftRepository({
+          customer: currentUser,
+          authResolved: firebaseDraftAuth.resolved,
+          firebaseUser: firebaseDraftAuth.user,
+        });
+        let synchronization;
+        try {
+          synchronization = await repository.synchronize(localDraft);
+        } catch (error) {
+          if (!cancelled && identityGeneration === futureDraftIdentityGenerationRef.current) {
+            console.error("Future draft synchronization failed.", error);
+            setFutureDraftPersistenceStatus("blocked");
+          }
+          return;
+        }
+        if (cancelled || identityGeneration !== futureDraftIdentityGenerationRef.current) {
+          return;
+        }
+        if (synchronization.status === "conflict") {
+          cloudFutureDraftRevisionRef.current = synchronization.record.revision;
+          setFutureDraftPersistenceStatus("conflict");
+          return;
+        }
+        if (
+          synchronization.status === "invalid" ||
+          synchronization.status === "blocked"
+        ) {
+          setFutureDraftPersistenceStatus(synchronization.status);
+          return;
+        }
+        cloudFutureDraftRevisionRef.current =
+          synchronization.record?.revision ?? null;
+        if (synchronization.record) {
+          GuestOrderSessionService.recordFutureDesignDraftCloudSynchronization(
+            futureDraftIdentity.ownerUid,
+            synchronization.record.revision,
+          );
+          if (
+            synchronization.status === "guest_transferred" ||
+            synchronization.status === "equivalent" ||
+            synchronization.status === "cloud_cleared"
+          ) {
+            GuestOrderSessionService.clearFutureDesignDraftAfterCloudSynchronization();
+          }
+        }
+        storedDraft = synchronization.draft;
+        if (synchronization.status === "cloud_cleared") {
+          hydratedPersistenceStatus = "cleared";
+        }
+      }
+      if (cancelled || identityGeneration !== futureDraftIdentityGenerationRef.current) {
+        return;
+      }
     const futureJourney = createDormantDesignStudioJourneyState({
       mode: normalizedJourneyMode,
       persistedDraft: storedDraft,
@@ -4038,11 +4176,37 @@ export default function DesignStudioView({
           fabric.code === reconciledFabricState.fabricAllocations[0]?.fabricCode,
       ) || null,
     );
+    setSelectedGarment(storedDraft?.selectedGarment || null);
+    setCustomerName(storedDraft?.customerName || currentUser?.name || "");
+    setCustomerEmail(storedDraft?.customerEmail || currentUser?.email || "");
+    setCustomerPhone(storedDraft?.customerPhone || currentUser?.phone || "");
+    setDeliveryMethod(storedDraft?.deliveryMethod || null);
+    if (storedDraft?.deliveryAddress) {
+      setDeliveryAddress(storedDraft.deliveryAddress);
+    }
+    setPickupTime(
+      storedDraft?.pickupTime || "Monday Afternoon (13:00 - 17:00)",
+    );
+    setSpecialInstructions(storedDraft?.specialInstructions || "");
+    setLeftoverFabricChoice(
+      storedDraft?.leftoverFabricChoice ||
+        "Return leftover fabric pieces with garment",
+    );
+    setHasLining(Boolean(storedDraft?.hasLining));
+    setFutureDraftPersistenceStatus(hydratedPersistenceStatus);
     setGuestDraftHydrated(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     isFutureNineStageMode,
     normalizedJourneyMode,
     currentUser,
+    firebaseDraftAuth,
+    futureDraftIdentity,
+    futureDraftIdentityKey,
     guestDraftHydrated,
     isLoadingData,
     customDetailCatalog,
@@ -4330,7 +4494,16 @@ export default function DesignStudioView({
   ]);
 
   useEffect(() => {
-    if (currentUser || !guestDraftHydrated) return;
+    if (!guestDraftHydrated) return;
+    if (!isFutureNineStageMode && currentUser) return;
+    if (
+      isFutureNineStageMode &&
+      (futureDraftPersistenceStatus !== "ready" ||
+        (futureDraftIdentity.status !== "guest" &&
+          futureDraftIdentity.status !== "authenticated"))
+    ) {
+      return;
+    }
 
     const persistTimer = window.setTimeout(() => {
       const currentSelectionSignature = getFabricAllocationSyncSignature(
@@ -4446,7 +4619,56 @@ export default function DesignStudioView({
         draft: futureDraft,
       });
       if (isFutureNineStageMode) {
-        GuestOrderSessionService.saveFutureDesignDraft(guestDraft);
+        if (futureDraftIdentity.status === "guest") {
+          GuestOrderSessionService.saveFutureDesignDraft(guestDraft);
+        } else if (futureDraftIdentity.status === "authenticated") {
+          const identityGeneration = futureDraftIdentityGenerationRef.current;
+          const repository = createFirebaseAuthenticatedFutureDraftRepository({
+            customer: currentUser,
+            authResolved: firebaseDraftAuth.resolved,
+            firebaseUser: firebaseDraftAuth.user,
+          });
+          cloudFutureDraftSaveQueueRef.current =
+            cloudFutureDraftSaveQueueRef.current
+              .then(async () => {
+                if (
+                  identityGeneration !==
+                    futureDraftIdentityGenerationRef.current ||
+                  futureDraftPersistenceStatus !== "ready"
+                ) {
+                  return;
+                }
+                const result = await repository.save(
+                  guestDraft,
+                  cloudFutureDraftRevisionRef.current,
+                );
+                if (
+                  identityGeneration !==
+                  futureDraftIdentityGenerationRef.current
+                ) {
+                  return;
+                }
+                if (result.status === "saved") {
+                  cloudFutureDraftRevisionRef.current = result.record.revision;
+                } else if (result.status === "conflict") {
+                  futureDraftIdentityGenerationRef.current += 1;
+                  setFutureDraftPersistenceStatus("conflict");
+                } else {
+                  futureDraftIdentityGenerationRef.current += 1;
+                  setFutureDraftPersistenceStatus(result.status);
+                }
+              })
+              .catch((error) => {
+                if (
+                  identityGeneration ===
+                  futureDraftIdentityGenerationRef.current
+                ) {
+                  console.error("Future draft autosave failed.", error);
+                  futureDraftIdentityGenerationRef.current += 1;
+                  setFutureDraftPersistenceStatus("blocked");
+                }
+              });
+        }
       } else {
         GuestOrderSessionService.saveLegacyDesignDraft(guestDraft);
       }
@@ -4455,6 +4677,9 @@ export default function DesignStudioView({
     return () => window.clearTimeout(persistTimer);
   }, [
     currentUser,
+    firebaseDraftAuth,
+    futureDraftIdentity,
+    futureDraftPersistenceStatus,
     guestDraftHydrated,
     currentStep,
     selectedFabric,

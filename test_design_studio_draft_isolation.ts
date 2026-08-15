@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { DesignStudioStageId, GuestDesignDraft } from "./src/types";
 import {
   createDesignStudioDraftRepository,
+  FUTURE_DESIGN_STUDIO_DRAFT_CLOUD_SYNC_NAMESPACE,
   FUTURE_DESIGN_STUDIO_DRAFT_MIGRATION_NAMESPACE,
   FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE,
   LEGACY_DESIGN_STUDIO_DRAFT_NAMESPACE,
@@ -220,6 +221,23 @@ delete legacyOnly.currentStageId;
 const future = makeDraft("shipping");
 
 const isolation = createFixture();
+const cloudSyncMarker = isolation.repository.recordCloudSynchronization({
+  ownerUid: "uid-future-customer",
+  cloudRevision: 3,
+});
+assert.equal(cloudSyncMarker?.cloudRevision, 3);
+assert.deepEqual(isolation.repository.readCloudSyncResult(), cloudSyncMarker);
+assert.doesNotMatch(
+  isolation.storage.getItem(FUTURE_DESIGN_STUDIO_DRAFT_CLOUD_SYNC_NAMESPACE) || "",
+  /Future Customer|Private street|Personalized requirement/,
+);
+assert.equal(isolation.repository.saveFutureDraftV1(future).status, "saved");
+assert.equal(
+  isolation.repository.clearFutureDraftAfterCloudSynchronization(),
+  true,
+);
+assert.equal(isolation.repository.loadFutureDraftV1().status, "empty");
+assert.deepEqual(isolation.repository.readCloudSyncResult(), cloudSyncMarker);
 isolation.repository.saveLegacyDraft(legacyOnly);
 assert.deepEqual(isolation.repository.loadLegacyDraft(), legacyOnly);
 assert.equal(
