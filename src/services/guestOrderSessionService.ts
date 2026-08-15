@@ -25,6 +25,10 @@ import {
   normalizeFutureMeasurementState,
 } from "../utils/measurementBlueprint";
 import {
+  createDesignStudioDraftRepository,
+  type DesignStudioDraftRepository,
+} from "../utils/designStudioDraftPersistence";
+import {
   getCartDesignConfigurationFingerprintInput,
   normalizeCartItemDesignDomain,
 } from "../utils/cartDesignDomain";
@@ -72,7 +76,9 @@ const createGuestCartId = (): string => {
   return `guest_${token}`;
 };
 
-const normalizeDesignDraft = (designDraft: GuestDesignDraft): GuestDesignDraft => {
+export const normalizeGuestDesignDraft = (
+  designDraft: GuestDesignDraft,
+): GuestDesignDraft => {
   const sourceReconciledDraft = reconcileGuestDesignDraftDesignSource(designDraft);
   const garmentTypeReconciledDraft = reconcileGuestDesignDraftGarmentTypeSelection(
     sourceReconciledDraft,
@@ -187,7 +193,7 @@ const normalizeSessionForPersistence = (
 ): GuestOrderSession => {
   const normalizedCartItems = normalizeCartItemsForPersistence(session.cartItems);
   const normalizedDraft = session.designDraft
-    ? normalizeDesignDraft(session.designDraft)
+    ? normalizeGuestDesignDraft(session.designDraft)
     : undefined;
   if (normalizedDraft === undefined) {
     const { designDraft: _designDraft, ...sessionWithoutDraft } = session;
@@ -263,6 +269,43 @@ const getOrCreateActiveGuestSession = (): GuestOrderSession => {
   }
   return session;
 };
+
+const loadLegacyDesignDraft = (): GuestDesignDraft | null =>
+  getOrCreateActiveGuestSession().designDraft || null;
+
+const saveLegacyDesignDraft = (designDraft: GuestDesignDraft): void => {
+  const session = getOrCreateActiveGuestSession();
+  StorageService.saveGuestOrderSession({
+    ...session,
+    designDraft: normalizeGuestDesignDraft(designDraft),
+    updatedAt: designDraft.updatedAt,
+  });
+};
+
+const clearLegacyDesignDraft = (): void => {
+  const session = getOrCreateActiveGuestSession();
+  const { designDraft: _discarded, ...sessionWithoutDraft } = session;
+  StorageService.saveGuestOrderSession({
+    ...sessionWithoutDraft,
+    updatedAt: new Date().toISOString(),
+  });
+};
+
+const getDesignStudioDraftRepository =
+  (): DesignStudioDraftRepository | null => {
+    if (typeof window === "undefined") return null;
+    return createDesignStudioDraftRepository({
+      storage: window.localStorage,
+      legacy: {
+        // Migration inspects the stored source without normalizing or rewriting it.
+        load: () => StorageService.getGuestOrderSession()?.designDraft || null,
+        save: saveLegacyDesignDraft,
+        clear: clearLegacyDesignDraft,
+      },
+      normalizeDraft: normalizeGuestDesignDraft,
+      legacySourceVersion: GUEST_ORDER_SESSION_VERSION,
+    });
+  };
 
 export interface GuestCartClaimResult {
   items: CartItem[];
@@ -347,25 +390,45 @@ export const GuestOrderSessionService = {
     return migratedItems;
   },
 
+  getLegacyDesignDraft: (): GuestDesignDraft | null =>
+    loadLegacyDesignDraft(),
+
+  saveLegacyDesignDraft: (designDraft: GuestDesignDraft): void => {
+    saveLegacyDesignDraft(designDraft);
+  },
+
+  clearLegacyDesignDraft: (): void => {
+    clearLegacyDesignDraft();
+  },
+
+  getFutureDesignDraft: (): GuestDesignDraft | null => {
+    const repository = getDesignStudioDraftRepository();
+    if (!repository) return null;
+    const result = repository.loadFutureDraftWithMigration();
+    return result.status === "loaded" ? result.draft : null;
+  },
+
+  saveFutureDesignDraft: (designDraft: GuestDesignDraft): void => {
+    getDesignStudioDraftRepository()?.saveFutureDraftV1(designDraft);
+  },
+
+  clearFutureDesignDraft: (): void => {
+    getDesignStudioDraftRepository()?.clearFutureDraftV1();
+  },
+
+  getFutureDesignDraftMigrationResult: () =>
+    getDesignStudioDraftRepository()?.readMigrationResult() || null,
+
+  // Compatibility aliases remain legacy-only for existing production callers.
   getGuestDesignDraft: (): GuestDesignDraft | null =>
-    getOrCreateActiveGuestSession().designDraft || null,
+    loadLegacyDesignDraft(),
 
   saveGuestDesignDraft: (designDraft: GuestDesignDraft): void => {
-    const session = getOrCreateActiveGuestSession();
-    StorageService.saveGuestOrderSession({
-      ...session,
-      designDraft: normalizeDesignDraft(designDraft),
-      updatedAt: designDraft.updatedAt,
-    });
+    saveLegacyDesignDraft(designDraft);
   },
 
   clearGuestDesignDraft: (): void => {
-    const session = getOrCreateActiveGuestSession();
-    const { designDraft: _discarded, ...sessionWithoutDraft } = session;
-    StorageService.saveGuestOrderSession({
-      ...sessionWithoutDraft,
-      updatedAt: new Date().toISOString(),
-    });
+    clearLegacyDesignDraft();
   },
 
   setCheckoutIntent: (checkoutIntent: boolean): void => {

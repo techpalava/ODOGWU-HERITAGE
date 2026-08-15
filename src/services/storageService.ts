@@ -41,8 +41,11 @@ import {
   where,
 } from "firebase/firestore";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
+import {
+  GUEST_ORDER_SESSION_STORAGE_NAMESPACE,
+} from "../utils/designStudioDraftPersistence";
 
-const GUEST_ORDER_SESSION_KEY = "odogwu_guest_order_session_v1";
+const GUEST_ORDER_SESSION_KEY = GUEST_ORDER_SESSION_STORAGE_NAMESPACE;
 const ACCOUNT_CART_KEY_PREFIX = "odogwu_account_cart_v1:";
 
 const getAccountCartStorageKey = (canonicalEmail: string): string =>

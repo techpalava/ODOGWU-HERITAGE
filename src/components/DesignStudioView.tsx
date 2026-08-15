@@ -3907,13 +3907,13 @@ export default function DesignStudioView({
     ) {
       return;
     }
+    const storedDraft = GuestOrderSessionService.getFutureDesignDraft();
     const futureJourney = createDormantDesignStudioJourneyState({
       mode: normalizedJourneyMode,
-      persistedDraft: GuestOrderSessionService.getGuestDesignDraft(),
+      persistedDraft: storedDraft,
       normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
     });
     setGarmentTypeSelection(futureJourney.garmentTypeSelection);
-    const storedDraft = GuestOrderSessionService.getGuestDesignDraft();
     const hydratedAllocations = storedDraft
       ? resolveDraftHydrationAllocations(storedDraft)
       : null;
@@ -4180,7 +4180,7 @@ export default function DesignStudioView({
     }
     if (styles.length === 0 || fabrics.length === 0) return;
 
-    const storedDraft = GuestOrderSessionService.getGuestDesignDraft();
+    const storedDraft = GuestOrderSessionService.getLegacyDesignDraft();
     if (!storedDraft) {
       setGuestDraftHydrated(true);
       return;
@@ -4445,7 +4445,11 @@ export default function DesignStudioView({
         currentStageId: futureStageId,
         draft: futureDraft,
       });
-      GuestOrderSessionService.saveGuestDesignDraft(guestDraft);
+      if (isFutureNineStageMode) {
+        GuestOrderSessionService.saveFutureDesignDraft(guestDraft);
+      } else {
+        GuestOrderSessionService.saveLegacyDesignDraft(guestDraft);
+      }
     }, 250);
 
     return () => window.clearTimeout(persistTimer);
