@@ -1079,6 +1079,15 @@ export interface GuestDesignDraft {
   selectedFabricCode: string | null;
   selectedStyleId: string | null;
   designSource?: DesignSource | null;
+  uploadedDesignOwnershipTransition?: {
+    schemaVersion: 1;
+    status: "transfer_required";
+    reason:
+      | "source_identity_unavailable"
+      | "claim_preparation_failed"
+      | "claim_unavailable"
+      | "transfer_failed";
+  };
   confirmedStyleId?: string | null;
   confirmedDesignSourceKey?: string | null;
   priceActivatedFabricCode?: string | null;

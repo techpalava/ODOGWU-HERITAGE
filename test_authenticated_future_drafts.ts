@@ -7,6 +7,7 @@ import {
   type AuthenticatedFutureDraftIdentity,
   type AuthenticatedFutureDraftPersistenceAdapter,
 } from "./src/services/authenticatedFutureDraftService";
+import { createUploadedDesignSource } from "./src/utils/designSourceState";
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -251,6 +252,64 @@ const redirected = await transferRepository.save(redirectedDraft, null);
 assert.equal(redirected.status, "saved");
 assert.equal(transferAdapter.values.has("uid-empty"), true);
 assert.equal(transferAdapter.values.has("uid-attacker"), false);
+
+const ownershipAdapter = new MemoryAdapter();
+const ownershipRepository = createAuthenticatedFutureDraftRepository({
+  adapter: ownershipAdapter,
+  getIdentity: () => ({
+    status: "authenticated" as const,
+    ownerUid: "account-draft-owner",
+  }),
+});
+const foreignUploadedDraft = makeDraft("design_style");
+foreignUploadedDraft.selectedStyleId = null;
+foreignUploadedDraft.designSource = createUploadedDesignSource({
+  uploadReference: {
+    ownerUid: "anonymous-upload-owner",
+    designReferenceId: "design-reference-001",
+    storagePath:
+      "customer-design-drafts/anonymous-upload-owner/design-reference-001/original.png",
+    mimeType: "image/png",
+    createdAt: "2026-08-15T09:00:00.000Z",
+  },
+  fabricCapacityComposition: [
+    { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+  ],
+  demographic: "male",
+});
+const foreignSave = await ownershipRepository.save(foreignUploadedDraft, null);
+assert.equal(foreignSave.status, "blocked");
+assert.equal(
+  foreignSave.status === "blocked" && foreignSave.reason,
+  "uploaded_design_owner_mismatch",
+);
+const foreignSync = await ownershipRepository.synchronize(foreignUploadedDraft);
+assert.equal(foreignSync.status, "blocked");
+assert.equal(ownershipAdapter.writes.length, 0);
+
+const markedDraft = makeDraft("design_style");
+markedDraft.uploadedDesignOwnershipTransition = {
+  schemaVersion: 1,
+  status: "transfer_required",
+  reason: "claim_unavailable",
+};
+const markedSave = await ownershipRepository.save(markedDraft, null);
+assert.equal(markedSave.status, "blocked");
+assert.equal(
+  markedSave.status === "blocked" && markedSave.reason,
+  "uploaded_design_ownership_transfer_required",
+);
+assert.equal(ownershipAdapter.writes.length, 0);
+
+const tokenBearingDraft = makeDraft("design_style") as GuestDesignDraft & {
+  ownershipClaimToken?: string;
+};
+tokenBearingDraft.ownershipClaimToken = "must-never-reach-cloud-storage";
+assert.equal(
+  (await ownershipRepository.save(tokenBearingDraft, null)).status,
+  "invalid",
+);
+assert.equal(ownershipAdapter.writes.length, 0);
 
 const stages: DesignStudioStageId[] = [
   "garment_type",

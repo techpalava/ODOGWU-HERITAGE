@@ -10,6 +10,7 @@ import {
 import type { Customer, GuestDesignDraft } from "../types";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 import { hasAuthoritativeFutureDraftMarker } from "../utils/designStudioDraftPersistence";
+import { isValidUploadedDesignSource } from "../utils/designSourceState";
 import { normalizeGuestDesignDraft } from "./guestOrderSessionService";
 import { auth, db } from "./firebase";
 
@@ -26,6 +27,7 @@ const FORBIDDEN_DRAFT_KEYS = new Set([
   "cardCvc",
   "cardCvv",
   "cardNumber",
+  "claimToken",
   "clientSecret",
   "customToken",
   "futureOrderCandidate",
@@ -35,6 +37,7 @@ const FORBIDDEN_DRAFT_KEYS = new Set([
   "paymentDetails",
   "paymentMethod",
   "orderCandidate",
+  "ownershipClaimToken",
   "providerPayload",
   "providerResponse",
   "rawImage",
@@ -332,11 +335,39 @@ export const resolveAuthenticatedFutureDraftIdentity = ({
   return { status: "authenticated", ownerUid: firebaseUser.uid };
 };
 
+export const getAuthenticatedDraftUploadedDesignOwnershipIssue = (
+  draft: GuestDesignDraft,
+  ownerUid: string,
+): string | null => {
+  if (draft.uploadedDesignOwnershipTransition?.status === "transfer_required") {
+    return "uploaded_design_ownership_transfer_required";
+  }
+  return isValidUploadedDesignSource(draft.designSource) &&
+    draft.designSource.uploadReference.ownerUid !== ownerUid
+    ? "uploaded_design_owner_mismatch"
+    : null;
+};
+
 const normalizeLoadedValue = (
   value: unknown | null,
+  ownerUid: string,
 ): AuthenticatedFutureDraftLoadResult => {
   if (value === null) return { status: "absent", record: null };
   const normalized = normalizeAuthenticatedFutureDraftRecord(value);
+  const ownershipIssue =
+    normalized.record?.lifecycleStatus === "active" && normalized.record.draft
+      ? getAuthenticatedDraftUploadedDesignOwnershipIssue(
+          normalized.record.draft,
+          ownerUid,
+        )
+      : null;
+  if (ownershipIssue) {
+    return {
+      status: "blocked",
+      record: null,
+      reason: ownershipIssue,
+    };
+  }
   return normalized.record
     ? { status: "loaded", record: normalized.record }
     : {
@@ -371,7 +402,7 @@ export const createAuthenticatedFutureDraftRepository = ({
     if (!owner.ownerUid) {
       return { status: "blocked", record: null, reason: owner.reason! };
     }
-    return normalizeLoadedValue(await adapter.load(owner.ownerUid));
+    return normalizeLoadedValue(await adapter.load(owner.ownerUid), owner.ownerUid);
   };
 
   const write = async ({
@@ -398,6 +429,17 @@ export const createAuthenticatedFutureDraftRepository = ({
         };
       }
       normalizedDraft = normalized.draft;
+      const ownershipIssue = getAuthenticatedDraftUploadedDesignOwnershipIssue(
+        normalizedDraft,
+        owner.ownerUid,
+      );
+      if (ownershipIssue) {
+        return {
+          status: "blocked",
+          record: null,
+          reason: ownershipIssue,
+        };
+      }
     }
     const committed = await adapter.commit({
       ownerUid: owner.ownerUid,
@@ -406,7 +448,10 @@ export const createAuthenticatedFutureDraftRepository = ({
       ...(normalizedDraft ? { draft: normalizedDraft } : {}),
     });
     if (committed.status === "conflict") {
-      const current = normalizeLoadedValue(committed.currentValue);
+      const current = normalizeLoadedValue(
+        committed.currentValue,
+        owner.ownerUid,
+      );
       return {
         status: "conflict",
         record: null,
@@ -445,6 +490,29 @@ export const createAuthenticatedFutureDraftRepository = ({
         draft: null,
         reason: `invalid_guest_draft:${guest.reason}`,
       };
+    }
+    const owner = requireOwner();
+    if (!owner.ownerUid) {
+      return {
+        status: "blocked",
+        record: null,
+        draft: null,
+        reason: owner.reason!,
+      };
+    }
+    if (guest.draft) {
+      const ownershipIssue = getAuthenticatedDraftUploadedDesignOwnershipIssue(
+        guest.draft,
+        owner.ownerUid,
+      );
+      if (ownershipIssue) {
+        return {
+          status: "blocked",
+          record: null,
+          draft: null,
+          reason: ownershipIssue,
+        };
+      }
     }
     const cloud = await load();
     if (cloud.status === "blocked" || cloud.status === "invalid") {
@@ -543,7 +611,7 @@ const createFirestoreAdapter = (
     return runTransaction(firestore, async (transaction) => {
       const snapshot = await transaction.get(reference);
       const currentValue = snapshot.exists() ? snapshot.data() : null;
-      const current = normalizeLoadedValue(currentValue);
+      const current = normalizeLoadedValue(currentValue, ownerUid);
       if (snapshot.exists() && current.status !== "loaded") {
         return { status: "conflict" as const, currentValue };
       }

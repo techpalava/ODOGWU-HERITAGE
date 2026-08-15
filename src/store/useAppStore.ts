@@ -30,6 +30,7 @@ import { processDynamicBatches } from "../utils/batchUtils";
 import { migrateLegacyCartShippingItems } from "../utils/shippingPricing";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
 import { FirebaseCustomerAuth } from "../services/firebaseCustomerAuth";
+import { guestUploadedDesignOwnershipContinuity } from "../services/guestUploadedDesignOwnershipContinuity";
 
 interface AppState {
 
@@ -528,6 +529,17 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (firebaseUser && !firebaseUser.isAnonymous) {
             void (async () => {
               try {
+                const continuity =
+                  await guestUploadedDesignOwnershipContinuity.ensure(
+                    firebaseUser,
+                  );
+                if (continuity.status === "transfer_required") {
+                  if (sequence === authBootstrapSequence) {
+                    ApiService.clearSession();
+                    get().setCurrentUser(null);
+                  }
+                  return;
+                }
                 const customer =
                   await FirebaseCustomerAuth.bootstrap(firebaseUser);
                 if (sequence === authBootstrapSequence) {

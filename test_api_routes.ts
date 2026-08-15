@@ -8,6 +8,7 @@ import pinLoginHandler from "./api/auth/pin-login.js";
 import pinRegisterHandler from "./api/auth/pin-register.js";
 import uploadedDesignTransferHandler from "./api/orders/transfer-uploaded-design.js";
 import uploadedDesignOwnershipClaimHandler from "./api/orders/create-uploaded-design-ownership-claim.js";
+import uploadedDesignDraftTransferHandler from "./api/design-studio/transfer-uploaded-design-draft.js";
 import type {
   HttpRequest,
   HttpResponse,
@@ -111,6 +112,7 @@ async function run() {
     "./api/auth/pin-register.ts",
     "./api/orders/transfer-uploaded-design.ts",
     "./api/orders/create-uploaded-design-ownership-claim.ts",
+    "./api/design-studio/transfer-uploaded-design-draft.ts",
   ]);
 
   assert.equal(typeof healthHandler, "function");
@@ -119,6 +121,7 @@ async function run() {
   assert.equal(typeof pinRegisterHandler, "function");
   assert.equal(typeof uploadedDesignTransferHandler, "function");
   assert.equal(typeof uploadedDesignOwnershipClaimHandler, "function");
+  assert.equal(typeof uploadedDesignDraftTransferHandler, "function");
 
   const health = createResponse();
   await healthHandler(request("GET"), health.response);
@@ -171,6 +174,17 @@ async function run() {
   assert.deepEqual(ownershipClaim.state.body, {
     error: "Firebase authentication is required.",
     code: "CLAIM_AUTH_REQUIRED",
+  });
+
+  const draftTransfer = createResponse();
+  await uploadedDesignDraftTransferHandler(
+    request("POST", { body: {} }),
+    draftTransfer.response,
+  );
+  assert.equal(draftTransfer.state.status, 401);
+  assert.deepEqual(draftTransfer.state.body, {
+    error: "Firebase authentication is required.",
+    code: "AUTH_FAILED",
   });
 
   console.log(

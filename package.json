@@ -38,6 +38,7 @@
     "test:uploaded-design-checkout-preparation": "tsx test_uploaded_design_checkout_preparation.ts",
     "test:uploaded-design-order-regression": "tsx test_uploaded_design_order_regression.ts",
     "test:uploaded-design-deletion-ui": "tsx test_uploaded_design_deletion_ui.tsx",
+    "test:uploaded-design-auth-continuity": "tsx test_uploaded_design_auth_continuity.ts",
     "test:firestore-security": "tsx test_firestore_security.ts",
     "test:measurement-blueprint": "tsx test_measurement_blueprint.ts",
     "test:future-measurement-stage": "tsx test_design_studio_future_measurement_stage.ts",

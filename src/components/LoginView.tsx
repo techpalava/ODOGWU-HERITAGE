@@ -20,9 +20,18 @@ import {
   } from "lucide-react";
 
 import { auth } from "../services/firebase";
-import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import {
+  GoogleAuthProvider,
+  linkWithPopup,
+  signInWithCredential,
+  signInWithPopup,
+} from "firebase/auth";
 import { Customer } from "../types";
 import { FirebaseCustomerAuth } from "../services/firebaseCustomerAuth";
+import {
+  GUEST_UPLOAD_TRANSFER_REQUIRED_MESSAGE,
+  guestUploadedDesignOwnershipContinuity,
+} from "../services/guestUploadedDesignOwnershipContinuity";
 
 interface LoginViewProps {
   onLogin: (customer: Customer) => void;
@@ -46,6 +55,58 @@ export default function LoginView({
   const [loginPasscode, setLoginPasscode] = useState("");
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [pendingAuthenticatedCustomer, setPendingAuthenticatedCustomer] =
+    useState<Customer | null>(null);
+  const [isTransferringGuestDesign, setIsTransferringGuestDesign] =
+    useState(false);
+
+  const prepareGuestUploadTransition = async (): Promise<boolean> => {
+    const preparation =
+      await guestUploadedDesignOwnershipContinuity.prepare(auth.currentUser);
+    if (preparation.status === "transfer_required") {
+      setError(GUEST_UPLOAD_TRANSFER_REQUIRED_MESSAGE);
+      return false;
+    }
+    return true;
+  };
+
+  const finishAuthenticatedLogin = async (
+    customer: Customer,
+  ): Promise<boolean> => {
+    const identity = auth.currentUser;
+    if (!identity || identity.isAnonymous) {
+      setError("Secure account authentication could not be confirmed.");
+      return false;
+    }
+    setIsTransferringGuestDesign(true);
+    try {
+      const continuity =
+        await guestUploadedDesignOwnershipContinuity.ensure(identity);
+      if (continuity.status === "transfer_required") {
+        setPendingAuthenticatedCustomer(customer);
+        setError(GUEST_UPLOAD_TRANSFER_REQUIRED_MESSAGE);
+        return false;
+      }
+      setPendingAuthenticatedCustomer(null);
+      onLogin(customer);
+      return true;
+    } finally {
+      setIsTransferringGuestDesign(false);
+    }
+  };
+
+  const handleRetryGuestDesignTransfer = async () => {
+    if (!pendingAuthenticatedCustomer) return;
+    setError("");
+    const completed = await finishAuthenticatedLogin(
+      pendingAuthenticatedCustomer,
+    );
+    if (completed) {
+      setSuccessMsg(
+        `Welcome back, ${pendingAuthenticatedCustomer.name}!`,
+      );
+    }
+  };
 
   // Register inputs (Common / Email)
   const [regName, setRegName] = useState("");
@@ -74,12 +135,14 @@ export default function LoginView({
     }
 
     try {
+      if (!(await prepareGuestUploadTransition())) return;
       const customer = await FirebaseCustomerAuth.signInWithPin(
         loginIdentifier.trim(),
         loginPasscode,
       );
-      setSuccessMsg(`Welcome back, ${customer.name}!`);
-      onLogin(customer);
+      if (await finishAuthenticatedLogin(customer)) {
+        setSuccessMsg(`Welcome back, ${customer.name}!`);
+      }
     } catch (loginError) {
       setError(
         loginError instanceof Error
@@ -93,10 +156,39 @@ export default function LoginView({
     try {
       setError("");
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
+      const existingIdentity = auth.currentUser;
+      let result;
+      if (existingIdentity?.isAnonymous) {
+        try {
+          result = await linkWithPopup(existingIdentity, provider);
+        } catch (linkError) {
+          const code =
+            linkError && typeof linkError === "object" && "code" in linkError
+              ? String((linkError as { code?: unknown }).code)
+              : "";
+          const credential = GoogleAuthProvider.credentialFromError(
+            linkError as Parameters<
+              typeof GoogleAuthProvider.credentialFromError
+            >[0],
+          );
+          if (
+            !credential ||
+            (code !== "auth/credential-already-in-use" &&
+              code !== "auth/email-already-in-use")
+          ) {
+            throw linkError;
+          }
+          if (!(await prepareGuestUploadTransition())) return;
+          result = await signInWithCredential(auth, credential);
+        }
+      } else {
+        if (!(await prepareGuestUploadTransition())) return;
+        result = await signInWithPopup(auth, provider);
+      }
       const customer = await FirebaseCustomerAuth.bootstrap(result.user);
-      setSuccessMsg(`Session activated: ${customer.name}`);
-      onLogin(customer);
+      if (await finishAuthenticatedLogin(customer)) {
+        setSuccessMsg(`Session activated: ${customer.name}`);
+      }
     } catch (err: any) {
       console.error("Login failed:", err);
       let friendlyMessage = "Google login failed. Please try again or contact support.";
@@ -139,13 +231,15 @@ export default function LoginView({
     }
 
     try {
+      if (!(await prepareGuestUploadTransition())) return;
       const customer = await FirebaseCustomerAuth.registerWithPin({
         name: regName.trim(),
         email: regEmail.trim(),
         pin: regPIN,
       });
-      setSuccessMsg("Account created successfully!");
-      onLogin(customer);
+      if (await finishAuthenticatedLogin(customer)) {
+        setSuccessMsg("Account created successfully!");
+      }
     } catch (registrationError) {
       setError(
         registrationError instanceof Error
@@ -273,7 +367,22 @@ export default function LoginView({
           {error && (
             <div className="mb-6 p-3 bg-red-50 text-red-700 text-[10px] uppercase font-bold tracking-wider rounded-xl border border-red-200 flex items-start gap-2">
               <span className="mt-0.5"><XCircle size={14} /></span>
-              <span className="flex-1 leading-snug">{error}</span>
+              <div className="min-w-0 flex-1">
+                <span className="block leading-snug">{error}</span>
+                {pendingAuthenticatedCustomer && (
+                  <button
+                    type="button"
+                    disabled={isTransferringGuestDesign}
+                    onClick={() => void handleRetryGuestDesignTransfer()}
+                    className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-red-300 bg-white px-3 text-[10px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RefreshCw size={13} aria-hidden="true" />
+                    {isTransferringGuestDesign
+                      ? "Securing Design..."
+                      : "Retry Secure Design Transfer"}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

@@ -12,6 +12,7 @@ import {
 } from "./src/server/authHttp";
 import { handleUploadedDesignTransfer } from "./src/server/uploadedDesignTransferHttp";
 import { handleCreateUploadedDesignOwnershipClaim } from "./src/server/uploadedDesignOwnershipClaimHttp";
+import { handleUploadedDesignDraftTransfer } from "./src/server/uploadedDesignDraftTransferHttp";
 
 dotenv.config();
 
@@ -46,6 +47,10 @@ app.post("/api/orders/transfer-uploaded-design", handleUploadedDesignTransfer);
 app.post(
   "/api/orders/create-uploaded-design-ownership-claim",
   handleCreateUploadedDesignOwnershipClaim,
+);
+app.post(
+  "/api/design-studio/transfer-uploaded-design-draft",
+  handleUploadedDesignDraftTransfer,
 );
 
 // API route for AI sizing estimation using Gemini 3.5 Flash
