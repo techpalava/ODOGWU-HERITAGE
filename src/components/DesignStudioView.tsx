@@ -37,7 +37,10 @@ import { GarmentTypeStep } from "./GarmentTypeStep";
 import { DormantFutureFabricStep } from "./DormantFutureFabricStep";
 import { DormantFutureDesignStyleStep } from "./DormantFutureDesignStyleStep";
 import { DesignStudioJourneyStepper } from "./DesignStudioJourneyStepper";
-import { DormantFutureCustomDetailsStep } from "./DormantFutureCustomDetailsStep";
+import {
+  DormantFutureCustomDetailsStep,
+  type AdditionalGarmentCustomDetailsChoice,
+} from "./DormantFutureCustomDetailsStep";
 import { DormantFutureAiTryOnStep } from "./DormantFutureAiTryOnStep";
 import { DormantFutureMeasurementStep } from "./DormantFutureMeasurementStep";
 import { DormantFutureSummaryStep } from "./DormantFutureSummaryStep";
@@ -85,6 +88,7 @@ import {
 import { reconcileFutureDesignStyleSelection } from "../utils/designStudioFutureDesignStyle";
 import {
   calculateGarmentScopedCustomDetailsPricing,
+  copyGarmentScopedCustomDetailsToAdditionalOccurrence,
   reconcileGarmentScopedCustomDetails,
   reconcileGarmentScopedPersonalizedInputs,
   validateGarmentScopedCustomDetailsCompletion,
@@ -128,6 +132,7 @@ import { buildFutureOrderCandidate } from "../utils/futureOrderCandidate";
 import { isFuturePaymentReviewStageUnlocked } from "../utils/designStudioFuturePaymentReview";
 import { createCatalogDesignSource } from "../utils/designSourceState";
 import {
+  cloneGarmentConstructionPricingResolution,
   createEmptyAdditionalGarmentConstructionState,
   reconcileAdditionalGarmentConstructionState,
   removeAdditionalGarmentConstruction,
@@ -303,7 +308,10 @@ export default function DesignStudioView({
   const pendingAdditionalConstructionRef = useRef<{
     garmentKey: string;
     resolution: GarmentConstructionPricingResolution;
+    copyFromParentGarmentKey?: string;
   } | null>(null);
+  const [futureCustomDetailsFocusGarmentKey, setFutureCustomDetailsFocusGarmentKey] =
+    useState<string | null>(null);
   const futureFabricComposition =
     getFutureFabricCapacityComposition(garmentTypeSelection);
   const futureFabricStageCompletion = getFutureFabricStageCompletion({
@@ -448,16 +456,15 @@ export default function DesignStudioView({
     additionalGarmentConstructions:
       futureAdditionalConstructionReconciliation.state,
   });
+  const isAdditionalGarmentCommitPending =
+    pendingAdditionalConstructionRef.current !== null;
 
   useEffect(() => {
     const pending = pendingAdditionalConstructionRef.current;
     if (!pending) return;
-    const committed = fabricAllocationState.fabricAllocations.some(
-      (allocation) =>
-        allocation.garmentAssignments.some(
-          (assignment) => assignment.garmentKey === pending.garmentKey,
-        ),
-    );
+    const committed = fabricAllocationState.fabricAllocations
+      .flatMap((allocation) => allocation.garmentAssignments)
+      .find((assignment) => assignment.garmentKey === pending.garmentKey);
     if (!committed) return;
     pendingAdditionalConstructionRef.current = null;
     setDesignSelections((current) => ({
@@ -469,7 +476,25 @@ export default function DesignStudioView({
           [pending.garmentKey]: pending.resolution,
         },
       },
+      ...(pending.copyFromParentGarmentKey
+        ? {
+            garmentScopedCustomDetails:
+              copyGarmentScopedCustomDetailsToAdditionalOccurrence({
+                state: current.garmentScopedCustomDetails || {
+                  schemaVersion: 1,
+                  selectionsByGarmentKey: {},
+                  snapshotsByGarmentKey: {},
+                },
+                sourceParentGarmentKey: pending.copyFromParentGarmentKey,
+                targetParentGarmentKey: pending.garmentKey,
+                garmentType: committed.garmentType as CanonicalPhysicalGarmentType,
+                catalogInspection: futureCatalogInspection,
+              }).state,
+          }
+        : {}),
     }));
+    setFutureCustomDetailsFocusGarmentKey(pending.garmentKey);
+    setFutureStageId("custom_details");
   }, [fabricAllocationState.fabricAllocations]);
   const futureScopedPersonalizedInputsReconciliation =
     futureScopedCustomDetailsReconciliation
@@ -993,6 +1018,7 @@ export default function DesignStudioView({
   useEffect(() => {
     if (
       !guestDraftHydrated ||
+      isAdditionalGarmentCommitPending ||
       !futureScopedCustomDetailsReconciliation ||
       !futureScopedPersonalizedInputsReconciliation ||
       (!futureScopedCustomDetailsReconciliation.stateChanged &&
@@ -1011,6 +1037,7 @@ export default function DesignStudioView({
     }));
   }, [
     guestDraftHydrated,
+    isAdditionalGarmentCommitPending,
     futureScopedCustomDetailsReconciliation,
     futureScopedPersonalizedInputsReconciliation,
     futureAdditionalConstructionReconciliation,
@@ -1603,7 +1630,9 @@ export default function DesignStudioView({
   };
   const handleAddFutureAdditionalGarment = (
     garmentType: CanonicalPhysicalGarmentType,
+    choice: AdditionalGarmentCustomDetailsChoice,
   ) => {
+    setFutureCustomDetailsFocusGarmentKey(null);
     if (
       fabricAllocationState.pendingFabricGarment ||
       fabricAllocationState.awaitingFabricForPendingGarment
@@ -1621,10 +1650,40 @@ export default function DesignStudioView({
       garmentType,
       existingAssignments,
     });
-    const construction = resolveGarmentConstructionPricing(
-      garmentType,
-      normalizedGarmentTypeCatalog,
-    );
+    const sourceSubject = choice.mode === "copy"
+      ? futureScopedCustomDetailsReconciliation.subjects.find(
+          (subject) =>
+            subject.parentGarmentKey === choice.sourceParentGarmentKey &&
+            subject.parentGarmentType === garmentType,
+        )
+      : null;
+    const sourceConstruction = sourceSubject
+      ? sourceSubject.parentGarmentKey.startsWith("base:")
+        ? garmentTypeSelection.constructionByGarment[garmentType]
+        : futureAdditionalConstructionReconciliation.state.byGarmentKey[
+            sourceSubject.parentGarmentKey
+          ]
+      : null;
+    if (choice.mode === "copy" && !sourceSubject) {
+      setNotification({
+        message: "The garment selected for copying is no longer available.",
+        type: "info",
+      });
+      return;
+    }
+    if (choice.mode === "copy" && sourceConstruction?.status !== "resolved") {
+      setNotification({
+        message: "The source garment construction needs review before it can be copied.",
+        type: "info",
+      });
+      return;
+    }
+    const construction = choice.mode === "copy"
+      ? sourceConstruction!
+      : resolveGarmentConstructionPricing(
+          garmentType,
+          normalizedGarmentTypeCatalog,
+        );
     if (addition.status !== "resolved" || construction.status !== "resolved") {
       setNotification({
         message: "This garment construction price is not ready yet.",
@@ -1650,18 +1709,40 @@ export default function DesignStudioView({
     );
     pendingAdditionalConstructionRef.current = {
       garmentKey: addition.selection.garmentSpec!.key,
-      resolution: construction,
+      resolution: cloneGarmentConstructionPricingResolution(construction),
+      ...(choice.mode === "copy"
+        ? { copyFromParentGarmentKey: choice.sourceParentGarmentKey }
+        : {}),
     };
     const nextState = FabricAllocationStateEngine.attemptAppendGarment(
       readyState,
       addition.selection,
     );
+    const additionAccepted = nextState.fabricAllocations.some((allocation) =>
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === addition.selection.garmentSpec!.key,
+      ),
+    );
+    const additionPending =
+      nextState.pendingFabricGarment?.garmentSpec?.key ===
+      addition.selection.garmentSpec!.key;
+    if (!additionAccepted && !additionPending) {
+      pendingAdditionalConstructionRef.current = null;
+      setNotification({
+        message: "This garment could not be added. Your existing order was not changed.",
+        type: "info",
+      });
+      return;
+    }
     setFabricAllocationState(nextState);
     if (nextState.pendingFabricGarment) {
       setFutureStageId("fabric");
     }
   };
   const handleRemoveFutureAdditionalGarment = (garmentKey: string) => {
+    if (futureCustomDetailsFocusGarmentKey === garmentKey) {
+      setFutureCustomDetailsFocusGarmentKey(null);
+    }
     if (pendingAdditionalConstructionRef.current?.garmentKey === garmentKey) {
       pendingAdditionalConstructionRef.current = null;
     }
@@ -1887,6 +1968,7 @@ export default function DesignStudioView({
           onClearAccessories={handleClearFutureAccessories}
           onAddAdditionalGarment={handleAddFutureAdditionalGarment}
           onRemoveAdditionalGarment={handleRemoveFutureAdditionalGarment}
+          focusAdditionalGarmentKey={futureCustomDetailsFocusGarmentKey}
           onBack={() => setFutureStageId("design_style")}
           onContinue={handleOpenDormantAiTryOnStage}
         />

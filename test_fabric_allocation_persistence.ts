@@ -583,6 +583,56 @@ assert.equal(
   "bum_shorts",
   "Custom Detail physical garments must survive strict draft hydration",
 );
+const catalogAdditionalGarmentDraft = makeGuestDraft({
+  fabricAllocations: [
+    {
+      allocationId: "catalog-additional-1",
+      fabricCode: "FABRIC-A",
+      garmentAssignments: [
+        {
+          garmentKey: "base:trouser",
+          code: "STYLE_BASE_TROUSER",
+          garmentType: "trouser",
+          fabricUnits: 1,
+          sourceRole: "main",
+        },
+        {
+          garmentKey: "additional:shirt:1",
+          code: "ADDITIONAL_SHIRT_1",
+          garmentType: "shirt",
+          fabricUnits: 1,
+          garmentSpec: {
+            key: "additional:shirt:1",
+            garmentType: "shirt",
+            fabricUnits: 1,
+          },
+          sourceRole: "additional",
+          eligibilityRule: "catalog_all",
+          dependencyStatus: "valid",
+        },
+      ],
+    },
+  ],
+});
+const catalogAdditionalHydration = resolveDraftHydrationAllocations(
+  catalogAdditionalGarmentDraft,
+);
+assert.equal(catalogAdditionalHydration.hasValidModernAllocations, true);
+assert.deepEqual(
+  catalogAdditionalHydration.fabricAllocations[0]?.garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
+  ["base:trouser", "additional:shirt:1"],
+  "catalog-wide additional garments must survive strict draft hydration",
+);
+GuestOrderSessionService.saveFutureDesignDraft(catalogAdditionalGarmentDraft);
+const restoredCatalogAdditionalDraft =
+  GuestOrderSessionService.getFutureDesignDraft();
+assert.deepEqual(
+  restoredCatalogAdditionalDraft?.fabricAllocations,
+  catalogAdditionalHydration.fabricAllocations,
+  "catalog-wide additional garments must round-trip through draft persistence",
+);
 GuestOrderSessionService.saveFutureDesignDraft(conflictingDraft);
 const restoredDraft = GuestOrderSessionService.getFutureDesignDraft();
 assert(restoredDraft, "Expected a guest draft to be restored");

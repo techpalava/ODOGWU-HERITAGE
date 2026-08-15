@@ -14,7 +14,12 @@ import {
   CUSTOM_DETAILS_CORE_SECTION_ORDER,
   projectFutureCustomDetailsCatalogue,
 } from "./src/utils/futureCustomDetailsCatalogue";
-import { reconcileGarmentScopedCustomDetails } from "./src/utils/garmentScopedCustomDetailsDomain";
+import {
+  calculateGarmentScopedCustomDetailsPricing,
+  reconcileGarmentScopedCustomDetails,
+  validateGarmentScopedCustomDetailsCompletion,
+} from "./src/utils/garmentScopedCustomDetailsDomain";
+import { setGarmentScopedCustomDetailSelection } from "./src/utils/garmentScopedCustomDetailsState";
 import {
   reconcileGarmentTypeStepSelection,
   selectGarmentConstructionOption,
@@ -79,20 +84,72 @@ const casualNative = {
     { key: "style:shirt", garmentType: "shirt", fabricUnits: 1 },
     { key: "style:trouser", garmentType: "trouser", fabricUnits: 1 },
   ],
+  targetDemographic: "male",
 } as StyleCategory;
 
 const shirt = project({ garmentTypes: ["shirt"], style: casualNative });
 assert.deepEqual(
   shirt.catalogue.coreGroups.map((group) => group.selectionGroup),
-  CUSTOM_DETAILS_CORE_SECTION_ORDER,
-  "Shirt-led catalogue uses the canonical order with every section present",
+  [
+    "shirt_construction",
+    "shirt_pockets",
+    "neck_design",
+    "trouser_fastening",
+    "trouser_pockets",
+    "standard_shorts_fastening",
+    "standard_shorts_pockets",
+  ],
+  "A Shirt selection uses structured style support and policy without unrelated sections",
 );
-assert.equal(shirt.catalogue.coreGroups.length, 13);
+assert.equal(shirt.catalogue.coreGroups.length, 7);
 assert.equal(shirt.catalogue.coreGroups[0].occurrences.length, 1);
 assert.equal(
-  shirt.catalogue.coreGroups.find((group) => group.selectionGroup === "dress_construction")?.occurrences.length,
+  shirt.catalogue.coreGroups.some(
+    (group) => group.selectionGroup === "dress_construction",
+  ),
+  false,
+  "unrelated Dress construction is absent",
+);
+
+const staleDressState = setGarmentScopedCustomDetailSelection(
+  {
+    schemaVersion: 1,
+    selectionsByGarmentKey: {},
+    snapshotsByGarmentKey: {},
+  },
+  "base:dress",
+  "dress_pockets",
+  "dress_pocket_2",
+);
+const reconciledStaleDress = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: shirt.garmentTypeSelection,
+  additionalGarments: [],
+  style: casualNative,
+  catalogInspection: catalog,
+  existingState: staleDressState,
+});
+assert.deepEqual(
+  reconciledStaleDress.state.selectionsByGarmentKey,
+  {},
+  "state owned only by a hidden inactive garment is reconciled away",
+);
+assert.equal(
+  validateGarmentScopedCustomDetailsCompletion({
+    earlierStagesComplete: true,
+    reconciliation: reconciledStaleDress,
+  }).blockers.some((blocker) => blocker.code === "selection_reconciled"),
+  false,
+  "cleaning hidden inactive-garment state does not create a completion blocker",
+);
+const staleDressPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: reconciledStaleDress,
+  catalogInspection: catalog,
+});
+assert.equal(staleDressPricing.status, "exact");
+assert.equal(
+  staleDressPricing.status === "exact" ? staleDressPricing.subtotalCents : null,
   0,
-  "unselected construction remains visible but inactive",
+  "hidden stale selections cannot contribute a charge",
 );
 assert.deepEqual(
   shirt.reconciliation.state.selectionsByGarmentKey,
@@ -116,13 +173,21 @@ const shirtTrouser = project({
   style: casualNative,
 });
 assert.deepEqual(
-  shirtTrouser.catalogue.coreGroups.slice(0, 4).map((group) => group.selectionGroup),
-  ["shirt_construction", "shirt_pockets", "trouser_fastening", "trouser_pockets"],
+  shirtTrouser.catalogue.coreGroups.map((group) => group.selectionGroup),
+  [
+    "shirt_construction",
+    "shirt_pockets",
+    "neck_design",
+    "trouser_fastening",
+    "trouser_pockets",
+    "standard_shorts_fastening",
+    "standard_shorts_pockets",
+  ],
 );
 
 const skirt = project({ garmentTypes: ["skirt"], demographic: "female" });
 assert.deepEqual(
-  skirt.catalogue.coreGroups.slice(0, 2).map((group) => group.selectionGroup),
+  skirt.catalogue.coreGroups.map((group) => group.selectionGroup),
   ["skirt_length", "skirt_pockets"],
 );
 
@@ -130,10 +195,10 @@ const family = project({
   garmentTypes: ["shirt", "trouser", "skirt"],
   demographic: "unisex",
 });
-assert.deepEqual(
-  family.catalogue.coreGroups.slice(0, 2).map((group) => group.selectionGroup),
-  ["trouser_fastening", "trouser_pockets"],
-  "Unisex/family prioritises Trouser without hiding other sections",
+assert.equal(
+  new Set(family.catalogue.coreGroups.map((group) => group.selectionGroup)).size,
+  family.catalogue.coreGroups.length,
+  "Family projections never duplicate Neck or optional shorts groups",
 );
 
 const maleSections = project({ garmentTypes: ["shirt"], demographic: "male" });
@@ -141,7 +206,56 @@ const femaleSections = project({ garmentTypes: ["shirt"], demographic: "female" 
 assert.deepEqual(
   maleSections.catalogue.coreGroups.map((group) => group.selectionGroup).sort(),
   femaleSections.catalogue.coreGroups.map((group) => group.selectionGroup).sort(),
-  "audience does not remove catalogue sections",
+  "Step 1 audience does not remove sections required by the selected style",
+);
+
+const gownStyle = {
+  id: "gown-led",
+  name: "Gown led",
+  targetDemographic: "female",
+  fabricCapacityComposition: [
+    { key: "style:gown", garmentType: "full_length_gown", fabricUnits: 2 },
+    { key: "style:skirt", garmentType: "skirt", fabricUnits: 1 },
+  ],
+} as StyleCategory;
+const gown = project({
+  garmentTypes: ["full_length_gown"],
+  demographic: "female",
+  style: gownStyle,
+});
+assert.deepEqual(
+  gown.catalogue.coreGroups.map((group) => group.selectionGroup),
+  [
+    "dress_construction",
+    "dress_pockets",
+    "neck_design",
+    "skirt_length",
+    "skirt_pockets",
+    "bum_shorts_fastening",
+    "bum_shorts_pockets",
+  ],
+  "Gown-led structured support projects Dress, Neck, Skirt, then Bum Shorts",
+);
+assert.equal(
+  gown.catalogue.coreGroups.some((group) =>
+    ["shirt_construction", "trouser_fastening", "standard_shorts_fastening"].includes(
+      group.selectionGroup,
+    ),
+  ),
+  false,
+);
+
+const agbada = project({ garmentTypes: ["agbada"], demographic: "male" });
+assert.deepEqual(
+  agbada.catalogue.coreGroups.map((group) => group.selectionGroup),
+  [
+    "shirt_construction",
+    "shirt_pockets",
+    "neck_design",
+    "trouser_fastening",
+    "trouser_pockets",
+  ],
+  "Agbada keeps its configured upper and Trouser physical components without duplicate sections",
 );
 
 const defaultShirt = shirt.garmentTypeSelection.constructionByGarment.shirt;
@@ -220,9 +334,12 @@ if (addition.status === "resolved") {
   assert.equal(removed.byGarmentKey[assignment.garmentKey], undefined);
   const inactiveAgain = project({ garmentTypes: ["shirt"] });
   assert.equal(
-    inactiveAgain.catalogue.coreGroups.find((group) => group.selectionGroup === "dress_construction")?.occurrences.length,
-    0,
+    inactiveAgain.catalogue.coreGroups.some(
+      (group) => group.selectionGroup === "dress_construction",
+    ),
+    false,
   );
 }
 
-console.log("PASS: complete Custom Details catalogue, ordering, construction replacement, and additional occurrence lifecycle");
+assert.deepEqual(CUSTOM_DETAILS_CORE_SECTION_ORDER.length, 13);
+console.log("PASS: relevant Custom Details projection, ordering, construction replacement, and additional occurrence lifecycle");

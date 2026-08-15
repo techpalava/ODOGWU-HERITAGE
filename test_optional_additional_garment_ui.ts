@@ -292,13 +292,38 @@ assert.match(
 );
 assert.match(
   customDetailsSource,
-  /CANONICAL_PHYSICAL_GARMENT_TYPES\.map\(\(garmentType\) =>/,
+  /additionalGarmentConstructionOptions\.map\(\(\{ garmentType, construction \}\) =>/,
   "the additional-garment section must offer canonical physical garments",
 );
 assert.match(
   customDetailsSource,
-  /onClick=\{\(\) => onAddAdditionalGarment\(garmentType\)\}/,
-  "the customer control must invoke the authoritative additional-garment handler",
+  /setAdditionalGarmentChoice\(\{ garmentType, sourceParentGarmentKey: null \}\)/,
+  "the customer control must ask how to configure the garment before invoking the transaction",
+);
+assert.match(customDetailsSource, /Use Same Custom Details/);
+assert.match(customDetailsSource, /Choose Custom Details/);
+assert.match(customDetailsSource, /resolveCompatibleGarmentScopedCopySources/);
+assert.match(customDetailsSource, /compatibleCopySources\.length === 1/);
+assert.match(customDetailsSource, /Select the garment whose Custom Details you want to copy/);
+assert.match(
+  source,
+  /copyGarmentScopedCustomDetailsToAdditionalOccurrence/,
+  "the committed allocation path must copy through the garment-scoped domain helper",
+);
+assert.match(
+  source,
+  /pendingAdditionalConstructionRef\.current = null;[\s\S]*FabricAllocationStateEngine\.cancelPendingGarment/,
+  "cancelling the Fabric transaction must discard pending construction and copy state",
+);
+assert.match(
+  source,
+  /if \(!additionAccepted && !additionPending\) \{[\s\S]*pendingAdditionalConstructionRef\.current = null;/,
+  "a rejected append must discard pending construction and copy state",
+);
+assert.match(
+  source,
+  /isAdditionalGarmentCommitPending \|\|[\s\S]*!futureScopedCustomDetailsReconciliation/,
+  "transient pre-construction reconciliation must not overwrite a copied occurrence",
 );
 assert.match(
   customDetailsSource,

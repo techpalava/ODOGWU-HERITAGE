@@ -23,6 +23,16 @@ export const createEmptyAdditionalGarmentConstructionState =
     byGarmentKey: {},
   });
 
+export const cloneGarmentConstructionPricingResolution = (
+  resolution: GarmentConstructionPricingResolution,
+): GarmentConstructionPricingResolution =>
+  resolution.status === "resolved"
+    ? {
+        ...resolution,
+        components: resolution.components.map((component) => ({ ...component })),
+      }
+    : { ...resolution };
+
 export interface AdditionalGarmentConstructionReconciliation {
   state: AdditionalGarmentConstructionStateV1;
   unresolvedGarmentKeys: string[];

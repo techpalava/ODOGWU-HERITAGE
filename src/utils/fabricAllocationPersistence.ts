@@ -55,7 +55,9 @@ const normalizeAdditionalDependencyStatus = (
 const normalizeAdditionalEligibilityRule = (
   value: unknown,
 ): AdditionalGarmentEligibilityRule | undefined =>
-  value === "same_type" || value === "demographic_policy"
+  value === "same_type" ||
+  value === "demographic_policy" ||
+  value === "catalog_all"
     ? value
     : undefined;
 
@@ -135,7 +137,8 @@ const normalizeGarmentAssignmentStrict = (
   if (
     sourceRole === "additional" &&
     !mainGarmentType &&
-    eligibilityRule !== "demographic_policy"
+    eligibilityRule !== "demographic_policy" &&
+    eligibilityRule !== "catalog_all"
   ) return null;
 
   if (sourceRole) assignment.sourceRole = sourceRole;

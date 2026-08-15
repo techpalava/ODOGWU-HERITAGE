@@ -30,6 +30,7 @@ import {
 } from "./catalogHelpers";
 import { normalizePersistedGarmentTypeStepSelection } from "./garmentTypeStepState";
 import {
+  cloneGarmentScopedCustomDetailsState,
   createEmptyGarmentScopedCustomDetailsState,
   enumerateGarmentScopedCustomDetails,
   normalizeGarmentScopedCustomDetailsState,
@@ -159,6 +160,33 @@ export interface FutureCustomDetailPhysicalSubjectResolution {
   subjects: FutureCustomDetailPhysicalSubject[];
   diagnostics: GarmentScopedCustomDetailsDomainDiagnostic[];
 }
+
+export interface CompatibleGarmentScopedCopySource {
+  parentGarmentKey: string;
+  role: "main" | "additional";
+}
+
+export const resolveCompatibleGarmentScopedCopySources = (
+  subjects: readonly FutureCustomDetailPhysicalSubject[],
+  garmentType: CanonicalPhysicalGarmentType,
+): CompatibleGarmentScopedCopySource[] => {
+  const seen = new Set<string>();
+  return subjects.flatMap((subject) => {
+    if (
+      subject.parentGarmentType !== garmentType ||
+      seen.has(subject.parentGarmentKey)
+    ) {
+      return [];
+    }
+    seen.add(subject.parentGarmentKey);
+    return [{
+      parentGarmentKey: subject.parentGarmentKey,
+      role: subject.parentGarmentKey.startsWith("base:")
+        ? ("main" as const)
+        : ("additional" as const),
+    }];
+  });
+};
 
 const resolveLockedGroupsForSubject = (
   selection: GarmentTypeStepSelection,
@@ -339,6 +367,144 @@ const optionMatchesSubject = (
     return false;
   }
   return true;
+};
+
+export type CopyGarmentScopedCustomDetailsResult =
+  | {
+      status: "copied";
+      state: GarmentScopedCustomDetailsStateV1;
+      copiedSelectionCount: number;
+    }
+  | {
+      status: "incompatible";
+      state: GarmentScopedCustomDetailsStateV1;
+      code:
+        | "same_occurrence"
+        | "source_components_unresolved"
+        | "target_components_unresolved";
+    };
+
+/**
+ * Copies current, garment-scoped catalogue choices into a new independent
+ * occurrence. Construction and customer-authored text have separate owners.
+ */
+export const copyGarmentScopedCustomDetailsToAdditionalOccurrence = ({
+  state,
+  sourceParentGarmentKey,
+  targetParentGarmentKey,
+  garmentType,
+  catalogInspection,
+}: {
+  state: GarmentScopedCustomDetailsStateV1;
+  sourceParentGarmentKey: string;
+  targetParentGarmentKey: string;
+  garmentType: CanonicalPhysicalGarmentType;
+  catalogInspection: CustomDetailCatalogInspection;
+}): CopyGarmentScopedCustomDetailsResult => {
+  const original = cloneGarmentScopedCustomDetailsState(state);
+  if (sourceParentGarmentKey === targetParentGarmentKey) {
+    return { status: "incompatible", state: original, code: "same_occurrence" };
+  }
+  const source = resolveCustomDetailPhysicalComponents({
+    parentGarmentKey: sourceParentGarmentKey,
+    garmentType,
+  });
+  if (source.status !== "resolved") {
+    return {
+      status: "incompatible",
+      state: original,
+      code: "source_components_unresolved",
+    };
+  }
+  const target = resolveCustomDetailPhysicalComponents({
+    parentGarmentKey: targetParentGarmentKey,
+    garmentType,
+  });
+  if (target.status !== "resolved") {
+    return {
+      status: "incompatible",
+      state: original,
+      code: "target_components_unresolved",
+    };
+  }
+
+  let next = original;
+  let copiedSelectionCount = 0;
+  source.components.forEach((sourceComponent) => {
+    const targetComponent = target.components.find(
+      (candidate) => candidate.componentId === sourceComponent.componentId,
+    );
+    if (!targetComponent) return;
+    const selections = original.selectionsByGarmentKey[sourceComponent.garmentKey];
+    if (!selections) return;
+    Object.entries(selections).forEach(([rawGroup, rawSelection]) => {
+      const selectionGroup = rawGroup as CustomDetailSelectionGroup;
+      if (
+        !rawSelection ||
+        selectionGroup === "personalized_additional" ||
+        isClothingPriceSelectionGroup(selectionGroup)
+      ) {
+        return;
+      }
+      const targetSubject: FutureCustomDetailPhysicalSubject = {
+        garmentKey: targetComponent.garmentKey,
+        parentGarmentKey: targetParentGarmentKey,
+        parentGarmentType: garmentType,
+        garmentType: targetComponent.garmentType,
+        garmentGroups: targetComponent.garmentGroups,
+        demographic: null,
+        order: targetComponent.order,
+        componentOrder: targetComponent.order,
+        lockedSelectionGroups: [],
+      };
+      const currentOptions = getSelectionOptionIds(rawSelection).flatMap(
+        (optionId) => {
+          const entry = catalogInspection.byOptionId.get(optionId);
+          const option = entry?.option;
+          return entry?.lifecycleStatus === "active" &&
+            option?.active &&
+            option.selectionGroup === selectionGroup &&
+            optionMatchesSubject(option, targetSubject)
+            ? [option]
+            : [];
+        },
+      );
+      if (currentOptions.length === 0) return;
+      const allowMultiple = currentOptions.some((option) => option.allowMultiple);
+      const selectedOptions = allowMultiple ? currentOptions : currentOptions.slice(0, 1);
+      next = setGarmentScopedCustomDetailSelection(
+        next,
+        targetComponent.garmentKey,
+        selectionGroup,
+        allowMultiple
+          ? selectedOptions.map((option) => option.id)
+          : selectedOptions[0].id,
+      );
+      selectedOptions.forEach((option) => {
+        next = setGarmentScopedCustomDetailSnapshot(
+          next,
+          targetComponent.garmentKey,
+          selectionGroup,
+          {
+            optionId: option.id,
+            label: option.label,
+            description: option.description,
+            garmentGroup: option.garmentGroup,
+            selectionGroup: option.selectionGroup,
+            priceCents: option.priceCents,
+            ...(option.informational !== undefined
+              ? { informational: option.informational }
+              : {}),
+            ...(option.requiresEvaluation !== undefined
+              ? { requiresEvaluation: option.requiresEvaluation }
+              : {}),
+          },
+        );
+        copiedSelectionCount += 1;
+      });
+    });
+  });
+  return { status: "copied", state: next, copiedSelectionCount };
 };
 
 export const resolveGarmentScopedCustomDetailApplicability = ({
@@ -730,7 +896,6 @@ export interface GarmentScopedCustomDetailsCompletionResult {
 const RECONCILIATION_SELECTION_CODES = new Set<
   GarmentScopedCustomDetailsDomainDiagnosticCode
 >([
-  "garment_removed",
   "group_locked_by_garment_type",
   "group_no_longer_applicable",
   "option_disabled",
