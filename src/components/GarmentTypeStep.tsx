@@ -1,5 +1,6 @@
 import type { ChangeEvent } from "react";
 import { AlertCircle, CheckCircle2, Layers3, UsersRound } from "lucide-react";
+import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type {
   CustomDetailDemographic,
   CustomDetailOption,
@@ -231,6 +232,7 @@ export const GarmentTypeStep = ({
       className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-12"
     >
       <div className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7 lg:col-span-8">
+        <DesignStudioBackButton disabled className="mb-5" />
         <div className="border-b border-heritage-gold/15 pb-5">
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
             Step 1 of 9

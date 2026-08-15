@@ -7,6 +7,29 @@ export const DESIGN_STUDIO_STEPS = DESIGN_STUDIO_NINE_STAGE_FOUNDATION.map(
 export type DesignStudioJourneyStageId =
   (typeof DESIGN_STUDIO_STEPS)[number]["id"];
 
+export type DesignStudioJourneyStepState =
+  | "current"
+  | "completed"
+  | "available"
+  | "locked";
+
+export const getDesignStudioJourneyStepState = ({
+  stepIndex,
+  currentStageIndex,
+  isAvailable,
+}: {
+  stepIndex: number;
+  currentStageIndex: number;
+  isAvailable: boolean;
+}): DesignStudioJourneyStepState =>
+  stepIndex === currentStageIndex
+    ? "current"
+    : stepIndex < currentStageIndex && isAvailable
+      ? "completed"
+      : isAvailable
+        ? "available"
+        : "locked";
+
 interface DesignStudioJourneyStepperProps {
   currentStageId: DesignStudioJourneyStageId;
   canEnterFabric: boolean;
@@ -58,7 +81,6 @@ export const DesignStudioJourneyStepper = ({
         const currentStageIndex = DESIGN_STUDIO_STEPS.findIndex(
           (candidate) => candidate.id === currentStageId,
         );
-        const isCompleted = index < currentStageIndex;
         const isAvailable =
           step.id === "garment_type" ||
           (step.id === "fabric" && canEnterFabric) ||
@@ -87,13 +109,12 @@ export const DesignStudioJourneyStepper = ({
                         : step.id === "shipping"
                           ? onSelectShipping
                           : onSelectPayment;
-        const state = isCurrent
-          ? "current"
-          : isCompleted
-            ? "completed"
-            : isAvailable
-              ? "available"
-              : "locked";
+        const state = getDesignStudioJourneyStepState({
+          stepIndex: index,
+          currentStageIndex,
+          isAvailable,
+        });
+        const isCompleted = state === "completed";
 
         return (
           <li key={step.id} className="min-w-0">
@@ -108,9 +129,11 @@ export const DesignStudioJourneyStepper = ({
               className={`flex min-h-11 w-full min-w-0 flex-col items-start justify-center rounded-xl px-2 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
                 isCurrent
                   ? "cursor-default bg-heritage-gold/10 text-heritage-gold ring-1 ring-heritage-gold/35"
-                  : isCompleted || isAvailable
-                    ? "cursor-pointer text-heritage-green hover:bg-heritage-cream/55 hover:text-heritage-gold"
-                    : "cursor-not-allowed text-heritage-ink/35"
+                  : isCompleted
+                    ? "cursor-pointer bg-heritage-green/10 text-heritage-green ring-1 ring-heritage-green/20 hover:bg-heritage-green hover:text-white"
+                    : isAvailable
+                      ? "cursor-pointer border border-heritage-green/25 bg-white text-heritage-ink hover:border-heritage-gold hover:bg-heritage-cream/55"
+                      : "cursor-not-allowed bg-heritage-cream/35 text-heritage-ink/35"
               } disabled:cursor-not-allowed`}
             >
               <span

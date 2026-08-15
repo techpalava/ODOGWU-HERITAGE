@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION,
@@ -7,6 +7,7 @@ import {
   NECK_DESIGN_SUBCATEGORY_ORDER,
 } from "../config/GarmentDetailsConfig";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type {
   CanonicalPhysicalGarmentType,
   CustomDetailOption,
@@ -468,7 +469,11 @@ export const DormantFutureCustomDetailsStep = ({
   return (
     <section aria-labelledby="future-custom-details-title" data-stage-id="custom_details" data-stage-complete={canContinue} className="space-y-6 font-sans">
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
-        <button type="button" onClick={onBack} className="mb-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-heritage-green/20 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><ArrowLeft aria-hidden="true" size={15} /> Back to Design Style</button>
+        <DesignStudioBackButton
+          destination="Design Style"
+          onClick={onBack}
+          className="mb-5"
+        />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">Step 4 of 9</p>
         <h2 id="future-custom-details-title" className="mt-2 font-serif text-2xl font-bold text-heritage-green sm:text-3xl">Custom Details</h2>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">Review the complete construction catalogue. Base garment construction was selected in Garment Type and is already included in your price. Only garments marked as included or added contribute to your order and price.</p>
@@ -560,7 +565,7 @@ export const DormantFutureCustomDetailsStep = ({
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <button type="button" onClick={onBack} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/25 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><ArrowLeft aria-hidden="true" size={15} /> Back to Design Style</button>
+        <DesignStudioBackButton destination="Design Style" onClick={onBack} />
         <button type="button" onClick={onContinue} disabled={!canContinue} aria-label={canContinue ? "Continue to AI Try-on" : "Continue to AI Try-on is locked until Custom Details are complete"} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Continue to AI Try-on <ArrowRight aria-hidden="true" size={14} /></button>
       </div>
     </section>

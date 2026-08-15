@@ -1,4 +1,5 @@
-import { ArrowLeft, Check, LockKeyhole } from "lucide-react";
+import { Check, LockKeyhole } from "lucide-react";
+import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type { GarmentTypeStepSelection, StyleCategory } from "../types";
 import {
   getFutureDesignStyleCompositionLabel,
@@ -52,14 +53,11 @@ export const DormantFutureDesignStyleStep = ({
       className="space-y-6 font-sans"
     >
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
-        <button
-          type="button"
+        <DesignStudioBackButton
+          destination="Fabric"
           onClick={onBack}
-          className="mb-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-heritage-green/20 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-        >
-          <ArrowLeft aria-hidden="true" size={15} />
-          Back to Fabric
-        </button>
+          className="mb-5"
+        />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
           Step 3 of 9
         </p>
@@ -248,14 +246,7 @@ export const DormantFutureDesignStyleStep = ({
       </aside>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/25 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-        >
-          <ArrowLeft aria-hidden="true" size={15} />
-          Back to Fabric
-        </button>
+        <DesignStudioBackButton destination="Fabric" onClick={onBack} />
         <button
           type="button"
           onClick={onContinue}

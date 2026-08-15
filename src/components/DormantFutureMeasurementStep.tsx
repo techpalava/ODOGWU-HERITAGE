@@ -1,4 +1,5 @@
-import { ArrowLeft, LockKeyhole, Ruler, ShieldAlert } from "lucide-react";
+import { LockKeyhole, Ruler, ShieldAlert } from "lucide-react";
+import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type {
   FutureMeasurementStateV1,
   MeasurementRiskRoute,
@@ -260,14 +261,11 @@ export const DormantFutureMeasurementStep = ({
       className="space-y-5 font-sans"
     >
       <header className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
-        <button
-          type="button"
+        <DesignStudioBackButton
+          destination="AI Try-on"
           onClick={onBack}
-          className="mb-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-heritage-green/20 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-        >
-          <ArrowLeft aria-hidden="true" size={15} />
-          Back to AI Try-on
-        </button>
+          className="mb-5"
+        />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
           Step 6 of 9
         </p>
@@ -491,14 +489,11 @@ export const DormantFutureMeasurementStep = ({
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="button"
+          <DesignStudioBackButton
+            destination="AI Try-on"
             onClick={onBack}
-            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-heritage-green/25 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
-          >
-            <ArrowLeft aria-hidden="true" size={14} />
-            Back to AI Try-on
-          </button>
+            className="w-full sm:w-auto"
+          />
           <div className="min-w-0 sm:text-right">
             <p id="measurement-summary-status-reason" className="mb-2 text-xs leading-relaxed text-heritage-ink/60">
               {canContinueToSummary

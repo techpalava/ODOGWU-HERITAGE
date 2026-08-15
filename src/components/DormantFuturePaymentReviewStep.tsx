@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
   LockKeyhole,
   Pencil,
@@ -9,6 +8,7 @@ import {
   Sparkles,
   Truck,
 } from "lucide-react";
+import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type React from "react";
 import type { DesignStudioStageId } from "../types";
 import {
@@ -351,14 +351,11 @@ export const DormantFuturePaymentReviewStep = ({
       className="mx-auto max-w-6xl space-y-5 font-sans"
     >
       <header className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
-        <button
-          type="button"
+        <DesignStudioBackButton
+          destination="Shipping"
           onClick={onBack}
-          className="mb-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-heritage-green/20 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-        >
-          <ArrowLeft aria-hidden="true" size={15} />
-          Back to Shipping
-        </button>
+          className="mb-5"
+        />
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
             Step 9 of 9
@@ -732,14 +729,11 @@ export const DormantFuturePaymentReviewStep = ({
       </section>
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
-        <button
-          type="button"
+        <DesignStudioBackButton
+          destination="Shipping"
           onClick={onBack}
-          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-heritage-green/25 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
-        >
-          <ArrowLeft aria-hidden="true" size={14} />
-          Back to Shipping
-        </button>
+          className="w-full sm:w-auto"
+        />
       </footer>
     </main>
   );
