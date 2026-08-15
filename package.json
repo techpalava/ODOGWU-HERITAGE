@@ -47,6 +47,7 @@
     "test:staff-preview-entitlement": "tsx test_staff_preview_entitlement.ts",
     "test:staff-preview-entitlement-cli": "tsx test_staff_preview_entitlement_cli.ts",
     "test:staff-preview-client-gate": "tsx test_staff_preview_client_gate.ts",
+    "test:staff-preview-client-gate-react": "tsx test_staff_preview_client_gate_react.tsx",
     "staff-preview:entitlement": "tsx src/scripts/manageStaffPreviewEntitlement.ts"
   },
   "dependencies": {
@@ -75,10 +76,12 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@types/react-test-renderer": "19.1.0",
     "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
     "firebase-tools": "15.27.0",
+    "react-test-renderer": "19.2.7",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

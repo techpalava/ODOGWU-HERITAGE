@@ -22,6 +22,13 @@ before evaluating another identity. It does not persist authorization. Future
 draft loading is allowed by the domain contract only while the state is exactly
 `authorized`.
 
+Each published result is bound to the exact feature, Firebase identity,
+application-customer identity, canonical-email, and controller context that
+produced it. A render with a different context synchronously falls back to a
+non-authorized state before asynchronous reevaluation begins.
+
 The gate protects entry to the official preview flow. Firebase rules and server
 authorization remain responsible for protecting privileged records and
-operations. Grants and revocations remain offline Admin operations.
+operations. Client-side gating cannot prevent a determined user from modifying
+code in their own browser. Grants and revocations remain offline Admin
+operations.

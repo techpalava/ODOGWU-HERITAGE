@@ -411,7 +411,7 @@ assert.doesNotMatch(
 );
 assert.match(serviceSource, /getIdTokenResult\(true\)/);
 assert.match(serviceSource, /doc\(db, STAFF_PREVIEW_ENTITLEMENT_COLLECTION, uid\)/);
-assert.match(hookSource, /controller\.dispose\(\)/);
+assert.match(hookSource, /controller\.cancel\(\)/);
 assert.doesNotMatch(appSource, /future_nine_stage/);
 assert.doesNotMatch(appSource, /useStaffPreviewClientGate/);
 
