@@ -132,6 +132,7 @@ export const DormantFutureFabricStep = ({
       completion.blockers.map((blocker) => blockerMessages[blocker.code]),
     ),
   );
+  const shouldDockContinueAction = completion.isComplete && !isCatalogueOpen;
 
   const closeCatalogue = () => {
     setIsCatalogueOpen(false);
@@ -201,7 +202,9 @@ export const DormantFutureFabricStep = ({
   return (
     <section
       aria-labelledby="future-fabric-step-title"
-      className="space-y-6 font-sans"
+      className={`space-y-6 font-sans ${
+        shouldDockContinueAction ? "pb-28 sm:pb-32" : ""
+      }`}
       data-stage-id="fabric"
       data-stage-complete={completion.isComplete}
     >
@@ -472,14 +475,34 @@ export const DormantFutureFabricStep = ({
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <DesignStudioBackButton destination="Garment Type" onClick={onBack} />
-        <button
-          type="button"
-          onClick={onContinue}
-          disabled={!completion.isComplete}
-          className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+        <div
+          data-testid="future-fabric-continue-action"
+          data-docked={shouldDockContinueAction}
+          className={
+            shouldDockContinueAction
+              ? "fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3"
+              : ""
+          }
         >
-          Continue to Design Style
-        </button>
+          <div
+            className={
+              shouldDockContinueAction
+                ? "mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm sm:px-4 sm:py-3.5"
+                : ""
+            }
+          >
+            <button
+              type="button"
+              onClick={onContinue}
+              disabled={!completion.isComplete}
+              className={`inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 ${
+                shouldDockContinueAction ? "w-full sm:w-auto" : ""
+              }`}
+            >
+              Continue to Design Style
+            </button>
+          </div>
+        </div>
       </div>
 
       {isCatalogueOpen &&

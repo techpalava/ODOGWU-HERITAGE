@@ -108,6 +108,14 @@ export const DormantFutureDesignStyleStep = ({
     uploadedDesign.isUploading ||
     uploadedDesign.isReplacing ||
     uploadedDesign.isDeleting;
+  const canContinueToCustomDetails =
+    !uploadBusy &&
+    !uploadedDesign.error &&
+    (uploadedSourceSelected
+      ? uploadReadiness.isReady &&
+        uploadedDesign.isConfirmed &&
+        uploadedDesign.isPricingActive
+      : selection.status === "selected");
   const uploadStatus = uploadedDesign.isUploading
     ? "Uploading"
     : uploadedDesign.isReplacing
@@ -139,7 +147,9 @@ export const DormantFutureDesignStyleStep = ({
       aria-labelledby="future-design-style-title"
       data-stage-id="design_style"
       data-stage-complete={selection.status === "selected"}
-      className="space-y-6 font-sans"
+      className={`space-y-6 font-sans ${
+        canContinueToCustomDetails ? "pb-28 sm:pb-32" : ""
+      }`}
     >
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
         <DesignStudioBackButton
@@ -592,34 +602,54 @@ export const DormantFutureDesignStyleStep = ({
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <DesignStudioBackButton destination="Fabric" onClick={onBack} />
-        <button
-          type="button"
-          onClick={
-            uploadedSourceSelected &&
-            (!uploadedDesign.isConfirmed || !uploadedDesign.isPricingActive)
-              ? onContinueUploadedDesign
-              : onContinue
+        <div
+          data-testid="future-design-style-continue-action"
+          data-docked={canContinueToCustomDetails}
+          className={
+            canContinueToCustomDetails
+              ? "fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3"
+              : ""
           }
-          disabled={
-            uploadBusy ||
-            (uploadedSourceSelected
-              ? !uploadReadiness.isReady
-              : selection.status !== "selected")
-          }
-          aria-label={
-            uploadedSourceSelected &&
-            (!uploadedDesign.isConfirmed || !uploadedDesign.isPricingActive)
-              ? "Continue with Uploaded Design to Fabric"
-              : "Continue to Custom Details"
-          }
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35"
         >
-          <LockKeyhole aria-hidden="true" size={14} />
-          {uploadedSourceSelected &&
-          (!uploadedDesign.isConfirmed || !uploadedDesign.isPricingActive)
-            ? "Continue with Uploaded Design"
-            : "Continue to Custom Details"}
-        </button>
+          <div
+            className={
+              canContinueToCustomDetails
+                ? "mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm sm:px-4 sm:py-3.5"
+                : ""
+            }
+          >
+            <button
+              type="button"
+              onClick={
+                uploadedSourceSelected &&
+                (!uploadedDesign.isConfirmed || !uploadedDesign.isPricingActive)
+                  ? onContinueUploadedDesign
+                  : onContinue
+              }
+              disabled={
+                uploadBusy ||
+                (uploadedSourceSelected
+                  ? !uploadReadiness.isReady
+                  : selection.status !== "selected")
+              }
+              aria-label={
+                uploadedSourceSelected &&
+                (!uploadedDesign.isConfirmed || !uploadedDesign.isPricingActive)
+                  ? "Continue with Uploaded Design to Fabric"
+                  : "Continue to Custom Details"
+              }
+              className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 ${
+                canContinueToCustomDetails ? "w-full sm:w-auto" : ""
+              }`}
+            >
+              <LockKeyhole aria-hidden="true" size={14} />
+              {uploadedSourceSelected &&
+              (!uploadedDesign.isConfirmed || !uploadedDesign.isPricingActive)
+                ? "Continue with Uploaded Design"
+                : "Continue to Custom Details"}
+            </button>
+          </div>
+        </div>
       </div>
     </section>
   );
