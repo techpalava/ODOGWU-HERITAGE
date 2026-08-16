@@ -120,6 +120,10 @@ assert.equal(
 const freshConfirm = findButton(renderer.root, "Select Fabric");
 assert.ok(freshConfirm);
 assert.equal(freshConfirm.props.disabled, true);
+assert.match(
+  textContent(renderer.root),
+  /Choose a fabric to begin\. Your selection is not assigned until you confirm below\./,
+);
 
 await act(async () => {
   renderer.root
@@ -131,6 +135,10 @@ assert.match(
   /Choosing fabric for: Standard Shirt/,
   "Add Fabric must activate the clicked garment target.",
 );
+assert.match(
+  textContent(renderer.root),
+  /Choose a fabric for Standard Shirt, then confirm below\./,
+);
 
 const firstCard = renderer.root.findAllByProps({ "data-fabric-card": "true" })[0];
 await act(async () => firstCard.props.onClick());
@@ -138,6 +146,10 @@ assert.equal(
   renderer.root.findAllByProps({ "data-fabric-card": "true" })[0].props[
     "aria-pressed"
   ], true);
+assert.match(
+  textContent(renderer.root),
+  /Selected temporarily\. Select Fabric to assign it to Standard Shirt\./,
+);
 assert.equal(assigned.length, 0, "Selecting a card must not assign Fabric yet.");
 assert.equal(findButton(renderer.root, "Select Fabric")?.props.disabled, false);
 
@@ -174,6 +186,7 @@ await act(async () => {
     ),
   );
 });
+assert.match(textContent(renderer.root), /Assigned/);
 await act(async () => {
   renderer.root
     .findByProps({ "aria-label": "Change fabric for Standard Shirt" })
