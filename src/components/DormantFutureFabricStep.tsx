@@ -197,6 +197,55 @@ export const DormantFutureFabricStep = ({
       return;
     }
     setSelectedCatalogueFabric(fabric);
+    setIsCatalogueOpen(true);
+  };
+
+  const renderCatalogueCard = (fabric: Fabric) => {
+    const availabilityMessage = getFabricAvailabilityMessage(fabric);
+    return (
+      <article
+        key={fabric.code}
+        className="flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm"
+      >
+        <div className="aspect-[4/3] overflow-hidden bg-heritage-cream/40">
+          {fabric.image ? (
+            <img
+              src={fabric.image}
+              alt={`${fabric.name} fabric swatch`}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div
+              className="h-full w-full"
+              style={{ backgroundColor: fabric.colorHex }}
+              aria-label={`${fabric.color} fabric color`}
+            />
+          )}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col p-4">
+          <h3 className="break-words font-serif text-base font-bold text-heritage-green">
+            {fabric.name}
+          </h3>
+          <p className="mt-1 break-words font-mono text-[10px] text-heritage-ink/55">
+            {fabric.code}
+          </p>
+          {availabilityMessage && (
+            <p className="mt-2 text-xs font-semibold text-red-700">
+              {availabilityMessage}
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={Boolean(availabilityMessage)}
+            onClick={() => handleFabricSelection(fabric)}
+            className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {!availabilityMessage && <Check aria-hidden="true" size={14} />}
+            {availabilityMessage ? "Unavailable" : "Select"}
+          </button>
+        </div>
+      </article>
+    );
   };
 
   return (
@@ -315,6 +364,20 @@ export const DormantFutureFabricStep = ({
             Select Fabric
           </button>
         )}
+
+        <div className="mt-8 border-t border-heritage-gold/20 pt-6">
+          <div className="mb-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
+              Fabric Catalogue
+            </p>
+            <h3 className="mt-1 font-serif text-xl font-bold text-heritage-green">
+              Available Fabrics
+            </h3>
+          </div>
+          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {visibleFabrics.map((fabric) => renderCatalogueCard(fabric))}
+          </div>
+        </div>
       </div>
 
       {uniqueBlockers.length > 0 && (
@@ -579,53 +642,7 @@ export const DormantFutureFabricStep = ({
               </div>
             ) : (
               <div className="grid min-w-0 grid-cols-1 gap-4 py-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {visibleFabrics.map((fabric) => {
-                  const availabilityMessage = getFabricAvailabilityMessage(fabric);
-                  return (
-                    <article
-                      key={fabric.code}
-                      className="flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm"
-                    >
-                      <div className="aspect-[4/3] overflow-hidden bg-heritage-cream/40">
-                        {fabric.image ? (
-                          <img
-                            src={fabric.image}
-                            alt={`${fabric.name} fabric swatch`}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div
-                            className="h-full w-full"
-                            style={{ backgroundColor: fabric.colorHex }}
-                            aria-label={`${fabric.color} fabric color`}
-                          />
-                        )}
-                      </div>
-                      <div className="flex min-w-0 flex-1 flex-col p-4">
-                        <h3 className="break-words font-serif text-base font-bold text-heritage-green">
-                          {fabric.name}
-                        </h3>
-                        <p className="mt-1 break-words font-mono text-[10px] text-heritage-ink/55">
-                          {fabric.code}
-                        </p>
-                        {availabilityMessage && (
-                          <p className="mt-2 text-xs font-semibold text-red-700">
-                            {availabilityMessage}
-                          </p>
-                        )}
-                        <button
-                          type="button"
-                          disabled={Boolean(availabilityMessage)}
-                          onClick={() => handleFabricSelection(fabric)}
-                          className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
-                        >
-                          {!availabilityMessage && <Check aria-hidden="true" size={14} />}
-                          {availabilityMessage ? "Unavailable" : "Select"}
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
+                {visibleFabrics.map((fabric) => renderCatalogueCard(fabric))}
               </div>
             )}
           </div>
