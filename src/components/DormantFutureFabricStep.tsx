@@ -96,6 +96,11 @@ export const DormantFutureFabricStep = ({
   const catalogueDialogRef = useRef<HTMLDivElement>(null);
   const catalogueSectionRef = useRef<HTMLDivElement>(null);
   const catalogueTriggerRef = useRef<HTMLElement | null>(null);
+  const catalogueFocusGarmentKeyRef = useRef<string | null>(null);
+  const catalogueFocusRequestRef = useRef(0);
+  const garmentActionRefs = useRef(new Map<string, HTMLButtonElement>());
+  const selectFabricActionRef = useRef<HTMLButtonElement>(null);
+  const catalogueHeadingRef = useRef<HTMLHeadingElement>(null);
 
   const visibleFabrics = fabrics.filter(
     (fabric) => fabric.stockStatus !== "HIDDEN",
@@ -153,13 +158,38 @@ export const DormantFutureFabricStep = ({
   );
   const shouldDockContinueAction = completion.isComplete && !isCatalogueOpen;
 
+  const restoreCatalogueFocus = () => {
+    const request = ++catalogueFocusRequestRef.current;
+    if (typeof window === "undefined") return;
+
+    window.requestAnimationFrame(() => {
+      if (request !== catalogueFocusRequestRef.current) return;
+
+      const candidates = [
+        catalogueTriggerRef.current,
+        catalogueFocusGarmentKeyRef.current
+          ? garmentActionRefs.current.get(catalogueFocusGarmentKeyRef.current)
+          : null,
+        selectFabricActionRef.current,
+        catalogueHeadingRef.current,
+        catalogueSectionRef.current,
+      ];
+      const focusTarget = candidates.find(
+        (element): element is HTMLElement =>
+          Boolean(element?.isConnected && !element.hasAttribute("disabled")),
+      );
+
+      focusTarget?.focus({ preventScroll: true });
+      catalogueTriggerRef.current = null;
+      catalogueFocusGarmentKeyRef.current = null;
+    });
+  };
+
   const closeCatalogue = () => {
     setIsCatalogueOpen(false);
     setCatalogueTargetGarmentKey(null);
     setSelectedCatalogueFabric(null);
-    if (typeof window !== "undefined") {
-      window.requestAnimationFrame(() => catalogueTriggerRef.current?.focus());
-    }
+    restoreCatalogueFocus();
   };
 
   const openCatalogue = (
@@ -168,6 +198,8 @@ export const DormantFutureFabricStep = ({
     openDialog = false,
   ) => {
     catalogueTriggerRef.current = trigger;
+    catalogueFocusGarmentKeyRef.current = garmentKey;
+    catalogueFocusRequestRef.current += 1;
     setCatalogueTargetGarmentKey(garmentKey);
     setSelectedCatalogueFabric(null);
     setIsCatalogueOpen(openDialog);
@@ -237,15 +269,16 @@ export const DormantFutureFabricStep = ({
       assignSelectedFabric(selectedCatalogueFabric, catalogueTargetGarmentKey);
       return;
     }
+    catalogueTriggerRef.current = selectFabricActionRef.current;
+    catalogueFocusGarmentKeyRef.current = null;
+    catalogueFocusRequestRef.current += 1;
     setIsCatalogueOpen(true);
   };
 
   const clearInlineCatalogueSelection = () => {
     setCatalogueTargetGarmentKey(null);
     setSelectedCatalogueFabric(null);
-    if (typeof window !== "undefined") {
-      window.requestAnimationFrame(() => catalogueTriggerRef.current?.focus());
-    }
+    restoreCatalogueFocus();
   };
 
   const renderCatalogueCard = (fabric: Fabric) => {
@@ -404,6 +437,13 @@ export const DormantFutureFabricStep = ({
                 </div>
                 <button
                   type="button"
+                  ref={(element) => {
+                    if (element) {
+                      garmentActionRefs.current.set(assignment.garmentKey, element);
+                    } else {
+                      garmentActionRefs.current.delete(assignment.garmentKey);
+                    }
+                  }}
                   onClick={(event) =>
                     openCatalogue(event.currentTarget, assignment.garmentKey)
                   }
@@ -430,7 +470,9 @@ export const DormantFutureFabricStep = ({
               Fabric Catalogue
             </p>
             <h3
+              ref={catalogueHeadingRef}
               aria-live="polite"
+              tabIndex={-1}
               className="mt-1 font-serif text-xl font-bold text-heritage-green"
             >
               {activeCatalogueTarget
@@ -463,6 +505,7 @@ export const DormantFutureFabricStep = ({
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
             <button
               type="button"
+              ref={selectFabricActionRef}
               onClick={confirmSelectedFabric}
               aria-describedby="future-fabric-catalogue-help"
               disabled={

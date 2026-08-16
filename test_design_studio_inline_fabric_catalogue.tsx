@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
+import type { ReactElement } from "react";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import { DormantFutureFabricStep } from "./src/components/DormantFutureFabricStep";
@@ -321,5 +322,169 @@ assert.doesNotMatch(
   /Your fabric can carry one more garment\. \(Optional\)/,
   "An offer for a missing catalogue fabric must remain hidden.",
 );
+
+type FocusMock = {
+  label?: string;
+  isConnected: boolean;
+  focus: (options?: FocusOptions) => void;
+  hasAttribute: (name: string) => boolean;
+  querySelector: () => FocusMock | null;
+  scrollIntoView: () => void;
+};
+
+const runtime = globalThis as unknown as {
+  document?: unknown;
+  window?: unknown;
+};
+const previousDocument = runtime.document;
+const previousWindow = runtime.window;
+let activeFocusMock: FocusMock | null = null;
+const focusMocks = new Map<string, FocusMock>();
+const mockDocument = {
+  body: {} as FocusMock,
+  get activeElement() {
+    return activeFocusMock;
+  },
+};
+const mockWindow = {
+  requestAnimationFrame: (callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  },
+};
+const createFocusMock = (element: ReactElement): FocusMock => {
+  const props = element.props as Record<string, unknown>;
+  const mock: FocusMock = {
+    label: element.type === "h3" ? "catalogue-heading" : undefined,
+    isConnected: true,
+    focus: () => {
+      activeFocusMock = mock;
+    },
+    hasAttribute: (name) => name === "disabled" && Boolean(props.disabled),
+    querySelector: () => null,
+    scrollIntoView: () => undefined,
+  };
+  const ariaLabel = props["aria-label"];
+  if (typeof ariaLabel === "string") {
+    mock.label = ariaLabel;
+    focusMocks.set(ariaLabel, mock);
+  }
+  return mock;
+};
+
+runtime.document = mockDocument;
+runtime.window = mockWindow;
+try {
+  let focusRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    focusRenderer = create(
+      renderStep(FabricAllocationStateEngine.initialize()),
+      { createNodeMock: createFocusMock },
+    );
+  });
+  const addShirt = findButton(focusRenderer.root, "Add Fabric");
+  assert.ok(addShirt);
+  const addShirtFocusTarget = focusMocks.get("Add fabric for Standard Shirt");
+  await act(async () =>
+    addShirt.props.onClick({
+      currentTarget: addShirtFocusTarget,
+    }),
+  );
+  await act(async () => findButton(focusRenderer.root, "Cancel")!.props.onClick());
+  assert.equal(
+    activeFocusMock?.label,
+    "Add fabric for Standard Shirt",
+    "Add Fabric cancellation must restore focus to the mounted garment action.",
+  );
+
+  const assignedState = assignFutureFabricToGarment({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  }).state;
+  await act(async () => {
+    focusRenderer = create(
+      renderStep(assignedState),
+      { createNodeMock: createFocusMock },
+    );
+  });
+  const changeShirt = findButton(focusRenderer.root, "Change Fabric");
+  assert.ok(changeShirt);
+  const changeShirtFocusTarget = focusMocks.get("Change fabric for Standard Shirt");
+  await act(async () =>
+    changeShirt.props.onClick({
+      currentTarget: changeShirtFocusTarget,
+    }),
+  );
+  await act(async () => findButton(focusRenderer.root, "Cancel")!.props.onClick());
+  assert.equal(
+    activeFocusMock?.label,
+    "Change fabric for Standard Shirt",
+    "Change Fabric cancellation must restore focus to the mounted garment action.",
+  );
+
+  let capacityFocusRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    capacityFocusRenderer = create(
+      renderStep(sharedState, () => undefined, threeGarmentSelection),
+      { createNodeMock: createFocusMock },
+    );
+  });
+  const differentFabric = findButton(
+    capacityFocusRenderer.root,
+    "Select Different Fabric",
+  );
+  assert.ok(differentFabric);
+  const detachedCapacityTrigger = {
+    ...focusMocks.get("Select Different Fabric"),
+    isConnected: true,
+  } as FocusMock;
+  await act(async () =>
+    differentFabric.props.onClick({ currentTarget: detachedCapacityTrigger }),
+  );
+  detachedCapacityTrigger.isConnected = false;
+  await act(async () =>
+    findButton(capacityFocusRenderer.root, "Cancel")!.props.onClick(),
+  );
+  assert.equal(
+    activeFocusMock?.label,
+    "Add fabric for Trouser",
+    "Capacity cancellation must skip the detached offer trigger and restore focus to the target garment action.",
+  );
+  assert.notEqual(activeFocusMock, mockDocument.body);
+
+  let removedTargetRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    removedTargetRenderer = create(
+      renderStep(sharedState, () => undefined, threeGarmentSelection),
+      { createNodeMock: createFocusMock },
+    );
+  });
+  const addTrouser = findButton(removedTargetRenderer.root, "Add Fabric");
+  assert.ok(addTrouser);
+  const removedTargetFocus = focusMocks.get("Add fabric for Trouser");
+  await act(async () =>
+    addTrouser.props.onClick({ currentTarget: removedTargetFocus }),
+  );
+  const staleCancel = findButton(removedTargetRenderer.root, "Cancel");
+  assert.ok(staleCancel);
+  const staleCancelOnClick = staleCancel.props.onClick;
+  await act(async () =>
+    removedTargetRenderer.update(renderStep(sharedState)),
+  );
+  if (removedTargetFocus) removedTargetFocus.isConnected = false;
+  await act(async () => staleCancelOnClick());
+  assert.equal(
+    activeFocusMock?.label,
+    "catalogue-heading",
+    "When the target garment is removed, cancellation must use the mounted catalogue heading fallback.",
+  );
+} finally {
+  if (previousDocument === undefined) delete runtime.document;
+  else runtime.document = previousDocument;
+  if (previousWindow === undefined) delete runtime.window;
+  else runtime.window = previousWindow;
+}
 
 console.log("PASS: inline Fabric catalogue target and confirmation flow");
