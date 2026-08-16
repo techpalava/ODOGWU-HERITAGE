@@ -125,6 +125,12 @@ export const DormantFutureFabricStep = ({
     garmentTypeSelection,
     fabricAllocationState,
   });
+  const capacityOfferFabric = capacityOffer
+    ? fabrics.find((fabric) => fabric.code === capacityOffer.fabricCode)
+    : null;
+  const capacityOfferIsValid = Boolean(
+    capacityOfferFabric && !getFabricAvailabilityMessage(capacityOfferFabric),
+  );
   const capacityOfferKey = capacityOffer
     ? `${capacityOffer.allocationId}:${capacityOffer.target.assignment.garmentKey}`
     : null;
@@ -560,7 +566,9 @@ export const DormantFutureFabricStep = ({
         )}
       </aside>
 
-      {capacityOffer && dismissedCapacityOffer !== capacityOfferKey && (
+      {capacityOffer &&
+        capacityOfferIsValid &&
+        dismissedCapacityOffer !== capacityOfferKey && (
         <div
           role="status"
           aria-live="polite"
@@ -598,12 +606,14 @@ export const DormantFutureFabricStep = ({
             </button>
             <button
               type="button"
-              onClick={(event) =>
+              onClick={(event) => {
+                setDismissedCapacityOffer(capacityOfferKey);
+                onChooseAnotherFabric();
                 openCatalogue(
                   event.currentTarget,
                   capacityOffer.target.assignment.garmentKey,
-                )
-              }
+                );
+              }}
               className="min-h-11 rounded-xl border border-heritage-green/30 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
             >
               Select Different Fabric

@@ -3,7 +3,7 @@ import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import { DormantFutureFabricStep } from "./src/components/DormantFutureFabricStep";
-import type { Fabric } from "./src/types";
+import type { Fabric, GarmentTypeStepSelection } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import {
@@ -17,6 +17,11 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const garmentTypeSelection = reconcileGarmentTypeStepSelection({
   selectedGarmentTypes: ["shirt"],
+  selectedDemographics: ["male"],
+  normalizedCustomDetailCatalog: catalog,
+}).selection;
+const threeGarmentSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["shirt", "trouser", "skirt"],
   selectedDemographics: ["male"],
   normalizedCustomDetailCatalog: catalog,
 }).selection;
@@ -62,31 +67,34 @@ const findButton = (root: ReactTestInstance, text: string) =>
 const renderStep = (
   state = FabricAllocationStateEngine.initialize(),
   onAssign: (fabric: Fabric, garmentKey: string) => void = () => undefined,
+  selection: GarmentTypeStepSelection = garmentTypeSelection,
+  onUseSameFabricForGarment: (garmentKey: string) => void = () => undefined,
+  onChooseAnotherFabric: () => void = () => undefined,
 ) => {
   const completion = getFutureFabricStageCompletion({
-    garmentTypeSelection,
+    garmentTypeSelection: selection,
     fabricAllocationState: state,
     fabrics,
   });
   const planning = getFutureGarmentFabricPlanning({
-    garmentTypeSelection,
+    garmentTypeSelection: selection,
     fabricAllocationState: state,
   });
   return (
     <DormantFutureFabricStep
       fabrics={fabrics}
-      garmentTypeSelection={garmentTypeSelection}
+      garmentTypeSelection={selection}
       fabricAllocationState={state}
       completion={completion}
       requiredFabricQuantity={planning.requiredFabricQuantity}
       selectedFabricQuantity={planning.selectedFabricQuantity}
       constructionPrice={65}
       onAssignFabricToGarment={onAssign}
-      onUseSameFabricForGarment={() => undefined}
+      onUseSameFabricForGarment={onUseSameFabricForGarment}
       onBack={() => undefined}
       onContinue={() => undefined}
       onUseSameFabric={() => undefined}
-      onChooseAnotherFabric={() => undefined}
+      onChooseAnotherFabric={onChooseAnotherFabric}
       onCancelPendingFabric={() => undefined}
     />
   );
@@ -201,5 +209,104 @@ assert.equal(
 assert.equal(assigned.length, 0, "The chooser path must not guess or assign a garment.");
 await act(async () => findButton(renderer.root, "Cancel")!.props.onClick());
 assert.equal(assigned.length, 0, "Cancelling the chooser must leave allocation state unchanged.");
+
+let sharedState = FabricAllocationStateEngine.initialize();
+sharedState = assignFutureFabricToGarment({
+  state: sharedState,
+  garmentTypeSelection: threeGarmentSelection,
+  garmentKey: "base:shirt",
+  fabricCode: "INLINE-A",
+}).state;
+let useSameTarget = "";
+let chooseAnotherCalls = 0;
+let capacityRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  capacityRenderer = create(
+    renderStep(
+      sharedState,
+      () => undefined,
+      threeGarmentSelection,
+      (garmentKey) => {
+        useSameTarget = garmentKey;
+      },
+      () => {
+        chooseAnotherCalls += 1;
+      },
+    ),
+  );
+});
+assert.equal(
+  capacityRenderer.root.findAllByProps({ role: "status" }).length,
+  1,
+  "A confirmed eligible assignment must show the capacity offer.",
+);
+assert.match(
+  textContent(capacityRenderer.root),
+  /Your fabric can carry one more garment\. \(Optional\)/,
+);
+assert.match(textContent(capacityRenderer.root), /Next: Trouser/);
+await act(async () =>
+  findButton(capacityRenderer.root, "Use Same Fabric")!.props.onClick(),
+);
+assert.equal(useSameTarget, "base:trouser");
+
+let capacityRenderer2!: ReturnType<typeof create>;
+await act(async () => {
+  capacityRenderer2 = create(
+    renderStep(
+      sharedState,
+      () => undefined,
+      threeGarmentSelection,
+      () => undefined,
+      () => {
+        chooseAnotherCalls += 1;
+      },
+    ),
+  );
+});
+await act(async () =>
+  findButton(capacityRenderer2.root, "Select Different Fabric")!.props.onClick({
+    currentTarget: {},
+  }),
+);
+assert.equal(chooseAnotherCalls, 1);
+assert.match(
+  textContent(capacityRenderer2.root),
+  /Choosing fabric for: Trouser/,
+);
+assert.doesNotMatch(
+  textContent(capacityRenderer2.root),
+  /Your fabric can carry one more garment\. \(Optional\)/,
+  "Selecting another Fabric must dismiss the exact capacity offer.",
+);
+assert.equal(
+  capacityRenderer2.root.findByProps({
+    "data-testid": "future-fabric-inline-catalogue",
+  }).props["data-catalogue-dialog-open"],
+  false,
+);
+assert.equal(
+  capacityRenderer2.root.findAllByProps({ "aria-pressed": true }).length,
+  0,
+  "Selecting another Fabric must not preselect a new Fabric.",
+);
+
+const invalidOfferState = assignFutureFabricToGarment({
+  state: FabricAllocationStateEngine.initialize(),
+  garmentTypeSelection: threeGarmentSelection,
+  garmentKey: "base:shirt",
+  fabricCode: "MISSING-FABRIC",
+}).state;
+let invalidOfferRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  invalidOfferRenderer = create(
+    renderStep(invalidOfferState, () => undefined, threeGarmentSelection),
+  );
+});
+assert.doesNotMatch(
+  textContent(invalidOfferRenderer.root),
+  /Your fabric can carry one more garment\. \(Optional\)/,
+  "An offer for a missing catalogue fabric must remain hidden.",
+);
 
 console.log("PASS: inline Fabric catalogue target and confirmation flow");
