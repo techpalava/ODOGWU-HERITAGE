@@ -129,8 +129,16 @@ assert.equal(
   fabricRenderer.root.findByProps({
     "data-testid": "future-fabric-continue-action",
   }).props["data-docked"],
+  true,
+  "Inline Fabric targeting must not hide the completed-step action.",
+);
+assert.match(textContent(fabricRenderer.root), /Choosing fabric for: Standard Shirt/);
+assert.equal(
+  fabricRenderer.root.findByProps({
+    "data-testid": "future-fabric-inline-catalogue",
+  }).props["data-catalogue-dialog-open"],
   false,
-  "The Fabric catalogue must suppress the docked action while its modal is open.",
+  "Changing a garment assignment must keep the catalogue inline.",
 );
 
 await act(async () => {
