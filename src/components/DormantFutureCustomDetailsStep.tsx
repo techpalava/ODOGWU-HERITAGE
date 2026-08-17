@@ -458,7 +458,7 @@ export const DormantFutureCustomDetailsStep = ({
           </label>
         )}
         {group.selectionGroup === "neck_design" ? (
-          <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,20rem),1fr))] gap-4">
             {NECK_DESIGN_SUBCATEGORY_ORDER.map((subcategory) => {
               const options = group.options.filter(
                 (option) => NECK_DESIGN_SUBCATEGORY_BY_OPTION_ID[option.id] === subcategory,
@@ -537,7 +537,7 @@ export const DormantFutureCustomDetailsStep = ({
                     ? "Complete"
                     : "Optional";
             return (
-              <fieldset key={group.selectionGroup} data-custom-detail-group={group.selectionGroup} data-active-occurrences={group.occurrences.length} className="min-w-0">
+              <fieldset key={group.selectionGroup} data-custom-detail-group={group.selectionGroup} data-active-occurrences={group.occurrences.length} className={`min-w-0 ${group.selectionGroup === "neck_design" ? "lg:col-span-2" : ""}`}>
                 <legend className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wide text-heritage-green">
                   <span className="min-w-0 break-words">{group.title}</span>
                   <span className="rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold">{groupStatus}</span>

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { DormantFutureCustomDetailsStep } from "./src/components/DormantFutureCustomDetailsStep";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
@@ -19,6 +22,7 @@ import {
   PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
   setGarmentScopedCustomDetailText,
 } from "./src/utils/garmentScopedCustomDetailInputsState";
+import { projectFutureCustomDetailsCatalogue } from "./src/utils/futureCustomDetailsCatalogue";
 import { createDormantDesignStudioJourneyState } from "./src/utils/designStudioJourneyMode";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 
@@ -153,6 +157,84 @@ assert.equal(
   "custom_details",
 );
 
+const renderedInputs = reconcileGarmentScopedPersonalizedInputs({
+  reconciliation: initial,
+  catalogInspection,
+  existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
+});
+const renderedCatalogue = projectFutureCustomDetailsCatalogue({
+  garmentTypeSelection,
+  style: null,
+  reconciliation: initial,
+  activeOptions: catalogInspection.activeOptions,
+  additionalGarments: [],
+});
+const renderedMarkup = renderToStaticMarkup(
+  createElement(DormantFutureCustomDetailsStep, {
+    reconciliation: initial,
+    catalogue: renderedCatalogue,
+    personalizedInputs: renderedInputs.state,
+    completion: validateGarmentScopedCustomDetailsCompletion({
+      earlierStagesComplete: true,
+      reconciliation: initial,
+      personalizedInputs: renderedInputs,
+    }),
+    pricing: calculateGarmentScopedCustomDetailsPricing({
+      reconciliation: initial,
+      catalogInspection,
+    }),
+    orderLevelCustomDetailsPrice: 0,
+    constructionSubtotal: 0,
+    designSelections: {},
+    selectedStyle: null,
+    additionalGarments: [],
+    additionalGarmentConstructionOptions: [],
+    onSingleSelect: () => undefined,
+    onClearSelection: () => undefined,
+    onConstructionSelect: () => undefined,
+    onToggleMultiSelect: () => undefined,
+    onPersonalizedTextChange: () => undefined,
+    onDecorativeFeatureToggle: () => undefined,
+    onClearDecorativeFeatures: () => undefined,
+    onMonogramPlacementChange: () => undefined,
+    onAccessoryToggle: () => undefined,
+    onClearAccessories: () => undefined,
+    onAddAdditionalGarment: () => undefined,
+    onRemoveAdditionalGarment: () => undefined,
+    onBack: () => undefined,
+    onContinue: () => undefined,
+  }),
+);
+const renderedNeckStart = renderedMarkup.indexOf(
+  'data-custom-detail-group="neck_design"',
+);
+assert.ok(renderedNeckStart >= 0, "Rendered markup must contain the Neck group");
+const renderedNeckMarkup = renderedMarkup.slice(renderedNeckStart);
+assert.match(
+  renderedNeckMarkup,
+  /class="min-w-0 lg:col-span-2"/,
+  "Rendered Neck fieldset must span the full Custom Details section width",
+);
+assert.match(
+  renderedNeckMarkup,
+  /grid-cols-\[repeat\(auto-fit,minmax\(min\(100%,20rem\),1fr\)\)\]/,
+  "Rendered collar panels must use a readable minimum-width grid",
+);
+assert.ok(
+  renderedNeckMarkup.indexOf("None") < renderedNeckMarkup.indexOf("No Collar"),
+  "Rendered Neck None option must precede collar panels",
+);
+for (const label of [
+  "No Collar",
+  "Vertical Collar",
+  "Flat Collar",
+  "Vertical Collar, U or Square-Shaped Neck",
+  "Flat Collar, U or Square-Shaped Neck",
+]) {
+  assert.ok(renderedNeckMarkup.includes(label), `Rendered Neck must retain ${label}`);
+}
+assert.ok(!renderedNeckMarkup.includes("break-all"));
+
 const componentSource = readFileSync(
   "src/components/DormantFutureCustomDetailsStep.tsx",
   "utf8",
@@ -186,6 +268,25 @@ assert.match(componentSource, /Added garment/);
 assert.match(componentSource, /Add Additional Garment/);
 assert.match(componentSource, /No selection for this category/);
 assert.match(componentSource, /NECK_DESIGN_SUBCATEGORY_ORDER/);
+assert.match(
+  componentSource,
+  /group\.selectionGroup === "neck_design" \? "lg:col-span-2"/,
+  "Neck must occupy the full Custom Details section width",
+);
+assert.match(
+  componentSource,
+  /grid-cols-\[repeat\(auto-fit,minmax\(min\(100%,20rem\),1fr\)\)\]/,
+  "Neck collar panels must retain a readable minimum width",
+);
+assert.doesNotMatch(
+  componentSource,
+  /neck_design[\s\S]{0,240}lg:grid-cols-2 2xl:grid-cols-3/,
+  "Neck must not force narrow two- or three-column panels",
+);
+assert.ok(
+  !componentSource.includes("break-all"),
+  "Neck labels must not use character-by-character wrapping",
+);
 assert.match(componentSource, /Included in your selected design/);
 assert.match(componentSource, /additionalGarmentConstructionOptions/);
 assert.match(componentSource, /min-h-12/);
