@@ -206,6 +206,7 @@ export const DormantFutureFabricStep = ({
   const catalogueTriggerRef = useRef<HTMLElement | null>(null);
   const catalogueFocusGarmentKeyRef = useRef<string | null>(null);
   const catalogueFocusRequestRef = useRef(0);
+  const postAssignmentFocusRequestRef = useRef(0);
   const garmentActionRefs = useRef(new Map<string, HTMLButtonElement>());
   const selectFabricActionRef = useRef<HTMLButtonElement>(null);
   const catalogueHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -233,8 +234,14 @@ export const DormantFutureFabricStep = ({
   useEffect(
     () => () => {
       catalogueFocusRequestRef.current += 1;
+      postAssignmentFocusRequestRef.current += 1;
       catalogueTriggerRef.current = null;
       catalogueFocusGarmentKeyRef.current = null;
+      catalogueDialogRef.current = null;
+      catalogueSectionRef.current = null;
+      selectFabricActionRef.current = null;
+      catalogueHeadingRef.current = null;
+      garmentActionRefs.current.clear();
     },
     [],
   );
@@ -314,11 +321,42 @@ export const DormantFutureFabricStep = ({
     }
   };
 
-  const closeCatalogue = () => {
+  const closeCatalogueForCancellation = () => {
+    postAssignmentFocusRequestRef.current += 1;
     setIsCatalogueOpen(false);
     setCatalogueTargetGarmentKey(null);
     setSelectedCatalogueFabric(null);
     restoreCatalogueFocus();
+  };
+
+  const focusPostAssignmentDestination = (garmentKey: string) => {
+    const request = ++postAssignmentFocusRequestRef.current;
+    const focus = () => {
+      if (request !== postAssignmentFocusRequestRef.current) return;
+
+      const garmentAction = garmentActionRefs.current.get(garmentKey);
+      if (garmentAction && focusElementSafely(garmentAction)) return;
+
+      // The garment can disappear while the parent reconciles an assignment;
+      // keep focus in the mounted Step 2 surface without invoking cancellation fallback.
+      focusElementSafely(catalogueSectionRef.current);
+    };
+
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(focus);
+    } else {
+      focus();
+    }
+  };
+
+  const completeCatalogueAssignment = (garmentKey: string) => {
+    catalogueFocusRequestRef.current += 1;
+    catalogueTriggerRef.current = null;
+    catalogueFocusGarmentKeyRef.current = null;
+    setIsCatalogueOpen(false);
+    setCatalogueTargetGarmentKey(null);
+    setSelectedCatalogueFabric(null);
+    focusPostAssignmentDestination(garmentKey);
   };
 
   const openCatalogue = (
@@ -326,6 +364,7 @@ export const DormantFutureFabricStep = ({
     garmentKey: string | null = null,
     openDialog = false,
   ) => {
+    postAssignmentFocusRequestRef.current += 1;
     catalogueTriggerRef.current = trigger;
     catalogueFocusGarmentKeyRef.current = garmentKey;
     catalogueFocusRequestRef.current += 1;
@@ -358,7 +397,7 @@ export const DormantFutureFabricStep = ({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        closeCatalogue();
+        closeCatalogueForCancellation();
         return;
       }
       if (event.key !== "Tab") return;
@@ -380,7 +419,7 @@ export const DormantFutureFabricStep = ({
 
   const assignSelectedFabric = (fabric: Fabric, garmentKey: string) => {
     onAssignFabricToGarment(fabric, garmentKey);
-    closeCatalogue();
+    completeCatalogueAssignment(garmentKey);
   };
 
   const handleFabricSelection = (fabric: Fabric) => {
@@ -405,6 +444,7 @@ export const DormantFutureFabricStep = ({
   };
 
   const clearInlineCatalogueSelection = () => {
+    postAssignmentFocusRequestRef.current += 1;
     setCatalogueTargetGarmentKey(null);
     setSelectedCatalogueFabric(null);
     restoreCatalogueFocus();
@@ -878,7 +918,7 @@ export const DormantFutureFabricStep = ({
               </div>
               <button
                 type="button"
-                onClick={closeCatalogue}
+                onClick={closeCatalogueForCancellation}
                 aria-label="Close fabric catalogue"
                 className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-heritage-green/25 px-3 text-xs font-bold uppercase text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
               >

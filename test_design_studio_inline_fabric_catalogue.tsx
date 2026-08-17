@@ -374,11 +374,29 @@ const mockDocument = {
     return activeFocusMock;
   },
 };
+const animationFrames = new Map<number, FrameRequestCallback>();
+let nextAnimationFrameId = 1;
+const flushAnimationFrame = () => {
+  const next = animationFrames.entries().next().value as
+    | [number, FrameRequestCallback]
+    | undefined;
+  if (!next) return false;
+  animationFrames.delete(next[0]);
+  next[1](0);
+  return true;
+};
+const flushAnimationFrames = () => {
+  while (flushAnimationFrame()) {
+    // Flush callbacks in registration order so stale-request checks are exercised.
+  }
+};
 const mockWindow = {
   requestAnimationFrame: (callback: FrameRequestCallback) => {
-    callback(0);
-    return 1;
+    const id = nextAnimationFrameId++;
+    animationFrames.set(id, callback);
+    return id;
   },
+  cancelAnimationFrame: (id: number) => animationFrames.delete(id),
   getComputedStyle: () => ({
     display: "block",
     visibility: "visible",
@@ -489,6 +507,7 @@ try {
     }),
   );
   await act(async () => findButton(focusRenderer.root, "Cancel")!.props.onClick());
+  flushAnimationFrames();
   assert.equal(
     activeFocusMock?.label,
     "Add fabric for Standard Shirt",
@@ -516,6 +535,7 @@ try {
     }),
   );
   await act(async () => findButton(focusRenderer.root, "Cancel")!.props.onClick());
+  flushAnimationFrames();
   assert.equal(
     activeFocusMock?.label,
     "Change fabric for Standard Shirt",
@@ -530,6 +550,7 @@ try {
       changeShirt.props.onClick({ currentTarget: trigger }),
     );
     await act(async () => findButton(focusRenderer.root, "Cancel")!.props.onClick());
+    flushAnimationFrames();
     assert.equal(activeFocusMock?.label, "Change fabric for Standard Shirt", message);
   };
   const changeShirtFocus = focusMocks.get("Change fabric for Standard Shirt");
@@ -583,6 +604,7 @@ try {
   await act(async () =>
     findButton(capacityFocusRenderer.root, "Cancel")!.props.onClick(),
   );
+  flushAnimationFrames();
   assert.equal(
     activeFocusMock?.label,
     "Add fabric for Trouser",
@@ -614,10 +636,37 @@ try {
   if (currentRemovedTargetFocus) currentRemovedTargetFocus.isConnected = false;
   activeFocusMock = null;
   await act(async () => staleCancelOnClick());
+  flushAnimationFrames();
   assert.equal(
     activeFocusMock?.label,
     "catalogue-heading",
     "When the target garment is removed, cancellation must use the mounted catalogue heading fallback.",
+  );
+
+  let unmountRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    unmountRenderer = create(
+      renderStep(FabricAllocationStateEngine.initialize()),
+      { createNodeMock: createFocusMock },
+    );
+  });
+  const unmountAdd = findButton(unmountRenderer.root, "Add Fabric");
+  assert.ok(unmountAdd);
+  const unmountTrigger = focusMocks.get("Add fabric for Standard Shirt");
+  await act(async () =>
+    unmountAdd.props.onClick({ currentTarget: unmountTrigger }),
+  );
+  const unmountCancel = findButton(unmountRenderer.root, "Cancel");
+  assert.ok(unmountCancel);
+  activeFocusMock = null;
+  await act(async () => unmountCancel.props.onClick());
+  await act(async () => unmountRenderer.unmount());
+  if (unmountTrigger) unmountTrigger.isConnected = false;
+  flushAnimationFrames();
+  assert.equal(
+    activeFocusMock,
+    null,
+    "A queued cancellation must not focus a Step 2 element after unmount.",
   );
 
   let chooserRenderer!: ReturnType<typeof create>;
@@ -641,6 +690,7 @@ try {
       .findByProps({ "aria-label": "Close fabric catalogue" })
       .props.onClick(),
   );
+  flushAnimationFrames();
   assert.equal(
     activeFocusMock?.label,
     "catalogue-heading",
@@ -673,6 +723,7 @@ try {
       preventDefault: () => undefined,
     }),
   );
+  flushAnimationFrames();
   assert.ok(
     activeFocusMock && activeFocusMock !== mockDocument.body,
     "Untargeted chooser Escape must restore an eligible persistent fallback.",
@@ -680,11 +731,20 @@ try {
   assert.notEqual(activeFocusMock, mockDocument.body);
 
   const confirmationCalls: string[] = [];
+  let assignmentState = FabricAllocationStateEngine.initialize();
   await act(async () => {
     chooserRenderer = create(
       renderStep(
-        FabricAllocationStateEngine.initialize(),
-        (_fabric, garmentKey) => confirmationCalls.push(garmentKey),
+        assignmentState,
+        (fabric, garmentKey) => {
+          confirmationCalls.push(garmentKey);
+          assignmentState = assignFutureFabricToGarment({
+            state: assignmentState,
+            garmentTypeSelection,
+            garmentKey,
+            fabricCode: fabric.code,
+          }).state;
+        },
         garmentTypeSelection,
       ),
       { createNodeMock: createFocusMock },
@@ -701,20 +761,142 @@ try {
       createNodeMock: createFocusMock,
     });
   });
+  assert.ok(
+    assignmentPortalRenderer.root.findByProps({ role: "dialog" }),
+    "Successful confirmation must begin with a rendered labelled chooser dialog.",
+  );
+  assert.ok(
+    assignmentPortalRenderer.root.findByProps({
+      "aria-label": "Close fabric catalogue",
+    }),
+    "The rendered chooser must expose its labelled close control before assignment.",
+  );
   const chooserTarget = findButton(assignmentPortalRenderer.root, "Standard Shirt");
   assert.ok(chooserTarget || dialogButtonHandlers.has("Standard Shirt"));
   await act(async () => {
     if (chooserTarget) chooserTarget.props.onClick();
     else dialogButtonHandlers.get("Standard Shirt")!();
   });
+  await act(async () =>
+    chooserRenderer.update(
+      renderStep(
+        assignmentState,
+        (fabric, garmentKey) => {
+          confirmationCalls.push(garmentKey);
+          assignmentState = assignFutureFabricToGarment({
+            state: assignmentState,
+            garmentTypeSelection,
+            garmentKey,
+            fabricCode: fabric.code,
+          }).state;
+        },
+        garmentTypeSelection,
+      ),
+    ),
+  );
+  flushAnimationFrames();
   assert.deepEqual(confirmationCalls, ["base:shirt"]);
   assert.equal(
-    findButton(chooserRenderer.root, "Close fabric catalogue"),
-    undefined,
-    "Successful chooser confirmation must close the dialog without using cancellation controls.",
+    chooserRenderer.root.findAllByProps({ role: "dialog" }).length,
+    0,
+    "Successful chooser confirmation must remove the rendered chooser dialog.",
+  );
+  assert.equal(
+    activeFocusMock?.label,
+    "Change fabric for Standard Shirt",
+    "Successful assignment must focus the updated garment action, not cancellation fallback.",
+  );
+
+  let capacityAssignmentState = FabricAllocationStateEngine.initialize();
+  let capacityAssignmentRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    capacityAssignmentRenderer = create(
+      renderStep(
+        capacityAssignmentState,
+        (fabric, garmentKey) => {
+          capacityAssignmentState = assignFutureFabricToGarment({
+            state: capacityAssignmentState,
+            garmentTypeSelection: threeGarmentSelection,
+            garmentKey,
+            fabricCode: fabric.code,
+          }).state;
+        },
+        threeGarmentSelection,
+      ),
+      { createNodeMock: createFocusMock },
+    );
+  });
+  const capacityAssignmentAdd = findButton(
+    capacityAssignmentRenderer.root,
+    "Add Fabric",
+  );
+  assert.ok(capacityAssignmentAdd);
+  await act(async () =>
+    capacityAssignmentAdd.props.onClick({
+      currentTarget: focusMocks.get("Add fabric for Standard Shirt"),
+    }),
+  );
+  await act(async () =>
+    capacityAssignmentRenderer.root
+      .findAllByProps({ "data-fabric-card": "true" })[0]
+      .props.onClick(),
+  );
+  await act(async () =>
+    findButton(capacityAssignmentRenderer.root, "Select Fabric")!.props.onClick(),
+  );
+  await act(async () =>
+    capacityAssignmentRenderer.update(
+      renderStep(
+        capacityAssignmentState,
+        (fabric, garmentKey) => {
+          capacityAssignmentState = assignFutureFabricToGarment({
+            state: capacityAssignmentState,
+            garmentTypeSelection: threeGarmentSelection,
+            garmentKey,
+            fabricCode: fabric.code,
+          }).state;
+        },
+        threeGarmentSelection,
+      ),
+    ),
+  );
+  flushAnimationFrames();
+  assert.equal(
+    capacityAssignmentRenderer.root.findAllByProps({ role: "status" }).length,
+    1,
+    "Successful assignment must preserve the existing capacity offer.",
+  );
+
+  let rapidRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    rapidRenderer = create(
+      renderStep(sharedState, () => undefined, threeGarmentSelection),
+      { createNodeMock: createFocusMock },
+    );
+  });
+  const rapidChange = findButton(rapidRenderer.root, "Change Fabric");
+  const rapidAdd = findButton(rapidRenderer.root, "Add Fabric");
+  assert.ok(rapidChange && rapidAdd);
+  const olderTrigger = createTriggerVariant(
+    focusMocks.get("Change fabric for Standard Shirt")!,
+    { label: "older-trigger" },
+  );
+  await act(async () => rapidChange.props.onClick({ currentTarget: olderTrigger }));
+  await act(async () => findButton(rapidRenderer.root, "Cancel")!.props.onClick());
+  await act(async () =>
+    rapidAdd.props.onClick({
+      currentTarget: focusMocks.get("Add fabric for Trouser"),
+    }),
+  );
+  flushAnimationFrames();
+  assert.notEqual(
+    activeFocusMock,
+    olderTrigger,
+    "A newer catalogue interaction must invalidate an older queued restoration.",
   );
 
 } finally {
+  animationFrames.clear();
   reactDomRuntime.createPortal = originalCreatePortal;
   if (previousDocument === undefined) delete runtime.document;
   else runtime.document = previousDocument;
