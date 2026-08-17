@@ -79,6 +79,7 @@ import {
 } from "../utils/designStudioJourneyMode";
 import {
   assignFutureFabricToGarment,
+  applyFutureFabricCardSelection,
   getFutureGarmentFabricPlanning,
   getFutureFabricCapacityComposition,
   getFutureFabricGarmentSelections,
@@ -793,22 +794,12 @@ export default function DesignStudioView({
       setFuturePriceActivatedFabricCode(null);
     }
     setFabricAllocationState((current) => {
-      if (
-        current.awaitingFabricForPendingGarment &&
-        current.pendingFabricGarment?.garmentKey === garmentKey
-      ) {
-        return FabricAllocationStateEngine.assignPendingGarmentToFabric(
-          current,
-          fabric.code,
-        );
-      }
-      const result = assignFutureFabricToGarment({
+      return applyFutureFabricCardSelection({
         state: current,
         garmentTypeSelection,
         garmentKey,
         fabricCode: fabric.code,
       });
-      return result.state;
     });
   };
 

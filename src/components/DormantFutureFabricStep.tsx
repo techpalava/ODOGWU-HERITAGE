@@ -68,6 +68,12 @@ const getFutureGarmentLabel = (garmentType: FabricGarmentType): string =>
     ? "Other Garment"
     : getGarmentTypeStepLabel(garmentType);
 
+const formatGarmentList = (labels: string[]): string => {
+  if (labels.length <= 1) return labels[0] || "the selected garment";
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
+};
+
 const getElementAttribute = (element: HTMLElement, name: string): string | null =>
   typeof element.getAttribute === "function" ? element.getAttribute(name) : null;
 
@@ -196,8 +202,7 @@ export const DormantFutureFabricStep = ({
   const [catalogueTargetGarmentKey, setCatalogueTargetGarmentKey] = useState<
     string | null
   >(null);
-  const [selectedCatalogueFabric, setSelectedCatalogueFabric] =
-    useState<Fabric | null>(null);
+  const [assignmentAnnouncement, setAssignmentAnnouncement] = useState("");
   const [dismissedCapacityOffer, setDismissedCapacityOffer] = useState<
     string | null
   >(null);
@@ -208,8 +213,12 @@ export const DormantFutureFabricStep = ({
   const catalogueFocusRequestRef = useRef(0);
   const postAssignmentFocusRequestRef = useRef(0);
   const garmentActionRefs = useRef(new Map<string, HTMLButtonElement>());
-  const selectFabricActionRef = useRef<HTMLButtonElement>(null);
   const catalogueHeadingRef = useRef<HTMLHeadingElement>(null);
+  const pendingAssignmentAnnouncementRef = useRef<{
+    fabricCode: string;
+    fabricName: string;
+    before: Map<string, string>;
+  } | null>(null);
 
   const visibleFabrics = fabrics.filter(
     (fabric) => fabric.stockStatus !== "HIDDEN",
@@ -228,7 +237,6 @@ export const DormantFutureFabricStep = ({
   useEffect(() => {
     if (catalogueTargetGarmentKey && !activeCatalogueTarget) {
       setCatalogueTargetGarmentKey(null);
-      setSelectedCatalogueFabric(null);
     }
   }, [activeCatalogueTarget, catalogueTargetGarmentKey]);
   useEffect(
@@ -239,7 +247,6 @@ export const DormantFutureFabricStep = ({
       catalogueFocusGarmentKeyRef.current = null;
       catalogueDialogRef.current = null;
       catalogueSectionRef.current = null;
-      selectFabricActionRef.current = null;
       catalogueHeadingRef.current = null;
       garmentActionRefs.current.clear();
     },
@@ -274,6 +281,32 @@ export const DormantFutureFabricStep = ({
       ),
     [fabricAllocationState.fabricAllocations],
   );
+  useEffect(() => {
+    const pendingAnnouncement = pendingAssignmentAnnouncementRef.current;
+    if (!pendingAnnouncement) return;
+
+    const changedGarmentLabels = targets
+      .filter(({ assignment }) => {
+        const previousFabricCode = pendingAnnouncement.before.get(
+          assignment.garmentKey,
+        );
+        const nextAssignment = assignmentByGarmentKey.get(assignment.garmentKey);
+        return (
+          nextAssignment?.allocation.fabricCode === pendingAnnouncement.fabricCode &&
+          previousFabricCode !== pendingAnnouncement.fabricCode
+        );
+      })
+      .map(({ assignment }) => getFutureGarmentLabel(assignment.garmentType));
+
+    if (changedGarmentLabels.length === 0) return;
+
+    setAssignmentAnnouncement(
+      `${pendingAnnouncement.fabricName} assigned to ${formatGarmentList(
+        changedGarmentLabels,
+      )}.`,
+    );
+    pendingAssignmentAnnouncementRef.current = null;
+  }, [assignmentByGarmentKey, fabricAllocationState.fabricAllocations, targets]);
   const uniqueBlockers = Array.from(
     new Set(
       completion.blockers.map((blocker) => blockerMessages[blocker.code]),
@@ -295,7 +328,6 @@ export const DormantFutureFabricStep = ({
         catalogueFocusGarmentKeyRef.current
           ? garmentActionRefs.current.get(catalogueFocusGarmentKeyRef.current)
           : null,
-        selectFabricActionRef.current,
         catalogueHeadingRef.current,
         catalogueSectionRef.current,
       ];
@@ -325,7 +357,6 @@ export const DormantFutureFabricStep = ({
     postAssignmentFocusRequestRef.current += 1;
     setIsCatalogueOpen(false);
     setCatalogueTargetGarmentKey(null);
-    setSelectedCatalogueFabric(null);
     restoreCatalogueFocus();
   };
 
@@ -355,7 +386,6 @@ export const DormantFutureFabricStep = ({
     catalogueFocusGarmentKeyRef.current = null;
     setIsCatalogueOpen(false);
     setCatalogueTargetGarmentKey(null);
-    setSelectedCatalogueFabric(null);
     focusPostAssignmentDestination(garmentKey);
   };
 
@@ -369,7 +399,6 @@ export const DormantFutureFabricStep = ({
     catalogueFocusGarmentKeyRef.current = garmentKey;
     catalogueFocusRequestRef.current += 1;
     setCatalogueTargetGarmentKey(garmentKey);
-    setSelectedCatalogueFabric(null);
     setIsCatalogueOpen(openDialog);
     if (!openDialog && typeof window !== "undefined") {
       window.requestAnimationFrame(() => {
@@ -418,40 +447,59 @@ export const DormantFutureFabricStep = ({
   }, [isCatalogueOpen]);
 
   const assignSelectedFabric = (fabric: Fabric, garmentKey: string) => {
+    pendingAssignmentAnnouncementRef.current = {
+      fabricCode: fabric.code,
+      fabricName: fabric.name,
+      before: new Map(
+        Array.from(assignmentByGarmentKey.entries()).map(
+          ([assignmentKey, { allocation }]) => [
+            assignmentKey,
+            allocation.fabricCode,
+          ],
+        ),
+      ),
+    };
+    setAssignmentAnnouncement("");
     onAssignFabricToGarment(fabric, garmentKey);
     completeCatalogueAssignment(garmentKey);
   };
 
   const handleFabricSelection = (fabric: Fabric) => {
-    if (isCatalogueOpen && catalogueTargetGarmentKey) {
-      assignSelectedFabric(fabric, catalogueTargetGarmentKey);
+    const target = catalogueTargetGarmentKey
+      ? activeCatalogueTarget
+      : unassignedTargets[0] ?? null;
+    if (!target) {
+      setAssignmentAnnouncement("All selected garments already have fabric assignments.");
       return;
     }
-    setSelectedCatalogueFabric(fabric);
-    setIsCatalogueOpen(false);
-  };
-
-  const confirmSelectedFabric = () => {
-    if (!selectedCatalogueFabric) return;
-    if (catalogueTargetGarmentKey) {
-      assignSelectedFabric(selectedCatalogueFabric, catalogueTargetGarmentKey);
-      return;
-    }
-    catalogueTriggerRef.current = selectFabricActionRef.current;
-    catalogueFocusGarmentKeyRef.current = null;
-    catalogueFocusRequestRef.current += 1;
-    setIsCatalogueOpen(true);
-  };
-
-  const clearInlineCatalogueSelection = () => {
-    postAssignmentFocusRequestRef.current += 1;
-    setCatalogueTargetGarmentKey(null);
-    setSelectedCatalogueFabric(null);
-    restoreCatalogueFocus();
+    assignSelectedFabric(fabric, target.assignment.garmentKey);
   };
 
   const renderCatalogueCard = (fabric: Fabric) => {
     const availabilityMessage = getFabricAvailabilityMessage(fabric);
+    const currentTarget =
+      activeCatalogueTarget || unassignedTargets[0] || null;
+    const assignedToCurrentTarget = Boolean(
+      currentTarget &&
+        fabricAllocationState.fabricAllocations.some(
+          (allocation) =>
+            allocation.fabricCode === fabric.code &&
+            allocation.garmentAssignments.some(
+              (assignment) =>
+                assignment.garmentKey === currentTarget.assignment.garmentKey,
+            ),
+        ),
+    );
+    const assignedElsewhere = fabricAllocationState.fabricAllocations.some(
+      (allocation) =>
+        allocation.fabricCode === fabric.code &&
+        allocation.garmentAssignments.length > 0,
+    );
+    const cardStatus = assignedToCurrentTarget
+      ? "ASSIGNED"
+      : assignedElsewhere
+        ? "IN USE"
+        : "SELECT";
     return (
       <article
         key={fabric.code}
@@ -486,23 +534,32 @@ export const DormantFutureFabricStep = ({
           )}
           <button
             type="button"
-            disabled={Boolean(availabilityMessage)}
+            disabled={
+              Boolean(availabilityMessage) ||
+              cardStatus === "ASSIGNED" ||
+              Boolean(
+                fabricAllocationState.pendingFabricGarment &&
+                  !fabricAllocationState.awaitingFabricForPendingGarment,
+              )
+            }
             onClick={() => handleFabricSelection(fabric)}
-            aria-pressed={selectedCatalogueFabric?.code === fabric.code}
             data-fabric-card="true"
             data-fabric-code={fabric.code}
+            data-fabric-status={cardStatus}
+            aria-label={`${cardStatus} ${fabric.name}${
+              currentTarget
+                ? ` for ${getFutureGarmentLabel(currentTarget.assignment.garmentType)}`
+                : ""
+            }`}
+            aria-describedby="future-fabric-catalogue-help future-fabric-assignment-status"
             className={`mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold uppercase tracking-wider transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 ${
-              selectedCatalogueFabric?.code === fabric.code
-                ? "border-2 border-heritage-green bg-heritage-green text-white"
-                : "bg-heritage-green text-white hover:bg-heritage-forest"
+              "bg-heritage-green text-white hover:bg-heritage-forest"
             }`}
           >
-            {!availabilityMessage && <Check aria-hidden="true" size={14} />}
-            {availabilityMessage
-              ? "Unavailable"
-              : selectedCatalogueFabric?.code === fabric.code
-                ? "Selected"
-                : "Select"}
+            {!availabilityMessage && cardStatus === "SELECT" && (
+              <Check aria-hidden="true" size={14} />
+            )}
+            {availabilityMessage ? "Unavailable" : cardStatus}
           </button>
         </div>
       </article>
@@ -655,47 +712,38 @@ export const DormantFutureFabricStep = ({
               className="mt-2 max-w-2xl text-xs leading-relaxed text-heritage-ink/65"
               aria-live="polite"
             >
-              {selectedCatalogueFabric
-                ? activeCatalogueTarget
-                  ? `Selected temporarily. Select Fabric to assign it to ${getFutureGarmentLabel(
-                      activeCatalogueTarget.assignment.garmentType,
+              {activeCatalogueTarget
+                ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
+                    activeCatalogueTarget.assignment.garmentType,
+                  )}.`
+                : unassignedTargets[0]
+                  ? `Select a fabric card to assign it to the next garment: ${getFutureGarmentLabel(
+                      unassignedTargets[0].assignment.garmentType,
                     )}.`
-                  : "Selected temporarily. Select Fabric, then choose the garment it belongs to."
-                : activeCatalogueTarget
-                  ? `Choose a fabric for ${getFutureGarmentLabel(
-                      activeCatalogueTarget.assignment.garmentType,
-                    )}, then confirm below.`
-                  : "Choose a fabric to begin. Your selection is not assigned until you confirm below."}
+                  : "All selected garments have fabric assignments."}
+            </p>
+            <p
+              id="future-fabric-assignment-status"
+              aria-live="polite"
+              className="sr-only"
+            >
+              {assignmentAnnouncement}
             </p>
           </div>
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {visibleFabrics.map((fabric) => renderCatalogueCard(fabric))}
           </div>
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <button
-              type="button"
-              ref={selectFabricActionRef}
-              onClick={confirmSelectedFabric}
-              aria-describedby="future-fabric-catalogue-help"
-              disabled={
-                !selectedCatalogueFabric ||
-                Boolean(fabricAllocationState.pendingFabricGarment)
-              }
-              className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
-            >
-              Select Fabric
-            </button>
-            {(catalogueTargetGarmentKey || selectedCatalogueFabric) && (
+          {catalogueTargetGarmentKey && (
+            <div className="mt-5">
               <button
                 type="button"
-                onClick={clearInlineCatalogueSelection}
-                disabled={Boolean(fabricAllocationState.pendingFabricGarment)}
-                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-heritage-green/25 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+                onClick={closeCatalogueForCancellation}
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-heritage-green/25 px-5 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
               >
                 Cancel
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -913,7 +961,11 @@ export const DormantFutureFabricStep = ({
                   id="future-fabric-catalogue-title"
                   className="mt-1 break-words font-serif text-2xl font-bold text-heritage-green sm:text-3xl"
                 >
-                  {selectedCatalogueFabric ? "For which garment?" : "Select a fabric"}
+                  {activeCatalogueTarget
+                    ? `Choose a fabric for ${getFutureGarmentLabel(
+                        activeCatalogueTarget.assignment.garmentType,
+                      )}`
+                    : "Select a fabric"}
                 </h2>
               </div>
               <button
@@ -927,49 +979,9 @@ export const DormantFutureFabricStep = ({
               </button>
             </div>
 
-            {selectedCatalogueFabric ? (
-              <div className="py-6">
-                <p className="max-w-2xl break-words text-sm text-heritage-ink/70">
-                  Assign {selectedCatalogueFabric.name} ({selectedCatalogueFabric.code})
-                  to one of the garments still waiting for fabric.
-                </p>
-                <div
-                  role="group"
-                  aria-label="For which garment?"
-                  className="mt-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-                >
-                  {unassignedTargets.map(({ assignment }) => {
-                    const label = getFutureGarmentLabel(assignment.garmentType);
-                    return (
-                      <button
-                        key={assignment.garmentKey}
-                        type="button"
-                        onClick={() =>
-                          assignSelectedFabric(
-                            selectedCatalogueFabric,
-                            assignment.garmentKey,
-                          )
-                        }
-                        className="min-h-11 min-w-0 rounded-xl border-2 border-heritage-green/20 bg-white p-4 text-left text-sm font-bold text-heritage-green transition hover:border-heritage-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-                      >
-                        <span className="break-words">{label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedCatalogueFabric(null)}
-                  className="mt-5 min-h-11 rounded-xl border border-heritage-green/25 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
-                >
-                  Choose a different fabric
-                </button>
-              </div>
-            ) : (
-              <div className="grid min-w-0 grid-cols-1 gap-4 py-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {visibleFabrics.map((fabric) => renderCatalogueCard(fabric))}
-              </div>
-            )}
+            <div className="grid min-w-0 grid-cols-1 gap-4 py-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {visibleFabrics.map((fabric) => renderCatalogueCard(fabric))}
+            </div>
           </div>
           </div>,
           document.body,

@@ -9,9 +9,13 @@ import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import {
   assignFutureFabricToGarment,
+  applyFutureFabricCardSelection,
+  getFutureFabricAssignmentTargets,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
+  selectFutureFabric,
 } from "./src/utils/designStudioFutureFabricStage";
+import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
 
 const require = createRequire(import.meta.url);
 const reactDomRuntime = require("react-dom") as {
@@ -32,6 +36,16 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const garmentTypeSelection = reconcileGarmentTypeStepSelection({
   selectedGarmentTypes: ["shirt"],
+  selectedDemographics: ["male"],
+  normalizedCustomDetailCatalog: catalog,
+}).selection;
+const shirtTrouserSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["shirt", "trouser"],
+  selectedDemographics: ["male"],
+  normalizedCustomDetailCatalog: catalog,
+}).selection;
+const shirtTrouserKaftanSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["shirt", "trouser", "kaftan"],
   selectedDemographics: ["male"],
   normalizedCustomDetailCatalog: catalog,
 }).selection;
@@ -74,6 +88,16 @@ const textContent = (node: ReactTestInstance | string | null): string =>
           .join("")
       : "";
 
+const resolveConstructionTotal = (selection: GarmentTypeStepSelection): number =>
+  getFutureFabricAssignmentTargets(selection).reduce((total, { assignment }) => {
+    const resolution = resolveGarmentConstructionPricing(
+      assignment.garmentType,
+      catalog,
+    );
+    assert.equal(resolution.status, "resolved");
+    return total + resolution.totalPrice;
+  }, 0);
+
 const findButton = (root: ReactTestInstance, text: string) =>
   root
     .findAllByType("button")
@@ -85,6 +109,7 @@ const renderStep = (
   selection: GarmentTypeStepSelection = garmentTypeSelection,
   onUseSameFabricForGarment: (garmentKey: string) => void = () => undefined,
   onChooseAnotherFabric: () => void = () => undefined,
+  constructionPrice?: number,
 ) => {
   const completion = getFutureFabricStageCompletion({
     garmentTypeSelection: selection,
@@ -103,7 +128,7 @@ const renderStep = (
       completion={completion}
       requiredFabricQuantity={planning.requiredFabricQuantity}
       selectedFabricQuantity={planning.selectedFabricQuantity}
-      constructionPrice={65}
+      constructionPrice={constructionPrice ?? resolveConstructionTotal(selection)}
       onAssignFabricToGarment={onAssign}
       onUseSameFabricForGarment={onUseSameFabricForGarment}
       onBack={() => undefined}
@@ -132,12 +157,14 @@ assert.equal(
   1,
   "Fresh Step 2 must render one inline Fabric catalogue.",
 );
-const freshConfirm = findButton(renderer.root, "Select Fabric");
-assert.ok(freshConfirm);
-assert.equal(freshConfirm.props.disabled, true);
+assert.equal(
+  findButton(renderer.root, "Select Fabric"),
+  undefined,
+  "Step 2 must not render a bottom Select Fabric confirmation button.",
+);
 assert.match(
   textContent(renderer.root),
-  /Choose a fabric to begin\. Your selection is not assigned until you confirm below\./,
+  /Select a fabric card to assign it to the next garment: Standard Shirt\./,
 );
 
 await act(async () => {
@@ -152,36 +179,233 @@ assert.match(
 );
 assert.match(
   textContent(renderer.root),
-  /Choose a fabric for Standard Shirt, then confirm below\./,
+  /Select a fabric card to assign it to Standard Shirt\./,
 );
 
 const firstCard = renderer.root.findAllByProps({ "data-fabric-card": "true" })[0];
 await act(async () => firstCard.props.onClick());
+assert.deepEqual(assigned, [
+  { fabricCode: "INLINE-A", garmentKey: "base:shirt" },
+]);
+
+let shirtTrouserState = FabricAllocationStateEngine.initialize();
+let shirtTrouserRenderer!: ReturnType<typeof create>;
+const applyShirtTrouserFabric = (fabric: Fabric, garmentKey: string) => {
+  shirtTrouserState = applyFutureFabricCardSelection({
+    state: shirtTrouserState,
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey,
+    fabricCode: fabric.code,
+  });
+};
+await act(async () => {
+  shirtTrouserRenderer = create(
+    renderStep(
+      shirtTrouserState,
+      applyShirtTrouserFabric,
+      shirtTrouserSelection,
+    ),
+  );
+});
 assert.equal(
-  renderer.root.findAllByProps({ "data-fabric-card": "true" })[0].props[
-    "aria-pressed"
-  ], true);
+  shirtTrouserRenderer.root.findAllByProps({
+    "data-assignment-status": "unassigned",
+  }).length,
+  2,
+);
+assert.match(textContent(shirtTrouserRenderer.root), /Fabrics selected: 0 \/ 1/);
+assert.equal(
+  findButton(shirtTrouserRenderer.root, "Continue to Design Style")?.props.disabled,
+  true,
+);
+const shirtCard = shirtTrouserRenderer.root
+  .findAllByProps({ "data-fabric-card": "true" })
+  .find((card) => card.props["data-fabric-code"] === "INLINE-A");
+assert.ok(shirtCard);
+await act(async () => shirtCard.props.onClick());
+await act(async () =>
+  shirtTrouserRenderer.update(
+    renderStep(
+      shirtTrouserState,
+      applyShirtTrouserFabric,
+      shirtTrouserSelection,
+    ),
+  ),
+);
+assert.deepEqual(
+  shirtTrouserState.fabricAllocations.map((allocation) => ({
+    fabricCode: allocation.fabricCode,
+    garmentKeys: allocation.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+  })),
+  [{ fabricCode: "INLINE-A", garmentKeys: ["base:shirt", "base:trouser"] }],
+  "One direct card click must fill the compatible Shirt and Trouser allocation through the orchestration seam.",
+);
+assert.equal(
+  shirtTrouserRenderer.root.findAllByProps({
+    "data-assignment-status": "unassigned",
+  }).length,
+  0,
+);
+assert.match(textContent(shirtTrouserRenderer.root), /Fabrics selected: 1 \/ 1/);
+assert.match(
+  textContent(shirtTrouserRenderer.root),
+  /Garment Construction Subtotal€140\.00/,
+  "The rendered shared allocation must retain the authoritative Shirt plus Trouser construction total.",
+);
+assert.equal(
+  findButton(shirtTrouserRenderer.root, "Continue to Design Style")?.props.disabled,
+  false,
+);
+assert.match(
+  textContent(shirtTrouserRenderer.root),
+  /Inline Heritage A assigned to Standard Shirt and Trouser\./,
+  "The live announcement must describe every garment changed by one direct assignment.",
+);
+assert.equal(
+  shirtTrouserRenderer.root.findByProps({
+    "data-fabric-code": "INLINE-A",
+  }).props["data-fabric-status"],
+  "IN USE",
+);
+assert.equal(
+  shirtTrouserRenderer.root.findByProps({
+    "data-fabric-code": "INLINE-B",
+  }).props["data-fabric-status"],
+  "SELECT",
+);
+
+let mixedState = FabricAllocationStateEngine.initialize();
+let mixedRenderer!: ReturnType<typeof create>;
+const applyMixedFabric = (fabric: Fabric, garmentKey: string) => {
+  mixedState = applyFutureFabricCardSelection({
+    state: mixedState,
+    garmentTypeSelection: shirtTrouserKaftanSelection,
+    garmentKey,
+    fabricCode: fabric.code,
+  });
+};
+const renderMixed = () =>
+  renderStep(
+    mixedState,
+    applyMixedFabric,
+    shirtTrouserKaftanSelection,
+    () => undefined,
+    () => {
+      mixedState = FabricAllocationStateEngine.beginChooseAnotherFabric(
+        mixedState,
+      );
+    },
+  );
+await act(async () => {
+  mixedRenderer = create(renderMixed());
+});
+const mixedFirstCard = mixedRenderer.root
+  .findAllByProps({ "data-fabric-card": "true" })
+  .find((card) => card.props["data-fabric-code"] === "INLINE-A");
+assert.ok(mixedFirstCard);
+await act(async () => mixedFirstCard.props.onClick());
+await act(async () => mixedRenderer.update(renderMixed()));
+assert.deepEqual(
+  mixedState.fabricAllocations.map((allocation) => ({
+    fabricCode: allocation.fabricCode,
+    garmentKeys: allocation.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+  })),
+  [{ fabricCode: "INLINE-A", garmentKeys: ["base:shirt", "base:trouser"] }],
+);
+assert.equal(
+  mixedState.pendingFabricGarment?.garmentKey,
+  "base:kaftan",
+  "The dedicated Kaftan must remain pending after the shared allocation fills.",
+);
+assert.match(textContent(mixedRenderer.root), /Fabrics selected: 1 \/ 2/);
+assert.match(textContent(mixedRenderer.root), /Inline Heritage A assigned to Standard Shirt and Trouser\./);
+await act(async () =>
+  findButton(mixedRenderer.root, "Choose Another Fabric")!.props.onClick({
+    currentTarget: {},
+  }),
+);
+await act(async () => mixedRenderer.update(renderMixed()));
+const mixedSecondCard = mixedRenderer.root
+  .findAllByProps({ "data-fabric-card": "true" })
+  .find((card) => card.props["data-fabric-code"] === "INLINE-B");
+assert.ok(mixedSecondCard);
+await act(async () => mixedSecondCard.props.onClick());
+await act(async () => mixedRenderer.update(renderMixed()));
+assert.deepEqual(
+  mixedState.fabricAllocations.map((allocation) => ({
+    fabricCode: allocation.fabricCode,
+    garmentKeys: allocation.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+  })),
+  [
+    { fabricCode: "INLINE-A", garmentKeys: ["base:shirt", "base:trouser"] },
+    { fabricCode: "INLINE-B", garmentKeys: ["base:kaftan"] },
+  ],
+  "A second direct card click must allocate only the pending Kaftan in a new allocation.",
+);
+assert.equal(mixedState.pendingFabricGarment, null);
+assert.match(textContent(mixedRenderer.root), /Fabrics selected: 2 \/ 2/);
+assert.match(
+  textContent(mixedRenderer.root),
+  /Inline Heritage B assigned to Long Shirt \(Kaftan\)\./,
+);
+assert.equal(
+  findButton(mixedRenderer.root, "Continue to Design Style")?.props.disabled,
+  false,
+);
+let failedAssignmentRenderer!: ReturnType<typeof create>;
+const failedAssignmentState = FabricAllocationStateEngine.initialize();
+await act(async () => {
+  failedAssignmentRenderer = create(
+    renderStep(
+      failedAssignmentState,
+      () => undefined,
+      shirtTrouserSelection,
+    ),
+  );
+});
+await act(async () =>
+  failedAssignmentRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })[0]
+    .props.onClick(),
+);
+await act(async () =>
+  failedAssignmentRenderer.update(
+    renderStep(
+      failedAssignmentState,
+      () => undefined,
+      shirtTrouserSelection,
+    ),
+  ),
+);
+assert.doesNotMatch(
+  textContent(failedAssignmentRenderer.root),
+  /assigned to Standard/,
+  "A failed assignment must never announce a successful garment assignment.",
+);
 assert.match(
   textContent(renderer.root),
-  /Selected temporarily\. Select Fabric to assign it to Standard Shirt\./,
+  /INLINE-A|Inline Heritage A|Assignment status updated/,
+  "A direct card selection must announce the completed assignment.",
 );
-assert.equal(assigned.length, 0, "Selecting a card must not assign Fabric yet.");
-assert.equal(findButton(renderer.root, "Select Fabric")?.props.disabled, false);
+assert.equal(
+  findButton(renderer.root, "Select Fabric"),
+  undefined,
+  "Direct assignment must not reveal a replacement confirmation button.",
+);
 
 const secondCard = renderer.root
   .findAllByProps({ "data-fabric-card": "true" })
   .find((card) => card !== firstCard);
 assert.ok(secondCard);
 await act(async () => secondCard.props.onClick());
-assert.equal(assigned.length, 0, "A replacement card selection remains temporary.");
-assert.equal(
-  renderer.root.findAllByProps({ "data-fabric-card": "true" })[1].props[
-    "aria-pressed"
-  ], true,
-);
-
-await act(async () => findButton(renderer.root, "Select Fabric")!.props.onClick());
 assert.deepEqual(assigned, [
+  { fabricCode: "INLINE-A", garmentKey: "base:shirt" },
   { fabricCode: "INLINE-B", garmentKey: "base:shirt" },
 ]);
 assert.doesNotMatch(textContent(renderer.root), /Choosing fabric for: Standard Shirt/);
@@ -213,30 +437,39 @@ await act(async () =>
     .findAllByProps({ "data-fabric-card": "true" })
     .find((card) => card.props["data-fabric-code"] === "INLINE-B")!.props.onClick(),
 );
-assert.equal(assigned.length, 0, "Change Fabric must preserve the old assignment until confirmation.");
-await act(async () => findButton(renderer.root, "Select Fabric")!.props.onClick());
+assert.equal(
+  assigned.length,
+  1,
+  "Change Fabric must assign the selected card without a second confirmation.",
+);
 assert.deepEqual(assigned, [
   { fabricCode: "INLINE-B", garmentKey: "base:shirt" },
 ]);
 
 assigned = [];
-await act(async () => renderer.update(renderStep()));
+await act(async () =>
+  renderer.update(
+    renderStep(
+      FabricAllocationStateEngine.initialize(),
+      (fabric, garmentKey) => assigned.push({ fabricCode: fabric.code, garmentKey }),
+    ),
+  ),
+);
 await act(async () =>
   renderer.root
     .findAllByProps({ "data-fabric-card": "true" })[0]
     .props.onClick(),
 );
-await act(async () => findButton(renderer.root, "Select Fabric")!.props.onClick());
 assert.equal(
   renderer.root.findByProps({
     "data-testid": "future-fabric-inline-catalogue",
   }).props["data-catalogue-dialog-open"],
-  true,
-  "A temporary selection without a target must open the garment chooser.",
+  false,
+  "An un-targeted card selection must complete inline without opening a chooser.",
 );
-assert.equal(assigned.length, 0, "The chooser path must not guess or assign a garment.");
-await act(async () => findButton(renderer.root, "Cancel")!.props.onClick());
-assert.equal(assigned.length, 0, "Cancelling the chooser must leave allocation state unchanged.");
+assert.deepEqual(assigned, [
+  { fabricCode: "INLINE-A", garmentKey: "base:shirt" },
+]);
 
 let sharedState = FabricAllocationStateEngine.initialize();
 sharedState = assignFutureFabricToGarment({
@@ -245,6 +478,78 @@ sharedState = assignFutureFabricToGarment({
   garmentKey: "base:shirt",
   fabricCode: "INLINE-A",
 }).state;
+let fullState = assignFutureFabricToGarment({
+  state: sharedState,
+  garmentTypeSelection: threeGarmentSelection,
+  garmentKey: "base:trouser",
+  fabricCode: "INLINE-A",
+}).state;
+let targetedTwoGarmentState = fullState;
+const targetedTwoGarmentCalls: string[] = [];
+let targetedTwoGarmentRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  targetedTwoGarmentRenderer = create(
+    renderStep(
+      targetedTwoGarmentState,
+      (fabric, garmentKey) => {
+        targetedTwoGarmentCalls.push(garmentKey);
+        targetedTwoGarmentState = assignFutureFabricToGarment({
+          state: targetedTwoGarmentState,
+          garmentTypeSelection: threeGarmentSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+        }).state;
+      },
+      threeGarmentSelection,
+    ),
+  );
+});
+await act(async () =>
+  targetedTwoGarmentRenderer.root
+    .findByProps({ "aria-label": "Change fabric for Standard Shirt" })
+    .props.onClick({ currentTarget: {} }),
+);
+const targetedCurrentFabricCard = targetedTwoGarmentRenderer.root
+  .findAllByProps({ "data-fabric-card": "true" })
+  .find((card) => card.props["data-fabric-code"] === "INLINE-A");
+assert.equal(targetedCurrentFabricCard?.props["data-fabric-status"], "ASSIGNED");
+assert.equal(
+  targetedCurrentFabricCard?.findByType("button").props.disabled,
+  true,
+  "The exact current target fabric must be visibly assigned and protected from a redundant transaction.",
+);
+await act(async () =>
+  targetedTwoGarmentRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find((card) => card.props["data-fabric-code"] === "INLINE-B")!
+    .props.onClick(),
+);
+assert.deepEqual(
+  targetedTwoGarmentCalls,
+  ["base:shirt"],
+  "Targeted Change Fabric must invoke the assignment handler only for the changed garment.",
+);
+assert.deepEqual(
+  targetedTwoGarmentState.fabricAllocations.flatMap((allocation) =>
+    allocation.garmentAssignments.map((assignment) => ({
+      garmentKey: assignment.garmentKey,
+      fabricCode: allocation.fabricCode,
+    })),
+  ),
+  [
+    { garmentKey: "base:trouser", fabricCode: "INLINE-A" },
+    { garmentKey: "base:shirt", fabricCode: "INLINE-B" },
+  ],
+  "Targeted replacement must preserve the unrelated Trouser assignment.",
+);
+const pendingTarget = getFutureFabricAssignmentTargets(threeGarmentSelection).find(
+  ({ assignment }) => assignment.garmentKey === "base:skirt",
+);
+assert.ok(pendingTarget);
+const pendingState = FabricAllocationStateEngine.attemptAppendGarment(
+  fullState,
+  pendingTarget.selection,
+);
 let useSameTarget = "";
 let chooseAnotherCalls = 0;
 let capacityRenderer!: ReturnType<typeof create>;
@@ -314,9 +619,99 @@ assert.equal(
   false,
 );
 assert.equal(
+  findButton(capacityRenderer2.root, "Select Fabric"),
+  undefined,
+  "The capacity flow must not reintroduce a bottom Select Fabric button.",
+);
+assert.equal(
   capacityRenderer2.root.findAllByProps({ "aria-pressed": true }).length,
   0,
-  "Selecting another Fabric must not preselect a new Fabric.",
+  "Fabric cards are assigned directly and never remain temporarily selected.",
+);
+
+let pendingChoiceState = pendingState;
+let pendingChoiceRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  pendingChoiceRenderer = create(
+    renderStep(
+      pendingChoiceState,
+      (fabric, garmentKey) => {
+        if (
+          pendingChoiceState.awaitingFabricForPendingGarment &&
+          pendingChoiceState.pendingFabricGarment?.garmentKey === garmentKey
+        ) {
+          pendingChoiceState =
+            FabricAllocationStateEngine.assignPendingGarmentToFabric(
+              pendingChoiceState,
+              fabric.code,
+            );
+        }
+      },
+      threeGarmentSelection,
+      () => undefined,
+      () => {
+        pendingChoiceState =
+          FabricAllocationStateEngine.beginChooseAnotherFabric(
+            pendingChoiceState,
+          );
+      },
+    ),
+  );
+});
+await act(async () => {
+  findButton(pendingChoiceRenderer.root, "Choose Another Fabric")!.props.onClick({
+    currentTarget: {},
+  });
+});
+await act(async () => {
+  pendingChoiceRenderer.update(
+    renderStep(
+      pendingChoiceState,
+      (fabric, garmentKey) => {
+        if (
+          pendingChoiceState.awaitingFabricForPendingGarment &&
+          pendingChoiceState.pendingFabricGarment?.garmentKey === garmentKey
+        ) {
+          pendingChoiceState =
+            FabricAllocationStateEngine.assignPendingGarmentToFabric(
+              pendingChoiceState,
+              fabric.code,
+            );
+        }
+      },
+      threeGarmentSelection,
+      () => undefined,
+      () => {
+        pendingChoiceState =
+          FabricAllocationStateEngine.beginChooseAnotherFabric(
+            pendingChoiceState,
+          );
+      },
+    ),
+  );
+});
+const pendingChoiceCards = pendingChoiceRenderer.root.findAllByProps({
+  "data-fabric-card": "true",
+});
+assert.equal(
+  pendingChoiceCards[1].findByType("button").props.disabled,
+  false,
+  "Choose Another Fabric must enable direct catalogue selection while awaiting the pending garment.",
+);
+await act(async () => pendingChoiceCards[1].findByType("button").props.onClick());
+assert.equal(pendingChoiceState.pendingFabricGarment, null);
+assert.deepEqual(
+  pendingChoiceState.fabricAllocations.map((allocation) => ({
+    fabricCode: allocation.fabricCode,
+    garmentKeys: allocation.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+  })),
+  [
+    { fabricCode: "INLINE-A", garmentKeys: ["base:shirt", "base:trouser"] },
+    { fabricCode: "INLINE-B", garmentKeys: ["base:skirt"] },
+  ],
+  "Choose Another Fabric must create the second allocation for the pending garment only.",
 );
 
 const invalidOfferState = assignFutureFabricToGarment({
@@ -669,16 +1064,84 @@ try {
     "A queued cancellation must not focus a Step 2 element after unmount.",
   );
 
-  let chooserRenderer!: ReturnType<typeof create>;
+  let directRenderer!: ReturnType<typeof create>;
   await act(async () => {
-    chooserRenderer = create(renderStep(), { createNodeMock: createFocusMock });
+    directRenderer = create(renderStep(), { createNodeMock: createFocusMock });
+  });
+  assert.equal(
+    findButton(directRenderer.root, "Select Fabric"),
+    undefined,
+    "The direct assignment path must not render a bottom confirmation button.",
+  );
+  const directCalls: string[] = [];
+  let directState = FabricAllocationStateEngine.initialize();
+  await act(async () => {
+    directRenderer.update(
+      renderStep(
+        directState,
+        (fabric, garmentKey) => {
+          directCalls.push(garmentKey);
+          directState = assignFutureFabricToGarment({
+            state: directState,
+            garmentTypeSelection,
+            garmentKey,
+            fabricCode: fabric.code,
+          }).state;
+        },
+      ),
+    );
   });
   await act(async () =>
-    chooserRenderer.root.findAllByProps({ "data-fabric-card": "true" })[0].props.onClick(),
+    directRenderer.root
+      .findAllByProps({ "data-fabric-card": "true" })[0]
+      .props.onClick(),
   );
-  await act(async () => findButton(chooserRenderer.root, "Select Fabric")!.props.onClick());
-  assert.ok(dialogFocusMock, "Untargeted confirmation must render the catalogue dialog.");
-  assert.ok(lastPortalChildren, "The catalogue dialog must provide rendered portal content.");
+  assert.deepEqual(
+    directCalls,
+    ["base:shirt"],
+    "A card Select click must call the authoritative assignment handler directly.",
+  );
+  assert.equal(
+    directRenderer.root.findAllByProps({ role: "dialog" }).length,
+    0,
+    "Direct assignment must not open a second confirmation dialog.",
+  );
+  await act(async () => {
+    directRenderer.update(
+      renderStep(
+        directState,
+        (fabric, garmentKey) => {
+          directCalls.push(garmentKey);
+          directState = assignFutureFabricToGarment({
+            state: directState,
+            garmentTypeSelection,
+            garmentKey,
+            fabricCode: fabric.code,
+          }).state;
+        },
+      ),
+    );
+  });
+  flushAnimationFrames();
+  assert.equal(
+    activeFocusMock?.label,
+    "Change fabric for Standard Shirt",
+    "Direct assignment must focus the updated garment action.",
+  );
+
+  activeFocusMock = null;
+  dialogFocusMock = null;
+  await act(async () => {
+    directRenderer = create(renderStep(pendingState, () => undefined, threeGarmentSelection), {
+      createNodeMock: createFocusMock,
+    });
+  });
+  await act(async () =>
+    findButton(directRenderer.root, "Choose Another Fabric")!.props.onClick({
+      currentTarget: {},
+    }),
+  );
+  assert.ok(lastPortalChildren, "Choose Another Fabric must render the catalogue dialog.");
   let closePortalRenderer!: ReturnType<typeof create>;
   await act(async () => {
     closePortalRenderer = create(lastPortalChildren as ReactElement, {
@@ -691,25 +1154,20 @@ try {
       .props.onClick(),
   );
   flushAnimationFrames();
-  assert.equal(
-    activeFocusMock?.label,
-    "catalogue-heading",
-    "Untargeted chooser Close must restore an eligible persistent fallback.",
-  );
   assert.notEqual(activeFocusMock, mockDocument.body);
 
   activeFocusMock = null;
   dialogFocusMock = null;
   await act(async () => {
-    chooserRenderer = create(renderStep(), { createNodeMock: createFocusMock });
+    directRenderer = create(renderStep(pendingState, () => undefined, threeGarmentSelection), {
+      createNodeMock: createFocusMock,
+    });
   });
   await act(async () =>
-    chooserRenderer.root.findAllByProps({ "data-fabric-card": "true" })[0].props.onClick(),
+    findButton(directRenderer.root, "Choose Another Fabric")!.props.onClick({
+      currentTarget: {},
+    }),
   );
-  await act(async () => findButton(chooserRenderer.root, "Select Fabric")!.props.onClick());
-  assert.ok(dialogFocusMock, "Untargeted confirmation must render the catalogue dialog.");
-  assert.ok(lastPortalChildren, "The Escape path must provide rendered portal content.");
-  const escapeDialog = dialogFocusMock;
   let escapePortalRenderer!: ReturnType<typeof create>;
   await act(async () => {
     escapePortalRenderer = create(lastPortalChildren as ReactElement, {
@@ -718,94 +1176,13 @@ try {
   });
   assert.ok(escapePortalRenderer);
   await act(async () =>
-    escapeDialog?.dispatchKeyDown({
+    dialogFocusMock?.dispatchKeyDown({
       key: "Escape",
       preventDefault: () => undefined,
     }),
   );
   flushAnimationFrames();
-  assert.ok(
-    activeFocusMock && activeFocusMock !== mockDocument.body,
-    "Untargeted chooser Escape must restore an eligible persistent fallback.",
-  );
   assert.notEqual(activeFocusMock, mockDocument.body);
-
-  const confirmationCalls: string[] = [];
-  let assignmentState = FabricAllocationStateEngine.initialize();
-  await act(async () => {
-    chooserRenderer = create(
-      renderStep(
-        assignmentState,
-        (fabric, garmentKey) => {
-          confirmationCalls.push(garmentKey);
-          assignmentState = assignFutureFabricToGarment({
-            state: assignmentState,
-            garmentTypeSelection,
-            garmentKey,
-            fabricCode: fabric.code,
-          }).state;
-        },
-        garmentTypeSelection,
-      ),
-      { createNodeMock: createFocusMock },
-    );
-  });
-  await act(async () =>
-    chooserRenderer.root.findAllByProps({ "data-fabric-card": "true" })[0].props.onClick(),
-  );
-  await act(async () => findButton(chooserRenderer.root, "Select Fabric")!.props.onClick());
-  assert.ok(lastPortalChildren, "The assignment chooser must provide rendered portal content.");
-  let assignmentPortalRenderer!: ReturnType<typeof create>;
-  await act(async () => {
-    assignmentPortalRenderer = create(lastPortalChildren as ReactElement, {
-      createNodeMock: createFocusMock,
-    });
-  });
-  assert.ok(
-    assignmentPortalRenderer.root.findByProps({ role: "dialog" }),
-    "Successful confirmation must begin with a rendered labelled chooser dialog.",
-  );
-  assert.ok(
-    assignmentPortalRenderer.root.findByProps({
-      "aria-label": "Close fabric catalogue",
-    }),
-    "The rendered chooser must expose its labelled close control before assignment.",
-  );
-  const chooserTarget = findButton(assignmentPortalRenderer.root, "Standard Shirt");
-  assert.ok(chooserTarget || dialogButtonHandlers.has("Standard Shirt"));
-  await act(async () => {
-    if (chooserTarget) chooserTarget.props.onClick();
-    else dialogButtonHandlers.get("Standard Shirt")!();
-  });
-  await act(async () =>
-    chooserRenderer.update(
-      renderStep(
-        assignmentState,
-        (fabric, garmentKey) => {
-          confirmationCalls.push(garmentKey);
-          assignmentState = assignFutureFabricToGarment({
-            state: assignmentState,
-            garmentTypeSelection,
-            garmentKey,
-            fabricCode: fabric.code,
-          }).state;
-        },
-        garmentTypeSelection,
-      ),
-    ),
-  );
-  flushAnimationFrames();
-  assert.deepEqual(confirmationCalls, ["base:shirt"]);
-  assert.equal(
-    chooserRenderer.root.findAllByProps({ role: "dialog" }).length,
-    0,
-    "Successful chooser confirmation must remove the rendered chooser dialog.",
-  );
-  assert.equal(
-    activeFocusMock?.label,
-    "Change fabric for Standard Shirt",
-    "Successful assignment must focus the updated garment action, not cancellation fallback.",
-  );
 
   let capacityAssignmentState = FabricAllocationStateEngine.initialize();
   let capacityAssignmentRenderer!: ReturnType<typeof create>;
@@ -840,9 +1217,6 @@ try {
     capacityAssignmentRenderer.root
       .findAllByProps({ "data-fabric-card": "true" })[0]
       .props.onClick(),
-  );
-  await act(async () =>
-    findButton(capacityAssignmentRenderer.root, "Select Fabric")!.props.onClick(),
   );
   await act(async () =>
     capacityAssignmentRenderer.update(
@@ -894,6 +1268,206 @@ try {
     olderTrigger,
     "A newer catalogue interaction must invalidate an older queued restoration.",
   );
+
+  const shirtTrouserSelection = reconcileGarmentTypeStepSelection({
+    selectedGarmentTypes: ["shirt", "trouser"],
+    selectedDemographics: ["male"],
+    normalizedCustomDetailCatalog: catalog,
+  }).selection;
+  let shirtTrouserState = FabricAllocationStateEngine.initialize();
+  const shirtTrouserCalls: string[] = [];
+  let shirtTrouserRenderer!: ReturnType<typeof create>;
+  const renderShirtTrouser = () =>
+    renderStep(
+      shirtTrouserState,
+      (fabric, garmentKey) => {
+        shirtTrouserCalls.push(garmentKey);
+        shirtTrouserState = selectFutureFabric({
+          state: shirtTrouserState,
+          garmentTypeSelection: shirtTrouserSelection,
+          fabricCode: fabric.code,
+          targetGarmentKey: garmentKey,
+        });
+      },
+      shirtTrouserSelection,
+    );
+  await act(async () => {
+    shirtTrouserRenderer = create(renderShirtTrouser(), {
+      createNodeMock: createFocusMock,
+    });
+  });
+  assert.equal(
+    textContent(shirtTrouserRenderer.root).match(/Needs fabric/g)?.length,
+    2,
+    "Fresh Shirt + Trouser must show both garments as needing fabric.",
+  );
+  assert.match(textContent(shirtTrouserRenderer.root), /Fabrics selected: 0 \/ 1/);
+  assert.equal(
+    findButton(shirtTrouserRenderer.root, "Continue to Design Style")?.props.disabled,
+    true,
+  );
+  await act(async () =>
+    shirtTrouserRenderer.root
+      .findAllByProps({ "data-fabric-card": "true" })[0]
+      .props.onClick(),
+  );
+  await act(async () => shirtTrouserRenderer.update(renderShirtTrouser()));
+  assert.deepEqual(
+    shirtTrouserCalls,
+    ["base:shirt"],
+    "One catalogue click must invoke the UI-facing handler once for its active target.",
+  );
+  assert.deepEqual(
+    shirtTrouserState.fabricAllocations.map((allocation) => ({
+      fabricCode: allocation.fabricCode,
+      garmentKeys: allocation.garmentAssignments.map(
+        (assignment) => assignment.garmentKey,
+      ),
+    })),
+    [{ fabricCode: "INLINE-A", garmentKeys: ["base:shirt", "base:trouser"] }],
+    "The direct selection must fill one authoritative allocation through the capacity engine.",
+  );
+  assert.match(textContent(shirtTrouserRenderer.root), /Fabrics selected: 1 \/ 1/);
+  assert.equal(
+    shirtTrouserRenderer.root.findAllByProps({
+      "data-assignment-status": "unassigned",
+    }).length,
+    0,
+  );
+  assert.equal(
+    findButton(shirtTrouserRenderer.root, "Continue to Design Style")?.props.disabled,
+    false,
+  );
+  assert.equal(
+    findButton(shirtTrouserRenderer.root, "Select Fabric"),
+    undefined,
+    "The direct multi-garment path must not render a bottom confirmation action.",
+  );
+
+  const shirtTrouserKaftanSelection = reconcileGarmentTypeStepSelection({
+    selectedGarmentTypes: ["shirt", "trouser", "kaftan"],
+    selectedDemographics: ["male"],
+    normalizedCustomDetailCatalog: catalog,
+  }).selection;
+  let shirtTrouserKaftanState = FabricAllocationStateEngine.initialize();
+  const shirtTrouserKaftanCalls: string[] = [];
+  let shirtTrouserKaftanRenderer!: ReturnType<typeof create>;
+  const renderShirtTrouserKaftan = () =>
+    renderStep(
+      shirtTrouserKaftanState,
+      (fabric, garmentKey) => {
+        shirtTrouserKaftanCalls.push(garmentKey);
+        if (
+          shirtTrouserKaftanState.awaitingFabricForPendingGarment &&
+          shirtTrouserKaftanState.pendingFabricGarment?.garmentKey === garmentKey
+        ) {
+          shirtTrouserKaftanState =
+            FabricAllocationStateEngine.assignPendingGarmentToFabric(
+              shirtTrouserKaftanState,
+              fabric.code,
+            );
+          return;
+        }
+        const alreadyAssigned = shirtTrouserKaftanState.fabricAllocations.some(
+          (allocation) =>
+            allocation.garmentAssignments.some(
+              (assignment) => assignment.garmentKey === garmentKey,
+            ),
+        );
+        shirtTrouserKaftanState = alreadyAssigned
+          ? assignFutureFabricToGarment({
+              state: shirtTrouserKaftanState,
+              garmentTypeSelection: shirtTrouserKaftanSelection,
+              garmentKey,
+              fabricCode: fabric.code,
+            }).state
+          : selectFutureFabric({
+              state: shirtTrouserKaftanState,
+              garmentTypeSelection: shirtTrouserKaftanSelection,
+              fabricCode: fabric.code,
+              targetGarmentKey: garmentKey,
+            });
+      },
+      shirtTrouserKaftanSelection,
+    );
+  await act(async () => {
+    shirtTrouserKaftanRenderer = create(renderShirtTrouserKaftan(), {
+      createNodeMock: createFocusMock,
+    });
+  });
+  await act(async () =>
+    shirtTrouserKaftanRenderer.root
+      .findAllByProps({ "data-fabric-card": "true" })[0]
+      .props.onClick(),
+  );
+  await act(async () => shirtTrouserKaftanRenderer.update(renderShirtTrouserKaftan()));
+  assert.deepEqual(shirtTrouserKaftanCalls, ["base:shirt"]);
+  assert.deepEqual(
+    shirtTrouserKaftanState.fabricAllocations[0]?.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+    ["base:shirt", "base:trouser"],
+  );
+  assert.equal(
+    shirtTrouserKaftanState.pendingFabricGarment?.garmentKey,
+    "base:kaftan",
+    "A dedicated-fabric garment must remain pending when the first allocation is full.",
+  );
+  assert.match(textContent(shirtTrouserKaftanRenderer.root), /Fabrics selected: 1 \/ 2/);
+  assert.equal(
+    shirtTrouserKaftanRenderer.root.findAllByProps({ role: "dialog" }).length,
+    1,
+  );
+
+  for (const dedicatedCase of [
+    { garmentType: "full_length_gown" as const, key: "base:full_length_gown" },
+    { garmentType: "agbada" as const, key: "base:agbada" },
+  ]) {
+    const dedicatedSelection = reconcileGarmentTypeStepSelection({
+      selectedGarmentTypes: ["shirt", "trouser", dedicatedCase.garmentType],
+      selectedDemographics: ["male"],
+      normalizedCustomDetailCatalog: catalog,
+    }).selection;
+    let dedicatedState = FabricAllocationStateEngine.initialize();
+    let dedicatedRenderer!: ReturnType<typeof create>;
+    const renderDedicated = () =>
+      renderStep(
+        dedicatedState,
+        (fabric, garmentKey) => {
+          dedicatedState = selectFutureFabric({
+            state: dedicatedState,
+            garmentTypeSelection: dedicatedSelection,
+            fabricCode: fabric.code,
+            targetGarmentKey: garmentKey,
+          });
+        },
+        dedicatedSelection,
+      );
+    await act(async () => {
+      dedicatedRenderer = create(renderDedicated(), {
+        createNodeMock: createFocusMock,
+      });
+    });
+    await act(async () =>
+      dedicatedRenderer.root
+        .findAllByProps({ "data-fabric-card": "true" })[0]
+        .props.onClick(),
+    );
+    await act(async () => dedicatedRenderer.update(renderDedicated()));
+    assert.deepEqual(
+      dedicatedState.fabricAllocations[0]?.garmentAssignments.map(
+        (assignment) => assignment.garmentKey,
+      ),
+      ["base:shirt", "base:trouser"],
+      `${dedicatedCase.garmentType} must not be appended to the full first allocation.`,
+    );
+    assert.equal(dedicatedState.pendingFabricGarment?.garmentKey, dedicatedCase.key);
+    assert.equal(
+      dedicatedRenderer.root.findAllByProps({ role: "dialog" }).length,
+      1,
+      `${dedicatedCase.garmentType} must expose the existing capacity-resolution flow.`,
+    );
+  }
 
 } finally {
   animationFrames.clear();

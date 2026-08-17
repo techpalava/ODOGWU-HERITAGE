@@ -6,6 +6,7 @@ import type { Fabric, FabricGarmentType } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
   assignFutureFabricToGarment,
+  applyFutureFabricCardSelection,
   getFutureFabricCapacityOffer,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
@@ -42,6 +43,48 @@ const fabrics = [
   createFabric("FAB-B", "Fabric B", 20),
   createFabric("FAB-C", "Fabric C", 30),
 ];
+
+let customerCardState = FabricAllocationStateEngine.initialize();
+customerCardState = applyFutureFabricCardSelection({
+  state: customerCardState,
+  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  garmentKey: "base:shirt",
+  fabricCode: "FAB-A",
+});
+assert.deepEqual(
+  customerCardState.fabricAllocations[0]?.garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
+  ["base:shirt", "base:trouser"],
+  "The UI-facing card orchestration must route a fresh Shirt target through the shared allocation engine.",
+);
+assert.equal(
+  getFutureFabricStageCompletion({
+    garmentTypeSelection: createSelection(["shirt", "trouser"]),
+    fabricAllocationState: customerCardState,
+    fabrics,
+  }).isComplete,
+  true,
+);
+customerCardState = applyFutureFabricCardSelection({
+  state: customerCardState,
+  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  garmentKey: "base:shirt",
+  fabricCode: "FAB-B",
+});
+assert.deepEqual(
+  customerCardState.fabricAllocations.map((allocation) => ({
+    fabricCode: allocation.fabricCode,
+    garmentKeys: allocation.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+  })),
+  [
+    { fabricCode: "FAB-A", garmentKeys: ["base:trouser"] },
+    { fabricCode: "FAB-B", garmentKeys: ["base:shirt"] },
+  ],
+  "Targeted replacement through the same UI seam must preserve the unrelated garment assignment.",
+);
 const assign = (
   state: ReturnType<typeof FabricAllocationStateEngine.initialize>,
   garmentTypes: FabricGarmentType[],
@@ -235,7 +278,11 @@ const stepSource = readFileSync(
   "utf8",
 );
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
-assert.match(stepSource, /For which garment\?/);
+assert.doesNotMatch(
+  stepSource,
+  />\s*Select Fabric\s*</,
+  "Step 2 must not retain a bottom Select Fabric confirmation control.",
+);
 assert.match(stepSource, /Fabrics selected:/);
 assert.match(stepSource, /Your fabric can carry one more garment\. \(Optional\)/);
 assert.match(stepSource, />\s*Use Same Fabric\s*</);
@@ -248,7 +295,19 @@ assert.match(stepSource, /focus\(\{ preventScroll: true \}\)/);
 assert.match(stepSource, /document\.activeElement === first/);
 assert.match(stepSource, /overflow-x-hidden/);
 assert.match(stepSource, /onAssignFabricToGarment\(fabric, garmentKey\)/);
+assert.match(stepSource, /onClick=\{\(\) => handleFabricSelection\(fabric\)\}/);
+assert.match(stepSource, /aria-live="polite"/);
 assert.match(studioSource, /assignFutureFabricToGarment\(/);
+assert.match(
+  studioSource,
+  /applyFutureFabricCardSelection\(/,
+  "DesignStudioView must route the customer-facing card action through the shared orchestration seam.",
+);
+assert.doesNotMatch(
+  studioSource,
+  /selectFutureFabric\(/,
+  "The parent UI must not bypass the orchestration seam with a second direct selection path.",
+);
 assert.match(studioSource, /onBack=\{\(\) => setFutureStageId\("garment_type"\)\}/);
 
 console.log("PASS: targeted future Fabric assignment flow");
