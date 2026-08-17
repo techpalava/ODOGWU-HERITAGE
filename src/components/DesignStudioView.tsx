@@ -80,6 +80,7 @@ import {
 import {
   assignFutureFabricToGarment,
   applyFutureFabricCardSelection,
+  removeFutureFabricAssignment,
   getFutureGarmentFabricPlanning,
   getFutureFabricCapacityComposition,
   getFutureFabricGarmentSelections,
@@ -801,6 +802,16 @@ export default function DesignStudioView({
         fabricCode: fabric.code,
       });
     });
+  };
+
+  const handleRemoveFutureFabricAssignment = (garmentKey: string) => {
+    if (activeUploadedDesignSource) {
+      setFuturePriceActivatedFabricCode(null);
+    }
+    pendingAdditionalConstructionRef.current = null;
+    setFabricAllocationState((current) =>
+      removeFutureFabricAssignment({ state: current, garmentKey }),
+    );
   };
 
   // STEP 3: Design Details
@@ -2400,6 +2411,7 @@ export default function DesignStudioView({
           }
           constructionPrice={futureConstructionPrice}
           onAssignFabricToGarment={handleAssignFutureFabricToGarment}
+          onRemoveFabricFromGarment={handleRemoveFutureFabricAssignment}
           onUseSameFabricForGarment={handleUseSameFutureFabricForGarment}
           onBack={() => setFutureStageId("garment_type")}
           onContinue={handleOpenDormantDesignStyleStage}

@@ -13,6 +13,7 @@ import {
   getFutureFabricAssignmentTargets,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
+  removeFutureFabricAssignment,
   selectFutureFabric,
 } from "./src/utils/designStudioFutureFabricStage";
 import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
@@ -109,6 +110,7 @@ const renderStep = (
   selection: GarmentTypeStepSelection = garmentTypeSelection,
   onUseSameFabricForGarment: (garmentKey: string) => void = () => undefined,
   onChooseAnotherFabric: () => void = () => undefined,
+  onRemoveFabricFromGarment: (garmentKey: string) => void = () => undefined,
   constructionPrice?: number,
 ) => {
   const completion = getFutureFabricStageCompletion({
@@ -130,6 +132,7 @@ const renderStep = (
       selectedFabricQuantity={planning.selectedFabricQuantity}
       constructionPrice={constructionPrice ?? resolveConstructionTotal(selection)}
       onAssignFabricToGarment={onAssign}
+      onRemoveFabricFromGarment={onRemoveFabricFromGarment}
       onUseSameFabricForGarment={onUseSameFabricForGarment}
       onBack={() => undefined}
       onContinue={() => undefined}
@@ -215,8 +218,9 @@ assert.equal(
 );
 assert.match(textContent(shirtTrouserRenderer.root), /Fabrics selected: 0 \/ 1/);
 assert.equal(
-  findButton(shirtTrouserRenderer.root, "Continue to Design Style")?.props.disabled,
-  true,
+  findButton(shirtTrouserRenderer.root, "Continue to Design Style"),
+  undefined,
+  "Incomplete Fabric must not render a forward action.",
 );
 const shirtCard = shirtTrouserRenderer.root
   .findAllByProps({ "data-fabric-card": "true" })
@@ -254,10 +258,7 @@ assert.match(
   /Garment Construction Subtotal€140\.00/,
   "The rendered shared allocation must retain the authoritative Shirt plus Trouser construction total.",
 );
-assert.equal(
-  findButton(shirtTrouserRenderer.root, "Continue to Design Style")?.props.disabled,
-  false,
-);
+assert.ok(findButton(shirtTrouserRenderer.root, "Continue to Design Style"));
 assert.match(
   textContent(shirtTrouserRenderer.root),
   /Inline Heritage A assigned to Standard Shirt and Trouser\./,
@@ -354,10 +355,7 @@ assert.match(
   textContent(mixedRenderer.root),
   /Inline Heritage B assigned to Long Shirt \(Kaftan\)\./,
 );
-assert.equal(
-  findButton(mixedRenderer.root, "Continue to Design Style")?.props.disabled,
-  false,
-);
+assert.ok(findButton(mixedRenderer.root, "Continue to Design Style"));
 let failedAssignmentRenderer!: ReturnType<typeof create>;
 const failedAssignmentState = FabricAllocationStateEngine.initialize();
 await act(async () => {
@@ -552,26 +550,42 @@ const pendingState = FabricAllocationStateEngine.attemptAppendGarment(
 );
 let useSameTarget = "";
 let chooseAnotherCalls = 0;
+let capacityState = FabricAllocationStateEngine.initialize();
 let capacityRenderer!: ReturnType<typeof create>;
-await act(async () => {
-  capacityRenderer = create(
-    renderStep(
-      sharedState,
-      () => undefined,
-      threeGarmentSelection,
-      (garmentKey) => {
-        useSameTarget = garmentKey;
-      },
-      () => {
-        chooseAnotherCalls += 1;
-      },
-    ),
+const renderCapacity = () =>
+  renderStep(
+    capacityState,
+    (fabric, garmentKey) => {
+      capacityState = assignFutureFabricToGarment({
+        state: capacityState,
+        garmentTypeSelection: threeGarmentSelection,
+        garmentKey,
+        fabricCode: fabric.code,
+      }).state;
+    },
+    threeGarmentSelection,
+    (garmentKey) => {
+      useSameTarget = garmentKey;
+    },
   );
+await act(async () => {
+  capacityRenderer = create(renderCapacity());
 });
 assert.equal(
   capacityRenderer.root.findAllByProps({ role: "status" }).length,
+  0,
+  "Mounting Fabric from state alone must not infer a capacity offer.",
+);
+await act(async () =>
+  capacityRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })[0]
+    .props.onClick(),
+);
+await act(async () => capacityRenderer.update(renderCapacity()));
+assert.equal(
+  capacityRenderer.root.findAllByProps({ role: "status" }).length,
   1,
-  "A confirmed eligible assignment must show the capacity offer.",
+  "A genuine successful assignment with spare capacity must show the offer.",
 );
 assert.match(
   textContent(capacityRenderer.root),
@@ -579,24 +593,59 @@ assert.match(
 );
 assert.match(textContent(capacityRenderer.root), /Next: Trouser/);
 await act(async () =>
-  findButton(capacityRenderer.root, "Use Same Fabric")!.props.onClick(),
+  capacityRenderer.root
+    .findByProps({ "aria-label": "Dismiss fabric capacity suggestion" })
+    .props.onClick(),
 );
-assert.equal(useSameTarget, "base:trouser");
+assert.equal(
+  capacityRenderer.root.findAllByProps({ role: "status" }).length,
+  0,
+  "Dismissing the one-shot offer must close it immediately.",
+);
 
-let capacityRenderer2!: ReturnType<typeof create>;
+let remountedCapacityRenderer!: ReturnType<typeof create>;
 await act(async () => {
-  capacityRenderer2 = create(
-    renderStep(
-      sharedState,
-      () => undefined,
-      threeGarmentSelection,
-      () => undefined,
-      () => {
-        chooseAnotherCalls += 1;
-      },
-    ),
-  );
+  remountedCapacityRenderer = create(renderCapacity());
 });
+assert.equal(
+  remountedCapacityRenderer.root.findAllByProps({ role: "status" }).length,
+  0,
+  "Draft hydration or completed-step remount must not reconstruct an offer.",
+);
+
+let capacityState2 = FabricAllocationStateEngine.initialize();
+let capacityRenderer2!: ReturnType<typeof create>;
+const renderCapacity2 = () =>
+  renderStep(
+    capacityState2,
+    (fabric, garmentKey) => {
+      capacityState2 = assignFutureFabricToGarment({
+        state: capacityState2,
+        garmentTypeSelection: threeGarmentSelection,
+        garmentKey,
+        fabricCode: fabric.code,
+      }).state;
+    },
+    threeGarmentSelection,
+    () => undefined,
+    () => {
+      chooseAnotherCalls += 1;
+    },
+  );
+await act(async () => {
+  capacityRenderer2 = create(renderCapacity2());
+});
+await act(async () =>
+  capacityRenderer2.root
+    .findAllByProps({ "data-fabric-card": "true" })[0]
+    .props.onClick(),
+);
+await act(async () => capacityRenderer2.update(renderCapacity2()));
+assert.equal(
+  capacityRenderer2.root.findAllByProps({ role: "status" }).length,
+  1,
+  "A later genuine assignment may create a new one-shot offer.",
+);
 await act(async () =>
   findButton(capacityRenderer2.root, "Select Different Fabric")!.props.onClick({
     currentTarget: {},
@@ -627,6 +676,104 @@ assert.equal(
   capacityRenderer2.root.findAllByProps({ "aria-pressed": true }).length,
   0,
   "Fabric cards are assigned directly and never remain temporarily selected.",
+);
+
+let capacityState3 = FabricAllocationStateEngine.initialize();
+let capacityRenderer3!: ReturnType<typeof create>;
+const renderCapacity3 = () =>
+  renderStep(
+    capacityState3,
+    (fabric, garmentKey) => {
+      capacityState3 = assignFutureFabricToGarment({
+        state: capacityState3,
+        garmentTypeSelection: threeGarmentSelection,
+        garmentKey,
+        fabricCode: fabric.code,
+      }).state;
+    },
+    threeGarmentSelection,
+    (garmentKey) => {
+      useSameTarget = garmentKey;
+    },
+  );
+await act(async () => {
+  capacityRenderer3 = create(renderCapacity3());
+});
+await act(async () =>
+  capacityRenderer3.root
+    .findAllByProps({ "data-fabric-card": "true" })[0]
+    .props.onClick(),
+);
+await act(async () => capacityRenderer3.update(renderCapacity3()));
+await act(async () =>
+  findButton(capacityRenderer3.root, "Use Same Fabric")!.props.onClick(),
+);
+assert.equal(useSameTarget, "base:trouser");
+assert.equal(capacityRenderer3.root.findAllByProps({ role: "status" }).length, 0);
+
+let staleOfferState = FabricAllocationStateEngine.initialize();
+let staleOfferRenderer!: ReturnType<typeof create>;
+const renderStaleOffer = () =>
+  renderStep(
+    staleOfferState,
+    (fabric, garmentKey) => {
+      staleOfferState = assignFutureFabricToGarment({
+        state: staleOfferState,
+        garmentTypeSelection: threeGarmentSelection,
+        garmentKey,
+        fabricCode: fabric.code,
+      }).state;
+    },
+    threeGarmentSelection,
+    () => undefined,
+    () => undefined,
+    (garmentKey) => {
+      staleOfferState = removeFutureFabricAssignment({
+        state: staleOfferState,
+        garmentKey,
+      });
+    },
+  );
+await act(async () => {
+  staleOfferRenderer = create(renderStaleOffer());
+});
+await act(async () =>
+  staleOfferRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })[0]
+    .props.onClick(),
+);
+await act(async () => staleOfferRenderer.update(renderStaleOffer()));
+assert.equal(staleOfferRenderer.root.findAllByProps({ role: "status" }).length, 1);
+await act(async () =>
+  staleOfferRenderer.root
+    .findByProps({ "aria-label": "Remove fabric from Standard Shirt" })
+    .props.onClick(),
+);
+await act(async () => staleOfferRenderer.update(renderStaleOffer()));
+assert.equal(
+  staleOfferRenderer.root.findAllByProps({ role: "status" }).length,
+  0,
+  "Removal must invalidate an offer before its stale target can be used.",
+);
+let removalRemountRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  removalRemountRenderer = create(renderStaleOffer());
+});
+assert.equal(
+  removalRemountRenderer.root.findAllByProps({ role: "status" }).length,
+  0,
+  "Reload and completed-step remount after removal must keep the offer closed.",
+);
+await act(async () =>
+  staleOfferRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })[0]
+    .props.onClick(),
+);
+await act(async () => staleOfferRenderer.update(renderStaleOffer()));
+assert.equal(
+  staleOfferRenderer.root.findAllByProps({ role: "status" }).length,
+  1,
+  "A genuine later assignment may create a fresh validated offer after removal.",
 );
 
 let pendingChoiceState = pendingState;
@@ -786,6 +933,10 @@ const flushAnimationFrames = () => {
   }
 };
 const mockWindow = {
+  scrollY: 240,
+  scrollTo: ({ top }: { top: number }) => {
+    mockWindow.scrollY = top;
+  },
   requestAnimationFrame: (callback: FrameRequestCallback) => {
     const id = nextAnimationFrameId++;
     animationFrames.set(id, callback);
@@ -976,13 +1127,33 @@ try {
     "A failed focus attempt must continue through the fallback order.",
   );
 
+  let capacityFocusState = FabricAllocationStateEngine.initialize();
   let capacityFocusRenderer!: ReturnType<typeof create>;
+  const renderCapacityFocus = () =>
+    renderStep(
+      capacityFocusState,
+      (fabric, garmentKey) => {
+        capacityFocusState = assignFutureFabricToGarment({
+          state: capacityFocusState,
+          garmentTypeSelection: threeGarmentSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+        }).state;
+      },
+      threeGarmentSelection,
+    );
   await act(async () => {
     capacityFocusRenderer = create(
-      renderStep(sharedState, () => undefined, threeGarmentSelection),
+      renderCapacityFocus(),
       { createNodeMock: createFocusMock },
     );
   });
+  await act(async () =>
+    capacityFocusRenderer.root
+      .findAllByProps({ "data-fabric-card": "true" })[0]
+      .props.onClick(),
+  );
+  await act(async () => capacityFocusRenderer.update(renderCapacityFocus()));
   const differentFabric = findButton(
     capacityFocusRenderer.root,
     "Select Different Fabric",
@@ -1303,8 +1474,9 @@ try {
   );
   assert.match(textContent(shirtTrouserRenderer.root), /Fabrics selected: 0 \/ 1/);
   assert.equal(
-    findButton(shirtTrouserRenderer.root, "Continue to Design Style")?.props.disabled,
-    true,
+    findButton(shirtTrouserRenderer.root, "Continue to Design Style"),
+    undefined,
+    "Incomplete Fabric must not expose a hidden or focusable Continue action.",
   );
   await act(async () =>
     shirtTrouserRenderer.root
@@ -1334,10 +1506,7 @@ try {
     }).length,
     0,
   );
-  assert.equal(
-    findButton(shirtTrouserRenderer.root, "Continue to Design Style")?.props.disabled,
-    false,
-  );
+  assert.ok(findButton(shirtTrouserRenderer.root, "Continue to Design Style"));
   assert.equal(
     findButton(shirtTrouserRenderer.root, "Select Fabric"),
     undefined,
@@ -1468,6 +1637,286 @@ try {
       `${dedicatedCase.garmentType} must expose the existing capacity-resolution flow.`,
     );
   }
+
+  let removalState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  const removalAllocationId = removalState.fabricAllocations[0].allocationId;
+  let removalRenderer!: ReturnType<typeof create>;
+  const renderRemoval = () =>
+    renderStep(
+      removalState,
+      () => undefined,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      (garmentKey) => {
+        removalState = removeFutureFabricAssignment({
+          state: removalState,
+          garmentKey,
+        });
+      },
+    );
+  await act(async () => {
+    removalRenderer = create(renderRemoval(), {
+      createNodeMock: createFocusMock,
+    });
+  });
+  const removeShirt = removalRenderer.root.findByProps({
+    "aria-label": "Remove fabric from Standard Shirt",
+  });
+  assert.equal(removeShirt.props.title, "Remove Fabric");
+  assert.match(removeShirt.props.className, /min-h-11/);
+  assert.match(removeShirt.props.className, /min-w-11/);
+  await act(async () => removeShirt.props.onClick());
+  await act(async () => removalRenderer.update(renderRemoval()));
+  flushAnimationFrames();
+  assert.deepEqual(
+    removalState.fabricAllocations.map((allocation) => ({
+      allocationId: allocation.allocationId,
+      garmentKeys: allocation.garmentAssignments.map(
+        (assignment) => assignment.garmentKey,
+      ),
+    })),
+    [{ allocationId: removalAllocationId, garmentKeys: ["base:trouser"] }],
+  );
+  assert.equal(
+    removalRenderer.root.findByProps({
+      "data-garment-key": "base:shirt",
+    }).props["data-assignment-status"],
+    "unassigned",
+  );
+  assert.equal(
+    removalRenderer.root.findAllByProps({
+      "aria-label": "Remove fabric from Standard Shirt",
+    }).length,
+    0,
+  );
+  assert.equal(
+    removalRenderer.root.findAllByProps({
+      "aria-label": "Remove fabric from Trouser",
+    }).length,
+    1,
+  );
+  assert.match(textContent(removalRenderer.root), /Fabrics selected: 1 \/ 1/);
+  assert.doesNotMatch(
+    textContent(removalRenderer.root),
+    /Your fabric can carry one more garment\. \(Optional\)/,
+    "Removing a shared assignment must not create a spare-capacity offer.",
+  );
+  assert.match(
+    textContent(removalRenderer.root),
+    /Garment Construction Subtotal€140\.00/,
+    "The construction subtotal must remain visible while Fabric completion is blocked.",
+  );
+  assert.match(
+    textContent(removalRenderer.root),
+    /Inline Heritage A removed from Standard Shirt\./,
+    "Removal must announce the exact fabric and garment without exposing implementation details.",
+  );
+  assert.ok(
+    findButton(removalRenderer.root, "Add Fabric"),
+    "The removed garment must immediately expose its Add Fabric action.",
+  );
+  assert.equal(
+    findButton(removalRenderer.root, "Continue to Design Style"),
+    undefined,
+    "Removal must remove the forward action while Fabric is incomplete.",
+  );
+  assert.equal(
+    activeFocusMock?.label,
+    "Add fabric for Standard Shirt",
+    "Removing a fabric must return focus to the removed garment's Add Fabric action.",
+  );
+  assert.equal(
+    mockWindow.scrollY,
+    240,
+    "Removal focus must preserve the customer viewport position.",
+  );
+
+  const removeTrouser = removalRenderer.root.findByProps({
+    "aria-label": "Remove fabric from Trouser",
+  });
+  await act(async () => removeTrouser.props.onClick());
+  await act(async () => removalRenderer.update(renderRemoval()));
+  assert.equal(removalState.fabricAllocations.length, 0);
+  assert.equal(removalState.activeAllocationId, null);
+  assert.match(textContent(removalRenderer.root), /Fabrics selected: 0 \/ 1/);
+  assert.doesNotMatch(
+    textContent(removalRenderer.root),
+    /Your fabric can carry one more garment\. \(Optional\)/,
+    "Removing the final assignment must not create a spare-capacity offer.",
+  );
+  assert.match(
+    textContent(removalRenderer.root),
+    /Garment Construction Subtotal€140\.00/,
+    "The construction subtotal must remain visible after final Fabric removal.",
+  );
+  assert.match(
+    textContent(removalRenderer.root),
+    /Inline Heritage A removed from Trouser\./,
+  );
+  assert.equal(
+    removalRenderer.root.findAllByProps({
+      "aria-label": "Remove fabric from Trouser",
+    }).length,
+    0,
+  );
+  assert.equal(findButton(removalRenderer.root, "Select Fabric"), undefined);
+
+  let pendingFinalRemovalState =
+    FabricAllocationStateEngine.removeGarmentAssignments(
+      pendingState,
+      ["base:shirt"],
+    );
+  assert.equal(
+    pendingFinalRemovalState.pendingFabricGarment?.garmentKey,
+    "base:skirt",
+    "The rendered regression must begin with a different pending overflow garment.",
+  );
+  let pendingFinalRemovalRenderer!: ReturnType<typeof create>;
+  const renderPendingFinalRemoval = () =>
+    renderStep(
+      pendingFinalRemovalState,
+      () => undefined,
+      threeGarmentSelection,
+      () => undefined,
+      () => undefined,
+      (garmentKey) => {
+        pendingFinalRemovalState = removeFutureFabricAssignment({
+          state: pendingFinalRemovalState,
+          garmentKey,
+        });
+      },
+    );
+  await act(async () => {
+    pendingFinalRemovalRenderer = create(renderPendingFinalRemoval(), {
+      createNodeMock: createFocusMock,
+    });
+  });
+  assert.equal(
+    pendingFinalRemovalRenderer.root.findAllByProps({ role: "dialog" }).length,
+    1,
+  );
+  await act(async () =>
+    pendingFinalRemovalRenderer.root
+      .findByProps({ "aria-label": "Remove fabric from Trouser" })
+      .props.onClick(),
+  );
+  await act(async () =>
+    pendingFinalRemovalRenderer.update(renderPendingFinalRemoval()),
+  );
+  flushAnimationFrames();
+  assert.equal(pendingFinalRemovalState.fabricAllocations.length, 0);
+  assert.equal(pendingFinalRemovalState.activeAllocationId, null);
+  assert.equal(pendingFinalRemovalState.pendingFabricGarment, null);
+  assert.equal(
+    pendingFinalRemovalState.awaitingFabricForPendingGarment,
+    false,
+  );
+  assert.equal(
+    pendingFinalRemovalRenderer.root.findAllByProps({ role: "dialog" }).length,
+    0,
+    "Removing the final assignment must close a different pending overflow flow.",
+  );
+  const pendingFinalAdd = pendingFinalRemovalRenderer.root.findByProps({
+    "aria-label": "Add fabric for Trouser",
+  });
+  assert.equal(Boolean(pendingFinalAdd.props.disabled), false);
+  assert.equal(
+    findButton(pendingFinalRemovalRenderer.root, "Continue to Design Style"),
+    undefined,
+  );
+  assert.doesNotMatch(
+    textContent(pendingFinalRemovalRenderer.root),
+    /Your fabric can carry one more garment\. \(Optional\)/,
+  );
+  assert.match(
+    textContent(pendingFinalRemovalRenderer.root),
+    /Inline Heritage A removed from Trouser\./,
+  );
+  assert.equal(activeFocusMock?.label, "Add fabric for Trouser");
+
+  let noOpRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    noOpRenderer = create(
+      renderStep(sharedState, () => undefined, shirtTrouserSelection, () => undefined, () => undefined, () => undefined),
+      { createNodeMock: createFocusMock },
+    );
+  });
+  const noOpRemove = noOpRenderer.root.findByProps({
+    "aria-label": "Remove fabric from Standard Shirt",
+  });
+  await act(async () => noOpRemove.props.onClick());
+  await act(async () => noOpRenderer.update(renderStep(sharedState, () => undefined, shirtTrouserSelection, () => undefined, () => undefined, () => undefined)));
+  await act(async () => flushAnimationFrames());
+  assert.doesNotMatch(
+    textContent(noOpRenderer.root),
+    /removed from Standard Shirt\./,
+    "A no-op removal must not announce a false removal.",
+  );
+
+  let separateRemovalState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  separateRemovalState = applyFutureFabricCardSelection({
+    state: separateRemovalState,
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:trouser",
+    fabricCode: "INLINE-B",
+  });
+  const separateAllocationId = separateRemovalState.fabricAllocations.find(
+    (allocation) => allocation.fabricCode === "INLINE-B",
+  )?.allocationId;
+  let separateRemovalRenderer!: ReturnType<typeof create>;
+  const renderSeparateRemoval = () =>
+    renderStep(
+      separateRemovalState,
+      () => undefined,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      (garmentKey) => {
+        separateRemovalState = removeFutureFabricAssignment({
+          state: separateRemovalState,
+          garmentKey,
+        });
+      },
+    );
+  await act(async () => {
+    separateRemovalRenderer = create(renderSeparateRemoval(), {
+      createNodeMock: createFocusMock,
+    });
+  });
+  await act(async () =>
+    separateRemovalRenderer.root
+      .findByProps({ "aria-label": "Remove fabric from Standard Shirt" })
+      .props.onClick(),
+  );
+  await act(async () => separateRemovalRenderer.update(renderSeparateRemoval()));
+  assert.deepEqual(
+    separateRemovalState.fabricAllocations.map((allocation) => ({
+      allocationId: allocation.allocationId,
+      fabricCode: allocation.fabricCode,
+      garmentKeys: allocation.garmentAssignments.map(
+        (assignment) => assignment.garmentKey,
+      ),
+    })),
+    [
+      {
+        allocationId: separateAllocationId,
+        fabricCode: "INLINE-B",
+        garmentKeys: ["base:trouser"],
+      },
+    ],
+    "Removing one separate assignment must preserve the unrelated allocation and Fabric.",
+  );
 
 } finally {
   animationFrames.clear();

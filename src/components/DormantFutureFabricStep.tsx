@@ -42,12 +42,20 @@ interface DormantFutureFabricStepProps {
   selectedFabricQuantity: number;
   constructionPrice: number;
   onAssignFabricToGarment: (fabric: Fabric, garmentKey: string) => void;
+  onRemoveFabricFromGarment: (garmentKey: string) => void;
   onUseSameFabricForGarment: (garmentKey: string) => void;
   onBack: () => void;
   onContinue: () => void;
   onUseSameFabric: () => void;
   onChooseAnotherFabric: () => void;
   onCancelPendingFabric: () => void;
+}
+
+interface FabricCapacityOfferSnapshot {
+  allocationId: string;
+  fabricCode: string;
+  targetGarmentKey: string;
+  assignmentGeneration: number;
 }
 
 const getFabricAvailabilityMessage = (fabric: Fabric): string | null => {
@@ -191,6 +199,7 @@ export const DormantFutureFabricStep = ({
   selectedFabricQuantity,
   constructionPrice,
   onAssignFabricToGarment,
+  onRemoveFabricFromGarment,
   onUseSameFabricForGarment,
   onBack,
   onContinue,
@@ -203,9 +212,11 @@ export const DormantFutureFabricStep = ({
     string | null
   >(null);
   const [assignmentAnnouncement, setAssignmentAnnouncement] = useState("");
-  const [dismissedCapacityOffer, setDismissedCapacityOffer] = useState<
-    string | null
-  >(null);
+  const [capacityOfferSnapshot, setCapacityOfferSnapshot] =
+    useState<FabricCapacityOfferSnapshot | null>(null);
+  const [pendingRemovalRequest, setPendingRemovalRequest] = useState<number | null>(
+    null,
+  );
   const catalogueDialogRef = useRef<HTMLDivElement>(null);
   const catalogueSectionRef = useRef<HTMLDivElement>(null);
   const catalogueTriggerRef = useRef<HTMLElement | null>(null);
@@ -217,8 +228,20 @@ export const DormantFutureFabricStep = ({
   const pendingAssignmentAnnouncementRef = useRef<{
     fabricCode: string;
     fabricName: string;
+    targetGarmentKey: string;
+    assignmentGeneration: number;
     before: Map<string, string>;
   } | null>(null);
+  const assignmentGenerationRef = useRef(0);
+  const pendingRemovalAnnouncementRef = useRef<{
+    request: number;
+    garmentKey: string;
+    garmentLabel: string;
+    fabricName: string;
+  } | null>(null);
+  const removalRequestRef = useRef(0);
+  const removalVerificationRequestRef = useRef<number | null>(null);
+  const pendingRemovalScrollYRef = useRef<number | null>(null);
 
   const visibleFabrics = fabrics.filter(
     (fabric) => fabric.stockStatus !== "HIDDEN",
@@ -249,6 +272,11 @@ export const DormantFutureFabricStep = ({
       catalogueSectionRef.current = null;
       catalogueHeadingRef.current = null;
       garmentActionRefs.current.clear();
+      assignmentGenerationRef.current += 1;
+      pendingAssignmentAnnouncementRef.current = null;
+      pendingRemovalAnnouncementRef.current = null;
+      removalVerificationRequestRef.current = null;
+      pendingRemovalScrollYRef.current = null;
     },
     [],
   );
@@ -256,19 +284,36 @@ export const DormantFutureFabricStep = ({
     garmentTypeSelection,
     fabricAllocationState,
   });
-  const capacityOffer = getFutureFabricCapacityOffer({
-    garmentTypeSelection,
-    fabricAllocationState,
-  });
+  const currentCapacityOffer = capacityOfferSnapshot
+    ? getFutureFabricCapacityOffer({
+        garmentTypeSelection,
+        fabricAllocationState,
+      })
+    : null;
+  const capacityOffer =
+    capacityOfferSnapshot &&
+    capacityOfferSnapshot.assignmentGeneration ===
+      assignmentGenerationRef.current &&
+    currentCapacityOffer?.allocationId === capacityOfferSnapshot.allocationId &&
+    currentCapacityOffer.fabricCode === capacityOfferSnapshot.fabricCode &&
+    currentCapacityOffer.target.assignment.garmentKey ===
+      capacityOfferSnapshot.targetGarmentKey
+      ? currentCapacityOffer
+      : null;
   const capacityOfferFabric = capacityOffer
     ? fabrics.find((fabric) => fabric.code === capacityOffer.fabricCode)
     : null;
   const capacityOfferIsValid = Boolean(
     capacityOfferFabric && !getFabricAvailabilityMessage(capacityOfferFabric),
   );
-  const capacityOfferKey = capacityOffer
-    ? `${capacityOffer.allocationId}:${capacityOffer.target.assignment.garmentKey}`
-    : null;
+  useEffect(() => {
+    if (
+      capacityOfferSnapshot &&
+      (!capacityOffer || !capacityOfferIsValid)
+    ) {
+      setCapacityOfferSnapshot(null);
+    }
+  }, [capacityOffer, capacityOfferIsValid, capacityOfferSnapshot]);
   const assignmentByGarmentKey = useMemo(
     () =>
       new Map(
@@ -284,8 +329,15 @@ export const DormantFutureFabricStep = ({
   useEffect(() => {
     const pendingAnnouncement = pendingAssignmentAnnouncementRef.current;
     if (!pendingAnnouncement) return;
+    if (
+      pendingAnnouncement.assignmentGeneration !==
+      assignmentGenerationRef.current
+    ) {
+      pendingAssignmentAnnouncementRef.current = null;
+      return;
+    }
 
-    const changedGarmentLabels = targets
+    const changedTargets = targets
       .filter(({ assignment }) => {
         const previousFabricCode = pendingAnnouncement.before.get(
           assignment.garmentKey,
@@ -295,8 +347,20 @@ export const DormantFutureFabricStep = ({
           nextAssignment?.allocation.fabricCode === pendingAnnouncement.fabricCode &&
           previousFabricCode !== pendingAnnouncement.fabricCode
         );
-      })
-      .map(({ assignment }) => getFutureGarmentLabel(assignment.garmentType));
+      });
+
+    if (
+      !changedTargets.some(
+        ({ assignment }) =>
+          assignment.garmentKey === pendingAnnouncement.targetGarmentKey,
+      )
+    ) {
+      return;
+    }
+
+    const changedGarmentLabels = changedTargets.map(({ assignment }) =>
+      getFutureGarmentLabel(assignment.garmentType),
+    );
 
     if (changedGarmentLabels.length === 0) return;
 
@@ -305,8 +369,92 @@ export const DormantFutureFabricStep = ({
         changedGarmentLabels,
       )}.`,
     );
+    const assignedTarget = assignmentByGarmentKey.get(
+      pendingAnnouncement.targetGarmentKey,
+    );
+    const nextCapacityOffer = getFutureFabricCapacityOffer({
+      garmentTypeSelection,
+      fabricAllocationState,
+    });
+    setCapacityOfferSnapshot(
+      nextCapacityOffer &&
+        assignedTarget?.allocation.allocationId ===
+          nextCapacityOffer.allocationId &&
+        nextCapacityOffer.fabricCode === pendingAnnouncement.fabricCode
+        ? {
+            allocationId: nextCapacityOffer.allocationId,
+            fabricCode: nextCapacityOffer.fabricCode,
+            targetGarmentKey:
+              nextCapacityOffer.target.assignment.garmentKey,
+            assignmentGeneration: pendingAnnouncement.assignmentGeneration,
+          }
+        : null,
+    );
     pendingAssignmentAnnouncementRef.current = null;
-  }, [assignmentByGarmentKey, fabricAllocationState.fabricAllocations, targets]);
+  }, [
+    assignmentByGarmentKey,
+    fabricAllocationState,
+    garmentTypeSelection,
+    targets,
+  ]);
+  useEffect(() => {
+    const pendingRemoval = pendingRemovalAnnouncementRef.current;
+    if (!pendingRemoval) {
+      return;
+    }
+
+    if (pendingRemoval.request !== removalRequestRef.current) {
+      pendingRemovalAnnouncementRef.current = null;
+      pendingRemovalScrollYRef.current = null;
+      setPendingRemovalRequest(null);
+      return;
+    }
+
+    if (assignmentByGarmentKey.has(pendingRemoval.garmentKey)) {
+      if (removalVerificationRequestRef.current !== pendingRemoval.request) {
+        removalVerificationRequestRef.current = pendingRemoval.request;
+        const verifyNoOp = () => {
+          removalVerificationRequestRef.current = null;
+          const latestRemoval = pendingRemovalAnnouncementRef.current;
+          if (
+            !latestRemoval ||
+            latestRemoval.request !== pendingRemoval.request
+          ) {
+            return;
+          }
+          if (assignmentByGarmentKey.has(latestRemoval.garmentKey)) {
+            pendingRemovalAnnouncementRef.current = null;
+            pendingRemovalScrollYRef.current = null;
+            setPendingRemovalRequest(null);
+            postAssignmentFocusRequestRef.current += 1;
+          }
+        };
+        if (
+          typeof window !== "undefined" &&
+          typeof window.requestAnimationFrame === "function"
+        ) {
+          window.requestAnimationFrame(verifyNoOp);
+        } else {
+          verifyNoOp();
+        }
+      }
+      return;
+    }
+
+    setAssignmentAnnouncement(
+      `${pendingRemoval.fabricName} removed from ${pendingRemoval.garmentLabel}.`,
+    );
+    pendingRemovalAnnouncementRef.current = null;
+    removalVerificationRequestRef.current = null;
+    setPendingRemovalRequest(null);
+    const scrollY = pendingRemovalScrollYRef.current;
+    pendingRemovalScrollYRef.current = null;
+    focusPostAssignmentDestination(pendingRemoval.garmentKey, scrollY);
+  }, [
+    assignmentByGarmentKey,
+    fabricAllocationState.fabricAllocations,
+    pendingRemovalRequest,
+  ]);
   const uniqueBlockers = Array.from(
     new Set(
       completion.blockers.map((blocker) => blockerMessages[blocker.code]),
@@ -360,17 +508,28 @@ export const DormantFutureFabricStep = ({
     restoreCatalogueFocus();
   };
 
-  const focusPostAssignmentDestination = (garmentKey: string) => {
+  const focusPostAssignmentDestination = (
+    garmentKey: string,
+    restoreScrollY: number | null = null,
+  ) => {
     const request = ++postAssignmentFocusRequestRef.current;
     const focus = () => {
       if (request !== postAssignmentFocusRequestRef.current) return;
 
       const garmentAction = garmentActionRefs.current.get(garmentKey);
-      if (garmentAction && focusElementSafely(garmentAction)) return;
-
-      // The garment can disappear while the parent reconciles an assignment;
-      // keep focus in the mounted Step 2 surface without invoking cancellation fallback.
-      focusElementSafely(catalogueSectionRef.current);
+      const focused =
+        (garmentAction && focusElementSafely(garmentAction)) ||
+        // The garment can disappear while the parent reconciles an assignment;
+        // keep focus in the mounted Step 2 surface without invoking cancellation fallback.
+        focusElementSafely(catalogueSectionRef.current);
+      if (
+        focused &&
+        restoreScrollY !== null &&
+        typeof window !== "undefined" &&
+        typeof window.scrollTo === "function"
+      ) {
+        window.scrollTo({ top: restoreScrollY, behavior: "auto" });
+      }
     };
 
     if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
@@ -394,6 +553,9 @@ export const DormantFutureFabricStep = ({
     garmentKey: string | null = null,
     openDialog = false,
   ) => {
+    assignmentGenerationRef.current += 1;
+    pendingAssignmentAnnouncementRef.current = null;
+    setCapacityOfferSnapshot(null);
     postAssignmentFocusRequestRef.current += 1;
     catalogueTriggerRef.current = trigger;
     catalogueFocusGarmentKeyRef.current = garmentKey;
@@ -447,9 +609,13 @@ export const DormantFutureFabricStep = ({
   }, [isCatalogueOpen]);
 
   const assignSelectedFabric = (fabric: Fabric, garmentKey: string) => {
+    const assignmentGeneration = ++assignmentGenerationRef.current;
+    setCapacityOfferSnapshot(null);
     pendingAssignmentAnnouncementRef.current = {
       fabricCode: fabric.code,
       fabricName: fabric.name,
+      targetGarmentKey: garmentKey,
+      assignmentGeneration,
       before: new Map(
         Array.from(assignmentByGarmentKey.entries()).map(
           ([assignmentKey, { allocation }]) => [
@@ -473,6 +639,62 @@ export const DormantFutureFabricStep = ({
       return;
     }
     assignSelectedFabric(fabric, target.assignment.garmentKey);
+  };
+
+  const removeAssignedFabric = (
+    garmentKey: string,
+    garmentLabel: string,
+    fabricName: string,
+  ) => {
+    assignmentGenerationRef.current += 1;
+    pendingAssignmentAnnouncementRef.current = null;
+    setCapacityOfferSnapshot(null);
+    setIsCatalogueOpen(false);
+    setCatalogueTargetGarmentKey(null);
+    catalogueFocusRequestRef.current += 1;
+    catalogueTriggerRef.current = null;
+    catalogueFocusGarmentKeyRef.current = null;
+    const request = ++removalRequestRef.current;
+    removalVerificationRequestRef.current = null;
+    const currentAssignment = assignmentByGarmentKey.get(garmentKey);
+    const hasAssignment = Boolean(currentAssignment);
+    if (!hasAssignment) {
+      pendingRemovalAnnouncementRef.current = null;
+      pendingRemovalScrollYRef.current = null;
+      setPendingRemovalRequest(null);
+      postAssignmentFocusRequestRef.current += 1;
+      setAssignmentAnnouncement("");
+      onRemoveFabricFromGarment(garmentKey);
+      return;
+    }
+    pendingRemovalAnnouncementRef.current = {
+      request,
+      garmentKey,
+      garmentLabel,
+      fabricName:
+        fabrics.find(
+          (fabric) => fabric.code === currentAssignment?.allocation.fabricCode,
+        )?.name ?? fabricName,
+    };
+    setPendingRemovalRequest(request);
+    pendingRemovalScrollYRef.current =
+      typeof window !== "undefined" ? window.scrollY : null;
+    setAssignmentAnnouncement("");
+    onRemoveFabricFromGarment(garmentKey);
+  };
+
+  const handleUseSameFabricForGarment = (garmentKey: string) => {
+    assignmentGenerationRef.current += 1;
+    pendingAssignmentAnnouncementRef.current = null;
+    setCapacityOfferSnapshot(null);
+    onUseSameFabricForGarment(garmentKey);
+  };
+
+  const handleUseSameFabricAgain = () => {
+    assignmentGenerationRef.current += 1;
+    pendingAssignmentAnnouncementRef.current = null;
+    setCapacityOfferSnapshot(null);
+    onUseSameFabric();
   };
 
   const renderCatalogueCard = (fabric: Fabric) => {
@@ -569,11 +791,10 @@ export const DormantFutureFabricStep = ({
   return (
     <section
       aria-labelledby="future-fabric-step-title"
-      className={`space-y-6 font-sans ${
-        shouldDockContinueAction ? "pb-28 sm:pb-32" : ""
-      }`}
+      className="space-y-6 pb-28 font-sans sm:pb-32"
       data-stage-id="fabric"
       data-stage-complete={completion.isComplete}
+      data-bottom-action-reserved="true"
     >
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
         <DesignStudioBackButton
@@ -633,13 +854,33 @@ export const DormantFutureFabricStep = ({
                 data-assignment-status={assigned ? "assigned" : "unassigned"}
               >
                 <div className="min-w-0">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <p className="min-w-0 break-words text-sm font-bold text-heritage-green">
-                      {garmentLabel}
-                    </p>
-                    <span className="shrink-0 rounded-full border border-heritage-gold/30 bg-white px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-heritage-green">
-                      {assigned ? "Assigned" : "Needs fabric"}
-                    </span>
+                  <div className="flex min-w-0 items-start gap-2">
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                      <p className="min-w-0 break-words text-sm font-bold text-heritage-green">
+                        {garmentLabel}
+                      </p>
+                      <span className="shrink-0 rounded-full border border-heritage-gold/30 bg-white px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-heritage-green">
+                        {assigned ? "Assigned" : "Needs fabric"}
+                      </span>
+                    </div>
+                    {assigned && (
+                      <button
+                        type="button"
+                        title="Remove Fabric"
+                        aria-label={`Remove fabric from ${garmentLabel}`}
+                        onClick={() =>
+                          removeAssignedFabric(
+                            assignment.garmentKey,
+                            garmentLabel,
+                            fabric?.name ?? "Selected fabric",
+                          )
+                        }
+                        className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-lg font-semibold leading-none text-heritage-ink/55 transition hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                      >
+                        <X aria-hidden="true" size={16} />
+                        <span className="sr-only">Remove Fabric</span>
+                      </button>
+                    )}
                   </div>
                   {assigned && fabric ? (
                     <>
@@ -782,7 +1023,7 @@ export const DormantFutureFabricStep = ({
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <button
                 type="button"
-                onClick={onUseSameFabric}
+                onClick={handleUseSameFabricAgain}
                 className="min-h-11 rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
               >
                 Use Same Fabric Again
@@ -822,8 +1063,7 @@ export const DormantFutureFabricStep = ({
           garments assigned across {completion.fabricQuantity} fabric selection
           {completion.fabricQuantity === 1 ? "" : "s"}.
         </p>
-        {pricing.status === "resolved" && (
-          <div className="mt-4 space-y-2 border-t border-heritage-gold/15 pt-4 text-sm">
+        <div className="mt-4 space-y-2 border-t border-heritage-gold/15 pt-4 text-sm">
             <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
               <span className="min-w-0 break-words text-heritage-ink/70">
                 Garment Construction Subtotal
@@ -835,7 +1075,7 @@ export const DormantFutureFabricStep = ({
             <p className="text-xs leading-relaxed text-heritage-ink/60">
               Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.
             </p>
-            {pricing.allocationLines.map((line, index) => (
+            {pricing.status === "resolved" && pricing.allocationLines.map((line, index) => (
               <div
                 key={line.allocationId}
                 className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
@@ -849,12 +1089,11 @@ export const DormantFutureFabricStep = ({
               </div>
             ))}
           </div>
-        )}
       </aside>
 
       {capacityOffer &&
         capacityOfferIsValid &&
-        dismissedCapacityOffer !== capacityOfferKey && (
+        capacityOfferSnapshot && (
         <div
           role="status"
           aria-live="polite"
@@ -871,7 +1110,7 @@ export const DormantFutureFabricStep = ({
             </div>
             <button
               type="button"
-              onClick={() => setDismissedCapacityOffer(capacityOfferKey)}
+              onClick={() => setCapacityOfferSnapshot(null)}
               aria-label="Dismiss fabric capacity suggestion"
               className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold"
             >
@@ -882,8 +1121,7 @@ export const DormantFutureFabricStep = ({
             <button
               type="button"
               onClick={() => {
-                setDismissedCapacityOffer(capacityOfferKey);
-                onUseSameFabricForGarment(
+                handleUseSameFabricForGarment(
                   capacityOffer.target.assignment.garmentKey,
                 );
               }}
@@ -894,7 +1132,9 @@ export const DormantFutureFabricStep = ({
             <button
               type="button"
               onClick={(event) => {
-                setDismissedCapacityOffer(capacityOfferKey);
+                assignmentGenerationRef.current += 1;
+                pendingAssignmentAnnouncementRef.current = null;
+                setCapacityOfferSnapshot(null);
                 onChooseAnotherFabric();
                 openCatalogue(
                   event.currentTarget,
@@ -911,34 +1151,23 @@ export const DormantFutureFabricStep = ({
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <DesignStudioBackButton destination="Garment Type" onClick={onBack} />
-        <div
-          data-testid="future-fabric-continue-action"
-          data-docked={shouldDockContinueAction}
-          className={
-            shouldDockContinueAction
-              ? "fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3"
-              : ""
-          }
-        >
+        {shouldDockContinueAction && (
           <div
-            className={
-              shouldDockContinueAction
-                ? "mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm sm:px-4 sm:py-3.5"
-                : ""
-            }
+            data-testid="future-fabric-continue-action"
+            data-docked="true"
+            className="fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3"
           >
-            <button
-              type="button"
-              onClick={onContinue}
-              disabled={!completion.isComplete}
-              className={`inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 ${
-                shouldDockContinueAction ? "w-full sm:w-auto" : ""
-              }`}
-            >
-              Continue to Design Style
-            </button>
+            <div className="mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm sm:px-4 sm:py-3.5">
+              <button
+                type="button"
+                onClick={onContinue}
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
+              >
+                Continue to Design Style
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {isCatalogueOpen &&

@@ -11,6 +11,7 @@ import {
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
   reconcileFutureFabricAllocationState,
+  removeFutureFabricAssignment,
 } from "./src/utils/designStudioFutureFabricStage";
 import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAllocationPricing";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
@@ -211,6 +212,128 @@ single = assign(single, singleSelection, "base:shirt", "FAB-C");
 assert.equal(single.fabricAllocations.length, 1);
 assert.equal(single.fabricAllocations[0].allocationId, originalAllocationId);
 assert.equal(single.fabricAllocations[0].fabricCode, "FAB-C");
+
+let sharedRemovalState = applyFutureFabricCardSelection({
+  state: FabricAllocationStateEngine.initialize(),
+  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  garmentKey: "base:shirt",
+  fabricCode: "FAB-A",
+});
+const sharedRemovalAllocationId = sharedRemovalState.fabricAllocations[0].allocationId;
+sharedRemovalState = removeFutureFabricAssignment({
+  state: sharedRemovalState,
+  garmentKey: "base:shirt",
+});
+assert.equal(sharedRemovalState.fabricAllocations.length, 1);
+assert.equal(sharedRemovalState.fabricAllocations[0].allocationId, sharedRemovalAllocationId);
+assert.deepEqual(
+  sharedRemovalState.fabricAllocations[0].garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
+  ["base:trouser"],
+  "Removing one shared assignment must preserve the unrelated garment in its allocation.",
+);
+assert.equal(
+  getFutureFabricStageCompletion({
+    garmentTypeSelection: createSelection(["shirt", "trouser"]),
+    fabricAllocationState: sharedRemovalState,
+    fabrics,
+  }).isComplete,
+  false,
+);
+sharedRemovalState = removeFutureFabricAssignment({
+  state: sharedRemovalState,
+  garmentKey: "base:trouser",
+});
+assert.equal(sharedRemovalState.fabricAllocations.length, 0);
+assert.equal(sharedRemovalState.activeAllocationId, null);
+assert.equal(
+  getFutureFabricStageCompletion({
+    garmentTypeSelection: createSelection(["shirt", "trouser"]),
+    fabricAllocationState: sharedRemovalState,
+    fabrics,
+  }).isComplete,
+  false,
+  "Removing the last assignment must make the fabric stage incomplete without leaving an empty allocation.",
+);
+
+const overflowRemovalSelection = createSelection([
+  "shirt",
+  "trouser",
+  "skirt",
+]);
+const overflowRemovalState = applyFutureFabricCardSelection({
+  state: FabricAllocationStateEngine.initialize(),
+  garmentTypeSelection: overflowRemovalSelection,
+  garmentKey: "base:shirt",
+  fabricCode: "FAB-A",
+});
+assert.equal(overflowRemovalState.pendingFabricGarment?.garmentKey, "base:skirt");
+const overflowAllocationId = overflowRemovalState.fabricAllocations[0].allocationId;
+const sharedAfterOverflowRemoval = removeFutureFabricAssignment({
+  state: overflowRemovalState,
+  garmentKey: "base:shirt",
+});
+assert.equal(sharedAfterOverflowRemoval.pendingFabricGarment, null);
+assert.equal(sharedAfterOverflowRemoval.awaitingFabricForPendingGarment, false);
+assert.equal(sharedAfterOverflowRemoval.fabricAllocations[0].allocationId, overflowAllocationId);
+assert.deepEqual(
+  sharedAfterOverflowRemoval.fabricAllocations[0].garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
+  ["base:trouser"],
+  "Removal must cancel a different pending overflow garment without deleting an unrelated committed assignment.",
+);
+
+const oneCommittedWithDifferentPending =
+  FabricAllocationStateEngine.removeGarmentAssignments(
+    overflowRemovalState,
+    ["base:shirt"],
+  );
+assert.equal(
+  oneCommittedWithDifferentPending.pendingFabricGarment?.garmentKey,
+  "base:skirt",
+  "The regression fixture must reproduce a different stale pending overflow garment.",
+);
+const finalAfterOverflowRemoval = removeFutureFabricAssignment({
+  state: oneCommittedWithDifferentPending,
+  garmentKey: "base:trouser",
+});
+assert.equal(finalAfterOverflowRemoval.fabricAllocations.length, 0);
+assert.equal(finalAfterOverflowRemoval.activeAllocationId, null);
+assert.equal(finalAfterOverflowRemoval.pendingFabricGarment, null);
+assert.equal(finalAfterOverflowRemoval.awaitingFabricForPendingGarment, false);
+
+const separateBeforeRemoval = assign(
+  assign(
+    FabricAllocationStateEngine.initialize(),
+    ["shirt", "trouser"],
+    "base:shirt",
+    "FAB-A",
+  ),
+  ["shirt", "trouser"],
+  "base:trouser",
+  "FAB-B",
+);
+const separateAfterRemoval = removeFutureFabricAssignment({
+  state: separateBeforeRemoval,
+  garmentKey: "base:shirt",
+});
+assert.deepEqual(
+  separateAfterRemoval.fabricAllocations.map((allocation) => ({
+    allocationId: allocation.allocationId,
+    fabricCode: allocation.fabricCode,
+    garmentKeys: allocation.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+  })),
+  [{
+    allocationId: separateBeforeRemoval.fabricAllocations[1].allocationId,
+    fabricCode: "FAB-B",
+    garmentKeys: ["base:trouser"],
+  }],
+  "Removing one separate allocation must preserve the unrelated allocation and its identity.",
+);
 
 const removed = reconcileFutureFabricAllocationState({
   state: separate,

@@ -350,6 +350,26 @@ export const applyFutureFabricCardSelection = ({
   }).state;
 };
 
+/**
+ * Removes one customer-facing garment assignment through the allocation
+ * engine, dropping only allocations that become empty after that removal.
+ */
+export const removeFutureFabricAssignment = ({
+  state,
+  garmentKey,
+}: {
+  state: FabricAllocationState;
+  garmentKey: string;
+}): FabricAllocationState => {
+  const withoutPendingFlow =
+    FabricAllocationStateEngine.cancelPendingGarment(state);
+  const removed = FabricAllocationStateEngine.removeGarmentAssignments(
+    withoutPendingFlow,
+    [garmentKey],
+  );
+  return removeEmptyFabricAllocations(removed);
+};
+
 export const getFutureFabricCapacityOffer = ({
   garmentTypeSelection,
   fabricAllocationState,

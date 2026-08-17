@@ -75,6 +75,7 @@ const renderFabricStep = (state = incompleteFabricState) => {
       selectedFabricQuantity={state.fabricAllocations.length}
       constructionPrice={65}
       onAssignFabricToGarment={() => undefined}
+      onRemoveFabricFromGarment={() => undefined}
       onUseSameFabricForGarment={() => undefined}
       onBack={() => undefined}
       onContinue={() => {
@@ -92,17 +93,23 @@ await act(async () => {
   fabricRenderer = create(renderFabricStep());
 });
 assert.equal(
-  fabricRenderer.root.findByProps({
+  fabricRenderer.root.findAllByProps({
     "data-testid": "future-fabric-continue-action",
-  }).props["data-docked"],
-  false,
-  "An incomplete Fabric step must keep its Continue action in the natural layout.",
+  }).length,
+  0,
+  "An incomplete Fabric step must not render a hidden or focusable Continue action.",
 );
 assert.equal(
   findForwardButtons(fabricRenderer.root, "Continue to Design Style").length,
-  1,
-  "Fabric must expose exactly one forward Continue button.",
+  0,
+  "Fabric must expose its forward action only when completion permits it.",
 );
+const incompleteFabricSection = fabricRenderer.root.findByProps({
+  "data-stage-id": "fabric",
+});
+assert.equal(incompleteFabricSection.props["data-bottom-action-reserved"], "true");
+assert.match(incompleteFabricSection.props.className, /pb-28/);
+assert.match(incompleteFabricSection.props.className, /sm:pb-32/);
 
 await act(async () => {
   fabricRenderer.update(renderFabricStep(completeFabricState));
@@ -110,8 +117,12 @@ await act(async () => {
 const completeFabricAction = fabricRenderer.root.findByProps({
   "data-testid": "future-fabric-continue-action",
 });
-assert.equal(completeFabricAction.props["data-docked"], true);
+assert.equal(completeFabricAction.props["data-docked"], "true");
 assert.match(completeFabricAction.props.className, /fixed inset-x-0 bottom-0/);
+const completeFabricSection = fabricRenderer.root.findByProps({
+  "data-stage-id": "fabric",
+});
+assert.equal(completeFabricSection.props.className, incompleteFabricSection.props.className);
 const fabricForwardButton = findForwardButtons(
   fabricRenderer.root,
   "Continue to Design Style",
@@ -129,7 +140,7 @@ assert.equal(
   fabricRenderer.root.findByProps({
     "data-testid": "future-fabric-continue-action",
   }).props["data-docked"],
-  true,
+  "true",
   "Inline Fabric targeting must not hide the completed-step action.",
 );
 assert.match(textContent(fabricRenderer.root), /Choosing fabric for: Standard Shirt/);
@@ -145,11 +156,16 @@ await act(async () => {
   fabricRenderer.update(renderFabricStep());
 });
 assert.equal(
-  fabricRenderer.root.findByProps({
+  fabricRenderer.root.findAllByProps({
     "data-testid": "future-fabric-continue-action",
-  }).props["data-docked"],
-  false,
-  "Invalidating Fabric completion must immediately remove the docked ready action.",
+  }).length,
+  0,
+  "Invalidating Fabric completion must remove the actual forward action.",
+);
+assert.equal(
+  fabricRenderer.root.findByProps({ "data-stage-id": "fabric" }).props.className,
+  completeFabricSection.props.className,
+  "Completion changes must not collapse Step 2's bottom layout reservation.",
 );
 
 const compatibleStyle: StyleCategory = {
