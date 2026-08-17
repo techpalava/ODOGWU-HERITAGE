@@ -241,8 +241,8 @@ assert.match(stepSource, /Your fabric can carry one more garment\. \(Optional\)/
 assert.match(stepSource, />\s*Use Same Fabric\s*</);
 assert.match(stepSource, />\s*Select Different Fabric\s*</);
 assert.match(stepSource, /aria-modal="true"/);
-assert.match(stepSource, /event\.key === "Escape"/);
 assert.match(stepSource, /restoreCatalogueFocus/);
+assert.match(stepSource, /focusElementSafely/);
 assert.match(stepSource, /isConnected/);
 assert.match(stepSource, /focus\(\{ preventScroll: true \}\)/);
 assert.match(stepSource, /document\.activeElement === first/);

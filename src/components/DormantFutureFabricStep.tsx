@@ -68,6 +68,114 @@ const getFutureGarmentLabel = (garmentType: FabricGarmentType): string =>
     ? "Other Garment"
     : getGarmentTypeStepLabel(garmentType);
 
+const getElementAttribute = (element: HTMLElement, name: string): string | null =>
+  typeof element.getAttribute === "function" ? element.getAttribute(name) : null;
+
+const hasElementAttribute = (element: HTMLElement, name: string): boolean =>
+  typeof element.hasAttribute === "function"
+    ? element.hasAttribute(name)
+    : getElementAttribute(element, name) !== null;
+
+const hasHiddenAncestor = (element: HTMLElement): boolean => {
+  let current: HTMLElement | null = element;
+  while (current) {
+    if (
+      current.hidden ||
+      hasElementAttribute(current, "hidden") ||
+      getElementAttribute(current, "aria-hidden") === "true" ||
+      hasElementAttribute(current, "inert") ||
+      Boolean((current as HTMLElement & { inert?: boolean }).inert)
+    ) {
+      return true;
+    }
+
+    if (typeof window !== "undefined" && typeof window.getComputedStyle === "function") {
+      try {
+        const style = window.getComputedStyle(current);
+        if (
+          style.display === "none" ||
+          style.visibility === "hidden" ||
+          style.visibility === "collapse"
+        ) {
+          return true;
+        }
+      } catch {
+        // Partial DOM implementations may not support computed styles.
+      }
+    }
+
+    current = current.parentElement;
+  }
+
+  return false;
+};
+
+const isFocusEligible = (element: HTMLElement | null): element is HTMLElement => {
+  if (!element) return false;
+  if (typeof HTMLElement !== "undefined" && !(element instanceof HTMLElement)) {
+    return false;
+  }
+  if (!element.isConnected) return false;
+  if (
+    Boolean((element as HTMLElement & { disabled?: boolean }).disabled) ||
+    hasElementAttribute(element, "disabled") ||
+    getElementAttribute(element, "aria-disabled") === "true" ||
+    hasHiddenAncestor(element)
+  ) {
+    return false;
+  }
+
+  const tagName = element.tagName?.toUpperCase();
+  const inputType =
+    tagName === "INPUT"
+      ? (element as HTMLInputElement).type?.toLowerCase()
+      : null;
+  if (inputType === "hidden") return false;
+
+  const naturallyFocusable =
+    tagName === "BUTTON" ||
+    (tagName === "A" && hasElementAttribute(element, "href")) ||
+    (tagName === "INPUT" && inputType !== "hidden") ||
+    tagName === "SELECT" ||
+    tagName === "TEXTAREA" ||
+    Boolean(element.isContentEditable);
+  const tabIndex = typeof element.tabIndex === "number" ? element.tabIndex : null;
+  const explicitlyFocusable =
+    hasElementAttribute(element, "tabindex") && tabIndex !== null && tabIndex >= -1;
+
+  return naturallyFocusable || explicitlyFocusable;
+};
+
+const didFocusElement = (element: HTMLElement): boolean => {
+  if (typeof document === "undefined" || !("activeElement" in document)) {
+    return true;
+  }
+  return document.activeElement === element;
+};
+
+const focusElementSafely = (element: HTMLElement): boolean => {
+  if (!isFocusEligible(element)) return false;
+
+  try {
+    element.focus({ preventScroll: true });
+  } catch {
+    try {
+      element.focus();
+    } catch {
+      return false;
+    }
+  }
+
+  if (didFocusElement(element)) return true;
+
+  try {
+    element.focus();
+  } catch {
+    return false;
+  }
+  return didFocusElement(element);
+};
+
 export const DormantFutureFabricStep = ({
   fabrics,
   garmentTypeSelection,
@@ -122,6 +230,14 @@ export const DormantFutureFabricStep = ({
       setSelectedCatalogueFabric(null);
     }
   }, [activeCatalogueTarget, catalogueTargetGarmentKey]);
+  useEffect(
+    () => () => {
+      catalogueFocusRequestRef.current += 1;
+      catalogueTriggerRef.current = null;
+      catalogueFocusGarmentKeyRef.current = null;
+    },
+    [],
+  );
   const unassignedTargets = getFutureUnassignedFabricTargets({
     garmentTypeSelection,
     fabricAllocationState,
@@ -160,9 +276,11 @@ export const DormantFutureFabricStep = ({
 
   const restoreCatalogueFocus = () => {
     const request = ++catalogueFocusRequestRef.current;
-    if (typeof window === "undefined") return;
-
-    window.requestAnimationFrame(() => {
+    const clearRestorationState = () => {
+      catalogueTriggerRef.current = null;
+      catalogueFocusGarmentKeyRef.current = null;
+    };
+    const restore = () => {
       if (request !== catalogueFocusRequestRef.current) return;
 
       const candidates = [
@@ -174,15 +292,26 @@ export const DormantFutureFabricStep = ({
         catalogueHeadingRef.current,
         catalogueSectionRef.current,
       ];
-      const focusTarget = candidates.find(
-        (element): element is HTMLElement =>
-          Boolean(element?.isConnected && !element.hasAttribute("disabled")),
-      );
 
-      focusTarget?.focus({ preventScroll: true });
-      catalogueTriggerRef.current = null;
-      catalogueFocusGarmentKeyRef.current = null;
-    });
+      for (const candidate of candidates) {
+        if (candidate && focusElementSafely(candidate)) {
+          clearRestorationState();
+          return;
+        }
+      }
+
+      clearRestorationState();
+    };
+
+    if (typeof window === "undefined") {
+      clearRestorationState();
+      return;
+    }
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(restore);
+    } else {
+      restore();
+    }
   };
 
   const closeCatalogue = () => {
