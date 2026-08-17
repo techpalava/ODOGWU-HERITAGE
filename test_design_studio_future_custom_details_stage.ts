@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { DormantFutureCustomDetailsStep } from "./src/components/DormantFutureCustomDetailsStep";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
@@ -157,39 +157,97 @@ assert.equal(
   "custom_details",
 );
 
-const renderedInputs = reconcileGarmentScopedPersonalizedInputs({
-  reconciliation: initial,
+const textContent = (node: ReactTestInstance | string | null): string =>
+  typeof node === "string"
+    ? node
+    : node
+      ? node.children
+          .map((child) => textContent(child as ReactTestInstance | string))
+          .join("")
+      : "";
+
+const neckLayoutGarmentTypeSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["shirt"],
+  selectedDemographic: "male",
+  normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+}).selection;
+let neckLayoutReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: neckLayoutGarmentTypeSelection,
+  catalogInspection,
+  existingState: createEmptyGarmentScopedCustomDetailsState(),
+});
+let neckLayoutInputs = reconcileGarmentScopedPersonalizedInputs({
+  reconciliation: neckLayoutReconciliation,
   catalogInspection,
   existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
 });
-const renderedCatalogue = projectFutureCustomDetailsCatalogue({
-  garmentTypeSelection,
+let neckLayoutCatalogue = projectFutureCustomDetailsCatalogue({
+  garmentTypeSelection: neckLayoutGarmentTypeSelection,
   style: null,
-  reconciliation: initial,
+  reconciliation: neckLayoutReconciliation,
   activeOptions: catalogInspection.activeOptions,
   additionalGarments: [],
 });
-const renderedMarkup = renderToStaticMarkup(
+let neckLayoutCompletion = validateGarmentScopedCustomDetailsCompletion({
+  earlierStagesComplete: true,
+  reconciliation: neckLayoutReconciliation,
+  personalizedInputs: neckLayoutInputs,
+});
+let neckLayoutPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: neckLayoutReconciliation,
+  catalogInspection,
+});
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+let neckRenderer!: ReturnType<typeof create>;
+const createNeckStep = () =>
   createElement(DormantFutureCustomDetailsStep, {
-    reconciliation: initial,
-    catalogue: renderedCatalogue,
-    personalizedInputs: renderedInputs.state,
-    completion: validateGarmentScopedCustomDetailsCompletion({
-      earlierStagesComplete: true,
-      reconciliation: initial,
-      personalizedInputs: renderedInputs,
-    }),
-    pricing: calculateGarmentScopedCustomDetailsPricing({
-      reconciliation: initial,
-      catalogInspection,
-    }),
+    reconciliation: neckLayoutReconciliation,
+    catalogue: neckLayoutCatalogue,
+    personalizedInputs: neckLayoutInputs.state,
+    completion: neckLayoutCompletion,
+    pricing: neckLayoutPricing,
     orderLevelCustomDetailsPrice: 0,
     constructionSubtotal: 0,
     designSelections: {},
     selectedStyle: null,
     additionalGarments: [],
     additionalGarmentConstructionOptions: [],
-    onSingleSelect: () => undefined,
+    onSingleSelect: (garmentKey, selectionGroup, optionId) => {
+      const nextState = setGarmentScopedCustomDetailSelection(
+        neckLayoutReconciliation.state,
+        garmentKey,
+        selectionGroup,
+        optionId,
+      );
+      neckLayoutReconciliation = reconcileGarmentScopedCustomDetails({
+        garmentTypeSelection: neckLayoutGarmentTypeSelection,
+        catalogInspection,
+        existingState: nextState,
+      });
+      neckLayoutInputs = reconcileGarmentScopedPersonalizedInputs({
+        reconciliation: neckLayoutReconciliation,
+        catalogInspection,
+        existingInputs: neckLayoutInputs.state,
+      });
+      neckLayoutCatalogue = projectFutureCustomDetailsCatalogue({
+        garmentTypeSelection: neckLayoutGarmentTypeSelection,
+        style: null,
+        reconciliation: neckLayoutReconciliation,
+        activeOptions: catalogInspection.activeOptions,
+        additionalGarments: [],
+      });
+      neckLayoutCompletion = validateGarmentScopedCustomDetailsCompletion({
+        earlierStagesComplete: true,
+        reconciliation: neckLayoutReconciliation,
+        personalizedInputs: neckLayoutInputs,
+      });
+      neckLayoutPricing = calculateGarmentScopedCustomDetailsPricing({
+        reconciliation: neckLayoutReconciliation,
+        catalogInspection,
+      });
+      neckRenderer.update(createNeckStep());
+    },
     onClearSelection: () => undefined,
     onConstructionSelect: () => undefined,
     onToggleMultiSelect: () => undefined,
@@ -203,37 +261,177 @@ const renderedMarkup = renderToStaticMarkup(
     onRemoveAdditionalGarment: () => undefined,
     onBack: () => undefined,
     onContinue: () => undefined,
-  }),
+  });
+act(() => {
+  neckRenderer = create(createNeckStep());
+});
+
+const neckFieldsets = neckRenderer.root.findAllByProps({
+  "data-custom-detail-group": "neck_design",
+});
+assert.equal(neckFieldsets.length, 1, "Rendered tree must contain one scoped Neck fieldset");
+const neckFieldset = neckFieldsets[0];
+const neckLegend = neckFieldset.findByType("legend");
+assert.equal(
+  textContent(neckLegend.findAllByType("span")[0]).trim().toUpperCase(),
+  "NECK DESIGN",
 );
-const renderedNeckStart = renderedMarkup.indexOf(
-  'data-custom-detail-group="neck_design"',
-);
-assert.ok(renderedNeckStart >= 0, "Rendered markup must contain the Neck group");
-const renderedNeckMarkup = renderedMarkup.slice(renderedNeckStart);
 assert.match(
-  renderedNeckMarkup,
-  /class="min-w-0 lg:col-span-2"/,
+  String(neckFieldset.props.className),
+  /(?:^|\s)lg:col-span-2(?:\s|$)/,
   "Rendered Neck fieldset must span the full Custom Details section width",
 );
-assert.match(
-  renderedNeckMarkup,
-  /grid-cols-\[repeat\(auto-fit,minmax\(min\(100%,20rem\),1fr\)\)\]/,
-  "Rendered collar panels must use a readable minimum-width grid",
+const ordinaryFieldsets = neckRenderer.root
+  .findAllByType("fieldset")
+  .filter((fieldset) => fieldset !== neckFieldset);
+assert.ok(
+  ordinaryFieldsets.length > 0,
+  "Rendered tree must contain at least one ordinary non-Neck fieldset",
 );
 assert.ok(
-  renderedNeckMarkup.indexOf("None") < renderedNeckMarkup.indexOf("No Collar"),
-  "Rendered Neck None option must precede collar panels",
+  ordinaryFieldsets.every(
+    (fieldset) => !String(fieldset.props.className).includes("lg:col-span-2"),
+  ),
+  "Ordinary Custom Details fieldsets must retain their normal layout",
 );
-for (const label of [
-  "No Collar",
-  "Vertical Collar",
-  "Flat Collar",
+
+const collarGridClass =
+  "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,20rem),1fr))] gap-4";
+const collarGrids = neckFieldset.findAll(
+  (node) => node.type === "div" && node.props.className === collarGridClass,
+);
+assert.equal(collarGrids.length, 1, "Neck must render one scoped responsive collar grid");
+const collarGrid = collarGrids[0];
+const collarGroups = collarGrid.findAllByType("section");
+const optionTitleSpan = (label: ReactTestInstance) =>
+  label.findAllByType("span").find((span) =>
+    String(span.props.className).includes("text-sm") &&
+    String(span.props.className).includes("font-bold"),
+  );
+
+const neckLabels = neckFieldset.findAllByType("label");
+const noneLabel = neckLabels.find((label) =>
+  textContent(label).trim().startsWith("None"),
+);
+assert.ok(noneLabel, "Neck must render None as the first selectable option");
+assert.equal(
+  neckLabels.indexOf(noneLabel),
+  0,
+  "None must be the first rendered Neck option",
+);
+const noneInput = noneLabel.findByType("input");
+assert.equal(noneInput.props.type, "radio");
+assert.equal(noneInput.props.checked, true);
+assert.match(
+  String(noneLabel.props.className),
+  /border-heritage-green bg-heritage-green\/5/,
+  "None must retain the existing selected-card styling",
+);
+assert.equal(
+  textContent(optionTitleSpan(noneLabel) || null).trim(),
+  "None",
+);
+assert.ok(textContent(noneLabel).includes("No selection for this category"));
+assert.equal(
+  noneLabel.parent,
+  collarGrid.parent,
+  "None and the collar grid must share the occurrence-level layout wrapper",
+);
+assert.equal(
+  noneLabel.parent?.children.indexOf(noneLabel),
+  0,
+  "None must occupy the full-width block before the collar grid",
+);
+assert.ok(
+  String(noneLabel.parent?.props.className).includes("space-y-3"),
+  "None must remain a full-width sibling of the collar grid",
+);
+
+const collarGroupOrder = collarGroups
+  .map((group) => textContent(group.findByType("h5")).trim().toUpperCase());
+assert.deepEqual(collarGroupOrder, [
+  "NO COLLAR",
+  "VERTICAL COLLAR",
+  "FLAT COLLAR",
+]);
+
+const expectedNeckOptionLabels = [
+  "No Collar, Round Neck",
+  "No Collar, V-Shaped Neck",
+  "No Collar, U or Square-Shaped Neck",
+  "Vertical Collar, Round Neck",
+  "Vertical Collar, V-Shaped Neck",
   "Vertical Collar, U or Square-Shaped Neck",
+  "Flat Collar, Round Neck",
+  "Flat Collar, V-Shaped Neck",
   "Flat Collar, U or Square-Shaped Neck",
-]) {
-  assert.ok(renderedNeckMarkup.includes(label), `Rendered Neck must retain ${label}`);
+];
+const collarOptionLabels = collarGroups.flatMap((group) =>
+  group
+    .findAllByType("label")
+    .map((label) => optionTitleSpan(label))
+    .filter((span): span is ReactTestInstance => Boolean(span))
+    .map((span) => textContent(span).trim()),
+);
+assert.deepEqual(collarOptionLabels, expectedNeckOptionLabels);
+assert.ok(
+  collarGroups.every((group) =>
+    group.findAllByType("label").every((label) => {
+      const title = optionTitleSpan(label);
+      return (
+        label.findByType("input").props.type === "radio" &&
+        new Set(String(title?.props.className).split(/\s+/)).has("min-w-0") &&
+        new Set(String(title?.props.className).split(/\s+/)).has("break-words") &&
+        !new Set(String(title?.props.className).split(/\s+/)).has("break-all") &&
+        String(label.props.className).includes("min-h-12") &&
+        String(label.props.className).includes("focus-within:ring-2") &&
+        textContent(label).includes("Included")
+      );
+    }),
+  ),
+  "Neck option cards must retain radio, wrapping, focus, touch-target, and Included contracts",
+);
+const includedNeckOption = neckLayoutReconciliation.applicabilityByGarmentKey
+  .get("base:shirt")
+  ?.groups.find((group) => group.selectionGroup === "neck_design")
+  ?.options.find((option) => option.label === "Vertical Collar, U or Square-Shaped Neck");
+assert.ok(includedNeckOption, "The real Included Neck option must be available");
+const includedNeckLabel = neckFieldset.findAllByType("label").find((label) =>
+  textContent(label).includes(includedNeckOption.label),
+);
+assert.ok(includedNeckLabel, "The real Included Neck option must render");
+act(() => {
+  includedNeckLabel.findByType("input").props.onChange();
+});
+const selectedNeckFieldset = neckRenderer.root.findAllByProps({
+  "data-custom-detail-group": "neck_design",
+})[0];
+const selectedIncludedNeckLabel = selectedNeckFieldset.findAllByType("label").find((label) =>
+  textContent(label).includes(includedNeckOption.label),
+);
+assert.ok(selectedIncludedNeckLabel);
+assert.equal(selectedIncludedNeckLabel.findByType("input").props.checked, true);
+assert.equal(
+  neckLayoutReconciliation.state.selectionsByGarmentKey["base:shirt"]?.neck_design,
+  includedNeckOption.id,
+);
+assert.equal(
+  neckRenderer.root.findByType(DormantFutureCustomDetailsStep).props.constructionSubtotal,
+  0,
+  "Selecting an Included Neck option must not change Garment Construction",
+);
+assert.equal(neckLayoutPricing.status, "exact");
+if (neckLayoutPricing.status === "exact") {
+  assert.equal(neckLayoutPricing.subtotalCents, 0);
+  assert.deepEqual(
+    neckLayoutPricing.lines
+      .filter((line) => line.selectionGroup === "neck_design")
+      .filter((line) => line.optionId === includedNeckOption.id)
+      .map((line) => line.lineTotalCents),
+    [0],
+    "The selected Included Neck option must contribute exactly €0",
+  );
 }
-assert.ok(!renderedNeckMarkup.includes("break-all"));
 
 const componentSource = readFileSync(
   "src/components/DormantFutureCustomDetailsStep.tsx",
@@ -261,35 +459,11 @@ assert.match(componentSource, /Describe your personalized requirement/);
 assert.match(componentSource, /type=\{group\.allowMultiple \? "checkbox" : "radio"\}/);
 assert.match(componentSource, /xl:grid-cols-\[minmax\(0,1fr\)_minmax\(19rem,24rem\)\]/);
 assert.match(componentSource, /xl:sticky xl:top-4/);
-assert.match(componentSource, /min-w-0 break-words/);
 assert.match(componentSource, /Not currently included/);
 assert.match(componentSource, /Included in your selected design/);
 assert.match(componentSource, /Added garment/);
 assert.match(componentSource, /Add Additional Garment/);
-assert.match(componentSource, /No selection for this category/);
-assert.match(componentSource, /NECK_DESIGN_SUBCATEGORY_ORDER/);
-assert.match(
-  componentSource,
-  /group\.selectionGroup === "neck_design" \? "lg:col-span-2"/,
-  "Neck must occupy the full Custom Details section width",
-);
-assert.match(
-  componentSource,
-  /grid-cols-\[repeat\(auto-fit,minmax\(min\(100%,20rem\),1fr\)\)\]/,
-  "Neck collar panels must retain a readable minimum width",
-);
-assert.doesNotMatch(
-  componentSource,
-  /neck_design[\s\S]{0,240}lg:grid-cols-2 2xl:grid-cols-3/,
-  "Neck must not force narrow two- or three-column panels",
-);
-assert.ok(
-  !componentSource.includes("break-all"),
-  "Neck labels must not use character-by-character wrapping",
-);
-assert.match(componentSource, /Included in your selected design/);
 assert.match(componentSource, /additionalGarmentConstructionOptions/);
-assert.match(componentSource, /min-h-12/);
 assert.match(componentSource, /onConstructionSelect/);
 assert.match(componentSource, /onClearSelection/);
 assert.match(stepperSource, /canEnterCustomDetails/);
