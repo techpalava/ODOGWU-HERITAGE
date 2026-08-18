@@ -29,7 +29,10 @@ import {
   resolveLegacyFabricMaterialPricing,
   type ResolvedFabricAllocationPricing,
 } from "./fabricAllocationPricing";
-import { getDefaultGarmentDetailsForSpec } from "../config/StyleFabricCapacityConfig";
+import {
+  createStyleBaseGarmentSpec,
+  getDefaultGarmentDetailsForSpec,
+} from "../config/StyleFabricCapacityConfig";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import { resolveAdditionalGarmentPriceRows } from "./additionalGarmentDomain";
 import {
@@ -340,6 +343,12 @@ export interface DesignPricingInput {
   allowUnresolvedMaterialPricing?: boolean;
   style?: StyleCategory | null;
   designContext?: CustomDetailDesignContext | null;
+  /**
+   * Determines applicability for explicitly selected decorative features
+   * without enabling style-included features, order-level filtering, sewing
+   * context, or style price overrides.
+   */
+  decorativeFeatureApplicabilityStyle?: StyleCategory | null;
   baseGarmentComposition?: readonly FabricCapacityGarmentSpec[];
   additionalGarments?: readonly FabricGarmentAssignment[];
   garment?: CustomDetailGarmentContext | null;
@@ -441,6 +450,7 @@ export const calculateDesignPricing = ({
   allowUnresolvedMaterialPricing = false,
   style,
   designContext,
+  decorativeFeatureApplicabilityStyle,
   baseGarmentComposition,
   additionalGarments = [],
   garment,
@@ -515,6 +525,11 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
     style,
     catalog,
     enrichedGarment,
+    decorativeFeatureApplicabilityStyle !== undefined
+      ? {
+          applicabilityStyle: decorativeFeatureApplicabilityStyle,
+        }
+      : undefined,
   );
   const catalogPricing = calculateCustomDetailsPriceBreakdown(
     applicableDesign,
@@ -540,8 +555,8 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
   }
 
   const candidateBaseGarmentPriceRows = isLockedConstructionMode
-    ? constructionBridge.readOnlyConstructionRows.map((row, index) => ({
-        garmentKey: `garment-type:${row.garmentType}:${index + 1}`,
+    ? constructionBridge.readOnlyConstructionRows.map((row) => ({
+        garmentKey: createStyleBaseGarmentSpec(row.garmentType).key,
         garmentType: row.garmentType,
         label: row.garmentLabel,
         price: roundMoney(row.price),

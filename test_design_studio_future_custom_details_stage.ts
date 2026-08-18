@@ -200,15 +200,24 @@ let neckLayoutPricing = calculateGarmentScopedCustomDetailsPricing({
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let neckRenderer!: ReturnType<typeof create>;
-const createNeckStep = () =>
+const createNeckStep = ({
+  constructionBreakdown = { status: "complete" as const, rows: [] },
+  constructionSubtotal = 0,
+  orderLevelCustomDetailsPrice = 0,
+}: {
+  constructionBreakdown?: Parameters<typeof DormantFutureCustomDetailsStep>[0]["constructionBreakdown"];
+  constructionSubtotal?: number | null;
+  orderLevelCustomDetailsPrice?: number;
+} = {}) =>
   createElement(DormantFutureCustomDetailsStep, {
     reconciliation: neckLayoutReconciliation,
     catalogue: neckLayoutCatalogue,
     personalizedInputs: neckLayoutInputs.state,
     completion: neckLayoutCompletion,
     pricing: neckLayoutPricing,
-    orderLevelCustomDetailsPrice: 0,
-    constructionSubtotal: 0,
+    orderLevelCustomDetailsPrice,
+    constructionBreakdown,
+    constructionSubtotal,
     designSelections: {},
     selectedStyle: null,
     additionalGarments: [],
@@ -432,6 +441,107 @@ if (neckLayoutPricing.status === "exact") {
     "The selected Included Neck option must contribute exactly €0",
   );
 }
+
+let constructionBreakdownRenderer!: ReturnType<typeof create>;
+act(() => {
+  constructionBreakdownRenderer = create(createNeckStep({
+    constructionBreakdown: {
+      status: "complete",
+      rows: [{
+        garmentKey: "base:shirt",
+        garmentLabel: "Shirt",
+        constructionLabel: "Standard Length Shirt, Short Sleeve",
+        role: "main",
+        priceCents: 6500,
+      }],
+    },
+    constructionSubtotal: 65,
+  }));
+});
+const constructionBreakdown = constructionBreakdownRenderer.root.findByProps({
+  "data-construction-price-breakdown": true,
+});
+assert.equal(
+  textContent(constructionBreakdown.findByProps({ "data-construction-price-row": "base:shirt" })),
+  "ShirtStandard Length Shirt, Short Sleeve€65.00",
+  "the read-only breakdown renders the garment occurrence, selected construction, and authoritative price together",
+);
+assert.equal(
+  textContent(constructionBreakdown).includes("Vertical Collar"),
+  false,
+  "Included Neck choices remain outside Garment Construction",
+);
+
+let pendingConstructionRenderer!: ReturnType<typeof create>;
+act(() => {
+  pendingConstructionRenderer = create(createNeckStep({
+    constructionBreakdown: {
+      status: "pending",
+      rows: [{
+        garmentKey: "base:shirt",
+        garmentLabel: "Shirt",
+        constructionLabel: null,
+        role: "main",
+        priceCents: null,
+      }],
+    },
+    constructionSubtotal: null,
+  }));
+});
+const pendingConstructionBreakdown = pendingConstructionRenderer.root.findByProps({
+  "data-construction-price-breakdown": true,
+});
+assert.match(textContent(pendingConstructionBreakdown), /Price pending/);
+assert.equal(
+  textContent(pendingConstructionBreakdown).includes("€0.00"),
+  false,
+  "unresolved construction pricing must never be presented as a free row",
+);
+assert.match(
+  textContent(pendingConstructionRenderer.root),
+  /Construction pricing needs review before an exact total is available\./,
+);
+
+let repeatedConstructionRenderer!: ReturnType<typeof create>;
+act(() => {
+  repeatedConstructionRenderer = create(createNeckStep({
+    constructionBreakdown: {
+      status: "complete",
+      rows: [
+        {
+          garmentKey: "base:shirt",
+          garmentLabel: "Shirt",
+          constructionLabel: "Standard Length Shirt, Short Sleeve",
+          role: "main",
+          priceCents: 6500,
+        },
+        {
+          garmentKey: "additional:shirt:1",
+          garmentLabel: "Shirt",
+          constructionLabel: "Standard Length Shirt, Mid-Long Sleeve",
+          role: "additional",
+          priceCents: 7000,
+        },
+      ],
+    },
+    constructionSubtotal: 135,
+    orderLevelCustomDetailsPrice: 12,
+  }));
+});
+assert.equal(
+  textContent(repeatedConstructionRenderer.root.findByProps({
+    "data-construction-price-row": "base:shirt",
+  })).startsWith("Shirt 1"),
+  true,
+);
+assert.equal(
+  textContent(repeatedConstructionRenderer.root.findByProps({
+    "data-construction-price-row": "additional:shirt:1",
+  })).startsWith("Shirt 2"),
+  true,
+);
+assert.match(textContent(repeatedConstructionRenderer.root), /Custom Details subtotal€12\.00/);
+assert.match(textContent(repeatedConstructionRenderer.root), /Estimated total so far€147\.00/);
 
 const componentSource = readFileSync(
   "src/components/DormantFutureCustomDetailsStep.tsx",

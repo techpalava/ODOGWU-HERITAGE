@@ -53,6 +53,7 @@ import type {
 } from "../utils/futureCustomDetailsCatalogue";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import { isFutureCustomDetailsContentReady } from "../utils/aiTryOnWorkflow";
+import type { CustomerGarmentConstructionBreakdownProjection } from "../utils/designPriceBreakdownPresentation";
 
 interface DormantFutureCustomDetailsStepProps {
   reconciliation: GarmentScopedCustomDetailsReconciliationResult;
@@ -61,7 +62,8 @@ interface DormantFutureCustomDetailsStepProps {
   completion: GarmentScopedCustomDetailsCompletionResult;
   pricing: GarmentScopedCustomDetailsPricingResult;
   orderLevelCustomDetailsPrice: number;
-  constructionSubtotal: number;
+  constructionBreakdown: CustomerGarmentConstructionBreakdownProjection;
+  constructionSubtotal: number | null;
   designSelections: DesignSelections;
   selectedStyle: StyleCategory | null;
   additionalGarments: readonly FabricGarmentAssignment[];
@@ -179,6 +181,7 @@ export const DormantFutureCustomDetailsStep = ({
   completion,
   pricing,
   orderLevelCustomDetailsPrice,
+  constructionBreakdown,
   constructionSubtotal,
   designSelections,
   selectedStyle,
@@ -235,7 +238,27 @@ export const DormantFutureCustomDetailsStep = ({
   const customDetailsSubtotal =
     (pricing.status === "exact" ? pricing.subtotal : pricing.exactSubtotalCents / 100) +
     orderLevelCustomDetailsPrice;
-  const estimatedTotal = pricing.status === "exact" ? constructionSubtotal + customDetailsSubtotal : null;
+  const estimatedTotal =
+    pricing.status === "exact" &&
+    constructionBreakdown.status === "complete" &&
+    constructionSubtotal !== null
+      ? constructionSubtotal + customDetailsSubtotal
+      : null;
+  const constructionOccurrenceLabels = new Map<string, number>();
+  const constructionBreakdownRows = constructionBreakdown.rows.map((row) => {
+    const priorOccurrences = constructionOccurrenceLabels.get(row.garmentLabel) || 0;
+    constructionOccurrenceLabels.set(row.garmentLabel, priorOccurrences + 1);
+    const sameGarmentCount = constructionBreakdown.rows.filter(
+      (candidate) => candidate.garmentLabel === row.garmentLabel,
+    ).length;
+    return {
+      ...row,
+      occurrenceLabel:
+        sameGarmentCount > 1
+          ? `${row.garmentLabel} ${priorOccurrences + 1}`
+          : row.garmentLabel,
+    };
+  });
   const subjectLabelByGarmentKey = new Map(
     reconciliation.subjects.map((subject) => [subject.garmentKey, getSubjectLabel(subject)]),
   );
@@ -661,7 +684,9 @@ export const DormantFutureCustomDetailsStep = ({
           <h3 className="font-serif text-lg font-bold text-heritage-green">Live Price Summary</h3>
           <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">Only active garment occurrences and selected optional details are priced.</p>
           <div className="mt-4 space-y-2.5 text-sm">
-            <div className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 break-words text-heritage-ink/70">Garment Construction Subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{money(constructionSubtotal)}</span></div>
+            {constructionBreakdownRows.length > 0 && <dl data-construction-price-breakdown className="space-y-3 border-b border-heritage-gold/15 pb-3">{constructionBreakdownRows.map((row) => <div key={row.garmentKey} data-construction-price-row={row.garmentKey} className="flex min-w-0 items-start justify-between gap-3 border-b border-heritage-gold/10 pb-3 last:border-0 last:pb-0"><dt className="min-w-0 flex-1"><span className="block break-words text-[10px] font-bold uppercase tracking-wide text-heritage-green">{row.occurrenceLabel}</span><span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">{row.constructionLabel || "Price pending"}</span>{row.role === "additional" && <span className="mt-1 block text-[10px] font-bold uppercase tracking-wide text-heritage-gold">Added garment</span>}</dt><dd className="shrink-0 font-mono text-xs font-bold text-heritage-green">{row.priceCents === null ? "Price pending" : money(row.priceCents / 100)}</dd></div>)}</dl>}
+            {constructionBreakdown.status === "pending" && <p data-construction-price-breakdown-status="pending" className="rounded-lg bg-heritage-cream/50 p-2 text-xs leading-relaxed text-heritage-ink/70">Construction pricing needs review before an exact total is available.</p>}
+            <div className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 break-words text-heritage-ink/70">Garment Construction Subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{constructionBreakdown.status === "complete" && constructionSubtotal !== null ? money(constructionSubtotal) : "Price pending"}</span></div>
             <p className="text-xs leading-relaxed text-heritage-ink/60">Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.</p>
             <div className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 break-words text-heritage-ink/70">Custom Details subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{money(customDetailsSubtotal)}</span></div>
             {pricing.lines.length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{pricing.lines.map((line) => <div key={line.occurrenceKey} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words leading-relaxed text-heritage-ink/60">{subjectLabelByGarmentKey.get(line.garmentKey) || "Garment"}: {line.label}</span><span className="shrink-0 font-mono text-heritage-green">{line.status === "evaluation_required" ? "Evaluation" : line.status === "exact" && line.lineTotalCents !== undefined ? money(line.lineTotalCents / 100) : "Review"}</span></div>)}</div>}
