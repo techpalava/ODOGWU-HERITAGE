@@ -40,6 +40,7 @@
     "test:uploaded-design-deletion-ui": "tsx test_uploaded_design_deletion_ui.tsx",
     "test:uploaded-design-auth-continuity": "tsx test_uploaded_design_auth_continuity.ts",
     "test:firestore-security": "tsx test_firestore_security.ts",
+    "test:firebase-client-configuration": "tsx test_firebase_client_configuration.ts",
     "test:measurement-blueprint": "tsx test_measurement_blueprint.ts",
     "test:future-measurement-stage": "tsx test_design_studio_future_measurement_stage.ts",
     "test:future-custom-details-stage": "tsx test_design_studio_future_custom_details_stage.ts",

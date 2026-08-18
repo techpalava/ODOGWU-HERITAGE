@@ -1,18 +1,73 @@
+/**
+ * Staging-only Storage smoke script.
+ *
+ * This file must never initialize the committed production Firebase project.
+ * Supply explicit staging VITE_FIREBASE_* values in the process environment
+ * before running it directly. It does not load dotenv or .env files.
+ */
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { initializeApp } from "firebase/app";
-import { getStorage, ref, uploadString, getDownloadURL } from "firebase/storage";
-import firebaseConfig from "./firebase-applet-config.json" with { type: "json" };
+import {
+  getDownloadURL,
+  getStorage,
+  ref,
+  uploadString,
+} from "firebase/storage";
+import committedProductionConfig from "./firebase-applet-config.json" with {
+  type: "json",
+};
+import {
+  resolveExplicitStagingFirebaseClientConfiguration,
+  type ResolvedFirebaseClientConfiguration,
+} from "./src/utils/firebaseClientConfiguration";
 
-const app = initializeApp(firebaseConfig);
-const storage = getStorage(app);
-
-async function test() {
+export const isTestStorageExecutedDirectly = (
+  moduleUrl: string,
+  argv1: string | undefined,
+): boolean => {
+  if (!argv1) return false;
   try {
-    const r = ref(storage, "test.txt");
-    const snap = await uploadString(r, "hello", "raw");
-    const url = await getDownloadURL(snap.ref);
-    console.log("Success! URL:", url);
-  } catch (e: any) {
-    console.error("Failed:", e.code, e.message);
+    return path.resolve(fileURLToPath(moduleUrl)) === path.resolve(argv1);
+  } catch {
+    return false;
   }
+};
+
+export const resolveTestStorageFirebaseClientConfiguration = (
+  environment: Readonly<Record<string, unknown>> = process.env,
+): ResolvedFirebaseClientConfiguration =>
+  resolveExplicitStagingFirebaseClientConfiguration({
+    environment,
+    committedProductionConfig,
+  });
+
+export const createTestStorageFirebaseApp = (
+  environment: Readonly<Record<string, unknown>> = process.env,
+  initialize: (
+    options: ResolvedFirebaseClientConfiguration["firebaseOptions"],
+  ) => unknown = initializeApp,
+) => {
+  const resolved = resolveTestStorageFirebaseClientConfiguration(environment);
+  return initialize(resolved.firebaseOptions);
+};
+
+export async function runStagingStorageSmokeTest(
+  environment: Readonly<Record<string, unknown>> = process.env,
+): Promise<void> {
+  const resolved = resolveTestStorageFirebaseClientConfiguration(environment);
+  const app = initializeApp(resolved.firebaseOptions);
+  const storage = getStorage(app);
+  const r = ref(storage, "test.txt");
+  const snap = await uploadString(r, "hello", "raw");
+  const url = await getDownloadURL(snap.ref);
+  console.log("Success! URL:", url);
 }
-test();
+
+if (isTestStorageExecutedDirectly(import.meta.url, process.argv[1])) {
+  void runStagingStorageSmokeTest().catch((error: unknown) => {
+    const err = error as { code?: string; message?: string };
+    console.error("Failed:", err.code, err.message);
+    process.exitCode = 1;
+  });
+}
