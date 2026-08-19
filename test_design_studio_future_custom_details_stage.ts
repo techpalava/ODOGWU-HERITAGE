@@ -23,6 +23,12 @@ import {
   setGarmentScopedCustomDetailText,
 } from "./src/utils/garmentScopedCustomDetailInputsState";
 import { projectFutureCustomDetailsCatalogue } from "./src/utils/futureCustomDetailsCatalogue";
+import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import {
+  createEmptyAdditionalGarmentConstructionState,
+  reconcileAdditionalGarmentConstructionState,
+} from "./src/utils/additionalGarmentConstructionState";
+import type { FabricGarmentAssignment } from "./src/types";
 import { createDormantDesignStudioJourneyState } from "./src/utils/designStudioJourneyMode";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 
@@ -278,7 +284,10 @@ act(() => {
 const neckFieldsets = neckRenderer.root.findAllByProps({
   "data-custom-detail-group": "neck_design",
 });
-assert.equal(neckFieldsets.length, 1, "Rendered tree must contain one scoped Neck fieldset");
+assert.ok(
+  !/STANDARD LEG SHORTS|Nikka/i.test(textContent(neckRenderer.root)),
+  "inactive policy garments such as Nikka must not render in Custom Details",
+);
 const neckFieldset = neckFieldsets[0];
 const neckLegend = neckFieldset.findByType("legend");
 assert.equal(
@@ -543,6 +552,129 @@ assert.equal(
 assert.match(textContent(repeatedConstructionRenderer.root), /Custom Details subtotal€12\.00/);
 assert.match(textContent(repeatedConstructionRenderer.root), /Estimated total so far€147\.00/);
 
+const additionalSelection = createCatalogueAdditionalGarmentSelection({
+  garmentType: "shirt",
+  existingAssignments: [],
+});
+assert.equal(additionalSelection.status, "resolved");
+if (
+  additionalSelection.status !== "resolved" ||
+  !additionalSelection.selection.garmentSpec
+) {
+  throw new Error("Expected an additional Shirt selection.");
+}
+const additionalAssignment: FabricGarmentAssignment = {
+  garmentKey: additionalSelection.selection.garmentSpec.key,
+  code: additionalSelection.selection.code,
+  garmentType: "shirt",
+  fabricUnits: 1,
+  garmentSpec: additionalSelection.selection.garmentSpec,
+  sourceRole: "additional",
+  eligibilityRule: "catalog_all",
+  dependencyStatus: "valid",
+};
+const additionalConstructions = reconcileAdditionalGarmentConstructionState({
+  existingState: createEmptyAdditionalGarmentConstructionState(),
+  assignments: [additionalAssignment],
+  normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+});
+const additionalReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: neckLayoutGarmentTypeSelection,
+  additionalGarments: [additionalAssignment],
+  additionalGarmentConstructions: additionalConstructions.state,
+  catalogInspection,
+  existingState: createEmptyGarmentScopedCustomDetailsState(),
+});
+const additionalCatalogue = projectFutureCustomDetailsCatalogue({
+  garmentTypeSelection: neckLayoutGarmentTypeSelection,
+  reconciliation: additionalReconciliation,
+  activeOptions: catalogInspection.activeOptions,
+  additionalGarments: [additionalAssignment],
+  additionalGarmentConstructions: additionalConstructions.state,
+});
+const additionalInputs = reconcileGarmentScopedPersonalizedInputs({
+  reconciliation: additionalReconciliation,
+  catalogInspection,
+  existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
+});
+const additionalCompletion = validateGarmentScopedCustomDetailsCompletion({
+  earlierStagesComplete: true,
+  reconciliation: additionalReconciliation,
+  personalizedInputs: additionalInputs,
+});
+const additionalPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: additionalReconciliation,
+  catalogInspection,
+});
+let additionalRenderer!: ReturnType<typeof create>;
+act(() => {
+  additionalRenderer = create(createElement(DormantFutureCustomDetailsStep, {
+    reconciliation: additionalReconciliation,
+    catalogue: additionalCatalogue,
+    personalizedInputs: additionalInputs.state,
+    completion: additionalCompletion,
+    pricing: additionalPricing,
+    orderLevelCustomDetailsPrice: 0,
+    constructionBreakdown: { status: "complete", rows: [] },
+    constructionSubtotal: 0,
+    designSelections: {},
+    selectedStyle: null,
+    additionalGarments: [additionalAssignment],
+    additionalGarmentConstructionOptions: [],
+    onSingleSelect: () => undefined,
+    onClearSelection: () => undefined,
+    onConstructionSelect: () => undefined,
+    onToggleMultiSelect: () => undefined,
+    onPersonalizedTextChange: () => undefined,
+    onDecorativeFeatureToggle: () => undefined,
+    onClearDecorativeFeatures: () => undefined,
+    onMonogramPlacementChange: () => undefined,
+    onAccessoryToggle: () => undefined,
+    onClearAccessories: () => undefined,
+    onAddAdditionalGarment: () => undefined,
+    onRemoveAdditionalGarment: () => undefined,
+    onBack: () => undefined,
+    onContinue: () => undefined,
+  }));
+});
+const mainDetails = additionalRenderer.root.findByProps({
+  "data-custom-detail-section": "main-garment-details",
+});
+const addSection = additionalRenderer.root.findByProps({
+  "data-custom-detail-section": "add-additional-garment",
+});
+assert.equal(
+  /STANDARD LEG SHORTS|Nikka/i.test(textContent(mainDetails)),
+  false,
+  "Main Custom Details must not render inactive Nikka sections",
+);
+assert.equal(
+  textContent(mainDetails).includes("Added garment"),
+  false,
+  "Main Custom Details must not mix Additional Garment options into the Step 1 garments",
+);
+assert.match(textContent(mainDetails), /Base garment/);
+assert.match(textContent(addSection), /Added garment/);
+assert.equal(
+  mainDetails.findAllByProps({ "data-custom-detail-group": "shirt_construction" }).length,
+  1,
+  "the Main Shirt construction group remains in the main area",
+);
+assert.equal(
+  addSection.findAllByProps({ "data-custom-detail-group": "shirt_construction" }).length,
+  1,
+  "the Additional Shirt construction group renders inside Add Additional Garment",
+);
+assert.ok(
+  addSection.findByProps({ "data-added-garment-heading": "true" }),
+  "a newly added garment must expose a stable focus target inside Add Additional Garment",
+);
+assert.ok(
+  addSection.findByProps({
+    "data-additional-garment-details": additionalAssignment.garmentKey,
+  }),
+);
+
 const componentSource = readFileSync(
   "src/components/DormantFutureCustomDetailsStep.tsx",
   "utf8",
@@ -569,8 +701,11 @@ assert.match(componentSource, /Describe your personalized requirement/);
 assert.match(componentSource, /type=\{group\.allowMultiple \? "checkbox" : "radio"\}/);
 assert.match(componentSource, /xl:grid-cols-\[minmax\(0,1fr\)_minmax\(19rem,24rem\)\]/);
 assert.match(componentSource, /xl:sticky xl:top-4/);
-assert.match(componentSource, /Not currently included/);
+assert.doesNotMatch(componentSource, /Not currently included/);
 assert.match(componentSource, /Included in your selected design/);
+assert.match(componentSource, /data-custom-detail-section="main-garment-details"/);
+assert.match(componentSource, /data-additional-garment-details/);
+assert.match(componentSource, /partitionCatalogueGroupsByRole/);
 assert.match(componentSource, /Added garment/);
 assert.match(componentSource, /Add Additional Garment/);
 assert.match(componentSource, /additionalGarmentConstructionOptions/);
