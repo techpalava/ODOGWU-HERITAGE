@@ -12,6 +12,7 @@ import {
 } from "./src/utils/additionalGarmentDomain";
 import {
   CUSTOM_DETAILS_CORE_SECTION_ORDER,
+  partitionCatalogueGroupsByRole,
   projectFutureCustomDetailsCatalogue,
 } from "./src/utils/futureCustomDetailsCatalogue";
 import {
@@ -103,6 +104,17 @@ assert.deepEqual(
 );
 assert.equal(shirt.catalogue.coreGroups.length, 7);
 assert.equal(shirt.catalogue.coreGroups[0].occurrences.length, 1);
+assert.deepEqual(
+  partitionCatalogueGroupsByRole(shirt.catalogue.coreGroups, "main").map(
+    (group) => group.selectionGroup,
+  ),
+  ["shirt_construction", "shirt_pockets", "neck_design"],
+  "visible Main Custom Details exclude inactive policy and unselected style garments",
+);
+assert.equal(
+  partitionCatalogueGroupsByRole(shirt.catalogue.coreGroups, "additional").length,
+  0,
+);
 assert.equal(
   shirt.catalogue.coreGroups.some(
     (group) => group.selectionGroup === "dress_construction",
@@ -302,6 +314,24 @@ if (addition.status === "resolved") {
   );
   assert.equal(dressGroup?.occurrences.length, 1);
   assert.equal(dressGroup?.occurrences[0].role, "additional");
+  const additionalDressGroups = partitionCatalogueGroupsByRole(
+    added.catalogue.coreGroups,
+    "additional",
+    assignment.garmentKey,
+  ).map((group) => group.selectionGroup);
+  assert.ok(additionalDressGroups.includes("dress_construction"));
+  assert.ok(additionalDressGroups.includes("dress_pockets"));
+  assert.equal(
+    additionalDressGroups.includes("shirt_construction"),
+    false,
+    "added Dress Custom Details are partitioned away from Main Shirt groups",
+  );
+  assert.equal(
+    partitionCatalogueGroupsByRole(added.catalogue.coreGroups, "main").some(
+      (group) => group.selectionGroup === "dress_construction",
+    ),
+    false,
+  );
   assert.equal(
     added.additionalConstructions.state.byGarmentKey[assignment.garmentKey]?.status,
     "resolved",

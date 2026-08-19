@@ -46,10 +46,11 @@ import {
   PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
   validateGarmentScopedCustomDetailText,
 } from "../utils/garmentScopedCustomDetailInputsState";
-import type {
-  FutureCustomDetailsCatalogueGroup,
-  FutureCustomDetailsCatalogueOccurrence,
-  FutureCustomDetailsCatalogueProjection,
+import {
+  partitionCatalogueGroupsByRole,
+  type FutureCustomDetailsCatalogueGroup,
+  type FutureCustomDetailsCatalogueOccurrence,
+  type FutureCustomDetailsCatalogueProjection,
 } from "../utils/futureCustomDetailsCatalogue";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import { isFutureCustomDetailsContentReady } from "../utils/aiTryOnWorkflow";
@@ -348,38 +349,36 @@ export const DormantFutureCustomDetailsStep = ({
 
   const renderOptions = (
     group: FutureCustomDetailsCatalogueGroup,
-    occurrence: FutureCustomDetailsCatalogueOccurrence | null,
+    occurrence: FutureCustomDetailsCatalogueOccurrence,
   ) => {
-    const inactive = occurrence === null;
-    const garmentKey = occurrence?.subject.garmentKey || `inactive:${group.selectionGroup}`;
+    const garmentKey = occurrence.subject.garmentKey;
     const groupId = `future-custom-detail-${garmentKey}-${group.selectionGroup}`;
-    const groupBlocker = occurrence
-      ? completion.blockers.find((blocker) =>
-          blocker.garmentKey === occurrence.subject.garmentKey && blocker.selectionGroup === group.selectionGroup,
-        )
-      : undefined;
-    const selectedConstructionId = occurrence && group.isConstruction
+    const groupBlocker = completion.blockers.find((blocker) =>
+      blocker.garmentKey === occurrence.subject.garmentKey && blocker.selectionGroup === group.selectionGroup,
+    );
+    const selectedConstructionId = group.isConstruction
       ? getSelectedConstructionId(occurrence, group.selectionGroup)
       : null;
-    const noneSelected = inactive || (!group.isConstruction && occurrence !== null && !hasSelection(
+    const noneSelected = !group.isConstruction && !hasSelection(
       reconciliation.state,
       occurrence.subject.garmentKey,
       group.selectionGroup,
-    ));
+    );
     const renderOptionCard = (option: CustomDetailOption) => {
       const optionId = `${groupId}-${option.id}`;
-      const checked = Boolean(occurrence && (
-        group.isConstruction
-          ? selectedConstructionId === option.id
-          : isSelected(reconciliation.state, occurrence.subject.garmentKey, group.selectionGroup, option.id)
-      ));
+      const checked = group.isConstruction
+        ? selectedConstructionId === option.id
+        : isSelected(reconciliation.state, occurrence.subject.garmentKey, group.selectionGroup, option.id);
       const isPersonalizedRequirement =
         group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP &&
         option.id === PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID;
       const identity = getIdentityKey(garmentKey, group.selectionGroup, option.id);
-      const persistedText = occurrence
-        ? getGarmentScopedCustomDetailText(personalizedInputs, occurrence.subject.garmentKey, group.selectionGroup, option.id)
-        : undefined;
+      const persistedText = getGarmentScopedCustomDetailText(
+        personalizedInputs,
+        occurrence.subject.garmentKey,
+        group.selectionGroup,
+        option.id,
+      );
       const text = overLimitText[identity] ?? persistedText ?? "";
       const textValidation = validateGarmentScopedCustomDetailText(text);
       const textError = isPersonalizedRequirement && checked
@@ -394,16 +393,14 @@ export const DormantFutureCustomDetailsStep = ({
         <div key={option.id} className="min-w-0">
           <label
             htmlFor={optionId}
-            className={`flex min-h-12 min-w-0 items-start gap-3 rounded-xl border-2 p-4 text-left transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${checked ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"} ${inactive ? "cursor-not-allowed opacity-65" : "cursor-pointer hover:border-heritage-gold"}`}
+            className={`flex min-h-12 min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-4 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${checked ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}
           >
             <input
               id={optionId}
               type={group.allowMultiple ? "checkbox" : "radio"}
               name={group.allowMultiple ? undefined : groupId}
               checked={checked}
-              disabled={inactive}
               onChange={() => {
-                if (!occurrence) return;
                 if (group.isConstruction) {
                   onConstructionSelect(occurrence.subject.parentGarmentKey, occurrence.subject.parentGarmentType, group.selectionGroup, option.id);
                 } else if (group.allowMultiple) {
@@ -424,7 +421,7 @@ export const DormantFutureCustomDetailsStep = ({
               {option.requiresEvaluation && <span className="mt-2 block text-[10px] font-semibold uppercase tracking-wide text-heritage-ink/50">Confirmed after tailoring review</span>}
             </span>
           </label>
-          {isPersonalizedRequirement && checked && occurrence && (
+          {isPersonalizedRequirement && checked && (
             <div className="mt-2">
               <label htmlFor={`${optionId}-text`} className="text-xs font-bold text-heritage-green">Describe your personalized requirement</label>
               <textarea
@@ -465,13 +462,12 @@ export const DormantFutureCustomDetailsStep = ({
     return (
       <div className="min-w-0 space-y-3">
         {!group.isConstruction && (
-          <label className={`flex min-h-12 min-w-0 items-center gap-3 rounded-xl border-2 p-4 text-left transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${noneSelected ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"} ${inactive ? "cursor-not-allowed opacity-65" : "cursor-pointer hover:border-heritage-gold"}`}>
+          <label className={`flex min-h-12 min-w-0 cursor-pointer items-center gap-3 rounded-xl border-2 p-4 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${noneSelected ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}>
             <input
               type="radio"
               name={`${groupId}-none`}
               checked={noneSelected}
-              disabled={inactive}
-              onChange={() => occurrence && onClearSelection(occurrence.subject.garmentKey, group.selectionGroup)}
+              onChange={() => onClearSelection(occurrence.subject.garmentKey, group.selectionGroup)}
               className="size-4 shrink-0 accent-heritage-green"
             />
             <span className="min-w-0">
@@ -502,96 +498,120 @@ export const DormantFutureCustomDetailsStep = ({
     );
   };
 
-  const coreSections = useMemo(() => {
+  const groupCatalogueSections = (
+    groups: readonly FutureCustomDetailsCatalogueGroup[],
+  ) => {
     const sections = new Map<string, FutureCustomDetailsCatalogueGroup[]>();
-    catalogue.coreGroups.forEach((group) => {
+    groups.forEach((group) => {
+      if (group.occurrences.length === 0) return;
       const title = getParentSectionTitle(group.selectionGroup, group.title);
       sections.set(title, [...(sections.get(title) || []), group]);
     });
-    return [...sections.entries()].map(([title, groups]) => ({ title, groups }));
-  }, [catalogue.coreGroups]);
-
+    return [...sections.entries()].map(([title, grouped]) => ({ title, groups: grouped }));
+  };
+  const mainCoreGroups = useMemo(
+    () => partitionCatalogueGroupsByRole(catalogue.coreGroups, "main"),
+    [catalogue.coreGroups],
+  );
+  const mainCoreSections = useMemo(
+    () => groupCatalogueSections(mainCoreGroups),
+    [mainCoreGroups],
+  );
+  const mainAdditionalCostGroups = useMemo(
+    () => partitionCatalogueGroupsByRole(catalogue.additionalCostGroups, "main"),
+    [catalogue.additionalCostGroups],
+  );
+  const mainPersonalizedGroups = useMemo(
+    () => partitionCatalogueGroupsByRole([catalogue.personalizedGroup], "main"),
+    [catalogue.personalizedGroup],
+  );
+  const getGroupStatus = (group: FutureCustomDetailsCatalogueGroup) =>
+    group.occurrences.some((occurrence) => occurrence.construction?.status !== "resolved")
+      ? "Price pending"
+      : group.occurrences.some((occurrence) =>
+          completion.blockers.some((blocker) =>
+            blocker.garmentKey === occurrence.subject.garmentKey &&
+            blocker.selectionGroup === group.selectionGroup,
+          ),
+        )
+        ? "Incomplete"
+        : group.isConstruction
+          ? "Complete"
+          : "Optional";
+  const renderGroupFieldsets = (
+    groups: readonly FutureCustomDetailsCatalogueGroup[],
+    headingMode: "base" | "added",
+  ) => (
+    <div className="mt-5 grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-2">
+      {groups.map((group) => (
+        <fieldset
+          key={group.selectionGroup}
+          data-custom-detail-group={group.selectionGroup}
+          data-active-occurrences={group.occurrences.length}
+          className={`min-w-0 ${group.selectionGroup === "neck_design" ? "lg:col-span-2" : ""}`}
+        >
+          <legend className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wide text-heritage-green">
+            <span className="min-w-0 break-words">{group.title}</span>
+            <span className="rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold">{getGroupStatus(group)}</span>
+          </legend>
+          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">{group.isConstruction ? "Select the all-inclusive construction that applies to this garment." : "Select an option or keep None for this category."}</p>
+          <div className="mt-3 space-y-5">
+            {group.occurrences.map((occurrence) => (
+              <div
+                key={occurrence.subject.garmentKey}
+                className="min-w-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              >
+                <h4
+                  className={`mb-2 break-words text-xs font-bold uppercase tracking-wide outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${headingMode === "added" ? "text-heritage-gold" : "text-heritage-green"}`}
+                >
+                  {getSubjectLabel(occurrence.subject)} - {headingMode === "added" ? "Added garment" : "Base garment"}
+                </h4>
+                {renderOptions(group, occurrence)}
+              </div>
+            ))}
+          </div>
+        </fieldset>
+      ))}
+    </div>
+  );
   const renderCatalogueSection = ({
     title,
     groups,
+    headingMode = "base",
   }: {
     title: string;
     groups: readonly FutureCustomDetailsCatalogueGroup[];
+    headingMode?: "base" | "added";
   }) => {
-    const occurrences = groups.flatMap((group) => group.occurrences);
-    const hasActiveOccurrence = occurrences.length > 0;
-    const hasBaseGarment = occurrences.some((occurrence) => occurrence.role === "main");
+    const visibleGroups = groups.filter((group) => group.occurrences.length > 0);
+    if (visibleGroups.length === 0) return null;
+    const occurrences = visibleGroups.flatMap((group) => group.occurrences);
     const hasPricingPending = occurrences.some((occurrence) => occurrence.construction?.status !== "resolved");
     const hasIncompleteOccurrence = occurrences.some((occurrence) =>
       completion.blockers.some((blocker) => blocker.garmentKey === occurrence.subject.garmentKey),
     );
-    const sectionBadge = !hasActiveOccurrence
-      ? "Not currently included"
-      : hasPricingPending
-        ? "Price pending"
-        : hasIncompleteOccurrence
-          ? "Incomplete"
-          : hasBaseGarment
-            ? "Base garment"
-            : "Added garment";
+    const sectionBadge = hasPricingPending
+      ? "Price pending"
+      : hasIncompleteOccurrence
+        ? "Incomplete"
+        : headingMode === "added"
+          ? "Added garment"
+          : "Base garment";
 
     return (
-      <section key={title} className={`min-w-0 rounded-2xl border p-4 shadow-sm sm:p-5 ${hasActiveOccurrence ? "border-heritage-gold/35 bg-white" : "border-heritage-ink/15 bg-heritage-cream/25"}`}>
+      <section key={title} className="min-w-0 rounded-2xl border border-heritage-gold/35 bg-white p-4 shadow-sm sm:p-5">
         <header className="flex min-w-0 flex-col gap-3 border-b border-heritage-gold/35 pb-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h3 className="break-words font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">{title}</h3>
             <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
-              {hasActiveOccurrence ? "Included in your selected design" : "Not currently included. Add this garment below to enable its choices."}
+              {headingMode === "added" ? "Added garment Custom Details stay independent of the main garments above." : "Included in your selected design"}
             </p>
           </div>
-          <span className={`w-fit shrink-0 rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide ${hasActiveOccurrence ? "border-heritage-green/30 bg-heritage-green/5 text-heritage-green" : "border-heritage-ink/15 bg-white text-heritage-ink/60"}`}>
+          <span className="w-fit shrink-0 rounded-full border border-heritage-green/30 bg-heritage-green/5 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide text-heritage-green">
             {sectionBadge}
           </span>
         </header>
-        <div className="mt-5 grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-2">
-          {groups.map((group) => {
-            const groupStatus = group.occurrences.length === 0
-              ? "Not currently included"
-              : group.occurrences.some((occurrence) => occurrence.construction?.status !== "resolved")
-                ? "Price pending"
-                : group.occurrences.some((occurrence) => completion.blockers.some((blocker) => blocker.garmentKey === occurrence.subject.garmentKey && blocker.selectionGroup === group.selectionGroup))
-                  ? "Incomplete"
-                  : group.isConstruction
-                    ? "Complete"
-                    : "Optional";
-            return (
-              <fieldset key={group.selectionGroup} data-custom-detail-group={group.selectionGroup} data-active-occurrences={group.occurrences.length} className={`min-w-0 ${group.selectionGroup === "neck_design" ? "lg:col-span-2" : ""}`}>
-                <legend className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wide text-heritage-green">
-                  <span className="min-w-0 break-words">{group.title}</span>
-                  <span className="rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold">{groupStatus}</span>
-                </legend>
-                <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">{group.isConstruction ? "Select the all-inclusive construction that applies to this garment." : "Select an option or keep None for this category."}</p>
-                <div className="mt-3 space-y-5">
-                  {group.occurrences.length > 0
-                    ? group.occurrences.map((occurrence) => (
-                        <div
-                          key={occurrence.subject.garmentKey}
-                          data-parent-garment-key={occurrence.subject.parentGarmentKey}
-                          className="min-w-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-                        >
-                          <h4
-                            data-added-garment-heading={
-                              occurrence.role === "additional" ? "true" : undefined
-                            }
-                            tabIndex={occurrence.role === "additional" ? -1 : undefined}
-                            className={`mb-2 break-words text-xs font-bold uppercase tracking-wide outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${occurrence.role === "additional" ? "text-heritage-gold" : "text-heritage-green"}`}
-                          >
-                            {getSubjectLabel(occurrence.subject)} - {occurrence.role === "additional" ? "Added garment" : "Base garment"}
-                          </h4>
-                          {renderOptions(group, occurrence)}
-                        </div>
-                      ))
-                    : renderOptions(group, null)}
-                </div>
-              </fieldset>
-            );
-          })}
-        </div>
+        {renderGroupFieldsets(visibleGroups, headingMode)}
       </section>
     );
   };
@@ -618,33 +638,38 @@ export const DormantFutureCustomDetailsStep = ({
 
       <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] xl:items-start xl:gap-6">
         <div ref={contentRef} className="min-w-0 space-y-5">
-          {coreSections.map(renderCatalogueSection)}
+          <div data-custom-detail-section="main-garment-details" className="min-w-0 space-y-5">
+            {mainCoreSections.map((section) => renderCatalogueSection(section))}
 
-          {catalogue.additionalCostGroups.length > 0 && (
-            <section data-custom-detail-section="additional-clothes-costs" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
-              <header className="border-b border-heritage-gold/35 pb-3"><h3 className="font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Additional Clothes Costs</h3>
-              <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">Optional enhancements apply only to included garment occurrences.</p>
-              </header>
-              <div className="mt-5 space-y-6">
-                {catalogue.additionalCostGroups.map((group) => (
-                  <fieldset key={group.selectionGroup} className="min-w-0 border-t border-heritage-gold/15 pt-4 first:border-0 first:pt-0">
-                    <legend className="flex min-w-0 flex-wrap items-center gap-2 font-serif text-base font-bold text-heritage-green"><span className="min-w-0 break-words">{group.title}</span><span className="rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold">{group.occurrences.length > 0 ? "Optional" : "Not currently included"}</span></legend>
-                    <p className="mt-1 text-xs text-heritage-ink/60">{group.occurrences.length > 0 ? "Available for your included garments." : "Not currently included."}</p>
-                    <div className="mt-3 space-y-4">
-                      {group.occurrences.length > 0
-                        ? group.occurrences.map((occurrence) => <div key={occurrence.subject.garmentKey} className="min-w-0"><p className="mb-2 break-words text-xs font-bold text-heritage-green">{getSubjectLabel(occurrence.subject)}</p>{renderOptions(group, occurrence)}</div>)
-                        : renderOptions(group, null)}
-                    </div>
-                  </fieldset>
-                ))}
-              </div>
-            </section>
-          )}
+            {mainAdditionalCostGroups.length > 0 && (
+              <section data-custom-detail-section="additional-clothes-costs" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
+                <header className="border-b border-heritage-gold/35 pb-3"><h3 className="font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Additional Clothes Costs</h3>
+                <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">Optional enhancements apply only to included garment occurrences.</p>
+                </header>
+                <div className="mt-5 space-y-6">
+                  {mainAdditionalCostGroups.map((group) => (
+                    <fieldset key={group.selectionGroup} className="min-w-0 border-t border-heritage-gold/15 pt-4 first:border-0 first:pt-0">
+                      <legend className="flex min-w-0 flex-wrap items-center gap-2 font-serif text-base font-bold text-heritage-green"><span className="min-w-0 break-words">{group.title}</span><span className="rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold">Optional</span></legend>
+                      <p className="mt-1 text-xs text-heritage-ink/60">Available for your included garments.</p>
+                      <div className="mt-3 space-y-4">
+                        {group.occurrences.map((occurrence) => (
+                          <div key={occurrence.subject.garmentKey} className="min-w-0">
+                            <p className="mb-2 break-words text-xs font-bold text-heritage-green">{getSubjectLabel(occurrence.subject)}</p>
+                            {renderOptions(group, occurrence)}
+                          </div>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ))}
+                </div>
+              </section>
+            )}
 
-          {renderCatalogueSection({
-            title: "Miscellaneous - Personalized Additional",
-            groups: [catalogue.personalizedGroup],
-          })}
+            {mainPersonalizedGroups.length > 0 && renderCatalogueSection({
+              title: "Miscellaneous - Personalized Additional",
+              groups: mainPersonalizedGroups,
+            })}
+          </div>
 
           <section data-custom-detail-section="monogram-embroidery" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
             <h3 className="border-b border-heritage-gold/35 pb-3 font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Monogram and Embroidery Design</h3>
@@ -676,7 +701,75 @@ export const DormantFutureCustomDetailsStep = ({
             <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {additionalGarmentConstructionOptions.map(({ garmentType, construction }) => <button key={garmentType} type="button" onClick={(event) => { choiceTriggerRef.current = event.currentTarget; setAdditionalGarmentChoice({ garmentType, sourceParentGarmentKey: null }); }} className="inline-flex min-h-12 min-w-0 items-start justify-between gap-3 rounded-xl border-2 border-heritage-green/65 bg-white p-3 text-left text-xs font-bold text-heritage-green transition hover:border-heritage-gold hover:bg-heritage-gold/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><span className="flex min-w-0 items-center gap-2"><Plus aria-hidden="true" size={15} className="shrink-0" /><span className="min-w-0 break-words">Add {getFabricGarmentLabel(garmentType)}</span></span><span className="shrink-0 font-mono text-[11px] text-heritage-gold">{construction.status === "resolved" ? money(construction.totalPrice) : "Price pending"}</span></button>)}
             </div>
-            {additionalGarments.length > 0 && <div className="mt-5 space-y-2 border-t border-heritage-gold/20 pt-4">{additionalGarments.map((garment) => <div key={garment.garmentKey} className="flex min-w-0 flex-col gap-2 rounded-xl border border-heritage-green/15 bg-white p-3 sm:flex-row sm:items-center sm:justify-between"><span className="min-w-0 break-words text-sm font-bold text-heritage-green">{getFabricGarmentLabel(garment.garmentType)} <span className="text-[10px] uppercase text-heritage-gold">Added garment</span></span><button type="button" onClick={() => onRemoveAdditionalGarment(garment.garmentKey)} aria-label={`Remove added ${getFabricGarmentLabel(garment.garmentType)}`} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"><Trash2 aria-hidden="true" size={15} /> Remove</button></div>)}</div>}
+            {additionalGarments.length > 0 && (
+              <div className="mt-5 space-y-4 border-t border-heritage-gold/20 pt-4">
+                {additionalGarments.map((garment) => {
+                  const additionalCoreGroups = partitionCatalogueGroupsByRole(
+                    catalogue.coreGroups,
+                    "additional",
+                    garment.garmentKey,
+                  );
+                  const additionalCostGroups = partitionCatalogueGroupsByRole(
+                    catalogue.additionalCostGroups,
+                    "additional",
+                    garment.garmentKey,
+                  );
+                  const additionalPersonalizedGroups = partitionCatalogueGroupsByRole(
+                    [catalogue.personalizedGroup],
+                    "additional",
+                    garment.garmentKey,
+                  );
+                  const additionalSections = groupCatalogueSections(additionalCoreGroups);
+                  return (
+                    <div
+                      key={garment.garmentKey}
+                      data-parent-garment-key={garment.garmentKey}
+                      data-additional-garment-details={garment.garmentKey}
+                      className="min-w-0 space-y-4 rounded-xl border border-heritage-green/15 bg-white p-3 sm:p-4"
+                    >
+                      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <h4
+                          data-added-garment-heading="true"
+                          tabIndex={-1}
+                          className="min-w-0 break-words text-sm font-bold uppercase tracking-wide text-heritage-gold outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                        >
+                          {getFabricGarmentLabel(garment.garmentType)} - Added garment
+                        </h4>
+                        <button type="button" onClick={() => onRemoveAdditionalGarment(garment.garmentKey)} aria-label={`Remove added ${getFabricGarmentLabel(garment.garmentType)}`} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"><Trash2 aria-hidden="true" size={15} /> Remove</button>
+                      </div>
+                      {additionalSections.map((section) => renderCatalogueSection({
+                        ...section,
+                        headingMode: "added",
+                      }))}
+                      {additionalCostGroups.length > 0 && (
+                        <div className="space-y-4">
+                          {additionalCostGroups.map((group) => (
+                            <fieldset key={group.selectionGroup} className="min-w-0">
+                              <legend className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wide text-heritage-green">
+                                <span className="min-w-0 break-words">{group.title}</span>
+                                <span className="rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold">Optional</span>
+                              </legend>
+                              <div className="mt-3 space-y-4">
+                                {group.occurrences.map((occurrence) => (
+                                  <div key={occurrence.subject.garmentKey} className="min-w-0">
+                                    {renderOptions(group, occurrence)}
+                                  </div>
+                                ))}
+                              </div>
+                            </fieldset>
+                          ))}
+                        </div>
+                      )}
+                      {additionalPersonalizedGroups.length > 0 && renderCatalogueSection({
+                        title: "Miscellaneous - Personalized Additional",
+                        groups: additionalPersonalizedGroups,
+                        headingMode: "added",
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
         </div>
 

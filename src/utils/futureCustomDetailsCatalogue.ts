@@ -114,6 +114,30 @@ export interface FutureCustomDetailsCatalogueProjection {
   activeParentGarmentOrder: readonly CanonicalPhysicalGarmentType[];
 }
 
+export const filterCatalogueGroupOccurrences = (
+  group: FutureCustomDetailsCatalogueGroup,
+  predicate: (occurrence: FutureCustomDetailsCatalogueOccurrence) => boolean,
+): FutureCustomDetailsCatalogueGroup | null => {
+  const occurrences = group.occurrences.filter(predicate);
+  return occurrences.length > 0 ? { ...group, occurrences } : null;
+};
+
+export const partitionCatalogueGroupsByRole = (
+  groups: readonly FutureCustomDetailsCatalogueGroup[],
+  role: FutureCustomDetailsCatalogueOccurrence["role"],
+  parentGarmentKey?: string,
+): FutureCustomDetailsCatalogueGroup[] =>
+  groups.flatMap((group) => {
+    const next = filterCatalogueGroupOccurrences(
+      group,
+      (occurrence) =>
+        occurrence.role === role &&
+        (parentGarmentKey === undefined ||
+          occurrence.subject.parentGarmentKey === parentGarmentKey),
+    );
+    return next ? [next] : [];
+  });
+
 const getSelectedParentGarmentOrder = ({
   garmentTypeSelection,
   style,
