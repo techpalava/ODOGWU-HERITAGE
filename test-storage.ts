@@ -1,9 +1,11 @@
 /**
  * Staging-only Storage smoke script.
  *
- * This file must never initialize the committed production Firebase project.
- * Supply explicit staging VITE_FIREBASE_* values in the process environment
- * before running it directly. It does not load dotenv or .env files.
+ * This file must never fall back to firebase-applet-config.json as initializeApp
+ * input. Supply explicit staging VITE_FIREBASE_* values in the process
+ * environment before running it directly. It does not load dotenv or .env files.
+ * The current committed Web app is staging and may be used when every field is
+ * supplied explicitly. A dedicated production Firebase project does not exist.
  */
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -14,7 +16,7 @@ import {
   ref,
   uploadString,
 } from "firebase/storage";
-import committedProductionConfig from "./firebase-applet-config.json" with {
+import committedStagingConfig from "./firebase-applet-config.json" with {
   type: "json",
 };
 import {
@@ -39,7 +41,7 @@ export const resolveTestStorageFirebaseClientConfiguration = (
 ): ResolvedFirebaseClientConfiguration =>
   resolveExplicitStagingFirebaseClientConfiguration({
     environment,
-    committedProductionConfig,
+    committedStagingConfig,
   });
 
 export const createTestStorageFirebaseApp = (

@@ -1,6 +1,17 @@
 export const APPROVED_NON_PRODUCTION_APP_ENV = "staging" as const;
 export const DEFAULT_FIRESTORE_DATABASE_LABEL = "(default)";
 
+/**
+ * Pre-launch boundary. A dedicated production Firebase project does not exist
+ * yet. The committed Web configuration is staging only and must not be treated
+ * as production or publicly launched as production.
+ */
+export const FIREBASE_PRODUCTION_BOUNDARY = {
+  publicProductionReady: false,
+  currentResourceEnvironment: "staging",
+  committedConfigurationSource: "committed_staging",
+} as const;
+
 export const FIREBASE_CLIENT_ENVIRONMENT_VARIABLES = [
   "VITE_APP_ENV",
   "VITE_FIREBASE_API_KEY",
@@ -27,7 +38,7 @@ export type FirebaseRuntimeMode = "development" | "production";
 export type FirebaseApplicationEnvironment = "staging" | "production";
 export type FirebaseClientConfigurationSource =
   | "explicit_environment"
-  | "committed_production";
+  | "committed_staging";
 
 export interface FirebaseClientEnvironmentVariables {
   VITE_APP_ENV?: string;
@@ -41,7 +52,7 @@ export interface FirebaseClientEnvironmentVariables {
   VITE_FIRESTORE_DATABASE_ID?: string;
 }
 
-export interface CommittedProductionFirebaseClientConfig {
+export interface CommittedStagingFirebaseClientConfig {
   apiKey: string;
   authDomain: string;
   projectId: string;
@@ -52,7 +63,7 @@ export interface CommittedProductionFirebaseClientConfig {
   firestoreDatabaseId: string;
 }
 
-export interface CommittedProductionFirebaseIdentifiers {
+export interface CommittedStagingFirebaseIdentifiers {
   apiKey: string;
   authDomain: string;
   projectId: string;
@@ -66,7 +77,7 @@ export interface CommittedProductionFirebaseIdentifiers {
 export interface ResolveFirebaseClientConfigurationInput {
   runtimeMode: FirebaseRuntimeMode;
   variables: FirebaseClientEnvironmentVariables;
-  committedProductionConfig: CommittedProductionFirebaseClientConfig;
+  committedStagingConfig: CommittedStagingFirebaseClientConfig;
 }
 
 export interface FirebaseClientFirebaseOptions {
@@ -141,9 +152,9 @@ export const readFirebaseClientEnvironmentVariables = (
   ),
 });
 
-export const normalizeCommittedProductionIdentifiers = (
-  config: CommittedProductionFirebaseClientConfig,
-): CommittedProductionFirebaseIdentifiers => ({
+export const normalizeCommittedStagingIdentifiers = (
+  config: CommittedStagingFirebaseClientConfig,
+): CommittedStagingFirebaseIdentifiers => ({
   apiKey: trimValue(config.apiKey),
   authDomain: trimValue(config.authDomain),
   projectId: trimValue(config.projectId),
@@ -153,6 +164,9 @@ export const normalizeCommittedProductionIdentifiers = (
   measurementId: trimValue(config.measurementId),
   firestoreDatabaseId: trimValue(config.firestoreDatabaseId),
 });
+
+export const isFirebasePublicProductionSupported = (): boolean =>
+  FIREBASE_PRODUCTION_BOUNDARY.publicProductionReady;
 
 export const resolveFirebaseRuntimeMode = (environment: {
   DEV?: boolean;
@@ -177,7 +191,7 @@ export const resolveFirebaseRuntimeMode = (environment: {
   }
 
   throw new FirebaseClientConfigurationError(
-    `Firebase client initialization is blocked because the runtime mode is unknown or contradictory (DEV=${String(environment.DEV)}, PROD=${String(environment.PROD)}, MODE=${mode || "(empty)"}). Use npm run dev with a staging .env.local, or a normal production Vite build. vite build --mode staging is not supported.`,
+    `Firebase client initialization is blocked because the runtime mode is unknown or contradictory (DEV=${String(environment.DEV)}, PROD=${String(environment.PROD)}, MODE=${mode || "(empty)"}). Use npm run dev with a staging .env.local, or a normal Vite production build. vite build --mode staging is not supported. A Vite production build currently still uses the committed staging Firebase project.`,
   );
 };
 
@@ -197,92 +211,122 @@ const createDevelopmentConfigurationError = (
       ? ` Offending variables: ${missingNames.join(", ")}.`
       : "";
   return new FirebaseClientConfigurationError(
-    `Local Firebase initialization is blocked because no explicit non-production configuration is present. Create an ignored \`.env.local\` using the Firebase web configuration from the staging project. Set VITE_APP_ENV=${APPROVED_NON_PRODUCTION_APP_ENV} and copy every VITE_FIREBASE_* field from the same staging Web app.${missingList} ${detail}`,
+    `Local Firebase initialization is blocked because no valid explicit staging configuration is present. Create an ignored \`.env.local\` using the Firebase web configuration from a single staging Web app. Set VITE_APP_ENV=${APPROVED_NON_PRODUCTION_APP_ENV} and copy every VITE_FIREBASE_* field from that same app.${missingList} ${detail}`,
   );
 };
 
-const collectProductionIdentifierCollisions = ({
+const collectSameProjectMismatches = ({
   apiKey,
   authDomain,
-  projectId,
+  storageBucket,
+  messagingSenderId,
+  appId,
+  measurementId,
+  committedIdentifiers,
+}: {
+  apiKey: string;
+  authDomain: string;
+  storageBucket: string;
+  messagingSenderId: string;
+  appId: string;
+  measurementId: string;
+  committedIdentifiers: CommittedStagingFirebaseIdentifiers;
+}): string[] => {
+  const mismatches: string[] = [];
+  if (apiKey !== committedIdentifiers.apiKey) {
+    mismatches.push("VITE_FIREBASE_API_KEY");
+  }
+  if (authDomain !== committedIdentifiers.authDomain) {
+    mismatches.push("VITE_FIREBASE_AUTH_DOMAIN");
+  }
+  if (storageBucket !== committedIdentifiers.storageBucket) {
+    mismatches.push("VITE_FIREBASE_STORAGE_BUCKET");
+  }
+  if (messagingSenderId !== committedIdentifiers.messagingSenderId) {
+    mismatches.push("VITE_FIREBASE_MESSAGING_SENDER_ID");
+  }
+  if (appId !== committedIdentifiers.appId) {
+    mismatches.push("VITE_FIREBASE_APP_ID");
+  }
+  if (measurementId !== committedIdentifiers.measurementId) {
+    mismatches.push("VITE_FIREBASE_MEASUREMENT_ID");
+  }
+  return mismatches;
+};
+
+const collectCrossProjectCollisions = ({
+  apiKey,
+  authDomain,
   storageBucket,
   messagingSenderId,
   appId,
   measurementId,
   firestoreDatabaseId,
-  productionIdentifiers,
+  committedIdentifiers,
 }: {
   apiKey: string;
   authDomain: string;
-  projectId: string;
   storageBucket: string;
   messagingSenderId: string;
   appId: string;
   measurementId: string;
   firestoreDatabaseId: string | null;
-  productionIdentifiers: CommittedProductionFirebaseIdentifiers;
+  committedIdentifiers: CommittedStagingFirebaseIdentifiers;
 }): string[] => {
   const collisions: string[] = [];
   if (
     apiKey !== "" &&
-    productionIdentifiers.apiKey !== "" &&
-    apiKey === productionIdentifiers.apiKey
+    committedIdentifiers.apiKey !== "" &&
+    apiKey === committedIdentifiers.apiKey
   ) {
     collisions.push("VITE_FIREBASE_API_KEY");
   }
   if (
     authDomain !== "" &&
-    productionIdentifiers.authDomain !== "" &&
-    authDomain === productionIdentifiers.authDomain
+    committedIdentifiers.authDomain !== "" &&
+    authDomain === committedIdentifiers.authDomain
   ) {
     collisions.push("VITE_FIREBASE_AUTH_DOMAIN");
   }
   if (
-    projectId !== "" &&
-    productionIdentifiers.projectId !== "" &&
-    projectId === productionIdentifiers.projectId
-  ) {
-    collisions.push("VITE_FIREBASE_PROJECT_ID");
-  }
-  if (
     storageBucket !== "" &&
-    productionIdentifiers.storageBucket !== "" &&
-    storageBucket === productionIdentifiers.storageBucket
+    committedIdentifiers.storageBucket !== "" &&
+    storageBucket === committedIdentifiers.storageBucket
   ) {
     collisions.push("VITE_FIREBASE_STORAGE_BUCKET");
   }
   if (
     messagingSenderId !== "" &&
-    productionIdentifiers.messagingSenderId !== "" &&
-    messagingSenderId === productionIdentifiers.messagingSenderId
+    committedIdentifiers.messagingSenderId !== "" &&
+    messagingSenderId === committedIdentifiers.messagingSenderId
   ) {
     collisions.push("VITE_FIREBASE_MESSAGING_SENDER_ID");
   }
   if (
     appId !== "" &&
-    productionIdentifiers.appId !== "" &&
-    appId === productionIdentifiers.appId
+    committedIdentifiers.appId !== "" &&
+    appId === committedIdentifiers.appId
   ) {
     collisions.push("VITE_FIREBASE_APP_ID");
   }
   if (
-    productionIdentifiers.measurementId !== "" &&
+    committedIdentifiers.measurementId !== "" &&
     measurementId !== "" &&
-    measurementId === productionIdentifiers.measurementId
+    measurementId === committedIdentifiers.measurementId
   ) {
     collisions.push("VITE_FIREBASE_MEASUREMENT_ID");
   }
   if (
     firestoreDatabaseId !== null &&
-    productionIdentifiers.firestoreDatabaseId !== "" &&
-    firestoreDatabaseId === productionIdentifiers.firestoreDatabaseId
+    committedIdentifiers.firestoreDatabaseId !== "" &&
+    firestoreDatabaseId === committedIdentifiers.firestoreDatabaseId
   ) {
     collisions.push("VITE_FIRESTORE_DATABASE_ID");
   }
   return collisions;
 };
 
-const resolveStagingFirestoreDatabaseId = (
+const resolveAlternateStagingFirestoreDatabaseId = (
   rawValue: string,
 ): string | null => {
   if (rawValue === "" || rawValue === DEFAULT_FIRESTORE_DATABASE_LABEL) {
@@ -301,19 +345,17 @@ const createDiagnostic = (
   configurationSource: resolved.configurationSource,
 });
 
-const toResolvedConfiguration = ({
-  applicationEnvironment,
+const toResolvedStagingConfiguration = ({
   configurationSource,
   options,
   firestoreDatabaseId,
 }: {
-  applicationEnvironment: FirebaseApplicationEnvironment;
   configurationSource: FirebaseClientConfigurationSource;
   options: FirebaseClientFirebaseOptions;
   firestoreDatabaseId: string | null;
 }): ResolvedFirebaseClientConfiguration => {
   const resolvedWithoutDiagnostic = {
-    applicationEnvironment,
+    applicationEnvironment: "staging" as const,
     configurationSource,
     projectId: options.projectId,
     firebaseOptions: options,
@@ -325,21 +367,40 @@ const toResolvedConfiguration = ({
   };
 };
 
+const resolveCurrentProjectFirestoreDatabaseId = ({
+  rawValue,
+  committedNamedDatabaseId,
+}: {
+  rawValue: string;
+  committedNamedDatabaseId: string;
+}): { firestoreDatabaseId: string | null; mismatch: boolean } => {
+  if (rawValue === "") {
+    return { firestoreDatabaseId: committedNamedDatabaseId, mismatch: false };
+  }
+  if (rawValue === DEFAULT_FIRESTORE_DATABASE_LABEL) {
+    return { firestoreDatabaseId: null, mismatch: false };
+  }
+  if (rawValue === committedNamedDatabaseId) {
+    return { firestoreDatabaseId: rawValue, mismatch: false };
+  }
+  return { firestoreDatabaseId: rawValue, mismatch: true };
+};
+
 const resolveDevelopmentConfiguration = (
   variables: FirebaseClientEnvironmentVariables,
-  committedProductionConfig: CommittedProductionFirebaseClientConfig,
+  committedStagingConfig: CommittedStagingFirebaseClientConfig,
 ): ResolvedFirebaseClientConfiguration => {
   const appEnv = trimValue(variables.VITE_APP_ENV);
   const missing = missingStagingVariableNames(variables);
   if (missing.length > 0) {
     throw createDevelopmentConfigurationError(
-      "Partial or blank staging configuration cannot fall back to the committed production Firebase project.",
+      "Partial or blank staging configuration cannot silently initialize Firebase.",
       missing,
     );
   }
   if (appEnv !== APPROVED_NON_PRODUCTION_APP_ENV) {
     throw createDevelopmentConfigurationError(
-      `VITE_APP_ENV must be ${APPROVED_NON_PRODUCTION_APP_ENV}.`,
+      `VITE_APP_ENV must be ${APPROVED_NON_PRODUCTION_APP_ENV}. A dedicated production Firebase project has not been configured.`,
       appEnv === "" ? ["VITE_APP_ENV"] : [],
     );
   }
@@ -353,32 +414,70 @@ const resolveDevelopmentConfiguration = (
   );
   const appId = trimValue(variables.VITE_FIREBASE_APP_ID);
   const measurementId = trimValue(variables.VITE_FIREBASE_MEASUREMENT_ID);
-  const firestoreDatabaseId = resolveStagingFirestoreDatabaseId(
-    trimValue(variables.VITE_FIRESTORE_DATABASE_ID),
+  const rawFirestoreDatabaseId = trimValue(variables.VITE_FIRESTORE_DATABASE_ID);
+  const committedIdentifiers = normalizeCommittedStagingIdentifiers(
+    committedStagingConfig,
   );
-  const productionIdentifiers = normalizeCommittedProductionIdentifiers(
-    committedProductionConfig,
+
+  if (projectId === committedIdentifiers.projectId) {
+    const firestoreResolution = resolveCurrentProjectFirestoreDatabaseId({
+      rawValue: rawFirestoreDatabaseId,
+      committedNamedDatabaseId: committedIdentifiers.firestoreDatabaseId,
+    });
+    const mismatches = collectSameProjectMismatches({
+      apiKey,
+      authDomain,
+      storageBucket,
+      messagingSenderId,
+      appId,
+      measurementId,
+      committedIdentifiers,
+    });
+    if (firestoreResolution.mismatch) {
+      mismatches.push("VITE_FIRESTORE_DATABASE_ID");
+    }
+    if (mismatches.length > 0) {
+      throw createDevelopmentConfigurationError(
+        "The project ID matches the committed staging Web app, but other identifiers do not. Copy every field from that same staging Web app.",
+        mismatches,
+      );
+    }
+    return toResolvedStagingConfiguration({
+      configurationSource: "explicit_environment",
+      options: {
+        apiKey,
+        authDomain,
+        projectId,
+        storageBucket,
+        messagingSenderId,
+        appId,
+        measurementId,
+      },
+      firestoreDatabaseId: firestoreResolution.firestoreDatabaseId,
+    });
+  }
+
+  const firestoreDatabaseId = resolveAlternateStagingFirestoreDatabaseId(
+    rawFirestoreDatabaseId,
   );
-  const collisions = collectProductionIdentifierCollisions({
+  const collisions = collectCrossProjectCollisions({
     apiKey,
     authDomain,
-    projectId,
     storageBucket,
     messagingSenderId,
     appId,
     measurementId,
     firestoreDatabaseId,
-    productionIdentifiers,
+    committedIdentifiers,
   });
   if (collisions.length > 0) {
     throw createDevelopmentConfigurationError(
-      "Do not mix staging and production Firebase web configuration. Copy every field from the same staging Web app.",
+      "Do not mix identifiers from the committed staging Web app with a different Firebase project. Copy every field from one Web app.",
       collisions,
     );
   }
 
-  return toResolvedConfiguration({
-    applicationEnvironment: "staging",
+  return toResolvedStagingConfiguration({
     configurationSource: "explicit_environment",
     options: {
       apiKey,
@@ -393,71 +492,72 @@ const resolveDevelopmentConfiguration = (
   });
 };
 
-const resolveProductionConfiguration = (
-  committedProductionConfig: CommittedProductionFirebaseClientConfig,
+const resolveCommittedStagingForProductionRuntime = (
+  committedStagingConfig: CommittedStagingFirebaseClientConfig,
 ): ResolvedFirebaseClientConfiguration => {
-  const productionIdentifiers = normalizeCommittedProductionIdentifiers(
-    committedProductionConfig,
+  const committedIdentifiers = normalizeCommittedStagingIdentifiers(
+    committedStagingConfig,
   );
   if (
-    productionIdentifiers.projectId === "" ||
-    productionIdentifiers.apiKey === "" ||
-    productionIdentifiers.authDomain === "" ||
-    productionIdentifiers.storageBucket === "" ||
-    productionIdentifiers.messagingSenderId === "" ||
-    productionIdentifiers.appId === "" ||
-    productionIdentifiers.firestoreDatabaseId === ""
+    committedIdentifiers.projectId === "" ||
+    committedIdentifiers.apiKey === "" ||
+    committedIdentifiers.authDomain === "" ||
+    committedIdentifiers.storageBucket === "" ||
+    committedIdentifiers.messagingSenderId === "" ||
+    committedIdentifiers.appId === "" ||
+    committedIdentifiers.firestoreDatabaseId === ""
   ) {
     throw new FirebaseClientConfigurationError(
-      "The committed production Firebase configuration is incomplete.",
+      "The committed staging Firebase configuration is incomplete.",
     );
   }
 
-  return toResolvedConfiguration({
-    applicationEnvironment: "production",
-    configurationSource: "committed_production",
+  return toResolvedStagingConfiguration({
+    configurationSource: "committed_staging",
     options: {
-      apiKey: productionIdentifiers.apiKey,
-      authDomain: productionIdentifiers.authDomain,
-      projectId: productionIdentifiers.projectId,
-      storageBucket: productionIdentifiers.storageBucket,
-      messagingSenderId: productionIdentifiers.messagingSenderId,
-      appId: productionIdentifiers.appId,
-      measurementId: productionIdentifiers.measurementId,
+      apiKey: committedIdentifiers.apiKey,
+      authDomain: committedIdentifiers.authDomain,
+      projectId: committedIdentifiers.projectId,
+      storageBucket: committedIdentifiers.storageBucket,
+      messagingSenderId: committedIdentifiers.messagingSenderId,
+      appId: committedIdentifiers.appId,
+      measurementId: committedIdentifiers.measurementId,
     },
-    firestoreDatabaseId: productionIdentifiers.firestoreDatabaseId,
+    firestoreDatabaseId: committedIdentifiers.firestoreDatabaseId,
   });
 };
 
 /**
  * Pure Firebase client configuration resolver. It performs no SDK calls and
  * does not read server environment globals or Admin credentials.
+ *
+ * `runtimeMode` is the Vite runtime (development vs production build).
+ * The Firebase resource environment is currently staging only. A Vite
+ * production build uses the committed staging Web configuration until a
+ * dedicated production Firebase project is introduced.
  */
 export const resolveFirebaseClientConfiguration = ({
   runtimeMode,
   variables,
-  committedProductionConfig,
+  committedStagingConfig,
 }: ResolveFirebaseClientConfigurationInput): ResolvedFirebaseClientConfiguration => {
   if (runtimeMode === "development") {
-    return resolveDevelopmentConfiguration(
-      variables,
-      committedProductionConfig,
-    );
+    return resolveDevelopmentConfiguration(variables, committedStagingConfig);
   }
-  return resolveProductionConfiguration(committedProductionConfig);
+  return resolveCommittedStagingForProductionRuntime(committedStagingConfig);
 };
 
 export const resolveExplicitStagingFirebaseClientConfiguration = ({
   environment,
-  committedProductionConfig,
+  committedStagingConfig,
 }: {
   environment: Readonly<Record<string, unknown>>;
-  committedProductionConfig: CommittedProductionFirebaseClientConfig;
+  committedStagingConfig: CommittedStagingFirebaseClientConfig;
 }): ResolvedFirebaseClientConfiguration =>
   resolveFirebaseClientConfiguration({
     runtimeMode: "development",
     variables: readFirebaseClientEnvironmentVariables(environment),
-    committedProductionConfig,
+    committedStagingConfig,
   });
 
 export const formatFirebaseClientConfigurationDiagnostic = (

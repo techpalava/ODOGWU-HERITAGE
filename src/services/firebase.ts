@@ -2,24 +2,27 @@
  * ============================================================================
  * DEPLOYMENT CHECKLIST & FIREBASE CONSOLE SETUP NOTE
  * ============================================================================
- * For Google Authentication to work correctly in production and development:
+ * The committed Firebase project is PRE-LAUNCH STAGING, not production.
+ * A dedicated production Firebase project must be created before public launch.
+ *
+ * For Google Authentication in the current staging project:
  * 1. Go to Firebase Console -> Authentication -> Sign-in method.
  * 2. Ensure the "Google" provider is ENABLED.
  * 3. Go to Firebase Console -> Authentication -> Settings -> Authorized domains.
- * 4. Add "odogwu-heritage.vercel.app" to the Authorized domains list.
- * 5. Add the staging authorized domain and localhost only after a dedicated
- *    staging Firebase project is configured via ignored `.env.local`.
+ * 4. Register localhost for local QA after an ignored `.env.local` is present.
+ * 5. Do not treat odogwu-heritage.vercel.app as a production Firebase project.
  * ============================================================================
  *
  * Canonical client Firebase boundary. Local development fails closed unless
- * explicit non-production VITE_FIREBASE_* configuration is present.
+ * explicit staging VITE_FIREBASE_* configuration is present. Vite production
+ * builds currently use the committed staging Web configuration.
  */
 
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getAuth } from "firebase/auth";
-import committedProductionConfig from "../../firebase-applet-config.json";
+import committedStagingConfig from "../../firebase-applet-config.json";
 import {
   emitFirebaseClientConfigurationDiagnostic,
   readFirebaseClientEnvironmentVariables,
@@ -47,7 +50,7 @@ const resolvedFirebaseClientConfiguration = resolveFirebaseClientConfiguration({
     VITE_FIREBASE_MEASUREMENT_ID: viteEnv?.VITE_FIREBASE_MEASUREMENT_ID,
     VITE_FIRESTORE_DATABASE_ID: viteEnv?.VITE_FIRESTORE_DATABASE_ID,
   }),
-  committedProductionConfig,
+  committedStagingConfig,
 });
 
 emitFirebaseClientConfigurationDiagnostic(

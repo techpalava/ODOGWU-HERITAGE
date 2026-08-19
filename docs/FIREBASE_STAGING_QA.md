@@ -1,34 +1,40 @@
 # Firebase Staging QA
 
-Local browser QA for Design Studio, including Custom Details construction breakdown, must never use the live Firebase project.
+The existing Firebase project is **pre-launch staging**, not production.
 
-Production project ID that local development must reject:
+Staging project ID:
 
 `gen-lang-client-0614710868`
 
-## Why local development is blocked from production Firebase
+The website has not launched. There are no real customers and no important production orders. Staging data is disposable. Do not create another staging Firebase project now. Do not promote this project by renaming it production.
 
-The SPA previously initialized the committed production Firebase web configuration as soon as the client loaded. `npm run dev` therefore read live Firestore immediately.
+A separate production Firebase project is mandatory before public launch.
 
-Local Vite development now fails closed until an explicit non-production staging configuration is supplied through an ignored `.env.local`. There is no silent fallback to the production project.
+## Runtime mode is not the Firebase environment
+
+Vite has a development runtime and a production-build runtime. Those are not Firebase environments.
+
+- `npm run dev` is the Vite development runtime. It requires an ignored staging `.env.local`.
+- `npm run build` is the Vite production-build runtime. Until a dedicated production Firebase project exists, that build still uses the **committed staging** Web configuration.
+
+A successful production-mode build does **not** mean the app is connected to production Firebase. Until a dedicated production Firebase project is configured, builds continue to use staging resources and must not be publicly launched as production.
+
+## Why local development still requires `.env.local`
+
+The SPA still fails closed in Vite development until explicit staging `VITE_FIREBASE_*` values are supplied through an ignored `.env.local`. There is no silent fallback and no mixed-project configuration.
+
+Those explicit values may be the current committed staging Web app, including `gen-lang-client-0614710868`. They are no longer rejected merely for matching the committed configuration.
 
 Unsupported or non-Vite runtime contexts also fail closed. Only a normal Vite development runtime (`DEV=true`, `PROD=false`, `MODE=development`) or a normal Vite production build (`DEV=false`, `PROD=true`, `MODE=production`) may initialize the Firebase client. Empty, contradictory, or unknown signals — including `vite build --mode staging` — throw before Firebase initializes.
 
-## Create a dedicated Firebase staging project
+## Use the existing staging project
 
-This repository does **not** create or deploy the staging project. Do that manually:
+Do **not** create a new staging Firebase project for this QA path.
 
-1. In Firebase Console, create a new project used only for staging and browser QA.
-2. Do not reuse `gen-lang-client-0614710868`.
-3. Enable Authentication, Firestore, and Storage in that staging project when you are ready to exercise those services.
-4. Deploy staging security rules and seed staging catalogue/style/fabric data separately. This configuration layer does not do that work.
-
-Later, after the staging project exists, you may add a Firebase CLI alias with `firebase use --add`. Do not run that command until the project exists. Do not change `.firebaserc` in this task.
-
-## Register a staging Web app
-
-1. In the staging project, add a Web app.
-2. Register `localhost` as an authorized Authentication domain before using Google or anonymous sign-in locally.
+1. Use the existing project `gen-lang-client-0614710868`.
+2. Use its existing staging Web app.
+3. Use the existing named staging Firestore database unless you intentionally configure another supported database on a different non-production project.
+4. Register `localhost` as an authorized Authentication domain before using Google or anonymous sign-in locally.
 
 ## Obtain the staging Firebase web configuration
 
@@ -41,11 +47,11 @@ From the **same** staging Web app settings, copy every **client** Firebase field
 - `messagingSenderId`
 - `appId`
 - `measurementId` (optional)
-- Firestore database ID, if the staging project uses a named database
+- Firestore database ID for the current named staging database
 
-Do not mix production and staging Firebase web configuration. Copying only the staging `projectId` while retaining a production `authDomain`, `storageBucket`, messaging sender ID, app ID, API key, measurement ID, or Firestore database ID will be rejected.
+The committed copy of this Web configuration is `firebase-applet-config.json`. You may copy those values into an ignored `.env.local`.
 
-Custom Auth domains and Storage buckets may use a different format from the staging project ID, but they must still come from that staging Web app — never from production.
+If you later use a different non-production Firebase project, copy every field from that other Web app. Do not mix identifiers from both projects. Custom Auth domains and Storage buckets may use a different format, but they must still belong to the same Web app as the project ID.
 
 Never copy Admin SDK JSON, private keys, or service-account files into `VITE_*` variables.
 
@@ -65,27 +71,23 @@ VITE_APP_ENV=staging
 
 ## Add the staging `VITE_FIREBASE_*` fields
 
-Copy every value from the same staging Firebase Web app:
+Copy every value from the same staging Firebase Web app. For the current project, that includes the committed named Firestore database ID:
 
 ```bash
 VITE_APP_ENV=staging
 VITE_FIREBASE_API_KEY=YOUR_STAGING_WEB_API_KEY
 VITE_FIREBASE_AUTH_DOMAIN=YOUR_STAGING_PROJECT.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=YOUR_STAGING_PROJECT_ID
-VITE_FIREBASE_STORAGE_BUCKET=YOUR_STAGING_PROJECT.firebasestorage.app
+VITE_FIREBASE_PROJECT_ID=gen-lang-client-0614710868
+VITE_FIREBASE_STORAGE_BUCKET=YOUR_STAGING_STORAGE_BUCKET
 VITE_FIREBASE_MESSAGING_SENDER_ID=YOUR_STAGING_SENDER_ID
 VITE_FIREBASE_APP_ID=YOUR_STAGING_WEB_APP_ID
 VITE_FIREBASE_MEASUREMENT_ID=
-VITE_FIRESTORE_DATABASE_ID=
+VITE_FIRESTORE_DATABASE_ID=YOUR_STAGING_NAMED_DATABASE_ID
 ```
 
-See `.env.example` for the same placeholders. `VITE_*` variables are browser-visible.
+See `.env.example` for placeholders. `VITE_*` variables are browser-visible.
 
-## Firestore database ID
-
-- Set `VITE_FIRESTORE_DATABASE_ID` to the staging named database ID when staging uses a named database.
-- Leave it blank, omit it, or set it to `(default)` to use the SDK default Firestore database.
-- Do not copy the production named database ID into staging configuration.
+If `VITE_FIREBASE_PROJECT_ID` is the current committed staging project, every other identifier must match that same committed Web app. Leaving the Firestore database ID blank uses the committed named staging database. Set it to `(default)` only if you intentionally want the SDK default database.
 
 ## Browser-visible `VITE_*` values
 
@@ -95,11 +97,11 @@ Never put Admin credentials, private keys, `FIREBASE_ADMIN_*`, or `FIREBASE_SERV
 
 ## Admin private keys remain server-only
 
-`FIREBASE_ADMIN_PROJECT_ID`, `FIREBASE_ADMIN_CLIENT_EMAIL`, and `FIREBASE_ADMIN_PRIVATE_KEY` are server-only. They are not read by the Firebase client configuration resolver. Keep them out of `.env.local` unless you are intentionally running server Admin routes against staging, and never expose them to the client.
+`FIREBASE_ADMIN_PROJECT_ID`, `FIREBASE_ADMIN_CLIENT_EMAIL`, and `FIREBASE_ADMIN_PRIVATE_KEY` are server-only. They are not read by the Firebase client configuration resolver. If you use Admin routes locally, point them at staging, never at a future production project, and never expose them to the client.
 
 ## Run `npm run dev`
 
-Normal browser QA uses `npm run dev` with an ignored staging `.env.local`. That is the supported path.
+Normal browser QA uses `npm run dev` with an ignored staging `.env.local` that passes staging validation. That is the supported path.
 
 ```bash
 npm run dev
@@ -107,14 +109,14 @@ npm run dev
 
 Restart the dev server after changing `.env.local`. Vite reads those values at startup.
 
-`vite build --mode staging` is **not** the supported way to run browser staging QA. That mode is an unknown/contradictory runtime and fails closed instead of initializing production or a mixed staging build.
+`vite build --mode staging` is **not** the supported way to run browser staging QA. That mode is an unknown/contradictory runtime and fails closed.
 
 ## Verify the console diagnostic
 
 In the browser or server terminal, look for a non-sensitive diagnostic similar to:
 
 ```text
-[firebase-client] applicationEnvironment=staging projectId=YOUR_STAGING_PROJECT_ID firestoreDatabaseId=(default) configurationSource=explicit_environment
+[firebase-client] applicationEnvironment=staging projectId=gen-lang-client-0614710868 firestoreDatabaseId=YOUR_STAGING_NAMED_DATABASE_ID configurationSource=explicit_environment
 ```
 
 Confirm:
@@ -125,26 +127,37 @@ Confirm:
 
 The diagnostic must not include the API key, Admin credentials, or tokens.
 
-## Stop immediately if the production project ID appears
+Production-mode builds do not emit this browser diagnostic. Their resolver result is still `applicationEnvironment=staging` with `configurationSource=committed_staging`.
 
-If the diagnostic or network traffic shows `gen-lang-client-0614710868`, stop. Local development is misconfigured and must not continue.
+## Stop immediately if the app claims to be production Firebase
+
+No production Firebase project exists yet. If a diagnostic, comment, or deployment description says the current project is production, stop. The current project is staging and is not launch-ready.
 
 ## `test-storage.ts` is staging-only
 
-`test-storage.ts` must never use the committed production configuration. It resolves the same explicit staging `VITE_FIREBASE_*` web fields, rejects missing, partial, mixed, or production identifiers, and initializes Firebase only after that staging resolver succeeds.
+`test-storage.ts` must never fall back to `firebase-applet-config.json` as `initializeApp` input. It resolves explicit staging `VITE_FIREBASE_*` web fields, accepts the current committed staging Web app when those fields are complete and consistent, accepts a different internally consistent non-production project, and rejects missing, partial, or mixed identifiers.
 
-Do not run it against production. Do not import `firebase-applet-config.json` as an `initializeApp` fallback.
+Do not run it as a live Storage smoke test unless you intend to write to staging. Do not invent production credentials for it.
 
 ## Remaining manual staging setup
 
-This configuration boundary only selects which Firebase **web** project the browser talks to. You still need to set up, separately and manually:
+This configuration boundary only selects which Firebase **web** project the browser talks to. Staging Auth, Firestore, Storage, rules, and seed data still require separate setup when they are not already present.
 
-- Authentication providers and authorized domains
-- Firestore
-- Storage
-- Security rules
-- Seeded catalogue, styles, fabrics, and other QA data
+## Future production Firebase project
 
-## This task does not create or deploy staging Firebase
+Before public launch, developers must:
 
-No staging project is created here. No Firebase or Vercel deployment is performed. Production configuration remains the committed fallback for a normal `npm run build` only.
+1. Create a separate production Firebase project. Do not reuse `gen-lang-client-0614710868`.
+2. Register a production Web app.
+3. Create production Firestore and Storage.
+4. Deploy production rules.
+5. Seed approved production data.
+6. Introduce production configuration separately.
+7. Prove staging and production identifiers are isolated.
+8. Update deployment environment configuration deliberately.
+
+Never silently promote the staging project later by renaming it production.
+
+## This branch does not create or deploy Firebase
+
+No Firebase or Vercel deployment is performed here. `npm run build` continues to pass without `.env.local` because the Vite production runtime uses the committed **staging** configuration. That is acceptable only because the website is pre-launch.

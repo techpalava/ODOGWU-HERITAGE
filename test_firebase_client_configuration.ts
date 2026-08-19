@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import committedProductionConfig from "./firebase-applet-config.json" with {
+import committedStagingConfig from "./firebase-applet-config.json" with {
   type: "json",
 };
 import {
   APPROVED_NON_PRODUCTION_APP_ENV,
   DEFAULT_FIRESTORE_DATABASE_LABEL,
+  FIREBASE_PRODUCTION_BOUNDARY,
   FirebaseClientConfigurationError,
   emitFirebaseClientConfigurationDiagnostic,
   formatFirebaseClientConfigurationDiagnostic,
   initializeResolvedFirebaseClient,
-  normalizeCommittedProductionIdentifiers,
+  isFirebasePublicProductionSupported,
+  normalizeCommittedStagingIdentifiers,
   readFirebaseClientEnvironmentVariables,
   resolveExplicitStagingFirebaseClientConfiguration,
   resolveFirebaseClientConfiguration,
@@ -23,75 +25,82 @@ import {
   resolveTestStorageFirebaseClientConfiguration,
 } from "./test-storage";
 
-const productionIdentifiers = normalizeCommittedProductionIdentifiers(
-  committedProductionConfig,
+const committedIdentifiers = normalizeCommittedStagingIdentifiers(
+  committedStagingConfig,
 );
 
-const STAGING_PROJECT_ID = "odogwu-heritage-staging";
-const STAGING_APP_ID = "1:123456789012:web:stagingappid0001";
-const STAGING_DATABASE_ID = "staging-custom-details";
-const STAGING_API_KEY = "staging-web-api-key-not-for-production";
-const STAGING_AUTH_DOMAIN = "auth.staging.example.com";
-const STAGING_STORAGE_BUCKET = "staging-custom-bucket.appspot.com";
-const STAGING_MESSAGING_SENDER_ID = "123456789012";
-const STAGING_MEASUREMENT_ID = "G-STAGINGONLY001";
-const FIXTURE_PRODUCTION_MEASUREMENT_ID = "G-PRODUCTIONONLY1";
+const ALTERNATE_PROJECT_ID = "odogwu-heritage-qa-alt";
+const ALTERNATE_APP_ID = "1:123456789012:web:stagingappid0001";
+const ALTERNATE_DATABASE_ID = "staging-custom-details";
+const ALTERNATE_API_KEY = "staging-web-api-key-not-for-production";
+const ALTERNATE_AUTH_DOMAIN = "auth.staging.example.com";
+const ALTERNATE_STORAGE_BUCKET = "staging-custom-bucket.appspot.com";
+const ALTERNATE_MESSAGING_SENDER_ID = "123456789012";
+const ALTERNATE_MEASUREMENT_ID = "G-STAGINGONLY001";
+const FIXTURE_STAGING_MEASUREMENT_ID = "G-STAGINGMEASURE1";
 
-const stagingVariables = (
+const committedStagingVariables = (
   overrides: Partial<FirebaseClientEnvironmentVariables> = {},
 ): FirebaseClientEnvironmentVariables => ({
   VITE_APP_ENV: APPROVED_NON_PRODUCTION_APP_ENV,
-  VITE_FIREBASE_API_KEY: STAGING_API_KEY,
-  VITE_FIREBASE_AUTH_DOMAIN: STAGING_AUTH_DOMAIN,
-  VITE_FIREBASE_PROJECT_ID: STAGING_PROJECT_ID,
-  VITE_FIREBASE_STORAGE_BUCKET: STAGING_STORAGE_BUCKET,
-  VITE_FIREBASE_MESSAGING_SENDER_ID: STAGING_MESSAGING_SENDER_ID,
-  VITE_FIREBASE_APP_ID: STAGING_APP_ID,
-  VITE_FIREBASE_MEASUREMENT_ID: STAGING_MEASUREMENT_ID,
-  VITE_FIRESTORE_DATABASE_ID: STAGING_DATABASE_ID,
+  VITE_FIREBASE_API_KEY: committedIdentifiers.apiKey,
+  VITE_FIREBASE_AUTH_DOMAIN: committedIdentifiers.authDomain,
+  VITE_FIREBASE_PROJECT_ID: committedIdentifiers.projectId,
+  VITE_FIREBASE_STORAGE_BUCKET: committedIdentifiers.storageBucket,
+  VITE_FIREBASE_MESSAGING_SENDER_ID: committedIdentifiers.messagingSenderId,
+  VITE_FIREBASE_APP_ID: committedIdentifiers.appId,
+  VITE_FIREBASE_MEASUREMENT_ID: committedIdentifiers.measurementId,
+  VITE_FIRESTORE_DATABASE_ID: committedIdentifiers.firestoreDatabaseId,
   ...overrides,
 });
 
-const productionIdentifierValues = [
-  productionIdentifiers.apiKey,
-  productionIdentifiers.authDomain,
-  productionIdentifiers.projectId,
-  productionIdentifiers.storageBucket,
-  productionIdentifiers.messagingSenderId,
-  productionIdentifiers.appId,
-  productionIdentifiers.measurementId,
-  productionIdentifiers.firestoreDatabaseId,
-  FIXTURE_PRODUCTION_MEASUREMENT_ID,
+const alternateStagingVariables = (
+  overrides: Partial<FirebaseClientEnvironmentVariables> = {},
+): FirebaseClientEnvironmentVariables => ({
+  VITE_APP_ENV: APPROVED_NON_PRODUCTION_APP_ENV,
+  VITE_FIREBASE_API_KEY: ALTERNATE_API_KEY,
+  VITE_FIREBASE_AUTH_DOMAIN: ALTERNATE_AUTH_DOMAIN,
+  VITE_FIREBASE_PROJECT_ID: ALTERNATE_PROJECT_ID,
+  VITE_FIREBASE_STORAGE_BUCKET: ALTERNATE_STORAGE_BUCKET,
+  VITE_FIREBASE_MESSAGING_SENDER_ID: ALTERNATE_MESSAGING_SENDER_ID,
+  VITE_FIREBASE_APP_ID: ALTERNATE_APP_ID,
+  VITE_FIREBASE_MEASUREMENT_ID: ALTERNATE_MEASUREMENT_ID,
+  VITE_FIRESTORE_DATABASE_ID: ALTERNATE_DATABASE_ID,
+  ...overrides,
+});
+
+const secretLikeValues = [
+  committedIdentifiers.apiKey,
+  ALTERNATE_API_KEY,
 ].filter((value) => value !== "");
 
-const assertErrorOmitsIdentifierValues = (message: string) => {
-  for (const value of productionIdentifierValues) {
+const assertErrorOmitsSecretValues = (message: string) => {
+  for (const value of secretLikeValues) {
     assert.equal(
       message.includes(value),
       false,
-      "configuration errors must not include production identifier values",
+      "configuration errors must not include API key values",
     );
   }
-  assert.equal(message.includes(STAGING_API_KEY), false);
 };
 
-const expectConfigurationError = (
+const expectDevelopmentError = (
   variables: FirebaseClientEnvironmentVariables,
   pattern: RegExp,
-  committedConfig = committedProductionConfig,
+  committedConfig = committedStagingConfig,
 ) => {
   assert.throws(
     () =>
       resolveFirebaseClientConfiguration({
         runtimeMode: "development",
         variables,
-        committedProductionConfig: committedConfig,
+        committedStagingConfig: committedConfig,
       }),
     (error: unknown) => {
       assert.ok(error instanceof FirebaseClientConfigurationError);
       assert.match(error.message, /ignored `\.env\.local`/);
       assert.match(error.message, pattern);
-      assertErrorOmitsIdentifierValues(error.message);
+      assertErrorOmitsSecretValues(error.message);
       return true;
     },
   );
@@ -119,12 +128,13 @@ const simulateClientBootstrap = (
     MODE?: string;
   },
   initializerState: { invoked: boolean },
+  variables: FirebaseClientEnvironmentVariables = {},
 ) => {
   const runtimeMode = resolveFirebaseRuntimeMode(runtime);
   const resolved = resolveFirebaseClientConfiguration({
     runtimeMode,
-    variables: {},
-    committedProductionConfig,
+    variables,
+    committedStagingConfig,
   });
   initializeResolvedFirebaseClient(resolved, {
     initializeApp: () => {
@@ -135,8 +145,16 @@ const simulateClientBootstrap = (
     getAuth: () => ({}),
     getStorage: () => ({}),
   });
-  return initializerState.invoked;
+  return { invoked: initializerState.invoked, resolved };
 };
+
+assert.equal(FIREBASE_PRODUCTION_BOUNDARY.publicProductionReady, false);
+assert.equal(FIREBASE_PRODUCTION_BOUNDARY.currentResourceEnvironment, "staging");
+assert.equal(
+  FIREBASE_PRODUCTION_BOUNDARY.committedConfigurationSource,
+  "committed_staging",
+);
+assert.equal(isFirebasePublicProductionSupported(), false);
 
 assert.equal(
   resolveFirebaseRuntimeMode({
@@ -193,208 +211,276 @@ assert.throws(
 assert.equal(contradictoryInitializer.invoked, false);
 
 const productionBuildInitializer = { invoked: false };
-assert.equal(
-  simulateClientBootstrap(
-    { DEV: false, PROD: true, MODE: "production" },
-    productionBuildInitializer,
-  ),
-  true,
+const productionBuild = simulateClientBootstrap(
+  { DEV: false, PROD: true, MODE: "production" },
+  productionBuildInitializer,
 );
-assert.equal(productionBuildInitializer.invoked, true);
+assert.equal(productionBuild.invoked, true);
+assert.equal(productionBuild.resolved.applicationEnvironment, "staging");
+assert.equal(productionBuild.resolved.configurationSource, "committed_staging");
+assert.equal(productionBuild.resolved.projectId, committedIdentifiers.projectId);
+assert.equal(
+  productionBuild.resolved.firestoreDatabaseId,
+  committedIdentifiers.firestoreDatabaseId,
+);
+assert.notEqual(productionBuild.resolved.applicationEnvironment, "production");
 
-expectConfigurationError(
+expectDevelopmentError(
   {},
   /Offending variables: VITE_APP_ENV, VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID/,
 );
 
-expectConfigurationError(
-  stagingVariables({ VITE_FIREBASE_PROJECT_ID: undefined }),
+expectDevelopmentError(
+  committedStagingVariables({ VITE_FIREBASE_PROJECT_ID: undefined }),
   /VITE_FIREBASE_PROJECT_ID/,
 );
 
-expectConfigurationError(
-  stagingVariables({
+expectDevelopmentError(
+  committedStagingVariables({
     VITE_FIREBASE_API_KEY: "   ",
     VITE_FIREBASE_AUTH_DOMAIN: "",
   }),
   /VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN/,
 );
 
-expectConfigurationError(
-  stagingVariables({ VITE_APP_ENV: "production" }),
+expectDevelopmentError(
+  committedStagingVariables({ VITE_APP_ENV: "production" }),
   /VITE_APP_ENV must be staging/,
 );
 
-expectConfigurationError(
-  stagingVariables({
-    VITE_FIREBASE_API_KEY: `  ${productionIdentifiers.apiKey}  `,
-  }),
-  /Offending variables: VITE_FIREBASE_API_KEY/,
-);
-
-expectConfigurationError(
-  stagingVariables({
-    VITE_FIREBASE_AUTH_DOMAIN: productionIdentifiers.authDomain,
-  }),
-  /Offending variables: VITE_FIREBASE_AUTH_DOMAIN/,
-);
-
-expectConfigurationError(
-  stagingVariables({
-    VITE_FIREBASE_STORAGE_BUCKET: productionIdentifiers.storageBucket,
-  }),
-  /Offending variables: VITE_FIREBASE_STORAGE_BUCKET/,
-);
-
-expectConfigurationError(
-  stagingVariables({
-    VITE_FIREBASE_MESSAGING_SENDER_ID: productionIdentifiers.messagingSenderId,
-  }),
-  /Offending variables: VITE_FIREBASE_MESSAGING_SENDER_ID/,
-);
-
-expectConfigurationError(
-  stagingVariables({
-    VITE_FIREBASE_APP_ID: productionIdentifiers.appId,
-  }),
-  /Offending variables: VITE_FIREBASE_APP_ID/,
-);
-
-expectConfigurationError(
-  stagingVariables({
-    VITE_FIRESTORE_DATABASE_ID: productionIdentifiers.firestoreDatabaseId,
-  }),
-  /Offending variables: VITE_FIRESTORE_DATABASE_ID/,
-);
-
-expectConfigurationError(
-  stagingVariables({
-    VITE_FIREBASE_PROJECT_ID: productionIdentifiers.projectId,
-  }),
-  /Offending variables: VITE_FIREBASE_PROJECT_ID/,
-);
-
-const committedProductionWithMeasurementId = {
-  ...committedProductionConfig,
-  measurementId: FIXTURE_PRODUCTION_MEASUREMENT_ID,
-};
-expectConfigurationError(
-  stagingVariables({
-    VITE_FIREBASE_MEASUREMENT_ID: ` ${FIXTURE_PRODUCTION_MEASUREMENT_ID} `,
-  }),
-  /Offending variables: VITE_FIREBASE_MEASUREMENT_ID/,
-  committedProductionWithMeasurementId,
-);
-
-const blankProductionMeasurementStillAllowsStagingMeasurement =
-  resolveFirebaseClientConfiguration({
-    runtimeMode: "development",
-    variables: stagingVariables(),
-    committedProductionConfig,
-  });
-assert.equal(
-  blankProductionMeasurementStillAllowsStagingMeasurement.firebaseOptions
-    .measurementId,
-  STAGING_MEASUREMENT_ID,
-);
-
-const stagingNamed = resolveFirebaseClientConfiguration({
+const currentStagingExplicit = resolveFirebaseClientConfiguration({
   runtimeMode: "development",
-  variables: stagingVariables(),
-  committedProductionConfig,
+  variables: committedStagingVariables(),
+  committedStagingConfig,
 });
-assert.equal(stagingNamed.applicationEnvironment, "staging");
-assert.equal(stagingNamed.configurationSource, "explicit_environment");
-assert.equal(stagingNamed.projectId, STAGING_PROJECT_ID);
-assert.equal(stagingNamed.firebaseOptions.projectId, STAGING_PROJECT_ID);
-assert.equal(stagingNamed.firebaseOptions.authDomain, STAGING_AUTH_DOMAIN);
+assert.equal(currentStagingExplicit.applicationEnvironment, "staging");
+assert.equal(currentStagingExplicit.configurationSource, "explicit_environment");
+assert.equal(currentStagingExplicit.projectId, committedIdentifiers.projectId);
 assert.equal(
-  stagingNamed.firebaseOptions.storageBucket,
-  STAGING_STORAGE_BUCKET,
+  currentStagingExplicit.firestoreDatabaseId,
+  committedIdentifiers.firestoreDatabaseId,
 );
-assert.equal(stagingNamed.firestoreDatabaseId, STAGING_DATABASE_ID);
-assert.equal(stagingNamed.diagnostic.projectId, STAGING_PROJECT_ID);
-assert.equal(stagingNamed.diagnostic.firestoreDatabaseId, STAGING_DATABASE_ID);
-assert.equal(stagingNamed.diagnostic.configurationSource, "explicit_environment");
 assert.equal(
-  "apiKey" in stagingNamed.diagnostic,
+  currentStagingExplicit.firebaseOptions.storageBucket,
+  committedIdentifiers.storageBucket,
+);
+assert.equal(
+  "apiKey" in currentStagingExplicit.diagnostic,
   false,
   "diagnostic must not include the API key",
 );
 
-const stagingDefaultDatabase = resolveFirebaseClientConfiguration({
+const currentStagingPaddedProjectId = resolveFirebaseClientConfiguration({
   runtimeMode: "development",
-  variables: stagingVariables({ VITE_FIRESTORE_DATABASE_ID: undefined }),
-  committedProductionConfig,
+  variables: committedStagingVariables({
+    VITE_FIREBASE_PROJECT_ID: `  ${committedIdentifiers.projectId}  `,
+    VITE_FIREBASE_API_KEY: ` ${committedIdentifiers.apiKey} `,
+  }),
+  committedStagingConfig,
 });
-assert.equal(stagingDefaultDatabase.firestoreDatabaseId, null);
 assert.equal(
-  stagingDefaultDatabase.diagnostic.firestoreDatabaseId,
+  currentStagingPaddedProjectId.projectId,
+  committedIdentifiers.projectId,
+);
+
+const currentStagingBlankDatabaseUsesNamed = resolveFirebaseClientConfiguration({
+  runtimeMode: "development",
+  variables: committedStagingVariables({
+    VITE_FIRESTORE_DATABASE_ID: undefined,
+  }),
+  committedStagingConfig,
+});
+assert.equal(
+  currentStagingBlankDatabaseUsesNamed.firestoreDatabaseId,
+  committedIdentifiers.firestoreDatabaseId,
+  "current staging project must keep the named database when the ID is omitted",
+);
+
+const currentStagingExplicitDefault = resolveFirebaseClientConfiguration({
+  runtimeMode: "development",
+  variables: committedStagingVariables({
+    VITE_FIRESTORE_DATABASE_ID: DEFAULT_FIRESTORE_DATABASE_LABEL,
+  }),
+  committedStagingConfig,
+});
+assert.equal(currentStagingExplicitDefault.firestoreDatabaseId, null);
+
+expectDevelopmentError(
+  committedStagingVariables({
+    VITE_FIREBASE_STORAGE_BUCKET: ALTERNATE_STORAGE_BUCKET,
+  }),
+  /Offending variables: VITE_FIREBASE_STORAGE_BUCKET/,
+);
+
+expectDevelopmentError(
+  committedStagingVariables({
+    VITE_FIREBASE_AUTH_DOMAIN: ALTERNATE_AUTH_DOMAIN,
+  }),
+  /Offending variables: VITE_FIREBASE_AUTH_DOMAIN/,
+);
+
+expectDevelopmentError(
+  committedStagingVariables({
+    VITE_FIREBASE_APP_ID: ALTERNATE_APP_ID,
+  }),
+  /Offending variables: VITE_FIREBASE_APP_ID/,
+);
+
+expectDevelopmentError(
+  committedStagingVariables({
+    VITE_FIREBASE_API_KEY: ALTERNATE_API_KEY,
+  }),
+  /Offending variables: VITE_FIREBASE_API_KEY/,
+);
+
+expectDevelopmentError(
+  committedStagingVariables({
+    VITE_FIREBASE_MESSAGING_SENDER_ID: ALTERNATE_MESSAGING_SENDER_ID,
+  }),
+  /Offending variables: VITE_FIREBASE_MESSAGING_SENDER_ID/,
+);
+
+expectDevelopmentError(
+  committedStagingVariables({
+    VITE_FIRESTORE_DATABASE_ID: ALTERNATE_DATABASE_ID,
+  }),
+  /Offending variables: VITE_FIRESTORE_DATABASE_ID/,
+);
+
+expectDevelopmentError(
+  alternateStagingVariables({
+    VITE_FIREBASE_STORAGE_BUCKET: committedIdentifiers.storageBucket,
+  }),
+  /Offending variables: VITE_FIREBASE_STORAGE_BUCKET/,
+);
+
+expectDevelopmentError(
+  alternateStagingVariables({
+    VITE_FIREBASE_AUTH_DOMAIN: committedIdentifiers.authDomain,
+  }),
+  /Offending variables: VITE_FIREBASE_AUTH_DOMAIN/,
+);
+
+expectDevelopmentError(
+  alternateStagingVariables({
+    VITE_FIREBASE_APP_ID: committedIdentifiers.appId,
+  }),
+  /Offending variables: VITE_FIREBASE_APP_ID/,
+);
+
+expectDevelopmentError(
+  alternateStagingVariables({
+    VITE_FIREBASE_API_KEY: committedIdentifiers.apiKey,
+  }),
+  /Offending variables: VITE_FIREBASE_API_KEY/,
+);
+
+expectDevelopmentError(
+  alternateStagingVariables({
+    VITE_FIRESTORE_DATABASE_ID: committedIdentifiers.firestoreDatabaseId,
+  }),
+  /Offending variables: VITE_FIRESTORE_DATABASE_ID/,
+);
+
+const committedStagingWithMeasurementId = {
+  ...committedStagingConfig,
+  measurementId: FIXTURE_STAGING_MEASUREMENT_ID,
+};
+expectDevelopmentError(
+  committedStagingVariables({
+    VITE_FIREBASE_MEASUREMENT_ID: "",
+  }),
+  /Offending variables: VITE_FIREBASE_MEASUREMENT_ID/,
+  committedStagingWithMeasurementId,
+);
+
+const currentStagingMatchingMeasurement = resolveFirebaseClientConfiguration({
+  runtimeMode: "development",
+  variables: committedStagingVariables({
+    VITE_FIREBASE_MEASUREMENT_ID: FIXTURE_STAGING_MEASUREMENT_ID,
+  }),
+  committedStagingConfig: committedStagingWithMeasurementId,
+});
+assert.equal(
+  currentStagingMatchingMeasurement.firebaseOptions.measurementId,
+  FIXTURE_STAGING_MEASUREMENT_ID,
+);
+
+const alternateStagingNamed = resolveFirebaseClientConfiguration({
+  runtimeMode: "development",
+  variables: alternateStagingVariables(),
+  committedStagingConfig,
+});
+assert.equal(alternateStagingNamed.applicationEnvironment, "staging");
+assert.equal(alternateStagingNamed.configurationSource, "explicit_environment");
+assert.equal(alternateStagingNamed.projectId, ALTERNATE_PROJECT_ID);
+assert.equal(alternateStagingNamed.firebaseOptions.authDomain, ALTERNATE_AUTH_DOMAIN);
+assert.equal(
+  alternateStagingNamed.firebaseOptions.storageBucket,
+  ALTERNATE_STORAGE_BUCKET,
+);
+assert.equal(alternateStagingNamed.firestoreDatabaseId, ALTERNATE_DATABASE_ID);
+
+const alternateStagingDefaultDatabase = resolveFirebaseClientConfiguration({
+  runtimeMode: "development",
+  variables: alternateStagingVariables({
+    VITE_FIRESTORE_DATABASE_ID: undefined,
+  }),
+  committedStagingConfig,
+});
+assert.equal(alternateStagingDefaultDatabase.firestoreDatabaseId, null);
+assert.equal(
+  alternateStagingDefaultDatabase.diagnostic.firestoreDatabaseId,
   DEFAULT_FIRESTORE_DATABASE_LABEL,
 );
 
-const stagingExplicitDefault = resolveFirebaseClientConfiguration({
-  runtimeMode: "development",
-  variables: stagingVariables({
-    VITE_FIRESTORE_DATABASE_ID: DEFAULT_FIRESTORE_DATABASE_LABEL,
-  }),
-  committedProductionConfig,
-});
-assert.equal(stagingExplicitDefault.firestoreDatabaseId, null);
-
-const productionResolved = resolveFirebaseClientConfiguration({
+const productionRuntimeResolved = resolveFirebaseClientConfiguration({
   runtimeMode: "production",
   variables: {},
-  committedProductionConfig,
+  committedStagingConfig,
 });
-assert.equal(productionResolved.applicationEnvironment, "production");
-assert.equal(productionResolved.configurationSource, "committed_production");
-assert.equal(productionResolved.projectId, productionIdentifiers.projectId);
+assert.equal(productionRuntimeResolved.applicationEnvironment, "staging");
+assert.equal(productionRuntimeResolved.configurationSource, "committed_staging");
+assert.equal(productionRuntimeResolved.projectId, committedIdentifiers.projectId);
 assert.equal(
-  productionResolved.firestoreDatabaseId,
-  productionIdentifiers.firestoreDatabaseId,
+  productionRuntimeResolved.firestoreDatabaseId,
+  committedIdentifiers.firestoreDatabaseId,
 );
 assert.equal(
-  productionResolved.firebaseOptions.appId,
-  productionIdentifiers.appId,
+  productionRuntimeResolved.firebaseOptions.appId,
+  committedIdentifiers.appId,
 );
-assert.equal(
-  productionResolved.firebaseOptions.authDomain,
-  productionIdentifiers.authDomain,
-);
-assert.equal(
-  productionResolved.firebaseOptions.apiKey,
-  productionIdentifiers.apiKey,
-);
-assert.equal(
-  productionResolved.firebaseOptions.storageBucket,
-  productionIdentifiers.storageBucket,
-);
-assert.equal(
-  productionResolved.firebaseOptions.messagingSenderId,
-  productionIdentifiers.messagingSenderId,
+assert.notEqual(productionRuntimeResolved.applicationEnvironment, "production");
+assert.notEqual(
+  productionRuntimeResolved.configurationSource,
+  "committed_production",
 );
 
-const productionIgnoresStagingVariables = resolveFirebaseClientConfiguration({
-  runtimeMode: "production",
-  variables: stagingVariables(),
-  committedProductionConfig,
-});
+const productionRuntimeIgnoresAlternateVariables =
+  resolveFirebaseClientConfiguration({
+    runtimeMode: "production",
+    variables: alternateStagingVariables(),
+    committedStagingConfig,
+  });
 assert.equal(
-  productionIgnoresStagingVariables.projectId,
-  productionIdentifiers.projectId,
-  "production builds keep the committed Firebase project",
+  productionRuntimeIgnoresAlternateVariables.projectId,
+  committedIdentifiers.projectId,
+  "Vite production runtime keeps the committed staging Firebase project",
 );
 assert.equal(
-  productionIgnoresStagingVariables.configurationSource,
-  "committed_production",
+  productionRuntimeIgnoresAlternateVariables.firebaseOptions.apiKey,
+  committedIdentifiers.apiKey,
+);
+assert.equal(
+  productionRuntimeIgnoresAlternateVariables.configurationSource,
+  "committed_staging",
 );
 
 const mixedEnvironment = readFirebaseClientEnvironmentVariables({
   VITE_APP_ENV: "staging",
-  VITE_FIREBASE_PROJECT_ID: STAGING_PROJECT_ID,
-  VITE_FIREBASE_API_KEY: STAGING_API_KEY,
-  FIREBASE_ADMIN_PROJECT_ID: productionIdentifiers.projectId,
+  VITE_FIREBASE_PROJECT_ID: committedIdentifiers.projectId,
+  VITE_FIREBASE_API_KEY: committedIdentifiers.apiKey,
+  FIREBASE_ADMIN_PROJECT_ID: committedIdentifiers.projectId,
   FIREBASE_ADMIN_CLIENT_EMAIL: "admin@example.com",
   FIREBASE_ADMIN_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\\nABC\\n-----END PRIVATE KEY-----",
   FIREBASE_SERVICE_ACCOUNT_KEY: "admin-json",
@@ -414,7 +500,10 @@ assert.deepEqual(Object.keys(mixedEnvironment).sort(), [
   "VITE_FIRESTORE_DATABASE_ID",
 ]);
 assert.equal(mixedEnvironment.VITE_APP_ENV, "staging");
-assert.equal(mixedEnvironment.VITE_FIREBASE_PROJECT_ID, STAGING_PROJECT_ID);
+assert.equal(
+  mixedEnvironment.VITE_FIREBASE_PROJECT_ID,
+  committedIdentifiers.projectId,
+);
 assert.equal(
   JSON.stringify(mixedEnvironment).includes("BEGIN PRIVATE KEY"),
   false,
@@ -423,30 +512,36 @@ assert.equal(JSON.stringify(mixedEnvironment).includes("sk_test_not_for_client")
 assert.equal(JSON.stringify(mixedEnvironment).includes("admin@example.com"), false);
 
 const diagnosticText = formatFirebaseClientConfigurationDiagnostic(
-  stagingNamed.diagnostic,
+  currentStagingExplicit.diagnostic,
 );
 assert.match(diagnosticText, /applicationEnvironment=staging/);
-assert.match(diagnosticText, new RegExp(`projectId=${STAGING_PROJECT_ID}`));
-assert.match(diagnosticText, new RegExp(`firestoreDatabaseId=${STAGING_DATABASE_ID}`));
+assert.match(
+  diagnosticText,
+  new RegExp(`projectId=${committedIdentifiers.projectId}`),
+);
+assert.match(
+  diagnosticText,
+  new RegExp(`firestoreDatabaseId=${committedIdentifiers.firestoreDatabaseId}`),
+);
 assert.match(diagnosticText, /configurationSource=explicit_environment/);
-assert.equal(diagnosticText.includes(STAGING_API_KEY), false);
+assert.equal(diagnosticText.includes(committedIdentifiers.apiKey), false);
 assert.equal(diagnosticText.includes("BEGIN PRIVATE KEY"), false);
 assert.equal(diagnosticText.toLowerCase().includes("apikey"), false);
 
 const logged: string[] = [];
-emitFirebaseClientConfigurationDiagnostic(stagingNamed, "development", {
+emitFirebaseClientConfigurationDiagnostic(currentStagingExplicit, "development", {
   info: (message: string) => {
     logged.push(message);
   },
 });
 assert.deepEqual(logged, [diagnosticText]);
 logged.length = 0;
-emitFirebaseClientConfigurationDiagnostic(productionResolved, "production", {
+emitFirebaseClientConfigurationDiagnostic(productionRuntimeResolved, "production", {
   info: (message: string) => {
     logged.push(message);
   },
 });
-assert.deepEqual(logged, [], "production must not emit the client diagnostic");
+assert.deepEqual(logged, [], "production runtime must not emit the client diagnostic");
 
 const resolverSource = readFileSync(
   "src/utils/firebaseClientConfiguration.ts",
@@ -458,14 +553,16 @@ assert.equal(resolverSource.includes('from "firebase/auth"'), false);
 assert.equal(resolverSource.includes('from "firebase/storage"'), false);
 assert.equal(resolverSource.includes("getAnalytics"), false);
 assert.equal(resolverSource.includes("process.env."), false);
+assert.equal(resolverSource.includes("committedProductionConfig"), false);
+assert.equal(resolverSource.includes("committed_production"), false);
+assert.equal(resolverSource.includes("normalizeCommittedProductionIdentifiers"), false);
 
 let initializerInvoked = false;
-const failingVariables: FirebaseClientEnvironmentVariables = {};
 try {
   const resolved = resolveFirebaseClientConfiguration({
     runtimeMode: "development",
-    variables: failingVariables,
-    committedProductionConfig,
+    variables: {},
+    committedStagingConfig,
   });
   initializeResolvedFirebaseClient(resolved, {
     initializeApp: () => {
@@ -492,11 +589,11 @@ try {
 assert.equal(initializerInvoked, false);
 
 let namedDatabaseId: string | undefined;
-const initialized = initializeResolvedFirebaseClient(stagingNamed, {
+const initialized = initializeResolvedFirebaseClient(currentStagingExplicit, {
   initializeApp: (options) => {
     initializerInvoked = true;
-    assert.equal(options.projectId, STAGING_PROJECT_ID);
-    assert.equal(options.apiKey, STAGING_API_KEY);
+    assert.equal(options.projectId, committedIdentifiers.projectId);
+    assert.equal(options.apiKey, committedIdentifiers.apiKey);
     return { name: "staging-app" };
   },
   getFirestore: (_app, databaseId) => {
@@ -507,11 +604,11 @@ const initialized = initializeResolvedFirebaseClient(stagingNamed, {
   getStorage: () => ({ kind: "storage" }),
 });
 assert.equal(initializerInvoked, true);
-assert.equal(namedDatabaseId, STAGING_DATABASE_ID);
+assert.equal(namedDatabaseId, committedIdentifiers.firestoreDatabaseId);
 assert.equal(initialized.app.name, "staging-app");
 
 let defaultDatabaseCalledWithExtraId = false;
-initializeResolvedFirebaseClient(stagingDefaultDatabase, {
+initializeResolvedFirebaseClient(currentStagingExplicitDefault, {
   initializeApp: () => ({ name: "staging-default" }),
   getFirestore: (_app, databaseId) => {
     if (databaseId !== undefined) defaultDatabaseCalledWithExtraId = true;
@@ -534,6 +631,8 @@ assert.ok(runtimeModeCallIndex >= 0);
 assert.ok(resolveCallIndex > runtimeModeCallIndex);
 assert.ok(initializeCallIndex > resolveCallIndex);
 assert.equal(firebaseServiceSource.includes("getAnalytics"), false);
+assert.equal(firebaseServiceSource.includes("committedProductionConfig"), false);
+assert.match(firebaseServiceSource, /committedStagingConfig/);
 
 const duplicateInitializerSource = readFileSync("src/firebase/config.ts", "utf8");
 assert.equal(duplicateInitializerSource.includes("initializeApp("), false);
@@ -548,55 +647,51 @@ assert.equal(
   "pure resolver tests must not import the live initializer",
 );
 
-const stagingEnvRecord = stagingVariables() as Record<string, unknown>;
+const stagingEnvRecord = committedStagingVariables() as Record<string, unknown>;
 const explicitStaging = resolveExplicitStagingFirebaseClientConfiguration({
   environment: stagingEnvRecord,
-  committedProductionConfig,
+  committedStagingConfig,
 });
-assert.equal(explicitStaging.projectId, STAGING_PROJECT_ID);
+assert.equal(explicitStaging.projectId, committedIdentifiers.projectId);
+assert.equal(explicitStaging.applicationEnvironment, "staging");
 
 const testStorageResolved =
   resolveTestStorageFirebaseClientConfiguration(stagingEnvRecord);
 assert.equal(testStorageResolved.applicationEnvironment, "staging");
-assert.equal(testStorageResolved.projectId, STAGING_PROJECT_ID);
-assert.notEqual(testStorageResolved.projectId, productionIdentifiers.projectId);
+assert.equal(testStorageResolved.projectId, committedIdentifiers.projectId);
+assert.equal(testStorageResolved.configurationSource, "explicit_environment");
 
 assert.throws(
   () =>
     resolveTestStorageFirebaseClientConfiguration({
       ...stagingEnvRecord,
-      VITE_FIREBASE_STORAGE_BUCKET: productionIdentifiers.storageBucket,
+      VITE_FIREBASE_STORAGE_BUCKET: ALTERNATE_STORAGE_BUCKET,
     }),
   FirebaseClientConfigurationError,
 );
 
 assert.throws(
   () =>
-    resolveTestStorageFirebaseClientConfiguration({
-      VITE_APP_ENV: "staging",
-      VITE_FIREBASE_API_KEY: productionIdentifiers.apiKey,
-      VITE_FIREBASE_AUTH_DOMAIN: productionIdentifiers.authDomain,
-      VITE_FIREBASE_PROJECT_ID: productionIdentifiers.projectId,
-      VITE_FIREBASE_STORAGE_BUCKET: productionIdentifiers.storageBucket,
-      VITE_FIREBASE_MESSAGING_SENDER_ID: productionIdentifiers.messagingSenderId,
-      VITE_FIREBASE_APP_ID: productionIdentifiers.appId,
-      VITE_FIRESTORE_DATABASE_ID: productionIdentifiers.firestoreDatabaseId,
-    }),
-  (error: unknown) => {
-    assert.ok(error instanceof FirebaseClientConfigurationError);
-    assertErrorOmitsIdentifierValues(
-      (error as FirebaseClientConfigurationError).message,
-    );
-    return true;
-  },
+    resolveTestStorageFirebaseClientConfiguration(
+      alternateStagingVariables({
+        VITE_FIREBASE_STORAGE_BUCKET: committedIdentifiers.storageBucket,
+      }) as Record<string, unknown>,
+    ),
+  FirebaseClientConfigurationError,
 );
+
+const alternateTestStorage = resolveTestStorageFirebaseClientConfiguration(
+  alternateStagingVariables() as Record<string, unknown>,
+);
+assert.equal(alternateTestStorage.projectId, ALTERNATE_PROJECT_ID);
+assert.equal(alternateTestStorage.applicationEnvironment, "staging");
 
 let testStorageInitializerInvoked = false;
 assert.throws(
   () =>
     createTestStorageFirebaseApp({}, () => {
       testStorageInitializerInvoked = true;
-      return { name: "blocked-production" } as never;
+      return { name: "blocked" } as never;
     }),
   FirebaseClientConfigurationError,
 );
@@ -606,15 +701,11 @@ let receivedTestStorageProjectId = "";
 createTestStorageFirebaseApp(stagingEnvRecord, (options) => {
   testStorageInitializerInvoked = true;
   receivedTestStorageProjectId = options.projectId;
-  assert.notEqual(options.projectId, productionIdentifiers.projectId);
-  assert.notEqual(options.apiKey, productionIdentifiers.apiKey);
-  assert.notEqual(options.authDomain, productionIdentifiers.authDomain);
-  assert.notEqual(options.storageBucket, productionIdentifiers.storageBucket);
-  assert.notEqual(options.appId, productionIdentifiers.appId);
+  assert.equal(options.projectId, committedIdentifiers.projectId);
   return { name: "staging-storage" } as never;
 });
 assert.equal(testStorageInitializerInvoked, true);
-assert.equal(receivedTestStorageProjectId, STAGING_PROJECT_ID);
+assert.equal(receivedTestStorageProjectId, committedIdentifiers.projectId);
 
 assert.equal(
   isTestStorageExecutedDirectly("file:///tmp/test-storage.ts", undefined),
@@ -635,6 +726,10 @@ assert.match(
 );
 assert.equal(testStorageSource.includes("initializeApp(firebaseConfig)"), false);
 assert.equal(
+  testStorageSource.includes("initializeApp(committedStagingConfig)"),
+  false,
+);
+assert.equal(
   testStorageSource.includes("initializeApp(committedProductionConfig)"),
   false,
 );
@@ -643,4 +738,10 @@ assert.match(testStorageSource, /initialize\(resolved\.firebaseOptions\)/);
 assert.match(testStorageSource, /initializeApp\(resolved\.firebaseOptions\)/);
 assert.match(testStorageSource, /isTestStorageExecutedDirectly/);
 
-console.log("PASS: fail-closed Firebase client configuration");
+const envExample = readFileSync(".env.example", "utf8");
+assert.match(envExample, /PRE-LAUNCH STAGING/);
+assert.match(envExample, /No production Firebase project exists yet/);
+assert.match(envExample, /FIREBASE_ADMIN_PROJECT_ID="<STAGING_PROJECT_ID>"/);
+assert.equal(envExample.includes(committedIdentifiers.apiKey), false);
+
+console.log("PASS: staging-reclassified Firebase client configuration");
