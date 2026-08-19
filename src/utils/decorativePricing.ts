@@ -376,24 +376,39 @@ export interface GarmentDetailsPrice {
   accessories: PricedSelection[];
 }
 
+export interface SelectedDecorativeFeaturePricingContext {
+  /**
+   * A narrow style context used only to decide whether an explicitly selected
+   * decorative feature applies. Price overrides and accessories still use the
+   * pricing style argument.
+   */
+  applicabilityStyle: StyleCategory | null;
+}
+
 export const calculateGarmentDetailsPrice = (
   details: DesignSelections,
   style?: StyleCategory | null,
   catalog: CustomDetailOption[] = [],
   garment?: CustomDetailGarmentContext | null,
+  selectedFeatureContext?: SelectedDecorativeFeaturePricingContext,
 ): GarmentDetailsPrice => {
+  const decorativeFeatureStyle = selectedFeatureContext
+    ? selectedFeatureContext.applicabilityStyle
+    : style;
   const applicableDetails = filterDesignSelectionsForDecorativeFeatures(
     details,
-    style,
+    decorativeFeatureStyle,
     garment,
   );
   const applicableFeatures = new Set(
-    getApplicableDecorativeFeatures(style, garment),
+    getApplicableDecorativeFeatures(decorativeFeatureStyle, garment),
   );
   const includedFeatures = new Set(
-    getIncludedDecorativeFeatures(style).filter((feature) =>
-      applicableFeatures.has(feature),
-    ),
+    selectedFeatureContext
+      ? []
+      : getIncludedDecorativeFeatures(decorativeFeatureStyle).filter(
+          (feature) => applicableFeatures.has(feature),
+        ),
   );
   const selectedFeatures = new Set<DecorativeFeature>(
     applicableDetails.decorativeFeatures || [],

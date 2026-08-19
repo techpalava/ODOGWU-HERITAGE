@@ -55,6 +55,7 @@ import {
   resolveShippingGarmentPieceCount,
 } from "../utils/shippingPricing";
 import { calculateDesignPricing } from "../utils/designPricing";
+import { projectCustomerGarmentConstructionBreakdown } from "../utils/designPriceBreakdownPresentation";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
 import { auth } from "../services/firebase";
 import {
@@ -1017,6 +1018,8 @@ export default function DesignStudioView({
               futureAdditionalConstructionReconciliation.state,
           },
           materialPricing: futureFabricMaterialPricing,
+          decorativeFeatureApplicabilityStyle:
+            futureDesignStyleSelection.selectedStyle,
           baseGarmentComposition: futureFabricComposition,
           additionalGarments: futureAdditionalGarments,
           catalog: customDetailCatalog,
@@ -2486,7 +2489,20 @@ export default function DesignStudioView({
           orderLevelCustomDetailsPrice={
             futureFabricAuthoritativePricing?.customDetailsPrice || 0
           }
-          constructionSubtotal={futureConstructionPrice}
+          constructionBreakdown={projectCustomerGarmentConstructionBreakdown({
+            pricing: futureFabricAuthoritativePricing,
+            subjects: futureScopedCustomDetailsReconciliation.subjects,
+            garmentTypeSelection,
+            additionalGarments: futureAdditionalGarments,
+            additionalGarmentConstructions:
+              futureAdditionalConstructionReconciliation.state,
+            catalogInspection: futureCatalogInspection,
+            constructionSubtotal:
+              futureSummary.pricingSummary.garmentConstructionSubtotal,
+          })}
+          constructionSubtotal={
+            futureSummary.pricingSummary.garmentConstructionSubtotal
+          }
           designSelections={designSelections}
           selectedStyle={futureDesignStyleSelection.selectedStyle}
           additionalGarments={futureAdditionalGarments}
