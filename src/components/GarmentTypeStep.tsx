@@ -15,6 +15,7 @@ import {
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
+  STEP_1_SELECTABLE_GARMENT_TYPES,
   type GarmentConstructionPricingResolution,
   resolveGarmentConstructionPricing,
 } from "../utils/garmentConstructionPricing";
@@ -147,7 +148,7 @@ export const getGarmentTypeStepPresentation = ({
   );
 
   return {
-    categories: CANONICAL_PHYSICAL_GARMENT_TYPES.map((garmentType) => ({
+    categories: STEP_1_SELECTABLE_GARMENT_TYPES.map((garmentType) => ({
       garmentType,
       label: getGarmentTypeStepLabel(garmentType),
       fabricUnits: createStyleBaseGarmentSpec(garmentType).fabricUnits,
@@ -391,16 +392,20 @@ export const GarmentTypeStep = ({
                 Select garment types to view their construction pricing.
               </p>
             ) : (
-              presentation.categories
-                .filter((category) => category.selected)
-                .map((category) => {
-                  const pricing = category.constructionPricing;
+              presentation.constructionPricing.map((pricing) => {
                   return (
                     <div
-                      key={category.garmentType}
+                      key={pricing.garmentType}
                       className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-heritage-ink/70"
                     >
-                      <span className="min-w-0 break-words">{category.label}</span>
+                      <span className="min-w-0 break-words">
+                        {getGarmentTypeStepLabel(
+                          pricing.garmentType as Exclude<
+                            FabricGarmentType,
+                            "other"
+                          >,
+                        )}
+                      </span>
                       {pricing?.status === "resolved" ? (
                         <span className="shrink-0 font-mono font-bold text-heritage-green">
                           {formatGarmentTypeStepEuro(pricing.totalPrice)}

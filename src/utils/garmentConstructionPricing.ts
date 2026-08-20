@@ -27,6 +27,12 @@ export const CANONICAL_PHYSICAL_GARMENT_TYPES: readonly CanonicalPhysicalGarment
   ...STYLE_BASE_GARMENT_TYPES,
 ] as CanonicalPhysicalGarmentType[];
 
+/** Customer-facing Step 1 garment cards; domain support for omitted types is retained elsewhere. */
+export const STEP_1_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmentType[] =
+  CANONICAL_PHYSICAL_GARMENT_TYPES.filter(
+    (garmentType) => garmentType !== "agbada",
+  );
+
 const CANONICAL_PHYSICAL_GARMENT_TYPE_SET = new Set<FabricGarmentType>(
   CANONICAL_PHYSICAL_GARMENT_TYPES,
 );

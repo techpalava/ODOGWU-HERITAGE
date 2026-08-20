@@ -51,7 +51,7 @@ const expectedDefaults: Record<
   },
   bum_shorts: { optionIds: ["bum_rope"], totalPriceCents: 7000 },
   dress: { optionIds: ["dress_std_sleeveless"], totalPriceCents: 7000 },
-  kaftan: { optionIds: ["shirt_std_short"], totalPriceCents: 6500 },
+  kaftan: { optionIds: ["shirt_long_short"], totalPriceCents: 7000 },
   full_length_gown: {
     optionIds: ["dress_long_short"],
     totalPriceCents: 7500,
@@ -221,11 +221,12 @@ const kaftan = resolveGarmentConstructionPricing("kaftan", catalog);
 assert.equal(shirt.status, "resolved");
 assert.equal(kaftan.status, "resolved");
 if (shirt.status === "resolved" && kaftan.status === "resolved") {
-  assert.equal(shirt.components[0]?.optionId, kaftan.components[0]?.optionId);
+  assert.equal(shirt.components[0]?.optionId, "shirt_std_short");
+  assert.equal(kaftan.components[0]?.optionId, "shirt_long_short");
   assert.notEqual(
     shirt.components[0]?.componentKey,
     kaftan.components[0]?.componentKey,
-    "Shared source options must retain garment-specific component identity",
+    "Distinct construction options must retain garment-specific component identity",
   );
 }
 
