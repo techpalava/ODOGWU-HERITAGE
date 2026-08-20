@@ -324,8 +324,18 @@ assert.match(
 );
 assert.match(
   customDetailsSource,
-  /catalogue\.additionalCostGroups\.length > 0/,
+  /mainAdditionalCostGroups\.length > 0/,
   "an empty relevance projection must not render an Additional Clothes Costs placeholder",
+);
+assert.match(
+  customDetailsSource,
+  /data-custom-detail-section="main-garment-details"/,
+  "Main garment Custom Details must stay visually separate from Additional Garment options",
+);
+assert.match(
+  customDetailsSource,
+  /data-additional-garment-details/,
+  "Additional Garment Custom Details must render inside the Add Additional Garment section after add",
 );
 assert.match(
   customDetailsSource,
