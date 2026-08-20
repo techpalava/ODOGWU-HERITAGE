@@ -10,6 +10,7 @@ import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepSt
 import {
   assignFutureFabricToGarment,
   applyFutureFabricCardSelection,
+  cancelFutureFabricCatalogueAssignment,
   getFutureFabricAssignmentTargets,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
@@ -512,9 +513,17 @@ const targetedCurrentFabricCard = targetedTwoGarmentRenderer.root
   .find((card) => card.props["data-fabric-code"] === "INLINE-A");
 assert.equal(targetedCurrentFabricCard?.props["data-fabric-status"], "ASSIGNED");
 assert.equal(
-  targetedCurrentFabricCard?.findByType("button").props.disabled,
-  true,
-  "The exact current target fabric must be visibly assigned and protected from a redundant transaction.",
+  targetedCurrentFabricCard?.props["data-fabric-action"],
+  "cancel",
+  "The exact current target fabric must expose cancellation instead of a redundant assignment.",
+);
+assert.ok(
+  !targetedCurrentFabricCard?.props.disabled,
+  "The assigned fabric CTA must remain actionable so the customer can cancel that assignment.",
+);
+assert.match(
+  String(targetedCurrentFabricCard?.props["aria-label"] || ""),
+  /Cancel Inline Heritage A fabric assignment/,
 );
 await act(async () =>
   targetedTwoGarmentRenderer.root
@@ -1916,6 +1925,376 @@ try {
       },
     ],
     "Removing one separate assignment must preserve the unrelated allocation and Fabric.",
+  );
+
+  const findFabricCard = (root: ReactTestInstance, fabricCode: string) =>
+    root
+      .findAllByProps({ "data-fabric-card": "true" })
+      .find((card) => card.props["data-fabric-code"] === fabricCode);
+
+  let inUseCancelState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: garmentTypeSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  let inUseCancelRenderer!: ReturnType<typeof create>;
+  const renderInUseCancel = () =>
+    renderStep(
+      inUseCancelState,
+      (fabric, garmentKey) => {
+        inUseCancelState = applyFutureFabricCardSelection({
+          state: inUseCancelState,
+          garmentTypeSelection: garmentTypeSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+        });
+      },
+      garmentTypeSelection,
+      () => undefined,
+      () => undefined,
+      (garmentKey) => {
+        inUseCancelState = cancelFutureFabricCatalogueAssignment({
+          state: inUseCancelState,
+          garmentKey,
+        });
+      },
+    );
+  await act(async () => {
+    inUseCancelRenderer = create(renderInUseCancel());
+  });
+  const assignedShirtCard = findFabricCard(inUseCancelRenderer.root, "INLINE-A");
+  assert.equal(assignedShirtCard?.props["data-fabric-status"], "IN USE");
+  assert.equal(assignedShirtCard?.props["data-fabric-action"], "cancel");
+  assert.equal(assignedShirtCard?.props["data-fabric-idle-label"], "IN USE");
+  assert.equal(assignedShirtCard?.props["data-fabric-active-label"], "CANCEL");
+  assert.equal(
+    assignedShirtCard?.props["data-fabric-cancel-garment-key"],
+    "base:shirt",
+  );
+  assert.equal(
+    assignedShirtCard?.props["aria-label"],
+    "Cancel Inline Heritage A fabric assignment for Standard Shirt",
+  );
+  assert.ok(!assignedShirtCard?.props.disabled);
+  await act(async () => assignedShirtCard!.props.onClick());
+  await act(async () => inUseCancelRenderer.update(renderInUseCancel()));
+  assert.equal(
+    inUseCancelState.fabricAllocations.length,
+    0,
+    "Cancelling the only assignment must unassign Shirt through the canonical removal path.",
+  );
+  assert.equal(
+    inUseCancelRenderer.root.findByProps({ "data-garment-key": "base:shirt" })
+      .props["data-assignment-status"],
+    "unassigned",
+  );
+  assert.match(textContent(inUseCancelRenderer.root), /Fabric not assigned/);
+  assert.match(textContent(inUseCancelRenderer.root), /Fabrics selected: 0 \/ 1/);
+  assert.equal(
+    findFabricCard(inUseCancelRenderer.root, "INLINE-A")?.props[
+      "data-fabric-status"
+    ],
+    "SELECT",
+  );
+  assert.equal(
+    getFutureFabricStageCompletion({
+      garmentTypeSelection,
+      fabricAllocationState: inUseCancelState,
+      fabrics,
+    }).isComplete,
+    false,
+  );
+
+  await act(async () =>
+    findFabricCard(inUseCancelRenderer.root, "INLINE-B")!.props.onClick(),
+  );
+  await act(async () => inUseCancelRenderer.update(renderInUseCancel()));
+  assert.deepEqual(
+    inUseCancelState.fabricAllocations.map((allocation) => ({
+      fabricCode: allocation.fabricCode,
+      garmentKeys: allocation.garmentAssignments.map(
+        (assignment) => assignment.garmentKey,
+      ),
+    })),
+    [{ fabricCode: "INLINE-B", garmentKeys: ["base:shirt"] }],
+    "After cancellation the same garment must be able to receive another fabric.",
+  );
+  assert.equal(
+    findFabricCard(inUseCancelRenderer.root, "INLINE-B")?.props[
+      "data-fabric-status"
+    ],
+    "IN USE",
+  );
+  assert.equal(
+    findFabricCard(inUseCancelRenderer.root, "INLINE-A")?.props[
+      "data-fabric-status"
+    ],
+    "SELECT",
+    "The cancelled fabric must not remain marked in use after a replacement assignment.",
+  );
+
+  let preserveOtherState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  preserveOtherState = applyFutureFabricCardSelection({
+    state: preserveOtherState,
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:trouser",
+    fabricCode: "INLINE-B",
+  });
+  let preserveOtherRenderer!: ReturnType<typeof create>;
+  const renderPreserveOther = () =>
+    renderStep(
+      preserveOtherState,
+      () => undefined,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      (garmentKey) => {
+        preserveOtherState = cancelFutureFabricCatalogueAssignment({
+          state: preserveOtherState,
+          garmentKey,
+        });
+      },
+    );
+  await act(async () => {
+    preserveOtherRenderer = create(renderPreserveOther());
+  });
+  assert.equal(
+    findFabricCard(preserveOtherRenderer.root, "INLINE-A")?.props[
+      "data-fabric-cancel-garment-key"
+    ],
+    "base:shirt",
+  );
+  await act(async () =>
+    findFabricCard(preserveOtherRenderer.root, "INLINE-A")!.props.onClick(),
+  );
+  await act(async () => preserveOtherRenderer.update(renderPreserveOther()));
+  assert.deepEqual(
+    preserveOtherState.fabricAllocations.map((allocation) => ({
+      fabricCode: allocation.fabricCode,
+      garmentKeys: allocation.garmentAssignments.map(
+        (assignment) => assignment.garmentKey,
+      ),
+    })),
+    [{ fabricCode: "INLINE-B", garmentKeys: ["base:trouser"] }],
+    "Cancelling Shirt must not remove Trouser's unrelated fabric assignment.",
+  );
+  assert.equal(
+    preserveOtherRenderer.root.findByProps({ "data-garment-key": "base:shirt" })
+      .props["data-assignment-status"],
+    "unassigned",
+  );
+  assert.equal(
+    preserveOtherRenderer.root.findByProps({
+      "data-garment-key": "base:trouser",
+    }).props["data-assignment-status"],
+    "assigned",
+  );
+  assert.match(
+    textContent(
+      preserveOtherRenderer.root.findByProps({
+        "data-garment-key": "base:trouser",
+      }),
+    ),
+    /Inline Heritage B/,
+  );
+  assert.match(
+    textContent(preserveOtherRenderer.root),
+    /Fabrics selected: 1 \/ 1/,
+  );
+
+  let sharedCodeState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  let sharedCodeRenderer!: ReturnType<typeof create>;
+  const renderSharedCode = () =>
+    renderStep(
+      sharedCodeState,
+      () => undefined,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      (garmentKey) => {
+        sharedCodeState = cancelFutureFabricCatalogueAssignment({
+          state: sharedCodeState,
+          garmentKey,
+        });
+      },
+    );
+  await act(async () => {
+    sharedCodeRenderer = create(renderSharedCode());
+  });
+  assert.deepEqual(
+    sharedCodeState.fabricAllocations[0]?.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+    ["base:shirt", "base:trouser"],
+  );
+  await act(async () =>
+    findFabricCard(sharedCodeRenderer.root, "INLINE-A")!.props.onClick(),
+  );
+  await act(async () => sharedCodeRenderer.update(renderSharedCode()));
+  assert.deepEqual(
+    sharedCodeState.fabricAllocations.map((allocation) =>
+      allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+    ),
+    [["base:trouser"]],
+    "Cancelling a shared fabric code must remove only the intended occurrence, not every garment using that code.",
+  );
+  assert.equal(
+    sharedCodeRenderer.root.findByProps({ "data-garment-key": "base:shirt" })
+      .props["data-assignment-status"],
+    "unassigned",
+  );
+  assert.equal(
+    sharedCodeRenderer.root.findByProps({ "data-garment-key": "base:trouser" })
+      .props["data-assignment-status"],
+    "assigned",
+  );
+
+  const { createCatalogueAdditionalGarmentSelection } = await import(
+    "./src/utils/additionalGarmentDomain"
+  );
+  let additionalCancelState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  const additionalSelection = createCatalogueAdditionalGarmentSelection({
+    garmentType: "shirt",
+    existingAssignments: additionalCancelState.fabricAllocations.flatMap(
+      (allocation) => allocation.garmentAssignments,
+    ),
+  });
+  assert.equal(additionalSelection.status, "resolved");
+  if (additionalSelection.status !== "resolved") {
+    throw new Error("Expected additional shirt selection.");
+  }
+  additionalCancelState = FabricAllocationStateEngine.attemptAppendGarment(
+    additionalCancelState,
+    additionalSelection.selection,
+  );
+  if (additionalCancelState.pendingFabricGarment) {
+    additionalCancelState =
+      FabricAllocationStateEngine.assignPendingGarmentToFabric(
+        additionalCancelState,
+        "INLINE-B",
+      );
+  }
+  assert.ok(
+    additionalCancelState.fabricAllocations.some((allocation) =>
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "additional:shirt:1",
+      ),
+    ),
+    "Additional Shirt must be assigned before its fabric can be cancelled.",
+  );
+  let additionalCancelRenderer!: ReturnType<typeof create>;
+  const renderAdditionalCancel = () =>
+    renderStep(
+      additionalCancelState,
+      (fabric, garmentKey) => {
+        additionalCancelState = applyFutureFabricCardSelection({
+          state: additionalCancelState,
+          garmentTypeSelection: shirtTrouserSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+        });
+      },
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      (garmentKey) => {
+        additionalCancelState = cancelFutureFabricCatalogueAssignment({
+          state: additionalCancelState,
+          garmentKey,
+        });
+      },
+    );
+  await act(async () => {
+    additionalCancelRenderer = create(renderAdditionalCancel());
+  });
+  const additionalFabricCard = findFabricCard(
+    additionalCancelRenderer.root,
+    additionalCancelState.fabricAllocations.find((allocation) =>
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "additional:shirt:1",
+      ),
+    )?.fabricCode || "INLINE-B",
+  );
+  assert.equal(additionalFabricCard?.props["data-fabric-action"], "cancel");
+  assert.equal(
+    additionalFabricCard?.props["data-fabric-cancel-garment-key"],
+    "additional:shirt:1",
+  );
+  await act(async () => additionalFabricCard!.props.onClick());
+  await act(async () =>
+    additionalCancelRenderer.update(renderAdditionalCancel()),
+  );
+  assert.equal(
+    additionalCancelState.pendingFabricGarment?.garmentKey,
+    "additional:shirt:1",
+    "Cancelling Additional Shirt fabric must keep the additional occurrence pending.",
+  );
+  assert.equal(additionalCancelState.awaitingFabricForPendingGarment, true);
+  assert.ok(
+    additionalCancelState.fabricAllocations.some((allocation) =>
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "base:shirt",
+      ),
+    ),
+    "Main Shirt fabric must survive Additional Shirt fabric cancellation.",
+  );
+  assert.ok(
+    additionalCancelState.fabricAllocations.some((allocation) =>
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "base:trouser",
+      ),
+    ),
+    "Trouser fabric must survive Additional Shirt fabric cancellation.",
+  );
+  assert.equal(
+    additionalCancelState.fabricAllocations.some((allocation) =>
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "additional:shirt:1",
+      ),
+    ),
+    false,
+  );
+  assert.equal(
+    getFutureFabricStageCompletion({
+      garmentTypeSelection: shirtTrouserSelection,
+      fabricAllocationState: additionalCancelState,
+      fabrics,
+    }).isComplete,
+    false,
+    "Progression must block until Additional Shirt receives fabric again.",
+  );
+
+  const persistedAfterCancel = {
+    fabricAllocations: JSON.parse(
+      JSON.stringify(preserveOtherState.fabricAllocations),
+    ),
+    activeAllocationId: preserveOtherState.activeAllocationId,
+    pendingFabricGarment: preserveOtherState.pendingFabricGarment,
+    awaitingFabricForPendingGarment:
+      preserveOtherState.awaitingFabricForPendingGarment,
+  };
+  assert.deepEqual(
+    persistedAfterCancel.fabricAllocations.map(
+      (allocation: { fabricCode: string }) => allocation.fabricCode,
+    ),
+    ["INLINE-B"],
+    "Serialized draft allocations must keep the cancelled Shirt fabric out.",
   );
 
 } finally {
