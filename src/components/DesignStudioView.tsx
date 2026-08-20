@@ -81,7 +81,7 @@ import {
 import {
   assignFutureFabricToGarment,
   applyFutureFabricCardSelection,
-  removeFutureFabricAssignment,
+  cancelFutureFabricCatalogueAssignment,
   getFutureGarmentFabricPlanning,
   getFutureFabricCapacityComposition,
   getFutureFabricGarmentSelections,
@@ -811,7 +811,7 @@ export default function DesignStudioView({
     }
     pendingAdditionalConstructionRef.current = null;
     setFabricAllocationState((current) =>
-      removeFutureFabricAssignment({ state: current, garmentKey }),
+      cancelFutureFabricCatalogueAssignment({ state: current, garmentKey }),
     );
   };
 
@@ -819,9 +819,21 @@ export default function DesignStudioView({
   const [designSelections, setDesignSelections] = useState<DesignSelections>({
     accessories: [],
   });
-  const futureAdditionalGarments = fabricAllocationState.fabricAllocations
+  const committedAdditionalGarments = fabricAllocationState.fabricAllocations
     .flatMap((allocation) => allocation.garmentAssignments)
     .filter((assignment) => assignment.sourceRole === "additional");
+  const pendingAdditionalGarment =
+    fabricAllocationState.pendingFabricGarment?.sourceRole === "additional" &&
+    !committedAdditionalGarments.some(
+      (assignment) =>
+        assignment.garmentKey ===
+        fabricAllocationState.pendingFabricGarment?.garmentKey,
+    )
+      ? fabricAllocationState.pendingFabricGarment
+      : null;
+  const futureAdditionalGarments = pendingAdditionalGarment
+    ? [...committedAdditionalGarments, pendingAdditionalGarment]
+    : committedAdditionalGarments;
   const futureAdditionalConstructionReconciliation =
     reconcileAdditionalGarmentConstructionState({
       existingState: designSelections.additionalGarmentConstructions,

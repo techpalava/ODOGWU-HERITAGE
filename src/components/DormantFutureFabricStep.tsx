@@ -15,6 +15,7 @@ import {
   getFutureFabricAssignmentTargets,
   getFutureFabricCapacityOffer,
   getFutureUnassignedFabricTargets,
+  resolveFutureFabricCatalogueCardPresentation,
   type FutureFabricStageCompletion,
 } from "../utils/designStudioFutureFabricStage";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
@@ -631,14 +632,22 @@ export const DormantFutureFabricStep = ({
   };
 
   const handleFabricSelection = (fabric: Fabric) => {
-    const target = catalogueTargetGarmentKey
-      ? activeCatalogueTarget
-      : unassignedTargets[0] ?? null;
-    if (!target) {
+    const pendingAssignment =
+      fabricAllocationState.awaitingFabricForPendingGarment
+        ? fabricAllocationState.pendingFabricGarment
+        : null;
+    const targetGarmentKey =
+      (catalogueTargetGarmentKey && activeCatalogueTarget
+        ? activeCatalogueTarget.assignment.garmentKey
+        : null) ||
+      pendingAssignment?.garmentKey ||
+      unassignedTargets[0]?.assignment.garmentKey ||
+      null;
+    if (!targetGarmentKey) {
       setAssignmentAnnouncement("All selected garments already have fabric assignments.");
       return;
     }
-    assignSelectedFabric(fabric, target.assignment.garmentKey);
+    assignSelectedFabric(fabric, targetGarmentKey);
   };
 
   const removeAssignedFabric = (
@@ -699,29 +708,40 @@ export const DormantFutureFabricStep = ({
 
   const renderCatalogueCard = (fabric: Fabric) => {
     const availabilityMessage = getFabricAvailabilityMessage(fabric);
+    const pendingTargetAssignment =
+      fabricAllocationState.awaitingFabricForPendingGarment
+        ? fabricAllocationState.pendingFabricGarment
+        : null;
     const currentTarget =
-      activeCatalogueTarget || unassignedTargets[0] || null;
-    const assignedToCurrentTarget = Boolean(
-      currentTarget &&
-        fabricAllocationState.fabricAllocations.some(
-          (allocation) =>
-            allocation.fabricCode === fabric.code &&
-            allocation.garmentAssignments.some(
-              (assignment) =>
-                assignment.garmentKey === currentTarget.assignment.garmentKey,
-            ),
-        ),
-    );
-    const assignedElsewhere = fabricAllocationState.fabricAllocations.some(
-      (allocation) =>
-        allocation.fabricCode === fabric.code &&
-        allocation.garmentAssignments.length > 0,
-    );
-    const cardStatus = assignedToCurrentTarget
-      ? "ASSIGNED"
-      : assignedElsewhere
-        ? "IN USE"
-        : "SELECT";
+      activeCatalogueTarget ||
+      (pendingTargetAssignment
+        ? { assignment: pendingTargetAssignment }
+        : null) ||
+      unassignedTargets[0] ||
+      null;
+    const cardPresentation = resolveFutureFabricCatalogueCardPresentation({
+      fabricCode: fabric.code,
+      garmentTypeSelection,
+      fabricAllocationState,
+      currentTargetGarmentKey: currentTarget?.assignment.garmentKey ?? null,
+    });
+    const cardStatus = cardPresentation.status;
+    const isCancelAction =
+      !availabilityMessage && cardPresentation.action === "cancel";
+    const cancelAssignment = cardPresentation.cancelGarmentKey
+      ? assignmentByGarmentKey.get(cardPresentation.cancelGarmentKey)
+          ?.assignment ||
+        (pendingTargetAssignment?.garmentKey ===
+        cardPresentation.cancelGarmentKey
+          ? pendingTargetAssignment
+          : null)
+      : null;
+    const cancelGarmentLabel = cancelAssignment
+      ? getFutureGarmentLabel(cancelAssignment.garmentType)
+      : "";
+    const cancelAccessibleName = cancelGarmentLabel
+      ? `Cancel ${fabric.name} fabric assignment for ${cancelGarmentLabel}`
+      : `Cancel ${fabric.name} fabric assignment`;
     return (
       <article
         key={fabric.code}
@@ -758,30 +778,66 @@ export const DormantFutureFabricStep = ({
             type="button"
             disabled={
               Boolean(availabilityMessage) ||
-              cardStatus === "ASSIGNED" ||
               Boolean(
                 fabricAllocationState.pendingFabricGarment &&
                   !fabricAllocationState.awaitingFabricForPendingGarment,
               )
             }
-            onClick={() => handleFabricSelection(fabric)}
+            onClick={() => {
+              if (isCancelAction && cardPresentation.cancelGarmentKey) {
+                removeAssignedFabric(
+                  cardPresentation.cancelGarmentKey,
+                  cancelGarmentLabel || "the selected garment",
+                  fabric.name,
+                );
+                return;
+              }
+              handleFabricSelection(fabric);
+            }}
             data-fabric-card="true"
             data-fabric-code={fabric.code}
             data-fabric-status={cardStatus}
-            aria-label={`${cardStatus} ${fabric.name}${
-              currentTarget
-                ? ` for ${getFutureGarmentLabel(currentTarget.assignment.garmentType)}`
-                : ""
-            }`}
+            data-fabric-action={cardPresentation.action}
+            data-fabric-idle-label={isCancelAction ? "IN USE" : undefined}
+            data-fabric-active-label={isCancelAction ? "CANCEL" : undefined}
+            data-fabric-cancel-garment-key={
+              cardPresentation.cancelGarmentKey ?? undefined
+            }
+            aria-label={
+              isCancelAction
+                ? cancelAccessibleName
+                : `${cardStatus} ${fabric.name}${
+                    currentTarget
+                      ? ` for ${getFutureGarmentLabel(currentTarget.assignment.garmentType)}`
+                      : ""
+                  }`
+            }
             aria-describedby="future-fabric-catalogue-help future-fabric-assignment-status"
-            className={`mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold uppercase tracking-wider transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 ${
-              "bg-heritage-green text-white hover:bg-heritage-forest"
+            className={`group mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold uppercase tracking-wider transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 ${
+              isCancelAction
+                ? "bg-heritage-green text-white hover:bg-red-700 hover:text-white focus-visible:bg-red-700"
+                : "bg-heritage-green text-white hover:bg-heritage-forest"
             }`}
           >
-            {!availabilityMessage && cardStatus === "SELECT" && (
-              <Check aria-hidden="true" size={14} />
+            {availabilityMessage ? (
+              "Unavailable"
+            ) : isCancelAction ? (
+              <span className="grid w-full place-items-center">
+                <span className="col-start-1 row-start-1 group-hover:invisible group-focus-visible:invisible">
+                  IN USE
+                </span>
+                <span className="col-start-1 row-start-1 invisible text-white group-hover:visible group-focus-visible:visible">
+                  CANCEL
+                </span>
+              </span>
+            ) : (
+              <>
+                {cardStatus === "SELECT" && (
+                  <Check aria-hidden="true" size={14} />
+                )}
+                {cardStatus}
+              </>
             )}
-            {availabilityMessage ? "Unavailable" : cardStatus}
           </button>
         </div>
       </article>
