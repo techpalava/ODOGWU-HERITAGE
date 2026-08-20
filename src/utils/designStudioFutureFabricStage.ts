@@ -370,6 +370,127 @@ export const removeFutureFabricAssignment = ({
   return removeEmptyFabricAllocations(removed);
 };
 
+export type FutureFabricCatalogueCardStatus = "SELECT" | "IN USE" | "ASSIGNED";
+export type FutureFabricCatalogueCardAction = "select" | "cancel";
+
+export interface FutureFabricCatalogueCardPresentation {
+  status: FutureFabricCatalogueCardStatus;
+  action: FutureFabricCatalogueCardAction;
+  cancelGarmentKey: string | null;
+}
+
+const collectOrderedFabricAssignmentKeys = ({
+  garmentTypeSelection,
+  fabricAllocationState,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+}): string[] => {
+  const orderedKeys: string[] = [];
+  const seen = new Set<string>();
+  const pushKey = (garmentKey: string) => {
+    if (seen.has(garmentKey)) return;
+    seen.add(garmentKey);
+    orderedKeys.push(garmentKey);
+  };
+  getFutureFabricAssignmentTargets(garmentTypeSelection).forEach((target) =>
+    pushKey(target.assignment.garmentKey),
+  );
+  fabricAllocationState.fabricAllocations.forEach((allocation) =>
+    allocation.garmentAssignments.forEach((assignment) =>
+      pushKey(assignment.garmentKey),
+    ),
+  );
+  if (fabricAllocationState.pendingFabricGarment) {
+    pushKey(fabricAllocationState.pendingFabricGarment.garmentKey);
+  }
+  return orderedKeys;
+};
+
+/**
+ * Derives the catalogue-card status and click action from allocation identity.
+ * Cancellation always targets a garment/allocation occurrence, never every
+ * assignment that happens to share a fabric code.
+ */
+export const resolveFutureFabricCatalogueCardPresentation = ({
+  fabricCode,
+  garmentTypeSelection,
+  fabricAllocationState,
+  currentTargetGarmentKey,
+}: {
+  fabricCode: string;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+  currentTargetGarmentKey: string | null;
+}): FutureFabricCatalogueCardPresentation => {
+  const fabricByGarmentKey = new Map<string, string>();
+  fabricAllocationState.fabricAllocations.forEach((allocation) =>
+    allocation.garmentAssignments.forEach((assignment) => {
+      fabricByGarmentKey.set(assignment.garmentKey, allocation.fabricCode);
+    }),
+  );
+  const usingFabric = collectOrderedFabricAssignmentKeys({
+    garmentTypeSelection,
+    fabricAllocationState,
+  }).filter((garmentKey) => fabricByGarmentKey.get(garmentKey) === fabricCode);
+  const assignedToCurrentTarget = Boolean(
+    currentTargetGarmentKey && usingFabric.includes(currentTargetGarmentKey),
+  );
+  const status: FutureFabricCatalogueCardStatus = assignedToCurrentTarget
+    ? "ASSIGNED"
+    : usingFabric.length > 0
+      ? "IN USE"
+      : "SELECT";
+
+  if (assignedToCurrentTarget && currentTargetGarmentKey) {
+    return {
+      status,
+      action: "cancel",
+      cancelGarmentKey: currentTargetGarmentKey,
+    };
+  }
+
+  if (currentTargetGarmentKey) {
+    return { status, action: "select", cancelGarmentKey: null };
+  }
+
+  if (usingFabric.length > 0) {
+    return {
+      status,
+      action: "cancel",
+      cancelGarmentKey: usingFabric[0],
+    };
+  }
+
+  return { status, action: "select", cancelGarmentKey: null };
+};
+
+/**
+ * Cancels one catalogue assignment through the canonical removal path.
+ * Additional garments keep their occurrence as a pending fabric assignment
+ * so Custom Details is not deleted merely because fabric was unassigned.
+ */
+export const cancelFutureFabricCatalogueAssignment = ({
+  state,
+  garmentKey,
+}: {
+  state: FabricAllocationState;
+  garmentKey: string;
+}): FabricAllocationState => {
+  const assignment = state.fabricAllocations
+    .flatMap((allocation) => allocation.garmentAssignments)
+    .find((candidate) => candidate.garmentKey === garmentKey);
+  const removed = removeFutureFabricAssignment({ state, garmentKey });
+  if (assignment?.sourceRole !== "additional") {
+    return removed;
+  }
+  return {
+    ...removed,
+    pendingFabricGarment: { ...assignment },
+    awaitingFabricForPendingGarment: true,
+  };
+};
+
 export const getFutureFabricCapacityOffer = ({
   garmentTypeSelection,
   fabricAllocationState,
