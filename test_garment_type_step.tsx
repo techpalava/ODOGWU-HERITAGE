@@ -26,8 +26,8 @@ const expectedGarmentLabels = [
   "Standard Dress",
   "Long Shirt (Kaftan)",
   "Long Dress (Gown)",
-  "Long Shirt (Agbada)",
 ];
+const hiddenStep1GarmentLabels = ["Long Shirt (Agbada)"];
 
 const renderStep = ({
   selectedGarmentTypes = [],
@@ -71,6 +71,13 @@ for (const demographic of ["male", "female", "unisex"] as const) {
   for (const label of expectedGarmentLabels) {
     assert.ok(markup.includes(label), `${label} must remain visible for ${demographic}`);
   }
+  for (const label of hiddenStep1GarmentLabels) {
+    assert.equal(
+      markup.includes(label),
+      false,
+      `${label} must be hidden from Step 1 for ${demographic}`,
+    );
+  }
 }
 assert.deepEqual(
   expectedGarmentLabels,
@@ -83,7 +90,6 @@ assert.deepEqual(
     "dress",
     "kaftan",
     "full_length_gown",
-    "agbada",
   ].map((garmentType) =>
     getGarmentTypeStepLabel(
       garmentType as Exclude<FabricGarmentType, "other">,
@@ -148,6 +154,34 @@ if (agbada?.status === "resolved") {
   assert.equal(agbada.totalPriceCents, 14000);
   assert.equal(agbada.components.length, 2);
 }
+
+const kaftanPresentation = getGarmentTypeStepPresentation({
+  selectedGarmentTypes: ["kaftan"],
+  normalizedCustomDetailCatalog: catalog,
+});
+const kaftanPricing = kaftanPresentation.constructionPricing.find(
+  (result) => result.garmentType === "kaftan",
+);
+assert.equal(kaftanPricing?.status, "resolved");
+if (kaftanPricing?.status === "resolved") {
+  assert.equal(kaftanPricing.totalPriceCents, 7000);
+  assert.equal(kaftanPricing.components[0].optionId, "shirt_long_short");
+}
+assert.equal(
+  kaftanPresentation.categories.find((category) => category.garmentType === "kaftan")
+    ?.fabricUnits,
+  2,
+);
+
+const kaftanPlusShirtPresentation = getGarmentTypeStepPresentation({
+  selectedGarmentTypes: ["kaftan", "shirt"],
+  normalizedCustomDetailCatalog: catalog,
+});
+assert.equal(
+  kaftanPlusShirtPresentation.constructionSubtotalCents,
+  7000 + 6500,
+  "Kaftan must contribute exactly once to the construction subtotal",
+);
 
 const capacityPresentation = getGarmentTypeStepPresentation({
   selectedGarmentTypes: ["shirt", "trouser", "skirt"],
@@ -215,9 +249,15 @@ assert.ok(populatedMarkup.includes("Who is this design for?"));
 assert.ok(populatedMarkup.includes("3 fabrics · 4 garments"));
 assert.ok(populatedMarkup.includes("You need 3 fabrics for your 4 garments."));
 assert.ok(populatedMarkup.includes("Fabrics selected: 2 / 3"));
-assert.equal((populatedMarkup.match(/type="checkbox"/g) || []).length, 12);
+assert.equal((populatedMarkup.match(/type="checkbox"/g) || []).length, 11);
 assert.ok(populatedMarkup.includes("Garment Construction Subtotal"));
 assert.ok(populatedMarkup.includes("€280.00"));
+assert.ok(populatedMarkup.includes("Long Shirt (Agbada)"));
+assert.equal(
+  populatedMarkup.includes('id="garment-type-step-agbada"'),
+  false,
+  "Agbada must not expose a Step 1 selection control",
+);
 assert.ok(populatedMarkup.includes("Fabric, tax, shipping, and other selected options will be added in later steps."));
 assert.equal(/upload your own design|uploaded design complete|design source/i.test(populatedMarkup), false);
 
