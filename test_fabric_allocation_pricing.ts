@@ -146,11 +146,11 @@ const kaftanSingle = resolveFabricAllocationMaterialPricing(
         garmentKey: "KAFTAN:kaftan",
         code: "KAFTAN",
         garmentType: "kaftan",
-        fabricUnits: 2,
+        fabricUnits: 1,
         garmentSpec: {
           key: "KAFTAN:kaftan",
           garmentType: "kaftan",
-          fabricUnits: 2,
+          fabricUnits: 1,
         },
       },
     ]),

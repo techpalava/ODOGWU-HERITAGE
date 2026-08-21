@@ -38,7 +38,7 @@ const DEFAULT_CUSTOM_DETAILS_BY_GARMENT_TYPE: Readonly<
     neck_design: "neck_no_round",
   },
   kaftan: {
-    shirt_construction: "shirt_std_short",
+    shirt_construction: "shirt_long_short",
     shirt_pockets: "shirt_pocket_0",
     neck_design: "neck_no_round",
   },
@@ -56,6 +56,12 @@ const DEFAULT_CUSTOM_DETAILS_BY_GARMENT_TYPE: Readonly<
   },
 };
 
+/**
+ * Internal fabricUnits are half-fabric integers:
+ * - 1 = 1/2 customer-facing fabric capacity unit = 1 standard garment, including Kaftan
+ * - 2 = 1 customer-facing fabric capacity unit = 1 fabric / Long Dress (Gown)
+ * One fabric holds at most two half-capacity garments (MAX_UNITS_PER_ALLOCATION = 2).
+ */
 export const FABRIC_GARMENT_CAPACITY_UNITS: Readonly<
   Record<FabricGarmentType, FabricUnitCount>
 > = {
@@ -65,11 +71,50 @@ export const FABRIC_GARMENT_CAPACITY_UNITS: Readonly<
   standard_shorts: 1,
   bum_shorts: 1,
   dress: 1,
-  kaftan: 2,
+  kaftan: 1,
   full_length_gown: 2,
   agbada: 2,
   other: 1,
 };
+
+export const INTERNAL_FABRIC_UNITS_PER_FABRIC = 2;
+
+export const formatCustomerFacingFabricCapacityAmount = (
+  internalUnits: number,
+): string => {
+  if (!Number.isInteger(internalUnits) || internalUnits < 0) {
+    throw new Error(
+      `Fabric capacity must be a non-negative integer number of half-units, received ${String(internalUnits)}.`,
+    );
+  }
+
+  const wholeUnits = Math.floor(internalUnits / INTERNAL_FABRIC_UNITS_PER_FABRIC);
+  const hasHalfUnit = internalUnits % INTERNAL_FABRIC_UNITS_PER_FABRIC === 1;
+  if (wholeUnits === 0) {
+    return hasHalfUnit ? "1/2" : "0";
+  }
+  if (!hasHalfUnit) {
+    return String(wholeUnits);
+  }
+  return `${wholeUnits} 1/2`;
+};
+
+export const formatCustomerFacingFabricCapacityNoun = (
+  internalUnits: number,
+): "unit" | "units" =>
+  internalUnits === 1 || internalUnits === INTERNAL_FABRIC_UNITS_PER_FABRIC
+    ? "unit"
+    : "units";
+
+export const formatGarmentFabricCapacityUsage = (
+  internalUnits: FabricUnitCount,
+): string =>
+  `Uses ${formatCustomerFacingFabricCapacityAmount(internalUnits)} fabric capacity ${formatCustomerFacingFabricCapacityNoun(internalUnits)}.`;
+
+export const getGarmentFabricCapacityUsageCopy = (
+  garmentType: FabricGarmentType,
+): string =>
+  formatGarmentFabricCapacityUsage(FABRIC_GARMENT_CAPACITY_UNITS[garmentType]);
 
 export const STYLE_BASE_GARMENT_TYPES: readonly FabricGarmentType[] = [
   "shirt",

@@ -135,7 +135,7 @@ const candidate: FutureOrderCandidateV1 = {
       label: "Kaftan",
       role: "main",
       demographic: "male",
-      fabricUnits: 2,
+      fabricUnits: 1,
       physicalComponents: [
         { garmentKey: "base:kaftan", garmentType: "kaftan", label: "Kaftan" },
       ],
@@ -196,7 +196,7 @@ const candidate: FutureOrderCandidateV1 = {
           garmentKey: "base:kaftan",
           code: "BASE_KAFTAN",
           garmentType: "kaftan",
-          fabricUnits: 2,
+          fabricUnits: 1,
           sourceRole: "main",
         },
       ],

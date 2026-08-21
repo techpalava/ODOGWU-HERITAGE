@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { DESIGN_STUDIO_STEPS } from "./src/components/DesignStudioJourneyStepper";
 import { getGarmentTypeStepPresentation } from "./src/components/GarmentTypeStep";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
-import { CANONICAL_PHYSICAL_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
+import { CANONICAL_PHYSICAL_GARMENT_TYPES, STEP_1_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
@@ -12,10 +12,18 @@ const presentation = getGarmentTypeStepPresentation({
   normalizedCustomDetailCatalog: catalog,
 });
 
-assert.equal(presentation.categories.length, 9);
+assert.equal(presentation.categories.length, 8);
 assert.deepEqual(
   presentation.categories.map((category) => category.garmentType),
-  CANONICAL_PHYSICAL_GARMENT_TYPES,
+  STEP_1_SELECTABLE_GARMENT_TYPES,
+);
+assert.ok(
+  CANONICAL_PHYSICAL_GARMENT_TYPES.includes("agbada"),
+  "Agbada domain support must remain in the canonical catalogue",
+);
+assert.ok(
+  !STEP_1_SELECTABLE_GARMENT_TYPES.includes("agbada"),
+  "Agbada must be excluded from Step 1 selectable garments",
 );
 assert.deepEqual(
   DESIGN_STUDIO_STEPS.map((step) => step.label),

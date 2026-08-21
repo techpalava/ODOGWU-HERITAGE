@@ -95,7 +95,7 @@ assert.equal(differentFabricPricing.totalMaterialPrice, 7.82);
 const kaftan = resolveCustomerFabricAssignmentSummary({
   fabrics: [ivory],
   fabricAllocations: [
-    allocation("ivory-1", ivory.code, [garment("kaftan", "kaftan", 2)]),
+    allocation("ivory-1", ivory.code, [garment("kaftan", "kaftan", 1)]),
   ],
 });
 assert.equal(kaftan.garmentCount, 1);
@@ -113,7 +113,7 @@ assert.equal(fullLengthGown.fabricQuantity, 1);
 const kaftanAndTrouser = resolveCustomerFabricAssignmentSummary({
   fabrics: [ivory],
   fabricAllocations: [
-    allocation("ivory-1", ivory.code, [garment("kaftan", "kaftan", 2)]),
+    allocation("ivory-1", ivory.code, [garment("kaftan", "kaftan", 1)]),
     allocation("ivory-2", ivory.code, [garment("trouser", "trouser")]),
   ],
 });

@@ -3,6 +3,12 @@ import {
   FABRIC_APPEND_GARMENT_CHOICES,
   FabricCapacityEngine,
 } from "./src/engine/FabricCapacityEngine";
+import {
+  FABRIC_GARMENT_CAPACITY_UNITS,
+  formatCustomerFacingFabricCapacityAmount,
+  formatCustomerFacingFabricCapacityNoun,
+  formatGarmentFabricCapacityUsage,
+} from "./src/config/StyleFabricCapacityConfig";
 import type { FabricAllocation, FabricGarmentAssignment, FabricGarmentInputAssignment } from "./src/types";
 
 const summarize = (garments: FabricGarmentAssignment[]) =>
@@ -109,7 +115,7 @@ const appendChoiceUnits = new Map([
   ["standard_shorts", 1],
   ["bum_shorts", 1],
   ["dress", 1],
-  ["kaftan", 2],
+  ["kaftan", 1],
   ["full_length_gown", 2],
 ]);
 
@@ -331,17 +337,17 @@ assertResolved(
       garmentSpec: {
         key: "KAFTAN:kaftan",
         garmentType: "kaftan",
-        fabricUnits: 2,
+        fabricUnits: 1,
       },
     },
   ]),
-  2,
+  1,
   [
     {
       garmentKey: "KAFTAN:kaftan",
       code: "KAFTAN",
       garmentType: "kaftan",
-      fabricUnits: 2,
+      fabricUnits: 1,
     },
   ],
 );
@@ -369,8 +375,8 @@ assertResolved(
 );
 
 assertUnclassified(
-  { code: "KAFTAN", garmentSpec: { key: "KAFTAN:kaftan", garmentType: "kaftan", fabricUnits: 1 } },
-  "kaftan explicit metadata must resolve to 2 fabric units",
+  { code: "KAFTAN", garmentSpec: { key: "KAFTAN:kaftan", garmentType: "kaftan", fabricUnits: 2 } },
+  "kaftan explicit metadata must resolve to 1 fabric unit",
 );
 
 assertUnclassified(
@@ -404,21 +410,88 @@ assertCapacityExceeded(
   "L7:skirt",
 );
 
-assertCapacityExceeded(
-  resolveInputAllocation("kaftan-with-trouser", "FABRIC_KAFTAN_SET", [
+assertResolved(
+  resolveInputAllocation("kaftan-with-shirt", "FABRIC_KAFTAN_SET", [
     {
       code: "KAFTAN",
       garmentSpec: {
         key: "KAFTAN:kaftan",
         garmentType: "kaftan",
+        fabricUnits: 1,
+      },
+    },
+    { code: "G1" },
+  ]),
+  2,
+  [
+    {
+      garmentKey: "KAFTAN:kaftan",
+      code: "KAFTAN",
+      garmentType: "kaftan",
+      fabricUnits: 1,
+    },
+    { garmentKey: "G1:shirt", code: "G1", garmentType: "shirt", fabricUnits: 1 },
+  ],
+);
+
+assertResolved(
+  resolveInputAllocation("two-kaftans", "FABRIC_TWO_KAFTANS", [
+    {
+      code: "KAFTAN_1",
+      garmentSpec: {
+        key: "KAFTAN:1",
+        garmentType: "kaftan",
+        fabricUnits: 1,
+      },
+    },
+    {
+      code: "KAFTAN_2",
+      garmentSpec: {
+        key: "KAFTAN:2",
+        garmentType: "kaftan",
+        fabricUnits: 1,
+      },
+    },
+  ]),
+  2,
+  [
+    {
+      garmentKey: "KAFTAN:1",
+      code: "KAFTAN_1",
+      garmentType: "kaftan",
+      fabricUnits: 1,
+    },
+    {
+      garmentKey: "KAFTAN:2",
+      code: "KAFTAN_2",
+      garmentType: "kaftan",
+      fabricUnits: 1,
+    },
+  ],
+);
+
+assertCapacityExceeded(
+  resolveInputAllocation("kaftan-with-gown", "FABRIC_KAFTAN_GOWN", [
+    {
+      code: "KAFTAN",
+      garmentSpec: {
+        key: "KAFTAN:kaftan",
+        garmentType: "kaftan",
+        fabricUnits: 1,
+      },
+    },
+    {
+      code: "GOWN",
+      garmentSpec: {
+        key: "GOWN:full_length_gown",
+        garmentType: "full_length_gown",
         fabricUnits: 2,
       },
     },
-    { code: "G4" },
   ]),
-  2,
   1,
-  "G4:trouser",
+  2,
+  "GOWN:full_length_gown",
 );
 
 assertResolved(
@@ -436,5 +509,32 @@ assertResolved(
   1,
   [{ garmentKey: "G2:shirt", code: "G2", garmentType: "shirt", fabricUnits: 1 }],
 );
+
+assert.equal(FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION, 2);
+assert.equal(formatGarmentFabricCapacityUsage(1), "Uses 1/2 fabric capacity unit.");
+assert.equal(formatGarmentFabricCapacityUsage(2), "Uses 1 fabric capacity unit.");
+assert.deepEqual(
+  [
+    formatCustomerFacingFabricCapacityAmount(1),
+    formatCustomerFacingFabricCapacityAmount(2),
+    formatCustomerFacingFabricCapacityAmount(3),
+    formatCustomerFacingFabricCapacityAmount(4),
+  ],
+  ["1/2", "1", "1 1/2", "2"],
+);
+assert.equal(FABRIC_GARMENT_CAPACITY_UNITS.kaftan, 1);
+assert.equal(FABRIC_GARMENT_CAPACITY_UNITS.full_length_gown, 2);
+assert.equal(
+  formatGarmentFabricCapacityUsage(FABRIC_GARMENT_CAPACITY_UNITS.kaftan),
+  "Uses 1/2 fabric capacity unit.",
+);
+assert.equal(
+  formatGarmentFabricCapacityUsage(FABRIC_GARMENT_CAPACITY_UNITS.full_length_gown),
+  "Uses 1 fabric capacity unit.",
+);
+assert.equal(formatCustomerFacingFabricCapacityNoun(0), "units");
+assert.equal(formatCustomerFacingFabricCapacityNoun(1), "unit");
+assert.equal(formatCustomerFacingFabricCapacityNoun(2), "unit");
+assert.equal(formatCustomerFacingFabricCapacityNoun(3), "units");
 
 console.log("All fabric capacity tests passed.");
