@@ -16,6 +16,7 @@ import type {
 import { resolveFabricAllocationMaterialPricing } from "./fabricAllocationPricing";
 import { resolveFabricPrice } from "./fabricPricing";
 import { getGarmentTypeStageCompletion } from "./designStudioJourneyMode";
+import { getStep1SelectableGarmentTypes } from "./garmentConstructionPricing";
 
 export type FutureFabricStageBlockerCode =
   | "GARMENT_TYPE_INCOMPLETE"
@@ -544,27 +545,13 @@ export const getFutureGarmentFabricPlanning = ({
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
 }): FutureGarmentFabricPlanning => {
-  const assignmentsByKey = new Map<string, FabricGarmentAssignment>();
-  resolveRequiredAssignments(garmentTypeSelection).forEach((assignment) =>
-    assignmentsByKey.set(assignment.garmentKey, assignment),
+  const requiredAssignments = resolveRequiredAssignmentsWithAdditional(
+    garmentTypeSelection,
+    fabricAllocationState,
   );
-  fabricAllocationState.fabricAllocations.forEach((allocation) =>
-    allocation.garmentAssignments.forEach((assignment) => {
-      if (!assignmentsByKey.has(assignment.garmentKey)) {
-        assignmentsByKey.set(assignment.garmentKey, assignment);
-      }
-    }),
+  const required = getCustomerFacingFabricQuantityForAssignments(
+    requiredAssignments,
   );
-  if (fabricAllocationState.pendingFabricGarment) {
-    assignmentsByKey.set(
-      fabricAllocationState.pendingFabricGarment.garmentKey,
-      fabricAllocationState.pendingFabricGarment,
-    );
-  }
-
-  const required = getCustomerFacingFabricQuantityForAssignments([
-    ...assignmentsByKey.values(),
-  ]);
   const selected = getCustomerFacingFabricQuantityForAllocations(
     fabricAllocationState.fabricAllocations,
   );
@@ -573,6 +560,43 @@ export const getFutureGarmentFabricPlanning = ({
     requiredFabricQuantity: required.fabricQuantity,
     selectedFabricQuantity: selected.allocations.length,
   };
+};
+
+/**
+ * Step 1 fabric-progress numerator: committed allocations that include at
+ * least one garment from the current selectable Step 1 cards. Additional-only
+ * and hidden legacy garment allocations are excluded; mixed allocations count
+ * once by allocation ID.
+ */
+export const getGarmentTypeStepSelectedFabricQuantity = ({
+  garmentTypeSelection,
+  fabricAllocationState,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+}): number => {
+  const stepOneGarmentKeys = new Set(
+    resolveRequiredAssignments({
+      ...garmentTypeSelection,
+      garmentTypes: getStep1SelectableGarmentTypes(
+        garmentTypeSelection.garmentTypes,
+      ),
+    }).map((assignment) => assignment.garmentKey),
+  );
+  if (stepOneGarmentKeys.size === 0) {
+    return 0;
+  }
+  const allocationIds = new Set<string>();
+  for (const allocation of fabricAllocationState.fabricAllocations) {
+    if (
+      allocation.garmentAssignments.some((assignment) =>
+        stepOneGarmentKeys.has(assignment.garmentKey),
+      )
+    ) {
+      allocationIds.add(allocation.allocationId);
+    }
+  }
+  return allocationIds.size;
 };
 
 /**
