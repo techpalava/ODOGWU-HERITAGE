@@ -10,6 +10,10 @@ import type React from "react";
 import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "../utils/designPriceBreakdownPresentation";
 import type { FutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+import {
+  formatCustomerFacingFabricCapacityAmount,
+  formatCustomerFacingFabricCapacityNoun,
+} from "../config/StyleFabricCapacityConfig";
 
 interface DormantFutureSummaryStepProps {
   summary: FutureDesignStudioSummary;
@@ -212,7 +216,7 @@ export const DormantFutureSummaryStep = ({
                 </span>
               </div>
               <p className="mt-1 text-xs capitalize text-heritage-ink/60">
-                {garment.demographic || "Demographic pending"} | {garment.fabricUnits} fabric capacity unit{garment.fabricUnits === 1 ? "" : "s"}
+                {garment.demographic || "Demographic pending"} | {formatCustomerFacingFabricCapacityAmount(garment.fabricUnits)} fabric capacity {formatCustomerFacingFabricCapacityNoun(garment.fabricUnits)}
               </p>
               {garment.physicalComponents.length > 1 && (
                 <p className="mt-2 text-xs text-heritage-ink/70">
@@ -286,7 +290,7 @@ export const DormantFutureSummaryStep = ({
                 </div>
               </div>
               <p className="mt-2 text-xs text-heritage-ink/65">
-                {allocation.garments.map((garment) => garment.label).join(", ")} | {allocation.capacityUnits} capacity unit{allocation.capacityUnits === 1 ? "" : "s"}
+                {allocation.garments.map((garment) => garment.label).join(", ")} | {formatCustomerFacingFabricCapacityAmount(allocation.capacityUnits)} capacity {formatCustomerFacingFabricCapacityNoun(allocation.capacityUnits)}
               </p>
             </article>
           ))}

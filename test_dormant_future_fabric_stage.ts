@@ -88,7 +88,7 @@ assert.deepEqual(
     ["base:standard_shorts", "standard_shorts", 1],
     ["base:bum_shorts", "bum_shorts", 1],
     ["base:dress", "dress", 1],
-    ["base:kaftan", "kaftan", 2],
+    ["base:kaftan", "kaftan", 1],
     ["base:full_length_gown", "full_length_gown", 2],
     ["base:agbada", "agbada", 2],
   ],

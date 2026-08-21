@@ -106,8 +106,8 @@ assert.deepEqual(summaryFor("agbada"), {
 });
 assert.deepEqual(summaryFor("kaftan", "trouser"), {
   garmentCount: 2,
-  fabricQuantity: 2,
-  requiresAdditionalAllocation: true,
+  fabricQuantity: 1,
+  requiresAdditionalAllocation: false,
 });
 
 const shirtAssignment = {
@@ -159,6 +159,11 @@ assert.deepEqual(
   ["HERITAGE-IVORY", "CRIMSON-RED"],
 );
 assert(UPLOADED_DESIGN_GARMENT_OPTIONS.every((option) => option.garmentType !== "other"));
+assert.equal(
+  UPLOADED_DESIGN_GARMENT_OPTIONS.find((option) => option.garmentType === "kaftan")
+    ?.fabricUnits,
+  1,
+);
 
 const source = createUploadedDesignSourceWhenReady({
   uploadReference: reference,

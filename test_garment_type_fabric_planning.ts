@@ -53,11 +53,7 @@ assert.deepEqual(regularPlanning, {
   selectedFabricQuantity: 0,
 });
 
-for (const exception of [
-  "kaftan",
-  "full_length_gown",
-  "agbada",
-] as const) {
+for (const exception of ["full_length_gown", "agbada"] as const) {
   const planning = getFutureGarmentFabricPlanning({
     garmentTypeSelection: createSelection([exception, "shirt", "trouser"]),
     fabricAllocationState: emptyState(),
@@ -70,12 +66,32 @@ for (const exception of [
   );
 }
 
+const kaftanWithShirt = getFutureGarmentFabricPlanning({
+  garmentTypeSelection: createSelection(["kaftan", "shirt"]),
+  fabricAllocationState: emptyState(),
+});
+assert.deepEqual(kaftanWithShirt, {
+  requiredGarmentCount: 2,
+  requiredFabricQuantity: 1,
+  selectedFabricQuantity: 0,
+});
+
+const kaftanWithGown = getFutureGarmentFabricPlanning({
+  garmentTypeSelection: createSelection(["kaftan", "full_length_gown"]),
+  fabricAllocationState: emptyState(),
+});
+assert.deepEqual(kaftanWithGown, {
+  requiredGarmentCount: 2,
+  requiredFabricQuantity: 2,
+  selectedFabricQuantity: 0,
+});
+
 const mainAssignments = resolveBaseAssignments(["shirt", "trouser"]);
 const appendedKaftan: FabricGarmentAssignment = {
   garmentKey: "additional:kaftan:1",
   code: "APPEND_KAFTAN_1",
   garmentType: "kaftan",
-  fabricUnits: 2,
+  fabricUnits: 1,
   sourceRole: "additional",
 };
 const pendingSkirt: FabricGarmentAssignment = {
@@ -108,7 +124,7 @@ const appendedPlanning = getFutureGarmentFabricPlanning({
 });
 assert.deepEqual(appendedPlanning, {
   requiredGarmentCount: 4,
-  requiredFabricQuantity: 3,
+  requiredFabricQuantity: 2,
   selectedFabricQuantity: 2,
 });
 assert.equal(

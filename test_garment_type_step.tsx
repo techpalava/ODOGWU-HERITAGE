@@ -3,6 +3,11 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import {
+  FABRIC_GARMENT_CAPACITY_UNITS,
+  formatCustomerFacingFabricCapacityAmount,
+  getGarmentFabricCapacityUsageCopy,
+} from "./src/config/StyleFabricCapacityConfig";
+import {
   GarmentTypeStep,
   getGarmentTypeStepLabel,
   getGarmentTypeStepPresentation,
@@ -65,6 +70,7 @@ const emptyPresentation = getGarmentTypeStepPresentation({
 assert.equal(emptyPresentation.selectedGarmentTypes.length, 0);
 assert.equal(emptyPresentation.constructionPricing.length, 0);
 assert.equal(emptyPresentation.constructionSubtotalCents, 0);
+assert.equal(emptyPresentation.customerFacingCapacityAmount, "0");
 
 for (const demographic of ["male", "female", "unisex"] as const) {
   const markup = renderStep({ selectedDemographics: [demographic] });
@@ -170,8 +176,82 @@ if (kaftanPricing?.status === "resolved") {
 assert.equal(
   kaftanPresentation.categories.find((category) => category.garmentType === "kaftan")
     ?.fabricUnits,
-  2,
+  1,
 );
+
+const halfCapacitySelectableTypes = [
+  "shirt",
+  "trouser",
+  "skirt",
+  "standard_shorts",
+  "bum_shorts",
+  "dress",
+  "kaftan",
+] as const;
+for (const garmentType of halfCapacitySelectableTypes) {
+  const category = emptyPresentation.categories.find(
+    (entry) => entry.garmentType === garmentType,
+  );
+  assert.equal(FABRIC_GARMENT_CAPACITY_UNITS[garmentType], 1);
+  assert.equal(category?.fabricUnits, 1);
+  assert.equal(category?.fabricCapacityUsage, "Uses 1/2 fabric capacity unit.");
+  assert.equal(
+    getGarmentFabricCapacityUsageCopy(garmentType),
+    "Uses 1/2 fabric capacity unit.",
+  );
+}
+const gownCategory = emptyPresentation.categories.find(
+  (category) => category.garmentType === "full_length_gown",
+);
+assert.equal(FABRIC_GARMENT_CAPACITY_UNITS.full_length_gown, 2);
+assert.equal(gownCategory?.fabricUnits, 2);
+assert.equal(gownCategory?.fabricCapacityUsage, "Uses 1 fabric capacity unit.");
+assert.equal(
+  getGarmentFabricCapacityUsageCopy("full_length_gown"),
+  "Uses 1 fabric capacity unit.",
+);
+
+const emptyMarkup = renderStep();
+assert.equal((emptyMarkup.match(/Uses 1\/2 fabric capacity unit\./g) || []).length, 7);
+assert.equal((emptyMarkup.match(/Uses 1 fabric capacity unit\./g) || []).length, 1);
+assert.equal(emptyMarkup.includes("Uses one fabric capacity unit."), false);
+assert.equal(emptyMarkup.includes("Uses two fabric capacity units."), false);
+assert.equal(emptyMarkup.includes("Uses 0.5"), false);
+assert.ok(
+  emptyPresentation.categories.every(
+    (category) => !category.fabricCapacityUsage.includes("0.5"),
+  ),
+);
+
+const assertSelectionCapacity = (
+  selectedGarmentTypes: FabricGarmentType[],
+  expectedInternalUnits: number,
+  expectedCustomerAmount: string,
+  expectedFabricQuantity: number,
+) => {
+  const presentation = getGarmentTypeStepPresentation({
+    selectedGarmentTypes,
+    normalizedCustomDetailCatalog: catalog,
+  });
+  assert.equal(presentation.capacityUnits, expectedInternalUnits);
+  assert.equal(presentation.customerFacingCapacityAmount, expectedCustomerAmount);
+  assert.equal(
+    formatCustomerFacingFabricCapacityAmount(presentation.capacityUnits),
+    expectedCustomerAmount,
+  );
+  assert.equal(presentation.fabricQuantity, expectedFabricQuantity);
+};
+
+assertSelectionCapacity(["shirt"], 1, "1/2", 1);
+assertSelectionCapacity(["shirt", "trouser"], 2, "1", 1);
+assertSelectionCapacity(["shirt", "trouser", "skirt"], 3, "1 1/2", 2);
+assertSelectionCapacity(["shirt", "trouser", "skirt", "dress"], 4, "2", 2);
+assertSelectionCapacity(["full_length_gown"], 2, "1", 1);
+assertSelectionCapacity(["shirt", "full_length_gown"], 3, "1 1/2", 2);
+assertSelectionCapacity(["shirt", "trouser", "full_length_gown"], 4, "2", 2);
+assertSelectionCapacity(["kaftan"], 1, "1/2", 1);
+assertSelectionCapacity(["kaftan", "shirt"], 2, "1", 1);
+assertSelectionCapacity(["kaftan", "full_length_gown"], 3, "1 1/2", 2);
 
 const kaftanPlusShirtPresentation = getGarmentTypeStepPresentation({
   selectedGarmentTypes: ["kaftan", "shirt"],

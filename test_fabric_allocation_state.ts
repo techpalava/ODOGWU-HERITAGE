@@ -424,26 +424,40 @@ const stateKaftan = FabricAllocationStateEngine.syncPrimaryGarmentSelection(empt
   garmentSpec: {
     key: "KAFTAN:kaftan",
     garmentType: "kaftan",
-    fabricUnits: 2,
+    fabricUnits: 1,
   },
 });
 assert.equal(stateKaftan.fabricAllocations.length, 1);
 assertAllocationAssignment(stateKaftan, 1, [
-  { garmentKey: "KAFTAN:kaftan", code: "KAFTAN", garmentType: "kaftan", fabricUnits: 2 },
+  { garmentKey: "KAFTAN:kaftan", code: "KAFTAN", garmentType: "kaftan", fabricUnits: 1 },
 ]);
 const resolvedKaftan = resolveActiveAllocation(stateKaftan);
 assert.equal(resolvedKaftan.status, "resolved");
-assert.equal(resolvedKaftan.totalUnits, 2);
+assert.equal(resolvedKaftan.totalUnits, 1);
 assert.deepEqual(resolvedKaftan.garments.map(summarize), [
-  { garmentKey: "KAFTAN:kaftan", code: "KAFTAN", garmentType: "kaftan", fabricUnits: 2 },
+  { garmentKey: "KAFTAN:kaftan", code: "KAFTAN", garmentType: "kaftan", fabricUnits: 1 },
 ]);
 
-const stateKaftanOverflow = FabricAllocationStateEngine.attemptAppendGarment(stateKaftan, {
+const stateKaftanWithShirt = FabricAllocationStateEngine.attemptAppendGarment(stateKaftan, {
+  code: "G1",
+});
+assert.equal(stateKaftanWithShirt.fabricAllocations.length, 1);
+assertAllocationAssignment(stateKaftanWithShirt, 2, [
+  { garmentKey: "KAFTAN:kaftan", code: "KAFTAN", garmentType: "kaftan", fabricUnits: 1 },
+  { garmentKey: "G1:shirt", code: "G1", garmentType: "shirt", fabricUnits: 1 },
+]);
+assertNoPendingGarment(stateKaftanWithShirt);
+const resolvedKaftanWithShirt = resolveActiveAllocation(stateKaftanWithShirt);
+assert.equal(resolvedKaftanWithShirt.status, "resolved");
+assert.equal(resolvedKaftanWithShirt.totalUnits, 2);
+
+const stateKaftanOverflow = FabricAllocationStateEngine.attemptAppendGarment(stateKaftanWithShirt, {
   code: "G4",
 });
 assert.equal(stateKaftanOverflow.fabricAllocations.length, 1);
-assertAllocationAssignment(stateKaftanOverflow, 1, [
-  { garmentKey: "KAFTAN:kaftan", code: "KAFTAN", garmentType: "kaftan", fabricUnits: 2 },
+assertAllocationAssignment(stateKaftanOverflow, 2, [
+  { garmentKey: "KAFTAN:kaftan", code: "KAFTAN", garmentType: "kaftan", fabricUnits: 1 },
+  { garmentKey: "G1:shirt", code: "G1", garmentType: "shirt", fabricUnits: 1 },
 ]);
 assertPendingGarment(stateKaftanOverflow, "G4:trouser");
 

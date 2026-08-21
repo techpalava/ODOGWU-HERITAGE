@@ -99,7 +99,6 @@ const makeAllocationState = (
       code: `BASE_${garmentType.toUpperCase()}`,
       garmentType,
       fabricUnits:
-        garmentType === "kaftan" ||
         garmentType === "full_length_gown" ||
         garmentType === "agbada"
           ? 2
@@ -127,7 +126,6 @@ const makeStyle = (
     key: `style:${garmentType}`,
     garmentType,
     fabricUnits:
-      garmentType === "kaftan" ||
       garmentType === "full_length_gown" ||
       garmentType === "agbada"
         ? 2

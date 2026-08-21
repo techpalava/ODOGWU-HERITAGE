@@ -184,11 +184,17 @@ assert.equal(
   getFutureFabricCapacityOffer({
     garmentTypeSelection: createSelection(exceptionTypes),
     fabricAllocationState: exceptionState,
-  }),
-  null,
+  })?.target.assignment.garmentKey,
+  "base:shirt",
 );
 exceptionState = assign(exceptionState, exceptionTypes, "base:shirt", "FAB-A");
-assert.equal(exceptionState.fabricAllocations.length, 2);
+assert.equal(exceptionState.fabricAllocations.length, 1);
+assert.deepEqual(
+  exceptionState.fabricAllocations[0].garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
+  ["base:kaftan", "base:shirt"],
+);
 
 separate = assign(separate, threeRegular, "base:trouser", "FAB-B");
 assert.deepEqual(

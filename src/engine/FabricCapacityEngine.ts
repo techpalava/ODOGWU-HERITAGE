@@ -140,6 +140,7 @@ const LOWER_GARMENT_REQUIRED_CODES = new Set(["L6", "L7"]);
 const DRESS_WITH_LOWER_REQUIRED_CODES = new Set(["L8.1", "L8.2", "L9.1", "L9.2"]);
 
 export class FabricCapacityEngine {
+  /** One fabric holds 2 internal half-units = 2 standard garments = 1 customer-facing capacity unit. */
   static readonly MAX_UNITS_PER_ALLOCATION = 2;
 
   static resolveFabricAllocation(

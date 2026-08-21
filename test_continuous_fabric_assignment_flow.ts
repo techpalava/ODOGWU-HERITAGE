@@ -112,21 +112,14 @@ const fiveSameFabric =
 assert.equal(fiveSameFabric.pendingFabricGarment, null);
 assert.equal(fiveSameFabric.fabricAllocations.length, 3);
 
-const kaftanTrouserSelections = selectionsFor("kaftan", "trouser");
-const kaftanTrouserInitial = startAssignment("kaftan", "trouser");
-assert.equal(kaftanTrouserInitial.pendingFabricGarment?.garmentType, "trouser");
-const kaftanTrouserSameFabric =
-  FabricAllocationStateEngine.useSameFabricForPendingGarmentAndContinue(
-    kaftanTrouserInitial,
-    kaftanTrouserSelections,
-  );
-assert.equal(kaftanTrouserSameFabric.fabricAllocations.length, 2);
+const kaftanTrouserSameFabric = startAssignment("kaftan", "trouser");
+assert.equal(kaftanTrouserSameFabric.pendingFabricGarment, null);
+assert.equal(kaftanTrouserSameFabric.fabricAllocations.length, 1);
 assert.deepEqual(
-  kaftanTrouserSameFabric.fabricAllocations.map(
-    (allocation) => allocation.fabricCode,
+  kaftanTrouserSameFabric.fabricAllocations[0].garmentAssignments.map(
+    (assignment) => assignment.garmentType,
   ),
-  [fabricA, fabricA],
-  "A full-allocation garment may reuse a fabric code only in another allocation.",
+  ["kaftan", "trouser"],
 );
 
 const threeDifferentFabricInitial = startAssignment("shirt", "trouser", "skirt");

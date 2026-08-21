@@ -205,13 +205,13 @@ kaftanOnlyItem.fabricAllocations = [
   {
     allocationId: "kaftan-allocation",
     fabricCode: "FABRIC-A",
-    garmentAssignments: [makeAssignment("kaftan-1", "kaftan", 2)],
+    garmentAssignments: [makeAssignment("kaftan-1", "kaftan", 1)],
   },
 ];
 assert.equal(
   resolveAuthoritativeGarmentPieceCount(kaftanOnlyItem),
   1,
-  "two fabric units for a Kaftan still represent one physical shipping piece",
+  "a Kaftan is still one physical shipping piece",
 );
 
 const kaftanAndTrouserItem = structuredClone(kaftanOnlyItem);

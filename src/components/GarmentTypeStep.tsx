@@ -7,7 +7,11 @@ import type {
   FabricGarmentAssignment,
   FabricGarmentType,
 } from "../types";
-import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
+import {
+  createStyleBaseGarmentSpec,
+  formatCustomerFacingFabricCapacityAmount,
+  formatGarmentFabricCapacityUsage,
+} from "../config/StyleFabricCapacityConfig";
 import {
   FabricCapacityEngine,
   getCustomerFacingFabricQuantityForAssignments,
@@ -57,6 +61,7 @@ export interface GarmentTypeStepCategoryPresentation {
   garmentType: FabricGarmentType;
   label: string;
   fabricUnits: 1 | 2;
+  fabricCapacityUsage: string;
   selected: boolean;
   constructionPricing: GarmentConstructionPricingResolution | null;
 }
@@ -68,6 +73,7 @@ export interface GarmentTypeStepPresentation {
   constructionSubtotalCents: number;
   garmentCount: number;
   capacityUnits: number;
+  customerFacingCapacityAmount: string;
   fabricQuantity: number;
   requiresMultipleFabricAllocations: boolean;
 }
@@ -148,16 +154,20 @@ export const getGarmentTypeStepPresentation = ({
   );
 
   return {
-    categories: STEP_1_SELECTABLE_GARMENT_TYPES.map((garmentType) => ({
-      garmentType,
-      label: getGarmentTypeStepLabel(garmentType),
-      fabricUnits: createStyleBaseGarmentSpec(garmentType).fabricUnits,
-      selected: selectedSet.has(garmentType),
-      constructionPricing:
-        constructionPricing.find(
-          (resolution) => resolution.garmentType === garmentType,
-        ) || null,
-    })),
+    categories: STEP_1_SELECTABLE_GARMENT_TYPES.map((garmentType) => {
+      const fabricUnits = createStyleBaseGarmentSpec(garmentType).fabricUnits;
+      return {
+        garmentType,
+        label: getGarmentTypeStepLabel(garmentType),
+        fabricUnits,
+        fabricCapacityUsage: formatGarmentFabricCapacityUsage(fabricUnits),
+        selected: selectedSet.has(garmentType),
+        constructionPricing:
+          constructionPricing.find(
+            (resolution) => resolution.garmentType === garmentType,
+          ) || null,
+      };
+    }),
     selectedGarmentTypes: canonicalSelection,
     constructionPricing,
     constructionSubtotalCents: constructionPricing.reduce(
@@ -169,6 +179,9 @@ export const getGarmentTypeStepPresentation = ({
     ),
     garmentCount: quantitySummary.garmentCount,
     capacityUnits: quantitySummary.capacityUnits,
+    customerFacingCapacityAmount: formatCustomerFacingFabricCapacityAmount(
+      quantitySummary.capacityUnits,
+    ),
     fabricQuantity: quantitySummary.fabricQuantity,
     requiresMultipleFabricAllocations: quantitySummary.fabricQuantity > 1,
   };
@@ -294,9 +307,7 @@ export const GarmentTypeStep = ({
                       )}
                     </span>
                     <span className="mt-1 block break-words text-[11px] leading-relaxed text-heritage-ink/60">
-                      {category.fabricUnits === 2
-                        ? "Uses two fabric capacity units."
-                        : "Uses one fabric capacity unit."}
+                      {category.fabricCapacityUsage}
                     </span>
                     {category.selected && !isResolved && (
                       <span className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
