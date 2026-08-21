@@ -14,6 +14,9 @@ import {
   updateGarmentTypeDemographics,
   updateGarmentTypeSelection,
 } from "./src/components/GarmentTypeStep";
+import { STEP_1_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
+import { getGarmentTypeStepSelectedFabricQuantity } from "./src/utils/designStudioFutureFabricStage";
+import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import type {
   CustomDetailDemographic,
   CustomDetailOption,
@@ -37,15 +40,11 @@ const hiddenStep1GarmentLabels = ["Long Shirt (Agbada)"];
 const renderStep = ({
   selectedGarmentTypes = [],
   selectedDemographics = [],
-  requiredGarmentCount,
-  requiredFabricQuantity,
   selectedFabricQuantity,
   normalizedCustomDetailCatalog = catalog,
 }: {
   selectedGarmentTypes?: readonly FabricGarmentType[];
   selectedDemographics?: readonly CustomDetailDemographic[];
-  requiredGarmentCount?: number;
-  requiredFabricQuantity?: number;
   selectedFabricQuantity?: number;
   normalizedCustomDetailCatalog?: readonly CustomDetailOption[];
 } = {}) =>
@@ -53,8 +52,6 @@ const renderStep = ({
     createElement(GarmentTypeStep, {
       selectedGarmentTypes,
       selectedDemographics,
-      requiredGarmentCount,
-      requiredFabricQuantity,
       selectedFabricQuantity,
       normalizedCustomDetailCatalog,
       onGarmentTypesChange: () => undefined,
@@ -125,6 +122,8 @@ assert.deepEqual(
   ],
 );
 assert.equal(selectedPresentation.constructionSubtotalCents, 28000);
+assert.equal(selectedPresentation.garmentCount, 2);
+assert.equal(selectedPresentation.fabricQuantity, 1);
 
 const confirmedPricePresentation = getGarmentTypeStepPresentation({
   selectedGarmentTypes: [
@@ -319,16 +318,26 @@ assert.equal(unresolvedMarkup.includes("€0.00"), false);
 const populatedMarkup = renderStep({
   selectedGarmentTypes: ["shirt", "trouser", "agbada"],
   selectedDemographics: ["male", "female"],
-  requiredGarmentCount: 4,
-  requiredFabricQuantity: 3,
-  selectedFabricQuantity: 2,
+  selectedFabricQuantity: 1,
 });
 assert.ok(populatedMarkup.includes("Step 1 of 9"));
 assert.ok(populatedMarkup.includes("What garment type do you want to order?"));
 assert.ok(populatedMarkup.includes("Who is this design for?"));
-assert.ok(populatedMarkup.includes("3 fabrics · 4 garments"));
-assert.ok(populatedMarkup.includes("You need 3 fabrics for your 4 garments."));
-assert.ok(populatedMarkup.includes("Fabrics selected: 2 / 3"));
+assert.ok(populatedMarkup.includes("1 fabric · 2 garments"));
+assert.ok(populatedMarkup.includes("You need 1 fabric for your 2 garments."));
+assert.ok(populatedMarkup.includes("Fabrics selected: 1 / 1"));
+assert.equal(
+  (populatedMarkup.match(/1 fabric · 2 garments/g) || []).length,
+  1,
+  "Fabric quantity summary must render once",
+);
+const garmentTypeLegendIndex = populatedMarkup.indexOf("Garment Type");
+const fabricSummaryIndex = populatedMarkup.indexOf("1 fabric · 2 garments");
+const standardShirtCardIndex = populatedMarkup.indexOf("Standard Shirt");
+const demographicLegendIndex = populatedMarkup.indexOf("Who is this design for?");
+assert.ok(garmentTypeLegendIndex < fabricSummaryIndex);
+assert.ok(fabricSummaryIndex < standardShirtCardIndex);
+assert.ok(fabricSummaryIndex < demographicLegendIndex);
 assert.equal((populatedMarkup.match(/type="checkbox"/g) || []).length, 11);
 assert.ok(populatedMarkup.includes("Garment Construction Subtotal"));
 assert.ok(populatedMarkup.includes("€280.00"));
@@ -340,5 +349,123 @@ assert.equal(
 );
 assert.ok(populatedMarkup.includes("Fabric, tax, shipping, and other selected options will be added in later steps."));
 assert.equal(/upload your own design|uploaded design complete|design source/i.test(populatedMarkup), false);
+
+const allEightStep1Markup = renderStep({
+  selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],
+  selectedDemographics: ["male"],
+});
+assert.ok(allEightStep1Markup.includes("5 fabrics · 8 garments"));
+assert.ok(
+  allEightStep1Markup.includes("You need 5 fabrics for your 8 garments."),
+);
+
+const allEightWithSelectedFabricMarkup = renderStep({
+  selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],
+  selectedDemographics: ["male"],
+  selectedFabricQuantity: 1,
+});
+assert.ok(allEightWithSelectedFabricMarkup.includes("5 fabrics · 8 garments"));
+assert.ok(allEightWithSelectedFabricMarkup.includes("Fabrics selected: 1 / 5"));
+
+const allEightWithHiddenAgbadaMarkup = renderStep({
+  selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES, "agbada"],
+  selectedDemographics: ["male"],
+});
+assert.ok(allEightWithHiddenAgbadaMarkup.includes("5 fabrics · 8 garments"));
+assert.ok(
+  allEightWithHiddenAgbadaMarkup.includes(
+    "You need 5 fabrics for your 8 garments.",
+  ),
+);
+
+const shirtTrouserHiddenAgbadaMarkup = renderStep({
+  selectedGarmentTypes: ["shirt", "trouser", "agbada"],
+  selectedDemographics: ["male"],
+  selectedFabricQuantity: 1,
+});
+assert.ok(shirtTrouserHiddenAgbadaMarkup.includes("1 fabric · 2 garments"));
+assert.ok(
+  shirtTrouserHiddenAgbadaMarkup.includes("Fabrics selected: 1 / 1"),
+);
+
+const deselectedShirtMarkup = renderStep({
+  selectedGarmentTypes: STEP_1_SELECTABLE_GARMENT_TYPES.filter(
+    (garmentType) => garmentType !== "shirt",
+  ),
+  selectedDemographics: ["male"],
+});
+assert.ok(deselectedShirtMarkup.includes("4 fabrics · 7 garments"));
+
+const allEightSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],
+  selectedDemographics: ["male"],
+  normalizedCustomDetailCatalog: catalog,
+}).selection;
+const additionalOnlyFabricState = {
+  fabricAllocations: [
+    {
+      allocationId: "fabric-selection-additional-1",
+      fabricCode: "ODG-002",
+      garmentAssignments: [
+        {
+          garmentKey: "additional:shirt:1",
+          code: "ADDITIONAL_SHIRT_1",
+          garmentType: "shirt" as const,
+          fabricUnits: 1 as const,
+          sourceRole: "additional" as const,
+          dependencyStatus: "valid" as const,
+        },
+      ],
+    },
+  ],
+  activeAllocationId: "fabric-selection-additional-1",
+  pendingFabricGarment: null,
+  awaitingFabricForPendingGarment: false,
+};
+assert.equal(
+  getGarmentTypeStepSelectedFabricQuantity({
+    garmentTypeSelection: allEightSelection,
+    fabricAllocationState: additionalOnlyFabricState,
+  }),
+  0,
+);
+const additionalOnlyFabricMarkup = renderStep({
+  selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],
+  selectedDemographics: ["male"],
+  selectedFabricQuantity: 0,
+});
+assert.ok(additionalOnlyFabricMarkup.includes("Fabrics selected: 0 / 5"));
+
+const shirtTrouserAgbadaSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["shirt", "trouser", "agbada"],
+  selectedDemographics: ["male"],
+  normalizedCustomDetailCatalog: catalog,
+}).selection;
+const agbadaOnlyAllocationState = {
+  fabricAllocations: [
+    {
+      allocationId: "fabric-selection-agbada-only",
+      fabricCode: "ODG-003",
+      garmentAssignments: [
+        {
+          garmentKey: "base:agbada",
+          code: "GARMENT_TYPE_AGBADA",
+          garmentType: "agbada" as const,
+          fabricUnits: 2 as const,
+        },
+      ],
+    },
+  ],
+  activeAllocationId: "fabric-selection-agbada-only",
+  pendingFabricGarment: null,
+  awaitingFabricForPendingGarment: false,
+};
+assert.equal(
+  getGarmentTypeStepSelectedFabricQuantity({
+    garmentTypeSelection: shirtTrouserAgbadaSelection,
+    fabricAllocationState: agbadaOnlyAllocationState,
+  }),
+  0,
+);
 
 console.log("Garment Type Step controlled component verification passed.");
