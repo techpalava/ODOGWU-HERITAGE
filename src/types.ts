@@ -150,6 +150,7 @@ export interface StyleCategory {
   fabricCapacityComposition?: FabricCapacityGarmentSpec[];
 }
 
+/** Internal half-fabric integers: 1 = 1/2 customer-facing unit, 2 = 1 customer-facing unit. */
 export type FabricUnitCount = 1 | 2;
 
 export type FabricGarmentType =

@@ -206,7 +206,6 @@ const allGarmentStyle = style({
     key: `base:${garmentType}`,
     garmentType,
     fabricUnits:
-      garmentType === "kaftan" ||
       garmentType === "full_length_gown" ||
       garmentType === "agbada"
         ? 2

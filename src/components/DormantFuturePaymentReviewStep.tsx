@@ -30,6 +30,10 @@ import {
   isFuturePaymentReviewStageUnlocked,
 } from "../utils/designStudioFuturePaymentReview";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+import {
+  formatCustomerFacingFabricCapacityAmount,
+  formatCustomerFacingFabricCapacityNoun,
+} from "../config/StyleFabricCapacityConfig";
 
 interface DormantFuturePaymentReviewStepProps {
   result: FutureOrderCandidateBuildResult;
@@ -243,7 +247,7 @@ const GarmentReview = ({
                             {allocation.fabricName}
                           </p>
                           <p className="break-words font-mono text-xs text-heritage-ink/55">
-                            {allocation.fabricCode} | Quantity 1 | {allocation.capacityUnits} capacity unit{allocation.capacityUnits === 1 ? "" : "s"}
+                            {allocation.fabricCode} | Quantity 1 | {formatCustomerFacingFabricCapacityAmount(allocation.capacityUnits)} capacity {formatCustomerFacingFabricCapacityNoun(allocation.capacityUnits)}
                           </p>
                         </li>
                       ))}
@@ -501,7 +505,7 @@ export const DormantFuturePaymentReviewStep = ({
                     <div className="flex min-w-0 flex-wrap justify-between gap-2">
                       <dt>Capacity</dt>
                       <dd className="font-bold">
-                        {allocation.capacityUnits} unit{allocation.capacityUnits === 1 ? "" : "s"}
+                        {formatCustomerFacingFabricCapacityAmount(allocation.capacityUnits)} {formatCustomerFacingFabricCapacityNoun(allocation.capacityUnits)}
                       </dd>
                     </div>
                     <div className="flex min-w-0 flex-wrap justify-between gap-2">

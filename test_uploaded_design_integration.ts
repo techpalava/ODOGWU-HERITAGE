@@ -123,7 +123,7 @@ assert.equal(
 );
 
 const kaftan = createUploadedContext(
-  [{ key: "uploaded-kaftan", garmentType: "kaftan", fabricUnits: 2 }],
+  [{ key: "uploaded-kaftan", garmentType: "kaftan", fabricUnits: 1 }],
   "male",
 );
 const kaftanState = FabricAllocationStateEngine.syncPrimaryGarmentComposition(
@@ -131,11 +131,11 @@ const kaftanState = FabricAllocationStateEngine.syncPrimaryGarmentComposition(
   "FABRIC_KAFTAN",
   getFabricGarmentSelectionsForComposition(kaftan.context.fabricCapacityComposition),
 );
-assert.equal(kaftanState.fabricAllocations[0].garmentAssignments[0].fabricUnits, 2);
+assert.equal(kaftanState.fabricAllocations[0].garmentAssignments[0].fabricUnits, 1);
 assert.equal(
   resolveShippingGarmentPieceCount({ fabricAllocations: kaftanState.fabricAllocations }),
   1,
-  "A two-unit kaftan is one physical shipping piece.",
+  "A kaftan is one physical shipping piece.",
 );
 assert.deepEqual(groupIds(kaftan.context), [
   "shirt_construction",

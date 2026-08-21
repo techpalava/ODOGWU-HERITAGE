@@ -168,7 +168,7 @@ assert.equal(
 
 const kaftan = makeUploadedSource(
   "uploaded-kaftan",
-  [{ key: "kaftan", garmentType: "kaftan", fabricUnits: 2 }],
+  [{ key: "kaftan", garmentType: "kaftan", fabricUnits: 1 }],
   "male",
 );
 const kaftanPricing = priceUploadedComposition(kaftan);
@@ -180,7 +180,7 @@ assert.equal(
       .defaultSelections,
     SEED_CUSTOM_DETAIL_CATALOG,
   ).clothingPrice,
-  "Kaftan is priced once even though it consumes two fabric units.",
+  "Kaftan is priced once as a half-capacity garment.",
 );
 
 const gown = makeUploadedSource(
