@@ -83,6 +83,7 @@ import {
   applyFutureFabricCardSelection,
   cancelFutureFabricCatalogueAssignment,
   getFutureGarmentFabricPlanning,
+  getGarmentTypeStepSelectedFabricQuantity,
   getFutureFabricCapacityComposition,
   getFutureFabricGarmentSelections,
   getFutureFabricStageCompletion,
@@ -401,6 +402,11 @@ export default function DesignStudioView({
     garmentTypeSelection,
     fabricAllocationState,
   });
+  const garmentTypeStepSelectedFabricQuantity =
+    getGarmentTypeStepSelectedFabricQuantity({
+      garmentTypeSelection,
+      fabricAllocationState,
+    });
   const futureDesignStyleSelection = reconcileFutureDesignStyleSelection({
     selectedStyleId: futureSelectedStyleId,
     styles,
@@ -2383,15 +2389,7 @@ export default function DesignStudioView({
             selectedDemographics={getGarmentTypeSelectedDemographics(
               garmentTypeSelection,
             )}
-            requiredGarmentCount={
-              futureGarmentFabricPlanning.requiredGarmentCount
-            }
-            requiredFabricQuantity={
-              futureGarmentFabricPlanning.requiredFabricQuantity
-            }
-            selectedFabricQuantity={
-              futureGarmentFabricPlanning.selectedFabricQuantity
-            }
+            selectedFabricQuantity={garmentTypeStepSelectedFabricQuantity}
             normalizedCustomDetailCatalog={normalizedGarmentTypeCatalog}
             onGarmentTypesChange={handleDormantGarmentTypesChange}
             onDemographicsChange={handleDormantGarmentDemographicsChange}

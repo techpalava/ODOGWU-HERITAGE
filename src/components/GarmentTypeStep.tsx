@@ -20,6 +20,7 @@ import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
   STEP_1_SELECTABLE_GARMENT_TYPES,
+  getStep1SelectableGarmentTypes,
   type GarmentConstructionPricingResolution,
   resolveGarmentConstructionPricing,
 } from "../utils/garmentConstructionPricing";
@@ -81,8 +82,6 @@ export interface GarmentTypeStepPresentation {
 export interface GarmentTypeStepProps {
   selectedGarmentTypes: readonly FabricGarmentType[];
   selectedDemographics: readonly CustomDetailDemographic[];
-  requiredGarmentCount?: number;
-  requiredFabricQuantity?: number;
   selectedFabricQuantity?: number;
   normalizedCustomDetailCatalog: readonly CustomDetailOption[];
   onGarmentTypesChange: (garmentTypes: FabricGarmentType[]) => void;
@@ -149,8 +148,11 @@ export const getGarmentTypeStepPresentation = ({
   const constructionPricing = canonicalSelection.map((garmentType) =>
     resolveGarmentConstructionPricing(garmentType, normalizedCustomDetailCatalog),
   );
+  const step1SelectableSelection = getStep1SelectableGarmentTypes(
+    canonicalSelection,
+  );
   const quantitySummary = getCustomerFacingFabricQuantityForAssignments(
-    getAssignmentsForGarments(canonicalSelection),
+    getAssignmentsForGarments(step1SelectableSelection),
   );
 
   return {
@@ -190,8 +192,6 @@ export const getGarmentTypeStepPresentation = ({
 export const GarmentTypeStep = ({
   selectedGarmentTypes,
   selectedDemographics,
-  requiredGarmentCount,
-  requiredFabricQuantity,
   selectedFabricQuantity = 0,
   normalizedCustomDetailCatalog,
   onGarmentTypesChange,
@@ -207,8 +207,8 @@ export const GarmentTypeStep = ({
   const hasUnresolvedConstructionPricing = presentation.constructionPricing.some(
     (resolution) => resolution.status === "unresolved",
   );
-  const garmentCount = requiredGarmentCount ?? presentation.garmentCount;
-  const fabricQuantity = requiredFabricQuantity ?? presentation.fabricQuantity;
+  const garmentCount = presentation.garmentCount;
+  const fabricQuantity = presentation.fabricQuantity;
 
   const handleGarmentChange = (
     garmentType: FabricGarmentType,
@@ -240,6 +240,29 @@ export const GarmentTypeStep = ({
     );
   };
 
+  const fabricQuantitySummary = (
+    <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-heritage-gold/20 bg-heritage-cream/35 p-3 sm:p-4">
+      <Layers3 aria-hidden="true" size={20} className="mt-0.5 shrink-0 text-heritage-gold" />
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-sm font-bold text-heritage-green">
+          {garmentCount > 0
+            ? `${fabricQuantity} ${fabricQuantity === 1 ? "fabric" : "fabrics"} · ${garmentCount} ${garmentCount === 1 ? "garment" : "garments"}`
+            : "Select garment types to see fabric quantities."}
+        </p>
+        {garmentCount > 0 && (
+          <>
+            <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/65">
+              You need {fabricQuantity} {fabricQuantity === 1 ? "fabric" : "fabrics"} for your {garmentCount} {garmentCount === 1 ? "garment" : "garments"}.
+            </p>
+            <p className="mt-2 break-words text-xs font-semibold text-heritage-green">
+              Fabrics selected: {selectedFabricQuantity} / {fabricQuantity}
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <section
       aria-labelledby={`${idPrefix}-title`}
@@ -262,14 +285,17 @@ export const GarmentTypeStep = ({
           </p>
         </div>
 
-        <fieldset className="mt-6 min-w-0">
-          <legend className="font-serif text-lg font-bold text-heritage-green">
+        <fieldset className="mt-6 min-w-0 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-6 lg:gap-y-1">
+          <legend className="font-serif text-lg font-bold text-heritage-green lg:col-start-1 lg:row-start-1">
             Garment Type
           </legend>
-          <p className="mt-1 text-xs text-heritage-ink/60">
+          <p className="mt-1 text-xs text-heritage-ink/60 lg:col-start-1 lg:row-start-2 lg:mt-1">
             Choose one or more garments. Construction pricing is selected from the current catalogue.
           </p>
-          <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-4 w-full shrink-0 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 lg:max-w-xs lg:justify-self-end xl:max-w-xs">
+            {fabricQuantitySummary}
+          </div>
+          <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 lg:col-span-full">
             {presentation.categories.map((category) => {
               const price = category.constructionPricing;
               const isResolved = price?.status === "resolved";
@@ -365,27 +391,6 @@ export const GarmentTypeStep = ({
             })}
           </div>
         </fieldset>
-
-        <div className="mt-7 flex min-w-0 flex-wrap items-start gap-3 rounded-2xl border border-heritage-gold/20 bg-heritage-cream/35 p-4">
-          <Layers3 aria-hidden="true" size={20} className="mt-0.5 shrink-0 text-heritage-gold" />
-          <div className="min-w-0 flex-1">
-            <p className="break-words text-sm font-bold text-heritage-green">
-              {garmentCount > 0
-                ? `${fabricQuantity} ${fabricQuantity === 1 ? "fabric" : "fabrics"} · ${garmentCount} ${garmentCount === 1 ? "garment" : "garments"}`
-                : "Select garment types to see fabric quantities."}
-            </p>
-            {garmentCount > 0 && (
-              <>
-                <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/65">
-                  You need {fabricQuantity} {fabricQuantity === 1 ? "fabric" : "fabrics"} for your {garmentCount} {garmentCount === 1 ? "garment" : "garments"}.
-                </p>
-                <p className="mt-2 break-words text-xs font-semibold text-heritage-green">
-                  Fabrics selected: {selectedFabricQuantity} / {fabricQuantity}
-                </p>
-              </>
-            )}
-          </div>
-        </div>
       </div>
 
       <aside className="min-w-0 lg:col-span-4" aria-label="Live Price Summary">

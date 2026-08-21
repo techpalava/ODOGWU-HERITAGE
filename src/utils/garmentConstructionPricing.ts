@@ -33,6 +33,24 @@ export const STEP_1_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmentT
     (garmentType) => garmentType !== "agbada",
   );
 
+const STEP_1_SELECTABLE_GARMENT_TYPE_SET = new Set<CanonicalPhysicalGarmentType>(
+  STEP_1_SELECTABLE_GARMENT_TYPES,
+);
+
+export const getStep1SelectableGarmentTypes = (
+  selectedGarmentTypes: readonly FabricGarmentType[],
+): CanonicalPhysicalGarmentType[] =>
+  STEP_1_SELECTABLE_GARMENT_TYPES.filter((garmentType) =>
+    selectedGarmentTypes.includes(garmentType),
+  );
+
+export const isStep1SelectableGarmentType = (
+  garmentType: FabricGarmentType,
+): garmentType is CanonicalPhysicalGarmentType =>
+  STEP_1_SELECTABLE_GARMENT_TYPE_SET.has(
+    garmentType as CanonicalPhysicalGarmentType,
+  );
+
 const CANONICAL_PHYSICAL_GARMENT_TYPE_SET = new Set<FabricGarmentType>(
   CANONICAL_PHYSICAL_GARMENT_TYPES,
 );
