@@ -108,6 +108,11 @@ const findButton = (root: ReactTestInstance, text: string) =>
     .findAllByType("button")
     .find((button) => textContent(button).includes(text));
 
+const findStockBadge = (root: ReactTestInstance, fabricCode: string) =>
+  root
+    .findAllByProps({ "data-fabric-stock-badge": "true" })
+    .find((badge) => badge.props["data-fabric-stock-code"] === fabricCode);
+
 const findVisibleFabricActionError = (root: ReactTestInstance) =>
   root.findAllByProps({ "data-fabric-visible-action-error": "true" })[0] ??
   null;
@@ -162,11 +167,12 @@ const renderStep = (
     fabricCode: string,
     garmentKeys: string[],
   ) => void = () => undefined,
+  catalogueFabrics: Fabric[] = fabrics,
 ) => {
   const completion = getFutureFabricStageCompletion({
     garmentTypeSelection: selection,
     fabricAllocationState: state,
-    fabrics,
+    fabrics: catalogueFabrics,
   });
   const planning = getFutureGarmentFabricPlanning({
     garmentTypeSelection: selection,
@@ -174,7 +180,7 @@ const renderStep = (
   });
   return (
     <DormantFutureFabricStep
-      fabrics={fabrics}
+      fabrics={catalogueFabrics}
       garmentTypeSelection={selection}
       fabricAllocationState={state}
       completion={completion}
@@ -2295,6 +2301,19 @@ try {
     assignedShirtCard?.props["aria-label"],
     "Cancel Inline Heritage A fabric assignment for Standard Shirt",
   );
+  const assignedShirtStockBadge = findStockBadge(
+    inUseCancelRenderer.root,
+    "INLINE-A",
+  );
+  assert.ok(
+    assignedShirtStockBadge,
+    "IN USE / CANCEL cards must still show the visible stock badge.",
+  );
+  assert.equal(assignedShirtStockBadge?.props["data-fabric-stock-label"], "In Stock");
+  assert.equal(
+    String(assignedShirtStockBadge?.props.className ?? "").includes("sr-only"),
+    false,
+  );
   assert.ok(!assignedShirtCard?.props.disabled);
   await act(async () => assignedShirtCard!.props.onClick());
   await act(async () => inUseCancelRenderer.update(renderInUseCancel()));
@@ -3336,6 +3355,208 @@ try {
     );
   });
   assertFabricProgress(eightGarmentRenderer.root, 5, 5, 8, 8);
+
+  const stockCatalogueFabrics: Fabric[] = [
+    { ...fabrics[0], stock: 12 },
+    { ...fabrics[1] },
+    {
+      ...fabrics[0],
+      code: "STOCK-LOW-3",
+      name: "Low Stock Counted",
+      stockStatus: "LOW_STOCK",
+      stock: 3,
+    },
+    {
+      ...fabrics[0],
+      code: "STOCK-LOW",
+      name: "Low Stock Uncounted",
+      stockStatus: "LOW_STOCK",
+    },
+    {
+      ...fabrics[0],
+      code: "STOCK-IN-ZERO",
+      name: "In Stock Zero Count",
+      stockStatus: "IN_STOCK",
+      stock: 0,
+    },
+    {
+      ...fabrics[0],
+      code: "STOCK-LOW-ZERO",
+      name: "Low Stock Zero Count",
+      stockStatus: "LOW_STOCK",
+      stock: 0,
+    },
+    {
+      ...fabrics[0],
+      code: "STOCK-OUT",
+      name: "Out Of Stock Counted",
+      stockStatus: "OUT_OF_STOCK",
+      stock: 0,
+    },
+    {
+      ...fabrics[0],
+      code: "STOCK-OUT-CONTRADICTORY",
+      name: "Out Of Stock Contradictory Count",
+      stockStatus: "OUT_OF_STOCK",
+      stock: 10,
+    },
+    {
+      ...fabrics[0],
+      code: "STOCK-HIDDEN",
+      name: "Hidden Stock Fabric",
+      stockStatus: "HIDDEN",
+      stock: 8,
+    },
+  ];
+  let stockCatalogueRenderer!: ReturnType<typeof create>;
+  let stockCatalogueAssigned: Array<{ fabricCode: string; garmentKey: string }> =
+    [];
+  await act(async () => {
+    stockCatalogueRenderer = create(
+      renderStep(
+        FabricAllocationStateEngine.initialize(),
+        (fabric, garmentKey) => {
+          stockCatalogueAssigned.push({
+            fabricCode: fabric.code,
+            garmentKey,
+          });
+        },
+        garmentTypeSelection,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        undefined,
+        () => undefined,
+        stockCatalogueFabrics,
+      ),
+    );
+  });
+  const inStockCountedBadge = findStockBadge(
+    stockCatalogueRenderer.root,
+    "INLINE-A",
+  );
+  assert.equal(inStockCountedBadge?.props["data-fabric-stock-label"], "In Stock: 12");
+  assert.match(textContent(inStockCountedBadge ?? null), /^In Stock: 12$/);
+  assert.equal(
+    String(inStockCountedBadge?.props.className ?? "").includes("sr-only"),
+    false,
+    "Stock badges must be visible, not screen-reader only.",
+  );
+  assert.match(
+    String(inStockCountedBadge?.props.className ?? ""),
+    /absolute top-2 right-2/,
+  );
+  assert.match(
+    String(inStockCountedBadge?.props.className ?? ""),
+    /pointer-events-none/,
+  );
+  assert.match(
+    String(inStockCountedBadge?.props.className ?? ""),
+    /max-w-\[calc\(100%-1rem\)\]/,
+    "The stock badge must constrain itself so it does not overlap the fabric card on narrow layouts.",
+  );
+  const inStockMissingBadge = findStockBadge(
+    stockCatalogueRenderer.root,
+    "INLINE-B",
+  );
+  assert.equal(inStockMissingBadge?.props["data-fabric-stock-label"], "In Stock");
+  assert.match(textContent(inStockMissingBadge ?? null), /^In Stock$/);
+  const lowStockCountedBadge = findStockBadge(
+    stockCatalogueRenderer.root,
+    "STOCK-LOW-3",
+  );
+  assert.equal(
+    lowStockCountedBadge?.props["data-fabric-stock-label"],
+    "Low Stock: 3",
+  );
+  const lowStockMissingBadge = findStockBadge(
+    stockCatalogueRenderer.root,
+    "STOCK-LOW",
+  );
+  assert.equal(lowStockMissingBadge?.props["data-fabric-stock-label"], "Low Stock");
+  const inStockZeroBadge = findStockBadge(
+    stockCatalogueRenderer.root,
+    "STOCK-IN-ZERO",
+  );
+  assert.equal(inStockZeroBadge?.props["data-fabric-stock-label"], "In Stock");
+  assert.match(textContent(inStockZeroBadge ?? null), /^In Stock$/);
+  assert.doesNotMatch(
+    textContent(inStockZeroBadge ?? null),
+    /: 0$/,
+    "Contradictory IN_STOCK + stock 0 must not show ': 0'.",
+  );
+  const inStockZeroCard = stockCatalogueRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find((card) => card.props["data-fabric-code"] === "STOCK-IN-ZERO");
+  assert.ok(
+    !inStockZeroCard?.props.disabled,
+    "IN_STOCK fabrics remain selectable even when stock is zero.",
+  );
+  const lowStockZeroBadge = findStockBadge(
+    stockCatalogueRenderer.root,
+    "STOCK-LOW-ZERO",
+  );
+  assert.equal(lowStockZeroBadge?.props["data-fabric-stock-label"], "Low Stock");
+  assert.match(textContent(lowStockZeroBadge ?? null), /^Low Stock$/);
+  assert.doesNotMatch(
+    textContent(lowStockZeroBadge ?? null),
+    /: 0$/,
+    "Contradictory LOW_STOCK + stock 0 must not show ': 0'.",
+  );
+  const outOfStockBadge = findStockBadge(
+    stockCatalogueRenderer.root,
+    "STOCK-OUT",
+  );
+  assert.equal(outOfStockBadge?.props["data-fabric-stock-label"], "Out of Stock");
+  const outOfStockContradictoryBadge = findStockBadge(
+    stockCatalogueRenderer.root,
+    "STOCK-OUT-CONTRADICTORY",
+  );
+  assert.equal(
+    outOfStockContradictoryBadge?.props["data-fabric-stock-label"],
+    "Out of Stock",
+  );
+  assert.match(
+    textContent(outOfStockContradictoryBadge ?? null),
+    /^Out of Stock$/,
+  );
+  assert.doesNotMatch(
+    textContent(outOfStockContradictoryBadge ?? null),
+    /: 10$/,
+    "Contradictory OUT_OF_STOCK + stock 10 must not expose the quantity.",
+  );
+  assert.equal(
+    findStockBadge(stockCatalogueRenderer.root, "STOCK-HIDDEN"),
+    undefined,
+    "HIDDEN fabrics must remain excluded from the catalogue.",
+  );
+  assert.equal(
+    stockCatalogueRenderer.root.findAllByProps({
+      "data-fabric-code": "STOCK-HIDDEN",
+    }).length,
+    0,
+  );
+  const outOfStockCard = stockCatalogueRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find((card) => card.props["data-fabric-code"] === "STOCK-OUT");
+  assert.equal(outOfStockCard?.props.disabled, true);
+  const outOfStockContradictoryCard = stockCatalogueRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find((card) => card.props["data-fabric-code"] === "STOCK-OUT-CONTRADICTORY");
+  assert.equal(
+    outOfStockContradictoryCard?.props.disabled,
+    true,
+    "OUT_OF_STOCK fabrics remain unavailable even when stock is positive.",
+  );
+  assert.deepEqual(
+    stockCatalogueAssigned,
+    [],
+    "OUT_OF_STOCK fabrics must remain unselectable.",
+  );
+  const selectableInStockCard = stockCatalogueRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find((card) => card.props["data-fabric-code"] === "INLINE-A");
+  assert.ok(!selectableInStockCard?.props.disabled);
 
 } finally {
   animationFrames.clear();

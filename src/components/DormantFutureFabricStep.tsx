@@ -11,6 +11,7 @@ import { getGarmentTypeStepLabel } from "./GarmentTypeStep";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import { resolveFabricAllocationMaterialPricing } from "../utils/fabricAllocationPricing";
 import { resolveFabricPrice } from "../utils/fabricPricing";
+import { getFabricStockPresentation } from "../utils/fabricStockPresentation";
 import {
   getFutureFabricAssignmentTargets,
   getFutureFabricBulkChoiceCandidates,
@@ -920,12 +921,20 @@ export const DormantFutureFabricStep = ({
     const cancelAccessibleName = cancelGarmentLabel
       ? `Cancel ${fabric.name} fabric assignment for ${cancelGarmentLabel}`
       : `Cancel ${fabric.name} fabric assignment`;
+    const stockPresentation = getFabricStockPresentation(fabric);
+    const stockBadgeId = `future-fabric-stock-${fabric.code}`;
+    const stockBadgeClassName =
+      stockPresentation.visible && stockPresentation.tone === "low_stock"
+        ? "border-amber-200 bg-amber-700 text-white"
+        : stockPresentation.visible && stockPresentation.tone === "out_of_stock"
+          ? "border-red-200 bg-red-700 text-white"
+          : "border-heritage-gold/30 bg-heritage-green text-white";
     return (
       <article
         key={fabric.code}
         className="flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm"
       >
-        <div className="aspect-[4/3] overflow-hidden bg-heritage-cream/40">
+        <div className="relative aspect-[4/3] overflow-hidden bg-heritage-cream/40">
           {fabric.image ? (
             <img
               src={fabric.image}
@@ -938,6 +947,18 @@ export const DormantFutureFabricStep = ({
               style={{ backgroundColor: fabric.colorHex }}
               aria-label={`${fabric.color} fabric color`}
             />
+          )}
+          {stockPresentation.visible && (
+            <span
+              id={stockBadgeId}
+              data-fabric-stock-badge="true"
+              data-fabric-stock-code={fabric.code}
+              data-fabric-stock-status={stockPresentation.status}
+              data-fabric-stock-label={stockPresentation.label}
+              className={`pointer-events-none absolute top-2 right-2 z-10 max-w-[calc(100%-1rem)] rounded-full border px-2 py-1 text-[10px] font-bold leading-tight shadow-sm ${stockBadgeClassName}`}
+            >
+              {stockPresentation.label}
+            </span>
           )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col p-4">
@@ -984,7 +1005,7 @@ export const DormantFutureFabricStep = ({
                       : ""
                   }`
             }
-            aria-describedby="future-fabric-catalogue-help future-fabric-assignment-status"
+            aria-describedby={`future-fabric-catalogue-help future-fabric-assignment-status ${stockBadgeId}`}
             className={`group mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold uppercase tracking-wider transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 ${
               isCancelAction
                 ? "bg-heritage-green text-white hover:bg-red-700 hover:text-white focus-visible:bg-red-700"
