@@ -81,6 +81,7 @@ import {
 import {
   assignFutureFabricToGarment,
   applyFutureFabricCardSelection,
+  assignSameFabricProductToGarments,
   cancelFutureFabricCatalogueAssignment,
   getFutureGarmentFabricPlanning,
   getGarmentTypeStepSelectedFabricQuantity,
@@ -801,24 +802,32 @@ export default function DesignStudioView({
     if (activeUploadedDesignSource) {
       setFuturePriceActivatedFabricCode(null);
     }
-    setFabricAllocationState((current) => {
-      return applyFutureFabricCardSelection({
-        state: current,
-        garmentTypeSelection,
-        garmentKey,
-        fabricCode: fabric.code,
-      });
+    const nextState = applyFutureFabricCardSelection({
+      state: fabricAllocationState,
+      garmentTypeSelection,
+      garmentKey,
+      fabricCode: fabric.code,
     });
+    setFabricAllocationState(nextState);
+    return nextState;
   };
 
   const handleRemoveFutureFabricAssignment = (garmentKey: string) => {
     if (activeUploadedDesignSource) {
       setFuturePriceActivatedFabricCode(null);
     }
-    pendingAdditionalConstructionRef.current = null;
-    setFabricAllocationState((current) =>
-      cancelFutureFabricCatalogueAssignment({ state: current, garmentKey }),
-    );
+    const result = cancelFutureFabricCatalogueAssignment({
+      state: fabricAllocationState,
+      garmentKey,
+    });
+    if (result.status !== "cancelled") {
+      return result;
+    }
+    if (pendingAdditionalConstructionRef.current?.garmentKey === garmentKey) {
+      pendingAdditionalConstructionRef.current = null;
+    }
+    setFabricAllocationState(result.state);
+    return result;
   };
 
   // STEP 3: Design Details
@@ -2300,6 +2309,24 @@ export default function DesignStudioView({
       ),
     );
   };
+  const handleAssignSameFabricProductToGarments = (
+    fabricCode: string,
+    garmentKeys: string[],
+  ) => {
+    if (activeUploadedDesignSource) {
+      setFuturePriceActivatedFabricCode(null);
+    }
+    const result = assignSameFabricProductToGarments({
+      state: fabricAllocationState,
+      garmentTypeSelection,
+      fabricCode,
+      garmentKeys,
+    });
+    if (result.status === "assigned") {
+      setFabricAllocationState(result.state);
+    }
+    return result;
+  };
   const handleUseSameFutureFabricForGarment = (garmentKey: string) => {
     if (activeUploadedDesignSource) {
       setFuturePriceActivatedFabricCode(null);
@@ -2426,6 +2453,7 @@ export default function DesignStudioView({
           onAssignFabricToGarment={handleAssignFutureFabricToGarment}
           onRemoveFabricFromGarment={handleRemoveFutureFabricAssignment}
           onUseSameFabricForGarment={handleUseSameFutureFabricForGarment}
+          onAssignSameFabricProduct={handleAssignSameFabricProductToGarments}
           onBack={() => setFutureStageId("garment_type")}
           onContinue={handleOpenDormantDesignStyleStage}
           onUseSameFabric={handleUseSameFutureFabric}

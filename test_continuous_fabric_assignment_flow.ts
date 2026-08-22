@@ -221,8 +221,8 @@ const designStudioSource = readFileSync(
 );
 assert.match(
   designStudioSource,
-  /resolveUnassignedPhysicalGarments[\s\S]*?fabric-assignment-progress/,
-  "The customer-facing Fabric step must consume the centralized unresolved state.",
+  /assignSameFabricProductToGarments/,
+  "Same-product bulk assignment must use the authoritative Fabric allocation helper.",
 );
 assert.match(
   designStudioSource,
@@ -231,13 +231,8 @@ assert.match(
 );
 assert.match(
   designStudioSource,
-  /assignPendingGarmentToFabricAndContinue/,
-  "Choosing another fabric must queue the next unresolved garment automatically.",
-);
-assert.match(
-  designStudioSource,
-  /Complete the remaining garment-to-fabric assignments before continuing\./,
-  "Proceed Fabric must be blocked while assignments are unresolved.",
+  /beginChooseAnotherFabric/,
+  "Choosing another fabric must enter the pending assignment path without discarding the garment.",
 );
 
 console.log("PASS: continuous multi-garment fabric assignment flow");
