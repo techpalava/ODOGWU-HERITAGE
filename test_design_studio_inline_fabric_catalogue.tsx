@@ -7,6 +7,7 @@ import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateE
 import type { Fabric, GarmentTypeStepSelection } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
+import { STEP_1_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
 import {
   assignFutureFabricToGarment,
   applyFutureFabricCardSelection,
@@ -110,6 +111,44 @@ const findButton = (root: ReactTestInstance, text: string) =>
 const findVisibleFabricActionError = (root: ReactTestInstance) =>
   root.findAllByProps({ "data-fabric-visible-action-error": "true" })[0] ??
   null;
+
+const assertFabricProgress = (
+  root: ReactTestInstance,
+  fabricSelected: number,
+  fabricRequired: number,
+  garmentsAssigned: number,
+  garmentsRequired: number,
+) => {
+  const progressRegion = root.findByProps({ "data-fabric-progress": "true" });
+  const fabricLine = progressRegion.findByProps({
+    "data-fabric-selection-progress": "true",
+  });
+  const garmentLine = progressRegion.findByProps({
+    "data-garment-assignment-progress": "true",
+  });
+  assert.match(
+    textContent(fabricLine),
+    new RegExp(
+      `^Fabric selections: ${fabricSelected} of ${fabricRequired} needed$`,
+    ),
+  );
+  assert.match(
+    textContent(garmentLine),
+    new RegExp(
+      `^Garments assigned: ${garmentsAssigned} of ${garmentsRequired}$`,
+    ),
+  );
+  assert.equal(
+    String(progressRegion.props.className ?? "").includes("sr-only"),
+    false,
+    "Fabric progress must remain visible to sighted customers.",
+  );
+  assert.equal(
+    String(progressRegion.props.className ?? "").includes("min-w-0"),
+    true,
+    "Fabric progress markup must wrap safely on narrow layouts.",
+  );
+};
 
 const renderStep = (
   state = FabricAllocationStateEngine.initialize(),
@@ -299,7 +338,7 @@ assert.equal(
   }).length,
   2,
 );
-assert.match(textContent(shirtTrouserRenderer.root), /Fabrics selected: 0 \/ 1/);
+assertFabricProgress(shirtTrouserRenderer.root, 0, 1, 0, 2);
 assert.equal(
   findButton(shirtTrouserRenderer.root, "Continue to Design Style"),
   undefined,
@@ -341,6 +380,7 @@ assert.deepEqual(
   [{ fabricCode: "INLINE-A", garmentKeys: ["base:shirt"] }],
   "The first successful fabric assignment must only occupy the clicked garment.",
 );
+assertFabricProgress(shirtTrouserRenderer.root, 1, 1, 1, 2);
 assert.match(
   textContent(shirtTrouserRenderer.root),
   /Use this fabric for your other garments\?/,
@@ -383,7 +423,7 @@ assert.equal(
   }).length,
   0,
 );
-assert.match(textContent(shirtTrouserRenderer.root), /Fabrics selected: 1 \/ 1/);
+assertFabricProgress(shirtTrouserRenderer.root, 1, 1, 2, 2);
 assert.match(
   textContent(shirtTrouserRenderer.root),
   /Garment Construction Subtotal€140\.00/,
@@ -478,7 +518,7 @@ assert.deepEqual(
   "YES — Use for All must create another allocation for Kaftan using the same fabric product.",
 );
 assert.equal(mixedState.pendingFabricGarment, null);
-assert.match(textContent(mixedRenderer.root), /Fabrics selected: 2 \/ 2/);
+assertFabricProgress(mixedRenderer.root, 2, 2, 3, 3);
 assert.ok(findButton(mixedRenderer.root, "Continue to Design Style"));
 let failedAssignmentRenderer!: ReturnType<typeof create>;
 const failedAssignmentState = FabricAllocationStateEngine.initialize();
@@ -1697,7 +1737,7 @@ try {
     2,
     "Fresh Shirt + Trouser must show both garments as needing fabric.",
   );
-  assert.match(textContent(shirtTrouserRenderer.root), /Fabrics selected: 0 \/ 1/);
+  assertFabricProgress(shirtTrouserRenderer.root, 0, 1, 0, 2);
   assert.equal(
     findButton(shirtTrouserRenderer.root, "Continue to Design Style"),
     undefined,
@@ -1736,7 +1776,7 @@ try {
     [{ fabricCode: "INLINE-A", garmentKeys: ["base:shirt", "base:trouser"] }],
     "YES — Use for All must fill one authoritative allocation through the capacity engine.",
   );
-  assert.match(textContent(shirtTrouserRenderer.root), /Fabrics selected: 1 \/ 1/);
+  assertFabricProgress(shirtTrouserRenderer.root, 1, 1, 2, 2);
   assert.equal(
     shirtTrouserRenderer.root.findAllByProps({
       "data-assignment-status": "unassigned",
@@ -1840,7 +1880,7 @@ try {
     ],
   );
   assert.equal(shirtTrouserKaftanState.pendingFabricGarment, null);
-  assert.match(textContent(shirtTrouserKaftanRenderer.root), /Fabrics selected: 2 \/ 2/);
+  assertFabricProgress(shirtTrouserKaftanRenderer.root, 2, 2, 3, 3);
 
   for (const dedicatedCase of [
     { garmentType: "full_length_gown" as const, key: "base:full_length_gown" },
@@ -1985,7 +2025,7 @@ try {
     }).length,
     1,
   );
-  assert.match(textContent(removalRenderer.root), /Fabrics selected: 1 \/ 1/);
+  assertFabricProgress(removalRenderer.root, 1, 1, 1, 2);
   assert.doesNotMatch(
     textContent(removalRenderer.root),
     /Your fabric can carry one more garment\. \(Optional\)/,
@@ -2028,7 +2068,7 @@ try {
   await act(async () => removalRenderer.update(renderRemoval()));
   assert.equal(removalState.fabricAllocations.length, 0);
   assert.equal(removalState.activeAllocationId, null);
-  assert.match(textContent(removalRenderer.root), /Fabrics selected: 0 \/ 1/);
+  assertFabricProgress(removalRenderer.root, 0, 1, 0, 2);
   assert.doesNotMatch(
     textContent(removalRenderer.root),
     /Your fabric can carry one more garment\. \(Optional\)/,
@@ -2269,7 +2309,7 @@ try {
     "unassigned",
   );
   assert.match(textContent(inUseCancelRenderer.root), /Fabric not assigned/);
-  assert.match(textContent(inUseCancelRenderer.root), /Fabrics selected: 0 \/ 1/);
+  assertFabricProgress(inUseCancelRenderer.root, 0, 1, 0, 1);
   assert.equal(
     findFabricCard(inUseCancelRenderer.root, "INLINE-A")?.props[
       "data-fabric-status"
@@ -2386,10 +2426,7 @@ try {
     ),
     /Inline Heritage B/,
   );
-  assert.match(
-    textContent(preserveOtherRenderer.root),
-    /Fabrics selected: 1 \/ 1/,
-  );
+  assertFabricProgress(preserveOtherRenderer.root, 1, 1, 1, 2);
 
   let sharedCodeState = applyFutureFabricCardSelection({
     state: FabricAllocationStateEngine.initialize(),
@@ -3263,6 +3300,42 @@ try {
     ),
     "The pending additional garment itself must still assign through assignPendingGarmentToFabric.",
   );
+
+  const eightGarmentSelection = reconcileGarmentTypeStepSelection({
+    selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],
+    selectedDemographics: ["male"],
+    normalizedCustomDetailCatalog: catalog,
+  }).selection;
+  let eightGarmentState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: eightGarmentSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  eightGarmentState = commitSameFabric({
+    state: eightGarmentState,
+    garmentTypeSelection: eightGarmentSelection,
+    fabricCode: "INLINE-A",
+    garmentKeys: remainingGarmentKeys(eightGarmentSelection, eightGarmentState),
+  });
+  let eightGarmentRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    eightGarmentRenderer = create(
+      renderStep(
+        eightGarmentState,
+        (fabric, garmentKey) => {
+          eightGarmentState = applyFutureFabricCardSelection({
+            state: eightGarmentState,
+            garmentTypeSelection: eightGarmentSelection,
+            garmentKey,
+            fabricCode: fabric.code,
+          });
+        },
+        eightGarmentSelection,
+      ),
+    );
+  });
+  assertFabricProgress(eightGarmentRenderer.root, 5, 5, 8, 8);
 
 } finally {
   animationFrames.clear();

@@ -99,6 +99,18 @@ const formatGarmentList = (labels: string[]): string => {
   return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
 };
 
+const formatFabricSelectionProgress = (
+  selectedFabricQuantity: number,
+  requiredFabricQuantity: number,
+): string =>
+  `Fabric selections: ${selectedFabricQuantity} of ${requiredFabricQuantity} needed`;
+
+const formatGarmentAssignmentProgress = (
+  assignedGarmentCount: number,
+  requiredGarmentCount: number,
+): string =>
+  `Garments assigned: ${assignedGarmentCount} of ${requiredGarmentCount}`;
+
 const getElementAttribute = (element: HTMLElement, name: string): string | null =>
   typeof element.getAttribute === "function" ? element.getAttribute(name) : null;
 
@@ -1034,12 +1046,24 @@ export const DormantFutureFabricStep = ({
               share a fabric while the existing two-unit capacity rule allows it.
             </p>
           </div>
-          <p
+          <div
             aria-live="polite"
-            className="shrink-0 rounded-full border border-heritage-gold/30 bg-heritage-cream/35 px-4 py-2 text-xs font-bold text-heritage-green"
+            data-fabric-progress="true"
+            className="min-w-0 max-w-full shrink-0 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 px-4 py-2 text-xs font-bold text-heritage-green"
           >
-            Fabrics selected: {selectedFabricQuantity} / {requiredFabricQuantity}
-          </p>
+            <p data-fabric-selection-progress="true">
+              {formatFabricSelectionProgress(
+                selectedFabricQuantity,
+                requiredFabricQuantity,
+              )}
+            </p>
+            <p data-garment-assignment-progress="true" className="mt-1">
+              {formatGarmentAssignmentProgress(
+                completion.assignedGarmentCount,
+                completion.requiredGarmentCount,
+              )}
+            </p>
+          </div>
         </div>
 
         <div className="mt-5 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
