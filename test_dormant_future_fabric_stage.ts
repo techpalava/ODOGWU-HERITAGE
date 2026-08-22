@@ -21,6 +21,7 @@ import {
   getFutureFabricStageCompletion,
   reconcileFutureFabricAllocationState,
   selectFutureFabric,
+  assignSameFabricProductToGarments,
 } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAllocationPricing";
@@ -55,6 +56,17 @@ const selection = (
     selectedDemographic: "unisex",
     normalizedCustomDetailCatalog: catalog,
   }).selection;
+const commitSameFabric = (
+  args: Parameters<typeof assignSameFabricProductToGarments>[0],
+) => {
+  const result = assignSameFabricProductToGarments(args);
+  assert.equal(
+    result.status,
+    "assigned",
+    result.status === "blocked" ? result.reason : "",
+  );
+  return result.state;
+};
 
 const incompleteJourney = createDormantDesignStudioJourneyState({
   normalizedCustomDetailCatalog: catalog,
@@ -114,6 +126,12 @@ let sharedState = selectFutureFabric({
   fabricCode: "FAB-A",
   garmentTypeSelection: shirtTrouser,
 });
+sharedState = commitSameFabric({
+  state: sharedState,
+  garmentTypeSelection: shirtTrouser,
+  fabricCode: "FAB-A",
+  garmentKeys: ["base:trouser"],
+});
 assert.equal(sharedState.fabricAllocations.length, 1);
 assert.deepEqual(
   sharedState.fabricAllocations[0].garmentAssignments.map(
@@ -136,11 +154,14 @@ let overflowState = reconcileFutureFabricAllocationState({
   state: sharedState,
   garmentTypeSelection: threeGarments,
 });
-overflowState = selectFutureFabric({
-  state: overflowState,
-  fabricCode: "FAB-A",
-  garmentTypeSelection: threeGarments,
-});
+const overflowSkirt = getFutureFabricGarmentSelections(threeGarments).find(
+  (garment) => garment.garmentSpec?.key === "base:skirt",
+);
+assert.ok(overflowSkirt);
+overflowState = FabricAllocationStateEngine.attemptAppendGarment(
+  overflowState,
+  overflowSkirt,
+);
 assert.equal(overflowState.pendingFabricGarment?.garmentKey, "base:skirt");
 overflowState =
   FabricAllocationStateEngine.beginChooseAnotherFabric(overflowState);
@@ -264,13 +285,13 @@ if (oldPrice.status === "resolved" && refreshedPrice.status === "resolved") {
   assert.ok(priceWithCurrentCatalog && priceAfterAdminUpdate);
   assert.equal(priceWithCurrentCatalog.clothingPrice, constructionPrice);
   assert.equal(priceWithCurrentCatalog.totalFabricMaterialPrice, 10);
-  assert.equal(priceWithCurrentCatalog.fabricPrice, 10);
+  assert.equal(priceWithCurrentCatalog.includedFabricPrice, 10);
   assert.equal(priceAfterAdminUpdate.clothingPrice, constructionPrice);
   assert.equal(priceAfterAdminUpdate.totalFabricMaterialPrice, 37);
-  assert.equal(priceAfterAdminUpdate.fabricPrice, 37);
+  assert.equal(priceAfterAdminUpdate.includedFabricPrice, 37);
   assert.equal(
-    priceAfterAdminUpdate.garmentSubtotal -
-      priceWithCurrentCatalog.garmentSubtotal,
+    priceAfterAdminUpdate.includedFabricPrice -
+      priceWithCurrentCatalog.includedFabricPrice,
     27,
   );
 }

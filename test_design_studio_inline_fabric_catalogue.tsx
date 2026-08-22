@@ -10,8 +10,10 @@ import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepSt
 import {
   assignFutureFabricToGarment,
   applyFutureFabricCardSelection,
+  assignSameFabricProductToGarments,
   cancelFutureFabricCatalogueAssignment,
   getFutureFabricAssignmentTargets,
+  getFutureUnassignedFabricTargets,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
   removeFutureFabricAssignment,
@@ -105,6 +107,10 @@ const findButton = (root: ReactTestInstance, text: string) =>
     .findAllByType("button")
     .find((button) => textContent(button).includes(text));
 
+const findVisibleFabricActionError = (root: ReactTestInstance) =>
+  root.findAllByProps({ "data-fabric-visible-action-error": "true" })[0] ??
+  null;
+
 const renderStep = (
   state = FabricAllocationStateEngine.initialize(),
   onAssign: (fabric: Fabric, garmentKey: string) => void = () => undefined,
@@ -113,6 +119,10 @@ const renderStep = (
   onChooseAnotherFabric: () => void = () => undefined,
   onRemoveFabricFromGarment: (garmentKey: string) => void = () => undefined,
   constructionPrice?: number,
+  onAssignSameFabricProduct: (
+    fabricCode: string,
+    garmentKeys: string[],
+  ) => void = () => undefined,
 ) => {
   const completion = getFutureFabricStageCompletion({
     garmentTypeSelection: selection,
@@ -135,6 +145,7 @@ const renderStep = (
       onAssignFabricToGarment={onAssign}
       onRemoveFabricFromGarment={onRemoveFabricFromGarment}
       onUseSameFabricForGarment={onUseSameFabricForGarment}
+      onAssignSameFabricProduct={onAssignSameFabricProduct}
       onBack={() => undefined}
       onContinue={() => undefined}
       onUseSameFabric={() => undefined}
@@ -142,6 +153,64 @@ const renderStep = (
       onCancelPendingFabric={() => undefined}
     />
   );
+};
+
+const remainingGarmentKeys = (
+  selection: GarmentTypeStepSelection,
+  state: ReturnType<typeof FabricAllocationStateEngine.initialize>,
+) =>
+  getFutureUnassignedFabricTargets({
+    garmentTypeSelection: selection,
+    fabricAllocationState: state,
+  }).map(({ assignment }) => assignment.garmentKey);
+
+const commitSameFabric = (
+  args: Parameters<typeof assignSameFabricProductToGarments>[0],
+) => {
+  const result = assignSameFabricProductToGarments(args);
+  assert.equal(
+    result.status,
+    "assigned",
+    result.status === "blocked" ? result.reason : "",
+  );
+  return result.state;
+};
+
+const applySameFabricResult =
+  (
+    getState: () => ReturnType<typeof FabricAllocationStateEngine.initialize>,
+    setState: (
+      state: ReturnType<typeof FabricAllocationStateEngine.initialize>,
+    ) => void,
+    selection: GarmentTypeStepSelection,
+  ) =>
+  (fabricCode: string, garmentKeys: string[]) => {
+    const result = assignSameFabricProductToGarments({
+      state: getState(),
+      garmentTypeSelection: selection,
+      fabricCode,
+      garmentKeys,
+    });
+    if (result.status === "assigned") setState(result.state);
+    return result;
+  };
+
+const assignRemainingSameFabric = (
+  state: ReturnType<typeof FabricAllocationStateEngine.initialize>,
+  selection: GarmentTypeStepSelection,
+  fabricCode: string,
+) =>
+  commitSameFabric({
+    state,
+    garmentTypeSelection: selection,
+    fabricCode,
+    garmentKeys: remainingGarmentKeys(selection, state),
+  });
+
+const clickBulkYes = async (root: ReactTestInstance) => {
+  const yes = findButton(root, "YES — Use for All");
+  assert.ok(yes, "Expected the first-fabric bulk-choice YES action.");
+  await act(async () => yes.props.onClick());
 };
 
 let assigned: Array<{ fabricCode: string; garmentKey: string }> = [];
@@ -201,6 +270,7 @@ const applyShirtTrouserFabric = (fabric: Fabric, garmentKey: string) => {
     garmentKey,
     fabricCode: fabric.code,
   });
+  return shirtTrouserState;
 };
 await act(async () => {
   shirtTrouserRenderer = create(
@@ -208,6 +278,18 @@ await act(async () => {
       shirtTrouserState,
       applyShirtTrouserFabric,
       shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      (fabricCode, garmentKeys) =>
+        applySameFabricResult(
+          () => shirtTrouserState,
+          (state) => {
+            shirtTrouserState = state;
+          },
+          shirtTrouserSelection,
+        )(fabricCode, garmentKeys),
     ),
   );
 });
@@ -234,6 +316,54 @@ await act(async () =>
       shirtTrouserState,
       applyShirtTrouserFabric,
       shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      (fabricCode, garmentKeys) =>
+        applySameFabricResult(
+          () => shirtTrouserState,
+          (state) => {
+            shirtTrouserState = state;
+          },
+          shirtTrouserSelection,
+        )(fabricCode, garmentKeys),
+    ),
+  ),
+);
+assert.deepEqual(
+  shirtTrouserState.fabricAllocations.map((allocation) => ({
+    fabricCode: allocation.fabricCode,
+    garmentKeys: allocation.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+  })),
+  [{ fabricCode: "INLINE-A", garmentKeys: ["base:shirt"] }],
+  "The first successful fabric assignment must only occupy the clicked garment.",
+);
+assert.match(
+  textContent(shirtTrouserRenderer.root),
+  /Use this fabric for your other garments\?/,
+);
+await clickBulkYes(shirtTrouserRenderer.root);
+await act(async () =>
+  shirtTrouserRenderer.update(
+    renderStep(
+      shirtTrouserState,
+      applyShirtTrouserFabric,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      (fabricCode, garmentKeys) =>
+        applySameFabricResult(
+          () => shirtTrouserState,
+          (state) => {
+            shirtTrouserState = state;
+          },
+          shirtTrouserSelection,
+        )(fabricCode, garmentKeys),
     ),
   ),
 );
@@ -245,7 +375,7 @@ assert.deepEqual(
     ),
   })),
   [{ fabricCode: "INLINE-A", garmentKeys: ["base:shirt", "base:trouser"] }],
-  "One direct card click must fill the compatible Shirt and Trouser allocation through the orchestration seam.",
+  "YES — Use for All must assign the same fabric product to remaining garments through the allocation engine.",
 );
 assert.equal(
   shirtTrouserRenderer.root.findAllByProps({
@@ -262,8 +392,8 @@ assert.match(
 assert.ok(findButton(shirtTrouserRenderer.root, "Continue to Design Style"));
 assert.match(
   textContent(shirtTrouserRenderer.root),
-  /Inline Heritage A assigned to Standard Shirt and Trouser\./,
-  "The live announcement must describe every garment changed by one direct assignment.",
+  /Inline Heritage A assigned to Trouser\./,
+  "The live announcement must describe garments assigned by YES — Use for All.",
 );
 assert.equal(
   shirtTrouserRenderer.root.findByProps({
@@ -287,6 +417,7 @@ const applyMixedFabric = (fabric: Fabric, garmentKey: string) => {
     garmentKey,
     fabricCode: fabric.code,
   });
+  return mixedState;
 };
 const renderMixed = () =>
   renderStep(
@@ -299,6 +430,15 @@ const renderMixed = () =>
         mixedState,
       );
     },
+    () => undefined,
+    undefined,
+    applySameFabricResult(
+      () => mixedState,
+      (state) => {
+        mixedState = state;
+      },
+      shirtTrouserKaftanSelection,
+    ),
   );
 await act(async () => {
   mixedRenderer = create(renderMixed());
@@ -316,26 +456,13 @@ assert.deepEqual(
       (assignment) => assignment.garmentKey,
     ),
   })),
-  [{ fabricCode: "INLINE-A", garmentKeys: ["base:shirt", "base:trouser"] }],
+  [{ fabricCode: "INLINE-A", garmentKeys: ["base:shirt"] }],
 );
-assert.equal(
-  mixedState.pendingFabricGarment?.garmentKey,
-  "base:kaftan",
-  "The dedicated Kaftan must remain pending after the shared allocation fills.",
+assert.match(
+  textContent(mixedRenderer.root),
+  /Use this fabric for your other garments\?/,
 );
-assert.match(textContent(mixedRenderer.root), /Fabrics selected: 1 \/ 2/);
-assert.match(textContent(mixedRenderer.root), /Inline Heritage A assigned to Standard Shirt and Trouser\./);
-await act(async () =>
-  findButton(mixedRenderer.root, "Choose Another Fabric")!.props.onClick({
-    currentTarget: {},
-  }),
-);
-await act(async () => mixedRenderer.update(renderMixed()));
-const mixedSecondCard = mixedRenderer.root
-  .findAllByProps({ "data-fabric-card": "true" })
-  .find((card) => card.props["data-fabric-code"] === "INLINE-B");
-assert.ok(mixedSecondCard);
-await act(async () => mixedSecondCard.props.onClick());
+await clickBulkYes(mixedRenderer.root);
 await act(async () => mixedRenderer.update(renderMixed()));
 assert.deepEqual(
   mixedState.fabricAllocations.map((allocation) => ({
@@ -346,16 +473,12 @@ assert.deepEqual(
   })),
   [
     { fabricCode: "INLINE-A", garmentKeys: ["base:shirt", "base:trouser"] },
-    { fabricCode: "INLINE-B", garmentKeys: ["base:kaftan"] },
+    { fabricCode: "INLINE-A", garmentKeys: ["base:kaftan"] },
   ],
-  "A second direct card click must allocate only the pending Kaftan in a new allocation.",
+  "YES — Use for All must create another allocation for Kaftan using the same fabric product.",
 );
 assert.equal(mixedState.pendingFabricGarment, null);
 assert.match(textContent(mixedRenderer.root), /Fabrics selected: 2 \/ 2/);
-assert.match(
-  textContent(mixedRenderer.root),
-  /Inline Heritage B assigned to Long Shirt \(Kaftan\)\./,
-);
 assert.ok(findButton(mixedRenderer.root, "Continue to Design Style"));
 let failedAssignmentRenderer!: ReturnType<typeof create>;
 const failedAssignmentState = FabricAllocationStateEngine.initialize();
@@ -557,8 +680,13 @@ const pendingState = FabricAllocationStateEngine.attemptAppendGarment(
   fullState,
   pendingTarget.selection,
 );
+const bulkChoiceCount = (root: ReactTestInstance) =>
+  root.findAllByProps({ "data-testid": "future-fabric-bulk-choice" }).length;
+
 let useSameTarget = "";
 let chooseAnotherCalls = 0;
+void useSameTarget;
+void chooseAnotherCalls;
 let capacityState = FabricAllocationStateEngine.initialize();
 let capacityRenderer!: ReturnType<typeof create>;
 const renderCapacity = () =>
@@ -571,19 +699,30 @@ const renderCapacity = () =>
         garmentKey,
         fabricCode: fabric.code,
       }).state;
+      return capacityState;
     },
     threeGarmentSelection,
     (garmentKey) => {
       useSameTarget = garmentKey;
     },
+    () => undefined,
+    () => undefined,
+    undefined,
+    applySameFabricResult(
+      () => capacityState,
+      (state) => {
+        capacityState = state;
+      },
+      threeGarmentSelection,
+    ),
   );
 await act(async () => {
   capacityRenderer = create(renderCapacity());
 });
 assert.equal(
-  capacityRenderer.root.findAllByProps({ role: "status" }).length,
+  bulkChoiceCount(capacityRenderer.root),
   0,
-  "Mounting Fabric from state alone must not infer a capacity offer.",
+  "Mounting Fabric from state alone must not infer a first-fabric bulk choice.",
 );
 await act(async () =>
   capacityRenderer.root
@@ -592,24 +731,33 @@ await act(async () =>
 );
 await act(async () => capacityRenderer.update(renderCapacity()));
 assert.equal(
-  capacityRenderer.root.findAllByProps({ role: "status" }).length,
+  bulkChoiceCount(capacityRenderer.root),
   1,
-  "A genuine successful assignment with spare capacity must show the offer.",
+  "The first successful fabric assignment must show the bulk-choice dialog.",
 );
 assert.match(
   textContent(capacityRenderer.root),
-  /Your fabric can carry one more garment\. \(Optional\)/,
+  /Use this fabric for your other garments\?/,
 );
-assert.match(textContent(capacityRenderer.root), /Next: Trouser/);
+assert.match(
+  textContent(capacityRenderer.root),
+  /You selected Inline Heritage A\. Would you like to use this same fabric for all remaining garments\?/,
+);
 await act(async () =>
-  capacityRenderer.root
-    .findByProps({ "aria-label": "Dismiss fabric capacity suggestion" })
-    .props.onClick(),
+  findButton(capacityRenderer.root, "NO — Choose Garments")!.props.onClick(),
 );
 assert.equal(
-  capacityRenderer.root.findAllByProps({ role: "status" }).length,
+  capacityRenderer.root.findByProps({ "data-testid": "future-fabric-bulk-choice" })
+    .props["data-bulk-choice-phase"],
+  "choose",
+);
+await act(async () =>
+  findButton(capacityRenderer.root, "Choose Fabrics Individually")!.props.onClick(),
+);
+assert.equal(
+  bulkChoiceCount(capacityRenderer.root),
   0,
-  "Dismissing the one-shot offer must close it immediately.",
+  "Choose Fabrics Individually must close the bulk-choice dialog.",
 );
 
 let remountedCapacityRenderer!: ReturnType<typeof create>;
@@ -617,9 +765,9 @@ await act(async () => {
   remountedCapacityRenderer = create(renderCapacity());
 });
 assert.equal(
-  remountedCapacityRenderer.root.findAllByProps({ role: "status" }).length,
+  bulkChoiceCount(remountedCapacityRenderer.root),
   0,
-  "Draft hydration or completed-step remount must not reconstruct an offer.",
+  "Draft hydration or completed-step remount must not reconstruct the bulk choice.",
 );
 
 let capacityState2 = FabricAllocationStateEngine.initialize();
@@ -640,6 +788,15 @@ const renderCapacity2 = () =>
     () => {
       chooseAnotherCalls += 1;
     },
+    () => undefined,
+    undefined,
+      applySameFabricResult(
+        () => capacityState2,
+        (state) => {
+          capacityState2 = state;
+        },
+        threeGarmentSelection,
+      ),
   );
 await act(async () => {
   capacityRenderer2 = create(renderCapacity2());
@@ -651,35 +808,21 @@ await act(async () =>
 );
 await act(async () => capacityRenderer2.update(renderCapacity2()));
 assert.equal(
-  capacityRenderer2.root.findAllByProps({ role: "status" }).length,
+  bulkChoiceCount(capacityRenderer2.root),
   1,
-  "A later genuine assignment may create a new one-shot offer.",
+  "A later genuine first assignment may create a new bulk choice.",
 );
 await act(async () =>
-  findButton(capacityRenderer2.root, "Select Different Fabric")!.props.onClick({
-    currentTarget: {},
-  }),
+  findButton(capacityRenderer2.root, "NO — Choose Garments")!.props.onClick(),
 );
-assert.equal(chooseAnotherCalls, 1);
 assert.match(
   textContent(capacityRenderer2.root),
-  /Choosing fabric for: Trouser/,
-);
-assert.doesNotMatch(
-  textContent(capacityRenderer2.root),
-  /Your fabric can carry one more garment\. \(Optional\)/,
-  "Selecting another Fabric must dismiss the exact capacity offer.",
-);
-assert.equal(
-  capacityRenderer2.root.findByProps({
-    "data-testid": "future-fabric-inline-catalogue",
-  }).props["data-catalogue-dialog-open"],
-  false,
+  /Which other garments should use this fabric\?/,
 );
 assert.equal(
   findButton(capacityRenderer2.root, "Select Fabric"),
   undefined,
-  "The capacity flow must not reintroduce a bottom Select Fabric button.",
+  "The bulk-choice flow must not reintroduce a bottom Select Fabric button.",
 );
 assert.equal(
   capacityRenderer2.root.findAllByProps({ "aria-pressed": true }).length,
@@ -704,6 +847,16 @@ const renderCapacity3 = () =>
     (garmentKey) => {
       useSameTarget = garmentKey;
     },
+    () => undefined,
+    () => undefined,
+    undefined,
+      applySameFabricResult(
+        () => capacityState3,
+        (state) => {
+          capacityState3 = state;
+        },
+        threeGarmentSelection,
+      ),
   );
 await act(async () => {
   capacityRenderer3 = create(renderCapacity3());
@@ -714,11 +867,15 @@ await act(async () =>
     .props.onClick(),
 );
 await act(async () => capacityRenderer3.update(renderCapacity3()));
-await act(async () =>
-  findButton(capacityRenderer3.root, "Use Same Fabric")!.props.onClick(),
+await clickBulkYes(capacityRenderer3.root);
+await act(async () => capacityRenderer3.update(renderCapacity3()));
+assert.deepEqual(
+  capacityState3.fabricAllocations.map((allocation) =>
+    allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+  ),
+  [["base:shirt", "base:trouser"], ["base:skirt"]],
 );
-assert.equal(useSameTarget, "base:trouser");
-assert.equal(capacityRenderer3.root.findAllByProps({ role: "status" }).length, 0);
+assert.equal(bulkChoiceCount(capacityRenderer3.root), 0);
 
 let staleOfferState = FabricAllocationStateEngine.initialize();
 let staleOfferRenderer!: ReturnType<typeof create>;
@@ -742,6 +899,14 @@ const renderStaleOffer = () =>
         garmentKey,
       });
     },
+    undefined,
+    applySameFabricResult(
+      () => staleOfferState,
+      (state) => {
+        staleOfferState = state;
+      },
+      threeGarmentSelection,
+    ),
   );
 await act(async () => {
   staleOfferRenderer = create(renderStaleOffer());
@@ -752,7 +917,7 @@ await act(async () =>
     .props.onClick(),
 );
 await act(async () => staleOfferRenderer.update(renderStaleOffer()));
-assert.equal(staleOfferRenderer.root.findAllByProps({ role: "status" }).length, 1);
+assert.equal(bulkChoiceCount(staleOfferRenderer.root), 1);
 await act(async () =>
   staleOfferRenderer.root
     .findByProps({ "aria-label": "Remove fabric from Standard Shirt" })
@@ -760,18 +925,18 @@ await act(async () =>
 );
 await act(async () => staleOfferRenderer.update(renderStaleOffer()));
 assert.equal(
-  staleOfferRenderer.root.findAllByProps({ role: "status" }).length,
+  bulkChoiceCount(staleOfferRenderer.root),
   0,
-  "Removal must invalidate an offer before its stale target can be used.",
+  "Removal must close the first-fabric bulk choice.",
 );
 let removalRemountRenderer!: ReturnType<typeof create>;
 await act(async () => {
   removalRemountRenderer = create(renderStaleOffer());
 });
 assert.equal(
-  removalRemountRenderer.root.findAllByProps({ role: "status" }).length,
+  bulkChoiceCount(removalRemountRenderer.root),
   0,
-  "Reload and completed-step remount after removal must keep the offer closed.",
+  "Reload and completed-step remount after removal must keep the bulk choice closed.",
 );
 await act(async () =>
   staleOfferRenderer.root
@@ -780,9 +945,9 @@ await act(async () =>
 );
 await act(async () => staleOfferRenderer.update(renderStaleOffer()));
 assert.equal(
-  staleOfferRenderer.root.findAllByProps({ role: "status" }).length,
+  bulkChoiceCount(staleOfferRenderer.root),
   1,
-  "A genuine later assignment may create a fresh validated offer after removal.",
+  "A genuine later first assignment after all fabrics are removed may show the bulk choice again.",
 );
 
 let pendingChoiceState = pendingState;
@@ -801,6 +966,13 @@ await act(async () => {
               pendingChoiceState,
               fabric.code,
             );
+        } else {
+          pendingChoiceState = applyFutureFabricCardSelection({
+            state: pendingChoiceState,
+            garmentTypeSelection: threeGarmentSelection,
+            garmentKey,
+            fabricCode: fabric.code,
+          });
         }
       },
       threeGarmentSelection,
@@ -814,6 +986,19 @@ await act(async () => {
     ),
   );
 });
+pendingChoiceRenderer.root
+  .findAllByType("button")
+  .filter((button) => {
+    const label = textContent(button);
+    return label.includes("Add Fabric") || label.includes("Change Fabric");
+  })
+  .forEach((button) => {
+    assert.equal(
+      Boolean(button.props.disabled),
+      false,
+      "A full pending allocation must not disable unrelated garment fabric actions.",
+    );
+  });
 await act(async () => {
   findButton(pendingChoiceRenderer.root, "Choose Another Fabric")!.props.onClick({
     currentTarget: {},
@@ -917,6 +1102,8 @@ const previousDocument = runtime.document;
 const previousWindow = runtime.window;
 let activeFocusMock: FocusMock | null = null;
 let dialogFocusMock: FocusMock | null = null;
+let bulkChoiceDialogFocusMock: FocusMock | null = null;
+const bulkDialogFocusables: FocusMock[] = [];
 const dialogButtonHandlers = new Map<string, () => void>();
 const focusMocks = new Map<string, FocusMock>();
 const mockDocument = {
@@ -1013,6 +1200,22 @@ const createFocusMock = (element: ReactElement): FocusMock => {
   };
   mock.dispatchKeyDown = (event) => keydownHandler?.(event);
   if (props.role === "dialog") dialogFocusMock = mock;
+  if (props["data-testid"] === "future-fabric-bulk-choice") {
+    bulkChoiceDialogFocusMock = mock;
+    mock.querySelectorAll = () =>
+      bulkDialogFocusables.filter((element) => !element.hasAttribute("disabled"));
+  }
+  if (props["data-bulk-choice-control"]) {
+    if (!mock.label && tagName === "BUTTON") {
+      mock.label = elementText(props.children) || undefined;
+    }
+    if (!mock.label && tagName === "INPUT") {
+      mock.label =
+        (typeof props.id === "string" ? props.id : undefined) ||
+        mock.label;
+    }
+    bulkDialogFocusables.push(mock);
+  }
   if (tagName === "BUTTON" && typeof props.onClick === "function") {
     const buttonLabel =
       typeof props["aria-label"] === "string"
@@ -1148,6 +1351,7 @@ try {
           garmentKey,
           fabricCode: fabric.code,
         }).state;
+        return capacityFocusState;
       },
       threeGarmentSelection,
     );
@@ -1163,28 +1367,26 @@ try {
       .props.onClick(),
   );
   await act(async () => capacityFocusRenderer.update(renderCapacityFocus()));
-  const differentFabric = findButton(
-    capacityFocusRenderer.root,
-    "Select Different Fabric",
-  );
-  assert.ok(differentFabric);
-  const detachedCapacityTrigger = {
-    ...focusMocks.get("Select Different Fabric"),
-    isConnected: true,
-  } as FocusMock;
   await act(async () =>
-    differentFabric.props.onClick({ currentTarget: detachedCapacityTrigger }),
+    findButton(capacityFocusRenderer.root, "NO — Choose Garments")!.props.onClick(),
   );
-  detachedCapacityTrigger.isConnected = false;
   await act(async () =>
-    findButton(capacityFocusRenderer.root, "Cancel")!.props.onClick(),
+    findButton(capacityFocusRenderer.root, "Choose Fabrics Individually")!.props.onClick(),
   );
   flushAnimationFrames();
   assert.equal(
-    activeFocusMock?.label,
-    "Add fabric for Trouser",
-    "Capacity cancellation must skip the detached offer trigger and restore focus to the target garment action.",
+    capacityFocusRenderer.root.findAllByProps({
+      "data-testid": "future-fabric-bulk-choice",
+    }).length,
+    0,
   );
+  const remainingAddButtons = capacityFocusRenderer.root
+    .findAllByType("button")
+    .filter((button) => textContent(button).includes("Add Fabric"));
+  assert.ok(remainingAddButtons.length >= 2);
+  remainingAddButtons.forEach((button) => {
+    assert.equal(Boolean(button.props.disabled), false);
+  });
   assert.notEqual(activeFocusMock, mockDocument.body);
 
   let removedTargetRenderer!: ReturnType<typeof create>;
@@ -1416,9 +1618,11 @@ try {
   );
   flushAnimationFrames();
   assert.equal(
-    capacityAssignmentRenderer.root.findAllByProps({ role: "status" }).length,
+    capacityAssignmentRenderer.root.findAllByProps({
+      "data-testid": "future-fabric-bulk-choice",
+    }).length,
     1,
-    "Successful assignment must preserve the existing capacity offer.",
+    "Successful first assignment must keep the bulk-choice dialog open.",
   );
 
   let rapidRenderer!: ReturnType<typeof create>;
@@ -1470,6 +1674,18 @@ try {
         });
       },
       shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      (fabricCode, garmentKeys) =>
+        applySameFabricResult(
+          () => shirtTrouserState,
+          (state) => {
+            shirtTrouserState = state;
+          },
+          shirtTrouserSelection,
+        )(fabricCode, garmentKeys),
     );
   await act(async () => {
     shirtTrouserRenderer = create(renderShirtTrouser(), {
@@ -1505,8 +1721,20 @@ try {
         (assignment) => assignment.garmentKey,
       ),
     })),
+    [{ fabricCode: "INLINE-A", garmentKeys: ["base:shirt"] }],
+    "The first catalogue click must assign only the active garment.",
+  );
+  await clickBulkYes(shirtTrouserRenderer.root);
+  await act(async () => shirtTrouserRenderer.update(renderShirtTrouser()));
+  assert.deepEqual(
+    shirtTrouserState.fabricAllocations.map((allocation) => ({
+      fabricCode: allocation.fabricCode,
+      garmentKeys: allocation.garmentAssignments.map(
+        (assignment) => assignment.garmentKey,
+      ),
+    })),
     [{ fabricCode: "INLINE-A", garmentKeys: ["base:shirt", "base:trouser"] }],
-    "The direct selection must fill one authoritative allocation through the capacity engine.",
+    "YES — Use for All must fill one authoritative allocation through the capacity engine.",
   );
   assert.match(textContent(shirtTrouserRenderer.root), /Fabrics selected: 1 \/ 1/);
   assert.equal(
@@ -1567,6 +1795,17 @@ try {
             });
       },
       shirtTrouserKaftanSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      applySameFabricResult(
+        () => shirtTrouserKaftanState,
+        (state) => {
+          shirtTrouserKaftanState = state;
+        },
+        shirtTrouserKaftanSelection,
+      ),
     );
   await act(async () => {
     shirtTrouserKaftanRenderer = create(renderShirtTrouserKaftan(), {
@@ -1584,18 +1823,24 @@ try {
     shirtTrouserKaftanState.fabricAllocations[0]?.garmentAssignments.map(
       (assignment) => assignment.garmentKey,
     ),
-    ["base:shirt", "base:trouser"],
+    ["base:shirt"],
   );
-  assert.equal(
-    shirtTrouserKaftanState.pendingFabricGarment?.garmentKey,
-    "base:kaftan",
-    "A dedicated-fabric garment must remain pending when the first allocation is full.",
+  await clickBulkYes(shirtTrouserKaftanRenderer.root);
+  await act(async () => shirtTrouserKaftanRenderer.update(renderShirtTrouserKaftan()));
+  assert.deepEqual(
+    shirtTrouserKaftanState.fabricAllocations.map((allocation) => ({
+      fabricCode: allocation.fabricCode,
+      garmentKeys: allocation.garmentAssignments.map(
+        (assignment) => assignment.garmentKey,
+      ),
+    })),
+    [
+      { fabricCode: "INLINE-A", garmentKeys: ["base:shirt", "base:trouser"] },
+      { fabricCode: "INLINE-A", garmentKeys: ["base:kaftan"] },
+    ],
   );
-  assert.match(textContent(shirtTrouserKaftanRenderer.root), /Fabrics selected: 1 \/ 2/);
-  assert.equal(
-    shirtTrouserKaftanRenderer.root.findAllByProps({ role: "dialog" }).length,
-    1,
-  );
+  assert.equal(shirtTrouserKaftanState.pendingFabricGarment, null);
+  assert.match(textContent(shirtTrouserKaftanRenderer.root), /Fabrics selected: 2 \/ 2/);
 
   for (const dedicatedCase of [
     { garmentType: "full_length_gown" as const, key: "base:full_length_gown" },
@@ -1620,6 +1865,17 @@ try {
           });
         },
         dedicatedSelection,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        undefined,
+        applySameFabricResult(
+          () => dedicatedState,
+          (state) => {
+            dedicatedState = state;
+          },
+          dedicatedSelection,
+        ),
       );
     await act(async () => {
       dedicatedRenderer = create(renderDedicated(), {
@@ -1632,19 +1888,33 @@ try {
         .props.onClick(),
     );
     await act(async () => dedicatedRenderer.update(renderDedicated()));
-    assert.deepEqual(
-      dedicatedState.fabricAllocations[0]?.garmentAssignments.map(
-        (assignment) => assignment.garmentKey,
-      ),
-      ["base:shirt", "base:trouser"],
-      `${dedicatedCase.garmentType} must not be appended to the full first allocation.`,
-    );
-    assert.equal(dedicatedState.pendingFabricGarment?.garmentKey, dedicatedCase.key);
-    assert.equal(
-      dedicatedRenderer.root.findAllByProps({ role: "dialog" }).length,
-      1,
-      `${dedicatedCase.garmentType} must expose the existing capacity-resolution flow.`,
-    );
+    await clickBulkYes(dedicatedRenderer.root);
+    await act(async () => dedicatedRenderer.update(renderDedicated()));
+    if (dedicatedCase.garmentType === "agbada") {
+      assert.deepEqual(
+        dedicatedState.fabricAllocations.map((allocation) =>
+          allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+        ),
+        [["base:shirt", "base:trouser"]],
+        "Hidden Agbada must be excluded from the initial Step 1 bulk assignment.",
+      );
+    } else {
+      assert.deepEqual(
+        dedicatedState.fabricAllocations.map((allocation) =>
+          allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+        ),
+        [["base:shirt", "base:trouser"], [dedicatedCase.key]],
+        `${dedicatedCase.garmentType} must occupy its own allocation when the first allocation is full.`,
+      );
+      assert.equal(
+        new Set(
+          dedicatedState.fabricAllocations.map((allocation) => allocation.fabricCode),
+        ).size,
+        1,
+        `${dedicatedCase.garmentType} must reuse the selected fabric product across allocations.`,
+      );
+    }
+    assert.equal(dedicatedState.pendingFabricGarment, null);
   }
 
   let removalState = applyFutureFabricCardSelection({
@@ -1653,6 +1923,11 @@ try {
     garmentKey: "base:shirt",
     fabricCode: "INLINE-A",
   });
+  removalState = assignRemainingSameFabric(
+    removalState,
+    shirtTrouserSelection,
+    "INLINE-A",
+  );
   const removalAllocationId = removalState.fabricAllocations[0].allocationId;
   let removalRenderer!: ReturnType<typeof create>;
   const renderRemoval = () =>
@@ -1821,15 +2096,15 @@ try {
   flushAnimationFrames();
   assert.equal(pendingFinalRemovalState.fabricAllocations.length, 0);
   assert.equal(pendingFinalRemovalState.activeAllocationId, null);
-  assert.equal(pendingFinalRemovalState.pendingFabricGarment, null);
   assert.equal(
-    pendingFinalRemovalState.awaitingFabricForPendingGarment,
-    false,
+    pendingFinalRemovalState.pendingFabricGarment?.garmentKey,
+    "base:skirt",
+    "Removing the last unrelated assignment must preserve the pending overflow garment.",
   );
   assert.equal(
     pendingFinalRemovalRenderer.root.findAllByProps({ role: "dialog" }).length,
-    0,
-    "Removing the final assignment must close a different pending overflow flow.",
+    1,
+    "The pending overflow dialog must remain while its garment is still pending.",
   );
   const pendingFinalAdd = pendingFinalRemovalRenderer.root.findByProps({
     "aria-label": "Add fabric for Trouser",
@@ -1954,10 +2229,14 @@ try {
       () => undefined,
       () => undefined,
       (garmentKey) => {
-        inUseCancelState = cancelFutureFabricCatalogueAssignment({
+        const result = cancelFutureFabricCatalogueAssignment({
           state: inUseCancelState,
           garmentKey,
         });
+        if (result.status === "cancelled") {
+          inUseCancelState = result.state;
+        }
+        return result;
       },
     );
   await act(async () => {
@@ -2055,10 +2334,14 @@ try {
       () => undefined,
       () => undefined,
       (garmentKey) => {
-        preserveOtherState = cancelFutureFabricCatalogueAssignment({
+        const result = cancelFutureFabricCatalogueAssignment({
           state: preserveOtherState,
           garmentKey,
         });
+        if (result.status === "cancelled") {
+          preserveOtherState = result.state;
+        }
+        return result;
       },
     );
   await act(async () => {
@@ -2114,6 +2397,11 @@ try {
     garmentKey: "base:shirt",
     fabricCode: "INLINE-A",
   });
+  sharedCodeState = assignRemainingSameFabric(
+    sharedCodeState,
+    shirtTrouserSelection,
+    "INLINE-A",
+  );
   let sharedCodeRenderer!: ReturnType<typeof create>;
   const renderSharedCode = () =>
     renderStep(
@@ -2123,10 +2411,14 @@ try {
       () => undefined,
       () => undefined,
       (garmentKey) => {
-        sharedCodeState = cancelFutureFabricCatalogueAssignment({
+        const result = cancelFutureFabricCatalogueAssignment({
           state: sharedCodeState,
           garmentKey,
         });
+        if (result.status === "cancelled") {
+          sharedCodeState = result.state;
+        }
+        return result;
       },
     );
   await act(async () => {
@@ -2169,6 +2461,11 @@ try {
     garmentKey: "base:shirt",
     fabricCode: "INLINE-A",
   });
+  additionalCancelState = assignRemainingSameFabric(
+    additionalCancelState,
+    shirtTrouserSelection,
+    "INLINE-A",
+  );
   const additionalSelection = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
     existingAssignments: additionalCancelState.fabricAllocations.flatMap(
@@ -2214,10 +2511,14 @@ try {
       () => undefined,
       () => undefined,
       (garmentKey) => {
-        additionalCancelState = cancelFutureFabricCatalogueAssignment({
+        const result = cancelFutureFabricCatalogueAssignment({
           state: additionalCancelState,
           garmentKey,
         });
+        if (result.status === "cancelled") {
+          additionalCancelState = result.state;
+        }
+        return result;
       },
     );
   await act(async () => {
@@ -2280,6 +2581,176 @@ try {
     "Progression must block until Additional Shirt receives fabric again.",
   );
 
+  const additionalOccurrences = (
+    state: typeof additionalCancelState,
+  ) => [
+    ...state.fabricAllocations.flatMap(
+      (allocation) => allocation.garmentAssignments,
+    ),
+    ...(state.pendingFabricGarment ? [state.pendingFabricGarment] : []),
+  ];
+  const appendInlineAdditionalShirt = (
+    state: typeof additionalCancelState,
+    fabricCode?: string,
+  ) => {
+    const selection = createCatalogueAdditionalGarmentSelection({
+      garmentType: "shirt",
+      existingAssignments: additionalOccurrences(state),
+    });
+    assert.equal(selection.status, "resolved");
+    if (selection.status !== "resolved") {
+      throw new Error("Expected additional shirt.");
+    }
+    let next = FabricAllocationStateEngine.attemptAppendGarment(
+      state,
+      selection.selection,
+    );
+    if (fabricCode && next.pendingFabricGarment) {
+      next = FabricAllocationStateEngine.assignPendingGarmentToFabric(
+        next,
+        fabricCode,
+      );
+    }
+    return next;
+  };
+  let blockedAdditionalCancelState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  blockedAdditionalCancelState = assignRemainingSameFabric(
+    blockedAdditionalCancelState,
+    shirtTrouserSelection,
+    "INLINE-A",
+  );
+  blockedAdditionalCancelState = appendInlineAdditionalShirt(
+    blockedAdditionalCancelState,
+    "INLINE-B",
+  );
+  blockedAdditionalCancelState = appendInlineAdditionalShirt(
+    blockedAdditionalCancelState,
+    "INLINE-B",
+  );
+  blockedAdditionalCancelState = appendInlineAdditionalShirt(
+    blockedAdditionalCancelState,
+  );
+  const blockedAdditionalSnapshot = JSON.parse(
+    JSON.stringify(blockedAdditionalCancelState),
+  ) as typeof blockedAdditionalCancelState;
+  assert.equal(
+    blockedAdditionalCancelState.pendingFabricGarment?.garmentKey,
+    "additional:shirt:3",
+  );
+  let blockedAdditionalRenderer!: ReturnType<typeof create>;
+  const renderBlockedAdditionalCancel = () =>
+    renderStep(
+      blockedAdditionalCancelState,
+      (fabric, garmentKey) => {
+        blockedAdditionalCancelState = applyFutureFabricCardSelection({
+          state: blockedAdditionalCancelState,
+          garmentTypeSelection: shirtTrouserSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+        });
+      },
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      (garmentKey) => {
+        const result = cancelFutureFabricCatalogueAssignment({
+          state: blockedAdditionalCancelState,
+          garmentKey,
+        });
+        if (result.status === "cancelled") {
+          blockedAdditionalCancelState = result.state;
+        }
+        return result;
+      },
+    );
+  await act(async () => {
+    blockedAdditionalRenderer = create(renderBlockedAdditionalCancel());
+  });
+  const shirt1FabricCard = findFabricCard(
+    blockedAdditionalRenderer.root,
+    "INLINE-B",
+  );
+  assert.equal(shirt1FabricCard?.props["data-fabric-action"], "cancel");
+  assert.equal(
+    shirt1FabricCard?.props["data-fabric-cancel-garment-key"],
+    "additional:shirt:1",
+    "IN USE cancellation for the shared additional fabric must target Shirt 1 first.",
+  );
+  await act(async () => shirt1FabricCard!.props.onClick());
+  const visibleBlockedError = findVisibleFabricActionError(
+    blockedAdditionalRenderer.root,
+  );
+  assert.ok(
+    visibleBlockedError,
+    "Blocked cancellation must render a visible Fabric action error.",
+  );
+  assert.equal(visibleBlockedError?.props.role, "alert");
+  assert.equal(
+    String(visibleBlockedError?.props.className ?? "").includes("sr-only"),
+    false,
+    "The visible Fabric action error must not be screen-reader only.",
+  );
+  assert.match(
+    textContent(visibleBlockedError),
+    /Finish assigning fabric to the pending additional garment before removing fabric from another additional garment\./,
+  );
+  await act(async () =>
+    blockedAdditionalRenderer.update(renderBlockedAdditionalCancel()),
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(blockedAdditionalCancelState)),
+    blockedAdditionalSnapshot,
+    "Blocked additional cancellation must leave the original allocation state unchanged.",
+  );
+  assert.ok(
+    blockedAdditionalCancelState.fabricAllocations.some((allocation) =>
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "additional:shirt:1",
+      ),
+    ),
+    "Committed Additional Shirt 1 must remain assigned.",
+  );
+  assert.equal(
+    blockedAdditionalCancelState.pendingFabricGarment?.garmentKey,
+    "additional:shirt:3",
+  );
+  assert.equal(
+    blockedAdditionalCancelState.awaitingFabricForPendingGarment,
+    blockedAdditionalSnapshot.awaitingFabricForPendingGarment,
+  );
+  const trouserRemoveButton = blockedAdditionalRenderer.root
+    .findByProps({ "data-garment-key": "base:trouser" })
+    .findAllByType("button")
+    .find((button) =>
+      String(button.props["aria-label"] ?? "").includes("Remove fabric"),
+    );
+  assert.ok(
+    trouserRemoveButton,
+    "A successful unrelated fabric removal control must be available to clear the visible error.",
+  );
+  await act(async () => trouserRemoveButton!.props.onClick());
+  await act(async () =>
+    blockedAdditionalRenderer.update(renderBlockedAdditionalCancel()),
+  );
+  assert.equal(
+    findVisibleFabricActionError(blockedAdditionalRenderer.root),
+    null,
+    "A successful fabric removal must clear the visible Fabric action error.",
+  );
+  assert.ok(
+    !blockedAdditionalCancelState.fabricAllocations.some((allocation) =>
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "base:trouser",
+      ),
+    ),
+    "Removing Trouser fabric must still succeed after the blocked additional cancellation.",
+  );
+
   const persistedAfterCancel = {
     fabricAllocations: JSON.parse(
       JSON.stringify(preserveOtherState.fabricAllocations),
@@ -2295,6 +2766,502 @@ try {
     ),
     ["INLINE-B"],
     "Serialized draft allocations must keep the cancelled Shirt fabric out.",
+  );
+
+  let failedAssignState = FabricAllocationStateEngine.initialize();
+  let failedAssignRenderer!: ReturnType<typeof create>;
+  const renderFailedAssign = () =>
+    renderStep(
+      failedAssignState,
+      () => failedAssignState,
+      threeGarmentSelection,
+    );
+  await act(async () => {
+    failedAssignRenderer = create(renderFailedAssign(), {
+      createNodeMock: createFocusMock,
+    });
+  });
+  await act(async () =>
+    failedAssignRenderer.root
+      .findAllByProps({ "data-fabric-card": "true" })[0]
+      .props.onClick(),
+  );
+  await act(async () => failedAssignRenderer.update(renderFailedAssign()));
+  assert.equal(
+    bulkChoiceCount(failedAssignRenderer.root),
+    0,
+    "A failed or no-op first assignment must not open the bulk-choice dialog.",
+  );
+
+  let transactionalState = FabricAllocationStateEngine.initialize();
+  transactionalState = assignFutureFabricToGarment({
+    state: transactionalState,
+    garmentTypeSelection: threeGarmentSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  }).state;
+  let transactionalRenderer!: ReturnType<typeof create>;
+  const renderTransactional = () =>
+    renderStep(
+      transactionalState,
+      () => undefined,
+      threeGarmentSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      (fabricCode, garmentKeys) => {
+        const result = assignSameFabricProductToGarments({
+          state: transactionalState,
+          garmentTypeSelection: threeGarmentSelection,
+          fabricCode,
+          garmentKeys: [...garmentKeys, "missing:stale-target"],
+        });
+        if (result.status === "assigned") {
+          transactionalState = result.state;
+        }
+        return result;
+      },
+    );
+  await act(async () => {
+    transactionalRenderer = create(renderTransactional(), {
+      createNodeMock: createFocusMock,
+    });
+  });
+  assert.equal(bulkChoiceCount(transactionalRenderer.root), 0);
+  await act(async () => {
+    transactionalRenderer.update(
+      renderStep(
+        transactionalState,
+        (fabric, garmentKey) => {
+          transactionalState = assignFutureFabricToGarment({
+            state: transactionalState,
+            garmentTypeSelection: threeGarmentSelection,
+            garmentKey,
+            fabricCode: fabric.code,
+          }).state;
+          return transactionalState;
+        },
+        threeGarmentSelection,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        undefined,
+        (fabricCode, garmentKeys) => {
+          const result = assignSameFabricProductToGarments({
+            state: transactionalState,
+            garmentTypeSelection: threeGarmentSelection,
+            fabricCode,
+            garmentKeys: [...garmentKeys, "missing:stale-target"],
+          });
+          if (result.status === "assigned") {
+            transactionalState = result.state;
+          }
+          return result;
+        },
+      ),
+    );
+  });
+  // Re-open the bulk dialog from a successful first assignment on a fresh tree.
+  let freshTransactional = FabricAllocationStateEngine.initialize();
+  const renderFreshTransactional = () =>
+    renderStep(
+      freshTransactional,
+      (fabric, garmentKey) => {
+        freshTransactional = assignFutureFabricToGarment({
+          state: freshTransactional,
+          garmentTypeSelection: threeGarmentSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+        }).state;
+        return freshTransactional;
+      },
+      threeGarmentSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      (fabricCode, garmentKeys) => {
+        const result = assignSameFabricProductToGarments({
+          state: freshTransactional,
+          garmentTypeSelection: threeGarmentSelection,
+          fabricCode,
+          garmentKeys: [...garmentKeys, "missing:stale-target"],
+        });
+        if (result.status === "assigned") {
+          freshTransactional = result.state;
+        }
+        return result;
+      },
+    );
+  let freshTransactionalRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    freshTransactionalRenderer = create(renderFreshTransactional(), {
+      createNodeMock: createFocusMock,
+    });
+  });
+  await act(async () =>
+    freshTransactionalRenderer.root
+      .findAllByProps({ "data-fabric-card": "true" })[0]
+      .props.onClick(),
+  );
+  await act(async () =>
+    freshTransactionalRenderer.update(renderFreshTransactional()),
+  );
+  assert.equal(bulkChoiceCount(freshTransactionalRenderer.root), 1);
+  await clickBulkYes(freshTransactionalRenderer.root);
+  await act(async () =>
+    freshTransactionalRenderer.update(renderFreshTransactional()),
+  );
+  assert.equal(
+    bulkChoiceCount(freshTransactionalRenderer.root),
+    1,
+    "A blocked bulk request must keep the dialog open for correction.",
+  );
+  assert.deepEqual(
+    freshTransactional.fabricAllocations.flatMap((allocation) =>
+      allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+    ),
+    ["base:shirt"],
+    "A stale bulk target must commit zero additional garments.",
+  );
+  assert.match(
+    textContent(freshTransactionalRenderer.root),
+    /Could not assign Inline Heritage A to one of the selected garments\. No garments were changed\./,
+  );
+  assert.equal(
+    textContent(freshTransactionalRenderer.root).includes(
+      "assigned to Trouser and Skirt",
+    ),
+    false,
+    "Announcements must not claim requested garments that were not committed.",
+  );
+
+  let announcedOnlyState = FabricAllocationStateEngine.initialize();
+  announcedOnlyState = assignFutureFabricToGarment({
+    state: announcedOnlyState,
+    garmentTypeSelection: threeGarmentSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  }).state;
+  let announcedOnlyRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    announcedOnlyRenderer = create(
+      renderStep(
+        FabricAllocationStateEngine.initialize(),
+        (fabric, garmentKey) => {
+          announcedOnlyState = assignFutureFabricToGarment({
+            state: announcedOnlyState,
+            garmentTypeSelection: threeGarmentSelection,
+            garmentKey,
+            fabricCode: fabric.code,
+          }).state;
+          return announcedOnlyState;
+        },
+        threeGarmentSelection,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        undefined,
+        (fabricCode, garmentKeys) => {
+          void garmentKeys;
+          const result = assignSameFabricProductToGarments({
+            state: announcedOnlyState,
+            garmentTypeSelection: threeGarmentSelection,
+            fabricCode,
+            garmentKeys: ["base:trouser"],
+          });
+          if (result.status === "assigned") {
+            announcedOnlyState = result.state;
+          }
+          return result;
+        },
+      ),
+      { createNodeMock: createFocusMock },
+    );
+  });
+  await act(async () =>
+    announcedOnlyRenderer.root
+      .findAllByProps({ "data-fabric-card": "true" })[0]
+      .props.onClick(),
+  );
+  await act(async () =>
+    announcedOnlyRenderer.update(
+      renderStep(
+        announcedOnlyState,
+        () => undefined,
+        threeGarmentSelection,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        undefined,
+        (fabricCode, garmentKeys) => {
+          void garmentKeys;
+          const result = assignSameFabricProductToGarments({
+            state: announcedOnlyState,
+            garmentTypeSelection: threeGarmentSelection,
+            fabricCode,
+            garmentKeys: ["base:trouser"],
+          });
+          if (result.status === "assigned") {
+            announcedOnlyState = result.state;
+          }
+          return result;
+        },
+      ),
+    ),
+  );
+  await clickBulkYes(announcedOnlyRenderer.root);
+  await act(async () =>
+    announcedOnlyRenderer.update(
+      renderStep(
+        announcedOnlyState,
+        () => undefined,
+        threeGarmentSelection,
+      ),
+    ),
+  );
+  assert.match(
+    textContent(announcedOnlyRenderer.root),
+    /Inline Heritage A assigned to Trouser\./,
+    "The live announcement must describe only garments returned in assignedGarmentKeys.",
+  );
+  assert.equal(
+    textContent(announcedOnlyRenderer.root).includes("assigned to Trouser and Skirt"),
+    false,
+  );
+
+  let keyboardState = FabricAllocationStateEngine.initialize();
+  const renderKeyboard = () =>
+    renderStep(
+      keyboardState,
+      (fabric, garmentKey) => {
+        keyboardState = assignFutureFabricToGarment({
+          state: keyboardState,
+          garmentTypeSelection: threeGarmentSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+        }).state;
+        return keyboardState;
+      },
+      threeGarmentSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      applySameFabricResult(
+        () => keyboardState,
+        (state) => {
+          keyboardState = state;
+        },
+        threeGarmentSelection,
+      ),
+    );
+  let keyboardRenderer!: ReturnType<typeof create>;
+  bulkDialogFocusables.length = 0;
+  bulkChoiceDialogFocusMock = null;
+  activeFocusMock = null;
+  animationFrames.clear();
+  await act(async () => {
+    keyboardRenderer = create(renderKeyboard(), {
+      createNodeMock: createFocusMock,
+    });
+  });
+  await act(async () =>
+    keyboardRenderer.root
+      .findAllByProps({ "data-fabric-card": "true" })[0]
+      .props.onClick(),
+  );
+  await act(async () => keyboardRenderer.update(renderKeyboard()));
+  assert.equal(bulkChoiceCount(keyboardRenderer.root), 1);
+  assert.ok(
+    bulkDialogFocusables.some((element) => element.label === "YES — Use for All"),
+    `Bulk dialog focusables were ${bulkDialogFocusables.map((element) => element.label).join(", ") || "empty"}.`,
+  );
+  assert.equal(
+    activeFocusMock?.label,
+    "YES — Use for All",
+    "Initial bulk-dialog focus must land on the first interactive control.",
+  );
+  assert.ok(bulkChoiceDialogFocusMock);
+  let prevented = false;
+  await act(async () => {
+    bulkChoiceDialogFocusMock?.dispatchKeyDown({
+      key: "Tab",
+      shiftKey: true,
+      preventDefault: () => {
+        prevented = true;
+      },
+    });
+  });
+  assert.equal(prevented, true);
+  assert.equal(
+    activeFocusMock?.label,
+    "NO — Choose Garments",
+    "Shift+Tab from the first control must wrap to the last control.",
+  );
+  prevented = false;
+  await act(async () => {
+    bulkChoiceDialogFocusMock?.dispatchKeyDown({
+      key: "Tab",
+      shiftKey: false,
+      preventDefault: () => {
+        prevented = true;
+      },
+    });
+  });
+  assert.equal(prevented, true);
+  assert.equal(
+    activeFocusMock?.label,
+    "YES — Use for All",
+    "Tab from the last control must wrap to the first control.",
+  );
+  await act(async () => {
+    bulkChoiceDialogFocusMock?.dispatchKeyDown({
+      key: "Escape",
+      preventDefault: () => undefined,
+    });
+  });
+  await act(async () => keyboardRenderer.update(renderKeyboard()));
+  assert.equal(
+    bulkChoiceCount(keyboardRenderer.root),
+    0,
+    "Escape must dismiss the bulk dialog as Choose Fabrics Individually.",
+  );
+  assert.deepEqual(
+    keyboardState.fabricAllocations.flatMap((allocation) =>
+      allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+    ),
+    ["base:shirt"],
+  );
+
+  let pendingUiState = assignFutureFabricToGarment({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: threeGarmentSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  }).state;
+  pendingUiState = commitSameFabric({
+    state: pendingUiState,
+    garmentTypeSelection: threeGarmentSelection,
+    fabricCode: "INLINE-A",
+    garmentKeys: ["base:trouser"],
+  });
+  const pendingUiAdditional = createCatalogueAdditionalGarmentSelection({
+    garmentType: "shirt",
+    existingAssignments: pendingUiState.fabricAllocations.flatMap(
+      (allocation) => allocation.garmentAssignments,
+    ),
+  });
+  assert.equal(pendingUiAdditional.status, "resolved");
+  if (pendingUiAdditional.status !== "resolved") {
+    throw new Error("Expected pending additional shirt for UI safety");
+  }
+  pendingUiState = FabricAllocationStateEngine.attemptAppendGarment(
+    pendingUiState,
+    pendingUiAdditional.selection,
+  );
+  assert.equal(pendingUiState.pendingFabricGarment?.garmentKey, "additional:shirt:1");
+  let pendingUiRenderer!: ReturnType<typeof create>;
+  const renderPendingUi = () =>
+    renderStep(
+      pendingUiState,
+      (fabric, garmentKey) => {
+        pendingUiState = applyFutureFabricCardSelection({
+          state: pendingUiState,
+          garmentTypeSelection: threeGarmentSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+        });
+        return pendingUiState;
+      },
+      threeGarmentSelection,
+      () => undefined,
+      () => {
+        pendingUiState = FabricAllocationStateEngine.beginChooseAnotherFabric(
+          pendingUiState,
+        );
+      },
+      (garmentKey) => {
+        pendingUiState = removeFutureFabricAssignment({
+          state: pendingUiState,
+          garmentKey,
+        });
+      },
+    );
+  await act(async () => {
+    pendingUiRenderer = create(renderPendingUi(), {
+      createNodeMock: createFocusMock,
+    });
+  });
+  pendingUiRenderer.root
+    .findAllByType("button")
+    .filter((button) => {
+      const label = textContent(button);
+      return label.includes("Add Fabric") || label.includes("Change Fabric");
+    })
+    .forEach((button) => {
+      assert.equal(
+        Boolean(button.props.disabled),
+        false,
+        "Unrelated Add/Change Fabric actions must remain enabled while an additional garment is pending.",
+      );
+    });
+  const addSkirt = pendingUiRenderer.root
+    .findAllByType("button")
+    .find((button) => button.props["aria-label"] === "Add fabric for Standard Skirt");
+  assert.ok(addSkirt);
+  await act(async () => addSkirt!.props.onClick({ currentTarget: {} }));
+  const skirtCard = pendingUiRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find((card) => card.props["data-fabric-code"] === "INLINE-B");
+  assert.ok(skirtCard);
+  await act(async () => skirtCard!.props.onClick());
+  await act(async () => pendingUiRenderer.update(renderPendingUi()));
+  assert.equal(
+    pendingUiState.pendingFabricGarment?.garmentKey,
+    "additional:shirt:1",
+    "Assigning an unrelated Step 1 garment must not consume the pending additional shirt.",
+  );
+  assert.ok(
+    pendingUiState.fabricAllocations.some((allocation) =>
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "base:skirt",
+      ),
+    ),
+  );
+  const pendingUiRemoveTrouser = pendingUiRenderer.root.findByProps({
+    "aria-label": "Remove fabric from Trouser",
+  });
+  await act(async () => pendingUiRemoveTrouser.props.onClick());
+  await act(async () => pendingUiRenderer.update(renderPendingUi()));
+  assert.equal(
+    pendingUiState.pendingFabricGarment?.garmentKey,
+    "additional:shirt:1",
+    "Removing an unrelated assigned garment must preserve the pending additional shirt.",
+  );
+  await act(async () => {
+    findButton(pendingUiRenderer.root, "Choose Another Fabric")!.props.onClick({
+      currentTarget: {},
+    });
+  });
+  await act(async () => pendingUiRenderer.update(renderPendingUi()));
+  const pendingCard = pendingUiRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find((card) => card.props["data-fabric-code"] === "INLINE-B");
+  assert.ok(pendingCard);
+  await act(async () => pendingCard!.props.onClick());
+  await act(async () => pendingUiRenderer.update(renderPendingUi()));
+  assert.equal(pendingUiState.pendingFabricGarment, null);
+  assert.ok(
+    pendingUiState.fabricAllocations.some(
+      (allocation) =>
+        allocation.fabricCode === "INLINE-B" &&
+        allocation.garmentAssignments.some(
+          (assignment) => assignment.garmentKey === "additional:shirt:1",
+        ),
+    ),
+    "The pending additional garment itself must still assign through assignPendingGarmentToFabric.",
   );
 
 } finally {
