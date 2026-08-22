@@ -7,7 +7,9 @@ import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
   assignFutureFabricToGarment,
   applyFutureFabricCardSelection,
+  assignSameFabricProductToGarments,
   cancelFutureFabricCatalogueAssignment,
+  getFutureFabricAssignmentTargets,
   getFutureFabricCapacityOffer,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
@@ -48,6 +50,28 @@ const fabrics = [
   createFabric("FAB-B", "Fabric B", 20),
   createFabric("FAB-C", "Fabric C", 30),
 ];
+const commitSameFabric = (
+  args: Parameters<typeof assignSameFabricProductToGarments>[0],
+) => {
+  const result = assignSameFabricProductToGarments(args);
+  assert.equal(
+    result.status,
+    "assigned",
+    result.status === "blocked" ? result.reason : "",
+  );
+  return result.state;
+};
+const commitCatalogueCancel = (
+  args: Parameters<typeof cancelFutureFabricCatalogueAssignment>[0],
+) => {
+  const result = cancelFutureFabricCatalogueAssignment(args);
+  assert.equal(
+    result.status,
+    "cancelled",
+    result.status === "blocked" ? result.reason : "",
+  );
+  return result.state;
+};
 
 let customerCardState = FabricAllocationStateEngine.initialize();
 customerCardState = applyFutureFabricCardSelection({
@@ -60,8 +84,21 @@ assert.deepEqual(
   customerCardState.fabricAllocations[0]?.garmentAssignments.map(
     (assignment) => assignment.garmentKey,
   ),
+  ["base:shirt"],
+  "The UI-facing card orchestration must assign only the clicked garment on the first selection.",
+);
+customerCardState = commitSameFabric({
+  state: customerCardState,
+  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  fabricCode: "FAB-A",
+  garmentKeys: ["base:trouser"],
+});
+assert.deepEqual(
+  customerCardState.fabricAllocations[0]?.garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
   ["base:shirt", "base:trouser"],
-  "The UI-facing card orchestration must route a fresh Shirt target through the shared allocation engine.",
+  "Bulk same-product assignment must route remaining garments through the shared allocation engine.",
 );
 assert.equal(
   getFutureFabricStageCompletion({
@@ -229,6 +266,12 @@ let sharedRemovalState = applyFutureFabricCardSelection({
   garmentKey: "base:shirt",
   fabricCode: "FAB-A",
 });
+sharedRemovalState = commitSameFabric({
+  state: sharedRemovalState,
+  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  fabricCode: "FAB-A",
+  garmentKeys: ["base:trouser"],
+});
 const sharedRemovalAllocationId = sharedRemovalState.fabricAllocations[0].allocationId;
 sharedRemovalState = removeFutureFabricAssignment({
   state: sharedRemovalState,
@@ -272,27 +315,48 @@ const overflowRemovalSelection = createSelection([
   "trouser",
   "skirt",
 ]);
-const overflowRemovalState = applyFutureFabricCardSelection({
+let overflowRemovalState = applyFutureFabricCardSelection({
   state: FabricAllocationStateEngine.initialize(),
   garmentTypeSelection: overflowRemovalSelection,
   garmentKey: "base:shirt",
   fabricCode: "FAB-A",
 });
+overflowRemovalState = assignFutureFabricToGarment({
+  state: overflowRemovalState,
+  garmentTypeSelection: overflowRemovalSelection,
+  garmentKey: "base:trouser",
+  fabricCode: "FAB-A",
+}).state;
+const overflowSkirtTarget = getFutureFabricAssignmentTargets(
+  overflowRemovalSelection,
+).find(({ assignment }) => assignment.garmentKey === "base:skirt");
+assert.ok(overflowSkirtTarget);
+overflowRemovalState = FabricAllocationStateEngine.attemptAppendGarment(
+  overflowRemovalState,
+  overflowSkirtTarget.selection,
+);
 assert.equal(overflowRemovalState.pendingFabricGarment?.garmentKey, "base:skirt");
 const overflowAllocationId = overflowRemovalState.fabricAllocations[0].allocationId;
 const sharedAfterOverflowRemoval = removeFutureFabricAssignment({
   state: overflowRemovalState,
   garmentKey: "base:shirt",
 });
-assert.equal(sharedAfterOverflowRemoval.pendingFabricGarment, null);
-assert.equal(sharedAfterOverflowRemoval.awaitingFabricForPendingGarment, false);
+assert.equal(
+  sharedAfterOverflowRemoval.pendingFabricGarment?.garmentKey,
+  "base:skirt",
+  "Removing an unrelated committed garment must preserve a different pending overflow garment.",
+);
+assert.equal(
+  sharedAfterOverflowRemoval.awaitingFabricForPendingGarment,
+  overflowRemovalState.awaitingFabricForPendingGarment,
+);
 assert.equal(sharedAfterOverflowRemoval.fabricAllocations[0].allocationId, overflowAllocationId);
 assert.deepEqual(
   sharedAfterOverflowRemoval.fabricAllocations[0].garmentAssignments.map(
     (assignment) => assignment.garmentKey,
   ),
   ["base:trouser"],
-  "Removal must cancel a different pending overflow garment without deleting an unrelated committed assignment.",
+  "Removal must not delete an unrelated committed assignment.",
 );
 
 const oneCommittedWithDifferentPending =
@@ -311,8 +375,15 @@ const finalAfterOverflowRemoval = removeFutureFabricAssignment({
 });
 assert.equal(finalAfterOverflowRemoval.fabricAllocations.length, 0);
 assert.equal(finalAfterOverflowRemoval.activeAllocationId, null);
-assert.equal(finalAfterOverflowRemoval.pendingFabricGarment, null);
-assert.equal(finalAfterOverflowRemoval.awaitingFabricForPendingGarment, false);
+assert.equal(
+  finalAfterOverflowRemoval.pendingFabricGarment?.garmentKey,
+  "base:skirt",
+  "Removing the last unrelated committed garment must still preserve the pending overflow garment.",
+);
+assert.equal(
+  finalAfterOverflowRemoval.awaitingFabricForPendingGarment,
+  oneCommittedWithDifferentPending.awaitingFabricForPendingGarment,
+);
 
 const separateBeforeRemoval = assign(
   assign(
@@ -394,11 +465,16 @@ assert.equal(focusedAssignedPresentation.status, "ASSIGNED");
 assert.equal(focusedAssignedPresentation.action, "cancel");
 assert.equal(focusedAssignedPresentation.cancelGarmentKey, "base:shirt");
 
-const sharedCodeState = applyFutureFabricCardSelection({
-  state: FabricAllocationStateEngine.initialize(),
+const sharedCodeState = commitSameFabric({
+  state: applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: createSelection(["shirt", "trouser"]),
+    garmentKey: "base:shirt",
+    fabricCode: "FAB-A",
+  }),
   garmentTypeSelection: createSelection(["shirt", "trouser"]),
-  garmentKey: "base:shirt",
   fabricCode: "FAB-A",
+  garmentKeys: ["base:trouser"],
 });
 const sharedCodeCard = resolveFutureFabricCatalogueCardPresentation({
   fabricCode: "FAB-A",
@@ -407,7 +483,7 @@ const sharedCodeCard = resolveFutureFabricCatalogueCardPresentation({
   currentTargetGarmentKey: null,
 });
 assert.equal(sharedCodeCard.cancelGarmentKey, "base:shirt");
-const sharedCodeAfterCancel = cancelFutureFabricCatalogueAssignment({
+const sharedCodeAfterCancel = commitCatalogueCancel({
   state: sharedCodeState,
   garmentKey: sharedCodeCard.cancelGarmentKey!,
 });
@@ -424,6 +500,12 @@ let additionalState = applyFutureFabricCardSelection({
   garmentTypeSelection: createSelection(["shirt", "trouser"]),
   garmentKey: "base:shirt",
   fabricCode: "FAB-A",
+});
+additionalState = commitSameFabric({
+  state: additionalState,
+  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  fabricCode: "FAB-A",
+  garmentKeys: ["base:trouser"],
 });
 const additionalSelection = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
@@ -445,7 +527,7 @@ if (additionalState.pendingFabricGarment) {
     "FAB-B",
   );
 }
-additionalState = cancelFutureFabricCatalogueAssignment({
+additionalState = commitCatalogueCancel({
   state: additionalState,
   garmentKey: "additional:shirt:1",
 });
@@ -483,13 +565,18 @@ assert.ok(
   "A cancelled additional garment must be reassignable through the existing pending assignment path.",
 );
 
-const persistCancelState = cancelFutureFabricCatalogueAssignment({
+const persistCancelState = commitCatalogueCancel({
   state: applyFutureFabricCardSelection({
-    state: applyFutureFabricCardSelection({
-      state: FabricAllocationStateEngine.initialize(),
+    state: commitSameFabric({
+      state: applyFutureFabricCardSelection({
+        state: FabricAllocationStateEngine.initialize(),
+        garmentTypeSelection: createSelection(["shirt", "trouser"]),
+        garmentKey: "base:shirt",
+        fabricCode: "FAB-A",
+      }),
       garmentTypeSelection: createSelection(["shirt", "trouser"]),
-      garmentKey: "base:shirt",
       fabricCode: "FAB-A",
+      garmentKeys: ["base:trouser"],
     }),
     garmentTypeSelection: createSelection(["shirt", "trouser"]),
     garmentKey: "base:trouser",
@@ -583,9 +670,11 @@ assert.doesNotMatch(
   "Step 2 must not retain a bottom Select Fabric confirmation control.",
 );
 assert.match(stepSource, /Fabrics selected:/);
-assert.match(stepSource, /Your fabric can carry one more garment\. \(Optional\)/);
-assert.match(stepSource, />\s*Use Same Fabric\s*</);
-assert.match(stepSource, />\s*Select Different Fabric\s*</);
+assert.match(stepSource, /Use this fabric for your other garments\?/);
+assert.match(stepSource, /YES — Use for All/);
+assert.match(stepSource, /NO — Choose Garments/);
+assert.match(stepSource, /Choose Fabrics Individually/);
+assert.match(stepSource, /onAssignSameFabricProduct/);
 assert.match(stepSource, /aria-modal="true"/);
 assert.match(stepSource, /restoreCatalogueFocus/);
 assert.match(stepSource, /focusElementSafely/);
@@ -615,6 +704,55 @@ assert.doesNotMatch(
   /selectFutureFabric\(/,
   "The parent UI must not bypass the orchestration seam with a second direct selection path.",
 );
-assert.match(studioSource, /onBack=\{\(\) => setFutureStageId\("garment_type"\)\}/);
+assert.match(studioSource, /assignSameFabricProductToGarments\(/);
+assert.match(
+  studioSource,
+  /onBack=\{\(\) => setFutureStageId\("garment_type"\)\}/,
+  "Step 2 Back must still return to Garment Type.",
+);
+assert.match(
+  studioSource,
+  /pendingAdditionalConstructionRef\.current\?\.garmentKey === garmentKey/,
+  "DesignStudioView must only clear pending additional construction when the removed garment is that pending garment.",
+);
+const removeHandler = studioSource.slice(
+  studioSource.indexOf("const handleRemoveFutureFabricAssignment"),
+  studioSource.indexOf("const handleRemoveFutureAdditionalGarment"),
+);
+assert.doesNotMatch(
+  removeHandler,
+  /pendingAdditionalConstructionRef\.current = null;\s*setFabricAllocationState/,
+  "Unrelated fabric removal must not wipe pending additional construction metadata.",
+);
+assert.match(
+  removeHandler,
+  /result.status !== "cancelled"/,
+  "DesignStudioView must leave allocation and construction metadata unchanged when cancellation is blocked.",
+);
+assert.match(
+  stepSource,
+  /Finish assigning fabric to the pending additional garment before removing fabric from another additional garment\./,
+);
+const stageSource = readFileSync(
+  "src/utils/designStudioFutureFabricStage.ts",
+  "utf8",
+);
+assert.match(stageSource, /OTHER_ADDITIONAL_GARMENT_PENDING/);
+assert.match(
+  stageSource,
+  /status: "blocked"/,
+);
+assert.doesNotMatch(
+  stageSource.slice(
+    stageSource.indexOf("export const removeFutureFabricAssignment"),
+    stageSource.indexOf("export type FutureFabricCatalogueCardStatus"),
+  ),
+  /cancelPendingGarment\(state\);\s*const removed/,
+  "removeFutureFabricAssignment must not cancel pending additional state unconditionally.",
+);
+assert.match(stepSource, /wasEligibleFirstStep1Assignment/);
+assert.match(stepSource, /getFocusable\(\)\[0\]\?\.focus\(\)/);
+assert.match(stepSource, /clearOnMiss: true/);
+assert.match(stepSource, /result\.assignedGarmentKeys/);
 
 console.log("PASS: targeted future Fabric assignment flow");
