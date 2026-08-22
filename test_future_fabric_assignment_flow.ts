@@ -669,7 +669,16 @@ assert.doesNotMatch(
   />\s*Select Fabric\s*</,
   "Step 2 must not retain a bottom Select Fabric confirmation control.",
 );
-assert.match(stepSource, /Fabrics selected:/);
+assert.match(stepSource, /data-fabric-progress="true"/);
+assert.match(stepSource, /data-fabric-selection-progress="true"/);
+assert.match(stepSource, /data-garment-assignment-progress="true"/);
+assert.match(stepSource, /Fabric selections:/);
+assert.match(stepSource, /Garments assigned:/);
+assert.doesNotMatch(
+  stepSource,
+  /Fabrics selected:/,
+  "Step 2 must not use the ambiguous single-line Fabric progress label.",
+);
 assert.match(stepSource, /Use this fabric for your other garments\?/);
 assert.match(stepSource, /YES — Use for All/);
 assert.match(stepSource, /NO — Choose Garments/);
