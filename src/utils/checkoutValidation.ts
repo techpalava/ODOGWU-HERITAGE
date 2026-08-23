@@ -38,7 +38,7 @@ import {
   inspectCartDesignDomain,
   UPLOADED_DESIGN_TRUSTED_TRANSFER_BLOCKER,
 } from "./cartDesignDomain";
-import { getCartItemConfigurationHash } from "../services/guestOrderSessionService";
+import { getCartItemConfigurationHash } from "./cartConfigurationHash";
 import type { PreparedUploadedDesignReference } from "./uploadedDesignCheckoutPreparation";
 import { getStyleBaseFabricCapacityComposition } from "../config/StyleFabricCapacityConfig";
 import { isAdditionalGarmentAllowed } from "./additionalGarmentDomain";

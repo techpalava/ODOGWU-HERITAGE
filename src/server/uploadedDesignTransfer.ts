@@ -352,3 +352,90 @@ export const transferVerifiedUploadedDesign = async ({
     },
   };
 };
+
+/**
+ * Independently verify an immutable uploaded-order reference for deposit prepare.
+ * Does not trust client-forged paths/metadata without storage confirmation.
+ */
+export const verifyImmutableUploadedOrderReferenceForDeposit = async ({
+  authenticatedUid,
+  orderId,
+  designReferenceId,
+  orderReference,
+  draftMimeType,
+  draftStoragePath,
+  draftOwnerUid,
+  bucket,
+}: {
+  authenticatedUid: string;
+  orderId: string;
+  designReferenceId: string;
+  orderReference: ImmutableUploadedOrderDesignReference;
+  draftMimeType: CustomerDesignImageMimeType;
+  draftStoragePath: string;
+  draftOwnerUid: string;
+  bucket: TrustedStorageBucket;
+}): Promise<ImmutableUploadedOrderDesignReference> => {
+  if (
+    !isSafeIdentifier(authenticatedUid) ||
+    !isSafeIdentifier(orderId) ||
+    !isSafeIdentifier(designReferenceId) ||
+    !isCustomerDesignImageMimeType(draftMimeType)
+  ) {
+    throw new TrustedUploadedDesignTransferError(
+      "INVALID_REFERENCE",
+      "The uploaded-design order reference is invalid.",
+    );
+  }
+
+  const expectedPath = buildDestinationPath(
+    authenticatedUid,
+    orderId,
+    designReferenceId,
+    draftMimeType,
+  );
+  if (
+    orderReference.orderId !== orderId ||
+    orderReference.storagePath !== expectedPath ||
+    orderReference.mimeType !== draftMimeType
+  ) {
+    throw new TrustedUploadedDesignTransferError(
+      "INVALID_REFERENCE",
+      "The uploaded-design order reference does not match the trusted path convention.",
+    );
+  }
+
+  const destination = bucket.file(expectedPath);
+  const [exists] = await destination.exists();
+  if (!exists) {
+    throw new TrustedUploadedDesignTransferError(
+      "SOURCE_NOT_FOUND",
+      "The trusted uploaded-design order asset was not found.",
+    );
+  }
+
+  const [metadata] = await destination.getMetadata();
+  const request: UploadedDesignTransferRequest = {
+    orderId,
+    draftReference: {
+      designReferenceId,
+      ownerUid: draftOwnerUid,
+      storagePath: draftStoragePath,
+      mimeType: draftMimeType,
+      createdAt: orderReference.createdAt,
+    },
+  };
+  if (!destinationMatchesRequest(metadata, request)) {
+    throw new TrustedUploadedDesignTransferError(
+      "DESTINATION_CONFLICT",
+      "The uploaded-design order asset metadata does not match the trusted transfer.",
+    );
+  }
+
+  return {
+    orderId,
+    storagePath: expectedPath,
+    mimeType: draftMimeType,
+    createdAt: metadata.timeCreated || metadata.updated || orderReference.createdAt,
+  };
+};

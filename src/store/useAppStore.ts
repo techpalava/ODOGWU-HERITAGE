@@ -338,12 +338,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const newOrders =
       typeof orders === "function" ? orders(get().orders) : orders;
     set({ orders: newOrders });
+    // Only staff/admin may write orders from the client. Customer deposit
+    // confirmation persists orders exclusively via Admin /api/orders/confirm-deposit.
     if (AuthorizationEngine.canViewStaffDashboard(get().currentUser)) {
       ApiService.saveOrders(newOrders);
-    } else {
-      void Promise.all(
-        newOrders.map((order) => StorageService.saveOrder(order)),
-      );
     }
   },
   customGroups: [],

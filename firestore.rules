@@ -148,11 +148,9 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow read: if isAdmin() || ownsExistingDocument();
-      allow create: if isAdmin()
-        || (
-          ownsIncomingDocument()
-          && request.resource.data.customer.ownerUid == request.auth.uid
-        );
+      // Confirmed customer orders are created exclusively by trusted Admin
+      // deposit confirmation. Ordinary customers may not create orders directly.
+      allow create: if isAdmin();
       allow update: if isAdmin()
         || (
           ownsExistingDocument()
@@ -161,6 +159,22 @@ service cloud.firestore {
             .hasOnly([])
         );
       allow delete: if isAdmin();
+    }
+
+    match /deposit_checkout_quotes/{quoteId} {
+      allow read, write: if false;
+    }
+
+    match /deposit_payment_confirmations/{paymentIntentId} {
+      allow read, write: if false;
+    }
+
+    match /deposit_prepare_lookups/{prepareKey} {
+      allow read, write: if false;
+    }
+
+    match /inventory_reservations/{checkoutId} {
+      allow read, write: if false;
     }
 
     match /businessSettings/{document=**} {

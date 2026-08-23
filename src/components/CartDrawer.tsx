@@ -253,6 +253,7 @@ export function CartDrawer() {
             items: validation.items,
             identity: anonymousIdentity,
             client: customerDesignOrderTransferClient,
+            prepareRequestId: `PREP-ANON-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`,
           });
         } catch {
           setNotification({

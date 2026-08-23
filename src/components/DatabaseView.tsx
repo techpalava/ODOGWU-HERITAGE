@@ -109,6 +109,13 @@ import { getClosestColorName } from "../utils/colorMatcher";
 import { FabricService } from "../services/fabricService";
 import { StorageService } from "../services/storageService";
 import { ImageService } from "../services/imageService";
+import { deriveFabricStockStatus } from "../utils/fabricStockStatus";
+import {
+  assertStockCoversReserved,
+  computeAvailableStock,
+  getFabricReservedStock,
+  InvalidFabricReservedStockError,
+} from "../utils/fabricInventoryAvailability";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 import { db } from "../services/firebase";
@@ -1013,21 +1020,33 @@ export default function DatabaseView({
       return;
     }
 
+    const stockOnHand = Number(item.stock ?? 0);
+    const reservedStock = getFabricReservedStock(item);
+    if (stockOnHand < reservedStock) {
+      triggerStatus(
+        `Stock on hand (${stockOnHand}) cannot be lower than reserved stock (${reservedStock}).`,
+        "error",
+      );
+      return;
+    }
+
     console.log("[handleSaveFabric] Base pricing calculation");
     // Auto-calculate the price from base if multiplier is updated
     const basePrice = 35; // Standard mill pricing
     const price = Math.round(basePrice * (item.priceMultiplier || 1));
 
     console.log("[handleSaveFabric] Creating finalItem");
+    const available =
+      computeAvailableStock(stockOnHand, reservedStock) ?? stockOnHand;
     const finalItem: Fabric = {
       ...item,
       price,
-      stockStatus:
-        item.stock <= 0
-          ? "OUT_OF_STOCK"
-          : item.stock <= 5
-            ? "LOW_STOCK"
-            : "IN_STOCK",
+      stock: stockOnHand,
+      reservedStock,
+      stockStatus: deriveFabricStockStatus(
+        available,
+        item.stockStatus,
+      ),
     };
 
     console.log("[handleSaveFabric] isNewRecord:", isNewRecord);
@@ -2674,26 +2693,48 @@ export default function DatabaseView({
                         <label className="font-bold text-heritage-green">
                           Stock Inventory &amp; Status
                         </label>
+                        <div className="grid grid-cols-3 gap-2 text-[10px] text-gray-500 font-medium mb-1">
+                          <span>Stock on hand</span>
+                          <span>Reserved</span>
+                          <span>Available</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mb-2">
+                          <div className="px-2 py-1.5 border border-heritage-gold/20 bg-white rounded-lg font-mono text-center text-xs">
+                            {editingItem.stock ?? 0}
+                          </div>
+                          <div className="px-2 py-1.5 border border-heritage-gold/20 bg-heritage-cream/40 rounded-lg font-mono text-center text-xs text-heritage-green">
+                            {getFabricReservedStock(editingItem)}
+                          </div>
+                          <div className="px-2 py-1.5 border border-heritage-gold/20 bg-white rounded-lg font-mono text-center text-xs font-bold text-heritage-green">
+                            {computeAvailableStock(
+                              editingItem.stock ?? 0,
+                              getFabricReservedStock(editingItem),
+                            ) ?? "—"}
+                          </div>
+                        </div>
                         <div className="flex gap-4 items-center">
                           <div className="w-1/2 space-y-1">
                             <span className="text-[10px] text-gray-500 font-medium">
-                              Linear Yards
+                              Linear Yards (on hand)
                             </span>
                             <input
                               type="number"
-                              min="0"
+                              min={getFabricReservedStock(editingItem)}
                               value={editingItem.stock ?? 30}
                               onChange={(e) => {
                                 const stock = parseInt(e.target.value) || 0;
+                                const reserved =
+                                  getFabricReservedStock(editingItem);
+                                const available =
+                                  computeAvailableStock(stock, reserved) ??
+                                  Math.max(0, stock - reserved);
                                 setEditingItem({
                                   ...editingItem,
                                   stock,
-                                  stockStatus:
-                                    stock <= 0
-                                      ? "OUT_OF_STOCK"
-                                      : stock <= 5
-                                        ? "LOW_STOCK"
-                                        : "IN_STOCK",
+                                  stockStatus: deriveFabricStockStatus(
+                                    available,
+                                    editingItem.stockStatus,
+                                  ),
                                 });
                               }}
                               className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg font-mono"
@@ -2703,24 +2744,41 @@ export default function DatabaseView({
                             <button
                               type="button"
                               onClick={() => {
+                                const reserved =
+                                  getFabricReservedStock(editingItem);
                                 const currentStock = editingItem.stock ?? 30;
-                                const newStock = currentStock <= 0 ? 25 : 0;
+                                const newStock =
+                                  currentStock <= reserved
+                                    ? Math.max(25, reserved)
+                                    : reserved;
+                                const available =
+                                  computeAvailableStock(newStock, reserved) ??
+                                  Math.max(0, newStock - reserved);
                                 setEditingItem({
                                   ...editingItem,
                                   stock: newStock,
-                                  stockStatus:
-                                    newStock <= 0 ? "OUT_OF_STOCK" : "IN_STOCK",
+                                  // Explicit stocked/unstocked toggle clears HIDDEN.
+                                  stockStatus: deriveFabricStockStatus(
+                                    available,
+                                    available <= 0 ? "OUT_OF_STOCK" : "IN_STOCK",
+                                  ),
                                 });
                               }}
                               className={`w-full py-2 px-3 border rounded-lg font-bold text-center transition cursor-pointer select-none text-[10px] ${
-                                (editingItem.stock ?? 30) <= 0
+                                (computeAvailableStock(
+                                  editingItem.stock ?? 30,
+                                  getFabricReservedStock(editingItem),
+                                ) ?? 0) <= 0
                                   ? "bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
                                   : "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
                               }`}
                             >
-                              {(editingItem.stock ?? 30) <= 0
+                              {(computeAvailableStock(
+                                editingItem.stock ?? 30,
+                                getFabricReservedStock(editingItem),
+                              ) ?? 0) <= 0
                                 ? "Mark as In Stock (25 Yds)"
-                                : "Mark Out of Stock (0 Yds)"}
+                                : "Mark Out of Stock (hold reserved)"}
                             </button>
                           </div>
                         </div>
@@ -4589,13 +4647,38 @@ export default function DatabaseView({
                                   onClick={() => {
                                     const currentStock = f.stock ?? 30;
                                     const newStock = currentStock <= 0 ? 30 : 0;
+                                    const reservedStock =
+                                      getFabricReservedStock(f);
+                                    try {
+                                      assertStockCoversReserved({
+                                        stock: newStock,
+                                        reservedStock: f.reservedStock,
+                                      });
+                                    } catch (error) {
+                                      const message =
+                                        error instanceof
+                                        InvalidFabricReservedStockError
+                                          ? error.message
+                                          : `Cannot set stock to ${newStock} while ${reservedStock} yards remain reserved.`;
+                                      triggerStatus(message, "error");
+                                      return;
+                                    }
+                                    const available =
+                                      computeAvailableStock(
+                                        newStock,
+                                        reservedStock,
+                                      ) ?? newStock;
                                     const finalItem: Fabric = {
                                       ...f,
                                       stock: newStock,
-                                      stockStatus:
+                                      reservedStock,
+                                      // Explicit catalogue toggle clears HIDDEN.
+                                      stockStatus: deriveFabricStockStatus(
+                                        available,
                                         newStock <= 0
                                           ? "OUT_OF_STOCK"
                                           : "IN_STOCK",
+                                      ),
                                     };
                                     FabricService.saveFabric(finalItem).catch(err => {
                                       console.error("Failed to update stock", err);

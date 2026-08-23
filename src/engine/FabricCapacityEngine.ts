@@ -9,8 +9,8 @@ import type {
   FabricGarmentRole,
   AdditionalGarmentDependencyStatus,
   AdditionalGarmentEligibilityRule,
-} from "../types";
-import { FABRIC_GARMENT_CAPACITY_UNITS } from "../config/StyleFabricCapacityConfig";
+} from "../types.js";
+import { FABRIC_GARMENT_CAPACITY_UNITS } from "../config/StyleFabricCapacityConfig.js";
 
 type LowerGarmentType = "trousers" | "skirt";
 

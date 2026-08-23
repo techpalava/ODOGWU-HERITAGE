@@ -10,6 +10,9 @@ assert.deepEqual(inStockWithCount, {
   status: "IN_STOCK",
   label: "In Stock: 12",
   tone: "in_stock",
+  availableStock: 12,
+  reservedStock: 0,
+  stockOnHand: 12,
 });
 
 const inStockWithoutCount = getFabricStockPresentation({
@@ -20,6 +23,9 @@ assert.deepEqual(inStockWithoutCount, {
   status: "IN_STOCK",
   label: "In Stock",
   tone: "in_stock",
+  availableStock: null,
+  reservedStock: 0,
+  stockOnHand: null,
 });
 
 const lowStockWithCount = getFabricStockPresentation({
@@ -31,6 +37,9 @@ assert.deepEqual(lowStockWithCount, {
   status: "LOW_STOCK",
   label: "Low Stock: 3",
   tone: "low_stock",
+  availableStock: 3,
+  reservedStock: 0,
+  stockOnHand: 3,
 });
 
 const lowStockWithoutCount = getFabricStockPresentation({
@@ -41,6 +50,9 @@ assert.deepEqual(lowStockWithoutCount, {
   status: "LOW_STOCK",
   label: "Low Stock",
   tone: "low_stock",
+  availableStock: null,
+  reservedStock: 0,
+  stockOnHand: null,
 });
 
 const outOfStock = getFabricStockPresentation({
@@ -52,41 +64,54 @@ assert.deepEqual(outOfStock, {
   status: "OUT_OF_STOCK",
   label: "Out of Stock",
   tone: "out_of_stock",
+  availableStock: 0,
+  reservedStock: 0,
+  stockOnHand: 0,
 });
 
-const outOfStockWithContradictoryCount = getFabricStockPresentation({
+// Available stock is authoritative for non-HIDDEN fabrics.
+const contradictoryOutOfStockStatus = getFabricStockPresentation({
   stockStatus: "OUT_OF_STOCK",
   stock: 10,
 });
-assert.equal(outOfStockWithContradictoryCount.visible, true);
-if (outOfStockWithContradictoryCount.visible) {
-  assert.equal(outOfStockWithContradictoryCount.label, "Out of Stock");
+assert.equal(contradictoryOutOfStockStatus.visible, true);
+if (contradictoryOutOfStockStatus.visible) {
+  assert.equal(contradictoryOutOfStockStatus.status, "IN_STOCK");
+  assert.equal(contradictoryOutOfStockStatus.label, "In Stock: 10");
 }
 
-const inStockWithZero = getFabricStockPresentation({
+const stockZeroShowsOutOfStock = getFabricStockPresentation({
   stockStatus: "IN_STOCK",
   stock: 0,
 });
-assert.equal(inStockWithZero.visible, true);
-if (inStockWithZero.visible) {
-  assert.equal(
-    inStockWithZero.label,
-    "In Stock",
-    "Contradictory IN_STOCK + stock 0 must not expose ': 0' on the badge.",
-  );
+assert.equal(stockZeroShowsOutOfStock.visible, true);
+if (stockZeroShowsOutOfStock.visible) {
+  assert.equal(stockZeroShowsOutOfStock.status, "OUT_OF_STOCK");
+  assert.equal(stockZeroShowsOutOfStock.label, "Out of Stock");
 }
 
-const lowStockWithZero = getFabricStockPresentation({
-  stockStatus: "LOW_STOCK",
-  stock: 0,
+const reservedReducesAvailable = getFabricStockPresentation({
+  stockStatus: "IN_STOCK",
+  stock: 10,
+  reservedStock: 9,
 });
-assert.equal(lowStockWithZero.visible, true);
-if (lowStockWithZero.visible) {
-  assert.equal(
-    lowStockWithZero.label,
-    "Low Stock",
-    "Contradictory LOW_STOCK + stock 0 must not expose ': 0' on the badge.",
-  );
+assert.equal(reservedReducesAvailable.visible, true);
+if (reservedReducesAvailable.visible) {
+  assert.equal(reservedReducesAvailable.status, "LOW_STOCK");
+  assert.equal(reservedReducesAvailable.label, "Low Stock: 1");
+  assert.equal(reservedReducesAvailable.availableStock, 1);
+}
+
+const fullyReservedShowsOutOfStock = getFabricStockPresentation({
+  stockStatus: "IN_STOCK",
+  stock: 2,
+  reservedStock: 2,
+});
+assert.equal(fullyReservedShowsOutOfStock.visible, true);
+if (fullyReservedShowsOutOfStock.visible) {
+  assert.equal(fullyReservedShowsOutOfStock.status, "OUT_OF_STOCK");
+  assert.equal(fullyReservedShowsOutOfStock.label, "Out of Stock");
+  assert.equal(fullyReservedShowsOutOfStock.availableStock, 0);
 }
 
 const inStockWithNegative = getFabricStockPresentation({
@@ -98,31 +123,9 @@ if (inStockWithNegative.visible) {
   assert.equal(
     inStockWithNegative.label,
     "In Stock",
-    "Contradictory IN_STOCK + negative stock must not expose the quantity.",
+    "Invalid negative stock must not expose a quantity.",
   );
-  assert.doesNotMatch(
-    inStockWithNegative.label,
-    /-1/,
-    "IN_STOCK badge must not include '-1' for negative stock.",
-  );
-}
-
-const lowStockWithNegative = getFabricStockPresentation({
-  stockStatus: "LOW_STOCK",
-  stock: -1,
-});
-assert.equal(lowStockWithNegative.visible, true);
-if (lowStockWithNegative.visible) {
-  assert.equal(
-    lowStockWithNegative.label,
-    "Low Stock",
-    "Contradictory LOW_STOCK + negative stock must not expose the quantity.",
-  );
-  assert.doesNotMatch(
-    lowStockWithNegative.label,
-    /-1/,
-    "LOW_STOCK badge must not include '-1' for negative stock.",
-  );
+  assert.doesNotMatch(inStockWithNegative.label, /-1/);
 }
 
 const hidden = getFabricStockPresentation({

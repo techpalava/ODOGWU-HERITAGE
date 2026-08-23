@@ -32,7 +32,11 @@ assert.match(
 );
 assert.match(
   rules,
-  /match \/orders\/\{orderId\} \{\s*allow read: if isAdmin\(\) \|\| ownsExistingDocument\(\)/,
+  /match \/orders\/\{orderId\} \{[\s\S]*?allow create: if isAdmin\(\);/,
+);
+assert.doesNotMatch(
+  rules,
+  /match \/orders\/\{orderId\} \{[\s\S]*?ownsIncomingDocument\(\)/,
 );
 assert.match(
   rules,
@@ -76,6 +80,14 @@ assert.match(
 assert.match(
   rules,
   /match \/staffPreviewEntitlements\/\{ownerUid\} \{\s*allow get: if ownsDocumentPath\(ownerUid\);\s*allow list, create, update, delete: if false;/,
+);
+assert.match(
+  rules,
+  /match \/inventory_reservations\/\{checkoutId\} \{\s*allow read, write: if false;/,
+);
+assert.match(
+  rules,
+  /match \/deposit_checkout_quotes\/\{quoteId\} \{\s*allow read, write: if false;/,
 );
 
 console.log("PASS: Firebase identity and Firestore rule security checks");

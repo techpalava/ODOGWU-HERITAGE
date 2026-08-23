@@ -705,18 +705,30 @@ const actualWeightCart = calculateCartPricing(
   ],
   0.5,
 );
+const estimatedWeightCart = calculateCartPricing(
+  [
+    makeItem("estimate-1", "community", 100, {
+      batchId: "AVATARS",
+      pieces: 2,
+      deliverySelection: europeDelivery,
+    }),
+    makeItem("estimate-2", "community", 100, {
+      batchId: "AVATARS",
+      pieces: 1,
+      deliverySelection: europeDelivery,
+    }),
+  ],
+  0.5,
+);
 assert.equal(
   actualWeightCart.finalMileShippingQuotes[0].weightSource,
-  "ACTUAL_WEIGHT",
+  "GARMENT_COUNT_ESTIMATE",
+  "client actualParcelWeightKg is not cart pricing authority",
 );
 assert.equal(
-  actualWeightCart.finalMileShippingQuotes[0].weightBand,
-  ">2 - 5 kg",
-);
-closeTo(
   actualWeightCart.eindhovenToDestinationShipping,
-  26.6,
-  "trusted item weights are combined for the outgoing parcel",
+  estimatedWeightCart.eindhovenToDestinationShipping,
+  "client-supplied parcel weights must not change cart shipping",
 );
 
 const groupedActualWeightBoundaries: Array<
@@ -728,11 +740,12 @@ const groupedActualWeightBoundaries: Array<
   [8, 12, ">10 - 20 kg"],
 ];
 groupedActualWeightBoundaries.forEach(
-  ([firstWeight, secondWeight, expectedBand]) => {
-    const cart = calculateCartPricing(
+  ([firstWeight, secondWeight]) => {
+    const withClientWeights = calculateCartPricing(
       [
         makeItem(`group-weight-${firstWeight}-a`, "community", 100, {
           batchId: "AVATARS",
+          pieces: 1,
           deliverySelection: {
             ...europeDelivery,
             actualParcelWeightKg: firstWeight,
@@ -740,6 +753,7 @@ groupedActualWeightBoundaries.forEach(
         }),
         makeItem(`group-weight-${secondWeight}-b`, "community", 100, {
           batchId: "AVATARS",
+          pieces: 1,
           deliverySelection: {
             ...europeDelivery,
             actualParcelWeightKg: secondWeight,
@@ -748,11 +762,30 @@ groupedActualWeightBoundaries.forEach(
       ],
       0.5,
     );
-    assert.equal(cart.shippingStatus, "READY");
+    const withoutClientWeights = calculateCartPricing(
+      [
+        makeItem(`group-weight-${firstWeight}-a2`, "community", 100, {
+          batchId: "AVATARS",
+          pieces: 1,
+          deliverySelection: europeDelivery,
+        }),
+        makeItem(`group-weight-${secondWeight}-b2`, "community", 100, {
+          batchId: "AVATARS",
+          pieces: 1,
+          deliverySelection: europeDelivery,
+        }),
+      ],
+      0.5,
+    );
+    assert.equal(withClientWeights.shippingStatus, "READY");
     assert.equal(
-      cart.finalMileShippingQuotes[0].weightBand,
-      expectedBand,
-      `grouped actual weight ${firstWeight + secondWeight} kg uses the exact boundary band`,
+      withClientWeights.finalMileShippingQuotes[0].weightSource,
+      "GARMENT_COUNT_ESTIMATE",
+    );
+    assert.equal(
+      withClientWeights.eindhovenToDestinationShipping,
+      withoutClientWeights.eindhovenToDestinationShipping,
+      `client weights ${firstWeight}+${secondWeight} kg must not alter cart shipping`,
     );
   },
 );
@@ -777,11 +810,11 @@ const partialActualWeightCart = calculateCartPricing(
 );
 assert.equal(
   partialActualWeightCart.shippingStatus,
-  "MANUAL_QUOTE_REQUIRED",
-  "partial actual weights must not fall back to a lower garment-count band",
+  "READY",
+  "partial client weights are ignored; garment-count estimate remains authoritative",
 );
-assert.equal(partialActualWeightCart.canCheckout, false);
-assert.equal(partialActualWeightCart.totalShipping, null);
+assert.equal(partialActualWeightCart.canCheckout, true);
+assert.notEqual(partialActualWeightCart.totalShipping, null);
 
 const missingDestinationCart = calculateCartPricing(
   [

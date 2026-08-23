@@ -8,6 +8,10 @@ import type {
   TrustedUploadedDesignTransferClient,
   UploadedDesignOwnershipClaim,
 } from "../services/customerDesignOrderTransfer";
+import {
+  buildDepositCheckoutIdFromPrepareKey,
+  buildDepositPrepareKey,
+} from "./depositOrderFingerprint";
 
 export interface PreparedUploadedDesignReference {
   sourceKey: string;
@@ -23,6 +27,7 @@ interface PendingOwnershipClaim extends UploadedDesignOwnershipClaim {
 
 interface CheckoutPreparationSession {
   cartKey: string;
+  prepareRequestId: string;
   checkoutId: string;
   orderIdsByItemId: Record<string, string>;
   claimsByItemId: Record<string, PendingOwnershipClaim>;
@@ -36,29 +41,37 @@ interface CheckoutPreparationSession {
 const getUploadedItems = (items: readonly CartItem[]): CartItem[] =>
   items.filter((item) => item.cartDesignSource?.kind === "uploaded");
 
-const getCartKey = (items: readonly CartItem[]): string =>
-  items
-    .map((item) => {
-      const source = item.cartDesignSource;
-      return source?.kind === "uploaded"
-        ? `${item.id}:${source.sourceKey}:${source.uploadReference.designReferenceId}:${source.uploadReference.ownerUid}`
-        : `${item.id}:catalog`;
-    })
-    .sort()
-    .join("|");
-
-const createCheckoutId = () =>
-  `CHECKOUT-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+const getCartKey = (
+  items: readonly CartItem[],
+  prepareRequestId: string,
+): string =>
+  [
+    prepareRequestId,
+    ...items
+      .map((item) => {
+        const source = item.cartDesignSource;
+        return source?.kind === "uploaded"
+          ? `${item.id}:${source.sourceKey}:${source.uploadReference.designReferenceId}:${source.uploadReference.ownerUid}`
+          : `${item.id}:catalog`;
+      })
+      .sort(),
+  ].join("|");
 
 let activeSession: CheckoutPreparationSession | null = null;
 
-const getSession = (items: readonly CartItem[]): CheckoutPreparationSession => {
-  const cartKey = getCartKey(items);
+const getSession = (
+  items: readonly CartItem[],
+  identity: FirebaseCheckoutIdentity,
+  prepareRequestId: string,
+): CheckoutPreparationSession => {
+  const cartKey = getCartKey(items, prepareRequestId);
   if (activeSession?.cartKey === cartKey) return activeSession;
 
-  const checkoutId = createCheckoutId();
+  const prepareKey = buildDepositPrepareKey(identity.uid, prepareRequestId);
+  const checkoutId = buildDepositCheckoutIdFromPrepareKey(prepareKey);
   activeSession = {
     cartKey,
+    prepareRequestId,
     checkoutId,
     orderIdsByItemId: Object.fromEntries(
       items.map((item) => [item.id, `${checkoutId}-${item.id}`]),
@@ -94,12 +107,14 @@ export const createAnonymousUploadedDesignClaims = async ({
   items,
   identity,
   client,
+  prepareRequestId,
 }: {
   items: readonly CartItem[];
   identity: FirebaseCheckoutIdentity;
   client: TrustedUploadedDesignTransferClient;
+  prepareRequestId: string;
 }): Promise<void> => {
-  const session = getSession(items);
+  const session = getSession(items, identity, prepareRequestId);
   for (const item of getUploadedItems(items)) {
     const source = getUploadedSource(item);
     if (source.uploadReference.ownerUid !== identity.uid) {
@@ -129,15 +144,18 @@ export const prepareUploadedDesignOrderReferences = async ({
   items,
   identity,
   client,
+  prepareRequestId,
 }: {
   items: readonly CartItem[];
   identity: FirebaseCheckoutIdentity;
   client: TrustedUploadedDesignTransferClient;
+  prepareRequestId: string;
 }): Promise<{
   checkoutId: string;
+  prepareRequestId: string;
   preparedByItemId: Record<string, PreparedUploadedDesignReference>;
 }> => {
-  const session = getSession(items);
+  const session = getSession(items, identity, prepareRequestId);
   for (const item of getUploadedItems(items)) {
     if (matchesPreparedReference(session.preparedByItemId[item.id], item)) {
       continue;
@@ -180,17 +198,12 @@ export const prepareUploadedDesignOrderReferences = async ({
       delete session.pendingTransfersByItemId[item.id];
     }
   }
+
   return {
     checkoutId: session.checkoutId,
+    prepareRequestId: session.prepareRequestId,
     preparedByItemId: { ...session.preparedByItemId },
   };
-};
-
-export const getPreparedUploadedDesignOrderReferences = (
-  items: readonly CartItem[],
-): Record<string, PreparedUploadedDesignReference> => {
-  const session = getSession(items);
-  return { ...session.preparedByItemId };
 };
 
 export const clearUploadedDesignCheckoutPreparation = (): void => {
@@ -198,8 +211,5 @@ export const clearUploadedDesignCheckoutPreparation = (): void => {
 };
 
 export const __resetUploadedDesignCheckoutPreparationForTests = (): void => {
-  clearUploadedDesignCheckoutPreparation();
+  activeSession = null;
 };
-
-export const getPreparedCheckoutId = (items: readonly CartItem[]): string =>
-  getSession(items).checkoutId;

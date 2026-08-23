@@ -62,15 +62,18 @@ const client: TrustedUploadedDesignTransferClient = {
 };
 
 __resetUploadedDesignCheckoutPreparationForTests();
+const prepareRequestId = "PREP-TEST-1";
 const preparedFirst = await prepareUploadedDesignOrderReferences({
   items: [uploadedItem],
   identity,
   client,
+  prepareRequestId,
 });
 const preparedRetry = await prepareUploadedDesignOrderReferences({
   items: [uploadedItem],
   identity,
   client,
+  prepareRequestId,
 });
 assert.equal(transferCalls, 1);
 assert.deepEqual(preparedRetry, preparedFirst);

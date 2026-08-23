@@ -18,7 +18,6 @@ import {
   CustomGroup,
   OrderContext,
   Customer,
-  ImmutableUploadedOrderDesignReference,
 } from "./types";
 import { StorageService } from "./services/storageService";
 import { auth } from "./services/firebase";
@@ -30,9 +29,7 @@ import { getCurrentRegistrationBatch } from "./utils/batchUtils";
 import { CapacityService } from "./services/CapacityService";
 import {
   BATCH_MINIMUM_GARMENTS,
-  calculateCartPaymentAllocations,
   calculateCartPricing,
-  getFinalMileShipmentGroupId,
   stampCurrentCartShippingItem,
 } from "./utils/shippingPricing";
 import {
@@ -40,9 +37,6 @@ import {
   getDepositRatio,
   PRICING_CURRENCY_SYMBOL,
 } from "./utils/money";
-import {
-  getPersistableCartItemFabricAllocationsForOrder,
-} from "./utils/fabricAllocationPersistence";
 import { getCartDesignLabel } from "./utils/cartDesignDomain";
 import { revalidateCartForCheckout } from "./utils/checkoutValidation";
 import { isBatchPricingRoute } from "./utils/designPricing";
@@ -54,6 +48,17 @@ import {
   clearUploadedDesignCheckoutPreparation,
   prepareUploadedDesignOrderReferences,
 } from "./utils/uploadedDesignCheckoutPreparation";
+import {
+  confirmDepositCheckout,
+  ConfirmDepositClientError,
+  prepareDepositCheckout,
+  releaseDepositReservation,
+  type PrepareDepositCheckoutSuccess,
+} from "./services/confirmDepositOrderClient";
+import {
+  DepositPaymentElement,
+  type DepositPaymentFormHandle,
+} from "./components/DepositPaymentElement";
 
 // Lazy load modular view components for performance optimization
 const HomeView = lazy(() => import("./components/HomeView"));
@@ -72,6 +77,47 @@ import Footer from "./components/Footer";
 
 
 import { AdminAuthGuard } from "./components/AdminAuthGuard";
+
+const PREPARED_DEPOSIT_SESSION_KEY = "odogwu_prepared_deposit";
+
+type PreparedDepositSession = {
+  checkoutId: string;
+  paymentIntentId: string;
+  prepareRequestId: string;
+};
+
+const writePreparedDepositSession = (value: PreparedDepositSession) => {
+  try {
+    sessionStorage.setItem(PREPARED_DEPOSIT_SESSION_KEY, JSON.stringify(value));
+  } catch {
+    // Ignore quota / private-mode failures; checkout can still proceed in-memory.
+  }
+};
+
+const readPreparedDepositSession = (): PreparedDepositSession | null => {
+  try {
+    const raw = sessionStorage.getItem(PREPARED_DEPOSIT_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PreparedDepositSession;
+    if (
+      typeof parsed?.checkoutId === "string" &&
+      typeof parsed?.paymentIntentId === "string"
+    ) {
+      return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+};
+
+const clearPreparedDepositSession = () => {
+  try {
+    sessionStorage.removeItem(PREPARED_DEPOSIT_SESSION_KEY);
+  } catch {
+    // ignore
+  }
+};
 
 export default function App() {
   const store = useAppStore();
@@ -247,14 +293,20 @@ export default function App() {
   >("ideal");
   const [checkoutIdealBank, setCheckoutIdealBank] =
     useState<string>("Rabobank");
-  const [checkoutCardNumber, setCheckoutCardNumber] = useState<string>(
-    "4242 4242 4242 4242",
-  );
-  const [checkoutCardExpiry, setCheckoutCardExpiry] = useState<string>("12/28");
-  const [checkoutCardCvc, setCheckoutCardCvc] = useState<string>("315");
   const [isPaymentProcessing, setIsPaymentProcessing] =
     useState<boolean>(false);
+  const [isPreparingCheckout, setIsPreparingCheckout] =
+    useState<boolean>(false);
+  const [preparedDeposit, setPreparedDeposit] =
+    useState<PrepareDepositCheckoutSuccess | null>(null);
+  const [stripeElementsReady, setStripeElementsReady] =
+    useState<boolean>(false);
   const checkoutSubmissionInProgress = React.useRef(false);
+  const prepareInProgress = React.useRef(false);
+  const depositPaymentFormRef = React.useRef<DepositPaymentFormHandle | null>(
+    null,
+  );
+  const stripeRedirectHandled = React.useRef(false);
 
   const triggerNotification = (
     message: string,
@@ -339,8 +391,87 @@ export default function App() {
     );
   };
 
-  const handleExecuteDepositPayment = async () => {
-    if (checkoutSubmissionInProgress.current) {
+  const applyConfirmedDeposit = (
+    confirmation: Awaited<ReturnType<typeof confirmDepositCheckout>>,
+  ) => {
+    const canonicalOrders = confirmation.quote?.canonicalOrders ?? [];
+    const confirmedOrders = canonicalOrders.map((order) => ({
+      ...order,
+      payment: {
+        ...order.payment,
+        isPaid: true,
+        transactionId: confirmation.paymentIntentId,
+        date: confirmation.checkoutConfirmation.createdAt,
+      },
+      shipment: {
+        ...order.shipment,
+        status: "Deposit Paid",
+        currentStage: 1,
+      },
+    }));
+    if (confirmedOrders.length > 0) {
+      const confirmedIds = new Set(confirmation.orderIds);
+      setOrders((previous) => [
+        ...previous.filter(
+          (order) => !confirmedIds.has(order.shipment?.trackingId || ""),
+        ),
+        ...confirmedOrders,
+      ]);
+    }
+    setPreparedDeposit(null);
+    clearPreparedDepositSession();
+    setIsCheckoutPaymentOpen(false);
+    setIsCartOpen(false);
+    setCartItems([]);
+    clearUploadedDesignCheckoutPreparation();
+    triggerNotification(
+      "Deposit authorized securely! Atelier notified.",
+      "success",
+    );
+    const nextJourney = CustomerJourneyEngine.getCurrentJourney({
+      currentUser: store.currentUser as any,
+      drafts: [],
+      activeOrders:
+        confirmedOrders.length > 0
+          ? [...store.orders, ...confirmedOrders]
+          : store.orders,
+      historicalOrders: store.historicalOrders,
+      allBatches: store.batches,
+    });
+    setActiveTab(nextJourney.destination as any);
+  };
+
+  const releasePreparedReservationIfAny = async (
+    checkoutId: string | null | undefined,
+  ) => {
+    if (!checkoutId) return;
+    const identity = auth.currentUser;
+    if (!identity) {
+      clearPreparedDepositSession();
+      return;
+    }
+    try {
+      await releaseDepositReservation({
+        checkoutId,
+        identity,
+      });
+    } catch {
+      // Best-effort release; reconcile cron / webhook can clean up leftovers.
+    } finally {
+      clearPreparedDepositSession();
+    }
+  };
+
+  const closeCheckoutPaymentModal = async () => {
+    const checkoutId = preparedDeposit?.checkoutId;
+    setIsCheckoutPaymentOpen(false);
+    setPreparedDeposit(null);
+    setStripeElementsReady(false);
+    await releasePreparedReservationIfAny(checkoutId);
+  };
+
+  const prepareDepositForOpenModal = async () => {
+    if (prepareInProgress.current || preparedDeposit) {
       return;
     }
     if (!currentUser) {
@@ -393,246 +524,260 @@ export default function App() {
       return;
     }
 
-    checkoutSubmissionInProgress.current = true;
-    setIsPaymentProcessing(true);
-    let immutableReferencesByItemId: Record<
-      string,
-      {
-        sourceKey: string;
-        designReferenceId: string;
-        orderReference: ImmutableUploadedOrderDesignReference;
-      }
-    >;
-    let preparedCheckoutId: string;
+    prepareInProgress.current = true;
+    setIsPreparingCheckout(true);
+    const prepareRequestId = `PREP-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
     try {
       const prepared = await prepareUploadedDesignOrderReferences({
         items: validation.items,
         identity: checkoutIdentity,
         client: customerDesignOrderTransferClient,
+        prepareRequestId,
       });
-      immutableReferencesByItemId = prepared.preparedByItemId;
-      preparedCheckoutId = prepared.checkoutId;
-    } catch (error) {
-      checkoutSubmissionInProgress.current = false;
-      setIsPaymentProcessing(false);
-      setIsCheckoutPaymentOpen(false);
-      setIsCartOpen(true);
-      triggerNotification(
-        error instanceof UploadedDesignTransferClientError &&
-          (error.code === "CLAIM_EXPIRED" || error.code === "CLAIM_INVALID")
-          ? "Your secure design authorization needs to be refreshed. Your cart is still saved."
-          : "We couldn't securely prepare your uploaded design for checkout. Please try again.",
-        "info",
-      );
-      return;
-    }
-
-    const preparedValidation = revalidateCartForCheckout(validation.items, {
-      fabrics,
-      styles,
-      batches,
-      customDetailCatalog: store.customDetailCatalog,
-      businessSettings,
-      depositRatio: checkoutDepositRatio,
-      preparedUploadedDesignReferences: immutableReferencesByItemId,
-    });
-    if (preparedValidation.changed) {
-      setCartItems(preparedValidation.items);
-    }
-    if (
-      !preparedValidation.canProceed ||
-      preparedValidation.pricing.total === null ||
-      preparedValidation.pricing.depositDueNow === null
-    ) {
-      checkoutSubmissionInProgress.current = false;
-      setIsPaymentProcessing(false);
-      setIsCheckoutPaymentOpen(false);
-      setIsCartOpen(true);
-      triggerNotification(
-        preparedValidation.blockers[0] ||
-          "Review the latest pricing and shipping details before payment.",
-        "info",
-      );
-      return;
-    }
-
-    const checkoutItems = [...preparedValidation.items];
-    const pricingSnapshot = preparedValidation.pricing;
-    let paymentAllocations: ReturnType<
-      typeof calculateCartPaymentAllocations
-    >;
-    try {
-      paymentAllocations = calculateCartPaymentAllocations(
-        checkoutItems,
-        pricingSnapshot,
-        checkoutDepositRatio,
-      );
-    } catch (error) {
-      console.error("Payment allocation failed:", error);
-      checkoutSubmissionInProgress.current = false;
-      setIsPaymentProcessing(false);
-      setIsCheckoutPaymentOpen(false);
-      setIsCartOpen(true);
-      triggerNotification(
-        "The checkout totals could not be reconciled. Please review the cart before payment.",
-        "info",
-      );
-      return;
-    }
-    const paymentAllocationByItem = new Map(
-      paymentAllocations.map((allocation) => [
-        allocation.itemId,
-        allocation,
-      ]),
-    );
-    const checkoutId = preparedCheckoutId;
-    const transactionId = `TXN-${Date.now()}`;
-    const paymentDate = new Date().toISOString();
-    const finalMileQuoteByGroup = new Map(
-      pricingSnapshot.finalMileShippingQuotes.map((quote) => [
-        quote.shipmentGroupId,
-        quote,
-      ]),
-    );
-
-    const completedOrders: MasterOrder[] = checkoutItems.map((item) => {
-      const allocation = paymentAllocationByItem.get(item.id);
-      if (!allocation) {
-        throw new Error(`Missing payment allocation for ${item.id}.`);
+      const preparedValidation = revalidateCartForCheckout(validation.items, {
+        fabrics,
+        styles,
+        batches,
+        customDetailCatalog: store.customDetailCatalog,
+        businessSettings,
+        depositRatio: checkoutDepositRatio,
+        preparedUploadedDesignReferences: prepared.preparedByItemId,
+      });
+      if (preparedValidation.changed) {
+        setCartItems(preparedValidation.items);
       }
-      const immutableReference = immutableReferencesByItemId[item.id];
-      if (item.cartDesignSource?.kind === "uploaded" && !immutableReference) {
-        throw new Error("Uploaded design transfer preparation is missing.");
-      }
-      const shipmentGroupId = getFinalMileShipmentGroupId(item);
-      const finalMileShipping =
-        finalMileQuoteByGroup.get(shipmentGroupId);
-      const persistableFabricAllocations =
-        getPersistableCartItemFabricAllocationsForOrder(item);
-
-      return {
-        ownerUid: checkoutIdentity.uid,
-        customer: item.customer,
-        ...(item.style ? { style: item.style } : {}),
-        ...(item.cartDesignSource?.kind === "uploaded"
-          ? {
-              orderDesignSource: {
-                kind: "uploaded" as const,
-                sourceKey: item.cartDesignSource.sourceKey,
-                displayLabel: item.cartDesignSource.displayLabel,
-                fabricCapacityComposition:
-                  item.cartDesignSource.fabricCapacityComposition.map((spec) => ({
-                    ...spec,
-                  })),
-                demographic: item.cartDesignSource.demographic,
-                imageState: {
-                  kind: "immutable_order_asset" as const,
-                  orderReference: {
-                    ...immutableReference!.orderReference,
-                  },
-                },
-              },
-            }
-          : item.cartDesignSource?.kind === "catalog"
-            ? {
-                orderDesignSource: {
-                  kind: "catalog" as const,
-                  sourceKey: item.cartDesignSource.sourceKey,
-                  styleId: item.cartDesignSource.styleId,
-                },
-              }
-            : {}),
-        fabric: item.fabric,
-        ...(persistableFabricAllocations !== undefined
-          ? { fabricAllocations: persistableFabricAllocations }
-          : {}),
-        design: item.design,
-        garment: {
-          ...item.garment,
-          checkoutTotal: allocation.orderSubtotal,
-        },
-        measurements: item.measurements,
-        payment: {
-          subtotal: allocation.orderSubtotal,
-          deposit: allocation.dueNow,
-          remaining: allocation.remainingGarmentBalance,
-          method:
-            checkoutPaymentMethod === "ideal"
-              ? "iDEAL Bank Transfer"
-              : "Stripe Credit Card",
-          date: paymentDate,
-          isPaid: true,
-          paymentMethod:
-            checkoutPaymentMethod === "ideal" ? "iDEAL" : "Stripe",
-          idealBank:
-            checkoutPaymentMethod === "ideal"
-              ? checkoutIdealBank
-              : undefined,
-          transactionId,
-          secondPaymentStatus: "unpaid",
-        },
-        shipment: {
-          trackingId: `${checkoutId}-${item.id}`,
-          status: "Deposit Paid",
-          currentStage: 1,
-          estimatedDeliveryDate: "TBD",
-        },
-        specialInstructions: item.specialInstructions,
-        notesAboutLeftoverFabric: item.notesAboutLeftoverFabric,
-        batchType: item.batchType,
-        batchName: item.batchName,
-        customGroupCode: item.customGroupCode,
-        checkoutId,
-        deliverySelection: item.deliverySelection,
-        finalMileShipping,
-        shippingBreakdown: {
-          lagosToEindhovenShipping:
-            allocation.lagosToEindhovenShipping,
-          eindhovenToDestinationShipping:
-            allocation.eindhovenToDestinationShipping,
-          totalShipping: allocation.totalShipping,
-          status: "READY",
-        },
-      };
-    });
-
-    // Simulate payment processing...
-    setTimeout(async () => {
-      try {
-        // The immutable asset already exists. Persist the order reference before
-        // declaring the simulated payment flow successful or clearing the cart.
-        await Promise.all(completedOrders.map((order) => StorageService.saveOrder(order)));
-        setOrders((previous) => [...previous, ...completedOrders]);
-        checkoutSubmissionInProgress.current = false;
-        setIsPaymentProcessing(false);
-        setIsCheckoutPaymentOpen(false);
-        setIsCartOpen(false);
-        setCartItems([]);
-        clearUploadedDesignCheckoutPreparation();
-        triggerNotification(
-          "Deposit authorized securely! Atelier notified.",
-          "success"
-        );
-        // Re-evaluate journey to determine post-checkout destination
-        const nextJourney = CustomerJourneyEngine.getCurrentJourney({
-          currentUser: store.currentUser as any,
-          drafts: [],
-          activeOrders: [...store.orders, ...completedOrders],
-          historicalOrders: store.historicalOrders,
-          allBatches: store.batches,
-        });
-        setActiveTab(nextJourney.destination as any);
-      } catch {
-        checkoutSubmissionInProgress.current = false;
-        setIsPaymentProcessing(false);
+      if (
+        !preparedValidation.canProceed ||
+        preparedValidation.pricing.total === null ||
+        preparedValidation.pricing.depositDueNow === null
+      ) {
         setIsCheckoutPaymentOpen(false);
         setIsCartOpen(true);
         triggerNotification(
-          "We couldn't save your prepared order. Your cart is still available to retry.",
+          preparedValidation.blockers[0] ||
+            "Review the latest pricing and shipping details before payment.",
+          "info",
+        );
+        return;
+      }
+
+      const preparedDepositResult = await prepareDepositCheckout({
+        cartItems: preparedValidation.items,
+        prepareRequestId,
+        paymentMethod: checkoutPaymentMethod === "ideal" ? "ideal" : "card",
+        idealBank:
+          checkoutPaymentMethod === "ideal" ? checkoutIdealBank : undefined,
+        preparedUploadedDesignReferences: prepared.preparedByItemId,
+        identity: checkoutIdentity,
+      });
+      setPreparedDeposit(preparedDepositResult);
+      writePreparedDepositSession({
+        checkoutId: preparedDepositResult.checkoutId,
+        paymentIntentId: preparedDepositResult.paymentIntentId,
+        prepareRequestId,
+      });
+      setStripeElementsReady(preparedDepositResult.mode !== "stripe");
+    } catch (error) {
+      setIsCheckoutPaymentOpen(false);
+      setIsCartOpen(true);
+      if (error instanceof UploadedDesignTransferClientError) {
+        triggerNotification(
+          error.code === "CLAIM_EXPIRED" || error.code === "CLAIM_INVALID"
+            ? "Your secure design authorization needs to be refreshed. Your cart is still saved."
+            : "We couldn't securely prepare your uploaded design for checkout. Please try again.",
+          "info",
+        );
+      } else if (error instanceof ConfirmDepositClientError) {
+        triggerNotification(
+          error.message ||
+            "We could not prepare your deposit checkout. Your cart is still available.",
+          "info",
+        );
+      } else {
+        triggerNotification(
+          "We could not prepare your deposit checkout. Your cart is still available.",
           "info",
         );
       }
-    }, 2000);
+    } finally {
+      prepareInProgress.current = false;
+      setIsPreparingCheckout(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (!isCheckoutPaymentOpen) {
+      return;
+    }
+    void prepareDepositForOpenModal();
+    // Intentionally only when the modal opens; payment-method changes reuse the hold.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCheckoutPaymentOpen]);
+
+  React.useEffect(() => {
+    if (stripeRedirectHandled.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const paymentIntentId = params.get("payment_intent");
+    const redirectStatus = params.get("redirect_status");
+    if (!paymentIntentId) return;
+    stripeRedirectHandled.current = true;
+
+    const clearStripeParams = () => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("payment_intent");
+      url.searchParams.delete("payment_intent_client_secret");
+      url.searchParams.delete("redirect_status");
+      window.history.replaceState({}, document.title, url.pathname + url.search);
+    };
+
+    const session = readPreparedDepositSession();
+    const checkoutIdentity = auth.currentUser;
+    if (
+      !session ||
+      !checkoutIdentity ||
+      redirectStatus !== "succeeded"
+    ) {
+      clearStripeParams();
+      if (redirectStatus && redirectStatus !== "succeeded") {
+        void releasePreparedReservationIfAny(session?.checkoutId);
+        triggerNotification(
+          "Stripe payment did not complete. Your cart is still available to retry.",
+          "info",
+        );
+      }
+      return;
+    }
+
+    void (async () => {
+      setIsPaymentProcessing(true);
+      try {
+        const confirmation = await confirmDepositCheckout({
+          checkoutId: session.checkoutId,
+          paymentIntentId: paymentIntentId || session.paymentIntentId,
+          identity: checkoutIdentity,
+        });
+        clearStripeParams();
+        applyConfirmedDeposit(confirmation);
+      } catch (error) {
+        clearStripeParams();
+        setIsCartOpen(true);
+        triggerNotification(
+          error instanceof ConfirmDepositClientError
+            ? error.message
+            : "We couldn't confirm your deposit after the bank redirect.",
+          "info",
+        );
+      } finally {
+        setIsPaymentProcessing(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleExecuteDepositPayment = async () => {
+    if (checkoutSubmissionInProgress.current) {
+      return;
+    }
+    if (!currentUser) {
+      setIsCheckoutPaymentOpen(false);
+      setCheckoutIntent(true);
+      setActiveTab("login");
+      triggerNotification(
+        "Sign in or create an account to securely complete your order.",
+        "info",
+      );
+      return;
+    }
+
+    const checkoutIdentity = auth.currentUser;
+    if (!checkoutIdentity) {
+      setIsCheckoutPaymentOpen(false);
+      setCheckoutIntent(true);
+      setActiveTab("login");
+      triggerNotification(
+        "Sign in or create an account to securely complete your order.",
+        "info",
+      );
+      return;
+    }
+
+    if (!preparedDeposit) {
+      triggerNotification(
+        "Checkout is still preparing. Please wait a moment.",
+        "info",
+      );
+      return;
+    }
+
+    checkoutSubmissionInProgress.current = true;
+    setIsPaymentProcessing(true);
+
+    try {
+      let paymentIntentId = preparedDeposit.paymentIntentId;
+
+      if (preparedDeposit.mode === "stripe") {
+        if (!depositPaymentFormRef.current) {
+          throw new ConfirmDepositClientError(
+            "PAYMENT_NOT_CONFIRMED",
+            "Stripe payment form is not ready yet.",
+          );
+        }
+        const confirmed = await depositPaymentFormRef.current.confirmPayment();
+        paymentIntentId = confirmed.paymentIntentId;
+      }
+
+      const confirmation = await confirmDepositCheckout({
+        checkoutId: preparedDeposit.checkoutId,
+        ...(preparedDeposit.mode === "simulated"
+          ? {
+              provider: "simulated" as const,
+              simulationToken: preparedDeposit.simulationToken,
+            }
+          : {
+              paymentIntentId,
+            }),
+        identity: checkoutIdentity,
+      });
+      checkoutSubmissionInProgress.current = false;
+      setIsPaymentProcessing(false);
+      applyConfirmedDeposit(confirmation);
+    } catch (error) {
+      checkoutSubmissionInProgress.current = false;
+      setIsPaymentProcessing(false);
+      if (error instanceof ConfirmDepositClientError) {
+        if (
+          error.code === "INSUFFICIENT_STOCK" ||
+          error.code === "FABRIC_UNAVAILABLE" ||
+          error.code === "INVALID_FABRIC_INVENTORY" ||
+          error.code === "INVALID_ORDER_ALLOCATION"
+        ) {
+          await closeCheckoutPaymentModal();
+          setIsCartOpen(true);
+          triggerNotification(
+            error.message ||
+              "One or more selected Fabrics no longer have enough stock. Return to Fabric selection to update your design.",
+            "info",
+          );
+          return;
+        }
+        if (
+          error.code === "PAYMENT_NOT_CONFIRMED" ||
+          error.code === "PAYMENT_MISMATCH"
+        ) {
+          triggerNotification(
+            error.message ||
+              "Payment could not be confirmed. Your cart is still available to retry.",
+            "info",
+          );
+          return;
+        }
+      }
+      const message =
+        error instanceof Error
+          ? error.message
+          : "We couldn't confirm your deposit checkout. Your cart is still available to retry.";
+      triggerNotification(message, "info");
+    }
   };
 
   const handleReorder = () => {
@@ -1178,8 +1323,11 @@ export default function App() {
                 </div>
               </div>
               <button
-                onClick={() => setIsCheckoutPaymentOpen(false)}
-                className="p-1 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition cursor-pointer"
+                onClick={() => {
+                  void closeCheckoutPaymentModal();
+                }}
+                disabled={isPaymentProcessing || isPreparingCheckout}
+                className="p-1 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               >
                 <X size={18} />
               </button>
@@ -1409,7 +1557,12 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setCheckoutPaymentMethod("ideal")}
-                    className={`p-3.5 rounded-2xl border-2 flex flex-col items-center gap-1.5 transition cursor-pointer ${
+                    disabled={isPaymentProcessing || isPreparingCheckout}
+                    className={`p-3.5 rounded-2xl border-2 flex flex-col items-center gap-1.5 transition ${
+                      isPaymentProcessing || isPreparingCheckout
+                        ? "cursor-not-allowed opacity-50"
+                        : "cursor-pointer"
+                    } ${
                       checkoutPaymentMethod === "ideal"
                         ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green"
                         : "border-gray-200 bg-white hover:border-gray-300 text-gray-500"
@@ -1423,7 +1576,12 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setCheckoutPaymentMethod("stripe")}
-                    className={`p-3.5 rounded-2xl border-2 flex flex-col items-center gap-1.5 transition cursor-pointer ${
+                    disabled={isPaymentProcessing || isPreparingCheckout}
+                    className={`p-3.5 rounded-2xl border-2 flex flex-col items-center gap-1.5 transition ${
+                      isPaymentProcessing || isPreparingCheckout
+                        ? "cursor-not-allowed opacity-50"
+                        : "cursor-pointer"
+                    } ${
                       checkoutPaymentMethod === "stripe"
                         ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green"
                         : "border-gray-200 bg-white hover:border-gray-300 text-gray-500"
@@ -1437,74 +1595,59 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Payment Details Inputs */}
-              {checkoutPaymentMethod === "ideal" ? (
+              {/* Payment Details — Stripe Elements or simulated prepare status */}
+              {isPreparingCheckout || !preparedDeposit ? (
+                <div className="bg-white border border-heritage-gold/10 p-4 rounded-2xl shadow-sm flex items-center gap-3 text-[10px] text-gray-500">
+                  <span className="animate-spin inline-block h-3.5 w-3.5 border-2 border-heritage-green border-t-transparent rounded-full" />
+                  Reserving fabric and preparing secure deposit checkout...
+                </div>
+              ) : preparedDeposit.mode === "stripe" &&
+                preparedDeposit.clientSecret ? (
                 <div className="bg-white border border-heritage-gold/10 p-4 rounded-2xl space-y-3 shadow-sm">
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-heritage-green">
-                      Select Dutch Issuing Bank
-                    </label>
-                    <select
-                      value={checkoutIdealBank}
-                      onChange={(e) => setCheckoutIdealBank(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs"
-                    >
-                      <option value="Rabobank">Rabobank</option>
-                      <option value="ING Bank">ING Bank</option>
-                      <option value="ABN AMRO">ABN AMRO</option>
-                      <option value="SNS Bank">SNS Bank</option>
-                      <option value="RegioBank">RegioBank</option>
-                      <option value="Triodos Bank">Triodos Bank</option>
-                    </select>
-                  </div>
-                  <p className="text-[10px] text-gray-400 italic">
-                    Upon pressing pay, you will be securely redirected to your
-                    bank's authentication gateway to authorize the garment
-                    deposit
-                    {checkoutPricing.totalShipping !== null &&
-                    checkoutPricing.totalShipping > 0
-                      ? " and full shipping payment"
-                      : ""}
-                    .
-                  </p>
+                  {checkoutPaymentMethod === "ideal" && (
+                    <p className="text-[10px] text-gray-400 italic">
+                      Choose iDEAL inside the secure Stripe form below. You may
+                      be redirected to your bank to authorize the deposit
+                      {checkoutPricing.totalShipping !== null &&
+                      checkoutPricing.totalShipping > 0
+                        ? " and full shipping payment"
+                        : ""}
+                      .
+                    </p>
+                  )}
+                  <DepositPaymentElement
+                    clientSecret={preparedDeposit.clientSecret}
+                    formRef={depositPaymentFormRef}
+                    onReady={() => setStripeElementsReady(true)}
+                    returnUrl={window.location.href}
+                  />
                 </div>
               ) : (
                 <div className="bg-white border border-heritage-gold/10 p-4 rounded-2xl space-y-3 shadow-sm">
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-heritage-green">
-                      Card Number
-                    </label>
-                    <input
-                      type="text"
-                      value={checkoutCardNumber}
-                      onChange={(e) => setCheckoutCardNumber(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-mono"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  {checkoutPaymentMethod === "ideal" && (
                     <div className="space-y-1.5">
                       <label className="block text-[10px] font-bold uppercase tracking-wider text-heritage-green">
-                        Expiry Date
+                        Select Dutch Issuing Bank
                       </label>
-                      <input
-                        type="text"
-                        value={checkoutCardExpiry}
-                        onChange={(e) => setCheckoutCardExpiry(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-mono font-medium"
-                      />
+                      <select
+                        value={checkoutIdealBank}
+                        onChange={(e) => setCheckoutIdealBank(e.target.value)}
+                        disabled={isPaymentProcessing || isPreparingCheckout}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <option value="Rabobank">Rabobank</option>
+                        <option value="ING Bank">ING Bank</option>
+                        <option value="ABN AMRO">ABN AMRO</option>
+                        <option value="SNS Bank">SNS Bank</option>
+                        <option value="RegioBank">RegioBank</option>
+                        <option value="Triodos Bank">Triodos Bank</option>
+                      </select>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-heritage-green">
-                        CVC Security Code
-                      </label>
-                      <input
-                        type="text"
-                        value={checkoutCardCvc}
-                        onChange={(e) => setCheckoutCardCvc(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-mono font-medium"
-                      />
-                    </div>
-                  </div>
+                  )}
+                  <p className="text-[10px] text-gray-500">
+                    Simulated deposit mode is active for this environment. Fabric
+                    is reserved; authorize to confirm the checkout.
+                  </p>
                 </div>
               )}
 
@@ -1524,8 +1667,11 @@ export default function App() {
             <div className="p-6 bg-gray-50 border-t border-gray-150 flex gap-3 justify-end">
               <button
                 type="button"
-                onClick={() => setIsCheckoutPaymentOpen(false)}
-                className="px-4 py-2 bg-white hover:bg-gray-100 border border-gray-200 text-gray-700 rounded-xl text-[10px] font-bold uppercase tracking-wider transition cursor-pointer"
+                onClick={() => {
+                  void closeCheckoutPaymentModal();
+                }}
+                disabled={isPaymentProcessing || isPreparingCheckout}
+                className="px-4 py-2 bg-white hover:bg-gray-100 border border-gray-200 text-gray-700 rounded-xl text-[10px] font-bold uppercase tracking-wider transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
               >
                 Go Back
               </button>
@@ -1534,15 +1680,20 @@ export default function App() {
                 onClick={handleExecuteDepositPayment}
                 disabled={
                   isPaymentProcessing ||
+                  isPreparingCheckout ||
+                  !preparedDeposit ||
+                  (preparedDeposit.mode === "stripe" && !stripeElementsReady) ||
                   !checkoutPricing.canCheckout ||
                   checkoutDepositAmount === null
                 }
                 className="px-6 py-2 bg-heritage-green hover:bg-heritage-gold text-white hover:text-heritage-forest rounded-xl text-[10px] font-bold uppercase tracking-widest transition flex items-center gap-2 border border-heritage-gold/20 shadow-md cursor-pointer disabled:opacity-50"
               >
-                {isPaymentProcessing ? (
+                {isPaymentProcessing || isPreparingCheckout ? (
                   <>
                     <span className="animate-spin inline-block h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
-                    Preparing your uploaded design...
+                    {isPreparingCheckout
+                      ? "Preparing checkout..."
+                      : "Authorizing deposit..."}
                   </>
                 ) : (
                   <>

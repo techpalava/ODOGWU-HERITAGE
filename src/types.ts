@@ -320,7 +320,13 @@ export interface Fabric {
   image?: string;
   width?: string;
   price?: number;
+  /** Physical stock on hand. */
   stock?: number;
+  /**
+   * Units held by ACTIVE checkouts. Legacy docs omit this — treat as 0.
+   * availableStock = stock - reservedStock.
+   */
+  reservedStock?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -678,6 +684,7 @@ export interface CartPricingReview {
 }
 
 export interface GarmentSelection {
+  code?: string;
   type: string; // e.g., "Shirt Only", "Shirt + Trouser", "Complete Set", "Gown Only"
   totalPrice: number;
   preTaxDesignSubtotal?: number;
@@ -933,6 +940,7 @@ export interface UploadedCartDesignSource {
   uploadReference: CustomerDesignUploadReference;
   fabricCapacityComposition: FabricCapacityGarmentSpec[];
   demographic: CustomDetailDemographic;
+  imageState?: UploadedOrderDraftDesignSource["imageState"];
 }
 
 export type CartDesignSource =

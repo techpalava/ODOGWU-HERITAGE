@@ -52,6 +52,7 @@
     "test:design-studio-draft-isolation": "tsx test_design_studio_draft_isolation.ts",
     "test:authenticated-future-drafts": "tsx test_authenticated_future_drafts.ts",
     "test:firestore-emulator": "firebase emulators:exec --only firestore --project demo-odogwu-future-drafts --config firebase.emulator.json \"tsx test_firestore_emulator.ts\"",
+    "test:fabric-inventory-emulator": "firebase emulators:exec --only firestore --project demo-odogwu-future-drafts --config firebase.emulator.json \"tsx test_fabric_inventory_emulator.ts\"",
     "test:staff-preview-entitlement": "tsx test_staff_preview_entitlement.ts",
     "test:staff-preview-entitlement-cli": "tsx test_staff_preview_entitlement_cli.ts",
     "test:staff-preview-client-gate": "tsx test_staff_preview_client_gate.ts",
@@ -61,6 +62,8 @@
   "dependencies": {
     "@google-cloud/firestore": "7.11.6",
     "@google/genai": "^2.4.0",
+    "@stripe/react-stripe-js": "^6.8.2",
+    "@stripe/stripe-js": "^9.14.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "color-namer": "^1.4.0",

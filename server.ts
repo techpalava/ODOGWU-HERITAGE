@@ -13,6 +13,11 @@ import {
 import { handleUploadedDesignTransfer } from "./src/server/uploadedDesignTransferHttp";
 import { handleCreateUploadedDesignOwnershipClaim } from "./src/server/uploadedDesignOwnershipClaimHttp";
 import { handleUploadedDesignDraftTransfer } from "./src/server/uploadedDesignDraftTransferHttp";
+import { handleConfirmDepositOrder } from "./src/server/confirmDepositOrderHttp";
+import { handlePrepareDepositOrder } from "./src/server/prepareDepositOrderHttp";
+import { handleReleaseDepositReservation } from "./src/server/releaseDepositReservationHttp";
+import { handleReconcileExpiredReservations } from "./src/server/reconcileExpiredReservationsHttp";
+import { handleStripeWebhook } from "./src/server/stripeWebhookHttp";
 
 dotenv.config();
 
@@ -37,6 +42,27 @@ function getStripeClient(): Stripe {
 const app = express();
 const PORT = 3000;
 
+// Stripe webhooks require the raw body for signature verification.
+// Mount this route BEFORE express.json().
+app.post(
+  "/api/orders/stripe-webhook",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    const rawBody = Buffer.isBuffer(req.body)
+      ? req.body
+      : Buffer.from(typeof req.body === "string" ? req.body : "");
+    return handleStripeWebhook(
+      {
+        method: req.method,
+        headers: req.headers as Record<string, string | string[] | undefined>,
+        body: rawBody,
+        rawBody,
+      },
+      res,
+    );
+  },
+);
+
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
@@ -51,6 +77,16 @@ app.post(
 app.post(
   "/api/design-studio/transfer-uploaded-design-draft",
   handleUploadedDesignDraftTransfer,
+);
+app.post("/api/orders/prepare-deposit", handlePrepareDepositOrder);
+app.post("/api/orders/confirm-deposit", handleConfirmDepositOrder);
+app.post(
+  "/api/orders/release-deposit-reservation",
+  handleReleaseDepositReservation,
+);
+app.post(
+  "/api/orders/reconcile-expired-reservations",
+  handleReconcileExpiredReservations,
 );
 
 // API route for AI sizing estimation using Gemini 3.5 Flash
@@ -198,7 +234,26 @@ Ensure all values are realistic numbers rounded to the nearest 0.5 inches. Outpu
 
 
 app.post("/api/create-payment-intent", async (req, res) => {
-  const { amount, paymentMethod, idealBank, customerEmail } = req.body;
+  const { amount, paymentMethod, idealBank, customerEmail, checkoutId, ownerUid, checkoutFingerprint } = req.body;
+
+  // Legacy endpoint must never accept Design Studio binding metadata.
+  if (
+    (typeof checkoutId === "string" && checkoutId.trim()) ||
+    (typeof ownerUid === "string" && ownerUid.trim()) ||
+    (typeof checkoutFingerprint === "string" && checkoutFingerprint.trim()) ||
+    (req.body?.metadata &&
+      typeof req.body.metadata === "object" &&
+      (req.body.metadata.checkoutId ||
+        req.body.metadata.ownerUid ||
+        req.body.metadata.checkoutFingerprint))
+  ) {
+    return res.status(400).json({
+      success: false,
+      error:
+        "Protected checkout binding metadata is not allowed on the legacy payment-intent route.",
+      code: "PROTECTED_METADATA_REFUSED",
+    });
+  }
 
   if (!amount || amount <= 0) {
     return res.status(400).json({ success: false, error: "Invalid amount specified." });
@@ -217,7 +272,11 @@ app.post("/api/create-payment-intent", async (req, res) => {
       const paymentIntent = await stripe.paymentIntents.create({
         amount: depositInCents,
         currency: "eur",
-        metadata: { customerEmail, paymentMethod: paymentMethod || "card", stage: "Bespoke 50% Deposit" }
+        metadata: {
+          customerEmail: customerEmail || "",
+          paymentMethod: paymentMethod || "card",
+          stage: "Bespoke 50% Deposit",
+        },
       });
       transactionId = paymentIntent.id;
       realStripeActivated = true;
@@ -235,7 +294,10 @@ app.post("/api/create-payment-intent", async (req, res) => {
     amountCharged: depositAmount,
     method: paymentMethod,
     bank: idealBank || null,
-    message: `Secure ${paymentMethod} deposit transaction of €${depositAmount} authorized successfully! ${realStripeActivated ? "(Live Stripe Gateway Verified)" : "(Secure Escrow Sandbox Simulated)"}`,
+    // Creating a PaymentIntent is not payment success. Confirm-deposit must
+    // retrieve a succeeded PaymentIntent (or use an explicitly gated simulator).
+    paymentStatus: realStripeActivated ? "requires_confirmation" : "simulated_intent_created",
+    message: `Secure ${paymentMethod} deposit PaymentIntent prepared for €${depositAmount}. ${realStripeActivated ? "(Live Stripe gateway; confirm before inventory)" : "(Simulator intent only; server must gate simulation)"}`,
     timestamp: new Date().toISOString()
   });
 });

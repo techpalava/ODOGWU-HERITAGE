@@ -91,6 +91,7 @@ const sameUidPrepared = await prepareUploadedDesignOrderReferences({
   items: [sameUidItem],
   identity: identity("customer-a"),
   client,
+  prepareRequestId: "PREP-TEST-SAME-UID",
 });
 assert.equal(transfers.length, 1);
 assert.equal(transfers[0].claimToken, undefined);
@@ -110,16 +111,19 @@ const slowClient: TrustedUploadedDesignTransferClient = {
   },
 };
 const concurrentItem = draftItem("concurrent", "customer-concurrent");
+const concurrentPrepareRequestId = "PREP-TEST-CONCURRENT";
 await Promise.all([
   prepareUploadedDesignOrderReferences({
     items: [concurrentItem],
     identity: identity("customer-concurrent"),
     client: slowClient,
+    prepareRequestId: concurrentPrepareRequestId,
   }),
   prepareUploadedDesignOrderReferences({
     items: [concurrentItem],
     identity: identity("customer-concurrent"),
     client: slowClient,
+    prepareRequestId: concurrentPrepareRequestId,
   }),
 ]);
 assert.equal(transfers.length, 1);
@@ -128,15 +132,18 @@ assert.equal(transfers.length, 1);
 __resetUploadedDesignCheckoutPreparationForTests();
 transfers.length = 0;
 const crossUidItem = draftItem("cross", "anonymous-a");
+const crossUidPrepareRequestId = "PREP-TEST-CROSS-UID";
 await createAnonymousUploadedDesignClaims({
   items: [crossUidItem],
   identity: identity("anonymous-a"),
   client,
+  prepareRequestId: crossUidPrepareRequestId,
 });
 const crossUidPrepared = await prepareUploadedDesignOrderReferences({
   items: [crossUidItem],
   identity: identity("customer-b"),
   client,
+  prepareRequestId: crossUidPrepareRequestId,
 });
 assert.equal(transfers.length, 1);
 assert.ok(transfers[0].claimToken?.startsWith("opaque-design-cross"));
@@ -158,6 +165,7 @@ await assert.rejects(
       items: [crossUidItem],
       identity: identity("customer-b"),
       client,
+      prepareRequestId: "PREP-TEST-CROSS-UID-BLOCKED",
     }),
   /authorization needs to be refreshed/,
 );
@@ -167,15 +175,18 @@ assert.equal(transfers.length, 0);
 __resetUploadedDesignCheckoutPreparationForTests();
 transfers.length = 0;
 claimCalls = 0;
+const catalogPrepareRequestId = "PREP-TEST-CATALOG";
 await createAnonymousUploadedDesignClaims({
   items: [catalogItem("catalog-only")],
   identity: identity("anonymous-catalog"),
   client: trackedClient,
+  prepareRequestId: catalogPrepareRequestId,
 });
 const catalogPrepared = await prepareUploadedDesignOrderReferences({
   items: [catalogItem("catalog-only")],
   identity: identity("customer-catalog"),
   client: trackedClient,
+  prepareRequestId: catalogPrepareRequestId,
 });
 assert.equal(claimCalls, 0);
 assert.equal(transfers.length, 0);
@@ -188,15 +199,18 @@ claimCalls = 0;
 const ownedByAnonymous = draftItem("anonymous-owned", "anonymous-mixed");
 const alreadyOwnedByAccount = draftItem("account-owned", "customer-mixed");
 const mixedOwnership = [ownedByAnonymous, alreadyOwnedByAccount];
+const mixedPrepareRequestId = "PREP-TEST-MIXED";
 await createAnonymousUploadedDesignClaims({
   items: mixedOwnership,
   identity: identity("anonymous-mixed"),
   client: trackedClient,
+  prepareRequestId: mixedPrepareRequestId,
 });
 await prepareUploadedDesignOrderReferences({
   items: mixedOwnership,
   identity: identity("customer-mixed"),
   client: trackedClient,
+  prepareRequestId: mixedPrepareRequestId,
 });
 assert.equal(claimCalls, 1);
 assert.ok(
@@ -216,12 +230,14 @@ transfers.length = 0;
 const first = draftItem("first", "customer-c");
 const second = draftItem("second", "customer-c");
 const mixed = [catalogItem("catalog"), first, second];
+const retryPrepareRequestId = "PREP-TEST-RETRY";
 failReferenceId = "design-second";
 await assert.rejects(() =>
   prepareUploadedDesignOrderReferences({
     items: mixed,
     identity: identity("customer-c"),
     client,
+    prepareRequestId: retryPrepareRequestId,
   }),
 );
 assert.deepEqual(
@@ -234,6 +250,7 @@ const retryPrepared = await prepareUploadedDesignOrderReferences({
   items: mixed,
   identity: identity("customer-c"),
   client,
+  prepareRequestId: retryPrepareRequestId,
 });
 assert.deepEqual(
   transfers.map((transfer) => transfer.itemReferenceId),

@@ -1183,23 +1183,12 @@ export const calculateCartPricing = (
     const deliveryKey = getDeliverySelectionKey(item.deliverySelection);
     const key = `${arrivalGroupKey}::${deliveryKey}`;
     const garmentPieceCount = getStoredGarmentPieceCount(item);
-    const actualParcelWeightKg =
-      item.deliverySelection?.actualParcelWeightKg;
-    const hasActualWeight =
-      typeof actualParcelWeightKg === "number" &&
-      Number.isFinite(actualParcelWeightKg) &&
-      actualParcelWeightKg > 0;
+    // Customer-supplied actualParcelWeightKg is never payment authority.
+    // Final-mile bands are derived from trusted garment-count estimates.
     const existing = finalMileGroups.get(key);
 
     if (existing) {
       existing.garmentPieceCount += garmentPieceCount;
-      existing.hasAnyActualWeight =
-        existing.hasAnyActualWeight || hasActualWeight;
-      existing.allItemsHaveActualWeight =
-        existing.allItemsHaveActualWeight && hasActualWeight;
-      if (hasActualWeight) {
-        existing.actualParcelWeightKg += actualParcelWeightKg;
-      }
       return;
     }
 
@@ -1208,49 +1197,30 @@ export const calculateCartPricing = (
       arrivalGroupKey,
       deliverySelection: item.deliverySelection,
       garmentPieceCount,
-      actualParcelWeightKg: hasActualWeight ? actualParcelWeightKg : 0,
-      hasAnyActualWeight: hasActualWeight,
-      allItemsHaveActualWeight: hasActualWeight,
+      actualParcelWeightKg: 0,
+      hasAnyActualWeight: false,
+      allItemsHaveActualWeight: false,
     });
   });
 
   const finalMileShippingQuotes = Array.from(finalMileGroups.values()).map(
     (group) => {
       const selection = group.deliverySelection
-        ? {
-            ...group.deliverySelection,
-            actualParcelWeightKg: group.allItemsHaveActualWeight
-              ? group.actualParcelWeightKg
-              : undefined,
-          }
+        ? (() => {
+            const {
+              actualParcelWeightKg: _ignoredClientWeight,
+              ...deliveryRest
+            } = group.deliverySelection;
+            return deliveryRest;
+          })()
         : undefined;
 
-      const quote = calculateFinalMileShipping({
+      return calculateFinalMileShipping({
         deliverySelection: selection,
         garmentPieceCount: group.garmentPieceCount,
         shipmentGroupId: getStableGroupId(group.key),
         arrivalGroupKey: group.arrivalGroupKey,
       });
-
-      if (
-        quote.method === "DELIVERY" &&
-        quote.status === "READY" &&
-        group.hasAnyActualWeight &&
-        !group.allItemsHaveActualWeight
-      ) {
-        return {
-          ...quote,
-          status: "MANUAL_QUOTE_REQUIRED" as const,
-          weightSource: null,
-          weightBand: null,
-          actualParcelWeightKg: undefined,
-          priceEur: null,
-          manualQuoteReason:
-            "Complete the actual parcel weight for every item in this shipment before payment.",
-        };
-      }
-
-      return quote;
     },
   );
 
