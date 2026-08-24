@@ -42,11 +42,16 @@ const renderStep = ({
   selectedDemographics = [],
   selectedFabricQuantity,
   normalizedCustomDetailCatalog = catalog,
+  catalogueCoverageMessage = null,
 }: {
   selectedGarmentTypes?: readonly FabricGarmentType[];
   selectedDemographics?: readonly CustomDetailDemographic[];
   selectedFabricQuantity?: number;
   normalizedCustomDetailCatalog?: readonly CustomDetailOption[];
+  catalogueCoverageMessage?: {
+    headline: string;
+    detail: string;
+  } | null;
 } = {}) =>
   renderToStaticMarkup(
     createElement(GarmentTypeStep, {
@@ -54,6 +59,7 @@ const renderStep = ({
       selectedDemographics,
       selectedFabricQuantity,
       normalizedCustomDetailCatalog,
+      catalogueCoverageMessage,
       onGarmentTypesChange: () => undefined,
       onDemographicsChange: () => undefined,
       onConstructionDefaultsChange: () => undefined,
@@ -348,7 +354,26 @@ assert.equal(
   "Agbada must not expose a Step 1 selection control",
 );
 assert.ok(populatedMarkup.includes("Fabric, tax, shipping, and other selected options will be added in later steps."));
-assert.equal(/upload your own design|uploaded design complete|design source/i.test(populatedMarkup), false);
+assert.equal(/uploaded design complete|design source/i.test(populatedMarkup), false);
+assert.ok(
+  populatedMarkup.includes(
+    "Step 3 later requires a matching Design Style catalogue entry for catalogue designs.",
+  ),
+);
+
+const coverageWarningMarkup = renderStep({
+  selectedGarmentTypes: ["skirt"],
+  selectedDemographics: ["female"],
+  catalogueCoverageMessage: {
+    headline: "No catalogue design matches this selection",
+    detail:
+      "None of the current Design Style catalogue entries support Skirt. Adjust your selection, or continue and use Upload Your Own Design in Step 3.",
+  },
+});
+assert.ok(
+  coverageWarningMarkup.includes("No catalogue design matches this selection"),
+);
+assert.ok(coverageWarningMarkup.includes("Upload Your Own Design"));
 
 const allEightStep1Markup = renderStep({
   selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],

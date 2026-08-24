@@ -31,6 +31,12 @@ import { migrateLegacyCartShippingItems } from "../utils/shippingPricing";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
 import { FirebaseCustomerAuth } from "../services/firebaseCustomerAuth";
 import { guestUploadedDesignOwnershipContinuity } from "../services/guestUploadedDesignOwnershipContinuity";
+import type { StylesLoadState } from "../utils/stylesCatalogueLoadState";
+import {
+  applyStylesCatalogueListenerEvent,
+  invalidateStylesCatalogueLoadGeneration,
+  isCurrentStylesCatalogueLoadGeneration,
+} from "../utils/stylesCatalogueLoadState";
 
 interface AppState {
 
@@ -84,6 +90,9 @@ interface AppState {
   hasLoadedBatches: boolean;
   hasLoadedOrders: boolean;
   hasLoadedBusinessSettings: boolean;
+  /** Authoritative Style catalogue readiness (first Firestore snapshot / error). */
+  stylesLoadState: StylesLoadState;
+  stylesLoadError: string | null;
   currentUser: Customer | null;
   setCurrentUser: (user: Customer | null) => void;
   customers: Customer[];
@@ -231,6 +240,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   hasLoadedBatches: false,
   hasLoadedOrders: false,
   hasLoadedBusinessSettings: false,
+  stylesLoadState: "loading",
+  stylesLoadError: null,
   currentUser: null,
   setCurrentUser: (user) => {
     clearPrivateStoreSubscriptions();
@@ -480,7 +491,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Initialization
   initializeData: async () => {
-    set({ isLoadingData: true });
+    // Invalidate + unsubscribe Style listeners BEFORE any await so a stale
+    // first-snapshot callback cannot flip the new reload back to ready.
+    const stylesSubscriptionGeneration =
+      invalidateStylesCatalogueLoadGeneration();
+    storeUnsubs.forEach((unsub) => unsub && unsub());
+    storeUnsubs = [];
+    clearPrivateStoreSubscriptions();
+    set({
+      isLoadingData: true,
+      stylesLoadState: "loading",
+      stylesLoadError: null,
+    });
     try {
       const catalog = await StorageService.getCatalog();
       set({ customDetailCatalog: catalog });
@@ -508,11 +530,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           hasInitializedData: true,
         };
       }
-
-      // Clear any existing listeners to prevent duplicates
-      storeUnsubs.forEach(unsub => unsub && unsub());
-      storeUnsubs = [];
-      clearPrivateStoreSubscriptions();
 
       storeUnsubs.push(
         StorageService.subscribeToDocument<BusinessSettings>("settings", "business", (settings) => {
@@ -571,9 +588,55 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
 
       storeUnsubs.push(
-        StorageService.subscribeToCollection<StyleCategory>("styles", (styles) => {
-          set({ styles });
-        })
+        StorageService.subscribeToCollection<StyleCategory>(
+          "styles",
+          (styles) => {
+            if (
+              !isCurrentStylesCatalogueLoadGeneration(
+                stylesSubscriptionGeneration,
+              )
+            ) {
+              return;
+            }
+            const next = applyStylesCatalogueListenerEvent(
+              {
+                styles: get().styles,
+                stylesLoadState: get().stylesLoadState,
+                stylesLoadError: get().stylesLoadError,
+              },
+              {
+                kind: "snapshot",
+                callbackGeneration: stylesSubscriptionGeneration,
+                styles,
+              },
+            );
+            set(next);
+          },
+          (error) => {
+            if (
+              !isCurrentStylesCatalogueLoadGeneration(
+                stylesSubscriptionGeneration,
+              )
+            ) {
+              return;
+            }
+            const next = applyStylesCatalogueListenerEvent(
+              {
+                styles: get().styles,
+                stylesLoadState: get().stylesLoadState,
+                stylesLoadError: get().stylesLoadError,
+              },
+              {
+                kind: "error",
+                callbackGeneration: stylesSubscriptionGeneration,
+                message:
+                  error?.message ||
+                  "The Design Style catalogue could not be loaded.",
+              },
+            );
+            set(next);
+          },
+        ),
       );
 
       storeUnsubs.push(
@@ -618,7 +681,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     } catch (error) {
       console.error("Failed to initialize app data:", error);
-      set({ isLoadingData: false });
+      set({
+        isLoadingData: false,
+        stylesLoadState: "error",
+        stylesLoadError:
+          error instanceof Error
+            ? error.message
+            : "The Design Style catalogue could not be loaded.",
+      });
     }
   },
 }));
