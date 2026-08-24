@@ -161,12 +161,17 @@ export const StorageService = {
   },
 
   // Helper to subscribe to collection
-  subscribeToCollection<T>(collectionName: string, callback: (data: T[]) => void) {
+  subscribeToCollection<T>(
+    collectionName: string,
+    callback: (data: T[]) => void,
+    onError?: (error: Error) => void,
+  ) {
     return onSnapshot(collection(db, collectionName), (snapshot) => {
       const items = snapshot.docs.map(doc => legacyCompatMap(collectionName, { id: doc.id, ...doc.data() } as T));
       callback(items);
     }, (error) => {
       console.error(`Error subscribing to collection ${collectionName}:`, error);
+      onError?.(error);
     });
   },
 

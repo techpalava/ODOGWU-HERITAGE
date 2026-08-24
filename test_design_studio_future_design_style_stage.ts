@@ -78,6 +78,18 @@ const adminSource = readFileSync("src/components/DatabaseView.tsx", "utf8");
 
 assert.match(componentSource, /No matching design styles are available yet/);
 assert.match(componentSource, /Return to Garment Type/);
+assert.match(
+  componentSource,
+  /No catalogue designs are available right now/,
+);
+assert.match(
+  componentSource,
+  /You can upload your own design below, or return to Garment Type/,
+);
+assert.equal(
+  /A current catalog design is required/.test(componentSource),
+  false,
+);
 assert.match(componentSource, /aria-pressed=\{isSelected\}/);
 assert.match(componentSource, /aria-describedby=\{!isCompatible \? reasonId : undefined\}/);
 assert.match(componentSource, /min-h-11/);

@@ -41,6 +41,13 @@ import { GarmentTypeStep } from "./GarmentTypeStep";
 import { DormantFutureFabricStep } from "./DormantFutureFabricStep";
 import { DormantFutureDesignStyleStep } from "./DormantFutureDesignStyleStep";
 import { DesignStudioJourneyStepper } from "./DesignStudioJourneyStepper";
+import { resolveStep1CatalogueCoverage } from "../utils/step1CatalogueCoverage";
+import {
+  canBeginFutureDesignDraftHydration,
+  isFutureDesignStyleStageCompleteForCustomDetails,
+  preserveUnresolvedCatalogueStyleSelection,
+  resolveHydratedDesignStyleSelection,
+} from "../utils/stylesCatalogueLoadState";
 import {
   DormantFutureCustomDetailsStep,
   type AdditionalGarmentCustomDetailsChoice,
@@ -140,6 +147,7 @@ import {
 import { buildFutureOrderCandidate } from "../utils/futureOrderCandidate";
 import { isFuturePaymentReviewStageUnlocked } from "../utils/designStudioFuturePaymentReview";
 import {
+  activateFutureCatalogStyleSelection,
   createCatalogDesignSource,
   isDesignSourceConfirmed,
   isValidUploadedDesignSource,
@@ -241,6 +249,7 @@ export default function DesignStudioView({
   >(null);
   const businessSettings = useAppStore((state) => state.businessSettings);
   const isLoadingData = useAppStore((state) => state.isLoadingData);
+  const stylesLoadState = useAppStore((state) => state.stylesLoadState);
   const storeBatches = useAppStore((state) => state.batches);
   const setNotification = useAppStore((state) => state.setNotification);
   const customDetailCatalog = useAppStore(
@@ -408,10 +417,18 @@ export default function DesignStudioView({
       garmentTypeSelection,
       fabricAllocationState,
     });
-  const futureDesignStyleSelection = reconcileFutureDesignStyleSelection({
-    selectedStyleId: futureSelectedStyleId,
-    styles,
+  const futureDesignStyleSelection =
+    stylesLoadState === "ready"
+      ? reconcileFutureDesignStyleSelection({
+          selectedStyleId: futureSelectedStyleId,
+          styles,
+          garmentTypeSelection,
+        })
+      : preserveUnresolvedCatalogueStyleSelection(futureSelectedStyleId);
+  const step1CatalogueCoverage = resolveStep1CatalogueCoverage({
     garmentTypeSelection,
+    styles,
+    stylesLoadState,
   });
   const activeFutureDesignSource =
     futureDesignSource || createCatalogDesignSource(futureSelectedStyleId || "");
@@ -439,9 +456,16 @@ export default function DesignStudioView({
         priceActivatedFabricCode: futurePriceActivatedFabricCode,
       }),
   );
-  const isFutureDesignSourceReadyForCustomDetails = activeUploadedDesignSource
-    ? isFutureUploadedDesignConfirmed && isFutureUploadedDesignPricingActive
-    : futureDesignStyleSelection.status === "selected";
+  const isFutureDesignSourceReadyForCustomDetails =
+    isFutureDesignStyleStageCompleteForCustomDetails({
+      stylesLoadState,
+      selectedStyleId: futureSelectedStyleId,
+      styles,
+      garmentTypeSelection,
+      designSource: activeFutureDesignSource,
+      isUploadedDesignConfirmed: isFutureUploadedDesignConfirmed,
+      isUploadedDesignPricingActive: isFutureUploadedDesignPricingActive,
+    });
 
   const [fabricSearchInput] = useState<string>("");
   const [fabricSearch, setFabricSearch] = useState<string>("");
@@ -707,11 +731,14 @@ export default function DesignStudioView({
   };
 
   const activateFutureCatalogStyle = (styleId: string) => {
-    setFutureSelectedStyleId(styleId);
-    const nextSource = createCatalogDesignSource(styleId);
-    setFutureDesignSource(nextSource);
-    setFutureConfirmedDesignSourceKey(nextSource?.sourceKey || null);
-    setFuturePriceActivatedFabricCode(futurePrimaryFabricCode);
+    const activated = activateFutureCatalogStyleSelection({
+      styleId,
+      primaryFabricCode: futurePrimaryFabricCode,
+    });
+    setFutureSelectedStyleId(activated.selectedStyleId);
+    setFutureDesignSource(activated.designSource);
+    setFutureConfirmedDesignSourceKey(activated.confirmedDesignSourceKey);
+    setFuturePriceActivatedFabricCode(activated.priceActivatedFabricCode);
   };
 
   const deleteUploadedDesign = async ({
@@ -1190,12 +1217,14 @@ export default function DesignStudioView({
 
   useEffect(() => {
     if (
-      guestDraftHydrated ||
-      isLoadingData ||
-      styles.length === 0 ||
-      fabrics.length === 0 ||
-      normalizedGarmentTypeCatalog.length === 0 ||
-      futureDraftIdentity.status === "resolving"
+      !canBeginFutureDesignDraftHydration({
+        guestDraftHydrated,
+        isLoadingData,
+        stylesLoadState,
+        hasFabrics: fabrics.length > 0,
+        hasGarmentCatalog: normalizedGarmentTypeCatalog.length > 0,
+        identityStatus: futureDraftIdentity.status,
+      })
     ) {
       return;
     }
@@ -1318,7 +1347,8 @@ export default function DesignStudioView({
       const restoredStyleId = restoredUploadedSource
         ? null
         : storedDraft?.selectedStyleId || null;
-      const restoredStyleSelection = reconcileFutureDesignStyleSelection({
+      const restoredStyleSelection = resolveHydratedDesignStyleSelection({
+        stylesLoadState,
         selectedStyleId: restoredStyleId,
         styles,
         garmentTypeSelection: restoredGarmentTypeSelection,
@@ -1340,7 +1370,8 @@ export default function DesignStudioView({
             selectedFabricCode: restoredPrimaryFabricCode,
             priceActivatedFabricCode: storedDraft?.priceActivatedFabricCode,
           })
-        : restoredStyleSelection.status === "selected";
+        : stylesLoadState === "ready" &&
+          restoredStyleSelection.status === "selected";
       const restoredAiTryOnWorkflow =
         normalizeAiTryOnWorkflowState(storedDraft?.aiTryOnWorkflow) ||
         createEmptyAiTryOnWorkflowState();
@@ -1498,6 +1529,7 @@ export default function DesignStudioView({
     futureDraftIdentityKey,
     guestDraftHydrated,
     isLoadingData,
+    stylesLoadState,
     customDetailCatalog,
     fabrics,
     styles,
@@ -2424,6 +2456,18 @@ export default function DesignStudioView({
               handleDormantConstructionDefaultsChange
             }
             statusMessage={garmentTypeBlockerMessage}
+            catalogueCoverageMessage={
+              (step1CatalogueCoverage.status === "no_match" ||
+                step1CatalogueCoverage.status === "empty_catalogue" ||
+                step1CatalogueCoverage.status === "catalogue_unavailable") &&
+              step1CatalogueCoverage.customerHeadline &&
+              step1CatalogueCoverage.customerDetail
+                ? {
+                    headline: step1CatalogueCoverage.customerHeadline,
+                    detail: step1CatalogueCoverage.customerDetail,
+                  }
+                : null
+            }
             idPrefix="future-garment-type-step"
           />
           <div className="flex justify-end">
@@ -2433,7 +2477,10 @@ export default function DesignStudioView({
               disabled={!garmentTypeStageCompletion.isComplete}
               className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
             >
-              Continue to Fabric
+              {step1CatalogueCoverage.status === "no_match" ||
+              step1CatalogueCoverage.status === "empty_catalogue"
+                ? "Continue to Fabric (upload later)"
+                : "Continue to Fabric"}
             </button>
           </div>
         </div>
@@ -2469,6 +2516,8 @@ export default function DesignStudioView({
             futureFabricAuthoritativePricing?.garmentConstructionSubtotal ??
             null
           }
+          isCatalogueLoading={stylesLoadState === "loading"}
+          stylesLoadState={stylesLoadState}
           uploadedDesign={{
             source: activeUploadedDesignSource,
             reference:
