@@ -12,6 +12,7 @@ import {
   toggleUploadedDesignGarmentComposition,
   UPLOADED_DESIGN_GARMENT_OPTIONS,
 } from "./src/utils/uploadedDesignStep1";
+import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
 import {
   getConfirmedDesignSourceKeyAfterSourceChange,
 } from "./src/utils/designSourceState";
@@ -99,11 +100,20 @@ assert.deepEqual(summaryFor("full_length_gown"), {
   fabricQuantity: 1,
   requiresAdditionalAllocation: false,
 });
-assert.deepEqual(summaryFor("agbada"), {
-  garmentCount: 1,
-  fabricQuantity: 1,
-  requiresAdditionalAllocation: false,
-});
+assert.deepEqual(
+  getUploadedDesignCapacitySummary([createStyleBaseGarmentSpec("agbada")]),
+  {
+    garmentCount: 1,
+    fabricQuantity: 1,
+    requiresAdditionalAllocation: false,
+  },
+);
+assert.ok(
+  UPLOADED_DESIGN_GARMENT_OPTIONS.every(
+    (option) => option.garmentType !== "agbada",
+  ),
+  "Upload garment options must hide Agbada",
+);
 assert.deepEqual(summaryFor("kaftan", "trouser"), {
   garmentCount: 2,
   fabricQuantity: 1,
@@ -158,7 +168,12 @@ assert.deepEqual(
   differentFabricAllocations.allocations.map((allocation) => allocation.fabricCode),
   ["HERITAGE-IVORY", "CRIMSON-RED"],
 );
-assert(UPLOADED_DESIGN_GARMENT_OPTIONS.every((option) => option.garmentType !== "other"));
+assert.equal(UPLOADED_DESIGN_GARMENT_OPTIONS.length, 8);
+assert.ok(
+  UPLOADED_DESIGN_GARMENT_OPTIONS.every(
+    (option) => option.garmentType !== "agbada",
+  ),
+);
 assert.equal(
   UPLOADED_DESIGN_GARMENT_OPTIONS.find((option) => option.garmentType === "kaftan")
     ?.fabricUnits,

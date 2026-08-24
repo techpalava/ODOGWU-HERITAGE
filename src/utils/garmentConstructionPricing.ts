@@ -27,29 +27,40 @@ export const CANONICAL_PHYSICAL_GARMENT_TYPES: readonly CanonicalPhysicalGarment
   ...STYLE_BASE_GARMENT_TYPES,
 ] as CanonicalPhysicalGarmentType[];
 
-/** Customer-facing Step 1 garment cards; domain support for omitted types is retained elsewhere. */
-export const STEP_1_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmentType[] =
+/**
+ * Authoritative customer-facing garment picker list for Design Studio.
+ * Agbada remains canonical/internal but is hidden from NEW customer selection.
+ * Excludes `other` (not a customer base garment card).
+ */
+export const CUSTOMER_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmentType[] =
   CANONICAL_PHYSICAL_GARMENT_TYPES.filter(
     (garmentType) => garmentType !== "agbada",
   );
 
-const STEP_1_SELECTABLE_GARMENT_TYPE_SET = new Set<CanonicalPhysicalGarmentType>(
-  STEP_1_SELECTABLE_GARMENT_TYPES,
+/** @deprecated Prefer CUSTOMER_SELECTABLE_GARMENT_TYPES — same authoritative list. */
+export const STEP_1_SELECTABLE_GARMENT_TYPES = CUSTOMER_SELECTABLE_GARMENT_TYPES;
+
+const CUSTOMER_SELECTABLE_GARMENT_TYPE_SET = new Set<CanonicalPhysicalGarmentType>(
+  CUSTOMER_SELECTABLE_GARMENT_TYPES,
 );
 
-export const getStep1SelectableGarmentTypes = (
+export const getCustomerSelectableGarmentTypes = (
   selectedGarmentTypes: readonly FabricGarmentType[],
 ): CanonicalPhysicalGarmentType[] =>
-  STEP_1_SELECTABLE_GARMENT_TYPES.filter((garmentType) =>
+  CUSTOMER_SELECTABLE_GARMENT_TYPES.filter((garmentType) =>
     selectedGarmentTypes.includes(garmentType),
   );
 
-export const isStep1SelectableGarmentType = (
+export const getStep1SelectableGarmentTypes = getCustomerSelectableGarmentTypes;
+
+export const isCustomerSelectableGarmentType = (
   garmentType: FabricGarmentType,
 ): garmentType is CanonicalPhysicalGarmentType =>
-  STEP_1_SELECTABLE_GARMENT_TYPE_SET.has(
+  CUSTOMER_SELECTABLE_GARMENT_TYPE_SET.has(
     garmentType as CanonicalPhysicalGarmentType,
   );
+
+export const isStep1SelectableGarmentType = isCustomerSelectableGarmentType;
 
 const CANONICAL_PHYSICAL_GARMENT_TYPE_SET = new Set<FabricGarmentType>(
   CANONICAL_PHYSICAL_GARMENT_TYPES,

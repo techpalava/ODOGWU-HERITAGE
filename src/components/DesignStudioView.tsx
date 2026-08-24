@@ -96,6 +96,7 @@ import {
   getFutureFabricGarmentSelections,
   getFutureFabricStageCompletion,
   reconcileFutureFabricAllocationState,
+  reconcileFutureFabricAllocationStateIfChanged,
 } from "../utils/designStudioFutureFabricStage";
 import {
   getGarmentTypeSelectedDemographics,
@@ -154,9 +155,17 @@ import {
 } from "../utils/designSourceState";
 import { isDesignSourcePricingActive } from "../utils/designStylePricingActivation";
 import {
+  buildEffectiveUploadedJourneyGarmentTypeSelection,
   createUploadedDesignSourceWhenReady,
-  toggleUploadedDesignGarmentComposition,
+  getUploadedDesignAdditionalGarmentTypes,
+  getUploadedDesignCompositionNeedsReview,
+  getUploadedDesignCompositionSignature,
+  getUploadedDesignRequiredStep1GarmentTypes,
+  mergeUploadedDesignCompositionWithStep1,
+  resolveFabricStepGarmentTypeSelection,
+  UPLOADED_DESIGN_COMPOSITION_NEEDS_REVIEW_MESSAGE,
 } from "../utils/uploadedDesignStep1";
+import { useDesignStudioEffectiveJourneyComposition } from "../utils/useDesignStudioEffectiveJourneyComposition";
 import {
   CustomerDesignUploadError,
   CustomerDesignUploadService,
@@ -171,7 +180,7 @@ import {
 } from "../utils/additionalGarmentConstructionState";
 import { createCatalogueAdditionalGarmentSelection } from "../utils/additionalGarmentDomain";
 import {
-  CANONICAL_PHYSICAL_GARMENT_TYPES,
+  CUSTOMER_SELECTABLE_GARMENT_TYPES,
   resolveGarmentConstructionPricing,
 } from "../utils/garmentConstructionPricing";
 import { projectFutureCustomDetailsCatalogue } from "../utils/futureCustomDetailsCatalogue";
@@ -270,8 +279,6 @@ export default function DesignStudioView({
       : futureDraftIdentity.status === "blocked"
         ? `blocked:${futureDraftIdentity.reason}`
         : futureDraftIdentity.status;
-  const normalizedGarmentTypeCatalog =
-    normalizeCustomDetailCatalog(customDetailCatalog);
   const [garmentTypeSelection, setGarmentTypeSelection] =
     useState<GarmentTypeStepSelection>(
       () =>
@@ -303,6 +310,8 @@ export default function DesignStudioView({
   const [uploadedDesignComposition, setUploadedDesignComposition] = useState<
     FabricCapacityGarmentSpec[]
   >([]);
+  const [uploadedDesignAdditionalGarmentTypes, setUploadedDesignAdditionalGarmentTypes] =
+    useState<FabricGarmentType[]>([]);
   const [uploadedDesignDemographic, setUploadedDesignDemographic] =
     useState<CustomDetailDemographic | null>(null);
   const [uploadedDesignPreviewUrl, setUploadedDesignPreviewUrl] = useState<
@@ -401,22 +410,6 @@ export default function DesignStudioView({
   } | null>(null);
   const [futureCustomDetailsFocusGarmentKey, setFutureCustomDetailsFocusGarmentKey] =
     useState<string | null>(null);
-  const futureFabricComposition =
-    getFutureFabricCapacityComposition(garmentTypeSelection);
-  const futureFabricStageCompletion = getFutureFabricStageCompletion({
-    garmentTypeSelection,
-    fabricAllocationState,
-    fabrics,
-  });
-  const futureGarmentFabricPlanning = getFutureGarmentFabricPlanning({
-    garmentTypeSelection,
-    fabricAllocationState,
-  });
-  const garmentTypeStepSelectedFabricQuantity =
-    getGarmentTypeStepSelectedFabricQuantity({
-      garmentTypeSelection,
-      fabricAllocationState,
-    });
   const futureDesignStyleSelection =
     stylesLoadState === "ready"
       ? reconcileFutureDesignStyleSelection({
@@ -436,10 +429,45 @@ export default function DesignStudioView({
     activeFutureDesignSource?.kind === "uploaded"
       ? activeFutureDesignSource
       : null;
+  const {
+    normalizedGarmentTypeCatalog,
+    effectiveJourneyGarmentTypeSelection,
+  } = useDesignStudioEffectiveJourneyComposition({
+    customDetailCatalog,
+    garmentTypeSelection,
+    activeUploadedDesignSource,
+  });
+  const uploadedDesignCompositionNeedsReview =
+    getUploadedDesignCompositionNeedsReview(
+      activeUploadedDesignSource?.fabricCapacityComposition ||
+        uploadedDesignComposition,
+    );
+  const fabricStepGarmentTypeSelection = resolveFabricStepGarmentTypeSelection({
+    step1GarmentTypeSelection: garmentTypeSelection,
+    effectiveJourneyGarmentTypeSelection,
+  });
+  const futureFabricComposition = getFutureFabricCapacityComposition(
+    effectiveJourneyGarmentTypeSelection,
+  );
+  const futureFabricStageCompletion = getFutureFabricStageCompletion({
+    garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+    fabricAllocationState,
+    fabrics,
+  });
+  const futureGarmentFabricPlanning = getFutureGarmentFabricPlanning({
+    garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+    fabricAllocationState,
+  });
+  const garmentTypeStepSelectedFabricQuantity =
+    getGarmentTypeStepSelectedFabricQuantity({
+      garmentTypeSelection,
+      fabricAllocationState,
+    });
   const futurePrimaryFabricCode =
     fabricAllocationState.fabricAllocations[0]?.fabricCode || null;
   const isFutureUploadedDesignConfirmed = Boolean(
     activeUploadedDesignSource &&
+      !uploadedDesignCompositionNeedsReview &&
       isDesignSourceConfirmed(
         activeUploadedDesignSource,
         futureConfirmedDesignSourceKey,
@@ -555,6 +583,7 @@ export default function DesignStudioView({
     revokeUploadedDesignPreview();
     setUploadedDesignReference(null);
     setUploadedDesignComposition([]);
+    setUploadedDesignAdditionalGarmentTypes([]);
     setUploadedDesignDemographic(null);
     if (clearError) setUploadedDesignError("");
   };
@@ -610,21 +639,28 @@ export default function DesignStudioView({
     setFutureSelectedStyleId(null);
     setFutureConfirmedDesignSourceKey(null);
     setFuturePriceActivatedFabricCode(null);
-    if (!nextSource) return;
+    if (!nextSource) {
+      setFabricAllocationState((current) =>
+        reconcileFutureFabricAllocationStateIfChanged({
+          state: current,
+          garmentTypeSelection,
+        }),
+      );
+      return;
+    }
 
-    const nextGarmentTypeSelection = updateDormantGarmentTypeSelection({
-      currentSelection: garmentTypeSelection,
-      normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
-      selectedGarmentTypes: nextSource.fabricCapacityComposition.map(
-        (spec) => spec.garmentType,
-      ),
-      selectedDemographics: [nextSource.demographic],
-    });
-    setGarmentTypeSelection(nextGarmentTypeSelection);
+    // Keep Step 1 customer selection intact. Fabric plans against the upload
+    // composition via effectiveJourneyGarmentTypeSelection when the source is active.
+    const fabricPlanningSelection =
+      buildEffectiveUploadedJourneyGarmentTypeSelection({
+        step1Selection: garmentTypeSelection,
+        uploadedComposition: nextSource.fabricCapacityComposition,
+        normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
+      });
     setFabricAllocationState((current) =>
-      reconcileFutureFabricAllocationState({
+      reconcileFutureFabricAllocationStateIfChanged({
         state: current,
-        garmentTypeSelection: nextGarmentTypeSelection,
+        garmentTypeSelection: fabricPlanningSelection,
       }),
     );
   };
@@ -682,9 +718,24 @@ export default function DesignStudioView({
       );
       applyUploadedDesignForm({
         reference: replacement.reference,
-        composition: isReplacement ? [] : uploadedDesignComposition,
+        composition: isReplacement
+          ? mergeUploadedDesignCompositionWithStep1({
+              step1GarmentTypes: garmentTypeSelection.garmentTypes,
+              additionalGarmentTypes: [],
+              preservedHiddenComposition: [],
+            })
+          : uploadedDesignComposition.length > 0
+            ? uploadedDesignComposition
+            : mergeUploadedDesignCompositionWithStep1({
+                step1GarmentTypes: garmentTypeSelection.garmentTypes,
+                additionalGarmentTypes: uploadedDesignAdditionalGarmentTypes,
+                preservedHiddenComposition: uploadedDesignComposition,
+              }),
         demographic: isReplacement ? null : uploadedDesignDemographic,
       });
+      if (isReplacement) {
+        setUploadedDesignAdditionalGarmentTypes([]);
+      }
       setPendingCatalogStyleId(null);
       if (replacement.previousDraftCleanupError) {
         setUploadedDesignError(
@@ -702,11 +753,45 @@ export default function DesignStudioView({
   const handleUploadedDesignCompositionToggle = (
     garmentType: FabricGarmentType,
   ) => {
-    const composition = toggleUploadedDesignGarmentComposition(
-      activeUploadedDesignSource?.fabricCapacityComposition ||
-        uploadedDesignComposition,
-      garmentType,
+    const step1GarmentTypes = garmentTypeSelection.garmentTypes;
+    const required = new Set(
+      getUploadedDesignRequiredStep1GarmentTypes(step1GarmentTypes),
     );
+    if (required.has(garmentType)) {
+      return;
+    }
+
+    const currentComposition =
+      activeUploadedDesignSource?.fabricCapacityComposition ||
+      uploadedDesignComposition;
+    const nextAdditional = new Set(
+      getUploadedDesignAdditionalGarmentTypes({
+        step1GarmentTypes,
+        composition: currentComposition,
+        additionalGarmentTypes: uploadedDesignAdditionalGarmentTypes,
+      }),
+    );
+    if (nextAdditional.has(garmentType)) {
+      nextAdditional.delete(garmentType);
+    } else if (
+      CUSTOMER_SELECTABLE_GARMENT_TYPES.includes(
+        garmentType as (typeof CUSTOMER_SELECTABLE_GARMENT_TYPES)[number],
+      )
+    ) {
+      nextAdditional.add(garmentType);
+    } else {
+      return;
+    }
+
+    const additionalGarmentTypes = [...nextAdditional];
+    setUploadedDesignAdditionalGarmentTypes(additionalGarmentTypes);
+    const composition = mergeUploadedDesignCompositionWithStep1({
+      step1GarmentTypes,
+      additionalGarmentTypes,
+      preservedHiddenComposition:
+        activeUploadedDesignSource?.fabricCapacityComposition ||
+        uploadedDesignComposition,
+    });
     applyUploadedDesignForm({
       reference:
         activeUploadedDesignSource?.uploadReference || uploadedDesignReference,
@@ -831,7 +916,7 @@ export default function DesignStudioView({
     }
     const nextState = applyFutureFabricCardSelection({
       state: fabricAllocationState,
-      garmentTypeSelection,
+      garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
       garmentKey,
       fabricCode: fabric.code,
     });
@@ -883,7 +968,7 @@ export default function DesignStudioView({
       normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
     });
   const futureAdditionalGarmentConstructionOptions =
-    CANONICAL_PHYSICAL_GARMENT_TYPES.map((garmentType) => ({
+    CUSTOMER_SELECTABLE_GARMENT_TYPES.map((garmentType) => ({
       garmentType,
       construction: resolveGarmentConstructionPricing(
         garmentType,
@@ -894,7 +979,7 @@ export default function DesignStudioView({
     inspectCustomDetailCatalog(customDetailCatalog);
   const futureScopedCustomDetailsReconciliation =
     reconcileGarmentScopedCustomDetails({
-      garmentTypeSelection,
+      garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
       additionalGarments: futureAdditionalGarments,
       additionalGarmentConstructions:
         futureAdditionalConstructionReconciliation.state,
@@ -903,7 +988,7 @@ export default function DesignStudioView({
       existingState: designSelections.garmentScopedCustomDetails,
     });
   const futureCustomDetailsCatalogue = projectFutureCustomDetailsCatalogue({
-    garmentTypeSelection,
+    garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
     style: futureDesignStyleSelection.selectedStyle,
     reconciliation: futureScopedCustomDetailsReconciliation,
     activeOptions: futureCatalogInspection.activeOptions,
@@ -984,7 +1069,7 @@ export default function DesignStudioView({
     activeFutureDesignSource &&
     futureScopedCustomDetailsReconciliation
       ? createAiTryOnVisualInputFingerprint({
-          garmentTypeSelection,
+          garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
           fabricAllocations: fabricAllocationState.fabricAllocations,
           selectedStyleId: activeFutureDesignSource.sourceKey,
           garmentScopedCustomDetails:
@@ -994,24 +1079,27 @@ export default function DesignStudioView({
   const futureMeasurementPhysicalGarments = useMemo(
     () =>
       getMeasurementPhysicalGarments({
-        garmentTypeSelection,
+        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
         fabricGarments: fabricAllocationState.fabricAllocations.flatMap(
           (allocation) => allocation.garmentAssignments,
         ),
       }),
-    [garmentTypeSelection, fabricAllocationState.fabricAllocations],
+    [
+      effectiveJourneyGarmentTypeSelection,
+      fabricAllocationState.fabricAllocations,
+    ],
   );
   const futureMeasurementPlan = useMemo(
     () =>
       planMeasurementRequirements({
         route: futureMeasurementState.route,
-        garmentTypeSelection,
+        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
         physicalGarments: futureMeasurementPhysicalGarments,
         garmentScopedCustomDetails: designSelections.garmentScopedCustomDetails,
       }),
     [
       futureMeasurementState.route,
-      garmentTypeSelection,
+      effectiveJourneyGarmentTypeSelection,
       futureMeasurementPhysicalGarments,
       designSelections.garmentScopedCustomDetails,
     ],
@@ -1079,30 +1167,35 @@ export default function DesignStudioView({
           catalog: customDetailCatalog,
           businessSettings,
           garmentConstructionSelectionMode: "garment_type_locked",
-          garmentTypeSelection,
+          garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
         })
       : null;
-  const futureConstructionPrice = garmentTypeSelection.garmentTypes.reduce(
-    (total, garmentType) => {
-      const resolution =
-        garmentTypeSelection.constructionByGarment[garmentType];
-      return (
-        total + (resolution?.status === "resolved" ? resolution.totalPrice : 0)
-      );
-    },
-    0,
-  ) + Object.values(
-    futureAdditionalConstructionReconciliation.state.byGarmentKey,
-  ).reduce(
-    (total, resolution) =>
-      total + (resolution.status === "resolved" ? resolution.totalPrice : 0),
-    0,
-  );
+  const futureConstructionPrice =
+    effectiveJourneyGarmentTypeSelection.garmentTypes.reduce(
+      (total, garmentType) => {
+        const resolution =
+          effectiveJourneyGarmentTypeSelection.constructionByGarment[
+            garmentType
+          ];
+        return (
+          total +
+          (resolution?.status === "resolved" ? resolution.totalPrice : 0)
+        );
+      },
+      0,
+    ) +
+    Object.values(
+      futureAdditionalConstructionReconciliation.state.byGarmentKey,
+    ).reduce(
+      (total, resolution) =>
+        total + (resolution.status === "resolved" ? resolution.totalPrice : 0),
+      0,
+    );
   const futureGarmentPieceCount = resolveShippingGarmentPieceCount({
     fabricAllocations: fabricAllocationState.fabricAllocations,
   });
   const futureSummaryInput = {
-    garmentTypeSelection,
+    garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
     catalogInspection: futureCatalogInspection,
     fabricAllocationState,
     fabricCompletion: futureFabricStageCompletion,
@@ -1310,18 +1403,18 @@ export default function DesignStudioView({
       )
         ? storedDraft!.designSource
         : null;
-      const restoredGarmentTypeSelection = restoredUploadedSource
+      const restoredGarmentTypeSelection = futureJourney.garmentTypeSelection;
+      setGarmentTypeSelection(restoredGarmentTypeSelection);
+      const restoredFabricPlanningSelection = restoredUploadedSource
         ? updateDormantGarmentTypeSelection({
-            currentSelection: futureJourney.garmentTypeSelection,
+            currentSelection: restoredGarmentTypeSelection,
             normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
             selectedGarmentTypes:
               restoredUploadedSource.fabricCapacityComposition.map(
                 (spec) => spec.garmentType,
               ),
-            selectedDemographics: [restoredUploadedSource.demographic],
           })
-        : futureJourney.garmentTypeSelection;
-      setGarmentTypeSelection(restoredGarmentTypeSelection);
+        : restoredGarmentTypeSelection;
       const hydratedAllocations = storedDraft
         ? resolveDraftHydrationAllocations(storedDraft)
         : null;
@@ -1337,10 +1430,10 @@ export default function DesignStudioView({
               awaitingFabricForPendingGarment: false,
             }
           : FabricAllocationStateEngine.initialize(),
-        garmentTypeSelection: restoredGarmentTypeSelection,
+        garmentTypeSelection: restoredFabricPlanningSelection,
       });
       const restoredFabricCompletion = getFutureFabricStageCompletion({
-        garmentTypeSelection: restoredGarmentTypeSelection,
+        garmentTypeSelection: restoredFabricPlanningSelection,
         fabricAllocationState: reconciledFabricState,
         fabrics,
       });
@@ -1393,7 +1486,7 @@ export default function DesignStudioView({
           normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
         });
       const restoredCustomDetails = reconcileGarmentScopedCustomDetails({
-        garmentTypeSelection: restoredGarmentTypeSelection,
+        garmentTypeSelection: restoredFabricPlanningSelection,
         additionalGarments: restoredAdditionalGarments,
         additionalGarmentConstructions:
           restoredAdditionalConstructions.state,
@@ -1498,7 +1591,30 @@ export default function DesignStudioView({
             ...spec,
           })),
         );
+        setUploadedDesignAdditionalGarmentTypes(
+          getUploadedDesignAdditionalGarmentTypes({
+            step1GarmentTypes: restoredGarmentTypeSelection.garmentTypes,
+            composition: restoredUploadedSource.fabricCapacityComposition,
+          }),
+        );
         setUploadedDesignDemographic(restoredUploadedSource.demographic);
+        if (
+          getUploadedDesignCompositionNeedsReview(
+            restoredUploadedSource.fabricCapacityComposition,
+          )
+        ) {
+          setUploadedDesignError(
+            UPLOADED_DESIGN_COMPOSITION_NEEDS_REVIEW_MESSAGE,
+          );
+        }
+      } else {
+        setUploadedDesignAdditionalGarmentTypes([]);
+        setUploadedDesignComposition(
+          mergeUploadedDesignCompositionWithStep1({
+            step1GarmentTypes: restoredGarmentTypeSelection.garmentTypes,
+            additionalGarmentTypes: [],
+          }),
+        );
       }
       setDesignSelections({
         ...(storedDraft?.designSelections || { accessories: [] }),
@@ -1575,19 +1691,57 @@ export default function DesignStudioView({
 
   useEffect(() => {
     if (!guestDraftHydrated) return;
+    const nextAdditional = getUploadedDesignAdditionalGarmentTypes({
+      step1GarmentTypes: garmentTypeSelection.garmentTypes,
+      additionalGarmentTypes: uploadedDesignAdditionalGarmentTypes,
+    });
+    const composition = mergeUploadedDesignCompositionWithStep1({
+      step1GarmentTypes: garmentTypeSelection.garmentTypes,
+      additionalGarmentTypes: nextAdditional,
+      preservedHiddenComposition:
+        activeUploadedDesignSource?.fabricCapacityComposition ||
+        uploadedDesignComposition,
+    });
+    const compositionKey = getUploadedDesignCompositionSignature(composition);
+    const currentKey = getUploadedDesignCompositionSignature(
+      uploadedDesignComposition,
+    );
+    if (compositionKey !== currentKey) {
+      setUploadedDesignComposition(composition);
+    }
+    if (
+      nextAdditional.length !== uploadedDesignAdditionalGarmentTypes.length ||
+      nextAdditional.some(
+        (garmentType, index) =>
+          uploadedDesignAdditionalGarmentTypes[index] !== garmentType,
+      )
+    ) {
+      setUploadedDesignAdditionalGarmentTypes(nextAdditional);
+    }
+  }, [
+    guestDraftHydrated,
+    garmentTypeSelection.garmentTypes,
+    uploadedDesignAdditionalGarmentTypes,
+    uploadedDesignComposition,
+  ]);
+
+  useEffect(() => {
+    if (!guestDraftHydrated) return;
     if (!garmentTypeStageCompletion.isComplete) {
       setFutureStageId("garment_type");
     }
     setFabricAllocationState((current) =>
-      reconcileFutureFabricAllocationState({
+      reconcileFutureFabricAllocationStateIfChanged({
         state: current,
-        garmentTypeSelection,
+        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
       }),
     );
   }, [
     guestDraftHydrated,
     garmentTypeSelection,
+    effectiveJourneyGarmentTypeSelection,
     garmentTypeStageCompletion.isComplete,
+    activeUploadedDesignSource?.sourceKey,
   ]);
 
   useEffect(() => {
@@ -1857,6 +2011,32 @@ export default function DesignStudioView({
         selectedGarmentTypes: garmentTypes,
       }),
     );
+    const nextAdditional = getUploadedDesignAdditionalGarmentTypes({
+      step1GarmentTypes: garmentTypes,
+      additionalGarmentTypes: uploadedDesignAdditionalGarmentTypes,
+    });
+    setUploadedDesignAdditionalGarmentTypes(nextAdditional);
+    const composition = mergeUploadedDesignCompositionWithStep1({
+      step1GarmentTypes: garmentTypes,
+      additionalGarmentTypes: nextAdditional,
+      preservedHiddenComposition:
+        activeUploadedDesignSource?.fabricCapacityComposition ||
+        uploadedDesignComposition,
+    });
+    setUploadedDesignComposition(composition);
+    if (
+      activeUploadedDesignSource ||
+      uploadedDesignReference ||
+      uploadedDesignDemographic
+    ) {
+      applyUploadedDesignForm({
+        reference:
+          activeUploadedDesignSource?.uploadReference || uploadedDesignReference,
+        composition,
+        demographic:
+          activeUploadedDesignSource?.demographic || uploadedDesignDemographic,
+      });
+    }
   };
   const handleDormantGarmentDemographicsChange = (
     demographics: CustomDetailDemographic[],
@@ -1902,6 +2082,14 @@ export default function DesignStudioView({
   };
   const handleContinueWithUploadedDesign = () => {
     if (!activeUploadedDesignSource) return;
+    if (
+      getUploadedDesignCompositionNeedsReview(
+        activeUploadedDesignSource.fabricCapacityComposition,
+      )
+    ) {
+      setUploadedDesignError(UPLOADED_DESIGN_COMPOSITION_NEEDS_REVIEW_MESSAGE);
+      return;
+    }
     setFutureConfirmedDesignSourceKey(activeUploadedDesignSource.sourceKey);
     setFuturePriceActivatedFabricCode(null);
     setFutureStageId("fabric");
@@ -2337,7 +2525,7 @@ export default function DesignStudioView({
     setFabricAllocationState((current) =>
       FabricAllocationStateEngine.useSameFabricForPendingGarmentAndContinue(
         current,
-        getFutureFabricGarmentSelections(garmentTypeSelection),
+        getFutureFabricGarmentSelections(effectiveJourneyGarmentTypeSelection),
       ),
     );
   };
@@ -2350,7 +2538,7 @@ export default function DesignStudioView({
     }
     const result = assignSameFabricProductToGarments({
       state: fabricAllocationState,
-      garmentTypeSelection,
+      garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
       fabricCode,
       garmentKeys,
     });
@@ -2370,7 +2558,7 @@ export default function DesignStudioView({
       if (!activeAllocation) return current;
       return assignFutureFabricToGarment({
         state: current,
-        garmentTypeSelection,
+        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
         garmentKey,
         fabricCode: activeAllocation.fabricCode,
       }).state;
@@ -2487,7 +2675,7 @@ export default function DesignStudioView({
       ) : futureStageId === "fabric" ? (
         <DormantFutureFabricStep
           fabrics={fabrics}
-          garmentTypeSelection={garmentTypeSelection}
+          garmentTypeSelection={fabricStepGarmentTypeSelection}
           fabricAllocationState={fabricAllocationState}
           completion={futureFabricStageCompletion}
           requiredFabricQuantity={
@@ -2523,10 +2711,13 @@ export default function DesignStudioView({
             reference:
               activeUploadedDesignSource?.uploadReference ||
               uploadedDesignReference,
-            composition:
-              activeUploadedDesignSource?.fabricCapacityComposition.map(
-                (spec) => ({ ...spec }),
-              ) || uploadedDesignComposition,
+            composition: mergeUploadedDesignCompositionWithStep1({
+              step1GarmentTypes: garmentTypeSelection.garmentTypes,
+              additionalGarmentTypes: uploadedDesignAdditionalGarmentTypes,
+              preservedHiddenComposition:
+                activeUploadedDesignSource?.fabricCapacityComposition ||
+                uploadedDesignComposition,
+            }),
             demographic:
               activeUploadedDesignSource?.demographic ||
               uploadedDesignDemographic,
@@ -2579,7 +2770,7 @@ export default function DesignStudioView({
           constructionBreakdown={projectCustomerGarmentConstructionBreakdown({
             pricing: futureFabricAuthoritativePricing,
             subjects: futureScopedCustomDetailsReconciliation.subjects,
-            garmentTypeSelection,
+            garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
             additionalGarments: futureAdditionalGarments,
             additionalGarmentConstructions:
               futureAdditionalConstructionReconciliation.state,

@@ -15,8 +15,9 @@ import {
   resolveShortsGarmentUnitPriceCents,
 } from "../config/AdditionalGarmentPolicy";
 import {
-  CANONICAL_PHYSICAL_GARMENT_TYPES,
   isCanonicalPhysicalGarmentType,
+  isCustomerSelectableGarmentType,
+  CUSTOMER_SELECTABLE_GARMENT_TYPES,
 } from "./garmentConstructionPricing";
 
 export interface AllowedAdditionalGarment {
@@ -148,9 +149,10 @@ export const createAdditionalGarmentSelection = ({
 };
 
 /**
- * The nine-stage Custom Details catalogue may add any canonical physical
- * garment. Capacity and allocation still run through the existing append
- * transaction; this helper only creates its stable occurrence identity.
+ * The nine-stage Custom Details catalogue may add customer-selectable physical
+ * garments. Agbada remains canonical for legacy/reconcile paths but cannot be
+ * newly selected through this customer-facing creation helper.
+ * Capacity and allocation still run through the existing append transaction.
  */
 export const createCatalogueAdditionalGarmentSelection = ({
   garmentType,
@@ -159,11 +161,16 @@ export const createCatalogueAdditionalGarmentSelection = ({
   garmentType: FabricGarmentType;
   existingAssignments: readonly FabricGarmentAssignment[];
 }): AdditionalGarmentSelectionResolution => {
-  if (!isCanonicalPhysicalGarmentType(garmentType)) {
+  if (!isCustomerSelectableGarmentType(garmentType)) {
     return {
       status: "invalid",
       attemptedGarmentType: garmentType,
-      allowedGarments: [],
+      allowedGarments: CUSTOMER_SELECTABLE_GARMENT_TYPES.map((candidate) => ({
+        garmentType: candidate,
+        label: getFabricGarmentLabel(candidate),
+        garmentSpec: createStyleBaseGarmentSpec(candidate),
+        eligibilityRule: "catalog_all" as const,
+      })),
     };
   }
   const sequence = getAdditionalAssignmentSequence(
@@ -174,7 +181,7 @@ export const createCatalogueAdditionalGarmentSelection = ({
   const garmentSpec = createStyleBaseGarmentSpec(garmentType);
   return {
     status: "resolved",
-    allowedGarments: CANONICAL_PHYSICAL_GARMENT_TYPES.map((candidate) => ({
+    allowedGarments: CUSTOMER_SELECTABLE_GARMENT_TYPES.map((candidate) => ({
       garmentType: candidate,
       label: getFabricGarmentLabel(candidate),
       garmentSpec: createStyleBaseGarmentSpec(candidate),
