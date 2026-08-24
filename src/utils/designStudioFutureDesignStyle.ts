@@ -115,24 +115,33 @@ const resolveRepresentedDemographics = (
 ): CustomDetailDemographic[] | null => {
   const configured = style.customDetailConfig?.representedGenders;
   if (configured?.length) {
-    const represented = [...new Set(configured)];
+    const represented = [
+      ...new Set(
+        configured.map((value) => String(value).trim().toLowerCase()),
+      ),
+    ];
     return represented.every(
       (value) => value === "male" || value === "female",
     )
-      ? represented
+      ? (represented as CustomDetailDemographic[])
       : null;
   }
 
+  const gender = String(style.gender || "").trim().toLowerCase();
   if (
     style.customDetailConfig?.featuresMaleAndFemale === true ||
     style.featuresMaleAndFemale === true ||
-    style.gender === "family" ||
-    style.gender === "couple"
+    gender === "family" ||
+    gender === "couple"
   ) {
     return ["male", "female"];
   }
 
-  const declared = style.targetDemographic || style.gender;
+  const declared = String(
+    style.targetDemographic || style.gender || "",
+  )
+    .trim()
+    .toLowerCase();
   if (declared === "male" || declared === "female") return [declared];
   if (declared === "unisex") return ["male", "female"];
   return null;

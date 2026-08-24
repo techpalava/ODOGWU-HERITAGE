@@ -90,6 +90,10 @@ export interface GarmentTypeStepProps {
     resolutions: GarmentConstructionPricingResolution[],
   ) => void;
   statusMessage?: string | null;
+  catalogueCoverageMessage?: {
+    headline: string;
+    detail: string;
+  } | null;
   idPrefix?: string;
 }
 
@@ -198,6 +202,7 @@ export const GarmentTypeStep = ({
   onDemographicsChange,
   onConstructionDefaultsChange,
   statusMessage = null,
+  catalogueCoverageMessage = null,
   idPrefix = "garment-type-step",
 }: GarmentTypeStepProps) => {
   const presentation = getGarmentTypeStepPresentation({
@@ -282,8 +287,21 @@ export const GarmentTypeStep = ({
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-heritage-ink/70">
             Select every physical garment included in this order, then choose who it is for.
+            Step 3 later requires a matching Design Style catalogue entry for catalogue designs.
           </p>
         </div>
+
+        {catalogueCoverageMessage && (
+          <div
+            role="status"
+            className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950"
+          >
+            <p className="font-bold">{catalogueCoverageMessage.headline}</p>
+            <p className="mt-1 text-xs leading-relaxed text-amber-950/80">
+              {catalogueCoverageMessage.detail}
+            </p>
+          </div>
+        )}
 
         <fieldset className="mt-6 min-w-0 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-6 lg:gap-y-1">
           <legend className="font-serif text-lg font-bold text-heritage-green lg:col-start-1 lg:row-start-1">

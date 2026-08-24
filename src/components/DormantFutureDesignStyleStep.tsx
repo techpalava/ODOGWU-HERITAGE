@@ -45,6 +45,8 @@ interface DormantFutureDesignStyleStepProps {
   stagePrice: number | null;
   uploadedDesign: UploadedDesignPanelState;
   pendingCatalogStyleName: string | null;
+  isCatalogueLoading?: boolean;
+  stylesLoadState?: "loading" | "ready" | "error";
   onSelectStyle: (styleId: string) => void;
   onUploadDesignFile: (file: File, isReplacement: boolean) => void;
   onToggleUploadedGarment: (garmentType: FabricGarmentType) => void;
@@ -66,6 +68,8 @@ export const DormantFutureDesignStyleStep = ({
   stagePrice,
   uploadedDesign,
   pendingCatalogStyleName,
+  isCatalogueLoading = false,
+  stylesLoadState = "ready",
   onSelectStyle,
   onUploadDesignFile,
   onToggleUploadedGarment,
@@ -79,18 +83,23 @@ export const DormantFutureDesignStyleStep = ({
 }: DormantFutureDesignStyleStepProps) => {
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const replacementInputRef = useRef<HTMLInputElement | null>(null);
-  const selection = reconcileFutureDesignStyleSelection({
-    selectedStyleId,
-    styles,
-    garmentTypeSelection,
-  });
-  const compatibilityByStyle = styles.map((style) => ({
-    style,
-    compatibility: resolveFutureDesignStyleCompatibility({
-      garmentTypeSelection,
-      style,
-    }),
-  }));
+  const catalogueReady = stylesLoadState === "ready";
+  const catalogueSelection = catalogueReady
+    ? reconcileFutureDesignStyleSelection({
+        selectedStyleId,
+        styles,
+        garmentTypeSelection,
+      })
+    : null;
+  const compatibilityByStyle = catalogueReady
+    ? styles.map((style) => ({
+        style,
+        compatibility: resolveFutureDesignStyleCompatibility({
+          garmentTypeSelection,
+          style,
+        }),
+      }))
+    : [];
   const compatibleStyleCount = compatibilityByStyle.filter(
     ({ compatibility }) => compatibility.status === "compatible",
   ).length;
@@ -115,7 +124,10 @@ export const DormantFutureDesignStyleStep = ({
       ? uploadReadiness.isReady &&
         uploadedDesign.isConfirmed &&
         uploadedDesign.isPricingActive
-      : selection.status === "selected");
+      : catalogueReady && catalogueSelection?.status === "selected");
+  const stageCompleteForAttribute = uploadedSourceSelected
+    ? canContinueToCustomDetails
+    : catalogueReady && catalogueSelection?.status === "selected";
   const uploadStatus = uploadedDesign.isUploading
     ? "Uploading"
     : uploadedDesign.isReplacing
@@ -146,7 +158,7 @@ export const DormantFutureDesignStyleStep = ({
     <section
       aria-labelledby="future-design-style-title"
       data-stage-id="design_style"
-      data-stage-complete={selection.status === "selected"}
+      data-stage-complete={stageCompleteForAttribute}
       className={`space-y-6 font-sans ${
         canContinueToCustomDetails ? "pb-28 sm:pb-32" : ""
       }`}
@@ -171,19 +183,21 @@ export const DormantFutureDesignStyleStep = ({
           Your garment and fabric assignments will not change.
         </p>
 
-        {selection.status === "reselection_required" && (
+        {catalogueReady && catalogueSelection?.status === "reselection_required" && (
           <div
             role="alert"
             className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
           >
             <p className="font-bold">Select another design</p>
             <p className="mt-1 text-xs leading-relaxed">
-              {selection.compatibility?.customerReason}
+              {catalogueSelection.compatibility?.customerReason}
             </p>
           </div>
         )}
 
-        {styles.length > 0 && compatibleStyleCount === 0 && (
+        {stylesLoadState === "ready" &&
+          styles.length > 0 &&
+          compatibleStyleCount === 0 && (
           <div
             role="status"
             className="mt-5 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4"
@@ -192,8 +206,9 @@ export const DormantFutureDesignStyleStep = ({
               No matching design styles are available yet
             </p>
             <p className="mt-1 text-xs leading-relaxed text-heritage-ink/70">
-              Return to Garment Type to adjust your selection, then choose from
-              the matching styles.
+              None of the current catalogue designs support your Step 1 garment
+              and audience selection. Return to Garment Type to adjust, or use
+              Upload Your Own Design below.
             </p>
             <button
               type="button"
@@ -206,21 +221,64 @@ export const DormantFutureDesignStyleStep = ({
         )}
 
         <div className="mt-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {styles.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-heritage-gold/30 bg-heritage-cream/25 p-6 text-center sm:col-span-2 xl:col-span-3">
+          {(isCatalogueLoading || stylesLoadState === "loading") && (
+            <div
+              role="status"
+              className="rounded-2xl border border-dashed border-heritage-gold/30 bg-heritage-cream/25 p-6 text-center sm:col-span-2 xl:col-span-3"
+            >
               <p className="font-serif text-base font-bold text-heritage-green">
-                No catalogue designs are available
+                Loading catalogue designs
               </p>
               <p className="mt-2 text-xs leading-relaxed text-heritage-ink/65">
-                A current catalog design is required before this step can be
-                completed.
+                Design styles are still loading. Your garment selection is
+                preserved.
               </p>
             </div>
           )}
-          {compatibilityByStyle.map(({ style, compatibility }) => {
+          {stylesLoadState === "error" && (
+            <div
+              role="status"
+              className="rounded-2xl border border-dashed border-heritage-gold/30 bg-heritage-cream/25 p-6 text-center sm:col-span-2 xl:col-span-3"
+            >
+              <p className="font-serif text-base font-bold text-heritage-green">
+                Design Style catalogue temporarily unavailable
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-heritage-ink/65">
+                Catalogue designs could not be loaded right now. You can upload
+                your own design below, or return to Garment Type and try again
+                shortly.
+              </p>
+              <button
+                type="button"
+                onClick={onReturnToGarmentType}
+                className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-heritage-green/25 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              >
+                Return to Garment Type
+              </button>
+            </div>
+          )}
+          {stylesLoadState === "ready" && styles.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-heritage-gold/30 bg-heritage-cream/25 p-6 text-center sm:col-span-2 xl:col-span-3">
+              <p className="font-serif text-base font-bold text-heritage-green">
+                No catalogue designs are available right now
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-heritage-ink/65">
+                You can upload your own design below, or return to Garment Type.
+              </p>
+              <button
+                type="button"
+                onClick={onReturnToGarmentType}
+                className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-heritage-green/25 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              >
+                Return to Garment Type
+              </button>
+            </div>
+          )}
+          {stylesLoadState === "ready" &&
+            compatibilityByStyle.map(({ style, compatibility }) => {
             const isCompatible = compatibility.status === "compatible";
             const isSelected =
-              isCompatible && selection.selectedStyleId === style.id;
+              isCompatible && catalogueSelection?.selectedStyleId === style.id;
             const isUnavailable = compatibility.code === "STYLE_DISABLED";
             const statusLabel = isSelected
               ? "Selected"
@@ -630,7 +688,8 @@ export const DormantFutureDesignStyleStep = ({
                 uploadBusy ||
                 (uploadedSourceSelected
                   ? !uploadReadiness.isReady
-                  : selection.status !== "selected")
+                  : !catalogueReady ||
+                    catalogueSelection?.status !== "selected")
               }
               aria-label={
                 uploadedSourceSelected &&

@@ -100,6 +100,37 @@ export const createCatalogDesignSource = (
       }
     : null;
 
+/**
+ * Authoritative catalogue style activation used by Design Studio Step 3.
+ * Keeps selectedStyleId and design-source identity bound to the same style.
+ */
+export const activateFutureCatalogStyleSelection = (input: {
+  styleId: string;
+  primaryFabricCode?: string | null;
+}): {
+  selectedStyleId: string;
+  designSource: CatalogDesignSource;
+  confirmedDesignSourceKey: string;
+  priceActivatedFabricCode: string | null;
+} => {
+  const designSource = createCatalogDesignSource(input.styleId);
+  if (!designSource) {
+    throw new TypeError(
+      "A non-empty catalogue style id is required to activate a Design Style selection.",
+    );
+  }
+  return {
+    selectedStyleId: designSource.styleId,
+    designSource,
+    confirmedDesignSourceKey: designSource.sourceKey,
+    priceActivatedFabricCode:
+      typeof input.primaryFabricCode === "string" &&
+      input.primaryFabricCode.trim()
+        ? input.primaryFabricCode.trim()
+        : null,
+  };
+};
+
 export const createUploadedDesignSource = ({
   uploadReference,
   fabricCapacityComposition,
