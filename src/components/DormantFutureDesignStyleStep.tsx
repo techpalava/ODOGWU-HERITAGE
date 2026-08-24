@@ -18,6 +18,7 @@ import {
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
   getUploadedDesignCapacitySummary,
+  getUploadedDesignRequiredStep1GarmentTypes,
   getUploadedDesignStep1Readiness,
   UPLOADED_DESIGN_GARMENT_OPTIONS,
 } from "../utils/uploadedDesignStep1";
@@ -111,6 +112,11 @@ export const DormantFutureDesignStyleStep = ({
   });
   const uploadCapacity = getUploadedDesignCapacitySummary(
     uploadedDesign.composition,
+  );
+  const requiredStep1GarmentTypes = new Set(
+    getUploadedDesignRequiredStep1GarmentTypes(
+      garmentTypeSelection.garmentTypes,
+    ),
   );
   const uploadedSourceSelected = uploadedDesign.source !== null;
   const uploadBusy =
@@ -504,20 +510,29 @@ export const DormantFutureDesignStyleStep = ({
                     What garments are included in your design?
                   </legend>
                   <p className="mt-1 text-[11px] leading-relaxed text-heritage-ink/65">
-                    Select every physical garment shown in your reference.
+                    Step 1 garments stay selected. You may add more garments
+                    shown in your reference.
                   </p>
                   <div className="mt-3 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
                     {UPLOADED_DESIGN_GARMENT_OPTIONS.map((option) => {
-                      const checked = uploadedDesign.composition.some(
-                        (spec) => spec.garmentType === option.garmentType,
+                      const requiredFromStep1 = requiredStep1GarmentTypes.has(
+                        option.garmentType,
                       );
+                      const checked =
+                        requiredFromStep1 ||
+                        uploadedDesign.composition.some(
+                          (spec) => spec.garmentType === option.garmentType,
+                        );
+                      const locked = requiredFromStep1 || uploadBusy;
                       return (
                         <label
                           key={option.garmentType}
                           className={`flex min-h-11 min-w-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
-                            uploadBusy
+                            locked && !requiredFromStep1
                               ? "cursor-not-allowed opacity-60"
-                              : "cursor-pointer"
+                              : requiredFromStep1
+                                ? "cursor-default"
+                                : "cursor-pointer"
                           } ${
                             checked
                               ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green"
@@ -526,15 +541,26 @@ export const DormantFutureDesignStyleStep = ({
                         >
                           <input
                             type="checkbox"
-                            disabled={uploadBusy}
+                            disabled={locked}
                             checked={checked}
-                            onChange={() =>
-                              onToggleUploadedGarment(option.garmentType)
+                            aria-description={
+                              requiredFromStep1
+                                ? "Selected in Step 1"
+                                : undefined
                             }
+                            onChange={() => {
+                              if (requiredFromStep1) return;
+                              onToggleUploadedGarment(option.garmentType);
+                            }}
                             className="size-5 shrink-0 accent-heritage-green"
                           />
                           <span className="min-w-0 flex-1 break-words font-semibold">
                             {option.label}
+                            {requiredFromStep1 && (
+                              <span className="mt-0.5 block text-[10px] font-medium text-heritage-ink/60">
+                                Selected in Step 1
+                              </span>
+                            )}
                           </span>
                           {option.fabricUnits === 2 && (
                             <span className="shrink-0 text-[9px] text-heritage-gold">
