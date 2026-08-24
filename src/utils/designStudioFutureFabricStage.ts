@@ -963,6 +963,70 @@ export const reconcileFutureFabricAllocationState = ({
     ),
   };
 };
+
+const getFutureFabricAssignmentSignature = (
+  assignment: FabricGarmentAssignment,
+): string => {
+  const garmentSpec = assignment.garmentSpec;
+  return [
+    assignment.garmentKey,
+    assignment.code,
+    assignment.garmentType,
+    String(assignment.fabricUnits),
+    garmentSpec?.key ?? "",
+    garmentSpec?.garmentType ?? "",
+    garmentSpec ? String(garmentSpec.fabricUnits) : "",
+    garmentSpec?.lowerGarmentType ?? "",
+    assignment.lowerGarmentType ?? "",
+    assignment.sourceRole ?? "",
+    assignment.mainGarmentKey ?? "",
+    assignment.mainGarmentType ?? "",
+    assignment.eligibilityRule ?? "",
+    assignment.dependencyStatus ?? "",
+  ].join("/");
+};
+
+/**
+ * Domain signature for Fabric allocation state equality checks.
+ * Used to avoid setState loops when reconcile produces an equivalent snapshot.
+ * Includes all semantically relevant allocation/assignment identity fields.
+ */
+export const getFutureFabricAllocationStateSignature = (
+  state: FabricAllocationState,
+): string => {
+  const allocations = [...state.fabricAllocations]
+    .sort((left, right) => left.allocationId.localeCompare(right.allocationId))
+    .map((allocation) => {
+      const assignments = [...allocation.garmentAssignments]
+        .sort((left, right) => left.garmentKey.localeCompare(right.garmentKey))
+        .map(getFutureFabricAssignmentSignature)
+        .join(",");
+      return `${allocation.allocationId}:${allocation.fabricCode}:{${assignments}}`;
+    })
+    .join("|");
+  const pending = state.pendingFabricGarment
+    ? getFutureFabricAssignmentSignature(state.pendingFabricGarment)
+    : "";
+  return `${allocations}#active=${state.activeAllocationId || ""}#pending=${pending}#awaiting=${state.awaitingFabricForPendingGarment ? 1 : 0}`;
+};
+
+export const reconcileFutureFabricAllocationStateIfChanged = ({
+  state,
+  garmentTypeSelection,
+}: {
+  state: FabricAllocationState;
+  garmentTypeSelection: GarmentTypeStepSelection;
+}): FabricAllocationState => {
+  const next = reconcileFutureFabricAllocationState({
+    state,
+    garmentTypeSelection,
+  });
+  return getFutureFabricAllocationStateSignature(state) ===
+    getFutureFabricAllocationStateSignature(next)
+    ? state
+    : next;
+};
+
 export const selectFutureFabric = ({
   state,
   fabricCode,

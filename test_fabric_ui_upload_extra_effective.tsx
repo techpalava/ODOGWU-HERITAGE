@@ -1,0 +1,301 @@
+/**
+ * Codex HIGH #1: Fabric UI must render effective journey (upload extras),
+ * not Step-1-only selection — via the DesignStudio production prop path.
+ */
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+import { createElement, useState, type ReactElement } from "react";
+import { act, create, type ReactTestInstance } from "react-test-renderer";
+import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
+import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
+import type { Fabric, FabricAllocationState, GarmentTypeStepSelection } from "./src/types";
+import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
+import {
+  assignFutureFabricToGarment,
+  getFutureFabricStageCompletion,
+} from "./src/utils/designStudioFutureFabricStage";
+import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
+import {
+  buildEffectiveUploadedJourneyGarmentTypeSelection,
+  mergeUploadedDesignCompositionWithStep1,
+  resolveFabricStepGarmentTypeSelection,
+} from "./src/utils/uploadedDesignStep1";
+
+const require = createRequire(import.meta.url);
+const reactDomRuntime = require("react-dom") as {
+  createPortal: (children: unknown, container: unknown) => unknown;
+};
+reactDomRuntime.createPortal = (children) => children;
+
+const { DormantFutureFabricStep } = await import(
+  "./src/components/DormantFutureFabricStep"
+);
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
+
+const selection = (
+  garmentTypes: GarmentTypeStepSelection["garmentTypes"],
+): GarmentTypeStepSelection =>
+  reconcileGarmentTypeStepSelection({
+    selectedGarmentTypes: garmentTypes,
+    selectedDemographics: ["male"],
+    normalizedCustomDetailCatalog: catalog,
+  }).selection;
+
+const fabrics: Fabric[] = [
+  {
+    code: "FAB-UI-A",
+    name: "Fabric UI A",
+    description: "Test fabric",
+    color: "Green",
+    colorHex: "#0A4A33",
+    category: "Test",
+    price: 20,
+    priceMultiplier: 1,
+    stockStatus: "IN_STOCK",
+  },
+  {
+    code: "FAB-UI-B",
+    name: "Fabric UI B",
+    description: "Second test fabric",
+    color: "Gold",
+    colorHex: "#B28A3B",
+    category: "Test",
+    price: 22,
+    priceMultiplier: 1,
+    stockStatus: "IN_STOCK",
+  },
+];
+
+const textContent = (node: ReactTestInstance | string | null): string =>
+  typeof node === "string"
+    ? node
+    : node
+      ? node.children
+          .map((child) => textContent(child as ReactTestInstance | string))
+          .join("")
+      : "";
+
+const findButton = (root: ReactTestInstance, label: string) =>
+  root.findAllByType("button").find((button) => textContent(button).includes(label));
+
+/** Mirrors DesignStudioView → DormantFutureFabricStep production prop wiring. */
+const FabricStepProductionBoundary = ({
+  step1GarmentTypeSelection,
+  effectiveJourneyGarmentTypeSelection,
+  initialFabricState,
+}: {
+  step1GarmentTypeSelection: GarmentTypeStepSelection;
+  effectiveJourneyGarmentTypeSelection: GarmentTypeStepSelection;
+  initialFabricState: FabricAllocationState;
+}) => {
+  const [fabricAllocationState, setFabricAllocationState] =
+    useState(initialFabricState);
+  const garmentTypeSelection = resolveFabricStepGarmentTypeSelection({
+    step1GarmentTypeSelection,
+    effectiveJourneyGarmentTypeSelection,
+  });
+  const completion = getFutureFabricStageCompletion({
+    garmentTypeSelection,
+    fabricAllocationState,
+    fabrics,
+  });
+
+  return createElement(DormantFutureFabricStep, {
+    fabrics,
+    garmentTypeSelection,
+    fabricAllocationState,
+    completion,
+    requiredFabricQuantity: 0,
+    selectedFabricQuantity: 0,
+    constructionPrice: 0,
+    onAssignFabricToGarment: (fabric: Fabric, garmentKey: string) => {
+      setFabricAllocationState((current) =>
+        assignFutureFabricToGarment({
+          state: current,
+          garmentTypeSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+        }).state,
+      );
+    },
+    onRemoveFabricFromGarment: () => undefined,
+    onUseSameFabricForGarment: () => undefined,
+    onAssignSameFabricProduct: () => undefined,
+    onBack: () => undefined,
+    onContinue: () => undefined,
+    onUseSameFabric: () => undefined,
+    onChooseAnotherFabric: () => undefined,
+    onCancelPendingFabric: () => undefined,
+  }) as ReactElement;
+};
+
+// Guard: DesignStudioView must pass the production Fabric selection resolver path.
+{
+  const viewSource = readFileSync(
+    new URL("./src/components/DesignStudioView.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    viewSource,
+    /resolveFabricStepGarmentTypeSelection/,
+    "DesignStudioView must resolve Fabric props via resolveFabricStepGarmentTypeSelection",
+  );
+  assert.match(
+    viewSource,
+    /garmentTypeSelection=\{fabricStepGarmentTypeSelection\}/,
+    "DesignStudioView must not pass Step1-only garmentTypeSelection into Fabric Step",
+  );
+}
+
+const step1 = selection(["shirt"]);
+
+const runUploadExtraCase = async ({
+  extra,
+  expectedTrouserOrExtraKey,
+  expectedLabel,
+}: {
+  extra: "trouser" | "full_length_gown" | "kaftan";
+  expectedTrouserOrExtraKey: string;
+  expectedLabel: string;
+}) => {
+  const composition = mergeUploadedDesignCompositionWithStep1({
+    step1GarmentTypes: ["shirt"],
+    additionalGarmentTypes: [extra],
+  });
+  const effective = buildEffectiveUploadedJourneyGarmentTypeSelection({
+    step1Selection: step1,
+    uploadedComposition: composition,
+    normalizedCustomDetailCatalog: catalog,
+  });
+  assert.ok(effective.garmentTypes.includes("shirt"));
+  assert.ok(effective.garmentTypes.includes(extra));
+
+  let fabricState = FabricAllocationStateEngine.initialize();
+  fabricState = assignFutureFabricToGarment({
+    state: fabricState,
+    garmentTypeSelection: effective,
+    garmentKey: "base:shirt",
+    fabricCode: fabrics[0].code,
+  }).state;
+
+  assert.equal(
+    getFutureFabricStageCompletion({
+      garmentTypeSelection: effective,
+      fabricAllocationState: fabricState,
+      fabrics,
+    }).isComplete,
+    false,
+  );
+
+  let renderer!: ReturnType<typeof create>;
+  await act(async () => {
+    renderer = create(
+      createElement(FabricStepProductionBoundary, {
+        step1GarmentTypeSelection: step1,
+        effectiveJourneyGarmentTypeSelection: effective,
+        initialFabricState: fabricState,
+      }),
+    );
+  });
+
+  const shirtCard = renderer.root.findByProps({ "data-garment-key": "base:shirt" });
+  const extraCard = renderer.root.findByProps({
+    "data-garment-key": expectedTrouserOrExtraKey,
+  });
+  assert.equal(shirtCard.props["data-assignment-status"], "assigned");
+  assert.equal(extraCard.props["data-assignment-status"], "unassigned");
+  assert.ok(textContent(shirtCard).includes("Assigned"));
+  assert.ok(textContent(extraCard).includes("Needs fabric"));
+  assert.ok(textContent(extraCard).includes(expectedLabel));
+
+  const addExtra = findButton(extraCard, "Add Fabric");
+  assert.ok(addExtra, `Add Fabric must exist for ${extra}`);
+  assert.equal(Boolean(addExtra!.props.disabled), false);
+
+  await act(async () => {
+    addExtra!.props.onClick({ currentTarget: {} });
+  });
+
+  const fabricCards = renderer.root.findAllByProps({ "data-fabric-card": "true" });
+  assert.ok(
+    fabricCards.length > 0,
+    "Fabric catalogue must expose a selectable fabric after Add Fabric",
+  );
+  const preferred =
+    fabricCards.find(
+      (card) => card.props["data-fabric-code"] === "FAB-UI-B",
+    ) || fabricCards[0];
+  await act(async () => {
+    preferred.props.onClick();
+  });
+
+  const updatedExtra = renderer.root.findByProps({
+    "data-garment-key": expectedTrouserOrExtraKey,
+  });
+  assert.equal(updatedExtra.props["data-assignment-status"], "assigned");
+  assert.ok(textContent(updatedExtra).includes("Assigned"));
+  assert.equal(
+    renderer.root.findByType(DormantFutureFabricStep).props.completion.isComplete,
+    true,
+  );
+
+  // Regression: Step1-only wiring would never show the extra card.
+  assert.throws(() => {
+    create(
+      createElement(FabricStepProductionBoundary, {
+        step1GarmentTypeSelection: step1,
+        // Intentionally wrong: pass Step1 as "effective" — only shirt renders.
+        effectiveJourneyGarmentTypeSelection: step1,
+        initialFabricState: fabricState,
+      }),
+    ).root.findByProps({ "data-garment-key": expectedTrouserOrExtraKey });
+  });
+};
+
+await runUploadExtraCase({
+  extra: "trouser",
+  expectedTrouserOrExtraKey: "base:trouser",
+  expectedLabel: "Trouser",
+});
+
+await runUploadExtraCase({
+  extra: "full_length_gown",
+  expectedTrouserOrExtraKey: "base:full_length_gown",
+  expectedLabel: "Long Dress (Gown)",
+});
+
+{
+  const composition = mergeUploadedDesignCompositionWithStep1({
+    step1GarmentTypes: ["shirt"],
+    additionalGarmentTypes: ["kaftan"],
+  });
+  assert.equal(
+    composition.find((spec) => spec.garmentType === "kaftan")?.fabricUnits,
+    1,
+  );
+  assert.equal(
+    composition.find((spec) => spec.garmentType === "full_length_gown"),
+    undefined,
+  );
+  const gownComposition = mergeUploadedDesignCompositionWithStep1({
+    step1GarmentTypes: ["shirt"],
+    additionalGarmentTypes: ["full_length_gown"],
+  });
+  assert.equal(
+    gownComposition.find((spec) => spec.garmentType === "full_length_gown")
+      ?.fabricUnits,
+    2,
+  );
+}
+
+await runUploadExtraCase({
+  extra: "kaftan",
+  expectedTrouserOrExtraKey: "base:kaftan",
+  expectedLabel: "Long Shirt (Kaftan)",
+});
+
+console.log("PASS: rendered Fabric UI upload-extra effective composition");
