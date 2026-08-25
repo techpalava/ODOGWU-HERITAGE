@@ -15,6 +15,7 @@ import type {
 } from "../types";
 import {
   ALL_CUSTOM_DETAIL_SELECTION_GROUPS,
+  isCustomerAvailableCustomDetailSelectionGroup,
 } from "../config/GarmentDetailsConfig";
 import {
   createStyleBaseGarmentSpec,
@@ -909,11 +910,18 @@ export const validateGarmentScopedCustomDetailsCompletion = ({
   earlierStagesComplete,
   reconciliation,
   personalizedInputs,
+  showAdditionalClothesCosts,
 }: {
   earlierStagesComplete: boolean;
   reconciliation: GarmentScopedCustomDetailsReconciliationResult;
   personalizedInputs?: GarmentScopedPersonalizedInputsReconciliationResult;
+  /** Optional override for tests; defaults to SHOW_ADDITIONAL_CLOTHES_COSTS. */
+  showAdditionalClothesCosts?: boolean;
 }): GarmentScopedCustomDetailsCompletionResult => {
+  const availabilityOptions = { showAdditionalClothesCosts };
+  const isCustomerAvailableGroup = (group: string | undefined) =>
+    !group ||
+    isCustomerAvailableCustomDetailSelectionGroup(group, availabilityOptions);
   const blockers: GarmentScopedCustomDetailsCompletionBlocker[] = [];
   if (!earlierStagesComplete) {
     blockers.push({
@@ -936,7 +944,10 @@ export const validateGarmentScopedCustomDetailsCompletion = ({
           "A selected garment requires attention before customization.",
         garmentKey: diagnostic.garmentKey,
       });
-    } else if (RECONCILIATION_SELECTION_CODES.has(diagnostic.code)) {
+    } else if (
+      RECONCILIATION_SELECTION_CODES.has(diagnostic.code) &&
+      isCustomerAvailableGroup(diagnostic.selectionGroup)
+    ) {
       blockers.push({
         code: "selection_reconciled",
         message: "A saved Custom Details selection is no longer valid.",
@@ -952,6 +963,7 @@ export const validateGarmentScopedCustomDetailsCompletion = ({
       subject.garmentKey,
     );
     applicability?.groups.forEach((group) => {
+      if (!isCustomerAvailableGroup(group.selectionGroup)) return;
       const selection = reconciliation.state.selectionsByGarmentKey[
         subject.garmentKey
       ]?.[group.selectionGroup];
@@ -968,6 +980,7 @@ export const validateGarmentScopedCustomDetailsCompletion = ({
 
   enumerateGarmentScopedCustomDetails(reconciliation.state).forEach(
     (occurrence) => {
+      if (!isCustomerAvailableGroup(occurrence.selectionGroup)) return;
       if (!occurrence.snapshot) {
         blockers.push({
           code: "snapshot_missing",
@@ -999,6 +1012,7 @@ export const validateGarmentScopedCustomDetailsCompletion = ({
   );
   enumerateGarmentScopedCustomDetails(reconciliation.state).forEach(
     (occurrence) => {
+      if (!isCustomerAvailableGroup(occurrence.selectionGroup)) return;
       if (
         occurrence.optionId !==
           PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID ||
@@ -1086,12 +1100,22 @@ export type GarmentScopedCustomDetailsPricingResult =
 export const calculateGarmentScopedCustomDetailsPricing = ({
   reconciliation,
   catalogInspection,
+  showAdditionalClothesCosts,
 }: {
   reconciliation: GarmentScopedCustomDetailsReconciliationResult;
   catalogInspection: CustomDetailCatalogInspection;
+  /** Optional override for tests; defaults to SHOW_ADDITIONAL_CLOTHES_COSTS. */
+  showAdditionalClothesCosts?: boolean;
 }): GarmentScopedCustomDetailsPricingResult => {
-  const lines = enumerateGarmentScopedCustomDetails(reconciliation.state).map(
-    (occurrence): GarmentScopedCustomDetailPricingLine => {
+  const availabilityOptions = { showAdditionalClothesCosts };
+  const lines = enumerateGarmentScopedCustomDetails(reconciliation.state)
+    .filter((occurrence) =>
+      isCustomerAvailableCustomDetailSelectionGroup(
+        occurrence.selectionGroup,
+        availabilityOptions,
+      ),
+    )
+    .map((occurrence): GarmentScopedCustomDetailPricingLine => {
       const entry = catalogInspection.byOptionId.get(occurrence.optionId);
       const option = entry?.option;
       const occurrenceKey = `${occurrence.garmentKey}:${occurrence.selectionGroup}:${occurrence.optionId}`;
@@ -1152,16 +1176,20 @@ export const calculateGarmentScopedCustomDetailsPricing = ({
         unitPriceCents: entry.priceCents,
         lineTotalCents: entry.priceCents,
       };
-    },
-  );
+    });
   const exactSubtotalCents = lines.reduce(
     (total, line) => total + (line.lineTotalCents || 0),
     0,
   );
   if (
     lines.some((line) => line.status === "invalid") ||
-    reconciliation.diagnostics.some((diagnostic) =>
-      RECONCILIATION_SELECTION_CODES.has(diagnostic.code),
+    reconciliation.diagnostics.some(
+      (diagnostic) =>
+        RECONCILIATION_SELECTION_CODES.has(diagnostic.code) &&
+        isCustomerAvailableCustomDetailSelectionGroup(
+          diagnostic.selectionGroup || "",
+          availabilityOptions,
+        ),
     )
   ) {
     return { status: "invalid", exactSubtotalCents, lines };
