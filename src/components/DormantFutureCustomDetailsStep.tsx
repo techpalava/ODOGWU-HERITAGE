@@ -5,6 +5,7 @@ import {
   CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION,
   NECK_DESIGN_SUBCATEGORY_BY_OPTION_ID,
   NECK_DESIGN_SUBCATEGORY_ORDER,
+  resolveShowAdditionalClothesCosts,
 } from "../config/GarmentDetailsConfig";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
@@ -66,6 +67,7 @@ interface DormantFutureCustomDetailsStepProps {
   constructionBreakdown: CustomerGarmentConstructionBreakdownProjection;
   constructionSubtotal: number | null;
   designSelections: DesignSelections;
+  showAdditionalClothesCosts?: boolean;
   selectedStyle: StyleCategory | null;
   additionalGarments: readonly FabricGarmentAssignment[];
   additionalGarmentConstructionOptions: readonly {
@@ -185,6 +187,7 @@ export const DormantFutureCustomDetailsStep = ({
   constructionBreakdown,
   constructionSubtotal,
   designSelections,
+  showAdditionalClothesCosts,
   selectedStyle,
   additionalGarments,
   additionalGarmentConstructionOptions,
@@ -204,6 +207,9 @@ export const DormantFutureCustomDetailsStep = ({
   onBack,
   onContinue,
 }: DormantFutureCustomDetailsStepProps) => {
+  const includeAdditionalClothesCosts = resolveShowAdditionalClothesCosts(
+    showAdditionalClothesCosts,
+  );
   const [overLimitText, setOverLimitText] = useState<Record<string, string>>({});
   const [additionalGarmentChoice, setAdditionalGarmentChoice] = useState<{
     garmentType: CanonicalPhysicalGarmentType;
@@ -641,7 +647,7 @@ export const DormantFutureCustomDetailsStep = ({
           <div data-custom-detail-section="main-garment-details" className="min-w-0 space-y-5">
             {mainCoreSections.map((section) => renderCatalogueSection(section))}
 
-            {mainAdditionalCostGroups.length > 0 && (
+            {includeAdditionalClothesCosts && mainAdditionalCostGroups.length > 0 && (
               <section data-custom-detail-section="additional-clothes-costs" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
                 <header className="border-b border-heritage-gold/35 pb-3"><h3 className="font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Additional Clothes Costs</h3>
                 <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">Optional enhancements apply only to included garment occurrences.</p>
@@ -741,7 +747,7 @@ export const DormantFutureCustomDetailsStep = ({
                         ...section,
                         headingMode: "added",
                       }))}
-                      {additionalCostGroups.length > 0 && (
+                      {includeAdditionalClothesCosts && additionalCostGroups.length > 0 && (
                         <div className="space-y-4">
                           {additionalCostGroups.map((group) => (
                             <fieldset key={group.selectionGroup} className="min-w-0">

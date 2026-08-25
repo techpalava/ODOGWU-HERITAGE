@@ -195,10 +195,12 @@ const buildSummaryInput = ({
     earlierStagesComplete: true,
     reconciliation: customDetailsReconciliation,
     personalizedInputs: personalizedReconciliation,
+    showAdditionalClothesCosts: true,
   });
   const customDetailsPricing = calculateGarmentScopedCustomDetailsPricing({
     reconciliation: customDetailsReconciliation,
     catalogInspection: inspection,
+    showAdditionalClothesCosts: true,
   });
   const physicalGarments = getMeasurementPhysicalGarments({
     garmentTypeSelection,
