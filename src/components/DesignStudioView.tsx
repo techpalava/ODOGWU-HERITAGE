@@ -110,6 +110,8 @@ import {
   reconcileGarmentScopedPersonalizedInputs,
   validateGarmentScopedCustomDetailsCompletion,
 } from "../utils/garmentScopedCustomDetailsDomain";
+import { resolveShowAdditionalClothesCosts } from "../config/GarmentDetailsConfig";
+import { projectActiveCustomerDesignSelections } from "../utils/customerAvailableDesignSelections";
 import {
   clearGarmentScopedCustomDetailSelection,
   getGarmentScopedCustomDetailSelection,
@@ -1040,6 +1042,15 @@ export default function DesignStudioView({
   const [designSelections, setDesignSelections] = useState<DesignSelections>({
     accessories: [],
   });
+  const showAdditionalClothesCosts = resolveShowAdditionalClothesCosts();
+  const activeCustomerDesignSelections = useMemo(
+    () =>
+      projectActiveCustomerDesignSelections({
+        designSelections,
+        showAdditionalClothesCosts,
+      }),
+    [designSelections, showAdditionalClothesCosts],
+  );
   const committedAdditionalGarments = fabricAllocationState.fabricAllocations
     .flatMap((allocation) => allocation.garmentAssignments)
     .filter((assignment) => assignment.sourceRole === "additional");
@@ -1089,6 +1100,7 @@ export default function DesignStudioView({
     additionalGarments: futureAdditionalGarments,
     additionalGarmentConstructions:
       futureAdditionalConstructionReconciliation.state,
+    showAdditionalClothesCosts,
   });
   const isAdditionalGarmentCommitPending =
     pendingAdditionalConstructionRef.current !== null;
@@ -1146,12 +1158,14 @@ export default function DesignStudioView({
         reconciliation: futureScopedCustomDetailsReconciliation,
         personalizedInputs:
           futureScopedPersonalizedInputsReconciliation || undefined,
+        showAdditionalClothesCosts,
       })
     : null;
   const futureCustomDetailsPricing = futureScopedCustomDetailsReconciliation
     ? calculateGarmentScopedCustomDetailsPricing({
         reconciliation: futureScopedCustomDetailsReconciliation,
         catalogInspection: futureCatalogInspection,
+        showAdditionalClothesCosts,
       })
     : null;
   const isFutureCustomDetailsStageReady = isFutureCustomDetailsContentReady(
@@ -1249,7 +1263,7 @@ export default function DesignStudioView({
       ? calculateDesignPricing({
           route: batchType,
           design: {
-            ...designSelections,
+            ...activeCustomerDesignSelections,
             additionalGarmentConstructions:
               futureAdditionalConstructionReconciliation.state,
           },
@@ -1602,6 +1616,7 @@ export default function DesignStudioView({
             restoredFabricCompletion.isComplete && restoredSourceReady,
           reconciliation: restoredCustomDetails,
           personalizedInputs: restoredPersonalizedInputs,
+          showAdditionalClothesCosts,
         });
       const restoredMeasurementPlan = planMeasurementRequirements({
         route: restoredMeasurementState.route,
@@ -2875,7 +2890,8 @@ export default function DesignStudioView({
           constructionSubtotal={
             futureSummary.pricingSummary.garmentConstructionSubtotal
           }
-          designSelections={designSelections}
+          designSelections={activeCustomerDesignSelections}
+          showAdditionalClothesCosts={showAdditionalClothesCosts}
           selectedStyle={futureDesignStyleSelection.selectedStyle}
           additionalGarments={futureAdditionalGarments}
           additionalGarmentConstructionOptions={

@@ -261,6 +261,41 @@ export const ADDITIONAL_CLOTHES_COST_SECTION_ORDER = [
 export type AdditionalClothesCostSection =
   (typeof ADDITIONAL_CLOTHES_COST_SECTION_ORDER)[number];
 
+/**
+ * Customer-facing “Additional Clothes Costs” card availability.
+ * Flip to `true` to restore the section, its completion rules, and active pricing.
+ * Does not delete catalogue options, Admin support, or draft/historical data.
+ */
+export const SHOW_ADDITIONAL_CLOTHES_COSTS = false;
+
+/** Groups rendered inside the Additional Clothes Costs card (excludes personalized_additional). */
+export const CUSTOMER_FACING_ADDITIONAL_CLOTHES_COST_GROUPS =
+  ADDITIONAL_CLOTHES_COST_SECTION_ORDER.filter(
+    (group) => group !== "personalized_additional",
+  );
+
+export type CustomerFacingAdditionalClothesCostGroup =
+  (typeof CUSTOMER_FACING_ADDITIONAL_CLOTHES_COST_GROUPS)[number];
+
+export const resolveShowAdditionalClothesCosts = (
+  override?: boolean,
+): boolean => override ?? SHOW_ADDITIONAL_CLOTHES_COSTS;
+
+export const isCustomerFacingAdditionalClothesCostGroup = (
+  group: string,
+): group is CustomerFacingAdditionalClothesCostGroup =>
+  (CUSTOMER_FACING_ADDITIONAL_CLOTHES_COST_GROUPS as readonly string[]).includes(
+    group,
+  );
+
+/** Whether a selection group may appear in the active customer Custom Details journey. */
+export const isCustomerAvailableCustomDetailSelectionGroup = (
+  group: string,
+  options?: { showAdditionalClothesCosts?: boolean },
+): boolean =>
+  !isCustomerFacingAdditionalClothesCostGroup(group) ||
+  resolveShowAdditionalClothesCosts(options?.showAdditionalClothesCosts);
+
 export const ALL_CUSTOM_DETAIL_SELECTION_GROUPS: readonly CustomDetailSelectionGroup[] = [
   ...CUSTOM_DETAIL_SELECTION_GROUPS,
   ...ADDITIONAL_CLOTHES_COST_SECTION_ORDER,

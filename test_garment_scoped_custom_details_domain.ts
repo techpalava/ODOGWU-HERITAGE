@@ -262,6 +262,7 @@ const repeatedPricing = calculateGarmentScopedCustomDetailsPricing({
     ),
   }),
   catalogInspection: seedInspection,
+  showAdditionalClothesCosts: true,
 });
 assert.equal(repeatedPricing.status, "exact");
 assert.equal(repeatedPricing.lines.length, 2);
@@ -293,6 +294,7 @@ const dressPricingReconciliation = reconcileGarmentScopedCustomDetails({
 const dressPricing = calculateGarmentScopedCustomDetailsPricing({
   reconciliation: dressPricingReconciliation,
   catalogInspection: seedInspection,
+  showAdditionalClothesCosts: true,
 });
 assert.equal(dressPricing.status, "exact");
 assert.equal(dressPricing.lines.length, 4);
@@ -338,6 +340,7 @@ assert.equal(
   calculateGarmentScopedCustomDetailsPricing({
     reconciliation: repricedReconciliation,
     catalogInspection: repricedInspection,
+    showAdditionalClothesCosts: true,
   }).lines[0]?.unitPriceCents,
   1750,
 );
@@ -449,6 +452,7 @@ assert.equal(
   calculateGarmentScopedCustomDetailsPricing({
     reconciliation: missingPriceResult,
     catalogInspection: missingPriceInspection,
+    showAdditionalClothesCosts: true,
   }).status,
   "invalid",
   "missing prices are invalid and never become zero",
