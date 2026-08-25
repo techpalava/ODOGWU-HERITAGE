@@ -443,12 +443,14 @@ assert.match(
 );
 assert.equal(
   shirtTrouserRenderer.root.findByProps({
+    "data-fabric-card": "true",
     "data-fabric-code": "INLINE-A",
   }).props["data-fabric-status"],
   "IN USE",
 );
 assert.equal(
   shirtTrouserRenderer.root.findByProps({
+    "data-fabric-card": "true",
     "data-fabric-code": "INLINE-B",
   }).props["data-fabric-status"],
   "SELECT",
