@@ -349,6 +349,136 @@ export const createUploadedDesignSourceWhenReady = (
   });
 };
 
+/**
+ * Authoritative Step 3 transition after a successful Upload Your Own Design
+ * preview is accepted. Always clears catalogue Design Style authority so a
+ * catalogue selection and uploaded preview cannot coexist.
+ *
+ * - Ready form => uploaded designSource becomes authoritative
+ * - Incomplete form => designSource null (local draft/preview remain intact)
+ */
+export const resolveAuthorityAfterSuccessfulUploadedDesignPreview = (
+  input: UploadedDesignStep1Input,
+): {
+  selectedStyleId: null;
+  designSource: UploadedDesignSource | null;
+  confirmedDesignSourceKey: null;
+  priceActivatedFabricCode: null;
+} => ({
+  selectedStyleId: null,
+  designSource: createUploadedDesignSourceWhenReady(input),
+  confirmedDesignSourceKey: null,
+  priceActivatedFabricCode: null,
+});
+
+export type UploadedDesignOperationKind = "upload" | "replacement";
+
+export interface UploadedDesignOperationIdentity {
+  generation: number;
+  kind: UploadedDesignOperationKind;
+}
+
+export interface UploadedDesignOperationCoordinator {
+  begin: (
+    kind: UploadedDesignOperationKind,
+  ) => UploadedDesignOperationIdentity;
+  invalidate: () => void;
+  isCurrent: (operation: UploadedDesignOperationIdentity) => boolean;
+  finish: (operation: UploadedDesignOperationIdentity) => boolean;
+}
+
+/**
+ * Owns upload/replacement authority independently from React render timing.
+ * Beginning or invalidating an operation makes every older async completion stale.
+ */
+export const createUploadedDesignOperationCoordinator =
+  (): UploadedDesignOperationCoordinator => {
+    let generation = 0;
+    let activeGeneration: number | null = null;
+
+    const isCurrent = (operation: UploadedDesignOperationIdentity) =>
+      operation.generation === generation &&
+      operation.generation === activeGeneration;
+
+    return {
+      begin: (kind) => {
+        const operation = { generation: ++generation, kind };
+        activeGeneration = operation.generation;
+        return operation;
+      },
+      invalidate: () => {
+        generation += 1;
+        activeGeneration = null;
+      },
+      isCurrent,
+      finish: (operation) => {
+        if (!isCurrent(operation)) return false;
+        activeGeneration = null;
+        return true;
+      },
+    };
+  };
+
+export type UploadedDesignOperationResult<T> =
+  | { status: "succeeded"; value: T }
+  | { status: "failed"; error: unknown }
+  | { status: "stale" };
+
+export interface RunUploadedDesignOperationInput<T> {
+  coordinator: UploadedDesignOperationCoordinator;
+  kind: UploadedDesignOperationKind;
+  onBegin: (operation: UploadedDesignOperationIdentity) => void;
+  validate: () => Promise<void>;
+  execute: () => Promise<T>;
+  onSuccess: (
+    value: T,
+    operation: UploadedDesignOperationIdentity,
+  ) => void;
+  onError: (
+    error: unknown,
+    operation: UploadedDesignOperationIdentity,
+  ) => void;
+  onFinish: (operation: UploadedDesignOperationIdentity) => void;
+}
+
+/**
+ * Runs the customer upload transition with current-operation checks after every
+ * asynchronous boundary. Stale operations cannot publish state, errors, or
+ * busy finalization.
+ */
+export const runUploadedDesignOperation = async <T>({
+  coordinator,
+  kind,
+  onBegin,
+  validate,
+  execute,
+  onSuccess,
+  onError,
+  onFinish,
+}: RunUploadedDesignOperationInput<T>): Promise<
+  UploadedDesignOperationResult<T>
+> => {
+  const operation = coordinator.begin(kind);
+  onBegin(operation);
+
+  try {
+    await validate();
+    if (!coordinator.isCurrent(operation)) return { status: "stale" };
+
+    const value = await execute();
+    if (!coordinator.isCurrent(operation)) return { status: "stale" };
+
+    onSuccess(value, operation);
+    return { status: "succeeded", value };
+  } catch (error) {
+    if (!coordinator.isCurrent(operation)) return { status: "stale" };
+    onError(error, operation);
+    return { status: "failed", error };
+  } finally {
+    if (coordinator.finish(operation)) onFinish(operation);
+  }
+};
+
 export interface UploadedDesignCapacitySummary {
   garmentCount: number;
   fabricQuantity: number;
