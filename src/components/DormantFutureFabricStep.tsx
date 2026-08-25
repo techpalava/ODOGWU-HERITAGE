@@ -94,6 +94,94 @@ const getFutureGarmentLabel = (garmentType: FabricGarmentType): string =>
     ? "Other Garment"
     : getGarmentTypeStepLabel(garmentType);
 
+const hasUsableFabricImage = (fabric: Fabric | null | undefined): boolean =>
+  typeof fabric?.image === "string" && fabric.image.trim().length > 0;
+
+/** Accept only catalogue-style hex colours: #RGB, #RRGGBB, #RRGGBBAA. */
+export const isUsableFabricColorHex = (
+  value: string | null | undefined,
+): value is string => {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  return /^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(trimmed);
+};
+
+const ASSIGNED_FABRIC_PREVIEW_CLASSNAME =
+  "h-[100px] w-full overflow-hidden rounded-lg border border-heritage-gold/25 bg-heritage-cream/40 sm:h-[100px] sm:w-[128px] sm:shrink-0";
+
+/**
+ * Compact assigned-Fabric preview for garment cards. Derives from the current
+ * catalogue Fabric record — never stores image URLs on allocations.
+ * Image load failures fall back to colour swatch / unavailable placeholder.
+ */
+const AssignedFabricPreview = ({
+  fabric,
+  garmentKey,
+  garmentLabel,
+  fabricCode,
+}: {
+  fabric: Fabric | null | undefined;
+  garmentKey: string;
+  garmentLabel: string;
+  fabricCode: string;
+}) => {
+  const previewCode = fabric?.code || fabricCode;
+  const imageUrl = hasUsableFabricImage(fabric) ? fabric!.image!.trim() : null;
+  const colorHex = isUsableFabricColorHex(fabric?.colorHex)
+    ? fabric!.colorHex.trim()
+    : null;
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUrl, previewCode]);
+
+  const commonProps = {
+    "data-assigned-fabric-preview": "true",
+    "data-garment-key": garmentKey,
+    "data-fabric-code": previewCode,
+    className: ASSIGNED_FABRIC_PREVIEW_CLASSNAME,
+  } as const;
+
+  if (imageUrl && !imageFailed) {
+    return (
+      <div {...commonProps}>
+        <img
+          src={imageUrl}
+          alt={`${fabric!.name} selected for ${garmentLabel}`}
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover"
+          onError={() => setImageFailed(true)}
+        />
+      </div>
+    );
+  }
+
+  if (colorHex && fabric) {
+    return (
+      <div
+        {...commonProps}
+        role="img"
+        aria-label={`${fabric.name} Fabric colour preview for ${garmentLabel}`}
+        style={{ backgroundColor: colorHex }}
+      />
+    );
+  }
+
+  return (
+    <div
+      {...commonProps}
+      role="img"
+      aria-label={`Fabric preview unavailable for ${garmentLabel}`}
+    >
+      <div className="flex h-full w-full items-center justify-center px-2 text-center text-[10px] font-semibold leading-snug text-heritage-ink/50">
+        Fabric preview unavailable
+      </div>
+    </div>
+  );
+};
+
 const formatGarmentList = (labels: string[]): string => {
   if (labels.length <= 1) return labels[0] || "the selected garment";
   if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
@@ -1114,54 +1202,70 @@ export const DormantFutureFabricStep = ({
                 data-garment-key={assignment.garmentKey}
                 data-assignment-status={assigned ? "assigned" : "unassigned"}
               >
-                <div className="min-w-0">
-                  <div className="flex min-w-0 items-start gap-2">
-                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                      <p className="min-w-0 break-words text-sm font-bold text-heritage-green">
-                        {garmentLabel}
-                      </p>
-                      <span className="shrink-0 rounded-full border border-heritage-gold/30 bg-white px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-heritage-green">
-                        {assigned ? "Assigned" : "Needs fabric"}
-                      </span>
+                <div
+                  className={
+                    assigned
+                      ? "flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start"
+                      : "min-w-0"
+                  }
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-start gap-2">
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                        <p className="min-w-0 break-words text-sm font-bold text-heritage-green">
+                          {garmentLabel}
+                        </p>
+                        <span className="shrink-0 rounded-full border border-heritage-gold/30 bg-white px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-heritage-green">
+                          {assigned ? "Assigned" : "Needs fabric"}
+                        </span>
+                      </div>
+                      {assigned && (
+                        <button
+                          type="button"
+                          title="Remove Fabric"
+                          aria-label={`Remove fabric from ${garmentLabel}`}
+                          onClick={() =>
+                            removeAssignedFabric(
+                              assignment.garmentKey,
+                              garmentLabel,
+                              fabric?.name ?? "Selected fabric",
+                            )
+                          }
+                          className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-lg font-semibold leading-none text-heritage-ink/55 transition hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                        >
+                          <X aria-hidden="true" size={16} />
+                          <span className="sr-only">Remove Fabric</span>
+                        </button>
+                      )}
                     </div>
-                    {assigned && (
-                      <button
-                        type="button"
-                        title="Remove Fabric"
-                        aria-label={`Remove fabric from ${garmentLabel}`}
-                        onClick={() =>
-                          removeAssignedFabric(
-                            assignment.garmentKey,
-                            garmentLabel,
-                            fabric?.name ?? "Selected fabric",
-                          )
-                        }
-                        className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-lg font-semibold leading-none text-heritage-ink/55 transition hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-                      >
-                        <X aria-hidden="true" size={16} />
-                        <span className="sr-only">Remove Fabric</span>
-                      </button>
+                    {assigned && fabric ? (
+                      <>
+                        <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/70">
+                          {fabric.name} ({fabric.code})
+                        </p>
+                        <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-heritage-gold">
+                          Fabric Selection {selectionNumber}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="mt-1 text-xs text-heritage-ink/60">
+                        Fabric not assigned
+                      </p>
+                    )}
+                    {fabricStatus && (
+                      <p className="mt-2 text-xs font-semibold text-red-700">
+                        {fabricStatus}
+                      </p>
                     )}
                   </div>
-                  {assigned && fabric ? (
-                    <>
-                      <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/70">
-                        {fabric.name} ({fabric.code})
-                      </p>
-                      <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-heritage-gold">
-                        Fabric Selection {selectionNumber}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="mt-1 text-xs text-heritage-ink/60">
-                      Fabric not assigned
-                    </p>
-                  )}
-                  {fabricStatus && (
-                    <p className="mt-2 text-xs font-semibold text-red-700">
-                      {fabricStatus}
-                    </p>
-                  )}
+                  {assigned ? (
+                    <AssignedFabricPreview
+                      fabric={fabric}
+                      garmentKey={assignment.garmentKey}
+                      garmentLabel={garmentLabel}
+                      fabricCode={assigned.allocation.fabricCode}
+                    />
+                  ) : null}
                 </div>
                 <button
                   type="button"
