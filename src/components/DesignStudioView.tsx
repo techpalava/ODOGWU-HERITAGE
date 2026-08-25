@@ -156,13 +156,16 @@ import {
 import { isDesignSourcePricingActive } from "../utils/designStylePricingActivation";
 import {
   buildEffectiveUploadedJourneyGarmentTypeSelection,
+  createUploadedDesignOperationCoordinator,
   createUploadedDesignSourceWhenReady,
   getUploadedDesignAdditionalGarmentTypes,
   getUploadedDesignCompositionNeedsReview,
   getUploadedDesignCompositionSignature,
   getUploadedDesignRequiredStep1GarmentTypes,
   mergeUploadedDesignCompositionWithStep1,
+  resolveAuthorityAfterSuccessfulUploadedDesignPreview,
   resolveFabricStepGarmentTypeSelection,
+  runUploadedDesignOperation,
   UPLOADED_DESIGN_COMPOSITION_NEEDS_REVIEW_MESSAGE,
 } from "../utils/uploadedDesignStep1";
 import { useDesignStudioEffectiveJourneyComposition } from "../utils/useDesignStudioEffectiveJourneyComposition";
@@ -323,6 +326,9 @@ export default function DesignStudioView({
   const [uploadedDesignError, setUploadedDesignError] = useState("");
   const [isUploadingDesign, setIsUploadingDesign] = useState(false);
   const [isReplacingDesign, setIsReplacingDesign] = useState(false);
+  const uploadedDesignOperationCoordinatorRef = useRef(
+    createUploadedDesignOperationCoordinator(),
+  );
   const [isRemovingDesign, setIsRemovingDesign] = useState(false);
   const uploadedDesignDeletionInFlightRef = useRef(false);
   const uploadedDesignDeletionGenerationRef = useRef(0);
@@ -579,7 +585,14 @@ export default function DesignStudioView({
     setUploadedDesignPreviewReferenceId(designReferenceId);
   };
 
+  const invalidateUploadedDesignOperation = () => {
+    uploadedDesignOperationCoordinatorRef.current.invalidate();
+    setIsUploadingDesign(false);
+    setIsReplacingDesign(false);
+  };
+
   const clearUploadedDesignLocalState = (clearError = true) => {
+    invalidateUploadedDesignOperation();
     revokeUploadedDesignPreview();
     setUploadedDesignReference(null);
     setUploadedDesignComposition([]);
@@ -689,65 +702,144 @@ export default function DesignStudioView({
     }
   };
 
+  /**
+   * Successful upload/replacement preview takes over Step 3 design authority.
+   * Catalogue selection is fully cleared even when the uploaded form is still
+   * incomplete (demographic pending, etc.). Local draft + preview remain.
+   */
+  const applySuccessfulUploadedDesignPreview = ({
+    reference,
+    composition,
+    demographic,
+  }: {
+    reference: CustomerDesignUploadReference;
+    composition: FabricCapacityGarmentSpec[];
+    demographic: CustomDetailDemographic | null;
+  }) => {
+    const authority = resolveAuthorityAfterSuccessfulUploadedDesignPreview({
+      uploadReference: reference,
+      fabricCapacityComposition: composition,
+      demographic,
+    });
+    setUploadedDesignReference(reference);
+    setUploadedDesignComposition(composition);
+    setUploadedDesignDemographic(demographic);
+    setFutureSelectedStyleId(authority.selectedStyleId);
+    setFutureConfirmedDesignSourceKey(authority.confirmedDesignSourceKey);
+    setFuturePriceActivatedFabricCode(authority.priceActivatedFabricCode);
+    if (authority.designSource) {
+      applyUploadedDesignSource(authority.designSource);
+      return;
+    }
+    // Incomplete uploaded form: drop catalogue authority without deleting the
+    // private image or clearing Step 1 / Fabric unless an uploaded source was
+    // already active and must be suspended until the form is complete again.
+    setFutureDesignSource(null);
+    if (activeUploadedDesignSource) {
+      setFabricAllocationState((current) =>
+        reconcileFutureFabricAllocationStateIfChanged({
+          state: current,
+          garmentTypeSelection,
+        }),
+      );
+    }
+  };
+
   const handleUploadedDesignFile = async (
     file: File,
     isReplacement: boolean,
   ) => {
-    setUploadedDesignError("");
-    try {
-      await CustomerDesignUploadService.validateCustomerDesignFile(file);
-      if (isReplacement) setIsReplacingDesign(true);
-      else setIsUploadingDesign(true);
-      const currentReference =
-        activeUploadedDesignSource?.uploadReference || uploadedDesignReference;
-      const replacement =
-        isReplacement && currentReference
-          ? await CustomerDesignUploadService.replaceCustomerDesignDraft(
-              currentReference,
-              file,
-            )
-          : {
-              reference:
-                await CustomerDesignUploadService.uploadCustomerDesignDraft(
-                  file,
-                ),
-            };
-      setUploadedDesignPreviewFromBlob(
-        file,
-        replacement.reference.designReferenceId,
-      );
-      applyUploadedDesignForm({
-        reference: replacement.reference,
-        composition: isReplacement
-          ? mergeUploadedDesignCompositionWithStep1({
-              step1GarmentTypes: garmentTypeSelection.garmentTypes,
-              additionalGarmentTypes: [],
-              preservedHiddenComposition: [],
-            })
+    await runUploadedDesignOperation({
+      coordinator: uploadedDesignOperationCoordinatorRef.current,
+      kind: isReplacement ? "replacement" : "upload",
+      onBegin: () => {
+        setUploadedDesignError("");
+        setIsUploadingDesign(!isReplacement);
+        setIsReplacingDesign(isReplacement);
+      },
+      validate: () =>
+        CustomerDesignUploadService.validateCustomerDesignFile(file),
+      execute: async () => {
+        const currentReference =
+          activeUploadedDesignSource?.uploadReference || uploadedDesignReference;
+        const previousUploadedComposition =
+          activeUploadedDesignSource?.fabricCapacityComposition.map((spec) => ({
+            ...spec,
+          })) || uploadedDesignComposition;
+        const previousUploadedDemographic =
+          activeUploadedDesignSource?.demographic || uploadedDesignDemographic;
+        const replacement =
+          isReplacement && currentReference
+            ? await CustomerDesignUploadService.replaceCustomerDesignDraft(
+                currentReference,
+                file,
+              )
+            : {
+                reference:
+                  await CustomerDesignUploadService.uploadCustomerDesignDraft(
+                    file,
+                  ),
+              };
+        const composition = isReplacement
+          ? previousUploadedComposition.length > 0
+            ? previousUploadedComposition
+            : mergeUploadedDesignCompositionWithStep1({
+                step1GarmentTypes: garmentTypeSelection.garmentTypes,
+                additionalGarmentTypes: [],
+                preservedHiddenComposition: [],
+              })
           : uploadedDesignComposition.length > 0
             ? uploadedDesignComposition
             : mergeUploadedDesignCompositionWithStep1({
                 step1GarmentTypes: garmentTypeSelection.garmentTypes,
                 additionalGarmentTypes: uploadedDesignAdditionalGarmentTypes,
                 preservedHiddenComposition: uploadedDesignComposition,
-              }),
-        demographic: isReplacement ? null : uploadedDesignDemographic,
-      });
-      if (isReplacement) {
-        setUploadedDesignAdditionalGarmentTypes([]);
-      }
-      setPendingCatalogStyleId(null);
-      if (replacement.previousDraftCleanupError) {
-        setUploadedDesignError(
-          "Your new image was saved, but the previous private image could not be removed.",
+              });
+        const demographic = isReplacement
+          ? previousUploadedDemographic
+          : uploadedDesignDemographic;
+        return {
+          composition,
+          demographic,
+          previousUploadedComposition,
+          replacement,
+        };
+      },
+      onSuccess: ({
+        composition,
+        demographic,
+        previousUploadedComposition,
+        replacement,
+      }) => {
+        // Preview acceptance is the switch point: catalogue must not remain
+        // selected alongside a successful uploaded preview.
+        setUploadedDesignPreviewFromBlob(
+          file,
+          replacement.reference.designReferenceId,
         );
-      }
-    } catch (error) {
-      setUploadedDesignError(getCustomerDesignUploadErrorMessage(error));
-    } finally {
-      setIsUploadingDesign(false);
-      setIsReplacingDesign(false);
-    }
+        applySuccessfulUploadedDesignPreview({
+          reference: replacement.reference,
+          composition,
+          demographic,
+        });
+        if (isReplacement && previousUploadedComposition.length === 0) {
+          setUploadedDesignAdditionalGarmentTypes([]);
+        }
+        setPendingCatalogStyleId(null);
+        if (replacement.previousDraftCleanupError) {
+          setUploadedDesignError(
+            "Your new image was saved, but the previous private image could not be removed.",
+          );
+        }
+      },
+      onError: (error) => {
+        setUploadedDesignError(getCustomerDesignUploadErrorMessage(error));
+      },
+      onFinish: () => {
+        setIsUploadingDesign(false);
+        setIsReplacingDesign(false);
+      },
+    });
   };
 
   const handleUploadedDesignCompositionToggle = (
@@ -816,6 +908,7 @@ export default function DesignStudioView({
   };
 
   const activateFutureCatalogStyle = (styleId: string) => {
+    invalidateUploadedDesignOperation();
     const activated = activateFutureCatalogStyleSelection({
       styleId,
       primaryFabricCode: futurePrimaryFabricCode,
@@ -834,6 +927,7 @@ export default function DesignStudioView({
     catalogStyleIdAfterDelete: string | null;
   }) => {
     if (uploadedDesignDeletionInFlightRef.current) return;
+    invalidateUploadedDesignOperation();
     const deletionGeneration =
       ++uploadedDesignDeletionGenerationRef.current;
     uploadedDesignDeletionInFlightRef.current = true;
