@@ -262,9 +262,11 @@ export type AdditionalClothesCostSection =
   (typeof ADDITIONAL_CLOTHES_COST_SECTION_ORDER)[number];
 
 /**
- * Customer-facing “Additional Clothes Costs” card availability.
- * Flip to `true` to restore the section, its completion rules, and active pricing.
- * Does not delete catalogue options, Admin support, or draft/historical data.
+ * Customer-facing “Additional Clothes Costs” full restore.
+ * Flip to `true` to restore every additional-cost group, its completion rules,
+ * and active pricing. Dress additional costs remain customer-visible even while
+ * this flag is false. Does not delete catalogue options, Admin support, or
+ * draft/historical data.
  */
 export const SHOW_ADDITIONAL_CLOTHES_COSTS = false;
 
@@ -277,6 +279,24 @@ export const CUSTOMER_FACING_ADDITIONAL_CLOTHES_COST_GROUPS =
 export type CustomerFacingAdditionalClothesCostGroup =
   (typeof CUSTOMER_FACING_ADDITIONAL_CLOTHES_COST_GROUPS)[number];
 
+/**
+ * Additional-cost groups shown to customers while the full restore flag is off.
+ * Add a group here to re-enable it later without flipping the global flag.
+ */
+export const CUSTOMER_VISIBLE_ADDITIONAL_CLOTHES_COST_GROUPS = [
+  "dress_additional",
+] as const satisfies readonly CustomerFacingAdditionalClothesCostGroup[];
+
+/** Groups rendered as a compact companion beside their parent garment section. */
+export const CUSTOMER_COMPANION_ADDITIONAL_CLOTHES_COST_GROUPS =
+  CUSTOMER_VISIBLE_ADDITIONAL_CLOTHES_COST_GROUPS;
+
+export const ADDITIONAL_CLOTHES_COST_CUSTOMER_VISIBLE_PARENT: Readonly<
+  Partial<Record<CustomerFacingAdditionalClothesCostGroup, FabricGarmentType>>
+> = {
+  dress_additional: "dress",
+};
+
 export const resolveShowAdditionalClothesCosts = (
   override?: boolean,
 ): boolean => override ?? SHOW_ADDITIONAL_CLOTHES_COSTS;
@@ -288,13 +308,48 @@ export const isCustomerFacingAdditionalClothesCostGroup = (
     group,
   );
 
+export const isCompanionCustomerAdditionalClothesCostGroup = (
+  group: string,
+): boolean =>
+  (CUSTOMER_COMPANION_ADDITIONAL_CLOTHES_COST_GROUPS as readonly string[]).includes(
+    group,
+  );
+
 /** Whether a selection group may appear in the active customer Custom Details journey. */
 export const isCustomerAvailableCustomDetailSelectionGroup = (
   group: string,
   options?: { showAdditionalClothesCosts?: boolean },
-): boolean =>
-  !isCustomerFacingAdditionalClothesCostGroup(group) ||
-  resolveShowAdditionalClothesCosts(options?.showAdditionalClothesCosts);
+): boolean => {
+  if (!isCustomerFacingAdditionalClothesCostGroup(group)) return true;
+  if (resolveShowAdditionalClothesCosts(options?.showAdditionalClothesCosts)) {
+    return true;
+  }
+  return (CUSTOMER_VISIBLE_ADDITIONAL_CLOTHES_COST_GROUPS as readonly string[]).includes(
+    group,
+  );
+};
+
+/** Group availability scoped to a physical parent garment when the full restore is off. */
+export const isCustomerVisibleAdditionalClothesCostForGarment = (
+  group: string,
+  parentGarmentType: string | null | undefined,
+  options?: { showAdditionalClothesCosts?: boolean },
+): boolean => {
+  if (!isCustomerAvailableCustomDetailSelectionGroup(group, options)) {
+    return false;
+  }
+  if (!isCustomerFacingAdditionalClothesCostGroup(group)) {
+    return true;
+  }
+  if (resolveShowAdditionalClothesCosts(options?.showAdditionalClothesCosts)) {
+    return true;
+  }
+  const requiredParent = ADDITIONAL_CLOTHES_COST_CUSTOMER_VISIBLE_PARENT[group];
+  if (!requiredParent || !parentGarmentType) {
+    return true;
+  }
+  return parentGarmentType === requiredParent;
+};
 
 export const ALL_CUSTOM_DETAIL_SELECTION_GROUPS: readonly CustomDetailSelectionGroup[] = [
   ...CUSTOM_DETAIL_SELECTION_GROUPS,
@@ -1251,7 +1306,7 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
   {
     id: "dress_additional_head_wrap",
     label: "Head Wrap / Gear / Scarf",
-    description: "Head-tie (traditional look).",
+    description: "Head-Tie (traditional look)",
     priceCents: 1000,
     garmentGroup: "dress",
     eligibleDemographics: ["female", "unisex"],
@@ -1267,7 +1322,7 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
     id: "dress_additional_shoulder_waist_wrap",
     label: "Shoulder or Waist Wrap / Scarf",
     description:
-      "Over the shoulder, around both shoulders, or around the waist.",
+      "Over the Shoulder or around both shoulders or around the Waist",
     priceCents: 1500,
     garmentGroup: "dress",
     eligibleDemographics: ["female", "unisex"],

@@ -7,6 +7,7 @@ import {
   ADDITIONAL_CLOTHES_COST_SECTION_ORDER,
   ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION,
   CUSTOMER_FACING_ADDITIONAL_CLOTHES_COST_GROUPS,
+  CUSTOMER_VISIBLE_ADDITIONAL_CLOTHES_COST_GROUPS,
   DRESS_LINING_OPTION_ID,
   SEED_CUSTOM_DETAIL_CATALOG,
   SHOW_ADDITIONAL_CLOTHES_COSTS,
@@ -210,8 +211,19 @@ assert.ok(
 );
 assert.equal(
   isCustomerAvailableCustomDetailSelectionGroup("dress_additional"),
+  true,
+);
+assert.equal(
+  isCustomerAvailableCustomDetailSelectionGroup("shirt_additional"),
   false,
 );
+assert.equal(
+  isCustomerAvailableCustomDetailSelectionGroup("trouser_additional"),
+  false,
+);
+assert.deepEqual([...CUSTOMER_VISIBLE_ADDITIONAL_CLOTHES_COST_GROUPS], [
+  "dress_additional",
+]);
 assert.equal(isCustomerAvailableCustomDetailSelectionGroup("neck_design"), true);
 assert.equal(
   isCustomerAvailableCustomDetailSelectionGroup("personalized_additional"),
@@ -287,10 +299,10 @@ const rawLegacySnapshot = JSON.parse(
 const activeLegacyDesignSelections = projectActiveCustomerDesignSelections({
   designSelections: rawLegacyDesignSelections,
 });
-assert.equal(activeLegacyDesignSelections.hasLining, false);
-assert.equal(
+assert.equal(activeLegacyDesignSelections.hasLining, true);
+assert.deepEqual(
   activeLegacyDesignSelections.customDetails?.dress_additional,
-  undefined,
+  [DRESS_LINING_OPTION_ID],
 );
 assert.equal(
   activeLegacyDesignSelections.customDetails?.neck_design,
@@ -300,7 +312,7 @@ assert.deepEqual(
   activeLegacyDesignSelections.customDetailSnapshots?.map(
     (snapshot) => snapshot.optionId,
   ),
-  [neckOption.id],
+  [DRESS_LINING_OPTION_ID, neckOption.id],
 );
 assert.deepEqual(
   activeLegacyDesignSelections.decorativeFeatures,
@@ -356,7 +368,16 @@ const disabledCatalogue = projectFutureCustomDetailsCatalogue({
   activeOptions: catalogInspection.activeOptions,
   additionalGarments: [],
 });
-assert.equal(disabledCatalogue.additionalCostGroups.length, 0);
+assert.deepEqual(
+  disabledCatalogue.additionalCostGroups.map((group) => group.selectionGroup),
+  ["dress_additional"],
+);
+assert.equal(
+  disabledCatalogue.additionalCostGroups.some(
+    (group) => group.selectionGroup === "shirt_additional",
+  ),
+  false,
+);
 
 const disabledCompletion = validateGarmentScopedCustomDetailsCompletion({
   earlierStagesComplete: true,
@@ -381,8 +402,17 @@ assert.equal(disabledPricing.status, "exact");
 if (disabledPricing.status !== "exact") {
   throw new Error("expected exact Custom Details pricing while the section is hidden");
 }
+assert.ok(
+  disabledPricing.lines.some(
+    (line) =>
+      line.selectionGroup === "dress_additional" &&
+      line.optionId === DRESS_LINING_OPTION_ID &&
+      line.lineTotalCents === 1000,
+  ),
+  "Dress additional clothes costs remain priced while other additional-cost groups stay hidden",
+);
 assert.equal(
-  disabledPricing.lines.some((line) => line.selectionGroup === "dress_additional"),
+  disabledPricing.lines.some((line) => line.selectionGroup === "shirt_additional"),
   false,
 );
 assert.ok(
@@ -451,9 +481,25 @@ const activeOrderDesignSelections = projectActiveCustomerDesignSelections({
     },
   },
 });
-const basePricing = calculateDesignPricing({
+assert.equal(activeOrderDesignSelections.hasLining, true);
+assert.deepEqual(
+  activeOrderDesignSelections.customDetails?.dress_additional,
+  [DRESS_LINING_OPTION_ID],
+);
+const dressLegacyPricing = calculateDesignPricing({
   route: "alone",
   design: activeOrderDesignSelections,
+  materialPricing,
+  baseGarmentComposition: getFutureFabricCapacityComposition(garmentTypeSelection),
+  catalog: catalogInspection.activeOptions,
+  businessSettings,
+  garmentConstructionSelectionMode: "garment_type_locked",
+  garmentTypeSelection,
+});
+assert.equal(dressLegacyPricing.customDetailsPrice, 10);
+const basePricing = calculateDesignPricing({
+  route: "alone",
+  design: { accessories: [] },
   materialPricing,
   baseGarmentComposition: getFutureFabricCapacityComposition(garmentTypeSelection),
   catalog: catalogInspection.activeOptions,
@@ -486,7 +532,7 @@ const enabledLegacyPricing = calculateDesignPricing({
   garmentConstructionSelectionMode: "garment_type_locked",
   garmentTypeSelection,
 });
-assert.equal(disabledLegacyPricing.customDetailsPrice, 25);
+assert.equal(disabledLegacyPricing.customDetailsPrice, 35);
 assert.equal(enabledLegacyPricing.customDetailsPrice, 35);
 const aiTryOnWorkflow: AiTryOnWorkflowStateV1 = {
   schemaVersion: 1,
@@ -518,7 +564,7 @@ assert.equal(
       (occurrence) => occurrence.selectionGroup === "dress_additional",
     ),
   ),
-  false,
+  true,
 );
 assert.ok(
   summary.customDetailsSummary.some((group) =>
@@ -598,14 +644,14 @@ assert.equal(
   orderResult.candidate.customDetails.some(
     (detail) => detail.selectionGroup === "dress_additional",
   ),
-  false,
+  true,
 );
 assert.ok(
   orderResult.candidate.customDetails.some(
     (detail) => detail.optionId === neckOption.id,
   ),
 );
-assert.doesNotMatch(
+assert.match(
   JSON.stringify(orderResult.candidate),
   new RegExp(DRESS_LINING_OPTION_ID),
 );
@@ -653,10 +699,16 @@ assert.equal(
   }).length,
   0,
 );
-assert.doesNotMatch(rendered, /Additional Clothes Costs/);
+assert.ok(
+  renderer.root.findAllByProps({
+    "data-custom-detail-section": "dress-additional-clothes-costs",
+  }).length > 0,
+);
+assert.match(rendered, /Additional Clothes Costs/);
 assert.doesNotMatch(rendered, /Shirts - Additional/);
 assert.doesNotMatch(rendered, /Neck Design - Additional/);
-assert.doesNotMatch(rendered, /Dress - Additional/);
+assert.match(rendered, /Dress - Additional/);
+assert.match(rendered, /Lining in Dress - to keep dress firm \(in shape\)/);
 assert.match(rendered, /Add Additional Garment/);
 assert.match(rendered, /Neck Design/i);
 assert.ok(
@@ -708,7 +760,15 @@ assert.equal(enabledPricing.status, "exact");
 if (enabledPricing.status !== "exact") {
   throw new Error("expected exact pricing when Additional Clothes Costs are reactivated");
 }
-assert.ok(enabledPricing.subtotalCents > disabledPricing.subtotalCents);
+assert.equal(enabledPricing.subtotalCents, disabledPricing.subtotalCents);
+assert.ok(
+  enabledPricing.lines.some(
+    (line) =>
+      line.selectionGroup === "dress_additional" &&
+      line.optionId === DRESS_LINING_OPTION_ID &&
+      line.lineTotalCents === 1000,
+  ),
+);
 
 const enabledCompletion = validateGarmentScopedCustomDetailsCompletion({
   earlierStagesComplete: true,
@@ -743,7 +803,13 @@ const enabledAdditionalSection = enabledRenderer.root.findByProps({
   "data-custom-detail-section": "additional-clothes-costs",
 });
 assert.match(enabledRendered, /Additional Clothes Costs/);
-assert.match(textContent(enabledAdditionalSection), /Dress - Additional/);
+assert.doesNotMatch(textContent(enabledAdditionalSection), /Dress - Additional/);
+assert.match(textContent(enabledAdditionalSection), /Shirts - Additional|Neck Design - Additional/);
+assert.ok(
+  enabledRenderer.root.findAllByProps({
+    "data-custom-detail-section": "dress-additional-clothes-costs",
+  }).length > 0,
+);
 assert.ok(enabledAdditionalSection.findAllByType("input").length > 0);
 assert.equal(
   enabledPricing.lines.find(
