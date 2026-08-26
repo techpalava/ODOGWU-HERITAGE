@@ -1,4 +1,4 @@
-import { Check, Layers3, X } from "lucide-react";
+import { Layers3, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
@@ -9,9 +9,12 @@ import type {
 } from "../types";
 import { getGarmentTypeStepLabel } from "./GarmentTypeStep";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import {
+  AssignedFabricPreview,
+} from "./AssignedFabricPreview";
+import { FutureFabricCatalogueCard } from "./FutureFabricCatalogueCard";
 import { resolveFabricAllocationMaterialPricing } from "../utils/fabricAllocationPricing";
-import { resolveFabricPrice } from "../utils/fabricPricing";
-import { getFabricStockPresentation } from "../utils/fabricStockPresentation";
+import { getFabricAvailabilityMessage } from "../utils/fabricCatalogueAvailability";
 import {
   getFutureFabricAssignmentTargets,
   getFutureFabricBulkChoiceCandidates,
@@ -23,6 +26,8 @@ import {
   type FutureFabricStageCompletion,
 } from "../utils/designStudioFutureFabricStage";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+
+export { isUsableFabricColorHex } from "./AssignedFabricPreview";
 
 const blockerMessages: Record<
   FutureFabricStageCompletion["blockers"][number]["code"],
@@ -76,111 +81,10 @@ interface FabricBulkChoicePrompt {
 const OTHER_ADDITIONAL_GARMENT_PENDING_MESSAGE =
   "Finish assigning fabric to the pending additional garment before removing fabric from another additional garment.";
 
-const getFabricAvailabilityMessage = (fabric: Fabric): string | null => {
-  if (fabric.stockStatus === "OUT_OF_STOCK") {
-    return "Currently out of stock.";
-  }
-  if (fabric.stockStatus === "HIDDEN") {
-    return "This fabric is no longer available.";
-  }
-  if (resolveFabricPrice(fabric) === null) {
-    return "Price needs catalogue review before selection.";
-  }
-  return null;
-};
-
 const getFutureGarmentLabel = (garmentType: FabricGarmentType): string =>
   garmentType === "other"
     ? "Other Garment"
     : getGarmentTypeStepLabel(garmentType);
-
-const hasUsableFabricImage = (fabric: Fabric | null | undefined): boolean =>
-  typeof fabric?.image === "string" && fabric.image.trim().length > 0;
-
-/** Accept only catalogue-style hex colours: #RGB, #RRGGBB, #RRGGBBAA. */
-export const isUsableFabricColorHex = (
-  value: string | null | undefined,
-): value is string => {
-  if (typeof value !== "string") return false;
-  const trimmed = value.trim();
-  return /^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(trimmed);
-};
-
-const ASSIGNED_FABRIC_PREVIEW_CLASSNAME =
-  "h-[100px] w-full overflow-hidden rounded-lg border border-heritage-gold/25 bg-heritage-cream/40 sm:h-[100px] sm:w-[128px] sm:shrink-0";
-
-/**
- * Compact assigned-Fabric preview for garment cards. Derives from the current
- * catalogue Fabric record — never stores image URLs on allocations.
- * Image load failures fall back to colour swatch / unavailable placeholder.
- */
-const AssignedFabricPreview = ({
-  fabric,
-  garmentKey,
-  garmentLabel,
-  fabricCode,
-}: {
-  fabric: Fabric | null | undefined;
-  garmentKey: string;
-  garmentLabel: string;
-  fabricCode: string;
-}) => {
-  const previewCode = fabric?.code || fabricCode;
-  const imageUrl = hasUsableFabricImage(fabric) ? fabric!.image!.trim() : null;
-  const colorHex = isUsableFabricColorHex(fabric?.colorHex)
-    ? fabric!.colorHex.trim()
-    : null;
-  const [imageFailed, setImageFailed] = useState(false);
-
-  useEffect(() => {
-    setImageFailed(false);
-  }, [imageUrl, previewCode]);
-
-  const commonProps = {
-    "data-assigned-fabric-preview": "true",
-    "data-garment-key": garmentKey,
-    "data-fabric-code": previewCode,
-    className: ASSIGNED_FABRIC_PREVIEW_CLASSNAME,
-  } as const;
-
-  if (imageUrl && !imageFailed) {
-    return (
-      <div {...commonProps}>
-        <img
-          src={imageUrl}
-          alt={`${fabric!.name} selected for ${garmentLabel}`}
-          loading="lazy"
-          decoding="async"
-          className="h-full w-full object-cover"
-          onError={() => setImageFailed(true)}
-        />
-      </div>
-    );
-  }
-
-  if (colorHex && fabric) {
-    return (
-      <div
-        {...commonProps}
-        role="img"
-        aria-label={`${fabric.name} Fabric colour preview for ${garmentLabel}`}
-        style={{ backgroundColor: colorHex }}
-      />
-    );
-  }
-
-  return (
-    <div
-      {...commonProps}
-      role="img"
-      aria-label={`Fabric preview unavailable for ${garmentLabel}`}
-    >
-      <div className="flex h-full w-full items-center justify-center px-2 text-center text-[10px] font-semibold leading-snug text-heritage-ink/50">
-        Fabric preview unavailable
-      </div>
-    </div>
-  );
-};
 
 const formatGarmentList = (labels: string[]): string => {
   if (labels.length <= 1) return labels[0] || "the selected garment";
@@ -974,7 +878,6 @@ export const DormantFutureFabricStep = ({
   };
 
   const renderCatalogueCard = (fabric: Fabric) => {
-    const availabilityMessage = getFabricAvailabilityMessage(fabric);
     const pendingTargetAssignment =
       fabricAllocationState.awaitingFabricForPendingGarment
         ? fabricAllocationState.pendingFabricGarment
@@ -992,9 +895,6 @@ export const DormantFutureFabricStep = ({
       fabricAllocationState,
       currentTargetGarmentKey: currentTarget?.assignment.garmentKey ?? null,
     });
-    const cardStatus = cardPresentation.status;
-    const isCancelAction =
-      !availabilityMessage && cardPresentation.action === "cancel";
     const cancelAssignment = cardPresentation.cancelGarmentKey
       ? assignmentByGarmentKey.get(cardPresentation.cancelGarmentKey)
           ?.assignment ||
@@ -1006,122 +906,34 @@ export const DormantFutureFabricStep = ({
     const cancelGarmentLabel = cancelAssignment
       ? getFutureGarmentLabel(cancelAssignment.garmentType)
       : "";
-    const cancelAccessibleName = cancelGarmentLabel
-      ? `Cancel ${fabric.name} fabric assignment for ${cancelGarmentLabel}`
-      : `Cancel ${fabric.name} fabric assignment`;
-    const stockPresentation = getFabricStockPresentation(fabric);
-    const stockBadgeId = `future-fabric-stock-${fabric.code}`;
-    const stockBadgeClassName =
-      stockPresentation.visible && stockPresentation.tone === "low_stock"
-        ? "border-amber-200 bg-amber-700 text-white"
-        : stockPresentation.visible && stockPresentation.tone === "out_of_stock"
-          ? "border-red-200 bg-red-700 text-white"
-          : "border-heritage-gold/30 bg-heritage-green text-white";
+    const targetGarmentLabel = currentTarget
+      ? getFutureGarmentLabel(currentTarget.assignment.garmentType)
+      : cancelGarmentLabel || undefined;
+
     return (
-      <article
+      <FutureFabricCatalogueCard
         key={fabric.code}
-        className="flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm"
-      >
-        <div className="relative aspect-[4/3] overflow-hidden bg-heritage-cream/40">
-          {fabric.image ? (
-            <img
-              src={fabric.image}
-              alt={`${fabric.name} fabric swatch`}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div
-              className="h-full w-full"
-              style={{ backgroundColor: fabric.colorHex }}
-              aria-label={`${fabric.color} fabric color`}
-            />
-          )}
-          {stockPresentation.visible && (
-            <span
-              id={stockBadgeId}
-              data-fabric-stock-badge="true"
-              data-fabric-stock-code={fabric.code}
-              data-fabric-stock-status={stockPresentation.status}
-              data-fabric-stock-label={stockPresentation.label}
-              className={`pointer-events-none absolute top-2 right-2 z-10 max-w-[calc(100%-1rem)] rounded-full border px-2 py-1 text-[10px] font-bold leading-tight shadow-sm ${stockBadgeClassName}`}
-            >
-              {stockPresentation.label}
-            </span>
-          )}
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col p-4">
-          <h3 className="break-words font-serif text-base font-bold text-heritage-green">
-            {fabric.name}
-          </h3>
-          <p className="mt-1 break-words font-mono text-[10px] text-heritage-ink/55">
-            {fabric.code}
-          </p>
-          {availabilityMessage && (
-            <p className="mt-2 text-xs font-semibold text-red-700">
-              {availabilityMessage}
-            </p>
-          )}
-          <button
-            type="button"
-            disabled={Boolean(availabilityMessage)}
-            onClick={() => {
-              if (isCancelAction && cardPresentation.cancelGarmentKey) {
-                removeAssignedFabric(
-                  cardPresentation.cancelGarmentKey,
-                  cancelGarmentLabel || "the selected garment",
-                  fabric.name,
-                );
-                return;
-              }
-              handleFabricSelection(fabric);
-            }}
-            data-fabric-card="true"
-            data-fabric-code={fabric.code}
-            data-fabric-status={cardStatus}
-            data-fabric-action={cardPresentation.action}
-            data-fabric-idle-label={isCancelAction ? "IN USE" : undefined}
-            data-fabric-active-label={isCancelAction ? "CANCEL" : undefined}
-            data-fabric-cancel-garment-key={
-              cardPresentation.cancelGarmentKey ?? undefined
-            }
-            aria-label={
-              isCancelAction
-                ? cancelAccessibleName
-                : `${cardStatus} ${fabric.name}${
-                    currentTarget
-                      ? ` for ${getFutureGarmentLabel(currentTarget.assignment.garmentType)}`
-                      : ""
-                  }`
-            }
-            aria-describedby={`future-fabric-catalogue-help future-fabric-assignment-status ${stockBadgeId}`}
-            className={`group mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold uppercase tracking-wider transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 ${
-              isCancelAction
-                ? "bg-heritage-green text-white hover:bg-red-700 hover:text-white focus-visible:bg-red-700"
-                : "bg-heritage-green text-white hover:bg-heritage-forest"
-            }`}
-          >
-            {availabilityMessage ? (
-              "Unavailable"
-            ) : isCancelAction ? (
-              <span className="grid w-full place-items-center">
-                <span className="col-start-1 row-start-1 group-hover:invisible group-focus-visible:invisible">
-                  IN USE
-                </span>
-                <span className="col-start-1 row-start-1 invisible text-white group-hover:visible group-focus-visible:visible">
-                  CANCEL
-                </span>
-              </span>
-            ) : (
-              <>
-                {cardStatus === "SELECT" && (
-                  <Check aria-hidden="true" size={14} />
-                )}
-                {cardStatus}
-              </>
-            )}
-          </button>
-        </div>
-      </article>
+        fabric={fabric}
+        presentation={cardPresentation}
+        targetGarmentLabel={targetGarmentLabel}
+        stockBadgeIdPrefix="future-fabric-stock"
+        describedBy="future-fabric-catalogue-help future-fabric-assignment-status"
+        onAction={() => {
+          if (
+            cardPresentation.action === "cancel" &&
+            cardPresentation.cancelGarmentKey &&
+            !getFabricAvailabilityMessage(fabric)
+          ) {
+            removeAssignedFabric(
+              cardPresentation.cancelGarmentKey,
+              cancelGarmentLabel || "the selected garment",
+              fabric.name,
+            );
+            return;
+          }
+          handleFabricSelection(fabric);
+        }}
+      />
     );
   };
 

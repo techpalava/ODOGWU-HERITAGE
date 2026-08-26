@@ -554,7 +554,17 @@ assert.match(textContent(repeatedConstructionRenderer.root), /Estimated total so
 
 const additionalSelection = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
-  existingAssignments: [],
+  existingAssignments: [
+    {
+      garmentKey: "base:shirt",
+      code: "BASE_SHIRT",
+      garmentType: "shirt",
+      fabricUnits: 1,
+      garmentSpec: { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+      sourceRole: "main",
+      dependencyStatus: "valid",
+    },
+  ],
 });
 assert.equal(additionalSelection.status, "resolved");
 if (
@@ -572,6 +582,8 @@ const additionalAssignment: FabricGarmentAssignment = {
   sourceRole: "additional",
   eligibilityRule: "catalog_all",
   dependencyStatus: "valid",
+  mainGarmentKey: additionalSelection.selection.mainGarmentKey,
+  mainGarmentType: additionalSelection.selection.mainGarmentType,
 };
 const additionalConstructions = reconcileAdditionalGarmentConstructionState({
   existingState: createEmptyAdditionalGarmentConstructionState(),

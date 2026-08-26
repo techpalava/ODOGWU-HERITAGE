@@ -35,12 +35,25 @@ if (sourceConstruction?.status === "resolved") {
   }
 }
 
+const makeBaseShirtAssignment = (): FabricGarmentAssignment => ({
+  garmentKey: "base:shirt",
+  code: "BASE_SHIRT",
+  garmentType: "shirt",
+  fabricUnits: 1,
+  garmentSpec: { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+  sourceRole: "main",
+  dependencyStatus: "valid",
+});
+
 const makeAdditionalShirt = (
   existingAssignments: FabricGarmentAssignment[],
 ): FabricGarmentAssignment => {
   const result = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments,
+    existingAssignments:
+      existingAssignments.length > 0
+        ? existingAssignments
+        : [makeBaseShirtAssignment()],
   });
   if (result.status !== "resolved" || !result.selection.garmentSpec) {
     throw new Error("Expected an additional Shirt selection.");
@@ -54,11 +67,16 @@ const makeAdditionalShirt = (
     sourceRole: "additional",
     eligibilityRule: "catalog_all",
     dependencyStatus: "valid",
+    mainGarmentKey: result.selection.mainGarmentKey,
+    mainGarmentType: result.selection.mainGarmentType,
   };
 };
 
 const firstAdditional = makeAdditionalShirt([]);
-const secondAdditional = makeAdditionalShirt([firstAdditional]);
+const secondAdditional = makeAdditionalShirt([
+  makeBaseShirtAssignment(),
+  firstAdditional,
+]);
 const reconciliation = reconcileGarmentScopedCustomDetails({
   garmentTypeSelection,
   additionalGarments: [firstAdditional],

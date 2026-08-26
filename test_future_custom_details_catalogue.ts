@@ -292,7 +292,17 @@ if (defaultShirt?.status === "resolved") {
 
 const addition = createCatalogueAdditionalGarmentSelection({
   garmentType: "dress",
-  existingAssignments: [],
+  existingAssignments: [
+    {
+      garmentKey: "base:shirt",
+      code: "BASE_SHIRT",
+      garmentType: "shirt",
+      fabricUnits: 1,
+      garmentSpec: { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+      sourceRole: "main",
+      dependencyStatus: "valid",
+    },
+  ],
 });
 assert.equal(addition.status, "resolved");
 if (addition.status === "resolved") {
@@ -304,6 +314,8 @@ if (addition.status === "resolved") {
     sourceRole: "additional",
     eligibilityRule: "catalog_all",
     dependencyStatus: "valid",
+    mainGarmentKey: addition.selection.mainGarmentKey,
+    mainGarmentType: addition.selection.mainGarmentType,
   };
   const added = project({
     garmentTypes: ["shirt"],

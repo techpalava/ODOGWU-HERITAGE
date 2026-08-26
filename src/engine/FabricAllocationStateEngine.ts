@@ -10,6 +10,7 @@ import type {
   FabricGarmentType,
   FabricGarmentInputAssignment,
 } from "../types";
+import { validateCanonicalAdditionalGarmentSelectionForParking } from "../utils/additionalGarmentDomain";
 
 export interface FabricAllocationSelection {
   code?: string;
@@ -527,6 +528,61 @@ export class FabricAllocationStateEngine {
       activeAllocationId: state.activeAllocationId,
       pendingFabricGarment: null,
       awaitingFabricForPendingGarment: false,
+    };
+  }
+
+  /**
+   * Parks an Optional Extra Garment as awaiting fabric when no usable active
+   * allocation exists yet. Catalogue selection then uses assignPendingGarmentToFabric.
+   * Only complete canonical additional-garment selections are accepted.
+   */
+  static beginPendingAdditionalGarmentSelection(
+    state: FabricAllocationState,
+    selection: FabricAllocationSelection,
+  ): FabricAllocationState {
+    if (state.pendingFabricGarment || state.awaitingFabricForPendingGarment) {
+      return state;
+    }
+
+    const validation = validateCanonicalAdditionalGarmentSelectionForParking({
+      state,
+      selection,
+    });
+    if (validation.status !== "valid") {
+      return state;
+    }
+
+    const resolved = this.resolveSelectedGarment(validation.selection);
+    if (!resolved || resolved.length !== 1) {
+      return state;
+    }
+    const assignment = resolved[0];
+    const garmentSpec = validation.selection.garmentSpec!;
+    if (
+      assignment.sourceRole !== "additional" ||
+      assignment.garmentKey !== garmentSpec.key ||
+      assignment.mainGarmentKey !== validation.selection.mainGarmentKey ||
+      assignment.mainGarmentType !== validation.selection.mainGarmentType ||
+      assignment.eligibilityRule !== validation.selection.eligibilityRule ||
+      assignment.dependencyStatus !== validation.selection.dependencyStatus
+    ) {
+      return state;
+    }
+
+    const alreadyCommitted = state.fabricAllocations.some((allocation) =>
+      allocation.garmentAssignments.some(
+        (candidate) => candidate.garmentKey === assignment.garmentKey,
+      ),
+    );
+    if (alreadyCommitted) {
+      return state;
+    }
+
+    return {
+      fabricAllocations: state.fabricAllocations,
+      activeAllocationId: state.activeAllocationId,
+      pendingFabricGarment: assignment,
+      awaitingFabricForPendingGarment: true,
     };
   }
 
