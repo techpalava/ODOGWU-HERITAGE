@@ -1,18 +1,8 @@
 import type { DesignSelections } from "../types";
 import {
   isCustomerAvailableCustomDetailSelectionGroup,
-  isCustomerFacingAdditionalClothesCostGroup,
   resolveShowAdditionalClothesCosts,
 } from "../config/GarmentDetailsConfig";
-
-const isActiveCustomerSelectionGroup = (
-  group: string,
-  showAdditionalClothesCosts: boolean,
-): boolean =>
-  !isCustomerFacingAdditionalClothesCostGroup(group) ||
-  isCustomerAvailableCustomDetailSelectionGroup(group, {
-    showAdditionalClothesCosts,
-  });
 
 /**
  * Projects persisted compatibility fields into the active customer journey.
@@ -25,29 +15,39 @@ export const projectActiveCustomerDesignSelections = ({
   designSelections: DesignSelections;
   showAdditionalClothesCosts?: boolean;
 }): DesignSelections => {
-  const includeAdditionalClothesCosts = resolveShowAdditionalClothesCosts(
+  const includeAllAdditionalClothesCosts = resolveShowAdditionalClothesCosts(
     showAdditionalClothesCosts,
   );
-  if (includeAdditionalClothesCosts) return designSelections;
+  if (includeAllAdditionalClothesCosts) return designSelections;
 
+  const availabilityOptions = { showAdditionalClothesCosts };
   const projectedCustomDetails = designSelections.customDetails
     ? Object.fromEntries(
         Object.entries(designSelections.customDetails).filter(([group]) =>
-          isActiveCustomerSelectionGroup(group, includeAdditionalClothesCosts),
+          isCustomerAvailableCustomDetailSelectionGroup(
+            group,
+            availabilityOptions,
+          ),
         ),
       ) as NonNullable<DesignSelections["customDetails"]>
     : undefined;
   const projectedSnapshots = designSelections.customDetailSnapshots?.filter(
     (snapshot) =>
-      isActiveCustomerSelectionGroup(
+      isCustomerAvailableCustomDetailSelectionGroup(
         snapshot.selectionGroup,
-        includeAdditionalClothesCosts,
+        availabilityOptions,
       ),
+  );
+  const dressAdditionalVisible = isCustomerAvailableCustomDetailSelectionGroup(
+    "dress_additional",
+    availabilityOptions,
   );
 
   return {
     ...designSelections,
-    ...(designSelections.hasLining === true ? { hasLining: false } : {}),
+    ...(designSelections.hasLining === true && !dressAdditionalVisible
+      ? { hasLining: false }
+      : {}),
     ...(designSelections.customDetails
       ? { customDetails: projectedCustomDetails }
       : {}),

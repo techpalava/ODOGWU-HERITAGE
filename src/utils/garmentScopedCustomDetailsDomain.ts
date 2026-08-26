@@ -15,7 +15,7 @@ import type {
 } from "../types";
 import {
   ALL_CUSTOM_DETAIL_SELECTION_GROUPS,
-  isCustomerAvailableCustomDetailSelectionGroup,
+  isCustomerVisibleAdditionalClothesCostForGarment,
 } from "../config/GarmentDetailsConfig";
 import {
   createStyleBaseGarmentSpec,
@@ -919,9 +919,19 @@ export const validateGarmentScopedCustomDetailsCompletion = ({
   showAdditionalClothesCosts?: boolean;
 }): GarmentScopedCustomDetailsCompletionResult => {
   const availabilityOptions = { showAdditionalClothesCosts };
-  const isCustomerAvailableGroup = (group: string | undefined) =>
+  const subjectByKey = new Map(
+    reconciliation.subjects.map((subject) => [subject.garmentKey, subject]),
+  );
+  const isCustomerAvailableGroup = (
+    group: string | undefined,
+    garmentKey?: string,
+  ) =>
     !group ||
-    isCustomerAvailableCustomDetailSelectionGroup(group, availabilityOptions);
+    isCustomerVisibleAdditionalClothesCostForGarment(
+      group,
+      garmentKey ? subjectByKey.get(garmentKey)?.parentGarmentType : undefined,
+      availabilityOptions,
+    );
   const blockers: GarmentScopedCustomDetailsCompletionBlocker[] = [];
   if (!earlierStagesComplete) {
     blockers.push({
@@ -946,7 +956,7 @@ export const validateGarmentScopedCustomDetailsCompletion = ({
       });
     } else if (
       RECONCILIATION_SELECTION_CODES.has(diagnostic.code) &&
-      isCustomerAvailableGroup(diagnostic.selectionGroup)
+      isCustomerAvailableGroup(diagnostic.selectionGroup, diagnostic.garmentKey)
     ) {
       blockers.push({
         code: "selection_reconciled",
@@ -963,7 +973,7 @@ export const validateGarmentScopedCustomDetailsCompletion = ({
       subject.garmentKey,
     );
     applicability?.groups.forEach((group) => {
-      if (!isCustomerAvailableGroup(group.selectionGroup)) return;
+      if (!isCustomerAvailableGroup(group.selectionGroup, subject.garmentKey)) return;
       const selection = reconciliation.state.selectionsByGarmentKey[
         subject.garmentKey
       ]?.[group.selectionGroup];
@@ -980,7 +990,7 @@ export const validateGarmentScopedCustomDetailsCompletion = ({
 
   enumerateGarmentScopedCustomDetails(reconciliation.state).forEach(
     (occurrence) => {
-      if (!isCustomerAvailableGroup(occurrence.selectionGroup)) return;
+      if (!isCustomerAvailableGroup(occurrence.selectionGroup, occurrence.garmentKey)) return;
       if (!occurrence.snapshot) {
         blockers.push({
           code: "snapshot_missing",
@@ -1012,7 +1022,7 @@ export const validateGarmentScopedCustomDetailsCompletion = ({
   );
   enumerateGarmentScopedCustomDetails(reconciliation.state).forEach(
     (occurrence) => {
-      if (!isCustomerAvailableGroup(occurrence.selectionGroup)) return;
+      if (!isCustomerAvailableGroup(occurrence.selectionGroup, occurrence.garmentKey)) return;
       if (
         occurrence.optionId !==
           PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID ||
@@ -1108,11 +1118,23 @@ export const calculateGarmentScopedCustomDetailsPricing = ({
   showAdditionalClothesCosts?: boolean;
 }): GarmentScopedCustomDetailsPricingResult => {
   const availabilityOptions = { showAdditionalClothesCosts };
+  const subjectByKey = new Map(
+    reconciliation.subjects.map((subject) => [subject.garmentKey, subject]),
+  );
+  const isCustomerAvailableOccurrence = (
+    group: string,
+    garmentKey?: string,
+  ) =>
+    isCustomerVisibleAdditionalClothesCostForGarment(
+      group,
+      garmentKey ? subjectByKey.get(garmentKey)?.parentGarmentType : undefined,
+      availabilityOptions,
+    );
   const lines = enumerateGarmentScopedCustomDetails(reconciliation.state)
     .filter((occurrence) =>
-      isCustomerAvailableCustomDetailSelectionGroup(
+      isCustomerAvailableOccurrence(
         occurrence.selectionGroup,
-        availabilityOptions,
+        occurrence.garmentKey,
       ),
     )
     .map((occurrence): GarmentScopedCustomDetailPricingLine => {
@@ -1186,9 +1208,9 @@ export const calculateGarmentScopedCustomDetailsPricing = ({
     reconciliation.diagnostics.some(
       (diagnostic) =>
         RECONCILIATION_SELECTION_CODES.has(diagnostic.code) &&
-        isCustomerAvailableCustomDetailSelectionGroup(
+        isCustomerAvailableOccurrence(
           diagnostic.selectionGroup || "",
-          availabilityOptions,
+          diagnostic.garmentKey,
         ),
     )
   ) {
