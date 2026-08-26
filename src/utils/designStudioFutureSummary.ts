@@ -34,6 +34,9 @@ import {
 import { enumerateGarmentScopedCustomDetailInputs } from "./garmentScopedCustomDetailInputsState";
 import {
   fromCanonicalCentimetres,
+  getActiveFutureMeasurementEntered,
+  isSelectedMeasurementRiskRoute,
+  MEASUREMENT_RISK_ROUTE_LABELS,
   roundMeasurementDisplayValue,
   type MeasurementRequirementPlan,
   type PlannedMeasurementRequirement,
@@ -219,25 +222,25 @@ const getAiTryOnSummary = (
 const getMeasurementValue = (
   state: FutureMeasurementStateV1,
   requirement: PlannedMeasurementRequirement,
-) =>
-  requirement.scope === "shared"
-    ? state.entered.shared[requirement.measurementId] ||
+) => {
+  const entered = getActiveFutureMeasurementEntered(state);
+  return requirement.scope === "shared"
+    ? entered.shared[requirement.measurementId] ||
       state.derived.shared[requirement.measurementId]
-    : state.entered.byGarmentKey[requirement.garmentKey || ""]?.[
+    : entered.byGarmentKey[requirement.garmentKey || ""]?.[
         requirement.measurementId
       ] ||
       state.derived.byGarmentKey[requirement.garmentKey || ""]?.[
         requirement.measurementId
       ];
+};
 
 const getMeasurementRouteLabel = (
   route: FutureMeasurementStateV1["route"],
 ): string =>
-  route === "low_risk"
-    ? "Low Risk - complete measurements"
-    : route === "medium_risk"
-      ? "Mid Risk - calculation pending"
-      : "High Risk - calculation pending";
+  isSelectedMeasurementRiskRoute(route)
+    ? MEASUREMENT_RISK_ROUTE_LABELS[route]
+    : "Not selected";
 
 const getSummaryStatus = ({
   blockers,
@@ -257,7 +260,8 @@ const getSummaryStatus = ({
     return "profile_mapping_pending";
   }
   if (
-    measurementState.route !== "low_risk" ||
+    measurementState.route === "medium_risk" ||
+    measurementState.route === "high_risk" ||
     measurementState.calculationStatus === "calculation_formula_pending"
   ) {
     return "measurement_calculation_pending";
@@ -587,7 +591,13 @@ const mapMeasurements = ({
   FutureDesignStudioSummaryInput,
   "measurementPlan" | "measurementState"
 > & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureSummaryMeasurements => {
-  if (measurementState.route !== "low_risk") {
+  if (!isSelectedMeasurementRiskRoute(measurementState.route)) {
+    blockers.push({
+      code: "MEASUREMENT_INCOMPLETE",
+      section: "measurements",
+      message: "Choose one measurement risk level and complete the measurements for that option.",
+    });
+  } else if (measurementState.route !== "low_risk") {
     blockers.push({
       code: "MEASUREMENT_CALCULATION_PENDING",
       section: "measurements",
@@ -604,6 +614,7 @@ const mapMeasurements = ({
     });
   }
   const values = measurementPlan.requirements.flatMap((requirement) => {
+    if (!requirement.directInput) return [];
     const stored = getMeasurementValue(measurementState, requirement);
     if (!stored || !Number.isFinite(stored.valueCm) || stored.valueCm <= 0) {
       return [];

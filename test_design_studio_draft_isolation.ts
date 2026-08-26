@@ -460,4 +460,60 @@ assert.equal(
   "shipping",
 );
 
+const isolatedMeasurementDraft = makeDraft("measurement", {
+  futureMeasurementState: {
+    schemaVersion: 1,
+    route: "medium_risk",
+    unit: "inch",
+    entered: {
+      shared: {
+        chest_bust_circumference: { valueCm: 99, provenance: "customer_entered" },
+      },
+      byGarmentKey: {},
+    },
+    enteredByRoute: {
+      low_risk: {
+        shared: {
+          chest_bust_circumference: { valueCm: 80, provenance: "customer_entered" },
+        },
+        byGarmentKey: {},
+      },
+      medium_risk: {
+        shared: {
+          chest_bust_circumference: { valueCm: 99, provenance: "customer_entered" },
+        },
+        byGarmentKey: {},
+      },
+      high_risk: { shared: {}, byGarmentKey: {} },
+    },
+    derived: { shared: {}, byGarmentKey: {} },
+    blueprintVersion: "measurement-blueprint-v1",
+    formulaVersion: null,
+    inputFingerprint: "measurement-input-v1",
+    calculationStatus: "calculation_formula_pending",
+    diagnostics: [],
+    invalidInputKeys: [],
+  },
+});
+const measurementIsolation = createFixture();
+assert.equal(
+  measurementIsolation.repository.saveFutureDraftV1(isolatedMeasurementDraft).status,
+  "saved",
+);
+const reloadedMeasurement = measurementIsolation.repository.loadFutureDraftV1();
+assert.equal(reloadedMeasurement.status, "loaded");
+assert.equal(reloadedMeasurement.draft?.futureMeasurementState?.route, "medium_risk");
+assert.equal(
+  reloadedMeasurement.draft?.futureMeasurementState?.entered.shared.chest_bust_circumference?.valueCm,
+  99,
+);
+assert.equal(
+  reloadedMeasurement.draft?.futureMeasurementState?.enteredByRoute?.low_risk.shared.chest_bust_circumference?.valueCm,
+  80,
+);
+assert.equal(
+  reloadedMeasurement.draft?.futureMeasurementState?.enteredByRoute?.high_risk.shared.chest_bust_circumference,
+  undefined,
+);
+
 console.log("Design Studio draft isolation verification passed.");

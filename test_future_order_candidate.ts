@@ -55,9 +55,11 @@ import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepSt
 import {
   createEmptyFutureMeasurementState,
   getMeasurementPhysicalGarments,
+  isFutureMeasurementEnteredBagEmpty,
   planMeasurementRequirements,
   reconcileFutureMeasurementState,
   setFutureMeasurementInput,
+  setFutureMeasurementRoute,
 } from "./src/utils/measurementBlueprint";
 import { resolveShippingGarmentPieceCount } from "./src/utils/shippingPricing";
 
@@ -596,6 +598,111 @@ assert.ok(
   measurementPending.blockers.some(
     (blocker) => blocker.code === "MEASUREMENT_CALCULATION_PENDING",
   ),
+);
+
+const overlappingMeasurementId = "chest_bust_circumference";
+const lowCompleteInput = buildInput();
+assert.ok(
+  lowCompleteInput.measurementState.entered.shared[overlappingMeasurementId],
+  "Completed Low candidate fixture must enter overlapping chest.",
+);
+const lowChestValue =
+  lowCompleteInput.measurementState.entered.shared[overlappingMeasurementId]!.valueCm;
+const switchedMidState = reconcileFutureMeasurementState({
+  state: setFutureMeasurementRoute(lowCompleteInput.measurementState, "medium_risk"),
+  plan: planMeasurementRequirements({
+    route: "medium_risk",
+    garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+    physicalGarments: getMeasurementPhysicalGarments({
+      garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+      fabricGarments: lowCompleteInput.fabricAllocationState.fabricAllocations.flatMap(
+        (allocation) => allocation.garmentAssignments,
+      ),
+    }),
+    garmentScopedCustomDetails: lowCompleteInput.customDetailsReconciliation.state,
+  }),
+});
+const midPlan = planMeasurementRequirements({
+  route: "medium_risk",
+  garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+  physicalGarments: getMeasurementPhysicalGarments({
+    garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+    fabricGarments: lowCompleteInput.fabricAllocationState.fabricAllocations.flatMap(
+      (allocation) => allocation.garmentAssignments,
+    ),
+  }),
+  garmentScopedCustomDetails: lowCompleteInput.customDetailsReconciliation.state,
+});
+const untouchedMidCandidate = buildFutureOrderCandidate({
+  ...lowCompleteInput,
+  measurementPlan: midPlan,
+  measurementState: switchedMidState,
+});
+assert.equal(untouchedMidCandidate.candidate.measurements.route, "medium_risk");
+assert.equal(
+  untouchedMidCandidate.candidate.measurements.entered.shared[overlappingMeasurementId],
+  undefined,
+);
+assert.equal(
+  isFutureMeasurementEnteredBagEmpty(
+    untouchedMidCandidate.candidate.measurements.enteredByRoute?.low_risk,
+  ),
+  true,
+);
+const midChestRequirement = midPlan.requirements.find(
+  (requirement) =>
+    requirement.directInput && requirement.measurementId === overlappingMeasurementId,
+)!;
+const midEnteredState = reconcileFutureMeasurementState({
+  state: setFutureMeasurementInput({
+    state: switchedMidState,
+    requirement: midChestRequirement,
+    displayValue: 19,
+  }),
+  plan: midPlan,
+});
+const midEnteredCandidate = buildFutureOrderCandidate({
+  ...lowCompleteInput,
+  measurementPlan: midPlan,
+  measurementState: midEnteredState,
+});
+assert.equal(midEnteredCandidate.candidate.measurements.route, "medium_risk");
+assert.ok(midEnteredCandidate.candidate.measurements.entered.shared[overlappingMeasurementId]);
+assert.notEqual(
+  midEnteredCandidate.candidate.measurements.entered.shared[overlappingMeasurementId]?.valueCm,
+  lowChestValue,
+);
+assert.equal(
+  midEnteredCandidate.candidate.measurements.enteredByRoute?.low_risk.shared[overlappingMeasurementId],
+  undefined,
+);
+const restoredLowPlan = planMeasurementRequirements({
+  route: "low_risk",
+  garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+  physicalGarments: getMeasurementPhysicalGarments({
+    garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+    fabricGarments: lowCompleteInput.fabricAllocationState.fabricAllocations.flatMap(
+      (allocation) => allocation.garmentAssignments,
+    ),
+  }),
+  garmentScopedCustomDetails: lowCompleteInput.customDetailsReconciliation.state,
+});
+const restoredLowCandidate = buildFutureOrderCandidate({
+  ...lowCompleteInput,
+  measurementPlan: restoredLowPlan,
+  measurementState: reconcileFutureMeasurementState({
+    state: setFutureMeasurementRoute(midEnteredState, "low_risk"),
+    plan: restoredLowPlan,
+  }),
+});
+assert.equal(restoredLowCandidate.candidate.measurements.route, "low_risk");
+assert.equal(
+  restoredLowCandidate.candidate.measurements.entered.shared[overlappingMeasurementId]?.valueCm,
+  lowChestValue,
+);
+assert.equal(
+  restoredLowCandidate.candidate.measurements.enteredByRoute?.medium_risk.shared[overlappingMeasurementId],
+  undefined,
 );
 
 assert.equal(candidate.shipping.state.customerInformation.fullName, "Ada Lovelace");

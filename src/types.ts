@@ -1010,6 +1010,9 @@ export type MeasurementRiskRoute =
   | "medium_risk"
   | "high_risk";
 
+/** Persisted IDs stay `low_risk` / `medium_risk` / `high_risk`. `null` means no risk level is selected yet. */
+export type SelectedMeasurementRiskRoute = MeasurementRiskRoute | null;
+
 export type MeasurementUnit = "inch" | "cm";
 
 export type MeasurementValueProvenance =
@@ -1043,14 +1046,34 @@ export interface FutureMeasurementDiagnostic {
   profileId?: string;
 }
 
+export interface FutureMeasurementEnteredBagV1 {
+  shared: Record<string, FutureMeasurementValueV1>;
+  byGarmentKey: Record<string, Record<string, FutureMeasurementValueV1>>;
+}
+
+export type FutureMeasurementEnteredByRouteV1 = Record<
+  MeasurementRiskRoute,
+  FutureMeasurementEnteredBagV1
+>;
+
 export interface FutureMeasurementStateV1 {
   schemaVersion: 1;
-  route: MeasurementRiskRoute;
+  route: SelectedMeasurementRiskRoute;
   unit: MeasurementUnit;
-  entered: {
-    shared: Record<string, FutureMeasurementValueV1>;
-    byGarmentKey: Record<string, Record<string, FutureMeasurementValueV1>>;
-  };
+  /** Active selected-route values only. Never a shared bag across risk routes. */
+  entered: FutureMeasurementEnteredBagV1;
+  /**
+   * Authoritative per-route snapshots. Optional on legacy drafts; normalize always
+   * materializes it. Inactive routes stay preserved here and must not satisfy the
+   * active path.
+   */
+  enteredByRoute?: FutureMeasurementEnteredByRouteV1;
+  /**
+   * Legacy drafts that have entered values but no trustworthy selected route.
+   * Preserved for round-trip only; never treated as active and never copied to
+   * all three routes.
+   */
+  unassignedEntered?: FutureMeasurementEnteredBagV1;
   derived: {
     shared: Record<string, FutureMeasurementValueV1>;
     byGarmentKey: Record<string, Record<string, FutureMeasurementValueV1>>;
@@ -1067,6 +1090,7 @@ export interface FutureMeasurementStateV1 {
     | "invalid";
   diagnostics: FutureMeasurementDiagnostic[];
   invalidInputKeys: string[];
+  invalidInputKeysByRoute?: Record<MeasurementRiskRoute, string[]>;
 }
 
 export interface GuestDesignDraft {
