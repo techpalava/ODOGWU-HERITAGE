@@ -112,7 +112,7 @@ assert.equal(componentSource.includes("handleStyleChange"), false);
 assert.equal(componentSource.includes("setFabricAllocationState"), false);
 assert.match(componentSource, /Continue to Custom Details/);
 assert.match(stepperSource, /aria-current=\{isCurrent \? "step" : undefined\}/);
-assert.match(stepperSource, /aria-disabled=\{!isAvailable \|\| isCurrent\}/);
+assert.match(stepperSource, /aria-disabled=\{!isClickable\}/);
 assert.match(studioSource, /onReturnToGarmentType=\{\(\) => setFutureStageId\("garment_type"\)\}/);
 assert.equal(appSource.includes("future_nine_stage"), false);
 assert.match(adminSource, /Compatible Physical Garments/);

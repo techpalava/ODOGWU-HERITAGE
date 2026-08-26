@@ -206,6 +206,7 @@ assert.deepEqual(
 const stepperMarkup = renderToStaticMarkup(
   createElement(DesignStudioJourneyStepper, {
     currentStageId: "measurement",
+    highestUnlockedStageIndex: 5,
     canEnterFabric: true,
     canEnterDesignStyle: true,
     canEnterCustomDetails: true,

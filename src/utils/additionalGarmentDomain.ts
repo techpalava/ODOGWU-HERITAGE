@@ -1,5 +1,6 @@
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import type {
+  AdditionalGarmentEligibilityRule,
   CustomDetailDesignContext,
   DesignSelections,
   FabricAllocationState,
@@ -9,7 +10,10 @@ import type {
   GarmentConstructionPricingResolution,
 } from "../types";
 import type { FabricAllocationSelection } from "../engine/FabricAllocationStateEngine";
-import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
+import {
+  createStyleBaseGarmentSpec,
+  FABRIC_GARMENT_CAPACITY_UNITS,
+} from "../config/StyleFabricCapacityConfig";
 import {
   resolveAdditionalGarmentPolicyCandidates,
   resolveShortsGarmentUnitPriceCents,
@@ -19,6 +23,191 @@ import {
   isCustomerSelectableGarmentType,
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
 } from "./garmentConstructionPricing";
+
+const ADDITIONAL_ELIGIBILITY_RULES: readonly AdditionalGarmentEligibilityRule[] =
+  ["same_type", "demographic_policy", "catalog_all"];
+
+export type CanonicalAdditionalGarmentSelectionValidation =
+  | { status: "valid"; selection: FabricAllocationSelection }
+  | { status: "invalid"; reason: string };
+
+const resolveMainParentFromExistingAssignments = (
+  existingAssignments: readonly FabricGarmentAssignment[],
+): FabricGarmentAssignment | null =>
+  existingAssignments.find((assignment) => assignment.sourceRole === "main") ||
+  existingAssignments.find((assignment) =>
+    assignment.garmentKey.startsWith("base:"),
+  ) ||
+  existingAssignments.find((assignment) => assignment.sourceRole !== "additional") ||
+  null;
+
+/**
+ * Fail-closed validator for parking a new Optional Extra Garment pending Fabric.
+ * Relationship metadata is proven against CURRENT committed Fabric assignments.
+ */
+export const validateCanonicalAdditionalGarmentSelectionForParking = ({
+  state,
+  selection,
+}: {
+  state: FabricAllocationState;
+  selection: FabricAllocationSelection | null | undefined;
+}): CanonicalAdditionalGarmentSelectionValidation => {
+  if (!selection) {
+    return { status: "invalid", reason: "selection_missing" };
+  }
+  if (typeof selection.code !== "string" || selection.code.trim().length === 0) {
+    return { status: "invalid", reason: "code_missing" };
+  }
+  if (selection.sourceRole !== "additional") {
+    return { status: "invalid", reason: "source_role_not_additional" };
+  }
+  const garmentSpec = selection.garmentSpec;
+  if (!garmentSpec) {
+    return { status: "invalid", reason: "garment_spec_missing" };
+  }
+  if (typeof garmentSpec.key !== "string" || garmentSpec.key.trim().length === 0) {
+    return { status: "invalid", reason: "garment_key_missing" };
+  }
+  if (!isCanonicalPhysicalGarmentType(garmentSpec.garmentType)) {
+    return { status: "invalid", reason: "garment_type_invalid" };
+  }
+  const expectedUnits = FABRIC_GARMENT_CAPACITY_UNITS[garmentSpec.garmentType];
+  if (garmentSpec.fabricUnits !== expectedUnits) {
+    return { status: "invalid", reason: "fabric_units_invalid" };
+  }
+  if (
+    typeof selection.mainGarmentKey !== "string" ||
+    selection.mainGarmentKey.trim().length === 0
+  ) {
+    return { status: "invalid", reason: "main_garment_key_missing" };
+  }
+  if (
+    !selection.mainGarmentType ||
+    !isCanonicalPhysicalGarmentType(selection.mainGarmentType)
+  ) {
+    return { status: "invalid", reason: "main_garment_type_missing" };
+  }
+  if (
+    !selection.eligibilityRule ||
+    !ADDITIONAL_ELIGIBILITY_RULES.includes(selection.eligibilityRule)
+  ) {
+    return { status: "invalid", reason: "eligibility_rule_missing" };
+  }
+  if (selection.dependencyStatus !== "valid") {
+    return { status: "invalid", reason: "dependency_status_invalid" };
+  }
+
+  const committedAssignments = state.fabricAllocations.flatMap(
+    (allocation) => allocation.garmentAssignments,
+  );
+  const parentMatches = committedAssignments.filter(
+    (assignment) => assignment.garmentKey === selection.mainGarmentKey,
+  );
+  if (parentMatches.length === 0) {
+    return { status: "invalid", reason: "parent_missing" };
+  }
+  if (parentMatches.length > 1) {
+    return { status: "invalid", reason: "parent_duplicate" };
+  }
+  const parent = parentMatches[0];
+  if (!isCanonicalPhysicalGarmentType(parent.garmentType)) {
+    return { status: "invalid", reason: "parent_malformed" };
+  }
+  if (parent.dependencyStatus === "orphaned") {
+    return { status: "invalid", reason: "parent_orphaned" };
+  }
+  if (parent.garmentType !== selection.mainGarmentType) {
+    return { status: "invalid", reason: "parent_type_mismatch" };
+  }
+  if (parent.sourceRole === "additional") {
+    return { status: "invalid", reason: "parent_role_ineligible" };
+  }
+
+  const committedMainComposition = committedAssignments
+    .filter(
+      (assignment) =>
+        assignment.sourceRole !== "additional" &&
+        assignment.dependencyStatus !== "orphaned",
+    )
+    .map((assignment) =>
+      assignment.garmentSpec
+        ? { ...assignment.garmentSpec }
+        : createStyleBaseGarmentSpec(assignment.garmentType),
+    );
+
+  if (selection.eligibilityRule === "same_type") {
+    if (
+      parent.garmentType !== garmentSpec.garmentType ||
+      selection.mainGarmentType !== garmentSpec.garmentType
+    ) {
+      return { status: "invalid", reason: "same_type_parent_mismatch" };
+    }
+  }
+
+  if (selection.eligibilityRule === "catalog_all") {
+    if (
+      parent.sourceRole !== "main" &&
+      !parent.garmentKey.startsWith("base:")
+    ) {
+      return { status: "invalid", reason: "catalog_all_parent_ineligible" };
+    }
+    if (!isCustomerSelectableGarmentType(garmentSpec.garmentType)) {
+      return { status: "invalid", reason: "eligibility_relationship_invalid" };
+    }
+  }
+
+  if (selection.eligibilityRule === "demographic_policy") {
+    const policyCandidate = resolveAdditionalGarmentPolicyCandidates(
+      committedMainComposition,
+    ).find(
+      (candidate) =>
+        candidate.garmentType === garmentSpec.garmentType &&
+        candidate.eligibilityRule === "demographic_policy",
+    );
+    if (!policyCandidate) {
+      return { status: "invalid", reason: "eligibility_relationship_invalid" };
+    }
+    if (
+      policyCandidate.mainGarmentSpec &&
+      policyCandidate.mainGarmentSpec.key !== selection.mainGarmentKey
+    ) {
+      return { status: "invalid", reason: "eligibility_relationship_invalid" };
+    }
+  }
+
+  if (
+    selection.eligibilityRule !== "catalog_all" &&
+    selection.eligibilityRule !== "same_type" &&
+    selection.eligibilityRule !== "demographic_policy"
+  ) {
+    return { status: "invalid", reason: "eligibility_rule_missing" };
+  }
+
+  const allowedTypes = new Set(
+    resolveAllowedAdditionalGarments(committedMainComposition).map(
+      (garment) => garment.garmentType,
+    ),
+  );
+  const expectedDependencyStatus =
+    selection.eligibilityRule === "catalog_all" &&
+    isCanonicalPhysicalGarmentType(garmentSpec.garmentType)
+      ? "valid"
+      : allowedTypes.has(garmentSpec.garmentType)
+        ? "valid"
+        : "orphaned";
+  if (selection.dependencyStatus !== expectedDependencyStatus) {
+    return { status: "invalid", reason: "dependency_status_inconsistent" };
+  }
+  if (expectedDependencyStatus !== "valid") {
+    return { status: "invalid", reason: "dependency_status_invalid" };
+  }
+
+  if (state.pendingFabricGarment?.garmentKey === selection.mainGarmentKey) {
+    return { status: "invalid", reason: "parent_pending" };
+  }
+
+  return { status: "valid", selection };
+};
 
 export interface AllowedAdditionalGarment {
   garmentType: FabricGarmentType;
@@ -173,6 +362,19 @@ export const createCatalogueAdditionalGarmentSelection = ({
       })),
     };
   }
+  const parentMain = resolveMainParentFromExistingAssignments(existingAssignments);
+  if (!parentMain || !isCanonicalPhysicalGarmentType(parentMain.garmentType)) {
+    return {
+      status: "invalid",
+      attemptedGarmentType: garmentType,
+      allowedGarments: CUSTOMER_SELECTABLE_GARMENT_TYPES.map((candidate) => ({
+        garmentType: candidate,
+        label: getFabricGarmentLabel(candidate),
+        garmentSpec: createStyleBaseGarmentSpec(candidate),
+        eligibilityRule: "catalog_all" as const,
+      })),
+    };
+  }
   const sequence = getAdditionalAssignmentSequence(
     garmentType,
     existingAssignments,
@@ -191,6 +393,8 @@ export const createCatalogueAdditionalGarmentSelection = ({
       code: `ADDITIONAL_${garmentType.toUpperCase()}_${sequence}`,
       garmentSpec: { ...garmentSpec, key: assignmentId },
       sourceRole: "additional",
+      mainGarmentKey: parentMain.garmentKey,
+      mainGarmentType: parentMain.garmentType,
       eligibilityRule: "catalog_all",
       dependencyStatus: "valid",
     },

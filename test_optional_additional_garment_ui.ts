@@ -319,8 +319,8 @@ assert.match(
 );
 assert.match(
   customDetailsSource,
-  /block: "nearest"/,
-  "moving focus to a newly added garment must avoid a disorienting centered jump",
+  /preventScroll:\s*true/,
+  "moving focus to a newly added garment must not force an automatic scroll jump",
 );
 assert.match(
   customDetailsSource,
@@ -347,17 +347,26 @@ assert.match(customDetailsSource, /compatibleCopySources\.length === 1/);
 assert.match(customDetailsSource, /Select the garment whose Custom Details you want to copy/);
 assert.match(
   source,
+  /applyAdditionalGarmentConstructionAndCopy/,
+  "the committed allocation path must copy through the shared construction/copy helper",
+);
+const pickerSource = readFileSync(
+  new URL("./src/utils/additionalGarmentFabricPicker.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  pickerSource,
   /copyGarmentScopedCustomDetailsToAdditionalOccurrence/,
-  "the committed allocation path must copy through the garment-scoped domain helper",
+  "construction/copy helper must still use the garment-scoped domain copy API",
 );
 assert.match(
   source,
-  /pendingAdditionalConstructionRef\.current = null;[\s\S]*FabricAllocationStateEngine\.cancelPendingGarment/,
+  /setAdditionalGarmentFabricTransaction\(null\);[\s\S]*FabricAllocationStateEngine\.cancelPendingGarment/,
   "cancelling the Fabric transaction must discard pending construction and copy state",
 );
 assert.match(
   source,
-  /if \(!additionAccepted && !additionPending\) \{[\s\S]*pendingAdditionalConstructionRef\.current = null;/,
+  /if \(!additionAccepted && !additionPending\) \{[\s\S]*additionalGarmentFabricSnapshotRef\.current = null;/,
   "a rejected append must discard pending construction and copy state",
 );
 assert.match(

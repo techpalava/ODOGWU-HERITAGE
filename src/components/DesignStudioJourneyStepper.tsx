@@ -16,22 +16,23 @@ export type DesignStudioJourneyStepState =
 export const getDesignStudioJourneyStepState = ({
   stepIndex,
   currentStageIndex,
-  isAvailable,
+  isUnlocked,
 }: {
   stepIndex: number;
   currentStageIndex: number;
-  isAvailable: boolean;
+  isUnlocked: boolean;
 }): DesignStudioJourneyStepState =>
   stepIndex === currentStageIndex
     ? "current"
-    : stepIndex < currentStageIndex && isAvailable
+    : stepIndex < currentStageIndex && isUnlocked
       ? "completed"
-      : isAvailable
+      : isUnlocked
         ? "available"
         : "locked";
 
 interface DesignStudioJourneyStepperProps {
   currentStageId: DesignStudioJourneyStageId;
+  highestUnlockedStageIndex: number;
   canEnterFabric: boolean;
   canEnterDesignStyle: boolean;
   canEnterCustomDetails: boolean;
@@ -53,6 +54,7 @@ interface DesignStudioJourneyStepperProps {
 
 export const DesignStudioJourneyStepper = ({
   currentStageId,
+  highestUnlockedStageIndex,
   canEnterFabric,
   canEnterDesignStyle,
   canEnterCustomDetails,
@@ -81,7 +83,8 @@ export const DesignStudioJourneyStepper = ({
         const currentStageIndex = DESIGN_STUDIO_STEPS.findIndex(
           (candidate) => candidate.id === currentStageId,
         );
-        const isAvailable =
+        const historicallyUnlocked = index <= highestUnlockedStageIndex;
+        const currentlyEnterable =
           step.id === "garment_type" ||
           (step.id === "fabric" && canEnterFabric) ||
           (step.id === "design_style" && canEnterDesignStyle) ||
@@ -91,6 +94,9 @@ export const DesignStudioJourneyStepper = ({
           (step.id === "summary" && canEnterSummary) ||
           (step.id === "shipping" && canEnterShipping) ||
           (step.id === "payment" && canEnterPayment);
+        // Previously unlocked steps remain clickable even if transiently incomplete.
+        const isUnlocked = historicallyUnlocked || currentlyEnterable;
+        const isClickable = isUnlocked && !isCurrent;
         const onClick =
           step.id === "garment_type"
             ? onSelectGarmentType
@@ -112,7 +118,7 @@ export const DesignStudioJourneyStepper = ({
         const state = getDesignStudioJourneyStepState({
           stepIndex: index,
           currentStageIndex,
-          isAvailable,
+          isUnlocked,
         });
         const isCompleted = state === "completed";
 
@@ -120,18 +126,23 @@ export const DesignStudioJourneyStepper = ({
           <li key={step.id} className="min-w-0">
             <button
               type="button"
-              onClick={onClick}
-              disabled={!isAvailable || isCurrent}
+              onClick={isClickable ? onClick : undefined}
+              disabled={!isClickable}
+              tabIndex={isClickable ? 0 : -1}
               aria-current={isCurrent ? "step" : undefined}
-              aria-disabled={!isAvailable || isCurrent}
+              aria-disabled={!isClickable}
               aria-label={`Step ${index + 1}: ${step.label}, ${state}`}
+              data-stage-id={step.id}
+              data-stage-unlocked={isUnlocked ? "true" : "false"}
+              data-stage-current={isCurrent ? "true" : "false"}
+              data-stage-clickable={isClickable ? "true" : "false"}
               data-step-state={state}
               className={`flex min-h-11 w-full min-w-0 flex-col items-start justify-center rounded-xl px-2 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
                 isCurrent
                   ? "cursor-default bg-heritage-gold/10 text-heritage-gold ring-1 ring-heritage-gold/35"
                   : isCompleted
                     ? "cursor-pointer bg-heritage-green/10 text-heritage-green ring-1 ring-heritage-green/20 hover:bg-heritage-green hover:text-white"
-                    : isAvailable
+                    : isUnlocked
                       ? "cursor-pointer border border-heritage-green/25 bg-white text-heritage-ink hover:border-heritage-gold hover:bg-heritage-cream/55"
                       : "cursor-not-allowed bg-heritage-cream/35 text-heritage-ink/35"
               } disabled:cursor-not-allowed`}
@@ -150,7 +161,7 @@ export const DesignStudioJourneyStepper = ({
                   ? "Current step"
                   : isCompleted
                     ? "Completed step; activate to return"
-                    : isAvailable
+                    : isUnlocked
                       ? "Available step"
                       : "Locked until the preceding stages are available"}
               </span>

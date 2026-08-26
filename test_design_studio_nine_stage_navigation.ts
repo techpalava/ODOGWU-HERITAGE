@@ -25,7 +25,7 @@ assert.equal(
   getDesignStudioJourneyStepState({
     stepIndex: 3,
     currentStageIndex: 3,
-    isAvailable: true,
+    isUnlocked: true,
   }),
   "current",
 );
@@ -33,7 +33,7 @@ assert.equal(
   getDesignStudioJourneyStepState({
     stepIndex: 2,
     currentStageIndex: 3,
-    isAvailable: true,
+    isUnlocked: true,
   }),
   "completed",
 );
@@ -41,7 +41,7 @@ assert.equal(
   getDesignStudioJourneyStepState({
     stepIndex: 4,
     currentStageIndex: 3,
-    isAvailable: true,
+    isUnlocked: true,
   }),
   "available",
 );
@@ -49,7 +49,7 @@ assert.equal(
   getDesignStudioJourneyStepState({
     stepIndex: 5,
     currentStageIndex: 3,
-    isAvailable: false,
+    isUnlocked: false,
   }),
   "locked",
 );
@@ -57,10 +57,19 @@ assert.equal(
   getDesignStudioJourneyStepState({
     stepIndex: 0,
     currentStageIndex: 3,
-    isAvailable: false,
+    isUnlocked: true,
+  }),
+  "completed",
+  "Previously unlocked earlier stages remain navigable.",
+);
+assert.equal(
+  getDesignStudioJourneyStepState({
+    stepIndex: 0,
+    currentStageIndex: 3,
+    isUnlocked: false,
   }),
   "locked",
-  "A no-longer-valid earlier stage must not be presented as completed.",
+  "Never-unlocked earlier stages stay locked.",
 );
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
@@ -79,7 +88,9 @@ const garmentTypeSource = readFileSync(
 
 assert.match(stepperSource, /getDesignStudioJourneyStepState/);
 assert.match(stepperSource, /data-step-state=\{state\}/);
-assert.match(stepperSource, /disabled=\{!isAvailable \|\| isCurrent\}/);
+assert.match(stepperSource, /data-stage-clickable=/);
+assert.match(stepperSource, /highestUnlockedStageIndex/);
+assert.match(stepperSource, /disabled=\{!isClickable\}/);
 assert.match(stepperSource, /bg-heritage-green\/10/);
 assert.match(stepperSource, /border-heritage-green\/25 bg-white text-heritage-ink/);
 assert.match(backButtonSource, /<button/);

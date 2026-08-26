@@ -54,7 +54,7 @@ assert.match(fabricSource, /getFutureGarmentLabel\(assignment\.garmentType\)/);
 assert.match(fabricSource, /aria-label=\{`\$\{assigned \? "Change" : "Add"\} fabric for/);
 assert.match(fabricSource, /Fabric needs attention/);
 assert.match(stepperSource, /aria-current=\{isCurrent \? "step" : undefined\}/);
-assert.match(stepperSource, /disabled=\{!isAvailable \|\| isCurrent\}/);
+assert.match(stepperSource, /disabled=\{!isClickable\}/);
 assert.match(stepperSource, /min-h-11/);
 assert.match(studioSource, /<DesignStudioJourneyStepper/);
 assert.match(studioSource, /<DormantFutureFabricStep/);
