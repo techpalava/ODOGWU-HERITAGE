@@ -316,9 +316,29 @@ assert.ok(
     rejected.allowedGarments.every((garment) => garment.garmentType !== "agbada"),
   );
 
-  const allowed = createCatalogueAdditionalGarmentSelection({
+  const withoutParent = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
     existingAssignments: [],
+  });
+  assert.equal(
+    withoutParent.status,
+    "invalid",
+    "catalogue addition requires a committed parent assignment",
+  );
+
+  const allowed = createCatalogueAdditionalGarmentSelection({
+    garmentType: "shirt",
+    existingAssignments: [
+      {
+        garmentKey: "base:shirt",
+        code: "BASE_SHIRT",
+        garmentType: "shirt",
+        fabricUnits: 1,
+        garmentSpec: { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+        sourceRole: "main",
+        dependencyStatus: "valid",
+      },
+    ],
   });
   assert.equal(allowed.status, "resolved");
   assert.ok(

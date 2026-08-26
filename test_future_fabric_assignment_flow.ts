@@ -695,7 +695,16 @@ assert.match(stepSource, /onAssignFabricToGarment\(fabric, garmentKey\)/);
 assert.match(stepSource, /handleFabricSelection\(fabric\)/);
 assert.match(stepSource, /removeAssignedFabric\(/);
 assert.match(stepSource, /resolveFutureFabricCatalogueCardPresentation/);
-assert.match(stepSource, /Cancel \$\{fabric\.name\} fabric assignment/);
+const catalogueCardSource = readFileSync(
+  "src/components/FutureFabricCatalogueCard.tsx",
+  "utf8",
+);
+assert.match(
+  catalogueCardSource,
+  /Cancel \$\{fabric\.name\} fabric assignment/,
+  "Shared Fabric catalogue card must keep the Cancel accessible name",
+);
+assert.match(stepSource, /FutureFabricCatalogueCard/);
 assert.match(stepSource, /aria-live="polite"/);
 assert.match(studioSource, /assignFutureFabricToGarment\(/);
 assert.match(
@@ -721,7 +730,7 @@ assert.match(
 );
 assert.match(
   studioSource,
-  /pendingAdditionalConstructionRef\.current\?\.garmentKey === garmentKey/,
+  /additionalGarmentFabricTransaction\?\.garmentKey === garmentKey/,
   "DesignStudioView must only clear pending additional construction when the removed garment is that pending garment.",
 );
 const removeHandler = studioSource.slice(
@@ -730,7 +739,7 @@ const removeHandler = studioSource.slice(
 );
 assert.doesNotMatch(
   removeHandler,
-  /pendingAdditionalConstructionRef\.current = null;\s*setFabricAllocationState/,
+  /setAdditionalGarmentFabricTransaction\(null\);\s*setFabricAllocationState/,
   "Unrelated fabric removal must not wipe pending additional construction metadata.",
 );
 assert.match(
