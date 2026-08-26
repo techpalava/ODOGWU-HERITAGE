@@ -7,8 +7,6 @@ import {
 } from "../utils/fabricCatalogueAvailability";
 import { getFabricStockPresentation } from "../utils/fabricStockPresentation";
 import type { FutureFabricCatalogueCardPresentation } from "../utils/designStudioFutureFabricStage";
-import { resolveFabricPrice } from "../utils/fabricPricing";
-import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import { isUsableFabricColorHex } from "./AssignedFabricPreview";
 
 export const FutureFabricCatalogueCard = ({
@@ -47,7 +45,6 @@ export const FutureFabricCatalogueCard = ({
       : stockPresentation.visible && stockPresentation.tone === "out_of_stock"
         ? "border-red-200 bg-red-700 text-white"
         : "border-heritage-gold/30 bg-heritage-green text-white";
-  const price = resolveFabricPrice(fabric);
   const disabled = Boolean(availabilityMessage) || Boolean(actionDisabled);
   const resolvedStatusLabel = statusLabel || presentation.status;
   const resolvedActionLabel =
@@ -129,12 +126,6 @@ export const FutureFabricCatalogueCard = ({
         <p className="mt-1 break-words font-mono text-[10px] text-heritage-ink/55">
           {fabric.code}
         </p>
-        {price !== null && (
-          <p className="mt-1 font-mono text-xs font-bold text-heritage-gold">
-            {PRICING_CURRENCY_SYMBOL}
-            {price.toFixed(2)}
-          </p>
-        )}
         {availabilityMessage && (
           <p className="mt-2 text-xs font-semibold text-red-700">
             {availabilityMessage}
