@@ -167,8 +167,11 @@ assert.deepEqual(firstLoad.draft.designSource, designSource);
 const activeSelections = projectActiveCustomerDesignSelections({
   designSelections: firstLoad.draft.designSelections,
 });
-assert.equal(activeSelections.hasLining, false);
-assert.equal(activeSelections.customDetails?.dress_additional, undefined);
+assert.equal(activeSelections.hasLining, true);
+assert.deepEqual(
+  activeSelections.customDetails?.dress_additional,
+  [DRESS_LINING_OPTION_ID],
+);
 assert.equal(
   activeSelections.customDetails?.neck_design,
   visiblePaidOptionId,
@@ -213,7 +216,7 @@ const hydratedPricing = calculateDesignPricing({
   garmentConstructionSelectionMode: "garment_type_locked",
   garmentTypeSelection,
 });
-assert.equal(hydratedPricing.customDetailsPrice, 25);
+assert.equal(hydratedPricing.customDetailsPrice, 35);
 
 const firstHydrationSnapshot = JSON.stringify(firstLoad.draft);
 const secondSave = repository.saveFutureDraftV1(firstLoad.draft);
@@ -231,5 +234,5 @@ assert.deepEqual(
 );
 
 console.log(
-  "PASS: hidden Additional Clothes Costs survive the real future draft round trip without entering the active projection",
+  "PASS: Dress Additional Clothes Costs survive the real future draft round trip and remain in the active projection",
 );

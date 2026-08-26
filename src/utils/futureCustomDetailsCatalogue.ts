@@ -1,7 +1,8 @@
 import {
   ADDITIONAL_CLOTHES_COST_SECTION_ORDER,
   CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE,
-  resolveShowAdditionalClothesCosts,
+  isCustomerAvailableCustomDetailSelectionGroup,
+  isCustomerVisibleAdditionalClothesCostForGarment,
   type CustomDetailParentSectionId,
 } from "../config/GarmentDetailsConfig";
 import { resolveAdditionalGarmentPolicyCandidates } from "../config/AdditionalGarmentPolicy";
@@ -317,6 +318,15 @@ export const projectFutureCustomDetailsCatalogue = ({
             ?.groups.some((group) => group.selectionGroup === selectionGroup) ===
           true;
       if (!ownsGroup) return [];
+      if (
+        !isCustomerVisibleAdditionalClothesCostForGarment(
+          selectionGroup,
+          subject.parentGarmentType,
+          { showAdditionalClothesCosts },
+        )
+      ) {
+        return [];
+      }
       return [
         {
           subject,
@@ -341,24 +351,21 @@ export const projectFutureCustomDetailsCatalogue = ({
     };
   };
 
-  const includeAdditionalClothesCosts = resolveShowAdditionalClothesCosts(
-    showAdditionalClothesCosts,
-  );
-
   return {
     coreGroups: coreOrder.map(makeGroup),
-    additionalCostGroups: includeAdditionalClothesCosts
-      ? ADDITIONAL_CLOTHES_COST_SECTION_ORDER.filter(
-          (group) =>
-            group !== "personalized_additional" &&
-            relevantParentSectionSet.has(
-              ADDITIONAL_COST_PARENT_SECTION[group] as Exclude<
-                CustomDetailParentSectionId,
-                "additional_garment"
-              >,
-            ),
-        ).map(makeGroup)
-      : [],
+    additionalCostGroups: ADDITIONAL_CLOTHES_COST_SECTION_ORDER.filter(
+      (group) =>
+        group !== "personalized_additional" &&
+        isCustomerAvailableCustomDetailSelectionGroup(group, {
+          showAdditionalClothesCosts,
+        }) &&
+        relevantParentSectionSet.has(
+          ADDITIONAL_COST_PARENT_SECTION[group] as Exclude<
+            CustomDetailParentSectionId,
+            "additional_garment"
+          >,
+        ),
+    ).map(makeGroup),
     personalizedGroup: makeGroup("personalized_additional"),
     activeParentGarmentOrder,
   };
