@@ -6,6 +6,10 @@ import type {
 } from "../types";
 import {
   fromCanonicalCentimetres,
+  getActiveFutureMeasurementEntered,
+  isSelectedMeasurementRiskRoute,
+  MEASUREMENT_RISK_ROUTE_LABELS,
+  MEASUREMENT_RISK_SELECTION_NOTICE,
   reconcileFutureMeasurementState,
   roundMeasurementDisplayValue,
   setFutureMeasurementInput,
@@ -30,17 +34,17 @@ const ROUTES: ReadonlyArray<{
 }> = [
   {
     id: "low_risk",
-    title: "Low Risk",
+    title: MEASUREMENT_RISK_ROUTE_LABELS.low_risk,
     description: "Enter the complete measurements required for your selected garments.",
   },
   {
     id: "medium_risk",
-    title: "Mid Risk",
+    title: MEASUREMENT_RISK_ROUTE_LABELS.medium_risk,
     description: "Enter the highlighted measurements for assisted calculation.",
   },
   {
     id: "high_risk",
-    title: "High Risk",
+    title: MEASUREMENT_RISK_ROUTE_LABELS.high_risk,
     description: "Enter the three or four quick measurements required for this garment.",
   },
 ];
@@ -72,10 +76,10 @@ const getBlockerMessage = (
 
 const getStatusLabel = (
   route: MeasurementRiskRoute,
-  selectedRoute: MeasurementRiskRoute,
+  selectedRoute: FutureMeasurementStateV1["route"],
   status: FutureMeasurementStateV1["calculationStatus"],
-): string => {
-  if (route !== selectedRoute) return "Available";
+): string | null => {
+  if (route !== selectedRoute) return null;
   switch (status) {
     case "complete":
       return "Complete";
@@ -88,18 +92,21 @@ const getStatusLabel = (
     case "profile_mapping_pending":
       return "Setup pending";
     default:
-      return "Available";
+      return "Selected";
   }
 };
 
 const getRequirementValue = (
   state: FutureMeasurementStateV1,
   requirement: PlannedMeasurementRequirement,
-) => requirement.scope === "shared"
-  ? state.entered.shared[requirement.measurementId]
-  : state.entered.byGarmentKey[requirement.garmentKey || ""]?.[
-      requirement.measurementId
-    ];
+) => {
+  const entered = getActiveFutureMeasurementEntered(state);
+  return requirement.scope === "shared"
+    ? entered.shared[requirement.measurementId]
+    : entered.byGarmentKey[requirement.garmentKey || ""]?.[
+        requirement.measurementId
+      ];
+};
 
 const MeasurementInput = ({
   requirement,
@@ -196,9 +203,12 @@ export const DormantFutureMeasurementStep = ({
   onContinue,
 }: DormantFutureMeasurementStepProps) => {
   const resolvedState = reconcileFutureMeasurementState({ state, plan });
-  const directRequirements = plan.requirements.filter(
-    (requirement) => requirement.directInput,
-  );
+  const selectedRoute = isSelectedMeasurementRiskRoute(resolvedState.route)
+    ? resolvedState.route
+    : null;
+  const directRequirements = selectedRoute
+    ? plan.requirements.filter((requirement) => requirement.directInput)
+    : [];
   const sharedRequirements = directRequirements.filter(
     (requirement) => requirement.scope === "shared",
   );
@@ -225,30 +235,41 @@ export const DormantFutureMeasurementStep = ({
   const factorlessManualCount = directRequirements.filter(
     (requirement) => requirement.inputSource === "factorless_manual",
   ).length;
-  const unsupportedGarments = resolvedState.diagnostics.filter(
-    (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
-  );
-  const blockerMessages = [...new Set(
-    resolvedState.diagnostics
-      .filter((diagnostic) => diagnostic.code !== "measurement_profile_unmapped")
-      .map(getBlockerMessage),
-  )];
+  const unsupportedGarments = selectedRoute
+    ? resolvedState.diagnostics.filter(
+        (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
+      )
+    : [];
+  const blockerMessages = selectedRoute
+    ? [...new Set(
+        resolvedState.diagnostics
+          .filter((diagnostic) =>
+            diagnostic.code !== "measurement_profile_unmapped" &&
+            diagnostic.code !== "calculation_configuration_pending"
+          )
+          .map(getBlockerMessage),
+      )]
+    : [];
   const pendingFormulaMessage =
-    resolvedState.calculationStatus === "calculation_formula_pending"
-      ? state.route === "medium_risk"
+    selectedRoute && resolvedState.calculationStatus === "calculation_formula_pending"
+      ? selectedRoute === "medium_risk"
         ? "Your required measurements can be saved, but the assisted calculation method is still being finalised."
         : "Your quick measurements can be saved, but the remaining calculation method is still being finalised."
       : null;
-  const routeSaveMessage = state.route === "low_risk"
-    ? resolvedState.calculationStatus === "complete"
-      ? "All required measurements are saved."
-      : `${remainingManualInputCount} required measurement${remainingManualInputCount === 1 ? " remains" : "s remain"}.`
-    : "Your measurements can be saved, but automatic calculation is awaiting final approval.";
-  const routeStatusLabel = getStatusLabel(
-    state.route,
-    state.route,
-    resolvedState.calculationStatus,
-  );
+  const routeSaveMessage = !selectedRoute
+    ? MEASUREMENT_RISK_SELECTION_NOTICE
+    : selectedRoute === "low_risk"
+      ? resolvedState.calculationStatus === "complete"
+        ? "All required measurements are saved."
+        : `${remainingManualInputCount} required measurement${remainingManualInputCount === 1 ? " remains" : "s remain"}.`
+      : "Your measurements can be saved, but automatic calculation is awaiting final approval.";
+  const routeStatusLabel = selectedRoute
+    ? getStatusLabel(
+        selectedRoute,
+        selectedRoute,
+        resolvedState.calculationStatus,
+      )
+    : null;
   const canContinueToSummary =
     resolvedState.route === "low_risk" &&
     resolvedState.calculationStatus === "complete";
@@ -258,6 +279,7 @@ export const DormantFutureMeasurementStep = ({
       aria-labelledby="future-measurement-title"
       data-stage-id="measurement"
       data-measurement-status={resolvedState.calculationStatus}
+      data-measurement-risk-selected={selectedRoute || "none"}
       className="space-y-5 font-sans"
     >
       <header className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
@@ -282,24 +304,26 @@ export const DormantFutureMeasurementStep = ({
       </header>
 
       <section className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
-        <fieldset>
+        <fieldset data-measurement-risk-selector="true">
           <legend className="font-serif text-lg font-bold text-heritage-green">
-            Choose a measurement route
+            Choose one measurement risk level
           </legend>
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
             {ROUTES.map((route) => {
-              const selected = state.route === route.id;
+              const selected = selectedRoute === route.id;
               const status = getStatusLabel(
                 route.id,
-                state.route,
+                selectedRoute,
                 resolvedState.calculationStatus,
               );
               return (
                 <label
                   key={route.id}
+                  data-measurement-risk-option={route.id}
+                  data-measurement-risk-selected={selected ? "true" : "false"}
                   className={`flex min-w-0 cursor-pointer gap-3 rounded-xl border p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
                     selected
-                      ? "border-heritage-gold bg-heritage-gold/8"
+                      ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
                       : "border-heritage-green/15 hover:border-heritage-gold/45"
                   }`}
                 >
@@ -313,12 +337,14 @@ export const DormantFutureMeasurementStep = ({
                   />
                   <span className="min-w-0">
                     <span className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="break-words text-sm font-bold text-heritage-green">
+                      <span className="break-words text-sm font-semibold text-heritage-green">
                         {route.title}
                       </span>
-                      <span className="rounded-full border border-current/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-ink/65">
-                        {status}
-                      </span>
+                      {status && (
+                        <span className="rounded-full border border-heritage-gold/30 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-wide text-heritage-ink/70">
+                          {status}
+                        </span>
+                      )}
                     </span>
                     <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">
                       {route.description}
@@ -331,8 +357,11 @@ export const DormantFutureMeasurementStep = ({
         </fieldset>
       </section>
 
+      {selectedRoute && (
+        <>
       <section
         aria-live="polite"
+        data-measurement-form={selectedRoute}
         className="rounded-2xl border border-heritage-gold/25 bg-heritage-cream/35 p-4 sm:p-5"
       >
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -486,6 +515,8 @@ export const DormantFutureMeasurementStep = ({
           </div>
         </section>
       ))}
+        </>
+      )}
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -495,16 +526,18 @@ export const DormantFutureMeasurementStep = ({
             className="w-full sm:w-auto"
           />
           <div className="min-w-0 sm:text-right">
-            <p id="measurement-summary-status-reason" className="mb-2 text-xs leading-relaxed text-heritage-ink/60">
-              {canContinueToSummary
-                ? "Your completed Low Risk measurements are ready for review."
-                : "Summary remains locked until Low Risk measurements are complete. Mid and High Risk calculations are still pending."}
+            <p
+              id="measurement-risk-selection-notice"
+              data-measurement-risk-notice="true"
+              className="mb-2 text-xs leading-relaxed text-heritage-ink/60"
+            >
+              {MEASUREMENT_RISK_SELECTION_NOTICE}
             </p>
             <button
               type="button"
               onClick={onContinue}
               disabled={!canContinueToSummary}
-              aria-describedby="measurement-summary-status-reason"
+              aria-describedby="measurement-risk-selection-notice"
               className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 sm:w-auto"
             >
               {!canContinueToSummary && <LockKeyhole aria-hidden="true" size={14} />}

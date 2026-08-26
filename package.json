@@ -43,6 +43,7 @@
     "test:firestore-security": "tsx test_firestore_security.ts",
     "test:firebase-client-configuration": "tsx test_firebase_client_configuration.ts",
     "test:measurement-blueprint": "tsx test_measurement_blueprint.ts",
+    "test:measurement-risk-selection": "tsx test_measurement_risk_selection.tsx",
     "test:future-measurement-stage": "tsx test_design_studio_future_measurement_stage.ts",
     "test:future-custom-details-stage": "tsx test_design_studio_future_custom_details_stage.ts",
     "test:future-summary-stage": "tsx test_design_studio_future_summary.ts",

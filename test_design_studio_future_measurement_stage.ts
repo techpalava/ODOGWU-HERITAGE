@@ -32,16 +32,24 @@ assert.match(measurementSource, /aria-invalid/);
 assert.match(measurementSource, /Enter a positive measurement value\./);
 assert.match(measurementSource, /Current route status/);
 assert.match(measurementSource, /Calculation pending/);
-assert.match(measurementSource, /aria-describedby="measurement-summary-status-reason"/);
+assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_LABELS\.low_risk/);
+assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_LABELS\.medium_risk/);
+assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_LABELS\.high_risk/);
+assert.match(measurementSource, /data-measurement-risk-selector/);
+assert.match(measurementSource, /data-measurement-form=\{selectedRoute\}/);
+assert.match(measurementSource, /MEASUREMENT_RISK_SELECTION_NOTICE/);
+assert.match(measurementSource, /aria-describedby="measurement-risk-selection-notice"/);
 assert.match(measurementSource, /DesignStudioBackButton/);
 assert.match(measurementSource, /destination="AI Try-on"/);
 assert.match(measurementSource, /Continue to Summary/);
 assert.match(measurementSource, /resolvedState\.route === "low_risk"/);
 assert.match(measurementSource, /resolvedState\.calculationStatus === "complete"/);
-assert.match(
-  measurementSource,
-  /Summary remains locked until Low Risk measurements are complete\. Mid and High Risk calculations are still pending\./,
+assert.equal(
+  measurementSource.includes("Summary remains locked until Low Risk measurements are complete. Mid and High Risk calculations are still pending."),
+  false,
 );
+assert.equal(measurementSource.includes("Your completed Low Risk measurements are ready for review."), false);
+assert.equal(measurementSource.includes("LOW OR NO RISK"), false);
 assert.match(measurementSource, /aria-live="polite"/);
 assert.equal(measurementSource.includes("calculated value"), false);
 assert.match(stepperSource, /canEnterMeasurement/);
