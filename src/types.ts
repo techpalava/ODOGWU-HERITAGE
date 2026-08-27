@@ -1017,12 +1017,21 @@ export type MeasurementUnit = "inch" | "cm";
 
 export type MeasurementValueProvenance =
   | "customer_entered"
-  | "system_derived";
+  | "system_derived"
+  | "calculated_average_factor";
 
 export interface FutureMeasurementValueV1 {
   /** Canonical storage is centimetres; display units are presentation only. */
   valueCm: number;
   provenance: MeasurementValueProvenance;
+  /** Present only for deterministic profile-owned calculations. */
+  calculation?: {
+    route: MeasurementRiskRoute;
+    profileId: string;
+    garmentKey: string;
+    measurementId: string;
+    averageFactor: number;
+  };
 }
 
 export type FutureMeasurementDiagnosticCode =
@@ -1036,6 +1045,7 @@ export type FutureMeasurementDiagnosticCode =
   | "calculation_basis_unresolved"
   | "calculation_configuration_pending"
   | "required_measurement_missing"
+  | "measurement_range_recheck"
   | "stale_derived_value";
 
 export interface FutureMeasurementDiagnostic {

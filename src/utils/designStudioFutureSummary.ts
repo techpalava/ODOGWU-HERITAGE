@@ -7,6 +7,7 @@ import type {
   CanonicalPhysicalGarmentType,
   FabricAllocationState,
   FutureMeasurementStateV1,
+  FutureMeasurementValueV1,
   GarmentScopedCustomDetailInputsV1,
   GarmentTypeStepSelection,
   StyleCategory,
@@ -32,15 +33,7 @@ import {
   type GarmentScopedCustomDetailsReconciliationResult,
 } from "./garmentScopedCustomDetailsDomain";
 import { enumerateGarmentScopedCustomDetailInputs } from "./garmentScopedCustomDetailInputsState";
-import {
-  fromCanonicalCentimetres,
-  getActiveFutureMeasurementEntered,
-  isSelectedMeasurementRiskRoute,
-  MEASUREMENT_RISK_ROUTE_LABELS,
-  roundMeasurementDisplayValue,
-  type MeasurementRequirementPlan,
-  type PlannedMeasurementRequirement,
-} from "./measurementBlueprint";
+import { fromCanonicalCentimetres, getResolvedMeasurementValue, isSelectedMeasurementRiskRoute, MEASUREMENT_RISK_ROUTE_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint";
 
 export type FutureDesignStudioSummaryStatus =
   | "ready"
@@ -139,6 +132,9 @@ export interface FutureSummaryMeasurementValue {
   formattedValue: string;
   value: number;
   unit: FutureMeasurementStateV1["unit"];
+  provenance: FutureMeasurementValueV1["provenance"];
+  profileId: string | null;
+  averageFactor: number | null;
 }
 
 export interface FutureSummaryMeasurements {
@@ -222,18 +218,7 @@ const getAiTryOnSummary = (
 const getMeasurementValue = (
   state: FutureMeasurementStateV1,
   requirement: PlannedMeasurementRequirement,
-) => {
-  const entered = getActiveFutureMeasurementEntered(state);
-  return requirement.scope === "shared"
-    ? entered.shared[requirement.measurementId] ||
-      state.derived.shared[requirement.measurementId]
-    : entered.byGarmentKey[requirement.garmentKey || ""]?.[
-        requirement.measurementId
-      ] ||
-      state.derived.byGarmentKey[requirement.garmentKey || ""]?.[
-        requirement.measurementId
-      ];
-};
+) => getResolvedMeasurementValue(state, requirement);
 
 const getMeasurementRouteLabel = (
   route: FutureMeasurementStateV1["route"],
@@ -258,13 +243,6 @@ const getSummaryStatus = ({
     )
   ) {
     return "profile_mapping_pending";
-  }
-  if (
-    measurementState.route === "medium_risk" ||
-    measurementState.route === "high_risk" ||
-    measurementState.calculationStatus === "calculation_formula_pending"
-  ) {
-    return "measurement_calculation_pending";
   }
   if (
     blockers.some((blocker) =>
@@ -597,12 +575,6 @@ const mapMeasurements = ({
       section: "measurements",
       message: "Choose one measurement risk level and complete the measurements for that option.",
     });
-  } else if (measurementState.route !== "low_risk") {
-    blockers.push({
-      code: "MEASUREMENT_CALCULATION_PENDING",
-      section: "measurements",
-      message: "This measurement route is awaiting an approved calculation method.",
-    });
   } else if (measurementState.calculationStatus !== "complete") {
     blockers.push({
       code:
@@ -613,8 +585,10 @@ const mapMeasurements = ({
       message: "Complete every required measurement before reviewing Summary.",
     });
   }
-  const values = measurementPlan.requirements.flatMap((requirement) => {
-    if (!requirement.directInput) return [];
+  const values = projectMeasurementRequirementsForPresentation({
+    requirements: measurementPlan.requirements,
+    state: measurementState,
+  }).flatMap((requirement) => {
     const stored = getMeasurementValue(measurementState, requirement);
     if (!stored || !Number.isFinite(stored.valueCm) || stored.valueCm <= 0) {
       return [];
@@ -622,14 +596,20 @@ const mapMeasurements = ({
     const value = roundMeasurementDisplayValue(
       fromCanonicalCentimetres(stored.valueCm, measurementState.unit),
     );
+    const occurrenceOwned =
+      requirement.scope === "garment" ||
+      stored.provenance === "calculated_average_factor";
     return [{
       requirementKey: requirement.key,
       measurementId: requirement.measurementId,
-      garmentKey: requirement.garmentKey || null,
+      garmentKey: occurrenceOwned ? requirement.garmentKey : null,
       label: requirement.definition.customerLabel,
       formattedValue: `${value} ${measurementState.unit === "inch" ? "in" : "cm"}`,
       value,
       unit: measurementState.unit,
+      provenance: stored.provenance,
+      profileId: occurrenceOwned ? requirement.profileId : null,
+      averageFactor: stored.calculation?.averageFactor ?? null,
     } satisfies FutureSummaryMeasurementValue];
   });
   const byGarment = new Map<string, FutureSummaryMeasurementValue[]>();

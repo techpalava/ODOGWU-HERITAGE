@@ -1236,11 +1236,17 @@ const mediumInput = buildSummaryInput({ customState: exactCustomState });
 mediumInput.measurementState = {
   ...mediumInput.measurementState,
   route: "medium_risk",
-  calculationStatus: "calculation_formula_pending",
+  calculationStatus: "incomplete",
 };
 assert.equal(
   projectFutureDesignStudioSummary(mediumInput).status,
-  "measurement_calculation_pending",
+  "incomplete",
+);
+assert.equal(
+  projectFutureDesignStudioSummary(mediumInput).blockers.some(
+    (blocker) => blocker.code === "MEASUREMENT_CALCULATION_PENDING",
+  ),
+  false,
 );
 
 const reloadedInput = buildSummaryInput({
