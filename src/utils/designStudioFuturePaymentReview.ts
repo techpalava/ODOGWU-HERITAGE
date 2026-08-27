@@ -29,7 +29,7 @@ export interface FuturePaymentReviewMeasurementItem {
   readonly label: string;
   readonly displayValue: number;
   readonly unitLabel: "in" | "cm";
-  readonly provenanceLabel: "Customer entered" | "System derived";
+  readonly provenanceLabel: "Customer entered" | "System derived" | "Calculated from height";
 }
 
 export interface FuturePaymentReviewMeasurementGroup {
@@ -118,7 +118,7 @@ const toMeasurementItem = ({
 }: {
   measurementId: string;
   valueCm: number;
-  provenance: "customer_entered" | "system_derived";
+  provenance: "customer_entered" | "system_derived" | "calculated_average_factor";
   unit: MeasurementUnit;
 }): FuturePaymentReviewMeasurementItem => ({
   measurementId,
@@ -128,7 +128,11 @@ const toMeasurementItem = ({
   ),
   unitLabel: unit === "inch" ? "in" : "cm",
   provenanceLabel:
-    provenance === "customer_entered" ? "Customer entered" : "System derived",
+    provenance === "customer_entered"
+      ? "Customer entered"
+      : provenance === "calculated_average_factor"
+        ? "Calculated from height"
+        : "System derived",
 });
 
 const mergeMeasurements = ({

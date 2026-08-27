@@ -6,6 +6,12 @@ import type {
 } from "../types";
 import {
   fromCanonicalCentimetres,
+  getResolvedMeasurementValue,
+  isFutureSummaryUnlockedByMeasurements,
+  isSelectedMeasurementRiskRoute,
+  MEASUREMENT_RISK_ROUTE_LABELS,
+  MEASUREMENT_RISK_SELECTION_NOTICE,
+  projectMeasurementRequirementsForPresentation,
   reconcileFutureMeasurementState,
   roundMeasurementDisplayValue,
   setFutureMeasurementInput,
@@ -30,20 +36,25 @@ const ROUTES: ReadonlyArray<{
 }> = [
   {
     id: "low_risk",
-    title: "Low Risk",
+    title: MEASUREMENT_RISK_ROUTE_LABELS.low_risk,
     description: "Enter the complete measurements required for your selected garments.",
   },
   {
     id: "medium_risk",
-    title: "Mid Risk",
-    description: "Enter the highlighted measurements for assisted calculation.",
+    title: MEASUREMENT_RISK_ROUTE_LABELS.medium_risk,
+    description: "Enter the required measurements. Optional values are calculated from height where available.",
   },
   {
     id: "high_risk",
-    title: "High Risk",
-    description: "Enter the three or four quick measurements required for this garment.",
+    title: MEASUREMENT_RISK_ROUTE_LABELS.high_risk,
+    description: "Enter the required measurements. Optional values are calculated from height where available.",
   },
 ];
+
+const CALCULATED_PENDING_MESSAGE =
+  "Complete the required measurements to calculate this value.";
+const CALCULATED_FROM_HEIGHT_LABEL = "Calculated from height";
+const RANGE_RECHECK_MESSAGE = "Please recheck this measurement.";
 
 const formatGarmentLabel = (garmentType?: string, garmentKey?: string): string => {
   const base = (garmentType || "Garment")
@@ -72,10 +83,10 @@ const getBlockerMessage = (
 
 const getStatusLabel = (
   route: MeasurementRiskRoute,
-  selectedRoute: MeasurementRiskRoute,
+  selectedRoute: FutureMeasurementStateV1["route"],
   status: FutureMeasurementStateV1["calculationStatus"],
-): string => {
-  if (route !== selectedRoute) return "Available";
+): string | null => {
+  if (route !== selectedRoute) return null;
   switch (status) {
     case "complete":
       return "Complete";
@@ -88,29 +99,35 @@ const getStatusLabel = (
     case "profile_mapping_pending":
       return "Setup pending";
     default:
-      return "Available";
+      return "Selected";
   }
 };
 
-const getRequirementValue = (
-  state: FutureMeasurementStateV1,
-  requirement: PlannedMeasurementRequirement,
-) => requirement.scope === "shared"
-  ? state.entered.shared[requirement.measurementId]
-  : state.entered.byGarmentKey[requirement.garmentKey || ""]?.[
-      requirement.measurementId
-    ];
+const groupGarmentRequirements = (
+  requirements: PlannedMeasurementRequirement[],
+): Array<[string, PlannedMeasurementRequirement[]]> =>
+  Array.from(
+    requirements.reduce((sections, requirement) => {
+      const garmentKey = requirement.garmentKey || "unknown";
+      const current = sections.get(garmentKey) || [];
+      current.push(requirement);
+      sections.set(garmentKey, current);
+      return sections;
+    }, new Map<string, PlannedMeasurementRequirement[]>()),
+  ).sort(([left], [right]) => left.localeCompare(right));
 
-const MeasurementInput = ({
+const MeasurementField = ({
   requirement,
   state,
   onChange,
+  rangeRecheck,
 }: {
   requirement: PlannedMeasurementRequirement;
   state: FutureMeasurementStateV1;
   onChange: (state: FutureMeasurementStateV1) => void;
+  rangeRecheck: boolean;
 }) => {
-  const stored = getRequirementValue(state, requirement);
+  const stored = getResolvedMeasurementValue(state, requirement);
   const displayValue = stored
     ? roundMeasurementDisplayValue(
         fromCanonicalCentimetres(stored.valueCm, state.unit),
@@ -119,16 +136,30 @@ const MeasurementInput = ({
   const inputId = `measurement-${requirement.key.replace(/[^a-z0-9_-]/gi, "-")}`;
   const hasInvalidValue = state.invalidInputKeys.includes(requirement.key);
   const errorId = `${inputId}-error`;
+  const calculated = requirement.inputSource === "calculated_average_factor";
+  const optionalManual = requirement.inputSource === "optional_manual";
+  const badge = stored?.provenance === "customer_entered"
+    ? "Customer measurement"
+    : calculated
+    ? CALCULATED_FROM_HEIGHT_LABEL
+    : optionalManual
+      ? "Optional"
+      : "Required";
 
   return (
     <label
-      htmlFor={inputId}
+      htmlFor={calculated ? undefined : inputId}
+      data-measurement-field={requirement.measurementId}
+      data-measurement-source={requirement.inputSource}
+      data-measurement-calculated={calculated ? "true" : "false"}
       className={`block min-w-0 rounded-xl border p-4 transition ${
         hasInvalidValue
           ? "border-red-400/70 bg-red-50/40"
-          : stored
-            ? "border-heritage-green/30 bg-heritage-green/[0.03]"
-            : "border-heritage-green/15 bg-heritage-cream/20"
+          : calculated
+            ? "border-heritage-green/10 bg-heritage-cream/35"
+            : stored
+              ? "border-heritage-green/30 bg-heritage-green/[0.03]"
+              : "border-heritage-green/15 bg-heritage-cream/20"
       }`}
     >
       <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -136,7 +167,7 @@ const MeasurementInput = ({
           {requirement.definition.customerLabel}
         </span>
         <span className="rounded-full border border-heritage-gold/25 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
-          Required
+          {badge}
         </span>
       </span>
       {requirement.definition.instructions && (
@@ -144,46 +175,184 @@ const MeasurementInput = ({
           {requirement.definition.instructions}
         </span>
       )}
-      {requirement.inputSource === "factorless_manual" && (
+      {requirement.averageFactor === null && requirement.section === "required" && (
         <span className="mt-2 block text-xs font-semibold text-heritage-ink/65">
           Enter this measurement directly.
         </span>
       )}
-      <span className="relative mt-3 block">
-        <input
-          id={inputId}
-          type="number"
-          min="0.01"
-          step="0.01"
-          inputMode="decimal"
-          aria-invalid={hasInvalidValue || undefined}
-          aria-describedby={hasInvalidValue ? errorId : undefined}
-          value={displayValue}
-          onChange={(event) => {
-            const raw = event.target.value;
-            onChange(setFutureMeasurementInput({
-              state,
-              requirement,
-              displayValue: raw === "" ? null : Number(raw),
-            }));
-          }}
-          className="min-h-11 w-full min-w-0 rounded-xl border border-heritage-green/20 bg-white px-3 pr-14 text-sm text-heritage-ink outline-none transition focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/30"
-        />
-        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-bold text-heritage-ink/50">
-          {state.unit === "inch" ? "in" : "cm"}
+      {calculated ? (
+        <span className="relative mt-3 block">
+          <span
+            className="flex min-h-11 w-full min-w-0 items-center rounded-xl border border-heritage-green/15 bg-heritage-cream/50 px-3 pr-14 text-sm text-heritage-ink"
+            data-measurement-calculated-value={stored ? String(displayValue) : "pending"}
+          >
+            {stored ? displayValue : CALCULATED_PENDING_MESSAGE}
+          </span>
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-bold text-heritage-ink/50">
+            {state.unit === "inch" ? "in" : "cm"}
+          </span>
         </span>
-      </span>
+      ) : (
+        <span className="relative mt-3 block">
+          <input
+            id={inputId}
+            type="number"
+            min="0.01"
+            step="0.01"
+            inputMode="decimal"
+            aria-invalid={hasInvalidValue || undefined}
+            aria-describedby={hasInvalidValue ? errorId : undefined}
+            value={displayValue}
+            onChange={(event) => {
+              const raw = event.target.value;
+              onChange(setFutureMeasurementInput({
+                state,
+                requirement,
+                displayValue: raw === "" ? null : Number(raw),
+              }));
+            }}
+            className="min-h-11 w-full min-w-0 rounded-xl border border-heritage-green/20 bg-white px-3 pr-14 text-sm text-heritage-ink outline-none transition focus:border-heritage-gold focus:ring-2 focus:ring-heritage-gold/30"
+          />
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-bold text-heritage-ink/50">
+            {state.unit === "inch" ? "in" : "cm"}
+          </span>
+        </span>
+      )}
       {hasInvalidValue && (
         <span id={errorId} className="mt-2 block text-xs font-semibold text-red-700">
           Enter a positive measurement value.
         </span>
       )}
-      {stored && !hasInvalidValue && (
+      {rangeRecheck && !hasInvalidValue && (
+        <span className="mt-2 block text-xs font-semibold text-heritage-gold">
+          {RANGE_RECHECK_MESSAGE}
+        </span>
+      )}
+      {stored && !hasInvalidValue && !calculated && !rangeRecheck && (
         <span className="mt-2 block text-xs font-semibold text-heritage-green/75">
           Saved
         </span>
       )}
     </label>
+  );
+};
+
+const MeasurementSection = ({
+  title,
+  description,
+  requirements,
+  state,
+  onChange,
+  section,
+}: {
+  title: string;
+  description: string;
+  requirements: PlannedMeasurementRequirement[];
+  state: FutureMeasurementStateV1;
+  onChange: (state: FutureMeasurementStateV1) => void;
+  section: "required" | "optional";
+}) => {
+  const sharedRequirements = requirements.filter(
+    (requirement) =>
+      requirement.scope === "shared" &&
+      requirement.inputSource !== "calculated_average_factor",
+  );
+  const garmentRequirementSections = groupGarmentRequirements(
+    requirements.filter(
+      (requirement) =>
+        requirement.scope === "garment" ||
+        requirement.inputSource === "calculated_average_factor",
+    ),
+  );
+  const completedCount = requirements.filter((requirement) => {
+    if (requirement.inputSource === "calculated_average_factor") return false;
+    const value = getResolvedMeasurementValue(state, requirement);
+    return Boolean(value && Number.isFinite(value.valueCm) && value.valueCm > 0);
+  }).length;
+  const requiredCount = requirements.filter((requirement) => requirement.directInput).length;
+
+  return (
+    <section
+      data-measurement-section={section}
+      className={`rounded-2xl border p-5 shadow-sm sm:p-6 ${
+        section === "optional"
+          ? "border-heritage-green/15 bg-heritage-cream/25"
+          : "border-heritage-gold/20 bg-white"
+      }`}
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <Ruler aria-hidden="true" className="mt-0.5 shrink-0 text-heritage-gold" size={20} />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h3 className="font-serif text-lg font-bold text-heritage-green">{title}</h3>
+            {section === "required" && requiredCount > 0 && (
+              <span className="rounded-full border border-heritage-gold/25 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+                {completedCount} of {requiredCount} complete
+              </span>
+            )}
+            {section === "optional" && (
+              <span className="rounded-full border border-heritage-green/20 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-ink/60">
+                Optional
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">{description}</p>
+        </div>
+      </div>
+      {sharedRequirements.length > 0 && (
+        <div className="mt-5">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-heritage-green">
+            Shared Body Measurements
+          </h4>
+          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">
+            Shared body measurements are entered once and used for all applicable garments.
+          </p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {sharedRequirements.map((requirement) => (
+              <MeasurementField
+                key={requirement.key}
+                requirement={requirement}
+                state={state}
+                onChange={onChange}
+                rangeRecheck={state.diagnostics.some(
+                  (diagnostic) =>
+                    diagnostic.code === "measurement_range_recheck" &&
+                    diagnostic.measurementId === requirement.measurementId,
+                )}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      {garmentRequirementSections.map(([garmentKey, garmentRequirements]) => (
+        <div key={garmentKey} className="mt-5">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h4 className="font-serif text-base font-bold text-heritage-green">
+              {formatGarmentLabel(garmentRequirements[0]?.garmentType, garmentKey)} Measurements
+            </h4>
+            <span className="rounded-full border border-heritage-gold/25 bg-heritage-cream/35 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+              Garment specific
+            </span>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {garmentRequirements.map((requirement) => (
+              <MeasurementField
+                key={requirement.key}
+                requirement={requirement}
+                state={state}
+                onChange={onChange}
+                rangeRecheck={state.diagnostics.some(
+                  (diagnostic) =>
+                    diagnostic.code === "measurement_range_recheck" &&
+                    diagnostic.measurementId === requirement.measurementId &&
+                    diagnostic.garmentKey === requirement.garmentKey,
+                )}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </section>
   );
 };
 
@@ -196,68 +365,63 @@ export const DormantFutureMeasurementStep = ({
   onContinue,
 }: DormantFutureMeasurementStepProps) => {
   const resolvedState = reconcileFutureMeasurementState({ state, plan });
-  const directRequirements = plan.requirements.filter(
-    (requirement) => requirement.directInput,
-  );
-  const sharedRequirements = directRequirements.filter(
-    (requirement) => requirement.scope === "shared",
-  );
-  const garmentRequirements = directRequirements.filter(
-    (requirement) => requirement.scope === "garment",
-  );
-  const garmentRequirementSections = Array.from(
-    garmentRequirements.reduce((sections, requirement) => {
-      const garmentKey = requirement.garmentKey || "unknown";
-      const current = sections.get(garmentKey) || [];
-      current.push(requirement);
-      sections.set(garmentKey, current);
-      return sections;
-    }, new Map<string, PlannedMeasurementRequirement[]>()),
-  );
-  const completedManualInputCount = directRequirements.filter((requirement) => {
-    const value = getRequirementValue(resolvedState, requirement);
+  const selectedRoute = isSelectedMeasurementRiskRoute(resolvedState.route)
+    ? resolvedState.route
+    : null;
+  const presentationRequirements = projectMeasurementRequirementsForPresentation({
+    requirements: plan.requirements,
+    state: resolvedState,
+  });
+  const requiredRequirements = selectedRoute
+    ? presentationRequirements.filter((requirement) => requirement.section === "required")
+    : [];
+  const optionalRequirements = selectedRoute
+    ? presentationRequirements.filter((requirement) => requirement.section === "optional")
+    : [];
+  const completedManualInputCount = requiredRequirements.filter((requirement) => {
+    const value = getResolvedMeasurementValue(resolvedState, requirement);
     return Boolean(value && Number.isFinite(value.valueCm) && value.valueCm > 0);
   }).length;
   const remainingManualInputCount = Math.max(
     0,
-    directRequirements.length - completedManualInputCount,
+    requiredRequirements.length - completedManualInputCount,
   );
-  const factorlessManualCount = directRequirements.filter(
-    (requirement) => requirement.inputSource === "factorless_manual",
-  ).length;
-  const unsupportedGarments = resolvedState.diagnostics.filter(
-    (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
-  );
-  const blockerMessages = [...new Set(
-    resolvedState.diagnostics
-      .filter((diagnostic) => diagnostic.code !== "measurement_profile_unmapped")
-      .map(getBlockerMessage),
-  )];
-  const pendingFormulaMessage =
-    resolvedState.calculationStatus === "calculation_formula_pending"
-      ? state.route === "medium_risk"
-        ? "Your required measurements can be saved, but the assisted calculation method is still being finalised."
-        : "Your quick measurements can be saved, but the remaining calculation method is still being finalised."
-      : null;
-  const routeSaveMessage = state.route === "low_risk"
-    ? resolvedState.calculationStatus === "complete"
+  const unsupportedGarments = selectedRoute
+    ? resolvedState.diagnostics.filter(
+        (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
+      )
+    : [];
+  const blockerMessages = selectedRoute
+    ? [...new Set(
+        resolvedState.diagnostics
+          .filter((diagnostic) =>
+            diagnostic.code !== "measurement_profile_unmapped" &&
+            diagnostic.code !== "calculation_configuration_pending" &&
+            diagnostic.code !== "measurement_range_recheck"
+          )
+          .map(getBlockerMessage),
+      )]
+    : [];
+  const routeSaveMessage = !selectedRoute
+    ? MEASUREMENT_RISK_SELECTION_NOTICE
+    : resolvedState.calculationStatus === "complete"
       ? "All required measurements are saved."
-      : `${remainingManualInputCount} required measurement${remainingManualInputCount === 1 ? " remains" : "s remain"}.`
-    : "Your measurements can be saved, but automatic calculation is awaiting final approval.";
-  const routeStatusLabel = getStatusLabel(
-    state.route,
-    state.route,
-    resolvedState.calculationStatus,
-  );
-  const canContinueToSummary =
-    resolvedState.route === "low_risk" &&
-    resolvedState.calculationStatus === "complete";
+      : `${remainingManualInputCount} required measurement${remainingManualInputCount === 1 ? " remains" : "s remain"}.`;
+  const routeStatusLabel = selectedRoute
+    ? getStatusLabel(
+        selectedRoute,
+        selectedRoute,
+        resolvedState.calculationStatus,
+      )
+    : null;
+  const canContinueToSummary = isFutureSummaryUnlockedByMeasurements(resolvedState);
 
   return (
     <section
       aria-labelledby="future-measurement-title"
       data-stage-id="measurement"
       data-measurement-status={resolvedState.calculationStatus}
+      data-measurement-risk-selected={selectedRoute || "none"}
       className="space-y-5 font-sans"
     >
       <header className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
@@ -282,24 +446,26 @@ export const DormantFutureMeasurementStep = ({
       </header>
 
       <section className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
-        <fieldset>
+        <fieldset data-measurement-risk-selector="true">
           <legend className="font-serif text-lg font-bold text-heritage-green">
-            Choose a measurement route
+            Choose one measurement risk level
           </legend>
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
             {ROUTES.map((route) => {
-              const selected = state.route === route.id;
+              const selected = selectedRoute === route.id;
               const status = getStatusLabel(
                 route.id,
-                state.route,
+                selectedRoute,
                 resolvedState.calculationStatus,
               );
               return (
                 <label
                   key={route.id}
+                  data-measurement-risk-option={route.id}
+                  data-measurement-risk-selected={selected ? "true" : "false"}
                   className={`flex min-w-0 cursor-pointer gap-3 rounded-xl border p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
                     selected
-                      ? "border-heritage-gold bg-heritage-gold/8"
+                      ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
                       : "border-heritage-green/15 hover:border-heritage-gold/45"
                   }`}
                 >
@@ -313,12 +479,14 @@ export const DormantFutureMeasurementStep = ({
                   />
                   <span className="min-w-0">
                     <span className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="break-words text-sm font-bold text-heritage-green">
+                      <span className="break-words text-sm font-semibold text-heritage-green">
                         {route.title}
                       </span>
-                      <span className="rounded-full border border-current/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-ink/65">
-                        {status}
-                      </span>
+                      {status && (
+                        <span className="rounded-full border border-heritage-gold/30 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-wide text-heritage-ink/70">
+                          {status}
+                        </span>
+                      )}
                     </span>
                     <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">
                       {route.description}
@@ -331,8 +499,11 @@ export const DormantFutureMeasurementStep = ({
         </fieldset>
       </section>
 
+      {selectedRoute && (
+        <>
       <section
         aria-live="polite"
+        data-measurement-form={selectedRoute}
         className="rounded-2xl border border-heritage-gold/25 bg-heritage-cream/35 p-4 sm:p-5"
       >
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -348,7 +519,7 @@ export const DormantFutureMeasurementStep = ({
             </p>
           </div>
           <div className="shrink-0 rounded-xl border border-heritage-green/15 bg-white px-3 py-2 text-xs font-semibold text-heritage-green">
-            {completedManualInputCount} / {directRequirements.length} saved
+            {completedManualInputCount} / {requiredRequirements.length} saved
           </div>
         </div>
       </section>
@@ -418,74 +589,31 @@ export const DormantFutureMeasurementStep = ({
         </section>
       )}
 
-      {pendingFormulaMessage && (
-        <p
-          role="status"
-          aria-live="polite"
-          className="rounded-xl border border-heritage-gold/30 bg-heritage-gold/8 px-4 py-3 text-sm text-heritage-ink/75"
-        >
-          {pendingFormulaMessage}
-        </p>
+      <MeasurementSection
+        title="Required Measurements"
+        description={
+          selectedRoute === "low_risk"
+            ? "All applicable measurements for this garment are entered manually."
+            : "Enter only the required measurements for this option."
+        }
+        requirements={requiredRequirements}
+        state={resolvedState}
+        onChange={onChange}
+        section="required"
+      />
+
+      {optionalRequirements.length > 0 && (
+        <MeasurementSection
+          title="Optional Measurements"
+          description="Calculated from height after the required measurements are complete. Fields without a factor stay optional and can be entered manually."
+          requirements={optionalRequirements}
+          state={resolvedState}
+          onChange={onChange}
+          section="optional"
+        />
       )}
-
-      <section className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex min-w-0 items-start gap-3">
-          <Ruler aria-hidden="true" className="mt-0.5 shrink-0 text-heritage-gold" size={20} />
-          <div className="min-w-0">
-            <h3 className="font-serif text-lg font-bold text-heritage-green">Shared Body Measurements</h3>
-            <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">
-              Shared body measurements are entered once and used for all applicable garments.
-            </p>
-          </div>
-        </div>
-        {factorlessManualCount > 0 && (
-          <p className="mt-4 rounded-xl bg-heritage-cream/45 px-3 py-2 text-xs leading-relaxed text-heritage-ink/65">
-            {factorlessManualCount} required field{factorlessManualCount === 1 ? " has" : "s have"} no approved calculation factor and must be entered manually.
-          </p>
-        )}
-        {sharedRequirements.length > 0 ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {sharedRequirements.map((requirement) => (
-              <MeasurementInput
-                key={requirement.key}
-                requirement={requirement}
-                state={resolvedState}
-                onChange={onChange}
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="mt-4 text-sm text-heritage-ink/65">
-            No shared body measurements are required for this route.
-          </p>
-        )}
-      </section>
-
-      {garmentRequirementSections.map(([garmentKey, requirements]) => (
-        <section
-          key={garmentKey}
-          className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6"
-        >
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h3 className="font-serif text-lg font-bold text-heritage-green">
-              {formatGarmentLabel(requirements[0]?.garmentType, garmentKey)} Measurements
-            </h3>
-            <span className="rounded-full border border-heritage-gold/25 bg-heritage-cream/35 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
-              Garment specific
-            </span>
-          </div>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {requirements.map((requirement) => (
-              <MeasurementInput
-                key={requirement.key}
-                requirement={requirement}
-                state={resolvedState}
-                onChange={onChange}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+        </>
+      )}
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -495,16 +623,18 @@ export const DormantFutureMeasurementStep = ({
             className="w-full sm:w-auto"
           />
           <div className="min-w-0 sm:text-right">
-            <p id="measurement-summary-status-reason" className="mb-2 text-xs leading-relaxed text-heritage-ink/60">
-              {canContinueToSummary
-                ? "Your completed Low Risk measurements are ready for review."
-                : "Summary remains locked until Low Risk measurements are complete. Mid and High Risk calculations are still pending."}
+            <p
+              id="measurement-risk-selection-notice"
+              data-measurement-risk-notice="true"
+              className="mb-2 text-xs leading-relaxed text-heritage-ink/60"
+            >
+              {MEASUREMENT_RISK_SELECTION_NOTICE}
             </p>
             <button
               type="button"
               onClick={onContinue}
               disabled={!canContinueToSummary}
-              aria-describedby="measurement-summary-status-reason"
+              aria-describedby="measurement-risk-selection-notice"
               className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 sm:w-auto"
             >
               {!canContinueToSummary && <LockKeyhole aria-hidden="true" size={14} />}

@@ -10,12 +10,19 @@ import {
   type MeasurementProfileField,
   type MeasurementProfileId,
 } from "../config/MeasurementBlueprintConfig";
+import {
+  calculateMeasurementFromAverageFactor,
+  isManualValueOutsideExpectedRange,
+} from "./measurementFactorEngine";
 import type {
+  AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
   CanonicalPhysicalGarmentType,
   FabricGarmentAssignment,
   FabricGarmentType,
   FutureMeasurementDiagnostic,
+  FutureMeasurementEnteredBagV1,
+  FutureMeasurementEnteredByRouteV1,
   FutureMeasurementStateV1,
   FutureMeasurementValueV1,
   GarmentScopedCustomDetailsStateV1,
@@ -23,6 +30,7 @@ import type {
   MeasurementRiskRoute,
   MeasurementUnit,
   Measurements,
+  SelectedMeasurementRiskRoute,
 } from "../types";
 
 const MEASUREMENT_ID_SET = new Set<CanonicalMeasurementId>(
@@ -39,6 +47,40 @@ const VALID_ROUTES = new Set<MeasurementRiskRoute>([
   "medium_risk",
   "high_risk",
 ]);
+
+export const MEASUREMENT_RISK_ROUTE_ORDER = [
+  "low_risk",
+  "medium_risk",
+  "high_risk",
+] as const satisfies ReadonlyArray<MeasurementRiskRoute>;
+
+export const MEASUREMENT_RISK_ROUTE_LABELS: Record<MeasurementRiskRoute, string> = {
+  low_risk: "Low Risk",
+  medium_risk: "Mid Risk",
+  high_risk: "High Risk",
+};
+
+export const MEASUREMENT_RISK_SELECTION_NOTICE =
+  "Choose one measurement risk level and complete only the measurements shown for your selected option.";
+
+const PATH_INPUT_BLOCKING_CODES = new Set<FutureMeasurementDiagnostic["code"]>([
+  "required_measurement_missing",
+  "invalid_measurement_value",
+  "applicability_unresolved",
+  "invalid_state",
+  "invalid_measurement_id",
+  "invalid_route",
+  "invalid_unit",
+]);
+
+const NON_BLOCKING_DIAGNOSTIC_CODES = new Set<FutureMeasurementDiagnostic["code"]>([
+  "measurement_range_recheck",
+]);
+
+export const isSelectedMeasurementRiskRoute = (
+  route: SelectedMeasurementRiskRoute | undefined,
+): route is MeasurementRiskRoute =>
+  route === "low_risk" || route === "medium_risk" || route === "high_risk";
 const VALID_UNITS = new Set<MeasurementUnit>(["inch", "cm"]);
 const SQUARE_NECK_OPTION_ID_SET = new Set<string>(SQUARE_NECK_OPTION_IDS);
 
@@ -67,14 +109,39 @@ const stableHash = (value: unknown): string => {
   return (hash >>> 0).toString(16).padStart(8, "0");
 };
 
-const getConstructionOptionIds = (
+const getBaseConstructionOptionIds = (
   selection: GarmentTypeStepSelection,
   garmentType: FabricGarmentType,
 ): string[] => {
-  const resolution = selection.constructionByGarment[garmentType as CanonicalPhysicalGarmentType];
+  const resolution = selection.constructionByGarment[
+    garmentType as CanonicalPhysicalGarmentType
+  ];
   return resolution?.status === "resolved"
     ? resolution.components.map((component) => component.optionId)
     : [];
+};
+
+const getOccurrenceConstructionOptionIds = ({
+  garment,
+  garmentTypeSelection,
+  additionalGarmentConstructions,
+}: {
+  garment: MeasurementPhysicalGarment;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+}): string[] | null => {
+  if (garment.garmentKey.startsWith("additional:")) {
+    const additionalResolution =
+      additionalGarmentConstructions?.byGarmentKey[garment.garmentKey];
+    if (!additionalResolution) return null;
+    return additionalResolution.status === "resolved"
+      ? additionalResolution.components.map((component) => component.optionId)
+      : null;
+  }
+  return getBaseConstructionOptionIds(
+    garmentTypeSelection,
+    garment.garmentType,
+  );
 };
 
 export interface MeasurementPhysicalGarment {
@@ -127,9 +194,11 @@ export const getMeasurementPhysicalGarments = ({
 export const resolveMeasurementProfile = ({
   garment,
   garmentTypeSelection,
+  additionalGarmentConstructions,
 }: {
   garment: MeasurementPhysicalGarment;
   garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
 }): MeasurementProfileResolution => {
   const { garmentKey, garmentType } = garment;
   if (["kaftan", "full_length_gown", "agbada", "other"].includes(garmentType)) {
@@ -148,10 +217,14 @@ export const resolveMeasurementProfile = ({
   if (eligible.length === 0) {
     return { status: "unresolved", garmentKey, garmentType, code: "demographic_ineligible" };
   }
-  const constructionOptionIds = getConstructionOptionIds(
+  const constructionOptionIds = getOccurrenceConstructionOptionIds({
+    garment,
     garmentTypeSelection,
-    garmentType,
-  );
+    additionalGarmentConstructions,
+  });
+  if (!constructionOptionIds) {
+    return { status: "unresolved", garmentKey, garmentType, code: "construction_unresolved" };
+  }
   if (eligible.length === 1 && eligible[0].constructionOptionIds.length === 0) {
     return {
       status: "resolved",
@@ -180,29 +253,84 @@ export const resolveMeasurementProfile = ({
     : { status: "unresolved", garmentKey, garmentType, code: "construction_unresolved" };
 };
 
+export type MeasurementInputSource =
+  | "route_marker"
+  | "calculated_average_factor"
+  | "optional_manual";
+
 export interface PlannedMeasurementRequirement {
   key: string;
+  manualValueKey: string;
   measurementId: CanonicalMeasurementId;
   definition: MeasurementDefinition;
   scope: "shared" | "garment";
-  garmentKey?: string;
-  garmentType?: FabricGarmentType;
+  garmentKey: string;
+  garmentType: FabricGarmentType;
   profileId: MeasurementProfileId;
   sourceRow: number;
   directInput: boolean;
-  inputSource: "route_marker" | "factorless_manual";
+  section: "required" | "optional";
+  inputSource: MeasurementInputSource;
   averageFactor: number | null;
+  minFactor: number | null;
+  maxFactor: number | null;
+  stdFactor: number | null;
 }
 
 export interface MeasurementRequirementPlan {
   blueprintVersion: string;
-  route: MeasurementRiskRoute;
+  route: SelectedMeasurementRiskRoute;
   profiles: MeasurementProfileResolution[];
   requirements: PlannedMeasurementRequirement[];
   diagnostics: FutureMeasurementDiagnostic[];
   inputFingerprint: string;
-  canCalculate: false;
+  canCalculate: boolean;
 }
+
+export const projectMeasurementRequirementsForPresentation = ({
+  requirements,
+  state,
+}: {
+  requirements: readonly PlannedMeasurementRequirement[];
+  state?: FutureMeasurementStateV1;
+}): PlannedMeasurementRequirement[] => {
+  const ordered = [...requirements].sort((left, right) =>
+    left.key.localeCompare(right.key),
+  );
+  const sharedManual = new Map<string, PlannedMeasurementRequirement>();
+  const projected: PlannedMeasurementRequirement[] = [];
+
+  ordered.forEach((requirement) => {
+    if (
+      requirement.scope === "shared" &&
+      requirement.inputSource !== "calculated_average_factor"
+    ) {
+      const current = sharedManual.get(requirement.manualValueKey);
+      if (!current || (requirement.directInput && !current.directInput)) {
+        sharedManual.set(requirement.manualValueKey, requirement);
+      }
+      return;
+    }
+    if (
+      requirement.inputSource === "calculated_average_factor" &&
+      requirement.scope === "shared" &&
+      Boolean(
+        state?.entered.shared[requirement.measurementId] &&
+          Number.isFinite(
+            state.entered.shared[requirement.measurementId].valueCm,
+          ) &&
+          state.entered.shared[requirement.measurementId].valueCm > 0,
+      )
+    ) {
+      return;
+    }
+    projected.push(requirement);
+  });
+
+  return [...sharedManual.values(), ...projected].sort((left, right) =>
+    left.key.localeCompare(right.key),
+  );
+};
 
 const getSelectedOptionIds = (
   state: GarmentScopedCustomDetailsStateV1 | undefined,
@@ -249,17 +377,36 @@ export const planMeasurementRequirements = ({
   garmentTypeSelection,
   physicalGarments,
   garmentScopedCustomDetails,
+  additionalGarmentConstructions,
 }: {
-  route: MeasurementRiskRoute;
+  route: SelectedMeasurementRiskRoute;
   garmentTypeSelection: GarmentTypeStepSelection;
   physicalGarments: readonly MeasurementPhysicalGarment[];
   garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
 }): MeasurementRequirementPlan => {
-  const profiles = physicalGarments.map((garment) =>
-    resolveMeasurementProfile({ garment, garmentTypeSelection }),
-  );
+  if (!isSelectedMeasurementRiskRoute(route)) {
+    return {
+      blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
+      route: null,
+      profiles: [],
+      requirements: [],
+      diagnostics: [],
+      inputFingerprint: `measurement_unresolved_${MEASUREMENT_BLUEPRINT_VERSION}`,
+      canCalculate: false,
+    };
+  }
+  const profiles = physicalGarments
+    .map((garment) =>
+      resolveMeasurementProfile({
+        garment,
+        garmentTypeSelection,
+        additionalGarmentConstructions,
+      }),
+    )
+    .sort((left, right) => left.garmentKey.localeCompare(right.garmentKey));
   const diagnostics: FutureMeasurementDiagnostic[] = [];
-  const requirements = new Map<string, PlannedMeasurementRequirement>();
+  const requirements: PlannedMeasurementRequirement[] = [];
 
   profiles.forEach((resolution) => {
     if (resolution.status !== "resolved") {
@@ -284,8 +431,9 @@ export const planMeasurementRequirements = ({
         selectedOptionIds,
       });
       if (applicability === "exclude") return;
+      const requiredOnRoute = field.directRoutes.includes(route);
       if (applicability === "unresolved") {
-        if (field.directRoutes.includes(route) || field.directRoutes.includes("low_risk")) {
+        if (requiredOnRoute || route === "low_risk") {
           diagnostics.push({
             code: "applicability_unresolved",
             garmentKey: resolution.garmentKey,
@@ -293,61 +441,45 @@ export const planMeasurementRequirements = ({
             measurementId: field.measurementId,
             profileId: resolution.profile.id,
           });
+          return;
         }
-        return;
       }
       const definition = DEFINITION_BY_ID.get(field.measurementId);
       if (!definition) return;
-      const routeMarkerInput = field.directRoutes.includes(route);
-      const factorlessManualInput =
-        route !== "low_risk" &&
-        field.averageFactor === null &&
-        field.directRoutes.includes("low_risk");
-      const directInput = routeMarkerInput || factorlessManualInput;
-      const key = definition.scope === "shared_body"
-        ? `shared:${field.measurementId}`
-        : `${resolution.garmentKey}:${field.measurementId}`;
-      if (!requirements.has(key)) {
-        requirements.set(key, {
-          key,
-          measurementId: field.measurementId,
-          definition,
-          scope: definition.scope === "shared_body" ? "shared" : "garment",
-          ...(definition.scope === "garment"
-            ? {
-                garmentKey: resolution.garmentKey,
-                garmentType: resolution.garmentType,
-              }
-            : {}),
-          profileId: resolution.profile.id,
-          sourceRow: field.sourceRow,
-          directInput,
-          inputSource: factorlessManualInput
-            ? "factorless_manual"
-            : "route_marker",
-          averageFactor: field.averageFactor,
-        });
-      } else if (directInput) {
-        const current = requirements.get(key)!;
-        if (!current.directInput) {
-          requirements.set(key, {
-            ...current,
-            directInput: true,
-            inputSource: factorlessManualInput
-              ? "factorless_manual"
-              : "route_marker",
-          });
-        }
-      }
-      if (!directInput && field.directRoutes.includes("low_risk")) {
-        diagnostics.push({
-          code: "calculation_configuration_pending",
-          garmentKey: resolution.garmentKey,
-          garmentType: resolution.garmentType,
-          measurementId: field.measurementId,
-          profileId: resolution.profile.id,
-        });
-      }
+      const inputSource: MeasurementInputSource = requiredOnRoute
+        ? "route_marker"
+        : field.averageFactor === null
+          ? "optional_manual"
+          : "calculated_average_factor";
+      const directInput = requiredOnRoute;
+      const scope = definition.scope === "shared_body" ? "shared" : "garment";
+      const key = [
+        route,
+        resolution.garmentKey,
+        resolution.profile.id,
+        field.measurementId,
+      ].join(":");
+      const nextRequirement: PlannedMeasurementRequirement = {
+        key,
+        manualValueKey: scope === "shared"
+          ? `shared:${field.measurementId}`
+          : `${resolution.garmentKey}:${field.measurementId}`,
+        measurementId: field.measurementId,
+        definition,
+        scope,
+        garmentKey: resolution.garmentKey,
+        garmentType: resolution.garmentType,
+        profileId: resolution.profile.id,
+        sourceRow: field.sourceRow,
+        directInput,
+        section: directInput ? "required" : "optional",
+        inputSource,
+        averageFactor: field.averageFactor,
+        minFactor: field.minFactor,
+        maxFactor: field.maxFactor,
+        stdFactor: field.stdFactor,
+      };
+      requirements.push(nextRequirement);
     });
     const requiresFutureCalculation =
       route !== "low_risk" &&
@@ -372,8 +504,16 @@ export const planMeasurementRequirements = ({
     }
   });
 
-  const orderedRequirements = [...requirements.values()].sort((left, right) =>
+  const orderedRequirements = [...requirements].sort((left, right) =>
     left.key.localeCompare(right.key),
+  );
+  diagnostics.sort((left, right) =>
+    [left.code, left.garmentKey || "", left.profileId || "", left.measurementId || ""]
+      .join(":")
+      .localeCompare(
+        [right.code, right.garmentKey || "", right.profileId || "", right.measurementId || ""]
+          .join(":"),
+      ),
   );
   const fingerprintInput = {
     blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
@@ -387,8 +527,12 @@ export const planMeasurementRequirements = ({
     requirements: orderedRequirements.map((requirement) => [
       requirement.key,
       requirement.directInput,
+      requirement.section,
       requirement.inputSource,
       requirement.averageFactor,
+      requirement.minFactor,
+      requirement.maxFactor,
+      requirement.stdFactor,
     ]),
     diagnostics: diagnostics.map((diagnostic) => [
       diagnostic.code,
@@ -403,7 +547,7 @@ export const planMeasurementRequirements = ({
     requirements: orderedRequirements,
     diagnostics,
     inputFingerprint: `measurement_${stableHash(fingerprintInput)}`,
-    canCalculate: false,
+    canCalculate: route === "medium_risk" || route === "high_risk",
   };
 };
 
@@ -420,14 +564,94 @@ export const fromCanonicalCentimetres = (
 export const roundMeasurementDisplayValue = (value: number): number =>
   Math.round(value * 100) / 100;
 
+const createEmptyEnteredBag = (): FutureMeasurementEnteredBagV1 => ({
+  shared: {},
+  byGarmentKey: {},
+});
+
+const createEmptyEnteredByRoute = (): FutureMeasurementEnteredByRouteV1 => ({
+  low_risk: createEmptyEnteredBag(),
+  medium_risk: createEmptyEnteredBag(),
+  high_risk: createEmptyEnteredBag(),
+});
+
+const createEmptyInvalidKeysByRoute = (): Record<MeasurementRiskRoute, string[]> => ({
+  low_risk: [],
+  medium_risk: [],
+  high_risk: [],
+});
+
+export const cloneFutureMeasurementEnteredBag = (
+  bag: FutureMeasurementEnteredBagV1 | undefined,
+): FutureMeasurementEnteredBagV1 => ({
+  shared: { ...(bag?.shared || {}) },
+  byGarmentKey: Object.fromEntries(
+    Object.entries(bag?.byGarmentKey || {}).map(([key, values]) => [key, { ...values }]),
+  ),
+});
+
+const cloneEnteredByRoute = (
+  byRoute: FutureMeasurementEnteredByRouteV1 | undefined,
+): FutureMeasurementEnteredByRouteV1 => ({
+  low_risk: cloneFutureMeasurementEnteredBag(byRoute?.low_risk),
+  medium_risk: cloneFutureMeasurementEnteredBag(byRoute?.medium_risk),
+  high_risk: cloneFutureMeasurementEnteredBag(byRoute?.high_risk),
+});
+
+export const isFutureMeasurementEnteredBagEmpty = (
+  bag: FutureMeasurementEnteredBagV1 | undefined,
+): boolean =>
+  !bag ||
+  (Object.keys(bag.shared).length === 0 && Object.keys(bag.byGarmentKey).length === 0);
+
+export const getActiveFutureMeasurementEntered = (
+  state: FutureMeasurementStateV1,
+): FutureMeasurementEnteredBagV1 => {
+  if (!isSelectedMeasurementRiskRoute(state.route)) {
+    return createEmptyEnteredBag();
+  }
+  if (state.enteredByRoute) {
+    return cloneFutureMeasurementEnteredBag(state.enteredByRoute[state.route]);
+  }
+  return cloneFutureMeasurementEnteredBag(state.entered);
+};
+
+const ensureEnteredByRoute = (
+  state: FutureMeasurementStateV1,
+): FutureMeasurementEnteredByRouteV1 => {
+  if (state.enteredByRoute) return cloneEnteredByRoute(state.enteredByRoute);
+  const next = createEmptyEnteredByRoute();
+  if (isSelectedMeasurementRiskRoute(state.route)) {
+    next[state.route] = cloneFutureMeasurementEnteredBag(state.entered);
+  }
+  return next;
+};
+
+const ensureInvalidKeysByRoute = (
+  state: FutureMeasurementStateV1,
+): Record<MeasurementRiskRoute, string[]> => {
+  const next = createEmptyInvalidKeysByRoute();
+  if (state.invalidInputKeysByRoute) {
+    MEASUREMENT_RISK_ROUTE_ORDER.forEach((route) => {
+      next[route] = [...(state.invalidInputKeysByRoute?.[route] || [])];
+    });
+    return next;
+  }
+  if (isSelectedMeasurementRiskRoute(state.route)) {
+    next[state.route] = [...state.invalidInputKeys];
+  }
+  return next;
+};
+
 export const createEmptyFutureMeasurementState = (
-  route: MeasurementRiskRoute = "low_risk",
+  route: SelectedMeasurementRiskRoute = null,
   unit: MeasurementUnit = "inch",
 ): FutureMeasurementStateV1 => ({
   schemaVersion: 1,
   route,
   unit,
-  entered: { shared: {}, byGarmentKey: {} },
+  entered: createEmptyEnteredBag(),
+  enteredByRoute: createEmptyEnteredByRoute(),
   derived: { shared: {}, byGarmentKey: {} },
   blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
   formulaVersion: MEASUREMENT_FORMULA_VERSION,
@@ -435,6 +659,7 @@ export const createEmptyFutureMeasurementState = (
   calculationStatus: "incomplete",
   diagnostics: [],
   invalidInputKeys: [],
+  invalidInputKeysByRoute: createEmptyInvalidKeysByRoute(),
 });
 
 const normalizeValueMap = (
@@ -467,41 +692,88 @@ const normalizeScopedValueMap = (
   );
 };
 
+const normalizeEnteredBag = (value: unknown): FutureMeasurementEnteredBagV1 => {
+  if (!isRecord(value)) return createEmptyEnteredBag();
+  return {
+    shared: normalizeValueMap(value.shared, "customer_entered"),
+    byGarmentKey: normalizeScopedValueMap(value.byGarmentKey, "customer_entered"),
+  };
+};
+
 export const normalizeFutureMeasurementState = (
   value: unknown,
 ): FutureMeasurementStateV1 | null => {
   if (!isRecord(value) || value.schemaVersion !== 1) return null;
-  if (!VALID_ROUTES.has(value.route as MeasurementRiskRoute)) return null;
+  const hasSelectedRoute = VALID_ROUTES.has(value.route as MeasurementRiskRoute);
+  const hasUnresolvedRoute = value.route === null || value.route === undefined;
+  if (!hasSelectedRoute && !hasUnresolvedRoute) return null;
   if (!VALID_UNITS.has(value.unit as MeasurementUnit)) return null;
   if (!isRecord(value.entered) || !isRecord(value.derived)) return null;
-  const route = value.route as MeasurementRiskRoute;
+  const route = hasSelectedRoute
+    ? (value.route as MeasurementRiskRoute)
+    : null;
   const unit = value.unit as MeasurementUnit;
-  const entered = {
-    shared: normalizeValueMap(value.entered.shared, "customer_entered"),
-    byGarmentKey: normalizeScopedValueMap(value.entered.byGarmentKey, "customer_entered"),
-  };
-  const derived = value.formulaVersion && value.formulaVersion === MEASUREMENT_FORMULA_VERSION
+  const legacyEntered = normalizeEnteredBag(value.entered);
+  const enteredByRouteSource = isRecord(value.enteredByRoute) ? value.enteredByRoute : null;
+  const hasEnteredByRouteField = Boolean(enteredByRouteSource);
+  const enteredByRoute = enteredByRouteSource
     ? {
-        shared: normalizeValueMap(value.derived.shared, "system_derived"),
-        byGarmentKey: normalizeScopedValueMap(value.derived.byGarmentKey, "system_derived"),
+        low_risk: normalizeEnteredBag(enteredByRouteSource.low_risk),
+        medium_risk: normalizeEnteredBag(enteredByRouteSource.medium_risk),
+        high_risk: normalizeEnteredBag(enteredByRouteSource.high_risk),
       }
-    : { shared: {}, byGarmentKey: {} };
+    : createEmptyEnteredByRoute();
+  if (!hasEnteredByRouteField && route) {
+    enteredByRoute[route] = cloneFutureMeasurementEnteredBag(legacyEntered);
+  } else if (
+    hasEnteredByRouteField &&
+    route &&
+    isFutureMeasurementEnteredBagEmpty(enteredByRoute[route]) &&
+    !isFutureMeasurementEnteredBagEmpty(legacyEntered)
+  ) {
+    enteredByRoute[route] = cloneFutureMeasurementEnteredBag(legacyEntered);
+  }
+  const unassignedEntered = !route && !hasEnteredByRouteField && !isFutureMeasurementEnteredBagEmpty(legacyEntered)
+    ? cloneFutureMeasurementEnteredBag(legacyEntered)
+    : !route
+      ? normalizeEnteredBag(value.unassignedEntered)
+      : undefined;
+  const entered = route
+    ? cloneFutureMeasurementEnteredBag(enteredByRoute[route])
+    : createEmptyEnteredBag();
+  const invalidInputKeysByRoute = createEmptyInvalidKeysByRoute();
+  const normalizeKeys = (keys: unknown): string[] =>
+    Array.isArray(keys)
+      ? keys.filter((key): key is string => typeof key === "string" && key.trim().length > 0)
+      : [];
+  const invalidKeysSource = isRecord(value.invalidInputKeysByRoute)
+    ? value.invalidInputKeysByRoute
+    : null;
+  if (invalidKeysSource) {
+    MEASUREMENT_RISK_ROUTE_ORDER.forEach((riskRoute) => {
+      invalidInputKeysByRoute[riskRoute] = normalizeKeys(invalidKeysSource[riskRoute]);
+    });
+  } else if (route) {
+    invalidInputKeysByRoute[route] = normalizeKeys(value.invalidInputKeys);
+  }
+  const derived = { shared: {}, byGarmentKey: {} };
   return {
     schemaVersion: 1,
     route,
     unit,
     entered,
+    enteredByRoute,
+    ...(unassignedEntered && !isFutureMeasurementEnteredBagEmpty(unassignedEntered)
+      ? { unassignedEntered }
+      : {}),
     derived,
     blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
     formulaVersion: MEASUREMENT_FORMULA_VERSION,
     inputFingerprint: typeof value.inputFingerprint === "string" ? value.inputFingerprint : "",
     calculationStatus: "incomplete",
     diagnostics: [],
-    invalidInputKeys: Array.isArray(value.invalidInputKeys)
-      ? value.invalidInputKeys.filter(
-          (key): key is string => typeof key === "string" && key.trim().length > 0,
-        )
-      : [],
+    invalidInputKeys: route ? invalidInputKeysByRoute[route] : [],
+    invalidInputKeysByRoute,
   };
 };
 
@@ -537,6 +809,9 @@ export const migrateLegacyManualMeasurements = (
       provenance: "customer_entered",
     };
   }
+  if (state.enteredByRoute) {
+    state.enteredByRoute.low_risk = cloneFutureMeasurementEnteredBag(state.entered);
+  }
   return Object.keys(state.entered.shared).length ? state : null;
 };
 
@@ -549,16 +824,15 @@ export const setFutureMeasurementInput = ({
   requirement: PlannedMeasurementRequirement;
   displayValue: number | null;
 }): FutureMeasurementStateV1 => {
-  const entered = {
-    shared: { ...state.entered.shared },
-    byGarmentKey: Object.fromEntries(
-      Object.entries(state.entered.byGarmentKey).map(([key, values]) => [key, { ...values }]),
-    ),
-  };
+  if (!isSelectedMeasurementRiskRoute(state.route)) return state;
+  if (requirement.inputSource === "calculated_average_factor") return state;
+  const enteredByRoute = ensureEnteredByRoute(state);
+  const entered = cloneFutureMeasurementEnteredBag(enteredByRoute[state.route]);
   const target = requirement.scope === "shared"
     ? entered.shared
     : (entered.byGarmentKey[requirement.garmentKey || ""] ||= {});
-  const invalidInputKeys = state.invalidInputKeys.filter(
+  const invalidInputKeysByRoute = ensureInvalidKeysByRoute(state);
+  const invalidInputKeys = invalidInputKeysByRoute[state.route].filter(
     (key) => key !== requirement.key,
   );
   if (displayValue === null) {
@@ -572,11 +846,15 @@ export const setFutureMeasurementInput = ({
       provenance: "customer_entered",
     };
   }
+  enteredByRoute[state.route] = entered;
+  invalidInputKeysByRoute[state.route] = invalidInputKeys;
   return {
     ...state,
     entered,
+    enteredByRoute,
     derived: { shared: {}, byGarmentKey: {} },
     invalidInputKeys,
+    invalidInputKeysByRoute,
   };
 };
 
@@ -589,6 +867,104 @@ export const setFutureMeasurementUnit = (
   derived: { shared: {}, byGarmentKey: {} },
 });
 
+export const setFutureMeasurementRoute = (
+  state: FutureMeasurementStateV1,
+  route: MeasurementRiskRoute,
+): FutureMeasurementStateV1 => {
+  const enteredByRoute = ensureEnteredByRoute(state);
+  const invalidInputKeysByRoute = ensureInvalidKeysByRoute(state);
+  return {
+    ...state,
+    route,
+    entered: cloneFutureMeasurementEnteredBag(enteredByRoute[route]),
+    enteredByRoute,
+    derived: { shared: {}, byGarmentKey: {} },
+    calculationStatus: "incomplete",
+    diagnostics: [],
+    invalidInputKeys: [...invalidInputKeysByRoute[route]],
+    invalidInputKeysByRoute,
+  };
+};
+
+export const getEnteredMeasurementValue = (
+  entered: FutureMeasurementEnteredBagV1,
+  requirement: PlannedMeasurementRequirement,
+): FutureMeasurementValueV1 | undefined =>
+  requirement.scope === "shared"
+    ? entered.shared[requirement.measurementId]
+    : entered.byGarmentKey[requirement.garmentKey || ""]?.[requirement.measurementId];
+
+const isPositiveMeasurementValue = (
+  value: FutureMeasurementValueV1 | undefined,
+): value is FutureMeasurementValueV1 =>
+  Boolean(value && Number.isFinite(value.valueCm) && value.valueCm > 0);
+
+const getRequirementFactors = (
+  requirement: PlannedMeasurementRequirement,
+) =>
+  requirement.averageFactor !== null &&
+  requirement.minFactor !== null &&
+  requirement.maxFactor !== null &&
+  requirement.stdFactor !== null
+    ? {
+        averageFactor: requirement.averageFactor,
+        minFactor: requirement.minFactor,
+        maxFactor: requirement.maxFactor,
+        stdFactor: requirement.stdFactor,
+      }
+    : null;
+
+export const deriveActiveCalculatedMeasurements = ({
+  route,
+  entered,
+  plan,
+  requiredComplete,
+}: {
+  route: MeasurementRiskRoute;
+  entered: FutureMeasurementEnteredBagV1;
+  plan: MeasurementRequirementPlan;
+  requiredComplete: boolean;
+}): FutureMeasurementStateV1["derived"] => {
+  const derived: FutureMeasurementStateV1["derived"] = {
+    shared: {},
+    byGarmentKey: {},
+  };
+  if (route === "low_risk" || !requiredComplete) return derived;
+  const height = entered.shared.total_height;
+  if (!isPositiveMeasurementValue(height)) return derived;
+  plan.requirements.forEach((requirement) => {
+    if (
+      requirement.inputSource !== "calculated_average_factor" ||
+      requirement.averageFactor === null
+    ) {
+      return;
+    }
+    if (
+      requirement.scope === "shared" &&
+      isPositiveMeasurementValue(entered.shared[requirement.measurementId])
+    ) {
+      return;
+    }
+    const derivedValue: FutureMeasurementValueV1 = {
+      valueCm: calculateMeasurementFromAverageFactor(
+        height.valueCm,
+        requirement.averageFactor,
+      ),
+      provenance: "calculated_average_factor",
+      calculation: {
+        route,
+        profileId: requirement.profileId,
+        garmentKey: requirement.garmentKey,
+        measurementId: requirement.measurementId,
+        averageFactor: requirement.averageFactor,
+      },
+    };
+    (derived.byGarmentKey[requirement.garmentKey] ||= {})[requirement.measurementId] =
+      derivedValue;
+  });
+  return derived;
+};
+
 export const reconcileFutureMeasurementState = ({
   state,
   plan,
@@ -596,11 +972,34 @@ export const reconcileFutureMeasurementState = ({
   state: FutureMeasurementStateV1;
   plan: MeasurementRequirementPlan;
 }): FutureMeasurementStateV1 => {
+  const route = isSelectedMeasurementRiskRoute(state.route)
+    ? state.route
+    : null;
+  const enteredByRoute = ensureEnteredByRoute(state);
+  const invalidInputKeysByRoute = ensureInvalidKeysByRoute(state);
+  if (!route) {
+    return {
+      ...state,
+      route: null,
+      entered: createEmptyEnteredBag(),
+      enteredByRoute,
+      blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
+      formulaVersion: MEASUREMENT_FORMULA_VERSION,
+      inputFingerprint: plan.inputFingerprint,
+      derived: { shared: {}, byGarmentKey: {} },
+      calculationStatus: "incomplete",
+      diagnostics: [],
+      invalidInputKeys: [],
+      invalidInputKeysByRoute,
+    };
+  }
+  const entered = cloneFutureMeasurementEnteredBag(enteredByRoute[route]);
   const diagnostics = [...plan.diagnostics];
   const requiredDirect = plan.requirements.filter((requirement) => requirement.directInput);
-  const invalidInputKeys = state.invalidInputKeys.filter((key) =>
+  const invalidInputKeys = invalidInputKeysByRoute[route].filter((key) =>
     plan.requirements.some((requirement) => requirement.key === key),
   );
+  invalidInputKeysByRoute[route] = invalidInputKeys;
   invalidInputKeys.forEach((key) => {
     const requirement = plan.requirements.find((item) => item.key === key);
     if (!requirement) return;
@@ -613,10 +1012,8 @@ export const reconcileFutureMeasurementState = ({
     });
   });
   requiredDirect.forEach((requirement) => {
-    const value = requirement.scope === "shared"
-      ? state.entered.shared[requirement.measurementId]
-      : state.entered.byGarmentKey[requirement.garmentKey || ""]?.[requirement.measurementId];
-    if (!value || !Number.isFinite(value.valueCm) || value.valueCm <= 0) {
+    const value = getEnteredMeasurementValue(entered, requirement);
+    if (!isPositiveMeasurementValue(value)) {
       diagnostics.push({
         code: "required_measurement_missing",
         garmentKey: requirement.garmentKey,
@@ -624,41 +1021,90 @@ export const reconcileFutureMeasurementState = ({
         measurementId: requirement.measurementId,
         profileId: requirement.profileId,
       });
+      return;
+    }
+    const heightValue = entered.shared.total_height?.valueCm;
+    if (
+      heightValue &&
+      Number.isFinite(heightValue) &&
+      heightValue > 0 &&
+      isManualValueOutsideExpectedRange({
+        value: value.valueCm,
+        heightValue,
+        factors: getRequirementFactors(requirement),
+      })
+    ) {
+      diagnostics.push({
+        code: "measurement_range_recheck",
+        garmentKey: requirement.garmentKey,
+        garmentType: requirement.garmentType,
+        measurementId: requirement.measurementId,
+        profileId: requirement.profileId,
+      });
     }
   });
-  const configurationPending = diagnostics.some(
-    (diagnostic) => diagnostic.code === "calculation_configuration_pending",
+  plan.requirements
+    .filter((requirement) => requirement.inputSource === "calculated_average_factor")
+    .forEach((requirement) => {
+      const hasCompatibleManualRequirement = plan.requirements.some(
+        (candidate) =>
+          candidate.manualValueKey === requirement.manualValueKey &&
+          candidate.inputSource !== "calculated_average_factor",
+      );
+      if (hasCompatibleManualRequirement) return;
+      if (requirement.scope === "shared") {
+        delete entered.shared[requirement.measurementId];
+        return;
+      }
+      const garmentKey = requirement.garmentKey || "";
+      if (entered.byGarmentKey[garmentKey]) {
+        delete entered.byGarmentKey[garmentKey][requirement.measurementId];
+      }
+    });
+  const blockingDiagnostics = diagnostics.filter(
+    (diagnostic) => !NON_BLOCKING_DIAGNOSTIC_CODES.has(diagnostic.code),
   );
-  const profileMappingPending = diagnostics.some(
+  const profileMappingPending = blockingDiagnostics.some(
     (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
   );
-  const invalid = diagnostics.some(
+  const invalid = blockingDiagnostics.some(
     (diagnostic) =>
       diagnostic.code === "invalid_measurement_value" ||
       diagnostic.code === "invalid_state" ||
       diagnostic.code === "invalid_measurement_id",
   );
-  const complete = diagnostics.length === 0;
+  const requiredValuesComplete = requiredDirect.every((requirement) =>
+    isPositiveMeasurementValue(getEnteredMeasurementValue(entered, requirement)),
+  );
+  const complete = blockingDiagnostics.length === 0;
+  const derived = deriveActiveCalculatedMeasurements({
+    route,
+    entered,
+    plan,
+    requiredComplete: requiredValuesComplete,
+  });
   return {
     ...state,
+    route,
+    entered,
+    enteredByRoute: {
+      ...enteredByRoute,
+      [route]: cloneFutureMeasurementEnteredBag(entered),
+    },
     blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
     formulaVersion: MEASUREMENT_FORMULA_VERSION,
     inputFingerprint: plan.inputFingerprint,
-    derived:
-      state.inputFingerprint === plan.inputFingerprint
-        ? state.derived
-        : { shared: {}, byGarmentKey: {} },
+    derived,
     calculationStatus: invalid
       ? "invalid"
       : profileMappingPending
         ? "profile_mapping_pending"
-        : configurationPending
-          ? "calculation_formula_pending"
-          : complete
-            ? "complete"
-            : "incomplete",
+        : complete
+          ? "complete"
+          : "incomplete",
     diagnostics,
     invalidInputKeys,
+    invalidInputKeysByRoute,
   };
 };
 
@@ -666,9 +1112,150 @@ export const isFutureMeasurementStageUnlocked = (
   workflow: AiTryOnWorkflowStateV1,
 ): boolean => workflow.status === "completed" || workflow.status === "skipped";
 
+export const isFutureMeasurementSelectedPathInputComplete = (
+  state: FutureMeasurementStateV1 | null | undefined,
+): boolean => {
+  if (!state || !isSelectedMeasurementRiskRoute(state.route)) return false;
+  return !state.diagnostics.some((diagnostic) =>
+    PATH_INPUT_BLOCKING_CODES.has(diagnostic.code),
+  );
+};
+
 export const isFutureMeasurementStageComplete = (
   state: FutureMeasurementStateV1 | null | undefined,
-): boolean => state?.calculationStatus === "complete";
+): boolean =>
+  Boolean(
+    isSelectedMeasurementRiskRoute(state?.route) &&
+      state?.calculationStatus === "complete",
+  );
+
+export const isFutureSummaryUnlockedByMeasurements = (
+  state: FutureMeasurementStateV1 | null | undefined,
+): boolean =>
+  Boolean(
+    isSelectedMeasurementRiskRoute(state?.route) &&
+      state?.calculationStatus === "complete",
+  );
+
+const omitUnassignedEntered = (
+  state: FutureMeasurementStateV1,
+): Omit<FutureMeasurementStateV1, "unassignedEntered"> => {
+  const { unassignedEntered, ...rest } = state;
+  void unassignedEntered;
+  return rest;
+};
+
+const cloneEnteredMap = (
+  value: Record<string, FutureMeasurementValueV1>,
+  allowedIds: ReadonlySet<string>,
+  provenance?: FutureMeasurementValueV1["provenance"],
+): Record<string, FutureMeasurementValueV1> =>
+  Object.fromEntries(
+    Object.entries(value).filter(([measurementId, entry]) =>
+      allowedIds.has(measurementId) &&
+      (!provenance || entry.provenance === provenance),
+    ),
+  );
+
+export const projectActiveFutureMeasurementState = ({
+  state,
+  plan,
+}: {
+  state: FutureMeasurementStateV1;
+  plan: MeasurementRequirementPlan;
+}): FutureMeasurementStateV1 => {
+  const route = isSelectedMeasurementRiskRoute(state.route) ? state.route : null;
+  if (!route || plan.route !== route) {
+    return {
+      ...omitUnassignedEntered(state),
+      route,
+      entered: createEmptyEnteredBag(),
+      enteredByRoute: createEmptyEnteredByRoute(),
+      derived: { shared: {}, byGarmentKey: {} },
+    };
+  }
+  const activeEntered = getActiveFutureMeasurementEntered(state);
+  const sharedIds = new Set(
+    plan.requirements
+      .filter((requirement) =>
+        requirement.scope === "shared" &&
+        requirement.inputSource !== "calculated_average_factor",
+      )
+      .map((requirement) => requirement.measurementId),
+  );
+  const garmentIds = new Map<string, Set<string>>();
+  plan.requirements
+    .filter((requirement) =>
+      requirement.scope === "garment" &&
+      requirement.garmentKey &&
+      requirement.inputSource !== "calculated_average_factor",
+    )
+    .forEach((requirement) => {
+      const garmentKey = requirement.garmentKey!;
+      const ids = garmentIds.get(garmentKey) || new Set<string>();
+      ids.add(requirement.measurementId);
+      garmentIds.set(garmentKey, ids);
+    });
+  const entered = {
+    shared: cloneEnteredMap(activeEntered.shared, sharedIds, "customer_entered"),
+    byGarmentKey: Object.fromEntries(
+      Object.entries(activeEntered.byGarmentKey).flatMap(([garmentKey, values]) => {
+        const allowed = garmentIds.get(garmentKey);
+        if (!allowed) return [];
+        const next = cloneEnteredMap(values, allowed, "customer_entered");
+        return Object.keys(next).length ? [[garmentKey, next]] : [];
+      }),
+    ),
+  };
+  const enteredByRoute = createEmptyEnteredByRoute();
+  enteredByRoute[route] = cloneFutureMeasurementEnteredBag(entered);
+  const calculatedGarmentIds = new Map<string, Set<string>>();
+  plan.requirements
+    .filter((requirement) =>
+      requirement.inputSource === "calculated_average_factor",
+    )
+    .forEach((requirement) => {
+      const garmentKey = requirement.garmentKey;
+      const ids = calculatedGarmentIds.get(garmentKey) || new Set<string>();
+      ids.add(requirement.measurementId);
+      calculatedGarmentIds.set(garmentKey, ids);
+    });
+  const derived = {
+    shared: {},
+    byGarmentKey: Object.fromEntries(
+      Object.entries(state.derived.byGarmentKey).flatMap(([garmentKey, values]) => {
+        const allowed = calculatedGarmentIds.get(garmentKey);
+        if (!allowed) return [];
+        const next = cloneEnteredMap(values, allowed, "calculated_average_factor");
+        return Object.keys(next).length ? [[garmentKey, next]] : [];
+      }),
+    ),
+  };
+  return {
+    ...omitUnassignedEntered(state),
+    route,
+    entered,
+    enteredByRoute,
+    derived,
+  };
+};
+
+export const getResolvedMeasurementValue = (
+  state: FutureMeasurementStateV1,
+  requirement: PlannedMeasurementRequirement,
+): FutureMeasurementValueV1 | undefined => {
+  const entered = getEnteredMeasurementValue(
+    getActiveFutureMeasurementEntered(state),
+    requirement,
+  );
+  if (isPositiveMeasurementValue(entered)) return entered;
+  if (requirement.inputSource === "calculated_average_factor") {
+    return state.derived.byGarmentKey[requirement.garmentKey]?.[
+      requirement.measurementId
+    ];
+  }
+  return entered;
+};
 
 export const getMeasurementDefinition = (
   measurementId: CanonicalMeasurementId,

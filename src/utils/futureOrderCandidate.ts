@@ -14,6 +14,7 @@ import {
   type FutureDesignStudioSummaryBlocker,
   type FutureDesignStudioSummaryInput,
 } from "./designStudioFutureSummary";
+import { projectActiveFutureMeasurementState } from "./measurementBlueprint";
 
 export const FUTURE_ORDER_CANDIDATE_SCHEMA_VERSION = 1 as const;
 
@@ -708,7 +709,12 @@ export const buildFutureOrderCandidate = (
       reviewStatus: summary.aiTryOnSummary.status,
       verifiedPrivateResultReference,
     },
-    measurements: cloneJsonValue(input.measurementState),
+    measurements: cloneJsonValue(
+      projectActiveFutureMeasurementState({
+        state: input.measurementState,
+        plan: input.measurementPlan,
+      }),
+    ),
     shipping: {
       state: cloneJsonValue(input.shippingResolution.state),
       status: input.shippingResolution.status,

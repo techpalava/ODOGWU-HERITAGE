@@ -147,9 +147,11 @@ import {
   createEmptyFutureMeasurementState,
   getMeasurementPhysicalGarments,
   isFutureMeasurementStageUnlocked,
+  isFutureSummaryUnlockedByMeasurements,
   normalizeFutureMeasurementState,
   planMeasurementRequirements,
   reconcileFutureMeasurementState,
+  setFutureMeasurementRoute,
 } from "../utils/measurementBlueprint";
 import { projectFutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
 import {
@@ -1208,12 +1210,15 @@ export default function DesignStudioView({
         garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
         physicalGarments: futureMeasurementPhysicalGarments,
         garmentScopedCustomDetails: designSelections.garmentScopedCustomDetails,
+        additionalGarmentConstructions:
+          designSelections.additionalGarmentConstructions,
       }),
     [
       futureMeasurementState.route,
       effectiveJourneyGarmentTypeSelection,
       futureMeasurementPhysicalGarments,
       designSelections.garmentScopedCustomDetails,
+      designSelections.additionalGarmentConstructions,
     ],
   );
   const reconciledFutureMeasurementState = useMemo(
@@ -1327,8 +1332,7 @@ export default function DesignStudioView({
   const isFutureSummaryStageUnlocked =
     (futureSummary.status === "ready" ||
       futureSummary.status === "pricing_pending") &&
-    reconciledFutureMeasurementState.route === "low_risk" &&
-    reconciledFutureMeasurementState.calculationStatus === "complete";
+    isFutureSummaryUnlockedByMeasurements(reconciledFutureMeasurementState);
   const isFutureShippingUnlocked = isFutureShippingStageUnlocked(
     futureSummary.status,
   );
@@ -1625,14 +1629,15 @@ export default function DesignStudioView({
         });
       const restoredMeasurementPlan = planMeasurementRequirements({
         route: restoredMeasurementState.route,
-        garmentTypeSelection: restoredGarmentTypeSelection,
+        garmentTypeSelection: restoredFabricPlanningSelection,
         physicalGarments: getMeasurementPhysicalGarments({
-          garmentTypeSelection: restoredGarmentTypeSelection,
+          garmentTypeSelection: restoredFabricPlanningSelection,
           fabricGarments: reconciledFabricState.fabricAllocations.flatMap(
             (allocation) => allocation.garmentAssignments,
           ),
         }),
         garmentScopedCustomDetails: restoredCustomDetails.state,
+        additionalGarmentConstructions: restoredAdditionalConstructions.state,
       });
       const restoredReconciledMeasurementState =
         reconcileFutureMeasurementState({
@@ -1645,8 +1650,7 @@ export default function DesignStudioView({
         !restoredUploadedSource &&
         isFutureCustomDetailsContentReady(restoredCustomDetailsCompletion) &&
         isFutureMeasurementStageUnlocked(restoredAiTryOnWorkflow) &&
-        restoredReconciledMeasurementState.route === "low_risk" &&
-        restoredReconciledMeasurementState.calculationStatus === "complete";
+        isFutureSummaryUnlockedByMeasurements(restoredReconciledMeasurementState);
       const restoredShippingResolution = reconcileFutureShippingState({
         state: restoredShippingState,
         garmentCount: restoredFabricCompletion.requiredGarmentCount,
@@ -2087,9 +2091,9 @@ export default function DesignStudioView({
       designSourceReady: isFutureDesignSourceReadyForCustomDetails,
       customDetailsReady: isFutureCustomDetailsStageReady,
       measurementUnlocked: isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow),
-      summaryUnlocked:
-        reconciledFutureMeasurementState.route === "low_risk" &&
-        reconciledFutureMeasurementState.calculationStatus === "complete",
+      summaryUnlocked: isFutureSummaryUnlockedByMeasurements(
+        reconciledFutureMeasurementState,
+      ),
       inlineAdditionalGarmentFabricTransaction:
         additionalGarmentFabricTransaction,
     });
@@ -2513,13 +2517,9 @@ export default function DesignStudioView({
     setFutureStageId("measurement");
   };
   const handleFutureMeasurementRouteChange = (route: MeasurementRiskRoute) => {
-    setFutureMeasurementState((current) => ({
-      ...current,
-      route,
-      derived: { shared: {}, byGarmentKey: {} },
-      calculationStatus: "incomplete",
-      diagnostics: [],
-    }));
+    setFutureMeasurementState((current) =>
+      setFutureMeasurementRoute(current, route),
+    );
   };
   const updateFutureScopedCustomDetails = (
     update: (current: DesignSelections) => DesignSelections,

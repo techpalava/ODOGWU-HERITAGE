@@ -55,9 +55,11 @@ import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepSt
 import {
   createEmptyFutureMeasurementState,
   getMeasurementPhysicalGarments,
+  isFutureMeasurementEnteredBagEmpty,
   planMeasurementRequirements,
   reconcileFutureMeasurementState,
   setFutureMeasurementInput,
+  setFutureMeasurementRoute,
 } from "./src/utils/measurementBlueprint";
 import { resolveShippingGarmentPieceCount } from "./src/utils/shippingPricing";
 
@@ -588,14 +590,125 @@ const measurementPendingInput = buildInput();
 measurementPendingInput.measurementState = {
   ...measurementPendingInput.measurementState,
   route: "medium_risk",
-  calculationStatus: "calculation_formula_pending",
+  calculationStatus: "incomplete",
 };
 const measurementPending = buildFutureOrderCandidate(measurementPendingInput);
 assert.equal(measurementPending.status, "blocked");
 assert.ok(
   measurementPending.blockers.some(
+    (blocker) => blocker.code === "MEASUREMENT_INCOMPLETE",
+  ),
+);
+assert.equal(
+  measurementPending.blockers.some(
     (blocker) => blocker.code === "MEASUREMENT_CALCULATION_PENDING",
   ),
+  false,
+);
+
+const overlappingMeasurementId = "chest_bust_circumference";
+const lowCompleteInput = buildInput();
+assert.ok(
+  lowCompleteInput.measurementState.entered.shared[overlappingMeasurementId],
+  "Completed Low candidate fixture must enter overlapping chest.",
+);
+const lowChestValue =
+  lowCompleteInput.measurementState.entered.shared[overlappingMeasurementId]!.valueCm;
+const switchedMidState = reconcileFutureMeasurementState({
+  state: setFutureMeasurementRoute(lowCompleteInput.measurementState, "medium_risk"),
+  plan: planMeasurementRequirements({
+    route: "medium_risk",
+    garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+    physicalGarments: getMeasurementPhysicalGarments({
+      garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+      fabricGarments: lowCompleteInput.fabricAllocationState.fabricAllocations.flatMap(
+        (allocation) => allocation.garmentAssignments,
+      ),
+    }),
+    garmentScopedCustomDetails: lowCompleteInput.customDetailsReconciliation.state,
+  }),
+});
+const midPlan = planMeasurementRequirements({
+  route: "medium_risk",
+  garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+  physicalGarments: getMeasurementPhysicalGarments({
+    garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+    fabricGarments: lowCompleteInput.fabricAllocationState.fabricAllocations.flatMap(
+      (allocation) => allocation.garmentAssignments,
+    ),
+  }),
+  garmentScopedCustomDetails: lowCompleteInput.customDetailsReconciliation.state,
+});
+const untouchedMidCandidate = buildFutureOrderCandidate({
+  ...lowCompleteInput,
+  measurementPlan: midPlan,
+  measurementState: switchedMidState,
+});
+assert.equal(untouchedMidCandidate.candidate.measurements.route, "medium_risk");
+assert.equal(
+  untouchedMidCandidate.candidate.measurements.entered.shared[overlappingMeasurementId],
+  undefined,
+);
+assert.equal(
+  isFutureMeasurementEnteredBagEmpty(
+    untouchedMidCandidate.candidate.measurements.enteredByRoute?.low_risk,
+  ),
+  true,
+);
+const midChestRequirement = midPlan.requirements.find(
+  (requirement) =>
+    requirement.directInput && requirement.measurementId === overlappingMeasurementId,
+)!;
+const midEnteredState = reconcileFutureMeasurementState({
+  state: setFutureMeasurementInput({
+    state: switchedMidState,
+    requirement: midChestRequirement,
+    displayValue: 19,
+  }),
+  plan: midPlan,
+});
+const midEnteredCandidate = buildFutureOrderCandidate({
+  ...lowCompleteInput,
+  measurementPlan: midPlan,
+  measurementState: midEnteredState,
+});
+assert.equal(midEnteredCandidate.candidate.measurements.route, "medium_risk");
+assert.ok(midEnteredCandidate.candidate.measurements.entered.shared[overlappingMeasurementId]);
+assert.notEqual(
+  midEnteredCandidate.candidate.measurements.entered.shared[overlappingMeasurementId]?.valueCm,
+  lowChestValue,
+);
+assert.equal(
+  midEnteredCandidate.candidate.measurements.enteredByRoute?.low_risk.shared[overlappingMeasurementId],
+  undefined,
+);
+const restoredLowPlan = planMeasurementRequirements({
+  route: "low_risk",
+  garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+  physicalGarments: getMeasurementPhysicalGarments({
+    garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+    fabricGarments: lowCompleteInput.fabricAllocationState.fabricAllocations.flatMap(
+      (allocation) => allocation.garmentAssignments,
+    ),
+  }),
+  garmentScopedCustomDetails: lowCompleteInput.customDetailsReconciliation.state,
+});
+const restoredLowCandidate = buildFutureOrderCandidate({
+  ...lowCompleteInput,
+  measurementPlan: restoredLowPlan,
+  measurementState: reconcileFutureMeasurementState({
+    state: setFutureMeasurementRoute(midEnteredState, "low_risk"),
+    plan: restoredLowPlan,
+  }),
+});
+assert.equal(restoredLowCandidate.candidate.measurements.route, "low_risk");
+assert.equal(
+  restoredLowCandidate.candidate.measurements.entered.shared[overlappingMeasurementId]?.valueCm,
+  lowChestValue,
+);
+assert.equal(
+  restoredLowCandidate.candidate.measurements.enteredByRoute?.medium_risk.shared[overlappingMeasurementId],
+  undefined,
 );
 
 assert.equal(candidate.shipping.state.customerInformation.fullName, "Ada Lovelace");
@@ -779,5 +892,136 @@ assert.doesNotMatch(
   "An incomplete journey must not dereference a missing order candidate",
 );
 assert.match(studioSource, /futureOrderCandidateResult\.candidate\?\.pricing/);
+
+const midCandidatePlan = planMeasurementRequirements({
+  route: "medium_risk",
+  garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+  physicalGarments: getMeasurementPhysicalGarments({
+    garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
+    fabricGarments: lowCompleteInput.fabricAllocationState.fabricAllocations.flatMap(
+      (allocation) => allocation.garmentAssignments,
+    ),
+  }),
+  garmentScopedCustomDetails: lowCompleteInput.customDetailsReconciliation.state,
+});
+let midCompleteState = setFutureMeasurementRoute(
+  createEmptyFutureMeasurementState("medium_risk", "cm"),
+  "medium_risk",
+);
+for (const requirement of midCandidatePlan.requirements.filter((item) => item.directInput)) {
+  midCompleteState = setFutureMeasurementInput({
+    state: midCompleteState,
+    requirement,
+    displayValue: requirement.measurementId === "total_height" ? 180 : 90,
+  });
+}
+midCompleteState = reconcileFutureMeasurementState({
+  state: midCompleteState,
+  plan: midCandidatePlan,
+});
+const midCompleteCandidate = buildFutureOrderCandidate({
+  ...lowCompleteInput,
+  measurementPlan: midCandidatePlan,
+  measurementState: midCompleteState,
+});
+assert.equal(midCompleteCandidate.candidate.measurements.route, "medium_risk");
+assert.equal(
+  midCompleteCandidate.candidate.measurements.entered.shared.chest_bust_circumference?.provenance,
+  "customer_entered",
+);
+assert.equal(
+  midCompleteCandidate.candidate.measurements.derived.byGarmentKey[
+    midCandidatePlan.requirements.find(
+      (requirement) => requirement.measurementId === "head_circumference",
+    )!.garmentKey
+  ]?.head_circumference?.provenance,
+  "calculated_average_factor",
+);
+assert.equal(
+  midCompleteCandidate.candidate.measurements.derived.byGarmentKey[
+    midCandidatePlan.requirements.find(
+      (requirement) => requirement.measurementId === "head_circumference",
+    )!.garmentKey
+  ]?.head_circumference?.calculation?.profileId,
+  "A",
+);
+assert.equal(
+  midCompleteCandidate.candidate.measurements.entered.shared.head_circumference,
+  undefined,
+);
+assert.equal(
+  midCompleteCandidate.blockers.some((blocker) => blocker.code === "MEASUREMENT_INCOMPLETE"),
+  false,
+);
+
+const dressTrouserInput = buildInput({
+  garmentTypes: ["dress", "trouser"],
+  demographic: "female",
+});
+const dressTrouserPhysicalGarments = getMeasurementPhysicalGarments({
+  garmentTypeSelection: dressTrouserInput.garmentTypeSelection,
+  fabricGarments: dressTrouserInput.fabricAllocationState.fabricAllocations.flatMap(
+    (allocation) => allocation.garmentAssignments,
+  ),
+});
+const buildHighRiskPlan = (physicalGarments: typeof dressTrouserPhysicalGarments) =>
+  planMeasurementRequirements({
+    route: "high_risk",
+    garmentTypeSelection: dressTrouserInput.garmentTypeSelection,
+    physicalGarments,
+    garmentScopedCustomDetails:
+      dressTrouserInput.customDetailsReconciliation.state,
+  });
+const dressFirstCandidatePlan = buildHighRiskPlan(dressTrouserPhysicalGarments);
+const trouserFirstCandidatePlan = buildHighRiskPlan([
+  ...dressTrouserPhysicalGarments,
+].reverse());
+const completeHighRiskPlan = (
+  plan: ReturnType<typeof planMeasurementRequirements>,
+) => {
+  let state = createEmptyFutureMeasurementState("high_risk", "cm");
+  plan.requirements
+    .filter((requirement) => requirement.directInput)
+    .forEach((requirement) => {
+      state = setFutureMeasurementInput({
+        state,
+        requirement,
+        displayValue: requirement.measurementId === "total_height" ? 180 : 90,
+      });
+    });
+  return reconcileFutureMeasurementState({ state, plan });
+};
+const dressFirstCandidate = buildFutureOrderCandidate({
+  ...dressTrouserInput,
+  measurementPlan: dressFirstCandidatePlan,
+  measurementState: completeHighRiskPlan(dressFirstCandidatePlan),
+});
+const trouserFirstCandidate = buildFutureOrderCandidate({
+  ...dressTrouserInput,
+  measurementPlan: trouserFirstCandidatePlan,
+  measurementState: completeHighRiskPlan(trouserFirstCandidatePlan),
+});
+assert.ok(dressFirstCandidate.candidate);
+assert.ok(trouserFirstCandidate.candidate);
+assert.deepEqual(
+  dressFirstCandidate.candidate.measurements,
+  trouserFirstCandidate.candidate.measurements,
+  "FutureOrderCandidate measurement semantics must not depend on Dress/Trouser order.",
+);
+assert.equal(
+  dressFirstCandidate.candidate.measurements.derived.byGarmentKey["base:dress"]
+    ?.hip_circumference,
+  undefined,
+);
+assert.equal(
+  dressFirstCandidate.candidate.measurements.derived.byGarmentKey[
+    "base:trouser"
+  ]?.hip_circumference?.calculation?.averageFactor,
+  0.584591437335114,
+);
+assert.equal(
+  midCompleteCandidate.blockers.some((blocker) => blocker.code === "MEASUREMENT_CALCULATION_PENDING"),
+  false,
+);
 
 console.log("PASS: future order candidate contract and security boundary");
