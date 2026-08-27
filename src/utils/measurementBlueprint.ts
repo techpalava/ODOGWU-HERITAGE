@@ -10,7 +10,12 @@ import {
   type MeasurementProfileField,
   type MeasurementProfileId,
 } from "../config/MeasurementBlueprintConfig";
+import {
+  calculateMeasurementFromAverageFactor,
+  isManualValueOutsideExpectedRange,
+} from "./measurementFactorEngine";
 import type {
+  AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
   CanonicalPhysicalGarmentType,
   FabricGarmentAssignment,
@@ -50,7 +55,7 @@ export const MEASUREMENT_RISK_ROUTE_ORDER = [
 ] as const satisfies ReadonlyArray<MeasurementRiskRoute>;
 
 export const MEASUREMENT_RISK_ROUTE_LABELS: Record<MeasurementRiskRoute, string> = {
-  low_risk: "Low / No Risk",
+  low_risk: "Low Risk",
   medium_risk: "Mid Risk",
   high_risk: "High Risk",
 };
@@ -66,6 +71,10 @@ const PATH_INPUT_BLOCKING_CODES = new Set<FutureMeasurementDiagnostic["code"]>([
   "invalid_measurement_id",
   "invalid_route",
   "invalid_unit",
+]);
+
+const NON_BLOCKING_DIAGNOSTIC_CODES = new Set<FutureMeasurementDiagnostic["code"]>([
+  "measurement_range_recheck",
 ]);
 
 export const isSelectedMeasurementRiskRoute = (
@@ -100,14 +109,39 @@ const stableHash = (value: unknown): string => {
   return (hash >>> 0).toString(16).padStart(8, "0");
 };
 
-const getConstructionOptionIds = (
+const getBaseConstructionOptionIds = (
   selection: GarmentTypeStepSelection,
   garmentType: FabricGarmentType,
 ): string[] => {
-  const resolution = selection.constructionByGarment[garmentType as CanonicalPhysicalGarmentType];
+  const resolution = selection.constructionByGarment[
+    garmentType as CanonicalPhysicalGarmentType
+  ];
   return resolution?.status === "resolved"
     ? resolution.components.map((component) => component.optionId)
     : [];
+};
+
+const getOccurrenceConstructionOptionIds = ({
+  garment,
+  garmentTypeSelection,
+  additionalGarmentConstructions,
+}: {
+  garment: MeasurementPhysicalGarment;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+}): string[] | null => {
+  if (garment.garmentKey.startsWith("additional:")) {
+    const additionalResolution =
+      additionalGarmentConstructions?.byGarmentKey[garment.garmentKey];
+    if (!additionalResolution) return null;
+    return additionalResolution.status === "resolved"
+      ? additionalResolution.components.map((component) => component.optionId)
+      : null;
+  }
+  return getBaseConstructionOptionIds(
+    garmentTypeSelection,
+    garment.garmentType,
+  );
 };
 
 export interface MeasurementPhysicalGarment {
@@ -160,9 +194,11 @@ export const getMeasurementPhysicalGarments = ({
 export const resolveMeasurementProfile = ({
   garment,
   garmentTypeSelection,
+  additionalGarmentConstructions,
 }: {
   garment: MeasurementPhysicalGarment;
   garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
 }): MeasurementProfileResolution => {
   const { garmentKey, garmentType } = garment;
   if (["kaftan", "full_length_gown", "agbada", "other"].includes(garmentType)) {
@@ -181,10 +217,14 @@ export const resolveMeasurementProfile = ({
   if (eligible.length === 0) {
     return { status: "unresolved", garmentKey, garmentType, code: "demographic_ineligible" };
   }
-  const constructionOptionIds = getConstructionOptionIds(
+  const constructionOptionIds = getOccurrenceConstructionOptionIds({
+    garment,
     garmentTypeSelection,
-    garmentType,
-  );
+    additionalGarmentConstructions,
+  });
+  if (!constructionOptionIds) {
+    return { status: "unresolved", garmentKey, garmentType, code: "construction_unresolved" };
+  }
   if (eligible.length === 1 && eligible[0].constructionOptionIds.length === 0) {
     return {
       status: "resolved",
@@ -213,18 +253,28 @@ export const resolveMeasurementProfile = ({
     : { status: "unresolved", garmentKey, garmentType, code: "construction_unresolved" };
 };
 
+export type MeasurementInputSource =
+  | "route_marker"
+  | "calculated_average_factor"
+  | "optional_manual";
+
 export interface PlannedMeasurementRequirement {
   key: string;
+  manualValueKey: string;
   measurementId: CanonicalMeasurementId;
   definition: MeasurementDefinition;
   scope: "shared" | "garment";
-  garmentKey?: string;
-  garmentType?: FabricGarmentType;
+  garmentKey: string;
+  garmentType: FabricGarmentType;
   profileId: MeasurementProfileId;
   sourceRow: number;
   directInput: boolean;
-  inputSource: "route_marker" | "factorless_manual";
+  section: "required" | "optional";
+  inputSource: MeasurementInputSource;
   averageFactor: number | null;
+  minFactor: number | null;
+  maxFactor: number | null;
+  stdFactor: number | null;
 }
 
 export interface MeasurementRequirementPlan {
@@ -234,8 +284,53 @@ export interface MeasurementRequirementPlan {
   requirements: PlannedMeasurementRequirement[];
   diagnostics: FutureMeasurementDiagnostic[];
   inputFingerprint: string;
-  canCalculate: false;
+  canCalculate: boolean;
 }
+
+export const projectMeasurementRequirementsForPresentation = ({
+  requirements,
+  state,
+}: {
+  requirements: readonly PlannedMeasurementRequirement[];
+  state?: FutureMeasurementStateV1;
+}): PlannedMeasurementRequirement[] => {
+  const ordered = [...requirements].sort((left, right) =>
+    left.key.localeCompare(right.key),
+  );
+  const sharedManual = new Map<string, PlannedMeasurementRequirement>();
+  const projected: PlannedMeasurementRequirement[] = [];
+
+  ordered.forEach((requirement) => {
+    if (
+      requirement.scope === "shared" &&
+      requirement.inputSource !== "calculated_average_factor"
+    ) {
+      const current = sharedManual.get(requirement.manualValueKey);
+      if (!current || (requirement.directInput && !current.directInput)) {
+        sharedManual.set(requirement.manualValueKey, requirement);
+      }
+      return;
+    }
+    if (
+      requirement.inputSource === "calculated_average_factor" &&
+      requirement.scope === "shared" &&
+      Boolean(
+        state?.entered.shared[requirement.measurementId] &&
+          Number.isFinite(
+            state.entered.shared[requirement.measurementId].valueCm,
+          ) &&
+          state.entered.shared[requirement.measurementId].valueCm > 0,
+      )
+    ) {
+      return;
+    }
+    projected.push(requirement);
+  });
+
+  return [...sharedManual.values(), ...projected].sort((left, right) =>
+    left.key.localeCompare(right.key),
+  );
+};
 
 const getSelectedOptionIds = (
   state: GarmentScopedCustomDetailsStateV1 | undefined,
@@ -282,11 +377,13 @@ export const planMeasurementRequirements = ({
   garmentTypeSelection,
   physicalGarments,
   garmentScopedCustomDetails,
+  additionalGarmentConstructions,
 }: {
   route: SelectedMeasurementRiskRoute;
   garmentTypeSelection: GarmentTypeStepSelection;
   physicalGarments: readonly MeasurementPhysicalGarment[];
   garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
 }): MeasurementRequirementPlan => {
   if (!isSelectedMeasurementRiskRoute(route)) {
     return {
@@ -299,11 +396,17 @@ export const planMeasurementRequirements = ({
       canCalculate: false,
     };
   }
-  const profiles = physicalGarments.map((garment) =>
-    resolveMeasurementProfile({ garment, garmentTypeSelection }),
-  );
+  const profiles = physicalGarments
+    .map((garment) =>
+      resolveMeasurementProfile({
+        garment,
+        garmentTypeSelection,
+        additionalGarmentConstructions,
+      }),
+    )
+    .sort((left, right) => left.garmentKey.localeCompare(right.garmentKey));
   const diagnostics: FutureMeasurementDiagnostic[] = [];
-  const requirements = new Map<string, PlannedMeasurementRequirement>();
+  const requirements: PlannedMeasurementRequirement[] = [];
 
   profiles.forEach((resolution) => {
     if (resolution.status !== "resolved") {
@@ -328,8 +431,9 @@ export const planMeasurementRequirements = ({
         selectedOptionIds,
       });
       if (applicability === "exclude") return;
+      const requiredOnRoute = field.directRoutes.includes(route);
       if (applicability === "unresolved") {
-        if (field.directRoutes.includes(route) || field.directRoutes.includes("low_risk")) {
+        if (requiredOnRoute || route === "low_risk") {
           diagnostics.push({
             code: "applicability_unresolved",
             garmentKey: resolution.garmentKey,
@@ -337,61 +441,45 @@ export const planMeasurementRequirements = ({
             measurementId: field.measurementId,
             profileId: resolution.profile.id,
           });
+          return;
         }
-        return;
       }
       const definition = DEFINITION_BY_ID.get(field.measurementId);
       if (!definition) return;
-      const routeMarkerInput = field.directRoutes.includes(route);
-      const factorlessManualInput =
-        route !== "low_risk" &&
-        field.averageFactor === null &&
-        field.directRoutes.includes("low_risk");
-      const directInput = routeMarkerInput || factorlessManualInput;
-      const key = definition.scope === "shared_body"
-        ? `shared:${field.measurementId}`
-        : `${resolution.garmentKey}:${field.measurementId}`;
-      if (!requirements.has(key)) {
-        requirements.set(key, {
-          key,
-          measurementId: field.measurementId,
-          definition,
-          scope: definition.scope === "shared_body" ? "shared" : "garment",
-          ...(definition.scope === "garment"
-            ? {
-                garmentKey: resolution.garmentKey,
-                garmentType: resolution.garmentType,
-              }
-            : {}),
-          profileId: resolution.profile.id,
-          sourceRow: field.sourceRow,
-          directInput,
-          inputSource: factorlessManualInput
-            ? "factorless_manual"
-            : "route_marker",
-          averageFactor: field.averageFactor,
-        });
-      } else if (directInput) {
-        const current = requirements.get(key)!;
-        if (!current.directInput) {
-          requirements.set(key, {
-            ...current,
-            directInput: true,
-            inputSource: factorlessManualInput
-              ? "factorless_manual"
-              : "route_marker",
-          });
-        }
-      }
-      if (!directInput && field.directRoutes.includes("low_risk")) {
-        diagnostics.push({
-          code: "calculation_configuration_pending",
-          garmentKey: resolution.garmentKey,
-          garmentType: resolution.garmentType,
-          measurementId: field.measurementId,
-          profileId: resolution.profile.id,
-        });
-      }
+      const inputSource: MeasurementInputSource = requiredOnRoute
+        ? "route_marker"
+        : field.averageFactor === null
+          ? "optional_manual"
+          : "calculated_average_factor";
+      const directInput = requiredOnRoute;
+      const scope = definition.scope === "shared_body" ? "shared" : "garment";
+      const key = [
+        route,
+        resolution.garmentKey,
+        resolution.profile.id,
+        field.measurementId,
+      ].join(":");
+      const nextRequirement: PlannedMeasurementRequirement = {
+        key,
+        manualValueKey: scope === "shared"
+          ? `shared:${field.measurementId}`
+          : `${resolution.garmentKey}:${field.measurementId}`,
+        measurementId: field.measurementId,
+        definition,
+        scope,
+        garmentKey: resolution.garmentKey,
+        garmentType: resolution.garmentType,
+        profileId: resolution.profile.id,
+        sourceRow: field.sourceRow,
+        directInput,
+        section: directInput ? "required" : "optional",
+        inputSource,
+        averageFactor: field.averageFactor,
+        minFactor: field.minFactor,
+        maxFactor: field.maxFactor,
+        stdFactor: field.stdFactor,
+      };
+      requirements.push(nextRequirement);
     });
     const requiresFutureCalculation =
       route !== "low_risk" &&
@@ -416,8 +504,16 @@ export const planMeasurementRequirements = ({
     }
   });
 
-  const orderedRequirements = [...requirements.values()].sort((left, right) =>
+  const orderedRequirements = [...requirements].sort((left, right) =>
     left.key.localeCompare(right.key),
+  );
+  diagnostics.sort((left, right) =>
+    [left.code, left.garmentKey || "", left.profileId || "", left.measurementId || ""]
+      .join(":")
+      .localeCompare(
+        [right.code, right.garmentKey || "", right.profileId || "", right.measurementId || ""]
+          .join(":"),
+      ),
   );
   const fingerprintInput = {
     blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
@@ -431,8 +527,12 @@ export const planMeasurementRequirements = ({
     requirements: orderedRequirements.map((requirement) => [
       requirement.key,
       requirement.directInput,
+      requirement.section,
       requirement.inputSource,
       requirement.averageFactor,
+      requirement.minFactor,
+      requirement.maxFactor,
+      requirement.stdFactor,
     ]),
     diagnostics: diagnostics.map((diagnostic) => [
       diagnostic.code,
@@ -447,7 +547,7 @@ export const planMeasurementRequirements = ({
     requirements: orderedRequirements,
     diagnostics,
     inputFingerprint: `measurement_${stableHash(fingerprintInput)}`,
-    canCalculate: false,
+    canCalculate: route === "medium_risk" || route === "high_risk",
   };
 };
 
@@ -656,12 +756,7 @@ export const normalizeFutureMeasurementState = (
   } else if (route) {
     invalidInputKeysByRoute[route] = normalizeKeys(value.invalidInputKeys);
   }
-  const derived = value.formulaVersion && value.formulaVersion === MEASUREMENT_FORMULA_VERSION
-    ? {
-        shared: normalizeValueMap(value.derived.shared, "system_derived"),
-        byGarmentKey: normalizeScopedValueMap(value.derived.byGarmentKey, "system_derived"),
-      }
-    : { shared: {}, byGarmentKey: {} };
+  const derived = { shared: {}, byGarmentKey: {} };
   return {
     schemaVersion: 1,
     route,
@@ -730,6 +825,7 @@ export const setFutureMeasurementInput = ({
   displayValue: number | null;
 }): FutureMeasurementStateV1 => {
   if (!isSelectedMeasurementRiskRoute(state.route)) return state;
+  if (requirement.inputSource === "calculated_average_factor") return state;
   const enteredByRoute = ensureEnteredByRoute(state);
   const entered = cloneFutureMeasurementEnteredBag(enteredByRoute[state.route]);
   const target = requirement.scope === "shared"
@@ -790,6 +886,85 @@ export const setFutureMeasurementRoute = (
   };
 };
 
+export const getEnteredMeasurementValue = (
+  entered: FutureMeasurementEnteredBagV1,
+  requirement: PlannedMeasurementRequirement,
+): FutureMeasurementValueV1 | undefined =>
+  requirement.scope === "shared"
+    ? entered.shared[requirement.measurementId]
+    : entered.byGarmentKey[requirement.garmentKey || ""]?.[requirement.measurementId];
+
+const isPositiveMeasurementValue = (
+  value: FutureMeasurementValueV1 | undefined,
+): value is FutureMeasurementValueV1 =>
+  Boolean(value && Number.isFinite(value.valueCm) && value.valueCm > 0);
+
+const getRequirementFactors = (
+  requirement: PlannedMeasurementRequirement,
+) =>
+  requirement.averageFactor !== null &&
+  requirement.minFactor !== null &&
+  requirement.maxFactor !== null &&
+  requirement.stdFactor !== null
+    ? {
+        averageFactor: requirement.averageFactor,
+        minFactor: requirement.minFactor,
+        maxFactor: requirement.maxFactor,
+        stdFactor: requirement.stdFactor,
+      }
+    : null;
+
+export const deriveActiveCalculatedMeasurements = ({
+  route,
+  entered,
+  plan,
+  requiredComplete,
+}: {
+  route: MeasurementRiskRoute;
+  entered: FutureMeasurementEnteredBagV1;
+  plan: MeasurementRequirementPlan;
+  requiredComplete: boolean;
+}): FutureMeasurementStateV1["derived"] => {
+  const derived: FutureMeasurementStateV1["derived"] = {
+    shared: {},
+    byGarmentKey: {},
+  };
+  if (route === "low_risk" || !requiredComplete) return derived;
+  const height = entered.shared.total_height;
+  if (!isPositiveMeasurementValue(height)) return derived;
+  plan.requirements.forEach((requirement) => {
+    if (
+      requirement.inputSource !== "calculated_average_factor" ||
+      requirement.averageFactor === null
+    ) {
+      return;
+    }
+    if (
+      requirement.scope === "shared" &&
+      isPositiveMeasurementValue(entered.shared[requirement.measurementId])
+    ) {
+      return;
+    }
+    const derivedValue: FutureMeasurementValueV1 = {
+      valueCm: calculateMeasurementFromAverageFactor(
+        height.valueCm,
+        requirement.averageFactor,
+      ),
+      provenance: "calculated_average_factor",
+      calculation: {
+        route,
+        profileId: requirement.profileId,
+        garmentKey: requirement.garmentKey,
+        measurementId: requirement.measurementId,
+        averageFactor: requirement.averageFactor,
+      },
+    };
+    (derived.byGarmentKey[requirement.garmentKey] ||= {})[requirement.measurementId] =
+      derivedValue;
+  });
+  return derived;
+};
+
 export const reconcileFutureMeasurementState = ({
   state,
   plan,
@@ -837,10 +1012,8 @@ export const reconcileFutureMeasurementState = ({
     });
   });
   requiredDirect.forEach((requirement) => {
-    const value = requirement.scope === "shared"
-      ? entered.shared[requirement.measurementId]
-      : entered.byGarmentKey[requirement.garmentKey || ""]?.[requirement.measurementId];
-    if (!value || !Number.isFinite(value.valueCm) || value.valueCm <= 0) {
+    const value = getEnteredMeasurementValue(entered, requirement);
+    if (!isPositiveMeasurementValue(value)) {
       diagnostics.push({
         code: "required_measurement_missing",
         garmentKey: requirement.garmentKey,
@@ -848,42 +1021,87 @@ export const reconcileFutureMeasurementState = ({
         measurementId: requirement.measurementId,
         profileId: requirement.profileId,
       });
+      return;
+    }
+    const heightValue = entered.shared.total_height?.valueCm;
+    if (
+      heightValue &&
+      Number.isFinite(heightValue) &&
+      heightValue > 0 &&
+      isManualValueOutsideExpectedRange({
+        value: value.valueCm,
+        heightValue,
+        factors: getRequirementFactors(requirement),
+      })
+    ) {
+      diagnostics.push({
+        code: "measurement_range_recheck",
+        garmentKey: requirement.garmentKey,
+        garmentType: requirement.garmentType,
+        measurementId: requirement.measurementId,
+        profileId: requirement.profileId,
+      });
     }
   });
-  const configurationPending = diagnostics.some(
-    (diagnostic) => diagnostic.code === "calculation_configuration_pending",
+  plan.requirements
+    .filter((requirement) => requirement.inputSource === "calculated_average_factor")
+    .forEach((requirement) => {
+      const hasCompatibleManualRequirement = plan.requirements.some(
+        (candidate) =>
+          candidate.manualValueKey === requirement.manualValueKey &&
+          candidate.inputSource !== "calculated_average_factor",
+      );
+      if (hasCompatibleManualRequirement) return;
+      if (requirement.scope === "shared") {
+        delete entered.shared[requirement.measurementId];
+        return;
+      }
+      const garmentKey = requirement.garmentKey || "";
+      if (entered.byGarmentKey[garmentKey]) {
+        delete entered.byGarmentKey[garmentKey][requirement.measurementId];
+      }
+    });
+  const blockingDiagnostics = diagnostics.filter(
+    (diagnostic) => !NON_BLOCKING_DIAGNOSTIC_CODES.has(diagnostic.code),
   );
-  const profileMappingPending = diagnostics.some(
+  const profileMappingPending = blockingDiagnostics.some(
     (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
   );
-  const invalid = diagnostics.some(
+  const invalid = blockingDiagnostics.some(
     (diagnostic) =>
       diagnostic.code === "invalid_measurement_value" ||
       diagnostic.code === "invalid_state" ||
       diagnostic.code === "invalid_measurement_id",
   );
-  const complete = diagnostics.length === 0;
+  const requiredValuesComplete = requiredDirect.every((requirement) =>
+    isPositiveMeasurementValue(getEnteredMeasurementValue(entered, requirement)),
+  );
+  const complete = blockingDiagnostics.length === 0;
+  const derived = deriveActiveCalculatedMeasurements({
+    route,
+    entered,
+    plan,
+    requiredComplete: requiredValuesComplete,
+  });
   return {
     ...state,
     route,
     entered,
-    enteredByRoute,
+    enteredByRoute: {
+      ...enteredByRoute,
+      [route]: cloneFutureMeasurementEnteredBag(entered),
+    },
     blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
     formulaVersion: MEASUREMENT_FORMULA_VERSION,
     inputFingerprint: plan.inputFingerprint,
-    derived:
-      state.inputFingerprint === plan.inputFingerprint
-        ? state.derived
-        : { shared: {}, byGarmentKey: {} },
+    derived,
     calculationStatus: invalid
       ? "invalid"
       : profileMappingPending
         ? "profile_mapping_pending"
-        : configurationPending
-          ? "calculation_formula_pending"
-          : complete
-            ? "complete"
-            : "incomplete",
+        : complete
+          ? "complete"
+          : "incomplete",
     diagnostics,
     invalidInputKeys,
     invalidInputKeysByRoute,
@@ -914,7 +1132,10 @@ export const isFutureMeasurementStageComplete = (
 export const isFutureSummaryUnlockedByMeasurements = (
   state: FutureMeasurementStateV1 | null | undefined,
 ): boolean =>
-  state?.route === "low_risk" && state.calculationStatus === "complete";
+  Boolean(
+    isSelectedMeasurementRiskRoute(state?.route) &&
+      state?.calculationStatus === "complete",
+  );
 
 const omitUnassignedEntered = (
   state: FutureMeasurementStateV1,
@@ -927,9 +1148,13 @@ const omitUnassignedEntered = (
 const cloneEnteredMap = (
   value: Record<string, FutureMeasurementValueV1>,
   allowedIds: ReadonlySet<string>,
+  provenance?: FutureMeasurementValueV1["provenance"],
 ): Record<string, FutureMeasurementValueV1> =>
   Object.fromEntries(
-    Object.entries(value).filter(([measurementId]) => allowedIds.has(measurementId)),
+    Object.entries(value).filter(([measurementId, entry]) =>
+      allowedIds.has(measurementId) &&
+      (!provenance || entry.provenance === provenance),
+    ),
   );
 
 export const projectActiveFutureMeasurementState = ({
@@ -952,12 +1177,19 @@ export const projectActiveFutureMeasurementState = ({
   const activeEntered = getActiveFutureMeasurementEntered(state);
   const sharedIds = new Set(
     plan.requirements
-      .filter((requirement) => requirement.directInput && requirement.scope === "shared")
+      .filter((requirement) =>
+        requirement.scope === "shared" &&
+        requirement.inputSource !== "calculated_average_factor",
+      )
       .map((requirement) => requirement.measurementId),
   );
   const garmentIds = new Map<string, Set<string>>();
   plan.requirements
-    .filter((requirement) => requirement.directInput && requirement.scope === "garment" && requirement.garmentKey)
+    .filter((requirement) =>
+      requirement.scope === "garment" &&
+      requirement.garmentKey &&
+      requirement.inputSource !== "calculated_average_factor",
+    )
     .forEach((requirement) => {
       const garmentKey = requirement.garmentKey!;
       const ids = garmentIds.get(garmentKey) || new Set<string>();
@@ -965,25 +1197,64 @@ export const projectActiveFutureMeasurementState = ({
       garmentIds.set(garmentKey, ids);
     });
   const entered = {
-    shared: cloneEnteredMap(activeEntered.shared, sharedIds),
+    shared: cloneEnteredMap(activeEntered.shared, sharedIds, "customer_entered"),
     byGarmentKey: Object.fromEntries(
       Object.entries(activeEntered.byGarmentKey).flatMap(([garmentKey, values]) => {
         const allowed = garmentIds.get(garmentKey);
         if (!allowed) return [];
-        const next = cloneEnteredMap(values, allowed);
+        const next = cloneEnteredMap(values, allowed, "customer_entered");
         return Object.keys(next).length ? [[garmentKey, next]] : [];
       }),
     ),
   };
   const enteredByRoute = createEmptyEnteredByRoute();
   enteredByRoute[route] = cloneFutureMeasurementEnteredBag(entered);
+  const calculatedGarmentIds = new Map<string, Set<string>>();
+  plan.requirements
+    .filter((requirement) =>
+      requirement.inputSource === "calculated_average_factor",
+    )
+    .forEach((requirement) => {
+      const garmentKey = requirement.garmentKey;
+      const ids = calculatedGarmentIds.get(garmentKey) || new Set<string>();
+      ids.add(requirement.measurementId);
+      calculatedGarmentIds.set(garmentKey, ids);
+    });
+  const derived = {
+    shared: {},
+    byGarmentKey: Object.fromEntries(
+      Object.entries(state.derived.byGarmentKey).flatMap(([garmentKey, values]) => {
+        const allowed = calculatedGarmentIds.get(garmentKey);
+        if (!allowed) return [];
+        const next = cloneEnteredMap(values, allowed, "calculated_average_factor");
+        return Object.keys(next).length ? [[garmentKey, next]] : [];
+      }),
+    ),
+  };
   return {
     ...omitUnassignedEntered(state),
     route,
     entered,
     enteredByRoute,
-    derived: { shared: {}, byGarmentKey: {} },
+    derived,
   };
+};
+
+export const getResolvedMeasurementValue = (
+  state: FutureMeasurementStateV1,
+  requirement: PlannedMeasurementRequirement,
+): FutureMeasurementValueV1 | undefined => {
+  const entered = getEnteredMeasurementValue(
+    getActiveFutureMeasurementEntered(state),
+    requirement,
+  );
+  if (isPositiveMeasurementValue(entered)) return entered;
+  if (requirement.inputSource === "calculated_average_factor") {
+    return state.derived.byGarmentKey[requirement.garmentKey]?.[
+      requirement.measurementId
+    ];
+  }
+  return entered;
 };
 
 export const getMeasurementDefinition = (

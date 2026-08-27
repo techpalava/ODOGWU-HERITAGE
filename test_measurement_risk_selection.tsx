@@ -147,10 +147,10 @@ assert.deepEqual(
 );
 assert.deepEqual(
   optionLabels.map((node) => MEASUREMENT_RISK_ROUTE_LABELS[node.props["data-measurement-risk-option"] as MeasurementRiskRoute]),
-  ["Low / No Risk", "Mid Risk", "High Risk"],
+  ["Low Risk", "Mid Risk", "High Risk"],
 );
 const pageText = collectText(renderer.root);
-assert.match(pageText, /Low \/ No Risk/);
+assert.match(pageText, /Low Risk/);
 assert.match(pageText, /Mid Risk/);
 assert.match(pageText, /High Risk/);
 assert.equal(radios.filter((radio) => radio.props.checked).length, 0);
@@ -176,8 +176,8 @@ assert.equal(
   1,
 );
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" }).length, 1);
-assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "medium_risk" }).length, 0);
-assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "high_risk" }).length, 0);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "required" }).length, 1);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "optional" }).length, 0);
 
 selectRoute(renderer, "medium_risk");
 assert.equal(
@@ -189,8 +189,10 @@ assert.equal(
   false,
 );
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "medium_risk" }).length, 1);
-assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" }).length, 0);
-assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "high_risk" }).length, 0);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "required" }).length, 1);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "optional" }).length, 1);
+assert.match(collectText(renderer.root), /Complete the required measurements to calculate this value/);
+assert.match(collectText(renderer.root), /Calculated from height/);
 
 selectRoute(renderer, "high_risk");
 assert.equal(
@@ -202,6 +204,8 @@ assert.equal(
   false,
 );
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "high_risk" }).length, 1);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "required" }).length, 1);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "optional" }).length, 1);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" }).length, 0);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "medium_risk" }).length, 0);
 
@@ -241,8 +245,8 @@ assert.equal(
 
 const midFilled = fillDirectRequirements("medium_risk", lowFilled.state);
 assert.equal(isFutureMeasurementSelectedPathInputComplete(midFilled.state), true);
-assert.equal(isFutureMeasurementStageComplete(midFilled.state), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(midFilled.state), false);
+assert.equal(isFutureMeasurementStageComplete(midFilled.state), true);
+assert.equal(isFutureSummaryUnlockedByMeasurements(midFilled.state), true);
 
 const highIgnoringMid = reconcileFutureMeasurementState({
   state: setFutureMeasurementRoute(midFilled.state, "high_risk"),
@@ -262,7 +266,8 @@ assert.equal(
 
 const highFilled = fillDirectRequirements("high_risk");
 assert.equal(isFutureMeasurementSelectedPathInputComplete(highFilled.state), true);
-assert.equal(isFutureMeasurementStageComplete(highFilled.state), false);
+assert.equal(isFutureMeasurementStageComplete(highFilled.state), true);
+assert.equal(isFutureSummaryUnlockedByMeasurements(highFilled.state), true);
 
 const incompleteActive = reconcileFutureMeasurementState({
   state: createEmptyFutureMeasurementState("low_risk"),

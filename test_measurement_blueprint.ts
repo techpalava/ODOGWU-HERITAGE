@@ -31,6 +31,7 @@ import {
   normalizeFutureMeasurementState,
   planMeasurementRequirements,
   projectActiveFutureMeasurementState,
+  projectMeasurementRequirementsForPresentation,
   reconcileFutureMeasurementState,
   resolveMeasurementProfile,
   setFutureMeasurementInput,
@@ -108,7 +109,7 @@ for (const profile of MEASUREMENT_PROFILES) {
         directRoutes.includes("high_risk"),
     ),
     true,
-    `${profile.id} has the canonical height basis for pending routes`,
+    `${profile.id} has the canonical height basis for Mid and High Risk routes`,
   );
 }
 
@@ -120,12 +121,15 @@ const markerDigest = createHash("sha256")
       field.measurementId,
       field.directRoutes,
       field.averageFactor,
+      field.minFactor,
+      field.maxFactor,
+      field.stdFactor,
       field.conditionalRule ?? null,
       field.alternativeGroup ?? null,
     ]),
   ])))
   .digest("hex");
-assert.equal(markerDigest, "d7446e38d46e2d41be65c5cf0aa8ec3dd30cd547fa6b5b553c6f3784f76fbf7c");
+assert.equal(markerDigest, "a0fd5d7d3920d6402fbbbb5618b5d8947e3839d3a436130f6e76810e5c69be4d");
 
 assert.equal(
   MEASUREMENT_PROFILES.find(({ id }) => id === "A")?.fields.find(
@@ -209,8 +213,15 @@ const lowPlan = planMeasurementRequirements({
 });
 assert.equal(
   lowPlan.requirements.filter(({ measurementId }) => measurementId === "total_height").length,
+  3,
+  "Every garment profile keeps its own Height requirement instance.",
+);
+assert.equal(
+  projectMeasurementRequirementsForPresentation({
+    requirements: lowPlan.requirements,
+  }).filter(({ measurementId }) => measurementId === "total_height").length,
   1,
-  "Shared body measurements must be deduplicated for one wearer.",
+  "Compatible shared manual Height instances render as one customer input.",
 );
 assert.equal(
   lowPlan.requirements.filter(({ measurementId }) =>
@@ -232,13 +243,13 @@ for (const route of ["medium_risk", "high_risk"] as MeasurementRiskRoute[]) {
   });
   assert.equal(
     plan.diagnostics.some(({ code }) => code === "calculation_configuration_pending"),
-    true,
+    false,
   );
-  assert.equal(plan.canCalculate, false);
+  assert.equal(plan.canCalculate, true);
   assert.equal(
     plan.requirements.some((requirement) => requirement.measurementId === "total_height" && requirement.directInput),
     true,
-    "Height remains an explicit future-calculation basis.",
+    "Height remains an explicit calculation basis.",
   );
 }
 
@@ -264,8 +275,11 @@ assert.deepEqual(
     inputSource: factorlessManualPlan.requirements.find(
       ({ measurementId }) => measurementId === "dress_length_long",
     )?.inputSource,
+    section: factorlessManualPlan.requirements.find(
+      ({ measurementId }) => measurementId === "dress_length_long",
+    )?.section,
   },
-  { directInput: true, inputSource: "factorless_manual" },
+  { directInput: false, inputSource: "optional_manual", section: "optional" },
 );
 
 let state = createEmptyFutureMeasurementState("low_risk", "inch");
@@ -304,8 +318,15 @@ for (const requirement of mediumPlan.requirements.filter(({ directInput }) => di
   mediumState = setFutureMeasurementInput({ state: mediumState, requirement, displayValue: 10 });
 }
 mediumState = reconcileFutureMeasurementState({ state: mediumState, plan: mediumPlan });
-assert.equal(mediumState.calculationStatus, "calculation_formula_pending");
-assert.equal(Object.keys(mediumState.derived.shared).length, 0);
+assert.equal(mediumState.calculationStatus, "complete");
+assert.equal(
+  Object.values(mediumState.derived.byGarmentKey).some((values) =>
+    Object.values(values).some(
+      (value) => value.provenance === "calculated_average_factor",
+    ),
+  ),
+  true,
+);
 
 const highPlan = planMeasurementRequirements({
   route: "high_risk",
@@ -317,7 +338,7 @@ for (const requirement of highPlan.requirements.filter(({ directInput }) => dire
   highState = setFutureMeasurementInput({ state: highState, requirement, displayValue: 10 });
 }
 highState = reconcileFutureMeasurementState({ state: highState, plan: highPlan });
-assert.equal(highState.calculationStatus, "calculation_formula_pending");
+assert.equal(highState.calculationStatus, "complete");
 
 const unmappedPlan = planMeasurementRequirements({
   route: "low_risk",
@@ -335,7 +356,7 @@ assert.equal(
 const invalidState = setFutureMeasurementInput({
   state: createEmptyFutureMeasurementState("medium_risk"),
   requirement: factorlessManualPlan.requirements.find(
-    ({ inputSource }) => inputSource === "factorless_manual",
+    ({ inputSource }) => inputSource === "optional_manual",
   )!,
   displayValue: 0,
 });
@@ -441,11 +462,11 @@ assert.equal(
   isFutureMeasurementStageUnlocked({ schemaVersion: 1, status: "completed", inputFingerprint: "x", resultReference: { kind: "verified_private_try_on_result", assetId: "a", ownerBindingId: "u" } }),
   true,
 );
-assert.equal(MEASUREMENT_FORMULA_VERSION, null);
+assert.equal(MEASUREMENT_FORMULA_VERSION, "height-average-factor-v1");
 assert.equal(state.blueprintVersion, MEASUREMENT_BLUEPRINT_VERSION);
 
 assert.deepEqual(MEASUREMENT_RISK_ROUTE_LABELS, {
-  low_risk: "Low / No Risk",
+  low_risk: "Low Risk",
   medium_risk: "Mid Risk",
   high_risk: "High Risk",
 });
@@ -476,19 +497,24 @@ assert.equal(isFutureMeasurementSelectedPathInputComplete(state), true);
 assert.equal(isFutureMeasurementStageComplete(state), true);
 assert.equal(isFutureSummaryUnlockedByMeasurements(state), true);
 assert.equal(isFutureMeasurementSelectedPathInputComplete(mediumState), true);
-assert.equal(isFutureMeasurementStageComplete(mediumState), false);
-assert.equal(isFutureSummaryUnlockedByMeasurements(mediumState), false);
+assert.equal(isFutureMeasurementStageComplete(mediumState), true);
+assert.equal(isFutureSummaryUnlockedByMeasurements(mediumState), true);
 assert.equal(isFutureMeasurementSelectedPathInputComplete(highState), true);
-assert.equal(isFutureMeasurementStageComplete(highState), false);
+assert.equal(isFutureMeasurementStageComplete(highState), true);
+assert.equal(isFutureSummaryUnlockedByMeasurements(highState), true);
 
 const lowOnlyField = lowPlan.requirements.find(
   (requirement) =>
     requirement.directInput &&
     !mediumPlan.requirements.some(
-      (candidate) => candidate.directInput && candidate.key === requirement.key,
+      (candidate) =>
+        candidate.directInput &&
+        candidate.garmentKey === requirement.garmentKey &&
+        candidate.profileId === requirement.profileId &&
+        candidate.measurementId === requirement.measurementId,
     ),
 );
-assert.ok(lowOnlyField, "Low / No Risk must require at least one field that Mid Risk does not.");
+assert.ok(lowOnlyField, "Low Risk must require at least one field that Mid Risk does not.");
 let switchedFromLow = setFutureMeasurementRoute(state, "medium_risk");
 assert.equal(
   getActiveFutureMeasurementEntered(switchedFromLow).shared[lowOnlyField.measurementId] === undefined &&
@@ -514,6 +540,8 @@ const switchedMediumReconciled = reconcileFutureMeasurementState({
 assert.equal(
   switchedMediumReconciled.diagnostics.some((diagnostic) =>
     diagnostic.measurementId === lowOnlyField.measurementId &&
+    diagnostic.garmentKey === lowOnlyField.garmentKey &&
+    diagnostic.profileId === lowOnlyField.profileId &&
     diagnostic.code === "required_measurement_missing",
   ),
   false,

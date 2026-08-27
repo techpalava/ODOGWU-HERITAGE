@@ -1210,12 +1210,15 @@ export default function DesignStudioView({
         garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
         physicalGarments: futureMeasurementPhysicalGarments,
         garmentScopedCustomDetails: designSelections.garmentScopedCustomDetails,
+        additionalGarmentConstructions:
+          designSelections.additionalGarmentConstructions,
       }),
     [
       futureMeasurementState.route,
       effectiveJourneyGarmentTypeSelection,
       futureMeasurementPhysicalGarments,
       designSelections.garmentScopedCustomDetails,
+      designSelections.additionalGarmentConstructions,
     ],
   );
   const reconciledFutureMeasurementState = useMemo(
@@ -1626,14 +1629,15 @@ export default function DesignStudioView({
         });
       const restoredMeasurementPlan = planMeasurementRequirements({
         route: restoredMeasurementState.route,
-        garmentTypeSelection: restoredGarmentTypeSelection,
+        garmentTypeSelection: restoredFabricPlanningSelection,
         physicalGarments: getMeasurementPhysicalGarments({
-          garmentTypeSelection: restoredGarmentTypeSelection,
+          garmentTypeSelection: restoredFabricPlanningSelection,
           fabricGarments: reconciledFabricState.fabricAllocations.flatMap(
             (allocation) => allocation.garmentAssignments,
           ),
         }),
         garmentScopedCustomDetails: restoredCustomDetails.state,
+        additionalGarmentConstructions: restoredAdditionalConstructions.state,
       });
       const restoredReconciledMeasurementState =
         reconcileFutureMeasurementState({
