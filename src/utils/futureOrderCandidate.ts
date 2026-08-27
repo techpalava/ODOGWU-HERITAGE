@@ -8,13 +8,21 @@ import type {
   FutureShippingStateV1,
 } from "../types";
 import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./designSourceJourney";
-import type { FutureShippingStageResolution } from "./designStudioFutureShipping";
+import {
+  reconcileFutureShippingState,
+  type FutureShippingStageResolution,
+} from "./designStudioFutureShipping";
 import {
   projectFutureDesignStudioSummary,
   type FutureDesignStudioSummaryBlocker,
   type FutureDesignStudioSummaryInput,
 } from "./designStudioFutureSummary";
 import { projectActiveFutureMeasurementState } from "./measurementBlueprint";
+import {
+  isSupportedStep8RateVersion,
+  isStep8DestinationZone,
+} from "../config/Step8AdditionalDeliveryConfig";
+import { resolveStep8WeightTier } from "./step8AdditionalDelivery";
 
 export const FUTURE_ORDER_CANDIDATE_SCHEMA_VERSION = 1 as const;
 
@@ -169,10 +177,15 @@ export interface FutureOrderCandidateV1 {
     state: FutureShippingStateV1;
     status: FutureShippingStageResolution["status"];
     customerInformationComplete: boolean;
+    formInputsComplete: boolean;
     formComplete: boolean;
     quoteReady: boolean;
+    quoteRequired: boolean;
     destinationLabel: string | null;
     parcelWeightKg: number | null;
+    weightTier: FutureShippingStageResolution["weightTier"];
+    additionalDeliveryFeeCents: number | null;
+    rateVersion: string;
   }>;
   readonly pricing: FutureOrderCandidatePricingV1;
   readonly contentStatus: FutureOrderCandidateStatus;
@@ -328,7 +341,7 @@ const getShippingBlocker = (
     },
     quote_pending: {
       code: "DELIVERY_QUOTE_PENDING",
-      message: "The destination delivery quote is still pending.",
+      message: "Custom shipping quote required",
     },
     quote_unavailable: {
       code: "DELIVERY_QUOTE_PENDING",
@@ -339,10 +352,18 @@ const getShippingBlocker = (
       message: "Refresh the destination delivery quote.",
     },
     pickup_arrangement_pending: {
-      code: "PICKUP_FEE_PENDING",
-      message: "Eindhoven pickup arrangements are still pending.",
+      code: "SHIPPING_INCOMPLETE",
+      message: "Complete pickup contact details before reviewing the order.",
     },
   };
+  if (resolution.quoteRequired) {
+    return {
+      code: "DELIVERY_QUOTE_PENDING",
+      message: "Custom shipping quote required",
+      stage: "shipping",
+      diagnostic: { sourceStatus: resolution.status },
+    };
+  }
   const definition = definitions[resolution.status];
   return definition
     ? {
@@ -443,6 +464,7 @@ const buildPricing = ({
   }
   if (
     input.shippingResolution.status === "quote_ready" &&
+    selectedTotalCents !== null &&
     !finalMatches
   ) {
     blockers.push({
@@ -521,6 +543,7 @@ const INVALID_CONTENT_CODES = new Set([
   "MEASUREMENT_INVALID",
   "PRICING_INVALID",
   "SHIPPING_INVALID",
+  "MALFORMED_SHIPPING",
 ]);
 
 export const buildFutureOrderCandidate = (
@@ -720,10 +743,16 @@ export const buildFutureOrderCandidate = (
       status: input.shippingResolution.status,
       customerInformationComplete:
         input.shippingResolution.customerInformationComplete,
+      formInputsComplete: input.shippingResolution.formInputsComplete,
       formComplete: input.shippingResolution.formComplete,
       quoteReady: input.shippingResolution.quoteReady,
+      quoteRequired: input.shippingResolution.quoteRequired,
       destinationLabel: input.shippingResolution.destinationLabel,
       parcelWeightKg: input.shippingResolution.parcelWeightKg,
+      weightTier: input.shippingResolution.weightTier,
+      additionalDeliveryFeeCents:
+        input.shippingResolution.postEindhovenAdjustmentCents,
+      rateVersion: input.shippingResolution.rateVersion,
     },
     pricing,
     contentStatus,
@@ -791,6 +820,208 @@ export const inspectFutureOrderCandidateSecurity = (
     safe: forbiddenPaths.length === 0,
     forbiddenPaths: forbiddenPaths.sort((left, right) => left.localeCompare(right)),
   };
+};
+
+const STEP8_WEIGHT_TIERS = new Set([
+  "0_2",
+  "2_5",
+  "5_10",
+  "10_20",
+  "over_20",
+]);
+
+const malformedShipping = (
+  message: string,
+): { code: string; message: string } => ({
+  code: "MALFORMED_SHIPPING",
+  message,
+});
+
+const sameNumber = (left: unknown, right: unknown): boolean =>
+  typeof left === "number" &&
+  typeof right === "number" &&
+  Number.isFinite(left) &&
+  Number.isFinite(right) &&
+  left === right;
+
+const validateCandidateShipping = (
+  shipping: Record<string, unknown>,
+  garments: unknown[],
+  selectedDesignTotalCents: unknown,
+): { code: string; message: string } | null => {
+  if (
+    !isRecord(shipping.state) ||
+    typeof shipping.status !== "string" ||
+    typeof shipping.quoteRequired !== "boolean" ||
+    typeof shipping.quoteReady !== "boolean" ||
+    typeof shipping.formComplete !== "boolean" ||
+    typeof shipping.formInputsComplete !== "boolean" ||
+    typeof shipping.customerInformationComplete !== "boolean"
+  ) {
+    return malformedShipping(
+      "The saved shipping record is missing required Step 8 fields.",
+    );
+  }
+  if (!isSupportedStep8RateVersion(String(shipping.rateVersion || ""))) {
+    return malformedShipping(
+      "The saved shipping rate version is missing or unsupported.",
+    );
+  }
+
+  const state = shipping.state;
+  const fulfilment = state.fulfilmentMethod;
+  if (fulfilment !== "eindhoven_pickup" && fulfilment !== "destination_delivery") {
+    return malformedShipping("The saved shipping method is invalid.");
+  }
+
+  const feeCents = shipping.additionalDeliveryFeeCents;
+  if (shipping.quoteRequired) {
+    if (feeCents !== null) {
+      return malformedShipping(
+        "A custom shipping quote cannot carry a numeric Additional Delivery fee.",
+      );
+    }
+  } else if (!isMoneyCents(feeCents)) {
+    return malformedShipping(
+      "Additional Delivery must be a finite non-negative amount when resolved.",
+    );
+  }
+
+  if (fulfilment === "eindhoven_pickup") {
+    if (shipping.quoteRequired || feeCents !== 0) {
+      return malformedShipping(
+        "Pick Up in Eindhoven must resolve Additional Delivery at €0.00.",
+      );
+    }
+  }
+
+  if (
+    typeof shipping.parcelWeightKg === "number" &&
+    typeof shipping.weightTier === "string" &&
+    STEP8_WEIGHT_TIERS.has(shipping.weightTier) &&
+    resolveStep8WeightTier(shipping.parcelWeightKg) !== shipping.weightTier
+  ) {
+    return malformedShipping(
+      "The saved shipment weight does not match the saved weight tier.",
+    );
+  }
+
+  const quoteReference = isRecord(state.quoteReference)
+    ? state.quoteReference
+    : null;
+  const storedGarmentCount =
+    quoteReference && Number.isInteger(quoteReference.garmentCount)
+      ? Number(quoteReference.garmentCount)
+      : null;
+  const physicalGarmentCount = Array.isArray(garments) ? garments.length : 0;
+  const garmentCount =
+    shipping.status === "quote_ready" && physicalGarmentCount > 0
+      ? physicalGarmentCount
+      : storedGarmentCount && storedGarmentCount > 0
+        ? storedGarmentCount
+        : physicalGarmentCount;
+  if (!garmentCount || garmentCount <= 0) {
+    return malformedShipping(
+      "The saved shipping record is missing a physical garment count.",
+    );
+  }
+
+  const selectedDesignPrice = isMoneyCents(selectedDesignTotalCents)
+    ? Number(selectedDesignTotalCents) / 100
+    : null;
+  const canonical = reconcileFutureShippingState({
+    state,
+    garmentCount,
+    selectedDesignPrice,
+  });
+
+  if (canonical.status === "invalid" || canonical.status === "incomplete") {
+    return malformedShipping(
+      "The saved shipping details are incomplete or invalid.",
+    );
+  }
+
+  if (
+    canonical.state.fulfilmentMethod !== fulfilment ||
+    canonical.quoteRequired !== shipping.quoteRequired ||
+    canonical.quoteReady !== shipping.quoteReady ||
+    canonical.formComplete !== shipping.formComplete ||
+    canonical.status !== shipping.status ||
+    canonical.rateVersion !== shipping.rateVersion ||
+    canonical.weightTier !== shipping.weightTier ||
+    canonical.postEindhovenAdjustmentCents !== feeCents
+  ) {
+    return malformedShipping(
+      "The saved Additional Delivery values do not match the authoritative Step 8 resolution.",
+    );
+  }
+
+  if (
+    canonical.parcelWeightKg !== shipping.parcelWeightKg &&
+    !sameNumber(canonical.parcelWeightKg, shipping.parcelWeightKg)
+  ) {
+    return malformedShipping(
+      "The saved shipment weight does not match the authoritative Step 8 resolution.",
+    );
+  }
+
+  if (fulfilment === "destination_delivery") {
+    if (
+      !isRecord(state.customerInformation) ||
+      !isRecord(state.customerInformation.deliveryAddress)
+    ) {
+      return malformedShipping("The saved courier address is malformed.");
+    }
+    const address = state.customerInformation.deliveryAddress;
+    if (
+      !isStableIdentifier(String(address.addressLine1 || "")) &&
+      !(typeof address.addressLine1 === "string" && address.addressLine1.trim())
+    ) {
+      return malformedShipping("The saved courier address is malformed.");
+    }
+    if (
+      typeof address.addressLine1 !== "string" ||
+      !address.addressLine1.trim() ||
+      typeof address.city !== "string" ||
+      !address.city.trim() ||
+      typeof address.countryCode !== "string" ||
+      !address.countryCode.trim()
+    ) {
+      return malformedShipping("The saved courier address is malformed.");
+    }
+    if (!canonical.quoteRequired) {
+      if (
+        !isStep8DestinationZone(String(state.destinationZoneId || "")) ||
+        state.destinationZoneId !== canonical.state.destinationZoneId
+      ) {
+        return malformedShipping(
+          "The saved destination zone does not match the authoritative Step 8 resolution.",
+        );
+      }
+      if (
+        typeof shipping.parcelWeightKg !== "number" ||
+        !(shipping.parcelWeightKg > 0) ||
+        typeof shipping.weightTier !== "string" ||
+        !STEP8_WEIGHT_TIERS.has(shipping.weightTier)
+      ) {
+        return malformedShipping(
+          "The saved courier shipment weight or tier is missing.",
+        );
+      }
+    }
+  }
+
+  if (
+    storedGarmentCount !== null &&
+    storedGarmentCount !== garmentCount &&
+    canonical.status === "quote_ready"
+  ) {
+    return malformedShipping(
+      "The saved shipping garment count does not match the order garments.",
+    );
+  }
+
+  return null;
 };
 
 const invalidNormalization = (
@@ -983,6 +1214,14 @@ export const normalizeFutureOrderCandidate = (
       "NON_AUTHORITATIVE_TOTAL",
       "The saved order total needs to be recalculated.",
     );
+  }
+  const shippingError = validateCandidateShipping(
+    parsed.shipping,
+    parsed.garments,
+    selectedTotalCents,
+  );
+  if (shippingError) {
+    return invalidNormalization(shippingError.code, shippingError.message);
   }
   const clone = cloneJsonValue(parsed) as unknown as FutureOrderCandidateV1;
   return deepFreeze({ status: "valid", candidate: deepFreeze(clone), blockers: [] });

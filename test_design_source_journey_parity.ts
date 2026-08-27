@@ -59,7 +59,7 @@ assert.deepEqual(
     { id: "try_on", position: 5, title: "AI Try-on" },
     { id: "measurement", position: 6, title: "Measurement" },
     { id: "summary", position: 7, title: "Summary" },
-    { id: "shipping", position: 8, title: "Shipping" },
+    { id: "shipping", position: 8, title: "Delivery & Pickup" },
     { id: "payment", position: 9, title: "Order Review & Payment" },
   ],
 );

@@ -90,7 +90,7 @@ const makeDraft = (
       comment: "Private delivery requirement",
     },
     destinationZoneId: "NETHERLANDS_OTHER",
-    destinationZoneSource: "customer_provisional",
+    destinationZoneSource: "iso_resolved",
     quoteReference: null,
   },
   selectedFabricCode: "FABRIC-A",

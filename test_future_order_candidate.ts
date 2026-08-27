@@ -315,14 +315,14 @@ const deliveryState = (): FutureShippingStateV1 => ({
     deliveryAddress: {
       addressLine1: "1 Heritage Way",
       addressLine2: "Suite 4",
-      city: "Eindhoven",
-      postalCode: "5611 AA",
-      countryCode: "NL",
+      city: "Paris",
+      postalCode: "75001",
+      countryCode: "FR",
     },
     comment: "Call before delivery.",
   },
   destinationZoneId: "EUROPE",
-  destinationZoneSource: "customer_provisional",
+  destinationZoneSource: "iso_resolved",
 });
 
 const buildInput = (
@@ -372,15 +372,20 @@ const exactInput: FutureOrderCandidateBuildInput = {
       inputFingerprint: "test-current-input-fingerprint",
       garmentCount: 4,
       weightKg: 2,
+      weightTier: "0_2",
       destinationZoneId: "EUROPE",
+      quoteRequired: false,
     },
   },
   status: "quote_ready",
   quoteReady: true,
+  quoteRequired: false,
   postEindhovenAdjustmentCents: authoritativeFinalMileCents,
   projectedTotalCents:
     exactSelectedDesignCents + authoritativeFinalMileCents,
   parcelWeightKg: 2,
+  weightTier: "0_2",
+  rateVersion: "step8-delivery-v1",
   },
 };
 const inputBefore = JSON.stringify(exactInput, (_key, value) =>
@@ -712,10 +717,23 @@ assert.equal(
 );
 
 assert.equal(candidate.shipping.state.customerInformation.fullName, "Ada Lovelace");
-assert.equal(candidate.shipping.state.customerInformation.deliveryAddress.city, "Eindhoven");
+assert.equal(candidate.shipping.state.customerInformation.deliveryAddress.city, "Paris");
 assert.equal(candidate.shipping.state.quoteReference?.tariffVersion.length! > 0, true);
+assert.equal(candidate.shipping.quoteRequired, false);
+assert.equal(candidate.shipping.additionalDeliveryFeeCents, 1900);
+assert.equal(candidate.shipping.rateVersion.length > 0, true);
+assert.equal(
+  candidate.pricing.selectedDesignTotalCents! +
+    candidate.pricing.postEindhovenAdjustmentCents!,
+  candidate.pricing.exactTotalCents,
+);
+assert.notEqual(candidate.pricing.postEindhovenAdjustmentCents, 1509);
+assert.notEqual(candidate.pricing.postEindhovenAdjustmentCents, 13125);
 
 const pickupBaseInput = buildInput();
+const pickupGarmentCount = resolveShippingGarmentPieceCount({
+  fabricAllocations: pickupBaseInput.fabricAllocationState.fabricAllocations,
+});
 const pickupInput: FutureOrderCandidateBuildInput = {
   ...pickupBaseInput,
   shippingResolution: reconcileFutureShippingState({
@@ -723,23 +741,29 @@ const pickupInput: FutureOrderCandidateBuildInput = {
     ...deliveryState(),
     fulfilmentMethod: "eindhoven_pickup",
   },
-  garmentCount: 1,
+  garmentCount: pickupGarmentCount,
   selectedDesignPrice:
     projectFutureDesignStudioSummary(pickupBaseInput).pricingSummary
       .selectedDesignPrice?.selectedDesignPrice || null,
   }),
 };
 const pickup = buildFutureOrderCandidate(pickupInput);
-assert.equal(pickup.status, "blocked");
-assert.ok(pickup.blockers.some((blocker) => blocker.code === "PICKUP_FEE_PENDING"));
-assert.equal(pickup.candidate?.pricing.exactTotalCents, null);
+assert.equal(pickup.status, "reviewable");
+assert.equal(pickup.candidate?.shipping.state.fulfilmentMethod, "eindhoven_pickup");
+assert.equal(pickup.candidate?.pricing.postEindhovenAdjustmentCents, 0);
+assert.equal(
+  pickup.candidate?.pricing.selectedDesignTotalCents,
+  pickup.candidate?.pricing.exactTotalCents,
+);
+assert.equal(pickup.blockers.some((blocker) => blocker.code === "PICKUP_FEE_PENDING"), false);
+assert.equal(pickup.candidate?.shipping.quoteRequired, false);
 
 const quotePendingBaseInput = buildInput();
 const quotePendingInput: FutureOrderCandidateBuildInput = {
   ...quotePendingBaseInput,
   shippingResolution: reconcileFutureShippingState({
   state: deliveryState(),
-  garmentCount: 6,
+  garmentCount: 41,
   selectedDesignPrice:
     projectFutureDesignStudioSummary(quotePendingBaseInput).pricingSummary
       .selectedDesignPrice?.selectedDesignPrice || null,
@@ -774,8 +798,13 @@ const staleInput: FutureOrderCandidateBuildInput = {
   }),
 };
 const stale = buildFutureOrderCandidate(staleInput);
-assert.equal(stale.status, "blocked");
-assert.ok(stale.blockers.some((blocker) => blocker.code === "STALE_SHIPPING_QUOTE"));
+assert.equal(stale.status, "reviewable");
+assert.equal(stale.candidate?.shipping.state.quoteReference?.tariffVersion, "step8-delivery-v1");
+assert.equal(
+  stale.blockers.some((blocker) => blocker.code === "STALE_SHIPPING_QUOTE"),
+  false,
+  "Step 8 must recompute additional delivery immediately instead of keeping a stale fee",
+);
 
 const malformedCandidate = {
   ...candidate,
@@ -801,6 +830,179 @@ assert.equal(
   normalizeFutureOrderCandidate(tamperedTotal).blockers[0].code,
   "NON_AUTHORITATIVE_TOTAL",
 );
+
+const rejectShipping = (value: unknown, label: string) => {
+  const result = normalizeFutureOrderCandidate(value);
+  assert.equal(result.status, "invalid", label);
+  assert.equal(result.blockers[0]?.code, "MALFORMED_SHIPPING", label);
+};
+
+rejectShipping({ ...candidate, shipping: {} }, "empty shipping object");
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...candidate.shipping,
+      state: {
+        ...candidate.shipping.state,
+        destinationZoneId: null,
+      },
+    },
+  },
+  "courier missing destination zone",
+);
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...candidate.shipping,
+      parcelWeightKg: null,
+    },
+  },
+  "courier missing shipment weight",
+);
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...candidate.shipping,
+      weightTier: "not_a_tier",
+    },
+  },
+  "courier invalid weight tier",
+);
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...candidate.shipping,
+      quoteRequired: true,
+      additionalDeliveryFeeCents: 0,
+      formComplete: true,
+      quoteReady: true,
+      status: "quote_ready",
+    },
+  },
+  "quote required with numeric zero fee",
+);
+rejectShipping(
+  {
+    ...pickup.candidate!,
+    shipping: {
+      ...pickup.candidate!.shipping,
+      additionalDeliveryFeeCents: 975,
+    },
+  },
+  "pickup with non-zero additional delivery fee",
+);
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...candidate.shipping,
+      rateVersion: "",
+    },
+  },
+  "missing rate version",
+);
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...candidate.shipping,
+      state: {
+        ...candidate.shipping.state,
+        customerInformation: {
+          ...candidate.shipping.state.customerInformation,
+          deliveryAddress: {
+            ...candidate.shipping.state.customerInformation.deliveryAddress,
+            addressLine1: "",
+            city: "",
+          },
+        },
+      },
+    },
+  },
+  "courier malformed address",
+);
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...candidate.shipping,
+      parcelWeightKg: 7,
+      weightTier: "0_2",
+    },
+  },
+  "stored weight/tier contradiction",
+);
+
+assert.equal(normalizeFutureOrderCandidate(candidate).status, "valid");
+assert.equal(normalizeFutureOrderCandidate(pickup.candidate).status, "valid");
+const eindhovenCandidate = buildFutureOrderCandidate({
+  ...pickupBaseInput,
+  shippingResolution: reconcileFutureShippingState({
+    state: {
+      ...deliveryState(),
+      customerInformation: {
+        ...deliveryState().customerInformation,
+        deliveryAddress: {
+          addressLine1: "1 Heritage Way",
+          city: "Eindhoven",
+          postalCode: "5611 AA",
+          countryCode: "NL",
+        },
+      },
+    },
+    garmentCount: pickupGarmentCount,
+    selectedDesignPrice:
+      projectFutureDesignStudioSummary(pickupBaseInput).pricingSummary
+        .selectedDesignPrice?.selectedDesignPrice || null,
+  }),
+});
+assert.equal(eindhovenCandidate.status, "reviewable");
+assert.equal(normalizeFutureOrderCandidate(eindhovenCandidate.candidate).status, "valid");
+assert.equal(
+  eindhovenCandidate.candidate?.shipping.state.destinationZoneId,
+  "EINDHOVEN",
+);
+
+const northAmericaCandidate = buildFutureOrderCandidate({
+  ...pickupBaseInput,
+  shippingResolution: reconcileFutureShippingState({
+    state: {
+      ...deliveryState(),
+      customerInformation: {
+        ...deliveryState().customerInformation,
+        deliveryAddress: {
+          addressLine1: "1 Heritage Way",
+          city: "Boston",
+          stateRegion: "MA",
+          postalCode: "02108",
+          countryCode: "US",
+        },
+      },
+    },
+    garmentCount: pickupGarmentCount,
+    selectedDesignPrice:
+      projectFutureDesignStudioSummary(pickupBaseInput).pricingSummary
+        .selectedDesignPrice?.selectedDesignPrice || null,
+  }),
+});
+assert.equal(northAmericaCandidate.status, "reviewable");
+assert.equal(normalizeFutureOrderCandidate(northAmericaCandidate.candidate).status, "valid");
+assert.equal(
+  northAmericaCandidate.candidate?.shipping.state.destinationZoneId,
+  "NORTH_AMERICA",
+);
+
+assert.equal(quotePending.status, "blocked");
+assert.equal(quotePending.candidate?.shipping.formComplete, false);
+assert.equal(quotePending.candidate?.shipping.quoteRequired, true);
+assert.equal(quotePending.candidate?.shipping.additionalDeliveryFeeCents, null);
+assert.equal(normalizeFutureOrderCandidate(quotePending.candidate).status, "valid");
+assert.equal(quotePending.candidate?.contentStatus, "blocked");
+
 const malformedMoneyInput: FutureOrderCandidateBuildInput = {
   ...buildInput(),
   basePricing: {
