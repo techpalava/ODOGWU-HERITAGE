@@ -1,42 +1,29 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { createElement, useRef, useState } from "react";
+import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import type { DesignStudioStageId } from "./src/types";
 import type { LiveOrderSummaryView } from "./src/utils/designStudioLiveOrderSummary";
+import { LIVE_ORDER_SUMMARY_HEADING } from "./src/utils/designStudioLiveOrderSummary";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const require = createRequire(import.meta.url);
-const reactDomRuntime = require("react-dom") as {
-  createPortal: (children: unknown, container: unknown) => unknown;
-};
-reactDomRuntime.createPortal = (children) => children;
-
-const {
-  DesignStudioOrderSummary,
-  DesignStudioOrderSummaryTrigger,
-} = await import("./src/components/DesignStudioOrderSummary");
+const { DesignStudioOrderSummary } = await import(
+  "./src/components/DesignStudioOrderSummary"
+);
 
 const sampleView: LiveOrderSummaryView = {
   sections: [
     {
-      id: "garments",
-      title: "Garments",
+      id: "construction",
+      title: "Garment Construction",
       editStage: "garment_type",
-      lines: [{ id: "base:shirt", label: "Shirt", detail: null, amountLabel: null }],
-    },
-    {
-      id: "fabrics",
-      title: "Fabrics",
-      editStage: "fabric",
       lines: [
         {
-          id: "fabric-base:shirt",
+          id: "construction-base:shirt",
           label: "Shirt",
-          detail: "Royal Forest Mosaic",
-          amountLabel: null,
+          detail: "Standard Length Shirt, Mid-Long Sleeve",
+          amountLabel: "€70.00",
         },
       ],
     },
@@ -50,6 +37,19 @@ const sampleView: LiveOrderSummaryView = {
           label: "Shirt 1",
           detail: "Imperial Sapphire Link · Standard Length Shirt, Mid-Long Sleeve",
           amountLabel: "€70.00",
+        },
+      ],
+    },
+    {
+      id: "fabrics",
+      title: "Fabrics",
+      editStage: "fabric",
+      lines: [
+        {
+          id: "fabric-base:shirt",
+          label: "Shirt",
+          detail: "Royal Forest Mosaic",
+          amountLabel: null,
         },
       ],
     },
@@ -100,7 +100,6 @@ act(() => {
   renderer = create(
     createElement(DesignStudioOrderSummary, {
       view: sampleView,
-      variant: "sidebar",
       unlockedStages: new Set<DesignStudioStageId>(["garment_type", "fabric"]),
       currentStageId: "design_style",
       onEditStage: () => undefined,
@@ -118,6 +117,9 @@ assert.equal(
     .length,
   0,
 );
+assert.ok(textOf(renderer.root).includes(LIVE_ORDER_SUMMARY_HEADING));
+assert.ok(!textOf(renderer.root).includes("Your Order Summary"));
+assert.ok(!textOf(renderer.root).includes("Live Price Summary"));
 assert.equal(
   textOf(
     renderer.root.findByProps({
@@ -125,6 +127,18 @@ assert.equal(
     }),
   ),
   "€245.00",
+);
+assert.match(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-total-value",
+  }).props.className,
+  /\btext-base\b/,
+);
+assert.doesNotMatch(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-total-value",
+  }).props.className,
+  /\btext-2xl\b/,
 );
 assert.ok(textOf(renderer.root).includes("Total"));
 assert.ok(textOf(renderer.root).includes("Shirt"));
@@ -144,11 +158,17 @@ assert.equal(
   "locked Measurement Edit must stay hidden",
 );
 
+const markup = textOf(renderer.root);
+const constructionIndex = markup.indexOf("Garment Construction");
+const totalIndex = markup.indexOf("€245.00");
+const fabricsIndex = markup.indexOf("Fabrics");
+assert.ok(constructionIndex >= 0 && totalIndex > constructionIndex);
+assert.ok(fabricsIndex > totalIndex, "Fabrics must sit under the total");
+
 act(() => {
   renderer.update(
     createElement(DesignStudioOrderSummary, {
       view: sampleView,
-      variant: "sidebar",
       unlockedStages: new Set<DesignStudioStageId>(["fabric"]),
       currentStageId: "fabric",
       onEditStage: () => undefined,
@@ -168,7 +188,6 @@ act(() => {
   renderer.update(
     createElement(DesignStudioOrderSummary, {
       view: sampleView,
-      variant: "sidebar",
       unlockedStages: new Set<DesignStudioStageId>(["fabric", "measurement"]),
       currentStageId: "shipping",
       onEditStage: (stage) => {
@@ -184,169 +203,92 @@ act(() => {
 });
 assert.equal(editedStage, "fabric");
 
-act(() => {
-  renderer.update(
-    createElement(DesignStudioOrderSummary, {
-      view: sampleView,
-      variant: "drawer",
-      unlockedStages: new Set<DesignStudioStageId>(["fabric"]),
-      currentStageId: "garment_type",
-      onClose: () => undefined,
-    }),
-  );
-});
-const drawer = renderer.root.findByProps({
-  "data-testid": "live-order-summary-drawer",
-});
-assert.equal(drawer.props.role, "dialog");
-assert.equal(drawer.props["aria-modal"], "true");
-assert.ok(drawer.props["aria-labelledby"]);
-assert.ok(typeof drawer.props.onKeyDown === "function");
-assert.equal(
-  renderer.root.findAllByProps({
-    "data-testid": "live-order-summary-drawer-close",
-  }).length,
-  1,
-);
-assert.match(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-drawer-scroll",
-  }).props.className,
-  /overflow-y-auto/,
-);
-
-const LiveSummaryMobileHarness = ({
-  view,
-}: {
-  view: LiveOrderSummaryView;
-}) => {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  return createElement(
-    "div",
-    null,
-    createElement(DesignStudioOrderSummaryTrigger, {
-      totalLabel: view.totalLabel,
-      totalValueLabel: view.totalValueLabel,
-      onOpen: () => setOpen(true),
-      openButtonRef: triggerRef,
-    }),
-    open
-      ? createElement(DesignStudioOrderSummary, {
-          view,
-          variant: "drawer",
-          unlockedStages: new Set<DesignStudioStageId>(["fabric"]),
-          currentStageId: "fabric",
-          onClose: () => {
-            setOpen(false);
-            triggerRef.current?.focus?.({ preventScroll: true });
-          },
-        })
-      : null,
-  );
-};
-
-let harness: ReturnType<typeof create>;
-act(() => {
-  harness = create(createElement(LiveSummaryMobileHarness, { view: sampleView }));
-});
-assert.equal(
-  harness.root.findAllByProps({ "data-testid": "live-order-summary-drawer" })
-    .length,
-  0,
-);
-act(() => {
-  harness.root
-    .findByProps({ "data-testid": "live-order-summary-view-order" })
-    .props.onClick();
-});
-assert.equal(
-  harness.root.findAllByProps({ "data-testid": "live-order-summary-drawer" })
-    .length,
-  1,
-  "View Order must open the drawer",
-);
-assert.equal(
-  harness.root.findByProps({
-    "data-testid": "live-order-summary-drawer-close",
-  }).props["aria-label"],
-  "Close order summary",
-);
-act(() => {
-  harness.root
-    .findByProps({ "data-testid": "live-order-summary-drawer" })
-    .props.onKeyDown({
-      key: "Escape",
-      preventDefault() {},
-    });
-});
-assert.equal(
-  harness.root.findAllByProps({ "data-testid": "live-order-summary-drawer" })
-    .length,
-  0,
-  "Escape must close the drawer",
-);
-assert.equal(
-  harness.root.findAllByProps({
-    "data-testid": "live-order-summary-view-order",
-  }).length,
-  1,
-);
-
-let trigger: ReturnType<typeof create>;
-act(() => {
-  trigger = create(
-    createElement(DesignStudioOrderSummaryTrigger, {
-      totalLabel: "Current Subtotal",
-      totalValueLabel: "€65.00",
-      onOpen: () => undefined,
-    }),
-  );
-});
-assert.equal(
-  textOf(
-    trigger.root.findByProps({
-      "data-testid": "live-order-summary-trigger-label",
-    }),
-  ),
-  "Current Subtotal",
-);
-assert.equal(
-  textOf(
-    trigger.root.findByProps({
-      "data-testid": "live-order-summary-trigger-total",
-    }),
-  ),
-  "€65.00",
-);
-assert.ok(textOf(trigger.root).includes("View Order"));
-
 const viewSource = readFileSync(
   new URL("./src/components/DesignStudioView.tsx", import.meta.url),
   "utf8",
 );
-assert.match(viewSource, /closeButtonRef\.current\?\.focus|mobileSummaryTriggerRef\.current\?\.focus/);
-assert.match(viewSource, /closeMobileLiveOrderSummary/);
-assert.match(
-  viewSource,
-  /showPersistentLiveOrderSummary \?[\s\S]*lg:hidden[\s\S]*DesignStudioOrderSummaryTrigger/,
-);
-assert.match(
-  viewSource,
-  /showPersistentLiveOrderSummary \?[\s\S]*hidden min-w-0 lg:block/,
-);
-assert.doesNotMatch(
-  viewSource,
-  /futureStageId === "summary"[\s\S]{0,80}DesignStudioOrderSummaryTrigger/,
-);
+assert.match(viewSource, /showShellLiveOrderSummary/);
+assert.match(viewSource, /embedPersistentLiveOrderSummary/);
+assert.match(viewSource, /lg:sticky/);
+assert.doesNotMatch(viewSource, /DesignStudioOrderSummaryTrigger/);
+assert.doesNotMatch(viewSource, /mobileSummaryOpen/);
+assert.doesNotMatch(viewSource, /Your Order Summary/);
+assert.doesNotMatch(viewSource, /live-order-summary-view-order/);
 
 const summarySource = readFileSync(
   new URL("./src/components/DesignStudioOrderSummary.tsx", import.meta.url),
   "utf8",
 );
-assert.match(summarySource, /closeButtonRef\.current\?\.focus/);
-assert.match(summarySource, /event\.key === "Escape"/);
-assert.match(summarySource, /aria-labelledby/);
-assert.match(summarySource, /overflow-y-auto/);
+assert.match(summarySource, /LIVE_ORDER_SUMMARY_HEADING/);
+assert.match(summarySource, /text-base/);
+assert.doesNotMatch(summarySource, /text-2xl/);
+assert.doesNotMatch(summarySource, /live-order-summary-drawer/);
+assert.doesNotMatch(summarySource, /View Order/);
+assert.match(summarySource, /<aside/);
+
+const { GarmentTypeStep } = await import("./src/components/GarmentTypeStep");
+const { SEED_CUSTOM_DETAIL_CATALOG } = await import(
+  "./src/config/GarmentDetailsConfig"
+);
+const { normalizeCustomDetailCatalog } = await import(
+  "./src/utils/catalogHelpers"
+);
+const step1Catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
+let step1SummaryRenderer!: ReturnType<typeof create>;
+act(() => {
+  step1SummaryRenderer = create(
+    createElement(GarmentTypeStep, {
+      selectedGarmentTypes: ["shirt"],
+      selectedDemographics: ["male"],
+      normalizedCustomDetailCatalog: step1Catalog,
+      onGarmentTypesChange: () => undefined,
+      onDemographicsChange: () => undefined,
+      onConstructionDefaultsChange: () => undefined,
+      orderSummary: createElement(DesignStudioOrderSummary, {
+        view: sampleView,
+        unlockedStages: new Set<DesignStudioStageId>(),
+      }),
+    }),
+  );
+});
+const step1Asides = step1SummaryRenderer.root.findAllByType("aside");
+const step1OrderSummaryLandmarks = step1Asides.filter((node) => {
+  const label = String(node.props["aria-label"] || "");
+  const labelledBy = String(node.props["aria-labelledby"] || "");
+  const testId = String(node.props["data-testid"] || "");
+  return (
+    label === "Order Summary" ||
+    labelledBy === "live-order-summary-heading" ||
+    testId === "live-order-summary-sidebar"
+  );
+});
+assert.equal(
+  step1OrderSummaryLandmarks.length,
+  1,
+  "Step 1 must expose exactly one Order Summary complementary landmark.",
+);
+assert.equal(
+  step1Asides.filter((node) => node.props["aria-label"] === "Order Summary")
+    .length,
+  0,
+  "The parent must not add a second identically named Order Summary landmark.",
+);
+
+const garmentTypeSource = readFileSync(
+  new URL("./src/components/GarmentTypeStep.tsx", import.meta.url),
+  "utf8",
+);
+assert.doesNotMatch(
+  garmentTypeSource,
+  /aria-label="Order Summary"[\s\S]{0,80}\{orderSummary/,
+);
+const customDetailsSource = readFileSync(
+  new URL("./src/components/DormantFutureCustomDetailsStep.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  customDetailsSource,
+  /orderSummary \? \(\s*<div className="mt-5 min-w-0/,
+);
 
 console.log("test_design_studio_live_order_summary_ui.tsx: all assertions passed");

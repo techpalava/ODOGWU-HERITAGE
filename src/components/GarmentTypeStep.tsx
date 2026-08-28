@@ -1,4 +1,4 @@
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import { AlertCircle, CheckCircle2, Layers3, UsersRound } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type {
@@ -94,6 +94,7 @@ export interface GarmentTypeStepProps {
     headline: string;
     detail: string;
   } | null;
+  orderSummary?: ReactNode;
   idPrefix?: string;
 }
 
@@ -203,6 +204,7 @@ export const GarmentTypeStep = ({
   onConstructionDefaultsChange,
   statusMessage = null,
   catalogueCoverageMessage = null,
+  orderSummary = null,
   idPrefix = "garment-type-step",
 }: GarmentTypeStepProps) => {
   const presentation = getGarmentTypeStepPresentation({
@@ -411,12 +413,16 @@ export const GarmentTypeStep = ({
         </fieldset>
       </div>
 
-      <aside className="min-w-0 lg:col-span-4" aria-label="Live Price Summary">
+      <div className="min-w-0 lg:col-span-4">
+        {orderSummary ? (
+          orderSummary
+        ) : (
+        <aside className="min-w-0" aria-label="Order Summary">
         <div className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex min-w-0 items-center gap-2 border-b border-gray-100 pb-3">
             <UsersRound aria-hidden="true" size={18} className="shrink-0 text-heritage-gold" />
             <h3 className="min-w-0 break-words font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">
-              Live Price Summary
+              Order Summary
             </h3>
           </div>
 
@@ -502,7 +508,9 @@ export const GarmentTypeStep = ({
               </div>
             )}
         </div>
-      </aside>
+        </aside>
+        )}
+      </div>
     </section>
   );
 };

@@ -26,6 +26,7 @@ export const shouldShowPersistentLiveOrderSummary = (
 ): boolean =>
   !(LIVE_ORDER_SUMMARY_HIDDEN_STAGES as readonly string[]).includes(stageId);
 
+export const LIVE_ORDER_SUMMARY_HEADING = "Order Summary";
 export const LIVE_ORDER_SUMMARY_PENDING_LABEL = "Not selected yet";
 export const LIVE_ORDER_SUMMARY_NOT_COMPLETED_LABEL = "Not completed yet";
 export const LIVE_ORDER_SUMMARY_OWN_DESIGN_TITLE = "Own Design Upload";
@@ -86,12 +87,22 @@ export interface LiveOrderSummaryView {
 const moneyFromCents = (cents: number): string =>
   `${PRICING_CURRENCY_SYMBOL}${(cents / 100).toFixed(2)}`;
 
-const pendingLine = (id: string, label = LIVE_ORDER_SUMMARY_PENDING_LABEL): LiveOrderSummaryLine => ({
-  id,
-  label,
-  detail: null,
-  amountLabel: null,
-});
+const isUncommittedSummaryLine = (line: LiveOrderSummaryLine): boolean => {
+  if (
+    line.label === LIVE_ORDER_SUMMARY_PENDING_LABEL ||
+    line.label === LIVE_ORDER_SUMMARY_NOT_COMPLETED_LABEL
+  ) {
+    return true;
+  }
+  return (
+    line.detail === LIVE_ORDER_SUMMARY_PENDING_LABEL && !line.amountLabel
+  );
+};
+
+const committedLines = (
+  lines: readonly LiveOrderSummaryLine[],
+): LiveOrderSummaryLine[] =>
+  lines.filter((line) => !isUncommittedSummaryLine(line));
 
 const occurrenceLabels = (
   items: readonly { garmentKey: string; label: string }[],
@@ -148,7 +159,12 @@ const measurementStatusLine = (
 ): LiveOrderSummaryLine => {
   const route = measurementState.route;
   if (!isSelectedMeasurementRiskRoute(route)) {
-    return pendingLine("measurements", LIVE_ORDER_SUMMARY_NOT_COMPLETED_LABEL);
+    return {
+      id: "measurements",
+      label: LIVE_ORDER_SUMMARY_NOT_COMPLETED_LABEL,
+      detail: null,
+      amountLabel: null,
+    };
   }
   const routeLabel = summary.measurementSummary.routeLabel;
   if (measurementState.calculationStatus === "complete") {
@@ -324,91 +340,102 @@ export const projectDesignStudioLiveOrderSummary = ({
   }));
   const extraLabels = occurrenceLabels(extraItems);
 
-  const garmentLines: LiveOrderSummaryLine[] =
-    summary.garmentSummary.length > 0
-      ? summary.garmentSummary.map((garment) => ({
-          id: garment.garmentKey,
-          label: garmentLabels.get(garment.garmentKey) || garment.label,
-          detail: null,
-          amountLabel: null,
-        }))
-      : [pendingLine("garments-empty")];
+  const garmentLines = committedLines(
+    summary.garmentSummary.map((garment) => ({
+      id: garment.garmentKey,
+      label: garmentLabels.get(garment.garmentKey) || garment.label,
+      detail: null,
+      amountLabel: null,
+    })),
+  );
 
-  const fabricLines: LiveOrderSummaryLine[] =
-    summary.garmentSummary.length === 0
-      ? [pendingLine("fabrics-empty")]
-      : summary.garmentSummary.map((garment) => {
-          const fabric = assignedFabric.get(garment.garmentKey);
-          return {
-            id: `fabric-${garment.garmentKey}`,
-            label: garmentLabels.get(garment.garmentKey) || garment.label,
-            detail: fabric?.name || LIVE_ORDER_SUMMARY_PENDING_LABEL,
-            amountLabel: null,
-          };
-        });
-
-  const designStyleLines: LiveOrderSummaryLine[] = summary.designStyleSummary
-    ? [
+  const fabricLines: LiveOrderSummaryLine[] = [
+    ...summary.garmentSummary.flatMap((garment) => {
+      const fabric = assignedFabric.get(garment.garmentKey);
+      if (!fabric) return [];
+      return [
         {
-          id: summary.designStyleSummary.styleId,
-          label: summary.designStyleSummary.name,
-          detail: summary.designStyleSummary.compositionLabel,
+          id: `fabric-${garment.garmentKey}`,
+          label: garmentLabels.get(garment.garmentKey) || garment.label,
+          detail: fabric.name,
           amountLabel: null,
         },
-      ]
-    : designSource?.kind === "uploaded"
+      ];
+    }),
+    ...extraAssignments.flatMap((assignment) => {
+      const fabric = assignedFabric.get(assignment.garmentKey);
+      if (!fabric) return [];
+      return [
+        {
+          id: `fabric-${assignment.garmentKey}`,
+          label:
+            extraLabels.get(assignment.garmentKey) ||
+            getFabricGarmentLabel(assignment.garmentType),
+          detail: fabric.name,
+          amountLabel: null,
+        },
+      ];
+    }),
+  ];
+
+  const designStyleLines = committedLines(
+    summary.designStyleSummary
       ? [
           {
-            id: designSource.sourceKey,
-            label: LIVE_ORDER_SUMMARY_OWN_DESIGN_TITLE,
-            detail: LIVE_ORDER_SUMMARY_OWN_DESIGN_DETAIL,
+            id: summary.designStyleSummary.styleId,
+            label: summary.designStyleSummary.name,
+            detail: summary.designStyleSummary.compositionLabel,
             amountLabel: null,
           },
         ]
-      : [pendingLine("design-style")];
+      : designSource?.kind === "uploaded"
+        ? [
+            {
+              id: designSource.sourceKey,
+              label: LIVE_ORDER_SUMMARY_OWN_DESIGN_TITLE,
+              detail: LIVE_ORDER_SUMMARY_OWN_DESIGN_DETAIL,
+              amountLabel: null,
+            },
+          ]
+        : [],
+  );
 
-  const constructionLines: LiveOrderSummaryLine[] =
-    summary.garmentSummary.length === 0
-      ? [pendingLine("construction-empty")]
-      : summary.garmentSummary.map((garment) => ({
-          id: `construction-${garment.garmentKey}`,
-          label: garmentLabels.get(garment.garmentKey) || garment.label,
-          detail:
-            constructionLabel(summary, garment.garmentKey) ||
-            LIVE_ORDER_SUMMARY_PENDING_LABEL,
-          amountLabel:
-            garment.constructionTotalCents === null
-              ? null
-              : moneyFromCents(garment.constructionTotalCents),
-        }));
+  const constructionLines = committedLines(
+    summary.garmentSummary.map((garment) => ({
+      id: `construction-${garment.garmentKey}`,
+      label: garmentLabels.get(garment.garmentKey) || garment.label,
+      detail: constructionLabel(summary, garment.garmentKey),
+      amountLabel:
+        garment.constructionTotalCents === null
+          ? null
+          : moneyFromCents(garment.constructionTotalCents),
+    })),
+  );
 
-  const extraLines: LiveOrderSummaryLine[] = extraAssignments.map(
-    (assignment) => {
+  const extraLines: LiveOrderSummaryLine[] = extraAssignments
+    .filter((assignment) => assignedFabric.has(assignment.garmentKey))
+    .map((assignment) => {
       const fabric = assignedFabric.get(assignment.garmentKey);
       const construction = extraConstructionPresentation({
         garmentKey: assignment.garmentKey,
         additionalConstructionState,
         catalogInspection,
       });
-      const details = [
-        fabric?.name || LIVE_ORDER_SUMMARY_PENDING_LABEL,
-        construction.label,
-      ].filter(Boolean);
+      const details = [fabric?.name, construction.label].filter(Boolean);
       return {
         id: assignment.garmentKey,
         label:
           extraLabels.get(assignment.garmentKey) ||
           getFabricGarmentLabel(assignment.garmentType),
-        detail: details.join(" · "),
+        detail: details.join(" · ") || null,
         amountLabel:
           construction.amountCents === null
             ? null
             : moneyFromCents(construction.amountCents),
       };
-    },
-  );
+    });
 
-  const additionalClothesLines = summary.customDetailsSummary.flatMap((group) =>
+  const additionalClothesLines: LiveOrderSummaryLine[] = summary.customDetailsSummary.flatMap((group) =>
     group.occurrences
       .filter((occurrence) =>
         isCustomerFacingAdditionalClothesCostGroup(occurrence.selectionGroup),
@@ -441,7 +468,19 @@ export const projectDesignStudioLiveOrderSummary = ({
         detail: row.value,
         amountLabel: null,
       }))
-    : [pendingLine("delivery")];
+    : [];
+
+  const measurementLine = measurementStatusLine(summary, measurementState);
+  const standardShippingLines = summary.pricingSummary.selectedDesignPrice
+    ? [
+        {
+          id: "standard-shipping-included",
+          label: "Included",
+          detail: SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
+          amountLabel: null,
+        },
+      ]
+    : [];
 
   const total = resolveTotal({
     summary,
@@ -449,79 +488,68 @@ export const projectDesignStudioLiveOrderSummary = ({
     shippingResolution,
   });
 
+  const allSections: LiveOrderSummarySection[] = [
+    {
+      id: "construction",
+      title: "Garment Construction",
+      editStage: "garment_type",
+      lines: constructionLines.filter(
+        (line) => line.amountLabel || line.detail,
+      ),
+    },
+    {
+      id: "optional_extras",
+      title: "Optional Extra Garments",
+      editStage: "custom_details",
+      lines: extraLines,
+    },
+    {
+      id: "additional_clothes",
+      title: "Additional Clothes Costs",
+      editStage: "custom_details",
+      lines: additionalClothesLines,
+    },
+    {
+      id: "garments",
+      title: "Garments",
+      editStage: "garment_type",
+      lines: constructionLines.length > 0 ? [] : garmentLines,
+    },
+    {
+      id: "fabrics",
+      title: "Fabrics",
+      editStage: "fabric",
+      lines: fabricLines,
+    },
+    {
+      id: "design_style",
+      title: "Design Style",
+      editStage: "design_style",
+      lines: designStyleLines,
+    },
+    {
+      id: "measurements",
+      title: "Measurements",
+      editStage: "measurement",
+      lines: isUncommittedSummaryLine(measurementLine) ? [] : [measurementLine],
+    },
+    {
+      id: "standard_shipping",
+      title: LIVE_ORDER_SUMMARY_STANDARD_SHIPPING_LABEL,
+      editStage: null,
+      lines: standardShippingLines,
+    },
+    {
+      id: "delivery",
+      title: "Delivery & Pickup",
+      editStage: "shipping",
+      lines: deliveryLines,
+    },
+  ];
+  const sections = allSections.filter((section) => section.lines.length > 0);
+
   return {
     ...total,
-    sections: [
-      {
-        id: "garments",
-        title: "Garments",
-        editStage: "garment_type",
-        lines: garmentLines,
-      },
-      {
-        id: "fabrics",
-        title: "Fabrics",
-        editStage: "fabric",
-        lines: fabricLines,
-      },
-      {
-        id: "design_style",
-        title: "Design Style",
-        editStage: "design_style",
-        lines: designStyleLines,
-      },
-      {
-        id: "construction",
-        title: "Construction",
-        editStage: "garment_type",
-        lines: constructionLines,
-      },
-      {
-        id: "optional_extras",
-        title: "Optional Extra Garments",
-        editStage: "custom_details",
-        lines:
-          extraLines.length > 0
-            ? extraLines
-            : [pendingLine("extras-empty", "Not selected yet")],
-      },
-      {
-        id: "additional_clothes",
-        title: "Additional Clothes Costs",
-        editStage: "custom_details",
-        lines:
-          additionalClothesLines.length > 0
-            ? additionalClothesLines
-            : [pendingLine("additional-clothes-empty", "Not selected yet")],
-      },
-      {
-        id: "measurements",
-        title: "Measurements",
-        editStage: "measurement",
-        lines: [measurementStatusLine(summary, measurementState)],
-      },
-      {
-        id: "standard_shipping",
-        title: LIVE_ORDER_SUMMARY_STANDARD_SHIPPING_LABEL,
-        editStage: null,
-        lines: [
-          summary.pricingSummary.selectedDesignPrice ||
-          summary.pricingSummary.garmentConstructionSubtotal !== null
-            ? {
-                id: "standard-shipping-included",
-                label: "Included",
-                detail: SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
-                amountLabel: null,
-              }
-            : pendingLine("standard-shipping-pending"),
-        ],
-      },
-      {
-        id: "delivery",
-        title: "Delivery & Pickup",
-        editStage: "shipping",
-        lines: deliveryLines,
-      },
-    ],
+    sections,
   };
 };

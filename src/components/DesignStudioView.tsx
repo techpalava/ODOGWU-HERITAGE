@@ -56,10 +56,7 @@ import { DormantFutureMeasurementStep } from "./DormantFutureMeasurementStep";
 import { DormantFutureSummaryStep } from "./DormantFutureSummaryStep";
 import { DormantFutureShippingStep } from "./DormantFutureShippingStep";
 import { DormantFuturePaymentReviewStep } from "./DormantFuturePaymentReviewStep";
-import {
-  DesignStudioOrderSummary,
-  DesignStudioOrderSummaryTrigger,
-} from "./DesignStudioOrderSummary";
+import { DesignStudioOrderSummary } from "./DesignStudioOrderSummary";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import {
   resolveShippingGarmentPieceCount,
@@ -328,8 +325,6 @@ export default function DesignStudioView({
     useState<FutureMeasurementStateV1>(createEmptyFutureMeasurementState);
   const [futureShippingState, setFutureShippingState] =
     useState<FutureShippingStateV1>(createEmptyFutureShippingState);
-  const [mobileSummaryOpen, setMobileSummaryOpen] = useState(false);
-  const mobileSummaryTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [futureSelectedStyleId, setFutureSelectedStyleId] = useState<
     string | null
   >(null);
@@ -1442,10 +1437,6 @@ export default function DesignStudioView({
     }
   }, [futureStageId, isFuturePaymentReviewUnlocked]);
 
-  useEffect(() => {
-    setMobileSummaryOpen(false);
-  }, [futureStageId]);
-
   useEffect(
     () =>
       onAuthStateChanged(auth, (firebaseUser) => {
@@ -2543,14 +2534,7 @@ export default function DesignStudioView({
     }
     setFutureStageId("payment");
   };
-  const closeMobileLiveOrderSummary = () => {
-    setMobileSummaryOpen(false);
-    requestAnimationFrame(() => {
-      mobileSummaryTriggerRef.current?.focus?.({ preventScroll: true });
-    });
-  };
   const handleLiveOrderSummaryEdit = (stage: DesignStudioStageId) => {
-    setMobileSummaryOpen(false);
     if (!isStageHistoricallyUnlocked(stage)) return;
     if (stage === "garment_type") {
       setFutureStageId("garment_type");
@@ -3295,6 +3279,21 @@ export default function DesignStudioView({
   const garmentTypeBlockerMessage = !garmentTypeStageCompletion.isComplete
     ? "Select at least one garment, choose who the order is for, and resolve every construction price to continue to Fabric."
     : null;
+  const liveOrderSummaryCard = (
+    <DesignStudioOrderSummary
+      view={liveOrderSummary}
+      unlockedStages={liveOrderSummaryUnlockedStages}
+      currentStageId={futureStageId}
+      onEditStage={handleLiveOrderSummaryEdit}
+    />
+  );
+  const embedPersistentLiveOrderSummary =
+    showPersistentLiveOrderSummary &&
+    (futureStageId === "garment_type" ||
+      futureStageId === "fabric" ||
+      futureStageId === "custom_details");
+  const showShellLiveOrderSummary =
+    showPersistentLiveOrderSummary && !embedPersistentLiveOrderSummary;
 
   return (
     <div
@@ -3347,19 +3346,9 @@ export default function DesignStudioView({
         onSelectShipping={handleOpenDormantShippingStage}
         onSelectPayment={handleOpenDormantPaymentReviewStage}
       />
-      {showPersistentLiveOrderSummary ? (
-        <div className="mt-4 lg:hidden">
-          <DesignStudioOrderSummaryTrigger
-            totalLabel={liveOrderSummary.totalLabel}
-            totalValueLabel={liveOrderSummary.totalValueLabel}
-            onOpen={() => setMobileSummaryOpen(true)}
-            openButtonRef={mobileSummaryTriggerRef}
-          />
-        </div>
-      ) : null}
       <div
         className={
-          showPersistentLiveOrderSummary
+          showShellLiveOrderSummary
             ? "mt-4 grid min-w-0 grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,2.2fr)_minmax(16rem,1fr)]"
             : "mt-4"
         }
@@ -3393,6 +3382,9 @@ export default function DesignStudioView({
                 : null
             }
             idPrefix="future-garment-type-step"
+            orderSummary={
+              embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
+            }
           />
           <div className="flex justify-end">
             <button
@@ -3430,6 +3422,9 @@ export default function DesignStudioView({
           onUseSameFabric={handleUseSameFutureFabric}
           onChooseAnotherFabric={handleChooseAnotherFutureFabric}
           onCancelPendingFabric={handleCancelFuturePendingFabric}
+          orderSummary={
+            embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
+          }
         />
       ) : futureStageId === "design_style" ? (
         <DormantFutureDesignStyleStep
@@ -3556,6 +3551,9 @@ export default function DesignStudioView({
           }}
           onBack={() => setFutureStageId("design_style")}
           onContinue={handleOpenDormantAiTryOnStage}
+          orderSummary={
+            embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
+          }
         />
       ) : futureStageId === "try_on" ? (
         <DormantFutureAiTryOnStep
@@ -3609,30 +3607,14 @@ export default function DesignStudioView({
         />
       ) : null}
         </div>
-        {showPersistentLiveOrderSummary ? (
-          <div className="hidden min-w-0 lg:block">
+        {showShellLiveOrderSummary ? (
+          <div className="min-w-0">
             <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-x-hidden lg:overflow-y-auto">
-              <DesignStudioOrderSummary
-                view={liveOrderSummary}
-                variant="sidebar"
-                unlockedStages={liveOrderSummaryUnlockedStages}
-                currentStageId={futureStageId}
-                onEditStage={handleLiveOrderSummaryEdit}
-              />
+              {liveOrderSummaryCard}
             </div>
           </div>
         ) : null}
       </div>
-      {showPersistentLiveOrderSummary && mobileSummaryOpen ? (
-        <DesignStudioOrderSummary
-          view={liveOrderSummary}
-          variant="drawer"
-          unlockedStages={liveOrderSummaryUnlockedStages}
-          currentStageId={futureStageId}
-          onEditStage={handleLiveOrderSummaryEdit}
-          onClose={closeMobileLiveOrderSummary}
-        />
-      ) : null}
       {showAdditionalGarmentFabricDialog &&
         additionalGarmentFabricTransaction && (
         <FutureAdditionalGarmentFabricDialog

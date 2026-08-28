@@ -19,6 +19,7 @@ import { calculateDesignPricing } from "./src/utils/designPricing";
 import {
   getFutureFabricCapacityComposition,
   getFutureFabricStageCompletion,
+  cancelFutureFabricCatalogueAssignment,
 } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileFutureDesignStyleSelection } from "./src/utils/designStudioFutureDesignStyle";
 import {
@@ -33,6 +34,7 @@ import {
   LIVE_ORDER_SUMMARY_PENDING_LABEL,
   LIVE_ORDER_SUMMARY_CURRENT_SUBTOTAL_LABEL,
   LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL,
+  LIVE_ORDER_SUMMARY_HEADING,
   LIVE_ORDER_SUMMARY_TOTAL_LABEL,
   projectDesignStudioLiveOrderSummary,
   shouldShowPersistentLiveOrderSummary,
@@ -230,6 +232,17 @@ const section = (
   const found = view.sections.find((candidate) => candidate.id === id);
   assert.ok(found, `missing live summary section ${id}`);
   return found;
+};
+
+const hiddenSection = (
+  view: ReturnType<typeof projectDesignStudioLiveOrderSummary>,
+  id: string,
+) => {
+  assert.equal(
+    view.sections.some((candidate) => candidate.id === id),
+    false,
+    `${id} must stay hidden until committed`,
+  );
 };
 
 const buildAuthority = ({
@@ -468,22 +481,95 @@ const early = buildAuthority({
   completeMeasurements: false,
   measurementRoute: null,
 });
-assert.deepEqual(
-  section(early.view, "garments").lines.map((line) => line.label),
-  ["Shirt"],
-);
-assert.equal(section(early.view, "fabrics").lines[0]?.detail, LIVE_ORDER_SUMMARY_PENDING_LABEL);
-assert.equal(section(early.view, "design_style").lines[0]?.label, LIVE_ORDER_SUMMARY_PENDING_LABEL);
 assert.equal(
-  section(early.view, "measurements").lines[0]?.label,
-  LIVE_ORDER_SUMMARY_NOT_COMPLETED_LABEL,
+  JSON.stringify(early.view.sections).includes(LIVE_ORDER_SUMMARY_PENDING_LABEL),
+  false,
 );
-assert.equal(section(early.view, "delivery").lines[0]?.label, LIVE_ORDER_SUMMARY_PENDING_LABEL);
+assert.equal(
+  JSON.stringify(early.view.sections).includes(
+    LIVE_ORDER_SUMMARY_NOT_COMPLETED_LABEL,
+  ),
+  false,
+);
+hiddenSection(early.view, "fabrics");
+hiddenSection(early.view, "design_style");
+hiddenSection(early.view, "measurements");
+hiddenSection(early.view, "delivery");
+hiddenSection(early.view, "optional_extras");
+assert.ok(
+  early.view.sections.some(
+    (candidate) => candidate.id === "construction" || candidate.id === "garments",
+  ),
+);
 assert.equal(early.view.totalLabel, LIVE_ORDER_SUMMARY_CURRENT_SUBTOTAL_LABEL);
 assert.notEqual(early.view.totalLabel, LIVE_ORDER_SUMMARY_TOTAL_LABEL);
 assert.equal(early.view.totalStatus, "pending");
 assert.equal(early.view.totalValueLabel, "Pending");
 assert.equal(early.view.totalAmountCents, null);
+
+const step1Only = buildAuthority({
+  garmentTypes: ["shirt", "trouser"],
+  demographic: "unisex",
+  includeStyle: false,
+  completeMeasurements: false,
+  measurementRoute: null,
+});
+assert.equal(
+  JSON.stringify(step1Only.view.sections).includes("Not selected yet"),
+  false,
+);
+assert.equal(
+  JSON.stringify(step1Only.view.sections).includes("Not completed yet"),
+  false,
+);
+hiddenSection(step1Only.view, "fabrics");
+hiddenSection(step1Only.view, "design_style");
+hiddenSection(step1Only.view, "measurements");
+hiddenSection(step1Only.view, "delivery");
+hiddenSection(step1Only.view, "optional_extras");
+hiddenSection(step1Only.view, "additional_clothes");
+assert.ok(
+  section(step1Only.view, "construction").lines.some(
+    (line) => line.label === "Shirt" || line.label === "Trouser",
+  ),
+);
+
+const afterFabric = buildAuthority({
+  garmentTypes: ["shirt", "trouser"],
+  demographic: "unisex",
+  fabricByGarment: { shirt: fabricA, trouser: fabricA },
+  includeStyle: false,
+  completeMeasurements: false,
+  measurementRoute: null,
+});
+assert.deepEqual(
+  section(afterFabric.view, "fabrics").lines.map(
+    (line) => `${line.label} — ${line.detail}`,
+  ),
+  ["Shirt — Royal Forest Mosaic", "Trouser — Royal Forest Mosaic"],
+);
+const shirtRemoval = cancelFutureFabricCatalogueAssignment({
+  state: afterFabric.allocation,
+  garmentKey: "base:shirt",
+});
+assert.equal(shirtRemoval.status, "cancelled");
+const afterShirtFabricRemoval = buildAuthority({
+  garmentTypes: ["shirt", "trouser"],
+  demographic: "unisex",
+  fabricAllocationState: shirtRemoval.state,
+  includeStyle: false,
+  completeMeasurements: false,
+  measurementRoute: null,
+});
+assert.deepEqual(
+  section(afterShirtFabricRemoval.view, "fabrics").lines.map(
+    (line) => `${line.label} — ${line.detail}`,
+  ),
+  ["Trouser — Royal Forest Mosaic"],
+);
+hiddenSection(afterFabric.view, "design_style");
+hiddenSection(afterFabric.view, "measurements");
+hiddenSection(afterFabric.view, "delivery");
 
 const preDelivery = buildAuthority({
   fabricByGarment: { shirt: fabricA },
@@ -518,11 +604,15 @@ assert.equal(
   false,
 );
 assert.equal(
-  section(multiFabric.view, "fabrics").lines.filter(
-    (line) => line.detail === "Imperial Sapphire Link",
-  ).length,
-  1,
+  section(multiFabric.view, "fabrics").lines.every(
+    (line) => line.amountLabel === null,
+  ),
+  true,
+  "fabric summary must not show fabric prices",
 );
+hiddenSection(step1Only.view, "fabrics");
+assert.ok(section(multiFabric.view, "fabrics"));
+assert.ok(section(multiFabric.view, "design_style"));
 
 const extraSelection = createAdditionalGarmentSelection({
   garmentType: "shirt",
@@ -668,19 +758,10 @@ const extraRemoved = buildAuthority({
   },
 });
 assert.equal(
-  section(extraRemoved.view, "optional_extras").lines[0]?.label,
-  LIVE_ORDER_SUMMARY_PENDING_LABEL,
-);
-assert.equal(
-  section(extraRemoved.view, "optional_extras").lines[0]?.amountLabel,
-  null,
-);
-assert.equal(
-  section(extraRemoved.view, "optional_extras").lines.some(
-    (line) => line.id === extraKeys[0] || line.amountLabel !== null,
-  ),
+  extraRemoved.view.sections.some((candidate) => candidate.id === "optional_extras"),
   false,
 );
+hiddenSection(extraRemoved.view, "optional_extras");
 
 const pendingExtraState: FabricAllocationState = {
   ...withExtraAllocation,
@@ -707,21 +788,10 @@ const pendingExtra = buildAuthority({
   demographic: "unisex",
   fabricAllocationState: pendingExtraState,
 });
+hiddenSection(pendingExtra.view, "optional_extras");
 assert.equal(
-  section(pendingExtra.view, "optional_extras").lines[0]?.label,
-  LIVE_ORDER_SUMMARY_PENDING_LABEL,
-);
-assert.equal(
-  section(pendingExtra.view, "optional_extras").lines[0]?.amountLabel,
-  null,
-);
-assert.notEqual(
-  section(pendingExtra.view, "optional_extras").lines[0]?.amountLabel,
-  extraLine.amountLabel,
-);
-assert.equal(
-  section(pendingExtra.view, "optional_extras").lines.some(
-    (line) => line.amountLabel === "€0.00",
+  pendingExtra.view.sections.some((candidate) =>
+    candidate.lines.some((line) => line.amountLabel === "€0.00"),
   ),
   false,
 );
@@ -1116,10 +1186,12 @@ assert.match(viewSource, /shouldShowPersistentLiveOrderSummary/);
 assert.match(viewSource, /DesignStudioOrderSummary/);
 assert.match(viewSource, /lg:sticky/);
 assert.match(viewSource, /useMemo\([\s\S]*projectDesignStudioLiveOrderSummary/);
-assert.match(viewSource, /lg:hidden/);
-assert.match(viewSource, /hidden min-w-0 lg:block/);
-assert.match(viewSource, /closeMobileLiveOrderSummary/);
-assert.match(viewSource, /mobileSummaryTriggerRef\.current\?\.focus/);
+assert.match(viewSource, /showShellLiveOrderSummary/);
+assert.match(viewSource, /embedPersistentLiveOrderSummary/);
+assert.doesNotMatch(viewSource, /DesignStudioOrderSummaryTrigger/);
+assert.doesNotMatch(viewSource, /closeMobileLiveOrderSummary/);
+assert.doesNotMatch(viewSource, /Your Order Summary/);
+assert.equal(LIVE_ORDER_SUMMARY_HEADING, "Order Summary");
 
 const helperSource = readFileSync(
   new URL("./src/utils/designStudioLiveOrderSummary.ts", import.meta.url),

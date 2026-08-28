@@ -1,5 +1,5 @@
 import { Layers3, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type {
   Fabric,
@@ -14,6 +14,10 @@ import {
 } from "./AssignedFabricPreview";
 import { FutureFabricCatalogueCard } from "./FutureFabricCatalogueCard";
 import { Step1FabricAssignmentDialog } from "./Step1FabricAssignmentDialog";
+import {
+  RemoveFabricAssignmentDialog,
+  type RemoveFabricAssignmentTarget,
+} from "./RemoveFabricAssignmentDialog";
 import { resolveFabricAllocationMaterialPricing } from "../utils/fabricAllocationPricing";
 import { getFabricAvailabilityMessage } from "../utils/fabricCatalogueAvailability";
 import {
@@ -78,6 +82,7 @@ interface DormantFutureFabricStepProps {
   onUseSameFabric: () => void;
   onChooseAnotherFabric: () => void;
   onCancelPendingFabric: () => void;
+  orderSummary?: ReactNode;
 }
 
 const OTHER_ADDITIONAL_GARMENT_PENDING_MESSAGE =
@@ -105,6 +110,35 @@ const formatGarmentAssignmentProgress = (
   requiredGarmentCount: number,
 ): string =>
   `Garments assigned: ${assignedGarmentCount} of ${requiredGarmentCount}`;
+
+const labelOwnedFabricCancelTargets = (
+  garmentKeys: readonly string[],
+  getGarmentType: (garmentKey: string) => FabricGarmentType | null,
+): RemoveFabricAssignmentTarget[] => {
+  const items = garmentKeys.map((garmentKey) => {
+    const garmentType = getGarmentType(garmentKey);
+    return {
+      garmentKey,
+      baseLabel: garmentType ? getFutureGarmentLabel(garmentType) : garmentKey,
+    };
+  });
+  const counts = new Map<string, number>();
+  items.forEach((item) => {
+    counts.set(item.baseLabel, (counts.get(item.baseLabel) || 0) + 1);
+  });
+  const seen = new Map<string, number>();
+  return items.map((item) => {
+    const prior = seen.get(item.baseLabel) || 0;
+    seen.set(item.baseLabel, prior + 1);
+    return {
+      garmentKey: item.garmentKey,
+      label:
+        (counts.get(item.baseLabel) || 0) > 1
+          ? `${item.baseLabel} ${prior + 1}`
+          : item.baseLabel,
+    };
+  });
+};
 
 const getElementAttribute = (element: HTMLElement, name: string): string | null =>
   typeof element.getAttribute === "function" ? element.getAttribute(name) : null;
@@ -231,6 +265,7 @@ export const DormantFutureFabricStep = ({
   onUseSameFabric,
   onChooseAnotherFabric,
   onCancelPendingFabric,
+  orderSummary = null,
 }: DormantFutureFabricStepProps) => {
   void onUseSameFabricForGarment;
   const [isCatalogueOpen, setIsCatalogueOpen] = useState(false);
@@ -249,6 +284,11 @@ export const DormantFutureFabricStep = ({
   const [pendingRemovalRequest, setPendingRemovalRequest] = useState<number | null>(
     null,
   );
+  const [pendingFabricRemoval, setPendingFabricRemoval] = useState<{
+    fabric: Fabric;
+    targets: RemoveFabricAssignmentTarget[];
+  } | null>(null);
+  const fabricRemovalTriggerRef = useRef<HTMLElement | null>(null);
   const catalogueDialogRef = useRef<HTMLDivElement>(null);
   const catalogueSectionRef = useRef<HTMLDivElement>(null);
   const catalogueTriggerRef = useRef<HTMLElement | null>(null);
@@ -567,6 +607,25 @@ export const DormantFutureFabricStep = ({
     setStep1AssignmentError(null);
   };
 
+  const restoreFabricRemovalFocus = () => {
+    const trigger = fabricRemovalTriggerRef.current;
+    fabricRemovalTriggerRef.current = null;
+    try {
+      if (trigger && focusElementSafely(trigger)) return;
+    } catch {
+      // The original card control may have been replaced after removal.
+    }
+  };
+
+  const closeFabricRemovalChooser = (restoreFocus: boolean) => {
+    setPendingFabricRemoval(null);
+    if (restoreFocus) {
+      restoreFabricRemovalFocus();
+      return;
+    }
+    fabricRemovalTriggerRef.current = null;
+  };
+
   const cancelStep1FabricAssignment = () => {
     closeStep1FabricAssignment();
     restoreStep1AssignmentFocus();
@@ -670,6 +729,7 @@ export const DormantFutureFabricStep = ({
       typeof window !== "undefined" ? window.scrollY : null;
     setVisibleActionError(null);
     setStep1AssignmentError(null);
+    closeFabricRemovalChooser(false);
     setPendingStep1FabricAssignment({
       fabricCode: fabric.code,
       selectedGarmentKeys: [],
@@ -820,6 +880,7 @@ export const DormantFutureFabricStep = ({
     assignmentGenerationRef.current += 1;
     pendingAssignmentAnnouncementRef.current = null;
     closeStep1FabricAssignment();
+    setPendingFabricRemoval(null);
     setIsCatalogueOpen(false);
     setCatalogueTargetGarmentKey(null);
     catalogueFocusRequestRef.current += 1;
@@ -899,7 +960,7 @@ export const DormantFutureFabricStep = ({
     const useStep1CardPresentation = Boolean(
       step1Presentation &&
         (step1Presentation.action !== "none" ||
-          step1Presentation.status === "NO GARMENTS TO ASSIGN" ||
+          step1Presentation.status === "ALL GARMENTS HAVE FABRIC" ||
           step1Presentation.status === "UNAVAILABLE" ||
           unassignedStep1Targets.length > 0),
     );
@@ -917,6 +978,7 @@ export const DormantFutureFabricStep = ({
                   ? "use_again"
                   : "select",
             cancelGarmentKey: null,
+            cancelGarmentKeys: [],
           }
         : resolveFutureFabricCatalogueCardPresentation({
             fabricCode: fabric.code,
@@ -924,20 +986,30 @@ export const DormantFutureFabricStep = ({
             fabricAllocationState,
             currentTargetGarmentKey: currentTarget?.assignment.garmentKey ?? null,
           });
-    const cancelAssignment = cardPresentation.cancelGarmentKey
-      ? assignmentByGarmentKey.get(cardPresentation.cancelGarmentKey)
-          ?.assignment ||
-        (pendingTargetAssignment?.garmentKey ===
-        cardPresentation.cancelGarmentKey
-          ? pendingTargetAssignment
-          : null)
-      : null;
-    const cancelGarmentLabel = cancelAssignment
-      ? getFutureGarmentLabel(cancelAssignment.garmentType)
-      : "";
-    const targetGarmentLabel = currentTarget
-      ? getFutureGarmentLabel(currentTarget.assignment.garmentType)
-      : cancelGarmentLabel || undefined;
+    const cancelGarmentKeys =
+      cardPresentation.cancelGarmentKeys ??
+      (cardPresentation.cancelGarmentKey
+        ? [cardPresentation.cancelGarmentKey]
+        : []);
+    const labeledCancelTargets = labelOwnedFabricCancelTargets(
+      cancelGarmentKeys,
+      (garmentKey) =>
+        assignmentByGarmentKey.get(garmentKey)?.assignment.garmentType ||
+        (pendingTargetAssignment?.garmentKey === garmentKey
+          ? pendingTargetAssignment.garmentType
+          : null) ||
+        targets.find((target) => target.assignment.garmentKey === garmentKey)
+          ?.assignment.garmentType ||
+        null,
+    );
+    const singleCancelLabel =
+      labeledCancelTargets.length === 1 ? labeledCancelTargets[0]!.label : "";
+    const targetGarmentLabel =
+      cardPresentation.action === "cancel"
+        ? singleCancelLabel || undefined
+        : currentTarget
+          ? getFutureGarmentLabel(currentTarget.assignment.garmentType)
+          : undefined;
 
     return (
       <FutureFabricCatalogueCard
@@ -950,14 +1022,23 @@ export const DormantFutureFabricStep = ({
         onAction={(event) => {
           if (
             cardPresentation.action === "cancel" &&
-            cardPresentation.cancelGarmentKey &&
+            cancelGarmentKeys.length > 0 &&
             !getFabricAvailabilityMessage(fabric)
           ) {
-            removeAssignedFabric(
-              cardPresentation.cancelGarmentKey,
-              cancelGarmentLabel || "the selected garment",
-              fabric.name,
-            );
+            if (cancelGarmentKeys.length === 1) {
+              removeAssignedFabric(
+                cancelGarmentKeys[0]!,
+                singleCancelLabel || "the selected garment",
+                fabric.name,
+              );
+              return;
+            }
+            closeStep1FabricAssignment();
+            fabricRemovalTriggerRef.current = event?.currentTarget || null;
+            setPendingFabricRemoval({
+              fabric,
+              targets: labeledCancelTargets,
+            });
             return;
           }
           handleFabricSelection(fabric, event?.currentTarget);
@@ -1279,6 +1360,9 @@ export const DormantFutureFabricStep = ({
           </div>
         )}
 
+      {orderSummary ? (
+        orderSummary
+      ) : (
       <aside className="rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-2 text-heritage-green">
           <Layers3 aria-hidden="true" size={18} />
@@ -1316,6 +1400,7 @@ export const DormantFutureFabricStep = ({
             ))}
           </div>
       </aside>
+      )}
 
       {pendingStep1FabricAssignment &&
         step1AssignmentDialogFabric &&
@@ -1358,6 +1443,25 @@ export const DormantFutureFabricStep = ({
           onCancel={cancelStep1FabricAssignment}
         />
       )}
+
+      {pendingFabricRemoval ? (
+        <RemoveFabricAssignmentDialog
+          fabric={pendingFabricRemoval.fabric}
+          targets={pendingFabricRemoval.targets}
+          onRemoveGarmentKey={(garmentKey) => {
+            const target = pendingFabricRemoval.targets.find(
+              (candidate) => candidate.garmentKey === garmentKey,
+            );
+            removeAssignedFabric(
+              garmentKey,
+              target?.label || "the selected garment",
+              pendingFabricRemoval.fabric.name,
+            );
+            restoreFabricRemovalFocus();
+          }}
+          onCancel={() => closeFabricRemovalChooser(true)}
+        />
+      ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <DesignStudioBackButton destination="Garment Type" onClick={onBack} />

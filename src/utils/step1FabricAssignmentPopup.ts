@@ -31,7 +31,7 @@ export const STEP1_ASSIGNMENT_FAILED_MESSAGE =
   "That fabric could not be assigned. No garments were changed.";
 export const STEP1_FABRIC_NO_LONGER_AVAILABLE_MESSAGE =
   "This Fabric is no longer available. Close this window and choose another Fabric.";
-export const STEP1_NO_GARMENTS_TO_ASSIGN_STATUS = "NO GARMENTS TO ASSIGN";
+export const STEP1_NO_GARMENTS_TO_ASSIGN_STATUS = "ALL GARMENTS HAVE FABRIC";
 
 export type Step1FabricAssignmentDisplaySnapshot = {
   fabricCode: string;
@@ -64,7 +64,7 @@ export type Step1FabricCatalogueCardStatus =
   | "SELECT"
   | "USE AGAIN"
   | "IN USE"
-  | "NO GARMENTS TO ASSIGN"
+  | "ALL GARMENTS HAVE FABRIC"
   | "UNAVAILABLE";
 
 export type Step1FabricCatalogueCardAction = "select" | "use_again" | "none";
@@ -466,7 +466,7 @@ export const resolveStep1FabricCatalogueCardPresentation = ({
   ) {
     return { status: "IN USE", action: "none" };
   }
-  return { status: "NO GARMENTS TO ASSIGN", action: "none" };
+  return { status: "ALL GARMENTS HAVE FABRIC", action: "none" };
 };
 
 const resolveCommitTargets = ({
