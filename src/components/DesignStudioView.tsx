@@ -56,6 +56,10 @@ import { DormantFutureMeasurementStep } from "./DormantFutureMeasurementStep";
 import { DormantFutureSummaryStep } from "./DormantFutureSummaryStep";
 import { DormantFutureShippingStep } from "./DormantFutureShippingStep";
 import { DormantFuturePaymentReviewStep } from "./DormantFuturePaymentReviewStep";
+import {
+  DesignStudioOrderSummary,
+  DesignStudioOrderSummaryTrigger,
+} from "./DesignStudioOrderSummary";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import {
   resolveShippingGarmentPieceCount,
@@ -154,6 +158,10 @@ import {
   setFutureMeasurementRoute,
 } from "../utils/measurementBlueprint";
 import { projectFutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
+import {
+  projectDesignStudioLiveOrderSummary,
+  shouldShowPersistentLiveOrderSummary,
+} from "../utils/designStudioLiveOrderSummary";
 import {
   createEmptyFutureShippingState,
   isFutureShippingStageUnlocked,
@@ -320,6 +328,8 @@ export default function DesignStudioView({
     useState<FutureMeasurementStateV1>(createEmptyFutureMeasurementState);
   const [futureShippingState, setFutureShippingState] =
     useState<FutureShippingStateV1>(createEmptyFutureShippingState);
+  const [mobileSummaryOpen, setMobileSummaryOpen] = useState(false);
+  const mobileSummaryTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [futureSelectedStyleId, setFutureSelectedStyleId] = useState<
     string | null
   >(null);
@@ -1364,6 +1374,41 @@ export default function DesignStudioView({
   const isFuturePaymentReviewUnlocked = isFuturePaymentReviewStageUnlocked(
     futureOrderCandidateResult,
   );
+  const showPersistentLiveOrderSummary =
+    shouldShowPersistentLiveOrderSummary(futureStageId);
+  const liveOrderSummary = useMemo(
+    () =>
+      projectDesignStudioLiveOrderSummary({
+        summary: futureSummary,
+        shippingResolution: futureShippingResolution,
+        candidatePricing: futureOrderCandidateResult.candidate?.pricing ?? null,
+        fabricAllocationState,
+        measurementState: reconciledFutureMeasurementState,
+        designSource: activeFutureDesignSource,
+        additionalConstructionState:
+          futureAdditionalConstructionReconciliation.state,
+        catalogInspection: futureCatalogInspection,
+        showAdditionalClothesCosts,
+      }),
+    [
+      futureSummary,
+      futureShippingResolution,
+      futureOrderCandidateResult.candidate?.pricing,
+      fabricAllocationState,
+      reconciledFutureMeasurementState,
+      activeFutureDesignSource,
+      futureAdditionalConstructionReconciliation.state,
+      futureCatalogInspection,
+      showAdditionalClothesCosts,
+    ],
+  );
+  const liveOrderSummaryUnlockedStages = useMemo(() => {
+    const unlocked = new Set<DesignStudioStageId>();
+    DESIGN_STUDIO_STEPS.forEach((step, index) => {
+      if (index <= highestUnlockedStageIndex) unlocked.add(step.id);
+    });
+    return unlocked;
+  }, [highestUnlockedStageIndex]);
 
   useEffect(() => {
     if (
@@ -1396,6 +1441,10 @@ export default function DesignStudioView({
       setFutureStageId("shipping");
     }
   }, [futureStageId, isFuturePaymentReviewUnlocked]);
+
+  useEffect(() => {
+    setMobileSummaryOpen(false);
+  }, [futureStageId]);
 
   useEffect(
     () =>
@@ -2494,6 +2543,39 @@ export default function DesignStudioView({
     }
     setFutureStageId("payment");
   };
+  const closeMobileLiveOrderSummary = () => {
+    setMobileSummaryOpen(false);
+    requestAnimationFrame(() => {
+      mobileSummaryTriggerRef.current?.focus?.({ preventScroll: true });
+    });
+  };
+  const handleLiveOrderSummaryEdit = (stage: DesignStudioStageId) => {
+    setMobileSummaryOpen(false);
+    if (!isStageHistoricallyUnlocked(stage)) return;
+    if (stage === "garment_type") {
+      setFutureStageId("garment_type");
+      return;
+    }
+    if (stage === "fabric") {
+      handleOpenDormantFabricStage();
+      return;
+    }
+    if (stage === "design_style") {
+      handleOpenDormantDesignStyleStage();
+      return;
+    }
+    if (stage === "custom_details") {
+      handleOpenDormantCustomDetailsStage();
+      return;
+    }
+    if (stage === "measurement") {
+      handleOpenDormantMeasurementStage();
+      return;
+    }
+    if (stage === "shipping") {
+      handleOpenDormantShippingStage();
+    }
+  };
   const handleRefreshDormantShippingQuote = () => {
     setFutureShippingState(
       refreshFutureShippingQuote({
@@ -3265,6 +3347,24 @@ export default function DesignStudioView({
         onSelectShipping={handleOpenDormantShippingStage}
         onSelectPayment={handleOpenDormantPaymentReviewStage}
       />
+      {showPersistentLiveOrderSummary ? (
+        <div className="mt-4 lg:hidden">
+          <DesignStudioOrderSummaryTrigger
+            totalLabel={liveOrderSummary.totalLabel}
+            totalValueLabel={liveOrderSummary.totalValueLabel}
+            onOpen={() => setMobileSummaryOpen(true)}
+            openButtonRef={mobileSummaryTriggerRef}
+          />
+        </div>
+      ) : null}
+      <div
+        className={
+          showPersistentLiveOrderSummary
+            ? "mt-4 grid min-w-0 grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,2.2fr)_minmax(16rem,1fr)]"
+            : "mt-4"
+        }
+      >
+        <div className="min-w-0">
       {futureStageId === "garment_type" ? (
         <div className="space-y-5">
           <GarmentTypeStep
@@ -3506,6 +3606,31 @@ export default function DesignStudioView({
           result={futureOrderCandidateResult}
           onBack={() => setFutureStageId("shipping")}
           onEditStage={(stage) => setFutureStageId(stage)}
+        />
+      ) : null}
+        </div>
+        {showPersistentLiveOrderSummary ? (
+          <div className="hidden min-w-0 lg:block">
+            <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-x-hidden lg:overflow-y-auto">
+              <DesignStudioOrderSummary
+                view={liveOrderSummary}
+                variant="sidebar"
+                unlockedStages={liveOrderSummaryUnlockedStages}
+                currentStageId={futureStageId}
+                onEditStage={handleLiveOrderSummaryEdit}
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
+      {showPersistentLiveOrderSummary && mobileSummaryOpen ? (
+        <DesignStudioOrderSummary
+          view={liveOrderSummary}
+          variant="drawer"
+          unlockedStages={liveOrderSummaryUnlockedStages}
+          currentStageId={futureStageId}
+          onEditStage={handleLiveOrderSummaryEdit}
+          onClose={closeMobileLiveOrderSummary}
         />
       ) : null}
       {showAdditionalGarmentFabricDialog &&
