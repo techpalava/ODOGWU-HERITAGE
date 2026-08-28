@@ -43,7 +43,7 @@ export const DESIGN_STUDIO_NINE_STAGE_FOUNDATION = [
   defineStage("try_on", 5, "AI Try-on", "AI Try-on"),
   defineStage("measurement", 6, "Measurement", "Measurement"),
   defineStage("summary", 7, "Summary", "Summary"),
-  defineStage("shipping", 8, "Shipping", "Shipping"),
+  defineStage("shipping", 8, "Delivery & Pickup", "Delivery"),
   defineStage("payment", 9, "Order Review & Payment", "Review"),
 ] as const satisfies readonly DesignStudioStageDefinition[];
 

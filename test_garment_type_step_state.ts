@@ -423,7 +423,7 @@ assert.deepEqual(
     "AI Try-on",
     "Measurement",
     "Summary",
-    "Shipping",
+    "Delivery & Pickup",
     "Order Review & Payment",
   ],
   "The active Design Studio must expose the approved nine-stage journey.",
