@@ -11,7 +11,11 @@ import type {
   FutureShippingFulfilmentSelection,
   FutureShippingStateV1,
 } from "../types";
-import { STEP8_COUNTRY_OPTIONS } from "../config/Step8AdditionalDeliveryConfig";
+import {
+  STEP8_CUSTOMER_COUNTRY_GROUPS,
+  STEP8_OTHER_DESTINATION_LABEL,
+  STEP8_OTHER_DESTINATION_SELECT_VALUE,
+} from "../config/Step8AdditionalDeliveryConfig";
 import {
   type FutureShippingFieldId,
   type FutureShippingStageResolution,
@@ -72,21 +76,67 @@ export const DormantFutureShippingStep = ({
     });
   const selectFulfilment = (
     fulfilmentMethod: FutureShippingFulfilmentSelection,
-  ) => onChange({ ...state, fulfilmentMethod, quoteReference: null });
+  ) =>
+    onChange({
+      ...state,
+      fulfilmentMethod,
+      destinationSelectionMode:
+        fulfilmentMethod === "destination_delivery"
+          ? state.destinationSelectionMode
+          : null,
+      quoteReference: null,
+    });
+  const selectDeliveryCountry = (value: string) => {
+    if (value === STEP8_OTHER_DESTINATION_SELECT_VALUE) {
+      onChange({
+        ...state,
+        destinationSelectionMode: "other_destination",
+        quoteReference: null,
+        customerInformation: {
+          ...customer,
+          deliveryAddress: { ...address, countryCode: "" },
+        },
+      });
+      return;
+    }
+    onChange({
+      ...state,
+      destinationSelectionMode: value ? "supported_country" : null,
+      otherDestinationCountry: "",
+      quoteReference: null,
+      customerInformation: {
+        ...customer,
+        deliveryAddress: { ...address, countryCode: value },
+      },
+    });
+  };
   const isDelivery = state.fulfilmentMethod === "destination_delivery";
   const isPickup = state.fulfilmentMethod === "eindhoven_pickup";
-  const regionRequired = step8RequiresRegion(address.countryCode);
+  const isOtherDestination =
+    isDelivery && state.destinationSelectionMode === "other_destination";
+  const regionRequired = !isOtherDestination && step8RequiresRegion(address.countryCode);
+  const countrySelectValue = isOtherDestination
+    ? STEP8_OTHER_DESTINATION_SELECT_VALUE
+    : address.countryCode || "";
   const showDeliverySummary =
     isPickup ||
     (isDelivery &&
-      Boolean(address.countryCode && address.city && address.addressLine1));
+      Boolean(
+        address.city &&
+          address.addressLine1 &&
+          (isOtherDestination
+            ? state.otherDestinationCountry
+            : address.countryCode),
+      ));
   const statusMessage =
     resolution.status === "quote_ready"
       ? isPickup
         ? "Pickup contact details are complete. Additional Delivery is €0.00."
         : `Additional Delivery is ready for ${resolution.destinationLabel}.`
       : resolution.status === "quote_pending" || resolution.quoteRequired
-        ? "Custom shipping quote required"
+        ? isOtherDestination
+          ? "Shipping to this destination requires a custom quote."
+          : "Custom shipping quote required"
         : resolution.diagnostics[0]?.message ||
           "Complete the delivery details below.";
 
@@ -260,34 +310,81 @@ export const DormantFutureShippingStep = ({
             {isDelivery && (
               <>
                 <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65 md:col-span-2">
-                  Country
+                  Delivery Country
                   <select
-                    value={address.countryCode || ""}
-                    onChange={(event) =>
-                      updateAddress({ countryCode: event.target.value })
-                    }
-                    aria-invalid={Boolean(errorFor("countryCode"))}
+                    value={countrySelectValue}
+                    onChange={(event) => selectDeliveryCountry(event.target.value)}
+                    aria-invalid={Boolean(errorFor("countryCode") || errorFor("otherDestinationCountry"))}
                     aria-describedby={
                       errorFor("countryCode")
                         ? "future-shipping-country-error"
-                        : undefined
+                        : "future-shipping-country-help"
                     }
                     autoComplete="country"
                     className={`${inputClassName} mt-1.5`}
                   >
-                    <option value="">Select country</option>
-                    {STEP8_COUNTRY_OPTIONS.map((country) => (
-                      <option key={country.code} value={country.code}>
-                        {country.label}
-                      </option>
+                    <option value="">Select a supported country</option>
+                    {STEP8_CUSTOMER_COUNTRY_GROUPS.map((group) => (
+                      <optgroup key={group.id} label={group.label}>
+                        {group.countries.map((country) => (
+                          <option key={country.countryCode} value={country.countryCode}>
+                            {country.name}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
+                    <optgroup label="Other Destination">
+                      <option value={STEP8_OTHER_DESTINATION_SELECT_VALUE}>
+                        {STEP8_OTHER_DESTINATION_LABEL}
+                      </option>
+                    </optgroup>
                   </select>
+                  <span
+                    id="future-shipping-country-help"
+                    className="mt-1 block font-normal normal-case tracking-normal text-heritage-ink/55"
+                  >
+                    Select a supported delivery country or request a custom shipping quote for another destination.
+                  </span>
                   {errorFor("countryCode") && (
                     <span id="future-shipping-country-error" className="mt-1 block normal-case tracking-normal text-red-700">
                       {errorFor("countryCode")!.message}
                     </span>
                   )}
                 </label>
+                {isOtherDestination && (
+                  <div className="min-w-0 rounded-xl border border-heritage-gold/30 bg-heritage-gold/5 p-3 md:col-span-2">
+                    <p className="text-sm font-semibold text-heritage-green">
+                      Shipping to this destination requires a custom quote.
+                    </p>
+                    <label className="mt-3 block min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65">
+                      Destination country / territory
+                      <input
+                        value={state.otherDestinationCountry}
+                        onChange={(event) =>
+                          onChange({
+                            ...state,
+                            otherDestinationCountry: event.target.value,
+                          })
+                        }
+                        aria-invalid={Boolean(errorFor("otherDestinationCountry"))}
+                        aria-describedby={
+                          errorFor("otherDestinationCountry")
+                            ? "future-shipping-other-destination-error"
+                            : undefined
+                        }
+                        className={`${inputClassName} mt-1.5`}
+                      />
+                      {errorFor("otherDestinationCountry") && (
+                        <span
+                          id="future-shipping-other-destination-error"
+                          className="mt-1 block normal-case tracking-normal text-red-700"
+                        >
+                          {errorFor("otherDestinationCountry")!.message}
+                        </span>
+                      )}
+                    </label>
+                  </div>
+                )}
                 <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65 md:col-span-2">
                   Address line 1
                   <input
@@ -410,7 +507,11 @@ export const DormantFutureShippingStep = ({
                     Destination
                   </dt>
                   <dd className="mt-1 break-words font-semibold text-heritage-green">
-                    {formatStep8CustomerDestination(address) ||
+                    {formatStep8CustomerDestination({
+                      city: address.city,
+                      countryCode: address.countryCode,
+                      otherDestinationCountry: state.otherDestinationCountry,
+                    }) ||
                       resolution.destinationLabel ||
                       "Pending"}
                   </dd>

@@ -12,6 +12,14 @@ import {
   reconcileFutureShippingState,
 } from "./src/utils/designStudioFutureShipping";
 import { step8RequiresRegion } from "./src/utils/step8AdditionalDelivery";
+import {
+  STEP8_COUNTRY_OPTIONS,
+  STEP8_CUSTOMER_COUNTRY_CATALOG,
+  STEP8_CUSTOMER_COUNTRY_GROUPS,
+  STEP8_OTHER_DESTINATION_LABEL,
+  STEP8_QUOTE_REQUIRED_COUNTRY_CODES,
+  isStep8CustomerSelectableCountry,
+} from "./src/config/Step8AdditionalDeliveryConfig";
 
 const withContact = (
   state: FutureShippingStateV1,
@@ -258,6 +266,10 @@ assert.equal(quoteRequired.formComplete, false);
 assert.equal(quoteRequired.formInputsComplete, true);
 assert.equal(isFutureShippingStepComplete(quoteRequired), false);
 assert.equal(quoteRequired.postEindhovenAdjustmentCents, null);
+assert.equal(quoteRequired.state.destinationSelectionMode, "other_destination");
+assert.equal(quoteRequired.state.customerInformation.deliveryAddress.countryCode, "");
+assert.match(quoteRequired.state.otherDestinationCountry, /Australia/);
+assert.equal(isFutureShippingStepComplete(quoteRequired), false);
 const quoteSummaryRows = getStep8OrderSummaryRows(quoteRequired);
 assert.equal(
   quoteSummaryRows.find((row) => row.label === "Additional Delivery")?.value,
@@ -265,8 +277,82 @@ assert.equal(
 );
 assert.match(
   quoteSummaryRows.find((row) => row.label === "Destination")?.value || "",
-  /Sydney/,
+  /Sydney, Australia/,
 );
+
+const otherDestination = reconcileFutureShippingState({
+  state: {
+    ...withDelivery(createEmptyFutureShippingState(), "", "Suva"),
+    destinationSelectionMode: "other_destination",
+    otherDestinationCountry: " Fiji ",
+  },
+  garmentCount: 3,
+  selectedDesignPrice: 500,
+});
+assert.equal(otherDestination.status, "quote_pending");
+assert.equal(otherDestination.quoteRequired, true);
+assert.equal(otherDestination.postEindhovenAdjustmentCents, null);
+assert.equal(otherDestination.formComplete, false);
+assert.equal(otherDestination.formInputsComplete, true);
+assert.equal(isFutureShippingStepComplete(otherDestination), false);
+assert.equal(otherDestination.paymentLocked, true);
+assert.equal(otherDestination.state.destinationSelectionMode, "other_destination");
+assert.equal(otherDestination.state.customerInformation.deliveryAddress.countryCode, "");
+assert.equal(otherDestination.state.otherDestinationCountry, "Fiji");
+assert.equal(otherDestination.state.destinationZoneId, null);
+const otherDestinationSummary = getStep8OrderSummaryRows(otherDestination);
+assert.equal(otherDestinationSummary[0].value, "Deliver to an Address");
+assert.equal(otherDestinationSummary.find((row) => row.label === "Destination")?.value, "Suva, Fiji");
+assert.equal(
+  otherDestinationSummary.find((row) => row.label === "Estimated Shipment Weight")?.value,
+  "1.5 kg",
+);
+assert.equal(
+  otherDestinationSummary.find((row) => row.label === "Additional Delivery")?.value,
+  "Custom shipping quote required",
+);
+assert.equal(
+  JSON.stringify(otherDestination.state).includes("\"OT\""),
+  false,
+);
+assert.equal(JSON.stringify(otherDestination.state).includes("15.09"), false);
+assert.equal(JSON.stringify(otherDestination.state).includes("131.25"), false);
+
+const lightEindhoven = reconcileFutureShippingState({
+  state: withDelivery(createEmptyFutureShippingState(), "NL", "Eindhoven"),
+  garmentCount: 3,
+  selectedDesignPrice: 500,
+});
+assert.equal(lightEindhoven.state.customerInformation.deliveryAddress.countryCode, "NL");
+assert.equal(lightEindhoven.state.destinationSelectionMode, "supported_country");
+assert.equal(lightEindhoven.parcelWeightKg, 1.5);
+assert.equal(lightEindhoven.postEindhovenAdjustmentCents, 750);
+
+const lightEurope = reconcileFutureShippingState({
+  state: withDelivery(createEmptyFutureShippingState(), "DE", "Berlin"),
+  garmentCount: 3,
+  selectedDesignPrice: 500,
+});
+assert.equal(lightEurope.state.customerInformation.deliveryAddress.countryCode, "DE");
+assert.equal(lightEurope.postEindhovenAdjustmentCents, 1900);
+
+const lightUs = reconcileFutureShippingState({
+  state: withDelivery(createEmptyFutureShippingState(), "US", "Boston", {
+    stateRegion: "MA",
+  }),
+  garmentCount: 3,
+  selectedDesignPrice: 500,
+});
+assert.equal(lightUs.state.customerInformation.deliveryAddress.countryCode, "US");
+assert.equal(lightUs.postEindhovenAdjustmentCents, 3800);
+
+const lightNigeria = reconcileFutureShippingState({
+  state: withDelivery(createEmptyFutureShippingState(), "NG", "Lagos"),
+  garmentCount: 3,
+  selectedDesignPrice: 500,
+});
+assert.equal(lightNigeria.state.customerInformation.deliveryAddress.countryCode, "NG");
+assert.equal(lightNigeria.postEindhovenAdjustmentCents, 4875);
 
 const heavy = reconcileFutureShippingState({
   state: withDelivery(createEmptyFutureShippingState(), "DE", "Berlin"),
@@ -371,6 +457,10 @@ assert.equal(
     .deliveryAddress.countryCode,
   "FR",
 );
+assert.equal(
+  normalizeFutureShippingState(roundTrip.futureShippingState).state.destinationSelectionMode,
+  "supported_country",
+);
 assert.equal(JSON.stringify(roundTrip.futureShippingState).includes("amountCents"), false);
 assert.equal(JSON.stringify(roundTrip.futureShippingState).includes("131.25"), false);
 assert.equal(JSON.stringify(roundTrip.futureShippingState).includes("15.09"), false);
@@ -406,10 +496,59 @@ assert.doesNotMatch(shippingSource, /calculateIndividualShipping/);
 assert.doesNotMatch(shippingSource, /calculateFinalMileShipping/);
 assert.doesNotMatch(shippingSource, /131\.25/);
 assert.doesNotMatch(shippingSource, /15\.09/);
+assert.match(shippingSource, /Delivery Country/);
+assert.match(shippingSource, /STEP8_OTHER_DESTINATION_LABEL/);
+assert.match(shippingSource, /optgroup/);
+assert.match(shippingSource, /STEP8_CUSTOMER_COUNTRY_GROUPS/);
+assert.match(shippingSource, /Shipping to this destination requires a custom quote/);
+assert.doesNotMatch(shippingSource, /STEP8_COUNTRY_ZONE_INDEX\.keys/);
+assert.doesNotMatch(shippingSource, /Select country/);
 assert.match(shippingSource, /stateRegion/);
 assert.match(shippingSource, /future-shipping-region-error/);
 assert.doesNotMatch(shippingSource, /Destination region/);
 assert.equal(appSource.includes("future_nine_stage"), false);
 assert.equal(studioSource.includes("legacy_five_stage"), false);
+
+const requiredSelectableCountries = [
+  "NL",
+  "DE",
+  "FR",
+  "GB",
+  "US",
+  "CA",
+  "NG",
+  "ZA",
+  "JP",
+  "IN",
+  "BR",
+];
+for (const countryCode of requiredSelectableCountries) {
+  assert.equal(isStep8CustomerSelectableCountry(countryCode), true, countryCode);
+  assert.ok(
+    STEP8_COUNTRY_OPTIONS.some((option) => option.code === countryCode),
+    countryCode,
+  );
+  assert.ok(
+    STEP8_CUSTOMER_COUNTRY_CATALOG.some(
+      (country) => country.countryCode === countryCode && country.customerSelectable,
+    ),
+    countryCode,
+  );
+}
+assert.equal(STEP8_CUSTOMER_COUNTRY_GROUPS[0]?.id, "netherlands");
+assert.equal(STEP8_CUSTOMER_COUNTRY_GROUPS[0]?.countries[0]?.countryCode, "NL");
+assert.equal(STEP8_OTHER_DESTINATION_LABEL, "Other Destination — Request Shipping Quote");
+for (const option of STEP8_COUNTRY_OPTIONS) {
+  assert.equal(isStep8CustomerSelectableCountry(option.code), true, option.code);
+  assert.doesNotMatch(option.code, /^(OT|XX|OTHER)$/);
+}
+for (const countryCode of STEP8_QUOTE_REQUIRED_COUNTRY_CODES) {
+  assert.equal(isStep8CustomerSelectableCountry(countryCode), false, countryCode);
+  assert.equal(
+    STEP8_COUNTRY_OPTIONS.some((option) => option.code === countryCode),
+    false,
+    countryCode,
+  );
+}
 
 console.log("PASS: Step 8 Delivery & Pickup state, completion, and UI contracts");

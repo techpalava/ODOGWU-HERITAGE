@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import {
   STEP8_ADDITIONAL_DELIVERY_RATES_CENTS,
+  STEP8_COUNTRY_OPTIONS,
   STEP8_DELIVERY_RATE_VERSION,
   STEP8_DESTINATION_ZONES,
   STEP8_HEADLINE_RATES_CENTS,
   STEP8_KG_PER_PHYSICAL_GARMENT,
   STEP8_PICKUP_FEE_CENTS,
+  STEP8_QUOTE_REQUIRED_COUNTRY_CODES,
+  isStep8CustomerSelectableCountry,
 } from "./src/config/Step8AdditionalDeliveryConfig";
 import {
   formatStep8CustomerDestination,
@@ -162,6 +165,7 @@ const isoCases: ReadonlyArray<[string, string | null]> = [
   ["NG", "AFRICA"],
   ["ZA", "AFRICA"],
   ["JP", "ASIA"],
+  ["IN", "ASIA"],
   ["BR", "SOUTH_AMERICA"],
 ];
 for (const [countryCode, zone] of isoCases) {
@@ -181,6 +185,36 @@ const australia = resolveStep8AdditionalDelivery({
 });
 assert.equal(australia.quoteRequired, true);
 assert.equal(australia.additionalDeliveryFeeCents, null);
+
+const otherDestinationRate = resolveStep8AdditionalDelivery({
+  deliveryMethod: "destination_delivery",
+  countryCode: null,
+  city: "Suva",
+  physicalGarmentCount: 3,
+  destinationSelectionMode: "other_destination",
+});
+assert.equal(otherDestinationRate.quoteRequired, true);
+assert.equal(otherDestinationRate.additionalDeliveryFeeCents, null);
+assert.equal(otherDestinationRate.destinationZone, null);
+assert.equal(otherDestinationRate.headlineRateCents, null);
+
+for (const option of STEP8_COUNTRY_OPTIONS) {
+  const mapped = resolveStep8DestinationZone({
+    countryCode: option.code,
+    city: option.code === "NL" ? "Amsterdam" : "City",
+  });
+  assert.equal(isStep8CustomerSelectableCountry(option.code), true, option.code);
+  assert.ok(mapped.zone, option.code);
+  assert.equal(mapped.quoteRequired, false, option.code);
+}
+for (const countryCode of STEP8_QUOTE_REQUIRED_COUNTRY_CODES) {
+  assert.equal(isStep8CustomerSelectableCountry(countryCode), false, countryCode);
+  assert.equal(
+    STEP8_COUNTRY_OPTIONS.some((option) => option.code === countryCode),
+    false,
+    countryCode,
+  );
+}
 
 const pickup = resolveStep8AdditionalDelivery({
   deliveryMethod: "eindhoven_pickup",

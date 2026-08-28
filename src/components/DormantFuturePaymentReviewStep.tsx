@@ -640,7 +640,8 @@ export const DormantFuturePaymentReviewStep = ({
                           shippingAddress?.city,
                           shippingAddress?.stateRegion,
                           shippingAddress?.postalCode,
-                          shippingAddress?.countryCode,
+                          shippingAddress?.countryCode ||
+                            candidate.shipping.state.otherDestinationCountry,
                         ].filter(Boolean).join(", ") || "Address pending"
                       : candidate.shipping.destinationLabel || "Pick Up in Eindhoven"}
                   </dd>

@@ -2,10 +2,13 @@ import {
   STEP8_DELIVERY_RATE_VERSION,
   STEP8_DESTINATION_ZONE_LABELS,
   STEP8_DESTINATION_ZONES,
+  formatStep8CountryLabel,
+  isStep8CustomerSelectableCountry,
   isStep8DestinationZone,
   type Step8WeightTier,
 } from "../config/Step8AdditionalDeliveryConfig";
 import type {
+  FutureShippingDestinationSelectionMode,
   FutureShippingDestinationZone,
   FutureShippingQuoteReferenceV1,
   FutureShippingStateV1,
@@ -16,6 +19,7 @@ import type { FutureDesignStudioSummaryStatus } from "./designStudioFutureSummar
 import { PRICING_CURRENCY_SYMBOL } from "./money";
 import {
   formatStep8CustomerDestination,
+  isStep8FakeCountryCode,
   isValidIsoCountryCode,
   normalizeStep8CountryCode,
   resolveStep8AdditionalDelivery,
@@ -56,7 +60,8 @@ export type FutureShippingFieldId =
   | "countryCode"
   | "destinationZoneId"
   | "state"
-  | "stateRegion";
+  | "stateRegion"
+  | "otherDestinationCountry";
 
 export interface FutureShippingStageDiagnostic {
   code: string;
@@ -97,6 +102,7 @@ const MAX_LENGTHS = Object.freeze({
   stateRegion: 120,
   postalCode: 32,
   countryCode: 8,
+  otherDestinationCountry: 80,
   comment: 1000,
 });
 
@@ -117,6 +123,8 @@ const emptyAddress = () => ({
 export const createEmptyFutureShippingState = (): FutureShippingStateV1 => ({
   schemaVersion: FUTURE_SHIPPING_STATE_SCHEMA_VERSION,
   fulfilmentMethod: null,
+  destinationSelectionMode: null,
+  otherDestinationCountry: "",
   customerInformation: {
     fullName: "",
     phone: "",
@@ -151,6 +159,80 @@ const normalizeText = ({
   return {
     value: normalized.slice(0, maximumLength),
     malformed: normalized.length > maximumLength,
+  };
+};
+
+const isDestinationSelectionMode = (
+  value: unknown,
+): value is FutureShippingDestinationSelectionMode =>
+  value === "supported_country" || value === "other_destination";
+
+const resolveDestinationSelection = ({
+  fulfilmentMethod,
+  requestedMode,
+  countryCode,
+  otherDestinationCountry,
+}: {
+  fulfilmentMethod: FutureShippingFulfilmentSelection | null;
+  requestedMode: unknown;
+  countryCode: string;
+  otherDestinationCountry: string;
+}): {
+  mode: FutureShippingDestinationSelectionMode | null;
+  countryCode: string;
+  otherDestinationCountry: string;
+} => {
+  const trimmedOther = otherDestinationCountry.trim();
+  if (fulfilmentMethod !== "destination_delivery") {
+    return {
+      mode: null,
+      countryCode: isStep8CustomerSelectableCountry(countryCode) ? countryCode : "",
+      otherDestinationCountry: "",
+    };
+  }
+  if (
+    requestedMode === "other_destination" ||
+    isStep8FakeCountryCode(countryCode)
+  ) {
+    return {
+      mode: "other_destination",
+      countryCode: "",
+      otherDestinationCountry: trimmedOther,
+    };
+  }
+  if (isStep8CustomerSelectableCountry(countryCode)) {
+    return {
+      mode: "supported_country",
+      countryCode,
+      otherDestinationCountry: "",
+    };
+  }
+  if (isValidIsoCountryCode(countryCode)) {
+    return {
+      mode: "other_destination",
+      countryCode: "",
+      otherDestinationCountry:
+        trimmedOther || formatStep8CountryLabel(countryCode),
+    };
+  }
+  if (requestedMode === "supported_country" && !countryCode) {
+    return {
+      mode: "supported_country",
+      countryCode: "",
+      otherDestinationCountry: "",
+    };
+  }
+  if (trimmedOther) {
+    return {
+      mode: "other_destination",
+      countryCode: "",
+      otherDestinationCountry: trimmedOther,
+    };
+  }
+  return {
+    mode: isDestinationSelectionMode(requestedMode) ? requestedMode : null,
+    countryCode: "",
+    otherDestinationCountry: "",
   };
 };
 
@@ -262,6 +344,13 @@ export const normalizeFutureShippingState = (
       value: "countryCode" in address ? address.countryCode : undefined,
       maximumLength: MAX_LENGTHS.countryCode,
     }),
+    otherDestinationCountry: normalizeText({
+      value:
+        "otherDestinationCountry" in candidate
+          ? candidate.otherDestinationCountry
+          : undefined,
+      maximumLength: MAX_LENGTHS.otherDestinationCountry,
+    }),
     comment: normalizeText({
       value: "comment" in customer ? customer.comment : undefined,
       maximumLength: MAX_LENGTHS.comment,
@@ -281,10 +370,19 @@ export const normalizeFutureShippingState = (
     candidate.fulfilmentMethod !== null &&
     !fulfilmentMethod;
 
+  const destinationSelection = resolveDestinationSelection({
+    fulfilmentMethod,
+    requestedMode: candidate.destinationSelectionMode,
+    countryCode: normalizeStep8CountryCode(normalizedFields.countryCode.value),
+    otherDestinationCountry: normalizedFields.otherDestinationCountry.value,
+  });
+
   return {
     state: {
       schemaVersion: FUTURE_SHIPPING_STATE_SCHEMA_VERSION,
       fulfilmentMethod,
+      destinationSelectionMode: destinationSelection.mode,
+      otherDestinationCountry: destinationSelection.otherDestinationCountry,
       customerInformation: {
         fullName: normalizedFields.fullName.value,
         phone: normalizedFields.phone.value,
@@ -295,9 +393,7 @@ export const normalizeFutureShippingState = (
           city: normalizedFields.city.value,
           stateRegion: normalizedFields.stateRegion.value,
           postalCode: normalizedFields.postalCode.value,
-          countryCode: normalizeStep8CountryCode(
-            normalizedFields.countryCode.value,
-          ),
+          countryCode: destinationSelection.countryCode,
         },
         comment: normalizedFields.comment.value,
       },
@@ -356,30 +452,38 @@ const getCustomerDiagnostics = (
       customer.deliveryAddress.postalCode,
       "Enter the postal code.",
     );
-    requireText(
-      "countryCode",
-      customer.deliveryAddress.countryCode,
-      "Select a destination country.",
-    );
-    if (
-      customer.deliveryAddress.countryCode &&
-      !isValidIsoCountryCode(customer.deliveryAddress.countryCode)
-    ) {
-      diagnostics.push({
-        code: "INVALID_COUNTRY",
-        field: "countryCode",
-        message: "Select a valid ISO country.",
-      });
-    }
-    if (
-      step8RequiresRegion(customer.deliveryAddress.countryCode) &&
-      !customer.deliveryAddress.stateRegion
-    ) {
-      diagnostics.push({
-        code: "REQUIRED_FIELD",
-        field: "stateRegion",
-        message: "Enter the state, province, or region.",
-      });
+    if (state.destinationSelectionMode === "other_destination") {
+      requireText(
+        "otherDestinationCountry",
+        state.otherDestinationCountry,
+        "Enter the destination country or territory.",
+      );
+    } else {
+      requireText(
+        "countryCode",
+        customer.deliveryAddress.countryCode,
+        "Select a destination country.",
+      );
+      if (
+        customer.deliveryAddress.countryCode &&
+        !isValidIsoCountryCode(customer.deliveryAddress.countryCode)
+      ) {
+        diagnostics.push({
+          code: "INVALID_COUNTRY",
+          field: "countryCode",
+          message: "Select a valid ISO country.",
+        });
+      }
+      if (
+        step8RequiresRegion(customer.deliveryAddress.countryCode) &&
+        !customer.deliveryAddress.stateRegion
+      ) {
+        diagnostics.push({
+          code: "REQUIRED_FIELD",
+          field: "stateRegion",
+          message: "Enter the state, province, or region.",
+        });
+      }
     }
   }
   return diagnostics;
@@ -408,6 +512,7 @@ const createQuoteInputFingerprint = ({
   return createOpaqueFingerprint({
     rateVersion: STEP8_DELIVERY_RATE_VERSION,
     fulfilmentMethod: state.fulfilmentMethod,
+    destinationSelectionMode: state.destinationSelectionMode,
     destinationZoneId,
     addressLine1: address.addressLine1,
     addressLine2: address.addressLine2 || "",
@@ -415,6 +520,7 @@ const createQuoteInputFingerprint = ({
     stateRegion: address.stateRegion || "",
     postalCode: address.postalCode,
     countryCode: address.countryCode,
+    otherDestinationCountry: state.otherDestinationCountry || "",
     garmentCount,
   });
 };
@@ -569,6 +675,7 @@ export const reconcileFutureShippingState = ({
     countryCode: normalizedState.customerInformation.deliveryAddress.countryCode,
     city: normalizedState.customerInformation.deliveryAddress.city,
     physicalGarmentCount: garmentCount,
+    destinationSelectionMode: normalizedState.destinationSelectionMode,
   });
   const selectedDesignPriceCents =
     selectedDesignPrice !== null && Number.isFinite(selectedDesignPrice)
@@ -748,7 +855,11 @@ export const getStep8OrderSummaryRows = (
     rows.push({
       label: "Destination",
       value:
-        formatStep8CustomerDestination(address) ||
+        formatStep8CustomerDestination({
+          city: address.city,
+          countryCode: address.countryCode,
+          otherDestinationCountry: resolution.state.otherDestinationCountry,
+        }) ||
         resolution.destinationLabel ||
         "Pending",
     });

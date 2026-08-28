@@ -7,14 +7,18 @@ import {
   STEP8_COUNTRY_ZONE_INDEX,
   STEP8_DELIVERY_RATE_VERSION,
   STEP8_DESTINATION_ZONE_LABELS,
+  STEP8_FAKE_COUNTRY_CODE_SENTINELS,
   STEP8_HEADLINE_RATES_CENTS,
   STEP8_KG_PER_PHYSICAL_GARMENT,
+  STEP8_OTHER_DESTINATION_SELECT_VALUE,
   STEP8_PICKUP_FEE_CENTS,
   STEP8_REGION_REQUIRED_COUNTRY_CODES,
   STEP8_RULE_IDS,
   STEP8_WEIGHT_TIER_LABELS,
   formatStep8CountryLabel,
+  isStep8CustomerSelectableCountry,
   isSupportedStep8RateVersion,
+  type Step8DestinationSelectionMode,
   type Step8DestinationZone,
   type Step8WeightTier,
 } from "../config/Step8AdditionalDeliveryConfig";
@@ -49,25 +53,40 @@ export const normalizeStep8CountryCode = (value: string | null | undefined): str
 export const isValidIsoCountryCode = (value: string | null | undefined): boolean =>
   ISO_COUNTRY_CODE_PATTERN.test(normalizeStep8CountryCode(value));
 
+export const isStep8FakeCountryCode = (
+  value: string | null | undefined,
+): boolean => {
+  const normalized = (value || "").trim().toUpperCase();
+  return (
+    normalized === STEP8_OTHER_DESTINATION_SELECT_VALUE.toUpperCase() ||
+    STEP8_FAKE_COUNTRY_CODE_SENTINELS.has(normalized)
+  );
+};
+
 export const step8RequiresRegion = (
   countryCode: string | null | undefined,
 ): boolean =>
   STEP8_REGION_REQUIRED_COUNTRY_CODES.has(normalizeStep8CountryCode(countryCode));
 
-export { isSupportedStep8RateVersion };
+export { isSupportedStep8RateVersion, isStep8CustomerSelectableCountry };
 
 export const formatStep8CustomerDestination = ({
   city,
   countryCode,
+  otherDestinationCountry,
 }: {
   city?: string | null;
   countryCode?: string | null;
+  otherDestinationCountry?: string | null;
 }): string | null => {
   const trimmedCity = (city || "").trim().replace(/\s+/g, " ");
+  const trimmedOther = (otherDestinationCountry || "").trim().replace(/\s+/g, " ");
   const normalizedCountry = normalizeStep8CountryCode(countryCode);
-  const countryLabel = isValidIsoCountryCode(normalizedCountry)
-    ? formatStep8CountryLabel(normalizedCountry)
-    : "";
+  const countryLabel =
+    isValidIsoCountryCode(normalizedCountry) &&
+    !isStep8FakeCountryCode(normalizedCountry)
+      ? formatStep8CountryLabel(normalizedCountry)
+      : trimmedOther;
   if (trimmedCity && countryLabel) return `${trimmedCity}, ${countryLabel}`;
   if (trimmedCity) return trimmedCity;
   if (countryLabel) return countryLabel;
@@ -105,15 +124,25 @@ export const resolveStep8WeightTier = (weightKg: number): Step8WeightTier => {
 export const resolveStep8DestinationZone = ({
   countryCode,
   city,
+  destinationSelectionMode,
 }: {
   countryCode?: string | null;
   city?: string | null;
+  destinationSelectionMode?: Step8DestinationSelectionMode | null;
 }): {
   zone: Step8DestinationZone | null;
   quoteRequired: boolean;
   diagnosticCode: string | null;
   diagnosticMessage: string | null;
 } => {
+  if (destinationSelectionMode === "other_destination") {
+    return {
+      zone: null,
+      quoteRequired: true,
+      diagnosticCode: "OTHER_DESTINATION_QUOTE_REQUIRED",
+      diagnosticMessage: "Custom shipping quote required",
+    };
+  }
   const normalizedCountry = normalizeStep8CountryCode(countryCode);
   if (!normalizedCountry) {
     return {
@@ -123,7 +152,10 @@ export const resolveStep8DestinationZone = ({
       diagnosticMessage: "Select a destination country.",
     };
   }
-  if (!isValidIsoCountryCode(normalizedCountry)) {
+  if (
+    isStep8FakeCountryCode(normalizedCountry) ||
+    !isValidIsoCountryCode(normalizedCountry)
+  ) {
     return {
       zone: null,
       quoteRequired: true,
@@ -203,11 +235,13 @@ export const resolveStep8AdditionalDelivery = ({
   countryCode,
   city,
   physicalGarmentCount,
+  destinationSelectionMode = null,
 }: {
   deliveryMethod: Step8DeliveryMethod;
   countryCode?: string | null;
   city?: string | null;
   physicalGarmentCount: number;
+  destinationSelectionMode?: Step8DestinationSelectionMode | null;
 }): Step8AdditionalDeliveryResolution => {
   const shipmentWeightKg = resolveStep8ShipmentWeightKg(physicalGarmentCount);
   const weightTier =
@@ -249,7 +283,11 @@ export const resolveStep8AdditionalDelivery = ({
     });
   }
 
-  const zoneResolution = resolveStep8DestinationZone({ countryCode, city });
+  const zoneResolution = resolveStep8DestinationZone({
+    countryCode,
+    city,
+    destinationSelectionMode,
+  });
   if (zoneResolution.quoteRequired || !zoneResolution.zone) {
     return unavailable({
       deliveryMethod,

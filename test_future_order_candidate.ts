@@ -1003,6 +1003,268 @@ assert.equal(quotePending.candidate?.shipping.additionalDeliveryFeeCents, null);
 assert.equal(normalizeFutureOrderCandidate(quotePending.candidate).status, "valid");
 assert.equal(quotePending.candidate?.contentStatus, "blocked");
 
+const otherDestinationInput: FutureOrderCandidateBuildInput = {
+  ...quotePendingBaseInput,
+  shippingResolution: reconcileFutureShippingState({
+    state: {
+      ...deliveryState(),
+      destinationSelectionMode: "other_destination",
+      otherDestinationCountry: "Fiji",
+      destinationZoneId: null,
+      destinationZoneSource: null,
+      customerInformation: {
+        ...deliveryState().customerInformation,
+        deliveryAddress: {
+          ...deliveryState().customerInformation.deliveryAddress,
+          city: "Suva",
+          countryCode: "",
+          postalCode: "0000",
+        },
+      },
+    },
+    garmentCount: 3,
+    selectedDesignPrice:
+      projectFutureDesignStudioSummary(quotePendingBaseInput).pricingSummary
+        .selectedDesignPrice?.selectedDesignPrice || null,
+  }),
+};
+const otherDestinationCandidate = buildFutureOrderCandidate(otherDestinationInput);
+assert.equal(otherDestinationCandidate.status, "blocked");
+assert.equal(
+  otherDestinationCandidate.candidate?.shipping.state.destinationSelectionMode,
+  "other_destination",
+);
+assert.equal(
+  otherDestinationCandidate.candidate?.shipping.state.customerInformation.deliveryAddress.countryCode,
+  "",
+);
+assert.equal(
+  otherDestinationCandidate.candidate?.shipping.state.otherDestinationCountry,
+  "Fiji",
+);
+assert.equal(otherDestinationCandidate.candidate?.shipping.quoteRequired, true);
+assert.equal(
+  otherDestinationCandidate.candidate?.shipping.additionalDeliveryFeeCents,
+  null,
+);
+assert.equal(otherDestinationCandidate.candidate?.shipping.formComplete, false);
+assert.equal(normalizeFutureOrderCandidate(otherDestinationCandidate.candidate).status, "valid");
+assert.ok(
+  otherDestinationCandidate.blockers.some(
+    (blocker) => blocker.code === "DELIVERY_QUOTE_PENDING",
+  ),
+);
+assert.doesNotMatch(
+  JSON.stringify(otherDestinationCandidate.candidate?.shipping.state),
+  /"(OT|XX|OTHER)"/,
+);
+
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...otherDestinationCandidate.candidate!.shipping,
+      additionalDeliveryFeeCents: 4875,
+      quoteRequired: true,
+      formComplete: false,
+      quoteReady: false,
+      status: "quote_pending",
+    },
+  },
+  "other destination with invented fee",
+);
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...otherDestinationCandidate.candidate!.shipping,
+      state: {
+        ...otherDestinationCandidate.candidate!.shipping.state,
+        customerInformation: {
+          ...otherDestinationCandidate.candidate!.shipping.state.customerInformation,
+          deliveryAddress: {
+            ...otherDestinationCandidate.candidate!.shipping.state.customerInformation
+              .deliveryAddress,
+            countryCode: "OT",
+          },
+        },
+      },
+    },
+  },
+  "other destination fake ISO country code",
+);
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...otherDestinationCandidate.candidate!.shipping,
+      state: {
+        ...otherDestinationCandidate.candidate!.shipping.state,
+        customerInformation: {
+          ...otherDestinationCandidate.candidate!.shipping.state.customerInformation,
+          deliveryAddress: {
+            ...otherDestinationCandidate.candidate!.shipping.state.customerInformation
+              .deliveryAddress,
+            countryCode: "XX",
+          },
+        },
+      },
+    },
+  },
+  "other destination fake ISO country code XX",
+);
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...otherDestinationCandidate.candidate!.shipping,
+      additionalDeliveryFeeCents: 1900,
+      quoteRequired: false,
+      quoteReady: true,
+      formComplete: true,
+      status: "quote_ready",
+      state: {
+        ...otherDestinationCandidate.candidate!.shipping.state,
+        destinationSelectionMode: "other_destination",
+        destinationZoneId: "EUROPE",
+        customerInformation: {
+          ...otherDestinationCandidate.candidate!.shipping.state.customerInformation,
+          deliveryAddress: {
+            ...otherDestinationCandidate.candidate!.shipping.state.customerInformation
+              .deliveryAddress,
+            countryCode: "DE",
+          },
+        },
+      },
+    },
+  },
+  "other destination with supported ISO and numeric fee",
+);
+
+const legacyAuResolution = reconcileFutureShippingState({
+  state: {
+    ...deliveryState(),
+    destinationSelectionMode: null,
+    destinationZoneId: null,
+    destinationZoneSource: null,
+    customerInformation: {
+      ...deliveryState().customerInformation,
+      deliveryAddress: {
+        ...deliveryState().customerInformation.deliveryAddress,
+        city: "Sydney",
+        postalCode: "2000",
+        countryCode: "AU",
+      },
+    },
+  },
+  garmentCount: 4,
+  selectedDesignPrice:
+    projectFutureDesignStudioSummary(exactBaseInput).pricingSummary
+      .selectedDesignPrice?.selectedDesignPrice || null,
+});
+assert.equal(legacyAuResolution.state.destinationSelectionMode, "other_destination");
+assert.equal(
+  legacyAuResolution.state.customerInformation.deliveryAddress.countryCode,
+  "",
+);
+assert.match(legacyAuResolution.state.otherDestinationCountry, /Australia/);
+assert.equal(legacyAuResolution.quoteRequired, true);
+assert.equal(legacyAuResolution.postEindhovenAdjustmentCents, null);
+const legacyAuCandidate = buildFutureOrderCandidate({
+  ...exactBaseInput,
+  shippingResolution: legacyAuResolution,
+});
+assert.equal(legacyAuCandidate.status, "blocked");
+assert.equal(normalizeFutureOrderCandidate(legacyAuCandidate.candidate).status, "valid");
+
+const contradictorySupportedAuCandidate = {
+  ...legacyAuCandidate.candidate!,
+  shipping: {
+    ...legacyAuCandidate.candidate!.shipping,
+    state: {
+      ...legacyAuCandidate.candidate!.shipping.state,
+      destinationSelectionMode: "supported_country",
+      customerInformation: {
+        ...legacyAuCandidate.candidate!.shipping.state.customerInformation,
+        deliveryAddress: {
+          ...legacyAuCandidate.candidate!.shipping.state.customerInformation
+            .deliveryAddress,
+          countryCode: "AU",
+        },
+      },
+    },
+  },
+};
+const contradictorySupportedAu = normalizeFutureOrderCandidate(
+  contradictorySupportedAuCandidate,
+);
+assert.equal(contradictorySupportedAu.status, "invalid");
+assert.equal(contradictorySupportedAu.candidate, null);
+assert.equal(contradictorySupportedAu.blockers[0]?.code, "MALFORMED_SHIPPING");
+console.log(`AUDIT_CONTRADICTORY_SUPPORTED_AU=${contradictorySupportedAu.status}`);
+
+rejectShipping(
+  {
+    ...legacyAuCandidate.candidate!,
+    shipping: {
+      ...legacyAuCandidate.candidate!.shipping,
+      state: {
+        ...legacyAuCandidate.candidate!.shipping.state,
+        destinationSelectionMode: "supported_country",
+        customerInformation: {
+          ...legacyAuCandidate.candidate!.shipping.state.customerInformation,
+          deliveryAddress: {
+            ...legacyAuCandidate.candidate!.shipping.state.customerInformation
+              .deliveryAddress,
+            countryCode: "NZ",
+          },
+        },
+      },
+    },
+  },
+  "supported-country claim with unsupported ISO and quote-required fields",
+);
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...candidate.shipping,
+      state: {
+        ...candidate.shipping.state,
+        destinationSelectionMode: "supported_country",
+        customerInformation: {
+          ...candidate.shipping.state.customerInformation,
+          deliveryAddress: {
+            ...candidate.shipping.state.customerInformation.deliveryAddress,
+            countryCode: null,
+          },
+        },
+      },
+    },
+  },
+  "supported-country claim with null countryCode",
+);
+rejectShipping(
+  {
+    ...candidate,
+    shipping: {
+      ...candidate.shipping,
+      state: {
+        ...candidate.shipping.state,
+        destinationSelectionMode: "supported_country",
+        customerInformation: {
+          ...candidate.shipping.state.customerInformation,
+          deliveryAddress: {
+            ...candidate.shipping.state.customerInformation.deliveryAddress,
+            countryCode: "AU",
+          },
+        },
+      },
+    },
+  },
+  "supported-country claim with unsupported ISO",
+);
+
 const malformedMoneyInput: FutureOrderCandidateBuildInput = {
   ...buildInput(),
   basePricing: {

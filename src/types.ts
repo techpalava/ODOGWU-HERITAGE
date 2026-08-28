@@ -597,6 +597,10 @@ export type FutureShippingWeightTier =
 
 export type FutureShippingDestinationZoneSource = "iso_resolved" | null;
 
+export type FutureShippingDestinationSelectionMode =
+  | "supported_country"
+  | "other_destination";
+
 /** Stores tariff identity only. Current configuration remains price authority. */
 export interface FutureShippingQuoteReferenceV1 {
   tariffVersion: string;
@@ -613,6 +617,8 @@ export interface FutureShippingQuoteReferenceV1 {
 export interface FutureShippingStateV1 {
   schemaVersion: 1;
   fulfilmentMethod: FutureShippingFulfilmentSelection | null;
+  destinationSelectionMode: FutureShippingDestinationSelectionMode | null;
+  otherDestinationCountry: string;
   customerInformation: FutureShippingCustomerInformationV1;
   destinationZoneId: FutureShippingDestinationZone | null;
   destinationZoneSource: FutureShippingDestinationZoneSource;

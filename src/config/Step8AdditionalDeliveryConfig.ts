@@ -1,4 +1,4 @@
-import type { FutureShippingDestinationZone } from "../types";
+import type { FutureShippingDestinationSelectionMode, FutureShippingDestinationZone } from "../types";
 
 export const STEP8_DELIVERY_RATE_VERSION = "step8-delivery-v1" as const;
 
@@ -125,13 +125,106 @@ export interface Step8CountryOption {
   readonly label: string;
 }
 
+export const isStep8DestinationZone = (
+  value: string,
+): value is Step8DestinationZone =>
+  (STEP8_DESTINATION_ZONES as readonly string[]).includes(value);
+
+export const formatStep8CountryLabel = (countryCode: string): string =>
+  countryDisplayNames?.of(countryCode) || countryCode;
+
+/** Select-only sentinel. Never stored in ISO countryCode. */
+export const STEP8_OTHER_DESTINATION_SELECT_VALUE =
+  "__other_destination__" as const;
+
+export const STEP8_OTHER_DESTINATION_LABEL =
+  "Other Destination — Request Shipping Quote" as const;
+
+export type Step8DestinationSelectionMode =
+  FutureShippingDestinationSelectionMode;
+
+export const STEP8_FAKE_COUNTRY_CODE_SENTINELS = Object.freeze(
+  new Set(["OT", "XX", "ZZ", "OTHER"]),
+);
+
+export interface Step8CustomerCountry {
+  readonly countryCode: string;
+  readonly name: string;
+  readonly zone: Step8DestinationZone;
+  readonly customerSelectable: true;
+}
+
+export interface Step8CustomerCountryGroup {
+  readonly id: string;
+  readonly label: string;
+  readonly zone: Step8DestinationZone;
+  readonly countries: readonly Step8CustomerCountry[];
+}
+
+const CUSTOMER_GROUP_ORDER: readonly {
+  id: string;
+  label: string;
+  zone: Step8DestinationZone;
+}[] = Object.freeze([
+  { id: "netherlands", label: "Netherlands", zone: "NETHERLANDS_OTHER" },
+  { id: "europe", label: "Europe", zone: "EUROPE" },
+  { id: "north_america", label: "North America", zone: "NORTH_AMERICA" },
+  { id: "south_america", label: "South America", zone: "SOUTH_AMERICA" },
+  { id: "africa", label: "Africa", zone: "AFRICA" },
+  { id: "asia", label: "Asia", zone: "ASIA" },
+]);
+
+export const isStep8AutomaticRateZone = (
+  value: string | null | undefined,
+): value is Step8DestinationZone =>
+  Boolean(value && value !== "quote_required" && isStep8DestinationZone(value));
+
+export const isStep8CustomerSelectableCountry = (
+  countryCode: string | null | undefined,
+): boolean => {
+  const mapped = STEP8_COUNTRY_ZONE_INDEX.get(
+    countryCode === "UK" ? "GB" : (countryCode || "").trim().toUpperCase(),
+  );
+  return isStep8AutomaticRateZone(mapped || null);
+};
+
+export const STEP8_CUSTOMER_COUNTRY_CATALOG: readonly Step8CustomerCountry[] =
+  Object.freeze(
+    [...STEP8_COUNTRY_ZONE_INDEX.entries()]
+      .filter((entry): entry is [string, Step8DestinationZone] =>
+        isStep8AutomaticRateZone(entry[1]),
+      )
+      .map(([countryCode, zone]) =>
+        Object.freeze({
+          countryCode,
+          name: formatStep8CountryLabel(countryCode),
+          zone,
+          customerSelectable: true as const,
+        }),
+      )
+      .sort((left, right) => left.name.localeCompare(right.name)),
+  );
+
+export const STEP8_CUSTOMER_COUNTRY_GROUPS: readonly Step8CustomerCountryGroup[] =
+  Object.freeze(
+    CUSTOMER_GROUP_ORDER.map((group) =>
+      Object.freeze({
+        ...group,
+        countries: Object.freeze(
+          STEP8_CUSTOMER_COUNTRY_CATALOG.filter(
+            (country) => country.zone === group.zone,
+          ),
+        ),
+      }),
+    ).filter((group) => group.countries.length > 0),
+  );
+
+/** Customer-visible automatically priced countries only. Quote-only ISO codes are excluded. */
 export const STEP8_COUNTRY_OPTIONS: readonly Step8CountryOption[] = Object.freeze(
-  [...STEP8_COUNTRY_ZONE_INDEX.keys()]
-    .map((code) => ({
-      code,
-      label: countryDisplayNames?.of(code) || code,
-    }))
-    .sort((left, right) => left.label.localeCompare(right.label)),
+  STEP8_CUSTOMER_COUNTRY_CATALOG.map((country) => ({
+    code: country.countryCode,
+    label: country.name,
+  })),
 );
 
 type PricedWeightTier = Exclude<Step8WeightTier, "over_20">;
@@ -204,11 +297,6 @@ export const STEP8_RULE_IDS = Object.freeze({
   quoteRequired: "step8_quote_required",
 });
 
-export const isStep8DestinationZone = (
-  value: string,
-): value is Step8DestinationZone =>
-  (STEP8_DESTINATION_ZONES as readonly string[]).includes(value);
-
 export const isSupportedStep8RateVersion = (
   value: string | null | undefined,
 ): value is typeof STEP8_DELIVERY_RATE_VERSION =>
@@ -216,6 +304,3 @@ export const isSupportedStep8RateVersion = (
     value &&
       (STEP8_SUPPORTED_RATE_VERSIONS as readonly string[]).includes(value),
   );
-
-export const formatStep8CountryLabel = (countryCode: string): string =>
-  countryDisplayNames?.of(countryCode) || countryCode;

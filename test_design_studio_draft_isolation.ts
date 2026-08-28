@@ -91,6 +91,8 @@ const makeDraft = (
     },
     destinationZoneId: "NETHERLANDS_OTHER",
     destinationZoneSource: "iso_resolved",
+    destinationSelectionMode: "supported_country",
+    otherDestinationCountry: "",
     quoteReference: null,
   },
   selectedFabricCode: "FABRIC-A",

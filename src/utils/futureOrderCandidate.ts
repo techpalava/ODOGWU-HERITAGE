@@ -19,10 +19,16 @@ import {
 } from "./designStudioFutureSummary";
 import { projectActiveFutureMeasurementState } from "./measurementBlueprint";
 import {
-  isSupportedStep8RateVersion,
+  isStep8CustomerSelectableCountry,
   isStep8DestinationZone,
+  isSupportedStep8RateVersion,
 } from "../config/Step8AdditionalDeliveryConfig";
-import { resolveStep8WeightTier } from "./step8AdditionalDelivery";
+import {
+  isStep8FakeCountryCode,
+  isValidIsoCountryCode,
+  normalizeStep8CountryCode,
+  resolveStep8WeightTier,
+} from "./step8AdditionalDelivery";
 
 export const FUTURE_ORDER_CANDIDATE_SCHEMA_VERSION = 1 as const;
 
@@ -844,6 +850,87 @@ const sameNumber = (left: unknown, right: unknown): boolean =>
   Number.isFinite(right) &&
   left === right;
 
+const storedCountryCode = (address: Record<string, unknown>): string =>
+  typeof address.countryCode === "string" ? address.countryCode.trim() : "";
+
+/**
+ * Canonical FutureOrderCandidate validation inspects the stored destination
+ * declaration before reconciliation. Legacy Step 8 drafts may still omit
+ * destinationSelectionMode and normalize unsupported ISO codes such as AU
+ * into other_destination. A current candidate that claims supported_country
+ * must already carry an automatically priced ISO country; silent repair of
+ * that contradiction is not allowed.
+ */
+const validateStoredCourierDestinationIntent = ({
+  state,
+  quoteRequired,
+  feeCents,
+}: {
+  state: Record<string, unknown>;
+  quoteRequired: unknown;
+  feeCents: unknown;
+}): { code: string; message: string } | null => {
+  if (
+    !isRecord(state.customerInformation) ||
+    !isRecord(state.customerInformation.deliveryAddress)
+  ) {
+    return malformedShipping("The saved courier address is malformed.");
+  }
+  const address = state.customerInformation.deliveryAddress;
+  const storedMode = state.destinationSelectionMode;
+  const rawCountry = storedCountryCode(address);
+  const normalizedCountry = normalizeStep8CountryCode(rawCountry);
+
+  if (storedMode === "supported_country") {
+    if (
+      address.countryCode !== undefined &&
+      address.countryCode !== null &&
+      typeof address.countryCode !== "string"
+    ) {
+      return malformedShipping(
+        "A supported-country destination must use an approved automatic-rate ISO country.",
+      );
+    }
+    if (
+      !rawCountry ||
+      !isValidIsoCountryCode(normalizedCountry) ||
+      isStep8FakeCountryCode(normalizedCountry) ||
+      !isStep8CustomerSelectableCountry(normalizedCountry)
+    ) {
+      return malformedShipping(
+        "A supported-country destination must use an approved automatic-rate ISO country.",
+      );
+    }
+    return null;
+  }
+
+  if (storedMode === "other_destination") {
+    if (isStep8FakeCountryCode(normalizedCountry)) {
+      return malformedShipping(
+        "Other Destination cannot carry a supported or fake ISO country code.",
+      );
+    }
+    if (isStep8CustomerSelectableCountry(normalizedCountry)) {
+      return malformedShipping(
+        "Other Destination cannot carry a supported or fake ISO country code.",
+      );
+    }
+    if (quoteRequired !== true || feeCents !== null) {
+      return malformedShipping(
+        "Other Destination must remain quote-required without a numeric fee.",
+      );
+    }
+    if (isStep8DestinationZone(String(state.destinationZoneId || ""))) {
+      return malformedShipping(
+        "Other Destination cannot carry an automatic shipping zone.",
+      );
+    }
+    return null;
+  }
+
+  return null;
+};
+
 const validateCandidateShipping = (
   shipping: Record<string, unknown>,
   garments: unknown[],
@@ -926,6 +1013,15 @@ const validateCandidateShipping = (
     );
   }
 
+  if (fulfilment === "destination_delivery") {
+    const storedIntentError = validateStoredCourierDestinationIntent({
+      state,
+      quoteRequired: shipping.quoteRequired,
+      feeCents,
+    });
+    if (storedIntentError) return storedIntentError;
+  }
+
   const selectedDesignPrice = isMoneyCents(selectedDesignTotalCents)
     ? Number(selectedDesignTotalCents) / 100
     : null;
@@ -973,21 +1069,75 @@ const validateCandidateShipping = (
       return malformedShipping("The saved courier address is malformed.");
     }
     const address = state.customerInformation.deliveryAddress;
-    if (
-      !isStableIdentifier(String(address.addressLine1 || "")) &&
-      !(typeof address.addressLine1 === "string" && address.addressLine1.trim())
-    ) {
-      return malformedShipping("The saved courier address is malformed.");
-    }
+    const storedMode = state.destinationSelectionMode;
+    const storedCountry = storedCountryCode(address);
+    const canonicalMode = canonical.state.destinationSelectionMode;
+    const canonicalCountry = normalizeStep8CountryCode(
+      canonical.state.customerInformation.deliveryAddress.countryCode,
+    );
     if (
       typeof address.addressLine1 !== "string" ||
       !address.addressLine1.trim() ||
       typeof address.city !== "string" ||
-      !address.city.trim() ||
-      typeof address.countryCode !== "string" ||
-      !address.countryCode.trim()
+      !address.city.trim()
     ) {
       return malformedShipping("The saved courier address is malformed.");
+    }
+    if (storedMode === "supported_country") {
+      if (canonicalMode !== "supported_country") {
+        return malformedShipping(
+          "A supported-country destination cannot reconcile to another destination mode.",
+        );
+      }
+      if (
+        canonicalCountry !== normalizeStep8CountryCode(storedCountry) ||
+        !isStep8CustomerSelectableCountry(canonicalCountry)
+      ) {
+        return malformedShipping(
+          "A supported-country destination must use an approved automatic-rate ISO country.",
+        );
+      }
+    }
+    if (storedMode === "other_destination" || canonicalMode === "other_destination") {
+      if (storedMode === "other_destination" && canonicalMode !== "other_destination") {
+        return malformedShipping(
+          "Other Destination cannot reconcile to a supported automatic-rate country.",
+        );
+      }
+      if (
+        isStep8FakeCountryCode(storedCountry) ||
+        isStep8CustomerSelectableCountry(storedCountry)
+      ) {
+        return malformedShipping(
+          "Other Destination cannot carry a supported or fake ISO country code.",
+        );
+      }
+      if (canonicalCountry) {
+        return malformedShipping(
+          "Other Destination must not store an ISO country code.",
+        );
+      }
+      if (
+        !shipping.quoteRequired ||
+        feeCents !== null ||
+        canonical.quoteRequired !== true ||
+        canonical.postEindhovenAdjustmentCents !== null ||
+        canonical.formComplete ||
+        canonical.state.destinationZoneId
+      ) {
+        return malformedShipping(
+          "Other Destination must remain quote-required without a numeric fee.",
+        );
+      }
+    } else if (canonicalMode === "supported_country") {
+      if (typeof address.countryCode !== "string" || !address.countryCode.trim()) {
+        return malformedShipping("The saved courier address is malformed.");
+      }
+      if (!isStep8CustomerSelectableCountry(String(address.countryCode || ""))) {
+        return malformedShipping(
+          "A supported-country destination must use an approved automatic-rate ISO country.",
+        );
+      }
     }
     if (!canonical.quoteRequired) {
       if (
