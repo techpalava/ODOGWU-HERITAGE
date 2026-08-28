@@ -638,8 +638,17 @@ export const removeFutureFabricAssignment = ({
   return restoreParkedPendingGarment(cleaned, pending, awaiting);
 };
 
-export type FutureFabricCatalogueCardStatus = "SELECT" | "IN USE" | "ASSIGNED";
-export type FutureFabricCatalogueCardAction = "select" | "cancel";
+export type FutureFabricCatalogueCardStatus =
+  | "SELECT"
+  | "IN USE"
+  | "ASSIGNED"
+  | "USE AGAIN"
+  | "NO GARMENTS TO ASSIGN";
+export type FutureFabricCatalogueCardAction =
+  | "select"
+  | "cancel"
+  | "use_again"
+  | "none";
 
 export interface FutureFabricCatalogueCardPresentation {
   status: FutureFabricCatalogueCardStatus;

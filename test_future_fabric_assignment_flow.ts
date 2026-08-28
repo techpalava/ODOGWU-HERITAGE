@@ -679,10 +679,9 @@ assert.doesNotMatch(
   /Fabrics selected:/,
   "Step 2 must not use the ambiguous single-line Fabric progress label.",
 );
-assert.match(stepSource, /Use this fabric for your other garments\?/);
-assert.match(stepSource, /YES — Use for All/);
-assert.match(stepSource, /NO — Choose Garments/);
-assert.match(stepSource, /Choose Fabrics Individually/);
+assert.match(stepSource, /Step1FabricAssignmentDialog/);
+assert.match(stepSource, /pendingStep1FabricAssignment/);
+assert.match(stepSource, /commitStep1FabricAssignment/);
 assert.match(stepSource, /onAssignSameFabricProduct/);
 assert.match(stepSource, /aria-modal="true"/);
 assert.match(stepSource, /restoreCatalogueFocus/);
@@ -692,9 +691,35 @@ assert.match(stepSource, /focus\(\{ preventScroll: true \}\)/);
 assert.match(stepSource, /document\.activeElement === first/);
 assert.match(stepSource, /overflow-x-hidden/);
 assert.match(stepSource, /onAssignFabricToGarment\(fabric, garmentKey\)/);
-assert.match(stepSource, /handleFabricSelection\(fabric\)/);
+assert.match(stepSource, /handleFabricSelection\(/);
 assert.match(stepSource, /removeAssignedFabric\(/);
 assert.match(stepSource, /resolveFutureFabricCatalogueCardPresentation/);
+assert.match(stepSource, /resolveStep1FabricCatalogueCardPresentation/);
+const assignmentDialogSource = readFileSync(
+  "src/components/Step1FabricAssignmentDialog.tsx",
+  "utf8",
+);
+assert.match(assignmentDialogSource, /STEP1_FABRIC_ASSIGNMENT_TITLE/);
+assert.match(assignmentDialogSource, /STEP1_FABRIC_ASSIGNMENT_DESCRIPTION/);
+assert.match(assignmentDialogSource, /STEP1_USE_FOR_ALL_LABEL/);
+assert.match(assignmentDialogSource, /Assign to Selected/);
+assert.doesNotMatch(
+  assignmentDialogSource,
+  /priceMultiplier|toFixed\(|PRICING_CURRENCY/,
+  "The Step 1 assignment popup must not show customer-facing Fabric price.",
+);
+assert.match(assignmentDialogSource, /role="dialog"/);
+assert.match(assignmentDialogSource, /aria-modal="true"/);
+const assignmentHelperSource = readFileSync(
+  "src/utils/step1FabricAssignmentPopup.ts",
+  "utf8",
+);
+assert.match(assignmentHelperSource, /Assign Fabric to Garments/);
+assert.match(
+  assignmentHelperSource,
+  /Choose which garments should use this Fabric\./,
+);
+assert.match(assignmentHelperSource, /YES — Use for All/);
 const catalogueCardSource = readFileSync(
   "src/components/FutureFabricCatalogueCard.tsx",
   "utf8",
@@ -768,9 +793,9 @@ assert.doesNotMatch(
   /cancelPendingGarment\(state\);\s*const removed/,
   "removeFutureFabricAssignment must not cancel pending additional state unconditionally.",
 );
-assert.match(stepSource, /wasEligibleFirstStep1Assignment/);
+assert.match(stepSource, /openStep1FabricAssignment/);
+assert.match(stepSource, /restoreStep1AssignmentFocus/);
 assert.match(stepSource, /getFocusable\(\)\[0\]\?\.focus\(\)/);
-assert.match(stepSource, /clearOnMiss: true/);
 assert.match(stepSource, /result\.assignedGarmentKeys/);
 
 console.log("PASS: targeted future Fabric assignment flow");

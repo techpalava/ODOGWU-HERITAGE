@@ -13,6 +13,7 @@ import type { Fabric, FabricAllocationState, GarmentTypeStepSelection } from "./
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
   assignFutureFabricToGarment,
+  assignSameFabricProductToGarments,
   getFutureFabricStageCompletion,
 } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
@@ -124,7 +125,20 @@ const FabricStepProductionBoundary = ({
     },
     onRemoveFabricFromGarment: () => undefined,
     onUseSameFabricForGarment: () => undefined,
-    onAssignSameFabricProduct: () => undefined,
+    onAssignSameFabricProduct: (fabricCode: string, garmentKeys: string[]) => {
+      let result: ReturnType<typeof assignSameFabricProductToGarments> | null =
+        null;
+      setFabricAllocationState((current) => {
+        result = assignSameFabricProductToGarments({
+          state: current,
+          garmentTypeSelection,
+          fabricCode,
+          garmentKeys,
+        });
+        return result.status === "assigned" ? result.state : current;
+      });
+      return result ?? undefined;
+    },
     onBack: () => undefined,
     onContinue: () => undefined,
     onUseSameFabric: () => undefined,
@@ -231,6 +245,17 @@ const runUploadExtraCase = async ({
     ) || fabricCards[0];
   await act(async () => {
     preferred.props.onClick();
+  });
+  const extraCheckbox = renderer.root.findByProps({
+    "data-step1-fabric-assignment-checkbox": expectedTrouserOrExtraKey,
+  });
+  await act(async () => {
+    extraCheckbox.props.onChange({ currentTarget: { checked: true } });
+  });
+  await act(async () => {
+    renderer.root
+      .findByProps({ "data-testid": "step1-fabric-assignment-confirm" })
+      .props.onClick();
   });
 
   const updatedExtra = renderer.root.findByProps({
