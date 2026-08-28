@@ -31,12 +31,19 @@ export const FutureFabricCatalogueCard = ({
   actionLabel?: string;
   actionDisabled?: boolean;
   actionPressed?: boolean;
-  onAction: () => void;
+  onAction: (
+    event?: { currentTarget: HTMLElement },
+  ) => void;
   dataAttributes?: Record<string, string | undefined>;
 }) => {
   const availabilityMessage = getFabricAvailabilityMessage(fabric);
   const isCancelAction =
     !availabilityMessage && presentation.action === "cancel";
+  const isIdleDisabledAction =
+    !availabilityMessage &&
+    presentation.action === "none" &&
+    (presentation.status === "IN USE" ||
+      presentation.status === "NO GARMENTS TO ASSIGN");
   const stockPresentation = getFabricStockPresentation(fabric);
   const stockBadgeId = `${stockBadgeIdPrefix}-${fabric.code}`;
   const stockBadgeClassName =
@@ -45,7 +52,10 @@ export const FutureFabricCatalogueCard = ({
       : stockPresentation.visible && stockPresentation.tone === "out_of_stock"
         ? "border-red-200 bg-red-700 text-white"
         : "border-heritage-gold/30 bg-heritage-green text-white";
-  const disabled = Boolean(availabilityMessage) || Boolean(actionDisabled);
+  const disabled =
+    Boolean(availabilityMessage) ||
+    Boolean(actionDisabled) ||
+    presentation.action === "none";
   const resolvedStatusLabel = statusLabel || presentation.status;
   const resolvedActionLabel =
     actionLabel ||
@@ -159,7 +169,7 @@ export const FutureFabricCatalogueCard = ({
           aria-describedby={
             [describedBy, stockBadgeId].filter(Boolean).join(" ") || undefined
           }
-          className={`group mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold uppercase tracking-wider transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 ${
+          className={`group mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-3 text-center text-xs font-bold uppercase leading-snug tracking-wider whitespace-normal break-words transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 ${
             isCancelAction
               ? "bg-heritage-green text-white hover:bg-red-700 hover:text-white focus-visible:bg-red-700"
               : "bg-heritage-green text-white hover:bg-heritage-forest"
@@ -167,6 +177,8 @@ export const FutureFabricCatalogueCard = ({
         >
           {availabilityMessage || resolvedActionLabel === "Unavailable" ? (
             "Unavailable"
+          ) : isIdleDisabledAction ? (
+            resolvedStatusLabel
           ) : isCancelAction ? (
             <span className="grid w-full place-items-center">
               <span className="col-start-1 row-start-1 group-hover:invisible group-focus-visible:invisible">
