@@ -1,37 +1,44 @@
 import {
-  FUTURE_SHIPPING_TARIFF_RULES,
-  FUTURE_SHIPPING_TARIFF_VERSION,
-  type FutureShippingTariffRuleV1,
-} from "../config/FutureShippingTariffConfig";
+  STEP8_DELIVERY_RATE_VERSION,
+  STEP8_DESTINATION_ZONE_LABELS,
+  STEP8_DESTINATION_ZONES,
+  formatStep8CountryLabel,
+  isStep8CustomerSelectableCountry,
+  isStep8DestinationZone,
+  type Step8WeightTier,
+} from "../config/Step8AdditionalDeliveryConfig";
 import type {
+  FutureShippingDestinationSelectionMode,
   FutureShippingDestinationZone,
   FutureShippingQuoteReferenceV1,
   FutureShippingStateV1,
   FutureShippingFulfilmentSelection,
+  FutureShippingWeightTier,
 } from "../types";
 import type { FutureDesignStudioSummaryStatus } from "./designStudioFutureSummary";
+import { PRICING_CURRENCY_SYMBOL } from "./money";
 import {
-  resolveFutureFinalMileFromGarmentCount,
-  resolveFutureGarmentCountWeightReference,
-} from "./futureShippingTariff";
+  formatStep8CustomerDestination,
+  isStep8FakeCountryCode,
+  isValidIsoCountryCode,
+  normalizeStep8CountryCode,
+  resolveStep8AdditionalDelivery,
+  step8RequiresRegion,
+} from "./step8AdditionalDelivery";
 
 export const FUTURE_SHIPPING_STATE_SCHEMA_VERSION = 1 as const;
 
 export const FUTURE_SHIPPING_DESTINATION_ZONE_OPTIONS: readonly {
   id: FutureShippingDestinationZone;
   label: string;
-}[] = Object.freeze([
-  Object.freeze({ id: "EINDHOVEN", label: "Eindhoven" }),
-  Object.freeze({
-    id: "NETHERLANDS_OTHER",
-    label: "Netherlands outside Eindhoven",
-  }),
-  Object.freeze({ id: "EUROPE", label: "Other parts of Europe" }),
-  Object.freeze({ id: "NORTH_AMERICA", label: "North America" }),
-  Object.freeze({ id: "SOUTH_AMERICA", label: "South America" }),
-  Object.freeze({ id: "AFRICA", label: "Africa" }),
-  Object.freeze({ id: "ASIA", label: "Asia" }),
-]);
+}[] = Object.freeze(
+  STEP8_DESTINATION_ZONES.map((id) =>
+    Object.freeze({
+      id,
+      label: STEP8_DESTINATION_ZONE_LABELS[id],
+    }),
+  ),
+);
 
 export type FutureShippingStageStatus =
   | "incomplete"
@@ -52,7 +59,9 @@ export type FutureShippingFieldId =
   | "postalCode"
   | "countryCode"
   | "destinationZoneId"
-  | "state";
+  | "state"
+  | "stateRegion"
+  | "otherDestinationCountry";
 
 export interface FutureShippingStageDiagnostic {
   code: string;
@@ -64,13 +73,17 @@ export interface FutureShippingStageResolution {
   state: FutureShippingStateV1;
   status: FutureShippingStageStatus;
   customerInformationComplete: boolean;
+  formInputsComplete: boolean;
   formComplete: boolean;
   quoteReady: boolean;
+  quoteRequired: boolean;
   diagnostics: FutureShippingStageDiagnostic[];
   postEindhovenAdjustmentCents: number | null;
   projectedTotalCents: number | null;
   destinationLabel: string | null;
   parcelWeightKg: number | null;
+  weightTier: FutureShippingWeightTier | null;
+  rateVersion: typeof STEP8_DELIVERY_RATE_VERSION;
   paymentLocked: true;
 }
 
@@ -86,8 +99,10 @@ const MAX_LENGTHS = Object.freeze({
   addressLine1: 200,
   addressLine2: 200,
   city: 120,
+  stateRegion: 120,
   postalCode: 32,
   countryCode: 8,
+  otherDestinationCountry: 80,
   comment: 1000,
 });
 
@@ -95,14 +110,12 @@ const FULFILMENT_METHODS = new Set<FutureShippingFulfilmentSelection>([
   "eindhoven_pickup",
   "destination_delivery",
 ]);
-const DESTINATION_ZONES = new Set<FutureShippingDestinationZone>(
-  FUTURE_SHIPPING_DESTINATION_ZONE_OPTIONS.map((zone) => zone.id),
-);
 
 const emptyAddress = () => ({
   addressLine1: "",
   addressLine2: "",
   city: "",
+  stateRegion: "",
   postalCode: "",
   countryCode: "",
 });
@@ -110,6 +123,8 @@ const emptyAddress = () => ({
 export const createEmptyFutureShippingState = (): FutureShippingStateV1 => ({
   schemaVersion: FUTURE_SHIPPING_STATE_SCHEMA_VERSION,
   fulfilmentMethod: null,
+  destinationSelectionMode: null,
+  otherDestinationCountry: "",
   customerInformation: {
     fullName: "",
     phone: "",
@@ -147,11 +162,97 @@ const normalizeText = ({
   };
 };
 
+const isDestinationSelectionMode = (
+  value: unknown,
+): value is FutureShippingDestinationSelectionMode =>
+  value === "supported_country" || value === "other_destination";
+
+const resolveDestinationSelection = ({
+  fulfilmentMethod,
+  requestedMode,
+  countryCode,
+  otherDestinationCountry,
+}: {
+  fulfilmentMethod: FutureShippingFulfilmentSelection | null;
+  requestedMode: unknown;
+  countryCode: string;
+  otherDestinationCountry: string;
+}): {
+  mode: FutureShippingDestinationSelectionMode | null;
+  countryCode: string;
+  otherDestinationCountry: string;
+} => {
+  const trimmedOther = otherDestinationCountry.trim();
+  if (fulfilmentMethod !== "destination_delivery") {
+    return {
+      mode: null,
+      countryCode: isStep8CustomerSelectableCountry(countryCode) ? countryCode : "",
+      otherDestinationCountry: "",
+    };
+  }
+  if (
+    requestedMode === "other_destination" ||
+    isStep8FakeCountryCode(countryCode)
+  ) {
+    return {
+      mode: "other_destination",
+      countryCode: "",
+      otherDestinationCountry: trimmedOther,
+    };
+  }
+  if (isStep8CustomerSelectableCountry(countryCode)) {
+    return {
+      mode: "supported_country",
+      countryCode,
+      otherDestinationCountry: "",
+    };
+  }
+  if (isValidIsoCountryCode(countryCode)) {
+    return {
+      mode: "other_destination",
+      countryCode: "",
+      otherDestinationCountry:
+        trimmedOther || formatStep8CountryLabel(countryCode),
+    };
+  }
+  if (requestedMode === "supported_country" && !countryCode) {
+    return {
+      mode: "supported_country",
+      countryCode: "",
+      otherDestinationCountry: "",
+    };
+  }
+  if (trimmedOther) {
+    return {
+      mode: "other_destination",
+      countryCode: "",
+      otherDestinationCountry: trimmedOther,
+    };
+  }
+  return {
+    mode: isDestinationSelectionMode(requestedMode) ? requestedMode : null,
+    countryCode: "",
+    otherDestinationCountry: "",
+  };
+};
+
+const isWeightTier = (value: unknown): value is Step8WeightTier =>
+  value === "0_2" ||
+  value === "2_5" ||
+  value === "5_10" ||
+  value === "10_20" ||
+  value === "over_20";
+
 const normalizeQuoteReference = (
   value: unknown,
 ): FutureShippingQuoteReferenceV1 | null => {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<FutureShippingQuoteReferenceV1>;
+  const destinationZoneId =
+    candidate.destinationZoneId &&
+    isStep8DestinationZone(candidate.destinationZoneId)
+      ? candidate.destinationZoneId
+      : null;
   if (
     typeof candidate.tariffVersion !== "string" ||
     typeof candidate.ruleId !== "string" ||
@@ -160,10 +261,7 @@ const normalizeQuoteReference = (
     !Number.isInteger(candidate.garmentCount) ||
     (candidate.garmentCount || 0) <= 0 ||
     !Number.isFinite(candidate.weightKg) ||
-    (candidate.weightKg || 0) <= 0 ||
-    !DESTINATION_ZONES.has(
-      candidate.destinationZoneId as FutureShippingDestinationZone,
-    )
+    (candidate.weightKg || 0) <= 0
   ) {
     return null;
   }
@@ -174,7 +272,9 @@ const normalizeQuoteReference = (
     inputFingerprint: candidate.inputFingerprint,
     garmentCount: candidate.garmentCount!,
     weightKg: candidate.weightKg!,
-    destinationZoneId: candidate.destinationZoneId!,
+    weightTier: isWeightTier(candidate.weightTier) ? candidate.weightTier : null,
+    destinationZoneId,
+    quoteRequired: candidate.quoteRequired === true,
   };
 };
 
@@ -232,6 +332,10 @@ export const normalizeFutureShippingState = (
       value: "city" in address ? address.city : undefined,
       maximumLength: MAX_LENGTHS.city,
     }),
+    stateRegion: normalizeText({
+      value: "stateRegion" in address ? address.stateRegion : undefined,
+      maximumLength: MAX_LENGTHS.stateRegion,
+    }),
     postalCode: normalizeText({
       value: "postalCode" in address ? address.postalCode : undefined,
       maximumLength: MAX_LENGTHS.postalCode,
@@ -239,6 +343,13 @@ export const normalizeFutureShippingState = (
     countryCode: normalizeText({
       value: "countryCode" in address ? address.countryCode : undefined,
       maximumLength: MAX_LENGTHS.countryCode,
+    }),
+    otherDestinationCountry: normalizeText({
+      value:
+        "otherDestinationCountry" in candidate
+          ? candidate.otherDestinationCountry
+          : undefined,
+      maximumLength: MAX_LENGTHS.otherDestinationCountry,
     }),
     comment: normalizeText({
       value: "comment" in customer ? customer.comment : undefined,
@@ -254,23 +365,24 @@ export const normalizeFutureShippingState = (
   )
     ? (candidate.fulfilmentMethod as FutureShippingFulfilmentSelection)
     : null;
-  const destinationZoneId = DESTINATION_ZONES.has(
-    candidate.destinationZoneId as FutureShippingDestinationZone,
-  )
-    ? (candidate.destinationZoneId as FutureShippingDestinationZone)
-    : null;
   const malformedIdentity =
-    (candidate.fulfilmentMethod !== undefined &&
-      candidate.fulfilmentMethod !== null &&
-      !fulfilmentMethod) ||
-    (candidate.destinationZoneId !== undefined &&
-      candidate.destinationZoneId !== null &&
-      !destinationZoneId);
+    candidate.fulfilmentMethod !== undefined &&
+    candidate.fulfilmentMethod !== null &&
+    !fulfilmentMethod;
+
+  const destinationSelection = resolveDestinationSelection({
+    fulfilmentMethod,
+    requestedMode: candidate.destinationSelectionMode,
+    countryCode: normalizeStep8CountryCode(normalizedFields.countryCode.value),
+    otherDestinationCountry: normalizedFields.otherDestinationCountry.value,
+  });
 
   return {
     state: {
       schemaVersion: FUTURE_SHIPPING_STATE_SCHEMA_VERSION,
       fulfilmentMethod,
+      destinationSelectionMode: destinationSelection.mode,
+      otherDestinationCountry: destinationSelection.otherDestinationCountry,
       customerInformation: {
         fullName: normalizedFields.fullName.value,
         phone: normalizedFields.phone.value,
@@ -279,15 +391,14 @@ export const normalizeFutureShippingState = (
           addressLine1: normalizedFields.addressLine1.value,
           addressLine2: normalizedFields.addressLine2.value,
           city: normalizedFields.city.value,
+          stateRegion: normalizedFields.stateRegion.value,
           postalCode: normalizedFields.postalCode.value,
-          countryCode: normalizedFields.countryCode.value.toUpperCase(),
+          countryCode: destinationSelection.countryCode,
         },
         comment: normalizedFields.comment.value,
       },
-      destinationZoneId,
-      destinationZoneSource: destinationZoneId
-        ? "customer_provisional"
-        : null,
+      destinationZoneId: null,
+      destinationZoneSource: null,
       quoteReference: normalizeQuoteReference(candidate.quoteReference),
     },
     diagnostics:
@@ -319,7 +430,7 @@ const getCustomerDiagnostics = (
   ) => {
     if (!value) diagnostics.push({ code: "REQUIRED_FIELD", field, message });
   };
-  requireText("fullName", customer.fullName, "Enter the customer's full name.");
+  requireText("fullName", customer.fullName, "Enter the recipient's full name.");
   requireText("phone", customer.phone, "Enter a phone contact.");
   requireText("email", customer.email, "Enter an email address.");
   if (customer.email && !isValidEmail(customer.email)) {
@@ -341,17 +452,38 @@ const getCustomerDiagnostics = (
       customer.deliveryAddress.postalCode,
       "Enter the postal code.",
     );
-    requireText(
-      "countryCode",
-      customer.deliveryAddress.countryCode,
-      "Enter the country code.",
-    );
-    if (!state.destinationZoneId) {
-      diagnostics.push({
-        code: "DESTINATION_ZONE_REQUIRED",
-        field: "destinationZoneId",
-        message: "Select the destination region for a provisional quote.",
-      });
+    if (state.destinationSelectionMode === "other_destination") {
+      requireText(
+        "otherDestinationCountry",
+        state.otherDestinationCountry,
+        "Enter the destination country or territory.",
+      );
+    } else {
+      requireText(
+        "countryCode",
+        customer.deliveryAddress.countryCode,
+        "Select a destination country.",
+      );
+      if (
+        customer.deliveryAddress.countryCode &&
+        !isValidIsoCountryCode(customer.deliveryAddress.countryCode)
+      ) {
+        diagnostics.push({
+          code: "INVALID_COUNTRY",
+          field: "countryCode",
+          message: "Select a valid ISO country.",
+        });
+      }
+      if (
+        step8RequiresRegion(customer.deliveryAddress.countryCode) &&
+        !customer.deliveryAddress.stateRegion
+      ) {
+        diagnostics.push({
+          code: "REQUIRED_FIELD",
+          field: "stateRegion",
+          message: "Enter the state, province, or region.",
+        });
+      }
     }
   }
   return diagnostics;
@@ -367,48 +499,129 @@ const createOpaqueFingerprint = (value: unknown): string => {
   return `v1:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 };
 
-const createRuleFingerprint = (rule: FutureShippingTariffRuleV1): string =>
-  createOpaqueFingerprint({
-    tariffVersion: rule.tariffVersion,
-    ruleId: rule.ruleId,
-    shippingLeg: rule.shippingLeg,
-    fulfilmentMethod: rule.fulfilmentMethod,
-    destinationZoneId: rule.destinationZoneId,
-    amountCents: rule.amountCents,
-    pricingUnit: rule.pricingUnit,
-    supportedWeightBoundary: rule.supportedWeightBoundary,
-    status: rule.status,
-  });
-
 const createQuoteInputFingerprint = ({
   state,
   garmentCount,
+  destinationZoneId,
 }: {
   state: FutureShippingStateV1;
   garmentCount: number;
+  destinationZoneId: FutureShippingDestinationZone | null;
 }): string => {
   const address = state.customerInformation.deliveryAddress;
   return createOpaqueFingerprint({
+    rateVersion: STEP8_DELIVERY_RATE_VERSION,
     fulfilmentMethod: state.fulfilmentMethod,
-    destinationZoneId: state.destinationZoneId,
+    destinationSelectionMode: state.destinationSelectionMode,
+    destinationZoneId,
     addressLine1: address.addressLine1,
     addressLine2: address.addressLine2 || "",
     city: address.city,
+    stateRegion: address.stateRegion || "",
     postalCode: address.postalCode,
     countryCode: address.countryCode,
+    otherDestinationCountry: state.otherDestinationCountry || "",
     garmentCount,
   });
 };
 
-const getDestinationLabel = (
-  zoneId: FutureShippingDestinationZone | null,
-): string | null =>
-  FUTURE_SHIPPING_DESTINATION_ZONE_OPTIONS.find((zone) => zone.id === zoneId)
-    ?.label || null;
+const createRuleFingerprint = ({
+  ruleId,
+  destinationZoneId,
+  weightTier,
+  amountCents,
+  quoteRequired,
+}: {
+  ruleId: string;
+  destinationZoneId: FutureShippingDestinationZone | null;
+  weightTier: FutureShippingWeightTier | null;
+  amountCents: number | null;
+  quoteRequired: boolean;
+}): string =>
+  createOpaqueFingerprint({
+    rateVersion: STEP8_DELIVERY_RATE_VERSION,
+    ruleId,
+    destinationZoneId,
+    weightTier,
+    amountCents,
+    quoteRequired,
+  });
+
+const baseResolution = ({
+  state,
+  status,
+  diagnostics,
+  postEindhovenAdjustmentCents = null,
+  projectedTotalCents = null,
+  destinationLabel = null,
+  parcelWeightKg = null,
+  weightTier = null,
+  quoteRequired = false,
+  quoteReady = false,
+  formInputsComplete = false,
+  formComplete = false,
+  customerInformationComplete = false,
+}: {
+  state: FutureShippingStateV1;
+  status: FutureShippingStageStatus;
+  diagnostics: FutureShippingStageDiagnostic[];
+  postEindhovenAdjustmentCents?: number | null;
+  projectedTotalCents?: number | null;
+  destinationLabel?: string | null;
+  parcelWeightKg?: number | null;
+  weightTier?: FutureShippingWeightTier | null;
+  quoteRequired?: boolean;
+  quoteReady?: boolean;
+  formInputsComplete?: boolean;
+  formComplete?: boolean;
+  customerInformationComplete?: boolean;
+}): FutureShippingStageResolution => ({
+  state,
+  status,
+  customerInformationComplete,
+  formInputsComplete,
+  formComplete,
+  quoteReady,
+  quoteRequired,
+  diagnostics,
+  postEindhovenAdjustmentCents,
+  projectedTotalCents,
+  destinationLabel,
+  parcelWeightKg,
+  weightTier,
+  rateVersion: STEP8_DELIVERY_RATE_VERSION,
+  paymentLocked: true,
+});
 
 export const isFutureShippingStageUnlocked = (
   summaryStatus: FutureDesignStudioSummaryStatus,
 ): boolean => summaryStatus === "ready";
+
+export const prefillFutureShippingContact = ({
+  state,
+  name,
+  email,
+  phone,
+}: {
+  state: FutureShippingStateV1;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+}): FutureShippingStateV1 => {
+  const current = state.customerInformation;
+  if (current.fullName || current.email || current.phone) {
+    return state;
+  }
+  return {
+    ...state,
+    customerInformation: {
+      ...current,
+      fullName: (name || "").trim(),
+      email: (email || "").trim(),
+      phone: (phone || "").trim(),
+    },
+  };
+};
 
 export const reconcileFutureShippingState = ({
   state,
@@ -422,26 +635,18 @@ export const reconcileFutureShippingState = ({
   const normalized = normalizeFutureShippingState(state);
   const normalizedState = normalized.state;
   if (!normalizedState.fulfilmentMethod) {
-    return {
+    return baseResolution({
       state: normalizedState,
       status: normalized.diagnostics.length > 0 ? "invalid" : "incomplete",
-      customerInformationComplete: false,
-      formComplete: false,
-      quoteReady: false,
       diagnostics: [
         ...normalized.diagnostics,
         {
           code: "FULFILMENT_METHOD_REQUIRED",
           field: "fulfilmentMethod",
-          message: "Choose collection or destination delivery.",
+          message: "Choose pickup or delivery.",
         },
       ],
-      postEindhovenAdjustmentCents: null,
-      projectedTotalCents: null,
-      destinationLabel: null,
-      parcelWeightKg: null,
-      paymentLocked: true,
-    };
+    });
   }
 
   const customerDiagnostics = getCustomerDiagnostics(normalizedState);
@@ -449,167 +654,138 @@ export const reconcileFutureShippingState = ({
   const hasInvalidDiagnostic = diagnostics.some(
     (diagnostic) =>
       diagnostic.code === "MALFORMED_SHIPPING_STATE" ||
-      diagnostic.code === "INVALID_EMAIL",
+      diagnostic.code === "INVALID_EMAIL" ||
+      diagnostic.code === "INVALID_COUNTRY",
   );
   if (diagnostics.length > 0) {
-    return {
-      state: normalizedState,
-      status: hasInvalidDiagnostic ? "invalid" : "incomplete",
-      customerInformationComplete: false,
-      formComplete: false,
-      quoteReady: false,
-      diagnostics,
-      postEindhovenAdjustmentCents: null,
-      projectedTotalCents: null,
-      destinationLabel: getDestinationLabel(normalizedState.destinationZoneId),
-      parcelWeightKg: null,
-      paymentLocked: true,
-    };
-  }
-
-  if (normalizedState.fulfilmentMethod === "eindhoven_pickup") {
-    return {
+    return baseResolution({
       state: {
         ...normalizedState,
+        destinationZoneId: null,
+        destinationZoneSource: null,
         quoteReference: null,
       },
-      status: "pickup_arrangement_pending",
-      customerInformationComplete: true,
-      formComplete: true,
-      quoteReady: false,
-      diagnostics: [],
-      postEindhovenAdjustmentCents: null,
-      projectedTotalCents: null,
-      destinationLabel: "Arranged Eindhoven collection",
-      parcelWeightKg: null,
-      paymentLocked: true,
-    };
+      status: hasInvalidDiagnostic ? "invalid" : "incomplete",
+      diagnostics,
+    });
   }
 
-  const tariffResolution = resolveFutureFinalMileFromGarmentCount({
-    fulfilmentMethod: "destination_delivery",
-    destinationZoneId: normalizedState.destinationZoneId,
-    garmentCount,
+  const delivery = resolveStep8AdditionalDelivery({
+    deliveryMethod: normalizedState.fulfilmentMethod,
+    countryCode: normalizedState.customerInformation.deliveryAddress.countryCode,
+    city: normalizedState.customerInformation.deliveryAddress.city,
+    physicalGarmentCount: garmentCount,
+    destinationSelectionMode: normalizedState.destinationSelectionMode,
   });
-  const existingReference = normalizedState.quoteReference;
-  if (
-    tariffResolution.status !== "resolved_baseline" ||
-    !tariffResolution.rule ||
-    tariffResolution.amountCents === null
-  ) {
-    const isStale = Boolean(existingReference);
-    return {
-      state: normalizedState,
-      status: isStale
-        ? "quote_stale"
-        : tariffResolution.status === "estimate_pending" ||
-            (tariffResolution.status === "quote_required" &&
-              tariffResolution.diagnostic?.code === "WEIGHT_OUTSIDE_BASELINE")
-          ? "quote_pending"
-          : "quote_unavailable",
-      customerInformationComplete: true,
-      formComplete: true,
-      quoteReady: false,
-      diagnostics: [{
-        code: tariffResolution.diagnostic?.code || "QUOTE_UNAVAILABLE",
-        field: "destinationZoneId",
-        message:
-          tariffResolution.diagnostic?.message ||
-          "A post-Eindhoven delivery quote is required.",
-      }],
-      postEindhovenAdjustmentCents: null,
-      projectedTotalCents: null,
-      destinationLabel: getDestinationLabel(normalizedState.destinationZoneId),
-      parcelWeightKg: null,
-      paymentLocked: true,
-    };
-  }
-
-  const inputFingerprint = createQuoteInputFingerprint({
-    state: normalizedState,
-    garmentCount,
-  });
-  const ruleFingerprint = createRuleFingerprint(tariffResolution.rule);
-  const weightReference = resolveFutureGarmentCountWeightReference(garmentCount);
-  if (weightReference.status !== "exact") {
-    return {
-      state: normalizedState,
-      status: "quote_pending",
-      customerInformationComplete: true,
-      formComplete: true,
-      quoteReady: false,
-      diagnostics: [{
-        code: weightReference.diagnostic.code,
-        field: "destinationZoneId",
-        message: weightReference.diagnostic.message,
-      }],
-      postEindhovenAdjustmentCents: null,
-      projectedTotalCents: null,
-      destinationLabel: getDestinationLabel(normalizedState.destinationZoneId),
-      parcelWeightKg: null,
-      paymentLocked: true,
-    };
-  }
-  const currentReference: FutureShippingQuoteReferenceV1 = {
-    tariffVersion: FUTURE_SHIPPING_TARIFF_VERSION,
-    ruleId: tariffResolution.rule.ruleId,
-    ruleFingerprint,
-    inputFingerprint,
-    garmentCount,
-    weightKg: weightReference.weightKg,
-    destinationZoneId: normalizedState.destinationZoneId!,
-  };
-  const referenceMatches =
-    !existingReference ||
-    (existingReference.tariffVersion === currentReference.tariffVersion &&
-      existingReference.ruleId === currentReference.ruleId &&
-      existingReference.ruleFingerprint === currentReference.ruleFingerprint &&
-      existingReference.inputFingerprint === currentReference.inputFingerprint &&
-      existingReference.garmentCount === currentReference.garmentCount &&
-      existingReference.destinationZoneId === currentReference.destinationZoneId);
-  if (!referenceMatches) {
-    return {
-      state: normalizedState,
-      status: "quote_stale",
-      customerInformationComplete: true,
-      formComplete: true,
-      quoteReady: false,
-      diagnostics: [{
-        code: "QUOTE_STALE",
-        field: "destinationZoneId",
-        message: "Shipping inputs changed. Refresh the post-Eindhoven quote.",
-      }],
-      postEindhovenAdjustmentCents: null,
-      projectedTotalCents: null,
-      destinationLabel: getDestinationLabel(normalizedState.destinationZoneId),
-      parcelWeightKg: null,
-      paymentLocked: true,
-    };
-  }
-
   const selectedDesignPriceCents =
     selectedDesignPrice !== null && Number.isFinite(selectedDesignPrice)
       ? Math.round(selectedDesignPrice * 100)
       : null;
-  return {
-    state: {
-      ...normalizedState,
-      quoteReference: currentReference,
-    },
+  const currentReference: FutureShippingQuoteReferenceV1 = {
+    tariffVersion: delivery.rateVersion,
+    ruleId: delivery.ruleId,
+    ruleFingerprint: createRuleFingerprint({
+      ruleId: delivery.ruleId,
+      destinationZoneId: delivery.destinationZone,
+      weightTier: delivery.weightTier,
+      amountCents: delivery.additionalDeliveryFeeCents,
+      quoteRequired: delivery.quoteRequired,
+    }),
+    inputFingerprint: createQuoteInputFingerprint({
+      state: normalizedState,
+      garmentCount,
+      destinationZoneId: delivery.destinationZone,
+    }),
+    garmentCount,
+    weightKg: delivery.shipmentWeightKg || 0,
+    weightTier: delivery.weightTier,
+    destinationZoneId: delivery.destinationZone,
+    quoteRequired: delivery.quoteRequired,
+  };
+  const nextState: FutureShippingStateV1 = {
+    ...normalizedState,
+    destinationZoneId: delivery.destinationZone,
+    destinationZoneSource: delivery.destinationZone ? "iso_resolved" : null,
+    quoteReference:
+      currentReference.weightKg > 0 ? currentReference : null,
+  };
+
+  if (delivery.status === "unavailable") {
+    return baseResolution({
+      state: nextState,
+      status: "quote_unavailable",
+      diagnostics: [{
+        code: delivery.diagnosticCode || "QUOTE_UNAVAILABLE",
+        field: "destinationZoneId",
+        message:
+          delivery.diagnosticMessage ||
+          "Additional delivery cannot be resolved yet.",
+      }],
+      destinationLabel: delivery.destinationLabel,
+      parcelWeightKg: delivery.shipmentWeightKg,
+      weightTier: delivery.weightTier,
+      customerInformationComplete: true,
+      formInputsComplete: true,
+      formComplete: false,
+    });
+  }
+
+  if (delivery.quoteRequired || delivery.status === "quote_required") {
+    return baseResolution({
+      state: nextState,
+      status: "quote_pending",
+      diagnostics: [{
+        code: delivery.diagnosticCode || "DELIVERY_QUOTE_REQUIRED",
+        field: "destinationZoneId",
+        message: delivery.diagnosticMessage || "Custom shipping quote required",
+      }],
+      destinationLabel: delivery.destinationLabel,
+      parcelWeightKg: delivery.shipmentWeightKg,
+      weightTier: delivery.weightTier,
+      quoteRequired: true,
+      customerInformationComplete: true,
+      formInputsComplete: true,
+      formComplete: false,
+    });
+  }
+
+  const additionalDeliveryFeeCents = delivery.additionalDeliveryFeeCents;
+  if (additionalDeliveryFeeCents === null) {
+    return baseResolution({
+      state: nextState,
+      status: "quote_pending",
+      diagnostics: [{
+        code: "DELIVERY_QUOTE_REQUIRED",
+        field: "destinationZoneId",
+        message: "Custom shipping quote required",
+      }],
+      destinationLabel: delivery.destinationLabel,
+      parcelWeightKg: delivery.shipmentWeightKg,
+      weightTier: delivery.weightTier,
+      quoteRequired: true,
+      customerInformationComplete: true,
+      formInputsComplete: true,
+      formComplete: false,
+    });
+  }
+
+  return baseResolution({
+    state: nextState,
     status: "quote_ready",
-    customerInformationComplete: true,
-    formComplete: true,
-    quoteReady: true,
     diagnostics: [],
-    postEindhovenAdjustmentCents: tariffResolution.amountCents,
+    postEindhovenAdjustmentCents: additionalDeliveryFeeCents,
     projectedTotalCents:
       selectedDesignPriceCents === null
         ? null
-        : selectedDesignPriceCents + tariffResolution.amountCents,
-    destinationLabel: getDestinationLabel(normalizedState.destinationZoneId),
-    parcelWeightKg: currentReference.weightKg,
-    paymentLocked: true,
-  };
+        : selectedDesignPriceCents + additionalDeliveryFeeCents,
+    destinationLabel: delivery.destinationLabel,
+    parcelWeightKg: delivery.shipmentWeightKg,
+    weightTier: delivery.weightTier,
+    quoteReady: true,
+    customerInformationComplete: true,
+    formInputsComplete: true,
+    formComplete: true,
+  });
 };
 
 export const refreshFutureShippingQuote = ({
@@ -638,7 +814,67 @@ export const persistFutureShippingState = <T extends object>({
   futureShippingState: normalizeFutureShippingState(state).state,
 });
 
-export const getFutureShippingRuleById = (
-  ruleId: string,
-): FutureShippingTariffRuleV1 | null =>
-  FUTURE_SHIPPING_TARIFF_RULES.find((rule) => rule.ruleId === ruleId) || null;
+export const getFutureShippingRuleById = (ruleId: string): { ruleId: string } | null =>
+  ruleId.startsWith("step8_") ? { ruleId } : null;
+
+export const isFutureShippingStepComplete = (
+  resolution: FutureShippingStageResolution,
+): boolean =>
+  resolution.formComplete &&
+  resolution.quoteReady &&
+  !resolution.quoteRequired &&
+  resolution.status === "quote_ready";
+
+export interface Step8OrderSummaryRow {
+  readonly label: string;
+  readonly value: string;
+}
+
+const formatAdditionalDeliverySummaryValue = (
+  resolution: FutureShippingStageResolution,
+): string => {
+  if (resolution.quoteRequired) return "Custom shipping quote required";
+  if (resolution.postEindhovenAdjustmentCents === null) return "Pending";
+  return `${PRICING_CURRENCY_SYMBOL}${(resolution.postEindhovenAdjustmentCents / 100).toFixed(2)}`;
+};
+
+export const getStep8OrderSummaryRows = (
+  resolution: FutureShippingStageResolution,
+): readonly Step8OrderSummaryRow[] => {
+  const method = resolution.state.fulfilmentMethod;
+  if (!method) return [];
+  const isPickup = method === "eindhoven_pickup";
+  const rows: Step8OrderSummaryRow[] = [
+    {
+      label: "Delivery Method",
+      value: isPickup ? "Pick Up in Eindhoven" : "Deliver to an Address",
+    },
+  ];
+  if (!isPickup) {
+    const address = resolution.state.customerInformation.deliveryAddress;
+    rows.push({
+      label: "Destination",
+      value:
+        formatStep8CustomerDestination({
+          city: address.city,
+          countryCode: address.countryCode,
+          otherDestinationCountry: resolution.state.otherDestinationCountry,
+        }) ||
+        resolution.destinationLabel ||
+        "Pending",
+    });
+    rows.push({
+      label: "Estimated Shipment Weight",
+      value:
+        resolution.parcelWeightKg === null ||
+        !Number.isFinite(resolution.parcelWeightKg)
+          ? "Pending"
+          : `${resolution.parcelWeightKg.toFixed(1)} kg`,
+    });
+  }
+  rows.push({
+    label: "Additional Delivery",
+    value: formatAdditionalDeliverySummaryValue(resolution),
+  });
+  return rows;
+};

@@ -157,8 +157,10 @@ import { projectFutureDesignStudioSummary } from "../utils/designStudioFutureSum
 import {
   createEmptyFutureShippingState,
   isFutureShippingStageUnlocked,
+  isFutureShippingStepComplete,
   normalizeFutureShippingState,
   persistFutureShippingState,
+  prefillFutureShippingContact,
   reconcileFutureShippingState,
   refreshFutureShippingQuote,
 } from "../utils/designStudioFutureShipping";
@@ -1371,6 +1373,17 @@ export default function DesignStudioView({
       setFutureShippingState(futureShippingResolution.state);
     }
   }, [futureShippingState, futureShippingResolution.state]);
+
+  useEffect(() => {
+    setFutureShippingState((current) =>
+      prefillFutureShippingContact({
+        state: current,
+        name: currentUser?.name,
+        email: currentUser?.email,
+        phone: currentUser?.phone,
+      }),
+    );
+  }, [currentUser?.name, currentUser?.email, currentUser?.phone]);
 
   useEffect(() => {
     if (futureStageId === "shipping" && !isFutureShippingUnlocked) {
@@ -3224,7 +3237,7 @@ export default function DesignStudioView({
                     : futureStageId === "summary"
                       ? futureSummary.status === "ready"
                       : futureStageId === "shipping"
-                        ? futureShippingResolution.formComplete
+                        ? isFutureShippingStepComplete(futureShippingResolution)
                         : isFuturePaymentReviewUnlocked
       }
       className="font-sans"
@@ -3474,6 +3487,7 @@ export default function DesignStudioView({
           onEditMeasurements={handleOpenDormantMeasurementStage}
           canContinueToShipping={isFutureShippingUnlocked}
           onContinueToShipping={handleOpenDormantShippingStage}
+          shippingResolution={futureShippingResolution}
         />
       ) : futureStageId === "shipping" ? (
         <DormantFutureShippingStep

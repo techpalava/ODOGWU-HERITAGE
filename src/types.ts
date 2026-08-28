@@ -562,6 +562,7 @@ export interface DeliveryAddress {
   addressLine1: string;
   addressLine2?: string;
   city: string;
+  stateRegion?: string;
   postalCode: string;
   countryCode: string;
 }
@@ -587,6 +588,19 @@ export interface FutureShippingCustomerInformationV1 {
   comment: string;
 }
 
+export type FutureShippingWeightTier =
+  | "0_2"
+  | "2_5"
+  | "5_10"
+  | "10_20"
+  | "over_20";
+
+export type FutureShippingDestinationZoneSource = "iso_resolved" | null;
+
+export type FutureShippingDestinationSelectionMode =
+  | "supported_country"
+  | "other_destination";
+
 /** Stores tariff identity only. Current configuration remains price authority. */
 export interface FutureShippingQuoteReferenceV1 {
   tariffVersion: string;
@@ -595,15 +609,19 @@ export interface FutureShippingQuoteReferenceV1 {
   inputFingerprint: string;
   garmentCount: number;
   weightKg: number;
-  destinationZoneId: FutureShippingDestinationZone;
+  weightTier: FutureShippingWeightTier | null;
+  destinationZoneId: FutureShippingDestinationZone | null;
+  quoteRequired: boolean;
 }
 
 export interface FutureShippingStateV1 {
   schemaVersion: 1;
   fulfilmentMethod: FutureShippingFulfilmentSelection | null;
+  destinationSelectionMode: FutureShippingDestinationSelectionMode | null;
+  otherDestinationCountry: string;
   customerInformation: FutureShippingCustomerInformationV1;
   destinationZoneId: FutureShippingDestinationZone | null;
-  destinationZoneSource: "customer_provisional" | null;
+  destinationZoneSource: FutureShippingDestinationZoneSource;
   quoteReference: FutureShippingQuoteReferenceV1 | null;
 }
 

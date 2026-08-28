@@ -7,8 +7,13 @@ import {
 } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type React from "react";
+import { Fragment } from "react";
 import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "../utils/designPriceBreakdownPresentation";
 import type { FutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
+import {
+  getStep8OrderSummaryRows,
+  type FutureShippingStageResolution,
+} from "../utils/designStudioFutureShipping";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
   formatCustomerFacingFabricCapacityAmount,
@@ -26,6 +31,7 @@ interface DormantFutureSummaryStepProps {
   onEditMeasurements: () => void;
   canContinueToShipping: boolean;
   onContinueToShipping: () => void;
+  shippingResolution?: FutureShippingStageResolution | null;
 }
 
 const money = (value: number): string =>
@@ -91,6 +97,7 @@ export const DormantFutureSummaryStep = ({
   onEditMeasurements,
   canContinueToShipping,
   onContinueToShipping,
+  shippingResolution = null,
 }: DormantFutureSummaryStepProps) => {
   const isReady = summary.status === "ready";
   const firstBlocker = summary.blockers[0] || null;
@@ -484,6 +491,21 @@ export const DormantFutureSummaryStep = ({
                 ? money(summary.pricingSummary.selectedDesignPrice.selectedDesignPrice)
                 : "Pending"}
             </dd>
+            {shippingResolution?.state.fulfilmentMethod &&
+              getStep8OrderSummaryRows(shippingResolution).map((row) => (
+                <Fragment key={row.label}>
+                  <dt className="text-white/65">{row.label}</dt>
+                  <dd
+                    className={
+                      row.label === "Additional Delivery"
+                        ? "text-right font-mono font-bold"
+                        : "text-right"
+                    }
+                  >
+                    {row.value}
+                  </dd>
+                </Fragment>
+              ))}
           </dl>
         </div>
       </section>
@@ -498,8 +520,8 @@ export const DormantFutureSummaryStep = ({
           <div className="min-w-0 sm:text-right">
             <p id="summary-shipping-lock-reason" className="mb-2 text-xs leading-relaxed text-heritage-ink/60">
               {canContinueToShipping
-                ? "Your Summary is ready. Continue to choose collection or post-Eindhoven delivery."
-                : "Shipping becomes available when this Summary is fully ready."}
+                ? "Your Summary is ready. Continue to choose pickup or additional delivery."
+                : "Delivery & Pickup becomes available when this Summary is fully ready."}
             </p>
             <button
               type="button"
@@ -513,7 +535,7 @@ export const DormantFutureSummaryStep = ({
               ) : (
                 <LockKeyhole aria-hidden="true" size={14} />
               )}
-              Continue to Shipping
+              Continue to Delivery
             </button>
           </div>
         </div>

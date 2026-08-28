@@ -35,7 +35,7 @@ assert.deepEqual(
     "AI Try-on",
     "Measurement",
     "Summary",
-    "Shipping",
+    "Delivery & Pickup",
     "Order Review & Payment",
   ],
 );

@@ -92,7 +92,7 @@ export const getFuturePaymentReviewEditLabel = (
     try_on: "Edit AI Try-on",
     measurement: "Edit Measurements",
     summary: "Review Summary",
-    shipping: "Edit Shipping",
+    shipping: "Edit Delivery & Pickup",
   })[stage];
 
 export const getFuturePaymentReviewGarments = (
@@ -204,13 +204,13 @@ export const getFuturePaymentReviewShippingStatusLabel = (
   candidate: FutureOrderCandidateV1,
 ): string =>
   ({
-    quote_ready: "Delivery quote ready",
-    pickup_arrangement_pending: "Pickup arrangement pending",
-    quote_pending: "Delivery quote pending",
-    quote_unavailable: "Delivery quote unavailable",
-    quote_stale: "Delivery quote needs refreshing",
-    incomplete: "Shipping information incomplete",
-    invalid: "Shipping information needs review",
+    quote_ready: "Delivery ready",
+    pickup_arrangement_pending: "Pickup details pending",
+    quote_pending: "Custom shipping quote required",
+    quote_unavailable: "Custom shipping quote required",
+    quote_stale: "Delivery details need refreshing",
+    incomplete: "Delivery information incomplete",
+    invalid: "Delivery information needs review",
   })[candidate.shipping.status];
 
 export const getFuturePaymentReviewPricingRows = (
@@ -233,13 +233,11 @@ export const getFuturePaymentReviewPricingRows = (
       label: "Custom Details",
       amountCents: pricing.customDetailsCents,
     },
-  ];
-  if (pricing.postEindhovenAdjustmentCents !== null) {
-    rows.push({
+    {
       id: "post_eindhoven",
-      label: "Post-Eindhoven adjustment",
+      label: "Additional Delivery",
       amountCents: pricing.postEindhovenAdjustmentCents,
-    });
-  }
+    },
+  ];
   return rows;
 };

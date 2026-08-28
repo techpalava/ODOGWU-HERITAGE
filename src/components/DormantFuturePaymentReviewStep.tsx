@@ -356,7 +356,7 @@ export const DormantFuturePaymentReviewStep = ({
     >
       <header className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
         <DesignStudioBackButton
-          destination="Shipping"
+          destination="Delivery & Pickup"
           onClick={onBack}
           className="mb-5"
         />
@@ -602,9 +602,9 @@ export const DormantFuturePaymentReviewStep = ({
           </ReviewSection>
 
           <ReviewSection
-            title="Shipping"
+            title="Delivery & Pickup"
             description="Contact and destination details are kept within this dedicated review section."
-            editLabel="Edit Shipping"
+            editLabel="Edit Delivery & Pickup"
             onEdit={() => onEditStage("shipping")}
           >
             <div className="flex min-w-0 items-start gap-3 rounded-xl bg-heritage-green/5 p-4">
@@ -612,10 +612,10 @@ export const DormantFuturePaymentReviewStep = ({
               <div className="min-w-0">
                 <p className="break-words font-bold text-heritage-green">
                   {candidate.shipping.state.fulfilmentMethod === "eindhoven_pickup"
-                    ? "Collect in Eindhoven"
+                    ? "Pick Up in Eindhoven"
                     : candidate.shipping.state.fulfilmentMethod === "destination_delivery"
-                      ? "Delivery to destination"
-                      : "Shipping method pending"}
+                      ? "Deliver to an Address"
+                      : "Delivery method pending"}
                 </p>
                 <p className="mt-1 break-words text-xs text-heritage-ink/60">
                   {getFuturePaymentReviewShippingStatusLabel(candidate)}
@@ -638,11 +638,23 @@ export const DormantFuturePaymentReviewStep = ({
                           shippingAddress?.addressLine1,
                           shippingAddress?.addressLine2,
                           shippingAddress?.city,
+                          shippingAddress?.stateRegion,
                           shippingAddress?.postalCode,
-                          shippingAddress?.countryCode,
+                          shippingAddress?.countryCode ||
+                            candidate.shipping.state.otherDestinationCountry,
                         ].filter(Boolean).join(", ") || "Address pending"
-                      : candidate.shipping.destinationLabel || "Eindhoven pickup"}
+                      : candidate.shipping.destinationLabel || "Pick Up in Eindhoven"}
                   </dd>
+                  {candidate.shipping.destinationLabel && (
+                    <dd className="mt-2 break-words text-xs text-heritage-ink/60">
+                      Zone: {candidate.shipping.destinationLabel}
+                    </dd>
+                  )}
+                  {candidate.shipping.parcelWeightKg !== null && (
+                    <dd className="mt-1 break-words text-xs text-heritage-ink/60">
+                      Estimated shipment weight: {candidate.shipping.parcelWeightKg.toFixed(1)} kg
+                    </dd>
+                  )}
                 </div>
               </dl>
             )}
@@ -655,12 +667,14 @@ export const DormantFuturePaymentReviewStep = ({
               </div>
             )}
             <p className="mt-4 break-words text-sm font-semibold text-heritage-green">
-              Lagos-to-Eindhoven shipping: Included in Garment Construction.
+              Standard Shipping to Eindhoven is included in Garment Construction.
             </p>
             <p className="mt-2 text-xs leading-relaxed text-heritage-ink/60">
-              {candidate.pricing.postEindhovenAdjustmentCents === null
-                ? "The post-Eindhoven adjustment is pending confirmation."
-                : "The authoritative post-Eindhoven adjustment is itemized once in the price breakdown below."}
+              {candidate.shipping.quoteRequired
+                ? "Custom shipping quote required. Additional Delivery is not a final charge yet."
+                : candidate.pricing.postEindhovenAdjustmentCents === null
+                  ? "Additional Delivery is still pending."
+                  : "Additional Delivery is itemized once in the price breakdown below."}
             </p>
           </ReviewSection>
 
@@ -734,7 +748,7 @@ export const DormantFuturePaymentReviewStep = ({
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioBackButton
-          destination="Shipping"
+          destination="Delivery & Pickup"
           onClick={onBack}
           className="w-full sm:w-auto"
         />

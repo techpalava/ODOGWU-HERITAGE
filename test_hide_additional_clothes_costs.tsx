@@ -595,7 +595,7 @@ const deliveryState = (): FutureShippingStateV1 => ({
     comment: "Call before delivery.",
   },
   destinationZoneId: "EUROPE",
-  destinationZoneSource: "customer_provisional",
+  destinationZoneSource: "iso_resolved",
 });
 
 const garmentCount = resolveShippingGarmentPieceCount({
@@ -628,14 +628,19 @@ const orderInput: FutureOrderCandidateBuildInput = {
         inputFingerprint: "test-current-input-fingerprint",
         garmentCount,
         weightKg: 2,
+        weightTier: "0_2",
         destinationZoneId: "EUROPE",
+        quoteRequired: false,
       },
     },
     status: "quote_ready",
     quoteReady: true,
+    quoteRequired: false,
     postEindhovenAdjustmentCents: 1900,
     projectedTotalCents: selectedDesignCents + 1900,
     parcelWeightKg: 2,
+    weightTier: "0_2",
+    rateVersion: "step8-delivery-v1",
   },
 };
 const orderResult = buildFutureOrderCandidate(orderInput);
