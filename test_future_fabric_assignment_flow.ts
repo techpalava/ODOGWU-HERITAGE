@@ -16,6 +16,7 @@ import {
   reconcileFutureFabricAllocationState,
   removeFutureFabricAssignment,
   resolveFutureFabricCatalogueCardPresentation,
+  getFutureFabricCatalogueCancelTargets,
 } from "./src/utils/designStudioFutureFabricStage";
 import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAllocationPricing";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
@@ -430,6 +431,7 @@ const inUsePresentation = resolveFutureFabricCatalogueCardPresentation({
 assert.equal(inUsePresentation.status, "IN USE");
 assert.equal(inUsePresentation.action, "cancel");
 assert.equal(inUsePresentation.cancelGarmentKey, "base:shirt");
+assert.deepEqual(inUsePresentation.cancelGarmentKeys, ["base:shirt"]);
 
 const pendingSharePresentation = resolveFutureFabricCatalogueCardPresentation({
   fabricCode: "FAB-A",
@@ -449,6 +451,7 @@ assert.equal(
   "IN USE must still assign to a pending garment instead of cancelling the existing occurrence.",
 );
 assert.equal(pendingSharePresentation.cancelGarmentKey, null);
+assert.deepEqual(pendingSharePresentation.cancelGarmentKeys, []);
 
 const focusedAssignedPresentation = resolveFutureFabricCatalogueCardPresentation({
   fabricCode: "FAB-A",
@@ -464,6 +467,7 @@ const focusedAssignedPresentation = resolveFutureFabricCatalogueCardPresentation
 assert.equal(focusedAssignedPresentation.status, "ASSIGNED");
 assert.equal(focusedAssignedPresentation.action, "cancel");
 assert.equal(focusedAssignedPresentation.cancelGarmentKey, "base:shirt");
+assert.deepEqual(focusedAssignedPresentation.cancelGarmentKeys, ["base:shirt"]);
 
 const sharedCodeState = commitSameFabric({
   state: applyFutureFabricCardSelection({
@@ -482,18 +486,55 @@ const sharedCodeCard = resolveFutureFabricCatalogueCardPresentation({
   fabricAllocationState: sharedCodeState,
   currentTargetGarmentKey: null,
 });
-assert.equal(sharedCodeCard.cancelGarmentKey, "base:shirt");
-const sharedCodeAfterCancel = commitCatalogueCancel({
+assert.equal(sharedCodeCard.action, "cancel");
+assert.equal(
+  sharedCodeCard.cancelGarmentKey,
+  null,
+  "Multiple assignments must not expose a hidden single cancel target.",
+);
+assert.deepEqual(sharedCodeCard.cancelGarmentKeys, [
+  "base:shirt",
+  "base:trouser",
+]);
+assert.deepEqual(
+  getFutureFabricCatalogueCancelTargets({
+    fabricCode: "FAB-A",
+    garmentTypeSelection: createSelection(["shirt", "trouser"]),
+    fabricAllocationState: sharedCodeState,
+    currentTargetGarmentKey: null,
+  }),
+  ["base:shirt", "base:trouser"],
+);
+const sharedCodeAfterCancelShirt = commitCatalogueCancel({
   state: sharedCodeState,
-  garmentKey: sharedCodeCard.cancelGarmentKey!,
+  garmentKey: "base:shirt",
 });
 assert.deepEqual(
-  sharedCodeAfterCancel.fabricAllocations[0]?.garmentAssignments.map(
+  sharedCodeAfterCancelShirt.fabricAllocations[0]?.garmentAssignments.map(
     (assignment) => assignment.garmentKey,
   ),
   ["base:trouser"],
   "Catalogue cancellation must follow garment identity, not delete every user of the fabric code.",
 );
+const sharedCodeAfterCancelTrouser = commitCatalogueCancel({
+  state: sharedCodeState,
+  garmentKey: "base:trouser",
+});
+assert.deepEqual(
+  sharedCodeAfterCancelTrouser.fabricAllocations[0]?.garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
+  ["base:shirt"],
+  "Removing Trouser must not depend on array order or silently target Shirt.",
+);
+const sharedAfterShirtOnly = resolveFutureFabricCatalogueCardPresentation({
+  fabricCode: "FAB-A",
+  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  fabricAllocationState: sharedCodeAfterCancelShirt,
+  currentTargetGarmentKey: null,
+});
+assert.equal(sharedAfterShirtOnly.cancelGarmentKey, "base:trouser");
+assert.deepEqual(sharedAfterShirtOnly.cancelGarmentKeys, ["base:trouser"]);
 
 let additionalState = applyFutureFabricCardSelection({
   state: FabricAllocationStateEngine.initialize(),
@@ -563,6 +604,131 @@ assert.ok(
       ),
   ),
   "A cancelled additional garment must be reassignable through the existing pending assignment path.",
+);
+
+let mixedStep4State = applyFutureFabricCardSelection({
+  state: FabricAllocationStateEngine.initialize(),
+  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  garmentKey: "base:shirt",
+  fabricCode: "FAB-A",
+});
+mixedStep4State = applyFutureFabricCardSelection({
+  state: mixedStep4State,
+  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  garmentKey: "base:trouser",
+  fabricCode: "FAB-B",
+});
+const mixedAdditionalSelection = createCatalogueAdditionalGarmentSelection({
+  garmentType: "shirt",
+  existingAssignments: mixedStep4State.fabricAllocations.flatMap(
+    (allocation) => allocation.garmentAssignments,
+  ),
+});
+assert.equal(mixedAdditionalSelection.status, "resolved");
+if (mixedAdditionalSelection.status !== "resolved") {
+  throw new Error("Expected additional shirt");
+}
+mixedStep4State = FabricAllocationStateEngine.attemptAppendGarment(
+  mixedStep4State,
+  mixedAdditionalSelection.selection,
+);
+if (mixedStep4State.pendingFabricGarment) {
+  mixedStep4State = FabricAllocationStateEngine.assignPendingGarmentToFabric(
+    mixedStep4State,
+    "FAB-A",
+  );
+}
+assert.deepEqual(
+  getFutureFabricCatalogueCancelTargets({
+    fabricCode: "FAB-A",
+    garmentTypeSelection: createSelection(["shirt", "trouser"]),
+    fabricAllocationState: mixedStep4State,
+    currentTargetGarmentKey: null,
+  }),
+  ["base:shirt"],
+  "Untargeted Step 2 card cancellation must not include Step 4 additional assignments when a Step 1 assignment exists.",
+);
+const mixedStep4Card = resolveFutureFabricCatalogueCardPresentation({
+  fabricCode: "FAB-A",
+  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  fabricAllocationState: mixedStep4State,
+  currentTargetGarmentKey: null,
+});
+assert.equal(mixedStep4Card.cancelGarmentKey, "base:shirt");
+assert.deepEqual(mixedStep4Card.cancelGarmentKeys, ["base:shirt"]);
+const mixedAfterShirtCancel = commitCatalogueCancel({
+  state: mixedStep4State,
+  garmentKey: "base:shirt",
+});
+assert.ok(
+  mixedAfterShirtCancel.fabricAllocations.some((allocation) =>
+    allocation.garmentAssignments.some(
+      (assignment) => assignment.garmentKey === "additional:shirt:1",
+    ),
+  ),
+  "Removing the Step 1 Shirt assignment must leave the Step 4 additional Shirt assignment intact.",
+);
+assert.equal(
+  mixedAfterShirtCancel.fabricAllocations.some((allocation) =>
+    allocation.garmentAssignments.some(
+      (assignment) => assignment.garmentKey === "base:shirt",
+    ),
+  ),
+  false,
+);
+assert.ok(
+  mixedAfterShirtCancel.fabricAllocations.some((allocation) =>
+    allocation.garmentAssignments.some(
+      (assignment) => assignment.garmentKey === "base:trouser",
+    ),
+  ),
+);
+
+let threeSharedState = applyFutureFabricCardSelection({
+  state: FabricAllocationStateEngine.initialize(),
+  garmentTypeSelection: createSelection(["shirt", "trouser", "skirt"]),
+  garmentKey: "base:shirt",
+  fabricCode: "FAB-A",
+});
+threeSharedState = commitSameFabric({
+  state: threeSharedState,
+  garmentTypeSelection: createSelection(["shirt", "trouser", "skirt"]),
+  fabricCode: "FAB-A",
+  garmentKeys: ["base:trouser", "base:skirt"],
+});
+assert.deepEqual(
+  getFutureFabricCatalogueCancelTargets({
+    fabricCode: "FAB-A",
+    garmentTypeSelection: createSelection(["shirt", "trouser", "skirt"]),
+    fabricAllocationState: threeSharedState,
+    currentTargetGarmentKey: null,
+  }),
+  ["base:shirt", "base:trouser", "base:skirt"],
+);
+const threeSharedCard = resolveFutureFabricCatalogueCardPresentation({
+  fabricCode: "FAB-A",
+  garmentTypeSelection: createSelection(["shirt", "trouser", "skirt"]),
+  fabricAllocationState: threeSharedState,
+  currentTargetGarmentKey: null,
+});
+assert.equal(threeSharedCard.cancelGarmentKey, null);
+assert.deepEqual(threeSharedCard.cancelGarmentKeys, [
+  "base:shirt",
+  "base:trouser",
+  "base:skirt",
+]);
+const threeAfterShirtCancel = commitCatalogueCancel({
+  state: threeSharedState,
+  garmentKey: "base:shirt",
+});
+assert.deepEqual(
+  getFutureFabricCatalogueCancelTargets({
+    fabricCode: "FAB-A",
+    garmentTypeSelection: createSelection(["shirt", "trouser", "skirt"]),
+    fabricAllocationState: threeAfterShirtCancel,
+    currentTargetGarmentKey: null,
+  }),
+  ["base:trouser", "base:skirt"],
 );
 
 const persistCancelState = commitCatalogueCancel({
@@ -680,6 +846,7 @@ assert.doesNotMatch(
   "Step 2 must not use the ambiguous single-line Fabric progress label.",
 );
 assert.match(stepSource, /Step1FabricAssignmentDialog/);
+assert.match(stepSource, /RemoveFabricAssignmentDialog/);
 assert.match(stepSource, /pendingStep1FabricAssignment/);
 assert.match(stepSource, /commitStep1FabricAssignment/);
 assert.match(stepSource, /onAssignSameFabricProduct/);
@@ -726,8 +893,13 @@ const catalogueCardSource = readFileSync(
 );
 assert.match(
   catalogueCardSource,
-  /Cancel \$\{fabric\.name\} fabric assignment/,
-  "Shared Fabric catalogue card must keep the Cancel accessible name",
+  /Remove \$\{fabric\.name\} from \$\{/,
+  "Single-assignment X must name the exact garment in the accessible label.",
+);
+assert.match(
+  catalogueCardSource,
+  /Choose garment to remove \$\{fabric\.name\} from/,
+  "Multi-assignment X must describe the chooser instead of naming one garment.",
 );
 assert.match(stepSource, /FutureFabricCatalogueCard/);
 assert.match(stepSource, /aria-live="polite"/);
@@ -784,6 +956,11 @@ assert.match(stageSource, /OTHER_ADDITIONAL_GARMENT_PENDING/);
 assert.match(
   stageSource,
   /status: "blocked"/,
+);
+assert.doesNotMatch(
+  stageSource,
+  /cancelGarmentKey:\s*usingFabric\[0\]/,
+  "Multi-assignment cancellation must not silently target usingFabric[0].",
 );
 assert.doesNotMatch(
   stageSource.slice(

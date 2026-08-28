@@ -56,6 +56,7 @@ import { DormantFutureMeasurementStep } from "./DormantFutureMeasurementStep";
 import { DormantFutureSummaryStep } from "./DormantFutureSummaryStep";
 import { DormantFutureShippingStep } from "./DormantFutureShippingStep";
 import { DormantFuturePaymentReviewStep } from "./DormantFuturePaymentReviewStep";
+import { DesignStudioOrderSummary } from "./DesignStudioOrderSummary";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import {
   resolveShippingGarmentPieceCount,
@@ -154,6 +155,10 @@ import {
   setFutureMeasurementRoute,
 } from "../utils/measurementBlueprint";
 import { projectFutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
+import {
+  projectDesignStudioLiveOrderSummary,
+  shouldShowPersistentLiveOrderSummary,
+} from "../utils/designStudioLiveOrderSummary";
 import {
   createEmptyFutureShippingState,
   isFutureShippingStageUnlocked,
@@ -1364,6 +1369,41 @@ export default function DesignStudioView({
   const isFuturePaymentReviewUnlocked = isFuturePaymentReviewStageUnlocked(
     futureOrderCandidateResult,
   );
+  const showPersistentLiveOrderSummary =
+    shouldShowPersistentLiveOrderSummary(futureStageId);
+  const liveOrderSummary = useMemo(
+    () =>
+      projectDesignStudioLiveOrderSummary({
+        summary: futureSummary,
+        shippingResolution: futureShippingResolution,
+        candidatePricing: futureOrderCandidateResult.candidate?.pricing ?? null,
+        fabricAllocationState,
+        measurementState: reconciledFutureMeasurementState,
+        designSource: activeFutureDesignSource,
+        additionalConstructionState:
+          futureAdditionalConstructionReconciliation.state,
+        catalogInspection: futureCatalogInspection,
+        showAdditionalClothesCosts,
+      }),
+    [
+      futureSummary,
+      futureShippingResolution,
+      futureOrderCandidateResult.candidate?.pricing,
+      fabricAllocationState,
+      reconciledFutureMeasurementState,
+      activeFutureDesignSource,
+      futureAdditionalConstructionReconciliation.state,
+      futureCatalogInspection,
+      showAdditionalClothesCosts,
+    ],
+  );
+  const liveOrderSummaryUnlockedStages = useMemo(() => {
+    const unlocked = new Set<DesignStudioStageId>();
+    DESIGN_STUDIO_STEPS.forEach((step, index) => {
+      if (index <= highestUnlockedStageIndex) unlocked.add(step.id);
+    });
+    return unlocked;
+  }, [highestUnlockedStageIndex]);
 
   useEffect(() => {
     if (
@@ -2494,6 +2534,32 @@ export default function DesignStudioView({
     }
     setFutureStageId("payment");
   };
+  const handleLiveOrderSummaryEdit = (stage: DesignStudioStageId) => {
+    if (!isStageHistoricallyUnlocked(stage)) return;
+    if (stage === "garment_type") {
+      setFutureStageId("garment_type");
+      return;
+    }
+    if (stage === "fabric") {
+      handleOpenDormantFabricStage();
+      return;
+    }
+    if (stage === "design_style") {
+      handleOpenDormantDesignStyleStage();
+      return;
+    }
+    if (stage === "custom_details") {
+      handleOpenDormantCustomDetailsStage();
+      return;
+    }
+    if (stage === "measurement") {
+      handleOpenDormantMeasurementStage();
+      return;
+    }
+    if (stage === "shipping") {
+      handleOpenDormantShippingStage();
+    }
+  };
   const handleRefreshDormantShippingQuote = () => {
     setFutureShippingState(
       refreshFutureShippingQuote({
@@ -3213,6 +3279,21 @@ export default function DesignStudioView({
   const garmentTypeBlockerMessage = !garmentTypeStageCompletion.isComplete
     ? "Select at least one garment, choose who the order is for, and resolve every construction price to continue to Fabric."
     : null;
+  const liveOrderSummaryCard = (
+    <DesignStudioOrderSummary
+      view={liveOrderSummary}
+      unlockedStages={liveOrderSummaryUnlockedStages}
+      currentStageId={futureStageId}
+      onEditStage={handleLiveOrderSummaryEdit}
+    />
+  );
+  const embedPersistentLiveOrderSummary =
+    showPersistentLiveOrderSummary &&
+    (futureStageId === "garment_type" ||
+      futureStageId === "fabric" ||
+      futureStageId === "custom_details");
+  const showShellLiveOrderSummary =
+    showPersistentLiveOrderSummary && !embedPersistentLiveOrderSummary;
 
   return (
     <div
@@ -3265,6 +3346,14 @@ export default function DesignStudioView({
         onSelectShipping={handleOpenDormantShippingStage}
         onSelectPayment={handleOpenDormantPaymentReviewStage}
       />
+      <div
+        className={
+          showShellLiveOrderSummary
+            ? "mt-4 grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2.2fr)_minmax(16rem,1fr)]"
+            : "mt-4"
+        }
+      >
+        <div className="min-w-0">
       {futureStageId === "garment_type" ? (
         <div className="space-y-5">
           <GarmentTypeStep
@@ -3293,6 +3382,9 @@ export default function DesignStudioView({
                 : null
             }
             idPrefix="future-garment-type-step"
+            orderSummary={
+              embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
+            }
           />
           <div className="flex justify-end">
             <button
@@ -3330,6 +3422,9 @@ export default function DesignStudioView({
           onUseSameFabric={handleUseSameFutureFabric}
           onChooseAnotherFabric={handleChooseAnotherFutureFabric}
           onCancelPendingFabric={handleCancelFuturePendingFabric}
+          orderSummary={
+            embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
+          }
         />
       ) : futureStageId === "design_style" ? (
         <DormantFutureDesignStyleStep
@@ -3456,6 +3551,9 @@ export default function DesignStudioView({
           }}
           onBack={() => setFutureStageId("design_style")}
           onContinue={handleOpenDormantAiTryOnStage}
+          orderSummary={
+            embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
+          }
         />
       ) : futureStageId === "try_on" ? (
         <DormantFutureAiTryOnStep
@@ -3508,6 +3606,13 @@ export default function DesignStudioView({
           onEditStage={(stage) => setFutureStageId(stage)}
         />
       ) : null}
+        </div>
+        {showShellLiveOrderSummary ? (
+          <div className="min-w-0">
+            {liveOrderSummaryCard}
+          </div>
+        ) : null}
+      </div>
       {showAdditionalGarmentFabricDialog &&
         additionalGarmentFabricTransaction && (
         <FutureAdditionalGarmentFabricDialog
