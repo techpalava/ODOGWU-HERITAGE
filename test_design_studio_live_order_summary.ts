@@ -1319,8 +1319,6 @@ const viewSource = readFileSync(
 );
 assert.match(viewSource, /shouldShowPersistentLiveOrderSummary/);
 assert.match(viewSource, /DesignStudioOrderSummary/);
-assert.match(viewSource, /lg:sticky/);
-assert.match(viewSource, /lg:self-start/);
 assert.doesNotMatch(viewSource, /lg:max-h-\[calc\(100vh-2rem\)\]/);
 assert.doesNotMatch(viewSource, /lg:overflow-y-auto/);
 assert.match(viewSource, /useMemo\([\s\S]*projectDesignStudioLiveOrderSummary/);

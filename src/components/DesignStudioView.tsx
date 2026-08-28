@@ -3349,7 +3349,7 @@ export default function DesignStudioView({
       <div
         className={
           showShellLiveOrderSummary
-            ? "mt-4 grid min-w-0 grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,2.2fr)_minmax(16rem,1fr)]"
+            ? "mt-4 grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2.2fr)_minmax(16rem,1fr)]"
             : "mt-4"
         }
       >
@@ -3609,9 +3609,7 @@ export default function DesignStudioView({
         </div>
         {showShellLiveOrderSummary ? (
           <div className="min-w-0">
-            <div className="lg:sticky lg:top-4 lg:self-start">
-              {liveOrderSummaryCard}
-            </div>
+            {liveOrderSummaryCard}
           </div>
         ) : null}
       </div>

@@ -832,7 +832,7 @@ export const DormantFutureCustomDetailsStep = ({
         </div>
       ) : null}
 
-      <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] xl:items-start xl:gap-6">
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6">
         <div ref={contentRef} className="min-w-0 space-y-5">
           <div data-custom-detail-section="main-garment-details" className="min-w-0 space-y-5">
             {mainCoreSections.map((section) =>
@@ -1040,11 +1040,11 @@ export const DormantFutureCustomDetailsStep = ({
         </div>
 
         {orderSummary ? (
-          <div className="mt-5 min-w-0 xl:sticky xl:top-4 xl:mt-0">
+          <div className="mt-5 min-w-0 lg:mt-0">
             {orderSummary}
           </div>
         ) : (
-        <aside className="mt-5 min-w-0 rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm xl:sticky xl:top-4 xl:mt-0">
+        <aside className="mt-5 min-w-0 rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm lg:sticky lg:top-24 lg:self-start lg:mt-0">
           <h3 className="font-serif text-lg font-bold text-heritage-green">Order Summary</h3>
           <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">Only active garment occurrences and selected optional details are priced.</p>
           <div className="mt-4 space-y-2.5 text-sm">

@@ -219,6 +219,57 @@ assert.doesNotMatch(
   }).props.className,
   /overflow-y-auto|max-h-\[/,
 );
+assert.match(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-sidebar",
+  }).props.className,
+  /lg:sticky/,
+);
+assert.match(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-sidebar",
+  }).props.className,
+  /lg:top-24/,
+);
+assert.match(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-sidebar",
+  }).props.className,
+  /lg:self-start/,
+);
+assert.doesNotMatch(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-sidebar",
+  }).props.className,
+  /(?:^|\s)(?:sticky|fixed)(?:\s|$)/,
+);
+
+const constructionHeading = renderer.root
+  .findByProps({ "data-testid": "live-order-summary-section-construction" })
+  .findByType("h3");
+const fabricsHeading = renderer.root
+  .findByProps({ "data-testid": "live-order-summary-section-fabrics" })
+  .findByType("h3");
+const constructionSubtotalLabel = renderer.root
+  .findByProps({ "data-testid": "live-order-summary-construction-subtotal" })
+  .findAllByType("p")[0];
+assert.match(constructionHeading.props.className, /text-\[15px\]/);
+assert.match(constructionHeading.props.className, /font-bold/);
+assert.match(constructionHeading.props.className, /text-heritage-green/);
+assert.match(fabricsHeading.props.className, /text-\[15px\]/);
+assert.match(fabricsHeading.props.className, /font-bold/);
+assert.match(fabricsHeading.props.className, /text-heritage-green/);
+assert.match(constructionSubtotalLabel.props.className, /text-\[13px\]/);
+assert.match(constructionSubtotalLabel.props.className, /font-semibold/);
+assert.doesNotMatch(constructionSubtotalLabel.props.className, /text-\[15px\]/);
+assert.doesNotMatch(
+  constructionSubtotalLabel.props.className,
+  /text-heritage-green/,
+);
+assert.doesNotMatch(
+  constructionHeading.props.className,
+  /text-\[10px\]|text-\[13px\]/,
+);
 
 act(() => {
   renderer.update(
@@ -264,10 +315,9 @@ const viewSource = readFileSync(
 );
 assert.match(viewSource, /showShellLiveOrderSummary/);
 assert.match(viewSource, /embedPersistentLiveOrderSummary/);
-assert.match(viewSource, /lg:sticky/);
-assert.match(viewSource, /lg:self-start/);
 assert.doesNotMatch(viewSource, /lg:max-h-\[calc\(100vh-2rem\)\]/);
 assert.doesNotMatch(viewSource, /lg:overflow-y-auto/);
+assert.doesNotMatch(viewSource, /position:\s*fixed/);
 assert.doesNotMatch(viewSource, /DesignStudioOrderSummaryTrigger/);
 assert.doesNotMatch(viewSource, /mobileSummaryOpen/);
 assert.doesNotMatch(viewSource, /Your Order Summary/);
@@ -279,9 +329,14 @@ const summarySource = readFileSync(
 );
 assert.match(summarySource, /LIVE_ORDER_SUMMARY_HEADING/);
 assert.match(summarySource, /text-base/);
+assert.match(summarySource, /lg:sticky/);
+assert.match(summarySource, /lg:top-24/);
+assert.match(summarySource, /lg:self-start/);
+assert.match(summarySource, /text-\[15px\] font-bold leading-snug text-heritage-green/);
 assert.doesNotMatch(summarySource, /text-2xl/);
 assert.doesNotMatch(summarySource, /overflow-y-auto/);
 assert.doesNotMatch(summarySource, /max-h-\[calc/);
+assert.doesNotMatch(summarySource, /(?:^|\s)fixed(?:\s|$)/m);
 assert.doesNotMatch(summarySource, /live-order-summary-drawer/);
 assert.doesNotMatch(summarySource, /View Order/);
 assert.match(summarySource, /<aside/);
@@ -348,7 +403,7 @@ const customDetailsSource = readFileSync(
 );
 assert.match(
   customDetailsSource,
-  /orderSummary \? \(\s*<div className="mt-5 min-w-0/,
+  /orderSummary \? \(\s*<div className="mt-5 min-w-0 lg:mt-0/,
 );
 
 const manyItemsView: LiveOrderSummaryView = {

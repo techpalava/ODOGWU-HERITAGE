@@ -1055,6 +1055,8 @@ export const DormantFutureFabricStep = ({
       data-stage-complete={completion.isComplete}
       data-bottom-action-reserved="true"
     >
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] lg:gap-6">
+        <div className="min-w-0 space-y-6">
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
         <DesignStudioBackButton
           destination="Garment Type"
@@ -1360,6 +1362,8 @@ export const DormantFutureFabricStep = ({
           </div>
         )}
 
+        </div>
+        <div className="mt-6 min-w-0 lg:mt-0">
       {orderSummary ? (
         orderSummary
       ) : (
@@ -1401,6 +1405,8 @@ export const DormantFutureFabricStep = ({
           </div>
       </aside>
       )}
+        </div>
+      </div>
 
       {pendingStep1FabricAssignment &&
         step1AssignmentDialogFabric &&

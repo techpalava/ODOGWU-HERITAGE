@@ -20,7 +20,7 @@ const SummarySection = ({
     className="min-w-0"
   >
     <div className="flex min-w-0 items-start justify-between gap-2">
-      <h3 className="min-w-0 break-words text-[10px] font-semibold uppercase tracking-[0.14em] text-heritage-ink/70">
+      <h3 className="min-w-0 break-words text-[15px] font-bold leading-snug text-heritage-green">
         {section.title}
       </h3>
       {canEdit && onEdit ? (
@@ -70,10 +70,10 @@ const SummarySection = ({
         data-subtotal-cents={section.footer.amountCents}
       >
         <div className="flex min-w-0 items-start justify-between gap-2">
-          <p className="min-w-0 break-words text-[13px] font-bold leading-snug text-heritage-ink">
+          <p className="min-w-0 break-words text-[13px] font-semibold leading-snug text-heritage-ink">
             {section.footer.label}
           </p>
-          <span className="shrink-0 text-right font-mono text-[13px] font-bold text-heritage-green sm:text-sm">
+          <span className="shrink-0 text-right font-mono text-[13px] font-semibold text-heritage-green">
             {section.footer.amountLabel}
           </span>
         </div>
@@ -122,7 +122,7 @@ export const DesignStudioOrderSummary = ({
     <aside
       aria-labelledby={headingId}
       data-testid="live-order-summary-sidebar"
-      className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-3 shadow-sm sm:p-3.5"
+      className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-3 shadow-sm sm:p-3.5 lg:sticky lg:top-24 lg:self-start"
     >
       <div className="flex min-w-0 items-center gap-2 border-b border-gray-100 pb-2">
         <UsersRound
