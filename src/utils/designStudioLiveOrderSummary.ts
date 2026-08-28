@@ -33,6 +33,10 @@ export const LIVE_ORDER_SUMMARY_OWN_DESIGN_TITLE = "Own Design Upload";
 export const LIVE_ORDER_SUMMARY_OWN_DESIGN_DETAIL = "Uploaded design selected";
 export const LIVE_ORDER_SUMMARY_STANDARD_SHIPPING_LABEL =
   "Lagos → Eindhoven Standard Shipping";
+export const LIVE_ORDER_SUMMARY_CONSTRUCTION_SUBTOTAL_LABEL =
+  "Garment Construction Subtotal";
+export const LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE =
+  SELECTED_DESIGN_PRICE_SUPPORTING_TEXT;
 
 export const LIVE_ORDER_SUMMARY_TOTAL_LABEL = "Total";
 export const LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL = "Current Total";
@@ -52,6 +56,14 @@ export interface LiveOrderSummaryLine {
   readonly amountLabel: string | null;
 }
 
+export interface LiveOrderSummarySectionFooter {
+  readonly id: string;
+  readonly label: string;
+  readonly amountLabel: string;
+  readonly amountCents: number;
+  readonly note: string;
+}
+
 export interface LiveOrderSummarySection {
   readonly id:
     | "garments"
@@ -61,7 +73,6 @@ export interface LiveOrderSummarySection {
     | "optional_extras"
     | "additional_clothes"
     | "measurements"
-    | "standard_shipping"
     | "delivery";
   readonly title: string;
   readonly editStage:
@@ -73,6 +84,7 @@ export interface LiveOrderSummarySection {
     | "shipping"
     | null;
   readonly lines: readonly LiveOrderSummaryLine[];
+  readonly footer?: LiveOrderSummarySectionFooter | null;
 }
 
 export interface LiveOrderSummaryView {
@@ -471,16 +483,23 @@ export const projectDesignStudioLiveOrderSummary = ({
     : [];
 
   const measurementLine = measurementStatusLine(summary, measurementState);
-  const standardShippingLines = summary.pricingSummary.selectedDesignPrice
-    ? [
-        {
-          id: "standard-shipping-included",
-          label: "Included",
-          detail: SELECTED_DESIGN_PRICE_SUPPORTING_TEXT,
-          amountLabel: null,
-        },
-      ]
-    : [];
+  const constructionSubtotalCents =
+    summary.pricingSummary.garmentConstructionSubtotal !== null
+      ? Math.round(summary.pricingSummary.garmentConstructionSubtotal * 100)
+      : null;
+  const constructionFooter: LiveOrderSummarySectionFooter | null =
+    constructionSubtotalCents === null
+      ? null
+      : {
+          id: "construction-subtotal",
+          label: LIVE_ORDER_SUMMARY_CONSTRUCTION_SUBTOTAL_LABEL,
+          amountLabel: moneyFromCents(constructionSubtotalCents),
+          amountCents: constructionSubtotalCents,
+          note: LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
+        };
+  const visibleConstructionLines = constructionLines.filter(
+    (line) => line.amountLabel || line.detail,
+  );
 
   const total = resolveTotal({
     summary,
@@ -493,9 +512,8 @@ export const projectDesignStudioLiveOrderSummary = ({
       id: "construction",
       title: "Garment Construction",
       editStage: "garment_type",
-      lines: constructionLines.filter(
-        (line) => line.amountLabel || line.detail,
-      ),
+      lines: visibleConstructionLines,
+      footer: constructionFooter,
     },
     {
       id: "optional_extras",
@@ -534,19 +552,15 @@ export const projectDesignStudioLiveOrderSummary = ({
       lines: isUncommittedSummaryLine(measurementLine) ? [] : [measurementLine],
     },
     {
-      id: "standard_shipping",
-      title: LIVE_ORDER_SUMMARY_STANDARD_SHIPPING_LABEL,
-      editStage: null,
-      lines: standardShippingLines,
-    },
-    {
       id: "delivery",
       title: "Delivery & Pickup",
       editStage: "shipping",
       lines: deliveryLines,
     },
   ];
-  const sections = allSections.filter((section) => section.lines.length > 0);
+  const sections = allSections.filter(
+    (section) => section.lines.length > 0 || Boolean(section.footer),
+  );
 
   return {
     ...total,

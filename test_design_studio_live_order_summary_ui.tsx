@@ -26,6 +26,13 @@ const sampleView: LiveOrderSummaryView = {
           amountLabel: "€70.00",
         },
       ],
+      footer: {
+        id: "construction-subtotal",
+        label: "Garment Construction Subtotal",
+        amountLabel: "€70.00",
+        amountCents: 7000,
+        note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.",
+      },
     },
     {
       id: "optional_extras",
@@ -160,10 +167,58 @@ assert.equal(
 
 const markup = textOf(renderer.root);
 const constructionIndex = markup.indexOf("Garment Construction");
+const constructionSubtotalIndex = markup.indexOf("Garment Construction Subtotal");
+const inclusionIndex = markup.indexOf(
+  "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.",
+);
 const totalIndex = markup.indexOf("€245.00");
 const fabricsIndex = markup.indexOf("Fabrics");
 assert.ok(constructionIndex >= 0 && totalIndex > constructionIndex);
-assert.ok(fabricsIndex > totalIndex, "Fabrics must sit under the total");
+assert.ok(
+  constructionSubtotalIndex > constructionIndex,
+  "Garment Construction Subtotal must sit inside Garment Construction",
+);
+assert.ok(
+  inclusionIndex > constructionSubtotalIndex,
+  "inclusion note must sit beneath Garment Construction Subtotal",
+);
+assert.equal(
+  (
+    markup.match(
+      /Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing\./g,
+    ) || []
+  ).length,
+  1,
+);
+assert.ok(!markup.includes("Lagos → Eindhoven Standard Shipping"));
+assert.ok(
+  fabricsIndex > constructionSubtotalIndex && fabricsIndex < totalIndex,
+  "Fabrics must sit under Order Summary and above the final total",
+);
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-construction-subtotal",
+  }).length,
+  1,
+);
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-construction-inclusion",
+  }).length,
+  1,
+);
+assert.equal(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-construction-subtotal",
+  }).props["data-subtotal-cents"],
+  7000,
+);
+assert.doesNotMatch(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-sidebar",
+  }).props.className,
+  /overflow-y-auto|max-h-\[/,
+);
 
 act(() => {
   renderer.update(
@@ -210,6 +265,9 @@ const viewSource = readFileSync(
 assert.match(viewSource, /showShellLiveOrderSummary/);
 assert.match(viewSource, /embedPersistentLiveOrderSummary/);
 assert.match(viewSource, /lg:sticky/);
+assert.match(viewSource, /lg:self-start/);
+assert.doesNotMatch(viewSource, /lg:max-h-\[calc\(100vh-2rem\)\]/);
+assert.doesNotMatch(viewSource, /lg:overflow-y-auto/);
 assert.doesNotMatch(viewSource, /DesignStudioOrderSummaryTrigger/);
 assert.doesNotMatch(viewSource, /mobileSummaryOpen/);
 assert.doesNotMatch(viewSource, /Your Order Summary/);
@@ -222,6 +280,8 @@ const summarySource = readFileSync(
 assert.match(summarySource, /LIVE_ORDER_SUMMARY_HEADING/);
 assert.match(summarySource, /text-base/);
 assert.doesNotMatch(summarySource, /text-2xl/);
+assert.doesNotMatch(summarySource, /overflow-y-auto/);
+assert.doesNotMatch(summarySource, /max-h-\[calc/);
 assert.doesNotMatch(summarySource, /live-order-summary-drawer/);
 assert.doesNotMatch(summarySource, /View Order/);
 assert.match(summarySource, /<aside/);
@@ -289,6 +349,125 @@ const customDetailsSource = readFileSync(
 assert.match(
   customDetailsSource,
   /orderSummary \? \(\s*<div className="mt-5 min-w-0/,
+);
+
+const manyItemsView: LiveOrderSummaryView = {
+  sections: [
+    {
+      id: "construction",
+      title: "Garment Construction",
+      editStage: "garment_type",
+      lines: [
+        { id: "construction-base:shirt", label: "Shirt", detail: null, amountLabel: "€65.00" },
+        { id: "construction-base:trouser", label: "Trouser", detail: null, amountLabel: "€75.00" },
+        { id: "construction-base:dress", label: "Dress", detail: "Additional net", amountLabel: "€90.00" },
+      ],
+      footer: {
+        id: "construction-subtotal",
+        label: "Garment Construction Subtotal",
+        amountLabel: "€230.00",
+        amountCents: 23000,
+        note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.",
+      },
+    },
+    {
+      id: "optional_extras",
+      title: "Optional Extra Garments",
+      editStage: "custom_details",
+      lines: [
+        {
+          id: "additional:shirt:1",
+          label: "Shirt 1",
+          detail: "Imperial Sapphire Link · Standard",
+          amountLabel: "€35.00",
+        },
+        {
+          id: "additional:shirt:2",
+          label: "Shirt 2",
+          detail: "Golden Heritage Weave · Standard",
+          amountLabel: "€35.00",
+        },
+      ],
+    },
+    {
+      id: "additional_clothes",
+      title: "Additional Clothes Costs",
+      editStage: "custom_details",
+      lines: [
+        {
+          id: "dress-net",
+          label: "Net overlay",
+          detail: "Dress",
+          amountLabel: "€25.00",
+        },
+      ],
+    },
+    {
+      id: "fabrics",
+      title: "Fabrics",
+      editStage: "fabric",
+      lines: [
+        { id: "fabric-base:shirt", label: "Shirt", detail: "Royal Forest Mosaic", amountLabel: null },
+        { id: "fabric-base:trouser", label: "Trouser", detail: "Royal Forest Mosaic", amountLabel: null },
+        { id: "fabric-base:dress", label: "Dress", detail: "Imperial Sapphire Link", amountLabel: null },
+        { id: "fabric-additional:shirt:1", label: "Shirt 1", detail: "Imperial Sapphire Link", amountLabel: null },
+        { id: "fabric-additional:shirt:2", label: "Shirt 2", detail: "Golden Heritage Weave", amountLabel: null },
+      ],
+    },
+    {
+      id: "measurements",
+      title: "Measurements",
+      editStage: "measurement",
+      lines: [
+        { id: "measurements-complete", label: "Low Risk — Complete", detail: null, amountLabel: null },
+      ],
+    },
+    {
+      id: "delivery",
+      title: "Delivery & Pickup",
+      editStage: "shipping",
+      lines: [
+        { id: "Delivery Method", label: "Delivery Method", detail: "Pick Up in Eindhoven", amountLabel: null },
+      ],
+    },
+  ],
+  totalStatus: "exact",
+  totalLabel: "Total",
+  totalValueLabel: "€325.00",
+  totalAmountCents: 32500,
+  quoteRequired: false,
+};
+
+act(() => {
+  renderer.update(
+    createElement(DesignStudioOrderSummary, {
+      view: manyItemsView,
+      unlockedStages: new Set<DesignStudioStageId>(),
+    }),
+  );
+});
+const manyMarkup = textOf(renderer.root);
+assert.ok(manyMarkup.includes("Shirt"));
+assert.ok(manyMarkup.includes("Trouser"));
+assert.ok(manyMarkup.includes("Dress"));
+assert.ok(manyMarkup.includes("Shirt 1"));
+assert.ok(manyMarkup.includes("Shirt 2"));
+assert.ok(manyMarkup.includes("Royal Forest Mosaic"));
+assert.ok(manyMarkup.includes("Imperial Sapphire Link"));
+assert.ok(manyMarkup.includes("Golden Heritage Weave"));
+assert.ok(manyMarkup.includes("Net overlay"));
+assert.ok(manyMarkup.includes("Low Risk — Complete"));
+assert.ok(manyMarkup.includes("Pick Up in Eindhoven"));
+assert.ok(manyMarkup.includes("€230.00"));
+assert.ok(manyMarkup.includes("€325.00"));
+assert.ok(!manyMarkup.includes("Not selected yet"));
+assert.ok(!manyMarkup.includes("Not completed yet"));
+assert.ok(!manyMarkup.includes("Lagos → Eindhoven Standard Shipping"));
+assert.doesNotMatch(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-sidebar",
+  }).props.className,
+  /overflow-y-auto|max-h-\[/,
 );
 
 console.log("test_design_studio_live_order_summary_ui.tsx: all assertions passed");

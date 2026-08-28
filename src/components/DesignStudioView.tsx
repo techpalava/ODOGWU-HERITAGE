@@ -3609,7 +3609,7 @@ export default function DesignStudioView({
         </div>
         {showShellLiveOrderSummary ? (
           <div className="min-w-0">
-            <div className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-x-hidden lg:overflow-y-auto">
+            <div className="lg:sticky lg:top-4 lg:self-start">
               {liveOrderSummaryCard}
             </div>
           </div>

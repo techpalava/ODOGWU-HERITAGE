@@ -36,6 +36,9 @@ import {
   LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL,
   LIVE_ORDER_SUMMARY_HEADING,
   LIVE_ORDER_SUMMARY_TOTAL_LABEL,
+  LIVE_ORDER_SUMMARY_STANDARD_SHIPPING_LABEL,
+  LIVE_ORDER_SUMMARY_CONSTRUCTION_SUBTOTAL_LABEL,
+  LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
   projectDesignStudioLiveOrderSummary,
   shouldShowPersistentLiveOrderSummary,
 } from "./src/utils/designStudioLiveOrderSummary";
@@ -533,6 +536,13 @@ assert.ok(
     (line) => line.label === "Shirt" || line.label === "Trouser",
   ),
 );
+hiddenSection(step1Only.view, "standard_shipping");
+assert.equal(
+  JSON.stringify(step1Only.view.sections).includes(
+    LIVE_ORDER_SUMMARY_STANDARD_SHIPPING_LABEL,
+  ),
+  false,
+);
 
 const afterFabric = buildAuthority({
   garmentTypes: ["shirt", "trouser"],
@@ -579,6 +589,46 @@ assert.notEqual(preDelivery.view.totalLabel, LIVE_ORDER_SUMMARY_TOTAL_LABEL);
 assert.equal(preDelivery.view.totalStatus, "subtotal");
 assert.ok(preDelivery.view.totalAmountCents);
 assert.notEqual(preDelivery.view.totalValueLabel, "€0.00");
+assert.ok(preDelivery.summary.pricingSummary.garmentConstructionSubtotal !== null);
+const preDeliveryConstructionCents = Math.round(
+  preDelivery.summary.pricingSummary.garmentConstructionSubtotal! * 100,
+);
+assert.equal(
+  section(preDelivery.view, "construction").footer?.amountCents,
+  preDeliveryConstructionCents,
+);
+assert.equal(
+  section(preDelivery.view, "construction").footer?.label,
+  LIVE_ORDER_SUMMARY_CONSTRUCTION_SUBTOTAL_LABEL,
+);
+assert.equal(
+  section(preDelivery.view, "construction").footer?.amountLabel,
+  `€${(preDeliveryConstructionCents / 100).toFixed(2)}`,
+);
+assert.equal(
+  section(preDelivery.view, "construction").footer?.note,
+  LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
+);
+assert.equal(
+  section(preDelivery.view, "construction").lines.some(
+    (line) => line.label === LIVE_ORDER_SUMMARY_CONSTRUCTION_SUBTOTAL_LABEL,
+  ),
+  false,
+  "construction subtotal must not be summed from visible rows",
+);
+hiddenSection(preDelivery.view, "standard_shipping");
+assert.equal(
+  JSON.stringify(preDelivery.view.sections).includes(
+    LIVE_ORDER_SUMMARY_STANDARD_SHIPPING_LABEL,
+  ),
+  false,
+);
+assert.equal(
+  JSON.stringify(preDelivery.view.sections).split(
+    LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
+  ).length - 1,
+  1,
+);
 
 const multiFabric = buildAuthority({
   garmentTypes: ["shirt", "trouser", "dress"],
@@ -1167,15 +1217,100 @@ assert.ok(
 assert.ok(
   section(full.view, "construction").lines.some((line) => line.detail !== LIVE_ORDER_SUMMARY_PENDING_LABEL),
 );
+hiddenSection(full.view, "standard_shipping");
 assert.equal(
-  section(full.view, "standard_shipping").lines[0]?.label,
-  "Included",
+  JSON.stringify(full.view).includes(LIVE_ORDER_SUMMARY_STANDARD_SHIPPING_LABEL),
+  false,
+);
+assert.ok(full.summary.pricingSummary.garmentConstructionSubtotal !== null);
+assert.equal(
+  section(full.view, "construction").footer?.amountCents,
+  Math.round(full.summary.pricingSummary.garmentConstructionSubtotal! * 100),
+);
+assert.equal(
+  section(full.view, "construction").footer?.note,
+  LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
+);
+assert.equal(
+  JSON.stringify(full.view.sections).split(
+    LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
+  ).length - 1,
+  1,
 );
 assert.equal(
   section(full.view, "delivery").lines.filter((line) =>
     /Lagos/.test(`${line.label} ${line.detail || ""}`),
   ).length,
   0,
+);
+
+const manyItems = buildAuthority({
+  garmentTypes: ["shirt", "trouser", "dress"],
+  demographic: "unisex",
+  fabricAllocationState: withTwoExtraAllocation,
+  customState: dressState,
+  measurementRoute: "low_risk",
+  shippingState: {
+    ...withContact(createEmptyFutureShippingState()),
+    fulfilmentMethod: "eindhoven_pickup",
+  },
+});
+const manySectionIds = manyItems.view.sections.map((item) => item.id);
+assert.deepEqual(
+  manySectionIds.filter((id) =>
+    [
+      "construction",
+      "optional_extras",
+      "additional_clothes",
+      "fabrics",
+      "design_style",
+      "measurements",
+      "delivery",
+    ].includes(id),
+  ),
+  [
+    "construction",
+    "optional_extras",
+    "additional_clothes",
+    "fabrics",
+    "design_style",
+    "measurements",
+    "delivery",
+  ],
+);
+assert.equal(section(manyItems.view, "construction").lines.length >= 3, true);
+assert.equal(section(manyItems.view, "optional_extras").lines.length, 2);
+assert.ok(
+  section(manyItems.view, "additional_clothes").lines.some(
+    (line) => line.id === dressOccurrence.occurrenceKey,
+  ),
+);
+assert.equal(section(manyItems.view, "fabrics").lines.length >= 4, true);
+assert.ok(
+  manyItems.view.sections.every(
+    (item) =>
+      item.lines.length > 0 || Boolean(item.footer),
+  ),
+);
+assert.equal(
+  JSON.stringify(manyItems.view.sections).includes("Not selected yet"),
+  false,
+);
+assert.equal(
+  JSON.stringify(manyItems.view.sections).includes("Not completed yet"),
+  false,
+);
+hiddenSection(manyItems.view, "standard_shipping");
+assert.ok(manyItems.summary.pricingSummary.garmentConstructionSubtotal !== null);
+assert.equal(
+  section(manyItems.view, "construction").footer?.amountCents,
+  Math.round(manyItems.summary.pricingSummary.garmentConstructionSubtotal! * 100),
+);
+assert.ok(manyItems.view.totalAmountCents);
+assert.notEqual(manyItems.view.totalValueLabel, "Pending");
+assert.equal(
+  manyItems.view.totalAmountCents,
+  manyItems.candidateResult.candidate?.pricing.exactTotalCents,
 );
 
 const viewSource = readFileSync(
@@ -1185,6 +1320,9 @@ const viewSource = readFileSync(
 assert.match(viewSource, /shouldShowPersistentLiveOrderSummary/);
 assert.match(viewSource, /DesignStudioOrderSummary/);
 assert.match(viewSource, /lg:sticky/);
+assert.match(viewSource, /lg:self-start/);
+assert.doesNotMatch(viewSource, /lg:max-h-\[calc\(100vh-2rem\)\]/);
+assert.doesNotMatch(viewSource, /lg:overflow-y-auto/);
 assert.match(viewSource, /useMemo\([\s\S]*projectDesignStudioLiveOrderSummary/);
 assert.match(viewSource, /showShellLiveOrderSummary/);
 assert.match(viewSource, /embedPersistentLiveOrderSummary/);
