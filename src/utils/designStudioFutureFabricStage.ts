@@ -643,7 +643,7 @@ export type FutureFabricCatalogueCardStatus =
   | "IN USE"
   | "ASSIGNED"
   | "USE AGAIN"
-  | "NO GARMENTS TO ASSIGN";
+  | "ALL GARMENTS HAVE FABRIC";
 export type FutureFabricCatalogueCardAction =
   | "select"
   | "cancel"
@@ -654,7 +654,27 @@ export interface FutureFabricCatalogueCardPresentation {
   status: FutureFabricCatalogueCardStatus;
   action: FutureFabricCatalogueCardAction;
   cancelGarmentKey: string | null;
+  cancelGarmentKeys?: readonly string[];
 }
+
+export const REMOVE_FABRIC_ASSIGNMENT_TITLE = "Remove Fabric Assignment";
+export const REMOVE_FABRIC_ASSIGNMENT_DESCRIPTION =
+  "Choose which garment should stop using this Fabric.";
+
+const emptyCancelPresentation = {
+  cancelGarmentKey: null as string | null,
+  cancelGarmentKeys: [] as readonly string[],
+};
+
+const singleCancelPresentation = (garmentKey: string) => ({
+  cancelGarmentKey: garmentKey,
+  cancelGarmentKeys: [garmentKey] as readonly string[],
+});
+
+const multiCancelPresentation = (garmentKeys: readonly string[]) => ({
+  cancelGarmentKey: null as string | null,
+  cancelGarmentKeys: garmentKeys,
+});
 
 const collectOrderedFabricAssignmentKeys = ({
   garmentTypeSelection,
@@ -684,10 +704,71 @@ const collectOrderedFabricAssignmentKeys = ({
   return orderedKeys;
 };
 
+const collectUsingFabricGarmentKeys = ({
+  fabricCode,
+  garmentTypeSelection,
+  fabricAllocationState,
+}: {
+  fabricCode: string;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+}): string[] => {
+  const fabricByGarmentKey = new Map<string, string>();
+  fabricAllocationState.fabricAllocations.forEach((allocation) =>
+    allocation.garmentAssignments.forEach((assignment) => {
+      fabricByGarmentKey.set(assignment.garmentKey, allocation.fabricCode);
+    }),
+  );
+  return collectOrderedFabricAssignmentKeys({
+    garmentTypeSelection,
+    fabricAllocationState,
+  }).filter((garmentKey) => fabricByGarmentKey.get(garmentKey) === fabricCode);
+};
+
+/**
+ * Exact garmentKeys this catalogue card may cancel. A focused catalogue
+ * (Change Fabric / additional picker) owns only that target. An untargeted
+ * Step 1/2 card owns committed Step 1 assignments using the Fabric; it owns
+ * additional assignments only when no Step 1 assignment uses that Fabric,
+ * matching the existing untargeted card cancellation path.
+ */
+export const getFutureFabricCatalogueCancelTargets = ({
+  fabricCode,
+  garmentTypeSelection,
+  fabricAllocationState,
+  currentTargetGarmentKey,
+}: {
+  fabricCode: string;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+  currentTargetGarmentKey: string | null;
+}): readonly string[] => {
+  const usingFabric = collectUsingFabricGarmentKeys({
+    fabricCode,
+    garmentTypeSelection,
+    fabricAllocationState,
+  });
+  if (currentTargetGarmentKey) {
+    return usingFabric.includes(currentTargetGarmentKey)
+      ? [currentTargetGarmentKey]
+      : [];
+  }
+  const step1KeySet = new Set(
+    getFutureFabricAssignmentTargets(garmentTypeSelection).map(
+      (target) => target.assignment.garmentKey,
+    ),
+  );
+  const step1UsingFabric = usingFabric.filter((garmentKey) =>
+    step1KeySet.has(garmentKey),
+  );
+  return step1UsingFabric.length > 0 ? step1UsingFabric : usingFabric;
+};
+
 /**
  * Derives the catalogue-card status and click action from allocation identity.
  * Cancellation always targets a garment/allocation occurrence, never every
- * assignment that happens to share a fabric code.
+ * assignment that happens to share a fabric code. Multiple untargeted
+ * assignments never collapse to usingFabric[0].
  */
 export const resolveFutureFabricCatalogueCardPresentation = ({
   fabricCode,
@@ -700,16 +781,17 @@ export const resolveFutureFabricCatalogueCardPresentation = ({
   fabricAllocationState: FabricAllocationState;
   currentTargetGarmentKey: string | null;
 }): FutureFabricCatalogueCardPresentation => {
-  const fabricByGarmentKey = new Map<string, string>();
-  fabricAllocationState.fabricAllocations.forEach((allocation) =>
-    allocation.garmentAssignments.forEach((assignment) => {
-      fabricByGarmentKey.set(assignment.garmentKey, allocation.fabricCode);
-    }),
-  );
-  const usingFabric = collectOrderedFabricAssignmentKeys({
+  const usingFabric = collectUsingFabricGarmentKeys({
+    fabricCode,
     garmentTypeSelection,
     fabricAllocationState,
-  }).filter((garmentKey) => fabricByGarmentKey.get(garmentKey) === fabricCode);
+  });
+  const cancelGarmentKeys = getFutureFabricCatalogueCancelTargets({
+    fabricCode,
+    garmentTypeSelection,
+    fabricAllocationState,
+    currentTargetGarmentKey,
+  });
   const assignedToCurrentTarget = Boolean(
     currentTargetGarmentKey && usingFabric.includes(currentTargetGarmentKey),
   );
@@ -723,23 +805,35 @@ export const resolveFutureFabricCatalogueCardPresentation = ({
     return {
       status,
       action: "cancel",
-      cancelGarmentKey: currentTargetGarmentKey,
+      ...singleCancelPresentation(currentTargetGarmentKey),
     };
   }
 
   if (currentTargetGarmentKey) {
-    return { status, action: "select", cancelGarmentKey: null };
+    return { status, action: "select", ...emptyCancelPresentation };
   }
 
-  if (usingFabric.length > 0) {
+  if (cancelGarmentKeys.length === 1) {
     return {
       status,
       action: "cancel",
-      cancelGarmentKey: usingFabric[0],
+      ...singleCancelPresentation(cancelGarmentKeys[0]!),
     };
   }
 
-  return { status, action: "select", cancelGarmentKey: null };
+  if (cancelGarmentKeys.length > 1) {
+    return {
+      status,
+      action: "cancel",
+      ...multiCancelPresentation(cancelGarmentKeys),
+    };
+  }
+
+  if (usingFabric.length > 0) {
+    return { status, action: "none", ...emptyCancelPresentation };
+  }
+
+  return { status, action: "select", ...emptyCancelPresentation };
 };
 
 /**

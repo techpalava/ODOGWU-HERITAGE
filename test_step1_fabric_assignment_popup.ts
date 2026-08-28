@@ -444,6 +444,8 @@ const unusedZeroCandidate = resolveStep1FabricCatalogueCardPresentation({
   availabilityMessage: null,
 });
 assert.equal(unusedZeroCandidate.status, STEP1_NO_GARMENTS_TO_ASSIGN_STATUS);
+assert.equal(STEP1_NO_GARMENTS_TO_ASSIGN_STATUS, "ALL GARMENTS HAVE FABRIC");
+assert.notEqual(unusedZeroCandidate.status, "NO GARMENTS TO ASSIGN");
 assert.equal(unusedZeroCandidate.action, "none");
 assert.notEqual(unusedZeroCandidate.status, "SELECT");
 assert.notEqual(unusedZeroCandidate.status, "IN USE");

@@ -350,6 +350,7 @@ export const FutureAdditionalGarmentFabricDialog = ({
                         ...presentation,
                         action: "select",
                         cancelGarmentKey: null,
+                        cancelGarmentKeys: [],
                       }}
                       targetGarmentLabel={garmentLabel}
                       stockBadgeIdPrefix="step4-fabric-stock"

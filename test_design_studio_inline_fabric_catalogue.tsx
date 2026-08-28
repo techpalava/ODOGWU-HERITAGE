@@ -695,7 +695,7 @@ assert.ok(
 );
 assert.match(
   String(targetedCurrentFabricCard?.props["aria-label"] || ""),
-  /Cancel Inline Heritage A fabric assignment/,
+  /Remove Inline Heritage A from Standard Shirt/,
 );
 await act(async () =>
   targetedTwoGarmentRenderer.root
@@ -2318,15 +2318,29 @@ try {
   const assignedShirtCard = findFabricCard(inUseCancelRenderer.root, "INLINE-A");
   assert.equal(assignedShirtCard?.props["data-fabric-status"], "IN USE");
   assert.equal(assignedShirtCard?.props["data-fabric-action"], "cancel");
-  assert.equal(assignedShirtCard?.props["data-fabric-idle-label"], "IN USE");
-  assert.equal(assignedShirtCard?.props["data-fabric-active-label"], "CANCEL");
+  assert.equal(assignedShirtCard?.props["data-fabric-remove"], "true");
+  assert.equal(assignedShirtCard?.props["data-fabric-idle-label"], undefined);
+  assert.equal(assignedShirtCard?.props["data-fabric-active-label"], undefined);
   assert.equal(
     assignedShirtCard?.props["data-fabric-cancel-garment-key"],
     "base:shirt",
   );
+  assert.equal(assignedShirtCard?.props["data-fabric-cancel-count"], "1");
   assert.equal(
-    assignedShirtCard?.props["aria-label"],
-    "Cancel Inline Heritage A fabric assignment for Standard Shirt",
+    assignedShirtCard?.props["data-fabric-remove-chooser"],
+    undefined,
+  );
+  assert.match(
+    assignedShirtCard?.props["aria-label"] || "",
+    /Remove Inline Heritage A from Standard Shirt/,
+  );
+  assert.match(
+    textContent(inUseCancelRenderer.root),
+    /IN USE/,
+  );
+  assert.doesNotMatch(
+    textContent(assignedShirtCard!),
+    /CANCEL/,
   );
   const assignedShirtStockBadge = findStockBadge(
     inUseCancelRenderer.root,
@@ -2474,6 +2488,15 @@ try {
   );
   assertFabricProgress(preserveOtherRenderer.root, 1, 1, 1, 2);
 
+  const findRemovalDialog = (root: ReactTestInstance) =>
+    root.findAllByProps({
+      "data-testid": "remove-fabric-assignment-dialog",
+    })[0] ?? null;
+  const findRemovalButton = (root: ReactTestInstance, garmentKey: string) =>
+    root.findAllByProps({
+      "data-remove-fabric-assignment-garment-key": garmentKey,
+    })[0] ?? null;
+
   let sharedCodeState = applyFutureFabricCardSelection({
     state: FabricAllocationStateEngine.initialize(),
     garmentTypeSelection: shirtTrouserSelection,
@@ -2513,8 +2536,42 @@ try {
     ),
     ["base:shirt", "base:trouser"],
   );
+  const sharedFabricCard = findFabricCard(sharedCodeRenderer.root, "INLINE-A");
+  assert.equal(sharedFabricCard?.props["data-fabric-action"], "cancel");
+  assert.equal(
+    findFabricCard(sharedCodeRenderer.root, "INLINE-B")?.props["data-fabric-status"],
+    STEP1_NO_GARMENTS_TO_ASSIGN_STATUS,
+  );
+  assert.equal(sharedFabricCard?.props["data-fabric-remove-chooser"], "true");
+  assert.equal(sharedFabricCard?.props["data-fabric-cancel-count"], "2");
+  assert.equal(
+    sharedFabricCard?.props["data-fabric-cancel-garment-key"],
+    undefined,
+  );
+  assert.match(
+    sharedFabricCard?.props["aria-label"] || "",
+    /Choose garment to remove Inline Heritage A from/,
+  );
+  const sharedSnapshot = JSON.parse(JSON.stringify(sharedCodeState));
+  await act(async () => sharedFabricCard!.props.onClick());
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sharedCodeState)),
+    sharedSnapshot,
+    "Opening the removal chooser must not mutate assignments.",
+  );
+  const sharedChooser = findRemovalDialog(sharedCodeRenderer.root);
+  assert.ok(sharedChooser, "Multi-assignment X must open Remove Fabric Assignment.");
+  assert.match(textContent(sharedChooser!), /Remove Fabric Assignment/);
+  assert.match(textContent(sharedChooser!), /Inline Heritage A/);
+  assert.match(textContent(sharedChooser!), /INLINE-A/);
+  assert.match(
+    textContent(sharedChooser!),
+    /Choose which garment should stop using this Fabric\./,
+  );
+  assert.ok(findRemovalButton(sharedCodeRenderer.root, "base:shirt"));
+  assert.ok(findRemovalButton(sharedCodeRenderer.root, "base:trouser"));
   await act(async () =>
-    findFabricCard(sharedCodeRenderer.root, "INLINE-A")!.props.onClick(),
+    findRemovalButton(sharedCodeRenderer.root, "base:shirt")!.props.onClick(),
   );
   await act(async () => sharedCodeRenderer.update(renderSharedCode()));
   assert.deepEqual(
@@ -2522,7 +2579,7 @@ try {
       allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
     ),
     [["base:trouser"]],
-    "Cancelling a shared fabric code must remove only the intended occurrence, not every garment using that code.",
+    "Removing Shirt from the chooser must leave Trouser assigned to the shared Fabric.",
   );
   assert.equal(
     sharedCodeRenderer.root.findByProps({ "data-garment-key": "base:shirt" })
@@ -2533,6 +2590,217 @@ try {
     sharedCodeRenderer.root.findByProps({ "data-garment-key": "base:trouser" })
       .props["data-assignment-status"],
     "assigned",
+  );
+  assert.equal(findRemovalDialog(sharedCodeRenderer.root), null);
+  const remainingSharedCard = findFabricCard(
+    sharedCodeRenderer.root,
+    "INLINE-A",
+  );
+  assert.equal(
+    remainingSharedCard?.props["data-fabric-status"],
+    "USE AGAIN",
+    "After Shirt is removed, residual capacity plus an unassigned candidate must keep USE AGAIN.",
+  );
+  assert.equal(remainingSharedCard?.props["data-fabric-action"], "use_again");
+  assert.equal(remainingSharedCard?.props["data-fabric-remove"], undefined);
+
+  let sharedTrouserState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  sharedTrouserState = assignRemainingSameFabric(
+    sharedTrouserState,
+    shirtTrouserSelection,
+    "INLINE-A",
+  );
+  let sharedTrouserRenderer!: ReturnType<typeof create>;
+  const renderSharedTrouser = () =>
+    renderStep(
+      sharedTrouserState,
+      () => undefined,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      (garmentKey) => {
+        const result = cancelFutureFabricCatalogueAssignment({
+          state: sharedTrouserState,
+          garmentKey,
+        });
+        if (result.status === "cancelled") {
+          sharedTrouserState = result.state;
+        }
+        return result;
+      },
+    );
+  await act(async () => {
+    sharedTrouserRenderer = create(renderSharedTrouser());
+  });
+  await act(async () =>
+    findFabricCard(sharedTrouserRenderer.root, "INLINE-A")!.props.onClick(),
+  );
+  await act(async () =>
+    findRemovalButton(sharedTrouserRenderer.root, "base:trouser")!.props.onClick(),
+  );
+  await act(async () => sharedTrouserRenderer.update(renderSharedTrouser()));
+  assert.deepEqual(
+    sharedTrouserState.fabricAllocations.map((allocation) =>
+      allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+    ),
+    [["base:shirt"]],
+    "Removing Trouser from the chooser must leave Shirt assigned.",
+  );
+
+  let sharedCancelChooserState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  sharedCancelChooserState = assignRemainingSameFabric(
+    sharedCancelChooserState,
+    shirtTrouserSelection,
+    "INLINE-A",
+  );
+  const sharedCancelChooserSnapshot = JSON.parse(
+    JSON.stringify(sharedCancelChooserState),
+  );
+  let sharedCancelChooserRenderer!: ReturnType<typeof create>;
+  const renderSharedCancelChooser = () =>
+    renderStep(
+      sharedCancelChooserState,
+      () => undefined,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      (garmentKey) => {
+        const result = cancelFutureFabricCatalogueAssignment({
+          state: sharedCancelChooserState,
+          garmentKey,
+        });
+        if (result.status === "cancelled") {
+          sharedCancelChooserState = result.state;
+        }
+        return result;
+      },
+    );
+  await act(async () => {
+    sharedCancelChooserRenderer = create(renderSharedCancelChooser());
+  });
+  await act(async () =>
+    findFabricCard(sharedCancelChooserRenderer.root, "INLINE-A")!.props.onClick(),
+  );
+  assert.ok(findRemovalDialog(sharedCancelChooserRenderer.root));
+  await act(async () =>
+    sharedCancelChooserRenderer.root.findByProps({
+      "data-remove-fabric-assignment-cancel": "true",
+    }).props.onClick(),
+  );
+  assert.equal(findRemovalDialog(sharedCancelChooserRenderer.root), null);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sharedCancelChooserState)),
+    sharedCancelChooserSnapshot,
+    "Cancel on the removal chooser must not change assignments.",
+  );
+  await act(async () =>
+    findFabricCard(sharedCancelChooserRenderer.root, "INLINE-A")!.props.onClick(),
+  );
+  const escapeEvent = {
+    key: "Escape",
+    preventDefault() {
+      return undefined;
+    },
+  };
+  await act(async () =>
+    findRemovalDialog(sharedCancelChooserRenderer.root)!.props.onKeyDown(
+      escapeEvent,
+    ),
+  );
+  assert.equal(findRemovalDialog(sharedCancelChooserRenderer.root), null);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sharedCancelChooserState)),
+    sharedCancelChooserSnapshot,
+    "Escape on the removal chooser must not change assignments.",
+  );
+
+  let useAgainState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  let useAgainRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    useAgainRenderer = create(
+      renderStep(
+        useAgainState,
+        () => undefined,
+        shirtTrouserSelection,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+      ),
+    );
+  });
+  const useAgainCard = findFabricCard(useAgainRenderer.root, "INLINE-A");
+  assert.equal(useAgainCard?.props["data-fabric-status"], "USE AGAIN");
+  assert.equal(useAgainCard?.props["data-fabric-action"], "use_again");
+  assert.equal(useAgainCard?.props["data-fabric-remove"], undefined);
+  assert.equal(
+    findFabricCard(useAgainRenderer.root, "INLINE-B")?.props["data-fabric-status"],
+    "SELECT",
+  );
+
+  let threeSharedUiState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: threeGarmentSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  threeSharedUiState = commitSameFabric({
+    state: threeSharedUiState,
+    garmentTypeSelection: threeGarmentSelection,
+    fabricCode: "INLINE-A",
+    garmentKeys: remainingGarmentKeys(threeGarmentSelection, threeSharedUiState),
+  });
+  let threeSharedRenderer!: ReturnType<typeof create>;
+  const renderThreeShared = () =>
+    renderStep(
+      threeSharedUiState,
+      () => undefined,
+      threeGarmentSelection,
+      () => undefined,
+      () => undefined,
+      (garmentKey) => {
+        const result = cancelFutureFabricCatalogueAssignment({
+          state: threeSharedUiState,
+          garmentKey,
+        });
+        if (result.status === "cancelled") {
+          threeSharedUiState = result.state;
+        }
+        return result;
+      },
+    );
+  await act(async () => {
+    threeSharedRenderer = create(renderThreeShared());
+  });
+  const threeCard = findFabricCard(threeSharedRenderer.root, "INLINE-A");
+  assert.equal(threeCard?.props["data-fabric-remove-chooser"], "true");
+  await act(async () => threeCard!.props.onClick());
+  assert.ok(findRemovalButton(threeSharedRenderer.root, "base:shirt"));
+  assert.ok(findRemovalButton(threeSharedRenderer.root, "base:trouser"));
+  assert.ok(findRemovalButton(threeSharedRenderer.root, "base:skirt"));
+  await act(async () =>
+    findRemovalButton(threeSharedRenderer.root, "base:shirt")!.props.onClick(),
+  );
+  await act(async () => threeSharedRenderer.update(renderThreeShared()));
+  assert.deepEqual(
+    threeSharedUiState.fabricAllocations.flatMap((allocation) =>
+      allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+    ),
+    ["base:trouser", "base:skirt"],
   );
 
   const { createCatalogueAdditionalGarmentSelection } = await import(
@@ -2664,6 +2932,82 @@ try {
     "Progression must block until Additional Shirt receives fabric again.",
   );
 
+  let mixedStep4UiState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  mixedStep4UiState = applyFutureFabricCardSelection({
+    state: mixedStep4UiState,
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:trouser",
+    fabricCode: "INLINE-B",
+  });
+  const mixedAdditionalSelection = createCatalogueAdditionalGarmentSelection({
+    garmentType: "shirt",
+    existingAssignments: mixedStep4UiState.fabricAllocations.flatMap(
+      (allocation) => allocation.garmentAssignments,
+    ),
+  });
+  assert.equal(mixedAdditionalSelection.status, "resolved");
+  if (mixedAdditionalSelection.status !== "resolved") {
+    throw new Error("Expected additional shirt.");
+  }
+  mixedStep4UiState = FabricAllocationStateEngine.attemptAppendGarment(
+    mixedStep4UiState,
+    mixedAdditionalSelection.selection,
+  );
+  if (mixedStep4UiState.pendingFabricGarment) {
+    mixedStep4UiState = FabricAllocationStateEngine.assignPendingGarmentToFabric(
+      mixedStep4UiState,
+      "INLINE-A",
+    );
+  }
+  let mixedStep4Renderer!: ReturnType<typeof create>;
+  const renderMixedStep4 = () =>
+    renderStep(
+      mixedStep4UiState,
+      () => undefined,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      (garmentKey) => {
+        const result = cancelFutureFabricCatalogueAssignment({
+          state: mixedStep4UiState,
+          garmentKey,
+        });
+        if (result.status === "cancelled") {
+          mixedStep4UiState = result.state;
+        }
+        return result;
+      },
+    );
+  await act(async () => {
+    mixedStep4Renderer = create(renderMixedStep4());
+  });
+  const mixedCard = findFabricCard(mixedStep4Renderer.root, "INLINE-A");
+  assert.equal(mixedCard?.props["data-fabric-cancel-garment-key"], "base:shirt");
+  assert.equal(mixedCard?.props["data-fabric-remove-chooser"], undefined);
+  await act(async () => mixedCard!.props.onClick());
+  await act(async () => mixedStep4Renderer.update(renderMixedStep4()));
+  assert.equal(
+    mixedStep4UiState.fabricAllocations.some((allocation) =>
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "base:shirt",
+      ),
+    ),
+    false,
+  );
+  assert.ok(
+    mixedStep4UiState.fabricAllocations.some((allocation) =>
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "additional:shirt:1",
+      ),
+    ),
+    "Step 2 card X must not silently remove a Step 4 additional assignment.",
+  );
+
   const additionalOccurrences = (
     state: typeof additionalCancelState,
   ) => [
@@ -2760,11 +3104,36 @@ try {
   );
   assert.equal(shirt1FabricCard?.props["data-fabric-action"], "cancel");
   assert.equal(
+    shirt1FabricCard?.props["data-fabric-remove-chooser"],
+    "true",
+    "Two additional assignments on the same Fabric must open a removal chooser instead of silently targeting Shirt 1.",
+  );
+  assert.equal(
     shirt1FabricCard?.props["data-fabric-cancel-garment-key"],
-    "additional:shirt:1",
-    "IN USE cancellation for the shared additional fabric must target Shirt 1 first.",
+    undefined,
+  );
+  const blockedBeforeChooser = JSON.parse(
+    JSON.stringify(blockedAdditionalCancelState),
   );
   await act(async () => shirt1FabricCard!.props.onClick());
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(blockedAdditionalCancelState)),
+    blockedBeforeChooser,
+    "Opening the additional-fabric chooser must not mutate assignments.",
+  );
+  assert.ok(findRemovalDialog(blockedAdditionalRenderer.root));
+  assert.ok(
+    findRemovalButton(blockedAdditionalRenderer.root, "additional:shirt:1"),
+  );
+  assert.ok(
+    findRemovalButton(blockedAdditionalRenderer.root, "additional:shirt:2"),
+  );
+  await act(async () =>
+    findRemovalButton(
+      blockedAdditionalRenderer.root,
+      "additional:shirt:1",
+    )!.props.onClick(),
+  );
   const visibleBlockedError = findVisibleFabricActionError(
     blockedAdditionalRenderer.root,
   );

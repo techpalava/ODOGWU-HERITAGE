@@ -88,8 +88,10 @@ export const Step1FabricAssignmentDialog = ({
   }, []);
 
   useEffect(() => {
-    const node = initialFocusRef.current || dialogRef.current;
-    node?.focus?.({ preventScroll: true });
+    const dialog = dialogRef.current;
+    dialog?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    const node = initialFocusRef.current || dialog;
+    node?.focus?.();
   }, []);
 
   useEffect(() => {
@@ -143,7 +145,7 @@ export const Step1FabricAssignmentDialog = ({
         tabIndex={-1}
         data-testid="step1-fabric-assignment-dialog"
         data-step1-fabric-assignment-code={fabric.code}
-        className="flex max-h-[90vh] w-full max-w-lg min-w-0 flex-col overflow-hidden rounded-3xl border border-heritage-gold/40 bg-white shadow-xl"
+        className="flex max-h-[90vh] w-full max-w-lg min-w-0 scroll-mt-24 flex-col overflow-hidden rounded-3xl border border-heritage-gold/40 bg-white shadow-xl"
       >
         <header className="flex min-w-0 items-start justify-between gap-3 border-b border-heritage-gold/20 px-4 py-4 sm:px-5">
           <div className="min-w-0">

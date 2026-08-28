@@ -1,5 +1,5 @@
 import { ArrowRight, Plus, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION,
   CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION,
@@ -115,6 +115,7 @@ interface DormantFutureCustomDetailsStepProps {
   onViewAdditionalGarment?: (garmentKey: string) => void;
   onBack: () => void;
   onContinue: () => void;
+  orderSummary?: ReactNode;
 }
 
 export type AdditionalGarmentCustomDetailsChoice =
@@ -236,6 +237,7 @@ export const DormantFutureCustomDetailsStep = ({
   onViewAdditionalGarment,
   onBack,
   onContinue,
+  orderSummary = null,
 }: DormantFutureCustomDetailsStepProps) => {
   const includeAdditionalClothesCosts = resolveShowAdditionalClothesCosts(
     showAdditionalClothesCosts,
@@ -830,7 +832,7 @@ export const DormantFutureCustomDetailsStep = ({
         </div>
       ) : null}
 
-      <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] xl:items-start xl:gap-6">
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6">
         <div ref={contentRef} className="min-w-0 space-y-5">
           <div data-custom-detail-section="main-garment-details" className="min-w-0 space-y-5">
             {mainCoreSections.map((section) =>
@@ -1037,8 +1039,13 @@ export const DormantFutureCustomDetailsStep = ({
           </section>
         </div>
 
-        <aside className="mt-5 min-w-0 rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm xl:sticky xl:top-4 xl:mt-0">
-          <h3 className="font-serif text-lg font-bold text-heritage-green">Live Price Summary</h3>
+        {orderSummary ? (
+          <div className="mt-5 min-w-0 lg:mt-0">
+            {orderSummary}
+          </div>
+        ) : (
+        <aside className="mt-5 min-w-0 rounded-2xl border border-heritage-gold/25 bg-white p-5 shadow-sm lg:sticky lg:top-24 lg:self-start lg:mt-0">
+          <h3 className="font-serif text-lg font-bold text-heritage-green">Order Summary</h3>
           <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">Only active garment occurrences and selected optional details are priced.</p>
           <div className="mt-4 space-y-2.5 text-sm">
             {constructionBreakdownRows.length > 0 && <dl data-construction-price-breakdown className="space-y-3 border-b border-heritage-gold/15 pb-3">{constructionBreakdownRows.map((row) => <div key={row.garmentKey} data-construction-price-row={row.garmentKey} className="flex min-w-0 items-start justify-between gap-3 border-b border-heritage-gold/10 pb-3 last:border-0 last:pb-0"><dt className="min-w-0 flex-1"><span className="block break-words text-[10px] font-bold uppercase tracking-wide text-heritage-green">{row.occurrenceLabel}</span><span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">{row.constructionLabel || "Price pending"}</span>{row.role === "additional" && <span className="mt-1 block text-[10px] font-bold uppercase tracking-wide text-heritage-gold">Added garment</span>}</dt><dd className="shrink-0 font-mono text-xs font-bold text-heritage-green">{row.priceCents === null ? "Price pending" : money(row.priceCents / 100)}</dd></div>)}</dl>}
@@ -1053,6 +1060,7 @@ export const DormantFutureCustomDetailsStep = ({
             <div className="flex min-w-0 items-start justify-between gap-3 border-t border-heritage-gold/15 pt-3 font-bold text-heritage-green"><span className="min-w-0 break-words">Estimated total so far</span><span className="shrink-0 font-mono">{estimatedTotal === null ? "Pending" : money(estimatedTotal)}</span></div>
           </div>
         </aside>
+        )}
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

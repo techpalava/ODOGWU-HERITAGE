@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, X } from "lucide-react";
 import type { Fabric } from "../types";
 import {
   getFabricAvailabilityMessage,
@@ -43,7 +43,7 @@ export const FutureFabricCatalogueCard = ({
     !availabilityMessage &&
     presentation.action === "none" &&
     (presentation.status === "IN USE" ||
-      presentation.status === "NO GARMENTS TO ASSIGN");
+      presentation.status === "ALL GARMENTS HAVE FABRIC");
   const stockPresentation = getFabricStockPresentation(fabric);
   const stockBadgeId = `${stockBadgeIdPrefix}-${fabric.code}`;
   const stockBadgeClassName =
@@ -64,11 +64,17 @@ export const FutureFabricCatalogueCard = ({
       : isCancelAction
         ? undefined
         : resolvedStatusLabel);
-  const cancelAccessibleName = presentation.cancelGarmentKey
-    ? `Cancel ${fabric.name} fabric assignment for ${
+  const cancelGarmentKeys =
+    presentation.cancelGarmentKeys ??
+    (presentation.cancelGarmentKey ? [presentation.cancelGarmentKey] : []);
+  const opensRemovalChooser = cancelGarmentKeys.length > 1;
+  const cancelAccessibleName = opensRemovalChooser
+    ? `Choose garment to remove ${fabric.name} from`
+    : `Remove ${fabric.name} from ${
         targetGarmentLabel || "the selected garment"
-      }`
-    : `Cancel ${fabric.name} fabric assignment`;
+      }`;
+  const describedByValue =
+    [describedBy, stockBadgeId].filter(Boolean).join(" ") || undefined;
   const imageUrl = hasUsableFabricImage(fabric) ? fabric.image!.trim() : null;
   const colorHex = isUsableFabricColorHex(fabric.colorHex)
     ? fabric.colorHex.trim()
@@ -80,6 +86,8 @@ export const FutureFabricCatalogueCard = ({
   }, [fabric.code, imageUrl]);
 
   const showImage = Boolean(imageUrl) && !imageFailed;
+  const actionClassName =
+    "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-3 text-center text-xs font-bold uppercase leading-snug tracking-wider whitespace-normal break-words text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45";
 
   return (
     <article
@@ -141,62 +149,66 @@ export const FutureFabricCatalogueCard = ({
             {availabilityMessage}
           </p>
         )}
-        <button
-          type="button"
-          disabled={disabled}
-          aria-pressed={actionPressed}
-          onClick={onAction}
-          data-fabric-card="true"
-          data-fabric-code={fabric.code}
-          data-fabric-status={resolvedStatusLabel}
-          data-fabric-action={
-            isCancelAction ? "cancel" : presentation.action
-          }
-          data-fabric-idle-label={isCancelAction ? "IN USE" : undefined}
-          data-fabric-active-label={isCancelAction ? "CANCEL" : undefined}
-          data-fabric-cancel-garment-key={
-            isCancelAction
-              ? presentation.cancelGarmentKey ?? undefined
-              : undefined
-          }
-          aria-label={
-            isCancelAction
-              ? cancelAccessibleName
-              : `${resolvedStatusLabel} ${fabric.name}${
-                  targetGarmentLabel ? ` for ${targetGarmentLabel}` : ""
-                }`
-          }
-          aria-describedby={
-            [describedBy, stockBadgeId].filter(Boolean).join(" ") || undefined
-          }
-          className={`group mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-3 text-center text-xs font-bold uppercase leading-snug tracking-wider whitespace-normal break-words transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 ${
-            isCancelAction
-              ? "bg-heritage-green text-white hover:bg-red-700 hover:text-white focus-visible:bg-red-700"
-              : "bg-heritage-green text-white hover:bg-heritage-forest"
-          }`}
-        >
-          {availabilityMessage || resolvedActionLabel === "Unavailable" ? (
-            "Unavailable"
-          ) : isIdleDisabledAction ? (
-            resolvedStatusLabel
-          ) : isCancelAction ? (
-            <span className="grid w-full place-items-center">
-              <span className="col-start-1 row-start-1 group-hover:invisible group-focus-visible:invisible">
-                IN USE
-              </span>
-              <span className="col-start-1 row-start-1 invisible text-white group-hover:visible group-focus-visible:visible">
-                CANCEL
-              </span>
+        {isCancelAction ? (
+          <div className="mt-auto flex min-w-0 items-stretch gap-2 pt-4">
+            <span
+              data-fabric-in-use="true"
+              className="inline-flex min-h-11 min-w-0 flex-1 items-center justify-center rounded-xl bg-heritage-green px-3 text-center text-xs font-bold uppercase leading-snug tracking-wider text-white"
+            >
+              IN USE
             </span>
-          ) : (
-            <>
-              {resolvedStatusLabel === "SELECT" && (
-                <Check aria-hidden="true" size={14} />
-              )}
-              {resolvedActionLabel || resolvedStatusLabel}
-            </>
-          )}
-        </button>
+            <button
+              type="button"
+              onClick={onAction}
+              data-fabric-card="true"
+              data-fabric-code={fabric.code}
+              data-fabric-status={resolvedStatusLabel}
+              data-fabric-action="cancel"
+              data-fabric-remove="true"
+              data-fabric-cancel-garment-key={
+                presentation.cancelGarmentKey ?? undefined
+              }
+              data-fabric-cancel-count={String(cancelGarmentKeys.length)}
+              data-fabric-remove-chooser={
+                opensRemovalChooser ? "true" : undefined
+              }
+              aria-label={cancelAccessibleName}
+              aria-describedby={describedByValue}
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/30 bg-white text-heritage-green transition hover:border-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              <X aria-hidden="true" size={16} />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={disabled}
+            aria-pressed={actionPressed}
+            onClick={onAction}
+            data-fabric-card="true"
+            data-fabric-code={fabric.code}
+            data-fabric-status={resolvedStatusLabel}
+            data-fabric-action={presentation.action}
+            aria-label={`${resolvedStatusLabel} ${fabric.name}${
+              targetGarmentLabel ? ` for ${targetGarmentLabel}` : ""
+            }`}
+            aria-describedby={describedByValue}
+            className={`mt-auto ${actionClassName}`}
+          >
+            {availabilityMessage || resolvedActionLabel === "Unavailable" ? (
+              "Unavailable"
+            ) : isIdleDisabledAction ? (
+              resolvedStatusLabel
+            ) : (
+              <>
+                {resolvedStatusLabel === "SELECT" && (
+                  <Check aria-hidden="true" size={14} />
+                )}
+                {resolvedActionLabel || resolvedStatusLabel}
+              </>
+            )}
+          </button>
+        )}
       </div>
     </article>
   );

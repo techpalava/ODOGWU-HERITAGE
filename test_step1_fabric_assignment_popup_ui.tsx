@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
@@ -376,7 +377,8 @@ assert.ok(unusedZeroCard);
 assert.equal(unusedZeroCard?.props["data-fabric-status"], STEP1_NO_GARMENTS_TO_ASSIGN_STATUS);
 assert.equal(unusedZeroCard?.props["data-fabric-action"], "none");
 assert.equal(unusedZeroCard?.props.disabled, true);
-assert.match(textContent(unusedZeroCard!), /NO GARMENTS TO ASSIGN/);
+assert.match(textContent(unusedZeroCard!), /ALL GARMENTS HAVE FABRIC/);
+assert.doesNotMatch(textContent(unusedZeroCard!), /NO GARMENTS TO ASSIGN/);
 assert.doesNotMatch(textContent(unusedZeroCard!), /\bSELECT\b/);
 await act(async () => unusedZeroCard?.props.onClick({ currentTarget: {} }));
 await act(async () => zeroRenderer.update(renderTwoStep(twoState, noopAssign)));
@@ -387,6 +389,9 @@ assert.ok(usedZeroCard);
 assert.equal(usedZeroCard?.props["data-fabric-status"], "IN USE");
 assert.notEqual(usedZeroCard?.props["data-fabric-action"], "use_again");
 assert.notEqual(usedZeroCard?.props["data-fabric-action"], "select");
+assert.equal(usedZeroCard?.props["data-fabric-remove"], "true");
+assert.match(usedZeroCard?.props["aria-label"] || "", /Remove .+ from /);
+assert.match(textContent(zeroRenderer.root), /IN USE/);
 assert.doesNotMatch(textContent(usedZeroCard!), /USE AGAIN/);
 assert.equal(dialogCount(zeroRenderer.root), 0);
 
@@ -671,5 +676,12 @@ await act(async () =>
 );
 assert.equal(dialogCount(staleCandidateRenderer.root), 0);
 assert.equal(continueCount(staleCandidateRenderer.root), 1);
+
+const assignmentDialogSource = readFileSync(
+  new URL("./src/components/Step1FabricAssignmentDialog.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(assignmentDialogSource, /behavior: "smooth", block: "start"/);
+assert.match(assignmentDialogSource, /initialFocusRef\.current \|\| dialog/);
 
 console.log("test_step1_fabric_assignment_popup_ui.tsx: all assertions passed");
