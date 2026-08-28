@@ -413,6 +413,33 @@ assert.ok(
   shirtTrouserHiddenAgbadaMarkup.includes("Fabrics selected: 1 / 1"),
 );
 
+const shirtTrouserDressPresentation = getGarmentTypeStepPresentation({
+  selectedGarmentTypes: ["shirt", "trouser", "dress"],
+  normalizedCustomDetailCatalog: catalog,
+});
+assert.deepEqual(
+  shirtTrouserDressPresentation.categories
+    .filter((category) => category.selected)
+    .map((category) => category.garmentType),
+  ["shirt", "trouser", "dress"],
+);
+assert.equal(shirtTrouserDressPresentation.constructionSubtotalCents, 21000);
+assert.equal(
+  JSON.stringify(shirtTrouserDressPresentation).includes("/images/garments"),
+  false,
+  "Reference image paths must not enter Step 1 presentation/pricing state",
+);
+const shirtTrouserDressMarkup = renderStep({
+  selectedGarmentTypes: ["shirt", "trouser", "dress"],
+});
+assert.ok(shirtTrouserDressMarkup.includes("€210.00"));
+assert.ok(shirtTrouserDressMarkup.includes("Ankara Standard Shirt reference"));
+assert.equal(
+  (shirtTrouserDressMarkup.match(/Reference images show garment types only\./g) || [])
+    .length,
+  1,
+);
+
 const deselectedShirtMarkup = renderStep({
   selectedGarmentTypes: STEP_1_SELECTABLE_GARMENT_TYPES.filter(
     (garmentType) => garmentType !== "shirt",

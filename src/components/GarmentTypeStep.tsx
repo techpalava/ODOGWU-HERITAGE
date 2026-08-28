@@ -1,5 +1,5 @@
-import type { ChangeEvent, ReactNode } from "react";
-import { AlertCircle, CheckCircle2, Layers3, UsersRound } from "lucide-react";
+import { useState, type ChangeEvent, type ReactNode } from "react";
+import { AlertCircle, CheckCircle2, ImageOff, Layers3, UsersRound } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type {
   CustomDetailDemographic,
@@ -24,6 +24,12 @@ import {
   type GarmentConstructionPricingResolution,
   resolveGarmentConstructionPricing,
 } from "../utils/garmentConstructionPricing";
+import {
+  STEP1_GARMENT_REFERENCE_DISCLAIMER,
+  getStep1GarmentReferenceAlt,
+  getStep1GarmentReferenceImage,
+  isStep1GarmentReferenceType,
+} from "../utils/step1GarmentReferenceImages";
 
 const DEMOGRAPHIC_OPTIONS: ReadonlyArray<{
   value: CustomDetailDemographic;
@@ -57,6 +63,55 @@ const GARMENT_TYPE_STEP_LABELS: Record<
 export const getGarmentTypeStepLabel = (
   garmentType: Exclude<FabricGarmentType, "other">,
 ): string => GARMENT_TYPE_STEP_LABELS[garmentType];
+
+const FIRST_VISIBLE_REFERENCE_IMAGE_COUNT = 3;
+
+export const Step1GarmentReferencePhoto = ({
+  src,
+  alt,
+  eager = false,
+}: {
+  src: string | null;
+  alt: string;
+  eager?: boolean;
+}) => {
+  const [failed, setFailed] = useState(!src);
+
+  return (
+    <div
+      className="relative aspect-[4/5] w-full overflow-hidden rounded-t-2xl bg-[#f4eee6]"
+      data-testid="step1-garment-reference-frame"
+    >
+      {failed || !src ? (
+        <div
+          className="flex h-full w-full flex-col items-center justify-center gap-2 px-3 text-center"
+          data-testid="step1-garment-reference-fallback"
+        >
+          <ImageOff
+            aria-hidden="true"
+            size={28}
+            className="text-heritage-ink/35"
+          />
+          <span className="text-[11px] leading-snug text-heritage-ink/55">
+            Reference image unavailable
+          </span>
+        </div>
+      ) : (
+        <img
+          src={src}
+          alt={alt}
+          width={720}
+          height={900}
+          loading={eager ? "eager" : "lazy"}
+          decoding="async"
+          onError={() => setFailed(true)}
+          className="h-full w-full object-contain object-center"
+          data-testid="step1-garment-reference-image"
+        />
+      )}
+    </div>
+  );
+};
 
 export interface GarmentTypeStepCategoryPresentation {
   garmentType: FabricGarmentType;
@@ -315,45 +370,74 @@ export const GarmentTypeStep = ({
           <div className="mt-4 w-full shrink-0 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 lg:max-w-xs lg:justify-self-end xl:max-w-xs">
             {fabricQuantitySummary}
           </div>
-          <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 lg:col-span-full">
-            {presentation.categories.map((category) => {
+          <p className="mt-4 text-xs leading-relaxed text-heritage-ink/55 lg:col-span-full">
+            {STEP1_GARMENT_REFERENCE_DISCLAIMER}
+          </p>
+          <div className="mt-4 grid min-w-0 grid-cols-2 gap-3 max-[340px]:grid-cols-1 xl:grid-cols-3 lg:col-span-full">
+            {presentation.categories.map((category, index) => {
               const price = category.constructionPricing;
               const isResolved = price?.status === "resolved";
               const inputId = `${idPrefix}-${category.garmentType}`;
+              const referenceImage = isStep1GarmentReferenceType(
+                category.garmentType,
+              )
+                ? getStep1GarmentReferenceImage(category.garmentType)
+                : null;
+              const referenceAlt = getStep1GarmentReferenceAlt(category.label);
               return (
                 <label
                   key={category.garmentType}
                   htmlFor={inputId}
-                  className={`flex min-h-[84px] min-w-0 cursor-pointer items-start gap-3 rounded-2xl border p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                  data-testid={`step1-garment-card-${category.garmentType}`}
+                  className={`flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-2xl border transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
                     category.selected
-                      ? "border-heritage-gold bg-heritage-cream/55 shadow-sm"
+                      ? "border-heritage-green shadow-sm ring-2 ring-heritage-green/25"
                       : "border-heritage-gold/20 bg-white hover:border-heritage-gold/60"
                   } ${
                     category.selected && !isResolved
-                      ? "border-amber-500 bg-amber-50"
+                      ? "border-amber-500 ring-amber-400/40"
                       : ""
                   }`}
                 >
-                  <input
-                    id={inputId}
-                    type="checkbox"
-                    checked={category.selected}
-                    onChange={(event) => handleGarmentChange(category.garmentType, event)}
-                    className="mt-0.5 h-5 w-5 shrink-0 accent-heritage-green"
+                  <Step1GarmentReferencePhoto
+                    src={referenceImage?.src ?? null}
+                    alt={referenceAlt}
+                    eager={index < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
                   />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                      <span className="min-w-0 break-words font-bold text-heritage-green">
-                        {category.label}
-                      </span>
-                      {isResolved && (
-                        <span className="shrink-0 font-mono text-sm font-bold text-heritage-green">
-                          {formatGarmentTypeStepEuro(price.totalPrice)}
+                  <span
+                    className={`flex min-w-0 flex-1 flex-col p-3 sm:p-4 ${
+                      category.selected && !isResolved
+                        ? "bg-amber-50"
+                        : category.selected
+                          ? "bg-heritage-cream/55"
+                          : "bg-white"
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-start gap-2">
+                      <input
+                        id={inputId}
+                        type="checkbox"
+                        checked={category.selected}
+                        onChange={(event) =>
+                          handleGarmentChange(category.garmentType, event)
+                        }
+                        className="mt-0.5 h-5 w-5 shrink-0 accent-heritage-green"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
+                          <span className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">
+                            {category.label}
+                          </span>
+                          {isResolved && (
+                            <span className="shrink-0 font-mono text-sm font-bold text-heritage-green">
+                              {formatGarmentTypeStepEuro(price.totalPrice)}
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    <span className="mt-1 block break-words text-[11px] leading-relaxed text-heritage-ink/60">
-                      {category.fabricCapacityUsage}
+                        <span className="mt-1 block break-words text-[11px] leading-relaxed text-heritage-ink/60">
+                          {category.fabricCapacityUsage}
+                        </span>
+                      </span>
                     </span>
                     {category.selected && !isResolved && (
                       <span className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
@@ -363,6 +447,15 @@ export const GarmentTypeStep = ({
                         </span>
                       </span>
                     )}
+                    <span
+                      className={`mt-3 inline-flex min-h-9 w-full items-center justify-center rounded-xl px-2 text-[11px] font-bold uppercase tracking-wider ${
+                        category.selected
+                          ? "bg-heritage-green text-white"
+                          : "border border-heritage-gold/40 text-heritage-green"
+                      }`}
+                    >
+                      {category.selected ? "✓ SELECTED" : "SELECT"}
+                    </span>
                   </span>
                 </label>
               );
