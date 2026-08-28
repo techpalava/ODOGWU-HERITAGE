@@ -13,18 +13,28 @@ import {
   AssignedFabricPreview,
 } from "./AssignedFabricPreview";
 import { FutureFabricCatalogueCard } from "./FutureFabricCatalogueCard";
+import { Step1FabricAssignmentDialog } from "./Step1FabricAssignmentDialog";
 import { resolveFabricAllocationMaterialPricing } from "../utils/fabricAllocationPricing";
 import { getFabricAvailabilityMessage } from "../utils/fabricCatalogueAvailability";
 import {
   getFutureFabricAssignmentTargets,
-  getFutureFabricBulkChoiceCandidates,
-  getFutureFabricStep1AssignmentTargets,
   getFutureUnassignedFabricTargets,
   resolveFutureFabricCatalogueCardPresentation,
   type FutureFabricBulkAssignmentResult,
   type FutureFabricCatalogueCancellationResult,
+  type FutureFabricCatalogueCardPresentation,
   type FutureFabricStageCompletion,
 } from "../utils/designStudioFutureFabricStage";
+import {
+  buildStep1FabricAssignmentCandidates,
+  commitStep1FabricAssignment,
+  createStep1FabricAssignmentDisplaySnapshot,
+  evaluateStep1FabricAssignmentSelection,
+  getUnassignedStep1FabricAssignmentCandidates,
+  resolveStep1AssignmentDialogFabric,
+  resolveStep1FabricCatalogueCardPresentation,
+  type PendingStep1FabricAssignment,
+} from "../utils/step1FabricAssignmentPopup";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 
 export { isUsableFabricColorHex } from "./AssignedFabricPreview";
@@ -68,14 +78,6 @@ interface DormantFutureFabricStepProps {
   onUseSameFabric: () => void;
   onChooseAnotherFabric: () => void;
   onCancelPendingFabric: () => void;
-}
-
-interface FabricBulkChoicePrompt {
-  fabricCode: string;
-  fabricName: string;
-  sourceGarmentKey: string;
-  assignmentGeneration: number;
-  phase: "ask" | "choose";
 }
 
 const OTHER_ADDITIONAL_GARMENT_PENDING_MESSAGE =
@@ -239,12 +241,11 @@ export const DormantFutureFabricStep = ({
   const [visibleActionError, setVisibleActionError] = useState<string | null>(
     null,
   );
-  const [bulkChoicePrompt, setBulkChoicePrompt] =
-    useState<FabricBulkChoicePrompt | null>(null);
-  const [bulkChoiceSelectedKeys, setBulkChoiceSelectedKeys] = useState<
-    string[]
-  >([]);
-  const [bulkChoiceStatusMessage, setBulkChoiceStatusMessage] = useState("");
+  const [pendingStep1FabricAssignment, setPendingStep1FabricAssignment] =
+    useState<PendingStep1FabricAssignment | null>(null);
+  const [step1AssignmentError, setStep1AssignmentError] = useState<string | null>(
+    null,
+  );
   const [pendingRemovalRequest, setPendingRemovalRequest] = useState<number | null>(
     null,
   );
@@ -256,18 +257,13 @@ export const DormantFutureFabricStep = ({
   const postAssignmentFocusRequestRef = useRef(0);
   const garmentActionRefs = useRef(new Map<string, HTMLButtonElement>());
   const catalogueHeadingRef = useRef<HTMLHeadingElement>(null);
-  const bulkChoiceDialogRef = useRef<HTMLDivElement>(null);
-  const bulkChoiceTriggerRef = useRef<HTMLElement | null>(null);
-  const registerBulkChoiceControl = (element: HTMLElement | null) => {
-    void element;
-  };
-  const bulkChoiceAnsweredRef = useRef(false);
+  const step1AssignmentTriggerRef = useRef<HTMLElement | null>(null);
+  const step1AssignmentScrollYRef = useRef<number | null>(null);
   const pendingAssignmentAnnouncementRef = useRef<{
     fabricCode: string;
     fabricName: string;
     targetGarmentKey: string;
     assignmentGeneration: number;
-    wasEligibleFirstStep1Assignment: boolean;
   } | null>(null);
   const assignmentGenerationRef = useRef(0);
   const pendingRemovalAnnouncementRef = useRef<{
@@ -321,13 +317,6 @@ export const DormantFutureFabricStep = ({
     garmentTypeSelection,
     fabricAllocationState,
   });
-  const bulkChoiceCandidates = bulkChoicePrompt
-    ? getFutureFabricBulkChoiceCandidates({
-        garmentTypeSelection,
-        fabricAllocationState,
-        excludeGarmentKey: bulkChoicePrompt.sourceGarmentKey,
-      })
-    : [];
   const assignmentByGarmentKey = useMemo(
     () =>
       new Map(
@@ -340,97 +329,48 @@ export const DormantFutureFabricStep = ({
       ),
     [fabricAllocationState.fabricAllocations],
   );
-  const hasRequiredFabricAssignment = targets.some(({ assignment }) =>
-    assignmentByGarmentKey.has(assignment.garmentKey),
+  const pendingAdditionalAssignment =
+    fabricAllocationState.awaitingFabricForPendingGarment
+      ? fabricAllocationState.pendingFabricGarment
+      : null;
+  const isChangeFabricTarget = Boolean(
+    catalogueTargetGarmentKey &&
+      assignmentByGarmentKey.has(catalogueTargetGarmentKey),
   );
-  const getCommittedFabricCode = (
-    state: FabricAllocationState,
-    garmentKey: string,
-  ): string | null =>
-    state.fabricAllocations.find((allocation) =>
-      allocation.garmentAssignments.some(
-        (assignment) => assignment.garmentKey === garmentKey,
-      ),
-    )?.fabricCode ?? null;
-  const settleBulkChoiceFromCommittedState = (
-    committedState: FabricAllocationState,
-    intent: NonNullable<typeof pendingAssignmentAnnouncementRef.current>,
-    options: { clearOnMiss: boolean },
-  ): boolean => {
-    if (intent.assignmentGeneration !== assignmentGenerationRef.current) {
-      pendingAssignmentAnnouncementRef.current = null;
-      return false;
-    }
-    const assignedCode = getCommittedFabricCode(
-      committedState,
-      intent.targetGarmentKey,
-    );
-    if (assignedCode !== intent.fabricCode) {
-      if (options.clearOnMiss) {
-        pendingAssignmentAnnouncementRef.current = null;
-        setBulkChoicePrompt((current) =>
-          current?.assignmentGeneration === intent.assignmentGeneration
-            ? null
-            : current,
-        );
-      }
-      return false;
-    }
-    const remainingCandidates = getFutureFabricBulkChoiceCandidates({
-      garmentTypeSelection,
-      fabricAllocationState: committedState,
-      excludeGarmentKey: intent.targetGarmentKey,
-    });
-    const step1Targets = getFutureFabricStep1AssignmentTargets(
-      garmentTypeSelection,
-    );
-    let openedBulkChoice = false;
-    if (
-      intent.wasEligibleFirstStep1Assignment &&
-      !bulkChoiceAnsweredRef.current &&
-      step1Targets.length > 1 &&
-      remainingCandidates.length > 0
-    ) {
-      postAssignmentFocusRequestRef.current += 1;
-      setBulkChoicePrompt({
-        fabricCode: intent.fabricCode,
-        fabricName: intent.fabricName,
-        sourceGarmentKey: intent.targetGarmentKey,
-        assignmentGeneration: intent.assignmentGeneration,
-        phase: "ask",
-      });
-      setBulkChoiceSelectedKeys([]);
-      setBulkChoiceStatusMessage("");
-      openedBulkChoice = true;
-    }
-    const assignedTarget = targets.find(
-      ({ assignment }) => assignment.garmentKey === intent.targetGarmentKey,
-    );
-    if (assignedTarget) {
-      setVisibleActionError(null);
-      setAssignmentAnnouncement(
-        `${intent.fabricName} assigned to ${getFutureGarmentLabel(
-          assignedTarget.assignment.garmentType,
-        )}.`,
-      );
-    }
-    pendingAssignmentAnnouncementRef.current = null;
-    return openedBulkChoice;
-  };
-  useEffect(() => {
-    if (!hasRequiredFabricAssignment) {
-      bulkChoiceAnsweredRef.current = false;
-    }
-  }, [hasRequiredFabricAssignment]);
-  useEffect(() => {
-    const pendingAnnouncement = pendingAssignmentAnnouncementRef.current;
-    if (!pendingAnnouncement) return;
-    settleBulkChoiceFromCommittedState(
-      fabricAllocationState,
-      pendingAnnouncement,
-      { clearOnMiss: false },
-    );
-  }, [assignmentByGarmentKey, fabricAllocationState, garmentTypeSelection]);
+  const unassignedStep1Targets = getUnassignedStep1FabricAssignmentCandidates({
+    garmentTypeSelection,
+    fabricAllocationState,
+  });
+  const isPendingAdditionalCatalogueTarget = Boolean(
+    pendingAdditionalAssignment &&
+      (!catalogueTargetGarmentKey ||
+        catalogueTargetGarmentKey === pendingAdditionalAssignment.garmentKey),
+  );
+  const isStep1CatalogueMode =
+    !isChangeFabricTarget && !isPendingAdditionalCatalogueTarget;
+  const step1AssignmentCandidates = pendingStep1FabricAssignment
+    ? buildStep1FabricAssignmentCandidates({
+        garmentTypeSelection,
+        fabricAllocationState,
+        fabricCode: pendingStep1FabricAssignment.fabricCode,
+      })
+    : [];
+  const step1AssignmentDialogFabric = pendingStep1FabricAssignment
+    ? resolveStep1AssignmentDialogFabric({
+        fabrics,
+        fabricCode: pendingStep1FabricAssignment.fabricCode,
+        displaySnapshot: pendingStep1FabricAssignment.displayFabric,
+      })
+    : null;
+  const step1AssignmentEvaluation = pendingStep1FabricAssignment
+    ? evaluateStep1FabricAssignmentSelection({
+        candidates: step1AssignmentCandidates,
+        selectedGarmentKeys: pendingStep1FabricAssignment.selectedGarmentKeys,
+        garmentTypeSelection,
+        fabricAllocationState,
+        fabricCode: pendingStep1FabricAssignment.fabricCode,
+      })
+    : null;
   useEffect(() => {
     const pendingRemoval = pendingRemovalAnnouncementRef.current;
     if (!pendingRemoval) {
@@ -496,7 +436,7 @@ export const DormantFutureFabricStep = ({
     ),
   );
   const shouldDockContinueAction =
-    completion.isComplete && !isCatalogueOpen && !bulkChoicePrompt;
+    completion.isComplete && !isCatalogueOpen && !pendingStep1FabricAssignment;
 
   const restoreCatalogueFocus = () => {
     const request = ++catalogueFocusRequestRef.current;
@@ -584,58 +524,56 @@ export const DormantFutureFabricStep = ({
     focusPostAssignmentDestination(garmentKey);
   };
 
-  const closeBulkChoicePrompt = (answered: boolean) => {
-    if (answered) {
-      bulkChoiceAnsweredRef.current = true;
+  const restoreStep1AssignmentFocus = () => {
+    const trigger = step1AssignmentTriggerRef.current;
+    const restoreScrollY = step1AssignmentScrollYRef.current;
+    step1AssignmentTriggerRef.current = null;
+    step1AssignmentScrollYRef.current = null;
+    const restoreScroll = () => {
+      if (
+        restoreScrollY !== null &&
+        typeof window !== "undefined" &&
+        typeof window.scrollTo === "function"
+      ) {
+        window.scrollTo({ top: restoreScrollY, behavior: "auto" });
+      }
+    };
+    try {
+      if (trigger && focusElementSafely(trigger)) {
+        restoreScroll();
+        return;
+      }
+    } catch {
+      // The original card may have disappeared with the Fabric.
     }
-    setBulkChoicePrompt(null);
-    setBulkChoiceSelectedKeys([]);
-    setBulkChoiceStatusMessage("");
+    try {
+      if (focusElementSafely(catalogueHeadingRef.current)) {
+        restoreScroll();
+        return;
+      }
+    } catch {
+      // Heading may be unmounted during catalogue transitions.
+    }
+    try {
+      focusElementSafely(catalogueSectionRef.current);
+    } catch {
+      // Nearest Step 2 fallback must never throw.
+    }
+    restoreScroll();
   };
 
-  const restoreBulkChoiceFocus = () => {
-    const trigger = bulkChoiceTriggerRef.current;
-    bulkChoiceTriggerRef.current = null;
-    if (trigger && focusElementSafely(trigger)) return;
-    const sourceKey = bulkChoicePrompt?.sourceGarmentKey;
-    if (sourceKey) {
-      const garmentAction = garmentActionRefs.current.get(sourceKey);
-      if (garmentAction && focusElementSafely(garmentAction)) return;
-    }
-    focusElementSafely(catalogueSectionRef.current);
+  const closeStep1FabricAssignment = () => {
+    setPendingStep1FabricAssignment(null);
+    setStep1AssignmentError(null);
   };
 
-  const dismissBulkChoiceIndividually = () => {
-    closeBulkChoicePrompt(true);
-    restoreBulkChoiceFocus();
+  const cancelStep1FabricAssignment = () => {
+    closeStep1FabricAssignment();
+    restoreStep1AssignmentFocus();
   };
 
-  const applyBulkChoiceToGarments = (garmentKeys: string[]) => {
-    if (!bulkChoicePrompt) return;
-    assignmentGenerationRef.current += 1;
-    pendingAssignmentAnnouncementRef.current = null;
-    const fabricName = bulkChoicePrompt.fabricName;
-    const result = onAssignSameFabricProduct(
-      bulkChoicePrompt.fabricCode,
-      garmentKeys,
-    );
-    if (!result || result.status === "blocked") {
-      const failedKey =
-        result && result.status === "blocked" ? result.failedGarmentKey : undefined;
-      const failedTarget = failedKey
-        ? targets.find(({ assignment }) => assignment.garmentKey === failedKey)
-        : null;
-      const failedLabel = failedTarget
-        ? getFutureGarmentLabel(failedTarget.assignment.garmentType)
-        : "one of the selected garments";
-      const message = `Could not assign ${fabricName} to ${failedLabel}. No garments were changed.`;
-      setBulkChoiceStatusMessage(message);
-      setAssignmentAnnouncement(message);
-      return;
-    }
-    closeBulkChoicePrompt(true);
-    restoreBulkChoiceFocus();
-    const labels = result.assignedGarmentKeys
+  const announceAssignedGarments = (fabricName: string, garmentKeys: string[]) => {
+    const labels = garmentKeys
       .map((garmentKey) => {
         const target = targets.find(
           ({ assignment }) => assignment.garmentKey === garmentKey,
@@ -651,6 +589,92 @@ export const DormantFutureFabricStep = ({
         `${fabricName} assigned to ${formatGarmentList(labels)}.`,
       );
     }
+  };
+
+  const commitPendingStep1FabricAssignment = (
+    mode: "selected" | "all_remaining",
+  ) => {
+    if (!pendingStep1FabricAssignment) return;
+    if (step1AssignmentDialogFabric?.unavailableError) {
+      setStep1AssignmentError(step1AssignmentDialogFabric.unavailableError);
+      setAssignmentAnnouncement(step1AssignmentDialogFabric.unavailableError);
+      return;
+    }
+    const fabricName =
+      step1AssignmentDialogFabric?.currentFabric?.name ||
+      pendingStep1FabricAssignment.displayFabric.fabricName ||
+      pendingStep1FabricAssignment.fabricCode;
+    const result = commitStep1FabricAssignment({
+      state: fabricAllocationState,
+      garmentTypeSelection,
+      fabrics,
+      fabricCode: pendingStep1FabricAssignment.fabricCode,
+      selectedGarmentKeys: pendingStep1FabricAssignment.selectedGarmentKeys,
+      mode,
+    });
+    if (result.status === "blocked") {
+      setStep1AssignmentError(result.error);
+      setAssignmentAnnouncement(result.error);
+      return;
+    }
+    const parentResult = onAssignSameFabricProduct(
+      pendingStep1FabricAssignment.fabricCode,
+      result.assignedGarmentKeys,
+    );
+    if (parentResult && parentResult.status === "blocked") {
+      setStep1AssignmentError(
+        "That fabric could not be assigned. No garments were changed.",
+      );
+      setAssignmentAnnouncement(
+        "That fabric could not be assigned. No garments were changed.",
+      );
+      return;
+    }
+    closeStep1FabricAssignment();
+    restoreStep1AssignmentFocus();
+    const assignedKeys =
+      parentResult && parentResult.status === "assigned"
+        ? parentResult.assignedGarmentKeys
+        : result.assignedGarmentKeys;
+    announceAssignedGarments(fabricName, assignedKeys);
+  };
+
+  const openStep1FabricAssignment = (
+    fabric: Fabric,
+    trigger?: HTMLElement,
+  ) => {
+    const presentation = resolveStep1FabricCatalogueCardPresentation({
+      fabricCode: fabric.code,
+      garmentTypeSelection,
+      fabricAllocationState,
+      availabilityMessage: getFabricAvailabilityMessage(fabric),
+    });
+    if (presentation.action === "none") {
+      return;
+    }
+    const candidates = buildStep1FabricAssignmentCandidates({
+      garmentTypeSelection,
+      fabricAllocationState,
+      fabricCode: fabric.code,
+    });
+    if (candidates.length === 0) {
+      setAssignmentAnnouncement(
+        "All selected garments already have fabric assignments.",
+      );
+      return;
+    }
+    assignmentGenerationRef.current += 1;
+    pendingAssignmentAnnouncementRef.current = null;
+    step1AssignmentTriggerRef.current = trigger || null;
+    step1AssignmentScrollYRef.current =
+      typeof window !== "undefined" ? window.scrollY : null;
+    setVisibleActionError(null);
+    setStep1AssignmentError(null);
+    setPendingStep1FabricAssignment({
+      fabricCode: fabric.code,
+      selectedGarmentKeys: [],
+      displayFabric: createStep1FabricAssignmentDisplaySnapshot(fabric),
+    });
   };
 
   const openCatalogue = (
@@ -713,97 +737,76 @@ export const DormantFutureFabricStep = ({
     return () => dialog.removeEventListener("keydown", handleKeyDown);
   }, [isCatalogueOpen]);
 
-  useEffect(() => {
-    if (!bulkChoicePrompt) return;
-    const dialog = bulkChoiceDialogRef.current;
-    if (!dialog) return;
-    const getFocusable = () =>
-      Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-        ),
-      );
-    getFocusable()[0]?.focus();
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        dismissBulkChoiceIndividually();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = getFocusable();
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    dialog.addEventListener("keydown", handleKeyDown);
-    return () => dialog.removeEventListener("keydown", handleKeyDown);
-  }, [bulkChoicePrompt]);
-
   const assignSelectedFabric = (fabric: Fabric, garmentKey: string) => {
     const assignmentGeneration = ++assignmentGenerationRef.current;
-    const step1Targets = getFutureFabricStep1AssignmentTargets(
-      garmentTypeSelection,
-    );
-    const wasEligibleFirstStep1Assignment =
-      !bulkChoiceAnsweredRef.current &&
-      step1Targets.length > 1 &&
-      !step1Targets.some(({ assignment }) =>
-        assignmentByGarmentKey.has(assignment.garmentKey),
-      );
     pendingAssignmentAnnouncementRef.current = {
       fabricCode: fabric.code,
       fabricName: fabric.name,
       targetGarmentKey: garmentKey,
       assignmentGeneration,
-      wasEligibleFirstStep1Assignment,
     };
     setVisibleActionError(null);
     setAssignmentAnnouncement("");
-    bulkChoiceTriggerRef.current =
-      garmentActionRefs.current.get(garmentKey) || catalogueTriggerRef.current;
     const nextState = onAssignFabricToGarment(fabric, garmentKey);
-    const intent = pendingAssignmentAnnouncementRef.current;
-    const openedBulkChoice =
-      nextState && intent && Array.isArray(nextState.fabricAllocations)
-        ? settleBulkChoiceFromCommittedState(nextState, intent, {
-            clearOnMiss: true,
-          })
-        : false;
-    if (openedBulkChoice) {
-      catalogueFocusRequestRef.current += 1;
-      catalogueTriggerRef.current = null;
-      catalogueFocusGarmentKeyRef.current = null;
-      setIsCatalogueOpen(false);
-      setCatalogueTargetGarmentKey(null);
-      return;
+    if (nextState && Array.isArray(nextState.fabricAllocations)) {
+      const assigned = nextState.fabricAllocations.some((allocation) =>
+        allocation.garmentAssignments.some(
+          (assignment) => assignment.garmentKey === garmentKey,
+        ),
+      );
+      if (assigned) {
+        setVisibleActionError(null);
+        const assignedTarget = targets.find(
+          ({ assignment }) => assignment.garmentKey === garmentKey,
+        );
+        if (assignedTarget) {
+          setAssignmentAnnouncement(
+            `${fabric.name} assigned to ${getFutureGarmentLabel(
+              assignedTarget.assignment.garmentType,
+            )}.`,
+          );
+        }
+      }
     }
+    pendingAssignmentAnnouncementRef.current = null;
     completeCatalogueAssignment(garmentKey);
   };
 
-  const handleFabricSelection = (fabric: Fabric) => {
+  const handleFabricSelection = (
+    fabric: Fabric,
+    trigger?: HTMLElement,
+  ) => {
     setVisibleActionError(null);
-    const pendingAssignment =
-      fabricAllocationState.awaitingFabricForPendingGarment
-        ? fabricAllocationState.pendingFabricGarment
-        : null;
+    if (
+      catalogueTargetGarmentKey &&
+      activeCatalogueTarget &&
+      assignmentByGarmentKey.has(catalogueTargetGarmentKey)
+    ) {
+      assignSelectedFabric(fabric, activeCatalogueTarget.assignment.garmentKey);
+      return;
+    }
+    if (
+      pendingAdditionalAssignment &&
+      (!catalogueTargetGarmentKey ||
+        catalogueTargetGarmentKey === pendingAdditionalAssignment.garmentKey)
+    ) {
+      assignSelectedFabric(fabric, pendingAdditionalAssignment.garmentKey);
+      return;
+    }
+    if (isStep1CatalogueMode) {
+      openStep1FabricAssignment(fabric, trigger);
+      return;
+    }
     const targetGarmentKey =
       (catalogueTargetGarmentKey && activeCatalogueTarget
         ? activeCatalogueTarget.assignment.garmentKey
         : null) ||
-      pendingAssignment?.garmentKey ||
       unassignedTargets[0]?.assignment.garmentKey ||
       null;
     if (!targetGarmentKey) {
-      setAssignmentAnnouncement("All selected garments already have fabric assignments.");
+      setAssignmentAnnouncement(
+        "All selected garments already have fabric assignments.",
+      );
       return;
     }
     assignSelectedFabric(fabric, targetGarmentKey);
@@ -816,8 +819,7 @@ export const DormantFutureFabricStep = ({
   ) => {
     assignmentGenerationRef.current += 1;
     pendingAssignmentAnnouncementRef.current = null;
-    setBulkChoicePrompt(null);
-    setBulkChoiceSelectedKeys([]);
+    closeStep1FabricAssignment();
     setIsCatalogueOpen(false);
     setCatalogueTargetGarmentKey(null);
     catalogueFocusRequestRef.current += 1;
@@ -878,10 +880,7 @@ export const DormantFutureFabricStep = ({
   };
 
   const renderCatalogueCard = (fabric: Fabric) => {
-    const pendingTargetAssignment =
-      fabricAllocationState.awaitingFabricForPendingGarment
-        ? fabricAllocationState.pendingFabricGarment
-        : null;
+    const pendingTargetAssignment = pendingAdditionalAssignment;
     const currentTarget =
       activeCatalogueTarget ||
       (pendingTargetAssignment
@@ -889,12 +888,42 @@ export const DormantFutureFabricStep = ({
         : null) ||
       unassignedTargets[0] ||
       null;
-    const cardPresentation = resolveFutureFabricCatalogueCardPresentation({
-      fabricCode: fabric.code,
-      garmentTypeSelection,
-      fabricAllocationState,
-      currentTargetGarmentKey: currentTarget?.assignment.garmentKey ?? null,
-    });
+    const step1Presentation = isStep1CatalogueMode
+      ? resolveStep1FabricCatalogueCardPresentation({
+          fabricCode: fabric.code,
+          garmentTypeSelection,
+          fabricAllocationState,
+          availabilityMessage: getFabricAvailabilityMessage(fabric),
+        })
+      : null;
+    const useStep1CardPresentation = Boolean(
+      step1Presentation &&
+        (step1Presentation.action !== "none" ||
+          step1Presentation.status === "NO GARMENTS TO ASSIGN" ||
+          step1Presentation.status === "UNAVAILABLE" ||
+          unassignedStep1Targets.length > 0),
+    );
+    const cardPresentation: FutureFabricCatalogueCardPresentation =
+      step1Presentation && useStep1CardPresentation
+        ? {
+            status:
+              step1Presentation.status === "UNAVAILABLE"
+                ? "SELECT"
+                : step1Presentation.status,
+            action:
+              step1Presentation.action === "none"
+                ? "none"
+                : step1Presentation.action === "use_again"
+                  ? "use_again"
+                  : "select",
+            cancelGarmentKey: null,
+          }
+        : resolveFutureFabricCatalogueCardPresentation({
+            fabricCode: fabric.code,
+            garmentTypeSelection,
+            fabricAllocationState,
+            currentTargetGarmentKey: currentTarget?.assignment.garmentKey ?? null,
+          });
     const cancelAssignment = cardPresentation.cancelGarmentKey
       ? assignmentByGarmentKey.get(cardPresentation.cancelGarmentKey)
           ?.assignment ||
@@ -918,7 +947,7 @@ export const DormantFutureFabricStep = ({
         targetGarmentLabel={targetGarmentLabel}
         stockBadgeIdPrefix="future-fabric-stock"
         describedBy="future-fabric-catalogue-help future-fabric-assignment-status"
-        onAction={() => {
+        onAction={(event) => {
           if (
             cardPresentation.action === "cancel" &&
             cardPresentation.cancelGarmentKey &&
@@ -931,7 +960,7 @@ export const DormantFutureFabricStep = ({
             );
             return;
           }
-          handleFabricSelection(fabric);
+          handleFabricSelection(fabric, event?.currentTarget);
         }}
       />
     );
@@ -1149,14 +1178,12 @@ export const DormantFutureFabricStep = ({
               className="mt-2 max-w-2xl text-xs leading-relaxed text-heritage-ink/65"
               aria-live="polite"
             >
-              {activeCatalogueTarget
+              {activeCatalogueTarget && isChangeFabricTarget
                 ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
                     activeCatalogueTarget.assignment.garmentType,
                   )}.`
-                : unassignedTargets[0]
-                  ? `Select a fabric card to assign it to the next garment: ${getFutureGarmentLabel(
-                      unassignedTargets[0].assignment.garmentType,
-                    )}.`
+                : unassignedStep1Targets.length > 0
+                  ? "Select a fabric card to choose which garments should use this Fabric."
                   : "All selected garments have fabric assignments."}
             </p>
             <p
@@ -1290,149 +1317,46 @@ export const DormantFutureFabricStep = ({
           </div>
       </aside>
 
-      {bulkChoicePrompt && (
-          <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-heritage-ink/40 p-3 sm:items-center sm:p-6">
-            <div
-              ref={bulkChoiceDialogRef}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="future-fabric-bulk-choice-title"
-              data-testid="future-fabric-bulk-choice"
-              data-bulk-choice-phase={bulkChoicePrompt.phase}
-              className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-heritage-gold/40 bg-white p-5 shadow-xl sm:p-6"
-            >
-              {bulkChoiceStatusMessage ? (
-                <p
-                  role="alert"
-                  data-testid="future-fabric-bulk-choice-status"
-                  className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800"
-                >
-                  {bulkChoiceStatusMessage}
-                </p>
-              ) : null}
-              {bulkChoicePrompt.phase === "ask" ? (
-                <>
-                  <h3
-                    id="future-fabric-bulk-choice-title"
-                    className="font-serif text-xl font-bold text-heritage-green"
-                  >
-                    Use this fabric for your other garments?
-                  </h3>
-                  <p className="mt-3 text-sm leading-relaxed text-heritage-ink/70">
-                    You selected {bulkChoicePrompt.fabricName}. Would you like
-                    to use this same fabric for all remaining garments?
-                  </p>
-                  <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                    <button
-                      type="button"
-                      ref={registerBulkChoiceControl}
-                      data-bulk-choice-control="true"
-                      onClick={() =>
-                        applyBulkChoiceToGarments(
-                          bulkChoiceCandidates.map(
-                            ({ assignment }) => assignment.garmentKey,
-                          ),
-                        )
-                      }
-                      className="min-h-11 rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-                    >
-                      YES — Use for All
-                    </button>
-                    <button
-                      type="button"
-                      ref={registerBulkChoiceControl}
-                      data-bulk-choice-control="true"
-                      onClick={() => {
-                        setBulkChoiceSelectedKeys([]);
-                        setBulkChoicePrompt((current) =>
-                          current ? { ...current, phase: "choose" } : current,
-                        );
-                      }}
-                      className="min-h-11 rounded-xl border border-heritage-green/30 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-                    >
-                      NO — Choose Garments
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <h3
-                    id="future-fabric-bulk-choice-title"
-                    className="font-serif text-xl font-bold text-heritage-green"
-                  >
-                    Which other garments should use this fabric?
-                  </h3>
-                  <p className="mt-3 text-sm leading-relaxed text-heritage-ink/70">
-                    Select one or more remaining garments to use{" "}
-                    {bulkChoicePrompt.fabricName}.
-                  </p>
-                  <fieldset className="mt-4 space-y-2">
-                    <legend className="sr-only">
-                      Remaining garments for {bulkChoicePrompt.fabricName}
-                    </legend>
-                    {bulkChoiceCandidates.map(({ assignment }) => {
-                      const garmentLabel = getFutureGarmentLabel(
-                        assignment.garmentType,
-                      );
-                      const checkboxId = `future-fabric-bulk-${assignment.garmentKey}`;
-                      return (
-                        <label
-                          key={assignment.garmentKey}
-                          htmlFor={checkboxId}
-                          className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-heritage-gold/25 bg-heritage-cream/25 px-3 py-2 text-sm font-semibold text-heritage-green"
-                        >
-                          <input
-                            id={checkboxId}
-                            type="checkbox"
-                            ref={registerBulkChoiceControl}
-                            data-bulk-choice-control="true"
-                            checked={bulkChoiceSelectedKeys.includes(
-                              assignment.garmentKey,
-                            )}
-                            onChange={(event) => {
-                              const checked = event.currentTarget.checked;
-                              setBulkChoiceSelectedKeys((current) =>
-                                checked
-                                  ? [...current, assignment.garmentKey]
-                                  : current.filter(
-                                      (key) => key !== assignment.garmentKey,
-                                    ),
-                              );
-                            }}
-                            className="h-4 w-4 accent-heritage-green"
-                          />
-                          {garmentLabel}
-                        </label>
-                      );
-                    })}
-                  </fieldset>
-                  <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                    <button
-                      type="button"
-                      ref={registerBulkChoiceControl}
-                      data-bulk-choice-control="true"
-                      disabled={bulkChoiceSelectedKeys.length === 0}
-                      onClick={() =>
-                        applyBulkChoiceToGarments(bulkChoiceSelectedKeys)
-                      }
-                      className="min-h-11 rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      Apply Fabric to Selected
-                    </button>
-                    <button
-                      type="button"
-                      ref={registerBulkChoiceControl}
-                      data-bulk-choice-control="true"
-                      onClick={dismissBulkChoiceIndividually}
-                      className="min-h-11 rounded-xl border border-heritage-green/30 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-                    >
-                      Choose Fabrics Individually
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+      {pendingStep1FabricAssignment &&
+        step1AssignmentDialogFabric &&
+        step1AssignmentEvaluation && (
+        <Step1FabricAssignmentDialog
+          displayFabric={step1AssignmentDialogFabric.displayFabric}
+          currentFabric={step1AssignmentDialogFabric.currentFabric}
+          candidates={step1AssignmentCandidates}
+          selectedGarmentKeys={pendingStep1FabricAssignment.selectedGarmentKeys}
+          selectedCount={step1AssignmentEvaluation.selectedCount}
+          canAssignSelected={
+            !step1AssignmentDialogFabric.unavailableError &&
+            step1AssignmentEvaluation.canAssignSelected
+          }
+          canUseForAll={
+            !step1AssignmentDialogFabric.unavailableError &&
+            step1AssignmentEvaluation.canUseForAll
+          }
+          selectedCapacityMessage={
+            step1AssignmentEvaluation.selectedCapacityMessage
+          }
+          remainingCapacityMessage={
+            step1AssignmentEvaluation.remainingCapacityMessage
+          }
+          errorMessage={
+            step1AssignmentDialogFabric.unavailableError || step1AssignmentError
+          }
+          onToggleGarmentKey={(garmentKey, checked) => {
+            setStep1AssignmentError(null);
+            setPendingStep1FabricAssignment((current) => {
+              if (!current) return current;
+              const selectedGarmentKeys = checked
+                ? [...current.selectedGarmentKeys, garmentKey]
+                : current.selectedGarmentKeys.filter((key) => key !== garmentKey);
+              return { ...current, selectedGarmentKeys };
+            });
+          }}
+          onAssignSelected={() => commitPendingStep1FabricAssignment("selected")}
+          onUseForAll={() => commitPendingStep1FabricAssignment("all_remaining")}
+          onCancel={cancelStep1FabricAssignment}
+        />
       )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
