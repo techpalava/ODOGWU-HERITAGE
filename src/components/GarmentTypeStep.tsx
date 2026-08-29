@@ -273,6 +273,7 @@ export const GarmentTypeStep = ({
   orderSummary = null,
   idPrefix = "garment-type-step",
 }: GarmentTypeStepProps) => {
+  void selectedFabricQuantity;
   const presentation = getGarmentTypeStepPresentation({
     selectedGarmentTypes,
     normalizedCustomDetailCatalog,
@@ -323,9 +324,6 @@ export const GarmentTypeStep = ({
           <>
             <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/65">
               {formatRequiredFabricQuantitySentence(fabricQuantity, garmentCount)}
-            </p>
-            <p className="mt-2 break-words text-xs font-semibold text-heritage-green">
-              Fabrics selected: {selectedFabricQuantity} / {fabricQuantity}
             </p>
           </>
         )}

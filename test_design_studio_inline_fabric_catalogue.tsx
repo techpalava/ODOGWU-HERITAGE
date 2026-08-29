@@ -135,13 +135,13 @@ const assertFabricProgress = (
   assert.match(
     textContent(fabricLine),
     new RegExp(
-      `^Fabric selections: ${fabricSelected} of ${fabricRequired}$`,
+      `^Fabrics Selected: ${fabricSelected} of ${fabricRequired}$`,
     ),
   );
   assert.doesNotMatch(
     textContent(fabricLine),
     /needed/,
-    "Step 2 Fabric selections counter must not include the word needed.",
+    "Step 2 Fabrics Selected counter must not include the word needed.",
   );
   const progressIcon = progressRegion.findAllByProps({
     "data-fabric-progress-icon": "true",
@@ -911,6 +911,7 @@ const renderCapacity3 = () =>
 await act(async () => {
   capacityRenderer3 = create(renderCapacity3());
 });
+assertFabricProgress(capacityRenderer3.root, 0, 2, 0, 3);
 await act(async () =>
   capacityRenderer3.root
     .findAllByProps({ "data-fabric-card": "true" })[0]
@@ -925,7 +926,37 @@ assert.deepEqual(
   ),
   [["base:shirt", "base:trouser"], ["base:skirt"]],
 );
+assert.equal(capacityState3.fabricAllocations.length, 2);
+assert.equal(
+  new Set(capacityState3.fabricAllocations.map((allocation) => allocation.fabricCode))
+    .size,
+  1,
+  "Same Fabric product may occupy two physical allocations.",
+);
+assert.equal(
+  getFutureGarmentFabricPlanning({
+    garmentTypeSelection: threeGarmentSelection,
+    fabricAllocationState: capacityState3,
+  }).selectedFabricQuantity,
+  2,
+  "Fabrics Selected counts allocations, not distinct fabric codes.",
+);
+assertFabricProgress(capacityRenderer3.root, 2, 2, 3, 3);
 assert.equal(bulkChoiceCount(capacityRenderer3.root), 0);
+
+let halfOneState = applyFutureFabricCardSelection({
+  state: FabricAllocationStateEngine.initialize(),
+  garmentTypeSelection: threeGarmentSelection,
+  garmentKey: "base:shirt",
+  fabricCode: "INLINE-A",
+});
+let halfOneRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  halfOneRenderer = create(
+    renderStep(halfOneState, () => undefined, threeGarmentSelection),
+  );
+});
+assertFabricProgress(halfOneRenderer.root, 1, 2, 1, 3);
 
 let staleOfferState = FabricAllocationStateEngine.initialize();
 let staleOfferRenderer!: ReturnType<typeof create>;

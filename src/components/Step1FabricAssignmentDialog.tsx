@@ -11,6 +11,7 @@ import {
   STEP1_FABRIC_ASSIGNMENT_TITLE,
   STEP1_USE_FOR_ALL_LABEL,
   type Step1FabricAssignmentCandidate,
+  type Step1FabricAssignmentFailure,
 } from "../utils/step1FabricAssignmentPopup";
 
 const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
@@ -39,6 +40,9 @@ export const Step1FabricAssignmentDialog = ({
   canUseForAll,
   selectedCapacityMessage,
   remainingCapacityMessage,
+  candidateMessages = {},
+  selectedFailure = null,
+  remainingFailure = null,
   errorMessage,
   onToggleGarmentKey,
   onAssignSelected,
@@ -54,6 +58,9 @@ export const Step1FabricAssignmentDialog = ({
   canUseForAll: boolean;
   selectedCapacityMessage: string | null;
   remainingCapacityMessage: string | null;
+  candidateMessages?: Record<string, string | null>;
+  selectedFailure?: Step1FabricAssignmentFailure | null;
+  remainingFailure?: Step1FabricAssignmentFailure | null;
   errorMessage: string | null;
   onToggleGarmentKey: (garmentKey: string, checked: boolean) => void;
   onAssignSelected: () => void;
@@ -120,15 +127,19 @@ export const Step1FabricAssignmentDialog = ({
     return () => dialog.removeEventListener("keydown", handleKeyDown);
   }, [onCancel]);
 
+  const getRowWarningId = (garmentKey: string) =>
+    `step1-fabric-assignment-${garmentKey}-warning`;
   const assignDescribedBy = [
     selectedCount === 0 ? descriptionId : null,
     selectedCapacityMessage ? selectedCapacityId : null,
+    selectedFailure ? getRowWarningId(selectedFailure.garmentKey) : null,
     errorMessage ? errorId : null,
   ]
     .filter(Boolean)
     .join(" ");
   const useForAllDescribedBy = [
     remainingCapacityMessage ? remainingCapacityId : null,
+    remainingFailure ? getRowWarningId(remainingFailure.garmentKey) : null,
     errorMessage ? errorId : null,
   ]
     .filter(Boolean)
@@ -225,8 +236,11 @@ export const Step1FabricAssignmentDialog = ({
             {candidates.map((candidate) => {
               const garmentLabel = getCandidateLabel(candidate);
               const checkboxId = `step1-fabric-assignment-${candidate.garmentKey}`;
-              const reasonId = `${checkboxId}-reason`;
+              const warningId = getRowWarningId(candidate.garmentKey);
               const checked = selectedGarmentKeys.includes(candidate.garmentKey);
+              const rowWarning =
+                candidateMessages[candidate.garmentKey] ??
+                candidate.disabledReason;
               return (
                 <label
                   key={candidate.garmentKey}
@@ -246,9 +260,8 @@ export const Step1FabricAssignmentDialog = ({
                     ref={registerControl}
                     checked={checked}
                     disabled={!candidate.individuallyAssignable}
-                    aria-describedby={
-                      candidate.disabledReason ? reasonId : undefined
-                    }
+                    aria-describedby={rowWarning ? warningId : undefined}
+                    aria-invalid={rowWarning ? true : undefined}
                     onChange={(event) =>
                       onToggleGarmentKey(
                         candidate.garmentKey,
@@ -264,12 +277,17 @@ export const Step1FabricAssignmentDialog = ({
                     <span className="mt-0.5 block break-words text-xs font-medium text-heritage-ink/65">
                       {candidate.capacityUsageCopy}
                     </span>
-                    {candidate.disabledReason ? (
+                    {rowWarning ? (
                       <span
-                        id={reasonId}
+                        id={warningId}
+                        role="alert"
+                        data-testid={`step1-fabric-assignment-row-warning-${candidate.garmentKey}`}
+                        data-step1-fabric-assignment-row-warning={
+                          candidate.garmentKey
+                        }
                         className="mt-1 block break-words text-xs font-semibold text-red-700"
                       >
-                        {candidate.disabledReason}
+                        {rowWarning}
                       </span>
                     ) : null}
                   </span>
@@ -306,7 +324,11 @@ export const Step1FabricAssignmentDialog = ({
             aria-disabled={!canUseForAll}
             aria-describedby={useForAllDescribedBy || undefined}
             title={
-              canUseForAll ? undefined : remainingCapacityMessage || undefined
+              canUseForAll
+                ? undefined
+                : remainingCapacityMessage ||
+                  remainingFailure?.message ||
+                  undefined
             }
             data-testid="step1-fabric-assignment-use-for-all"
             data-step1-fabric-assignment-control="true"
@@ -337,7 +359,9 @@ export const Step1FabricAssignmentDialog = ({
             title={
               canAssignSelected
                 ? undefined
-                : selectedCapacityMessage || "Select at least one garment."
+                : selectedCapacityMessage ||
+                  selectedFailure?.message ||
+                  "Select at least one garment."
             }
             data-testid="step1-fabric-assignment-confirm"
             data-step1-fabric-assignment-control="true"

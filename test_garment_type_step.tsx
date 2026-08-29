@@ -331,7 +331,16 @@ assert.ok(populatedMarkup.includes("What garment type do you want to order?"));
 assert.ok(populatedMarkup.includes("Who is this design for?"));
 assert.ok(populatedMarkup.includes("1 fabric · 2 garments"));
 assert.ok(populatedMarkup.includes("You need 1 fabric for your 2 garments."));
-assert.ok(populatedMarkup.includes("Fabrics selected: 1 / 1"));
+assert.equal(
+  populatedMarkup.includes("Fabrics selected:"),
+  false,
+  "Step 1 must not show Fabric-selection progress.",
+);
+assert.equal(
+  populatedMarkup.includes("Fabrics Selected:"),
+  false,
+  "Step 1 must not show Fabric-selection progress.",
+);
 assert.equal(
   (populatedMarkup.match(/1 fabric · 2 garments/g) || []).length,
   1,
@@ -390,7 +399,11 @@ const allEightWithSelectedFabricMarkup = renderStep({
   selectedFabricQuantity: 1,
 });
 assert.ok(allEightWithSelectedFabricMarkup.includes("5 fabrics · 8 garments"));
-assert.ok(allEightWithSelectedFabricMarkup.includes("Fabrics selected: 1 / 5"));
+assert.equal(
+  allEightWithSelectedFabricMarkup.includes("Fabrics selected:"),
+  false,
+  "Step 1 must not show Fabric-selection progress.",
+);
 
 const allEightWithHiddenAgbadaMarkup = renderStep({
   selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES, "agbada"],
@@ -409,8 +422,10 @@ const shirtTrouserHiddenAgbadaMarkup = renderStep({
   selectedFabricQuantity: 1,
 });
 assert.ok(shirtTrouserHiddenAgbadaMarkup.includes("1 fabric · 2 garments"));
-assert.ok(
+assert.equal(
   shirtTrouserHiddenAgbadaMarkup.includes("Fabrics selected: 1 / 1"),
+  false,
+  "Step 1 must not show Fabric-selection progress.",
 );
 
 const shirtTrouserDressPresentation = getGarmentTypeStepPresentation({
@@ -486,7 +501,12 @@ const additionalOnlyFabricMarkup = renderStep({
   selectedDemographics: ["male"],
   selectedFabricQuantity: 0,
 });
-assert.ok(additionalOnlyFabricMarkup.includes("Fabrics selected: 0 / 5"));
+assert.ok(additionalOnlyFabricMarkup.includes("5 fabrics · 8 garments"));
+assert.equal(
+  additionalOnlyFabricMarkup.includes("Fabrics selected:"),
+  false,
+  "Step 1 must not show Fabric-selection progress.",
+);
 
 const shirtTrouserAgbadaSelection = reconcileGarmentTypeStepSelection({
   selectedGarmentTypes: ["shirt", "trouser", "agbada"],

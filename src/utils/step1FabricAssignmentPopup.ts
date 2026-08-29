@@ -20,7 +20,9 @@ export const STEP1_FABRIC_ASSIGNMENT_TITLE = "Assign Fabric to Garments";
 export const STEP1_FABRIC_ASSIGNMENT_DESCRIPTION =
   "Choose which garments should use this Fabric.";
 export const STEP1_USE_FOR_ALL_LABEL = "YES — Use for All";
-export const STEP1_INSUFFICIENT_CAPACITY_REASON = "Insufficient Fabric capacity";
+export const STEP1_INSUFFICIENT_CAPACITY_REASON =
+  "Not enough available Fabric capacity for this garment in the current assignment.";
+export const STEP1_GARMENT_CAPACITY_MESSAGE = STEP1_INSUFFICIENT_CAPACITY_REASON;
 export const STEP1_SELECTED_CAPACITY_MESSAGE =
   "This Fabric cannot cover all selected garments. Select fewer garments.";
 export const STEP1_REMAINING_CAPACITY_MESSAGE =
@@ -91,6 +93,22 @@ export type Step1FabricAssignmentCommitResult =
         | "ASSIGNMENT_FAILED";
       failedGarmentKey?: string;
     };
+
+export type Step1FabricAssignmentFailure = {
+  garmentKey: string;
+  message: string;
+};
+
+export type Step1FabricAssignmentEvaluation = {
+  selectedCount: number;
+  canAssignSelected: boolean;
+  canUseForAll: boolean;
+  selectedCapacityMessage: string | null;
+  remainingCapacityMessage: string | null;
+  candidateMessages: Record<string, string | null>;
+  selectedFailure: Step1FabricAssignmentFailure | null;
+  remainingFailure: Step1FabricAssignmentFailure | null;
+};
 
 const candidateGarmentKeys = (
   candidates: readonly FutureFabricAssignmentTarget[],
@@ -236,57 +254,35 @@ const dryRunAssignGarmentKeys = ({
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricCode: string;
   garmentKeys: readonly string[];
-}): FutureFabricBulkAssignmentResult =>
-  assignSameFabricProductToGarments({
+}): FutureFabricBulkAssignmentResult => {
+  if (garmentKeys.length === 0) {
+    return {
+      status: "blocked",
+      state,
+      reason: "INVALID_CAPACITY",
+    };
+  }
+  return assignSameFabricProductToGarments({
     state,
     garmentTypeSelection,
     fabricCode,
     garmentKeys,
   });
-
-const canExistingAllocationsCoverUnits = ({
-  fabricAllocationState,
-  fabricCode,
-  requiredUnits,
-}: {
-  fabricAllocationState: FabricAllocationState;
-  fabricCode: string;
-  requiredUnits: number;
-}): boolean => {
-  if (requiredUnits <= 0) return true;
-  if (!hasExistingFabricProductAllocation(fabricAllocationState, fabricCode)) {
-    return true;
-  }
-  return (
-    getRemainingCapacityUnitsOnExistingFabricAllocations({
-      fabricAllocationState,
-      fabricCode,
-    }) >= requiredUnits
-  );
 };
+
+export const dryRunAssignFabricProductToStep1GarmentKeys = dryRunAssignGarmentKeys;
 
 export const canAssignFabricProductToStep1Garment = ({
   garmentTypeSelection,
   fabricAllocationState,
   fabricCode,
   garmentKey,
-  fabricUnits,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
   fabricCode: string;
   garmentKey: string;
-  fabricUnits: number;
 }): boolean => {
-  if (
-    !canExistingAllocationsCoverUnits({
-      fabricAllocationState,
-      fabricCode,
-      requiredUnits: fabricUnits,
-    })
-  ) {
-    return false;
-  }
   const result = assignFutureFabricToGarment({
     state: fabricAllocationState,
     garmentTypeSelection,
@@ -301,32 +297,18 @@ export const canAssignFabricProductToStep1GarmentKeys = ({
   fabricAllocationState,
   fabricCode,
   garmentKeys,
-  requiredUnits,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
   fabricCode: string;
   garmentKeys: readonly string[];
-  requiredUnits: number;
-}): boolean => {
-  if (garmentKeys.length === 0) return false;
-  if (
-    !canExistingAllocationsCoverUnits({
-      fabricAllocationState,
-      fabricCode,
-      requiredUnits,
-    })
-  ) {
-    return false;
-  }
-  const result = dryRunAssignGarmentKeys({
+}): boolean =>
+  dryRunAssignGarmentKeys({
     state: fabricAllocationState,
     garmentTypeSelection,
     fabricCode,
     garmentKeys,
-  });
-  return result.status === "assigned";
-};
+  }).status === "assigned";
 
 export const buildStep1FabricAssignmentCandidates = ({
   garmentTypeSelection,
@@ -346,7 +328,6 @@ export const buildStep1FabricAssignmentCandidates = ({
       fabricAllocationState,
       fabricCode,
       garmentKey: assignment.garmentKey,
-      fabricUnits: assignment.fabricUnits,
     });
     return {
       garmentKey: assignment.garmentKey,
@@ -360,6 +341,32 @@ export const buildStep1FabricAssignmentCandidates = ({
     };
   });
 
+const failureFromDryRun = (
+  result: FutureFabricBulkAssignmentResult | null,
+): Step1FabricAssignmentFailure | null => {
+  if (!result || result.status !== "blocked" || !result.failedGarmentKey) {
+    return null;
+  }
+  return {
+    garmentKey: result.failedGarmentKey,
+    message: STEP1_GARMENT_CAPACITY_MESSAGE,
+  };
+};
+
+const globalMessageForBlockedDryRun = ({
+  result,
+  failure,
+  fallback,
+}: {
+  result: FutureFabricBulkAssignmentResult | null;
+  failure: Step1FabricAssignmentFailure | null;
+  fallback: string;
+}): string | null => {
+  if (!result || result.status === "assigned") return null;
+  if (failure) return null;
+  return fallback;
+};
+
 export const evaluateStep1FabricAssignmentSelection = ({
   candidates,
   selectedGarmentKeys,
@@ -372,48 +379,53 @@ export const evaluateStep1FabricAssignmentSelection = ({
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
   fabricCode: string;
-}): {
-  selectedCount: number;
-  canAssignSelected: boolean;
-  canUseForAll: boolean;
-  selectedCapacityMessage: string | null;
-  remainingCapacityMessage: string | null;
-} => {
+}): Step1FabricAssignmentEvaluation => {
   const candidateKeys = new Set(candidates.map((candidate) => candidate.garmentKey));
   const selected = selectedGarmentKeys.filter((garmentKey) =>
     candidateKeys.has(garmentKey),
   );
-  const selectedUnits = selected.reduce((total, garmentKey) => {
-    const candidate = candidates.find((row) => row.garmentKey === garmentKey);
-    return total + (candidate?.fabricUnits ?? 0);
-  }, 0);
-  const remainingUnits = candidates.reduce(
-    (total, candidate) => total + candidate.fabricUnits,
-    0,
-  );
   const remainingKeys = candidates.map((candidate) => candidate.garmentKey);
-  const canUseForAll =
-    remainingKeys.length > 0 &&
-    canAssignFabricProductToStep1GarmentKeys({
-      garmentTypeSelection,
-      fabricAllocationState,
-      fabricCode,
-      garmentKeys: remainingKeys,
-      requiredUnits: remainingUnits,
-    });
-  const canAssignSelected =
-    selected.length > 0 &&
-    selected.every((garmentKey) => {
-      const candidate = candidates.find((row) => row.garmentKey === garmentKey);
-      return candidate?.individuallyAssignable;
-    }) &&
-    canAssignFabricProductToStep1GarmentKeys({
-      garmentTypeSelection,
-      fabricAllocationState,
-      fabricCode,
-      garmentKeys: selected,
-      requiredUnits: selectedUnits,
-    });
+  const selectedResult =
+    selected.length === 0
+      ? null
+      : dryRunAssignGarmentKeys({
+          state: fabricAllocationState,
+          garmentTypeSelection,
+          fabricCode,
+          garmentKeys: selected,
+        });
+  const remainingResult =
+    remainingKeys.length === 0
+      ? null
+      : dryRunAssignGarmentKeys({
+          state: fabricAllocationState,
+          garmentTypeSelection,
+          fabricCode,
+          garmentKeys: remainingKeys,
+        });
+  const canAssignSelected = selectedResult?.status === "assigned";
+  const canUseForAll = remainingResult?.status === "assigned";
+  const selectedFailure =
+    selected.length > 0 && !canAssignSelected
+      ? failureFromDryRun(selectedResult)
+      : null;
+  const remainingFailure = !canUseForAll
+    ? failureFromDryRun(remainingResult)
+    : null;
+  const candidateMessages: Record<string, string | null> = {};
+  for (const candidate of candidates) {
+    const messages: string[] = [];
+    if (candidate.disabledReason) {
+      messages.push(candidate.disabledReason);
+    }
+    if (selectedFailure?.garmentKey === candidate.garmentKey) {
+      messages.push(selectedFailure.message);
+    }
+    if (remainingFailure?.garmentKey === candidate.garmentKey) {
+      messages.push(remainingFailure.message);
+    }
+    candidateMessages[candidate.garmentKey] = [...new Set(messages)][0] ?? null;
+  }
 
   return {
     selectedCount: selected.length,
@@ -421,13 +433,23 @@ export const evaluateStep1FabricAssignmentSelection = ({
     canUseForAll,
     selectedCapacityMessage:
       selected.length > 0 && !canAssignSelected
-        ? STEP1_SELECTED_CAPACITY_MESSAGE
+        ? globalMessageForBlockedDryRun({
+            result: selectedResult,
+            failure: selectedFailure,
+            fallback: STEP1_SELECTED_CAPACITY_MESSAGE,
+          })
         : null,
-    remainingCapacityMessage: canUseForAll
-      ? null
-      : remainingKeys.length > 0
-        ? STEP1_REMAINING_CAPACITY_MESSAGE
+    remainingCapacityMessage:
+      remainingKeys.length > 0 && !canUseForAll
+        ? globalMessageForBlockedDryRun({
+            result: remainingResult,
+            failure: remainingFailure,
+            fallback: STEP1_REMAINING_CAPACITY_MESSAGE,
+          })
         : null,
+    candidateMessages,
+    selectedFailure,
+    remainingFailure,
   };
 };
 
@@ -556,34 +578,6 @@ export const commitStep1FabricAssignment = ({
       reason: "ASSIGNMENT_FAILED",
     };
   }
-  const candidates = buildStep1FabricAssignmentCandidates({
-    garmentTypeSelection,
-    fabricAllocationState: state,
-    fabricCode: currentFabricCode,
-  });
-  const requiredUnits = garmentKeys.reduce((total, garmentKey) => {
-    const candidate = candidates.find((row) => row.garmentKey === garmentKey);
-    return total + (candidate?.fabricUnits ?? 0);
-  }, 0);
-  if (
-    !canAssignFabricProductToStep1GarmentKeys({
-      garmentTypeSelection,
-      fabricAllocationState: state,
-      fabricCode: currentFabricCode,
-      garmentKeys,
-      requiredUnits,
-    })
-  ) {
-    return {
-      status: "blocked",
-      state,
-      error:
-        mode === "all_remaining"
-          ? STEP1_REMAINING_CAPACITY_MESSAGE
-          : STEP1_SELECTED_CAPACITY_MESSAGE,
-      reason: "INVALID_CAPACITY",
-    };
-  }
   const result = assignSameFabricProductToGarments({
     state,
     garmentTypeSelection,
@@ -594,7 +588,9 @@ export const commitStep1FabricAssignment = ({
     return {
       status: "blocked",
       state,
-      error: STEP1_ASSIGNMENT_FAILED_MESSAGE,
+      error: result.failedGarmentKey
+        ? STEP1_GARMENT_CAPACITY_MESSAGE
+        : STEP1_ASSIGNMENT_FAILED_MESSAGE,
       reason:
         result.reason === "INVALID_CAPACITY"
           ? "INVALID_CAPACITY"

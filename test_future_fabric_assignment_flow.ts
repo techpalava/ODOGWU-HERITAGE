@@ -838,7 +838,12 @@ assert.doesNotMatch(
 assert.match(stepSource, /data-fabric-progress="true"/);
 assert.match(stepSource, /data-fabric-selection-progress="true"/);
 assert.match(stepSource, /data-garment-assignment-progress="true"/);
-assert.match(stepSource, /Fabric selections:/);
+assert.match(stepSource, /Fabrics Selected:/);
+assert.doesNotMatch(
+  stepSource,
+  /Fabric selections:/,
+  "Step 2 must use Fabrics Selected, not Fabric selections.",
+);
 assert.doesNotMatch(
   stepSource,
   /of \$\{requiredFabricQuantity\} needed/,

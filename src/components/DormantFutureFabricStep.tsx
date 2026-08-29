@@ -106,7 +106,7 @@ const formatFabricSelectionProgress = (
   selectedFabricQuantity: number,
   requiredFabricQuantity: number,
 ): string =>
-  `Fabric selections: ${selectedFabricQuantity} of ${requiredFabricQuantity}`;
+  `Fabrics Selected: ${selectedFabricQuantity} of ${requiredFabricQuantity}`;
 
 const formatGarmentAssignmentProgress = (
   assignedGarmentCount: number,
@@ -1689,6 +1689,9 @@ export const DormantFutureFabricStep = ({
           remainingCapacityMessage={
             step1AssignmentEvaluation.remainingCapacityMessage
           }
+          candidateMessages={step1AssignmentEvaluation.candidateMessages}
+          selectedFailure={step1AssignmentEvaluation.selectedFailure}
+          remainingFailure={step1AssignmentEvaluation.remainingFailure}
           errorMessage={
             step1AssignmentDialogFabric.unavailableError || step1AssignmentError
           }
