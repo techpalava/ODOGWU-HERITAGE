@@ -270,12 +270,12 @@ assert.doesNotMatch(
   "completed-step navigation must preserve added garments and their selections",
 );
 assert.ok(
-  source.includes("onAddAdditionalGarment={handleAddFutureAdditionalGarment}"),
-  "the customer selector must call the UI-facing additional garment handler",
+  source.includes("onBeginAdditionalGarment={handleBeginFutureAdditionalGarment}"),
+  "the customer selector must begin the additional-garment Fabric transaction first",
 );
 assert.ok(
-  source.includes("FabricAllocationStateEngine.attemptAppendGarment("),
-  "the UI-facing handler must delegate append behavior to the centralized allocation flow",
+  source.includes("FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection("),
+  "the UI-facing handler must park the additional garment for Fabric selection before Custom Details choice",
 );
 assert.ok(
   !source.includes("additionalGarmentParentSection"),
@@ -297,8 +297,13 @@ assert.match(
 );
 assert.match(
   customDetailsSource,
+  /onBeginAdditionalGarment\(garmentType, event\.currentTarget\)/,
+  "Add Additional Garment must begin the Fabric transaction instead of opening Custom Details first",
+);
+assert.doesNotMatch(
+  customDetailsSource,
   /setAdditionalGarmentChoice\(\{ garmentType, sourceParentGarmentKey: null \}\)/,
-  "the customer control must ask how to configure the garment before invoking the transaction",
+  "Add Additional Garment must not open the Custom Details copy/choose dialog on the initial click",
 );
 assert.match(customDetailsSource, /Use Same Custom Details/);
 assert.match(customDetailsSource, /Choose Custom Details/);
@@ -346,6 +351,21 @@ assert.match(customDetailsSource, /resolveCompatibleGarmentScopedCopySources/);
 assert.match(customDetailsSource, /compatibleCopySources\.length === 1/);
 assert.match(customDetailsSource, /Select the garment whose Custom Details you want to copy/);
 assert.match(
+  customDetailsSource,
+  /grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start/,
+  "Personalized Additional must use a responsive two-column desktop grid",
+);
+assert.match(
+  customDetailsSource,
+  /isPersonalizedAdditionalGroup \? noneCard : null/,
+  "None must participate in the same Personalized Additional choice grid",
+);
+assert.match(
+  customDetailsSource,
+  /data-custom-detail-choice-grid=\{group\.selectionGroup\}/,
+  "Personalized Additional choices must share one labelled choice-grid container",
+);
+assert.match(
   source,
   /applyAdditionalGarmentConstructionAndCopy/,
   "the committed allocation path must copy through the shared construction/copy helper",
@@ -366,8 +386,18 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!additionAccepted && !additionPending\) \{[\s\S]*additionalGarmentFabricSnapshotRef\.current = null;/,
-  "a rejected append must discard pending construction and copy state",
+  /if \(pendingState\.pendingFabricGarment\?\.garmentKey !== garmentKey\) \{[\s\S]*additionalGarmentFabricSnapshotRef\.current = null;/,
+  "a rejected pending park must discard the Fabric snapshot without mutating the order",
+);
+assert.match(
+  source,
+  /phase: "custom_details_choice"/,
+  "Fabric success must enter the Custom Details choice phase before commit",
+);
+assert.match(
+  source,
+  /isAdditionalGarmentFabricDialogVisible/,
+  "Fabric dialog visibility must stay transaction-driven and exclude Custom Details choice",
 );
 assert.match(
   source,

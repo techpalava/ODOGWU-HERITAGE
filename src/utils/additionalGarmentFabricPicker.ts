@@ -19,6 +19,7 @@ export { isFabricAvailableForCustomerSelection } from "./fabricCatalogueAvailabi
 export type AdditionalGarmentFabricTransactionPhase =
   | "choice"
   | "catalogue"
+  | "custom_details_choice"
   | "assigning"
   | "awaiting_commit"
   | "committed";
@@ -84,6 +85,41 @@ export const DUPLICATE_FABRIC_CATALOGUE_MESSAGE =
 
 export const STALE_ADDITIONAL_GARMENT_FABRIC_MESSAGE =
   "This garment setup is no longer current. The active fabric assignment was left unchanged.";
+
+export const isAdditionalGarmentCustomDetailsChoicePhase = (
+  phase: AdditionalGarmentFabricTransactionPhase | undefined,
+): boolean => phase === "custom_details_choice";
+
+export const isIncompleteNewAdditionalGarmentTransaction = (
+  transaction: AdditionalGarmentFabricTransaction | null | undefined,
+): boolean =>
+  Boolean(
+    transaction &&
+      transaction.origin === "new_addition" &&
+      transaction.phase !== "committed",
+  );
+
+/**
+ * Fabric dialog visibility is driven by the transaction.
+ * Custom Details copy/choose uses a separate phase and must never share the
+ * Fabric popup.
+ */
+export const isAdditionalGarmentFabricDialogVisible = (
+  transaction: AdditionalGarmentFabricTransaction | null | undefined,
+): boolean => {
+  if (!transaction?.openedModal) return false;
+  if (transaction.phase === "custom_details_choice") return false;
+  if (transaction.phase === "committed") return false;
+  if (transaction.origin === "new_addition") {
+    return transaction.phase === "choice" || transaction.phase === "catalogue";
+  }
+  return (
+    transaction.phase === "choice" ||
+    transaction.phase === "catalogue" ||
+    transaction.phase === "assigning" ||
+    transaction.phase === "awaiting_commit"
+  );
+};
 
 /**
  * Fabric code that activates Design Style pricing — the allocation that holds
@@ -341,7 +377,8 @@ export const isAdditionalGarmentFabricTransactionTargetValid = ({
   }
   if (
     transaction.phase === "awaiting_commit" ||
-    transaction.phase === "assigning"
+    transaction.phase === "assigning" ||
+    transaction.phase === "custom_details_choice"
   ) {
     return (
       matching.length === 1 &&
@@ -379,6 +416,14 @@ export const confirmAdditionalGarmentTransactionCommitted = ({
       status: "stale",
       reason: "This garment is no longer available for fabric assignment.",
     };
+  }
+
+  if (
+    transaction.phase === "choice" ||
+    transaction.phase === "catalogue" ||
+    transaction.phase === "custom_details_choice"
+  ) {
+    return { status: "pending" };
   }
 
   const fabricCode = transaction.requestedFabricCode;

@@ -272,7 +272,9 @@ const createNeckStep = ({
     onMonogramPlacementChange: () => undefined,
     onAccessoryToggle: () => undefined,
     onClearAccessories: () => undefined,
-    onAddAdditionalGarment: () => undefined,
+    onBeginAdditionalGarment: () => undefined,
+    onConfirmAdditionalGarmentCustomDetails: () => undefined,
+    onCancelAdditionalGarmentCustomDetails: () => undefined,
     onRemoveAdditionalGarment: () => undefined,
     onBack: () => undefined,
     onContinue: () => undefined,
@@ -643,7 +645,9 @@ act(() => {
     onMonogramPlacementChange: () => undefined,
     onAccessoryToggle: () => undefined,
     onClearAccessories: () => undefined,
-    onAddAdditionalGarment: () => undefined,
+    onBeginAdditionalGarment: () => undefined,
+    onConfirmAdditionalGarmentCustomDetails: () => undefined,
+    onCancelAdditionalGarmentCustomDetails: () => undefined,
     onRemoveAdditionalGarment: () => undefined,
     onBack: () => undefined,
     onContinue: () => undefined,
@@ -721,11 +725,24 @@ assert.match(componentSource, /partitionCatalogueGroupsByRole/);
 assert.match(componentSource, /Added garment/);
 assert.match(componentSource, /Add Additional Garment/);
 assert.match(componentSource, /additionalGarmentConstructionOptions/);
+assert.match(componentSource, /onBeginAdditionalGarment/);
+assert.match(componentSource, /onConfirmAdditionalGarmentCustomDetails/);
+assert.match(
+  componentSource,
+  /grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start/,
+);
+assert.match(
+  componentSource,
+  /isPersonalizedAdditionalGroup \? noneCard : null/,
+);
 assert.match(componentSource, /onConstructionSelect/);
 assert.match(componentSource, /onClearSelection/);
 assert.match(stepperSource, /canEnterCustomDetails/);
 assert.match(styleSource, /onContinue/);
 assert.match(studioSource, /handleOpenDormantCustomDetailsStage/);
+assert.match(studioSource, /handleBeginFutureAdditionalGarment/);
+assert.match(studioSource, /custom_details_choice/);
+assert.match(studioSource, /isAdditionalGarmentFabricDialogVisible/);
 assert.match(studioSource, /reconcileGarmentScopedCustomDetails/);
 assert.match(studioSource, /reconcileGarmentScopedPersonalizedInputs/);
 assert.match(studioSource, /setGarmentScopedCustomDetailSelection/);

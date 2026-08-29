@@ -69,6 +69,16 @@ import {
   shouldShowCustomDetailsGoToTop,
 } from "./CustomDetailsGoToTopButton";
 
+export type AdditionalGarmentCustomDetailsChoice =
+  | { mode: "choose" }
+  | { mode: "copy"; sourceParentGarmentKey: string };
+
+export type AdditionalGarmentCustomDetailsChoiceRequest = {
+  transactionId: number;
+  garmentKey: string;
+  garmentType: CanonicalPhysicalGarmentType;
+};
+
 interface DormantFutureCustomDetailsStepProps {
   reconciliation: GarmentScopedCustomDetailsReconciliationResult;
   catalogue: FutureCustomDetailsCatalogueProjection;
@@ -96,11 +106,16 @@ interface DormantFutureCustomDetailsStepProps {
   onMonogramPlacementChange: (placement: MonogramPlacement) => void;
   onAccessoryToggle: (accessory: TraditionalAccessory) => void;
   onClearAccessories: () => void;
-  onAddAdditionalGarment: (
+  onBeginAdditionalGarment: (
     garmentType: CanonicalPhysicalGarmentType,
-    choice: AdditionalGarmentCustomDetailsChoice,
     triggerElement?: HTMLElement | null,
   ) => void;
+  onConfirmAdditionalGarmentCustomDetails: (
+    choice: AdditionalGarmentCustomDetailsChoice,
+  ) => void;
+  onCancelAdditionalGarmentCustomDetails: () => void;
+  customDetailsChoiceRequest?: AdditionalGarmentCustomDetailsChoiceRequest | null;
+  customDetailsChoiceError?: string | null;
   onRemoveAdditionalGarment: (garmentKey: string) => void;
   onChangeAdditionalGarmentFabric?: (
     garmentKey: string,
@@ -117,10 +132,6 @@ interface DormantFutureCustomDetailsStepProps {
   onContinue: () => void;
   orderSummary?: ReactNode;
 }
-
-export type AdditionalGarmentCustomDetailsChoice =
-  | { mode: "choose" }
-  | { mode: "copy"; sourceParentGarmentKey: string };
 
 const money = (amount: number): string => `${PRICING_CURRENCY_SYMBOL}${amount.toFixed(2)}`;
 
@@ -225,7 +236,11 @@ export const DormantFutureCustomDetailsStep = ({
   onMonogramPlacementChange,
   onAccessoryToggle,
   onClearAccessories,
-  onAddAdditionalGarment,
+  onBeginAdditionalGarment,
+  onConfirmAdditionalGarmentCustomDetails,
+  onCancelAdditionalGarmentCustomDetails,
+  customDetailsChoiceRequest = null,
+  customDetailsChoiceError = null,
   onRemoveAdditionalGarment,
   onChangeAdditionalGarmentFabric,
   fabrics = [],
@@ -245,6 +260,8 @@ export const DormantFutureCustomDetailsStep = ({
   const [overLimitText, setOverLimitText] = useState<Record<string, string>>({});
   const [additionalGarmentChoice, setAdditionalGarmentChoice] = useState<{
     garmentType: CanonicalPhysicalGarmentType;
+    garmentKey: string;
+    transactionId: number;
     sourceParentGarmentKey: string | null;
   } | null>(null);
   const choiceDialogRef = useRef<HTMLDivElement>(null);
@@ -324,7 +341,10 @@ export const DormantFutureCustomDetailsStep = ({
     if (!additionalGarmentChoice) return [];
     let additionalIndex = 0;
     return resolveCompatibleGarmentScopedCopySources(
-      reconciliation.subjects,
+      reconciliation.subjects.filter(
+        (subject) =>
+          subject.parentGarmentKey !== additionalGarmentChoice.garmentKey,
+      ),
       additionalGarmentChoice.garmentType,
     ).map((source) => ({
       ...source,
@@ -338,6 +358,28 @@ export const DormantFutureCustomDetailsStep = ({
     (compatibleCopySources.length === 1
       ? compatibleCopySources[0].parentGarmentKey
       : null);
+
+  useEffect(() => {
+    if (!customDetailsChoiceRequest) {
+      setAdditionalGarmentChoice(null);
+      return;
+    }
+    setAdditionalGarmentChoice((current) => {
+      if (
+        current &&
+        current.transactionId === customDetailsChoiceRequest.transactionId &&
+        current.garmentKey === customDetailsChoiceRequest.garmentKey
+      ) {
+        return current;
+      }
+      return {
+        garmentType: customDetailsChoiceRequest.garmentType,
+        garmentKey: customDetailsChoiceRequest.garmentKey,
+        transactionId: customDetailsChoiceRequest.transactionId,
+        sourceParentGarmentKey: null,
+      };
+    });
+  }, [customDetailsChoiceRequest]);
 
   useEffect(() => {
     if (!additionalGarmentChoice) return;
@@ -405,7 +447,7 @@ export const DormantFutureCustomDetailsStep = ({
   }: {
     restoreFocus?: boolean;
   } = {}) => {
-    setAdditionalGarmentChoice(null);
+    onCancelAdditionalGarmentCustomDetails();
     if (!restoreFocus) return;
     window.requestAnimationFrame(() => {
       const trigger = choiceTriggerRef.current;
@@ -441,11 +483,8 @@ export const DormantFutureCustomDetailsStep = ({
   const submitAdditionalGarmentChoice = (
     choice: AdditionalGarmentCustomDetailsChoice,
   ) => {
-    if (!additionalGarmentChoice) return;
-    const { garmentType } = additionalGarmentChoice;
-    const trigger = choiceTriggerRef.current;
-    closeAdditionalGarmentChoice({ restoreFocus: false });
-    onAddAdditionalGarment(garmentType, choice, trigger);
+    if (!customDetailsChoiceRequest || !additionalGarmentChoice) return;
+    onConfirmAdditionalGarmentCustomDetails(choice);
   };
 
   const renderOptions = (
@@ -465,6 +504,27 @@ export const DormantFutureCustomDetailsStep = ({
       occurrence.subject.garmentKey,
       group.selectionGroup,
     );
+    const isPersonalizedAdditionalGroup =
+      group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP;
+    const noneCard = !group.isConstruction ? (
+      <label
+        key={`${groupId}-none`}
+        data-custom-detail-none="true"
+        className={`flex min-h-12 min-w-0 cursor-pointer items-center gap-3 rounded-xl border-2 p-4 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 lg:self-start ${noneSelected ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}
+      >
+        <input
+          type="radio"
+          name={`${groupId}-none`}
+          checked={noneSelected}
+          onChange={() => onClearSelection(occurrence.subject.garmentKey, group.selectionGroup)}
+          className="size-4 shrink-0 accent-heritage-green"
+        />
+        <span className="min-w-0">
+          <span className="block text-sm font-bold text-heritage-green">None</span>
+          <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">No selection for this category</span>
+        </span>
+      </label>
+    ) : null;
     const renderOptionCard = (option: CustomDetailOption) => {
       const optionId = `${groupId}-${option.id}`;
       const checked = group.isConstruction
@@ -491,7 +551,10 @@ export const DormantFutureCustomDetailsStep = ({
         : undefined;
 
       return (
-        <div key={option.id} className="min-w-0">
+        <div
+          key={option.id}
+          className={`min-w-0 ${isPersonalizedAdditionalGroup ? "lg:self-start" : ""}`}
+        >
           <label
             htmlFor={optionId}
             className={`flex min-h-12 min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-4 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${checked ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}
@@ -555,28 +618,22 @@ export const DormantFutureCustomDetailsStep = ({
     };
 
     const renderOptionGrid = (options: readonly CustomDetailOption[]) => (
-      <div className="grid min-w-0 grid-cols-1 gap-3">
+      <div
+        data-custom-detail-choice-grid={group.selectionGroup}
+        className={
+          isPersonalizedAdditionalGroup
+            ? "grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start"
+            : "grid min-w-0 grid-cols-1 gap-3"
+        }
+      >
+        {isPersonalizedAdditionalGroup ? noneCard : null}
         {options.map(renderOptionCard)}
       </div>
     );
 
     return (
       <div className="min-w-0 space-y-3">
-        {!group.isConstruction && (
-          <label className={`flex min-h-12 min-w-0 cursor-pointer items-center gap-3 rounded-xl border-2 p-4 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${noneSelected ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}>
-            <input
-              type="radio"
-              name={`${groupId}-none`}
-              checked={noneSelected}
-              onChange={() => onClearSelection(occurrence.subject.garmentKey, group.selectionGroup)}
-              className="size-4 shrink-0 accent-heritage-green"
-            />
-            <span className="min-w-0">
-              <span className="block text-sm font-bold text-heritage-green">None</span>
-              <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">No selection for this category</span>
-            </span>
-          </label>
-        )}
+        {!isPersonalizedAdditionalGroup && noneCard}
         {group.selectionGroup === "neck_design" ? (
           <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,20rem),1fr))] gap-4">
             {NECK_DESIGN_SUBCATEGORY_ORDER.map((subcategory) => {
@@ -914,7 +971,7 @@ export const DormantFutureCustomDetailsStep = ({
               </div>
             ) : null}
             <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {additionalGarmentConstructionOptions.map(({ garmentType, construction }) => <button key={garmentType} type="button" onClick={(event) => { choiceTriggerRef.current = event.currentTarget; setAdditionalGarmentChoice({ garmentType, sourceParentGarmentKey: null }); }} className="inline-flex min-h-12 min-w-0 items-start justify-between gap-3 rounded-xl border-2 border-heritage-green/65 bg-white p-3 text-left text-xs font-bold text-heritage-green transition hover:border-heritage-gold hover:bg-heritage-gold/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><span className="flex min-w-0 items-center gap-2"><Plus aria-hidden="true" size={15} className="shrink-0" /><span className="min-w-0 break-words">Add {getFabricGarmentLabel(garmentType)}</span></span><span className="shrink-0 font-mono text-[11px] text-heritage-gold">{construction.status === "resolved" ? money(construction.totalPrice) : "Price pending"}</span></button>)}
+              {additionalGarmentConstructionOptions.map(({ garmentType, construction }) => <button key={garmentType} type="button" data-add-additional-garment={garmentType} onClick={(event) => { choiceTriggerRef.current = event.currentTarget; onBeginAdditionalGarment(garmentType, event.currentTarget); }} className="inline-flex min-h-12 min-w-0 items-start justify-between gap-3 rounded-xl border-2 border-heritage-green/65 bg-white p-3 text-left text-xs font-bold text-heritage-green transition hover:border-heritage-gold hover:bg-heritage-gold/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><span className="flex min-w-0 items-center gap-2"><Plus aria-hidden="true" size={15} className="shrink-0" /><span className="min-w-0 break-words">Add {getFabricGarmentLabel(garmentType)}</span></span><span className="shrink-0 font-mono text-[11px] text-heritage-gold">{construction.status === "resolved" ? money(construction.totalPrice) : "Price pending"}</span></button>)}
             </div>
             {additionalGarments.length > 0 && (
               <div className="mt-5 space-y-4 border-t border-heritage-gold/20 pt-4">
@@ -1071,13 +1128,14 @@ export const DormantFutureCustomDetailsStep = ({
       {shouldShowCustomDetailsGoToTop({
         sentinelOutOfView: showGoToTop,
         fabricModalOpen,
-        choiceDialogOpen: Boolean(additionalGarmentChoice),
+        choiceDialogOpen: Boolean(customDetailsChoiceRequest),
       }) ? (
         <CustomDetailsGoToTopButton onClick={handleGoToTop} />
       ) : null}
 
-      {additionalGarmentChoice && (
+      {customDetailsChoiceRequest && additionalGarmentChoice && (
           <div
+            data-additional-garment-choice-dialog="true"
             className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/55 p-4"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) closeAdditionalGarmentChoice();
@@ -1102,6 +1160,18 @@ export const DormantFutureCustomDetailsStep = ({
               </div>
               <button type="button" onClick={() => closeAdditionalGarmentChoice()} aria-label="Close additional garment choices" className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/20 text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><X aria-hidden="true" size={18} /></button>
             </div>
+
+            {customDetailsChoiceError ? (
+              <div
+                role="alert"
+                aria-live="assertive"
+                data-additional-garment-choice-error="true"
+                className="mt-4 rounded-2xl border border-red-300/50 bg-red-50/80 px-4 py-3"
+              >
+                <p className="text-sm font-bold text-red-800">Custom Details notice</p>
+                <p className="mt-1 text-sm text-red-900/90">{customDetailsChoiceError}</p>
+              </div>
+            ) : null}
 
             {compatibleCopySources.length > 1 && (
               <fieldset className="mt-5">
