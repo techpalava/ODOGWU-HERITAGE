@@ -676,6 +676,92 @@ const multiCancelPresentation = (garmentKeys: readonly string[]) => ({
   cancelGarmentKeys: garmentKeys,
 });
 
+/**
+ * Attach exact cancel garmentKeys to a catalogue-card presentation without
+ * changing the primary action. USE AGAIN can therefore keep reuse while the
+ * card still owns the canonical X removal targets.
+ */
+export const withFutureFabricCatalogueCancelTargets = (
+  presentation: Pick<FutureFabricCatalogueCardPresentation, "status" | "action">,
+  cancelGarmentKeys: readonly string[],
+): FutureFabricCatalogueCardPresentation => {
+  if (cancelGarmentKeys.length === 1) {
+    return {
+      ...presentation,
+      ...singleCancelPresentation(cancelGarmentKeys[0]!),
+    };
+  }
+  if (cancelGarmentKeys.length > 1) {
+    return {
+      ...presentation,
+      ...multiCancelPresentation(cancelGarmentKeys),
+    };
+  }
+  return { ...presentation, ...emptyCancelPresentation };
+};
+
+export type UntargetedStep1CatalogueStatus =
+  | "SELECT"
+  | "USE AGAIN"
+  | "IN USE"
+  | "ALL GARMENTS HAVE FABRIC"
+  | "UNAVAILABLE";
+
+export type UntargetedStep1CatalogueAction = "select" | "use_again" | "none";
+
+/**
+ * Step 1/2 untargeted catalogue overlay: keep USE AGAIN as the primary
+ * action while restoring canonical cancel targets for the X control.
+ * Non-reusable IN USE falls back to the existing IN USE + X presentation.
+ */
+export const adaptUntargetedStep1CatalogueCardPresentation = ({
+  step1Status,
+  step1Action,
+  cancelGarmentKeys,
+}: {
+  step1Status: UntargetedStep1CatalogueStatus;
+  step1Action: UntargetedStep1CatalogueAction;
+  cancelGarmentKeys: readonly string[];
+}): FutureFabricCatalogueCardPresentation => {
+  if (step1Action === "use_again") {
+    return withFutureFabricCatalogueCancelTargets(
+      { status: "USE AGAIN", action: "use_again" },
+      cancelGarmentKeys,
+    );
+  }
+  if (step1Status === "IN USE") {
+    if (cancelGarmentKeys.length > 0) {
+      return withFutureFabricCatalogueCancelTargets(
+        { status: "IN USE", action: "cancel" },
+        cancelGarmentKeys,
+      );
+    }
+    return withFutureFabricCatalogueCancelTargets(
+      { status: "IN USE", action: "none" },
+      [],
+    );
+  }
+  if (step1Status === "UNAVAILABLE") {
+    return withFutureFabricCatalogueCancelTargets(
+      { status: "SELECT", action: "none" },
+      [],
+    );
+  }
+  if (step1Status === "ALL GARMENTS HAVE FABRIC") {
+    return withFutureFabricCatalogueCancelTargets(
+      { status: "ALL GARMENTS HAVE FABRIC", action: "none" },
+      [],
+    );
+  }
+  return withFutureFabricCatalogueCancelTargets(
+    {
+      status: "SELECT",
+      action: step1Action === "select" ? "select" : "none",
+    },
+    [],
+  );
+};
+
 const collectOrderedFabricAssignmentKeys = ({
   garmentTypeSelection,
   fabricAllocationState,
