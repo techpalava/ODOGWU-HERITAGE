@@ -418,54 +418,51 @@ await act(async () => {
 const unusedOneCard = findFabricCardByCode(oneRenderer.root, "FAB-C");
 assert.equal(unusedOneCard?.props["data-fabric-status"], "SELECT");
 assert.equal(unusedOneCard?.props["data-fabric-action"], "select");
+assert.match(
+  textContent(oneRenderer.root),
+  /Select a fabric card to assign it to Trouser\./,
+);
 await act(async () => unusedOneCard?.props.onClick({ currentTarget: {} }));
 await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
-const oneDialog = oneRenderer.root.findByProps({
-  "data-testid": "step1-fabric-assignment-dialog",
-});
 assert.equal(
-  oneDialog.findAllByProps({ "data-step1-fabric-assignment-row": "base:trouser" })
-    .length,
-  1,
-);
-assert.equal(
-  oneDialog.findAllByProps({ "data-step1-fabric-assignment-row": "base:shirt" })
-    .length,
+  dialogCount(oneRenderer.root),
   0,
+  "One remaining Step 1 candidate must assign directly without the popup.",
 );
-await act(async () =>
-  oneDialog.findByProps({ "data-testid": "step1-fabric-assignment-cancel" }).props.onClick(),
+assert.deepEqual(
+  oneState.fabricAllocations.flatMap((allocation) =>
+    allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+  ).sort(),
+  ["base:shirt", "base:trouser"],
 );
-await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
-assert.equal(dialogCount(oneRenderer.root), 0);
-
-const usedOneCard = findFabricCardByCode(oneRenderer.root, "FAB-A");
-assert.equal(usedOneCard?.props["data-fabric-status"], "USE AGAIN");
-assert.equal(usedOneCard?.props["data-fabric-action"], "use_again");
-await act(async () => usedOneCard?.props.onClick({ currentTarget: {} }));
-await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
-const useAgainDialog = oneRenderer.root.findByProps({
-  "data-testid": "step1-fabric-assignment-dialog",
-});
-assert.equal(
-  useAgainDialog.findAllByProps({
-    "data-step1-fabric-assignment-row": "base:trouser",
-  }).length,
-  1,
-);
-await act(async () =>
-  useAgainDialog
-    .findByProps({ "data-testid": "step1-fabric-assignment-cancel" })
-    .props.onClick(),
-);
-await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
 
 oneState = applyFutureFabricCardSelection({
   state: FabricAllocationStateEngine.initialize(),
   garmentTypeSelection: twoSelection,
   garmentKey: "base:shirt",
-  fabricCode: "FAB-B",
+  fabricCode: "FAB-A",
 });
+await act(async () => {
+  oneRenderer.update(renderTwoStep(oneState, applyTwoBulk));
+});
+const usedOneCard = findFabricCardByCode(oneRenderer.root, "FAB-A");
+assert.equal(usedOneCard?.props["data-fabric-status"], "USE AGAIN");
+assert.equal(usedOneCard?.props["data-fabric-action"], "use_again");
+await act(async () => usedOneCard?.props.onClick({ currentTarget: {} }));
+await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
+assert.equal(
+  dialogCount(oneRenderer.root),
+  0,
+  "USE AGAIN with one remaining candidate must assign directly without the popup.",
+);
+assert.deepEqual(
+  oneState.fabricAllocations.flatMap((allocation) =>
+    allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+  ).sort(),
+  ["base:shirt", "base:trouser"],
+);
+
+oneState = FabricAllocationStateEngine.initialize();
 let missingRenderer!: ReturnType<typeof create>;
 await act(async () => {
   missingRenderer = create(renderTwoStep(oneState, applyTwoBulk, threeFabrics));
@@ -514,7 +511,7 @@ assert.deepEqual(
   oneState.fabricAllocations.flatMap((allocation) =>
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
   ),
-  ["base:shirt"],
+  [],
 );
 assert.equal(continueCount(missingRenderer.root), 0);
 await act(async () =>
@@ -530,12 +527,7 @@ const mutateLiveFabric = async (
   extras: Partial<Fabric>,
   expectedError: string,
 ) => {
-  let liveState = applyFutureFabricCardSelection({
-    state: FabricAllocationStateEngine.initialize(),
-    garmentTypeSelection: twoSelection,
-    garmentKey: "base:shirt",
-    fabricCode: "FAB-B",
-  });
+  let liveState = FabricAllocationStateEngine.initialize();
   const assignLive = (fabricCode: string, garmentKeys: string[]) => {
     const result = assignSameFabricProductToGarments({
       state: liveState,
@@ -587,7 +579,7 @@ const mutateLiveFabric = async (
     liveState.fabricAllocations.flatMap((allocation) =>
       allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
     ),
-    ["base:shirt"],
+    [],
   );
   await act(async () =>
     staleDialog.findByProps({ "data-testid": "step1-fabric-assignment-cancel" }).props.onClick(),
@@ -608,15 +600,10 @@ assert.deepEqual(
   unpricedLive.fabricAllocations.flatMap((allocation) =>
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
   ),
-  ["base:shirt"],
+  [],
 );
 
-let staleCandidateState = applyFutureFabricCardSelection({
-  state: FabricAllocationStateEngine.initialize(),
-  garmentTypeSelection: twoSelection,
-  garmentKey: "base:shirt",
-  fabricCode: "FAB-B",
-});
+let staleCandidateState = FabricAllocationStateEngine.initialize();
 const assignStaleCandidate = (fabricCode: string, garmentKeys: string[]) => {
   const result = assignSameFabricProductToGarments({
     state: staleCandidateState,
@@ -644,6 +631,12 @@ await act(async () =>
   ),
 );
 assert.equal(dialogCount(staleCandidateRenderer.root), 1);
+staleCandidateState = applyFutureFabricCardSelection({
+  state: staleCandidateState,
+  garmentTypeSelection: twoSelection,
+  garmentKey: "base:shirt",
+  fabricCode: "FAB-B",
+});
 staleCandidateState = applyFutureFabricCardSelection({
   state: staleCandidateState,
   garmentTypeSelection: twoSelection,

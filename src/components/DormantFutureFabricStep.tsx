@@ -39,6 +39,7 @@ import {
   getUnassignedStep1FabricAssignmentCandidates,
   resolveStep1AssignmentDialogFabric,
   resolveStep1FabricCatalogueCardPresentation,
+  shouldPromptStep1FabricAssignmentSelection,
   type PendingStep1FabricAssignment,
 } from "../utils/step1FabricAssignmentPopup";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
@@ -105,7 +106,7 @@ const formatFabricSelectionProgress = (
   selectedFabricQuantity: number,
   requiredFabricQuantity: number,
 ): string =>
-  `Fabric selections: ${selectedFabricQuantity} of ${requiredFabricQuantity} needed`;
+  `Fabric selections: ${selectedFabricQuantity} of ${requiredFabricQuantity}`;
 
 const formatGarmentAssignmentProgress = (
   assignedGarmentCount: number,
@@ -303,6 +304,7 @@ export const DormantFutureFabricStep = ({
   const fabricRemovalTriggerRef = useRef<HTMLElement | null>(null);
   const catalogueDialogRef = useRef<HTMLDivElement>(null);
   const catalogueSectionRef = useRef<HTMLDivElement>(null);
+  const catalogueScrollAnchorRef = useRef<HTMLDivElement>(null);
   const catalogueTriggerRef = useRef<HTMLElement | null>(null);
   const catalogueFocusGarmentKeyRef = useRef<string | null>(null);
   const catalogueFocusRequestRef = useRef(0);
@@ -366,6 +368,7 @@ export const DormantFutureFabricStep = ({
       catalogueFocusGarmentKeyRef.current = null;
       catalogueDialogRef.current = null;
       catalogueSectionRef.current = null;
+      catalogueScrollAnchorRef.current = null;
       catalogueHeadingRef.current = null;
       garmentActionRefs.current.clear();
       garmentCardRefs.current.clear();
@@ -714,51 +717,23 @@ export const DormantFutureFabricStep = ({
     }
   };
 
-  const commitPendingStep1FabricAssignment = (
-    mode: "selected" | "all_remaining",
+  const reportBlockedStep1FabricAssignment = (
+    error: string,
+    keepDialog: boolean,
   ) => {
-    if (!pendingStep1FabricAssignment) return;
-    if (step1AssignmentDialogFabric?.unavailableError) {
-      setStep1AssignmentError(step1AssignmentDialogFabric.unavailableError);
-      setAssignmentAnnouncement(step1AssignmentDialogFabric.unavailableError);
-      return;
+    pendingPostAssignmentNavRef.current = null;
+    if (keepDialog) {
+      setStep1AssignmentError(error);
+    } else {
+      setVisibleActionError(error);
     }
-    const fabricName =
-      step1AssignmentDialogFabric?.currentFabric?.name ||
-      pendingStep1FabricAssignment.displayFabric.fabricName ||
-      pendingStep1FabricAssignment.fabricCode;
-    const result = commitStep1FabricAssignment({
-      state: fabricAllocationState,
-      garmentTypeSelection,
-      fabrics,
-      fabricCode: pendingStep1FabricAssignment.fabricCode,
-      selectedGarmentKeys: pendingStep1FabricAssignment.selectedGarmentKeys,
-      mode,
-    });
-    if (result.status === "blocked") {
-      pendingPostAssignmentNavRef.current = null;
-      setStep1AssignmentError(result.error);
-      setAssignmentAnnouncement(result.error);
-      return;
-    }
-    const parentResult = onAssignSameFabricProduct(
-      pendingStep1FabricAssignment.fabricCode,
-      result.assignedGarmentKeys,
-    );
-    if (parentResult && parentResult.status === "blocked") {
-      pendingPostAssignmentNavRef.current = null;
-      setStep1AssignmentError(
-        "That fabric could not be assigned. No garments were changed.",
-      );
-      setAssignmentAnnouncement(
-        "That fabric could not be assigned. No garments were changed.",
-      );
-      return;
-    }
-    const assignedKeys =
-      parentResult && parentResult.status === "assigned"
-        ? parentResult.assignedGarmentKeys
-        : result.assignedGarmentKeys;
+    setAssignmentAnnouncement(error);
+  };
+
+  const finalizeSuccessfulStep1FabricAssignment = (
+    fabricName: string,
+    assignedKeys: string[],
+  ) => {
     const canonicalGarmentKeys = getFutureFabricStep1AssignmentTargets(
       garmentTypeSelection,
     ).map(({ assignment }) => assignment.garmentKey);
@@ -798,6 +773,99 @@ export const DormantFutureFabricStep = ({
     closeStep1FabricAssignment();
     announceAssignedGarments(fabricName, assignedKeys, nextUnassignedLabel);
     setPostAssignmentNavEpoch((current) => current + 1);
+  };
+
+  const applyCommittedStep1FabricAssignment = ({
+    fabricCode,
+    fabricName,
+    assignedGarmentKeys,
+    keepDialogOnBlock,
+  }: {
+    fabricCode: string;
+    fabricName: string;
+    assignedGarmentKeys: string[];
+    keepDialogOnBlock: boolean;
+  }) => {
+    const parentResult = onAssignSameFabricProduct(
+      fabricCode,
+      assignedGarmentKeys,
+    );
+    if (parentResult && parentResult.status === "blocked") {
+      reportBlockedStep1FabricAssignment(
+        "That fabric could not be assigned. No garments were changed.",
+        keepDialogOnBlock,
+      );
+      return;
+    }
+    const assignedKeys =
+      parentResult && parentResult.status === "assigned"
+        ? parentResult.assignedGarmentKeys
+        : assignedGarmentKeys;
+    finalizeSuccessfulStep1FabricAssignment(fabricName, assignedKeys);
+  };
+
+  const commitPendingStep1FabricAssignment = (
+    mode: "selected" | "all_remaining",
+  ) => {
+    if (!pendingStep1FabricAssignment) return;
+    if (step1AssignmentDialogFabric?.unavailableError) {
+      reportBlockedStep1FabricAssignment(
+        step1AssignmentDialogFabric.unavailableError,
+        true,
+      );
+      return;
+    }
+    const fabricName =
+      step1AssignmentDialogFabric?.currentFabric?.name ||
+      pendingStep1FabricAssignment.displayFabric.fabricName ||
+      pendingStep1FabricAssignment.fabricCode;
+    const result = commitStep1FabricAssignment({
+      state: fabricAllocationState,
+      garmentTypeSelection,
+      fabrics,
+      fabricCode: pendingStep1FabricAssignment.fabricCode,
+      selectedGarmentKeys: pendingStep1FabricAssignment.selectedGarmentKeys,
+      mode,
+    });
+    if (result.status === "blocked") {
+      reportBlockedStep1FabricAssignment(result.error, true);
+      return;
+    }
+    applyCommittedStep1FabricAssignment({
+      fabricCode: pendingStep1FabricAssignment.fabricCode,
+      fabricName,
+      assignedGarmentKeys: result.assignedGarmentKeys,
+      keepDialogOnBlock: true,
+    });
+  };
+
+  const assignSingleEligibleStep1FabricCandidate = (
+    fabric: Fabric,
+    garmentKey: string,
+  ) => {
+    const unavailable = getFabricAvailabilityMessage(fabric);
+    if (unavailable) {
+      reportBlockedStep1FabricAssignment(unavailable, false);
+      return;
+    }
+    const result = commitStep1FabricAssignment({
+      state: fabricAllocationState,
+      garmentTypeSelection,
+      fabrics,
+      fabricCode: fabric.code,
+      selectedGarmentKeys: [garmentKey],
+      mode: "selected",
+    });
+    if (result.status === "blocked") {
+      reportBlockedStep1FabricAssignment(result.error, false);
+      return;
+    }
+    applyCommittedStep1FabricAssignment({
+      fabricCode: fabric.code,
+      fabricName: fabric.name,
+      assignedGarmentKeys: result.assignedGarmentKeys,
+      keepDialogOnBlock: false,
+    });
   };
 
   useEffect(() => {
@@ -855,6 +923,17 @@ export const DormantFutureFabricStep = ({
       );
       return;
     }
+    if (!shouldPromptStep1FabricAssignmentSelection(candidates.length)) {
+      const candidate = candidates[0];
+      if (!candidate) {
+        setAssignmentAnnouncement(
+          "All selected garments already have fabric assignments.",
+        );
+        return;
+      }
+      assignSingleEligibleStep1FabricCandidate(fabric, candidate.garmentKey);
+      return;
+    }
     assignmentGenerationRef.current += 1;
     pendingAssignmentAnnouncementRef.current = null;
     step1AssignmentTriggerRef.current = trigger || null;
@@ -880,18 +959,30 @@ export const DormantFutureFabricStep = ({
     postAssignmentFocusRequestRef.current += 1;
     catalogueTriggerRef.current = trigger;
     catalogueFocusGarmentKeyRef.current = garmentKey;
-    catalogueFocusRequestRef.current += 1;
+    const request = ++catalogueFocusRequestRef.current;
     setVisibleActionError(null);
     setCatalogueTargetGarmentKey(garmentKey);
     setIsCatalogueOpen(openDialog);
-    if (!openDialog && typeof window !== "undefined") {
-      window.requestAnimationFrame(() => {
-        const catalogue = catalogueSectionRef.current;
-        catalogue?.scrollIntoView({ behavior: "smooth", block: "start" });
-        catalogue
-          ?.querySelector<HTMLElement>("[data-fabric-card]")
-          ?.focus();
-      });
+    if (openDialog || typeof window === "undefined") {
+      return;
+    }
+    const scrollToCatalogueHeader = () => {
+      if (request !== catalogueFocusRequestRef.current) return;
+      const anchor = catalogueScrollAnchorRef.current;
+      if (anchor && typeof anchor.scrollIntoView === "function") {
+        anchor.scrollIntoView({
+          behavior: prefersReducedMotion() ? "auto" : "smooth",
+          block: "start",
+        });
+      }
+      if (catalogueHeadingRef.current) {
+        focusElementSafely(catalogueHeadingRef.current);
+      }
+    };
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(scrollToCatalogueHeader);
+    } else {
+      scrollToCatalogueHeader();
     }
   };
 
@@ -1215,20 +1306,28 @@ export const DormantFutureFabricStep = ({
           <div
             aria-live="polite"
             data-fabric-progress="true"
-            className="min-w-0 max-w-full shrink-0 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 px-4 py-2 text-xs font-bold text-heritage-green"
+            className="flex min-w-0 max-w-full shrink-0 items-start gap-3 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 px-4 py-2 text-xs font-bold text-heritage-green"
           >
-            <p data-fabric-selection-progress="true">
-              {formatFabricSelectionProgress(
-                selectedFabricQuantity,
-                requiredFabricQuantity,
-              )}
-            </p>
-            <p data-garment-assignment-progress="true" className="mt-1">
-              {formatGarmentAssignmentProgress(
-                completion.assignedGarmentCount,
-                completion.requiredGarmentCount,
-              )}
-            </p>
+            <Layers3
+              aria-hidden="true"
+              data-fabric-progress-icon="true"
+              size={20}
+              className="mt-0.5 shrink-0 text-heritage-gold"
+            />
+            <div className="min-w-0 flex-1">
+              <p data-fabric-selection-progress="true">
+                {formatFabricSelectionProgress(
+                  selectedFabricQuantity,
+                  requiredFabricQuantity,
+                )}
+              </p>
+              <p data-garment-assignment-progress="true" className="mt-1">
+                {formatGarmentAssignmentProgress(
+                  completion.assignedGarmentCount,
+                  completion.requiredGarmentCount,
+                )}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -1388,10 +1487,14 @@ export const DormantFutureFabricStep = ({
           ref={catalogueSectionRef}
           data-testid="future-fabric-inline-catalogue"
           data-catalogue-dialog-open={isCatalogueOpen}
-          className="mt-8 scroll-mt-6 border-t border-heritage-gold/20 pt-6"
+          className="mt-8 border-t border-heritage-gold/20 pt-6"
           tabIndex={-1}
         >
-          <div className="mb-4">
+          <div
+            ref={catalogueScrollAnchorRef}
+            data-catalogue-scroll-anchor="true"
+            className="mb-4 scroll-mt-24"
+          >
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
               Fabric Catalogue
             </p>
@@ -1416,9 +1519,13 @@ export const DormantFutureFabricStep = ({
                 ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
                     activeCatalogueTarget.assignment.garmentType,
                   )}.`
-                : unassignedStep1Targets.length > 0
-                  ? "Select a fabric card to choose which garments should use this Fabric."
-                  : "All selected garments have fabric assignments."}
+                : unassignedStep1Targets.length === 1
+                  ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
+                      unassignedStep1Targets[0]!.assignment.garmentType,
+                    )}.`
+                  : unassignedStep1Targets.length > 1
+                    ? "Select a fabric card to choose which garments should use this Fabric."
+                    : "All selected garments have fabric assignments."}
             </p>
             <p
               id="future-fabric-assignment-status"

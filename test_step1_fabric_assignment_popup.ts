@@ -23,6 +23,7 @@ import {
   getUnassignedStep1FabricAssignmentCandidates,
   resolveStep1AssignmentDialogFabric,
   resolveStep1FabricCatalogueCardPresentation,
+  shouldPromptStep1FabricAssignmentSelection,
 } from "./src/utils/step1FabricAssignmentPopup";
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
@@ -535,9 +536,44 @@ const unpricedDialog = resolveStep1AssignmentDialogFabric({
   displaySnapshot: snapshot,
 });
 assert.equal(unpricedDialog.currentFabric, null);
+assert.equal(unpricedDialog.unavailableError, "Price needs catalogue review before selection.");
+
+assert.equal(shouldPromptStep1FabricAssignmentSelection(0), false);
+assert.equal(shouldPromptStep1FabricAssignmentSelection(1), false);
+assert.equal(shouldPromptStep1FabricAssignmentSelection(2), true);
+assert.equal(shouldPromptStep1FabricAssignmentSelection(8), true);
+
+const leftoverOneCandidate = buildStep1FabricAssignmentCandidates({
+  garmentTypeSelection: createSelection(threeTypes),
+  fabricAllocationState: leftoverState,
+  fabricCode: "FAB-B",
+});
+assert.equal(leftoverOneCandidate.length, 2);
+const shirtOnlyCandidates = buildStep1FabricAssignmentCandidates({
+  garmentTypeSelection: createSelection(["shirt"]),
+  fabricAllocationState: empty,
+  fabricCode: "FAB-A",
+});
+assert.deepEqual(
+  shirtOnlyCandidates.map((candidate) => candidate.garmentKey),
+  ["base:shirt"],
+);
 assert.equal(
-  unpricedDialog.unavailableError,
-  "Price needs catalogue review before selection.",
+  shouldPromptStep1FabricAssignmentSelection(shirtOnlyCandidates.length),
+  false,
+);
+const shirtAssignedRemaining = buildStep1FabricAssignmentCandidates({
+  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  fabricAllocationState: assignOne(["shirt", "trouser"], "base:shirt"),
+  fabricCode: "FAB-B",
+});
+assert.deepEqual(
+  shirtAssignedRemaining.map((candidate) => candidate.garmentKey),
+  ["base:trouser"],
+);
+assert.equal(
+  shouldPromptStep1FabricAssignmentSelection(shirtAssignedRemaining.length),
+  false,
 );
 
 console.log("test_step1_fabric_assignment_popup.ts: all assertions passed");

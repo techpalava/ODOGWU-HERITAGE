@@ -108,6 +108,10 @@ export const getUnassignedStep1FabricAssignmentCandidates = ({
     fabricAllocationState,
   });
 
+export const shouldPromptStep1FabricAssignmentSelection = (
+  eligibleCandidateCount: number,
+): boolean => eligibleCandidateCount >= 2;
+
 const hasExistingStep1FabricProductAllocation = (
   state: FabricAllocationState,
   garmentTypeSelection: GarmentTypeStepSelection,

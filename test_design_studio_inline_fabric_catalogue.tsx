@@ -135,9 +135,20 @@ const assertFabricProgress = (
   assert.match(
     textContent(fabricLine),
     new RegExp(
-      `^Fabric selections: ${fabricSelected} of ${fabricRequired} needed$`,
+      `^Fabric selections: ${fabricSelected} of ${fabricRequired}$`,
     ),
   );
+  assert.doesNotMatch(
+    textContent(fabricLine),
+    /needed/,
+    "Step 2 Fabric selections counter must not include the word needed.",
+  );
+  const progressIcon = progressRegion.findAllByProps({
+    "data-fabric-progress-icon": "true",
+  })[0];
+  assert.ok(progressIcon, "Step 2 Fabric progress must include the decorative Layers3 icon.");
+  assert.equal(progressIcon.props["aria-hidden"], "true");
+  assert.equal(progressRegion.props["aria-live"], "polite");
   assert.match(
     textContent(garmentLine),
     new RegExp(
@@ -294,7 +305,7 @@ assert.equal(
 );
 assert.match(
   textContent(renderer.root),
-  /Select a fabric card to choose which garments should use this Fabric\./,
+  /Select a fabric card to assign it to Standard Shirt\./,
 );
 
 await act(async () => {
@@ -309,25 +320,22 @@ assert.match(
 );
 assert.match(
   textContent(renderer.root),
-  /Select a fabric card to choose which garments should use this Fabric\./,
+  /Select a fabric card to assign it to Standard Shirt\./,
 );
 
 const firstCard = renderer.root.findAllByProps({ "data-fabric-card": "true" })[0];
 await act(async () => firstCard.props.onClick({ currentTarget: {} }));
 assert.deepEqual(assigned, []);
-assert.deepEqual(bulkAssigned, []);
+assert.deepEqual(bulkAssigned, [
+  { fabricCode: "INLINE-A", garmentKeys: ["base:shirt"] },
+]);
 assert.equal(
   renderer.root.findAllByProps({
     "data-testid": "step1-fabric-assignment-dialog",
   }).length,
-  1,
-  "Selecting a Fabric must open the assignment popup before any allocation.",
+  0,
+  "Selecting a Fabric with one eligible garment must assign directly without the popup.",
 );
-await clickBulkYes(renderer.root);
-assert.deepEqual(assigned, []);
-assert.deepEqual(bulkAssigned, [
-  { fabricCode: "INLINE-A", garmentKeys: ["base:shirt"] },
-]);
 
 let shirtTrouserState = FabricAllocationStateEngine.initialize();
 let shirtTrouserRenderer!: ReturnType<typeof create>;
@@ -368,6 +376,10 @@ assert.equal(
   2,
 );
 assertFabricProgress(shirtTrouserRenderer.root, 0, 1, 0, 2);
+assert.match(
+  textContent(shirtTrouserRenderer.root),
+  /Select a fabric card to choose which garments should use this Fabric\./,
+);
 assert.equal(
   findButton(shirtTrouserRenderer.root, "Continue to Design Style"),
   undefined,
@@ -637,8 +649,8 @@ assert.equal(
   renderer.root.findAllByProps({
     "data-testid": "step1-fabric-assignment-dialog",
   }).length,
-  1,
-  "An un-targeted card selection must open the assignment popup before allocating.",
+  0,
+  "An un-targeted card selection with one eligible garment must assign directly without the popup.",
 );
 assert.deepEqual(assigned, []);
 
@@ -1189,6 +1201,8 @@ const mockWindow = {
   }),
 };
 let lastScrolledGarmentKey: string | null = null;
+let lastScrolledCatalogueAnchor = false;
+let lastFocusedFabricCard = false;
 const createFocusMock = (element: ReactElement): FocusMock => {
   const props = element.props as Record<string, unknown>;
   const tagName = typeof element.type === "string" ? element.type.toUpperCase() : "DIV";
@@ -1286,6 +1300,19 @@ const createFocusMock = (element: ReactElement): FocusMock => {
     };
     focusMocks.set(`garment-card:${garmentKey}`, mock);
   }
+  if (props["data-catalogue-scroll-anchor"] === "true") {
+    mock.scrollIntoView = () => {
+      lastScrolledCatalogueAnchor = true;
+    };
+    focusMocks.set("catalogue-scroll-anchor", mock);
+  }
+  if (props["data-fabric-card"] === "true") {
+    const originalFocus = mock.focus;
+    mock.focus = (options?: FocusOptions) => {
+      lastFocusedFabricCard = true;
+      originalFocus(options);
+    };
+  }
   return mock;
 };
 
@@ -1317,10 +1344,38 @@ try {
   const addShirt = findButton(focusRenderer.root, "Add Fabric");
   assert.ok(addShirt);
   const addShirtFocusTarget = focusMocks.get("Add fabric for Standard Shirt");
+  lastScrolledCatalogueAnchor = false;
+  lastFocusedFabricCard = false;
+  lastScrolledGarmentKey = null;
   await act(async () =>
     addShirt.props.onClick({
       currentTarget: addShirtFocusTarget,
     }),
+  );
+  flushAnimationFrames();
+  assert.equal(
+    lastScrolledCatalogueAnchor,
+    true,
+    "Add Fabric must scroll the catalogue header anchor into view.",
+  );
+  assert.equal(
+    lastFocusedFabricCard,
+    false,
+    "Add Fabric must not automatically focus the first Fabric card.",
+  );
+  assert.equal(
+    lastScrolledGarmentKey,
+    null,
+    "Add Fabric must not scroll a garment card.",
+  );
+  assert.equal(
+    activeFocusMock?.label,
+    "catalogue-heading",
+    "Add Fabric must focus the catalogue heading without moving the viewport to a card.",
+  );
+  assert.match(
+    textContent(focusRenderer.root),
+    /Choosing fabric for: Standard Shirt/,
   );
   await act(async () => findButton(focusRenderer.root, "Cancel")!.props.onClick());
   flushAnimationFrames();
@@ -1345,10 +1400,34 @@ try {
   const changeShirt = findButton(focusRenderer.root, "Change Fabric");
   assert.ok(changeShirt);
   const changeShirtFocusTarget = focusMocks.get("Change fabric for Standard Shirt");
+  lastScrolledCatalogueAnchor = false;
+  lastFocusedFabricCard = false;
+  lastScrolledGarmentKey = null;
   await act(async () =>
     changeShirt.props.onClick({
       currentTarget: changeShirtFocusTarget,
     }),
+  );
+  flushAnimationFrames();
+  assert.equal(
+    lastScrolledCatalogueAnchor,
+    true,
+    "Change Fabric must scroll the same catalogue header anchor as Add Fabric.",
+  );
+  assert.equal(
+    lastFocusedFabricCard,
+    false,
+    "Change Fabric must not automatically focus the first Fabric card.",
+  );
+  assert.equal(lastScrolledGarmentKey, null);
+  assert.equal(activeFocusMock?.label, "catalogue-heading");
+  assert.match(
+    textContent(focusRenderer.root),
+    /Choosing fabric for: Standard Shirt/,
+  );
+  assert.match(
+    textContent(focusRenderer.root),
+    /Select a fabric card to assign it to Standard Shirt\./,
   );
   await act(async () => findButton(focusRenderer.root, "Cancel")!.props.onClick());
   flushAnimationFrames();
@@ -1548,16 +1627,15 @@ try {
   assert.deepEqual(
     directCalls,
     [],
-    "A card Select click must open the assignment popup before calling the garment handler.",
+    "A one-candidate card Select click must not call the per-garment handler.",
   );
   assert.equal(
     directRenderer.root.findAllByProps({
       "data-testid": "step1-fabric-assignment-dialog",
     }).length,
-    1,
-    "Selecting a Fabric must open the assignment popup.",
+    0,
+    "Selecting a Fabric with one eligible garment must not open the assignment popup.",
   );
-  await clickBulkYes(directRenderer.root);
   await act(async () => {
     directRenderer.update(
       renderStep(
@@ -1598,7 +1676,7 @@ try {
       "data-testid": "step1-fabric-assignment-dialog",
     }).length,
     0,
-    "Confirmed assignment must close the popup and stay on Step 2.",
+    "Direct one-candidate assignment must stay on Step 2 without a popup.",
   );
   assert.equal(
     lastScrolledGarmentKey,
@@ -2434,8 +2512,6 @@ try {
       currentTarget: {},
     }),
   );
-  await act(async () => inUseCancelRenderer.update(renderInUseCancel()));
-  await clickBulkYes(inUseCancelRenderer.root);
   await act(async () => inUseCancelRenderer.update(renderInUseCancel()));
   assert.deepEqual(
     inUseCancelState.fabricAllocations.map((allocation) => ({
@@ -3749,24 +3825,11 @@ try {
   assert.ok(skirtCard);
   await act(async () => skirtCard!.props.onClick());
   await act(async () => pendingUiRenderer.update(renderPendingUi()));
-  assert.equal(bulkChoiceCount(pendingUiRenderer.root), 1);
   assert.equal(
-    pendingUiRenderer.root.findAllByProps({
-      "data-step1-fabric-assignment-checkbox": "base:skirt",
-    }).length,
-    1,
+    bulkChoiceCount(pendingUiRenderer.root),
+    0,
+    "One remaining Step 1 garment must assign directly without mixing in the pending additional shirt.",
   );
-  await act(async () =>
-    pendingUiRenderer.root
-      .findByProps({ "data-step1-fabric-assignment-checkbox": "base:skirt" })
-      .props.onChange({ currentTarget: { checked: true } }),
-  );
-  await act(async () =>
-    pendingUiRenderer.root
-      .findByProps({ "data-testid": "step1-fabric-assignment-confirm" })
-      .props.onClick(),
-  );
-  await act(async () => pendingUiRenderer.update(renderPendingUi()));
   assert.equal(
     pendingUiState.pendingFabricGarment?.garmentKey,
     "additional:shirt:1",
@@ -3818,6 +3881,50 @@ try {
     selectedDemographics: ["male"],
     normalizedCustomDetailCatalog: catalog,
   }).selection;
+  let emptyEightRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    emptyEightRenderer = create(
+      renderStep(
+        FabricAllocationStateEngine.initialize(),
+        () => undefined,
+        eightGarmentSelection,
+      ),
+    );
+  });
+  assertFabricProgress(emptyEightRenderer.root, 0, 5, 0, 8);
+
+  let threeOfFiveState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: eightGarmentSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  threeOfFiveState = applyFutureFabricCardSelection({
+    state: threeOfFiveState,
+    garmentTypeSelection: eightGarmentSelection,
+    garmentKey: "base:trouser",
+    fabricCode: "INLINE-A",
+  });
+  threeOfFiveState = applyFutureFabricCardSelection({
+    state: threeOfFiveState,
+    garmentTypeSelection: eightGarmentSelection,
+    garmentKey: "base:skirt",
+    fabricCode: "INLINE-B",
+  });
+  threeOfFiveState = applyFutureFabricCardSelection({
+    state: threeOfFiveState,
+    garmentTypeSelection: eightGarmentSelection,
+    garmentKey: "base:dress",
+    fabricCode: "INLINE-A",
+  });
+  let threeOfFiveRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    threeOfFiveRenderer = create(
+      renderStep(threeOfFiveState, () => undefined, eightGarmentSelection),
+    );
+  });
+  assertFabricProgress(threeOfFiveRenderer.root, 3, 5, 4, 8);
+
   let eightGarmentState = applyFutureFabricCardSelection({
     state: FabricAllocationStateEngine.initialize(),
     garmentTypeSelection: eightGarmentSelection,
@@ -4306,6 +4413,109 @@ try {
     lastScrolledGarmentKey,
     null,
     "Cancellation must not smart-jump to a garment card.",
+  );
+
+  lastScrolledGarmentKey = null;
+  activeFocusMock = null;
+  let remainingOneState = assignFutureFabricToGarment({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  }).state;
+  let remainingOneRenderer!: ReturnType<typeof create>;
+  const renderRemainingOne = () =>
+    renderStep(
+      remainingOneState,
+      () => undefined,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      applySameFabricResult(
+        () => remainingOneState,
+        (state) => {
+          remainingOneState = state;
+        },
+        shirtTrouserSelection,
+      ),
+    );
+  await act(async () => {
+    remainingOneRenderer = create(renderRemainingOne(), {
+      createNodeMock: createFocusMock,
+    });
+  });
+  assert.match(
+    textContent(remainingOneRenderer.root),
+    /Select a fabric card to assign it to Trouser\./,
+  );
+  await act(async () =>
+    remainingOneRenderer.root
+      .findAllByProps({ "data-fabric-card": "true" })
+      .find((card) => card.props["data-fabric-code"] === "INLINE-B")!
+      .props.onClick({ currentTarget: {} }),
+  );
+  await act(async () => remainingOneRenderer.update(renderRemainingOne()));
+  flushAnimationFrames();
+  assert.equal(
+    remainingOneRenderer.root.findAllByProps({
+      "data-testid": "step1-fabric-assignment-dialog",
+    }).length,
+    0,
+    "One remaining Step 1 candidate must assign directly without the popup.",
+  );
+  assert.deepEqual(
+    remainingOneState.fabricAllocations.flatMap((allocation) =>
+      allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+    ).sort(),
+    ["base:shirt", "base:trouser"],
+  );
+  assert.equal(lastScrolledGarmentKey, "base:trouser");
+  assert.equal(activeFocusMock?.label, "Change fabric for Trouser");
+
+  lastScrolledGarmentKey = null;
+  let blockedDirectState = FabricAllocationStateEngine.initialize();
+  let blockedDirectRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    blockedDirectRenderer = create(
+      renderStep(
+        blockedDirectState,
+        () => undefined,
+        garmentTypeSelection,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        undefined,
+        () => ({
+          status: "blocked" as const,
+          state: blockedDirectState,
+          reason: "INVALID_CAPACITY" as const,
+        }),
+      ),
+      { createNodeMock: createFocusMock },
+    );
+  });
+  await act(async () =>
+    blockedDirectRenderer.root
+      .findAllByProps({ "data-fabric-card": "true" })[0]
+      .props.onClick({ currentTarget: {} }),
+  );
+  assert.equal(
+    blockedDirectRenderer.root.findAllByProps({
+      "data-testid": "step1-fabric-assignment-dialog",
+    }).length,
+    0,
+    "A blocked one-candidate assignment must not fall back to the popup.",
+  );
+  assert.ok(findVisibleFabricActionError(blockedDirectRenderer.root));
+  assert.doesNotMatch(textContent(blockedDirectRenderer.root), /assigned to Standard Shirt/);
+  assert.equal(lastScrolledGarmentKey, null);
+  assert.equal(
+    blockedDirectRenderer.root.findAllByProps({
+      "data-post-assignment-highlight": "assigned",
+    }).length,
+    0,
   );
 
 } finally {
