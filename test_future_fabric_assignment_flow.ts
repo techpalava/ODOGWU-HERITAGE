@@ -838,7 +838,28 @@ assert.doesNotMatch(
 assert.match(stepSource, /data-fabric-progress="true"/);
 assert.match(stepSource, /data-fabric-selection-progress="true"/);
 assert.match(stepSource, /data-garment-assignment-progress="true"/);
-assert.match(stepSource, /Fabric selections:/);
+assert.match(stepSource, /Fabrics Selected:/);
+assert.doesNotMatch(
+  stepSource,
+  /Fabric selections:/,
+  "Step 2 must use Fabrics Selected, not Fabric selections.",
+);
+assert.doesNotMatch(
+  stepSource,
+  /of \$\{requiredFabricQuantity\} needed/,
+  "Step 2 counter copy must not append needed.",
+);
+assert.match(stepSource, /data-fabric-progress-icon="true"/);
+assert.match(stepSource, /data-catalogue-scroll-anchor="true"/);
+assert.match(stepSource, /catalogueScrollAnchorRef/);
+assert.match(stepSource, /assignSingleEligibleStep1FabricCandidate/);
+assert.match(stepSource, /shouldPromptStep1FabricAssignmentSelection/);
+assert.match(stepSource, /finalizeSuccessfulStep1FabricAssignment/);
+assert.doesNotMatch(
+  stepSource,
+  /querySelector<HTMLElement>\("\[data-fabric-card\]"\)/,
+  "Inline Add/Change Fabric must not focus the first Fabric card after scrolling.",
+);
 assert.match(stepSource, /Garments assigned:/);
 assert.doesNotMatch(
   stepSource,
@@ -972,6 +993,10 @@ assert.doesNotMatch(
 );
 assert.match(stepSource, /openStep1FabricAssignment/);
 assert.match(stepSource, /restoreStep1AssignmentFocus/);
+assert.match(stepSource, /resolveStep2PostAssignmentDestination/);
+assert.match(stepSource, /navigateToStep2PostAssignmentDestination/);
+assert.match(stepSource, /prefers-reduced-motion/);
+assert.match(stepSource, /motion-reduce:animate-none/);
 assert.match(stepSource, /getFocusable\(\)\[0\]\?\.focus\(\)/);
 assert.match(stepSource, /result\.assignedGarmentKeys/);
 

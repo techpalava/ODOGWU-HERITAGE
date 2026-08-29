@@ -16,6 +16,7 @@ import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructi
 import { applyFutureFabricCardSelection } from "./src/utils/designStudioFutureFabricStage";
 import {
   STEP1_FABRIC_NO_LONGER_AVAILABLE_MESSAGE,
+  STEP1_GARMENT_CAPACITY_MESSAGE,
   STEP1_NO_GARMENTS_TO_ASSIGN_STATUS,
 } from "./src/utils/step1FabricAssignmentPopup";
 
@@ -26,6 +27,9 @@ const reactDomRuntime = require("react-dom") as {
 reactDomRuntime.createPortal = (children) => children;
 const { DormantFutureFabricStep } = await import(
   "./src/components/DormantFutureFabricStep"
+);
+const { Step1FabricAssignmentDialog } = await import(
+  "./src/components/Step1FabricAssignmentDialog"
 );
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -274,12 +278,69 @@ assert.equal(
   leftoverDialog.findByProps({
     "data-testid": "step1-fabric-assignment-use-for-all",
   }).props.disabled,
-  true,
+  false,
 );
-assert.match(
+assert.doesNotMatch(
   textContent(leftoverDialog),
-  /This Fabric cannot cover all remaining garments. Select fewer garments./,
+  /This Fabric cannot cover all remaining garments/,
 );
+assert.doesNotMatch(
+  textContent(leftoverDialog),
+  /This Fabric cannot cover all selected garments/,
+);
+assert.equal(
+  leftoverDialog.findAllByProps({
+    "data-testid": "step1-fabric-assignment-remaining-capacity",
+  }).length,
+  0,
+);
+assert.equal(
+  leftoverDialog.findAllByProps({
+    "data-testid": "step1-fabric-assignment-selected-capacity",
+  }).length,
+  0,
+);
+await act(async () =>
+  leftoverDialog
+    .findByProps({ "data-step1-fabric-assignment-checkbox": "base:trouser" })
+    .props.onChange({ currentTarget: { checked: true } }),
+);
+await act(async () =>
+  leftoverDialog
+    .findByProps({ "data-step1-fabric-assignment-checkbox": "base:dress" })
+    .props.onChange({ currentTarget: { checked: true } }),
+);
+await act(async () => renderer.update(renderStep(state, applyBulk)));
+const leftoverSelectedDialog = renderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+assert.equal(
+  leftoverSelectedDialog.findByProps({
+    "data-testid": "step1-fabric-assignment-confirm",
+  }).props.disabled,
+  false,
+);
+assert.match(textContent(leftoverSelectedDialog), /Assign to Selected \(2\)/);
+await act(async () =>
+  leftoverSelectedDialog
+    .findByProps({ "data-testid": "step1-fabric-assignment-use-for-all" })
+    .props.onClick(),
+);
+await act(async () => renderer.update(renderStep(state, applyBulk)));
+assert.deepEqual(
+  state.fabricAllocations
+    .flatMap((allocation) =>
+      allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+    )
+    .sort(),
+  ["base:dress", "base:shirt", "base:trouser"],
+);
+assert.equal(state.fabricAllocations.length, 2);
+assert.ok(
+  state.fabricAllocations.every((allocation) => allocation.fabricCode === "FAB-A"),
+);
+assert.match(textContent(renderer.root), /Fabrics Selected: 2 of 2/);
+assert.match(textContent(renderer.root), /Garments assigned: 3 of 3/);
 
 const twoSelection = reconcileGarmentTypeStepSelection({
   selectedGarmentTypes: ["shirt", "trouser"],
@@ -418,54 +479,51 @@ await act(async () => {
 const unusedOneCard = findFabricCardByCode(oneRenderer.root, "FAB-C");
 assert.equal(unusedOneCard?.props["data-fabric-status"], "SELECT");
 assert.equal(unusedOneCard?.props["data-fabric-action"], "select");
+assert.match(
+  textContent(oneRenderer.root),
+  /Select a fabric card to assign it to Trouser\./,
+);
 await act(async () => unusedOneCard?.props.onClick({ currentTarget: {} }));
 await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
-const oneDialog = oneRenderer.root.findByProps({
-  "data-testid": "step1-fabric-assignment-dialog",
-});
 assert.equal(
-  oneDialog.findAllByProps({ "data-step1-fabric-assignment-row": "base:trouser" })
-    .length,
-  1,
-);
-assert.equal(
-  oneDialog.findAllByProps({ "data-step1-fabric-assignment-row": "base:shirt" })
-    .length,
+  dialogCount(oneRenderer.root),
   0,
+  "One remaining Step 1 candidate must assign directly without the popup.",
 );
-await act(async () =>
-  oneDialog.findByProps({ "data-testid": "step1-fabric-assignment-cancel" }).props.onClick(),
+assert.deepEqual(
+  oneState.fabricAllocations.flatMap((allocation) =>
+    allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+  ).sort(),
+  ["base:shirt", "base:trouser"],
 );
-await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
-assert.equal(dialogCount(oneRenderer.root), 0);
-
-const usedOneCard = findFabricCardByCode(oneRenderer.root, "FAB-A");
-assert.equal(usedOneCard?.props["data-fabric-status"], "USE AGAIN");
-assert.equal(usedOneCard?.props["data-fabric-action"], "use_again");
-await act(async () => usedOneCard?.props.onClick({ currentTarget: {} }));
-await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
-const useAgainDialog = oneRenderer.root.findByProps({
-  "data-testid": "step1-fabric-assignment-dialog",
-});
-assert.equal(
-  useAgainDialog.findAllByProps({
-    "data-step1-fabric-assignment-row": "base:trouser",
-  }).length,
-  1,
-);
-await act(async () =>
-  useAgainDialog
-    .findByProps({ "data-testid": "step1-fabric-assignment-cancel" })
-    .props.onClick(),
-);
-await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
 
 oneState = applyFutureFabricCardSelection({
   state: FabricAllocationStateEngine.initialize(),
   garmentTypeSelection: twoSelection,
   garmentKey: "base:shirt",
-  fabricCode: "FAB-B",
+  fabricCode: "FAB-A",
 });
+await act(async () => {
+  oneRenderer.update(renderTwoStep(oneState, applyTwoBulk));
+});
+const usedOneCard = findFabricCardByCode(oneRenderer.root, "FAB-A");
+assert.equal(usedOneCard?.props["data-fabric-status"], "USE AGAIN");
+assert.equal(usedOneCard?.props["data-fabric-action"], "use_again");
+await act(async () => usedOneCard?.props.onClick({ currentTarget: {} }));
+await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
+assert.equal(
+  dialogCount(oneRenderer.root),
+  0,
+  "USE AGAIN with one remaining candidate must assign directly without the popup.",
+);
+assert.deepEqual(
+  oneState.fabricAllocations.flatMap((allocation) =>
+    allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+  ).sort(),
+  ["base:shirt", "base:trouser"],
+);
+
+oneState = FabricAllocationStateEngine.initialize();
 let missingRenderer!: ReturnType<typeof create>;
 await act(async () => {
   missingRenderer = create(renderTwoStep(oneState, applyTwoBulk, threeFabrics));
@@ -514,7 +572,7 @@ assert.deepEqual(
   oneState.fabricAllocations.flatMap((allocation) =>
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
   ),
-  ["base:shirt"],
+  [],
 );
 assert.equal(continueCount(missingRenderer.root), 0);
 await act(async () =>
@@ -530,12 +588,7 @@ const mutateLiveFabric = async (
   extras: Partial<Fabric>,
   expectedError: string,
 ) => {
-  let liveState = applyFutureFabricCardSelection({
-    state: FabricAllocationStateEngine.initialize(),
-    garmentTypeSelection: twoSelection,
-    garmentKey: "base:shirt",
-    fabricCode: "FAB-B",
-  });
+  let liveState = FabricAllocationStateEngine.initialize();
   const assignLive = (fabricCode: string, garmentKeys: string[]) => {
     const result = assignSameFabricProductToGarments({
       state: liveState,
@@ -587,7 +640,7 @@ const mutateLiveFabric = async (
     liveState.fabricAllocations.flatMap((allocation) =>
       allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
     ),
-    ["base:shirt"],
+    [],
   );
   await act(async () =>
     staleDialog.findByProps({ "data-testid": "step1-fabric-assignment-cancel" }).props.onClick(),
@@ -608,15 +661,10 @@ assert.deepEqual(
   unpricedLive.fabricAllocations.flatMap((allocation) =>
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
   ),
-  ["base:shirt"],
+  [],
 );
 
-let staleCandidateState = applyFutureFabricCardSelection({
-  state: FabricAllocationStateEngine.initialize(),
-  garmentTypeSelection: twoSelection,
-  garmentKey: "base:shirt",
-  fabricCode: "FAB-B",
-});
+let staleCandidateState = FabricAllocationStateEngine.initialize();
 const assignStaleCandidate = (fabricCode: string, garmentKeys: string[]) => {
   const result = assignSameFabricProductToGarments({
     state: staleCandidateState,
@@ -644,6 +692,12 @@ await act(async () =>
   ),
 );
 assert.equal(dialogCount(staleCandidateRenderer.root), 1);
+staleCandidateState = applyFutureFabricCardSelection({
+  state: staleCandidateState,
+  garmentTypeSelection: twoSelection,
+  garmentKey: "base:shirt",
+  fabricCode: "FAB-B",
+});
 staleCandidateState = applyFutureFabricCardSelection({
   state: staleCandidateState,
   garmentTypeSelection: twoSelection,
@@ -683,5 +737,118 @@ const assignmentDialogSource = readFileSync(
 );
 assert.match(assignmentDialogSource, /behavior: "smooth", block: "start"/);
 assert.match(assignmentDialogSource, /initialFocusRef\.current \|\| dialog/);
+assert.match(assignmentDialogSource, /data-step1-fabric-assignment-row-warning/);
+assert.match(assignmentDialogSource, /role="alert"/);
+
+const blockedDialogCandidates = [
+  {
+    garmentKey: "base:shirt",
+    garmentType: "shirt" as const,
+    fabricUnits: 1 as const,
+    capacityUsageCopy: "Uses 1/2 fabric capacity unit.",
+    individuallyAssignable: false,
+    disabledReason: STEP1_GARMENT_CAPACITY_MESSAGE,
+  },
+  {
+    garmentKey: "base:trouser",
+    garmentType: "trouser" as const,
+    fabricUnits: 1 as const,
+    capacityUsageCopy: "Uses 1/2 fabric capacity unit.",
+    individuallyAssignable: true,
+    disabledReason: null,
+  },
+];
+let blockedDialogRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  blockedDialogRenderer = create(
+    <Step1FabricAssignmentDialog
+      displayFabric={fabrics[0]}
+      currentFabric={fabrics[0]}
+      candidates={blockedDialogCandidates}
+      selectedGarmentKeys={["base:shirt", "base:trouser"]}
+      selectedCount={2}
+      canAssignSelected={false}
+      canUseForAll={false}
+      selectedCapacityMessage={null}
+      remainingCapacityMessage={null}
+      candidateMessages={{
+        "base:shirt": STEP1_GARMENT_CAPACITY_MESSAGE,
+        "base:trouser": null,
+      }}
+      selectedFailure={{
+        garmentKey: "base:shirt",
+        message: STEP1_GARMENT_CAPACITY_MESSAGE,
+      }}
+      remainingFailure={{
+        garmentKey: "base:shirt",
+        message: STEP1_GARMENT_CAPACITY_MESSAGE,
+      }}
+      errorMessage={null}
+      onToggleGarmentKey={() => undefined}
+      onAssignSelected={() => undefined}
+      onUseForAll={() => undefined}
+      onCancel={() => undefined}
+    />,
+  );
+});
+const blockedDialog = blockedDialogRenderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+const blockedShirtRow = blockedDialog.findByProps({
+  "data-step1-fabric-assignment-row": "base:shirt",
+});
+const blockedTrouserRow = blockedDialog.findByProps({
+  "data-step1-fabric-assignment-row": "base:trouser",
+});
+const shirtWarning = blockedShirtRow.findByProps({
+  "data-step1-fabric-assignment-row-warning": "base:shirt",
+});
+assert.equal(shirtWarning.props.role, "alert");
+assert.match(textContent(shirtWarning), /Not enough available Fabric capacity/);
+assert.equal(
+  blockedShirtRow.findByProps({
+    "data-step1-fabric-assignment-checkbox": "base:shirt",
+  }).props["aria-describedby"],
+  "step1-fabric-assignment-base:shirt-warning",
+);
+assert.equal(
+  blockedTrouserRow.findAllByProps({
+    "data-step1-fabric-assignment-row-warning": "base:trouser",
+  }).length,
+  0,
+);
+assert.doesNotMatch(textContent(blockedTrouserRow), /Not enough available Fabric capacity/);
+assert.equal(
+  blockedDialog.findAllByProps({
+    "data-testid": "step1-fabric-assignment-selected-capacity",
+  }).length,
+  0,
+);
+assert.equal(
+  blockedDialog.findAllByProps({
+    "data-testid": "step1-fabric-assignment-remaining-capacity",
+  }).length,
+  0,
+);
+assert.equal(
+  blockedDialog.findByProps({
+    "data-testid": "step1-fabric-assignment-confirm",
+  }).props.disabled,
+  true,
+);
+assert.equal(
+  blockedDialog.findByProps({
+    "data-testid": "step1-fabric-assignment-use-for-all",
+  }).props.disabled,
+  true,
+);
+assert.doesNotMatch(
+  textContent(blockedDialog),
+  /This Fabric cannot cover all remaining garments/,
+);
+assert.doesNotMatch(
+  textContent(blockedDialog),
+  /This Fabric cannot cover all selected garments/,
+);
 
 console.log("test_step1_fabric_assignment_popup_ui.tsx: all assertions passed");

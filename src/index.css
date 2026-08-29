@@ -13,6 +13,44 @@
   --color-heritage-cream: #F9F6F0;
   --color-heritage-beige: #DDD2BF;
   --color-heritage-ink: #1B1B1B;
+
+  --animate-step1-select-attention: step1-select-attention 3.2s ease-in-out infinite;
+  --animate-step2-assignment-success: step2-assignment-success 1.2s ease-out 1;
+  --animate-step2-next-unassigned: step2-next-unassigned 1.2s ease-out 1;
+}
+
+@keyframes step1-select-attention {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 0 rgb(10 41 27 / 0);
+  }
+  45% {
+    transform: translateY(-1px) scale(1.015);
+    box-shadow: 0 6px 14px -8px rgb(10 41 27 / 0.26);
+  }
+  60% {
+    transform: translateY(-1px) scale(1.02);
+    box-shadow: 0 8px 16px -8px rgb(10 41 27 / 0.3);
+  }
+}
+
+@keyframes step2-assignment-success {
+  0% {
+    box-shadow: 0 0 0 3px rgb(10 41 27 / 0.28);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(10 41 27 / 0);
+  }
+}
+
+@keyframes step2-next-unassigned {
+  0% {
+    box-shadow: 0 0 0 3px rgb(197 168 92 / 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(197 168 92 / 0);
+  }
 }
 
 /* Custom premium scrollbar styling */

@@ -525,4 +525,32 @@ assert.doesNotMatch(
   /overflow-y-auto|max-h-\[/,
 );
 
+const emptySummaryView: LiveOrderSummaryView = {
+  sections: [],
+  totalStatus: "hidden",
+  totalLabel: "",
+  totalValueLabel: "",
+  totalAmountCents: null,
+  quoteRequired: false,
+};
+act(() => {
+  renderer.update(
+    createElement(DesignStudioOrderSummary, {
+      view: emptySummaryView,
+      unlockedStages: new Set<DesignStudioStageId>(),
+    }),
+  );
+});
+const emptyMarkup = textOf(renderer.root);
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-total",
+  }).length,
+  0,
+);
+assert.ok(!emptyMarkup.includes("Pending"));
+assert.ok(!emptyMarkup.includes("Current Subtotal"));
+assert.ok(!emptyMarkup.includes("€0.00"));
+assert.ok(emptyMarkup.includes(LIVE_ORDER_SUMMARY_HEADING));
+
 console.log("test_design_studio_live_order_summary_ui.tsx: all assertions passed");
