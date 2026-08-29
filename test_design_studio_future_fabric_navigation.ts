@@ -41,6 +41,12 @@ assert.match(studioSource, /onSelectFabric=\{handleOpenDormantFabricStage\}/);
 assert.match(studioSource, /setFutureStageId\("fabric"\)/);
 assert.match(studioSource, /setFutureStageId\("design_style"\)/);
 assert.match(studioSource, /onContinue=\{handleOpenDormantDesignStyleStage\}/);
+assert.match(studioSource, />\s*Continue to Fabric\s*</);
+assert.equal(
+  studioSource.includes("Continue to Fabric (upload later)"),
+  false,
+  "Step 1 CTA must not use the upload-later suffix.",
+);
 assert.equal(appSource.includes("future_nine_stage"), false);
 
 console.log("PASS: future Fabric navigation and legacy boundary");

@@ -30,6 +30,7 @@ import {
   getStep1GarmentReferenceImage,
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
+import { formatRequiredFabricQuantitySentence } from "../utils/designStudioFutureFabricStage";
 
 const DEMOGRAPHIC_OPTIONS: ReadonlyArray<{
   value: CustomDetailDemographic;
@@ -321,7 +322,7 @@ export const GarmentTypeStep = ({
         {garmentCount > 0 && (
           <>
             <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/65">
-              You need {fabricQuantity} {fabricQuantity === 1 ? "fabric" : "fabrics"} for your {garmentCount} {garmentCount === 1 ? "garment" : "garments"}.
+              {formatRequiredFabricQuantitySentence(fabricQuantity, garmentCount)}
             </p>
             <p className="mt-2 break-words text-xs font-semibold text-heritage-green">
               Fabrics selected: {selectedFabricQuantity} / {fabricQuantity}

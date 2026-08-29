@@ -972,6 +972,10 @@ assert.doesNotMatch(
 );
 assert.match(stepSource, /openStep1FabricAssignment/);
 assert.match(stepSource, /restoreStep1AssignmentFocus/);
+assert.match(stepSource, /resolveStep2PostAssignmentDestination/);
+assert.match(stepSource, /navigateToStep2PostAssignmentDestination/);
+assert.match(stepSource, /prefers-reduced-motion/);
+assert.match(stepSource, /motion-reduce:animate-none/);
 assert.match(stepSource, /getFocusable\(\)\[0\]\?\.focus\(\)/);
 assert.match(stepSource, /result\.assignedGarmentKeys/);
 

@@ -22,6 +22,7 @@ import { resolveFabricAllocationMaterialPricing } from "../utils/fabricAllocatio
 import { getFabricAvailabilityMessage } from "../utils/fabricCatalogueAvailability";
 import {
   getFutureFabricAssignmentTargets,
+  getFutureFabricStep1AssignmentTargets,
   getFutureUnassignedFabricTargets,
   resolveFutureFabricCatalogueCardPresentation,
   type FutureFabricBulkAssignmentResult,
@@ -29,6 +30,7 @@ import {
   type FutureFabricCatalogueCardPresentation,
   type FutureFabricStageCompletion,
 } from "../utils/designStudioFutureFabricStage";
+import { resolveStep2PostAssignmentDestination } from "../utils/step2PostAssignmentDestination";
 import {
   buildStep1FabricAssignmentCandidates,
   commitStep1FabricAssignment,
@@ -225,6 +227,16 @@ const didFocusElement = (element: HTMLElement): boolean => {
   return document.activeElement === element;
 };
 
+const prefersReducedMotion = (): boolean =>
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const STEP2_ASSIGNED_HIGHLIGHT_CLASS =
+  "ring-2 ring-heritage-green motion-safe:animate-step2-assignment-success motion-reduce:animate-none";
+const STEP2_NEXT_UNASSIGNED_HIGHLIGHT_CLASS =
+  "ring-2 ring-heritage-gold motion-safe:animate-step2-next-unassigned motion-reduce:animate-none";
+
 const focusElementSafely = (element: HTMLElement): boolean => {
   if (!isFocusEligible(element)) return false;
 
@@ -296,6 +308,17 @@ export const DormantFutureFabricStep = ({
   const catalogueFocusRequestRef = useRef(0);
   const postAssignmentFocusRequestRef = useRef(0);
   const garmentActionRefs = useRef(new Map<string, HTMLButtonElement>());
+  const garmentCardRefs = useRef(new Map<string, HTMLElement>());
+  const pendingPostAssignmentNavRef = useRef<{
+    assignedGarmentKeys: string[];
+    destinationGarmentKey: string;
+    destinationKind: "assigned" | "next_unassigned";
+  } | null>(null);
+  const [postAssignmentHighlight, setPostAssignmentHighlight] = useState<{
+    garmentKey: string;
+    kind: "assigned" | "next_unassigned";
+  } | null>(null);
+  const [postAssignmentNavEpoch, setPostAssignmentNavEpoch] = useState(0);
   const catalogueHeadingRef = useRef<HTMLHeadingElement>(null);
   const step1AssignmentTriggerRef = useRef<HTMLElement | null>(null);
   const step1AssignmentScrollYRef = useRef<number | null>(null);
@@ -345,6 +368,8 @@ export const DormantFutureFabricStep = ({
       catalogueSectionRef.current = null;
       catalogueHeadingRef.current = null;
       garmentActionRefs.current.clear();
+      garmentCardRefs.current.clear();
+      pendingPostAssignmentNavRef.current = null;
       assignmentGenerationRef.current += 1;
       pendingAssignmentAnnouncementRef.current = null;
       pendingRemovalAnnouncementRef.current = null;
@@ -555,6 +580,36 @@ export const DormantFutureFabricStep = ({
     }
   };
 
+  const navigateToStep2PostAssignmentDestination = (
+    garmentKey: string,
+    kind: "assigned" | "next_unassigned",
+  ) => {
+    const request = ++postAssignmentFocusRequestRef.current;
+    setPostAssignmentHighlight({ garmentKey, kind });
+    const focus = () => {
+      if (request !== postAssignmentFocusRequestRef.current) return;
+      const card = garmentCardRefs.current.get(garmentKey);
+      if (card && typeof card.scrollIntoView === "function") {
+        card.scrollIntoView({
+          behavior: prefersReducedMotion() ? "auto" : "smooth",
+          block: "center",
+        });
+      }
+      const garmentAction = garmentActionRefs.current.get(garmentKey);
+      if (garmentAction) {
+        focusElementSafely(garmentAction);
+      }
+    };
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      window.requestAnimationFrame(focus);
+    } else {
+      focus();
+    }
+  };
+
   const completeCatalogueAssignment = (garmentKey: string) => {
     catalogueFocusRequestRef.current += 1;
     catalogueTriggerRef.current = null;
@@ -627,11 +682,17 @@ export const DormantFutureFabricStep = ({
   };
 
   const cancelStep1FabricAssignment = () => {
+    pendingPostAssignmentNavRef.current = null;
+    postAssignmentFocusRequestRef.current += 1;
     closeStep1FabricAssignment();
     restoreStep1AssignmentFocus();
   };
 
-  const announceAssignedGarments = (fabricName: string, garmentKeys: string[]) => {
+  const announceAssignedGarments = (
+    fabricName: string,
+    garmentKeys: string[],
+    nextUnassignedLabel: string | null = null,
+  ) => {
     const labels = garmentKeys
       .map((garmentKey) => {
         const target = targets.find(
@@ -643,9 +704,12 @@ export const DormantFutureFabricStep = ({
       })
       .filter((label): label is string => Boolean(label));
     if (labels.length > 0) {
+      const assignedCopy = `${fabricName} assigned to ${formatGarmentList(labels)}.`;
       setVisibleActionError(null);
       setAssignmentAnnouncement(
-        `${fabricName} assigned to ${formatGarmentList(labels)}.`,
+        nextUnassignedLabel
+          ? `${assignedCopy} Next: ${nextUnassignedLabel} needs fabric.`
+          : assignedCopy,
       );
     }
   };
@@ -672,6 +736,7 @@ export const DormantFutureFabricStep = ({
       mode,
     });
     if (result.status === "blocked") {
+      pendingPostAssignmentNavRef.current = null;
       setStep1AssignmentError(result.error);
       setAssignmentAnnouncement(result.error);
       return;
@@ -681,6 +746,7 @@ export const DormantFutureFabricStep = ({
       result.assignedGarmentKeys,
     );
     if (parentResult && parentResult.status === "blocked") {
+      pendingPostAssignmentNavRef.current = null;
       setStep1AssignmentError(
         "That fabric could not be assigned. No garments were changed.",
       );
@@ -689,14 +755,81 @@ export const DormantFutureFabricStep = ({
       );
       return;
     }
-    closeStep1FabricAssignment();
-    restoreStep1AssignmentFocus();
     const assignedKeys =
       parentResult && parentResult.status === "assigned"
         ? parentResult.assignedGarmentKeys
         : result.assignedGarmentKeys;
-    announceAssignedGarments(fabricName, assignedKeys);
+    const canonicalGarmentKeys = getFutureFabricStep1AssignmentTargets(
+      garmentTypeSelection,
+    ).map(({ assignment }) => assignment.garmentKey);
+    const assignedNow = new Set([
+      ...assignmentByGarmentKey.keys(),
+      ...assignedKeys,
+    ]);
+    const remainingUnassignedGarmentKeys = canonicalGarmentKeys.filter(
+      (garmentKey) => !assignedNow.has(garmentKey),
+    );
+    const destination = resolveStep2PostAssignmentDestination({
+      assignedGarmentKeys: assignedKeys,
+      canonicalGarmentKeys,
+      remainingUnassignedGarmentKeys,
+    });
+    const nextTarget =
+      destination?.kind === "next_unassigned"
+        ? targets.find(
+            ({ assignment }) => assignment.garmentKey === destination.garmentKey,
+          )
+        : null;
+    const nextUnassignedLabel = nextTarget
+      ? getFutureGarmentLabel(nextTarget.assignment.garmentType)
+      : null;
+    step1AssignmentTriggerRef.current = null;
+    step1AssignmentScrollYRef.current = null;
+    catalogueFocusRequestRef.current += 1;
+    catalogueTriggerRef.current = null;
+    catalogueFocusGarmentKeyRef.current = null;
+    pendingPostAssignmentNavRef.current = destination
+      ? {
+          assignedGarmentKeys: assignedKeys,
+          destinationGarmentKey: destination.garmentKey,
+          destinationKind: destination.kind,
+        }
+      : null;
+    closeStep1FabricAssignment();
+    announceAssignedGarments(fabricName, assignedKeys, nextUnassignedLabel);
+    setPostAssignmentNavEpoch((current) => current + 1);
   };
+
+  useEffect(() => {
+    const pending = pendingPostAssignmentNavRef.current;
+    if (!pending) return;
+    const observed = pending.assignedGarmentKeys.every((garmentKey) =>
+      assignmentByGarmentKey.has(garmentKey),
+    );
+    if (!observed) return;
+    pendingPostAssignmentNavRef.current = null;
+    navigateToStep2PostAssignmentDestination(
+      pending.destinationGarmentKey,
+      pending.destinationKind,
+    );
+  }, [assignmentByGarmentKey, fabricAllocationState.fabricAllocations, postAssignmentNavEpoch]);
+
+  useEffect(() => {
+    if (!postAssignmentHighlight) return;
+    if (typeof window === "undefined" || typeof window.setTimeout !== "function") {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setPostAssignmentHighlight((current) =>
+        current &&
+        current.garmentKey === postAssignmentHighlight.garmentKey &&
+        current.kind === postAssignmentHighlight.kind
+          ? null
+          : current,
+      );
+    }, 1200);
+    return () => window.clearTimeout(timeoutId);
+  }, [postAssignmentHighlight]);
 
   const openStep1FabricAssignment = (
     fabric: Fabric,
@@ -1122,9 +1255,27 @@ export const DormantFutureFabricStep = ({
             return (
               <article
                 key={assignment.garmentKey}
-                className="flex min-w-0 flex-col rounded-xl border border-heritage-gold/20 bg-heritage-cream/25 p-4"
+                ref={(element) => {
+                  if (element) {
+                    garmentCardRefs.current.set(assignment.garmentKey, element);
+                  } else {
+                    garmentCardRefs.current.delete(assignment.garmentKey);
+                  }
+                }}
+                className={`flex min-w-0 scroll-mt-28 flex-col rounded-xl border border-heritage-gold/20 bg-heritage-cream/25 p-4 ${
+                  postAssignmentHighlight?.garmentKey === assignment.garmentKey
+                    ? postAssignmentHighlight.kind === "assigned"
+                      ? STEP2_ASSIGNED_HIGHLIGHT_CLASS
+                      : STEP2_NEXT_UNASSIGNED_HIGHLIGHT_CLASS
+                    : ""
+                }`}
                 data-garment-key={assignment.garmentKey}
                 data-assignment-status={assigned ? "assigned" : "unassigned"}
+                data-post-assignment-highlight={
+                  postAssignmentHighlight?.garmentKey === assignment.garmentKey
+                    ? postAssignmentHighlight.kind
+                    : undefined
+                }
               >
                 <div
                   className={
