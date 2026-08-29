@@ -344,7 +344,7 @@ const demographicLegendIndex = populatedMarkup.indexOf("Who is this design for?"
 assert.ok(garmentTypeLegendIndex < fabricSummaryIndex);
 assert.ok(fabricSummaryIndex < standardShirtCardIndex);
 assert.ok(fabricSummaryIndex < demographicLegendIndex);
-assert.equal((populatedMarkup.match(/type="checkbox"/g) || []).length, 11);
+assert.equal((populatedMarkup.match(/type="checkbox"/g) || []).length, 3);
 assert.ok(populatedMarkup.includes("Garment Construction Subtotal"));
 assert.ok(populatedMarkup.includes("€280.00"));
 assert.ok(populatedMarkup.includes("Long Shirt (Agbada)"));

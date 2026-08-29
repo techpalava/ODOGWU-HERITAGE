@@ -70,6 +70,12 @@ const FIRST_VISIBLE_REFERENCE_IMAGE_COUNT = 3;
 export const STEP1_GARMENT_REFERENCE_FRAME_CLASS =
   "relative aspect-[2/1] w-full overflow-hidden rounded-t-2xl bg-[#f4eee6]";
 
+export const STEP1_GARMENT_SELECT_ATTENTION_CLASS =
+  "motion-safe:animate-step1-select-attention motion-reduce:animate-none";
+
+export const STEP1_GARMENT_SELECT_BUTTON_BASE_CLASS =
+  "mt-2.5 inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-xl px-2 text-[11px] font-bold uppercase tracking-wider transition duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-green focus-visible:ring-offset-2 active:scale-[0.97]";
+
 export const Step1GarmentReferencePhoto = ({
   src,
   alt,
@@ -276,14 +282,11 @@ export const GarmentTypeStep = ({
   const garmentCount = presentation.garmentCount;
   const fabricQuantity = presentation.fabricQuantity;
 
-  const handleGarmentChange = (
-    garmentType: FabricGarmentType,
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
+  const toggleGarment = (garmentType: FabricGarmentType) => {
     const nextGarmentTypes = updateGarmentTypeSelection(
       presentation.selectedGarmentTypes,
       garmentType,
-      event.currentTarget.checked,
+      !presentation.selectedGarmentTypes.includes(garmentType),
     );
     const nextPresentation = getGarmentTypeStepPresentation({
       selectedGarmentTypes: nextGarmentTypes,
@@ -381,7 +384,7 @@ export const GarmentTypeStep = ({
             {presentation.categories.map((category, index) => {
               const price = category.constructionPricing;
               const isResolved = price?.status === "resolved";
-              const inputId = `${idPrefix}-${category.garmentType}`;
+              const buttonId = `${idPrefix}-${category.garmentType}`;
               const referenceImage = isStep1GarmentReferenceType(
                 category.garmentType,
               )
@@ -389,14 +392,13 @@ export const GarmentTypeStep = ({
                 : null;
               const referenceAlt = getStep1GarmentReferenceAlt(category.label);
               return (
-                <label
+                <article
                   key={category.garmentType}
-                  htmlFor={inputId}
                   data-testid={`step1-garment-card-${category.garmentType}`}
-                  className={`flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-2xl border transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                  className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border ${
                     category.selected
                       ? "border-heritage-green shadow-sm ring-2 ring-heritage-green/25"
-                      : "border-heritage-gold/20 bg-white hover:border-heritage-gold/60"
+                      : "border-heritage-gold/20 bg-white"
                   } ${
                     category.selected && !isResolved
                       ? "border-amber-500 ring-amber-400/40"
@@ -408,7 +410,7 @@ export const GarmentTypeStep = ({
                     alt={referenceAlt}
                     eager={index < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
                   />
-                  <span
+                  <div
                     className={`flex min-w-0 flex-1 flex-col p-2.5 sm:p-3 ${
                       category.selected && !isResolved
                         ? "bg-amber-50"
@@ -417,51 +419,48 @@ export const GarmentTypeStep = ({
                           : "bg-white"
                     }`}
                   >
-                    <span className="flex min-w-0 items-start gap-2">
-                      <input
-                        id={inputId}
-                        type="checkbox"
-                        checked={category.selected}
-                        onChange={(event) =>
-                          handleGarmentChange(category.garmentType, event)
-                        }
-                        className="mt-0.5 h-5 w-5 shrink-0 accent-heritage-green"
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
-                          <span className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">
-                            {category.label}
-                          </span>
-                          {isResolved && (
-                            <span className="shrink-0 font-mono text-sm font-bold text-heritage-green">
-                              {formatGarmentTypeStepEuro(price.totalPrice)}
-                            </span>
-                          )}
-                        </span>
-                        <span className="mt-1 block break-words text-[11px] leading-relaxed text-heritage-ink/60">
-                          {category.fabricCapacityUsage}
-                        </span>
-                      </span>
-                    </span>
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
+                      <h3 className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">
+                        {category.label}
+                      </h3>
+                      {isResolved && (
+                        <p className="shrink-0 font-mono text-sm font-bold text-heritage-green">
+                          {formatGarmentTypeStepEuro(price.totalPrice)}
+                        </p>
+                      )}
+                    </div>
+                    <p className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60">
+                      {category.fabricCapacityUsage}
+                    </p>
                     {category.selected && !isResolved && (
-                      <span className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
+                      <p className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
                         <AlertCircle aria-hidden="true" size={14} className="mt-0.5 shrink-0" />
                         <span className="min-w-0 break-words">
                           Construction pricing needs review.
                         </span>
-                      </span>
+                      </p>
                     )}
-                    <span
-                      className={`mt-2.5 inline-flex min-h-8 w-full items-center justify-center rounded-xl px-2 text-[11px] font-bold uppercase tracking-wider ${
+                    <button
+                      id={buttonId}
+                      type="button"
+                      aria-pressed={category.selected}
+                      aria-label={
                         category.selected
-                          ? "bg-heritage-green text-white"
-                          : "border border-heritage-gold/40 text-heritage-green"
+                          ? `Deselect ${category.label}`
+                          : `Select ${category.label}`
+                      }
+                      data-testid={`step1-garment-select-${category.garmentType}`}
+                      onClick={() => toggleGarment(category.garmentType)}
+                      className={`${STEP1_GARMENT_SELECT_BUTTON_BASE_CLASS} ${
+                        category.selected
+                          ? "bg-heritage-green text-heritage-cream hover:bg-heritage-forest"
+                          : `${STEP1_GARMENT_SELECT_ATTENTION_CLASS} border border-heritage-green bg-heritage-cream text-heritage-green hover:animate-none hover:-translate-y-0.5 hover:border-heritage-forest hover:bg-white hover:shadow-md`
                       }`}
                     >
                       {category.selected ? "✓ SELECTED" : "SELECT"}
-                    </span>
-                  </span>
-                </label>
+                    </button>
+                  </div>
+                </article>
               );
             })}
           </div>
