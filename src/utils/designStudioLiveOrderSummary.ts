@@ -47,7 +47,8 @@ export type LiveOrderSummaryTotalStatus =
   | "current"
   | "subtotal"
   | "quote_required"
-  | "pending";
+  | "pending"
+  | "hidden";
 
 export interface LiveOrderSummaryLine {
   readonly id: string;
@@ -201,6 +202,30 @@ const measurementStatusLine = (
   };
 };
 
+const constructionSubtotalFromSelectedGarments = (
+  summary: FutureDesignStudioSummary,
+): number | null => {
+  const garments = summary.garmentSummary;
+  if (garments.length === 0) return null;
+  let totalCents = 0;
+  for (const garment of garments) {
+    if (garment.constructionTotalCents === null) {
+      return null;
+    }
+    totalCents += garment.constructionTotalCents;
+  }
+  return totalCents;
+};
+
+const authoritativeConstructionSubtotalCents = (
+  summary: FutureDesignStudioSummary,
+): number | null => {
+  if (summary.pricingSummary.garmentConstructionSubtotal !== null) {
+    return Math.round(summary.pricingSummary.garmentConstructionSubtotal * 100);
+  }
+  return constructionSubtotalFromSelectedGarments(summary);
+};
+
 const knownSubtotalCents = ({
   summary,
   candidatePricing,
@@ -216,12 +241,7 @@ const knownSubtotalCents = ({
       summary.pricingSummary.selectedDesignPrice.selectedDesignPrice * 100,
     );
   }
-  if (summary.pricingSummary.garmentConstructionSubtotal !== null) {
-    return Math.round(
-      summary.pricingSummary.garmentConstructionSubtotal * 100,
-    );
-  }
-  return null;
+  return authoritativeConstructionSubtotalCents(summary);
 };
 
 const resolveTotal = ({
@@ -272,6 +292,15 @@ const resolveTotal = ({
       totalValueLabel: moneyFromCents(subtotalCents),
       totalAmountCents: subtotalCents,
       quoteRequired,
+    };
+  }
+  if (summary.garmentSummary.length === 0 && !quoteRequired) {
+    return {
+      totalStatus: "hidden",
+      totalLabel: "",
+      totalValueLabel: "",
+      totalAmountCents: null,
+      quoteRequired: false,
     };
   }
   return {
@@ -484,9 +513,7 @@ export const projectDesignStudioLiveOrderSummary = ({
 
   const measurementLine = measurementStatusLine(summary, measurementState);
   const constructionSubtotalCents =
-    summary.pricingSummary.garmentConstructionSubtotal !== null
-      ? Math.round(summary.pricingSummary.garmentConstructionSubtotal * 100)
-      : null;
+    authoritativeConstructionSubtotalCents(summary);
   const constructionFooter: LiveOrderSummarySectionFooter | null =
     constructionSubtotalCents === null
       ? null

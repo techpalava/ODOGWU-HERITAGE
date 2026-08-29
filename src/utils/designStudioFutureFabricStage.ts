@@ -951,6 +951,15 @@ export const getFutureGarmentFabricPlanning = ({
   };
 };
 
+export const formatRequiredFabricQuantitySentence = (
+  fabricQuantity: number,
+  garmentCount: number,
+): string => {
+  const fabricLabel = fabricQuantity === 1 ? "fabric" : "fabrics";
+  const garmentLabel = garmentCount === 1 ? "garment" : "garments";
+  return `You need ${fabricQuantity} ${fabricLabel} for your ${garmentCount} ${garmentLabel}.`;
+};
+
 /**
  * Step 1 fabric-progress numerator: committed allocations that include at
  * least one garment from the current selectable Step 1 cards. Additional-only

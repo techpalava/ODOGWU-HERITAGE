@@ -9,10 +9,12 @@ import type {
 } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
+  formatRequiredFabricQuantitySentence,
   getFutureFabricGarmentSelections,
   getFutureGarmentFabricPlanning,
   getGarmentTypeStepSelectedFabricQuantity,
 } from "./src/utils/designStudioFutureFabricStage";
+import { getGarmentTypeStepPresentation } from "./src/components/GarmentTypeStep";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
@@ -469,6 +471,74 @@ assertPlanning(
     requiredGarmentCount: 9,
     requiredFabricQuantity: 6,
   },
+);
+
+assert.equal(
+  formatRequiredFabricQuantitySentence(1, 1),
+  "You need 1 fabric for your 1 garment.",
+);
+assert.equal(
+  formatRequiredFabricQuantitySentence(1, 2),
+  "You need 1 fabric for your 2 garments.",
+);
+assert.equal(
+  formatRequiredFabricQuantitySentence(5, 8),
+  "You need 5 fabrics for your 8 garments.",
+);
+assert.match(
+  formatRequiredFabricQuantitySentence(5, 8),
+  /\.$/,
+  "The customer-facing fabric quantity sentence must include a final period.",
+);
+
+const sevenHalfUnits = getFutureGarmentFabricPlanning({
+  garmentTypeSelection: createSelection([...halfCapacityGarments]),
+  fabricAllocationState: emptyState(),
+});
+assert.equal(sevenHalfUnits.requiredGarmentCount, 7);
+assert.equal(
+  sevenHalfUnits.requiredFabricQuantity,
+  4,
+  "Seven half-unit garments require 4 fabrics, not ceil(7/2) from a different rule.",
+);
+const sevenHalfPlusGown = getFutureGarmentFabricPlanning({
+  garmentTypeSelection: createSelection([
+    ...halfCapacityGarments,
+    "full_length_gown",
+  ]),
+  fabricAllocationState: emptyState(),
+});
+assert.equal(sevenHalfPlusGown.requiredGarmentCount, 8);
+assert.equal(
+  sevenHalfPlusGown.requiredFabricQuantity,
+  5,
+  "Long Dress (2 internal units) must raise the required Fabric quantity from 4 to 5.",
+);
+assert.equal(
+  formatRequiredFabricQuantitySentence(
+    sevenHalfPlusGown.requiredFabricQuantity,
+    sevenHalfPlusGown.requiredGarmentCount,
+  ),
+  "You need 5 fabrics for your 8 garments.",
+);
+
+const step1AllEight = getGarmentTypeStepPresentation({
+  selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],
+  normalizedCustomDetailCatalog: catalog,
+});
+const step2AllEight = getFutureGarmentFabricPlanning({
+  garmentTypeSelection: createSelection([...STEP_1_SELECTABLE_GARMENT_TYPES]),
+  fabricAllocationState: emptyState(),
+});
+assert.equal(step1AllEight.capacityUnits, 9);
+assert.equal(step1AllEight.garmentCount, 8);
+assert.equal(step1AllEight.fabricQuantity, 5);
+assert.equal(step2AllEight.requiredGarmentCount, 8);
+assert.equal(step2AllEight.requiredFabricQuantity, 5);
+assert.equal(
+  step1AllEight.fabricQuantity,
+  step2AllEight.requiredFabricQuantity,
+  "Step 1 and Step 2 must share the same required Fabric quantity.",
 );
 
 console.log("PASS: Garment Type fabric planning and allocation counters");

@@ -27,6 +27,12 @@ export const CANONICAL_PHYSICAL_GARMENT_TYPES: readonly CanonicalPhysicalGarment
   ...STYLE_BASE_GARMENT_TYPES,
 ] as CanonicalPhysicalGarmentType[];
 
+/** Customer-selectable Step 1 garment keys. Agbada remains canonical/internal only. */
+export type CustomerSelectableGarmentType = Exclude<
+  CanonicalPhysicalGarmentType,
+  "agbada"
+>;
+
 /**
  * Authoritative customer-facing garment picker list for Design Studio.
  * Agbada remains canonical/internal but is hidden from NEW customer selection.

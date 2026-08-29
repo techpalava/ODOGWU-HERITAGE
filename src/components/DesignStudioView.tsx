@@ -3393,10 +3393,7 @@ export default function DesignStudioView({
               disabled={!garmentTypeStageCompletion.isComplete}
               className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
             >
-              {step1CatalogueCoverage.status === "no_match" ||
-              step1CatalogueCoverage.status === "empty_catalogue"
-                ? "Continue to Fabric (upload later)"
-                : "Continue to Fabric"}
+              Continue to Fabric
             </button>
           </div>
         </div>
