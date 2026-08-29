@@ -15,6 +15,7 @@ import {
   cancelFutureFabricCatalogueAssignment,
   getFutureFabricAssignmentTargets,
   getFutureUnassignedFabricTargets,
+  formatRequiredFabricQuantitySentence,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
   removeFutureFabricAssignment,
@@ -155,6 +156,15 @@ const assertFabricProgress = (
       `^Garments assigned: ${garmentsAssigned} of ${garmentsRequired}$`,
     ),
   );
+  if (garmentsRequired > 0) {
+    const planningLine = progressRegion.findByProps({
+      "data-fabric-planning-sentence": "true",
+    });
+    assert.equal(
+      textContent(planningLine),
+      formatRequiredFabricQuantitySentence(fabricRequired, garmentsRequired),
+    );
+  }
   assert.equal(
     String(progressRegion.props.className ?? "").includes("sr-only"),
     false,

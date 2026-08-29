@@ -25,6 +25,7 @@ import {
   getFutureFabricStep1AssignmentTargets,
   getFutureUnassignedFabricTargets,
   adaptUntargetedStep1CatalogueCardPresentation,
+  formatRequiredFabricQuantitySentence,
   getFutureFabricCatalogueCancelTargets,
   resolveFutureFabricCatalogueCardPresentation,
   type FutureFabricBulkAssignmentResult,
@@ -1328,6 +1329,17 @@ export const DormantFutureFabricStep = ({
                   completion.requiredGarmentCount,
                 )}
               </p>
+              {completion.requiredGarmentCount > 0 && (
+                <p
+                  data-fabric-planning-sentence="true"
+                  className="mt-2 break-words text-[11px] font-normal leading-relaxed text-heritage-ink/65"
+                >
+                  {formatRequiredFabricQuantitySentence(
+                    requiredFabricQuantity,
+                    completion.requiredGarmentCount,
+                  )}
+                </p>
+              )}
             </div>
           </div>
         </div>
