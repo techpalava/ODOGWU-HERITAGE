@@ -66,6 +66,10 @@ export const getGarmentTypeStepLabel = (
 
 const FIRST_VISIBLE_REFERENCE_IMAGE_COUNT = 3;
 
+/** Compact Step 1 reference frame (~20% shorter than the prior 4:5 crop). */
+export const STEP1_GARMENT_REFERENCE_FRAME_CLASS =
+  "relative aspect-square w-full overflow-hidden rounded-t-2xl bg-[#f4eee6]";
+
 export const Step1GarmentReferencePhoto = ({
   src,
   alt,
@@ -79,7 +83,7 @@ export const Step1GarmentReferencePhoto = ({
 
   return (
     <div
-      className="relative aspect-[4/5] w-full overflow-hidden rounded-t-2xl bg-[#f4eee6]"
+      className={STEP1_GARMENT_REFERENCE_FRAME_CLASS}
       data-testid="step1-garment-reference-frame"
     >
       {failed || !src ? (
@@ -373,7 +377,7 @@ export const GarmentTypeStep = ({
           <p className="mt-4 text-xs leading-relaxed text-heritage-ink/55 lg:col-span-full">
             {STEP1_GARMENT_REFERENCE_DISCLAIMER}
           </p>
-          <div className="mt-4 grid min-w-0 grid-cols-2 gap-3 max-[340px]:grid-cols-1 xl:grid-cols-3 lg:col-span-full">
+          <div className="mt-4 grid min-w-0 grid-cols-2 gap-2.5 max-[340px]:grid-cols-1 xl:grid-cols-3 lg:col-span-full">
             {presentation.categories.map((category, index) => {
               const price = category.constructionPricing;
               const isResolved = price?.status === "resolved";
@@ -405,7 +409,7 @@ export const GarmentTypeStep = ({
                     eager={index < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
                   />
                   <span
-                    className={`flex min-w-0 flex-1 flex-col p-3 sm:p-4 ${
+                    className={`flex min-w-0 flex-1 flex-col p-2.5 sm:p-3 ${
                       category.selected && !isResolved
                         ? "bg-amber-50"
                         : category.selected
@@ -448,7 +452,7 @@ export const GarmentTypeStep = ({
                       </span>
                     )}
                     <span
-                      className={`mt-3 inline-flex min-h-9 w-full items-center justify-center rounded-xl px-2 text-[11px] font-bold uppercase tracking-wider ${
+                      className={`mt-2.5 inline-flex min-h-8 w-full items-center justify-center rounded-xl px-2 text-[11px] font-bold uppercase tracking-wider ${
                         category.selected
                           ? "bg-heritage-green text-white"
                           : "border border-heritage-gold/40 text-heritage-green"

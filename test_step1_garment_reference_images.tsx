@@ -8,6 +8,7 @@ import { act, create } from "react-test-renderer";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import {
   GarmentTypeStep,
+  STEP1_GARMENT_REFERENCE_FRAME_CLASS,
   Step1GarmentReferencePhoto,
   getGarmentTypeStepLabel,
 } from "./src/components/GarmentTypeStep";
@@ -89,6 +90,10 @@ assert.equal(
 );
 assert.ok(emptyMarkup.includes('loading="eager"'));
 assert.ok(emptyMarkup.includes('loading="lazy"'));
+assert.ok(
+  emptyMarkup.includes('class="relative aspect-square w-full'),
+  "Step 1 reference frames must use the compact square aspect crop",
+);
 
 for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
   assert.ok(isStep1GarmentReferenceType(garmentType));
@@ -153,7 +158,8 @@ assert.equal(
 const fallbackFrame = fallbackRenderer.root.findByProps({
   "data-testid": "step1-garment-reference-frame",
 });
-assert.ok(fallbackFrame.props.className.includes("aspect-[4/5]"));
+assert.ok(fallbackFrame.props.className.includes("aspect-square"));
+assert.equal(STEP1_GARMENT_REFERENCE_FRAME_CLASS.includes("aspect-square"), true);
 
 let selectableRenderer: ReturnType<typeof create>;
 act(() => {
