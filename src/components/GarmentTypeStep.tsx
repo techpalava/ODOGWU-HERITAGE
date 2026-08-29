@@ -66,9 +66,9 @@ export const getGarmentTypeStepLabel = (
 
 const FIRST_VISIBLE_REFERENCE_IMAGE_COUNT = 3;
 
-/** Compact Step 1 reference frame (~20% shorter than the prior 4:5 crop). */
+/** Half-height Step 1 reference frame (~50% shorter than the prior square crop). */
 export const STEP1_GARMENT_REFERENCE_FRAME_CLASS =
-  "relative aspect-square w-full overflow-hidden rounded-t-2xl bg-[#f4eee6]";
+  "relative aspect-[2/1] w-full overflow-hidden rounded-t-2xl bg-[#f4eee6]";
 
 export const Step1GarmentReferencePhoto = ({
   src,
@@ -88,15 +88,15 @@ export const Step1GarmentReferencePhoto = ({
     >
       {failed || !src ? (
         <div
-          className="flex h-full w-full flex-col items-center justify-center gap-2 px-3 text-center"
+          className="flex h-full w-full flex-col items-center justify-center gap-1 px-2 text-center"
           data-testid="step1-garment-reference-fallback"
         >
           <ImageOff
             aria-hidden="true"
-            size={28}
+            size={16}
             className="text-heritage-ink/35"
           />
-          <span className="text-[11px] leading-snug text-heritage-ink/55">
+          <span className="text-[10px] leading-snug text-heritage-ink/55">
             Reference image unavailable
           </span>
         </div>

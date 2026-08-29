@@ -146,29 +146,31 @@ export const DesignStudioOrderSummary = ({
           ))}
         </div>
       ) : null}
-      <div
-        className="mt-2.5 border-t border-heritage-gold/30 pt-2.5"
-        data-testid="live-order-summary-total"
-        data-total-status={view.totalStatus}
-      >
-        <div className="flex min-w-0 items-baseline justify-between gap-2">
-          <p className="min-w-0 break-words text-[13px] font-semibold text-heritage-ink">
-            {view.totalLabel}
-          </p>
-          <p
-            className="shrink-0 text-right font-serif text-base font-bold leading-tight text-heritage-green"
-            data-testid="live-order-summary-total-value"
-          >
-            {view.totalValueLabel}
-          </p>
+      {view.totalStatus === "hidden" ? null : (
+        <div
+          className="mt-2.5 border-t border-heritage-gold/30 pt-2.5"
+          data-testid="live-order-summary-total"
+          data-total-status={view.totalStatus}
+        >
+          <div className="flex min-w-0 items-baseline justify-between gap-2">
+            <p className="min-w-0 break-words text-[13px] font-semibold text-heritage-ink">
+              {view.totalLabel}
+            </p>
+            <p
+              className="shrink-0 text-right font-serif text-base font-bold leading-tight text-heritage-green"
+              data-testid="live-order-summary-total-value"
+            >
+              {view.totalValueLabel}
+            </p>
+          </div>
+          {view.quoteRequired ? (
+            <p className="mt-1.5 text-[10px] leading-snug text-heritage-ink/65">
+              A custom shipping quote is required before the final payable total
+              can be confirmed.
+            </p>
+          ) : null}
         </div>
-        {view.quoteRequired ? (
-          <p className="mt-1.5 text-[10px] leading-snug text-heritage-ink/65">
-            A custom shipping quote is required before the final payable total
-            can be confirmed.
-          </p>
-        ) : null}
-      </div>
+      )}
     </aside>
   );
 };

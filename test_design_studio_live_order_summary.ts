@@ -506,9 +506,113 @@ assert.ok(
 );
 assert.equal(early.view.totalLabel, LIVE_ORDER_SUMMARY_CURRENT_SUBTOTAL_LABEL);
 assert.notEqual(early.view.totalLabel, LIVE_ORDER_SUMMARY_TOTAL_LABEL);
-assert.equal(early.view.totalStatus, "pending");
-assert.equal(early.view.totalValueLabel, "Pending");
-assert.equal(early.view.totalAmountCents, null);
+assert.equal(early.view.totalStatus, "subtotal");
+assert.notEqual(early.view.totalValueLabel, "Pending");
+assert.ok(early.view.totalAmountCents);
+assert.equal(
+  early.view.totalAmountCents,
+  section(early.view, "construction").footer?.amountCents,
+);
+assert.equal(
+  early.view.totalValueLabel,
+  section(early.view, "construction").footer?.amountLabel,
+);
+assert.equal(
+  JSON.stringify(early.view).includes("Pending"),
+  false,
+);
+
+const emptyStep1 = buildAuthority({
+  garmentTypes: [],
+  includeStyle: false,
+  completeMeasurements: false,
+  measurementRoute: null,
+});
+assert.equal(emptyStep1.summary.garmentSummary.length, 0);
+assert.equal(emptyStep1.view.totalStatus, "hidden");
+assert.equal(emptyStep1.view.totalAmountCents, null);
+assert.equal(emptyStep1.view.totalValueLabel, "");
+assert.equal(emptyStep1.view.totalLabel, "");
+assert.equal(JSON.stringify(emptyStep1.view).includes("Pending"), false);
+assert.equal(JSON.stringify(emptyStep1.view).includes("Current Subtotal"), false);
+assert.equal(JSON.stringify(emptyStep1.view).includes('"Total"'), false);
+assert.equal(JSON.stringify(emptyStep1.view).includes("€0.00"), false);
+hiddenSection(emptyStep1.view, "construction");
+
+const oneGarment = buildAuthority({
+  garmentTypes: ["shirt"],
+  includeStyle: false,
+  completeMeasurements: false,
+  measurementRoute: null,
+});
+const oneGarmentConstructionCents =
+  oneGarment.summary.garmentSummary[0]?.constructionTotalCents ?? null;
+assert.ok(oneGarmentConstructionCents);
+assert.equal(
+  section(oneGarment.view, "construction").footer?.amountCents,
+  oneGarmentConstructionCents,
+);
+assert.equal(oneGarment.view.totalStatus, "subtotal");
+assert.equal(oneGarment.view.totalLabel, LIVE_ORDER_SUMMARY_CURRENT_SUBTOTAL_LABEL);
+assert.equal(oneGarment.view.totalAmountCents, oneGarmentConstructionCents);
+assert.equal(
+  oneGarment.view.totalValueLabel,
+  section(oneGarment.view, "construction").footer?.amountLabel,
+);
+assert.equal(JSON.stringify(oneGarment.view).includes("Pending"), false);
+assert.notEqual(oneGarment.view.totalValueLabel, "€0.00");
+
+const multipleGarments = buildAuthority({
+  garmentTypes: ["shirt", "trouser", "dress"],
+  demographic: "unisex",
+  includeStyle: false,
+  completeMeasurements: false,
+  measurementRoute: null,
+});
+const multipleConstructionCents = multipleGarments.summary.garmentSummary.reduce(
+  (total, garment) => total + (garment.constructionTotalCents || 0),
+  0,
+);
+assert.equal(multipleGarments.summary.garmentSummary.length, 3);
+assert.equal(
+  section(multipleGarments.view, "construction").footer?.amountCents,
+  multipleConstructionCents,
+);
+assert.equal(multipleGarments.view.totalStatus, "subtotal");
+assert.equal(
+  multipleGarments.view.totalLabel,
+  LIVE_ORDER_SUMMARY_CURRENT_SUBTOTAL_LABEL,
+);
+assert.equal(multipleGarments.view.totalAmountCents, multipleConstructionCents);
+assert.equal(
+  multipleGarments.view.totalValueLabel,
+  section(multipleGarments.view, "construction").footer?.amountLabel,
+);
+assert.equal(JSON.stringify(multipleGarments.view).includes("Pending"), false);
+assert.equal(
+  multipleGarments.view.totalAmountCents,
+  section(multipleGarments.view, "construction").footer?.amountCents,
+  "Current Subtotal must equal the authoritative construction subtotal",
+);
+
+const step2PreFabric = buildAuthority({
+  garmentTypes: ["shirt", "trouser"],
+  demographic: "unisex",
+  includeStyle: false,
+  completeMeasurements: false,
+  measurementRoute: null,
+});
+hiddenSection(step2PreFabric.view, "fabrics");
+assert.equal(step2PreFabric.view.totalStatus, "subtotal");
+assert.equal(
+  step2PreFabric.view.totalLabel,
+  LIVE_ORDER_SUMMARY_CURRENT_SUBTOTAL_LABEL,
+);
+assert.equal(
+  step2PreFabric.view.totalAmountCents,
+  section(step2PreFabric.view, "construction").footer?.amountCents,
+);
+assert.equal(JSON.stringify(step2PreFabric.view).includes("Pending"), false);
 
 const step1Only = buildAuthority({
   garmentTypes: ["shirt", "trouser"],

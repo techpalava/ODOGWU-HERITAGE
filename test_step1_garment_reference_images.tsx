@@ -91,9 +91,10 @@ assert.equal(
 assert.ok(emptyMarkup.includes('loading="eager"'));
 assert.ok(emptyMarkup.includes('loading="lazy"'));
 assert.ok(
-  emptyMarkup.includes('class="relative aspect-square w-full'),
-  "Step 1 reference frames must use the compact square aspect crop",
+  emptyMarkup.includes('class="relative aspect-[2/1] w-full'),
+  "Step 1 reference frames must use the half-height 2/1 aspect crop",
 );
+assert.equal(emptyMarkup.includes("aspect-square"), false);
 
 for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
   assert.ok(isStep1GarmentReferenceType(garmentType));
@@ -158,8 +159,9 @@ assert.equal(
 const fallbackFrame = fallbackRenderer.root.findByProps({
   "data-testid": "step1-garment-reference-frame",
 });
-assert.ok(fallbackFrame.props.className.includes("aspect-square"));
-assert.equal(STEP1_GARMENT_REFERENCE_FRAME_CLASS.includes("aspect-square"), true);
+assert.ok(fallbackFrame.props.className.includes("aspect-[2/1]"));
+assert.equal(STEP1_GARMENT_REFERENCE_FRAME_CLASS.includes("aspect-[2/1]"), true);
+assert.equal(STEP1_GARMENT_REFERENCE_FRAME_CLASS.includes("aspect-square"), false);
 
 let selectableRenderer: ReturnType<typeof create>;
 act(() => {
