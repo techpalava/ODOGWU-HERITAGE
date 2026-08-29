@@ -15,6 +15,7 @@ import {
   cancelFutureFabricCatalogueAssignment,
   getFutureFabricAssignmentTargets,
   getFutureUnassignedFabricTargets,
+  formatRequiredFabricQuantitySentence,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
   removeFutureFabricAssignment,
@@ -155,6 +156,15 @@ const assertFabricProgress = (
       `^Garments assigned: ${garmentsAssigned} of ${garmentsRequired}$`,
     ),
   );
+  if (garmentsRequired > 0) {
+    const planningLine = progressRegion.findByProps({
+      "data-fabric-planning-sentence": "true",
+    });
+    assert.equal(
+      textContent(planningLine),
+      formatRequiredFabricQuantitySentence(fabricRequired, garmentsRequired),
+    );
+  }
   assert.equal(
     String(progressRegion.props.className ?? "").includes("sr-only"),
     false,
@@ -2427,6 +2437,18 @@ try {
   const findFabricCard = (root: ReactTestInstance, fabricCode: string) =>
     root
       .findAllByProps({ "data-fabric-card": "true" })
+      .find(
+        (card) =>
+          card.props["data-fabric-code"] === fabricCode &&
+          card.props["data-fabric-remove"] !== "true",
+      ) ||
+    root
+      .findAllByProps({ "data-fabric-card": "true" })
+      .find((card) => card.props["data-fabric-code"] === fabricCode);
+
+  const findFabricRemoveButton = (root: ReactTestInstance, fabricCode: string) =>
+    root
+      .findAllByProps({ "data-fabric-remove": "true" })
       .find((card) => card.props["data-fabric-code"] === fabricCode);
 
   let inUseCancelState = applyFutureFabricCardSelection({
@@ -2758,6 +2780,18 @@ try {
   );
   assert.equal(remainingSharedCard?.props["data-fabric-action"], "use_again");
   assert.equal(remainingSharedCard?.props["data-fabric-remove"], undefined);
+  const remainingSharedRemove = findFabricRemoveButton(
+    sharedCodeRenderer.root,
+    "INLINE-A",
+  );
+  assert.ok(
+    remainingSharedRemove,
+    "USE AGAIN must keep the X removal control for the remaining assignment.",
+  );
+  assert.equal(
+    remainingSharedRemove?.props["data-fabric-cancel-garment-key"],
+    "base:trouser",
+  );
 
   let sharedTrouserState = applyFutureFabricCardSelection({
     state: FabricAllocationStateEngine.initialize(),
@@ -2902,6 +2936,9 @@ try {
   assert.equal(useAgainCard?.props["data-fabric-status"], "USE AGAIN");
   assert.equal(useAgainCard?.props["data-fabric-action"], "use_again");
   assert.equal(useAgainCard?.props["data-fabric-remove"], undefined);
+  const useAgainRemove = findFabricRemoveButton(useAgainRenderer.root, "INLINE-A");
+  assert.ok(useAgainRemove, "USE AGAIN must render a distinct X removal control.");
+  assert.equal(useAgainRemove?.props["data-fabric-cancel-garment-key"], "base:shirt");
   assert.equal(
     findFabricCard(useAgainRenderer.root, "INLINE-B")?.props["data-fabric-status"],
     "SELECT",

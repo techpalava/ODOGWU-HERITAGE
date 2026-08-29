@@ -838,6 +838,8 @@ assert.doesNotMatch(
 assert.match(stepSource, /data-fabric-progress="true"/);
 assert.match(stepSource, /data-fabric-selection-progress="true"/);
 assert.match(stepSource, /data-garment-assignment-progress="true"/);
+assert.match(stepSource, /data-fabric-planning-sentence="true"/);
+assert.match(stepSource, /formatRequiredFabricQuantitySentence/);
 assert.match(stepSource, /Fabrics Selected:/);
 assert.doesNotMatch(
   stepSource,

@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
-import { AlertCircle, CheckCircle2, ImageOff, Layers3, UsersRound } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2, ImageOff, Layers3, UsersRound, X } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type {
   CustomDetailDemographic,
@@ -452,11 +452,27 @@ export const GarmentTypeStep = ({
                       onClick={() => toggleGarment(category.garmentType)}
                       className={`${STEP1_GARMENT_SELECT_BUTTON_BASE_CLASS} ${
                         category.selected
-                          ? "bg-heritage-green text-heritage-cream hover:bg-heritage-forest"
+                          ? "group justify-between gap-0 bg-heritage-green px-0 text-heritage-cream hover:bg-heritage-forest"
                           : `${STEP1_GARMENT_SELECT_ATTENTION_CLASS} border border-heritage-green bg-heritage-cream text-heritage-green hover:animate-none hover:-translate-y-0.5 hover:border-heritage-forest hover:bg-white hover:shadow-md`
                       }`}
                     >
-                      {category.selected ? "✓ SELECTED" : "SELECT"}
+                      {category.selected ? (
+                        <>
+                          <span className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 px-2">
+                            <Check aria-hidden="true" size={14} />
+                            SELECTED
+                          </span>
+                          <span
+                            aria-hidden="true"
+                            data-step1-deselect-cue="true"
+                            className="inline-flex size-11 shrink-0 items-center justify-center border-l border-white/20 text-heritage-cream/90 group-hover:text-red-200"
+                          >
+                            <X size={16} />
+                          </span>
+                        </>
+                      ) : (
+                        "SELECT"
+                      )}
                     </button>
                   </div>
                 </article>

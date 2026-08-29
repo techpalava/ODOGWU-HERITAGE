@@ -20,6 +20,8 @@ export const FutureFabricCatalogueCard = ({
   actionDisabled,
   actionPressed,
   onAction,
+  onRemove,
+  removeTargetGarmentLabel,
   dataAttributes,
 }: {
   fabric: Fabric;
@@ -34,6 +36,10 @@ export const FutureFabricCatalogueCard = ({
   onAction: (
     event?: { currentTarget: HTMLElement },
   ) => void;
+  onRemove?: (
+    event?: { currentTarget: HTMLElement },
+  ) => void;
+  removeTargetGarmentLabel?: string;
   dataAttributes?: Record<string, string | undefined>;
 }) => {
   const availabilityMessage = getFabricAvailabilityMessage(fabric);
@@ -71,8 +77,17 @@ export const FutureFabricCatalogueCard = ({
   const cancelAccessibleName = opensRemovalChooser
     ? `Choose garment to remove ${fabric.name} from`
     : `Remove ${fabric.name} from ${
-        targetGarmentLabel || "the selected garment"
+        removeTargetGarmentLabel ||
+        targetGarmentLabel ||
+        "the selected garment"
       }`;
+  const canShowRemoveControl =
+    !availabilityMessage &&
+    cancelGarmentKeys.length > 0 &&
+    (presentation.action === "cancel" || presentation.action === "use_again");
+  const handleRemove = (event?: { currentTarget: HTMLElement }) => {
+    (onRemove ?? onAction)(event);
+  };
   const describedByValue =
     [describedBy, stockBadgeId].filter(Boolean).join(" ") || undefined;
   const imageUrl = hasUsableFabricImage(fabric) ? fabric.image!.trim() : null;
@@ -88,6 +103,38 @@ export const FutureFabricCatalogueCard = ({
   const showImage = Boolean(imageUrl) && !imageFailed;
   const actionClassName =
     "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-3 text-center text-xs font-bold uppercase leading-snug tracking-wider whitespace-normal break-words text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45";
+  const useAgainSplitClassName =
+    "inline-flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-heritage-green px-3 text-center text-xs font-bold uppercase leading-snug tracking-wider whitespace-normal break-words text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
+  const removeButtonClassName =
+    "inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/30 bg-white text-heritage-green transition hover:border-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
+  const removeButton = canShowRemoveControl ? (
+    <button
+      type="button"
+      onClick={(event) => {
+        if (event && typeof event.stopPropagation === "function") {
+          event.stopPropagation();
+        }
+        handleRemove(event);
+      }}
+      data-fabric-card="true"
+      data-fabric-code={fabric.code}
+      data-fabric-status={resolvedStatusLabel}
+      data-fabric-action="cancel"
+      data-fabric-remove="true"
+      data-fabric-cancel-garment-key={
+        presentation.cancelGarmentKey ?? undefined
+      }
+      data-fabric-cancel-count={String(cancelGarmentKeys.length)}
+      data-fabric-remove-chooser={
+        opensRemovalChooser ? "true" : undefined
+      }
+      aria-label={cancelAccessibleName}
+      aria-describedby={describedByValue}
+      className={removeButtonClassName}
+    >
+      <X aria-hidden="true" size={16} />
+    </button>
+  ) : null;
 
   return (
     <article
@@ -149,7 +196,7 @@ export const FutureFabricCatalogueCard = ({
             {availabilityMessage}
           </p>
         )}
-        {isCancelAction ? (
+        {isCancelAction && removeButton ? (
           <div className="mt-auto flex min-w-0 items-stretch gap-2 pt-4">
             <span
               data-fabric-in-use="true"
@@ -157,27 +204,28 @@ export const FutureFabricCatalogueCard = ({
             >
               IN USE
             </span>
+            {removeButton}
+          </div>
+        ) : presentation.action === "use_again" && removeButton ? (
+          <div className="mt-auto flex min-w-0 items-stretch gap-2 pt-4">
             <button
               type="button"
+              disabled={disabled}
+              aria-pressed={actionPressed}
               onClick={onAction}
               data-fabric-card="true"
               data-fabric-code={fabric.code}
               data-fabric-status={resolvedStatusLabel}
-              data-fabric-action="cancel"
-              data-fabric-remove="true"
-              data-fabric-cancel-garment-key={
-                presentation.cancelGarmentKey ?? undefined
-              }
-              data-fabric-cancel-count={String(cancelGarmentKeys.length)}
-              data-fabric-remove-chooser={
-                opensRemovalChooser ? "true" : undefined
-              }
-              aria-label={cancelAccessibleName}
+              data-fabric-action="use_again"
+              aria-label={`${resolvedStatusLabel} ${fabric.name}${
+                targetGarmentLabel ? ` for ${targetGarmentLabel}` : ""
+              }`}
               aria-describedby={describedByValue}
-              className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/30 bg-white text-heritage-green transition hover:border-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              className={useAgainSplitClassName}
             >
-              <X aria-hidden="true" size={16} />
+              {resolvedActionLabel || resolvedStatusLabel}
             </button>
+            {removeButton}
           </div>
         ) : (
           <button

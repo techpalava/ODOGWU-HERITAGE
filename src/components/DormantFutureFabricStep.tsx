@@ -24,6 +24,9 @@ import {
   getFutureFabricAssignmentTargets,
   getFutureFabricStep1AssignmentTargets,
   getFutureUnassignedFabricTargets,
+  adaptUntargetedStep1CatalogueCardPresentation,
+  formatRequiredFabricQuantitySentence,
+  getFutureFabricCatalogueCancelTargets,
   resolveFutureFabricCatalogueCardPresentation,
   type FutureFabricBulkAssignmentResult,
   type FutureFabricCatalogueCancellationResult,
@@ -1190,20 +1193,16 @@ export const DormantFutureFabricStep = ({
     );
     const cardPresentation: FutureFabricCatalogueCardPresentation =
       step1Presentation && useStep1CardPresentation
-        ? {
-            status:
-              step1Presentation.status === "UNAVAILABLE"
-                ? "SELECT"
-                : step1Presentation.status,
-            action:
-              step1Presentation.action === "none"
-                ? "none"
-                : step1Presentation.action === "use_again"
-                  ? "use_again"
-                  : "select",
-            cancelGarmentKey: null,
-            cancelGarmentKeys: [],
-          }
+        ? adaptUntargetedStep1CatalogueCardPresentation({
+            step1Status: step1Presentation.status,
+            step1Action: step1Presentation.action,
+            cancelGarmentKeys: getFutureFabricCatalogueCancelTargets({
+              fabricCode: fabric.code,
+              garmentTypeSelection,
+              fabricAllocationState,
+              currentTargetGarmentKey: null,
+            }),
+          })
         : resolveFutureFabricCatalogueCardPresentation({
             fabricCode: fabric.code,
             garmentTypeSelection,
@@ -1234,6 +1233,28 @@ export const DormantFutureFabricStep = ({
         : currentTarget
           ? getFutureGarmentLabel(currentTarget.assignment.garmentType)
           : undefined;
+    const handleCatalogueRemove = (event?: { currentTarget: HTMLElement }) => {
+      if (
+        cancelGarmentKeys.length === 0 ||
+        getFabricAvailabilityMessage(fabric)
+      ) {
+        return;
+      }
+      if (cancelGarmentKeys.length === 1) {
+        removeAssignedFabric(
+          cancelGarmentKeys[0]!,
+          singleCancelLabel || "the selected garment",
+          fabric.name,
+        );
+        return;
+      }
+      closeStep1FabricAssignment();
+      fabricRemovalTriggerRef.current = event?.currentTarget || null;
+      setPendingFabricRemoval({
+        fabric,
+        targets: labeledCancelTargets,
+      });
+    };
 
     return (
       <FutureFabricCatalogueCard
@@ -1241,32 +1262,13 @@ export const DormantFutureFabricStep = ({
         fabric={fabric}
         presentation={cardPresentation}
         targetGarmentLabel={targetGarmentLabel}
+        removeTargetGarmentLabel={singleCancelLabel || undefined}
         stockBadgeIdPrefix="future-fabric-stock"
         describedBy="future-fabric-catalogue-help future-fabric-assignment-status"
         onAction={(event) => {
-          if (
-            cardPresentation.action === "cancel" &&
-            cancelGarmentKeys.length > 0 &&
-            !getFabricAvailabilityMessage(fabric)
-          ) {
-            if (cancelGarmentKeys.length === 1) {
-              removeAssignedFabric(
-                cancelGarmentKeys[0]!,
-                singleCancelLabel || "the selected garment",
-                fabric.name,
-              );
-              return;
-            }
-            closeStep1FabricAssignment();
-            fabricRemovalTriggerRef.current = event?.currentTarget || null;
-            setPendingFabricRemoval({
-              fabric,
-              targets: labeledCancelTargets,
-            });
-            return;
-          }
           handleFabricSelection(fabric, event?.currentTarget);
         }}
+        onRemove={handleCatalogueRemove}
       />
     );
   };
@@ -1327,6 +1329,17 @@ export const DormantFutureFabricStep = ({
                   completion.requiredGarmentCount,
                 )}
               </p>
+              {completion.requiredGarmentCount > 0 && (
+                <p
+                  data-fabric-planning-sentence="true"
+                  className="mt-2 break-words text-[11px] font-normal leading-relaxed text-heritage-ink/65"
+                >
+                  {formatRequiredFabricQuantitySentence(
+                    requiredFabricQuantity,
+                    completion.requiredGarmentCount,
+                  )}
+                </p>
+              )}
             </div>
           </div>
         </div>
