@@ -86,6 +86,8 @@ assert.ok(emptyMarkup.includes("Standard Shirt"));
 assert.ok(emptyMarkup.includes("Uses 1/2 fabric capacity unit."));
 assert.ok(emptyMarkup.includes(">SELECT<"));
 assert.equal(emptyMarkup.includes("✓ SELECTED"), false);
+assert.equal(emptyMarkup.includes("SELECTED"), false);
+assert.equal(emptyMarkup.includes('data-step1-deselect-cue="true"'), false);
 assert.equal(
   (emptyMarkup.match(/type="checkbox"/g) || []).length,
   3,
@@ -133,7 +135,9 @@ assert.ok(
   selectedMarkup.includes(`src="${STEP1_GARMENT_REFERENCE_IMAGES.shirt.src}"`),
   "Selected cards must keep the same reference image visible",
 );
-assert.ok(selectedMarkup.includes("✓ SELECTED"));
+assert.ok(selectedMarkup.includes("SELECTED"));
+assert.ok(selectedMarkup.includes('data-step1-deselect-cue="true"'));
+assert.equal(selectedMarkup.includes("✓ SELECTED"), false);
 assert.ok(selectedMarkup.includes("border-heritage-green"));
 assert.ok(selectedMarkup.includes('id="garment-type-step-shirt"'));
 assert.ok(selectedMarkup.includes('aria-pressed="true"'));
@@ -231,6 +235,11 @@ const shirtSelect = selectableRenderer.root.findByProps({
 assert.equal(shirtSelect.props.type, "button");
 assert.equal(shirtSelect.props["aria-pressed"], false);
 assert.equal(shirtSelect.props["aria-label"], "Select Standard Shirt");
+assert.equal(
+  shirtSelect.findAllByProps({ "data-step1-deselect-cue": "true" }).length,
+  0,
+  "Unselected SELECT must not render the selected X cue",
+);
 assert.ok(
   shirtSelect.props.className.includes(STEP1_GARMENT_SELECT_ATTENTION_CLASS),
 );
@@ -249,6 +258,18 @@ const selectedShirtSelect = selectableRenderer.root.findByProps({
 });
 assert.equal(selectedShirtSelect.props["aria-pressed"], true);
 assert.equal(selectedShirtSelect.props["aria-label"], "Deselect Standard Shirt");
+assert.equal(selectedShirtSelect.props.type, "button");
+assert.equal(
+  selectedShirtSelect.findAll(
+    (node) => node !== selectedShirtSelect && node.props?.type === "button",
+  ).length,
+  0,
+  "SELECTED must remain one native button without a nested X control",
+);
+const shirtDeselectCue = selectedShirtSelect.findByProps({
+  "data-step1-deselect-cue": "true",
+});
+assert.equal(shirtDeselectCue.props["aria-hidden"], "true");
 assert.equal(
   selectedShirtSelect.props.className.includes(STEP1_GARMENT_SELECT_ATTENTION_CLASS),
   false,
@@ -286,6 +307,16 @@ assert.deepEqual(selectedGarmentTypes, ["shirt", "trouser", "dress"]);
 act(() => {
   selectableRenderer.update(renderSelectable(selectedGarmentTypes));
 });
+for (const garmentType of ["shirt", "trouser", "dress"] as const) {
+  const selectedControl = selectableRenderer.root.findByProps({
+    "data-testid": `step1-garment-select-${garmentType}`,
+  });
+  assert.equal(selectedControl.props["aria-pressed"], true);
+  assert.ok(
+    selectedControl.findByProps({ "data-step1-deselect-cue": "true" }),
+    `${garmentType} selected control must show the X deselect cue`,
+  );
+}
 act(() => {
   selectableRenderer.root
     .findByProps({ "data-testid": "step1-garment-select-trouser" })
@@ -293,6 +324,38 @@ act(() => {
 });
 assert.deepEqual(selectedGarmentTypes, ["shirt", "dress"]);
 assert.equal(garmentChangeCount, 6);
+act(() => {
+  selectableRenderer.update(renderSelectable(selectedGarmentTypes));
+});
+assert.equal(
+  selectableRenderer.root.findByProps({
+    "data-testid": "step1-garment-select-shirt",
+  }).props["aria-pressed"],
+  true,
+);
+assert.ok(
+  selectableRenderer.root
+    .findByProps({ "data-testid": "step1-garment-select-shirt" })
+    .findByProps({ "data-step1-deselect-cue": "true" }),
+);
+assert.equal(
+  selectableRenderer.root.findByProps({
+    "data-testid": "step1-garment-select-dress",
+  }).props["aria-pressed"],
+  true,
+);
+assert.equal(
+  selectableRenderer.root.findByProps({
+    "data-testid": "step1-garment-select-trouser",
+  }).props["aria-pressed"],
+  false,
+);
+assert.equal(
+  selectableRenderer.root
+    .findByProps({ "data-testid": "step1-garment-select-trouser" })
+    .findAllByProps({ "data-step1-deselect-cue": "true" }).length,
+  0,
+);
 assert.ok(
   selectableRenderer.root.findByProps({
     "data-testid": "step1-garment-card-shirt",
