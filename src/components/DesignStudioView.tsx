@@ -1066,6 +1066,7 @@ export default function DesignStudioView({
       garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
       garmentKey,
       fabricCode: fabric.code,
+      fabrics,
     });
     setFabricAllocationState(nextState);
     return nextState;
@@ -3056,6 +3057,7 @@ export default function DesignStudioView({
       garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
       fabricCode,
       garmentKeys,
+      fabrics,
     });
     if (result.status === "assigned") {
       setFabricAllocationState(result.state);
@@ -3089,12 +3091,14 @@ export default function DesignStudioView({
         (allocation) => allocation.allocationId === current.activeAllocationId,
       );
       if (!activeAllocation) return current;
-      return assignFutureFabricToGarment({
+      const result = assignFutureFabricToGarment({
         state: current,
         garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
         garmentKey,
         fabricCode: activeAllocation.fabricCode,
-      }).state;
+        fabrics,
+      });
+      return result.status === "assigned" ? result.state : current;
     });
   };
   const handleChooseAnotherFutureFabric = () => {
@@ -3215,6 +3219,7 @@ export default function DesignStudioView({
       garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
       garmentKey: additionalGarmentFabricTransaction.garmentKey,
       fabricCode: resolved.fabric.code,
+      fabrics,
     });
     const result = confirmAdditionalGarmentFabricAssignment({
       previousState: previous,

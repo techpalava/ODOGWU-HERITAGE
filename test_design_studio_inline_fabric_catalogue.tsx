@@ -4215,26 +4215,28 @@ try {
     stockCatalogueRenderer.root,
     "STOCK-IN-ZERO",
   );
-  assert.equal(inStockZeroBadge?.props["data-fabric-stock-label"], "In Stock");
-  assert.match(textContent(inStockZeroBadge ?? null), /^In Stock$/);
-  assert.doesNotMatch(
-    textContent(inStockZeroBadge ?? null),
-    /: 0$/,
-    "Contradictory IN_STOCK + stock 0 must not show ': 0'.",
+  assert.equal(
+    inStockZeroBadge?.props["data-fabric-stock-label"],
+    "Out of Stock",
   );
+  assert.match(textContent(inStockZeroBadge ?? null), /^Out of Stock$/);
   const inStockZeroCard = stockCatalogueRenderer.root
     .findAllByProps({ "data-fabric-card": "true" })
     .find((card) => card.props["data-fabric-code"] === "STOCK-IN-ZERO");
-  assert.ok(
-    !inStockZeroCard?.props.disabled,
-    "IN_STOCK fabrics remain selectable even when stock is zero.",
+  assert.equal(
+    inStockZeroCard?.props.disabled,
+    true,
+    "Numeric stock 0 must block new Fabric selection even when stockStatus is IN_STOCK.",
   );
   const lowStockZeroBadge = findStockBadge(
     stockCatalogueRenderer.root,
     "STOCK-LOW-ZERO",
   );
-  assert.equal(lowStockZeroBadge?.props["data-fabric-stock-label"], "Low Stock");
-  assert.match(textContent(lowStockZeroBadge ?? null), /^Low Stock$/);
+  assert.equal(
+    lowStockZeroBadge?.props["data-fabric-stock-label"],
+    "Out of Stock",
+  );
+  assert.match(textContent(lowStockZeroBadge ?? null), /^Out of Stock$/);
   assert.doesNotMatch(
     textContent(lowStockZeroBadge ?? null),
     /: 0$/,

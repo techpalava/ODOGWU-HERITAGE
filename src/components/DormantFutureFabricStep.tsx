@@ -36,6 +36,7 @@ import {
   formatFabricQuantityLimitChangeCopy,
   formatFabricQuantityLimitReachedCopy,
   formatFabricQuantityOverAllocatedCopy,
+  formatFutureFabricStockOverAllocatedBlockerMessage,
   formatRequiredFabricQuantitySentence,
   getFutureFabricCatalogueCancelTargets,
   isPhysicalFabricQuantityOverAllocated,
@@ -58,6 +59,11 @@ import {
   shouldOpenStep1FabricGroupingDialog,
   type PendingStep1FabricAssignment,
 } from "../utils/step1FabricAssignmentPopup";
+import {
+  getFabricNewAllocationStockConstraintMessage,
+  getOrderAwareFabricStockPresentation,
+  formatFabricStockExhaustedCopy,
+} from "../utils/fabricStockAvailability";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 
 export { isUsableFabricColorHex } from "./AssignedFabricPreview";
@@ -76,6 +82,8 @@ const blockerMessages: Record<
   MALFORMED_ASSIGNMENT: "One garment assignment needs review before this step can continue.",
   FABRIC_QUANTITY_OVER_ALLOCATED:
     "Your saved Fabric selections use more fabrics than this order requires. Remove or change Fabric assignments until the required number remains.",
+  FABRIC_STOCK_OVER_ALLOCATED:
+    "One or more Fabric selections exceed available stock. Remove or change a Fabric Selection.",
 };
 
 interface DormantFutureFabricStepProps {
@@ -524,6 +532,7 @@ export const DormantFutureFabricStep = ({
         garmentTypeSelection,
         fabricAllocationState,
         fabricCode: pendingStep1FabricAssignment.fabricCode,
+        fabrics,
       })
     : [];
   const step1AssignmentDialogFabric = pendingStep1FabricAssignment
@@ -540,6 +549,7 @@ export const DormantFutureFabricStep = ({
         garmentTypeSelection,
         fabricAllocationState,
         fabricCode: pendingStep1FabricAssignment.fabricCode,
+        fabrics,
       })
     : null;
   useEffect(() => {
@@ -609,7 +619,13 @@ export const DormantFutureFabricStep = ({
               selectedFabricQuantity,
               requiredFabricQuantity,
             )
-          : blockerMessages[blocker.code],
+          : blocker.code === "FABRIC_STOCK_OVER_ALLOCATED"
+            ? formatFutureFabricStockOverAllocatedBlockerMessage(
+                fabrics,
+                fabricAllocationState,
+                blocker.fabricCode,
+              )
+            : blockerMessages[blocker.code],
       ),
     ),
   );
@@ -1082,6 +1098,7 @@ export const DormantFutureFabricStep = ({
       garmentTypeSelection,
       fabricAllocationState,
       availabilityMessage: getFabricAvailabilityMessage(fabric),
+      fabrics,
     });
     if (presentation.action === "none") {
       return;
@@ -1090,6 +1107,7 @@ export const DormantFutureFabricStep = ({
       garmentTypeSelection,
       fabricAllocationState,
       fabricCode: fabric.code,
+      fabrics,
     });
     if (candidates.length === 0) {
       setAssignmentAnnouncement(
@@ -1226,12 +1244,15 @@ export const DormantFutureFabricStep = ({
       garmentTypeSelection,
       garmentKey,
       fabricCode: fabric.code,
+      fabrics,
     });
     if (preview.status === "blocked") {
       const blockedMessage =
         preview.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
           ? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
-          : "That fabric could not be assigned to this garment.";
+          : preview.reason === "FABRIC_STOCK_EXHAUSTED"
+            ? formatFabricStockExhaustedCopy()
+            : "That fabric could not be assigned to this garment.";
       setVisibleActionError(blockedMessage);
       setAssignmentAnnouncement(blockedMessage);
       pendingAssignmentAnnouncementRef.current = null;
@@ -1385,6 +1406,7 @@ export const DormantFutureFabricStep = ({
           garmentTypeSelection,
           fabricAllocationState,
           availabilityMessage: getFabricAvailabilityMessage(fabric),
+          fabrics,
         })
       : null;
     const useStep1CardPresentation = Boolean(
@@ -1411,7 +1433,20 @@ export const DormantFutureFabricStep = ({
             garmentTypeSelection,
             fabricAllocationState,
             currentTargetGarmentKey: currentTarget?.assignment.garmentKey ?? null,
+            fabrics,
           });
+    const allowExistingPartialReuse = currentTarget
+      ? getFutureCompatiblePartialFabricAllocations({
+          garmentTypeSelection,
+          fabricAllocationState,
+          garmentKey: currentTarget.assignment.garmentKey,
+        }).some((entry) => entry.fabricCode === fabric.code)
+      : false;
+    const stockConstraintMessage = getFabricNewAllocationStockConstraintMessage(
+      fabric,
+      fabricAllocationState,
+      allowExistingPartialReuse,
+    );
     const cancelGarmentKeys =
       cardPresentation.cancelGarmentKeys ??
       (cardPresentation.cancelGarmentKey
@@ -1467,6 +1502,11 @@ export const DormantFutureFabricStep = ({
         targetGarmentLabel={targetGarmentLabel}
         removeTargetGarmentLabel={singleCancelLabel || undefined}
         stockBadgeIdPrefix="future-fabric-stock"
+        stockPresentation={getOrderAwareFabricStockPresentation(
+          fabric,
+          fabricAllocationState,
+        )}
+        stockConstraintMessage={stockConstraintMessage}
         describedBy="future-fabric-catalogue-help future-fabric-assignment-status"
         onAction={(event) => {
           handleFabricSelection(fabric, event?.currentTarget);

@@ -17,6 +17,13 @@ import type {
 } from "../types";
 import { resolveFabricAllocationMaterialPricing } from "./fabricAllocationPricing";
 import { resolveFabricPrice } from "./fabricPricing";
+import {
+  canCreatePhysicalFabricAllocationForStock,
+  formatFabricStockOverAllocatedCopy,
+  getFabricStockOverAllocations,
+  resolveFabricFromCatalogue,
+  validateProjectedFabricStock,
+} from "./fabricStockAvailability";
 import { getGarmentTypeStageCompletion } from "./designStudioJourneyMode";
 import {
   getStep1SelectableGarmentTypes,
@@ -32,7 +39,8 @@ export type FutureFabricStageBlockerCode =
   | "FABRIC_PRICE_UNAVAILABLE"
   | "INVALID_ALLOCATION_CAPACITY"
   | "MALFORMED_ASSIGNMENT"
-  | "FABRIC_QUANTITY_OVER_ALLOCATED";
+  | "FABRIC_QUANTITY_OVER_ALLOCATED"
+  | "FABRIC_STOCK_OVER_ALLOCATED";
 
 export interface FutureFabricStageBlocker {
   code: FutureFabricStageBlockerCode;
@@ -126,7 +134,8 @@ export type FutureFabricAssignmentBlockReason =
   | "ALLOCATION_NOT_FOUND"
   | "ASSIGNMENT_IN_PROGRESS"
   | "INVALID_CAPACITY"
-  | "FABRIC_QUANTITY_LIMIT_REACHED";
+  | "FABRIC_QUANTITY_LIMIT_REACHED"
+  | "FABRIC_STOCK_EXHAUSTED";
 
 export type FutureFabricAssignmentResult =
   | { status: "assigned"; state: FabricAllocationState }
@@ -716,16 +725,69 @@ const tryAppendToMatchingFabricAllocations = ({
   return null;
 };
 
+const blockNewPhysicalAllocationForStock = ({
+  fabricCode,
+  fabrics,
+  state,
+}: {
+  fabricCode: string;
+  fabrics?: readonly Fabric[];
+  state: FabricAllocationState;
+}): FutureFabricAssignmentResult | null => {
+  const fabric = resolveFabricFromCatalogue(fabricCode, fabrics);
+  if (!fabric) {
+    return null;
+  }
+  if (!canCreatePhysicalFabricAllocationForStock({ fabric, state })) {
+    return { status: "blocked", reason: "FABRIC_STOCK_EXHAUSTED", state };
+  }
+  return null;
+};
+
+const finalizeAssignedFabricStock = ({
+  fabricCode,
+  fabrics,
+  beforeState,
+  afterState,
+  fallbackState,
+}: {
+  fabricCode: string;
+  fabrics?: readonly Fabric[];
+  beforeState: FabricAllocationState;
+  afterState: FabricAllocationState;
+  fallbackState: FabricAllocationState;
+}): FutureFabricAssignmentResult => {
+  const fabric = resolveFabricFromCatalogue(fabricCode, fabrics);
+  if (!fabric) {
+    return { status: "assigned", state: afterState };
+  }
+  const validation = validateProjectedFabricStock({
+    fabric,
+    beforeState,
+    afterState,
+  });
+  if (!validation.valid) {
+    return {
+      status: "blocked",
+      reason: "FABRIC_STOCK_EXHAUSTED",
+      state: fallbackState,
+    };
+  }
+  return { status: "assigned", state: afterState };
+};
+
 const assignTargetToFabricCore = ({
   state,
   target,
   fabricCode,
   garmentTypeSelection,
+  fabrics,
 }: {
   state: FabricAllocationState;
   target: FutureFabricAssignmentTarget;
   fabricCode: string;
   garmentTypeSelection: GarmentTypeStepSelection;
+  fabrics?: readonly Fabric[];
 }): FutureFabricAssignmentResult => {
   const appended = tryAppendToMatchingFabricAllocations({
     state,
@@ -733,7 +795,13 @@ const assignTargetToFabricCore = ({
     fabricCode,
   });
   if (appended) {
-    return { status: "assigned", state: appended };
+    return finalizeAssignedFabricStock({
+      fabricCode,
+      fabrics,
+      beforeState: state,
+      afterState: appended,
+      fallbackState: state,
+    });
   }
 
   if (
@@ -749,6 +817,15 @@ const assignTargetToFabricCore = ({
     };
   }
 
+  const stockBlocked = blockNewPhysicalAllocationForStock({
+    fabricCode,
+    fabrics,
+    state,
+  });
+  if (stockBlocked) {
+    return stockBlocked;
+  }
+
   const withAllocation =
     state.fabricAllocations.length === 0
       ? FabricAllocationStateEngine.selectPrimaryFabric(state, fabricCode, null)
@@ -760,7 +837,13 @@ const assignTargetToFabricCore = ({
   if (!hasGarmentAssignment(attempted, target.assignment.garmentKey)) {
     return { status: "blocked", reason: "INVALID_CAPACITY", state };
   }
-  return { status: "assigned", state: attempted };
+  return finalizeAssignedFabricStock({
+    fabricCode,
+    fabrics,
+    beforeState: state,
+    afterState: attempted,
+    fallbackState: state,
+  });
 };
 
 const assignTargetToFabric = ({
@@ -768,11 +851,13 @@ const assignTargetToFabric = ({
   target,
   fabricCode,
   garmentTypeSelection,
+  fabrics,
 }: {
   state: FabricAllocationState;
   target: FutureFabricAssignmentTarget;
   fabricCode: string;
   garmentTypeSelection: GarmentTypeStepSelection;
+  fabrics?: readonly Fabric[];
 }): FutureFabricAssignmentResult => {
   if (state.pendingFabricGarment?.garmentKey === target.assignment.garmentKey) {
     const awaitingState = {
@@ -785,7 +870,13 @@ const assignTargetToFabric = ({
       fabricCode,
     });
     if (appended) {
-      return { status: "assigned", state: appended };
+      return finalizeAssignedFabricStock({
+        fabricCode,
+        fabrics,
+        beforeState: state,
+        afterState: appended,
+        fallbackState: state,
+      });
     }
     if (
       !canCreatePhysicalFabricAllocation({
@@ -799,13 +890,25 @@ const assignTargetToFabric = ({
         state,
       };
     }
-    return {
-      status: "assigned",
-      state: FabricAllocationStateEngine.assignPendingGarmentToFabric(
-        awaitingState,
-        fabricCode,
-      ),
-    };
+    const stockBlocked = blockNewPhysicalAllocationForStock({
+      fabricCode,
+      fabrics,
+      state: awaitingState,
+    });
+    if (stockBlocked) {
+      return stockBlocked;
+    }
+    const assigned = FabricAllocationStateEngine.assignPendingGarmentToFabric(
+      awaitingState,
+      fabricCode,
+    );
+    return finalizeAssignedFabricStock({
+      fabricCode,
+      fabrics,
+      beforeState: state,
+      afterState: assigned,
+      fallbackState: state,
+    });
   }
 
   const parkedPending = state.pendingFabricGarment;
@@ -823,6 +926,7 @@ const assignTargetToFabric = ({
     target,
     fabricCode,
     garmentTypeSelection,
+    fabrics,
   });
   if (result.status !== "assigned") {
     return { ...result, state };
@@ -865,11 +969,13 @@ export const assignSameFabricProductToGarments = ({
   garmentTypeSelection,
   fabricCode,
   garmentKeys,
+  fabrics,
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricCode: string;
   garmentKeys: readonly string[];
+  fabrics?: readonly Fabric[];
 }): FutureFabricBulkAssignmentResult => {
   let workingState = state;
   const assignedGarmentKeys: string[] = [];
@@ -892,6 +998,7 @@ export const assignSameFabricProductToGarments = ({
       garmentTypeSelection,
       garmentKey,
       fabricCode,
+      fabrics,
     });
     if (
       result.status !== "assigned" ||
@@ -929,11 +1036,13 @@ export const assignFutureFabricToGarment = ({
   garmentTypeSelection,
   garmentKey,
   fabricCode,
+  fabrics,
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
   garmentKey: string;
   fabricCode: string;
+  fabrics?: readonly Fabric[];
 }): FutureFabricAssignmentResult => {
   const target = getFutureFabricAssignmentTargetForKey({
     garmentTypeSelection,
@@ -955,6 +1064,7 @@ export const assignFutureFabricToGarment = ({
       target,
       fabricCode,
       garmentTypeSelection,
+      fabrics,
     });
   }
   if (sourceAllocation.fabricCode === fabricCode) {
@@ -962,18 +1072,22 @@ export const assignFutureFabricToGarment = ({
   }
 
   if (sourceAllocation.garmentAssignments.length === 1) {
-    return {
-      status: "assigned",
-      state: {
-        ...state,
-        fabricAllocations: state.fabricAllocations.map((allocation) =>
-          allocation.allocationId === sourceAllocation.allocationId
-            ? { ...allocation, fabricCode }
-            : allocation,
-        ),
-        activeAllocationId: sourceAllocation.allocationId,
-      },
+    const nextState = {
+      ...state,
+      fabricAllocations: state.fabricAllocations.map((allocation) =>
+        allocation.allocationId === sourceAllocation.allocationId
+          ? { ...allocation, fabricCode }
+          : allocation,
+      ),
+      activeAllocationId: sourceAllocation.allocationId,
     };
+    return finalizeAssignedFabricStock({
+      fabricCode,
+      fabrics,
+      beforeState: state,
+      afterState: nextState,
+      fallbackState: state,
+    });
   }
 
   const withoutTarget = FabricAllocationStateEngine.removeGarmentAssignments(
@@ -985,6 +1099,7 @@ export const assignFutureFabricToGarment = ({
     target,
     fabricCode,
     garmentTypeSelection,
+    fabrics,
   });
   return reassigned.status === "assigned"
     ? { status: "assigned", state: removeEmptyFabricAllocations(reassigned.state) }
@@ -1063,11 +1178,13 @@ export const applyFutureFabricCardSelection = ({
   garmentTypeSelection,
   garmentKey,
   fabricCode,
+  fabrics,
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
   garmentKey: string;
   fabricCode: string;
+  fabrics?: readonly Fabric[];
 }): FabricAllocationState => {
   if (state.pendingFabricGarment?.garmentKey === garmentKey) {
     const result = assignFutureFabricToGarment({
@@ -1075,6 +1192,7 @@ export const applyFutureFabricCardSelection = ({
       garmentTypeSelection,
       garmentKey,
       fabricCode,
+      fabrics,
     });
     return result.status === "assigned" ? result.state : state;
   }
@@ -1090,6 +1208,7 @@ export const applyFutureFabricCardSelection = ({
       garmentTypeSelection,
       fabricCode,
       targetGarmentKey: garmentKey,
+      fabrics,
     });
   }
 
@@ -1098,6 +1217,7 @@ export const applyFutureFabricCardSelection = ({
     garmentTypeSelection,
     garmentKey,
     fabricCode,
+    fabrics,
   }).state;
 };
 
@@ -1352,11 +1472,13 @@ export const resolveFutureFabricCatalogueCardPresentation = ({
   garmentTypeSelection,
   fabricAllocationState,
   currentTargetGarmentKey,
+  fabrics,
 }: {
   fabricCode: string;
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
   currentTargetGarmentKey: string | null;
+  fabrics?: readonly Fabric[];
 }): FutureFabricCatalogueCardPresentation => {
   const usingFabric = collectUsingFabricGarmentKeys({
     fabricCode,
@@ -1392,10 +1514,12 @@ export const resolveFutureFabricCatalogueCardPresentation = ({
       garmentTypeSelection,
       garmentKey: currentTargetGarmentKey,
       fabricCode,
+      fabrics,
     });
     if (
       assignmentResult.status === "blocked" &&
-      assignmentResult.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
+      (assignmentResult.reason === "FABRIC_QUANTITY_LIMIT_REACHED" ||
+        assignmentResult.reason === "FABRIC_STOCK_EXHAUSTED")
     ) {
       return { status, action: "none", ...emptyCancelPresentation };
     }
@@ -1733,11 +1857,13 @@ export const selectFutureFabric = ({
   fabricCode,
   garmentTypeSelection,
   targetGarmentKey,
+  fabrics,
 }: {
   state: FabricAllocationState;
   fabricCode: string;
   garmentTypeSelection: GarmentTypeStepSelection;
   targetGarmentKey?: string | null;
+  fabrics?: readonly Fabric[];
 }): FabricAllocationState => {
   if (
     state.awaitingFabricForPendingGarment &&
@@ -1756,6 +1882,7 @@ export const selectFutureFabric = ({
       target: pendingTarget,
       fabricCode,
       garmentTypeSelection,
+      fabrics,
     });
     return pendingResult.status === "assigned" ? pendingResult.state : state;
   }
@@ -1787,8 +1914,32 @@ export const selectFutureFabric = ({
     target,
     fabricCode,
     garmentTypeSelection,
+    fabrics,
   });
   return result.status === "assigned" ? result.state : state;
+};
+
+export const formatFutureFabricStockOverAllocatedBlockerMessage = (
+  fabrics: readonly Fabric[],
+  fabricAllocationState: FabricAllocationState,
+  fabricCode?: string,
+): string => {
+  const overAllocations = getFabricStockOverAllocations(
+    fabrics,
+    fabricAllocationState,
+  );
+  const target =
+    (fabricCode
+      ? overAllocations.find((entry) => entry.fabricCode === fabricCode)
+      : null) || overAllocations[0];
+  if (target) {
+    return formatFabricStockOverAllocatedCopy(
+      target.fabricName,
+      target.used,
+      target.stock,
+    );
+  }
+  return "One or more Fabric selections exceed available stock. Remove or change a Fabric Selection.";
 };
 
 export const getFutureFabricStageCompletion = ({
@@ -1891,6 +2042,16 @@ export const getFutureFabricStageCompletion = ({
   });
   if (planning.selectedFabricQuantity > planning.requiredFabricQuantity) {
     blockers.push({ code: "FABRIC_QUANTITY_OVER_ALLOCATED" });
+  }
+
+  for (const overAllocation of getFabricStockOverAllocations(
+    fabrics,
+    fabricAllocationState,
+  )) {
+    blockers.push({
+      code: "FABRIC_STOCK_OVER_ALLOCATED",
+      fabricCode: overAllocation.fabricCode,
+    });
   }
 
   const materialPricing = resolveFabricAllocationMaterialPricing(
