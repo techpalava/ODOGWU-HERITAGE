@@ -13,6 +13,7 @@ import {
 } from "../src/config/StyleFabricCapacityConfig";
 import { STEP_1_SELECTABLE_GARMENT_TYPES } from "../src/utils/garmentConstructionPricing";
 import {
+  isFutureDesignStyleSelectable,
   resolveFutureDesignStyleCompatibility,
   type FutureDesignStyleCompatibilityCode,
 } from "../src/utils/designStudioFutureDesignStyle";
@@ -142,7 +143,7 @@ const styleAudits: StyleAuditRow[] = styles.map((style) => {
         garmentTypeSelection: selectionFor(garments, demos),
         style,
       });
-      if (result.status !== "compatible") probeCodes.add(result.code);
+      if (!isFutureDesignStyleSelectable(result)) probeCodes.add(result.code);
     }
   }
 
@@ -187,7 +188,7 @@ for (const garments of combos) {
         garmentTypeSelection: selection,
         style,
       });
-      if (result.status === "compatible") {
+      if (isFutureDesignStyleSelectable(result)) {
         compatibleStyles.push({ id: style.id, name: style.name });
       } else {
         rejectionTallies[result.code] =
@@ -214,10 +215,12 @@ const singleGarmentCoverage = STEP_1_SELECTABLE_GARMENT_TYPES.map(
       const compatible = styles
         .filter(
           (style) =>
-            resolveFutureDesignStyleCompatibility({
-              garmentTypeSelection: selectionFor([garment], demographics),
-              style,
-            }).status === "compatible",
+            isFutureDesignStyleSelectable(
+              resolveFutureDesignStyleCompatibility({
+                garmentTypeSelection: selectionFor([garment], demographics),
+                style,
+              }),
+            ),
         )
         .map((s) => ({ id: s.id, name: s.name }));
       return {

@@ -38,7 +38,7 @@ assert.equal(
     garmentTypeSelection,
     style: compatibleStyle,
   }).status,
-  "compatible",
+  "exact_match",
 );
 assert.equal(
   resolveFutureDesignStyleCompatibility({

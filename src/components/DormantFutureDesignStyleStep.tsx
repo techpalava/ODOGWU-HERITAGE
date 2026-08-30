@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import {
   getFutureDesignStyleCompositionLabel,
+  isFutureDesignStyleSelectable,
   reconcileFutureDesignStyleSelection,
   resolveFutureDesignStyleCompatibility,
 } from "../utils/designStudioFutureDesignStyle";
@@ -102,7 +103,7 @@ export const DormantFutureDesignStyleStep = ({
       }))
     : [];
   const compatibleStyleCount = compatibilityByStyle.filter(
-    ({ compatibility }) => compatibility.status === "compatible",
+    ({ compatibility }) => isFutureDesignStyleSelectable(compatibility),
   ).length;
   const uploadReadiness = getUploadedDesignStep1Readiness({
     uploadReference:
@@ -282,7 +283,7 @@ export const DormantFutureDesignStyleStep = ({
           )}
           {stylesLoadState === "ready" &&
             compatibilityByStyle.map(({ style, compatibility }) => {
-            const isCompatible = compatibility.status === "compatible";
+            const isCompatible = isFutureDesignStyleSelectable(compatibility);
             const isSelected =
               isCompatible && catalogueSelection?.selectedStyleId === style.id;
             const isUnavailable = compatibility.code === "STYLE_DISABLED";

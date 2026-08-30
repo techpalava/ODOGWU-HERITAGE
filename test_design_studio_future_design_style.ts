@@ -46,46 +46,46 @@ assert.equal(
     garmentTypeSelection: selectedGarments,
     style: compatibleStyle,
   }).status,
-  "compatible",
+  "exact_match",
 );
 
 const shirtOnly = resolveFutureDesignStyleCompatibility({
   garmentTypeSelection: selection(["shirt"], "male"),
   style: compatibleStyle,
 });
-assert.equal(shirtOnly.status, "compatible");
+assert.equal(shirtOnly.status, "exact_match");
 
 const trouserOnly = resolveFutureDesignStyleCompatibility({
   garmentTypeSelection: selection(["trouser"], "male"),
   style: compatibleStyle,
 });
-assert.equal(trouserOnly.status, "compatible");
+assert.equal(trouserOnly.status, "exact_match");
 
 const unsupportedCombination = resolveFutureDesignStyleCompatibility({
   garmentTypeSelection: selection(["shirt", "skirt"], "male"),
   style: compatibleStyle,
 });
-assert.equal(unsupportedCombination.status, "incompatible");
+assert.equal(unsupportedCombination.status, "blocked");
 assert.equal(
   unsupportedCombination.code,
   "GARMENT_COMPOSITION_MISMATCH",
 );
 assert.equal(
   unsupportedCombination.customerReason,
-  "This design does not support Skirt.",
+  "This design is not available for one or more garments in your order.",
 );
 
 const unsupportedGarment = resolveFutureDesignStyleCompatibility({
   garmentTypeSelection: selection(["standard_shorts"], "male"),
   style: compatibleStyle,
 });
-assert.equal(unsupportedGarment.status, "incompatible");
+assert.equal(unsupportedGarment.status, "blocked");
 
 const incompatibleDemographic = resolveFutureDesignStyleCompatibility({
   garmentTypeSelection: selection(["shirt", "trouser"], "female"),
   style: compatibleStyle,
 });
-assert.equal(incompatibleDemographic.status, "incompatible");
+assert.equal(incompatibleDemographic.status, "blocked");
 assert.equal(incompatibleDemographic.code, "DEMOGRAPHIC_MISMATCH");
 
 const malformedAudience = resolveFutureDesignStyleCompatibility({
@@ -100,7 +100,7 @@ const malformedAudience = resolveFutureDesignStyleCompatibility({
   },
   style: compatibleStyle,
 });
-assert.equal(malformedAudience.status, "incompatible");
+assert.equal(malformedAudience.status, "blocked");
 assert.equal(malformedAudience.code, "DEMOGRAPHIC_MISMATCH");
 
 const noStructuredComposition = style({
@@ -135,7 +135,7 @@ const stableIdBridge = resolveFutureDesignStyleCompatibility({
     fabricCapacityComposition: undefined,
   }),
 });
-assert.equal(stableIdBridge.status, "compatible");
+assert.equal(stableIdBridge.status, "exact_match");
 
 const disabled = resolveFutureDesignStyleCompatibility({
   garmentTypeSelection: selectedGarments,
@@ -218,7 +218,7 @@ allCanonicalGarments.forEach((garmentType) => {
       garmentTypeSelection: selection([garmentType], "unisex"),
       style: allGarmentStyle,
     }).status,
-    "compatible",
+    "exact_match",
     `${garmentType} should use its canonical identity in subset matching`,
   );
 });
@@ -228,7 +228,7 @@ assert.equal(
     garmentTypeSelection: selection(["agbada"], "male"),
     style: compatibleStyle,
   }).status,
-  "incompatible",
+  "blocked",
   "Agbada must not be reinterpreted as Shirt plus Trouser",
 );
 
@@ -241,7 +241,7 @@ assert.equal(
     ),
     style: compatibleStyle,
   }).status,
-  "compatible",
+  "exact_match",
   "A multi-audience selection should match when at least one audience is represented",
 );
 
@@ -252,7 +252,7 @@ const duplicateCustomerTypes = resolveFutureDesignStyleCompatibility({
   ),
   style: compatibleStyle,
 });
-assert.equal(duplicateCustomerTypes.status, "compatible");
+assert.equal(duplicateCustomerTypes.status, "exact_match");
 
 const preservedSelection = selection(["shirt"], "male");
 preservedSelection.constructionByGarment.shirt = {
