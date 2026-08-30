@@ -857,7 +857,7 @@ assert.match(stepSource, /data-fabric-progress-icon="true"/);
 assert.match(stepSource, /data-catalogue-scroll-anchor="true"/);
 assert.match(stepSource, /catalogueScrollAnchorRef/);
 assert.match(stepSource, /assignSingleEligibleStep1FabricCandidate/);
-assert.match(stepSource, /shouldPromptStep1FabricAssignmentSelection/);
+assert.match(stepSource, /shouldOpenStep1FabricGroupingDialog/);
 assert.match(stepSource, /finalizeSuccessfulStep1FabricAssignment/);
 assert.doesNotMatch(
   stepSource,
@@ -894,7 +894,7 @@ const assignmentDialogSource = readFileSync(
 assert.match(assignmentDialogSource, /STEP1_FABRIC_ASSIGNMENT_TITLE/);
 assert.match(assignmentDialogSource, /STEP1_FABRIC_ASSIGNMENT_DESCRIPTION/);
 assert.match(assignmentDialogSource, /STEP1_USE_FOR_ALL_LABEL/);
-assert.match(assignmentDialogSource, /Assign to Selected/);
+assert.match(assignmentDialogSource, /STEP1_FABRIC_GROUP_ASSIGN_BUTTON_LABEL/);
 assert.doesNotMatch(
   assignmentDialogSource,
   /priceMultiplier|toFixed\(|PRICING_CURRENCY/,

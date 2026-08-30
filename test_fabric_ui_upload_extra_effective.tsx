@@ -13,6 +13,7 @@ import type { Fabric, FabricAllocationState, GarmentTypeStepSelection } from "./
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
   assignFutureFabricToGarment,
+  assignFutureGarmentToExistingFabricAllocation,
   assignSameFabricProductToGarments,
   getFutureFabricStageCompletion,
 } from "./src/utils/designStudioFutureFabricStage";
@@ -139,6 +140,21 @@ const FabricStepProductionBoundary = ({
       });
       return result ?? undefined;
     },
+    onAssignGarmentToExistingAllocation: (garmentKey: string, allocationId: string) => {
+      let result: ReturnType<
+        typeof assignFutureGarmentToExistingFabricAllocation
+      > | null = null;
+      setFabricAllocationState((current) => {
+        result = assignFutureGarmentToExistingFabricAllocation({
+          state: current,
+          garmentTypeSelection,
+          garmentKey,
+          allocationId,
+        });
+        return result.status === "assigned" ? result.state : current;
+      });
+      return result ?? undefined;
+    },
     onBack: () => undefined,
     onContinue: () => undefined,
     onUseSameFabric: () => undefined,
@@ -171,10 +187,12 @@ const runUploadExtraCase = async ({
   extra,
   expectedTrouserOrExtraKey,
   expectedLabel,
+  assignmentMode,
 }: {
   extra: "trouser" | "full_length_gown" | "kaftan";
   expectedTrouserOrExtraKey: string;
   expectedLabel: string;
+  assignmentMode: "add_fabric" | "assign_to_existing";
 }) => {
   const composition = mergeUploadedDesignCompositionWithStep1({
     step1GarmentTypes: ["shirt"],
@@ -195,6 +213,11 @@ const runUploadExtraCase = async ({
     garmentKey: "base:shirt",
     fabricCode: fabrics[0].code,
   }).state;
+  const shirtAllocationId = fabricState.fabricAllocations.find((allocation) =>
+    allocation.garmentAssignments.some(
+      (assignment) => assignment.garmentKey === "base:shirt",
+    ),
+  )!.allocationId;
 
   assert.equal(
     getFutureFabricStageCompletion({
@@ -226,58 +249,111 @@ const runUploadExtraCase = async ({
   assert.ok(textContent(extraCard).includes("Needs fabric"));
   assert.ok(textContent(extraCard).includes(expectedLabel));
 
-  const addExtra = findButton(extraCard, "Add Fabric");
-  assert.ok(addExtra, `Add Fabric must exist for ${extra}`);
-  assert.equal(Boolean(addExtra!.props.disabled), false);
+  if (assignmentMode === "assign_to_existing") {
+    assert.equal(
+      findButton(extraCard, "Add Fabric"),
+      undefined,
+      `${expectedLabel} must not expose Add Fabric when partial capacity can complete the Fabric.`,
+    );
+    const assignButton = findButton(extraCard, "Assign to Fabric");
+    assert.ok(assignButton, `Assign to Fabric must exist for ${extra}`);
+    assert.equal(Boolean(assignButton!.props.disabled), false);
 
-  await act(async () => {
-    addExtra!.props.onClick({ currentTarget: {} });
-  });
+    await act(async () => assignButton!.props.onClick());
+    assert.equal(
+      renderer.root.findAllByProps({
+        "data-testid": "partial-fabric-capacity-assignment-dialog",
+      }).length,
+      1,
+    );
+    await act(async () =>
+      renderer.root
+        .findByProps({ "data-testid": "partial-fabric-capacity-confirm" })
+        .props.onClick(),
+    );
 
-  const fabricCards = renderer.root.findAllByProps({ "data-fabric-card": "true" });
-  assert.ok(
-    fabricCards.length > 0,
-    "Fabric catalogue must expose a selectable fabric after Add Fabric",
-  );
-  const preferred =
-    fabricCards.find(
-      (card) => card.props["data-fabric-code"] === "FAB-UI-B",
-    ) || fabricCards[0];
-  await act(async () => {
-    preferred.props.onClick();
-  });
-  const extraCheckbox = renderer.root.findByProps({
-    "data-step1-fabric-assignment-checkbox": expectedTrouserOrExtraKey,
-  });
-  await act(async () => {
-    extraCheckbox.props.onChange({ currentTarget: { checked: true } });
-  });
-  await act(async () => {
-    renderer.root
-      .findByProps({ "data-testid": "step1-fabric-assignment-confirm" })
-      .props.onClick();
-  });
+    const updatedExtra = renderer.root.findByProps({
+      "data-garment-key": expectedTrouserOrExtraKey,
+    });
+    assert.equal(updatedExtra.props["data-assignment-status"], "assigned");
+    assert.ok(textContent(updatedExtra).includes("Assigned"));
+    const stepProps = renderer.root.findByType(DormantFutureFabricStep).props;
+    assert.equal(stepProps.completion.isComplete, true);
+    assert.equal(stepProps.fabricAllocationState.fabricAllocations.length, 1);
+    const completedAllocation = stepProps.fabricAllocationState.fabricAllocations.find(
+      (allocation: { allocationId: string }) =>
+        allocation.allocationId === shirtAllocationId,
+    );
+    assert.ok(completedAllocation);
+    assert.equal(completedAllocation.garmentAssignments.length, 2);
+    assert.ok(
+      completedAllocation.garmentAssignments.some(
+        (assignment: { garmentKey: string }) =>
+          assignment.garmentKey === "base:shirt",
+      ),
+    );
+    assert.ok(
+      completedAllocation.garmentAssignments.some(
+        (assignment: { garmentKey: string }) =>
+          assignment.garmentKey === expectedTrouserOrExtraKey,
+      ),
+    );
+  } else {
+    const addExtra = findButton(extraCard, "Add Fabric");
+    assert.ok(addExtra, `Add Fabric must exist for ${extra}`);
+    assert.equal(Boolean(addExtra!.props.disabled), false);
 
-  const updatedExtra = renderer.root.findByProps({
-    "data-garment-key": expectedTrouserOrExtraKey,
-  });
-  assert.equal(updatedExtra.props["data-assignment-status"], "assigned");
-  assert.ok(textContent(updatedExtra).includes("Assigned"));
-  assert.equal(
-    renderer.root.findByType(DormantFutureFabricStep).props.completion.isComplete,
-    true,
-  );
+    await act(async () => {
+      addExtra!.props.onClick({ currentTarget: {} });
+    });
+
+    const fabricCards = renderer.root.findAllByProps({ "data-fabric-card": "true" });
+    assert.ok(
+      fabricCards.length > 0,
+      "Fabric catalogue must expose a selectable fabric after Add Fabric",
+    );
+    const preferred =
+      fabricCards.find(
+        (card) => card.props["data-fabric-code"] === "FAB-UI-B",
+      ) || fabricCards[0];
+    await act(async () => {
+      preferred.props.onClick();
+    });
+    const extraCheckbox = renderer.root.findByProps({
+      "data-step1-fabric-assignment-checkbox": expectedTrouserOrExtraKey,
+    });
+    await act(async () => {
+      extraCheckbox.props.onChange({ currentTarget: { checked: true } });
+    });
+    await act(async () => {
+      renderer.root
+        .findByProps({ "data-testid": "step1-fabric-assignment-confirm" })
+        .props.onClick();
+    });
+
+    const updatedExtra = renderer.root.findByProps({
+      "data-garment-key": expectedTrouserOrExtraKey,
+    });
+    assert.equal(updatedExtra.props["data-assignment-status"], "assigned");
+    assert.ok(textContent(updatedExtra).includes("Assigned"));
+    assert.equal(
+      renderer.root.findByType(DormantFutureFabricStep).props.completion.isComplete,
+      true,
+    );
+  }
 
   // Regression: Step1-only wiring would never show the extra card.
-  assert.throws(() => {
-    create(
-      createElement(FabricStepProductionBoundary, {
-        step1GarmentTypeSelection: step1,
-        // Intentionally wrong: pass Step1 as "effective" — only shirt renders.
-        effectiveJourneyGarmentTypeSelection: step1,
-        initialFabricState: fabricState,
-      }),
-    ).root.findByProps({ "data-garment-key": expectedTrouserOrExtraKey });
+  await act(async () => {
+    assert.throws(() => {
+      create(
+        createElement(FabricStepProductionBoundary, {
+          step1GarmentTypeSelection: step1,
+          // Intentionally wrong: pass Step1 as "effective" — only shirt renders.
+          effectiveJourneyGarmentTypeSelection: step1,
+          initialFabricState: fabricState,
+        }),
+      ).root.findByProps({ "data-garment-key": expectedTrouserOrExtraKey });
+    });
   });
 };
 
@@ -285,12 +361,14 @@ await runUploadExtraCase({
   extra: "trouser",
   expectedTrouserOrExtraKey: "base:trouser",
   expectedLabel: "Trouser",
+  assignmentMode: "assign_to_existing",
 });
 
 await runUploadExtraCase({
   extra: "full_length_gown",
   expectedTrouserOrExtraKey: "base:full_length_gown",
   expectedLabel: "Long Dress (Gown)",
+  assignmentMode: "add_fabric",
 });
 
 {
@@ -321,6 +399,78 @@ await runUploadExtraCase({
   extra: "kaftan",
   expectedTrouserOrExtraKey: "base:kaftan",
   expectedLabel: "Long Shirt (Kaftan)",
+  assignmentMode: "assign_to_existing",
 });
+
+{
+  let priceActivatedFabricCode: string | null = "FAB-UI-A";
+  const activeUploadedDesignSource = true;
+  const composition = mergeUploadedDesignCompositionWithStep1({
+    step1GarmentTypes: ["shirt"],
+    additionalGarmentTypes: ["trouser"],
+  });
+  const effective = buildEffectiveUploadedJourneyGarmentTypeSelection({
+    step1Selection: step1,
+    uploadedComposition: composition,
+    normalizedCustomDetailCatalog: catalog,
+  });
+  let fabricState = FabricAllocationStateEngine.initialize();
+  fabricState = assignFutureFabricToGarment({
+    state: fabricState,
+    garmentTypeSelection: effective,
+    garmentKey: "base:shirt",
+    fabricCode: fabrics[0].code,
+  }).state;
+  const shirtAllocationId = fabricState.fabricAllocations.find((allocation) =>
+    allocation.garmentAssignments.some(
+      (assignment) => assignment.garmentKey === "base:shirt",
+    ),
+  )!.allocationId;
+  const staleState = assignFutureGarmentToExistingFabricAllocation({
+    state: fabricState,
+    garmentTypeSelection: effective,
+    garmentKey: "base:trouser",
+    allocationId: shirtAllocationId,
+  }).state;
+
+  const handleAssignGarmentToExistingAllocation = (
+    state: FabricAllocationState,
+    garmentKey: string,
+    allocationId: string,
+  ) => {
+    const result = assignFutureGarmentToExistingFabricAllocation({
+      state,
+      garmentTypeSelection: effective,
+      garmentKey,
+      allocationId,
+    });
+    if (result.status === "assigned") {
+      if (activeUploadedDesignSource) {
+        priceActivatedFabricCode = null;
+      }
+    }
+    return result;
+  };
+
+  const blocked = handleAssignGarmentToExistingAllocation(
+    staleState,
+    "base:trouser",
+    shirtAllocationId,
+  );
+  assert.equal(blocked.status, "blocked");
+  assert.equal(
+    blocked.status === "blocked" ? blocked.reason : null,
+    "GARMENT_ALREADY_ASSIGNED",
+  );
+  assert.equal(priceActivatedFabricCode, "FAB-UI-A");
+
+  const validResult = handleAssignGarmentToExistingAllocation(
+    fabricState,
+    "base:trouser",
+    shirtAllocationId,
+  );
+  assert.equal(validResult.status, "assigned");
+  assert.equal(priceActivatedFabricCode, null);
+}
 
 console.log("PASS: rendered Fabric UI upload-extra effective composition");

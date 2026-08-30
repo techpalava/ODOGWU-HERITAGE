@@ -74,11 +74,6 @@ const textContent = (node: ReactTestInstance | string | null): string =>
           .join("")
       : "";
 
-const findButton = (root: ReactTestInstance, text: string) =>
-  root
-    .findAllByType("button")
-    .find((button) => textContent(button).includes(text));
-
 const constructionPrice = threeSelection.garmentTypes.reduce((total, garmentType) => {
   const resolution = resolveGarmentConstructionPricing(garmentType, catalog);
   return resolution.status === "resolved" ? total + resolution.totalPrice : total;
@@ -118,6 +113,7 @@ const renderStep = (
       onRemoveFabricFromGarment={() => undefined}
       onUseSameFabricForGarment={() => undefined}
       onAssignSameFabricProduct={onAssignSameFabricProduct}
+      onAssignGarmentToExistingAllocation={() => undefined}
       onBack={() => undefined}
       onContinue={() => {
         continueClicks += 1;
@@ -166,7 +162,11 @@ assert.doesNotMatch(textContent(dialog), /10\.00|€10|EUR 10/);
 assert.ok(dialog.findByProps({ "data-step1-fabric-assignment-row": "base:shirt" }));
 assert.ok(dialog.findByProps({ "data-step1-fabric-assignment-row": "base:trouser" }));
 assert.ok(dialog.findByProps({ "data-step1-fabric-assignment-row": "base:dress" }));
-assert.equal(findButton(dialog, "Assign to Selected (0)")?.props.disabled, true);
+assert.equal(
+  dialog.findByProps({ "data-testid": "step1-fabric-assignment-confirm" }).props
+    .disabled,
+  true,
+);
 
 await act(async () =>
   dialog
@@ -174,19 +174,35 @@ await act(async () =>
     .props.onChange({ currentTarget: { checked: true } }),
 );
 await act(async () => renderer.update(renderStep(state, applyBulk)));
-const selectedDialog = renderer.root.findByProps({
+let selectedDialog = renderer.root.findByProps({
   "data-testid": "step1-fabric-assignment-dialog",
 });
-assert.ok(findButton(selectedDialog, "Assign to Selected (1)"));
-await act(async () =>
-  findButton(selectedDialog, "Assign to Selected (1)")!.props.onClick(),
+assert.equal(
+  selectedDialog.findByProps({ "data-testid": "step1-fabric-assignment-confirm" })
+    .props.disabled,
+  true,
 );
+assert.match(textContent(selectedDialog), /Select 1 more garment/);
+await act(async () =>
+  selectedDialog
+    .findByProps({ "data-step1-fabric-assignment-checkbox": "base:trouser" })
+    .props.onChange({ currentTarget: { checked: true } }),
+);
+await act(async () => renderer.update(renderStep(state, applyBulk)));
+selectedDialog = renderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+const assignSelectedButton = selectedDialog.findByProps({
+  "data-testid": "step1-fabric-assignment-confirm",
+});
+assert.equal(assignSelectedButton.props.disabled, false);
+await act(async () => assignSelectedButton.props.onClick());
 await act(async () => renderer.update(renderStep(state, applyBulk)));
 assert.deepEqual(
   state.fabricAllocations.flatMap((allocation) =>
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
-  ),
-  ["base:shirt"],
+  ).sort(),
+  ["base:shirt", "base:trouser"],
 );
 assert.equal(
   renderer.root.findAllByProps({
@@ -206,27 +222,11 @@ const reusedCard = renderer.root
 assert.equal(reusedCard?.props["data-fabric-status"], "USE AGAIN");
 await act(async () => reusedCard?.props.onClick({ currentTarget: {} }));
 await act(async () => renderer.update(renderStep(state, applyBulk)));
-const reuseDialog = renderer.root.findByProps({
-  "data-testid": "step1-fabric-assignment-dialog",
-});
-assert.ok(reuseDialog.findByProps({ "data-step1-fabric-assignment-row": "base:trouser" }));
-assert.ok(reuseDialog.findByProps({ "data-step1-fabric-assignment-row": "base:dress" }));
-assert.equal(
-  reuseDialog.findAllByProps({
-    "data-step1-fabric-assignment-row": "base:shirt",
-  }).length,
-  0,
-);
-
-await act(async () =>
-  reuseDialog.findByProps({ "data-testid": "step1-fabric-assignment-cancel" }).props.onClick(),
-);
-await act(async () => renderer.update(renderStep(state, applyBulk)));
 assert.deepEqual(
   state.fabricAllocations.flatMap((allocation) =>
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
-  ),
-  ["base:shirt"],
+  ).sort(),
+  ["base:dress", "base:shirt", "base:trouser"],
 );
 assert.equal(
   renderer.root.findAllByProps({
@@ -320,7 +320,7 @@ assert.equal(
   }).props.disabled,
   false,
 );
-assert.match(textContent(leftoverSelectedDialog), /Assign to Selected \(2\)/);
+assert.match(textContent(leftoverSelectedDialog), /Assign Fabric/);
 await act(async () =>
   leftoverSelectedDialog
     .findByProps({ "data-testid": "step1-fabric-assignment-use-for-all" })
@@ -404,6 +404,7 @@ const renderTwoStep = (
       onRemoveFabricFromGarment={() => undefined}
       onUseSameFabricForGarment={() => undefined}
       onAssignSameFabricProduct={onAssignSameFabricProduct}
+      onAssignGarmentToExistingAllocation={() => undefined}
       onBack={() => undefined}
       onContinue={() => {
         continueClicks += 1;
@@ -557,7 +558,9 @@ const missingError = missingDialog.findByProps({
 assert.equal(missingError.props.role, "alert");
 assert.equal(textContent(missingError), STEP1_FABRIC_NO_LONGER_AVAILABLE_MESSAGE);
 assert.equal(
-  findButton(missingDialog, "Assign to Selected")?.props.disabled,
+  missingDialog.findByProps({
+    "data-testid": "step1-fabric-assignment-confirm",
+  }).props.disabled,
   true,
 );
 assert.equal(
@@ -625,7 +628,9 @@ const mutateLiveFabric = async (
   });
   assert.match(textContent(staleDialog), new RegExp(expectedError.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.equal(
-    findButton(staleDialog, "Assign to Selected")?.props.disabled,
+    staleDialog.findByProps({
+      "data-testid": "step1-fabric-assignment-confirm",
+    }).props.disabled,
     true,
   );
   assert.equal(
@@ -713,7 +718,9 @@ const staleCandidateDialog = staleCandidateRenderer.root.findByProps({
   "data-testid": "step1-fabric-assignment-dialog",
 });
 assert.equal(
-  findButton(staleCandidateDialog, "Assign to Selected")?.props.disabled,
+  staleCandidateDialog.findByProps({
+    "data-testid": "step1-fabric-assignment-confirm",
+  }).props.disabled,
   true,
 );
 await act(async () =>
@@ -765,8 +772,11 @@ await act(async () => {
       candidates={blockedDialogCandidates}
       selectedGarmentKeys={["base:shirt", "base:trouser"]}
       selectedCount={2}
+      selectedCapacityUnits={2}
+      maxCapacityUnits={2}
       canAssignSelected={false}
       canUseForAll={false}
+      groupingCapacityStatus={null}
       selectedCapacityMessage={null}
       remainingCapacityMessage={null}
       candidateMessages={{

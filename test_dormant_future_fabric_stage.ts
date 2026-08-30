@@ -375,7 +375,7 @@ assert.match(studioSource, /futureStageId === ["']garment_type["']/);
 assert.match(studioSource, /setFutureStageId\("design_style"\)/);
 assert.match(
   studioSource,
-  /getFutureFabricGarmentSelections\(garmentTypeSelection\)/,
+  /getFutureFabricGarmentSelections\(effectiveJourneyGarmentTypeSelection\)/,
 );
 
 console.log("PASS: dormant future Fabric stage integration");

@@ -78,6 +78,7 @@ const renderFabricStep = (state = incompleteFabricState) => {
       onRemoveFabricFromGarment={() => undefined}
       onUseSameFabricForGarment={() => undefined}
       onAssignSameFabricProduct={() => undefined}
+      onAssignGarmentToExistingAllocation={() => undefined}
       onBack={() => undefined}
       onContinue={() => {
         fabricContinueCalls += 1;

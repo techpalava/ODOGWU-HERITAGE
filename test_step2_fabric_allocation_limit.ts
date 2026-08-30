@@ -7,12 +7,18 @@ import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
   applyFutureFabricCardSelection,
   assignFutureFabricToGarment,
+  assignFutureGarmentToExistingFabricAllocation,
   canCreatePhysicalFabricAllocation,
   formatFabricQuantityLimitReachedCopy,
   formatRequiredFabricQuantitySentence,
+  getFutureCompatiblePartialFabricAllocations,
   getFutureFabricAssignmentTargets,
+  getFuturePartialFabricAllocationCompatibleTargets,
+  getFuturePartialFabricAllocationSummaries,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
+  hasAvoidablePartialFabricAllocation,
+  isFutureFinalPartialFabricAllocation,
   removeFutureFabricAssignment,
   resolveFutureFabricCatalogueCardPresentation,
 } from "./src/utils/designStudioFutureFabricStage";
@@ -440,6 +446,321 @@ assert.equal(
 assert.equal(
   formatFabricQuantityLimitReachedCopy(2),
   "You have selected the 2 fabrics needed for this order. Use one of your selected fabrics for the remaining garments, or change a selected fabric.",
+);
+
+const mixedScreenshotTypes = [
+  "full_length_gown",
+  "shirt",
+  "trouser",
+] satisfies FabricGarmentType[];
+const mixedScreenshotSelection = createSelection(mixedScreenshotTypes);
+let screenshotPartial = assign(empty(), mixedScreenshotTypes, "base:full_length_gown", "FAB-A")
+  .state;
+screenshotPartial = assign(
+  screenshotPartial,
+  mixedScreenshotTypes,
+  "base:shirt",
+  "FAB-B",
+).state;
+assert.deepEqual(planningOf(mixedScreenshotTypes, screenshotPartial), {
+  requiredGarmentCount: 3,
+  requiredFabricQuantity: 2,
+  selectedFabricQuantity: 2,
+});
+assert.equal(completionOf(mixedScreenshotTypes, screenshotPartial).assignedGarmentCount, 2);
+assert.equal(completionOf(mixedScreenshotTypes, screenshotPartial).isComplete, false);
+const screenshotSummaries = getFuturePartialFabricAllocationSummaries({
+  fabricAllocationState: screenshotPartial,
+});
+const gownSummary = screenshotSummaries.find((summary) =>
+  summary.assignedGarmentKeys.includes("base:full_length_gown"),
+);
+const shirtSummary = screenshotSummaries.find((summary) =>
+  summary.assignedGarmentKeys.includes("base:shirt"),
+);
+assert.ok(gownSummary);
+assert.ok(shirtSummary);
+assert.deepEqual(
+  { usedUnits: gownSummary!.usedUnits, remainingUnits: gownSummary!.remainingUnits },
+  { usedUnits: 2, remainingUnits: 0 },
+);
+assert.deepEqual(
+  { usedUnits: shirtSummary!.usedUnits, remainingUnits: shirtSummary!.remainingUnits },
+  { usedUnits: 1, remainingUnits: 1 },
+);
+const trouserCompatible = getFutureCompatiblePartialFabricAllocations({
+  garmentTypeSelection: mixedScreenshotSelection,
+  fabricAllocationState: screenshotPartial,
+  garmentKey: "base:trouser",
+});
+assert.deepEqual(
+  trouserCompatible.map((entry) => entry.allocationId),
+  [shirtSummary!.allocationId],
+);
+assert.equal(
+  hasAvoidablePartialFabricAllocation({
+    garmentTypeSelection: mixedScreenshotSelection,
+    fabricAllocationState: screenshotPartial,
+  }),
+  true,
+);
+assert.deepEqual(
+  getFuturePartialFabricAllocationCompatibleTargets({
+    garmentTypeSelection: mixedScreenshotSelection,
+    fabricAllocationState: screenshotPartial,
+  }).map((entry) => ({
+    allocationId: entry.allocationId,
+    compatibleGarmentKeys: [...entry.compatibleGarmentKeys],
+  })),
+  [
+    {
+      allocationId: shirtSummary!.allocationId,
+      compatibleGarmentKeys: ["base:trouser"],
+    },
+  ],
+);
+assert.equal(
+  isFutureFinalPartialFabricAllocation({
+    garmentTypeSelection: mixedScreenshotSelection,
+    fabricAllocationState: screenshotPartial,
+    allocationId: shirtSummary!.allocationId,
+  }),
+  false,
+);
+
+const shirtGownTypes = ["shirt", "full_length_gown"] satisfies FabricGarmentType[];
+const shirtGownSelection = createSelection(shirtGownTypes);
+let shirtGownPartial = assign(empty(), shirtGownTypes, "base:shirt", "FAB-A").state;
+const shirtGownSummary = getFuturePartialFabricAllocationSummaries({
+  fabricAllocationState: shirtGownPartial,
+}).find((summary) => summary.assignedGarmentKeys.includes("base:shirt"));
+assert.ok(shirtGownSummary);
+assert.equal(
+  isFutureFinalPartialFabricAllocation({
+    garmentTypeSelection: shirtGownSelection,
+    fabricAllocationState: shirtGownPartial,
+    allocationId: shirtGownSummary!.allocationId,
+  }),
+  false,
+  "Shirt 1/2 with Gown still unassigned must not be treated as a final residual.",
+);
+const blockedDifferentProduct = assign(
+  screenshotPartial,
+  mixedScreenshotTypes,
+  "base:trouser",
+  "FAB-C",
+);
+assert.equal(blockedDifferentProduct.status, "blocked");
+assert.equal(
+  blockedDifferentProduct.status === "blocked"
+    ? blockedDifferentProduct.reason
+    : null,
+  "FABRIC_QUANTITY_LIMIT_REACHED",
+);
+assert.equal(
+  getFutureCompatiblePartialFabricAllocations({
+    garmentTypeSelection: mixedScreenshotSelection,
+    fabricAllocationState: screenshotPartial,
+    garmentKey: "base:trouser",
+  }).length,
+  1,
+  "Domain analysis must still expose the partial Fabric A/B allocation even when Fabric C is blocked.",
+);
+let screenshotComplete = assign(
+  screenshotPartial,
+  mixedScreenshotTypes,
+  "base:trouser",
+  "FAB-B",
+).state;
+assert.deepEqual(planningOf(mixedScreenshotTypes, screenshotComplete), {
+  requiredGarmentCount: 3,
+  requiredFabricQuantity: 2,
+  selectedFabricQuantity: 2,
+});
+assert.equal(completionOf(mixedScreenshotTypes, screenshotComplete).assignedGarmentCount, 3);
+assert.equal(completionOf(mixedScreenshotTypes, screenshotComplete).isComplete, true);
+assert.equal(
+  hasAvoidablePartialFabricAllocation({
+    garmentTypeSelection: mixedScreenshotSelection,
+    fabricAllocationState: screenshotComplete,
+  }),
+  false,
+);
+const completedShirtAllocation = screenshotComplete.fabricAllocations.find((allocation) =>
+  allocation.garmentAssignments.some(
+    (assignment) => assignment.garmentKey === "base:shirt",
+  ),
+);
+assert.ok(completedShirtAllocation);
+assert.equal(completedShirtAllocation!.garmentAssignments.length, 2);
+assert.ok(
+  completedShirtAllocation!.garmentAssignments.some(
+    (assignment) => assignment.garmentKey === "base:trouser",
+  ),
+);
+
+let shirtTrouserPartial = assign(empty(), twoOrdinary, "base:shirt", "FAB-A").state;
+assert.equal(
+  hasAvoidablePartialFabricAllocation({
+    garmentTypeSelection: createSelection(twoOrdinary),
+    fabricAllocationState: shirtTrouserPartial,
+  }),
+  true,
+);
+assert.deepEqual(
+  getFutureCompatiblePartialFabricAllocations({
+    garmentTypeSelection: createSelection(twoOrdinary),
+    fabricAllocationState: shirtTrouserPartial,
+    garmentKey: "base:trouser",
+  }).map((entry) => entry.fabricCode),
+  ["FAB-A"],
+);
+shirtTrouserPartial = assign(
+  shirtTrouserPartial,
+  twoOrdinary,
+  "base:trouser",
+  "FAB-A",
+).state;
+assert.equal(shirtTrouserPartial.fabricAllocations.length, 1);
+assert.equal(
+  getFuturePartialFabricAllocationSummaries({
+    fabricAllocationState: shirtTrouserPartial,
+  })[0]?.remainingUnits,
+  0,
+);
+assert.equal(completionOf(twoOrdinary, shirtTrouserPartial).isComplete, true);
+
+const threeOddTypes = ["shirt", "trouser", "skirt"] satisfies FabricGarmentType[];
+const threeOddSelection = createSelection(threeOddTypes);
+let oddResidual = assign(empty(), threeOddTypes, "base:shirt", "FAB-A").state;
+oddResidual = assign(oddResidual, threeOddTypes, "base:trouser", "FAB-A").state;
+oddResidual = assign(oddResidual, threeOddTypes, "base:skirt", "FAB-B").state;
+assert.equal(completionOf(threeOddTypes, oddResidual).isComplete, true);
+const skirtSummary = getFuturePartialFabricAllocationSummaries({
+  fabricAllocationState: oddResidual,
+}).find((summary) => summary.assignedGarmentKeys.includes("base:skirt"));
+assert.ok(skirtSummary);
+assert.equal(skirtSummary!.remainingUnits, 1);
+assert.equal(
+  hasAvoidablePartialFabricAllocation({
+    garmentTypeSelection: threeOddSelection,
+    fabricAllocationState: oddResidual,
+  }),
+  false,
+);
+assert.equal(
+  isFutureFinalPartialFabricAllocation({
+    garmentTypeSelection: threeOddSelection,
+    fabricAllocationState: oddResidual,
+    allocationId: skirtSummary!.allocationId,
+  }),
+  true,
+);
+
+const gownOnly = assign(empty(), ["full_length_gown"], "base:full_length_gown", "FAB-A")
+  .state;
+assert.deepEqual(
+  getFuturePartialFabricAllocationSummaries({
+    fabricAllocationState: gownOnly,
+  }).filter((summary) => summary.remainingUnits > 0),
+  [],
+);
+assert.equal(
+  getFutureCompatiblePartialFabricAllocations({
+    garmentTypeSelection: createSelection(["full_length_gown", "shirt"]),
+    fabricAllocationState: gownOnly,
+    garmentKey: "base:shirt",
+  }).length,
+  0,
+);
+
+const legacyPartialTargets = getFutureFabricAssignmentTargets(
+  mixedScreenshotSelection,
+);
+const legacyPartialState = {
+  fabricAllocations: [
+    {
+      allocationId: "legacy-gown",
+      fabricCode: "FAB-A",
+      garmentAssignments: [
+        legacyPartialTargets.find(
+          (target) => target.assignment.garmentKey === "base:full_length_gown",
+        )!.assignment,
+      ],
+    },
+    {
+      allocationId: "legacy-shirt",
+      fabricCode: "FAB-B",
+      garmentAssignments: [
+        legacyPartialTargets.find(
+          (target) => target.assignment.garmentKey === "base:shirt",
+        )!.assignment,
+      ],
+    },
+  ],
+  activeAllocationId: "legacy-shirt",
+  pendingFabricGarment: null,
+  awaitingFabricForPendingGarment: false,
+};
+assert.equal(
+  hasAvoidablePartialFabricAllocation({
+    garmentTypeSelection: mixedScreenshotSelection,
+    fabricAllocationState: legacyPartialState,
+  }),
+  true,
+);
+assert.equal(completionOf(mixedScreenshotTypes, legacyPartialState).isComplete, false);
+assert.deepEqual(
+  getFutureCompatiblePartialFabricAllocations({
+    garmentTypeSelection: mixedScreenshotSelection,
+    fabricAllocationState: legacyPartialState,
+    garmentKey: "base:trouser",
+  }).map((entry) => entry.allocationId),
+  ["legacy-shirt"],
+);
+
+const existingAllocationResult = assignFutureGarmentToExistingFabricAllocation({
+  state: screenshotPartial,
+  garmentTypeSelection: mixedScreenshotSelection,
+  garmentKey: "base:trouser",
+  allocationId: shirtSummary!.allocationId,
+});
+assert.equal(existingAllocationResult.status, "assigned");
+assert.equal(
+  existingAllocationResult.state.fabricAllocations.find(
+    (allocation) => allocation.allocationId === shirtSummary!.allocationId,
+  )?.garmentAssignments.length,
+  2,
+);
+assert.equal(
+  completionOf(mixedScreenshotTypes, existingAllocationResult.state).isComplete,
+  true,
+);
+
+const staleAlreadyAssigned = assignFutureGarmentToExistingFabricAllocation({
+  state: existingAllocationResult.state,
+  garmentTypeSelection: mixedScreenshotSelection,
+  garmentKey: "base:trouser",
+  allocationId: shirtSummary!.allocationId,
+});
+assert.equal(staleAlreadyAssigned.status, "blocked");
+assert.equal(
+  staleAlreadyAssigned.status === "blocked" ? staleAlreadyAssigned.reason : null,
+  "GARMENT_ALREADY_ASSIGNED",
+);
+assert.deepEqual(
+  staleAlreadyAssigned.state.fabricAllocations.map((allocation) => ({
+    allocationId: allocation.allocationId,
+    garmentKeys: allocation.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+  })),
+  existingAllocationResult.state.fabricAllocations.map((allocation) => ({
+    allocationId: allocation.allocationId,
+    garmentKeys: allocation.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+  })),
 );
 
 console.log("test_step2_fabric_allocation_limit: ok");

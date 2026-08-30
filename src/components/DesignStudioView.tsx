@@ -88,6 +88,7 @@ import {
 import {
   assignFutureFabricToGarment,
   applyFutureFabricCardSelection,
+  assignFutureGarmentToExistingFabricAllocation,
   assignSameFabricProductToGarments,
   cancelFutureFabricCatalogueAssignment,
   getFutureGarmentFabricPlanning,
@@ -3061,6 +3062,24 @@ export default function DesignStudioView({
     }
     return result;
   };
+  const handleAssignGarmentToExistingAllocation = (
+    garmentKey: string,
+    allocationId: string,
+  ) => {
+    const result = assignFutureGarmentToExistingFabricAllocation({
+      state: fabricAllocationState,
+      garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+      garmentKey,
+      allocationId,
+    });
+    if (result.status === "assigned") {
+      if (activeUploadedDesignSource) {
+        setFuturePriceActivatedFabricCode(null);
+      }
+      setFabricAllocationState(result.state);
+    }
+    return result;
+  };
   const handleUseSameFutureFabricForGarment = (garmentKey: string) => {
     if (activeUploadedDesignSource) {
       setFuturePriceActivatedFabricCode(null);
@@ -3414,6 +3433,9 @@ export default function DesignStudioView({
           onRemoveFabricFromGarment={handleRemoveFutureFabricAssignment}
           onUseSameFabricForGarment={handleUseSameFutureFabricForGarment}
           onAssignSameFabricProduct={handleAssignSameFabricProductToGarments}
+          onAssignGarmentToExistingAllocation={
+            handleAssignGarmentToExistingAllocation
+          }
           onBack={() => setFutureStageId("garment_type")}
           onContinue={handleOpenDormantDesignStyleStage}
           onUseSameFabric={handleUseSameFutureFabric}

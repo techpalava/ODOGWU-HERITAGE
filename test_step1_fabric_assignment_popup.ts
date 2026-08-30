@@ -19,6 +19,7 @@ import {
   STEP1_NO_GARMENTS_TO_ASSIGN_STATUS,
   STEP1_REMAINING_CAPACITY_MESSAGE,
   STEP1_SELECTED_CAPACITY_MESSAGE,
+  STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE,
   buildStep1FabricAssignmentCandidates,
   commitStep1FabricAssignment,
   createStep1FabricAssignmentDisplaySnapshot,
@@ -238,7 +239,11 @@ const reduced = evaluateStep1FabricAssignmentSelection({
   fabricAllocationState: leftoverState,
   fabricCode: "FAB-A",
 });
-assert.equal(reduced.canAssignSelected, true);
+assert.equal(reduced.canAssignSelected, false);
+assert.equal(
+  reduced.groupingCapacityStatus,
+  STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE,
+);
 const reducedCommit = commitStep1FabricAssignment({
   state: leftoverState,
   garmentTypeSelection: createSelection(threeTypes),
@@ -721,7 +726,11 @@ const blockedRemaining = evaluateStep1FabricAssignmentSelection({
 assert.equal(blockedRemaining.canUseForAll, false);
 assert.equal(blockedRemaining.remainingFailure?.garmentKey, "base:shirt");
 assert.equal(blockedRemaining.remainingCapacityMessage, null);
-assert.equal(blockedRemaining.canAssignSelected, true);
+assert.equal(blockedRemaining.canAssignSelected, false);
+assert.equal(
+  blockedRemaining.groupingCapacityStatus,
+  STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE,
+);
 assert.equal(
   blockedRemaining.candidateMessages["base:shirt"],
   STEP1_GARMENT_CAPACITY_MESSAGE,

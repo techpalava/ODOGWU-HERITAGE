@@ -21,6 +21,16 @@ import {
 export const STEP1_FABRIC_ASSIGNMENT_TITLE = "Assign Fabric to Garments";
 export const STEP1_FABRIC_ASSIGNMENT_DESCRIPTION =
   "Choose which garments should use this Fabric.";
+export const STEP1_FABRIC_GROUP_ASSIGN_BUTTON_LABEL = "Assign Fabric";
+export const STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE =
+  "Select 1 more garment to use this Fabric.";
+export const STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE = "Fabric capacity complete.";
+export const STEP1_FINAL_RESIDUAL_CAPACITY_MESSAGE =
+  "This is the final garment for this order. The remaining half of this Fabric will be unused.";
+export const formatStep1FabricCapacityProgress = (
+  usedUnits: number,
+  maxUnits: number = FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION,
+): string => `Fabric Capacity: ${usedUnits}/${maxUnits}`;
 export const STEP1_USE_FOR_ALL_LABEL = "YES — Use for All";
 export const STEP1_INSUFFICIENT_CAPACITY_REASON =
   "Not enough available Fabric capacity for this garment in the current assignment.";
@@ -104,8 +114,11 @@ export type Step1FabricAssignmentFailure = {
 
 export type Step1FabricAssignmentEvaluation = {
   selectedCount: number;
+  selectedCapacityUnits: number;
+  maxCapacityUnits: number;
   canAssignSelected: boolean;
   canUseForAll: boolean;
+  groupingCapacityStatus: string | null;
   selectedCapacityMessage: string | null;
   remainingCapacityMessage: string | null;
   candidateMessages: Record<string, string | null>;
@@ -132,6 +145,46 @@ export const getUnassignedStep1FabricAssignmentCandidates = ({
 export const shouldPromptStep1FabricAssignmentSelection = (
   eligibleCandidateCount: number,
 ): boolean => eligibleCandidateCount >= 2;
+
+export const shouldOpenStep1FabricGroupingDialog = ({
+  candidates,
+  action,
+  garmentTypeSelection,
+  fabricAllocationState,
+}: {
+  candidates: readonly Step1FabricAssignmentCandidate[];
+  action: Step1FabricCatalogueCardAction;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+}): boolean => {
+  if (candidates.length === 0) {
+    return false;
+  }
+  if (action === "use_again") {
+    return shouldPromptStep1FabricAssignmentSelection(candidates.length);
+  }
+  if (candidates.length >= 2) {
+    return true;
+  }
+  const only = candidates[0];
+  if (!only) {
+    return false;
+  }
+  if (only.fabricUnits >= FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION) {
+    return true;
+  }
+  const unassignedStep1 = getUnassignedStep1FabricAssignmentCandidates({
+    garmentTypeSelection,
+    fabricAllocationState,
+  });
+  if (unassignedStep1.length <= 1) {
+    const hasPriorAssignments = fabricAllocationState.fabricAllocations.some(
+      (allocation) => allocation.garmentAssignments.length > 0,
+    );
+    return hasPriorAssignments;
+  }
+  return true;
+};
 
 const hasExistingStep1FabricProductAllocation = (
   state: FabricAllocationState,
@@ -426,7 +479,7 @@ export const evaluateStep1FabricAssignmentSelection = ({
           fabricCode,
           garmentKeys: remainingKeys,
         });
-  const canAssignSelected = selectedResult?.status === "assigned";
+  let canAssignSelected = selectedResult?.status === "assigned";
   const canUseForAll = remainingResult?.status === "assigned";
   const selectedFailure =
     selected.length > 0 && !canAssignSelected
@@ -435,6 +488,41 @@ export const evaluateStep1FabricAssignmentSelection = ({
   const remainingFailure = !canUseForAll
     ? failureFromDryRun(remainingResult)
     : null;
+  const candidateByKey = new Map(
+    candidates.map((candidate) => [candidate.garmentKey, candidate]),
+  );
+  const selectedCapacityUnits = selected.reduce(
+    (total, garmentKey) =>
+      total + (candidateByKey.get(garmentKey)?.fabricUnits ?? 0),
+    0,
+  );
+  const maxCapacityUnits = FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION;
+  const unselectedCandidates = candidates.filter(
+    (candidate) => !selected.includes(candidate.garmentKey),
+  );
+  let groupingCapacityStatus: string | null = null;
+  if (selected.length > 0) {
+    if (selectedCapacityUnits >= maxCapacityUnits) {
+      groupingCapacityStatus = STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE;
+    } else if (candidates.length === 1) {
+      groupingCapacityStatus = STEP1_FINAL_RESIDUAL_CAPACITY_MESSAGE;
+    } else {
+      const canGroupWithAnother = unselectedCandidates.some((candidate) =>
+        dryRunAssignGarmentKeys({
+          state: fabricAllocationState,
+          garmentTypeSelection,
+          fabricCode,
+          garmentKeys: [...selected, candidate.garmentKey],
+        }).status === "assigned",
+      );
+      if (canGroupWithAnother) {
+        groupingCapacityStatus = STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE;
+        if (selectedResult?.status === "assigned") {
+          canAssignSelected = false;
+        }
+      }
+    }
+  }
   const candidateMessages: Record<string, string | null> = {};
   for (const candidate of candidates) {
     const messages: string[] = [];
@@ -452,8 +540,11 @@ export const evaluateStep1FabricAssignmentSelection = ({
 
   return {
     selectedCount: selected.length,
+    selectedCapacityUnits,
+    maxCapacityUnits,
     canAssignSelected,
     canUseForAll,
+    groupingCapacityStatus,
     selectedCapacityMessage:
       selected.length > 0 && !canAssignSelected
         ? globalMessageForBlockedDryRun({

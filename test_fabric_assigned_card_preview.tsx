@@ -186,6 +186,7 @@ const renderStep = (
     onRemoveFabricFromGarment: handlers.onRemove || (() => undefined),
     onUseSameFabricForGarment: () => undefined,
     onAssignSameFabricProduct: () => undefined,
+    onAssignGarmentToExistingAllocation: () => undefined,
     onBack: () => undefined,
     onContinue: () => undefined,
     onUseSameFabric: () => undefined,
