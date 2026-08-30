@@ -138,7 +138,7 @@ assert.equal(
     garmentTypeSelection: selection(["shirt", "trouser"], ["male"]),
     style: styles.find((s) => s.id === "casual-native-1")!,
   }).status,
-  "compatible",
+  "exact_match",
 );
 assert.equal(
   resolveFutureDesignStyleCompatibility({
@@ -152,7 +152,7 @@ assert.equal(
       ],
     },
   }).status,
-  "compatible",
+  "exact_match",
 );
 
 // Supported singles / pairs
@@ -248,7 +248,7 @@ for (const garment of ["skirt", "standard_shorts", "bum_shorts"] as const) {
   });
   assert.equal(selected.status, "selected");
   assert.equal(selected.selectedStyleId, "contemporary-ankara-1");
-  assert.equal(selected.compatibility?.status, "compatible");
+  assert.equal(selected.compatibility?.status, "exact_match");
 }
 
 // Empty styles vs zero compatible vs compatible vs loading

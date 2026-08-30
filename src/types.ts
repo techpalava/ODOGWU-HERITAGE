@@ -110,6 +110,20 @@ export interface ConstructionDetail {
   discountPrice?: number;
 }
 
+export type StyleApplicabilityMode = "exact_only" | "adaptable";
+
+/**
+ * Explicit Design Style applicability. Distinct from fabricCapacityComposition,
+ * which remains the original/displayed catalogue composition.
+ *
+ * Missing metadata is treated as mode "exact_only".
+ */
+export interface StyleApplicability {
+  mode: StyleApplicabilityMode;
+  garmentTypes?: CanonicalPhysicalGarmentType[];
+  demographics?: CustomDetailDemographic[];
+}
+
 export interface StyleCategory {
   id: string;
   name: string;
@@ -148,6 +162,12 @@ export interface StyleCategory {
   
   defaultGarmentDetails?: DesignSelections;
   fabricCapacityComposition?: FabricCapacityGarmentSpec[];
+  /**
+   * Optional explicit mapping of which Step 1 garments/demographics this
+   * catalogue design may be adapted to. Never inferred from composition,
+   * outfitType, image, or display labels.
+   */
+  styleApplicability?: StyleApplicability;
 }
 
 /** Internal half-fabric integers: 1 = 1/2 customer-facing unit, 2 = 1 customer-facing unit. */

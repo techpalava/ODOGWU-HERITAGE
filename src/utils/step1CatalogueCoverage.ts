@@ -1,6 +1,9 @@
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import { getGarmentTypeSelectedDemographics } from "./garmentTypeStepState";
-import { resolveFutureDesignStyleCompatibility } from "./designStudioFutureDesignStyle";
+import {
+  isFutureDesignStyleSelectable,
+  resolveFutureDesignStyleCompatibility,
+} from "./designStudioFutureDesignStyle";
 import type { StylesLoadState } from "./stylesCatalogueLoadState";
 import type {
   GarmentTypeStepSelection,
@@ -117,7 +120,7 @@ export const resolveStep1CatalogueCoverage = ({
         style,
       }),
     }))
-    .filter(({ compatibility }) => compatibility.status === "compatible")
+    .filter(({ compatibility }) => isFutureDesignStyleSelectable(compatibility))
     .map(({ style }) => ({
       id: style.id,
       name: style.name,
