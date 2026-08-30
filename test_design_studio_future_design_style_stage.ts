@@ -76,7 +76,8 @@ const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8")
 const appSource = readFileSync("src/App.tsx", "utf8");
 const adminSource = readFileSync("src/components/DatabaseView.tsx", "utf8");
 
-assert.match(componentSource, /No matching design styles are available yet/);
+assert.match(componentSource, /No designs can currently be selected for this order/);
+assert.match(componentSource, /No exact catalogue matches yet/);
 assert.match(componentSource, /Return to Garment Type/);
 assert.match(
   componentSource,
@@ -91,18 +92,22 @@ assert.equal(
   false,
 );
 assert.match(componentSource, /aria-pressed=\{isSelected\}/);
-assert.match(componentSource, /aria-describedby=\{!isCompatible \? reasonId : undefined\}/);
+assert.match(componentSource, /aria-describedby=\{!isSelectable \? reasonId : undefined\}/);
 assert.match(componentSource, /min-h-11/);
 assert.match(componentSource, /sm:grid-cols-2 xl:grid-cols-3/);
 assert.match(componentSource, /Image unavailable/);
-assert.match(
-  componentSource,
-  /Supports: \{getFutureDesignStyleCompositionLabel\(style\)\}/,
-);
+assert.match(componentSource, /Originally shown as:/);
+assert.match(componentSource, /getFutureDesignStyleMatchPresentation/);
+assert.match(componentSource, /More Designs/);
 assert.match(componentSource, /Upload Your Own Design/);
+assert.equal(
+  componentSource.includes("ODOGWU_STEP3_DISCOVERY_QA_STYLES"),
+  false,
+);
+assert.equal(componentSource.includes("sessionStorage"), false);
 assert.match(componentSource, /data-testid="upload-your-design-panel"/);
 assert(
-  componentSource.indexOf("compatibilityByStyle.map") <
+  componentSource.indexOf('data-testid="step3-explore-all"') <
     componentSource.indexOf('data-testid="upload-your-design-panel"'),
   "The catalogue must remain before the uploaded-design module.",
 );

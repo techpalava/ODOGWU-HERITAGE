@@ -58,6 +58,21 @@ export interface FutureDesignStyleMatchPresentation {
   customerReason: string;
 }
 
+export const FUTURE_DESIGN_STYLE_TIER_BADGE: Record<
+  FutureDesignStyleMatchTier,
+  string
+> = {
+  exact_match: "BEST MATCH",
+  adaptable: "CAN BE ADAPTED",
+  blocked: "NOT AVAILABLE FOR THIS ORDER",
+  indeterminate: "CATALOGUE REVIEW",
+};
+
+export interface FutureDesignStyleAdaptationConfirmationCopy {
+  title: string;
+  body: string;
+}
+
 const INDETERMINATE_CUSTOMER_REASON =
   "This design needs catalogue review before it can be selected.";
 const EXACT_MATCH_CUSTOMER_REASON = "Designed for your selected garments.";
@@ -469,6 +484,26 @@ export const getFutureDesignStyleMatchPresentation = ({
     originalCompositionLabel,
     selectedGarmentLabels: selectedGarmentLabelsFor(selectedGarments),
     customerReason: compatibility.customerReason,
+  };
+};
+
+export const getFutureDesignStyleAdaptationConfirmationCopy = ({
+  garmentTypeSelection,
+  style,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  style: StyleCategory;
+}): FutureDesignStyleAdaptationConfirmationCopy => {
+  const presentation = getFutureDesignStyleMatchPresentation({
+    garmentTypeSelection,
+    style,
+  });
+  const selectedList = formatCustomerGarmentList(
+    presentation.selectedGarmentLabels,
+  );
+  return {
+    title: "Adapt this design to your garments?",
+    body: `This design is shown as ${presentation.originalCompositionLabel}, but it can be adapted to your selected ${selectedList}. Your garments and Fabric selections will not change.`,
   };
 };
 

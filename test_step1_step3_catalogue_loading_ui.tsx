@@ -235,8 +235,10 @@ const renderStep3 = async ({
     garmentTypeSelection: selection(["shirt", "trouser"], ["male"]),
     stylesLoadState: "ready",
   });
-  assert.match(step3.text, /No matching design styles are available yet/);
+  assert.match(step3.text, /No designs can currently be selected for this order/);
   assert.match(step3.text, /Upload Your Own Design/);
+  assert.match(step3.text, /NOT AVAILABLE FOR THIS ORDER/);
+  assert.equal(step3.text.includes("No matching design styles are available yet"), false);
 }
 
 // 5. saved selection while loading must not show upload-only; then matched
