@@ -10,8 +10,10 @@ import { resolveCurrentCatalogueFabricForAssignment } from "./additionalGarmentF
 import {
   assignFutureFabricToGarment,
   assignSameFabricProductToGarments,
+  formatFabricQuantityLimitChangeCopy,
   getFutureFabricBulkChoiceCandidates,
   getFutureFabricStep1AssignmentTargets,
+  getFutureGarmentFabricPlanning,
   type FutureFabricAssignmentTarget,
   type FutureFabricBulkAssignmentResult,
 } from "./designStudioFutureFabricStage";
@@ -90,6 +92,7 @@ export type Step1FabricAssignmentCommitResult =
         | "FABRIC_UNAVAILABLE"
         | "GARMENT_ALREADY_ASSIGNED"
         | "INVALID_CAPACITY"
+        | "FABRIC_QUANTITY_LIMIT_REACHED"
         | "ASSIGNMENT_FAILED";
       failedGarmentKey?: string;
     };
@@ -323,12 +326,17 @@ export const buildStep1FabricAssignmentCandidates = ({
     garmentTypeSelection,
     fabricAllocationState,
   }).map(({ assignment }) => {
-    const individuallyAssignable = canAssignFabricProductToStep1Garment({
+    const result = assignFutureFabricToGarment({
+      state: fabricAllocationState,
+      garmentTypeSelection,
+      garmentKey: assignment.garmentKey,
+      fabricCode,
+    });
+    const individuallyAssignable = result.status === "assigned";
+    const requiredFabricQuantity = getFutureGarmentFabricPlanning({
       garmentTypeSelection,
       fabricAllocationState,
-      fabricCode,
-      garmentKey: assignment.garmentKey,
-    });
+    }).requiredFabricQuantity;
     return {
       garmentKey: assignment.garmentKey,
       garmentType: assignment.garmentType,
@@ -337,7 +345,10 @@ export const buildStep1FabricAssignmentCandidates = ({
       individuallyAssignable,
       disabledReason: individuallyAssignable
         ? null
-        : STEP1_INSUFFICIENT_CAPACITY_REASON,
+        : result.status === "blocked" &&
+            result.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
+          ? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
+          : STEP1_INSUFFICIENT_CAPACITY_REASON,
     };
   });
 
@@ -345,6 +356,9 @@ const failureFromDryRun = (
   result: FutureFabricBulkAssignmentResult | null,
 ): Step1FabricAssignmentFailure | null => {
   if (!result || result.status !== "blocked" || !result.failedGarmentKey) {
+    return null;
+  }
+  if (result.reason === "FABRIC_QUANTITY_LIMIT_REACHED") {
     return null;
   }
   return {
@@ -357,13 +371,18 @@ const globalMessageForBlockedDryRun = ({
   result,
   failure,
   fallback,
+  requiredFabricQuantity,
 }: {
   result: FutureFabricBulkAssignmentResult | null;
   failure: Step1FabricAssignmentFailure | null;
   fallback: string;
+  requiredFabricQuantity: number;
 }): string | null => {
   if (!result || result.status === "assigned") return null;
   if (failure) return null;
+  if (result.reason === "FABRIC_QUANTITY_LIMIT_REACHED") {
+    return formatFabricQuantityLimitChangeCopy(requiredFabricQuantity);
+  }
   return fallback;
 };
 
@@ -380,6 +399,10 @@ export const evaluateStep1FabricAssignmentSelection = ({
   fabricAllocationState: FabricAllocationState;
   fabricCode: string;
 }): Step1FabricAssignmentEvaluation => {
+  const requiredFabricQuantity = getFutureGarmentFabricPlanning({
+    garmentTypeSelection,
+    fabricAllocationState,
+  }).requiredFabricQuantity;
   const candidateKeys = new Set(candidates.map((candidate) => candidate.garmentKey));
   const selected = selectedGarmentKeys.filter((garmentKey) =>
     candidateKeys.has(garmentKey),
@@ -437,6 +460,7 @@ export const evaluateStep1FabricAssignmentSelection = ({
             result: selectedResult,
             failure: selectedFailure,
             fallback: STEP1_SELECTED_CAPACITY_MESSAGE,
+            requiredFabricQuantity,
           })
         : null,
     remainingCapacityMessage:
@@ -445,6 +469,7 @@ export const evaluateStep1FabricAssignmentSelection = ({
             result: remainingResult,
             failure: remainingFailure,
             fallback: STEP1_REMAINING_CAPACITY_MESSAGE,
+            requiredFabricQuantity,
           })
         : null,
     candidateMessages,
@@ -491,6 +516,9 @@ export const resolveStep1FabricCatalogueCardPresentation = ({
     hasExistingFabricProductAllocation(fabricAllocationState, fabricCode)
   ) {
     return { status: "IN USE", action: "none" };
+  }
+  if (candidates.length > 0) {
+    return { status: "SELECT", action: "none" };
   }
   return { status: "ALL GARMENTS HAVE FABRIC", action: "none" };
 };
@@ -585,6 +613,19 @@ export const commitStep1FabricAssignment = ({
     garmentKeys,
   });
   if (result.status !== "assigned") {
+    const requiredFabricQuantity = getFutureGarmentFabricPlanning({
+      garmentTypeSelection,
+      fabricAllocationState: state,
+    }).requiredFabricQuantity;
+    if (result.reason === "FABRIC_QUANTITY_LIMIT_REACHED") {
+      return {
+        status: "blocked",
+        state,
+        error: formatFabricQuantityLimitChangeCopy(requiredFabricQuantity),
+        reason: "FABRIC_QUANTITY_LIMIT_REACHED",
+        failedGarmentKey: result.failedGarmentKey,
+      };
+    }
     return {
       status: "blocked",
       state,

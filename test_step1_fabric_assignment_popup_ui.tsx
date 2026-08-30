@@ -339,8 +339,8 @@ assert.equal(state.fabricAllocations.length, 2);
 assert.ok(
   state.fabricAllocations.every((allocation) => allocation.fabricCode === "FAB-A"),
 );
-assert.match(textContent(renderer.root), /Fabrics Selected: 2 of 2/);
-assert.match(textContent(renderer.root), /Garments assigned: 3 of 3/);
+assert.match(textContent(renderer.root), /Fabrics Selected: 2\/2/);
+assert.match(textContent(renderer.root), /Garments assigned: 3\/3/);
 
 const twoSelection = reconcileGarmentTypeStepSelection({
   selectedGarmentTypes: ["shirt", "trouser"],
@@ -424,7 +424,7 @@ let twoState = applyFutureFabricCardSelection({
   }),
   garmentTypeSelection: twoSelection,
   garmentKey: "base:trouser",
-  fabricCode: "FAB-B",
+  fabricCode: "FAB-A",
 });
 const noopAssign = () => {
   throw new Error("zero-candidate unused fabric must not start an assignment");
@@ -451,7 +451,7 @@ assert.equal(usedZeroCard?.props["data-fabric-status"], "IN USE");
 assert.notEqual(usedZeroCard?.props["data-fabric-action"], "use_again");
 assert.notEqual(usedZeroCard?.props["data-fabric-action"], "select");
 assert.equal(usedZeroCard?.props["data-fabric-remove"], "true");
-assert.match(usedZeroCard?.props["aria-label"] || "", /Remove .+ from /);
+assert.match(usedZeroCard?.props["aria-label"] || "", /remove /i);
 assert.match(textContent(zeroRenderer.root), /IN USE/);
 assert.doesNotMatch(textContent(usedZeroCard!), /USE AGAIN/);
 assert.equal(dialogCount(zeroRenderer.root), 0);
@@ -478,23 +478,21 @@ await act(async () => {
 });
 const unusedOneCard = findFabricCardByCode(oneRenderer.root, "FAB-C");
 assert.equal(unusedOneCard?.props["data-fabric-status"], "SELECT");
-assert.equal(unusedOneCard?.props["data-fabric-action"], "select");
+assert.equal(unusedOneCard?.props["data-fabric-action"], "none");
+assert.equal(unusedOneCard?.props.disabled, true);
 assert.match(
   textContent(oneRenderer.root),
-  /Select a fabric card to assign it to Trouser\./,
+  /You have selected the 1 fabric needed for this order/,
 );
 await act(async () => unusedOneCard?.props.onClick({ currentTarget: {} }));
 await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
-assert.equal(
-  dialogCount(oneRenderer.root),
-  0,
-  "One remaining Step 1 candidate must assign directly without the popup.",
-);
+assert.equal(dialogCount(oneRenderer.root), 0);
 assert.deepEqual(
   oneState.fabricAllocations.flatMap((allocation) =>
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
-  ).sort(),
-  ["base:shirt", "base:trouser"],
+  ),
+  ["base:shirt"],
+  "An unused Fabric product must not create a second allocation at the required limit.",
 );
 
 oneState = applyFutureFabricCardSelection({

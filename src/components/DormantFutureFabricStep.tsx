@@ -25,8 +25,13 @@ import {
   getFutureFabricStep1AssignmentTargets,
   getFutureUnassignedFabricTargets,
   adaptUntargetedStep1CatalogueCardPresentation,
+  assignFutureFabricToGarment,
+  formatFabricQuantityLimitChangeCopy,
+  formatFabricQuantityLimitReachedCopy,
+  formatFabricQuantityOverAllocatedCopy,
   formatRequiredFabricQuantitySentence,
   getFutureFabricCatalogueCancelTargets,
+  isPhysicalFabricQuantityOverAllocated,
   resolveFutureFabricCatalogueCardPresentation,
   type FutureFabricBulkAssignmentResult,
   type FutureFabricCatalogueCancellationResult,
@@ -61,6 +66,8 @@ const blockerMessages: Record<
   FABRIC_PRICE_UNAVAILABLE: "A selected fabric needs a current catalogue price before this step can continue.",
   INVALID_ALLOCATION_CAPACITY: "One fabric assignment exceeds the permitted fabric capacity. Review the allocation.",
   MALFORMED_ASSIGNMENT: "One garment assignment needs review before this step can continue.",
+  FABRIC_QUANTITY_OVER_ALLOCATED:
+    "Your saved Fabric selections use more fabrics than this order requires. Remove or change Fabric assignments until the required number remains.",
 };
 
 interface DormantFutureFabricStepProps {
@@ -109,13 +116,13 @@ const formatFabricSelectionProgress = (
   selectedFabricQuantity: number,
   requiredFabricQuantity: number,
 ): string =>
-  `Fabrics Selected: ${selectedFabricQuantity} of ${requiredFabricQuantity}`;
+  `Fabrics Selected: ${selectedFabricQuantity}/${requiredFabricQuantity}`;
 
 const formatGarmentAssignmentProgress = (
   assignedGarmentCount: number,
   requiredGarmentCount: number,
 ): string =>
-  `Garments assigned: ${assignedGarmentCount} of ${requiredGarmentCount}`;
+  `Garments assigned: ${assignedGarmentCount}/${requiredGarmentCount}`;
 
 const labelOwnedFabricCancelTargets = (
   garmentKeys: readonly string[],
@@ -419,6 +426,17 @@ export const DormantFutureFabricStep = ({
   );
   const isStep1CatalogueMode =
     !isChangeFabricTarget && !isPendingAdditionalCatalogueTarget;
+  const isOverAllocated = isPhysicalFabricQuantityOverAllocated({
+    selectedFabricQuantity,
+    requiredFabricQuantity,
+  });
+  const showAllocationLimitCopy =
+    !isOverAllocated &&
+    selectedFabricQuantity >= requiredFabricQuantity &&
+    requiredFabricQuantity > 0 &&
+    (unassignedStep1Targets.length > 0 ||
+      unassignedTargets.length > 0 ||
+      Boolean(pendingAdditionalAssignment));
   const step1AssignmentCandidates = pendingStep1FabricAssignment
     ? buildStep1FabricAssignmentCandidates({
         garmentTypeSelection,
@@ -503,7 +521,14 @@ export const DormantFutureFabricStep = ({
   ]);
   const uniqueBlockers = Array.from(
     new Set(
-      completion.blockers.map((blocker) => blockerMessages[blocker.code]),
+      completion.blockers.map((blocker) =>
+        blocker.code === "FABRIC_QUANTITY_OVER_ALLOCATED"
+          ? formatFabricQuantityOverAllocatedCopy(
+              selectedFabricQuantity,
+              requiredFabricQuantity,
+            )
+          : blockerMessages[blocker.code],
+      ),
     ),
   );
   const shouldDockContinueAction =
@@ -1034,6 +1059,22 @@ export const DormantFutureFabricStep = ({
     };
     setVisibleActionError(null);
     setAssignmentAnnouncement("");
+    const preview = assignFutureFabricToGarment({
+      state: fabricAllocationState,
+      garmentTypeSelection,
+      garmentKey,
+      fabricCode: fabric.code,
+    });
+    if (preview.status === "blocked") {
+      const blockedMessage =
+        preview.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
+          ? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
+          : "That fabric could not be assigned to this garment.";
+      setVisibleActionError(blockedMessage);
+      setAssignmentAnnouncement(blockedMessage);
+      pendingAssignmentAnnouncementRef.current = null;
+      return;
+    }
     const nextState = onAssignFabricToGarment(fabric, garmentKey);
     if (nextState && Array.isArray(nextState.fabricAllocations)) {
       const assigned = nextState.fabricAllocations.some((allocation) =>
@@ -1317,13 +1358,13 @@ export const DormantFutureFabricStep = ({
               className="mt-0.5 shrink-0 text-heritage-gold"
             />
             <div className="min-w-0 flex-1">
-              <p data-fabric-selection-progress="true">
+              <p data-fabric-selection-progress="true" className="break-words">
                 {formatFabricSelectionProgress(
                   selectedFabricQuantity,
                   requiredFabricQuantity,
                 )}
               </p>
-              <p data-garment-assignment-progress="true" className="mt-1">
+              <p data-garment-assignment-progress="true" className="mt-1 break-words">
                 {formatGarmentAssignmentProgress(
                   completion.assignedGarmentCount,
                   completion.requiredGarmentCount,
@@ -1525,20 +1566,33 @@ export const DormantFutureFabricStep = ({
             </h3>
             <p
               id="future-fabric-catalogue-help"
-              className="mt-2 max-w-2xl text-xs leading-relaxed text-heritage-ink/65"
+              className="mt-2 max-w-2xl break-words text-xs leading-relaxed text-heritage-ink/65"
               aria-live="polite"
+              data-fabric-quantity-limit-message={
+                showAllocationLimitCopy ? "true" : undefined
+              }
+              data-fabric-quantity-over-allocated={
+                isOverAllocated ? "true" : undefined
+              }
             >
-              {activeCatalogueTarget && isChangeFabricTarget
-                ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
-                    activeCatalogueTarget.assignment.garmentType,
-                  )}.`
-                : unassignedStep1Targets.length === 1
-                  ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
-                      unassignedStep1Targets[0]!.assignment.garmentType,
-                    )}.`
-                  : unassignedStep1Targets.length > 1
-                    ? "Select a fabric card to choose which garments should use this Fabric."
-                    : "All selected garments have fabric assignments."}
+              {isOverAllocated
+                ? formatFabricQuantityOverAllocatedCopy(
+                    selectedFabricQuantity,
+                    requiredFabricQuantity,
+                  )
+                : showAllocationLimitCopy
+                  ? formatFabricQuantityLimitReachedCopy(requiredFabricQuantity)
+                  : activeCatalogueTarget && isChangeFabricTarget
+                    ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
+                        activeCatalogueTarget.assignment.garmentType,
+                      )}.`
+                    : unassignedStep1Targets.length === 1
+                      ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
+                          unassignedStep1Targets[0]!.assignment.garmentType,
+                        )}.`
+                      : unassignedStep1Targets.length > 1
+                        ? "Select a fabric card to choose which garments should use this Fabric."
+                        : "All selected garments have fabric assignments."}
             </p>
             <p
               id="future-fabric-assignment-status"
@@ -1569,6 +1623,10 @@ export const DormantFutureFabricStep = ({
         <div
           role="alert"
           className="rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4"
+          data-fabric-needs-attention="true"
+          data-fabric-quantity-over-allocated={
+            isOverAllocated ? "true" : undefined
+          }
         >
           <p className="text-sm font-bold text-heritage-green">Fabric needs attention</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-heritage-ink/70">

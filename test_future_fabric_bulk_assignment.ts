@@ -247,10 +247,8 @@ assert.deepEqual(
       (assignment) => assignment.garmentKey,
     ),
   })),
-  [
-    { fabricCode: "FAB-A", garmentKeys: ["base:trouser"] },
-    { fabricCode: "FAB-B", garmentKeys: ["base:shirt"] },
-  ],
+  [{ fabricCode: "FAB-A", garmentKeys: ["base:shirt", "base:trouser"] }],
+  "Changing one of two shared ordinary garments onto a new Fabric must not create a second allocation.",
 );
 changed = removeFutureFabricAssignment({
   state: changed,

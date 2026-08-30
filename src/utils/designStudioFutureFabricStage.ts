@@ -29,7 +29,8 @@ export type FutureFabricStageBlockerCode =
   | "FABRIC_UNAVAILABLE"
   | "FABRIC_PRICE_UNAVAILABLE"
   | "INVALID_ALLOCATION_CAPACITY"
-  | "MALFORMED_ASSIGNMENT";
+  | "MALFORMED_ASSIGNMENT"
+  | "FABRIC_QUANTITY_OVER_ALLOCATED";
 
 export interface FutureFabricStageBlocker {
   code: FutureFabricStageBlockerCode;
@@ -120,7 +121,8 @@ export interface FutureFabricCapacityOffer {
 export type FutureFabricAssignmentBlockReason =
   | "GARMENT_NOT_FOUND"
   | "ASSIGNMENT_IN_PROGRESS"
-  | "INVALID_CAPACITY";
+  | "INVALID_CAPACITY"
+  | "FABRIC_QUANTITY_LIMIT_REACHED";
 
 export type FutureFabricAssignmentResult =
   | { status: "assigned"; state: FabricAllocationState }
@@ -216,6 +218,93 @@ const getAssignedFabricCode = (
   );
   return allocation?.fabricCode ?? null;
 };
+
+const fabricWord = (quantity: number): string =>
+  quantity === 1 ? "fabric" : "fabrics";
+
+/**
+ * Committed physical Fabric allocations, counted by allocation ID.
+ * Empty allocations are ignored; duplicate fabricCode values still count
+ * separately.
+ */
+export const getCommittedPhysicalFabricAllocationCount = (
+  state: FabricAllocationState,
+): number =>
+  getCustomerFacingFabricQuantityForAllocations(state.fabricAllocations)
+    .allocations.length;
+
+export const getRequiredPhysicalFabricAllocationCount = ({
+  garmentTypeSelection,
+  fabricAllocationState,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+}): number =>
+  getCustomerFacingFabricQuantityForAssignments(
+    resolveRequiredAssignmentsWithAdditional(
+      garmentTypeSelection,
+      fabricAllocationState,
+    ),
+  ).fabricQuantity;
+
+/**
+ * Authoritative ceiling: a NEW physical Fabric allocation may be created
+ * only while the committed allocation count is still below the required
+ * quantity from Fabric Capacity units.
+ */
+export const canCreatePhysicalFabricAllocation = ({
+  state,
+  garmentTypeSelection,
+}: {
+  state: FabricAllocationState;
+  garmentTypeSelection: GarmentTypeStepSelection;
+}): boolean =>
+  getCommittedPhysicalFabricAllocationCount(state) <
+  getRequiredPhysicalFabricAllocationCount({
+    garmentTypeSelection,
+    fabricAllocationState: state,
+  });
+
+export const isPhysicalFabricAllocationLimitReached = ({
+  state,
+  garmentTypeSelection,
+}: {
+  state: FabricAllocationState;
+  garmentTypeSelection: GarmentTypeStepSelection;
+}): boolean =>
+  !canCreatePhysicalFabricAllocation({ state, garmentTypeSelection });
+
+export const isPhysicalFabricQuantityOverAllocated = ({
+  selectedFabricQuantity,
+  requiredFabricQuantity,
+}: {
+  selectedFabricQuantity: number;
+  requiredFabricQuantity: number;
+}): boolean => selectedFabricQuantity > requiredFabricQuantity;
+
+export const formatFabricQuantityLimitReachedCopy = (
+  requiredFabricQuantity: number,
+): string =>
+  `You have selected the ${requiredFabricQuantity} ${fabricWord(
+    requiredFabricQuantity,
+  )} needed for this order. Use one of your selected fabrics for the remaining garments, or change a selected fabric.`;
+
+export const formatFabricQuantityLimitChangeCopy = (
+  requiredFabricQuantity: number,
+): string =>
+  `Your order already uses the ${requiredFabricQuantity} ${fabricWord(
+    requiredFabricQuantity,
+  )} required. To use this Fabric, first remove or change another Fabric assignment.`;
+
+export const formatFabricQuantityOverAllocatedCopy = (
+  selectedFabricQuantity: number,
+  requiredFabricQuantity: number,
+): string =>
+  `Your saved Fabric selections use ${selectedFabricQuantity} ${fabricWord(
+    selectedFabricQuantity,
+  )}, but this order requires ${requiredFabricQuantity}. Remove or change Fabric assignments until ${requiredFabricQuantity} ${
+    requiredFabricQuantity === 1 ? "fabric remains" : "fabrics remain"
+  }.`;
 
 export const isFutureFabricStep1BulkAssignment = (
   assignment: FabricGarmentAssignment,
@@ -317,7 +406,7 @@ const restoreParkedPendingGarment = (
   };
 };
 
-const assignTargetToFabricCore = ({
+const tryAppendToMatchingFabricAllocations = ({
   state,
   target,
   fabricCode,
@@ -325,7 +414,7 @@ const assignTargetToFabricCore = ({
   state: FabricAllocationState;
   target: FutureFabricAssignmentTarget;
   fabricCode: string;
-}): FutureFabricAssignmentResult => {
+}): FabricAllocationState | null => {
   const matchingAllocations = state.fabricAllocations.filter(
     (allocation) => allocation.fabricCode === fabricCode,
   );
@@ -347,8 +436,43 @@ const assignTargetToFabricCore = ({
       target.selection,
     );
     if (hasGarmentAssignment(attempted, target.assignment.garmentKey)) {
-      return { status: "assigned", state: attempted };
+      return attempted;
     }
+  }
+  return null;
+};
+
+const assignTargetToFabricCore = ({
+  state,
+  target,
+  fabricCode,
+  garmentTypeSelection,
+}: {
+  state: FabricAllocationState;
+  target: FutureFabricAssignmentTarget;
+  fabricCode: string;
+  garmentTypeSelection: GarmentTypeStepSelection;
+}): FutureFabricAssignmentResult => {
+  const appended = tryAppendToMatchingFabricAllocations({
+    state,
+    target,
+    fabricCode,
+  });
+  if (appended) {
+    return { status: "assigned", state: appended };
+  }
+
+  if (
+    !canCreatePhysicalFabricAllocation({
+      state,
+      garmentTypeSelection,
+    })
+  ) {
+    return {
+      status: "blocked",
+      reason: "FABRIC_QUANTITY_LIMIT_REACHED",
+      state,
+    };
   }
 
   const withAllocation =
@@ -369,19 +493,42 @@ const assignTargetToFabric = ({
   state,
   target,
   fabricCode,
+  garmentTypeSelection,
 }: {
   state: FabricAllocationState;
   target: FutureFabricAssignmentTarget;
   fabricCode: string;
+  garmentTypeSelection: GarmentTypeStepSelection;
 }): FutureFabricAssignmentResult => {
   if (state.pendingFabricGarment?.garmentKey === target.assignment.garmentKey) {
+    const awaitingState = {
+      ...state,
+      awaitingFabricForPendingGarment: true,
+    };
+    const appended = tryAppendToMatchingFabricAllocations({
+      state: awaitingState,
+      target,
+      fabricCode,
+    });
+    if (appended) {
+      return { status: "assigned", state: appended };
+    }
+    if (
+      !canCreatePhysicalFabricAllocation({
+        state: awaitingState,
+        garmentTypeSelection,
+      })
+    ) {
+      return {
+        status: "blocked",
+        reason: "FABRIC_QUANTITY_LIMIT_REACHED",
+        state,
+      };
+    }
     return {
       status: "assigned",
       state: FabricAllocationStateEngine.assignPendingGarmentToFabric(
-        {
-          ...state,
-          awaitingFabricForPendingGarment: true,
-        },
+        awaitingState,
         fabricCode,
       ),
     };
@@ -401,6 +548,7 @@ const assignTargetToFabric = ({
     state: readyState,
     target,
     fabricCode,
+    garmentTypeSelection,
   });
   if (result.status !== "assigned") {
     return { ...result, state };
@@ -528,7 +676,12 @@ export const assignFutureFabricToGarment = ({
     ),
   );
   if (!sourceAllocation) {
-    return assignTargetToFabric({ state, target, fabricCode });
+    return assignTargetToFabric({
+      state,
+      target,
+      fabricCode,
+      garmentTypeSelection,
+    });
   }
   if (sourceAllocation.fabricCode === fabricCode) {
     return { status: "assigned", state };
@@ -557,6 +710,7 @@ export const assignFutureFabricToGarment = ({
     state: withoutTarget,
     target,
     fabricCode,
+    garmentTypeSelection,
   });
   return reassigned.status === "assigned"
     ? { status: "assigned", state: removeEmptyFabricAllocations(reassigned.state) }
@@ -579,13 +733,13 @@ export const applyFutureFabricCardSelection = ({
   fabricCode: string;
 }): FabricAllocationState => {
   if (state.pendingFabricGarment?.garmentKey === garmentKey) {
-    return FabricAllocationStateEngine.assignPendingGarmentToFabric(
-      {
-        ...state,
-        awaitingFabricForPendingGarment: true,
-      },
+    const result = assignFutureFabricToGarment({
+      state,
+      garmentTypeSelection,
+      garmentKey,
       fabricCode,
-    );
+    });
+    return result.status === "assigned" ? result.state : state;
   }
 
   const targetIsAlreadyAssigned = state.fabricAllocations.some((allocation) =>
@@ -896,6 +1050,18 @@ export const resolveFutureFabricCatalogueCardPresentation = ({
   }
 
   if (currentTargetGarmentKey) {
+    const assignmentResult = assignFutureFabricToGarment({
+      state: fabricAllocationState,
+      garmentTypeSelection,
+      garmentKey: currentTargetGarmentKey,
+      fabricCode,
+    });
+    if (
+      assignmentResult.status === "blocked" &&
+      assignmentResult.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
+    ) {
+      return { status, action: "none", ...emptyCancelPresentation };
+    }
     return { status, action: "select", ...emptyCancelPresentation };
   }
 
@@ -1242,10 +1408,19 @@ export const selectFutureFabric = ({
     (!targetGarmentKey ||
       targetGarmentKey === state.pendingFabricGarment.garmentKey)
   ) {
-    return FabricAllocationStateEngine.assignPendingGarmentToFabric(
+    const pendingTarget = getFutureFabricAssignmentTargetForKey({
+      garmentTypeSelection,
+      fabricAllocationState: state,
+      garmentKey: state.pendingFabricGarment.garmentKey,
+    });
+    if (!pendingTarget) return state;
+    const pendingResult = assignTargetToFabric({
       state,
+      target: pendingTarget,
       fabricCode,
-    );
+      garmentTypeSelection,
+    });
+    return pendingResult.status === "assigned" ? pendingResult.state : state;
   }
 
   const assignedKeys = new Set(
@@ -1270,7 +1445,12 @@ export const selectFutureFabric = ({
       : remaining[0] || null;
   if (!target) return state;
 
-  const result = assignTargetToFabric({ state, target, fabricCode });
+  const result = assignTargetToFabric({
+    state,
+    target,
+    fabricCode,
+    garmentTypeSelection,
+  });
   return result.status === "assigned" ? result.state : state;
 };
 
@@ -1366,6 +1546,14 @@ export const getFutureFabricStageCompletion = ({
     fabricAllocationState.awaitingFabricForPendingGarment
   ) {
     blockers.push({ code: "PENDING_GARMENT_ASSIGNMENT" });
+  }
+
+  const planning = getFutureGarmentFabricPlanning({
+    garmentTypeSelection,
+    fabricAllocationState,
+  });
+  if (planning.selectedFabricQuantity > planning.requiredFabricQuantity) {
+    blockers.push({ code: "FABRIC_QUANTITY_OVER_ALLOCATED" });
   }
 
   const materialPricing = resolveFabricAllocationMaterialPricing(

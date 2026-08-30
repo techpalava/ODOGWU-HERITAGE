@@ -13,6 +13,8 @@ import {
   applyFutureFabricCardSelection,
   assignSameFabricProductToGarments,
   cancelFutureFabricCatalogueAssignment,
+  formatFabricQuantityLimitReachedCopy,
+  formatFabricQuantityOverAllocatedCopy,
   getFutureFabricAssignmentTargets,
   getFutureUnassignedFabricTargets,
   formatRequiredFabricQuantitySentence,
@@ -136,7 +138,7 @@ const assertFabricProgress = (
   assert.match(
     textContent(fabricLine),
     new RegExp(
-      `^Fabrics Selected: ${fabricSelected} of ${fabricRequired}$`,
+      `^Fabrics Selected: ${fabricSelected}/${fabricRequired}$`,
     ),
   );
   assert.doesNotMatch(
@@ -153,7 +155,7 @@ const assertFabricProgress = (
   assert.match(
     textContent(garmentLine),
     new RegExp(
-      `^Garments assigned: ${garmentsAssigned} of ${garmentsRequired}$`,
+      `^Garments assigned: ${garmentsAssigned}/${garmentsRequired}$`,
     ),
   );
   if (garmentsRequired > 0) {
@@ -2377,13 +2379,13 @@ try {
 
   let separateRemovalState = applyFutureFabricCardSelection({
     state: FabricAllocationStateEngine.initialize(),
-    garmentTypeSelection: shirtTrouserSelection,
+    garmentTypeSelection: threeGarmentSelection,
     garmentKey: "base:shirt",
     fabricCode: "INLINE-A",
   });
   separateRemovalState = applyFutureFabricCardSelection({
     state: separateRemovalState,
-    garmentTypeSelection: shirtTrouserSelection,
+    garmentTypeSelection: threeGarmentSelection,
     garmentKey: "base:trouser",
     fabricCode: "INLINE-B",
   });
@@ -2395,7 +2397,7 @@ try {
     renderStep(
       separateRemovalState,
       () => undefined,
-      shirtTrouserSelection,
+      threeGarmentSelection,
       () => undefined,
       () => undefined,
       (garmentKey) => {
@@ -2592,14 +2594,20 @@ try {
 
   let preserveOtherState = applyFutureFabricCardSelection({
     state: FabricAllocationStateEngine.initialize(),
-    garmentTypeSelection: shirtTrouserSelection,
+    garmentTypeSelection: threeGarmentSelection,
     garmentKey: "base:shirt",
     fabricCode: "INLINE-A",
   });
   preserveOtherState = applyFutureFabricCardSelection({
     state: preserveOtherState,
-    garmentTypeSelection: shirtTrouserSelection,
+    garmentTypeSelection: threeGarmentSelection,
     garmentKey: "base:trouser",
+    fabricCode: "INLINE-B",
+  });
+  preserveOtherState = applyFutureFabricCardSelection({
+    state: preserveOtherState,
+    garmentTypeSelection: threeGarmentSelection,
+    garmentKey: "base:skirt",
     fabricCode: "INLINE-B",
   });
   let preserveOtherRenderer!: ReturnType<typeof create>;
@@ -2607,7 +2615,7 @@ try {
     renderStep(
       preserveOtherState,
       () => undefined,
-      shirtTrouserSelection,
+      threeGarmentSelection,
       () => undefined,
       () => undefined,
       (garmentKey) => {
@@ -2641,7 +2649,7 @@ try {
         (assignment) => assignment.garmentKey,
       ),
     })),
-    [{ fabricCode: "INLINE-B", garmentKeys: ["base:trouser"] }],
+    [{ fabricCode: "INLINE-B", garmentKeys: ["base:trouser", "base:skirt"] }],
     "Cancelling Shirt must not remove Trouser's unrelated fabric assignment.",
   );
   assert.equal(
@@ -2663,7 +2671,7 @@ try {
     ),
     /Inline Heritage B/,
   );
-  assertFabricProgress(preserveOtherRenderer.root, 1, 1, 1, 2);
+  assertFabricProgress(preserveOtherRenderer.root, 1, 2, 2, 3);
 
   const findRemovalDialog = (root: ReactTestInstance) =>
     root.findAllByProps({
@@ -3130,12 +3138,6 @@ try {
     garmentKey: "base:shirt",
     fabricCode: "INLINE-A",
   });
-  mixedStep4UiState = applyFutureFabricCardSelection({
-    state: mixedStep4UiState,
-    garmentTypeSelection: shirtTrouserSelection,
-    garmentKey: "base:trouser",
-    fabricCode: "INLINE-B",
-  });
   const mixedAdditionalSelection = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
     existingAssignments: mixedStep4UiState.fabricAllocations.flatMap(
@@ -3156,6 +3158,12 @@ try {
       "INLINE-A",
     );
   }
+  mixedStep4UiState = applyFutureFabricCardSelection({
+    state: mixedStep4UiState,
+    garmentTypeSelection: shirtTrouserSelection,
+    garmentKey: "base:trouser",
+    fabricCode: "INLINE-B",
+  });
   let mixedStep4Renderer!: ReturnType<typeof create>;
   const renderMixedStep4 = () =>
     renderStep(
@@ -4514,15 +4522,41 @@ try {
       createNodeMock: createFocusMock,
     });
   });
+  assertFabricProgress(remainingOneRenderer.root, 1, 1, 1, 2);
   assert.match(
     textContent(remainingOneRenderer.root),
-    /Select a fabric card to assign it to Trouser\./,
+    new RegExp(
+      formatFabricQuantityLimitReachedCopy(1).replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      ),
+    ),
+  );
+  const remainingInlineB = remainingOneRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find((card) => card.props["data-fabric-code"] === "INLINE-B");
+  assert.equal(
+    remainingInlineB?.props["data-fabric-action"],
+    "none",
+    "A new Fabric product must not keep a SELECT path once the allocation limit is reached.",
+  );
+  const remainingInlineA = remainingOneRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find((card) => card.props["data-fabric-code"] === "INLINE-A");
+  assert.equal(remainingInlineA?.props["data-fabric-action"], "use_again");
+  await act(async () =>
+    remainingInlineB!.props.onClick({ currentTarget: {} }),
+  );
+  await act(async () => remainingOneRenderer.update(renderRemainingOne()));
+  assert.deepEqual(
+    remainingOneState.fabricAllocations.flatMap((allocation) =>
+      allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+    ).sort(),
+    ["base:shirt"],
+    "A blocked unused Fabric must not assign the remaining garment.",
   );
   await act(async () =>
-    remainingOneRenderer.root
-      .findAllByProps({ "data-fabric-card": "true" })
-      .find((card) => card.props["data-fabric-code"] === "INLINE-B")!
-      .props.onClick({ currentTarget: {} }),
+    remainingInlineA!.props.onClick({ currentTarget: {} }),
   );
   await act(async () => remainingOneRenderer.update(renderRemainingOne()));
   flushAnimationFrames();
@@ -4531,7 +4565,7 @@ try {
       "data-testid": "step1-fabric-assignment-dialog",
     }).length,
     0,
-    "One remaining Step 1 candidate must assign directly without the popup.",
+    "One remaining Step 1 candidate must assign via USE AGAIN without the popup.",
   );
   assert.deepEqual(
     remainingOneState.fabricAllocations.flatMap((allocation) =>
@@ -4584,6 +4618,158 @@ try {
       "data-post-assignment-highlight": "assigned",
     }).length,
     0,
+  );
+
+  const fourOrdinarySelection = reconcileGarmentTypeStepSelection({
+    selectedGarmentTypes: ["shirt", "trouser", "standard_shorts", "bum_shorts"],
+    selectedDemographics: ["male"],
+    normalizedCustomDetailCatalog: catalog,
+  }).selection;
+  const fourCatalogueFabrics: Fabric[] = [
+    ...fabrics,
+    {
+      code: "INLINE-C",
+      name: "Inline Heritage C",
+      description: "Third inline test fabric.",
+      color: "Ivory",
+      colorHex: "#F5F0E6",
+      category: "Test",
+      price: 30,
+      priceMultiplier: 1,
+      stockStatus: "IN_STOCK",
+    },
+  ];
+  let fourLimitState = applyFutureFabricCardSelection({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: fourOrdinarySelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  });
+  fourLimitState = applyFutureFabricCardSelection({
+    state: fourLimitState,
+    garmentTypeSelection: fourOrdinarySelection,
+    garmentKey: "base:trouser",
+    fabricCode: "INLINE-B",
+  });
+  let fourLimitRenderer!: ReturnType<typeof create>;
+  const renderFourLimit = () =>
+    renderStep(
+      fourLimitState,
+      (fabric, garmentKey) => {
+        fourLimitState = applyFutureFabricCardSelection({
+          state: fourLimitState,
+          garmentTypeSelection: fourOrdinarySelection,
+          garmentKey,
+          fabricCode: fabric.code,
+        });
+      },
+      fourOrdinarySelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      applySameFabricResult(
+        () => fourLimitState,
+        (state) => {
+          fourLimitState = state;
+        },
+        fourOrdinarySelection,
+      ),
+      fourCatalogueFabrics,
+    );
+  await act(async () => {
+    fourLimitRenderer = create(renderFourLimit());
+  });
+  assertFabricProgress(fourLimitRenderer.root, 2, 2, 2, 4);
+  assert.match(
+    textContent(fourLimitRenderer.root),
+    new RegExp(formatFabricQuantityLimitReachedCopy(2).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  );
+  assert.equal(
+    findFabricCard(fourLimitRenderer.root, "INLINE-C")?.props["data-fabric-action"],
+    "none",
+    "An unused Fabric product must not keep a SELECT path once the allocation limit is reached.",
+  );
+  assert.equal(
+    findFabricCard(fourLimitRenderer.root, "INLINE-A")?.props["data-fabric-action"],
+    "use_again",
+  );
+  await act(async () =>
+    findFabricCard(fourLimitRenderer.root, "INLINE-C")!.props.onClick({
+      currentTarget: {},
+    }),
+  );
+  await act(async () => fourLimitRenderer.update(renderFourLimit()));
+  assert.equal(fourLimitState.fabricAllocations.length, 2);
+  assert.equal(
+    fourLimitState.fabricAllocations.some(
+      (allocation) => allocation.fabricCode === "INLINE-C",
+    ),
+    false,
+  );
+  fourLimitState = applyFutureFabricCardSelection({
+    state: fourLimitState,
+    garmentTypeSelection: fourOrdinarySelection,
+    garmentKey: "base:standard_shorts",
+    fabricCode: "INLINE-A",
+  });
+  fourLimitState = applyFutureFabricCardSelection({
+    state: fourLimitState,
+    garmentTypeSelection: fourOrdinarySelection,
+    garmentKey: "base:bum_shorts",
+    fabricCode: "INLINE-B",
+  });
+  await act(async () => fourLimitRenderer.update(renderFourLimit()));
+  assertFabricProgress(fourLimitRenderer.root, 2, 2, 4, 4);
+  assert.match(
+    textContent(fourLimitRenderer.root),
+    /You need 2 fabrics for your 4 garments\./,
+  );
+
+  const fourTargets = getFutureFabricAssignmentTargets(fourOrdinarySelection);
+  const legacyOverAllocatedState = {
+    fabricAllocations: fourTargets.map((target, index) => ({
+      allocationId: `legacy-${index + 1}`,
+      fabricCode: ["INLINE-A", "INLINE-B", "INLINE-C", "INLINE-A"][index]!,
+      garmentAssignments: [target.assignment],
+    })),
+    activeAllocationId: "legacy-4",
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  };
+  let legacyRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    legacyRenderer = create(
+      renderStep(
+        legacyOverAllocatedState,
+        () => undefined,
+        fourOrdinarySelection,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        undefined,
+        undefined,
+        fourCatalogueFabrics,
+      ),
+    );
+  });
+  assertFabricProgress(legacyRenderer.root, 4, 2, 4, 4);
+  assert.match(
+    textContent(legacyRenderer.root),
+    new RegExp(
+      formatFabricQuantityOverAllocatedCopy(4, 2).replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      ),
+    ),
+  );
+  assert.equal(
+    getFutureFabricStageCompletion({
+      garmentTypeSelection: fourOrdinarySelection,
+      fabricAllocationState: legacyOverAllocatedState,
+      fabrics: fourCatalogueFabrics,
+    }).isComplete,
+    false,
   );
 
 } finally {

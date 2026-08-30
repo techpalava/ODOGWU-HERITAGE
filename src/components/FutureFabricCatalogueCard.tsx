@@ -49,7 +49,8 @@ export const FutureFabricCatalogueCard = ({
     !availabilityMessage &&
     presentation.action === "none" &&
     (presentation.status === "IN USE" ||
-      presentation.status === "ALL GARMENTS HAVE FABRIC");
+      presentation.status === "ALL GARMENTS HAVE FABRIC" ||
+      presentation.status === "SELECT");
   const stockPresentation = getFabricStockPresentation(fabric);
   const stockBadgeId = `${stockBadgeIdPrefix}-${fabric.code}`;
   const stockBadgeClassName =
