@@ -10,8 +10,9 @@ export type InlineAdditionalGarmentFabricTransactionLike = {
  * Returns null when the current stage should stay mounted.
  *
  * While an inline Optional Extra Garment Fabric transaction is active
- * (including the terminal "committed" stabilization phase), Step 4 stays
- * mounted even if Fabric/Design Source readiness briefly flickers.
+ * (including fabric selection, custom_details_choice, and the terminal
+ * "committed" stabilization phase), Step 4 stays mounted even if
+ * Fabric/Design Source readiness briefly flickers.
  */
 export const resolveFutureStageCorrection = ({
   currentStageId,

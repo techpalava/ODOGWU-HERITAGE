@@ -136,6 +136,8 @@ assert.match(
 );
 assert.match(studioSource, /activeFabricResolution=\{activeInlineFabricPicker\.resolution\}/);
 assert.match(studioSource, /beginPendingAdditionalGarmentSelection/);
+assert.match(studioSource, /custom_details_choice/);
+assert.match(studioSource, /isAdditionalGarmentFabricDialogVisible/);
 assert.match(studioSource, /STALE_ADDITIONAL_GARMENT_FABRIC_MESSAGE/);
 assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
 
