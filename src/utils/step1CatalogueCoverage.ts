@@ -1,4 +1,3 @@
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import { getGarmentTypeSelectedDemographics } from "./garmentTypeStepState";
 import {
   isFutureDesignStyleSelectable,
@@ -139,22 +138,11 @@ export const resolveStep1CatalogueCoverage = ({
     };
   }
 
-  const garmentLabels = selectedGarments
-    .map((garmentType) => getFabricGarmentLabel(garmentType))
-    .join(", ");
-  const demographicLabels = selectedDemographics
-    .map((demographic) => {
-      if (demographic === "male") return "Male";
-      if (demographic === "female") return "Female";
-      return "Unisex / Family";
-    })
-    .join(", ");
-
   return emptyResult(
     "no_match",
     selectedGarments,
     selectedDemographics,
-    "No catalogue design matches this selection",
-    `None of the current Design Style catalogue entries support ${garmentLabels} for ${demographicLabels}. You can continue and use Upload Your Own Design in Step 3, or change your garment/audience selection.`,
+    "No directly compatible catalogue design found",
+    `You can still continue to Step 3 to browse all designs. Designs that match your order or can be adapted will be selectable. Other designs will remain visible for reference, or you can Upload Your Own Design.`,
   );
 };

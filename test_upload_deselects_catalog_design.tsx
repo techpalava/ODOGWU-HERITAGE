@@ -821,7 +821,11 @@ const applySuccessfulPreview = (
 
   const stillSelected = renderer.root
     .findAllByType("button")
-    .filter((button) => button.props["aria-pressed"] === true);
+    .filter(
+      (button) =>
+        button.props["aria-pressed"] === true &&
+        !button.props["data-catalogue-filter"],
+    );
   assert.equal(
     stillSelected.length,
     0,

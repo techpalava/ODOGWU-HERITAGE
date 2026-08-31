@@ -9,12 +9,51 @@ import { getFabricStockPresentation } from "../utils/fabricStockPresentation";
 import {
   STEP1_FABRIC_ASSIGNMENT_DESCRIPTION,
   STEP1_FABRIC_ASSIGNMENT_TITLE,
+  STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE,
   STEP1_FABRIC_GROUP_ASSIGN_BUTTON_LABEL,
+  STEP1_FINAL_RESIDUAL_CAPACITY_MESSAGE,
+  STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE,
   STEP1_USE_FOR_ALL_LABEL,
   formatStep1FabricCapacityProgress,
   type Step1FabricAssignmentCandidate,
   type Step1FabricAssignmentFailure,
 } from "../utils/step1FabricAssignmentPopup";
+
+const getCapacityGuidanceTone = (
+  selectedCapacityUnits: number,
+  maxCapacityUnits: number,
+  groupingCapacityStatus: string | null,
+): { container: string; headline: string; guidance: string } => {
+  if (groupingCapacityStatus === STEP1_FINAL_RESIDUAL_CAPACITY_MESSAGE) {
+    return {
+      container: "border-heritage-green/25 bg-heritage-green/5",
+      headline: "text-heritage-green",
+      guidance: "text-heritage-green/80",
+    };
+  }
+  if (
+    selectedCapacityUnits >= maxCapacityUnits ||
+    groupingCapacityStatus === STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE
+  ) {
+    return {
+      container: "border-heritage-green/25 bg-heritage-green/5",
+      headline: "text-heritage-green",
+      guidance: "text-heritage-green/80",
+    };
+  }
+  if (groupingCapacityStatus === STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE) {
+    return {
+      container: "border-heritage-gold/35 bg-heritage-gold/10",
+      headline: "text-heritage-green",
+      guidance: "text-heritage-ink/75",
+    };
+  }
+  return {
+    container: "border-heritage-gold/25 bg-heritage-cream/40",
+    headline: "text-heritage-green",
+    guidance: "text-heritage-ink/70",
+  };
+};
 
 const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
   Array.from(
@@ -154,6 +193,11 @@ export const Step1FabricAssignmentDialog = ({
   ]
     .filter(Boolean)
     .join(" ");
+  const capacityTone = getCapacityGuidanceTone(
+    selectedCapacityUnits,
+    maxCapacityUnits,
+    groupingCapacityStatus,
+  );
 
   const dialog = (
     <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-heritage-ink/40 p-3 sm:items-center sm:p-6">
@@ -208,6 +252,32 @@ export const Step1FabricAssignmentDialog = ({
               {errorMessage}
             </p>
           ) : null}
+
+          <div
+            data-testid="step1-fabric-assignment-capacity-guidance"
+            className={`mb-4 rounded-2xl border px-3 py-3 ${capacityTone.container}`}
+          >
+            <p
+              role="status"
+              data-testid="step1-fabric-assignment-capacity-progress"
+              className={`text-sm font-semibold ${capacityTone.headline}`}
+            >
+              {formatStep1FabricCapacityProgress(
+                selectedCapacityUnits,
+                maxCapacityUnits,
+              )}
+            </p>
+            {groupingCapacityStatus ? (
+              <p
+                id={groupingCapacityId}
+                role="status"
+                data-testid="step1-fabric-assignment-grouping-capacity"
+                className={`mt-1 text-sm leading-relaxed ${capacityTone.guidance}`}
+              >
+                {groupingCapacityStatus}
+              </p>
+            ) : null}
+          </div>
 
           <div
             className="flex min-w-0 flex-col gap-3 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 p-3 sm:flex-row sm:items-center"
@@ -305,27 +375,6 @@ export const Step1FabricAssignmentDialog = ({
               );
             })}
           </fieldset>
-
-          <p
-            role="status"
-            data-testid="step1-fabric-assignment-capacity-progress"
-            className="mt-4 text-sm font-semibold text-heritage-green"
-          >
-            {formatStep1FabricCapacityProgress(
-              selectedCapacityUnits,
-              maxCapacityUnits,
-            )}
-          </p>
-          {groupingCapacityStatus ? (
-            <p
-              id={groupingCapacityId}
-              role="status"
-              data-testid="step1-fabric-assignment-grouping-capacity"
-              className="mt-2 text-sm leading-relaxed text-heritage-ink/75"
-            >
-              {groupingCapacityStatus}
-            </p>
-          ) : null}
 
           {remainingCapacityMessage ? (
             <p

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  getFutureDesignStyleAdaptationConfirmationCopy,
   getFutureDesignStyleMatchPresentation,
   reconcileFutureDesignStyleSelection,
   resolveFutureDesignStyleCompatibility,
@@ -117,6 +118,18 @@ assert.deepEqual(adaptedPresentation.selectedGarmentLabels, [
   "Standard Shirt",
   "Trouser",
 ]);
+
+const adaptationCopy = getFutureDesignStyleAdaptationConfirmationCopy({
+  garmentTypeSelection: shirtTrouserMale,
+  style: adaptableKaftan,
+});
+assert.equal(adaptationCopy.title, "Adapt this design to your garments?");
+assert.match(adaptationCopy.body, /Long Shirt \(Kaftan\)/);
+assert.match(adaptationCopy.body, /Standard Shirt and Trouser/);
+assert.match(
+  adaptationCopy.body,
+  /Your garments and Fabric selections will not change/,
+);
 
 const exactPresentation = getFutureDesignStyleMatchPresentation({
   garmentTypeSelection: kaftanMale,
