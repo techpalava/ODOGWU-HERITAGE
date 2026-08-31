@@ -288,7 +288,13 @@ for (const garment of ["skirt", "standard_shorts", "bum_shorts"] as const) {
     stylesLoadState: "ready",
   });
   assert.equal(noMatch.status, "no_match");
+  assert.equal(
+    noMatch.customerHeadline,
+    "No directly compatible catalogue design found",
+  );
+  assert.match(noMatch.customerDetail || "", /browse all designs/i);
   assert.match(noMatch.customerDetail || "", /Upload Your Own Design/);
+  assert.equal(noMatch.compatibleCount, 0);
 
   // 5. saved Shirt+Trouser+Male while styles initially [] during load
   //    must NOT become upload-only; once styles arrive => matched

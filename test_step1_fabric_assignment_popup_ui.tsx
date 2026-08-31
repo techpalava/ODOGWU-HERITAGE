@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { ComponentProps } from "react";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
@@ -18,6 +19,10 @@ import {
   STEP1_FABRIC_NO_LONGER_AVAILABLE_MESSAGE,
   STEP1_GARMENT_CAPACITY_MESSAGE,
   STEP1_NO_GARMENTS_TO_ASSIGN_STATUS,
+  STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE,
+  STEP1_FINAL_RESIDUAL_CAPACITY_MESSAGE,
+  STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE,
+  STEP1_ZERO_CAPACITY_GUIDANCE_MESSAGE,
 } from "./src/utils/step1FabricAssignmentPopup";
 
 const require = createRequire(import.meta.url);
@@ -73,6 +78,83 @@ const textContent = (node: ReactTestInstance | string | null): string =>
           .map((child) => textContent(child as ReactTestInstance | string))
           .join("")
       : "";
+
+const flattenRenderOrder = (node: ReactTestInstance): ReactTestInstance[] => {
+  const ordered: ReactTestInstance[] = [node];
+  for (const child of node.children) {
+    if (typeof child !== "string") {
+      ordered.push(...flattenRenderOrder(child));
+    }
+  }
+  return ordered;
+};
+
+const renderOrderIndex = (
+  root: ReactTestInstance,
+  matcher: (node: ReactTestInstance) => boolean,
+): number => flattenRenderOrder(root).findIndex(matcher);
+
+const assertDialogSectionOrder = (dialog: ReactTestInstance) => {
+  const markers = [
+    {
+      label: "capacity guidance",
+      index: renderOrderIndex(
+        dialog,
+        (node) =>
+          node.props?.["data-testid"] ===
+          "step1-fabric-assignment-capacity-guidance",
+      ),
+    },
+    {
+      label: "fabric preview/header",
+      index: renderOrderIndex(
+        dialog,
+        (node) =>
+          node.props?.["data-testid"] === "step1-fabric-assignment-header",
+      ),
+    },
+    {
+      label: "garment candidate list",
+      index: renderOrderIndex(dialog, (node) => node.type === "fieldset"),
+    },
+  ];
+  for (const marker of markers) {
+    assert.ok(marker.index >= 0, `${marker.label} must render in the dialog`);
+  }
+  assert.ok(
+    markers[0]!.index < markers[1]!.index &&
+      markers[1]!.index < markers[2]!.index,
+    "Capacity guidance must precede fabric preview/header, which must precede garment candidates.",
+  );
+};
+
+const capacityGuidanceNode = (dialog: ReactTestInstance) =>
+  dialog.findByProps({
+    "data-testid": "step1-fabric-assignment-capacity-guidance",
+  });
+
+const assertCapacityGuidanceTone = (
+  dialog: ReactTestInstance,
+  {
+    includes,
+    excludes = ["border-red", "bg-red", "text-red"],
+  }: { includes: string[]; excludes?: string[] },
+) => {
+  const className = String(capacityGuidanceNode(dialog).props.className || "");
+  for (const token of includes) {
+    assert.ok(
+      className.includes(token),
+      `expected capacity guidance to include ${token}, received ${className}`,
+    );
+  }
+  for (const token of excludes) {
+    assert.equal(
+      className.includes(token),
+      false,
+      `capacity guidance must not include error tone token ${token}`,
+    );
+  }
+};
 
 const constructionPrice = threeSelection.garmentTypes.reduce((total, garmentType) => {
   const resolution = resolveGarmentConstructionPricing(garmentType, catalog);
@@ -168,6 +250,8 @@ assert.equal(
     .disabled,
   true,
 );
+assert.match(textContent(dialog), /Fabric Capacity: 0\/2/);
+assert.match(textContent(dialog), /Select garments to use this Fabric/);
 
 await act(async () =>
   dialog
@@ -183,7 +267,7 @@ assert.equal(
     .props.disabled,
   true,
 );
-assert.match(textContent(selectedDialog), /Select 1 more garment/);
+assert.match(textContent(selectedDialog), /Select 1 more standard garment/);
 await act(async () =>
   selectedDialog
     .findByProps({ "data-step1-fabric-assignment-checkbox": "base:trouser" })
@@ -746,6 +830,173 @@ assert.match(assignmentDialogSource, /behavior: "smooth", block: "start"/);
 assert.match(assignmentDialogSource, /initialFocusRef\.current \|\| dialog/);
 assert.match(assignmentDialogSource, /data-step1-fabric-assignment-row-warning/);
 assert.match(assignmentDialogSource, /role="alert"/);
+
+const renderCapacityDialog = (
+  props: Partial<ComponentProps<typeof Step1FabricAssignmentDialog>>,
+) =>
+  create(
+    <Step1FabricAssignmentDialog
+      displayFabric={fabrics[0]}
+      currentFabric={fabrics[0]}
+      candidates={[
+        {
+          garmentKey: "base:shirt",
+          garmentType: "shirt",
+          fabricUnits: 1,
+          capacityUsageCopy: "Uses 1/2 fabric capacity unit.",
+          individuallyAssignable: true,
+          disabledReason: null,
+        },
+        {
+          garmentKey: "base:trouser",
+          garmentType: "trouser",
+          fabricUnits: 1,
+          capacityUsageCopy: "Uses 1/2 fabric capacity unit.",
+          individuallyAssignable: true,
+          disabledReason: null,
+        },
+      ]}
+      selectedGarmentKeys={[]}
+      selectedCount={0}
+      selectedCapacityUnits={0}
+      maxCapacityUnits={2}
+      canAssignSelected={false}
+      canUseForAll={false}
+      groupingCapacityStatus={STEP1_ZERO_CAPACITY_GUIDANCE_MESSAGE}
+      selectedCapacityMessage={null}
+      remainingCapacityMessage={null}
+      errorMessage={null}
+      onToggleGarmentKey={() => undefined}
+      onAssignSelected={() => undefined}
+      onUseForAll={() => undefined}
+      onCancel={() => undefined}
+      {...props}
+    />,
+  );
+
+let zeroCapacityRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  zeroCapacityRenderer = renderCapacityDialog({});
+});
+const zeroCapacityDialog = zeroCapacityRenderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+assertDialogSectionOrder(zeroCapacityDialog);
+assert.match(textContent(zeroCapacityDialog), /Fabric Capacity: 0\/2/);
+assert.match(textContent(zeroCapacityDialog), /Select garments to use this Fabric/);
+assertCapacityGuidanceTone(zeroCapacityDialog, {
+  includes: ["bg-heritage-cream/40", "border-heritage-gold/25"],
+});
+
+let oneHalfRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  oneHalfRenderer = renderCapacityDialog({
+    selectedGarmentKeys: ["base:shirt"],
+    selectedCount: 1,
+    selectedCapacityUnits: 1,
+    groupingCapacityStatus: STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE,
+  });
+});
+const oneHalfDialog = oneHalfRenderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+assert.match(textContent(oneHalfDialog), /Fabric Capacity: 1\/2/);
+assert.match(
+  textContent(oneHalfDialog),
+  /Select 1 more standard garment to complete this Fabric/,
+);
+assertCapacityGuidanceTone(oneHalfDialog, {
+  includes: ["bg-heritage-gold/10", "border-heritage-gold/35"],
+});
+
+let completeRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  completeRenderer = renderCapacityDialog({
+    selectedGarmentKeys: ["base:shirt", "base:trouser"],
+    selectedCount: 2,
+    selectedCapacityUnits: 2,
+    canAssignSelected: true,
+    groupingCapacityStatus: STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE,
+  });
+});
+const completeDialog = completeRenderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+assert.match(textContent(completeDialog), /Fabric Capacity: 2\/2/);
+assert.match(textContent(completeDialog), /Fabric capacity complete/);
+assert.doesNotMatch(textContent(completeDialog), /Select 1 more garment/);
+assertCapacityGuidanceTone(completeDialog, {
+  includes: ["bg-heritage-green/5", "border-heritage-green/25"],
+});
+
+let gownRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  gownRenderer = renderCapacityDialog({
+    candidates: [
+      {
+        garmentKey: "base:full_length_gown",
+        garmentType: "full_length_gown",
+        fabricUnits: 2,
+        capacityUsageCopy: "Uses 1 fabric capacity unit.",
+        individuallyAssignable: true,
+        disabledReason: null,
+      },
+    ],
+    selectedGarmentKeys: ["base:full_length_gown"],
+    selectedCount: 1,
+    selectedCapacityUnits: 2,
+    canAssignSelected: true,
+    groupingCapacityStatus: STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE,
+  });
+});
+const gownDialog = gownRenderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+assert.match(textContent(gownDialog), /Fabric Capacity: 2\/2/);
+assert.match(textContent(gownDialog), /Fabric capacity complete/);
+assert.doesNotMatch(
+  textContent(gownDialog),
+  /Select 1 more standard garment/,
+);
+assertCapacityGuidanceTone(gownDialog, {
+  includes: ["bg-heritage-green/5", "border-heritage-green/25"],
+});
+
+let residualRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  residualRenderer = renderCapacityDialog({
+    candidates: [
+      {
+        garmentKey: "base:dress",
+        garmentType: "dress",
+        fabricUnits: 1,
+        capacityUsageCopy: "Uses 1/2 fabric capacity unit.",
+        individuallyAssignable: true,
+        disabledReason: null,
+      },
+    ],
+    selectedGarmentKeys: ["base:dress"],
+    selectedCount: 1,
+    selectedCapacityUnits: 1,
+    canAssignSelected: true,
+    groupingCapacityStatus: STEP1_FINAL_RESIDUAL_CAPACITY_MESSAGE,
+  });
+});
+const residualDialog = residualRenderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+assert.match(textContent(residualDialog), /Fabric Capacity: 1\/2/);
+assert.match(
+  textContent(residualDialog),
+  /Final Fabric — the remaining half will be unused/,
+);
+assert.doesNotMatch(
+  textContent(residualDialog),
+  /Select 1 more standard garment/,
+);
+assertCapacityGuidanceTone(residualDialog, {
+  includes: ["bg-heritage-green/5", "border-heritage-green/25"],
+});
 
 const blockedDialogCandidates = [
   {

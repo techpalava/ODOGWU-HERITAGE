@@ -350,7 +350,7 @@ export const GarmentTypeStep = ({
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-heritage-ink/70">
             Select every physical garment included in this order, then choose who it is for.
-            Step 3 later requires a matching Design Style catalogue entry for catalogue designs.
+            Step 3 will show all catalogue designs and highlight which ones best match or can be adapted to your order.
           </p>
         </div>
 

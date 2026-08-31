@@ -366,7 +366,7 @@ assert.ok(populatedMarkup.includes("Fabric, tax, shipping, and other selected op
 assert.equal(/uploaded design complete|design source/i.test(populatedMarkup), false);
 assert.ok(
   populatedMarkup.includes(
-    "Step 3 later requires a matching Design Style catalogue entry for catalogue designs.",
+    "Step 3 will show all catalogue designs and highlight which ones best match or can be adapted to your order.",
   ),
 );
 
@@ -374,14 +374,15 @@ const coverageWarningMarkup = renderStep({
   selectedGarmentTypes: ["skirt"],
   selectedDemographics: ["female"],
   catalogueCoverageMessage: {
-    headline: "No catalogue design matches this selection",
+    headline: "No directly compatible catalogue design found",
     detail:
-      "None of the current Design Style catalogue entries support Skirt. Adjust your selection, or continue and use Upload Your Own Design in Step 3.",
+      "You can still continue to Step 3 to browse all designs. Designs that match your order or can be adapted will be selectable. Other designs will remain visible for reference, or you can Upload Your Own Design.",
   },
 });
 assert.ok(
-  coverageWarningMarkup.includes("No catalogue design matches this selection"),
+  coverageWarningMarkup.includes("No directly compatible catalogue design found"),
 );
+assert.ok(coverageWarningMarkup.includes("browse all designs"));
 assert.ok(coverageWarningMarkup.includes("Upload Your Own Design"));
 
 const allEightStep1Markup = renderStep({

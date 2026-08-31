@@ -236,7 +236,7 @@ const designStyleStepSource = readFileSync(
 );
 assert.match(designStyleStepSource, /data-testid="upload-your-design-panel"/);
 assert(
-  designStyleStepSource.indexOf("compatibilityByStyle.map") <
+  designStyleStepSource.indexOf('data-testid="step3-explore-all"') <
     designStyleStepSource.indexOf('data-testid="upload-your-design-panel"'),
   "The upload panel must appear below the Design Style catalogue.",
 );
