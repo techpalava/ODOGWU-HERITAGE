@@ -14,6 +14,8 @@ import {
   applyFutureFabricCardSelection,
   assignSameFabricProductToGarments,
   cancelFutureFabricCatalogueAssignment,
+  changeFutureFabricAllocationProduct,
+  getFutureFabricAllocationAssignmentSignature,
   formatFabricQuantityLimitReachedCopy,
   formatFabricQuantityOverAllocatedCopy,
   getFutureFabricAssignmentTargets,
@@ -212,6 +214,14 @@ const renderStep = (
     garmentKey: string,
     allocationId: string,
   ) => void = () => undefined,
+  onChangeFabricAllocationProduct: (
+    allocationId: string,
+    fabricCode: string,
+    expectation?: {
+      expectedCurrentFabricCode: string;
+      expectedAssignmentSignature: string;
+    },
+  ) => void = () => undefined,
 ) => {
   const completion = getFutureFabricStageCompletion({
     garmentTypeSelection: selection,
@@ -236,6 +246,7 @@ const renderStep = (
       onUseSameFabricForGarment={onUseSameFabricForGarment}
       onAssignSameFabricProduct={onAssignSameFabricProduct}
       onAssignGarmentToExistingAllocation={onAssignGarmentToExistingAllocation}
+      onChangeFabricAllocationProduct={onChangeFabricAllocationProduct}
       onBack={() => undefined}
       onContinue={() => undefined}
       onUseSameFabric={() => undefined}
@@ -653,12 +664,34 @@ const assignedState = assignFutureFabricToGarment({
   garmentKey: "base:shirt",
   fabricCode: "INLINE-A",
 }).state;
-assigned = [];
+const changeCalls: Array<{ allocationId: string; fabricCode: string }> = [];
+let changeState = assignedState;
 await act(async () => {
   renderer.update(
     renderStep(
-      assignedState,
-      (fabric, garmentKey) => assigned.push({ fabricCode: fabric.code, garmentKey }),
+      changeState,
+      () => undefined,
+      garmentTypeSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      () => undefined,
+      fabrics,
+      () => undefined,
+      (allocationId, fabricCode) => {
+        changeCalls.push({ allocationId, fabricCode });
+        const result = changeFutureFabricAllocationProduct({
+          state: changeState,
+          allocationId,
+          nextFabricCode: fabricCode,
+          fabrics,
+        });
+        if (result.status === "assigned") {
+          changeState = result.state;
+        }
+        return result;
+      },
     ),
   );
 });
@@ -675,13 +708,15 @@ await act(async () =>
     .find((card) => card.props["data-fabric-code"] === "INLINE-B")!.props.onClick(),
 );
 assert.equal(
-  assigned.length,
+  changeCalls.length,
   1,
-  "Change Fabric must assign the selected card without a second confirmation.",
+  "Single-garment Change Fabric must replace the allocation product directly without a group confirmation.",
 );
-assert.deepEqual(assigned, [
-  { fabricCode: "INLINE-B", garmentKey: "base:shirt" },
-]);
+assert.equal(changeCalls[0]?.fabricCode, "INLINE-B");
+assert.equal(
+  changeState.fabricAllocations[0]?.fabricCode,
+  "INLINE-B",
+);
 
 assigned = [];
 await act(async () =>
@@ -719,23 +754,48 @@ let fullState = assignFutureFabricToGarment({
   garmentKey: "base:trouser",
   fabricCode: "INLINE-A",
 }).state;
+const sharedInlineAllocationId = fullState.fabricAllocations.find((allocation) =>
+  allocation.garmentAssignments.some(
+    (assignment) => assignment.garmentKey === "base:shirt",
+  ),
+)!.allocationId;
 let targetedTwoGarmentState = fullState;
-const targetedTwoGarmentCalls: string[] = [];
+const targetedTwoGarmentCalls: Array<{
+  allocationId: string;
+  fabricCode: string;
+  expectation?: {
+    expectedCurrentFabricCode: string;
+    expectedAssignmentSignature: string;
+  };
+}> = [];
 let targetedTwoGarmentRenderer!: ReturnType<typeof create>;
 await act(async () => {
   targetedTwoGarmentRenderer = create(
     renderStep(
       targetedTwoGarmentState,
-      (fabric, garmentKey) => {
-        targetedTwoGarmentCalls.push(garmentKey);
-        targetedTwoGarmentState = assignFutureFabricToGarment({
-          state: targetedTwoGarmentState,
-          garmentTypeSelection: threeGarmentSelection,
-          garmentKey,
-          fabricCode: fabric.code,
-        }).state;
-      },
+      () => undefined,
       threeGarmentSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      () => undefined,
+      fabrics,
+      () => undefined,
+      (allocationId, fabricCode, expectation) => {
+        targetedTwoGarmentCalls.push({ allocationId, fabricCode, expectation });
+        const result = changeFutureFabricAllocationProduct({
+          state: targetedTwoGarmentState,
+          allocationId,
+          nextFabricCode: fabricCode,
+          fabrics,
+          expectation,
+        });
+        if (result.status === "assigned") {
+          targetedTwoGarmentState = result.state;
+        }
+        return result;
+      },
     ),
   );
 });
@@ -743,6 +803,14 @@ await act(async () =>
   targetedTwoGarmentRenderer.root
     .findByProps({ "aria-label": "Change fabric for Standard Shirt" })
     .props.onClick({ currentTarget: {} }),
+);
+assert.match(
+  textContent(targetedTwoGarmentRenderer.root),
+  /Changing Fabric for Fabric Selection/,
+);
+assert.match(
+  textContent(targetedTwoGarmentRenderer.root),
+  /shared by Standard Shirt and Trouser/i,
 );
 const targetedCurrentFabricCard = targetedTwoGarmentRenderer.root
   .findAllByProps({ "data-fabric-card": "true" })
@@ -767,10 +835,35 @@ await act(async () =>
     .find((card) => card.props["data-fabric-code"] === "INLINE-B")!
     .props.onClick(),
 );
+assert.equal(
+  targetedTwoGarmentRenderer.root.findAllByProps({
+    "data-testid": "change-fabric-allocation-dialog",
+  }).length,
+  1,
+  "Shared-group Change Fabric must require confirmation before commit.",
+);
+await act(async () =>
+  targetedTwoGarmentRenderer.root
+    .findByProps({ "data-change-fabric-confirm": "true" })
+    .props.onClick(),
+);
 assert.deepEqual(
   targetedTwoGarmentCalls,
-  ["base:shirt"],
-  "Targeted Change Fabric must invoke the assignment handler only for the changed garment.",
+  [
+    {
+      allocationId: sharedInlineAllocationId,
+      fabricCode: "INLINE-B",
+      expectation: {
+        expectedCurrentFabricCode: "INLINE-A",
+        expectedAssignmentSignature: getFutureFabricAllocationAssignmentSignature(
+          fullState.fabricAllocations.find(
+            (allocation) => allocation.allocationId === sharedInlineAllocationId,
+          )!,
+        ),
+      },
+    },
+  ],
+  "Shared-group Change Fabric must replace the whole physical allocation by allocationId.",
 );
 assert.deepEqual(
   targetedTwoGarmentState.fabricAllocations.flatMap((allocation) =>
@@ -780,11 +873,119 @@ assert.deepEqual(
     })),
   ),
   [
-    { garmentKey: "base:trouser", fabricCode: "INLINE-A" },
     { garmentKey: "base:shirt", fabricCode: "INLINE-B" },
+    { garmentKey: "base:trouser", fabricCode: "INLINE-B" },
   ],
-  "Targeted replacement must preserve the unrelated Trouser assignment.",
+  "Shared-group replacement must update every garment in the targeted allocation.",
 );
+
+let trouserSharedState = fullState;
+const trouserSharedCalls: Array<{
+  allocationId: string;
+  fabricCode: string;
+  expectation?: {
+    expectedCurrentFabricCode: string;
+    expectedAssignmentSignature: string;
+  };
+}> = [];
+let trouserSharedRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  trouserSharedRenderer = create(
+    renderStep(
+      trouserSharedState,
+      () => undefined,
+      threeGarmentSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      () => undefined,
+      fabrics,
+      () => undefined,
+      (allocationId, fabricCode, expectation) => {
+        trouserSharedCalls.push({ allocationId, fabricCode, expectation });
+        const result = changeFutureFabricAllocationProduct({
+          state: trouserSharedState,
+          allocationId,
+          nextFabricCode: fabricCode,
+          fabrics,
+          expectation,
+        });
+        if (result.status === "assigned") {
+          trouserSharedState = result.state;
+        }
+        return result;
+      },
+    ),
+  );
+});
+await act(async () =>
+  trouserSharedRenderer.root
+    .findByProps({ "aria-label": "Change fabric for Trouser" })
+    .props.onClick({ currentTarget: {} }),
+);
+assert.match(
+  textContent(trouserSharedRenderer.root),
+  /shared by Standard Shirt and Trouser/i,
+  "Trouser-initiated Change Fabric must resolve the same shared allocation group.",
+);
+await act(async () =>
+  trouserSharedRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find((card) => card.props["data-fabric-code"] === "INLINE-B")!
+    .props.onClick(),
+);
+await act(async () =>
+  trouserSharedRenderer.root
+    .findByProps({ "data-change-fabric-confirm": "true" })
+    .props.onClick(),
+);
+assert.deepEqual(
+  trouserSharedCalls,
+  [
+    {
+      allocationId: sharedInlineAllocationId,
+      fabricCode: "INLINE-B",
+      expectation: {
+        expectedCurrentFabricCode: "INLINE-A",
+        expectedAssignmentSignature: getFutureFabricAllocationAssignmentSignature(
+          fullState.fabricAllocations.find(
+            (allocation) => allocation.allocationId === sharedInlineAllocationId,
+          )!,
+        ),
+      },
+    },
+  ],
+  "Trouser-initiated shared-group Change Fabric must confirm against the same allocationId.",
+);
+assert.deepEqual(
+  trouserSharedState.fabricAllocations.flatMap((allocation) =>
+    allocation.garmentAssignments.map((assignment) => ({
+      allocationId: allocation.allocationId,
+      garmentKey: assignment.garmentKey,
+      fabricCode: allocation.fabricCode,
+    })),
+  ),
+  [
+    {
+      allocationId: sharedInlineAllocationId,
+      garmentKey: "base:shirt",
+      fabricCode: "INLINE-B",
+    },
+    {
+      allocationId: sharedInlineAllocationId,
+      garmentKey: "base:trouser",
+      fabricCode: "INLINE-B",
+    },
+  ],
+  "Trouser-initiated shared-group replacement must update every garment in the allocation.",
+);
+assert.equal(
+  trouserSharedState.fabricAllocations.length,
+  fullState.fabricAllocations.length,
+  "Shared-group replacement from Trouser must not create another physical allocation.",
+);
+
 const pendingTarget = getFutureFabricAssignmentTargets(threeGarmentSelection).find(
   ({ assignment }) => assignment.garmentKey === "base:skirt",
 );
@@ -1395,6 +1596,17 @@ const createFocusMock = (element: ReactElement): FocusMock => {
       lastFocusedFabricCard = true;
       originalFocus(options);
     };
+    const fabricCodeAttr = props["data-fabric-code"];
+    if (typeof fabricCodeAttr === "string") {
+      mock.label = `fabric-card:${fabricCodeAttr}`;
+      focusMocks.set(`fabric-card:${fabricCodeAttr}`, mock);
+    }
+  }
+  if (props["data-change-fabric-confirm"] === "true") {
+    mock.label = "change-fabric-confirm";
+  }
+  if (props["data-change-fabric-cancel"] === "true") {
+    mock.label = "change-fabric-cancel";
   }
   return mock;
 };
@@ -1506,11 +1718,11 @@ try {
   assert.equal(activeFocusMock?.label, "catalogue-heading");
   assert.match(
     textContent(focusRenderer.root),
-    /Choosing fabric for: Standard Shirt/,
+    /Changing Fabric for Fabric Selection 1/,
   );
   assert.match(
     textContent(focusRenderer.root),
-    /Select a fabric card to assign it to Standard Shirt\./,
+    /Select a replacement Fabric for Fabric Selection 1\./,
   );
   await act(async () => findButton(focusRenderer.root, "Cancel")!.props.onClick());
   flushAnimationFrames();
@@ -1518,6 +1730,146 @@ try {
     activeFocusMock?.label,
     "Change fabric for Standard Shirt",
     "Change Fabric cancellation must restore focus to the mounted garment action.",
+  );
+
+  let sharedFocusState = FabricAllocationStateEngine.initialize();
+  const sharedFocusSelection = reconcileGarmentTypeStepSelection({
+    selectedGarmentTypes: ["shirt", "trouser"],
+    selectedDemographics: ["male"],
+    normalizedCustomDetailCatalog: catalog,
+  }).selection;
+  sharedFocusState = assignFutureFabricToGarment({
+    state: sharedFocusState,
+    garmentTypeSelection: sharedFocusSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "INLINE-A",
+  }).state;
+  sharedFocusState = assignFutureFabricToGarment({
+    state: sharedFocusState,
+    garmentTypeSelection: sharedFocusSelection,
+    garmentKey: "base:trouser",
+    fabricCode: "INLINE-A",
+  }).state;
+  const sharedFocusBefore = JSON.stringify(sharedFocusState.fabricAllocations);
+  let sharedFocusRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    sharedFocusRenderer = create(
+      renderStep(
+        sharedFocusState,
+        () => undefined,
+        sharedFocusSelection,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        undefined,
+        () => undefined,
+        fabrics,
+        () => undefined,
+        () => undefined,
+      ),
+      { createNodeMock: createFocusMock },
+    );
+  });
+  const sharedChangeShirt = sharedFocusRenderer.root.findByProps({
+    "aria-label": "Change fabric for Standard Shirt",
+  });
+  const sharedChangeShirtFocusTarget = focusMocks.get(
+    "Change fabric for Standard Shirt",
+  );
+  await act(async () =>
+    sharedChangeShirt.props.onClick({
+      currentTarget: sharedChangeShirtFocusTarget,
+    }),
+  );
+  flushAnimationFrames();
+  const inlineBReplacementCard = sharedFocusRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find((card) => card.props["data-fabric-code"] === "INLINE-B");
+  assert.ok(
+    inlineBReplacementCard,
+    "INLINE-B replacement card must render during shared-group change.",
+  );
+  const replacementCardTrigger: FocusMock =
+    focusMocks.get("fabric-card:INLINE-B") ?? {
+      label: "fabric-card:INLINE-B",
+      tagName: "BUTTON",
+      isConnected: true,
+      hidden: false,
+      inert: false,
+      tabIndex: 0,
+      parentElement: null,
+      focus: () => {
+        activeFocusMock = replacementCardTrigger;
+      },
+      hasAttribute: () => false,
+      getAttribute: () => null,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchKeyDown: () => undefined,
+      scrollIntoView: () => undefined,
+    };
+  await act(async () =>
+    inlineBReplacementCard.props.onClick({ currentTarget: replacementCardTrigger }),
+  );
+  flushAnimationFrames();
+  assert.equal(
+    sharedFocusRenderer.root.findAllByProps({
+      "data-testid": "change-fabric-allocation-dialog",
+    }).length,
+    1,
+    "Shared-group replacement must open the confirmation dialog.",
+  );
+  assert.equal(
+    activeFocusMock?.label,
+    "change-fabric-confirm",
+    "Shared-group confirmation must initialize focus on the confirm action.",
+  );
+  await act(async () =>
+    sharedFocusRenderer.root
+      .findByProps({ "data-change-fabric-cancel": "true" })
+      .props.onClick(),
+  );
+  flushAnimationFrames();
+  assert.equal(
+    JSON.stringify(sharedFocusState.fabricAllocations),
+    sharedFocusBefore,
+    "Cancel must leave allocation state unchanged.",
+  );
+  assert.equal(
+    activeFocusMock?.label,
+    "fabric-card:INLINE-B",
+    "Cancel must restore focus to the replacement Fabric card that opened confirmation.",
+  );
+
+  await act(async () =>
+    sharedChangeShirt.props.onClick({
+      currentTarget: sharedChangeShirtFocusTarget,
+    }),
+  );
+  flushAnimationFrames();
+  await act(async () =>
+    inlineBReplacementCard.props.onClick({ currentTarget: replacementCardTrigger }),
+  );
+  flushAnimationFrames();
+  assert.ok(dialogFocusMock);
+  await act(async () =>
+    dialogFocusMock!.dispatchKeyDown({
+      key: "Escape",
+      preventDefault: () => undefined,
+    }),
+  );
+  flushAnimationFrames();
+  assert.equal(
+    JSON.stringify(sharedFocusState.fabricAllocations),
+    sharedFocusBefore,
+    "Escape must leave allocation state unchanged.",
+  );
+  assert.equal(
+    activeFocusMock?.label,
+    "fabric-card:INLINE-B",
+    "Escape must restore focus to the replacement Fabric card that opened confirmation.",
   );
 
   const testFallbackTrigger = async (

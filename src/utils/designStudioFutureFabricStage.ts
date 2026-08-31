@@ -15,6 +15,7 @@ import type {
   FabricGarmentInputAssignment,
   GarmentTypeStepSelection,
 } from "../types";
+import { getFabricAvailabilityMessage } from "./fabricCatalogueAvailability";
 import { resolveFabricAllocationMaterialPricing } from "./fabricAllocationPricing";
 import { resolveFabricPrice } from "./fabricPricing";
 import {
@@ -132,10 +133,41 @@ export type FutureFabricAssignmentBlockReason =
   | "GARMENT_NOT_FOUND"
   | "GARMENT_ALREADY_ASSIGNED"
   | "ALLOCATION_NOT_FOUND"
+  | "ALLOCATION_CHANGED"
   | "ASSIGNMENT_IN_PROGRESS"
   | "INVALID_CAPACITY"
   | "FABRIC_QUANTITY_LIMIT_REACHED"
   | "FABRIC_STOCK_EXHAUSTED";
+
+export type ChangeFutureFabricAllocationProductBlockReason =
+  | "ALLOCATION_NOT_FOUND"
+  | "ALLOCATION_CHANGED"
+  | "FABRIC_NOT_FOUND"
+  | "FABRIC_UNAVAILABLE"
+  | "FABRIC_STOCK_EXHAUSTED";
+
+export interface ChangeFutureFabricAllocationExpectation {
+  expectedCurrentFabricCode: string;
+  expectedAssignmentSignature: string;
+}
+
+export type ChangeFutureFabricAllocationProductResult =
+  | { status: "assigned"; state: FabricAllocationState }
+  | {
+      status: "blocked";
+      reason: ChangeFutureFabricAllocationProductBlockReason;
+      state: FabricAllocationState;
+    };
+
+export interface FutureFabricAllocationGroupChangePresentation {
+  allocationId: string;
+  fabricSelectionNumber: number;
+  fabricCode: string;
+  fabricName: string;
+  garmentKeys: readonly string[];
+  garmentLabels: readonly string[];
+  isSharedGroup: boolean;
+}
 
 export type FutureFabricAssignmentResult =
   | { status: "assigned"; state: FabricAllocationState }
@@ -1031,6 +1063,134 @@ export const assignSameFabricProductToGarments = ({
   };
 };
 
+const mapChangeFutureFabricAllocationProductResult = (
+  result: ChangeFutureFabricAllocationProductResult,
+): FutureFabricAssignmentResult => {
+  if (result.status === "assigned") {
+    return result;
+  }
+  const reason: FutureFabricAssignmentBlockReason =
+    result.reason === "FABRIC_STOCK_EXHAUSTED"
+      ? "FABRIC_STOCK_EXHAUSTED"
+      : result.reason === "ALLOCATION_NOT_FOUND"
+        ? "ALLOCATION_NOT_FOUND"
+        : result.reason === "ALLOCATION_CHANGED"
+          ? "ALLOCATION_CHANGED"
+          : "INVALID_CAPACITY";
+  return { status: "blocked", reason, state: result.state };
+};
+
+export const getFutureFabricAllocationGroupChangePresentation = ({
+  state,
+  allocationId,
+  garmentTypeSelection,
+  fabrics,
+}: {
+  state: FabricAllocationState;
+  allocationId: string;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabrics?: readonly Fabric[];
+}): FutureFabricAllocationGroupChangePresentation | null => {
+  const allocationIndex = state.fabricAllocations.findIndex(
+    (candidate) => candidate.allocationId === allocationId,
+  );
+  if (allocationIndex < 0) {
+    return null;
+  }
+  const allocation = state.fabricAllocations[allocationIndex]!;
+  if (allocation.garmentAssignments.length === 0) {
+    return null;
+  }
+  const fabric = resolveFabricFromCatalogue(allocation.fabricCode, fabrics);
+  const garmentKeys = allocation.garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  );
+  const garmentLabels = garmentKeys.map((garmentKey) => {
+    const assignment = allocation.garmentAssignments.find(
+      (candidate) => candidate.garmentKey === garmentKey,
+    );
+    return assignment
+      ? getFabricGarmentLabel(assignment.garmentType)
+      : getFutureGarmentAssignmentLabel(
+          garmentKey,
+          state,
+          garmentTypeSelection,
+        );
+  });
+  return {
+    allocationId,
+    fabricSelectionNumber: allocationIndex + 1,
+    fabricCode: allocation.fabricCode,
+    fabricName: fabric?.name ?? allocation.fabricCode,
+    garmentKeys,
+    garmentLabels,
+    isSharedGroup: allocation.garmentAssignments.length > 1,
+  };
+};
+
+export const changeFutureFabricAllocationProduct = ({
+  state,
+  allocationId,
+  nextFabricCode,
+  fabrics,
+  expectation,
+}: {
+  state: FabricAllocationState;
+  allocationId: string;
+  nextFabricCode: string;
+  fabrics: readonly Fabric[];
+  expectation?: ChangeFutureFabricAllocationExpectation;
+}): ChangeFutureFabricAllocationProductResult => {
+  const allocation = state.fabricAllocations.find(
+    (candidate) => candidate.allocationId === allocationId,
+  );
+  if (!allocation || allocation.garmentAssignments.length === 0) {
+    return { status: "blocked", reason: "ALLOCATION_NOT_FOUND", state };
+  }
+  if (expectation) {
+    if (allocation.fabricCode !== expectation.expectedCurrentFabricCode) {
+      return { status: "blocked", reason: "ALLOCATION_CHANGED", state };
+    }
+    if (
+      getFutureFabricAllocationAssignmentSignature(allocation) !==
+      expectation.expectedAssignmentSignature
+    ) {
+      return { status: "blocked", reason: "ALLOCATION_CHANGED", state };
+    }
+  }
+  if (allocation.fabricCode === nextFabricCode) {
+    return { status: "assigned", state };
+  }
+  const nextFabric = resolveFabricFromCatalogue(nextFabricCode, fabrics);
+  if (!nextFabric) {
+    return { status: "blocked", reason: "FABRIC_NOT_FOUND", state };
+  }
+  if (getFabricAvailabilityMessage(nextFabric)) {
+    return { status: "blocked", reason: "FABRIC_UNAVAILABLE", state };
+  }
+  if (resolveFabricPrice(nextFabric) === null) {
+    return { status: "blocked", reason: "FABRIC_UNAVAILABLE", state };
+  }
+  const afterState: FabricAllocationState = {
+    ...state,
+    fabricAllocations: state.fabricAllocations.map((candidate) =>
+      candidate.allocationId === allocationId
+        ? { ...candidate, fabricCode: nextFabricCode }
+        : candidate,
+    ),
+    activeAllocationId: allocationId,
+  };
+  const stockValidation = validateProjectedFabricStock({
+    fabric: nextFabric,
+    beforeState: state,
+    afterState,
+  });
+  if (!stockValidation.valid) {
+    return { status: "blocked", reason: "FABRIC_STOCK_EXHAUSTED", state };
+  }
+  return { status: "assigned", state: afterState };
+};
+
 export const assignFutureFabricToGarment = ({
   state,
   garmentTypeSelection,
@@ -1070,40 +1230,17 @@ export const assignFutureFabricToGarment = ({
   if (sourceAllocation.fabricCode === fabricCode) {
     return { status: "assigned", state };
   }
-
-  if (sourceAllocation.garmentAssignments.length === 1) {
-    const nextState = {
-      ...state,
-      fabricAllocations: state.fabricAllocations.map((allocation) =>
-        allocation.allocationId === sourceAllocation.allocationId
-          ? { ...allocation, fabricCode }
-          : allocation,
-      ),
-      activeAllocationId: sourceAllocation.allocationId,
-    };
-    return finalizeAssignedFabricStock({
-      fabricCode,
-      fabrics,
-      beforeState: state,
-      afterState: nextState,
-      fallbackState: state,
-    });
+  if (!fabrics) {
+    return { status: "blocked", reason: "INVALID_CAPACITY", state };
   }
-
-  const withoutTarget = FabricAllocationStateEngine.removeGarmentAssignments(
-    state,
-    [garmentKey],
+  return mapChangeFutureFabricAllocationProductResult(
+    changeFutureFabricAllocationProduct({
+      state,
+      allocationId: sourceAllocation.allocationId,
+      nextFabricCode: fabricCode,
+      fabrics,
+    }),
   );
-  const reassigned = assignTargetToFabric({
-    state: withoutTarget,
-    target,
-    fabricCode,
-    garmentTypeSelection,
-    fabrics,
-  });
-  return reassigned.status === "assigned"
-    ? { status: "assigned", state: removeEmptyFabricAllocations(reassigned.state) }
-    : { ...reassigned, state };
 };
 
 export const assignFutureGarmentToExistingFabricAllocation = ({
@@ -1810,6 +1947,14 @@ const getFutureFabricAssignmentSignature = (
     assignment.dependencyStatus ?? "",
   ].join("/");
 };
+
+export const getFutureFabricAllocationAssignmentSignature = (
+  allocation: Pick<FabricAllocation, "garmentAssignments">,
+): string =>
+  [...allocation.garmentAssignments]
+    .sort((left, right) => left.garmentKey.localeCompare(right.garmentKey))
+    .map(getFutureFabricAssignmentSignature)
+    .join("|");
 
 /**
  * Domain signature for Fabric allocation state equality checks.

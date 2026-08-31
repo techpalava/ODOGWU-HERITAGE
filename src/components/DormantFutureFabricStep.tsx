@@ -14,6 +14,7 @@ import {
 } from "./AssignedFabricPreview";
 import { FutureFabricCatalogueCard } from "./FutureFabricCatalogueCard";
 import { Step1FabricAssignmentDialog } from "./Step1FabricAssignmentDialog";
+import { ChangeFabricAllocationDialog } from "./ChangeFabricAllocationDialog";
 import { PartialFabricCapacityAssignmentDialog } from "./PartialFabricCapacityAssignmentDialog";
 import {
   RemoveFabricAssignmentDialog,
@@ -33,15 +34,20 @@ import {
   getFutureUnassignedFabricTargets,
   adaptUntargetedStep1CatalogueCardPresentation,
   assignFutureFabricToGarment,
+  changeFutureFabricAllocationProduct,
   formatFabricQuantityLimitChangeCopy,
   formatFabricQuantityLimitReachedCopy,
   formatFabricQuantityOverAllocatedCopy,
   formatFutureFabricStockOverAllocatedBlockerMessage,
   formatRequiredFabricQuantitySentence,
+  getFutureFabricAllocationGroupChangePresentation,
+  getFutureFabricAllocationAssignmentSignature,
   getFutureFabricCatalogueCancelTargets,
   isPhysicalFabricQuantityOverAllocated,
   resolveFutureFabricCatalogueCardPresentation,
   type FutureFabricAssignmentResult,
+  type FutureFabricAssignmentBlockReason,
+  type ChangeFutureFabricAllocationExpectation,
   type FutureFabricBulkAssignmentResult,
   type FutureFabricCatalogueCancellationResult,
   type FutureFabricCatalogueCardPresentation,
@@ -98,6 +104,11 @@ interface DormantFutureFabricStepProps {
     fabric: Fabric,
     garmentKey: string,
   ) => FabricAllocationState | void;
+  onChangeFabricAllocationProduct: (
+    allocationId: string,
+    fabricCode: string,
+    expectation?: ChangeFutureFabricAllocationExpectation,
+  ) => FutureFabricAssignmentResult | void;
   onRemoveFabricFromGarment: (
     garmentKey: string,
   ) => FutureFabricCatalogueCancellationResult | void;
@@ -306,6 +317,7 @@ export const DormantFutureFabricStep = ({
   selectedFabricQuantity,
   constructionPrice,
   onAssignFabricToGarment,
+  onChangeFabricAllocationProduct,
   onRemoveFabricFromGarment,
   onUseSameFabricForGarment,
   onAssignSameFabricProduct,
@@ -330,6 +342,14 @@ export const DormantFutureFabricStep = ({
     useState<PendingStep1FabricAssignment | null>(null);
   const [pendingPartialFabricAssignment, setPendingPartialFabricAssignment] =
     useState<{ garmentKey: string } | null>(null);
+  const [pendingChangeFabricAllocation, setPendingChangeFabricAllocation] =
+    useState<{
+      allocationId: string;
+      nextFabricCode: string;
+      nextFabricName: string;
+      expectedCurrentFabricCode: string;
+      expectedAssignmentSignature: string;
+    } | null>(null);
   const [step1AssignmentError, setStep1AssignmentError] = useState<string | null>(
     null,
   );
@@ -361,6 +381,8 @@ export const DormantFutureFabricStep = ({
   } | null>(null);
   const [postAssignmentNavEpoch, setPostAssignmentNavEpoch] = useState(0);
   const catalogueHeadingRef = useRef<HTMLHeadingElement>(null);
+  const changeFabricConfirmationTriggerRef = useRef<HTMLElement | null>(null);
+  const changeFabricOpenerRef = useRef<HTMLElement | null>(null);
   const step1AssignmentTriggerRef = useRef<HTMLElement | null>(null);
   const step1AssignmentScrollYRef = useRef<number | null>(null);
   const pendingAssignmentAnnouncementRef = useRef<{
@@ -444,6 +466,41 @@ export const DormantFutureFabricStep = ({
     catalogueTargetGarmentKey &&
       assignmentByGarmentKey.has(catalogueTargetGarmentKey),
   );
+  const changeFabricAssignmentTarget = catalogueTargetGarmentKey
+    ? assignmentByGarmentKey.get(catalogueTargetGarmentKey) ?? null
+    : null;
+  const changeFabricPresentation = useMemo(() => {
+    if (!changeFabricAssignmentTarget) {
+      return null;
+    }
+    return getFutureFabricAllocationGroupChangePresentation({
+      state: fabricAllocationState,
+      allocationId: changeFabricAssignmentTarget.allocation.allocationId,
+      garmentTypeSelection,
+      fabrics,
+    });
+  }, [
+    changeFabricAssignmentTarget,
+    fabricAllocationState,
+    fabrics,
+    garmentTypeSelection,
+  ]);
+  const pendingChangeFabricPresentation = useMemo(() => {
+    if (!pendingChangeFabricAllocation) {
+      return null;
+    }
+    return getFutureFabricAllocationGroupChangePresentation({
+      state: fabricAllocationState,
+      allocationId: pendingChangeFabricAllocation.allocationId,
+      garmentTypeSelection,
+      fabrics,
+    });
+  }, [
+    pendingChangeFabricAllocation,
+    fabricAllocationState,
+    garmentTypeSelection,
+    fabrics,
+  ]);
   const unassignedStep1Targets = getUnassignedStep1FabricAssignmentCandidates({
     garmentTypeSelection,
     fabricAllocationState,
@@ -673,6 +730,7 @@ export const DormantFutureFabricStep = ({
 
   const closeCatalogueForCancellation = () => {
     postAssignmentFocusRequestRef.current += 1;
+    setPendingChangeFabricAllocation(null);
     setIsCatalogueOpen(false);
     setCatalogueTargetGarmentKey(null);
     restoreCatalogueFocus();
@@ -1229,7 +1287,182 @@ export const DormantFutureFabricStep = ({
     return () => dialog.removeEventListener("keydown", handleKeyDown);
   }, [isCatalogueOpen]);
 
-  const assignSelectedFabric = (fabric: Fabric, garmentKey: string) => {
+  const formatChangeFabricAllocationBlockedMessage = (
+    reason: FutureFabricAssignmentBlockReason,
+  ): string => {
+    if (reason === "FABRIC_STOCK_EXHAUSTED") {
+      return formatFabricStockExhaustedCopy();
+    }
+    if (reason === "ALLOCATION_NOT_FOUND") {
+      return "This Fabric selection is no longer available to change.";
+    }
+    if (reason === "ALLOCATION_CHANGED") {
+      return "This Fabric selection changed. Reopen Change Fabric to continue.";
+    }
+    return "That Fabric could not be applied to this Fabric selection.";
+  };
+
+  const restoreChangeFabricConfirmationFocus = () => {
+    const confirmationTrigger = changeFabricConfirmationTriggerRef.current;
+    const opener = changeFabricOpenerRef.current;
+    changeFabricConfirmationTriggerRef.current = null;
+    const restore = () => {
+      if (confirmationTrigger && focusElementSafely(confirmationTrigger)) {
+        return;
+      }
+      if (opener && focusElementSafely(opener)) {
+        return;
+      }
+      if (catalogueTargetGarmentKey) {
+        const garmentAction = garmentActionRefs.current.get(
+          catalogueTargetGarmentKey,
+        );
+        if (garmentAction && focusElementSafely(garmentAction)) {
+          return;
+        }
+      }
+      focusElementSafely(catalogueHeadingRef.current);
+    };
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      window.requestAnimationFrame(restore);
+    } else {
+      restore();
+    }
+  };
+
+  const cancelChangeFabricAllocation = () => {
+    setPendingChangeFabricAllocation(null);
+    restoreChangeFabricConfirmationFocus();
+  };
+
+  useEffect(() => {
+    if (!pendingChangeFabricAllocation) {
+      return;
+    }
+    const allocation = fabricAllocationState.fabricAllocations.find(
+      (candidate) =>
+        candidate.allocationId === pendingChangeFabricAllocation.allocationId,
+    );
+    if (!allocation || allocation.garmentAssignments.length === 0) {
+      cancelChangeFabricAllocation();
+      setVisibleActionError(
+        "This Fabric selection is no longer available to change.",
+      );
+      setAssignmentAnnouncement(
+        "This Fabric selection is no longer available to change.",
+      );
+      return;
+    }
+    if (
+      allocation.fabricCode !==
+        pendingChangeFabricAllocation.expectedCurrentFabricCode ||
+      getFutureFabricAllocationAssignmentSignature(allocation) !==
+        pendingChangeFabricAllocation.expectedAssignmentSignature
+    ) {
+      cancelChangeFabricAllocation();
+      setVisibleActionError(
+        "This Fabric selection changed. Reopen Change Fabric to continue.",
+      );
+      setAssignmentAnnouncement(
+        "This Fabric selection changed. Reopen Change Fabric to continue.",
+      );
+    }
+  }, [fabricAllocationState, pendingChangeFabricAllocation]);
+
+  const commitChangeFabricAllocation = (
+    allocationId: string,
+    fabric: Fabric,
+    focusGarmentKey: string,
+    expectation?: ChangeFutureFabricAllocationExpectation,
+  ) => {
+    const result = onChangeFabricAllocationProduct(
+      allocationId,
+      fabric.code,
+      expectation,
+    );
+    if (!result) {
+      setVisibleActionError(
+        "That Fabric could not be applied to this Fabric selection.",
+      );
+      setAssignmentAnnouncement(
+        "That Fabric could not be applied to this Fabric selection.",
+      );
+      return false;
+    }
+    if (result.status === "blocked") {
+      if (
+        result.reason === "ALLOCATION_CHANGED" ||
+        result.reason === "ALLOCATION_NOT_FOUND"
+      ) {
+        cancelChangeFabricAllocation();
+      }
+      const blockedMessage = formatChangeFabricAllocationBlockedMessage(
+        result.reason,
+      );
+      setVisibleActionError(blockedMessage);
+      setAssignmentAnnouncement(blockedMessage);
+      return false;
+    }
+    setVisibleActionError(null);
+    changeFabricConfirmationTriggerRef.current = null;
+    setPendingChangeFabricAllocation(null);
+    const presentation = getFutureFabricAllocationGroupChangePresentation({
+      state: result.state,
+      allocationId,
+      garmentTypeSelection,
+      fabrics,
+    });
+    setAssignmentAnnouncement(
+      presentation
+        ? `${fabric.name} now applies to ${formatGarmentList(
+            [...presentation.garmentLabels],
+          )} in Fabric Selection ${presentation.fabricSelectionNumber}.`
+        : `${fabric.name} updated for this Fabric selection.`,
+    );
+    completeCatalogueAssignment(focusGarmentKey);
+    return true;
+  };
+
+  const assignSelectedFabric = (
+    fabric: Fabric,
+    garmentKey: string,
+    confirmationTrigger?: HTMLElement | null,
+  ) => {
+    if (isChangeFabricTarget && changeFabricAssignmentTarget) {
+      const allocationId = changeFabricAssignmentTarget.allocation.allocationId;
+      const allocation = changeFabricAssignmentTarget.allocation;
+      if (changeFabricAssignmentTarget.allocation.fabricCode === fabric.code) {
+        completeCatalogueAssignment(garmentKey);
+        return;
+      }
+      const presentation =
+        changeFabricPresentation ||
+        getFutureFabricAllocationGroupChangePresentation({
+          state: fabricAllocationState,
+          allocationId,
+          garmentTypeSelection,
+          fabrics,
+        });
+      if (presentation?.isSharedGroup) {
+        changeFabricOpenerRef.current = catalogueTriggerRef.current;
+        changeFabricConfirmationTriggerRef.current = confirmationTrigger ?? null;
+        setPendingChangeFabricAllocation({
+          allocationId,
+          nextFabricCode: fabric.code,
+          nextFabricName: fabric.name,
+          expectedCurrentFabricCode: allocation.fabricCode,
+          expectedAssignmentSignature:
+            getFutureFabricAllocationAssignmentSignature(allocation),
+        });
+        return;
+      }
+      commitChangeFabricAllocation(allocationId, fabric, garmentKey);
+      return;
+    }
+
     const assignmentGeneration = ++assignmentGenerationRef.current;
     pendingAssignmentAnnouncementRef.current = {
       fabricCode: fabric.code,
@@ -1290,10 +1523,14 @@ export const DormantFutureFabricStep = ({
     setVisibleActionError(null);
     if (
       catalogueTargetGarmentKey &&
-      activeCatalogueTarget &&
+      changeFabricAssignmentTarget &&
       assignmentByGarmentKey.has(catalogueTargetGarmentKey)
     ) {
-      assignSelectedFabric(fabric, activeCatalogueTarget.assignment.garmentKey);
+      assignSelectedFabric(
+        fabric,
+        changeFabricAssignmentTarget.assignment.garmentKey,
+        trigger,
+      );
       return;
     }
     if (
@@ -1442,11 +1679,37 @@ export const DormantFutureFabricStep = ({
           garmentKey: currentTarget.assignment.garmentKey,
         }).some((entry) => entry.fabricCode === fabric.code)
       : false;
-    const stockConstraintMessage = getFabricNewAllocationStockConstraintMessage(
-      fabric,
-      fabricAllocationState,
-      allowExistingPartialReuse,
-    );
+    const changeAllocationId =
+      isChangeFabricTarget && changeFabricAssignmentTarget
+        ? changeFabricAssignmentTarget.allocation.allocationId
+        : null;
+    const stockConstraintMessage = changeAllocationId
+      ? (() => {
+          const preview = changeFutureFabricAllocationProduct({
+            state: fabricAllocationState,
+            allocationId: changeAllocationId,
+            nextFabricCode: fabric.code,
+            fabrics,
+          });
+          if (
+            preview.status === "blocked" &&
+            preview.reason === "FABRIC_STOCK_EXHAUSTED"
+          ) {
+            return formatFabricStockExhaustedCopy();
+          }
+          if (
+            preview.status === "blocked" &&
+            preview.reason === "FABRIC_UNAVAILABLE"
+          ) {
+            return getFabricAvailabilityMessage(fabric);
+          }
+          return null;
+        })()
+      : getFabricNewAllocationStockConstraintMessage(
+          fabric,
+          fabricAllocationState,
+          allowExistingPartialReuse,
+        );
     const cancelGarmentKeys =
       cardPresentation.cancelGarmentKeys ??
       (cardPresentation.cancelGarmentKey
@@ -1839,11 +2102,13 @@ export const DormantFutureFabricStep = ({
               tabIndex={-1}
               className="mt-1 font-serif text-xl font-bold text-heritage-green"
             >
-              {activeCatalogueTarget
-                ? `Choosing fabric for: ${getFutureGarmentLabel(
-                    activeCatalogueTarget.assignment.garmentType,
-                  )}`
-                : "Available Fabrics"}
+              {changeFabricPresentation
+                ? `Changing Fabric for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}`
+                : activeCatalogueTarget
+                  ? `Choosing fabric for: ${getFutureGarmentLabel(
+                      activeCatalogueTarget.assignment.garmentType,
+                    )}`
+                  : "Available Fabrics"}
             </h3>
             <p
               id="future-fabric-catalogue-help"
@@ -1863,17 +2128,29 @@ export const DormantFutureFabricStep = ({
                   )
                 : showAllocationLimitCopy
                   ? formatFabricQuantityLimitReachedCopy(requiredFabricQuantity)
-                  : activeCatalogueTarget && isChangeFabricTarget
-                    ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
-                        activeCatalogueTarget.assignment.garmentType,
-                      )}.`
-                    : unassignedStep1Targets.length === 1
-                      ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
-                          unassignedStep1Targets[0]!.assignment.garmentType,
-                        )}.`
-                      : unassignedStep1Targets.length > 1
-                        ? "Select a fabric card to choose which garments should use this Fabric."
-                        : "All selected garments have fabric assignments."}
+                  : changeFabricPresentation?.isSharedGroup
+                    ? `This Fabric is shared by ${formatGarmentList(
+                        changeFabricPresentation.garmentKeys.map((garmentKey) => {
+                          const assignment =
+                            assignmentByGarmentKey.get(garmentKey)?.assignment;
+                          return assignment
+                            ? getFutureGarmentLabel(assignment.garmentType)
+                            : garmentKey;
+                        }),
+                      )}. Changing it will update both garments.`
+                    : changeFabricPresentation
+                      ? `Select a replacement Fabric for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}.`
+                      : activeCatalogueTarget && isChangeFabricTarget
+                        ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
+                            activeCatalogueTarget.assignment.garmentType,
+                          )}.`
+                        : unassignedStep1Targets.length === 1
+                          ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
+                              unassignedStep1Targets[0]!.assignment.garmentType,
+                            )}.`
+                          : unassignedStep1Targets.length > 1
+                            ? "Select a fabric card to choose which garments should use this Fabric."
+                            : "All selected garments have fabric assignments."}
             </p>
             <p
               id="future-fabric-assignment-status"
@@ -2067,6 +2344,46 @@ export const DormantFutureFabricStep = ({
           onCancel={cancelStep1FabricAssignment}
         />
       )}
+
+      {pendingChangeFabricAllocation && pendingChangeFabricPresentation ? (
+        <ChangeFabricAllocationDialog
+          fabricSelectionNumber={
+            pendingChangeFabricPresentation.fabricSelectionNumber
+          }
+          currentFabricName={pendingChangeFabricPresentation.fabricName}
+          nextFabricName={pendingChangeFabricAllocation.nextFabricName}
+          garmentLabels={pendingChangeFabricPresentation.garmentLabels}
+          isSharedGroup={pendingChangeFabricPresentation.isSharedGroup}
+          onConfirm={() => {
+            const fabric = fabrics.find(
+              (candidate) =>
+                candidate.code === pendingChangeFabricAllocation.nextFabricCode,
+            );
+            if (!fabric) {
+              cancelChangeFabricAllocation();
+              setVisibleActionError("That Fabric is no longer available.");
+              setAssignmentAnnouncement("That Fabric is no longer available.");
+              return;
+            }
+            const focusGarmentKey =
+              catalogueTargetGarmentKey ||
+              pendingChangeFabricPresentation.garmentKeys[0] ||
+              "";
+            commitChangeFabricAllocation(
+              pendingChangeFabricAllocation.allocationId,
+              fabric,
+              focusGarmentKey,
+              {
+                expectedCurrentFabricCode:
+                  pendingChangeFabricAllocation.expectedCurrentFabricCode,
+                expectedAssignmentSignature:
+                  pendingChangeFabricAllocation.expectedAssignmentSignature,
+              },
+            );
+          }}
+          onCancel={cancelChangeFabricAllocation}
+        />
+      ) : null}
 
       {pendingPartialFabricAssignment &&
       partialAssignmentPresentations.length > 0 ? (

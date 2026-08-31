@@ -71,6 +71,7 @@ const assign = (
     garmentTypeSelection: createSelection([...garmentTypes]),
     garmentKey,
     fabricCode,
+    fabrics,
   });
 
 const planningOf = (
@@ -212,10 +213,24 @@ assert.deepEqual(planningOf(fourOrdinary, sameProduct), {
   requiredFabricQuantity: 2,
   selectedFabricQuantity: 2,
 });
+const sharedGroupChange = assign(sameProduct, fourOrdinary, "base:shirt", "FAB-C");
 assert.equal(
-  assign(sameProduct, fourOrdinary, "base:shirt", "FAB-C").status,
-  "blocked",
-  "A shared allocation cannot split onto a third unused Fabric while already at the limit.",
+  sharedGroupChange.status,
+  "assigned",
+  "Changing Fabric for a shared allocation replaces the whole physical group in place.",
+);
+assert.equal(sharedGroupChange.state.fabricAllocations.length, 2);
+assert.ok(
+  sharedGroupChange.state.fabricAllocations.some(
+    (allocation) =>
+      allocation.fabricCode === "FAB-C" &&
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "base:shirt",
+      ) &&
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "base:trouser",
+      ),
+  ),
 );
 
 let gownState = assign(empty(), ["full_length_gown"], "base:full_length_gown", "FAB-A")
@@ -254,10 +269,24 @@ assert.deepEqual(planningOf(mixedTypes, mixed), {
   selectedFabricQuantity: 2,
 });
 assert.equal(completionOf(mixedTypes, mixed).isComplete, true);
+const mixedSharedChange = assign(mixed, mixedTypes, "base:shirt", "FAB-C");
 assert.equal(
-  assign(mixed, mixedTypes, "base:shirt", "FAB-C").status,
-  "blocked",
-  "Splitting Shirt off a full mixed allocation at the limit must be blocked.",
+  mixedSharedChange.status,
+  "assigned",
+  "Changing Fabric for a shared Shirt + Trouser allocation replaces the whole group.",
+);
+assert.equal(mixedSharedChange.state.fabricAllocations.length, 2);
+assert.ok(
+  mixedSharedChange.state.fabricAllocations.some(
+    (allocation) =>
+      allocation.fabricCode === "FAB-C" &&
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "base:shirt",
+      ) &&
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "base:trouser",
+      ),
+  ),
 );
 const mixedDressReplace = assign(
   mixed,
@@ -284,13 +313,25 @@ splitAtLimit = assign(splitAtLimit, fourOrdinary, "base:standard_shorts", "FAB-A
 splitAtLimit = assign(splitAtLimit, fourOrdinary, "base:trouser", "FAB-B").state;
 splitAtLimit = assign(splitAtLimit, fourOrdinary, "base:bum_shorts", "FAB-B").state;
 assert.equal(splitAtLimit.fabricAllocations.length, 2);
-const blockedSplit = assign(splitAtLimit, fourOrdinary, "base:shirt", "FAB-C");
-assert.equal(blockedSplit.status, "blocked");
+const groupChangeAtLimit = assign(splitAtLimit, fourOrdinary, "base:shirt", "FAB-C");
 assert.equal(
-  blockedSplit.status === "blocked" ? blockedSplit.reason : null,
-  "FABRIC_QUANTITY_LIMIT_REACHED",
+  groupChangeAtLimit.status,
+  "assigned",
+  "At the Fabric limit, a shared allocation may still change product in place.",
 );
-assert.equal(blockedSplit.state.fabricAllocations.length, 2);
+assert.equal(groupChangeAtLimit.state.fabricAllocations.length, 2);
+assert.ok(
+  groupChangeAtLimit.state.fabricAllocations.some(
+    (allocation) =>
+      allocation.fabricCode === "FAB-C" &&
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "base:shirt",
+      ) &&
+      allocation.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === "base:standard_shorts",
+      ),
+  ),
+);
 assert.equal(
   resolveFutureFabricCatalogueCardPresentation({
     fabricCode: "FAB-C",
@@ -298,7 +339,7 @@ assert.equal(
     fabricAllocationState: splitAtLimit,
     currentTargetGarmentKey: "base:shirt",
   }).action,
-  "none",
+  "select",
 );
 
 let replaceOnly = empty();
@@ -322,9 +363,17 @@ splitAllowed = assign(splitAllowed, fourOrdinary, "base:shirt", "FAB-A").state;
 splitAllowed = assign(splitAllowed, fourOrdinary, "base:standard_shorts", "FAB-A")
   .state;
 assert.equal(splitAllowed.fabricAllocations.length, 1);
-const splitCreated = assign(splitAllowed, fourOrdinary, "base:shirt", "FAB-C");
-assert.equal(splitCreated.status, "assigned");
-assert.equal(splitCreated.state.fabricAllocations.length, 2);
+const groupChangeCreated = assign(splitAllowed, fourOrdinary, "base:shirt", "FAB-C");
+assert.equal(groupChangeCreated.status, "assigned");
+assert.equal(groupChangeCreated.state.fabricAllocations.length, 1);
+assert.equal(
+  groupChangeCreated.state.fabricAllocations[0]?.fabricCode,
+  "FAB-C",
+);
+assert.equal(
+  groupChangeCreated.state.fabricAllocations[0]?.garmentAssignments.length,
+  2,
+);
 
 const assignmentTargets = getFutureFabricAssignmentTargets(
   createSelection(fourOrdinary),
@@ -437,11 +486,20 @@ assert.ok(
 const twoOrdinary = ["shirt", "trouser"] satisfies FabricGarmentType[];
 let twoShared = assign(empty(), twoOrdinary, "base:shirt", "FAB-A").state;
 twoShared = assign(twoShared, twoOrdinary, "base:trouser", "FAB-A").state;
-const blockedTwoSplit = assign(twoShared, twoOrdinary, "base:shirt", "FAB-B");
-assert.equal(blockedTwoSplit.status, "blocked");
+const twoSharedChange = assign(twoShared, twoOrdinary, "base:shirt", "FAB-B");
 assert.equal(
-  blockedTwoSplit.status === "blocked" ? blockedTwoSplit.reason : null,
-  "FABRIC_QUANTITY_LIMIT_REACHED",
+  twoSharedChange.status,
+  "assigned",
+  "A full shared Shirt + Trouser allocation changes product for the whole group.",
+);
+assert.equal(twoSharedChange.state.fabricAllocations.length, 1);
+assert.equal(
+  twoSharedChange.state.fabricAllocations[0]?.fabricCode,
+  "FAB-B",
+);
+assert.equal(
+  twoSharedChange.state.fabricAllocations[0]?.garmentAssignments.length,
+  2,
 );
 assert.equal(
   formatFabricQuantityLimitReachedCopy(2),

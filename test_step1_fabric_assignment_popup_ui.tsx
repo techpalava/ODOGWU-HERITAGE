@@ -110,6 +110,7 @@ const renderStep = (
       selectedFabricQuantity={planning.selectedFabricQuantity}
       constructionPrice={constructionPrice}
       onAssignFabricToGarment={onAssignFabricToGarment}
+      onChangeFabricAllocationProduct={() => undefined}
       onRemoveFabricFromGarment={() => undefined}
       onUseSameFabricForGarment={() => undefined}
       onAssignSameFabricProduct={onAssignSameFabricProduct}
@@ -401,6 +402,7 @@ const renderTwoStep = (
       selectedFabricQuantity={planning.selectedFabricQuantity}
       constructionPrice={twoConstructionPrice}
       onAssignFabricToGarment={() => undefined}
+      onChangeFabricAllocationProduct={() => undefined}
       onRemoveFabricFromGarment={() => undefined}
       onUseSameFabricForGarment={() => undefined}
       onAssignSameFabricProduct={onAssignSameFabricProduct}

@@ -114,6 +114,7 @@ customerCardState = applyFutureFabricCardSelection({
   garmentTypeSelection: createSelection(["shirt", "trouser"]),
   garmentKey: "base:shirt",
   fabricCode: "FAB-B",
+  fabrics,
 });
 assert.deepEqual(
   customerCardState.fabricAllocations.map((allocation) => ({
@@ -122,8 +123,8 @@ assert.deepEqual(
       (assignment) => assignment.garmentKey,
     ),
   })),
-  [{ fabricCode: "FAB-A", garmentKeys: ["base:shirt", "base:trouser"] }],
-  "Two ordinary garments require one physical Fabric; splitting onto a second unused product must be blocked.",
+  [{ fabricCode: "FAB-B", garmentKeys: ["base:shirt", "base:trouser"] }],
+  "Changing Fabric for a shared Shirt + Trouser allocation replaces the whole physical group.",
 );
 const assign = (
   state: ReturnType<typeof FabricAllocationStateEngine.initialize>,
@@ -136,6 +137,7 @@ const assign = (
     garmentTypeSelection: createSelection(garmentTypes),
     garmentKey,
     fabricCode,
+    fabrics,
   });
   assert.equal(result.status, "assigned");
   return result.state;
@@ -232,18 +234,21 @@ assert.deepEqual(
 );
 
 separate = assign(separate, threeRegular, "base:trouser", "FAB-B");
+assert.equal(separate.fabricAllocations[0].fabricCode, "FAB-B");
 assert.deepEqual(
   separate.fabricAllocations[0].garmentAssignments.map(
     (assignment) => assignment.garmentKey,
   ),
-  ["base:shirt"],
+  ["base:shirt", "base:trouser"],
+  "Changing Trouser's Fabric changes the whole shared Shirt + Trouser allocation.",
 );
 assert.deepEqual(
   separate.fabricAllocations[1].garmentAssignments.map(
     (assignment) => assignment.garmentKey,
   ),
-  ["base:skirt", "base:trouser"],
+  ["base:skirt"],
 );
+assert.equal(separate.fabricAllocations[1].fabricCode, "FAB-B");
 
 const singleSelection = ["shirt"] satisfies FabricGarmentType[];
 let single = assign(

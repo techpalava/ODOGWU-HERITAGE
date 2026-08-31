@@ -15,6 +15,8 @@ import {
   assignFutureFabricToGarment,
   assignFutureGarmentToExistingFabricAllocation,
   assignSameFabricProductToGarments,
+  changeFutureFabricAllocationProduct,
+  getFutureFabricAllocationAssignmentSignature,
   getFutureFabricStageCompletion,
 } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
@@ -124,6 +126,7 @@ const FabricStepProductionBoundary = ({
         }).state,
       );
     },
+    onChangeFabricAllocationProduct: () => undefined,
     onRemoveFabricFromGarment: () => undefined,
     onUseSameFabricForGarment: () => undefined,
     onAssignSameFabricProduct: (fabricCode: string, garmentKeys: string[]) => {
@@ -471,6 +474,94 @@ await runUploadExtraCase({
   );
   assert.equal(validResult.status, "assigned");
   assert.equal(priceActivatedFabricCode, null);
+}
+
+{
+  let priceActivatedFabricCode: string | null = "FAB-UI-A";
+  const activeUploadedDesignSource = true;
+  const composition = mergeUploadedDesignCompositionWithStep1({
+    step1GarmentTypes: ["shirt", "trouser"],
+    additionalGarmentTypes: [],
+  });
+  const effective = buildEffectiveUploadedJourneyGarmentTypeSelection({
+    step1Selection: step1,
+    uploadedComposition: composition,
+    normalizedCustomDetailCatalog: catalog,
+  });
+  let fabricState = FabricAllocationStateEngine.initialize();
+  fabricState = assignFutureFabricToGarment({
+    state: fabricState,
+    garmentTypeSelection: effective,
+    garmentKey: "base:shirt",
+    fabricCode: fabrics[0].code,
+    fabrics,
+  }).state;
+  fabricState = assignFutureFabricToGarment({
+    state: fabricState,
+    garmentTypeSelection: effective,
+    garmentKey: "base:trouser",
+    fabricCode: fabrics[0].code,
+    fabrics,
+  }).state;
+  const sharedAllocation = fabricState.fabricAllocations.find((allocation) =>
+    allocation.garmentAssignments.some(
+      (assignment) => assignment.garmentKey === "base:shirt",
+    ),
+  )!;
+  const expectation = {
+    expectedCurrentFabricCode: sharedAllocation.fabricCode,
+    expectedAssignmentSignature: getFutureFabricAllocationAssignmentSignature(
+      sharedAllocation,
+    ),
+  };
+  const mutatedState = {
+    ...fabricState,
+    fabricAllocations: fabricState.fabricAllocations.map((allocation) =>
+      allocation.allocationId === sharedAllocation.allocationId
+        ? { ...allocation, fabricCode: fabrics[1].code }
+        : allocation,
+    ),
+  };
+
+  const handleChangeFabricAllocationProduct = (
+    state: typeof fabricState,
+    allocationId: string,
+    fabricCode: string,
+    changeExpectation?: typeof expectation,
+  ) => {
+    const result = changeFutureFabricAllocationProduct({
+      state,
+      allocationId,
+      nextFabricCode: fabricCode,
+      fabrics,
+      expectation: changeExpectation,
+    });
+    if (result.status === "assigned" && result.state !== state) {
+      if (activeUploadedDesignSource) {
+        priceActivatedFabricCode = null;
+      }
+    }
+    return result;
+  };
+
+  const blocked = handleChangeFabricAllocationProduct(
+    mutatedState,
+    sharedAllocation.allocationId,
+    fabrics[1].code,
+    expectation,
+  );
+  assert.equal(blocked.status, "blocked");
+  assert.equal(
+    blocked.status === "blocked" ? blocked.reason : null,
+    "ALLOCATION_CHANGED",
+  );
+  assert.equal(priceActivatedFabricCode, "FAB-UI-A");
+  assert.equal(
+    mutatedState.fabricAllocations.find(
+      (allocation) => allocation.allocationId === sharedAllocation.allocationId,
+    )?.fabricCode,
+    fabrics[1].code,
+  );
 }
 
 console.log("PASS: rendered Fabric UI upload-extra effective composition");

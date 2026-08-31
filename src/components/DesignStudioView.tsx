@@ -91,6 +91,8 @@ import {
   assignFutureGarmentToExistingFabricAllocation,
   assignSameFabricProductToGarments,
   cancelFutureFabricCatalogueAssignment,
+  changeFutureFabricAllocationProduct,
+  type ChangeFutureFabricAllocationExpectation,
   getFutureGarmentFabricPlanning,
   getGarmentTypeStepSelectedFabricQuantity,
   getFutureFabricCapacityComposition,
@@ -1058,9 +1060,6 @@ export default function DesignStudioView({
     fabric: Fabric,
     garmentKey: string,
   ) => {
-    if (activeUploadedDesignSource) {
-      setFuturePriceActivatedFabricCode(null);
-    }
     const nextState = applyFutureFabricCardSelection({
       state: fabricAllocationState,
       garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
@@ -1068,8 +1067,49 @@ export default function DesignStudioView({
       fabricCode: fabric.code,
       fabrics,
     });
+    if (nextState === fabricAllocationState) {
+      return nextState;
+    }
+    if (activeUploadedDesignSource) {
+      setFuturePriceActivatedFabricCode(null);
+    }
     setFabricAllocationState(nextState);
     return nextState;
+  };
+  const handleChangeFutureFabricAllocationProduct = (
+    allocationId: string,
+    fabricCode: string,
+    expectation?: ChangeFutureFabricAllocationExpectation,
+  ) => {
+    const result = changeFutureFabricAllocationProduct({
+      state: fabricAllocationState,
+      allocationId,
+      nextFabricCode: fabricCode,
+      fabrics,
+      expectation,
+    });
+    if (result.status !== "assigned") {
+      return {
+        status: "blocked" as const,
+        reason:
+          result.reason === "FABRIC_STOCK_EXHAUSTED"
+            ? ("FABRIC_STOCK_EXHAUSTED" as const)
+            : result.reason === "ALLOCATION_NOT_FOUND"
+              ? ("ALLOCATION_NOT_FOUND" as const)
+              : result.reason === "ALLOCATION_CHANGED"
+                ? ("ALLOCATION_CHANGED" as const)
+                : ("INVALID_CAPACITY" as const),
+        state: fabricAllocationState,
+      };
+    }
+    if (result.state === fabricAllocationState) {
+      return { status: "assigned" as const, state: result.state };
+    }
+    if (activeUploadedDesignSource) {
+      setFuturePriceActivatedFabricCode(null);
+    }
+    setFabricAllocationState(result.state);
+    return { status: "assigned" as const, state: result.state };
   };
 
   const handleRemoveFutureFabricAssignment = (garmentKey: string) => {
@@ -3435,6 +3475,7 @@ export default function DesignStudioView({
           }
           constructionPrice={futureConstructionPrice}
           onAssignFabricToGarment={handleAssignFutureFabricToGarment}
+          onChangeFabricAllocationProduct={handleChangeFutureFabricAllocationProduct}
           onRemoveFabricFromGarment={handleRemoveFutureFabricAssignment}
           onUseSameFabricForGarment={handleUseSameFutureFabricForGarment}
           onAssignSameFabricProduct={handleAssignSameFabricProductToGarments}
