@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import type { Fabric } from "./src/types";
 import { cloneFabricAllocations } from "./src/utils/fabricAllocationPersistence";
 import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAllocationPricing";
+import { changeFutureFabricAllocationProduct } from "./src/utils/designStudioFutureFabricStage";
 
 const royal: Fabric = {
   code: "ROYAL_FOREST",
@@ -159,26 +159,41 @@ assert.equal(reloadedAllocations?.[0].fabricCode, imperial.code);
 assert.equal(reloadedAllocations?.[1].allocationId, secondAllocationId);
 assert.equal(reloadedAllocations?.[1].fabricCode, lace.code);
 
-const designStudioSource = readFileSync(
-  new URL("./src/components/DesignStudioView.tsx", import.meta.url),
-  "utf8",
+const unrelatedAllocationChange = changeFutureFabricAllocationProduct({
+  state: chooseAnother,
+  allocationId: originalId,
+  nextFabricCode: imperial.code,
+  fabrics,
+});
+assert.equal(unrelatedAllocationChange.status, "assigned");
+assert.equal(
+  unrelatedAllocationChange.status === "assigned"
+    ? unrelatedAllocationChange.state.fabricAllocations[0]?.allocationId
+    : null,
+  originalId,
 );
-const futureFabricStageSource = readFileSync(
-  new URL("./src/utils/designStudioFutureFabricStage.ts", import.meta.url),
-  "utf8",
+assert.equal(
+  unrelatedAllocationChange.status === "assigned"
+    ? unrelatedAllocationChange.state.fabricAllocations[1]?.allocationId
+    : null,
+  secondAllocationId,
 );
-assert.match(
-  designStudioSource,
-  /handleAssignFutureFabricToGarment[\s\S]*assignFutureFabricToGarment/,
+assert.equal(
+  unrelatedAllocationChange.status === "assigned"
+    ? unrelatedAllocationChange.state.fabricAllocations.length
+    : null,
+  2,
 );
-assert.match(
-  futureFabricStageSource,
-  /awaitingFabricForPendingGarment[\s\S]*FabricAllocationStateEngine\.assignPendingGarmentToFabricAndContinue/,
+
+const pendingGarmentAssignment =
+  FabricAllocationStateEngine.assignPendingGarmentToFabric(
+    FabricAllocationStateEngine.beginChooseAnotherFabric(overflow),
+    lace.code,
+  );
+assert.equal(pendingGarmentAssignment.fabricAllocations.length, 2);
+assert.equal(
+  pendingGarmentAssignment.fabricAllocations[1]?.garmentAssignments[0]?.garmentType,
+  "skirt",
 );
-assert.match(
-  futureFabricStageSource,
-  /FabricAllocationStateEngine\.selectPrimaryFabric/,
-);
-assert.doesNotMatch(futureFabricStageSource, /syncForSelectedFabric/);
 
 console.log("PASS: primary fabric replacement preserves allocation identity and pricing semantics");

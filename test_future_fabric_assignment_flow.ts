@@ -114,6 +114,7 @@ customerCardState = applyFutureFabricCardSelection({
   garmentTypeSelection: createSelection(["shirt", "trouser"]),
   garmentKey: "base:shirt",
   fabricCode: "FAB-B",
+  fabrics,
 });
 assert.deepEqual(
   customerCardState.fabricAllocations.map((allocation) => ({
@@ -122,11 +123,8 @@ assert.deepEqual(
       (assignment) => assignment.garmentKey,
     ),
   })),
-  [
-    { fabricCode: "FAB-A", garmentKeys: ["base:trouser"] },
-    { fabricCode: "FAB-B", garmentKeys: ["base:shirt"] },
-  ],
-  "Targeted replacement through the same UI seam must preserve the unrelated garment assignment.",
+  [{ fabricCode: "FAB-B", garmentKeys: ["base:shirt", "base:trouser"] }],
+  "Changing Fabric for a shared Shirt + Trouser allocation replaces the whole physical group.",
 );
 const assign = (
   state: ReturnType<typeof FabricAllocationStateEngine.initialize>,
@@ -139,6 +137,7 @@ const assign = (
     garmentTypeSelection: createSelection(garmentTypes),
     garmentKey,
     fabricCode,
+    fabrics,
   });
   assert.equal(result.status, "assigned");
   return result.state;
@@ -235,18 +234,21 @@ assert.deepEqual(
 );
 
 separate = assign(separate, threeRegular, "base:trouser", "FAB-B");
+assert.equal(separate.fabricAllocations[0].fabricCode, "FAB-B");
 assert.deepEqual(
   separate.fabricAllocations[0].garmentAssignments.map(
     (assignment) => assignment.garmentKey,
   ),
-  ["base:shirt"],
+  ["base:shirt", "base:trouser"],
+  "Changing Trouser's Fabric changes the whole shared Shirt + Trouser allocation.",
 );
 assert.deepEqual(
   separate.fabricAllocations[1].garmentAssignments.map(
     (assignment) => assignment.garmentKey,
   ),
-  ["base:skirt", "base:trouser"],
+  ["base:skirt"],
 );
+assert.equal(separate.fabricAllocations[1].fabricCode, "FAB-B");
 
 const singleSelection = ["shirt"] satisfies FabricGarmentType[];
 let single = assign(
@@ -389,11 +391,11 @@ assert.equal(
 const separateBeforeRemoval = assign(
   assign(
     FabricAllocationStateEngine.initialize(),
-    ["shirt", "trouser"],
+    ["shirt", "trouser", "skirt"],
     "base:shirt",
     "FAB-A",
   ),
-  ["shirt", "trouser"],
+  ["shirt", "trouser", "skirt"],
   "base:trouser",
   "FAB-B",
 );
@@ -612,12 +614,6 @@ let mixedStep4State = applyFutureFabricCardSelection({
   garmentKey: "base:shirt",
   fabricCode: "FAB-A",
 });
-mixedStep4State = applyFutureFabricCardSelection({
-  state: mixedStep4State,
-  garmentTypeSelection: createSelection(["shirt", "trouser"]),
-  garmentKey: "base:trouser",
-  fabricCode: "FAB-B",
-});
 const mixedAdditionalSelection = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
   existingAssignments: mixedStep4State.fabricAllocations.flatMap(
@@ -638,6 +634,12 @@ if (mixedStep4State.pendingFabricGarment) {
     "FAB-A",
   );
 }
+mixedStep4State = applyFutureFabricCardSelection({
+  state: mixedStep4State,
+  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  garmentKey: "base:trouser",
+  fabricCode: "FAB-B",
+});
 assert.deepEqual(
   getFutureFabricCatalogueCancelTargets({
     fabricCode: "FAB-A",
@@ -732,21 +734,16 @@ assert.deepEqual(
 );
 
 const persistCancelState = commitCatalogueCancel({
-  state: applyFutureFabricCardSelection({
-    state: commitSameFabric({
-      state: applyFutureFabricCardSelection({
-        state: FabricAllocationStateEngine.initialize(),
-        garmentTypeSelection: createSelection(["shirt", "trouser"]),
-        garmentKey: "base:shirt",
-        fabricCode: "FAB-A",
-      }),
+  state: commitSameFabric({
+    state: applyFutureFabricCardSelection({
+      state: FabricAllocationStateEngine.initialize(),
       garmentTypeSelection: createSelection(["shirt", "trouser"]),
+      garmentKey: "base:shirt",
       fabricCode: "FAB-A",
-      garmentKeys: ["base:trouser"],
     }),
     garmentTypeSelection: createSelection(["shirt", "trouser"]),
-    garmentKey: "base:trouser",
-    fabricCode: "FAB-B",
+    fabricCode: "FAB-A",
+    garmentKeys: ["base:trouser"],
   }),
   garmentKey: "base:shirt",
 });
@@ -760,7 +757,7 @@ assert.deepEqual(
       (assignment) => assignment.garmentKey,
     ),
   })),
-  [{ fabricCode: "FAB-B", garmentKeys: ["base:trouser"] }],
+  [{ fabricCode: "FAB-A", garmentKeys: ["base:trouser"] }],
   "Draft serialize/restore must keep the cancelled assignment cancelled.",
 );
 
@@ -851,11 +848,21 @@ assert.doesNotMatch(
   /of \$\{requiredFabricQuantity\} needed/,
   "Step 2 counter copy must not append needed.",
 );
+assert.match(
+  stepSource,
+  /\$\{selectedFabricQuantity\}\/\$\{requiredFabricQuantity\}/,
+  "Fabrics Selected must use X/Y with no spaces around the slash.",
+);
+assert.match(
+  stepSource,
+  /\$\{assignedGarmentCount\}\/\$\{requiredGarmentCount\}/,
+  "Garments assigned must use X/Y with no spaces around the slash.",
+);
 assert.match(stepSource, /data-fabric-progress-icon="true"/);
 assert.match(stepSource, /data-catalogue-scroll-anchor="true"/);
 assert.match(stepSource, /catalogueScrollAnchorRef/);
 assert.match(stepSource, /assignSingleEligibleStep1FabricCandidate/);
-assert.match(stepSource, /shouldPromptStep1FabricAssignmentSelection/);
+assert.match(stepSource, /shouldOpenStep1FabricGroupingDialog/);
 assert.match(stepSource, /finalizeSuccessfulStep1FabricAssignment/);
 assert.doesNotMatch(
   stepSource,
@@ -892,7 +899,7 @@ const assignmentDialogSource = readFileSync(
 assert.match(assignmentDialogSource, /STEP1_FABRIC_ASSIGNMENT_TITLE/);
 assert.match(assignmentDialogSource, /STEP1_FABRIC_ASSIGNMENT_DESCRIPTION/);
 assert.match(assignmentDialogSource, /STEP1_USE_FOR_ALL_LABEL/);
-assert.match(assignmentDialogSource, /Assign to Selected/);
+assert.match(assignmentDialogSource, /STEP1_FABRIC_GROUP_ASSIGN_BUTTON_LABEL/);
 assert.doesNotMatch(
   assignmentDialogSource,
   /priceMultiplier|toFixed\(|PRICING_CURRENCY/,

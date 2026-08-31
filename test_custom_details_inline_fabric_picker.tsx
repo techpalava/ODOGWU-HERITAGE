@@ -445,6 +445,7 @@ const reassigned = applyFutureFabricCardSelection({
   garmentTypeSelection,
   garmentKey: secondKey,
   fabricCode: fabricA.code,
+  fabrics: [fabricA, fabricB],
 });
 assert.equal(
   withTwoShirts.fabricAllocations.find((allocation) =>

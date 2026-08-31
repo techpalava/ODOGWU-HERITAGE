@@ -74,11 +74,6 @@ const textContent = (node: ReactTestInstance | string | null): string =>
           .join("")
       : "";
 
-const findButton = (root: ReactTestInstance, text: string) =>
-  root
-    .findAllByType("button")
-    .find((button) => textContent(button).includes(text));
-
 const constructionPrice = threeSelection.garmentTypes.reduce((total, garmentType) => {
   const resolution = resolveGarmentConstructionPricing(garmentType, catalog);
   return resolution.status === "resolved" ? total + resolution.totalPrice : total;
@@ -115,9 +110,11 @@ const renderStep = (
       selectedFabricQuantity={planning.selectedFabricQuantity}
       constructionPrice={constructionPrice}
       onAssignFabricToGarment={onAssignFabricToGarment}
+      onChangeFabricAllocationProduct={() => undefined}
       onRemoveFabricFromGarment={() => undefined}
       onUseSameFabricForGarment={() => undefined}
       onAssignSameFabricProduct={onAssignSameFabricProduct}
+      onAssignGarmentToExistingAllocation={() => undefined}
       onBack={() => undefined}
       onContinue={() => {
         continueClicks += 1;
@@ -166,7 +163,11 @@ assert.doesNotMatch(textContent(dialog), /10\.00|€10|EUR 10/);
 assert.ok(dialog.findByProps({ "data-step1-fabric-assignment-row": "base:shirt" }));
 assert.ok(dialog.findByProps({ "data-step1-fabric-assignment-row": "base:trouser" }));
 assert.ok(dialog.findByProps({ "data-step1-fabric-assignment-row": "base:dress" }));
-assert.equal(findButton(dialog, "Assign to Selected (0)")?.props.disabled, true);
+assert.equal(
+  dialog.findByProps({ "data-testid": "step1-fabric-assignment-confirm" }).props
+    .disabled,
+  true,
+);
 
 await act(async () =>
   dialog
@@ -174,19 +175,35 @@ await act(async () =>
     .props.onChange({ currentTarget: { checked: true } }),
 );
 await act(async () => renderer.update(renderStep(state, applyBulk)));
-const selectedDialog = renderer.root.findByProps({
+let selectedDialog = renderer.root.findByProps({
   "data-testid": "step1-fabric-assignment-dialog",
 });
-assert.ok(findButton(selectedDialog, "Assign to Selected (1)"));
-await act(async () =>
-  findButton(selectedDialog, "Assign to Selected (1)")!.props.onClick(),
+assert.equal(
+  selectedDialog.findByProps({ "data-testid": "step1-fabric-assignment-confirm" })
+    .props.disabled,
+  true,
 );
+assert.match(textContent(selectedDialog), /Select 1 more garment/);
+await act(async () =>
+  selectedDialog
+    .findByProps({ "data-step1-fabric-assignment-checkbox": "base:trouser" })
+    .props.onChange({ currentTarget: { checked: true } }),
+);
+await act(async () => renderer.update(renderStep(state, applyBulk)));
+selectedDialog = renderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+const assignSelectedButton = selectedDialog.findByProps({
+  "data-testid": "step1-fabric-assignment-confirm",
+});
+assert.equal(assignSelectedButton.props.disabled, false);
+await act(async () => assignSelectedButton.props.onClick());
 await act(async () => renderer.update(renderStep(state, applyBulk)));
 assert.deepEqual(
   state.fabricAllocations.flatMap((allocation) =>
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
-  ),
-  ["base:shirt"],
+  ).sort(),
+  ["base:shirt", "base:trouser"],
 );
 assert.equal(
   renderer.root.findAllByProps({
@@ -206,27 +223,11 @@ const reusedCard = renderer.root
 assert.equal(reusedCard?.props["data-fabric-status"], "USE AGAIN");
 await act(async () => reusedCard?.props.onClick({ currentTarget: {} }));
 await act(async () => renderer.update(renderStep(state, applyBulk)));
-const reuseDialog = renderer.root.findByProps({
-  "data-testid": "step1-fabric-assignment-dialog",
-});
-assert.ok(reuseDialog.findByProps({ "data-step1-fabric-assignment-row": "base:trouser" }));
-assert.ok(reuseDialog.findByProps({ "data-step1-fabric-assignment-row": "base:dress" }));
-assert.equal(
-  reuseDialog.findAllByProps({
-    "data-step1-fabric-assignment-row": "base:shirt",
-  }).length,
-  0,
-);
-
-await act(async () =>
-  reuseDialog.findByProps({ "data-testid": "step1-fabric-assignment-cancel" }).props.onClick(),
-);
-await act(async () => renderer.update(renderStep(state, applyBulk)));
 assert.deepEqual(
   state.fabricAllocations.flatMap((allocation) =>
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
-  ),
-  ["base:shirt"],
+  ).sort(),
+  ["base:dress", "base:shirt", "base:trouser"],
 );
 assert.equal(
   renderer.root.findAllByProps({
@@ -320,7 +321,7 @@ assert.equal(
   }).props.disabled,
   false,
 );
-assert.match(textContent(leftoverSelectedDialog), /Assign to Selected \(2\)/);
+assert.match(textContent(leftoverSelectedDialog), /Assign Fabric/);
 await act(async () =>
   leftoverSelectedDialog
     .findByProps({ "data-testid": "step1-fabric-assignment-use-for-all" })
@@ -339,8 +340,8 @@ assert.equal(state.fabricAllocations.length, 2);
 assert.ok(
   state.fabricAllocations.every((allocation) => allocation.fabricCode === "FAB-A"),
 );
-assert.match(textContent(renderer.root), /Fabrics Selected: 2 of 2/);
-assert.match(textContent(renderer.root), /Garments assigned: 3 of 3/);
+assert.match(textContent(renderer.root), /Fabrics Selected: 2\/2/);
+assert.match(textContent(renderer.root), /Garments assigned: 3\/3/);
 
 const twoSelection = reconcileGarmentTypeStepSelection({
   selectedGarmentTypes: ["shirt", "trouser"],
@@ -401,9 +402,11 @@ const renderTwoStep = (
       selectedFabricQuantity={planning.selectedFabricQuantity}
       constructionPrice={twoConstructionPrice}
       onAssignFabricToGarment={() => undefined}
+      onChangeFabricAllocationProduct={() => undefined}
       onRemoveFabricFromGarment={() => undefined}
       onUseSameFabricForGarment={() => undefined}
       onAssignSameFabricProduct={onAssignSameFabricProduct}
+      onAssignGarmentToExistingAllocation={() => undefined}
       onBack={() => undefined}
       onContinue={() => {
         continueClicks += 1;
@@ -424,7 +427,7 @@ let twoState = applyFutureFabricCardSelection({
   }),
   garmentTypeSelection: twoSelection,
   garmentKey: "base:trouser",
-  fabricCode: "FAB-B",
+  fabricCode: "FAB-A",
 });
 const noopAssign = () => {
   throw new Error("zero-candidate unused fabric must not start an assignment");
@@ -451,7 +454,7 @@ assert.equal(usedZeroCard?.props["data-fabric-status"], "IN USE");
 assert.notEqual(usedZeroCard?.props["data-fabric-action"], "use_again");
 assert.notEqual(usedZeroCard?.props["data-fabric-action"], "select");
 assert.equal(usedZeroCard?.props["data-fabric-remove"], "true");
-assert.match(usedZeroCard?.props["aria-label"] || "", /Remove .+ from /);
+assert.match(usedZeroCard?.props["aria-label"] || "", /remove /i);
 assert.match(textContent(zeroRenderer.root), /IN USE/);
 assert.doesNotMatch(textContent(usedZeroCard!), /USE AGAIN/);
 assert.equal(dialogCount(zeroRenderer.root), 0);
@@ -478,23 +481,21 @@ await act(async () => {
 });
 const unusedOneCard = findFabricCardByCode(oneRenderer.root, "FAB-C");
 assert.equal(unusedOneCard?.props["data-fabric-status"], "SELECT");
-assert.equal(unusedOneCard?.props["data-fabric-action"], "select");
+assert.equal(unusedOneCard?.props["data-fabric-action"], "none");
+assert.equal(unusedOneCard?.props.disabled, true);
 assert.match(
   textContent(oneRenderer.root),
-  /Select a fabric card to assign it to Trouser\./,
+  /You have selected the 1 fabric needed for this order/,
 );
 await act(async () => unusedOneCard?.props.onClick({ currentTarget: {} }));
 await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
-assert.equal(
-  dialogCount(oneRenderer.root),
-  0,
-  "One remaining Step 1 candidate must assign directly without the popup.",
-);
+assert.equal(dialogCount(oneRenderer.root), 0);
 assert.deepEqual(
   oneState.fabricAllocations.flatMap((allocation) =>
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
-  ).sort(),
-  ["base:shirt", "base:trouser"],
+  ),
+  ["base:shirt"],
+  "An unused Fabric product must not create a second allocation at the required limit.",
 );
 
 oneState = applyFutureFabricCardSelection({
@@ -559,7 +560,9 @@ const missingError = missingDialog.findByProps({
 assert.equal(missingError.props.role, "alert");
 assert.equal(textContent(missingError), STEP1_FABRIC_NO_LONGER_AVAILABLE_MESSAGE);
 assert.equal(
-  findButton(missingDialog, "Assign to Selected")?.props.disabled,
+  missingDialog.findByProps({
+    "data-testid": "step1-fabric-assignment-confirm",
+  }).props.disabled,
   true,
 );
 assert.equal(
@@ -627,7 +630,9 @@ const mutateLiveFabric = async (
   });
   assert.match(textContent(staleDialog), new RegExp(expectedError.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.equal(
-    findButton(staleDialog, "Assign to Selected")?.props.disabled,
+    staleDialog.findByProps({
+      "data-testid": "step1-fabric-assignment-confirm",
+    }).props.disabled,
     true,
   );
   assert.equal(
@@ -715,7 +720,9 @@ const staleCandidateDialog = staleCandidateRenderer.root.findByProps({
   "data-testid": "step1-fabric-assignment-dialog",
 });
 assert.equal(
-  findButton(staleCandidateDialog, "Assign to Selected")?.props.disabled,
+  staleCandidateDialog.findByProps({
+    "data-testid": "step1-fabric-assignment-confirm",
+  }).props.disabled,
   true,
 );
 await act(async () =>
@@ -767,8 +774,11 @@ await act(async () => {
       candidates={blockedDialogCandidates}
       selectedGarmentKeys={["base:shirt", "base:trouser"]}
       selectedCount={2}
+      selectedCapacityUnits={2}
+      maxCapacityUnits={2}
       canAssignSelected={false}
       canUseForAll={false}
+      groupingCapacityStatus={null}
       selectedCapacityMessage={null}
       remainingCapacityMessage={null}
       candidateMessages={{

@@ -10,6 +10,10 @@ import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import {
   resolveFutureFabricCatalogueCardPresentation,
 } from "../utils/designStudioFutureFabricStage";
+import {
+  getFabricNewAllocationStockConstraintMessage,
+  getOrderAwareFabricStockPresentation,
+} from "../utils/fabricStockAvailability";
 import type { AdditionalGarmentFabricTransaction } from "../utils/additionalGarmentFabricPicker";
 import {
   resolveCurrentCatalogueFabricForAssignment,
@@ -341,7 +345,13 @@ export const FutureAdditionalGarmentFabricDialog = ({
                     garmentTypeSelection,
                     fabricAllocationState,
                     currentTargetGarmentKey: transaction.garmentKey,
+                    fabrics,
                   });
+                  const stockConstraintMessage =
+                    getFabricNewAllocationStockConstraintMessage(
+                      fabric,
+                      fabricAllocationState,
+                    );
                   return (
                     <FutureFabricCatalogueCard
                       key={fabric.code}
@@ -354,6 +364,11 @@ export const FutureAdditionalGarmentFabricDialog = ({
                       }}
                       targetGarmentLabel={garmentLabel}
                       stockBadgeIdPrefix="step4-fabric-stock"
+                      stockPresentation={getOrderAwareFabricStockPresentation(
+                        fabric,
+                        fabricAllocationState,
+                      )}
+                      stockConstraintMessage={stockConstraintMessage}
                       describedBy={helpId}
                       onAction={() => onSelectFabric(fabric.code)}
                     />
