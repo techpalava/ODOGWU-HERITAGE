@@ -98,7 +98,7 @@ assert.match(componentSource, /sm:grid-cols-2 xl:grid-cols-3/);
 assert.match(componentSource, /Image unavailable/);
 assert.match(componentSource, /Originally shown as:/);
 assert.match(componentSource, /getFutureDesignStyleMatchPresentation/);
-assert.match(componentSource, /More Designs/);
+assert.match(componentSource, /All Designs/);
 assert.match(componentSource, /Upload Your Own Design/);
 assert.equal(
   componentSource.includes("ODOGWU_STEP3_DISCOVERY_QA_STYLES"),

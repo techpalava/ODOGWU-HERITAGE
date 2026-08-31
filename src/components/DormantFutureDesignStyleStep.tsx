@@ -69,7 +69,7 @@ interface DormantFutureDesignStyleStepProps {
 }
 
 type CatalogueBrowseFilter =
-  | "more_designs"
+  | "all_designs"
   | "exact_match"
   | "adaptable"
   | "male"
@@ -80,7 +80,7 @@ const CATALOGUE_FILTERS: ReadonlyArray<{
   id: CatalogueBrowseFilter;
   label: string;
 }> = [
-  { id: "more_designs", label: "More Designs" },
+  { id: "all_designs", label: "All Designs" },
   { id: "exact_match", label: "Best Matches" },
   { id: "adaptable", label: "Can Be Adapted" },
   { id: "male", label: "Male" },
@@ -104,7 +104,7 @@ const styleMatchesBrowseFilter = (
   presentation: FutureDesignStyleMatchPresentation,
   filter: CatalogueBrowseFilter,
 ): boolean => {
-  if (filter === "more_designs") return true;
+  if (filter === "all_designs") return true;
   if (filter === "exact_match") return presentation.tier === "exact_match";
   if (filter === "adaptable") return presentation.tier === "adaptable";
   return getStyleBrowseAudience(style) === filter;
@@ -160,7 +160,7 @@ export const DormantFutureDesignStyleStep = ({
   const adaptationInitialFocusRef = useRef<HTMLButtonElement | null>(null);
   const adaptationTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [exploreFilter, setExploreFilter] =
-    useState<CatalogueBrowseFilter>("more_designs");
+    useState<CatalogueBrowseFilter>("all_designs");
   const [pendingAdaptableStyleId, setPendingAdaptableStyleId] = useState<
     string | null
   >(null);
@@ -192,15 +192,9 @@ export const DormantFutureDesignStyleStep = ({
   const selectableStyleCount = catalogueByStyle.filter(({ presentation }) =>
     isFutureDesignStyleSelectable(presentation.tier),
   ).length;
-  const exploredStyles = catalogueByStyle.filter(({ style, presentation }) => {
-    if (
-      exploreFilter === "more_designs" &&
-      presentation.tier === "exact_match"
-    ) {
-      return false;
-    }
-    return styleMatchesBrowseFilter(style, presentation, exploreFilter);
-  });
+  const exploredStyles = catalogueByStyle.filter(({ style, presentation }) =>
+    styleMatchesBrowseFilter(style, presentation, exploreFilter),
+  );
   const pendingAdaptableStyle =
     catalogueByStyle.find(({ style }) => style.id === pendingAdaptableStyleId) ||
     null;
@@ -749,6 +743,10 @@ export const DormantFutureDesignStyleStep = ({
                 >
                   Explore All Designs
                 </h3>
+                <p className="mt-2 text-xs leading-relaxed text-heritage-ink/70">
+                  Browse the full catalogue, including Best Matches and designs
+                  that may not be available for this order.
+                </p>
                 <div
                   role="group"
                   aria-label="Catalogue design filters"
@@ -783,9 +781,7 @@ export const DormantFutureDesignStyleStep = ({
                     data-testid="step3-explore-empty"
                     className="mt-4 text-xs leading-relaxed text-heritage-ink/65"
                   >
-                    {exploreFilter === "more_designs"
-                      ? "Best Match designs are shown above."
-                      : "No designs match this filter."}
+                    No designs match this filter.
                   </p>
                 )}
               </section>

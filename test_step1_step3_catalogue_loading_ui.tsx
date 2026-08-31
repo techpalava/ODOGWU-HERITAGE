@@ -228,8 +228,10 @@ const renderStep3 = async ({
   });
   assert.equal(coverage.status, "no_match");
   const step1 = renderStep1(coverage);
-  assert.match(step1, /No catalogue design matches this selection/);
+  assert.match(step1, /No directly compatible catalogue design found/);
+  assert.match(step1, /browse all designs/i);
   assert.match(step1, /upload your own design/i);
+  assert.equal(step1.includes("No catalogue design matches this selection"), false);
   const step3 = await renderStep3({
     styles: [incompatibleStyle],
     garmentTypeSelection: selection(["shirt", "trouser"], ["male"]),
@@ -239,6 +241,37 @@ const renderStep3 = async ({
   assert.match(step3.text, /Upload Your Own Design/);
   assert.match(step3.text, /NOT AVAILABLE FOR THIS ORDER/);
   assert.equal(step3.text.includes("No matching design styles are available yet"), false);
+}
+
+// blocked/indeterminate catalogue entries do not count as Step 1 selectable matches
+{
+  const blockedStyle: StyleCategory = {
+    id: "blocked-kaftan",
+    name: "Palace Kaftan",
+    description: "Kaftan only.",
+    gender: "male",
+    options: [],
+    fabricCapacityComposition: [createStyleBaseGarmentSpec("kaftan")],
+  };
+  const indeterminateStyle: StyleCategory = {
+    id: "indeterminate-archive",
+    name: "Unreviewed Archive",
+    description: "Missing composition metadata.",
+    gender: "male",
+    options: [],
+  };
+  const coverage = resolveStep1CatalogueCoverage({
+    garmentTypeSelection: selection(["shirt", "trouser"], ["male"]),
+    styles: [blockedStyle, indeterminateStyle],
+    stylesLoadState: "ready",
+  });
+  assert.equal(coverage.status, "no_match");
+  assert.equal(coverage.compatibleCount, 0);
+  assert.equal(
+    coverage.customerHeadline,
+    "No directly compatible catalogue design found",
+  );
+  assert.match(coverage.customerDetail || "", /browse all designs/i);
 }
 
 // 5. saved selection while loading must not show upload-only; then matched

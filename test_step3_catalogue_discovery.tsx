@@ -114,6 +114,87 @@ const styleF: StyleCategory = {
 
 const fullCatalogue = [styleA, styleB, styleC, styleD, styleE, styleF];
 
+const audienceMaleStyle: StyleCategory = {
+  id: "audience-male-senator",
+  name: "Men's Senator Classic",
+  description: "Male-audience exact match.",
+  gender: "male",
+  targetDemographic: "male",
+  options: [],
+  fabricCapacityComposition: [
+    createStyleBaseGarmentSpec("shirt"),
+    createStyleBaseGarmentSpec("trouser"),
+  ],
+};
+
+const audienceFemaleStyle: StyleCategory = {
+  id: "audience-female-evening",
+  name: "Women's Evening Line",
+  description: "Female-audience catalogue design.",
+  gender: "female",
+  targetDemographic: "female",
+  options: [],
+  fabricCapacityComposition: [
+    createStyleBaseGarmentSpec("shirt"),
+    createStyleBaseGarmentSpec("trouser"),
+  ],
+};
+
+const audienceUnisexStyle: StyleCategory = {
+  id: "audience-unisex-family",
+  name: "Family Heritage Collection",
+  description: "Unisex / family audience design.",
+  gender: "unisex",
+  targetDemographic: "unisex",
+  options: [],
+  fabricCapacityComposition: [
+    createStyleBaseGarmentSpec("shirt"),
+    createStyleBaseGarmentSpec("trouser"),
+  ],
+};
+
+const audienceAdaptableStyle: StyleCategory = {
+  id: "audience-adaptable-royal",
+  name: "Royal Senator Adapt",
+  description: "Male-audience adaptable design.",
+  gender: "male",
+  targetDemographic: "male",
+  options: [],
+  fabricCapacityComposition: [createStyleBaseGarmentSpec("kaftan")],
+  styleApplicability: {
+    mode: "adaptable",
+    garmentTypes: ["shirt", "trouser", "kaftan"],
+  },
+};
+
+const audienceBlockedMaleStyle: StyleCategory = {
+  id: "audience-blocked-male-kaftan",
+  name: "Men's Palace Kaftan",
+  description: "Male audience but blocked for this order.",
+  gender: "male",
+  targetDemographic: "male",
+  options: [],
+  fabricCapacityComposition: [createStyleBaseGarmentSpec("kaftan")],
+};
+
+const audienceIndeterminateUnisexStyle: StyleCategory = {
+  id: "audience-indeterminate-unisex",
+  name: "Unreviewed Family Archive",
+  description: "Unisex audience with missing composition metadata.",
+  gender: "unisex",
+  targetDemographic: "unisex",
+  options: [],
+};
+
+const audienceCatalogue = [
+  audienceMaleStyle,
+  audienceAdaptableStyle,
+  audienceFemaleStyle,
+  audienceUnisexStyle,
+  audienceBlockedMaleStyle,
+  audienceIndeterminateUnisexStyle,
+];
+
 const emptyUploaded = {
   source: null,
   reference: null,
@@ -162,6 +243,22 @@ const buttonsByLabel = (root: ReactTestInstance, label: string) =>
   root
     .findAllByType("button")
     .filter((button) => textContent(button).includes(label));
+
+const exploreCardIds = (root: ReactTestInstance) =>
+  cardsInSection(root, "step3-explore-all").map(
+    (card) => card.props["data-style-card"] as string,
+  );
+
+const clickCatalogueFilter = async (
+  renderer: ReturnType<typeof create>,
+  filterId: string,
+) => {
+  await act(async () => {
+    renderer.root
+      .findByProps({ "data-catalogue-filter": filterId })
+      .props.onClick();
+  });
+};
 
 const renderStep = async ({
   styles,
@@ -315,7 +412,11 @@ const renderStep = async ({
   const selectButtons = buttonsByLabel(renderer.root, "Select Design").filter(
     (button) => !button.props.disabled,
   );
-  assert.equal(selectButtons.length, 1);
+  assert.equal(
+    selectButtons.length,
+    2,
+    "Exact-match styleA appears in Best Matches and All Designs.",
+  );
   await act(async () => {
     selectButtons[0]!.props.onClick();
   });
@@ -392,15 +493,18 @@ const renderStep = async ({
     onSelectStyle: (styleId) => selected.push(styleId),
   });
   const moreDesignsFilter = renderer.root.findByProps({
-    "data-catalogue-filter": "more_designs",
+    "data-catalogue-filter": "all_designs",
   });
   assert.equal(moreDesignsFilter.props["aria-pressed"], true);
-  assert.match(textContent(moreDesignsFilter), /More Designs/i);
+  assert.match(textContent(moreDesignsFilter), /All Designs/i);
   const exploreBefore = cardsInSection(renderer.root, "step3-explore-all").map(
     (card) => card.props["data-style-card"],
   );
-  assert.equal(exploreBefore.includes(styleA.id), false);
+  assert.equal(exploreBefore.includes(styleA.id), true);
   assert.equal(exploreBefore.includes(styleB.id), true);
+  assert.equal(exploreBefore.includes(styleC.id), true);
+  assert.equal(exploreBefore.includes(styleD.id), true);
+  assert.equal(exploreBefore.includes(styleE.id), true);
 
   await act(async () => {
     renderer.root
@@ -424,7 +528,7 @@ const renderStep = async ({
 
   await act(async () => {
     renderer.root
-      .findByProps({ "data-catalogue-filter": "more_designs" })
+      .findByProps({ "data-catalogue-filter": "all_designs" })
       .props.onClick();
   });
   assert.equal(
@@ -444,6 +548,108 @@ const renderStep = async ({
   assert.deepEqual(adaptableFiltered, [styleB.id]);
   assert.deepEqual(selected, []);
   assert.deepEqual(frozenGarments, shirtTrouserMale);
+}
+
+// Audience filters (Male / Female / Unisex / Family)
+{
+  const selected: string[] = [];
+  const { renderer } = await renderStep({
+    styles: audienceCatalogue,
+    onSelectStyle: (styleId) => selected.push(styleId),
+  });
+  assert.equal(
+    renderer.root.findByProps({ "data-catalogue-filter": "all_designs" }).props[
+      "aria-pressed"
+    ],
+    true,
+  );
+  assert.deepEqual(
+    new Set(exploreCardIds(renderer.root)),
+    new Set(audienceCatalogue.map((style) => style.id)),
+  );
+
+  await clickCatalogueFilter(renderer, "male");
+  assert.equal(
+    renderer.root.findByProps({ "data-catalogue-filter": "male" }).props[
+      "aria-pressed"
+    ],
+    true,
+  );
+  const maleFilteredIds = exploreCardIds(renderer.root);
+  assert.ok(maleFilteredIds.includes(audienceMaleStyle.id));
+  assert.ok(maleFilteredIds.includes(audienceBlockedMaleStyle.id));
+  assert.equal(maleFilteredIds.includes(audienceFemaleStyle.id), false);
+  assert.equal(maleFilteredIds.includes(audienceUnisexStyle.id), false);
+  assert.equal(maleFilteredIds.includes(audienceIndeterminateUnisexStyle.id), false);
+  const blockedMaleCard = cardById(renderer.root, audienceBlockedMaleStyle.id);
+  assert.equal(blockedMaleCard.props["data-style-tier"], "blocked");
+  assert.equal(blockedMaleCard.findByType("button").props.disabled, true);
+
+  await clickCatalogueFilter(renderer, "female");
+  assert.equal(
+    renderer.root.findByProps({ "data-catalogue-filter": "female" }).props[
+      "aria-pressed"
+    ],
+    true,
+  );
+  const femaleFilteredIds = exploreCardIds(renderer.root);
+  assert.ok(femaleFilteredIds.includes(audienceFemaleStyle.id));
+  assert.equal(femaleFilteredIds.includes(audienceMaleStyle.id), false);
+  assert.equal(femaleFilteredIds.includes(audienceBlockedMaleStyle.id), false);
+  assert.equal(femaleFilteredIds.includes(audienceUnisexStyle.id), false);
+  assert.equal(femaleFilteredIds.includes(audienceIndeterminateUnisexStyle.id), false);
+
+  await clickCatalogueFilter(renderer, "unisex");
+  assert.equal(
+    renderer.root.findByProps({ "data-catalogue-filter": "unisex" }).props[
+      "aria-pressed"
+    ],
+    true,
+  );
+  const unisexFilteredIds = exploreCardIds(renderer.root);
+  assert.ok(unisexFilteredIds.includes(audienceUnisexStyle.id));
+  assert.ok(unisexFilteredIds.includes(audienceIndeterminateUnisexStyle.id));
+  assert.equal(unisexFilteredIds.includes(audienceMaleStyle.id), false);
+  assert.equal(unisexFilteredIds.includes(audienceFemaleStyle.id), false);
+  assert.equal(unisexFilteredIds.includes(audienceBlockedMaleStyle.id), false);
+  const indeterminateUnisexCard = cardById(
+    renderer.root,
+    audienceIndeterminateUnisexStyle.id,
+  );
+  assert.equal(indeterminateUnisexCard.props["data-style-tier"], "indeterminate");
+  assert.equal(indeterminateUnisexCard.findByType("button").props.disabled, true);
+
+  await clickCatalogueFilter(renderer, "all_designs");
+  assert.equal(
+    renderer.root.findByProps({ "data-catalogue-filter": "all_designs" }).props[
+      "aria-pressed"
+    ],
+    true,
+  );
+  const restoredIds = exploreCardIds(renderer.root);
+  assert.deepEqual(
+    new Set(restoredIds),
+    new Set(audienceCatalogue.map((style) => style.id)),
+  );
+  assert.equal(
+    cardById(renderer.root, audienceMaleStyle.id).props["data-style-tier"],
+    "exact_match",
+  );
+  assert.equal(
+    cardById(renderer.root, audienceAdaptableStyle.id).props["data-style-tier"],
+    "adaptable",
+  );
+  assert.equal(
+    cardById(renderer.root, audienceBlockedMaleStyle.id).props["data-style-tier"],
+    "blocked",
+  );
+  assert.equal(
+    cardById(renderer.root, audienceIndeterminateUnisexStyle.id).props[
+      "data-style-tier"
+    ],
+    "indeterminate",
+  );
+  assert.deepEqual(selected, []);
 }
 
 // Zero selectable still shows catalogue + upload
@@ -552,8 +758,8 @@ assert.equal(
 );
 assert.equal(componentSource.includes("sessionStorage"), false);
 assert.equal(componentSource.includes("localStorage"), false);
-assert.match(componentSource, /More Designs/);
-assert.match(componentSource, /more_designs/);
-assert.match(componentSource, /useState<CatalogueBrowseFilter>\("more_designs"\)/);
+assert.match(componentSource, /All Designs/);
+assert.match(componentSource, /all_designs/);
+assert.match(componentSource, /useState<CatalogueBrowseFilter>\("all_designs"\)/);
 
 console.log("PASS: Step 3 full-catalogue discovery UX");

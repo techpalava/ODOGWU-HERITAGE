@@ -24,10 +24,12 @@ export const STEP1_FABRIC_ASSIGNMENT_DESCRIPTION =
   "Choose which garments should use this Fabric.";
 export const STEP1_FABRIC_GROUP_ASSIGN_BUTTON_LABEL = "Assign Fabric";
 export const STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE =
-  "Select 1 more garment to use this Fabric.";
+  "Select 1 more standard garment to complete this Fabric.";
 export const STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE = "Fabric capacity complete.";
+export const STEP1_ZERO_CAPACITY_GUIDANCE_MESSAGE =
+  "Select garments to use this Fabric.";
 export const STEP1_FINAL_RESIDUAL_CAPACITY_MESSAGE =
-  "This is the final garment for this order. The remaining half of this Fabric will be unused.";
+  "Final Fabric — the remaining half will be unused.";
 export const formatStep1FabricCapacityProgress = (
   usedUnits: number,
   maxUnits: number = FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION,
@@ -428,7 +430,13 @@ const failureFromDryRun = (
   if (!result || result.status !== "blocked" || !result.failedGarmentKey) {
     return null;
   }
-  if (result.reason === "FABRIC_QUANTITY_LIMIT_REACHED") {
+  if (
+    result.reason === "FABRIC_QUANTITY_LIMIT_REACHED" ||
+    result.reason === "FABRIC_STOCK_EXHAUSTED"
+  ) {
+    return null;
+  }
+  if (result.reason !== "INVALID_CAPACITY") {
     return null;
   }
   return {
@@ -525,26 +533,26 @@ export const evaluateStep1FabricAssignmentSelection = ({
     (candidate) => !selected.includes(candidate.garmentKey),
   );
   let groupingCapacityStatus: string | null = null;
-  if (selected.length > 0) {
-    if (selectedCapacityUnits >= maxCapacityUnits) {
-      groupingCapacityStatus = STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE;
-    } else if (candidates.length === 1) {
-      groupingCapacityStatus = STEP1_FINAL_RESIDUAL_CAPACITY_MESSAGE;
-    } else {
-      const canGroupWithAnother = unselectedCandidates.some((candidate) =>
-        dryRunAssignGarmentKeys({
-          state: fabricAllocationState,
-          garmentTypeSelection,
-          fabricCode,
-          garmentKeys: [...selected, candidate.garmentKey],
-          fabrics,
-        }).status === "assigned",
-      );
-      if (canGroupWithAnother) {
-        groupingCapacityStatus = STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE;
-        if (selectedResult?.status === "assigned") {
-          canAssignSelected = false;
-        }
+  if (selected.length === 0) {
+    groupingCapacityStatus = STEP1_ZERO_CAPACITY_GUIDANCE_MESSAGE;
+  } else if (selectedCapacityUnits >= maxCapacityUnits) {
+    groupingCapacityStatus = STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE;
+  } else if (candidates.length === 1) {
+    groupingCapacityStatus = STEP1_FINAL_RESIDUAL_CAPACITY_MESSAGE;
+  } else {
+    const canGroupWithAnother = unselectedCandidates.some((candidate) =>
+      dryRunAssignGarmentKeys({
+        state: fabricAllocationState,
+        garmentTypeSelection,
+        fabricCode,
+        garmentKeys: [...selected, candidate.garmentKey],
+        fabrics,
+      }).status === "assigned",
+    );
+    if (canGroupWithAnother) {
+      groupingCapacityStatus = STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE;
+      if (selectedResult?.status === "assigned") {
+        canAssignSelected = false;
       }
     }
   }
