@@ -88,8 +88,11 @@ import {
 import {
   assignFutureFabricToGarment,
   applyFutureFabricCardSelection,
+  assignFutureGarmentToExistingFabricAllocation,
   assignSameFabricProductToGarments,
   cancelFutureFabricCatalogueAssignment,
+  changeFutureFabricAllocationProduct,
+  type ChangeFutureFabricAllocationExpectation,
   getFutureGarmentFabricPlanning,
   getGarmentTypeStepSelectedFabricQuantity,
   getFutureFabricCapacityComposition,
@@ -1057,17 +1060,56 @@ export default function DesignStudioView({
     fabric: Fabric,
     garmentKey: string,
   ) => {
-    if (activeUploadedDesignSource) {
-      setFuturePriceActivatedFabricCode(null);
-    }
     const nextState = applyFutureFabricCardSelection({
       state: fabricAllocationState,
       garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
       garmentKey,
       fabricCode: fabric.code,
+      fabrics,
     });
+    if (nextState === fabricAllocationState) {
+      return nextState;
+    }
+    if (activeUploadedDesignSource) {
+      setFuturePriceActivatedFabricCode(null);
+    }
     setFabricAllocationState(nextState);
     return nextState;
+  };
+  const handleChangeFutureFabricAllocationProduct = (
+    allocationId: string,
+    fabricCode: string,
+    expectation?: ChangeFutureFabricAllocationExpectation,
+  ) => {
+    const result = changeFutureFabricAllocationProduct({
+      state: fabricAllocationState,
+      allocationId,
+      nextFabricCode: fabricCode,
+      fabrics,
+      expectation,
+    });
+    if (result.status !== "assigned") {
+      return {
+        status: "blocked" as const,
+        reason:
+          result.reason === "FABRIC_STOCK_EXHAUSTED"
+            ? ("FABRIC_STOCK_EXHAUSTED" as const)
+            : result.reason === "ALLOCATION_NOT_FOUND"
+              ? ("ALLOCATION_NOT_FOUND" as const)
+              : result.reason === "ALLOCATION_CHANGED"
+                ? ("ALLOCATION_CHANGED" as const)
+                : ("INVALID_CAPACITY" as const),
+        state: fabricAllocationState,
+      };
+    }
+    if (result.state === fabricAllocationState) {
+      return { status: "assigned" as const, state: result.state };
+    }
+    if (activeUploadedDesignSource) {
+      setFuturePriceActivatedFabricCode(null);
+    }
+    setFabricAllocationState(result.state);
+    return { status: "assigned" as const, state: result.state };
   };
 
   const handleRemoveFutureFabricAssignment = (garmentKey: string) => {
@@ -3055,8 +3097,27 @@ export default function DesignStudioView({
       garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
       fabricCode,
       garmentKeys,
+      fabrics,
     });
     if (result.status === "assigned") {
+      setFabricAllocationState(result.state);
+    }
+    return result;
+  };
+  const handleAssignGarmentToExistingAllocation = (
+    garmentKey: string,
+    allocationId: string,
+  ) => {
+    const result = assignFutureGarmentToExistingFabricAllocation({
+      state: fabricAllocationState,
+      garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+      garmentKey,
+      allocationId,
+    });
+    if (result.status === "assigned") {
+      if (activeUploadedDesignSource) {
+        setFuturePriceActivatedFabricCode(null);
+      }
       setFabricAllocationState(result.state);
     }
     return result;
@@ -3070,12 +3131,14 @@ export default function DesignStudioView({
         (allocation) => allocation.allocationId === current.activeAllocationId,
       );
       if (!activeAllocation) return current;
-      return assignFutureFabricToGarment({
+      const result = assignFutureFabricToGarment({
         state: current,
         garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
         garmentKey,
         fabricCode: activeAllocation.fabricCode,
-      }).state;
+        fabrics,
+      });
+      return result.status === "assigned" ? result.state : current;
     });
   };
   const handleChooseAnotherFutureFabric = () => {
@@ -3196,6 +3259,7 @@ export default function DesignStudioView({
       garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
       garmentKey: additionalGarmentFabricTransaction.garmentKey,
       fabricCode: resolved.fabric.code,
+      fabrics,
     });
     const result = confirmAdditionalGarmentFabricAssignment({
       previousState: previous,
@@ -3411,9 +3475,13 @@ export default function DesignStudioView({
           }
           constructionPrice={futureConstructionPrice}
           onAssignFabricToGarment={handleAssignFutureFabricToGarment}
+          onChangeFabricAllocationProduct={handleChangeFutureFabricAllocationProduct}
           onRemoveFabricFromGarment={handleRemoveFutureFabricAssignment}
           onUseSameFabricForGarment={handleUseSameFutureFabricForGarment}
           onAssignSameFabricProduct={handleAssignSameFabricProductToGarments}
+          onAssignGarmentToExistingAllocation={
+            handleAssignGarmentToExistingAllocation
+          }
           onBack={() => setFutureStageId("garment_type")}
           onContinue={handleOpenDormantDesignStyleStage}
           onUseSameFabric={handleUseSameFutureFabric}

@@ -75,9 +75,11 @@ const renderFabricStep = (state = incompleteFabricState) => {
       selectedFabricQuantity={state.fabricAllocations.length}
       constructionPrice={65}
       onAssignFabricToGarment={() => undefined}
+      onChangeFabricAllocationProduct={() => undefined}
       onRemoveFabricFromGarment={() => undefined}
       onUseSameFabricForGarment={() => undefined}
       onAssignSameFabricProduct={() => undefined}
+      onAssignGarmentToExistingAllocation={() => undefined}
       onBack={() => undefined}
       onContinue={() => {
         fabricContinueCalls += 1;
@@ -144,7 +146,10 @@ assert.equal(
   "true",
   "Inline Fabric targeting must not hide the completed-step action.",
 );
-assert.match(textContent(fabricRenderer.root), /Choosing fabric for: Standard Shirt/);
+assert.match(
+  textContent(fabricRenderer.root),
+  /Changing Fabric for Fabric Selection 1/,
+);
 assert.equal(
   fabricRenderer.root.findByProps({
     "data-testid": "future-fabric-inline-catalogue",

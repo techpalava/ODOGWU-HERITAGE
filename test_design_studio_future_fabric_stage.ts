@@ -51,7 +51,9 @@ const stepperSource = readFileSync(
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 
 assert.match(fabricSource, /getFutureGarmentLabel\(assignment\.garmentType\)/);
-assert.match(fabricSource, /aria-label=\{`\$\{assigned \? "Change" : "Add"\} fabric for/);
+assert.match(fabricSource, /aria-label=\{`Change fabric for \$\{garmentLabel\}`\}/);
+assert.match(fabricSource, /aria-label=\{`Add fabric for \$\{garmentLabel\}`\}/);
+assert.match(fabricSource, /aria-label=\{`Assign fabric for \$\{garmentLabel\}`\}/);
 assert.match(fabricSource, /Fabric needs attention/);
 assert.match(stepperSource, /aria-current=\{isCurrent \? "step" : undefined\}/);
 assert.match(stepperSource, /disabled=\{!isClickable\}/);

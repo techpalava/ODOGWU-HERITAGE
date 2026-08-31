@@ -163,6 +163,7 @@ const renderStep = (
   handlers: {
     onRemove?: (garmentKey: string) => void;
     onAssign?: (fabric: Fabric, garmentKey: string) => void;
+    onChange?: (allocationId: string, fabricCode: string) => void;
   } = {},
 ) => {
   const completion = getFutureFabricStageCompletion({
@@ -183,9 +184,11 @@ const renderStep = (
     selectedFabricQuantity: planning.selectedFabricQuantity,
     constructionPrice: 0,
     onAssignFabricToGarment: handlers.onAssign || (() => undefined),
+    onChangeFabricAllocationProduct: handlers.onChange || (() => undefined),
     onRemoveFabricFromGarment: handlers.onRemove || (() => undefined),
     onUseSameFabricForGarment: () => undefined,
     onAssignSameFabricProduct: () => undefined,
+    onAssignGarmentToExistingAllocation: () => undefined,
     onBack: () => undefined,
     onContinue: () => undefined,
     onUseSameFabric: () => undefined,
@@ -205,6 +208,7 @@ const assign = (
     garmentTypeSelection,
     garmentKey,
     fabricCode,
+    fabrics: allFabrics,
   }).state;
 
 // ---------------------------------------------------------------------------

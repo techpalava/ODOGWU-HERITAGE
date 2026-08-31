@@ -7,6 +7,7 @@ import {
 } from "../utils/fabricCatalogueAvailability";
 import { getFabricStockPresentation } from "../utils/fabricStockPresentation";
 import type { FutureFabricCatalogueCardPresentation } from "../utils/designStudioFutureFabricStage";
+import type { FabricStockPresentation } from "../utils/fabricStockPresentation";
 import { isUsableFabricColorHex } from "./AssignedFabricPreview";
 
 export const FutureFabricCatalogueCard = ({
@@ -14,6 +15,8 @@ export const FutureFabricCatalogueCard = ({
   presentation,
   targetGarmentLabel,
   stockBadgeIdPrefix = "future-fabric-stock",
+  stockPresentation: stockPresentationOverride,
+  stockConstraintMessage,
   describedBy,
   statusLabel,
   actionLabel,
@@ -28,6 +31,8 @@ export const FutureFabricCatalogueCard = ({
   presentation: FutureFabricCatalogueCardPresentation;
   targetGarmentLabel?: string;
   stockBadgeIdPrefix?: string;
+  stockPresentation?: FabricStockPresentation;
+  stockConstraintMessage?: string | null;
   describedBy?: string;
   statusLabel?: string;
   actionLabel?: string;
@@ -49,8 +54,10 @@ export const FutureFabricCatalogueCard = ({
     !availabilityMessage &&
     presentation.action === "none" &&
     (presentation.status === "IN USE" ||
-      presentation.status === "ALL GARMENTS HAVE FABRIC");
-  const stockPresentation = getFabricStockPresentation(fabric);
+      presentation.status === "ALL GARMENTS HAVE FABRIC" ||
+      presentation.status === "SELECT");
+  const stockPresentation =
+    stockPresentationOverride ?? getFabricStockPresentation(fabric);
   const stockBadgeId = `${stockBadgeIdPrefix}-${fabric.code}`;
   const stockBadgeClassName =
     stockPresentation.visible && stockPresentation.tone === "low_stock"
@@ -61,6 +68,10 @@ export const FutureFabricCatalogueCard = ({
   const disabled =
     Boolean(availabilityMessage) ||
     Boolean(actionDisabled) ||
+    Boolean(
+      stockConstraintMessage &&
+        (presentation.action === "select" || presentation.action === "use_again"),
+    ) ||
     presentation.action === "none";
   const resolvedStatusLabel = statusLabel || presentation.status;
   const resolvedActionLabel =
@@ -194,6 +205,14 @@ export const FutureFabricCatalogueCard = ({
         {availabilityMessage && (
           <p className="mt-2 text-xs font-semibold text-red-700">
             {availabilityMessage}
+          </p>
+        )}
+        {stockConstraintMessage && !availabilityMessage && (
+          <p
+            className="mt-2 text-xs font-semibold text-red-700"
+            data-fabric-stock-constraint="true"
+          >
+            {stockConstraintMessage}
           </p>
         )}
         {isCancelAction && removeButton ? (

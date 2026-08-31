@@ -9,7 +9,9 @@ import { getFabricStockPresentation } from "../utils/fabricStockPresentation";
 import {
   STEP1_FABRIC_ASSIGNMENT_DESCRIPTION,
   STEP1_FABRIC_ASSIGNMENT_TITLE,
+  STEP1_FABRIC_GROUP_ASSIGN_BUTTON_LABEL,
   STEP1_USE_FOR_ALL_LABEL,
+  formatStep1FabricCapacityProgress,
   type Step1FabricAssignmentCandidate,
   type Step1FabricAssignmentFailure,
 } from "../utils/step1FabricAssignmentPopup";
@@ -36,8 +38,11 @@ export const Step1FabricAssignmentDialog = ({
   candidates,
   selectedGarmentKeys,
   selectedCount,
+  selectedCapacityUnits,
+  maxCapacityUnits,
   canAssignSelected,
   canUseForAll,
+  groupingCapacityStatus,
   selectedCapacityMessage,
   remainingCapacityMessage,
   candidateMessages = {},
@@ -54,8 +59,11 @@ export const Step1FabricAssignmentDialog = ({
   candidates: readonly Step1FabricAssignmentCandidate[];
   selectedGarmentKeys: readonly string[];
   selectedCount: number;
+  selectedCapacityUnits: number;
+  maxCapacityUnits: number;
   canAssignSelected: boolean;
   canUseForAll: boolean;
+  groupingCapacityStatus: string | null;
   selectedCapacityMessage: string | null;
   remainingCapacityMessage: string | null;
   candidateMessages?: Record<string, string | null>;
@@ -72,6 +80,7 @@ export const Step1FabricAssignmentDialog = ({
   const errorId = useId();
   const selectedCapacityId = useId();
   const remainingCapacityId = useId();
+  const groupingCapacityId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const initialFocusRef = useRef<HTMLButtonElement | null>(null);
   const registerControl = (element: HTMLElement | null) => {
@@ -131,6 +140,7 @@ export const Step1FabricAssignmentDialog = ({
     `step1-fabric-assignment-${garmentKey}-warning`;
   const assignDescribedBy = [
     selectedCount === 0 ? descriptionId : null,
+    groupingCapacityStatus ? groupingCapacityId : null,
     selectedCapacityMessage ? selectedCapacityId : null,
     selectedFailure ? getRowWarningId(selectedFailure.garmentKey) : null,
     errorMessage ? errorId : null,
@@ -296,6 +306,27 @@ export const Step1FabricAssignmentDialog = ({
             })}
           </fieldset>
 
+          <p
+            role="status"
+            data-testid="step1-fabric-assignment-capacity-progress"
+            className="mt-4 text-sm font-semibold text-heritage-green"
+          >
+            {formatStep1FabricCapacityProgress(
+              selectedCapacityUnits,
+              maxCapacityUnits,
+            )}
+          </p>
+          {groupingCapacityStatus ? (
+            <p
+              id={groupingCapacityId}
+              role="status"
+              data-testid="step1-fabric-assignment-grouping-capacity"
+              className="mt-2 text-sm leading-relaxed text-heritage-ink/75"
+            >
+              {groupingCapacityStatus}
+            </p>
+          ) : null}
+
           {remainingCapacityMessage ? (
             <p
               id={remainingCapacityId}
@@ -368,7 +399,7 @@ export const Step1FabricAssignmentDialog = ({
             ref={registerControl}
             className="min-h-11 min-w-0 break-words rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
           >
-            Assign to Selected ({selectedCount})
+            {STEP1_FABRIC_GROUP_ASSIGN_BUTTON_LABEL}
           </button>
         </div>
       </div>
