@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import type { Fabric, FabricAllocation, FabricGarmentAssignment } from "./src/types";
 import { resolveCustomerFabricAssignmentSummary } from "./src/utils/fabricAssignmentSummary";
 import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAllocationPricing";
@@ -196,24 +195,23 @@ assert.deepEqual(unresolved.garmentRows.at(-1), {
   roleLabel: "Main",
 });
 
-const designStudioSource = readFileSync(
-  new URL("./src/components/DesignStudioView.tsx", import.meta.url),
-  "utf8",
+const groupedSharedFabricSummary = resolveCustomerFabricAssignmentSummary({
+  fabrics: [ivory],
+  fabricAllocations: [
+    allocation("ivory-1", ivory.code, [
+      garment("shirt", "shirt"),
+      garment("trouser", "trouser"),
+    ]),
+  ],
+});
+assert.deepEqual(
+  groupedSharedFabricSummary.garmentRows.map((row) => row.fabricLabel),
+  [
+    "Heritage Ivory Lattice (ODG-010)",
+    "Heritage Ivory Lattice (ODG-010)",
+  ],
 );
-assert.match(
-  designStudioSource,
-  /resolveCustomerFabricAssignmentSummary[\s\S]*?Garments &amp; Fabrics/,
-  "Active Selection must render the centralized assignment summary.",
-);
-assert.doesNotMatch(
-  designStudioSource,
-  /Fabric Selection \{index \+ 1\}/,
-  "Active Selection must not regress to raw allocation-selection rows.",
-);
-assert.match(
-  designStudioSource,
-  /Complete fabric assignments to see the final design total\./,
-  "Incomplete assignments must not appear as a final price.",
-);
+assert.equal(groupedSharedFabricSummary.fabricQuantity, 1);
+assert.equal(groupedSharedFabricSummary.garmentCount, 2);
 
 console.log("PASS: customer fabric assignment summary");

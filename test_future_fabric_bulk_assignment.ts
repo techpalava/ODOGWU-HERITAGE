@@ -239,6 +239,7 @@ changed = applyFutureFabricCardSelection({
   garmentTypeSelection: createSelection(twoTypes),
   garmentKey: "base:shirt",
   fabricCode: "FAB-B",
+  fabrics,
 });
 assert.deepEqual(
   changed.fabricAllocations.map((allocation) => ({
@@ -247,10 +248,8 @@ assert.deepEqual(
       (assignment) => assignment.garmentKey,
     ),
   })),
-  [
-    { fabricCode: "FAB-A", garmentKeys: ["base:trouser"] },
-    { fabricCode: "FAB-B", garmentKeys: ["base:shirt"] },
-  ],
+  [{ fabricCode: "FAB-B", garmentKeys: ["base:shirt", "base:trouser"] }],
+  "Changing Fabric for a shared Shirt + Trouser allocation replaces the whole physical group.",
 );
 changed = removeFutureFabricAssignment({
   state: changed,

@@ -19,6 +19,7 @@ import {
   STEP1_NO_GARMENTS_TO_ASSIGN_STATUS,
   STEP1_REMAINING_CAPACITY_MESSAGE,
   STEP1_SELECTED_CAPACITY_MESSAGE,
+  STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE,
   buildStep1FabricAssignmentCandidates,
   commitStep1FabricAssignment,
   createStep1FabricAssignmentDisplaySnapshot,
@@ -238,7 +239,11 @@ const reduced = evaluateStep1FabricAssignmentSelection({
   fabricAllocationState: leftoverState,
   fabricCode: "FAB-A",
 });
-assert.equal(reduced.canAssignSelected, true);
+assert.equal(reduced.canAssignSelected, false);
+assert.equal(
+  reduced.groupingCapacityStatus,
+  STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE,
+);
 const reducedCommit = commitStep1FabricAssignment({
   state: leftoverState,
   garmentTypeSelection: createSelection(threeTypes),
@@ -494,10 +499,21 @@ const twoTypes = ["shirt", "trouser"] satisfies FabricGarmentType[];
 const shirtThenTrouser = assignSameFabricProductToGarments({
   state: assignOne(twoTypes, "base:shirt", "FAB-A"),
   garmentTypeSelection: createSelection(twoTypes),
-  fabricCode: "FAB-B",
+  fabricCode: "FAB-A",
   garmentKeys: ["base:trouser"],
 });
 assert.equal(shirtThenTrouser.status, "assigned");
+const blockedSecondProduct = assignSameFabricProductToGarments({
+  state: assignOne(twoTypes, "base:shirt", "FAB-A"),
+  garmentTypeSelection: createSelection(twoTypes),
+  fabricCode: "FAB-B",
+  garmentKeys: ["base:trouser"],
+});
+assert.equal(blockedSecondProduct.status, "blocked");
+assert.equal(
+  blockedSecondProduct.status === "blocked" ? blockedSecondProduct.reason : null,
+  "FABRIC_QUANTITY_LIMIT_REACHED",
+);
 const unusedZeroCandidate = resolveStep1FabricCatalogueCardPresentation({
   fabricCode: "FAB-C",
   garmentTypeSelection: createSelection(twoTypes),
@@ -528,7 +544,7 @@ const unusedOneCandidate = resolveStep1FabricCatalogueCardPresentation({
   availabilityMessage: null,
 });
 assert.equal(unusedOneCandidate.status, "SELECT");
-assert.equal(unusedOneCandidate.action, "select");
+assert.equal(unusedOneCandidate.action, "none");
 const usedOneCandidate = resolveStep1FabricCatalogueCardPresentation({
   fabricCode: "FAB-A",
   garmentTypeSelection: createSelection(twoTypes),
@@ -710,7 +726,11 @@ const blockedRemaining = evaluateStep1FabricAssignmentSelection({
 assert.equal(blockedRemaining.canUseForAll, false);
 assert.equal(blockedRemaining.remainingFailure?.garmentKey, "base:shirt");
 assert.equal(blockedRemaining.remainingCapacityMessage, null);
-assert.equal(blockedRemaining.canAssignSelected, true);
+assert.equal(blockedRemaining.canAssignSelected, false);
+assert.equal(
+  blockedRemaining.groupingCapacityStatus,
+  STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE,
+);
 assert.equal(
   blockedRemaining.candidateMessages["base:shirt"],
   STEP1_GARMENT_CAPACITY_MESSAGE,
