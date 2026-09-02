@@ -8,6 +8,7 @@ import type {
   FabricGarmentAssignment,
   FabricGarmentType,
   GarmentConstructionPricingResolution,
+  CanonicalPhysicalGarmentType,
 } from "../types";
 import type { FabricAllocationSelection } from "../engine/FabricAllocationStateEngine";
 import {
@@ -18,6 +19,7 @@ import {
   resolveAdditionalGarmentPolicyCandidates,
   resolveShortsGarmentUnitPriceCents,
 } from "../config/AdditionalGarmentPolicy";
+import type { PhysicalGarmentOccurrence } from "./designSourceState";
 import {
   isCanonicalPhysicalGarmentType,
   isCustomerSelectableGarmentType,
@@ -27,19 +29,54 @@ import {
 const ADDITIONAL_ELIGIBILITY_RULES: readonly AdditionalGarmentEligibilityRule[] =
   ["same_type", "demographic_policy", "catalog_all"];
 
+/** Catalogue Step 1 base occurrences for parent resolution inputs. */
+export const projectCatalogueStep1PhysicalOccurrences = (
+  garmentTypes: readonly CanonicalPhysicalGarmentType[],
+): PhysicalGarmentOccurrence[] =>
+  garmentTypes.map((garmentType) => {
+    const spec = createStyleBaseGarmentSpec(garmentType);
+    return {
+      garmentKey: spec.key,
+      garmentType,
+      sourceRole: "main" as const,
+      fabricUnits: spec.fabricUnits,
+    };
+  });
+
 export type CanonicalAdditionalGarmentSelectionValidation =
   | { status: "valid"; selection: FabricAllocationSelection }
   | { status: "invalid"; reason: string };
 
-const resolveMainParentFromExistingAssignments = (
-  existingAssignments: readonly FabricGarmentAssignment[],
-): FabricGarmentAssignment | null =>
-  existingAssignments.find((assignment) => assignment.sourceRole === "main") ||
-  existingAssignments.find((assignment) =>
-    assignment.garmentKey.startsWith("base:"),
-  ) ||
-  existingAssignments.find((assignment) => assignment.sourceRole !== "additional") ||
-  null;
+const resolveCatalogueAdditionalGarmentParent = (
+  authoritativePhysicalOccurrences: readonly PhysicalGarmentOccurrence[],
+  garmentType: FabricGarmentType,
+): PhysicalGarmentOccurrence | null => {
+  const catalogEligible = authoritativePhysicalOccurrences.filter(
+    (occurrence) =>
+      occurrence.sourceRole === "main" ||
+      occurrence.garmentKey.startsWith("base:"),
+  );
+  if (catalogEligible.length === 0) {
+    return null;
+  }
+
+  const matchingBase = catalogEligible.find(
+    (occurrence) =>
+      occurrence.garmentType === garmentType &&
+      occurrence.garmentKey.startsWith("base:"),
+  );
+  if (matchingBase) {
+    return matchingBase;
+  }
+
+  return (
+    catalogEligible.find((occurrence) => occurrence.sourceRole === "main") ||
+    catalogEligible.find((occurrence) =>
+      occurrence.garmentKey.startsWith("base:"),
+    ) ||
+    null
+  );
+};
 
 /**
  * Fail-closed validator for parking a new Optional Extra Garment pending Fabric.
@@ -258,15 +295,39 @@ export const isAdditionalGarmentAllowed = (
     (garment) => garment.garmentType === garmentType,
   );
 
-const getAdditionalAssignmentSequence = (
+const ADDITIONAL_OCCURRENCE_KEY_PATTERN = /^additional:([^:]+):(\d+)$/;
+
+export const parseAdditionalOccurrenceSequenceFromKey = (
+  garmentKey: string,
+): { garmentType: FabricGarmentType; sequence: number } | null => {
+  const match = garmentKey.match(ADDITIONAL_OCCURRENCE_KEY_PATTERN);
+  if (!match) return null;
+  const garmentType = match[1];
+  if (!isCanonicalPhysicalGarmentType(garmentType as FabricGarmentType)) {
+    return null;
+  }
+  const sequence = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(sequence) || sequence < 1) return null;
+  return { garmentType: garmentType as FabricGarmentType, sequence };
+};
+
+/**
+ * Monotonic additional occurrence sequence from authoritative ledger keys.
+ * Fabric assignments must not influence identity allocation.
+ */
+export const getNextAdditionalOccurrenceSequence = (
   garmentType: FabricGarmentType,
-  existingAssignments: readonly FabricGarmentAssignment[],
-): number =>
-  existingAssignments.filter(
-    (assignment) =>
-      assignment.sourceRole === "additional" &&
-      assignment.garmentType === garmentType,
-  ).length + 1;
+  authorizedOccurrenceKeys: readonly string[],
+): number => {
+  let maxSequence = 0;
+  for (const garmentKey of authorizedOccurrenceKeys) {
+    const parsed = parseAdditionalOccurrenceSequenceFromKey(garmentKey);
+    if (parsed?.garmentType === garmentType) {
+      maxSequence = Math.max(maxSequence, parsed.sequence);
+    }
+  }
+  return maxSequence + 1;
+};
 
 export type AdditionalGarmentSelectionResolution =
   | {
@@ -288,12 +349,14 @@ export const createAdditionalGarmentSelection = ({
   garmentType,
   mainComposition,
   design,
-  existingAssignments,
+  existingAssignments: _existingAssignments,
+  authorizedOccurrenceKeys = [],
 }: {
   garmentType: FabricGarmentType;
   mainComposition: readonly FabricCapacityGarmentSpec[];
   design?: CustomDetailDesignContext | null;
   existingAssignments: readonly FabricGarmentAssignment[];
+  authorizedOccurrenceKeys?: readonly string[];
 }): AdditionalGarmentSelectionResolution => {
   const allowedGarments = resolveAllowedAdditionalGarments(
     mainComposition,
@@ -306,9 +369,9 @@ export const createAdditionalGarmentSelection = ({
     return { status: "invalid", attemptedGarmentType: garmentType, allowedGarments };
   }
 
-  const sequence = getAdditionalAssignmentSequence(
+  const sequence = getNextAdditionalOccurrenceSequence(
     garmentType,
-    existingAssignments,
+    authorizedOccurrenceKeys,
   );
   const assignmentId = `additional:${garmentType}:${sequence}`;
   return {
@@ -345,10 +408,12 @@ export const createAdditionalGarmentSelection = ({
  */
 export const createCatalogueAdditionalGarmentSelection = ({
   garmentType,
-  existingAssignments,
+  authoritativePhysicalOccurrences,
+  authorizedOccurrenceKeys = [],
 }: {
   garmentType: FabricGarmentType;
-  existingAssignments: readonly FabricGarmentAssignment[];
+  authoritativePhysicalOccurrences: readonly PhysicalGarmentOccurrence[];
+  authorizedOccurrenceKeys?: readonly string[];
 }): AdditionalGarmentSelectionResolution => {
   if (!isCustomerSelectableGarmentType(garmentType)) {
     return {
@@ -362,7 +427,10 @@ export const createCatalogueAdditionalGarmentSelection = ({
       })),
     };
   }
-  const parentMain = resolveMainParentFromExistingAssignments(existingAssignments);
+  const parentMain = resolveCatalogueAdditionalGarmentParent(
+    authoritativePhysicalOccurrences,
+    garmentType,
+  );
   if (!parentMain || !isCanonicalPhysicalGarmentType(parentMain.garmentType)) {
     return {
       status: "invalid",
@@ -375,9 +443,9 @@ export const createCatalogueAdditionalGarmentSelection = ({
       })),
     };
   }
-  const sequence = getAdditionalAssignmentSequence(
+  const sequence = getNextAdditionalOccurrenceSequence(
     garmentType,
-    existingAssignments,
+    authorizedOccurrenceKeys,
   );
   const assignmentId = `additional:${garmentType}:${sequence}`;
   const garmentSpec = createStyleBaseGarmentSpec(garmentType);
@@ -473,12 +541,35 @@ export const resolveAdditionalGarmentPriceRows = ({
 } => {
   const rows: AdditionalGarmentPriceRow[] = [];
   const unresolvedAssignmentIds: string[] = [];
+  const assignmentByGarmentKey = new Map<string, FabricGarmentAssignment>();
   for (const assignment of additionalAssignments) {
-    if (assignment.sourceRole !== "additional") {
+    if (
+      assignment.sourceRole === "additional" &&
+      assignment.dependencyStatus !== "orphaned"
+    ) {
+      assignmentByGarmentKey.set(assignment.garmentKey, assignment);
+    }
+  }
+  for (const garmentKey of Object.keys(constructionByGarmentKey || {})) {
+    if (assignmentByGarmentKey.has(garmentKey)) continue;
+    const occurrenceConstruction = constructionByGarmentKey?.[garmentKey];
+    if (
+      !occurrenceConstruction?.garmentType ||
+      !isCanonicalPhysicalGarmentType(occurrenceConstruction.garmentType)
+    ) {
       continue;
     }
-    if (assignment.dependencyStatus === "orphaned") {
-      unresolvedAssignmentIds.push(assignment.garmentKey);
+    assignmentByGarmentKey.set(garmentKey, {
+      garmentKey,
+      code: `ADDITIONAL_${occurrenceConstruction.garmentType.toUpperCase()}`,
+      garmentType: occurrenceConstruction.garmentType,
+      fabricUnits:
+        FABRIC_GARMENT_CAPACITY_UNITS[occurrenceConstruction.garmentType],
+      sourceRole: "additional",
+    });
+  }
+  for (const assignment of assignmentByGarmentKey.values()) {
+    if (assignment.sourceRole !== "additional") {
       continue;
     }
     const occurrenceConstruction = constructionByGarmentKey?.[

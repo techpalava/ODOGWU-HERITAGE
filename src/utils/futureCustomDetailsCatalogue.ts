@@ -27,6 +27,7 @@ import type {
   GarmentScopedCustomDetailsReconciliationResult,
 } from "./garmentScopedCustomDetailsDomain";
 import { getGarmentTypeSelectedDemographics } from "./garmentTypeStepState";
+import { isCanonicalPhysicalGarmentType } from "./garmentConstructionPricing";
 
 export const CUSTOM_DETAILS_CORE_SECTION_ORDER = [
   "shirt_construction",
@@ -148,6 +149,7 @@ const getSelectedParentGarmentOrder = ({
   style?: StyleCategory | null;
 }): CanonicalPhysicalGarmentType[] => {
   const selected = new Set(garmentTypeSelection.garmentTypes);
+  const physicalOrder = [...garmentTypeSelection.garmentTypes];
   const styleOrder = style
     ? getStyleBaseFabricCapacityComposition(
         applyLegacyStyleFabricCapacityConfig(style),
@@ -159,10 +161,8 @@ const getSelectedParentGarmentOrder = ({
         )
     : [];
   const ordered = [
-    ...new Set([
-      ...styleOrder,
-      ...garmentTypeSelection.garmentTypes,
-    ]),
+    ...styleOrder,
+    ...physicalOrder.filter((garmentType) => !styleOrder.includes(garmentType)),
   ];
   if (
     getGarmentTypeSelectedDemographics(garmentTypeSelection).includes(
@@ -175,37 +175,57 @@ const getSelectedParentGarmentOrder = ({
   return ordered;
 };
 
+const getAuthorizedAdditionalGarmentTypes = (
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1,
+): CanonicalPhysicalGarmentType[] =>
+  Object.entries(additionalGarmentConstructions?.byGarmentKey || {}).flatMap(
+    ([garmentKey, construction]) => {
+      const garmentType =
+        construction?.garmentType &&
+        construction.garmentType !== "other" &&
+        isCanonicalPhysicalGarmentType(construction.garmentType)
+          ? construction.garmentType
+          : garmentKey.startsWith("additional:")
+            ? (garmentKey.split(":")[1] as CanonicalPhysicalGarmentType)
+            : null;
+      return garmentType && isCanonicalPhysicalGarmentType(garmentType)
+        ? [garmentType]
+        : [];
+    },
+  );
+
 const getRelevantParentSectionOrder = ({
   garmentTypeSelection,
   style,
-  additionalGarments,
+  additionalGarmentConstructions,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   style?: StyleCategory | null;
-  additionalGarments: readonly FabricGarmentAssignment[];
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
 }): Exclude<CustomDetailParentSectionId, "additional_garment">[] => {
   const normalizedStyle = style
     ? applyLegacyStyleFabricCapacityConfig(style)
     : null;
-  const styleComposition = getStyleBaseFabricCapacityComposition(normalizedStyle)
-    .filter(
-      (spec): spec is typeof spec & { garmentType: CanonicalPhysicalGarmentType } =>
-        spec.garmentType !== "other",
-    );
+  const styleComposition = normalizedStyle
+    ? getStyleBaseFabricCapacityComposition(normalizedStyle).filter(
+        (
+          spec,
+        ): spec is typeof spec & { garmentType: CanonicalPhysicalGarmentType } =>
+          spec.garmentType !== "other" &&
+          isCanonicalPhysicalGarmentType(spec.garmentType),
+      )
+    : [];
   const selectedTypes = getSelectedParentGarmentOrder({
     garmentTypeSelection,
     style,
   });
-  const activeAdditionalTypes = additionalGarments.flatMap((assignment) =>
-    assignment.sourceRole === "additional" &&
-    assignment.dependencyStatus !== "orphaned" &&
-    assignment.garmentType !== "other"
-      ? [assignment.garmentType as CanonicalPhysicalGarmentType]
-      : [],
+  const activeAdditionalTypes = getAuthorizedAdditionalGarmentTypes(
+    additionalGarmentConstructions,
   );
-  const baseComposition = styleComposition.length > 0
-    ? styleComposition
-    : garmentTypeSelection.garmentTypes.map(createStyleBaseGarmentSpec);
+  const baseComposition =
+    styleComposition.length > 0
+      ? styleComposition
+      : garmentTypeSelection.garmentTypes.map(createStyleBaseGarmentSpec);
   const policyTypes = resolveAdditionalGarmentPolicyCandidates(
     baseComposition,
     normalizedStyle,
@@ -214,12 +234,9 @@ const getRelevantParentSectionOrder = ({
       ? []
       : [candidate.garmentType as CanonicalPhysicalGarmentType],
   );
+  const styleGarmentTypes = styleComposition.map((spec) => spec.garmentType);
   const orderedGarmentTypes = [
-    ...new Set([
-      ...selectedTypes,
-      ...styleComposition.map((spec) => spec.garmentType),
-      ...activeAdditionalTypes,
-    ]),
+    ...new Set([...selectedTypes, ...styleGarmentTypes, ...activeAdditionalTypes]),
   ];
   const orderedSections = orderedGarmentTypes.flatMap(
     (garmentType) => PARENT_SECTIONS_BY_GARMENT[garmentType],
@@ -283,6 +300,7 @@ export const projectFutureCustomDetailsCatalogue = ({
   /** Optional override for tests; defaults to SHOW_ADDITIONAL_CLOTHES_COSTS. */
   showAdditionalClothesCosts?: boolean;
 }): FutureCustomDetailsCatalogueProjection => {
+  void additionalGarments;
   const activeParentGarmentOrder = getSelectedParentGarmentOrder({
     garmentTypeSelection,
     style,
@@ -290,16 +308,14 @@ export const projectFutureCustomDetailsCatalogue = ({
   const relevantParentSections = getRelevantParentSectionOrder({
     garmentTypeSelection,
     style,
-    additionalGarments,
+    additionalGarmentConstructions,
   });
   const coreOrder = relevantParentSections.flatMap(
     (section) => CORE_GROUPS_BY_PARENT_SECTION[section],
   );
   const relevantParentSectionSet = new Set(relevantParentSections);
   const additionalRoleByKey = new Set(
-    additionalGarments
-      .filter((assignment) => assignment.sourceRole === "additional")
-      .map((assignment) => assignment.garmentKey),
+    Object.keys(additionalGarmentConstructions?.byGarmentKey || {}),
   );
   const makeGroup = (
     selectionGroup: CustomDetailSelectionGroup,

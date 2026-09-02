@@ -16,7 +16,10 @@ import type {
   GarmentTypeStepSelection,
   UploadedDesignSource,
 } from "../types";
-import { createUploadedDesignSource } from "./designSourceState";
+import {
+  createUploadedDesignSource,
+  isDesignSourceConfirmed,
+} from "./designSourceState";
 import { updateDormantGarmentTypeSelection } from "./designStudioJourneyMode";
 import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
@@ -143,21 +146,124 @@ export const getUploadedDesignCompositionNeedsReview = (
 
 export const getUploadedDesignStep1Readiness = (
   input: UploadedDesignStep1Input,
+  step1GarmentTypes: readonly FabricGarmentType[],
 ) => {
   const needsReview = getUploadedDesignCompositionNeedsReview(
     input.fabricCapacityComposition,
   );
+  const step1Coverage = evaluateUploadedCompositionStep1Coverage({
+    step1GarmentTypes,
+    uploadedComposition: input.fabricCapacityComposition,
+  });
+  const missingRequiredStep1Garments =
+    step1Coverage.status === "missing_required";
   return {
     hasUpload: input.uploadReference !== null,
     hasComposition: input.fabricCapacityComposition.length > 0,
     hasDemographic: input.demographic !== null,
     needsReview,
+    missingRequiredStep1Garments,
+    missingStep1GarmentTypes:
+      step1Coverage.status === "missing_required"
+        ? step1Coverage.missingGarmentTypes
+        : [],
     isReady:
       input.uploadReference !== null &&
       input.fabricCapacityComposition.length > 0 &&
       input.demographic !== null &&
-      !needsReview,
+      !needsReview &&
+      !missingRequiredStep1Garments,
   };
+};
+
+export type AuthoritativeUploadedDesignReadiness = ReturnType<
+  typeof getUploadedDesignStep1Readiness
+> & {
+  isConfirmed: boolean;
+  isCompositionValid: boolean;
+  isProgressionReady: boolean;
+  isPricingEligible: boolean;
+};
+
+/**
+ * Single authoritative upload readiness gate shared by Step 3 UI, parent
+ * progression, hydration, pricing activation, and physical-order resolution.
+ */
+export const evaluateAuthoritativeUploadedDesignReadiness = ({
+  uploadInput,
+  step1GarmentTypes,
+  designSource,
+  confirmedDesignSourceKey,
+  selectedFabricCode,
+  priceActivatedFabricCode,
+}: {
+  uploadInput: UploadedDesignStep1Input;
+  step1GarmentTypes: readonly FabricGarmentType[];
+  designSource: UploadedDesignSource | null | undefined;
+  confirmedDesignSourceKey: string | null | undefined;
+  selectedFabricCode?: string | null;
+  priceActivatedFabricCode?: string | null;
+}): AuthoritativeUploadedDesignReadiness => {
+  const step1Readiness = getUploadedDesignStep1Readiness(
+    uploadInput,
+    step1GarmentTypes,
+  );
+  const isConfirmed = Boolean(
+    designSource &&
+      isDesignSourceConfirmed(designSource, confirmedDesignSourceKey),
+  );
+  const isCompositionValid = step1Readiness.isReady;
+  const isProgressionReady = isCompositionValid && isConfirmed;
+  const isPricingEligible =
+    isProgressionReady &&
+    Boolean(selectedFabricCode) &&
+    selectedFabricCode === priceActivatedFabricCode;
+  return {
+    ...step1Readiness,
+    isConfirmed,
+    isCompositionValid,
+    isProgressionReady,
+    isPricingEligible,
+  };
+};
+
+export const UPLOADED_DESIGN_MISSING_REQUIRED_STEP1_GARMENTS_MESSAGE =
+  "The uploaded design is missing one or more garments from Step 1. Replace or update the uploaded design to continue.";
+
+export type UploadedCompositionStep1CoverageResult =
+  | {
+      status: "covered";
+      missingGarmentTypes: [];
+    }
+  | {
+      status: "missing_required";
+      missingGarmentTypes: FabricGarmentType[];
+    };
+
+/**
+ * Confirmed uploaded compositions must include every required Step 1 garment.
+ * Missing garments are never auto-inserted; the raw composition is preserved.
+ */
+export const evaluateUploadedCompositionStep1Coverage = ({
+  step1GarmentTypes,
+  uploadedComposition,
+}: {
+  step1GarmentTypes: readonly FabricGarmentType[];
+  uploadedComposition: readonly FabricCapacityGarmentSpec[];
+}): UploadedCompositionStep1CoverageResult => {
+  const required = getUploadedDesignRequiredStep1GarmentTypes(step1GarmentTypes);
+  const coveredTypes = new Set(
+    uploadedComposition
+      .filter((spec) => isCustomerSelectableGarmentType(spec.garmentType))
+      .map((spec) => spec.garmentType),
+  );
+  const missingGarmentTypes = required.filter(
+    (garmentType) => !coveredTypes.has(garmentType),
+  );
+  if (missingGarmentTypes.length === 0) {
+    return { status: "covered", missingGarmentTypes: [] };
+  }
+  return { status: "missing_required", missingGarmentTypes };
 };
 
 /** Step 1 garments that are required / non-removable in Upload Your Own Design. */

@@ -7,6 +7,7 @@ import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
   calculateGarmentScopedCustomDetailsPricing,
+  projectAuthorizedAdditionalGarmentAssignments,
   reconcileGarmentScopedCustomDetails,
   reconcileGarmentScopedPersonalizedInputs,
   resolveFutureCustomDetailPhysicalSubjects,
@@ -23,14 +24,17 @@ import {
   setGarmentScopedCustomDetailText,
 } from "./src/utils/garmentScopedCustomDetailInputsState";
 import { projectFutureCustomDetailsCatalogue } from "./src/utils/futureCustomDetailsCatalogue";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
 import {
-  createEmptyAdditionalGarmentConstructionState,
+  createCatalogueAdditionalGarmentSelection,
+  projectCatalogueStep1PhysicalOccurrences,
+} from "./src/utils/additionalGarmentDomain";
+import {
   reconcileAdditionalGarmentConstructionState,
 } from "./src/utils/additionalGarmentConstructionState";
 import type { FabricGarmentAssignment } from "./src/types";
 import { createDormantDesignStudioJourneyState } from "./src/utils/designStudioJourneyMode";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
+import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
 
 const catalogInspection = inspectCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const garmentTypeSelection = reconcileGarmentTypeStepSelection({
@@ -554,17 +558,7 @@ assert.match(textContent(repeatedConstructionRenderer.root), /Estimated total so
 
 const additionalSelection = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
-  existingAssignments: [
-    {
-      garmentKey: "base:shirt",
-      code: "BASE_SHIRT",
-      garmentType: "shirt",
-      fabricUnits: 1,
-      garmentSpec: { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
-      sourceRole: "main",
-      dependencyStatus: "valid",
-    },
-  ],
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
 });
 assert.equal(additionalSelection.status, "resolved");
 if (
@@ -585,10 +579,26 @@ const additionalAssignment: FabricGarmentAssignment = {
   mainGarmentKey: additionalSelection.selection.mainGarmentKey,
   mainGarmentType: additionalSelection.selection.mainGarmentType,
 };
+const additionalConstruction = resolveGarmentConstructionPricing(
+  "shirt",
+  catalogInspection.activeOptions,
+);
+assert.equal(additionalConstruction.status, "resolved");
+if (additionalConstruction.status !== "resolved") {
+  throw new Error("Expected resolved additional shirt construction");
+}
 const additionalConstructions = reconcileAdditionalGarmentConstructionState({
-  existingState: createEmptyAdditionalGarmentConstructionState(),
-  assignments: [additionalAssignment],
+  existingState: {
+    schemaVersion: 1,
+    byGarmentKey: {
+      [additionalAssignment.garmentKey]: additionalConstruction,
+    },
+  },
+  assignments: [],
   normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+});
+const liveAdditionalGarments = projectAuthorizedAdditionalGarmentAssignments({
+  additionalGarmentConstructions: additionalConstructions.state,
 });
 const additionalReconciliation = reconcileGarmentScopedCustomDetails({
   garmentTypeSelection: neckLayoutGarmentTypeSelection,
@@ -631,7 +641,7 @@ act(() => {
     constructionSubtotal: 0,
     designSelections: {},
     selectedStyle: null,
-    additionalGarments: [additionalAssignment],
+    additionalGarments: liveAdditionalGarments,
     additionalGarmentConstructionOptions: [],
     onSingleSelect: () => undefined,
     onClearSelection: () => undefined,

@@ -7,10 +7,12 @@ import {
 } from "./src/engine/FabricCapacityEngine";
 import {
   createUploadedDesignSourceWhenReady,
+  evaluateUploadedCompositionStep1Coverage,
   getUploadedDesignCapacitySummary,
   getUploadedDesignStep1Readiness,
   toggleUploadedDesignGarmentComposition,
   UPLOADED_DESIGN_GARMENT_OPTIONS,
+  UPLOADED_DESIGN_MISSING_REQUIRED_STEP1_GARMENTS_MESSAGE,
 } from "./src/utils/uploadedDesignStep1";
 import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
 import {
@@ -25,11 +27,14 @@ const reference = createCustomerDesignUploadReference({
   createdAt: "2026-08-11T00:00:00.000Z",
 });
 
-const noInputs = getUploadedDesignStep1Readiness({
-  uploadReference: null,
-  fabricCapacityComposition: [],
-  demographic: null,
-});
+const noInputs = getUploadedDesignStep1Readiness(
+  {
+    uploadReference: null,
+    fabricCapacityComposition: [],
+    demographic: null,
+  },
+  [],
+);
 assert.equal(noInputs.isReady, false);
 assert.equal(
   createUploadedDesignSourceWhenReady({
@@ -261,6 +266,33 @@ assert.doesNotMatch(
   studioSource,
   /CustomerDesignUploadError[\s\S]{0,120}\? error\.message/,
   "Customer-facing upload errors must not expose raw ownership or storage details.",
+);
+
+const missingStep1Coverage = evaluateUploadedCompositionStep1Coverage({
+  step1GarmentTypes: ["shirt", "trouser", "full_length_gown"],
+  uploadedComposition: [
+    createStyleBaseGarmentSpec("shirt"),
+    createStyleBaseGarmentSpec("trouser"),
+  ],
+});
+assert.equal(missingStep1Coverage.status, "missing_required");
+assert.deepEqual(missingStep1Coverage.missingGarmentTypes, ["full_length_gown"]);
+const missingStep1Readiness = getUploadedDesignStep1Readiness(
+  {
+    uploadReference: reference,
+    fabricCapacityComposition: [
+      createStyleBaseGarmentSpec("shirt"),
+      createStyleBaseGarmentSpec("trouser"),
+    ],
+    demographic: "male",
+  },
+  ["shirt", "trouser", "full_length_gown"],
+);
+assert.equal(missingStep1Readiness.missingRequiredStep1Garments, true);
+assert.equal(missingStep1Readiness.isReady, false);
+assert.match(
+  UPLOADED_DESIGN_MISSING_REQUIRED_STEP1_GARMENTS_MESSAGE,
+  /missing one or more garments from Step 1/i,
 );
 
 console.log("PASS: uploaded design Step 1 readiness, composition, capacity, and secure UI wiring");

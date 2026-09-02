@@ -14,11 +14,20 @@ import {
 } from "./src/utils/catalogHelpers";
 import {
   calculateGarmentScopedCustomDetailsPricing,
+  projectAuthorizedAdditionalGarmentAssignments,
   reconcileGarmentScopedCustomDetails,
   resolveFutureCustomDetailPhysicalSubjects,
   resolveGarmentScopedCustomDetailApplicability,
   validateGarmentScopedCustomDetailsCompletion,
 } from "./src/utils/garmentScopedCustomDetailsDomain";
+import { projectFutureCustomDetailsCatalogue } from "./src/utils/futureCustomDetailsCatalogue";
+import {
+  cloneGarmentConstructionPricingResolution,
+  createEmptyAdditionalGarmentConstructionState,
+  removeAdditionalGarmentConstruction,
+} from "./src/utils/additionalGarmentConstructionState";
+import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
+import type { FabricAllocationState, FabricGarmentAssignment } from "./src/types";
 import {
   createEmptyGarmentScopedCustomDetailsState,
   setGarmentScopedCustomDetailSelection,
@@ -554,6 +563,242 @@ reconcileGarmentScopedCustomDetails({
 });
 assert.equal(JSON.stringify(legacyState), legacyBefore);
 
+const additionalConstruction = (
+  garmentKey: string,
+  garmentType: CanonicalPhysicalGarmentType,
+  priceCents: number,
+) => {
+  const base = resolveGarmentConstructionPricing(garmentType, seedInspection.activeOptions);
+  assert.equal(base.status, "resolved");
+  const resolved = cloneGarmentConstructionPricingResolution(base);
+  assert.equal(resolved.status, "resolved");
+  return {
+    schemaVersion: 1 as const,
+    byGarmentKey: {
+      [garmentKey]: {
+        ...resolved,
+        totalPriceCents: priceCents,
+        totalPrice: priceCents / 100,
+        components: resolved.components.map((component, index) =>
+          index === 0 ? { ...component, priceCents } : { ...component, priceCents: 0 },
+        ),
+      },
+    },
+  };
+};
+
+const fabricStateWithAssignments = (
+  assignments: FabricGarmentAssignment[],
+): FabricAllocationState => ({
+  fabricAllocations: assignments.length
+    ? [
+        {
+          allocationId: "allocation-1",
+          fabricCode: "FAB-A",
+          garmentAssignments: assignments,
+        },
+      ]
+    : [],
+  activeAllocationId: assignments.length ? "allocation-1" : null,
+  pendingFabricGarment: null,
+  awaitingFabricForPendingGarment: false,
+});
+
+const parentGarmentKeys = (
+  subjects: ReturnType<typeof resolveFutureCustomDetailPhysicalSubjects>["subjects"],
+) =>
+  [...new Set(subjects.map((subject) => subject.parentGarmentKey))].sort();
+
+// G2 A — authorized additional Shirt without Fabric remains in Custom Details
+{
+  const authorizedState = additionalConstruction("additional:shirt:1", "shirt", 7000);
+  const partialFabric = fabricStateWithAssignments([
+    {
+      garmentKey: "base:shirt",
+      code: "BASE_SHIRT",
+      garmentType: "shirt",
+      fabricUnits: 1,
+      sourceRole: "main",
+    },
+  ]);
+  const subjects = resolveFutureCustomDetailPhysicalSubjects(shirtStep, {
+    additionalGarmentConstructions: authorizedState,
+  });
+  assert.deepEqual(parentGarmentKeys(subjects.subjects), [
+    "additional:shirt:1",
+    "base:shirt",
+  ]);
+  const liveList = projectAuthorizedAdditionalGarmentAssignments({
+    additionalGarmentConstructions: authorizedState,
+    fabricAllocationState: partialFabric,
+  });
+  assert.deepEqual(
+    liveList.map((assignment) => assignment.garmentKey),
+    ["additional:shirt:1"],
+  );
+}
+
+// G2 B — orphan Fabric Gown must not create Custom Details membership
+{
+  const orphanFabric = fabricStateWithAssignments([
+    {
+      garmentKey: "base:shirt",
+      code: "BASE_SHIRT",
+      garmentType: "shirt",
+      fabricUnits: 1,
+      sourceRole: "main",
+    },
+    {
+      garmentKey: "additional:full_length_gown:99",
+      code: "ADDITIONAL_GOWN",
+      garmentType: "full_length_gown",
+      fabricUnits: 2,
+      sourceRole: "additional",
+    },
+  ]);
+  const subjects = resolveFutureCustomDetailPhysicalSubjects(shirtStep, {
+    additionalGarmentConstructions: createEmptyAdditionalGarmentConstructionState(),
+  });
+  assert.deepEqual(parentGarmentKeys(subjects.subjects), ["base:shirt"]);
+  assert.deepEqual(
+    projectAuthorizedAdditionalGarmentAssignments({
+      additionalGarmentConstructions: createEmptyAdditionalGarmentConstructionState(),
+      fabricAllocationState: orphanFabric,
+    }),
+    [],
+  );
+}
+
+// G2 C — base Shirt and additional Shirt remain distinct occurrence keys
+{
+  const authorizedState = additionalConstruction("additional:shirt:1", "shirt", 7000);
+  const subjects = resolveFutureCustomDetailPhysicalSubjects(shirtStep, {
+    additionalGarmentConstructions: authorizedState,
+  });
+  assert.ok(
+    subjects.subjects.some(
+      (subject) => subject.parentGarmentKey === "base:shirt",
+    ),
+  );
+  assert.ok(
+    subjects.subjects.some(
+      (subject) => subject.parentGarmentKey === "additional:shirt:1",
+    ),
+  );
+  assert.notEqual(
+    subjects.subjects.find((subject) => subject.parentGarmentKey === "base:shirt")
+      ?.garmentKey,
+    subjects.subjects.find(
+      (subject) => subject.parentGarmentKey === "additional:shirt:1",
+    )?.garmentKey,
+  );
+}
+
+// G2 F — Fabric removal only keeps authorized additional subject
+{
+  const authorizedState = additionalConstruction("additional:shirt:1", "shirt", 7000);
+  const assignedFabric = fabricStateWithAssignments([
+    {
+      garmentKey: "base:shirt",
+      code: "BASE_SHIRT",
+      garmentType: "shirt",
+      fabricUnits: 1,
+      sourceRole: "main",
+    },
+    {
+      garmentKey: "additional:shirt:1",
+      code: "ADDITIONAL_SHIRT",
+      garmentType: "shirt",
+      fabricUnits: 1,
+      sourceRole: "additional",
+    },
+  ]);
+  const fabricRemoved = fabricStateWithAssignments([
+    {
+      garmentKey: "base:shirt",
+      code: "BASE_SHIRT",
+      garmentType: "shirt",
+      fabricUnits: 1,
+      sourceRole: "main",
+    },
+  ]);
+  assert.deepEqual(
+    parentGarmentKeys(
+      resolveFutureCustomDetailPhysicalSubjects(shirtStep, {
+        additionalGarmentConstructions: authorizedState,
+      }).subjects,
+    ),
+    parentGarmentKeys(
+      resolveFutureCustomDetailPhysicalSubjects(shirtStep, {
+        additionalGarmentConstructions: authorizedState,
+      }).subjects,
+    ),
+  );
+  assert.deepEqual(
+    projectAuthorizedAdditionalGarmentAssignments({
+      additionalGarmentConstructions: authorizedState,
+      fabricAllocationState: fabricRemoved,
+    }).map((assignment) => assignment.garmentKey),
+    ["additional:shirt:1"],
+  );
+  void assignedFabric;
+}
+
+// G2 G — explicit remove garment drops additional subject
+{
+  const authorizedState = additionalConstruction("additional:shirt:1", "shirt", 7000);
+  const removedState = removeAdditionalGarmentConstruction(
+    authorizedState,
+    "additional:shirt:1",
+  );
+  const subjects = resolveFutureCustomDetailPhysicalSubjects(shirtStep, {
+    additionalGarmentConstructions: removedState,
+  });
+  assert.deepEqual(parentGarmentKeys(subjects.subjects), ["base:shirt"]);
+}
+
+// G2 orphan Fabric must not mark catalogue role without ledger authorization
+{
+  const orphanFabric = fabricStateWithAssignments([
+    {
+      garmentKey: "base:shirt",
+      code: "BASE_SHIRT",
+      garmentType: "shirt",
+      fabricUnits: 1,
+      sourceRole: "main",
+    },
+    {
+      garmentKey: "additional:full_length_gown:99",
+      code: "ADDITIONAL_GOWN",
+      garmentType: "full_length_gown",
+      fabricUnits: 2,
+      sourceRole: "additional",
+    },
+  ]);
+  const reconciliation = reconcileGarmentScopedCustomDetails({
+    garmentTypeSelection: shirtStep,
+    additionalGarments: orphanFabric.fabricAllocations[0]!.garmentAssignments.filter(
+      (assignment) => assignment.sourceRole === "additional",
+    ),
+    additionalGarmentConstructions: createEmptyAdditionalGarmentConstructionState(),
+    catalogInspection: seedInspection,
+    existingState: createEmptyGarmentScopedCustomDetailsState(),
+  });
+  const catalogue = projectFutureCustomDetailsCatalogue({
+    garmentTypeSelection: shirtStep,
+    reconciliation,
+    activeOptions: seedInspection.activeOptions,
+    additionalGarments: orphanFabric.fabricAllocations[0]!.garmentAssignments.filter(
+      (assignment) => assignment.sourceRole === "additional",
+    ),
+    additionalGarmentConstructions: createEmptyAdditionalGarmentConstructionState(),
+  });
+  const additionalOccurrences = catalogue.coreGroups.flatMap((group) =>
+    group.occurrences.filter((occurrence) => occurrence.role === "additional"),
+  );
+  assert.equal(additionalOccurrences.length, 0);
+}
+
 const designStudioSource = readFileSync(
   "src/components/DesignStudioView.tsx",
   "utf8",
@@ -563,6 +808,11 @@ assert.match(
   designStudioSource,
   /garmentScopedCustomDetailsDomain/,
   "the active controller must use the garment-scoped domain engine",
+);
+assert.match(
+  designStudioSource,
+  /projectAuthorizedAdditionalGarmentAssignments/,
+  "live additional-garment list must project from the Step 4 construction ledger",
 );
 assert.doesNotMatch(designStudioSource, /isFutureNineStageMode|legacy_five_stage/);
 assert.equal(

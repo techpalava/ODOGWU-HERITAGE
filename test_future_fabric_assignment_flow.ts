@@ -20,8 +20,13 @@ import {
 } from "./src/utils/designStudioFutureFabricStage";
 import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAllocationPricing";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import { cloneFabricAllocations } from "./src/utils/fabricAllocationPersistence";
+import { buildAuthoritativePhysicalOccurrences } from "./src/utils/designSourceState";
+import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
+import {
+  cloneGarmentConstructionPricingResolution,
+} from "./src/utils/additionalGarmentConstructionState";
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const createSelection = (garmentTypes: FabricGarmentType[]) =>
@@ -552,9 +557,7 @@ additionalState = commitSameFabric({
 });
 const additionalSelection = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
-  existingAssignments: additionalState.fabricAllocations.flatMap(
-    (allocation) => allocation.garmentAssignments,
-  ),
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt", "trouser"]),
 });
 assert.equal(additionalSelection.status, "resolved");
 if (additionalSelection.status !== "resolved") {
@@ -591,12 +594,41 @@ assert.equal(
   }).isComplete,
   false,
 );
-additionalState = applyFutureFabricCardSelection({
+const additionalFlowSelection = createSelection(["shirt", "trouser"]);
+const additionalShirtConstruction = resolveGarmentConstructionPricing(
+  "shirt",
+  catalog,
+);
+assert.equal(additionalShirtConstruction.status, "resolved");
+if (additionalShirtConstruction.status !== "resolved") {
+  throw new Error("Expected shirt construction for additional flow");
+}
+const additionalAuthorizedOccurrences = buildAuthoritativePhysicalOccurrences({
+  sourceKind: "catalogue",
+  step1GarmentTypeSelection: additionalFlowSelection,
+  effectiveGarmentTypeSelection: additionalFlowSelection,
+  additionalGarmentConstructionState: {
+    schemaVersion: 1,
+    byGarmentKey: {
+      "additional:shirt:1": cloneGarmentConstructionPricingResolution(
+        additionalShirtConstruction,
+      ),
+    },
+  },
+});
+const reassignmentResult = assignFutureFabricToGarment({
   state: additionalState,
-  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  garmentTypeSelection: additionalFlowSelection,
   garmentKey: "additional:shirt:1",
   fabricCode: "FAB-C",
+  requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
 });
+assert.equal(
+  reassignmentResult.status,
+  "assigned",
+  `Expected cancelled additional reassignment to succeed: ${reassignmentResult.status}`,
+);
+additionalState = reassignmentResult.state;
 assert.ok(
   additionalState.fabricAllocations.some(
     (allocation) =>
@@ -616,9 +648,7 @@ let mixedStep4State = applyFutureFabricCardSelection({
 });
 const mixedAdditionalSelection = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
-  existingAssignments: mixedStep4State.fabricAllocations.flatMap(
-    (allocation) => allocation.garmentAssignments,
-  ),
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt", "trouser"]),
 });
 assert.equal(mixedAdditionalSelection.status, "resolved");
 if (mixedAdditionalSelection.status !== "resolved") {

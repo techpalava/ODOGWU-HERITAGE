@@ -307,7 +307,7 @@ const materialPricingOrThrow = (state: FabricAllocationState) => {
   assert.equal(
     createCatalogueAdditionalGarmentSelection({
       garmentType: "agbada",
-      existingAssignments: [],
+      authoritativePhysicalOccurrences: [],
     }).status,
     "invalid",
   );
@@ -414,11 +414,14 @@ const materialPricingOrThrow = (state: FabricAllocationState) => {
   assert.equal(hidden!.key, "bad", "must not rewrite key to base:agbada");
   assert.equal(getUploadedDesignCompositionNeedsReview(merged), true);
   assert.equal(
-    getUploadedDesignStep1Readiness({
-      uploadReference,
-      fabricCapacityComposition: merged,
-      demographic: "male",
-    }).isReady,
+    getUploadedDesignStep1Readiness(
+      {
+        uploadReference,
+        fabricCapacityComposition: merged,
+        demographic: "male",
+      },
+      ["shirt"],
+    ).isReady,
     false,
   );
 }

@@ -70,6 +70,7 @@ const StabilityHarness = ({
     customDetailCatalog: catalogInput,
     garmentTypeSelection: step1Selection,
     activeUploadedDesignSource: uploadedSource,
+    confirmedDesignSourceKey: uploadedSource.sourceKey,
   });
 
   const [fabricState, setFabricState] = useState<FabricAllocationState>(() => {

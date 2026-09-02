@@ -24,6 +24,10 @@ const catalogStyle: StyleCategory = {
   description: "Catalog fixture for the common Design Studio journey.",
   gender: "male",
   options: [],
+  fabricCapacityComposition: [
+    createStyleBaseGarmentSpec("shirt"),
+    createStyleBaseGarmentSpec("trouser"),
+  ],
 };
 
 const uploadedSource = createUploadedDesignSource({
@@ -74,6 +78,10 @@ for (const source of [catalogSource, uploadedSource]) {
       confirmedDesignSourceKey: source.sourceKey,
       selectedFabricCode: fabricCode,
       priceActivatedFabricCode: fabricCode,
+      step1GarmentTypes:
+        source.kind === "uploaded"
+          ? source.fabricCapacityComposition.map((spec) => spec.garmentType)
+          : catalogStyle.fabricCapacityComposition.map((spec) => spec.garmentType),
     }),
     true,
   );

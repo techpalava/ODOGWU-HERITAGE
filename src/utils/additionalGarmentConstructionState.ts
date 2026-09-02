@@ -57,45 +57,57 @@ export const reconcileAdditionalGarmentConstructionState = ({
       : {};
   const state = createEmptyAdditionalGarmentConstructionState();
   const unresolvedGarmentKeys: string[] = [];
-  const activeKeys = new Set<string>();
+  const assignmentByGarmentKey = new Map(
+    assignments
+      .filter(
+        (assignment) =>
+          assignment.sourceRole === "additional" &&
+          assignment.dependencyStatus !== "orphaned" &&
+          isCanonicalPhysicalGarmentType(assignment.garmentType),
+      )
+      .map((assignment) => [assignment.garmentKey, assignment] as const),
+  );
 
-  assignments.forEach((assignment) => {
-    if (
-      assignment.sourceRole !== "additional" ||
-      assignment.dependencyStatus === "orphaned" ||
-      !isCanonicalPhysicalGarmentType(assignment.garmentType)
-    ) {
+  Object.entries(existing).forEach(([garmentKey, previousValue]) => {
+    const previous = previousValue as GarmentConstructionPricingResolution;
+    const assignment = assignmentByGarmentKey.get(garmentKey);
+    const garmentType =
+      assignment?.garmentType ||
+      (previous?.garmentType &&
+      isCanonicalPhysicalGarmentType(previous.garmentType)
+        ? previous.garmentType
+        : null);
+    if (!garmentType) {
+      state.byGarmentKey[garmentKey] = previous;
+      if (previous?.status !== "resolved") {
+        unresolvedGarmentKeys.push(garmentKey);
+      }
       return;
     }
-    activeKeys.add(assignment.garmentKey);
     const canonicalDefault = resolveGarmentConstructionPricing(
-      assignment.garmentType,
+      garmentType,
       normalizedCustomDetailCatalog,
     );
-    const previous = existing[
-      assignment.garmentKey
-    ] as GarmentConstructionPricingResolution | undefined;
     const resolution =
       reconcileGarmentConstructionResolution(
         previous,
         canonicalDefault,
         normalizedCustomDetailCatalog,
       ) || canonicalDefault;
-    state.byGarmentKey[assignment.garmentKey] = resolution;
+    state.byGarmentKey[garmentKey] = resolution;
     if (resolution.status !== "resolved") {
-      unresolvedGarmentKeys.push(assignment.garmentKey);
+      unresolvedGarmentKeys.push(garmentKey);
     }
   });
 
   const removedGarmentKeys = Object.keys(existing).filter(
-    (garmentKey) => !activeKeys.has(garmentKey),
+    (garmentKey) => !Object.prototype.hasOwnProperty.call(state.byGarmentKey, garmentKey),
   );
   return {
     state,
     unresolvedGarmentKeys,
     removedGarmentKeys,
-    stateChanged:
-      JSON.stringify(existingState) !== JSON.stringify(state),
+    stateChanged: JSON.stringify(existingState) !== JSON.stringify(state),
   };
 };
 

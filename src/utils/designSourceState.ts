@@ -1,17 +1,37 @@
 import type {
+  AdditionalGarmentConstructionStateV1,
+  CanonicalPhysicalGarmentType,
   CatalogDesignSource,
   CustomerDesignUploadReference,
   CustomDetailDemographic,
   CustomDetailDesignContext,
+  CustomDetailOption,
   DesignSource,
+  FabricAllocationState,
   FabricCapacityGarmentSpec,
+  FabricGarmentAssignment,
+  FabricGarmentType,
+  FabricUnitCount,
+  GarmentConstructionPricingResolution,
+  GarmentTypeStepSelection,
   GuestDesignDraft,
   StyleCategory,
   UploadedDesignSource,
 } from "../types";
 import { isCustomerDesignDraftStoragePath } from "../services/customerDesignUploadReference";
-import { getStyleBaseFabricCapacityComposition } from "../config/StyleFabricCapacityConfig";
+import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import {
+  isCanonicalPhysicalGarmentType,
+} from "./garmentConstructionPricing";
+import {
+  buildEffectiveUploadedJourneyGarmentTypeSelection,
+  evaluateUploadedCompositionStep1Coverage,
+  getUploadedDesignCompositionNeedsReview,
+  UPLOADED_DESIGN_COMPOSITION_NEEDS_REVIEW_MESSAGE,
+  UPLOADED_DESIGN_MISSING_REQUIRED_STEP1_GARMENTS_MESSAGE,
+} from "./uploadedDesignStep1";
+import { normalizeCustomDetailCatalog } from "./catalogHelpers";
 
 export const CATALOG_DESIGN_SOURCE_PREFIX = "catalog:";
 export const UPLOADED_DESIGN_SOURCE_PREFIX = "uploaded:";
@@ -264,11 +284,504 @@ export const getActiveDesignSelectionPresentation = (
 
 export const resolveActiveDesignComposition = (
   designSource: DesignSource | null | undefined,
-  selectedStyle: StyleCategory | null | undefined,
+  _selectedStyle: StyleCategory | null | undefined,
 ): FabricCapacityGarmentSpec[] => {
-  const source = resolveActiveDesignSource(designSource, selectedStyle);
-  if (source?.kind === "uploaded") return cloneComposition(source.fabricCapacityComposition);
-  return getStyleBaseFabricCapacityComposition(selectedStyle);
+  const source = resolveActiveDesignSource(designSource, _selectedStyle);
+  if (source?.kind === "uploaded") {
+    return cloneComposition(source.fabricCapacityComposition);
+  }
+  return [];
+};
+
+export type PhysicalGarmentOccurrence = {
+  garmentKey: string;
+  garmentType: CanonicalPhysicalGarmentType;
+  sourceRole: "main" | "additional";
+  fabricUnits: number;
+};
+
+export type AuthoritativePhysicalOrderDiagnosticCode =
+  | "upload_missing_required_step1_garment"
+  | "upload_composition_needs_review"
+  | "upload_not_confirmed"
+  | "missing_demographic"
+  | "duplicate_occurrence_key"
+  | "duplicate_assignment_key"
+  | "orphan_fabric_assignment"
+  | "missing_occurrence_for_assignment";
+
+export type FabricAssignmentIntegrityResult = {
+  diagnostics: readonly AuthoritativePhysicalOrderDiagnostic[];
+  assignmentKeys: readonly string[];
+};
+
+const collectRawFabricAssignments = (
+  fabricAllocationState?: FabricAllocationState | null,
+): FabricGarmentAssignment[] => {
+  const committed =
+    fabricAllocationState?.fabricAllocations.flatMap(
+      (allocation) => allocation.garmentAssignments,
+    ) ?? [];
+  const pending = fabricAllocationState?.pendingFabricGarment;
+  return pending ? [...committed, pending] : committed;
+};
+
+export const physicalOccurrencesToFabricRequirements = (
+  occurrences: readonly PhysicalGarmentOccurrence[],
+): FabricGarmentAssignment[] =>
+  occurrences.map((occurrence) => ({
+    garmentKey: occurrence.garmentKey,
+    code:
+      occurrence.sourceRole === "additional"
+        ? `ADDITIONAL_${occurrence.garmentType.toUpperCase()}`
+        : `BASE_${occurrence.garmentType.toUpperCase()}`,
+    garmentType: occurrence.garmentType,
+    fabricUnits: occurrence.fabricUnits as FabricUnitCount,
+    sourceRole: occurrence.sourceRole,
+  }));
+
+export const parseAdditionalGarmentTypeFromKey = (
+  garmentKey: string,
+): CanonicalPhysicalGarmentType | null => {
+  if (!garmentKey.startsWith("additional:")) return null;
+  const garmentType = garmentKey.split(":")[1];
+  return isCanonicalPhysicalGarmentType(garmentType as FabricGarmentType)
+    ? (garmentType as CanonicalPhysicalGarmentType)
+    : null;
+};
+
+const resolveAdditionalOccurrenceGarmentType = ({
+  garmentKey,
+  additionalGarmentConstructionState,
+}: {
+  garmentKey: string;
+  additionalGarmentConstructionState?: AdditionalGarmentConstructionStateV1 | null;
+}): CanonicalPhysicalGarmentType | null => {
+  const construction = additionalGarmentConstructionState?.byGarmentKey[garmentKey];
+  if (
+    construction?.garmentType &&
+    isCanonicalPhysicalGarmentType(construction.garmentType)
+  ) {
+    return construction.garmentType;
+  }
+  return parseAdditionalGarmentTypeFromKey(garmentKey);
+};
+
+const projectAuthorizedAdditionalPhysicalOccurrences = ({
+  additionalGarmentConstructionState,
+}: {
+  additionalGarmentConstructionState?: AdditionalGarmentConstructionStateV1 | null;
+}): PhysicalGarmentOccurrence[] => {
+  const occurrences: PhysicalGarmentOccurrence[] = [];
+  Object.keys(additionalGarmentConstructionState?.byGarmentKey || {}).forEach(
+    (garmentKey) => {
+      const garmentType = resolveAdditionalOccurrenceGarmentType({
+        garmentKey,
+        additionalGarmentConstructionState,
+      });
+      if (!garmentType) return;
+      occurrences.push({
+        garmentKey,
+        garmentType,
+        sourceRole: "additional",
+        fabricUnits: createStyleBaseGarmentSpec(garmentType).fabricUnits,
+      });
+    },
+  );
+  return occurrences;
+};
+
+const projectSourceBasePhysicalOccurrences = ({
+  sourceKind,
+  step1GarmentTypeSelection,
+  uploadedCompositionSpecs,
+}: {
+  sourceKind: "catalogue" | "uploaded";
+  step1GarmentTypeSelection: GarmentTypeStepSelection;
+  uploadedCompositionSpecs?: readonly FabricCapacityGarmentSpec[] | null;
+}): PhysicalGarmentOccurrence[] => {
+  if (sourceKind === "uploaded" && uploadedCompositionSpecs?.length) {
+    return uploadedCompositionSpecs.map((spec) => ({
+      garmentKey: spec.key,
+      garmentType: spec.garmentType as CanonicalPhysicalGarmentType,
+      sourceRole: inferOccurrenceRole(
+        spec.key,
+        spec.garmentType,
+        step1GarmentTypeSelection.garmentTypes,
+      ),
+      fabricUnits: spec.fabricUnits,
+    }));
+  }
+
+  return step1GarmentTypeSelection.garmentTypes.map((garmentType) => {
+    const spec = createStyleBaseGarmentSpec(garmentType);
+    return {
+      garmentKey: spec.key,
+      garmentType,
+      sourceRole: "main" as const,
+      fabricUnits: spec.fabricUnits,
+    };
+  });
+};
+
+export const validateRawFabricAssignments = ({
+  authoritativeOccurrenceKeys,
+  fabricAllocationState,
+}: {
+  authoritativeOccurrenceKeys: ReadonlySet<string>;
+  fabricAllocationState?: FabricAllocationState | null;
+}): FabricAssignmentIntegrityResult => {
+  const diagnostics: AuthoritativePhysicalOrderDiagnostic[] = [];
+  const rawAssignments = collectRawFabricAssignments(fabricAllocationState);
+  const seenKeys = new Set<string>();
+  const assignmentKeys: string[] = [];
+
+  rawAssignments.forEach((assignment) => {
+    if (seenKeys.has(assignment.garmentKey)) {
+      diagnostics.push({
+        code: "duplicate_assignment_key",
+        message: "Duplicate Fabric assignment keys were detected.",
+        garmentKey: assignment.garmentKey,
+      });
+    }
+    seenKeys.add(assignment.garmentKey);
+    assignmentKeys.push(assignment.garmentKey);
+    if (!authoritativeOccurrenceKeys.has(assignment.garmentKey)) {
+      diagnostics.push({
+        code: "orphan_fabric_assignment",
+        message:
+          "A Fabric assignment does not match an active physical garment.",
+        garmentKey: assignment.garmentKey,
+        garmentType: isCanonicalPhysicalGarmentType(assignment.garmentType)
+          ? assignment.garmentType
+          : undefined,
+      });
+    }
+  });
+
+  return { diagnostics, assignmentKeys };
+};
+
+export const validateFinalPhysicalOccurrenceAssignmentParity = ({
+  authoritativeOccurrenceKeys,
+  fabricAllocationState,
+}: {
+  authoritativeOccurrenceKeys: readonly string[];
+  fabricAllocationState: FabricAllocationState;
+}): AuthoritativePhysicalOrderDiagnostic[] => {
+  const occurrenceSet = new Set(authoritativeOccurrenceKeys);
+  const integrity = validateRawFabricAssignments({
+    authoritativeOccurrenceKeys: occurrenceSet,
+    fabricAllocationState,
+  });
+  const diagnostics = [...integrity.diagnostics];
+  const assignmentSet = new Set(integrity.assignmentKeys);
+  authoritativeOccurrenceKeys.forEach((garmentKey) => {
+    if (!assignmentSet.has(garmentKey)) {
+      diagnostics.push({
+        code: "missing_occurrence_for_assignment",
+        message: "A physical garment is missing a Fabric assignment.",
+        garmentKey,
+      });
+    }
+  });
+  return diagnostics;
+};
+
+export const resolveOccurrenceConstruction = ({
+  garmentKey,
+  garmentType,
+  sourceRole,
+  garmentTypeSelection,
+  additionalGarmentConstructionState,
+}: {
+  garmentKey: string;
+  garmentType: CanonicalPhysicalGarmentType;
+  sourceRole: "main" | "additional";
+  garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructionState?: AdditionalGarmentConstructionStateV1 | null;
+}): GarmentConstructionPricingResolution | undefined => {
+  if (sourceRole === "additional" || garmentKey.startsWith("additional:")) {
+    return additionalGarmentConstructionState?.byGarmentKey[garmentKey];
+  }
+  return garmentTypeSelection.constructionByGarment[garmentType];
+};
+
+export type AuthoritativePhysicalOrderDiagnostic = {
+  code: AuthoritativePhysicalOrderDiagnosticCode;
+  message: string;
+  garmentKey?: string;
+  garmentType?: CanonicalPhysicalGarmentType;
+};
+
+export type AuthoritativePhysicalOrderResolution =
+  | {
+      status: "resolved";
+      sourceKind: "catalogue" | "uploaded";
+      effectiveGarmentTypeSelection: GarmentTypeStepSelection;
+      basePhysicalSpecs: FabricCapacityGarmentSpec[];
+      physicalOccurrences: readonly PhysicalGarmentOccurrence[];
+    }
+  | {
+      status: "blocked";
+      sourceKind: "catalogue" | "uploaded";
+      diagnostics: readonly AuthoritativePhysicalOrderDiagnostic[];
+    };
+
+const inferOccurrenceRole = (
+  garmentKey: string,
+  garmentType: FabricGarmentType,
+  step1GarmentTypes: readonly FabricGarmentType[],
+): "main" | "additional" => {
+  if (garmentKey.startsWith("additional:")) return "additional";
+  if (garmentKey.startsWith("base:")) return "main";
+  const step1Count = step1GarmentTypes.filter((type) => type === garmentType).length;
+  return step1Count > 0 ? "main" : "additional";
+};
+
+const sortPhysicalOccurrences = (
+  occurrences: readonly PhysicalGarmentOccurrence[],
+  effectiveGarmentTypeSelection: GarmentTypeStepSelection,
+): PhysicalGarmentOccurrence[] => {
+  const baseKeyOrder = new Map(
+    effectiveGarmentTypeSelection.garmentTypes.map((garmentType, index) => [
+      createStyleBaseGarmentSpec(garmentType).key,
+      index,
+    ]),
+  );
+  return [...occurrences].sort((left, right) => {
+    const leftIsAdditional =
+      left.sourceRole === "additional" || left.garmentKey.startsWith("additional:");
+    const rightIsAdditional =
+      right.sourceRole === "additional" || right.garmentKey.startsWith("additional:");
+    if (leftIsAdditional !== rightIsAdditional) {
+      return leftIsAdditional ? 1 : -1;
+    }
+    if (!leftIsAdditional) {
+      const leftOrder = baseKeyOrder.get(left.garmentKey) ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = baseKeyOrder.get(right.garmentKey) ?? Number.MAX_SAFE_INTEGER;
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+    }
+    return left.garmentKey.localeCompare(right.garmentKey);
+  });
+};
+
+export const buildAuthoritativePhysicalOccurrences = ({
+  sourceKind,
+  step1GarmentTypeSelection,
+  effectiveGarmentTypeSelection,
+  uploadedCompositionSpecs,
+  additionalGarmentConstructionState,
+}: {
+  sourceKind: "catalogue" | "uploaded";
+  step1GarmentTypeSelection: GarmentTypeStepSelection;
+  effectiveGarmentTypeSelection: GarmentTypeStepSelection;
+  uploadedCompositionSpecs?: readonly FabricCapacityGarmentSpec[] | null;
+  additionalGarmentConstructionState?: AdditionalGarmentConstructionStateV1 | null;
+}): PhysicalGarmentOccurrence[] => {
+  const baseOccurrences = projectSourceBasePhysicalOccurrences({
+    sourceKind,
+    step1GarmentTypeSelection,
+    uploadedCompositionSpecs,
+  });
+  const additionalOccurrences = projectAuthorizedAdditionalPhysicalOccurrences({
+    additionalGarmentConstructionState,
+  });
+
+  return sortPhysicalOccurrences(
+    [...baseOccurrences, ...additionalOccurrences],
+    effectiveGarmentTypeSelection,
+  );
+};
+
+export const projectAuthoritativePhysicalOccurrences = ({
+  sourceKind = "catalogue",
+  step1GarmentTypeSelection,
+  effectiveGarmentTypeSelection,
+  uploadedCompositionSpecs = null,
+  additionalGarmentConstructionState = null,
+  compositionFallback: _compositionFallback,
+  pendingAdditionalGarment: _pendingAdditionalGarment,
+}: {
+  sourceKind?: "catalogue" | "uploaded";
+  step1GarmentTypeSelection?: GarmentTypeStepSelection;
+  effectiveGarmentTypeSelection: GarmentTypeStepSelection;
+  uploadedCompositionSpecs?: readonly FabricCapacityGarmentSpec[] | null;
+  additionalGarmentConstructionState?: AdditionalGarmentConstructionStateV1 | null;
+  pendingAdditionalGarment?: FabricGarmentAssignment | null;
+  fabricAllocationState?: FabricAllocationState | null;
+  compositionFallback?: readonly FabricCapacityGarmentSpec[] | null;
+}): PhysicalGarmentOccurrence[] =>
+  buildAuthoritativePhysicalOccurrences({
+    sourceKind,
+    step1GarmentTypeSelection:
+      step1GarmentTypeSelection || effectiveGarmentTypeSelection,
+    effectiveGarmentTypeSelection,
+    uploadedCompositionSpecs,
+    additionalGarmentConstructionState,
+  });
+
+const validateAuthoritativeOccurrenceKeys = (
+  occurrences: readonly PhysicalGarmentOccurrence[],
+): AuthoritativePhysicalOrderDiagnostic[] => {
+  const keys = occurrences.map((occurrence) => occurrence.garmentKey);
+  const uniqueKeys = new Set(keys);
+  if (uniqueKeys.size !== keys.length) {
+    return [
+      {
+        code: "duplicate_occurrence_key",
+        message: "Duplicate physical garment keys were detected.",
+      },
+    ];
+  }
+  return [];
+};
+
+export const resolveAuthoritativePhysicalOrder = ({
+  garmentTypeSelection,
+  designSource,
+  selectedStyle,
+  confirmedDesignSourceKey,
+  normalizedCustomDetailCatalog,
+  fabricAllocationState,
+  additionalGarmentConstructionState,
+  pendingAdditionalGarment: _pendingAdditionalGarment,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  designSource?: DesignSource | null;
+  selectedStyle?: StyleCategory | null;
+  confirmedDesignSourceKey?: string | null;
+  normalizedCustomDetailCatalog?: readonly CustomDetailOption[];
+  fabricAllocationState?: FabricAllocationState | null;
+  additionalGarmentConstructionState?: AdditionalGarmentConstructionStateV1 | null;
+  pendingAdditionalGarment?: FabricGarmentAssignment | null;
+}): AuthoritativePhysicalOrderResolution => {
+  const activeSource = resolveActiveDesignSource(designSource, selectedStyle);
+  const catalog = normalizedCustomDetailCatalog
+    ? normalizedCustomDetailCatalog
+    : normalizeCustomDetailCatalog([]);
+  const uploadedConfirmed =
+    activeSource?.kind === "uploaded" &&
+    confirmedDesignSourceKey === activeSource.sourceKey;
+
+  const finalizeResolution = ({
+    sourceKind,
+    effectiveGarmentTypeSelection,
+    basePhysicalSpecs,
+    physicalOccurrences,
+  }: {
+    sourceKind: "catalogue" | "uploaded";
+    effectiveGarmentTypeSelection: GarmentTypeStepSelection;
+    basePhysicalSpecs: FabricCapacityGarmentSpec[];
+    physicalOccurrences: readonly PhysicalGarmentOccurrence[];
+  }): AuthoritativePhysicalOrderResolution => {
+    const occurrenceDiagnostics = validateAuthoritativeOccurrenceKeys(
+      physicalOccurrences,
+    );
+    const assignmentIntegrity = validateRawFabricAssignments({
+      authoritativeOccurrenceKeys: new Set(
+        physicalOccurrences.map((occurrence) => occurrence.garmentKey),
+      ),
+      fabricAllocationState,
+    });
+    const diagnostics = [
+      ...occurrenceDiagnostics,
+      ...assignmentIntegrity.diagnostics,
+    ];
+    if (diagnostics.length > 0) {
+      return { status: "blocked", sourceKind, diagnostics };
+    }
+    return {
+      status: "resolved",
+      sourceKind,
+      effectiveGarmentTypeSelection,
+      basePhysicalSpecs,
+      physicalOccurrences,
+    };
+  };
+
+  if (uploadedConfirmed) {
+    if (getUploadedDesignCompositionNeedsReview(activeSource.fabricCapacityComposition)) {
+      return {
+        status: "blocked",
+        sourceKind: "uploaded",
+        diagnostics: [
+          {
+            code: "upload_composition_needs_review",
+            message: UPLOADED_DESIGN_COMPOSITION_NEEDS_REVIEW_MESSAGE,
+          },
+        ],
+      };
+    }
+    const step1Coverage = evaluateUploadedCompositionStep1Coverage({
+      step1GarmentTypes: garmentTypeSelection.garmentTypes,
+      uploadedComposition: activeSource.fabricCapacityComposition,
+    });
+    if (step1Coverage.status === "missing_required") {
+      const missingLabels = step1Coverage.missingGarmentTypes
+        .map((garmentType) => getFabricGarmentLabel(garmentType))
+        .join(", ");
+      return {
+        status: "blocked",
+        sourceKind: "uploaded",
+        diagnostics: [
+          {
+            code: "upload_missing_required_step1_garment",
+            message: `${UPLOADED_DESIGN_MISSING_REQUIRED_STEP1_GARMENTS_MESSAGE} Missing: ${missingLabels}.`,
+          },
+        ],
+      };
+    }
+    if (!activeSource.demographic) {
+      return {
+        status: "blocked",
+        sourceKind: "uploaded",
+        diagnostics: [
+          {
+            code: "missing_demographic",
+            message: "Select who the uploaded design is for before continuing.",
+          },
+        ],
+      };
+    }
+    const effectiveGarmentTypeSelection =
+      buildEffectiveUploadedJourneyGarmentTypeSelection({
+        step1Selection: garmentTypeSelection,
+        uploadedComposition: activeSource.fabricCapacityComposition,
+        normalizedCustomDetailCatalog: catalog,
+      });
+    const physicalOccurrences = buildAuthoritativePhysicalOccurrences({
+      sourceKind: "uploaded",
+      step1GarmentTypeSelection: garmentTypeSelection,
+      effectiveGarmentTypeSelection,
+      uploadedCompositionSpecs: activeSource.fabricCapacityComposition,
+      additionalGarmentConstructionState,
+    });
+    return finalizeResolution({
+      sourceKind: "uploaded",
+      effectiveGarmentTypeSelection,
+      basePhysicalSpecs: activeSource.fabricCapacityComposition.map((spec) => ({
+        ...spec,
+      })),
+      physicalOccurrences,
+    });
+  }
+
+  const effectiveGarmentTypeSelection = garmentTypeSelection;
+  const physicalOccurrences = buildAuthoritativePhysicalOccurrences({
+    sourceKind: "catalogue",
+    step1GarmentTypeSelection: garmentTypeSelection,
+    effectiveGarmentTypeSelection,
+    additionalGarmentConstructionState,
+  });
+  return finalizeResolution({
+    sourceKind: "catalogue",
+    effectiveGarmentTypeSelection,
+    basePhysicalSpecs: garmentTypeSelection.garmentTypes.map(
+      createStyleBaseGarmentSpec,
+    ),
+    physicalOccurrences,
+  });
 };
 
 export const resolveActiveDesignDemographic = (

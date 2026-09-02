@@ -1,5 +1,5 @@
 import { Layers3, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type {
   Fabric,
@@ -8,6 +8,7 @@ import type {
   GarmentTypeStepSelection,
 } from "../types";
 import { getGarmentTypeStepLabel } from "./GarmentTypeStep";
+import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import {
   AssignedFabricPreview,
@@ -23,13 +24,12 @@ import {
 import { getFabricAvailabilityMessage } from "../utils/fabricCatalogueAvailability";
 import { resolveFabricAllocationMaterialPricing } from "../utils/fabricAllocationPricing";
 import {
-  canCreatePhysicalFabricAllocation,
   getFutureCompatiblePartialFabricAllocations,
   getFuturePartialFabricAllocationSummaries,
   getFuturePartialFabricAllocationCompatibleTargets,
   getFuturePartialFabricAssignmentTargetPresentations,
   hasAvoidablePartialFabricAllocation,
-  getFutureFabricAssignmentTargets,
+  getFutureFabricAssignmentTargetsFromAuthority,
   getFutureFabricStep1AssignmentTargets,
   getFutureUnassignedFabricTargets,
   adaptUntargetedStep1CatalogueCardPresentation,
@@ -52,6 +52,8 @@ import {
   type FutureFabricCatalogueCancellationResult,
   type FutureFabricCatalogueCardPresentation,
   type FutureFabricStageCompletion,
+  type HydratedOrphanFabricAssignmentRepairResult,
+  type HydratedOrphanFabricAssignmentRepairTarget,
 } from "../utils/designStudioFutureFabricStage";
 import { resolveStep2PostAssignmentDestination } from "../utils/step2PostAssignmentDestination";
 import {
@@ -90,6 +92,8 @@ const blockerMessages: Record<
     "Your saved Fabric selections use more fabrics than this order requires. Remove or change Fabric assignments until the required number remains.",
   FABRIC_STOCK_OVER_ALLOCATED:
     "One or more Fabric selections exceed available stock. Remove or change a Fabric Selection.",
+  RAW_FABRIC_INTEGRITY_BLOCKED:
+    "Saved Fabric assignments conflict with the current order. Review duplicate or invalid garment assignments before continuing.",
 };
 
 interface DormantFutureFabricStepProps {
@@ -97,6 +101,8 @@ interface DormantFutureFabricStepProps {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
   completion: FutureFabricStageCompletion;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  orphanRepairTargets?: readonly HydratedOrphanFabricAssignmentRepairTarget[];
   requiredFabricQuantity: number;
   selectedFabricQuantity: number;
   constructionPrice: number;
@@ -112,6 +118,9 @@ interface DormantFutureFabricStepProps {
   onRemoveFabricFromGarment: (
     garmentKey: string,
   ) => FutureFabricCatalogueCancellationResult | void;
+  onRepairInvalidFabricAssignment?: (
+    target: HydratedOrphanFabricAssignmentRepairTarget,
+  ) => HydratedOrphanFabricAssignmentRepairResult;
   onUseSameFabricForGarment: (garmentKey: string) => void;
   onAssignSameFabricProduct: (
     fabricCode: string,
@@ -148,6 +157,11 @@ const formatGarmentList = (labels: string[]): string => {
   if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
   return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
 };
+
+const getOrphanRepairTargetKey = (
+  target: HydratedOrphanFabricAssignmentRepairTarget,
+): string =>
+  `${target.allocationId}:${target.garmentKey}:${target.assignmentSignature}`;
 
 const formatFabricSelectionProgress = (
   selectedFabricQuantity: number,
@@ -313,12 +327,15 @@ export const DormantFutureFabricStep = ({
   garmentTypeSelection,
   fabricAllocationState,
   completion,
+  requiredPhysicalOccurrences,
+  orphanRepairTargets = [],
   requiredFabricQuantity,
   selectedFabricQuantity,
   constructionPrice,
   onAssignFabricToGarment,
   onChangeFabricAllocationProduct,
   onRemoveFabricFromGarment,
+  onRepairInvalidFabricAssignment,
   onUseSameFabricForGarment,
   onAssignSameFabricProduct,
   onAssignGarmentToExistingAllocation,
@@ -338,6 +355,11 @@ export const DormantFutureFabricStep = ({
   const [visibleActionError, setVisibleActionError] = useState<string | null>(
     null,
   );
+  const [pendingOrphanRepair, setPendingOrphanRepair] =
+    useState<HydratedOrphanFabricAssignmentRepairTarget | null>(null);
+  const [orphanRepairError, setOrphanRepairError] = useState<string | null>(null);
+  const [orphanRepairAnnouncement, setOrphanRepairAnnouncement] = useState("");
+  const [focusAfterOrphanRepair, setFocusAfterOrphanRepair] = useState(false);
   const [pendingStep1FabricAssignment, setPendingStep1FabricAssignment] =
     useState<PendingStep1FabricAssignment | null>(null);
   const [pendingPartialFabricAssignment, setPendingPartialFabricAssignment] =
@@ -361,6 +383,15 @@ export const DormantFutureFabricStep = ({
     targets: RemoveFabricAssignmentTarget[];
   } | null>(null);
   const fabricRemovalTriggerRef = useRef<HTMLElement | null>(null);
+  const orphanRepairTriggerRef = useRef<HTMLElement | null>(null);
+  const orphanRepairDialogRef = useRef<HTMLDivElement | null>(null);
+  const orphanRepairInitialFocusRef = useRef<HTMLButtonElement | null>(null);
+  const orphanRepairHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const orphanRepairStatusRef = useRef<HTMLParagraphElement | null>(null);
+  const orphanRepairActionRefs = useRef(new Map<string, HTMLButtonElement>());
+  const completedOrphanRepairTargetKeyRef = useRef<string | null>(null);
+  const orphanRepairTitleId = useId();
+  const orphanRepairDescriptionId = useId();
   const catalogueDialogRef = useRef<HTMLDivElement>(null);
   const catalogueSectionRef = useRef<HTMLDivElement>(null);
   const catalogueScrollAnchorRef = useRef<HTMLDivElement>(null);
@@ -409,7 +440,11 @@ export const DormantFutureFabricStep = ({
     fabricAllocationState.fabricAllocations,
     fabrics,
   );
-  const targets = getFutureFabricAssignmentTargets(garmentTypeSelection);
+  const targets = getFutureFabricAssignmentTargetsFromAuthority({
+    garmentTypeSelection,
+    fabricAllocationState,
+    requiredPhysicalOccurrences,
+  });
   const activeCatalogueTarget = catalogueTargetGarmentKey
     ? targets.find(
         ({ assignment }) =>
@@ -439,12 +474,20 @@ export const DormantFutureFabricStep = ({
       pendingRemovalAnnouncementRef.current = null;
       removalVerificationRequestRef.current = null;
       pendingRemovalScrollYRef.current = null;
+      orphanRepairTriggerRef.current = null;
+      orphanRepairDialogRef.current = null;
+      orphanRepairInitialFocusRef.current = null;
+      orphanRepairHeadingRef.current = null;
+      orphanRepairStatusRef.current = null;
+      orphanRepairActionRefs.current.clear();
+      completedOrphanRepairTargetKeyRef.current = null;
     },
     [],
   );
   const unassignedTargets = getFutureUnassignedFabricTargets({
     garmentTypeSelection,
     fabricAllocationState,
+    requiredPhysicalOccurrences,
   });
   const assignmentByGarmentKey = useMemo(
     () =>
@@ -530,14 +573,16 @@ export const DormantFutureFabricStep = ({
       getFuturePartialFabricAllocationCompatibleTargets({
         garmentTypeSelection,
         fabricAllocationState,
+        requiredPhysicalOccurrences,
       }).filter((entry) => entry.compatibleGarmentKeys.length > 0),
-    [garmentTypeSelection, fabricAllocationState],
+    [garmentTypeSelection, fabricAllocationState, requiredPhysicalOccurrences],
   );
   const showAvoidablePartialGuidance =
     !isOverAllocated &&
     hasAvoidablePartialFabricAllocation({
       garmentTypeSelection,
       fabricAllocationState,
+      requiredPhysicalOccurrences,
     });
   const avoidablePartialGuidanceCopy =
     compatiblePartialTargets.length > 1 ||
@@ -546,10 +591,7 @@ export const DormantFutureFabricStep = ({
     )
       ? "Complete your selected Fabrics by assigning the remaining garments to available Fabric capacity."
       : "Complete your selected Fabric by assigning the remaining garment to it.";
-  const fabricSlotsAvailable = canCreatePhysicalFabricAllocation({
-    state: fabricAllocationState,
-    garmentTypeSelection,
-  });
+  const fabricSlotsAvailable = selectedFabricQuantity < requiredFabricQuantity;
   const resolveUnassignedGarmentFabricAction = (
     garmentKey: string,
   ): "add_fabric" | "assign_to_fabric" | "blocked" => {
@@ -560,6 +602,7 @@ export const DormantFutureFabricStep = ({
       garmentTypeSelection,
       fabricAllocationState,
       garmentKey,
+      requiredPhysicalOccurrences,
     });
     if (compatibleAllocations.length > 0) {
       return "assign_to_fabric";
@@ -570,11 +613,20 @@ export const DormantFutureFabricStep = ({
     () => new Map(fabrics.map((fabric) => [fabric.code, fabric.name])),
     [fabrics],
   );
+  const orphanRepairAllocationNumberById = useMemo(() => {
+    const allocationIds = [
+      ...new Set(orphanRepairTargets.map((target) => target.allocationId)),
+    ];
+    return new Map(
+      allocationIds.map((allocationId, index) => [allocationId, index + 1]),
+    );
+  }, [orphanRepairTargets]);
   const partialAssignmentPresentations = pendingPartialFabricAssignment
     ? getFuturePartialFabricAssignmentTargetPresentations({
         garmentTypeSelection,
         fabricAllocationState,
         garmentKey: pendingPartialFabricAssignment.garmentKey,
+        requiredPhysicalOccurrences,
       })
     : [];
   const showAllocationLimitCopy =
@@ -867,6 +919,142 @@ export const DormantFutureFabricStep = ({
     }
     fabricRemovalTriggerRef.current = null;
   };
+
+  const restoreOrphanRepairTriggerFocus = () => {
+    const trigger = orphanRepairTriggerRef.current;
+    orphanRepairTriggerRef.current = null;
+    const restore = () => {
+      if (trigger) focusElementSafely(trigger);
+    };
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      window.requestAnimationFrame(restore);
+      return;
+    }
+    restore();
+  };
+
+  const closeOrphanRepairDialog = (restoreFocus: boolean) => {
+    setPendingOrphanRepair(null);
+    if (restoreFocus) {
+      restoreOrphanRepairTriggerFocus();
+      return;
+    }
+    orphanRepairTriggerRef.current = null;
+  };
+
+  const openOrphanRepairDialog = (
+    target: HydratedOrphanFabricAssignmentRepairTarget,
+    trigger: HTMLElement,
+  ) => {
+    orphanRepairTriggerRef.current = trigger;
+    setOrphanRepairError(null);
+    setPendingOrphanRepair(target);
+  };
+
+  const confirmOrphanRepair = () => {
+    if (!pendingOrphanRepair || !onRepairInvalidFabricAssignment) return;
+    const result = onRepairInvalidFabricAssignment(pendingOrphanRepair);
+    if (result.status !== "removed") {
+      completedOrphanRepairTargetKeyRef.current = null;
+      setOrphanRepairError(
+        "This saved Fabric assignment changed before it could be removed. Review the current repair items and try again.",
+      );
+      setOrphanRepairAnnouncement(
+        "The invalid Fabric assignment was not removed because the saved assignment changed.",
+      );
+      closeOrphanRepairDialog(false);
+      setFocusAfterOrphanRepair(true);
+      return;
+    }
+
+    const fabricName =
+      fabrics.find((fabric) => fabric.code === pendingOrphanRepair.fabricCode)
+        ?.name ?? pendingOrphanRepair.fabricCode;
+    setOrphanRepairError(null);
+    completedOrphanRepairTargetKeyRef.current =
+      getOrphanRepairTargetKey(pendingOrphanRepair);
+    setOrphanRepairAnnouncement(
+      `Invalid saved assignment for ${fabricName} removed.`,
+    );
+    closeOrphanRepairDialog(false);
+    setFocusAfterOrphanRepair(true);
+  };
+
+  useEffect(() => {
+    if (!pendingOrphanRepair) return;
+    const dialog = orphanRepairDialogRef.current;
+    if (!dialog) return;
+    const previousOverflow = document.body?.style?.overflow;
+    if (document.body?.style) document.body.style.overflow = "hidden";
+    const getFocusable = () =>
+      Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+    (orphanRepairInitialFocusRef.current || dialog).focus?.();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeOrphanRepairDialog(true);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = getFocusable();
+      if (focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    dialog.addEventListener("keydown", handleKeyDown);
+    return () => {
+      dialog.removeEventListener("keydown", handleKeyDown);
+      if (document.body?.style && previousOverflow !== undefined) {
+        document.body.style.overflow = previousOverflow;
+      }
+    };
+  }, [pendingOrphanRepair]);
+
+  useEffect(() => {
+    if (!focusAfterOrphanRepair) return;
+    const completedTargetKey = completedOrphanRepairTargetKeyRef.current;
+    if (
+      completedTargetKey &&
+      orphanRepairTargets.some(
+        (target) => getOrphanRepairTargetKey(target) === completedTargetKey,
+      )
+    ) {
+      return;
+    }
+    setFocusAfterOrphanRepair(false);
+    completedOrphanRepairTargetKeyRef.current = null;
+    const focus = () => {
+      const nextTarget = orphanRepairTargets[0];
+      const nextAction = nextTarget
+        ? orphanRepairActionRefs.current.get(getOrphanRepairTargetKey(nextTarget))
+        : null;
+      if (nextAction && focusElementSafely(nextAction)) return;
+      if (focusElementSafely(orphanRepairStatusRef.current)) return;
+      focusElementSafely(orphanRepairHeadingRef.current);
+    };
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      window.requestAnimationFrame(focus);
+      return;
+    }
+    focus();
+  }, [focusAfterOrphanRepair, orphanRepairTargets]);
 
   const cancelStep1FabricAssignment = () => {
     pendingPostAssignmentNavRef.current = null;
@@ -1478,6 +1666,7 @@ export const DormantFutureFabricStep = ({
       garmentKey,
       fabricCode: fabric.code,
       fabrics,
+      requiredPhysicalOccurrences,
     });
     if (preview.status === "blocked") {
       const blockedMessage =
@@ -1671,12 +1860,14 @@ export const DormantFutureFabricStep = ({
             fabricAllocationState,
             currentTargetGarmentKey: currentTarget?.assignment.garmentKey ?? null,
             fabrics,
+            requiredPhysicalOccurrences,
           });
     const allowExistingPartialReuse = currentTarget
       ? getFutureCompatiblePartialFabricAllocations({
           garmentTypeSelection,
           fabricAllocationState,
           garmentKey: currentTarget.assignment.garmentKey,
+          requiredPhysicalOccurrences,
         }).some((entry) => entry.fabricCode === fabric.code)
       : false;
     const changeAllocationId =
@@ -1848,6 +2039,105 @@ export const DormantFutureFabricStep = ({
             </div>
           </div>
         </div>
+
+        {orphanRepairAnnouncement ? (
+          <p
+            ref={orphanRepairStatusRef}
+            role="status"
+            aria-live="polite"
+            tabIndex={-1}
+            data-fabric-integrity-repair-status="true"
+            className="mt-4 rounded-xl border border-heritage-green/20 bg-heritage-green/5 px-4 py-3 text-sm font-semibold leading-relaxed text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+          >
+            {orphanRepairAnnouncement}
+          </p>
+        ) : null}
+
+        {orphanRepairError ? (
+          <div
+            role="alert"
+            data-fabric-integrity-repair-error="true"
+            className="mt-4 rounded-xl border border-red-300/60 bg-red-50/70 px-4 py-3 text-sm leading-relaxed text-red-900"
+          >
+            {orphanRepairError}
+          </div>
+        ) : null}
+
+        {orphanRepairTargets.length > 0 ? (
+          <section
+            aria-labelledby="future-fabric-integrity-repair-title"
+            data-fabric-integrity-repair-panel="true"
+            className="mt-5 rounded-2xl border border-heritage-gold/40 bg-heritage-cream/40 p-4 sm:p-5"
+          >
+            <h3
+              ref={orphanRepairHeadingRef}
+              id="future-fabric-integrity-repair-title"
+              tabIndex={-1}
+              className="break-words font-serif text-lg font-bold text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              Saved Fabric assignment needs repair
+            </h3>
+            <p className="mt-2 max-w-3xl break-words text-sm leading-relaxed text-heritage-ink/70">
+              A saved Fabric assignment points to a garment that is no longer part
+              of this order. Remove the invalid assignment to continue. Valid
+              garment assignments will remain unchanged.
+            </p>
+            <ul className="mt-4 space-y-3">
+              {orphanRepairTargets.map((target) => {
+                const targetKey = getOrphanRepairTargetKey(target);
+                const fabric = fabrics.find(
+                  (candidate) => candidate.code === target.fabricCode,
+                );
+                const garmentLabel = getFutureGarmentLabel(target.garmentType);
+                const allocationNumber =
+                  orphanRepairAllocationNumberById.get(target.allocationId);
+                return (
+                  <li
+                    key={targetKey}
+                    data-fabric-integrity-repair-item="true"
+                    data-repair-allocation-id={target.allocationId}
+                    data-repair-garment-key={target.garmentKey}
+                    className="flex min-w-0 flex-col gap-3 rounded-xl border border-heritage-gold/25 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words text-sm font-bold text-heritage-green">
+                        {fabric?.name ?? "Saved Fabric"}
+                      </p>
+                      <p className="mt-1 break-words font-mono text-[11px] text-heritage-ink/60">
+                        {target.fabricCode}
+                      </p>
+                      <p className="mt-2 break-words text-xs leading-relaxed text-heritage-ink/70">
+                        Invalid saved assignment for {garmentLabel}
+                        {allocationNumber
+                          ? ` · Fabric Selection ${allocationNumber}`
+                          : ""}
+                      </p>
+                    </div>
+                    <button
+                      ref={(element) => {
+                        if (element) {
+                          orphanRepairActionRefs.current.set(targetKey, element);
+                        } else {
+                          orphanRepairActionRefs.current.delete(targetKey);
+                        }
+                      }}
+                      type="button"
+                      onClick={(event) =>
+                        openOrphanRepairDialog(target, event.currentTarget)
+                      }
+                      disabled={!onRepairInvalidFabricAssignment}
+                      aria-label={`Remove invalid Fabric assignment for ${garmentLabel}`}
+                      data-remove-invalid-fabric-assignment="true"
+                      className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-xl border border-red-300 bg-white px-4 text-xs font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+                    >
+                      Remove Invalid Assignment
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
 
         {showAvoidablePartialGuidance ? (
           <p
@@ -2449,6 +2739,59 @@ export const DormantFutureFabricStep = ({
           </div>
         )}
       </div>
+
+      {pendingOrphanRepair &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-heritage-ink/40 p-3 sm:items-center sm:p-6">
+            <div
+              ref={orphanRepairDialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={orphanRepairTitleId}
+              aria-describedby={orphanRepairDescriptionId}
+              tabIndex={-1}
+              data-testid="invalid-fabric-assignment-repair-dialog"
+              data-repair-allocation-id={pendingOrphanRepair.allocationId}
+              data-repair-garment-key={pendingOrphanRepair.garmentKey}
+              className="w-full max-w-lg min-w-0 rounded-3xl border border-heritage-gold/40 bg-white p-5 shadow-xl sm:p-6"
+            >
+              <h2
+                id={orphanRepairTitleId}
+                className="break-words font-serif text-xl font-bold text-heritage-green sm:text-2xl"
+              >
+                Remove invalid Fabric assignment?
+              </h2>
+              <p
+                id={orphanRepairDescriptionId}
+                className="mt-3 break-words text-sm leading-relaxed text-heritage-ink/70"
+              >
+                This removes the saved Fabric assignment only. It will not add or
+                remove garments from your order.
+              </p>
+              <div className="mt-5 flex min-w-0 flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button
+                  ref={orphanRepairInitialFocusRef}
+                  type="button"
+                  onClick={() => closeOrphanRepairDialog(true)}
+                  data-invalid-fabric-repair-cancel="true"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-heritage-green/30 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-cream/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmOrphanRepair}
+                  data-invalid-fabric-repair-confirm="true"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-red-700 px-4 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 sm:w-auto"
+                >
+                  Remove Assignment
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {isCatalogueOpen &&
         typeof document !== "undefined" &&

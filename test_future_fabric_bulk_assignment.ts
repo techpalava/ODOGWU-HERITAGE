@@ -4,7 +4,7 @@ import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateE
 import { FabricCapacityEngine } from "./src/engine/FabricCapacityEngine";
 import type { Fabric, FabricGarmentType } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import {
   applyFutureFabricCardSelection,
   assignFutureFabricToGarment,
@@ -265,9 +265,7 @@ let additionalState = commitSameFabric({
 });
 const additionalSelection = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
-  existingAssignments: additionalState.fabricAllocations.flatMap(
-    (allocation) => allocation.garmentAssignments,
-  ),
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt", "trouser"]),
 });
 assert.equal(additionalSelection.status, "resolved");
 if (additionalSelection.status !== "resolved") {
@@ -337,9 +335,11 @@ skirtPending = commitSameFabric({
 });
 const pendingShirtSelection = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
-  existingAssignments: skirtPending.fabricAllocations.flatMap(
-    (allocation) => allocation.garmentAssignments,
-  ),
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences([
+    "shirt",
+    "trouser",
+    "skirt",
+  ]),
 });
 assert.equal(pendingShirtSelection.status, "resolved");
 if (pendingShirtSelection.status !== "resolved") {
@@ -364,9 +364,7 @@ let pendingPreserve = commitSameFabric({
 });
 const preserveAdditional = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
-  existingAssignments: pendingPreserve.fabricAllocations.flatMap(
-    (allocation) => allocation.garmentAssignments,
-  ),
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt", "trouser"]),
 });
 assert.equal(preserveAdditional.status, "resolved");
 if (preserveAdditional.status !== "resolved") {
@@ -410,25 +408,27 @@ assert.ok(
   "Only the requested committed assignment may be removed.",
 );
 
-const additionalOccurrenceAssignments = (
-  state: ReturnType<typeof FabricAllocationStateEngine.initialize>,
-) => [
-  ...state.fabricAllocations.flatMap(
-    (allocation) => allocation.garmentAssignments,
-  ),
-  ...(state.pendingFabricGarment ? [state.pendingFabricGarment] : []),
-];
+const authorizedBulkAdditionalKeys: string[] = [];
 const appendAdditionalShirt = (
   state: ReturnType<typeof FabricAllocationStateEngine.initialize>,
   fabricCode?: string,
 ) => {
   const selection = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: additionalOccurrenceAssignments(state),
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences([
+      "shirt",
+      "trouser",
+    ]),
+    authorizedOccurrenceKeys: authorizedBulkAdditionalKeys,
   });
   assert.equal(selection.status, "resolved");
   if (selection.status !== "resolved") {
     throw new Error("Expected additional shirt");
+  }
+  const garmentKey = selection.selection.garmentSpec?.key;
+  assert.ok(garmentKey);
+  if (!authorizedBulkAdditionalKeys.includes(garmentKey)) {
+    authorizedBulkAdditionalKeys.push(garmentKey);
   }
   let next = FabricAllocationStateEngine.attemptAppendGarment(
     state,

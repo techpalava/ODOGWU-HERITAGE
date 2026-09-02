@@ -16,7 +16,7 @@ import {
 } from "./src/components/CustomDetailsGoToTopButton";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import {
   resolveAuthoritativePrimaryFabricCode,
 } from "./src/utils/additionalGarmentFabricPicker";
@@ -87,9 +87,7 @@ const fabricB: Fabric = {
 
   const addition = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (a) => a.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
   });
   assert.equal(addition.status, "resolved");
   state = FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(

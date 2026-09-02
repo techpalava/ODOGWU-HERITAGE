@@ -8,11 +8,20 @@ import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateE
 import type { BusinessSettings, FabricAllocationState, StyleCategory } from "./src/types";
 import {
   createAdditionalGarmentSelection,
+  createCatalogueAdditionalGarmentSelection,
   getAllowedAdditionalGarmentLabels,
+  projectCatalogueStep1PhysicalOccurrences,
   reconcileAdditionalGarmentDependencies,
+  resolveAdditionalGarmentPriceRows,
   resolveAllowedAdditionalGarments,
 } from "./src/utils/additionalGarmentDomain";
+import {
+  cloneGarmentConstructionPricingResolution,
+  removeAdditionalGarmentConstruction,
+} from "./src/utils/additionalGarmentConstructionState";
 import { calculateDesignPricing } from "./src/utils/designPricing";
+import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
+import { inspectCustomDetailCatalog, normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import { resolveCustomerFabricAssignmentSummary } from "./src/utils/fabricAssignmentSummary";
 import { cloneFabricAllocations } from "./src/utils/fabricAllocationPersistence";
 
@@ -40,6 +49,8 @@ const style: StyleCategory = {
   options: [],
   fabricCapacityComposition: [...mainComposition],
 };
+const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
+const catalogInspection = inspectCustomDetailCatalog(catalog);
 
 const initializeMainState = (): FabricAllocationState =>
   FabricAllocationStateEngine.syncPrimaryGarmentComposition(
@@ -161,6 +172,7 @@ const secondAdditionalShirt = createAdditionalGarmentSelection({
   existingAssignments: state.fabricAllocations.flatMap(
     (allocation) => allocation.garmentAssignments,
   ),
+  authorizedOccurrenceKeys: ["additional:shirt:1"],
 });
 assert.equal(secondAdditionalShirt.status, "resolved");
 if (secondAdditionalShirt.status !== "resolved") throw new Error("Expected second shirt");
@@ -330,7 +342,150 @@ const unresolvedPricing = calculateDesignPricing({
   businessSettings: pricingSettings,
 });
 assert.ok(unresolvedPricing);
-assert.equal(unresolvedPricing.additionalGarmentPricingStatus, "unresolved");
-assert.equal(unresolvedPricing.additionalGarmentPriceRows.length, 0);
+assert.equal(
+  unresolvedPricing.additionalGarmentPricingStatus,
+  "resolved",
+  "orphaned Fabric rows are excluded; remaining valid additional garments may still price",
+);
+assert.equal(unresolvedPricing.additionalGarmentPriceRows.length, 1);
+assert.equal(
+  unresolvedPricing.additionalGarmentPriceRows[0]?.garmentType,
+  "trouser",
+);
+assert.equal(
+  unresolvedPricing.additionalGarmentPriceRows.some(
+    (row) => row.garmentType === "shirt",
+  ),
+  false,
+  "orphaned shirt Fabric assignment must not produce a pricing row",
+);
+
+const authorizedShirtConstruction = resolveGarmentConstructionPricing(
+  "shirt",
+  catalogInspection.activeOptions,
+);
+assert.equal(authorizedShirtConstruction.status, "resolved");
+if (authorizedShirtConstruction.status !== "resolved") {
+  throw new Error("expected resolved shirt construction");
+}
+const authorizedAdditionalConstruction = {
+  schemaVersion: 1 as const,
+  byGarmentKey: {
+    "additional:shirt:1": {
+      ...cloneGarmentConstructionPricingResolution(authorizedShirtConstruction),
+      totalPriceCents: 7000,
+      totalPrice: 70,
+      components: authorizedShirtConstruction.components.map((component, index) =>
+        index === 0 ? { ...component, priceCents: 7000 } : { ...component, priceCents: 0 },
+      ),
+    },
+  },
+};
+const authorizedUnassignedPricing = calculateDesignPricing({
+  route: "community",
+  design: {
+    customDetails: {},
+    additionalGarmentConstructions: authorizedAdditionalConstruction,
+  },
+  fabric: null,
+  allowUnresolvedMaterialPricing: true,
+  style,
+  baseGarmentComposition: mainComposition,
+  additionalGarments: [],
+  catalog: SEED_CUSTOM_DETAIL_CATALOG,
+  businessSettings: pricingSettings,
+});
+assert.equal(authorizedUnassignedPricing.additionalGarmentPricingStatus, "resolved");
+assert.equal(
+  authorizedUnassignedPricing.additionalGarmentPriceRows.find(
+    (row) => row.assignmentId === "additional:shirt:1",
+  )?.price,
+  70,
+  "authorized construction ledger pricing does not require Fabric assignment",
+);
+
+const orphanFabricPricing = resolveAdditionalGarmentPriceRows({
+  additionalAssignments: [
+    {
+      garmentKey: "additional:full_length_gown:99",
+      code: "ADDITIONAL_GOWN",
+      garmentType: "full_length_gown",
+      fabricUnits: 2,
+      sourceRole: "additional",
+      dependencyStatus: "orphaned",
+    },
+  ],
+  mainGarmentPriceRows: [{ garmentType: "shirt", price: 65 }],
+  constructionByGarmentKey: {},
+});
+assert.equal(orphanFabricPricing.rows.length, 0);
+assert.equal(orphanFabricPricing.unresolvedAssignmentIds.length, 0);
+
+const fabricRemovedPricing = calculateDesignPricing({
+  route: "community",
+  design: {
+    customDetails: {},
+    additionalGarmentConstructions: authorizedAdditionalConstruction,
+  },
+  fabric: null,
+  allowUnresolvedMaterialPricing: true,
+  style,
+  baseGarmentComposition: mainComposition,
+  additionalGarments: [],
+  catalog: SEED_CUSTOM_DETAIL_CATALOG,
+  businessSettings: pricingSettings,
+});
+assert.equal(
+  fabricRemovedPricing.additionalGarmentPriceRows.find(
+    (row) => row.assignmentId === "additional:shirt:1",
+  )?.price,
+  70,
+  "Fabric removal does not erase authorized construction pricing",
+);
+
+const explicitRemovalPricing = calculateDesignPricing({
+  route: "community",
+  design: {
+    customDetails: {},
+    additionalGarmentConstructions: removeAdditionalGarmentConstruction(
+      authorizedAdditionalConstruction,
+      "additional:shirt:1",
+    ),
+  },
+  fabric: null,
+  allowUnresolvedMaterialPricing: true,
+  style,
+  baseGarmentComposition: mainComposition,
+  additionalGarments: [],
+  catalog: SEED_CUSTOM_DETAIL_CATALOG,
+  businessSettings: pricingSettings,
+});
+assert.equal(explicitRemovalPricing.additionalGarmentPriceRows.length, 0);
+
+const shirtOnlyOccurrences = projectCatalogueStep1PhysicalOccurrences(["shirt"]);
+
+const catalogueWithoutFabric = createCatalogueAdditionalGarmentSelection({
+  garmentType: "shirt",
+  authoritativePhysicalOccurrences: shirtOnlyOccurrences,
+  authorizedOccurrenceKeys: [],
+});
+assert.equal(catalogueWithoutFabric.status, "resolved");
+if (catalogueWithoutFabric.status !== "resolved") {
+  throw new Error("Expected catalogue additional shirt without Fabric parent.");
+}
+assert.equal(catalogueWithoutFabric.selection.garmentSpec?.key, "additional:shirt:1");
+assert.equal(catalogueWithoutFabric.selection.mainGarmentKey, "base:shirt");
+
+const sequenceLedger = ["additional:shirt:1"];
+const nextWithoutFabric = createCatalogueAdditionalGarmentSelection({
+  garmentType: "shirt",
+  authoritativePhysicalOccurrences: shirtOnlyOccurrences,
+  authorizedOccurrenceKeys: sequenceLedger,
+});
+assert.equal(nextWithoutFabric.status, "resolved");
+if (nextWithoutFabric.status !== "resolved") {
+  throw new Error("Expected next catalogue shirt without Fabric.");
+}
+assert.equal(nextWithoutFabric.selection.garmentSpec?.key, "additional:shirt:2");
 
 console.log("PASS: Optional garment domain validates dependencies, identities, allocation compatibility, persistence, and inherited pricing");
