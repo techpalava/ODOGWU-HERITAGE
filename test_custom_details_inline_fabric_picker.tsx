@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { FutureAdditionalGarmentFabricDialog } from "./src/components/FutureAdditionalGarmentFabricDialog";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import {
   confirmAdditionalGarmentFabricAssignment,
   confirmAdditionalGarmentTransactionCommitted,
@@ -121,9 +121,8 @@ state = FabricAllocationStateEngine.attemptAppendGarment(state, {
 
 const firstExtra = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
-  existingAssignments: state.fabricAllocations.flatMap(
-    (allocation) => allocation.garmentAssignments,
-  ),
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
+  authorizedOccurrenceKeys: [],
 });
 assert.equal(firstExtra.status, "resolved");
 const firstKey = firstExtra.selection.garmentSpec!.key;
@@ -131,9 +130,8 @@ state = FabricAllocationStateEngine.attemptAppendGarment(state, firstExtra.selec
 
 const secondExtra = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
-  existingAssignments: state.fabricAllocations.flatMap(
-    (allocation) => allocation.garmentAssignments,
-  ),
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
+  authorizedOccurrenceKeys: [firstKey],
 });
 assert.equal(secondExtra.status, "resolved");
 const secondKey = secondExtra.selection.garmentSpec!.key;

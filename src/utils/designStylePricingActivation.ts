@@ -1,3 +1,10 @@
+import type { DesignSource, FabricGarmentType, StyleCategory } from "../types";
+import {
+  getConfirmedDesignSourceKeyAfterSourceChange,
+  resolveActiveDesignSource,
+} from "./designSourceState";
+import { getUploadedDesignStep1Readiness } from "./uploadedDesignStep1";
+
 export const isDesignStylePricingActive = (
   selectedStyleId: string | null | undefined,
   confirmedStyleId: string | null | undefined,
@@ -16,6 +23,7 @@ export const isDesignSourcePricingActive = ({
   confirmedDesignSourceKey,
   selectedFabricCode,
   priceActivatedFabricCode,
+  step1GarmentTypes,
 }: {
   designSource: DesignSource | null | undefined;
   selectedStyle: StyleCategory | null | undefined;
@@ -23,23 +31,36 @@ export const isDesignSourcePricingActive = ({
   confirmedDesignSourceKey: string | null | undefined;
   selectedFabricCode: string | null | undefined;
   priceActivatedFabricCode: string | null | undefined;
+  step1GarmentTypes: readonly FabricGarmentType[];
 }): boolean => {
   const activeSource = resolveActiveDesignSource(designSource, selectedStyle);
   if (activeSource?.kind === "catalog") {
-  return isDesignStylePricingActive(
-    selectedStyle?.id,
-    confirmedStyleId,
-    selectedFabricCode,
-    priceActivatedFabricCode,
-  );
+    return isDesignStylePricingActive(
+      selectedStyle?.id,
+      confirmedStyleId,
+      selectedFabricCode,
+      priceActivatedFabricCode,
+    );
   }
 
+  if (!activeSource || activeSource.kind !== "uploaded") {
+    return false;
+  }
+
+  const uploadReadiness = getUploadedDesignStep1Readiness(
+    {
+      uploadReference: activeSource.uploadReference,
+      fabricCapacityComposition: activeSource.fabricCapacityComposition,
+      demographic: activeSource.demographic,
+    },
+    step1GarmentTypes,
+  );
+
   return Boolean(
-  activeSource &&
-    confirmedDesignSourceKey === activeSource.sourceKey &&
-    resolveActiveDesignComposition(activeSource, null).length > 0 &&
-    selectedFabricCode &&
-    selectedFabricCode === priceActivatedFabricCode,
+    uploadReadiness.isReady &&
+      confirmedDesignSourceKey === activeSource.sourceKey &&
+      selectedFabricCode &&
+      selectedFabricCode === priceActivatedFabricCode,
   );
 };
 
@@ -77,9 +98,3 @@ export const getPriceActivatedFabricCodeAfterDesignSourceChange = ({
   )
     ? currentPriceActivatedFabricCode || null
     : null;
-import type { DesignSource, StyleCategory } from "../types";
-import {
-  getConfirmedDesignSourceKeyAfterSourceChange,
-  resolveActiveDesignComposition,
-  resolveActiveDesignSource,
-} from "./designSourceState";

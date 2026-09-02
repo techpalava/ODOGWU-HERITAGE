@@ -57,11 +57,12 @@ import {
   setFutureMeasurementInput,
 } from "./src/utils/measurementBlueprint";
 import { resolveShippingGarmentPieceCount } from "./src/utils/shippingPricing";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import {
-  createEmptyAdditionalGarmentConstructionState,
+  cloneGarmentConstructionPricingResolution,
   reconcileAdditionalGarmentConstructionState,
 } from "./src/utils/additionalGarmentConstructionState";
+import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -497,17 +498,7 @@ assert.ok(
 
 const addition = createCatalogueAdditionalGarmentSelection({
   garmentType: "dress",
-  existingAssignments: [
-    {
-      garmentKey: "base:shirt",
-      code: "BASE_SHIRT",
-      garmentType: "shirt",
-      fabricUnits: 1,
-      garmentSpec: { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
-      sourceRole: "main",
-      dependencyStatus: "valid",
-    },
-  ],
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
 });
 assert.equal(addition.status, "resolved");
 if (addition.status !== "resolved") {
@@ -524,8 +515,22 @@ const additionalDress: FabricGarmentAssignment = {
   mainGarmentKey: addition.selection.mainGarmentKey,
   mainGarmentType: addition.selection.mainGarmentType,
 };
+const dressConstruction = resolveGarmentConstructionPricing(
+  "dress",
+  catalogInspection.activeOptions,
+);
+assert.equal(dressConstruction.status, "resolved");
+if (dressConstruction.status !== "resolved") {
+  throw new Error("expected dress construction pricing");
+}
 const additionalConstructions = reconcileAdditionalGarmentConstructionState({
-  existingState: createEmptyAdditionalGarmentConstructionState(),
+  existingState: {
+    schemaVersion: 1,
+    byGarmentKey: {
+      [additionalDress.garmentKey]:
+        cloneGarmentConstructionPricingResolution(dressConstruction),
+    },
+  },
   assignments: [additionalDress],
   normalizedCustomDetailCatalog: catalogInspection.activeOptions,
 });
@@ -576,9 +581,6 @@ const measurementPlan = planMeasurementRequirements({
   garmentTypeSelection: dressShirtSelection,
   physicalGarments: getMeasurementPhysicalGarments({
     garmentTypeSelection: dressShirtSelection,
-    fabricGarments: fabricAllocationState.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
   }),
   garmentScopedCustomDetails: dressShirtReconciliation.state,
 });
@@ -607,7 +609,9 @@ const basePricing = calculateDesignPricing({
   garmentTypeSelection: dressShirtSelection,
 });
 const summary = projectFutureDesignStudioSummary({
+  step1GarmentTypeSelection: dressShirtSelection,
   garmentTypeSelection: dressShirtSelection,
+  designSourceKind: "catalogue",
   catalogInspection,
   fabricAllocationState,
   fabricCompletion,
@@ -678,6 +682,8 @@ const selectedDesignCents = Math.round(
 );
 const orderInput: FutureOrderCandidateBuildInput = {
   ...{
+    step1GarmentTypeSelection: dressShirtSelection,
+    designSourceKind: "catalogue",
     garmentTypeSelection: dressShirtSelection,
     catalogInspection,
     fabricAllocationState,

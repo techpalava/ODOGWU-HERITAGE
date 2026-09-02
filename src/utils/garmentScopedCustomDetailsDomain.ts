@@ -11,6 +11,7 @@ import type {
   GarmentScopedCustomDetailInputsV1,
   GarmentScopedCustomDetailsStateV1,
   GarmentTypeStepSelection,
+  FabricAllocationState,
   StyleCategory,
 } from "../types";
 import {
@@ -30,6 +31,8 @@ import {
   sortCustomDetailOptions,
 } from "./catalogHelpers";
 import { normalizePersistedGarmentTypeStepSelection } from "./garmentTypeStepState";
+import { isCanonicalPhysicalGarmentType } from "./garmentConstructionPricing";
+import { parseAdditionalGarmentTypeFromKey } from "./designSourceState";
 import {
   cloneGarmentScopedCustomDetailsState,
   createEmptyGarmentScopedCustomDetailsState,
@@ -167,6 +170,70 @@ export interface CompatibleGarmentScopedCopySource {
   role: "main" | "additional";
 }
 
+/**
+ * Projects authorized Step 4 additional garments for live journey UI.
+ * Membership comes from the construction ledger only; Fabric may enrich
+ * committed assignment metadata but must not create new members.
+ */
+export const projectAuthorizedAdditionalGarmentAssignments = ({
+  additionalGarmentConstructions,
+  fabricAllocationState,
+}: {
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1 | null;
+  fabricAllocationState?: FabricAllocationState | null;
+}): FabricGarmentAssignment[] => {
+  const fabricByKey = new Map<string, FabricGarmentAssignment>();
+  fabricAllocationState?.fabricAllocations.forEach((allocation) =>
+    allocation.garmentAssignments.forEach((assignment) => {
+      if (
+        assignment.sourceRole === "additional" &&
+        assignment.dependencyStatus !== "orphaned"
+      ) {
+        fabricByKey.set(assignment.garmentKey, assignment);
+      }
+    }),
+  );
+
+  return Object.keys(additionalGarmentConstructions?.byGarmentKey || {})
+    .sort((left, right) => left.localeCompare(right))
+    .flatMap((garmentKey) => {
+      const construction =
+        additionalGarmentConstructions?.byGarmentKey[garmentKey];
+      const garmentType =
+        construction?.garmentType &&
+        isCanonicalPhysicalGarmentType(construction.garmentType)
+          ? construction.garmentType
+          : parseAdditionalGarmentTypeFromKey(garmentKey);
+      if (!garmentType) return [];
+      const fromFabric = fabricByKey.get(garmentKey);
+      if (fromFabric) {
+        return [{ ...fromFabric }];
+      }
+      const spec = createStyleBaseGarmentSpec(garmentType);
+      return [
+        {
+          garmentKey,
+          code: `ADDITIONAL_${garmentType.toUpperCase()}`,
+          garmentType,
+          fabricUnits: spec.fabricUnits,
+          sourceRole: "additional" as const,
+          garmentSpec: {
+            key: garmentKey,
+            garmentType,
+            fabricUnits: spec.fabricUnits,
+          },
+        },
+      ];
+    });
+};
+
+export const resolveAuthorizedAdditionalGarmentParentKeys = (
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1 | null,
+): readonly string[] =>
+  Object.keys(additionalGarmentConstructions?.byGarmentKey || {}).sort(
+    (left, right) => left.localeCompare(right),
+  );
+
 export const resolveCompatibleGarmentScopedCopySources = (
   subjects: readonly FutureCustomDetailPhysicalSubject[],
   garmentType: CanonicalPhysicalGarmentType,
@@ -283,42 +350,45 @@ export const resolveFutureCustomDetailPhysicalSubjects = (
     });
   });
 
-  (options.additionalGarments || []).forEach((assignment, assignmentIndex) => {
-    if (
-      assignment.sourceRole !== "additional" ||
-      assignment.dependencyStatus === "orphaned" ||
-      assignment.garmentType === "other"
-    ) {
+  (options.additionalGarmentConstructions?.byGarmentKey
+    ? Object.keys(options.additionalGarmentConstructions.byGarmentKey)
+    : []
+  ).forEach((garmentKey, assignmentIndex) => {
+    const construction =
+      options.additionalGarmentConstructions?.byGarmentKey[garmentKey];
+    const parentGarmentType =
+      construction?.garmentType &&
+      isCanonicalPhysicalGarmentType(construction.garmentType)
+        ? construction.garmentType
+        : garmentKey.startsWith("additional:")
+          ? parseAdditionalGarmentTypeFromKey(garmentKey)
+          : null;
+    if (!parentGarmentType || !isCanonicalPhysicalGarmentType(parentGarmentType)) {
       return;
     }
-    const parentGarmentType = assignment.garmentType as CanonicalPhysicalGarmentType;
     const components = resolveCustomDetailPhysicalComponents({
-      parentGarmentKey: assignment.garmentKey,
+      parentGarmentKey: garmentKey,
       garmentType: parentGarmentType,
     });
     if (components.status !== "resolved") {
       diagnostics.push({
         code: "invalid_physical_component_configuration",
-        garmentKey: assignment.garmentKey,
+        garmentKey,
         detail: components.code,
       });
       return;
     }
-    const construction =
-      options.additionalGarmentConstructions?.byGarmentKey[
-        assignment.garmentKey
-      ];
     if (!construction || construction.status !== "resolved") {
       diagnostics.push({
         code: "construction_unresolved",
-        garmentKey: assignment.garmentKey,
+        garmentKey,
         detail: "missing_additional_garment_construction",
       });
     }
     components.components.forEach((component) => {
       subjects.push({
         garmentKey: component.garmentKey,
-        parentGarmentKey: assignment.garmentKey,
+        parentGarmentKey: garmentKey,
         parentGarmentType,
         garmentType: component.garmentType,
         garmentGroups: [...component.garmentGroups],

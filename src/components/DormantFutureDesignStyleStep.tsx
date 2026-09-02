@@ -25,7 +25,7 @@ import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
   getUploadedDesignCapacitySummary,
   getUploadedDesignRequiredStep1GarmentTypes,
-  getUploadedDesignStep1Readiness,
+  evaluateAuthoritativeUploadedDesignReadiness,
   UPLOADED_DESIGN_GARMENT_OPTIONS,
 } from "../utils/uploadedDesignStep1";
 import { CUSTOMER_DESIGN_IMAGE_MIME_TYPES } from "../services/customerDesignUploadReference";
@@ -204,11 +204,18 @@ export const DormantFutureDesignStyleStep = ({
         style: pendingAdaptableStyle.style,
       })
     : null;
-  const uploadReadiness = getUploadedDesignStep1Readiness({
-    uploadReference:
-      uploadedDesign.source?.uploadReference || uploadedDesign.reference,
-    fabricCapacityComposition: uploadedDesign.composition,
-    demographic: uploadedDesign.demographic,
+  const uploadReadiness = evaluateAuthoritativeUploadedDesignReadiness({
+    uploadInput: {
+      uploadReference:
+        uploadedDesign.source?.uploadReference || uploadedDesign.reference,
+      fabricCapacityComposition: uploadedDesign.composition,
+      demographic: uploadedDesign.demographic,
+    },
+    step1GarmentTypes: garmentTypeSelection.garmentTypes,
+    designSource: uploadedDesign.source,
+    confirmedDesignSourceKey: uploadedDesign.isConfirmed
+      ? uploadedDesign.source?.sourceKey || null
+      : null,
   });
   const uploadCapacity = getUploadedDesignCapacitySummary(
     uploadedDesign.composition,
@@ -227,10 +234,10 @@ export const DormantFutureDesignStyleStep = ({
     !uploadBusy &&
     !uploadedDesign.error &&
     (uploadedSourceSelected
-      ? uploadReadiness.isReady &&
-        uploadedDesign.isConfirmed &&
-        uploadedDesign.isPricingActive
-      : catalogueReady && catalogueSelection?.status === "selected");
+      ? uploadReadiness.isProgressionReady
+      : selectedStyleId &&
+        catalogueReady &&
+        catalogueSelection?.status === "selected");
   const stageCompleteForAttribute = uploadedSourceSelected
     ? canContinueToCustomDetails
     : catalogueReady && catalogueSelection?.status === "selected";

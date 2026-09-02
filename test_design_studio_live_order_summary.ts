@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import type {
   AiTryOnWorkflowStateV1,
+  AdditionalGarmentConstructionStateV1,
   BusinessSettings,
   Fabric,
   FabricAllocationState,
@@ -65,8 +66,11 @@ import {
   reconcileFutureMeasurementState,
   setFutureMeasurementInput,
 } from "./src/utils/measurementBlueprint";
-import { createEmptyAdditionalGarmentConstructionState } from "./src/utils/additionalGarmentConstructionState";
-import { reconcileAdditionalGarmentConstructionState } from "./src/utils/additionalGarmentConstructionState";
+import {
+  cloneGarmentConstructionPricingResolution,
+  reconcileAdditionalGarmentConstructionState,
+} from "./src/utils/additionalGarmentConstructionState";
+import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const inspection = inspectCustomDetailCatalog(catalog);
@@ -142,6 +146,23 @@ const emptyAllocation = (): FabricAllocationState => ({
   pendingFabricGarment: null,
   awaitingFabricForPendingGarment: false,
 });
+
+const seedAuthorizedAdditionalConstructionState = (
+  assignments: FabricAllocationState["fabricAllocations"][number]["garmentAssignments"],
+) => {
+  const byGarmentKey: AdditionalGarmentConstructionStateV1["byGarmentKey"] = {};
+  assignments.forEach((assignment) => {
+    if (assignment.sourceRole !== "additional") return;
+    const base = resolveGarmentConstructionPricing(
+      assignment.garmentType,
+      catalog,
+    );
+    if (base.status !== "resolved") return;
+    byGarmentKey[assignment.garmentKey] =
+      cloneGarmentConstructionPricingResolution(base);
+  });
+  return { schemaVersion: 1 as const, byGarmentKey };
+};
 
 const allocationFor = (
   garmentTypes: GarmentTypeStepSelection["garmentTypes"],
@@ -248,6 +269,14 @@ const hiddenSection = (
   );
 };
 
+const constructionLine = (
+  view: ReturnType<typeof projectDesignStudioLiveOrderSummary>,
+  garmentKey: string,
+) =>
+  section(view, "construction").lines.find(
+    (line) => line.id === `construction-${garmentKey}`,
+  );
+
 const buildAuthority = ({
   garmentTypes = ["shirt"] as GarmentTypeStepSelection["garmentTypes"],
   demographic = "male" as NonNullable<GarmentTypeStepSelection["demographic"]>,
@@ -315,7 +344,7 @@ const buildAuthority = ({
       ),
   );
   const additionalConstruction = reconcileAdditionalGarmentConstructionState({
-    existingState: createEmptyAdditionalGarmentConstructionState(),
+    existingState: seedAuthorizedAdditionalConstructionState(additionalAssignments),
     assignments: additionalAssignments,
     normalizedCustomDetailCatalog: catalog,
   });
@@ -355,9 +384,6 @@ const buildAuthority = ({
     garmentTypeSelection,
     physicalGarments: getMeasurementPhysicalGarments({
       garmentTypeSelection,
-      fabricGarments: allocation.fabricAllocations.flatMap(
-        (item) => item.garmentAssignments,
-      ),
     }),
     garmentScopedCustomDetails:
       customDetailsReconciliation?.state ||
@@ -404,7 +430,15 @@ const buildAuthority = ({
         })
       : null;
   const summaryInput = {
+    step1GarmentTypeSelection: garmentTypeSelection,
     garmentTypeSelection,
+    designSourceKind: "catalogue" as const,
+    uploadedCompositionSpecs: null,
+    additionalGarmentConstructionState: additionalConstruction.state,
+    pendingAdditionalGarment:
+      allocation.pendingFabricGarment?.sourceRole === "additional"
+        ? allocation.pendingFabricGarment
+        : null,
     catalogInspection: inspection,
     fabricAllocationState: allocation,
     fabricCompletion,
@@ -776,6 +810,7 @@ const extraSelection = createAdditionalGarmentSelection({
   existingAssignments: multiFabric.allocation.fabricAllocations.flatMap(
     (item) => item.garmentAssignments,
   ),
+  authorizedOccurrenceKeys: [],
 });
 assert.equal(extraSelection.status, "resolved");
 if (extraSelection.status !== "resolved") {
@@ -803,13 +838,12 @@ const extraCommitted = buildAuthority({
   demographic: "unisex",
   fabricAllocationState: withExtraAllocation,
 });
-const extraLine = section(extraCommitted.view, "optional_extras").lines.find(
-  (line) => line.id === extraKeys[0],
-);
-assert.ok(extraLine, "committed extra garment must appear");
-assert.equal(extraLine.id, extraKeys[0]);
+const extraLine = constructionLine(extraCommitted.view, extraKeys[0]);
+assert.ok(extraLine, "committed extra garment must appear in construction rows");
+assert.equal(extraLine.id, `construction-${extraKeys[0]}`);
 assert.match(extraLine.label, /Shirt/);
-assert.match(extraLine.detail || "", /Imperial Sapphire Link|Royal Forest Mosaic/);
+assert.match(extraLine.detail || "", /Standard|Shirt|Construction/i);
+hiddenSection(extraCommitted.view, "optional_extras");
 const extraConstruction =
   extraCommitted.additionalConstruction.state.byGarmentKey[extraKeys[0]];
 assert.equal(extraConstruction?.status, "resolved");
@@ -845,6 +879,7 @@ const extraSelection2 = createAdditionalGarmentSelection({
   existingAssignments: withExtraAllocation.fabricAllocations.flatMap(
     (item) => item.garmentAssignments,
   ),
+  authorizedOccurrenceKeys: extraKeys,
 });
 assert.equal(extraSelection2.status, "resolved");
 if (extraSelection2.status !== "resolved") {
@@ -873,12 +908,17 @@ const twoExtras = buildAuthority({
   demographic: "unisex",
   fabricAllocationState: withTwoExtraAllocation,
 });
-const twoExtraLines = section(twoExtras.view, "optional_extras").lines;
-assert.equal(twoExtraLines.length, 2);
-assert.equal(twoExtraLines[0]?.id, "additional:shirt:1");
-assert.equal(twoExtraLines[1]?.id, "additional:shirt:2");
-assert.equal(twoExtraLines[0]?.label, "Shirt 1");
-assert.equal(twoExtraLines[1]?.label, "Shirt 2");
+const twoExtraLines = [
+  constructionLine(twoExtras.view, "additional:shirt:1"),
+  constructionLine(twoExtras.view, "additional:shirt:2"),
+];
+assert.ok(twoExtraLines[0]);
+assert.ok(twoExtraLines[1]);
+assert.equal(twoExtraLines[0]?.id, "construction-additional:shirt:1");
+assert.equal(twoExtraLines[1]?.id, "construction-additional:shirt:2");
+assert.match(twoExtraLines[0]?.label || "", /Shirt/);
+assert.match(twoExtraLines[1]?.label || "", /Shirt/);
+hiddenSection(twoExtras.view, "optional_extras");
 const firstExtraConstruction =
   twoExtras.additionalConstruction.state.byGarmentKey["additional:shirt:1"];
 const secondExtraConstruction =
@@ -899,8 +939,8 @@ assert.equal(
   twoExtraLines[1]?.amountLabel,
   `€${(secondExtraConstruction.totalPriceCents / 100).toFixed(2)}`,
 );
-assert.match(twoExtraLines[0]?.detail || "", /Imperial Sapphire Link|Royal Forest Mosaic/);
-assert.match(twoExtraLines[1]?.detail || "", /Golden Heritage Weave/);
+assert.match(twoExtraLines[0]?.detail || "", /Standard|Shirt|Construction/i);
+assert.match(twoExtraLines[1]?.detail || "", /Standard|Shirt|Construction/i);
 
 const extraRemoved = buildAuthority({
   garmentTypes: ["shirt", "trouser", "dress"],
@@ -1293,9 +1333,7 @@ assert.equal(
   full.view.totalAmountCents,
   full.shippingResolution.projectedTotalCents,
 );
-const fullExtraLine = section(full.view, "optional_extras").lines.find(
-  (line) => line.id === extraKeys[0],
-);
+const fullExtraLine = constructionLine(full.view, extraKeys[0]);
 const fullExtraConstruction =
   full.additionalConstruction.state.byGarmentKey[extraKeys[0]];
 assert.ok(fullExtraLine);
@@ -1374,7 +1412,6 @@ assert.deepEqual(
   ),
   [
     "construction",
-    "optional_extras",
     "additional_clothes",
     "fabrics",
     "design_style",
@@ -1382,8 +1419,11 @@ assert.deepEqual(
     "delivery",
   ],
 );
-assert.equal(section(manyItems.view, "construction").lines.length >= 3, true);
-assert.equal(section(manyItems.view, "optional_extras").lines.length, 2);
+assert.equal(section(manyItems.view, "construction").lines.length >= 5, true);
+assert.equal(
+  manyItems.view.sections.some((sectionItem) => sectionItem.id === "optional_extras"),
+  false,
+);
 assert.ok(
   section(manyItems.view, "additional_clothes").lines.some(
     (line) => line.id === dressOccurrence.occurrenceKey,
@@ -1442,6 +1482,6 @@ assert.doesNotMatch(helperSource, /resolveStep8AdditionalDelivery\(/);
 assert.match(helperSource, /projectFutureDesignStudioSummary|FutureDesignStudioSummary/);
 assert.match(helperSource, /getStep8OrderSummaryRows/);
 assert.match(helperSource, /LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL/);
-assert.match(helperSource, /totalPriceCents/);
+assert.match(helperSource, /constructionTotalCents/);
 
 console.log("test_design_studio_live_order_summary.ts: all assertions passed");

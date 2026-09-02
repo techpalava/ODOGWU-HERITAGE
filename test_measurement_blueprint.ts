@@ -39,6 +39,7 @@ import {
 } from "./src/utils/measurementBlueprint";
 import { createDormantDesignStudioJourneyState } from "./src/utils/designStudioJourneyMode";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
+import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 
 const construction = (
@@ -200,10 +201,10 @@ assert.equal(
 
 const physicalGarments = getMeasurementPhysicalGarments({
   garmentTypeSelection: selection,
-  fabricGarments: [
-    { garmentKey: "shirt:1", garmentType: "shirt", code: "shirt", fabricUnits: 1 },
-    { garmentKey: "trouser:1", garmentType: "trouser", code: "trouser", fabricUnits: 1 },
-    { garmentKey: "skirt:1", garmentType: "skirt", code: "skirt", fabricUnits: 1 },
+  physicalOccurrences: [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "base:trouser", garmentType: "trouser" },
+    { garmentKey: "base:skirt", garmentType: "skirt" },
   ],
 });
 const lowPlan = planMeasurementRequirements({
@@ -745,5 +746,76 @@ assert.equal(
   setFutureMeasurementRoute(isolatedHydrated!, "low_risk").entered.shared[overlappingId]?.valueCm,
   state.entered.shared[overlappingId]?.valueCm,
 );
+
+// Partial Fabric assignment keeps authoritative measurement membership
+{
+  const shirtTrouserSelection: GarmentTypeStepSelection = {
+    garmentTypes: ["shirt", "trouser"],
+    demographic: "male",
+    constructionByGarment: {
+      shirt: construction("shirt", "shirt_std_short", "shirt_construction"),
+      trouser: construction("trouser", "trouser_rope", "trouser_fastening"),
+    },
+  };
+  const partialMembership = getMeasurementPhysicalGarments({
+    garmentTypeSelection: shirtTrouserSelection,
+    physicalOccurrences: [
+      {
+        garmentKey: createStyleBaseGarmentSpec("shirt").key,
+        garmentType: "shirt",
+      },
+      {
+        garmentKey: createStyleBaseGarmentSpec("trouser").key,
+        garmentType: "trouser",
+      },
+    ],
+  });
+  assert.deepEqual(
+    partialMembership.map((garment) => garment.garmentType).sort(),
+    ["shirt", "trouser"],
+  );
+}
+
+// Complete Fabric assignment keeps the same membership
+{
+  const shirtTrouserSelection: GarmentTypeStepSelection = {
+    garmentTypes: ["shirt", "trouser"],
+    demographic: "male",
+    constructionByGarment: {
+      shirt: construction("shirt", "shirt_std_short", "shirt_construction"),
+      trouser: construction("trouser", "trouser_rope", "trouser_fastening"),
+    },
+  };
+  const completeMembership = getMeasurementPhysicalGarments({
+    garmentTypeSelection: shirtTrouserSelection,
+    physicalOccurrences: [
+      { garmentKey: "base:shirt", garmentType: "shirt" },
+      { garmentKey: "base:trouser", garmentType: "trouser" },
+    ],
+  });
+  assert.deepEqual(
+    completeMembership.map((garment) => garment.garmentKey).sort(),
+    ["base:shirt", "base:trouser"],
+  );
+}
+
+// Orphan Fabric assignment must not become a measurement subject
+{
+  const shirtOnlySelection: GarmentTypeStepSelection = {
+    garmentTypes: ["shirt"],
+    demographic: "male",
+    constructionByGarment: {
+      shirt: construction("shirt", "shirt_std_short", "shirt_construction"),
+    },
+  };
+  const orphanSafeMembership = getMeasurementPhysicalGarments({
+    garmentTypeSelection: shirtOnlySelection,
+    physicalOccurrences: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+  });
+  assert.deepEqual(
+    orphanSafeMembership.map((garment) => garment.garmentKey),
+    ["base:shirt"],
+  );
+}
 
 console.log("PASS: authoritative measurement blueprint, planning, units, and state");

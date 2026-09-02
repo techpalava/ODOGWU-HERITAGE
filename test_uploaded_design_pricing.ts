@@ -120,6 +120,7 @@ const isUploadedPricingActive = (
     confirmedDesignSourceKey,
     selectedFabricCode,
     priceActivatedFabricCode,
+    step1GarmentTypes: ["shirt", "trouser"],
   });
 
 assert.equal(isUploadedPricingActive(null, null, null), false);

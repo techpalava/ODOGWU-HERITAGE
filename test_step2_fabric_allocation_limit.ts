@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import type { Fabric, FabricGarmentAssignment, FabricGarmentType } from "./src/types";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
+import {
+  cloneGarmentConstructionPricingResolution,
+} from "./src/utils/additionalGarmentConstructionState";
+import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
+import { buildAuthoritativePhysicalOccurrences } from "./src/utils/designSourceState";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
-  applyFutureFabricCardSelection,
   assignFutureFabricToGarment,
   assignFutureGarmentToExistingFabricAllocation,
   canCreatePhysicalFabricAllocation,
@@ -441,9 +445,7 @@ assert.equal(completionOf(fourOrdinary, repaired).isComplete, true);
 let additionalState = fourState;
 const additionalSelection = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
-  existingAssignments: additionalState.fabricAllocations.flatMap(
-    (allocation) => allocation.garmentAssignments,
-  ),
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt", "trouser"]),
 });
 assert.equal(additionalSelection.status, "resolved");
 if (additionalSelection.status !== "resolved") {
@@ -457,30 +459,59 @@ assert.equal(
   additionalState.pendingFabricGarment?.garmentKey,
   "additional:shirt:1",
 );
-assert.equal(planningOf(fourOrdinary, additionalState).requiredFabricQuantity, 3);
+assert.equal(
+  planningOf(fourOrdinary, additionalState).requiredFabricQuantity,
+  2,
+  "Pending Fabric without Step 4 authorization must not raise required fabric quantity.",
+);
+const fourSelection = createSelection(fourOrdinary);
+const shirtConstruction = resolveGarmentConstructionPricing("shirt", catalog);
+assert.equal(shirtConstruction.status, "resolved");
+if (shirtConstruction.status !== "resolved") {
+  throw new Error("Expected shirt construction pricing");
+}
+const authorizedOccurrences = buildAuthoritativePhysicalOccurrences({
+  sourceKind: "catalogue",
+  step1GarmentTypeSelection: fourSelection,
+  effectiveGarmentTypeSelection: fourSelection,
+  additionalGarmentConstructionState: {
+    schemaVersion: 1,
+    byGarmentKey: {
+      "additional:shirt:1":
+        cloneGarmentConstructionPricingResolution(shirtConstruction),
+    },
+  },
+});
+assert.equal(
+  getFutureGarmentFabricPlanning({
+    garmentTypeSelection: fourSelection,
+    fabricAllocationState: additionalState,
+    requiredPhysicalOccurrences: authorizedOccurrences,
+  }).requiredFabricQuantity,
+  3,
+  "Authorized additional garments raise fabric requirements even before assignment.",
+);
 assert.equal(
   canCreatePhysicalFabricAllocation({
     state: additionalState,
-    garmentTypeSelection: createSelection(fourOrdinary),
+    garmentTypeSelection: fourSelection,
   }),
-  true,
-  "An additional garment must raise the allocation ceiling.",
+  false,
+  "Legacy fabric ceiling ignores unauthorized pending garments.",
 );
-additionalState = applyFutureFabricCardSelection({
-  state: additionalState,
-  garmentTypeSelection: createSelection(fourOrdinary),
-  garmentKey: "additional:shirt:1",
-  fabricCode: "FAB-C",
-});
-assert.equal(planningOf(fourOrdinary, additionalState).selectedFabricQuantity, 3);
-assert.ok(
-  additionalState.fabricAllocations.some(
-    (allocation) =>
-      allocation.fabricCode === "FAB-C" &&
-      allocation.garmentAssignments.some(
-        (assignment) => assignment.garmentKey === "additional:shirt:1",
-      ),
-  ),
+assert.equal(
+  getFutureGarmentFabricPlanning({
+    garmentTypeSelection: fourSelection,
+    fabricAllocationState: additionalState,
+    requiredPhysicalOccurrences: authorizedOccurrences,
+  }).selectedFabricQuantity <
+    getFutureGarmentFabricPlanning({
+      garmentTypeSelection: fourSelection,
+      fabricAllocationState: additionalState,
+      requiredPhysicalOccurrences: authorizedOccurrences,
+    }).requiredFabricQuantity,
+  true,
+  "Authorized additional garments must leave room for another fabric allocation.",
 );
 
 const twoOrdinary = ["shirt", "trouser"] satisfies FabricGarmentType[];
@@ -820,5 +851,245 @@ assert.deepEqual(
     ),
   })),
 );
+
+// H1 A–J: authorized additional Shirt fills an existing base-Shirt partial allocation.
+{
+  const shirtOnly = ["shirt"] satisfies FabricGarmentType[];
+  const shirtSelection = createSelection(shirtOnly);
+  let shirtPartialState = assign(empty(), shirtOnly, "base:shirt", "FAB-A").state;
+  const shirtPartialSummary = getFuturePartialFabricAllocationSummaries({
+    fabricAllocationState: shirtPartialState,
+  }).find((summary) => summary.assignedGarmentKeys.includes("base:shirt"));
+  assert.ok(shirtPartialSummary);
+  assert.equal(shirtPartialSummary!.remainingUnits, 1);
+  const shirtConstruction = resolveGarmentConstructionPricing("shirt", catalog);
+  assert.equal(shirtConstruction.status, "resolved");
+  if (shirtConstruction.status !== "resolved") {
+    throw new Error("Expected shirt construction pricing");
+  }
+  const authorizedShirtOccurrences = buildAuthoritativePhysicalOccurrences({
+    sourceKind: "catalogue",
+    step1GarmentTypeSelection: shirtSelection,
+    effectiveGarmentTypeSelection: shirtSelection,
+    additionalGarmentConstructionState: {
+      schemaVersion: 1,
+      byGarmentKey: {
+        "additional:shirt:1": cloneGarmentConstructionPricingResolution(
+          shirtConstruction,
+        ),
+      },
+    },
+  });
+  assert.deepEqual(
+    getFuturePartialFabricAllocationCompatibleTargets({
+      garmentTypeSelection: shirtSelection,
+      fabricAllocationState: shirtPartialState,
+    }).map((entry) => ({
+      allocationId: entry.allocationId,
+      compatibleGarmentKeys: [...entry.compatibleGarmentKeys],
+    })),
+    [
+      {
+        allocationId: shirtPartialSummary!.allocationId,
+        compatibleGarmentKeys: [],
+      },
+    ],
+    "Without authority, additional shirts must not appear as partial targets.",
+  );
+  assert.deepEqual(
+    getFuturePartialFabricAllocationCompatibleTargets({
+      garmentTypeSelection: shirtSelection,
+      fabricAllocationState: shirtPartialState,
+      requiredPhysicalOccurrences: authorizedShirtOccurrences,
+    }).map((entry) => ({
+      allocationId: entry.allocationId,
+      compatibleGarmentKeys: [...entry.compatibleGarmentKeys],
+    })),
+    [
+      {
+        allocationId: shirtPartialSummary!.allocationId,
+        compatibleGarmentKeys: ["additional:shirt:1"],
+      },
+    ],
+  );
+  assert.deepEqual(
+    getFutureCompatiblePartialFabricAllocations({
+      garmentTypeSelection: shirtSelection,
+      fabricAllocationState: shirtPartialState,
+      garmentKey: "additional:shirt:1",
+      requiredPhysicalOccurrences: authorizedShirtOccurrences,
+    }).map((entry) => entry.allocationId),
+    [shirtPartialSummary!.allocationId],
+  );
+  const allocationCountBefore = shirtPartialState.fabricAllocations.length;
+  const stockBefore = planningOf(shirtOnly, shirtPartialState).selectedFabricQuantity;
+  const assignResult = assignFutureGarmentToExistingFabricAllocation({
+    state: shirtPartialState,
+    garmentTypeSelection: shirtSelection,
+    garmentKey: "additional:shirt:1",
+    allocationId: shirtPartialSummary!.allocationId,
+    requiredPhysicalOccurrences: authorizedShirtOccurrences,
+  });
+  assert.equal(assignResult.status, "assigned");
+  assert.equal(
+    assignResult.state.fabricAllocations.length,
+    allocationCountBefore,
+    "Filling a partial allocation must not create another physical Fabric allocation.",
+  );
+  assert.equal(
+    planningOf(shirtOnly, assignResult.state).selectedFabricQuantity,
+    stockBefore,
+    "Filling a partial allocation must not consume another stock unit.",
+  );
+  const filledAllocation = assignResult.state.fabricAllocations.find(
+    (allocation) => allocation.allocationId === shirtPartialSummary!.allocationId,
+  );
+  assert.deepEqual(
+    filledAllocation?.garmentAssignments.map((assignment) => assignment.garmentKey).sort(),
+    ["additional:shirt:1", "base:shirt"],
+  );
+  assert.equal(
+    getFuturePartialFabricAllocationSummaries({
+      fabricAllocationState: assignResult.state,
+    }).find((summary) => summary.allocationId === shirtPartialSummary!.allocationId)
+      ?.remainingUnits,
+    0,
+  );
+  const authorizedCompletion = getFutureFabricStageCompletion({
+    garmentTypeSelection: shirtSelection,
+    fabricAllocationState: assignResult.state,
+    fabrics,
+    requiredPhysicalOccurrences: authorizedShirtOccurrences,
+  });
+  assert.equal(authorizedCompletion.requiredGarmentCount, 2);
+  assert.equal(authorizedCompletion.assignedGarmentCount, 2);
+  assert.equal(authorizedCompletion.isComplete, true);
+}
+
+// H1 F: Gown requiring 2 units cannot enter a 1-unit partial remainder.
+{
+  const shirtGownTypes = ["shirt", "full_length_gown"] satisfies FabricGarmentType[];
+  const shirtGownSelection = createSelection(shirtGownTypes);
+  const shirtGownPartial = assign(empty(), shirtGownTypes, "base:shirt", "FAB-A").state;
+  const gownConstruction = resolveGarmentConstructionPricing(
+    "full_length_gown",
+    catalog,
+  );
+  assert.equal(gownConstruction.status, "resolved");
+  if (gownConstruction.status !== "resolved") {
+    throw new Error("Expected gown construction pricing");
+  }
+  const authorizedGownOccurrences = buildAuthoritativePhysicalOccurrences({
+    sourceKind: "catalogue",
+    step1GarmentTypeSelection: shirtGownSelection,
+    effectiveGarmentTypeSelection: shirtGownSelection,
+    additionalGarmentConstructionState: {
+      schemaVersion: 1,
+      byGarmentKey: {
+        "additional:full_length_gown:1": cloneGarmentConstructionPricingResolution(
+          gownConstruction,
+        ),
+      },
+    },
+  });
+  assert.deepEqual(
+    getFutureCompatiblePartialFabricAllocations({
+      garmentTypeSelection: shirtGownSelection,
+      fabricAllocationState: shirtGownPartial,
+      garmentKey: "additional:full_length_gown:1",
+      requiredPhysicalOccurrences: authorizedGownOccurrences,
+    }),
+    [],
+  );
+}
+
+// H1 G: orphan Fabric assignments are not partial-capacity targets.
+{
+  const shirtOnly = ["shirt"] satisfies FabricGarmentType[];
+  const shirtSelection = createSelection(shirtOnly);
+  const shirtPartialBase = assign(empty(), shirtOnly, "base:shirt", "FAB-A").state;
+  const shirtPartialSummary = getFuturePartialFabricAllocationSummaries({
+    fabricAllocationState: shirtPartialBase,
+  }).find((summary) => summary.assignedGarmentKeys.includes("base:shirt"));
+  assert.ok(shirtPartialSummary);
+  const orphanState = {
+    ...shirtPartialBase,
+    fabricAllocations: [
+      ...shirtPartialBase.fabricAllocations,
+      {
+        allocationId: "orphan-allocation",
+        fabricCode: "FAB-B",
+        garmentAssignments: [
+          {
+            garmentKey: "additional:full_length_gown:99",
+            code: "ADDITIONAL_GOWN",
+            garmentType: "full_length_gown",
+            fabricUnits: 2,
+            sourceRole: "additional",
+          } satisfies FabricGarmentAssignment,
+        ],
+      },
+    ],
+  };
+  const shirtConstruction = resolveGarmentConstructionPricing("shirt", catalog);
+  assert.equal(shirtConstruction.status, "resolved");
+  if (shirtConstruction.status !== "resolved") {
+    throw new Error("Expected shirt construction pricing");
+  }
+  const authoritativeOnlyBase = buildAuthoritativePhysicalOccurrences({
+    sourceKind: "catalogue",
+    step1GarmentTypeSelection: shirtSelection,
+    effectiveGarmentTypeSelection: shirtSelection,
+    additionalGarmentConstructionState: {
+      schemaVersion: 1,
+      byGarmentKey: {
+        "additional:shirt:1": cloneGarmentConstructionPricingResolution(
+          shirtConstruction,
+        ),
+      },
+    },
+  });
+  const compatibleTargets = getFuturePartialFabricAllocationCompatibleTargets({
+    garmentTypeSelection: shirtSelection,
+    fabricAllocationState: orphanState,
+    requiredPhysicalOccurrences: authoritativeOnlyBase,
+  });
+  const shirtPartialTargets = compatibleTargets.find(
+    (entry) => entry.allocationId === shirtPartialSummary!.allocationId,
+  );
+  assert.deepEqual(shirtPartialTargets?.compatibleGarmentKeys, ["additional:shirt:1"]);
+  assert.equal(
+    compatibleTargets.flatMap((entry) => entry.compatibleGarmentKeys).includes(
+      "additional:full_length_gown:99",
+    ),
+    false,
+    "Orphan Fabric rows must not broaden partial-capacity targets.",
+  );
+}
+
+// H1 H: final residual remains only when no authoritative compatible target remains.
+{
+  const threeOddSelection = createSelection(["shirt", "trouser", "skirt"]);
+  let oddResidual = assign(empty(), ["shirt", "trouser", "skirt"], "base:shirt", "FAB-A").state;
+  oddResidual = assign(oddResidual, ["shirt", "trouser", "skirt"], "base:trouser", "FAB-A").state;
+  oddResidual = assign(oddResidual, ["shirt", "trouser", "skirt"], "base:skirt", "FAB-B").state;
+  const skirtSummary = getFuturePartialFabricAllocationSummaries({
+    fabricAllocationState: oddResidual,
+  }).find((summary) => summary.assignedGarmentKeys.includes("base:skirt"));
+  assert.ok(skirtSummary);
+  assert.equal(
+    isFutureFinalPartialFabricAllocation({
+      garmentTypeSelection: threeOddSelection,
+      fabricAllocationState: oddResidual,
+      allocationId: skirtSummary!.allocationId,
+      requiredPhysicalOccurrences: buildAuthoritativePhysicalOccurrences({
+        sourceKind: "catalogue",
+        step1GarmentTypeSelection: threeOddSelection,
+        effectiveGarmentTypeSelection: threeOddSelection,
+      }),
+    }),
+    true,
+  );
+}
 
 console.log("test_step2_fabric_allocation_limit: ok");

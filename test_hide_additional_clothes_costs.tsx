@@ -453,9 +453,6 @@ const measurementPlan = planMeasurementRequirements({
   garmentTypeSelection,
   physicalGarments: getMeasurementPhysicalGarments({
     garmentTypeSelection,
-    fabricGarments: fabricAllocationState.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
   }),
   garmentScopedCustomDetails: reconciliation.state,
 });
@@ -541,7 +538,9 @@ const aiTryOnWorkflow: AiTryOnWorkflowStateV1 = {
 };
 
 const summaryAuthority = {
+  step1GarmentTypeSelection: garmentTypeSelection,
   garmentTypeSelection,
+  designSourceKind: "catalogue" as const,
   catalogInspection,
   fabricAllocationState,
   fabricCompletion,

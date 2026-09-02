@@ -252,10 +252,13 @@ await act(async () => {
   styleRenderer = create(renderStyleStep({ selectedStyleId: null }));
 });
 assert.equal(
-  styleRenderer.root.findByProps({
-    "data-testid": "future-design-style-continue-action",
-  }).props["data-docked"],
+  Boolean(
+    styleRenderer.root.findByProps({
+      "data-testid": "future-design-style-continue-action",
+    }).props["data-docked"],
+  ),
   false,
+  "Design Style must not dock before a catalogue style is selected.",
 );
 
 await act(async () => {
@@ -283,9 +286,11 @@ await act(async () => {
   );
 });
 assert.equal(
-  styleRenderer.root.findByProps({
-    "data-testid": "future-design-style-continue-action",
-  }).props["data-docked"],
+  Boolean(
+    styleRenderer.root.findByProps({
+      "data-testid": "future-design-style-continue-action",
+    }).props["data-docked"],
+  ),
   false,
   "An uploaded source must not dock before Fabric activation is confirmed.",
 );
@@ -320,9 +325,11 @@ await act(async () => {
   );
 });
 assert.equal(
-  styleRenderer.root.findByProps({
-    "data-testid": "future-design-style-continue-action",
-  }).props["data-docked"],
+  Boolean(
+    styleRenderer.root.findByProps({
+      "data-testid": "future-design-style-continue-action",
+    }).props["data-docked"],
+  ),
   false,
   "A pending uploaded-design deletion must suppress the docked action.",
 );

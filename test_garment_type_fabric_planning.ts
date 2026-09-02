@@ -3,11 +3,15 @@ import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { STEP_1_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
 import { FabricCapacityEngine } from "./src/engine/FabricCapacityEngine";
 import type {
+  AdditionalGarmentConstructionStateV1,
   FabricAllocationState,
   FabricGarmentAssignment,
   FabricGarmentType,
 } from "./src/types";
+import { cloneGarmentConstructionPricingResolution } from "./src/utils/additionalGarmentConstructionState";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
+import { buildAuthoritativePhysicalOccurrences } from "./src/utils/designSourceState";
+import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
 import {
   formatRequiredFabricQuantitySentence,
   getFutureFabricGarmentSelections,
@@ -41,6 +45,40 @@ const emptyState = (): FabricAllocationState => ({
   pendingFabricGarment: null,
   awaitingFabricForPendingGarment: false,
 });
+
+const additionalConstructionEntry = (garmentType: FabricGarmentType) => {
+  const pricing = resolveGarmentConstructionPricing(garmentType, catalog);
+  assert.equal(pricing.status, "resolved");
+  return cloneGarmentConstructionPricingResolution(pricing);
+};
+
+const buildAuthorizedAdditionalState = (
+  entries: Array<{ garmentKey: string; garmentType: FabricGarmentType }>,
+): AdditionalGarmentConstructionStateV1 => ({
+  schemaVersion: 1,
+  byGarmentKey: Object.fromEntries(
+    entries.map(({ garmentKey, garmentType }) => [
+      garmentKey,
+      additionalConstructionEntry(garmentType),
+    ]),
+  ),
+});
+
+const buildAuthoritativeOccurrences = ({
+  garmentTypes,
+  additionalGarmentConstructionState = null,
+}: {
+  garmentTypes: FabricGarmentType[];
+  additionalGarmentConstructionState?: AdditionalGarmentConstructionStateV1 | null;
+}) => {
+  const garmentTypeSelection = createSelection(garmentTypes);
+  return buildAuthoritativePhysicalOccurrences({
+    sourceKind: "catalogue",
+    step1GarmentTypeSelection: garmentTypeSelection,
+    effectiveGarmentTypeSelection: garmentTypeSelection,
+    additionalGarmentConstructionState,
+  });
+};
 
 const regularPlanning = getFutureGarmentFabricPlanning({
   garmentTypeSelection: createSelection([
@@ -90,6 +128,7 @@ assert.deepEqual(kaftanWithGown, {
   selectedFabricQuantity: 0,
 });
 
+const shirtTrouserSelection = createSelection(["shirt", "trouser"]);
 const mainAssignments = resolveBaseAssignments(["shirt", "trouser"]);
 const appendedKaftan: FabricGarmentAssignment = {
   garmentKey: "additional:kaftan:1",
@@ -105,6 +144,33 @@ const pendingSkirt: FabricGarmentAssignment = {
   fabricUnits: 1,
   sourceRole: "additional",
 };
+const fourGarmentAdditionalState = buildAuthorizedAdditionalState([
+  { garmentKey: "additional:kaftan:1", garmentType: "kaftan" },
+  { garmentKey: "additional:skirt:1", garmentType: "skirt" },
+]);
+const fourGarmentOccurrences = buildAuthoritativeOccurrences({
+  garmentTypes: ["shirt", "trouser"],
+  additionalGarmentConstructionState: fourGarmentAdditionalState,
+});
+assert.deepEqual(
+  fourGarmentOccurrences.map((occurrence) => occurrence.garmentKey).sort(),
+  [
+    "additional:kaftan:1",
+    "additional:skirt:1",
+    "base:shirt",
+    "base:trouser",
+  ],
+);
+const kaftanOnlyAdditionalState = buildAuthorizedAdditionalState([
+  { garmentKey: "additional:kaftan:1", garmentType: "kaftan" },
+]);
+const threeGarmentOccurrences = buildAuthoritativeOccurrences({
+  garmentTypes: ["shirt", "trouser"],
+  additionalGarmentConstructionState: kaftanOnlyAdditionalState,
+});
+const twoGarmentOccurrences = buildAuthoritativeOccurrences({
+  garmentTypes: ["shirt", "trouser"],
+});
 const allocationState: FabricAllocationState = {
   fabricAllocations: [
     {
@@ -123,8 +189,9 @@ const allocationState: FabricAllocationState = {
   awaitingFabricForPendingGarment: true,
 };
 const appendedPlanning = getFutureGarmentFabricPlanning({
-  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+  garmentTypeSelection: shirtTrouserSelection,
   fabricAllocationState: allocationState,
+  requiredPhysicalOccurrences: fourGarmentOccurrences,
 });
 assert.deepEqual(appendedPlanning, {
   requiredGarmentCount: 4,
@@ -137,20 +204,88 @@ assert.equal(
   "Two allocation IDs using the same fabric product must count as two selected fabrics.",
 );
 
-const removedPlanning = getFutureGarmentFabricPlanning({
-  garmentTypeSelection: createSelection(["shirt", "trouser"]),
+const fabricRemovedPlanning = getFutureGarmentFabricPlanning({
+  garmentTypeSelection: shirtTrouserSelection,
   fabricAllocationState: {
     ...allocationState,
     fabricAllocations: [allocationState.fabricAllocations[0]],
     pendingFabricGarment: null,
     awaitingFabricForPendingGarment: false,
   },
+  requiredPhysicalOccurrences: fourGarmentOccurrences,
 });
-assert.deepEqual(removedPlanning, {
+assert.deepEqual(
+  fabricRemovedPlanning,
+  {
+    requiredGarmentCount: 4,
+    requiredFabricQuantity: 2,
+    selectedFabricQuantity: 1,
+  },
+  "Fabric removal must not remove Step 4 authorized physical membership.",
+);
+
+const explicitGarmentRemovalPlanning = getFutureGarmentFabricPlanning({
+  garmentTypeSelection: shirtTrouserSelection,
+  fabricAllocationState: {
+    fabricAllocations: [allocationState.fabricAllocations[0]],
+    activeAllocationId: "fabric-selection-1",
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  },
+  requiredPhysicalOccurrences: twoGarmentOccurrences,
+});
+assert.deepEqual(explicitGarmentRemovalPlanning, {
   requiredGarmentCount: 2,
   requiredFabricQuantity: 1,
   selectedFabricQuantity: 1,
 });
+
+const pendingOnlyPlanning = getFutureGarmentFabricPlanning({
+  garmentTypeSelection: shirtTrouserSelection,
+  fabricAllocationState: allocationState,
+  requiredPhysicalOccurrences: threeGarmentOccurrences,
+});
+assert.deepEqual(
+  pendingOnlyPlanning,
+  {
+    requiredGarmentCount: 3,
+    requiredFabricQuantity: 2,
+    selectedFabricQuantity: 2,
+  },
+  "Pending Fabric without Step 4 authorization must not increase membership.",
+);
+
+const fabricOnlyKaftanState: FabricAllocationState = {
+  fabricAllocations: [
+    {
+      allocationId: "fabric-selection-1",
+      fabricCode: "ODG-001",
+      garmentAssignments: mainAssignments,
+    },
+    {
+      allocationId: "fabric-selection-2",
+      fabricCode: "ODG-001",
+      garmentAssignments: [appendedKaftan],
+    },
+  ],
+  activeAllocationId: "fabric-selection-2",
+  pendingFabricGarment: null,
+  awaitingFabricForPendingGarment: false,
+};
+const fabricOnlyPlanning = getFutureGarmentFabricPlanning({
+  garmentTypeSelection: shirtTrouserSelection,
+  fabricAllocationState: fabricOnlyKaftanState,
+  requiredPhysicalOccurrences: twoGarmentOccurrences,
+});
+assert.deepEqual(
+  fabricOnlyPlanning,
+  {
+    requiredGarmentCount: 2,
+    requiredFabricQuantity: 1,
+    selectedFabricQuantity: 2,
+  },
+  "Fabric-only additional assignments must not become authoritative membership.",
+);
 
 const assertPlanning = (
   garmentTypes: FabricGarmentType[],

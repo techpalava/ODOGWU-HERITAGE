@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { FutureFabricCatalogueCard } from "./src/components/FutureFabricCatalogueCard";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import {
   canCancelPendingForAdditionalGarmentTransaction,
   confirmAdditionalGarmentFabricAssignment,
@@ -65,9 +65,7 @@ const withBaseShirt = (): FabricAllocationState => {
   const state = withBaseShirt();
   const valid = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
   });
   assert.equal(valid.status, "resolved");
   const parked = FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(
@@ -150,9 +148,7 @@ const withBaseShirt = (): FabricAllocationState => {
 
   const first = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
   });
   assert.equal(first.status, "resolved");
   let committed = FabricAllocationStateEngine.attemptAppendGarment(
@@ -172,9 +168,7 @@ const withBaseShirt = (): FabricAllocationState => {
   );
   const second = createCatalogueAdditionalGarmentSelection({
     garmentType: "trouser",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
   });
   assert.equal(second.status, "resolved");
   const conflicting =
@@ -203,22 +197,24 @@ const withBaseShirt = (): FabricAllocationState => {
 // --- Capacity confirmation ---
 {
   let state = withBaseShirt();
+  const authorizedCapacityKeys: string[] = [];
   const firstExtra = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
+    authorizedOccurrenceKeys: authorizedCapacityKeys,
   });
   assert.equal(firstExtra.status, "resolved");
+  const firstKey = firstExtra.selection.garmentSpec!.key;
+  assert.ok(firstKey);
+  authorizedCapacityKeys.push(firstKey);
   state = FabricAllocationStateEngine.attemptAppendGarment(
     state,
     firstExtra.selection,
   );
   const extra = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
+    authorizedOccurrenceKeys: authorizedCapacityKeys,
   });
   assert.equal(extra.status, "resolved");
   const key = extra.selection.garmentSpec!.key;
@@ -506,9 +502,7 @@ const withBaseShirt = (): FabricAllocationState => {
   const state = withBaseShirt();
   const valid = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
   });
   assert.equal(valid.status, "resolved");
 

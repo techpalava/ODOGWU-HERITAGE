@@ -17,6 +17,10 @@ import {
   type FutureDesignStudioSummaryBlocker,
   type FutureDesignStudioSummaryInput,
 } from "./designStudioFutureSummary";
+import {
+  validateFinalPhysicalOccurrenceAssignmentParity,
+  validateRawFabricAssignments,
+} from "./designSourceState";
 import { projectActiveFutureMeasurementState } from "./measurementBlueprint";
 import {
   isStep8CustomerSelectableCountry,
@@ -550,6 +554,7 @@ const INVALID_CONTENT_CODES = new Set([
   "PRICING_INVALID",
   "SHIPPING_INVALID",
   "MALFORMED_SHIPPING",
+  "PHYSICAL_OCCURRENCE_MISMATCH",
 ]);
 
 export const buildFutureOrderCandidate = (
@@ -579,11 +584,7 @@ export const buildFutureOrderCandidate = (
       message: "Select the Design Style again before reviewing the order.",
     });
   }
-  const physicalGarmentCount = new Set(
-    input.fabricAllocationState.fabricAllocations.flatMap((allocation) =>
-      allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
-    ),
-  ).size;
+  const physicalGarmentCount = summary.garmentSummary.length;
   const shippingGarmentCount =
     input.shippingResolution.state.quoteReference?.garmentCount;
   if (
@@ -616,31 +617,48 @@ export const buildFutureOrderCandidate = (
     ]),
   );
   const garments: FutureOrderCandidateGarmentV1[] = summary.garmentSummary.map(
-    (garment) => {
-      const resolved = input.garmentTypeSelection.constructionByGarment[
-        garment.garmentType
-      ];
-      const selectionGroupByComponent = new Map(
-        resolved?.status === "resolved"
-          ? resolved.components.map((component) => [
-              component.componentKey,
-              component.selectionGroup,
-            ])
-          : [],
-      );
-      return {
-        ...garment,
-        physicalComponents: garment.physicalComponents.map((component) => ({
-          ...component,
-        })),
-        construction: garment.construction.map((component) => ({
-          ...component,
-          selectionGroup:
-            selectionGroupByComponent.get(component.componentKey) || "unknown",
-        })),
-      };
-    },
+    (garment) => ({
+      ...garment,
+      physicalComponents: garment.physicalComponents.map((component) => ({
+        ...component,
+      })),
+      construction: garment.construction.map((component) => ({
+        componentKey: component.componentKey,
+        selectionGroup: component.selectionGroup,
+        optionId: component.optionId,
+        label: component.label,
+        priceCents: component.priceCents,
+      })),
+    }),
   );
+  const authoritativeOccurrenceKeys = summary.garmentSummary.map(
+    (garment) => garment.garmentKey,
+  );
+  const rawIntegrity = validateRawFabricAssignments({
+    authoritativeOccurrenceKeys: new Set(authoritativeOccurrenceKeys),
+    fabricAllocationState: input.fabricAllocationState,
+  });
+  if (rawIntegrity.diagnostics.length > 0) {
+    blockers.push({
+      code: "PHYSICAL_OCCURRENCE_MISMATCH",
+      stage: "garment_type",
+      message:
+        "Physical garment rows do not match the authoritative Fabric assignments.",
+    });
+  } else if (input.fabricCompletion.isComplete) {
+    const parityDiagnostics = validateFinalPhysicalOccurrenceAssignmentParity({
+      authoritativeOccurrenceKeys,
+      fabricAllocationState: input.fabricAllocationState,
+    });
+    if (parityDiagnostics.length > 0) {
+      blockers.push({
+        code: "PHYSICAL_OCCURRENCE_MISMATCH",
+        stage: "garment_type",
+        message:
+          "Physical garment rows do not match the authoritative Fabric assignments.",
+      });
+    }
+  }
   const fabricAllocations: FutureOrderCandidateFabricAllocationV1[] =
     summary.fabricSummary.map((fabric) => {
       const line = pricingByAllocation.get(fabric.allocationId);

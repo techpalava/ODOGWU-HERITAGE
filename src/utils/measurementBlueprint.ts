@@ -14,12 +14,22 @@ import {
   calculateMeasurementFromAverageFactor,
   isManualValueOutsideExpectedRange,
 } from "./measurementFactorEngine";
+import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
+import {
+  projectAuthoritativePhysicalOccurrences,
+  resolveActiveDesignSource,
+  resolveAuthoritativePhysicalOrder,
+} from "./designSourceState";
+import { buildEffectiveUploadedJourneyGarmentTypeSelection } from "./uploadedDesignStep1";
 import type {
   AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
   CanonicalPhysicalGarmentType,
-  FabricGarmentAssignment,
+  CustomDetailOption,
+  DesignSource,
+  FabricAllocationState,
   FabricGarmentType,
+  StyleCategory,
   FutureMeasurementDiagnostic,
   FutureMeasurementEnteredBagV1,
   FutureMeasurementEnteredByRouteV1,
@@ -172,22 +182,90 @@ export type MeasurementProfileResolution =
 
 export const getMeasurementPhysicalGarments = ({
   garmentTypeSelection,
-  fabricGarments,
+  physicalOccurrences,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
-  fabricGarments?: readonly FabricGarmentAssignment[];
+  physicalOccurrences?: readonly {
+    garmentKey: string;
+    garmentType: FabricGarmentType;
+  }[];
 }): MeasurementPhysicalGarment[] => {
-  const source = fabricGarments?.length
-    ? fabricGarments.map(({ garmentKey, garmentType }) => ({ garmentKey, garmentType }))
-    : garmentTypeSelection.garmentTypes.map((garmentType) => ({
-        garmentKey: `main:${garmentType}:0`,
-        garmentType,
-      }));
+  const source =
+    physicalOccurrences && physicalOccurrences.length > 0
+      ? physicalOccurrences.map(({ garmentKey, garmentType }) => ({
+          garmentKey,
+          garmentType,
+        }))
+      : garmentTypeSelection.garmentTypes.map((garmentType) => {
+          const spec = createStyleBaseGarmentSpec(garmentType);
+          return { garmentKey: spec.key, garmentType };
+        });
   const seen = new Set<string>();
   return source.filter(({ garmentKey }) => {
     if (!garmentKey || seen.has(garmentKey)) return false;
     seen.add(garmentKey);
     return true;
+  });
+};
+
+export const resolveHydratedMeasurementPhysicalGarments = ({
+  garmentTypeSelection,
+  designSource,
+  selectedStyle,
+  confirmedDesignSourceKey,
+  normalizedCustomDetailCatalog,
+  fabricAllocationState,
+  additionalGarmentConstructionState,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  designSource?: DesignSource | null;
+  selectedStyle?: StyleCategory | null;
+  confirmedDesignSourceKey?: string | null;
+  normalizedCustomDetailCatalog?: readonly CustomDetailOption[];
+  fabricAllocationState?: FabricAllocationState | null;
+  additionalGarmentConstructionState?: AdditionalGarmentConstructionStateV1 | null;
+}): MeasurementPhysicalGarment[] => {
+  const authoritativePhysicalOrder = resolveAuthoritativePhysicalOrder({
+    garmentTypeSelection,
+    designSource,
+    selectedStyle,
+    confirmedDesignSourceKey,
+    normalizedCustomDetailCatalog,
+    fabricAllocationState,
+    additionalGarmentConstructionState,
+  });
+  if (authoritativePhysicalOrder.status === "resolved") {
+    return getMeasurementPhysicalGarments({
+      garmentTypeSelection:
+        authoritativePhysicalOrder.effectiveGarmentTypeSelection,
+      physicalOccurrences: authoritativePhysicalOrder.physicalOccurrences,
+    });
+  }
+
+  const activeSource = resolveActiveDesignSource(designSource, selectedStyle);
+  const uploadedCompositionSpecs =
+    activeSource?.kind === "uploaded"
+      ? activeSource.fabricCapacityComposition
+      : null;
+  const effectiveGarmentTypeSelection =
+    authoritativePhysicalOrder.sourceKind === "uploaded" &&
+    uploadedCompositionSpecs
+      ? buildEffectiveUploadedJourneyGarmentTypeSelection({
+          step1Selection: garmentTypeSelection,
+          uploadedComposition: uploadedCompositionSpecs,
+          normalizedCustomDetailCatalog: normalizedCustomDetailCatalog || [],
+        })
+      : garmentTypeSelection;
+  const physicalOccurrences = projectAuthoritativePhysicalOccurrences({
+    sourceKind: authoritativePhysicalOrder.sourceKind,
+    step1GarmentTypeSelection: garmentTypeSelection,
+    effectiveGarmentTypeSelection,
+    uploadedCompositionSpecs,
+    additionalGarmentConstructionState,
+  });
+  return getMeasurementPhysicalGarments({
+    garmentTypeSelection: effectiveGarmentTypeSelection,
+    physicalOccurrences,
   });
 };
 
