@@ -68,6 +68,7 @@ import {
   CustomDetailsGoToTopButton,
   shouldShowCustomDetailsGoToTop,
 } from "./CustomDetailsGoToTopButton";
+import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 
 interface DormantFutureCustomDetailsStepProps {
   reconciliation: GarmentScopedCustomDetailsReconciliationResult;
@@ -101,7 +102,13 @@ interface DormantFutureCustomDetailsStepProps {
     choice: AdditionalGarmentCustomDetailsChoice,
     triggerElement?: HTMLElement | null,
   ) => void;
-  onRemoveAdditionalGarment: (garmentKey: string) => void;
+  /** Retained for test/consumer compatibility; committed removal uses the shared confirmation flow. */
+  onRemoveAdditionalGarment?: (garmentKey: string) => void;
+  removalTargets?: readonly FutureGarmentRemovalTarget[];
+  onRequestGarmentRemoval?: (
+    target: FutureGarmentRemovalTarget,
+    trigger: HTMLButtonElement,
+  ) => void;
   onChangeAdditionalGarmentFabric?: (
     garmentKey: string,
     triggerElement?: HTMLElement | null,
@@ -226,7 +233,8 @@ export const DormantFutureCustomDetailsStep = ({
   onAccessoryToggle,
   onClearAccessories,
   onAddAdditionalGarment,
-  onRemoveAdditionalGarment,
+  removalTargets = [],
+  onRequestGarmentRemoval,
   onChangeAdditionalGarmentFabric,
   fabrics = [],
   fabricAllocationState = null,
@@ -832,6 +840,74 @@ export const DormantFutureCustomDetailsStep = ({
         </div>
       ) : null}
 
+      {removalTargets.length > 0 && (
+        <section
+          aria-labelledby="future-custom-details-garments-in-order"
+          className="min-w-0 rounded-2xl border border-heritage-gold/25 bg-white p-4 shadow-sm sm:p-5"
+          data-garment-removal-list="custom_details"
+        >
+          <h3
+            id="future-custom-details-garments-in-order"
+            tabIndex={-1}
+            data-garment-removal-list-heading="custom_details"
+            className="break-words font-serif text-lg font-bold uppercase tracking-wide text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+          >
+            Garments in this order
+          </h3>
+          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
+            Remove one exact garment without changing the saved choices for the others.
+          </p>
+          <ul className="mt-4 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
+            {removalTargets.map((target, index) => {
+              const reasonId = `custom-details-removal-reason-${index}`;
+              return (
+                <li
+                  key={target.garmentKey}
+                  className="flex min-w-0 flex-col gap-3 rounded-xl border border-heritage-green/15 bg-heritage-cream/20 p-3 sm:flex-row sm:items-center sm:justify-between"
+                  data-garment-removal-row={target.garmentKey}
+                >
+                  <div className="min-w-0">
+                    <h4
+                      tabIndex={-1}
+                      data-garment-removal-row-heading={target.garmentKey}
+                      className="break-words text-sm font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                    >
+                      {target.occurrenceLabel}
+                    </h4>
+                    <p className="mt-1 break-words text-[10px] font-bold uppercase tracking-wide text-heritage-gold">
+                      {target.roleLabel}
+                    </p>
+                    {target.disabledReason && (
+                      <p
+                        id={reasonId}
+                        className="mt-2 break-words text-xs leading-relaxed text-heritage-ink/65"
+                      >
+                        {target.disabledReason}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!target.canRequestRemoval}
+                    aria-label={target.accessibleName}
+                    aria-describedby={target.disabledReason ? reasonId : undefined}
+                    data-garment-removal-button={target.garmentKey}
+                    data-garment-removal-origin-stage="custom_details"
+                    onClick={(event) =>
+                      onRequestGarmentRemoval?.(target, event.currentTarget)
+                    }
+                    className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+                  >
+                    <Trash2 aria-hidden="true" size={15} />
+                    Remove
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6">
         <div ref={contentRef} className="min-w-0 space-y-5">
           <div data-custom-detail-section="main-garment-details" className="min-w-0 space-y-5">
@@ -951,7 +1027,6 @@ export const DormantFutureCustomDetailsStep = ({
                         >
                           {getFabricGarmentLabel(garment.garmentType)} - Added garment
                         </h4>
-                        <button type="button" onClick={() => onRemoveAdditionalGarment(garment.garmentKey)} aria-label={`Remove added ${getFabricGarmentLabel(garment.garmentType)}`} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"><Trash2 aria-hidden="true" size={15} /> Remove</button>
                       </div>
                       {(() => {
                         const assigned = getAssignedFabricForGarment(garment.garmentKey);

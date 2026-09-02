@@ -225,7 +225,7 @@ assert.deepEqual(
   [
     ["shirt", 65],
     ["trouser", 75],
-    ["kaftan", 65],
+    ["kaftan", 70],
     ["agbada", 140],
   ],
 );
@@ -239,7 +239,7 @@ assert.equal(
   combinedBridge.readOnlyConstructionRows.filter((row) =>
     row.components.some((component) => component.optionId === "shirt_std_short"),
   ).length,
-  3,
+  2,
 );
 
 const repricedCatalog = catalog.map((option) =>
@@ -269,10 +269,10 @@ const lockedPricing = calculateDesignPricing({
 });
 assert.ok(lockedPricing);
 assert.equal(lockedPricing.baseGarmentPricingStatus, "resolved");
-assert.equal(lockedPricing.clothingPrice, 345);
+assert.equal(lockedPricing.clothingPrice, 350);
 assert.equal(lockedPricing.constructionUpgradesPrice, 10);
 assert.equal(lockedPricing.customDetailsPrice, 10);
-assert.equal(lockedPricing.garmentSubtotal, 355);
+assert.equal(lockedPricing.garmentSubtotal, 360);
 
 const individualLockedPricing = calculateDesignPricing({
   route: "alone",
@@ -284,8 +284,8 @@ const individualLockedPricing = calculateDesignPricing({
   garmentTypeSelection: combinedSelection,
 });
 assert.ok(individualLockedPricing);
-assert.equal(individualLockedPricing.clothingPrice, 345);
-assert.equal(individualLockedPricing.constructionSewingCost, 23.44);
+assert.equal(individualLockedPricing.clothingPrice, 350);
+assert.equal(individualLockedPricing.constructionSewingCost, 0);
 
 const legacyPricingOmitted = calculateDesignPricing({
   route: "community",

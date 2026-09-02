@@ -3,7 +3,7 @@ import type {
   GuestDesignDraft,
   UploadedDesignSource,
 } from "../types";
-import { isValidUploadedDesignSource } from "../utils/designSourceState";
+import { isValidUploadedDesignDraftSource } from "../utils/designSourceState";
 import {
   customerDesignDraftOwnershipTransferClient,
   type CustomerDesignDraftTransferIdentity,
@@ -44,7 +44,7 @@ interface GuestUploadedDesignOwnershipContinuityDependencies {
 const getUploadedSource = (
   draft: GuestDesignDraft | null,
 ): UploadedDesignSource | null =>
-  isValidUploadedDesignSource(draft?.designSource)
+  isValidUploadedDesignDraftSource(draft?.designSource)
     ? draft!.designSource
     : null;
 

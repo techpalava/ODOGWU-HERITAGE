@@ -232,7 +232,10 @@ assert.match(
   "Earlier completed steps must remain represented as navigable completed stages.",
 );
 assert.match(stepperMarkup, /aria-label="Step 7: Summary, locked"/);
-assert.match(stepperMarkup, /aria-label="Step 8: Shipping, locked"/);
+assert.match(
+  stepperMarkup,
+  /aria-label="Step 8: Delivery &amp; Pickup, locked"/,
+);
 assert.match(
   stepperMarkup,
   /aria-label="Step 9: Order Review &amp; Payment, locked"/,
