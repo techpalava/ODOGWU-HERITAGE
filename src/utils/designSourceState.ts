@@ -32,6 +32,10 @@ import {
   UPLOADED_DESIGN_MISSING_REQUIRED_STEP1_GARMENTS_MESSAGE,
 } from "./uploadedDesignStep1";
 import { normalizeCustomDetailCatalog } from "./catalogHelpers";
+import {
+  getPhysicalGarmentOccurrenceGeneration,
+  reconcilePhysicalGarmentOccurrenceIdentityState,
+} from "./physicalGarmentOccurrenceIdentity";
 
 export const CATALOG_DESIGN_SOURCE_PREFIX = "catalog:";
 export const UPLOADED_DESIGN_SOURCE_PREFIX = "uploaded:";
@@ -173,8 +177,9 @@ export const createUploadedDesignSource = ({
   return source;
 };
 
-export const isValidUploadedDesignSource = (
+const isValidUploadedDesignSourceShape = (
   source: unknown,
+  requireComposition: boolean,
 ): source is UploadedDesignSource => {
   if (!source || typeof source !== "object") return false;
   const candidate = source as Partial<UploadedDesignSource>;
@@ -191,10 +196,26 @@ export const isValidUploadedDesignSource = (
       typeof candidate.uploadReference.originalFileName === "string") &&
     DEMOGRAPHICS.has(candidate.demographic as CustomDetailDemographic) &&
     Array.isArray(candidate.fabricCapacityComposition) &&
-    candidate.fabricCapacityComposition.length > 0 &&
+    (!requireComposition || candidate.fabricCapacityComposition.length > 0) &&
     candidate.fabricCapacityComposition.every(isFabricCapacityGarmentSpec)
   );
 };
+
+/**
+ * Draft-only structural contract. An active legacy migration may retain a
+ * private uploaded-design identity while removing its final invalid garment.
+ * Progression and order conversion continue to require the stricter non-empty
+ * composition contract below.
+ */
+export const isValidUploadedDesignDraftSource = (
+  source: unknown,
+): source is UploadedDesignSource =>
+  isValidUploadedDesignSourceShape(source, false);
+
+export const isValidUploadedDesignSource = (
+  source: unknown,
+): source is UploadedDesignSource =>
+  isValidUploadedDesignSourceShape(source, true);
 
 export const isValidDesignSource = (source: unknown): source is DesignSource => {
   if (!source || typeof source !== "object") return false;
@@ -298,6 +319,7 @@ export type PhysicalGarmentOccurrence = {
   garmentType: CanonicalPhysicalGarmentType;
   sourceRole: "main" | "additional";
   fabricUnits: number;
+  occurrenceGeneration?: number;
 };
 
 export type AuthoritativePhysicalOrderDiagnosticCode =
@@ -588,10 +610,24 @@ export const buildAuthoritativePhysicalOccurrences = ({
     additionalGarmentConstructionState,
   });
 
-  return sortPhysicalOccurrences(
+  const sortedOccurrences = sortPhysicalOccurrences(
     [...baseOccurrences, ...additionalOccurrences],
     effectiveGarmentTypeSelection,
   );
+  const identityState = reconcilePhysicalGarmentOccurrenceIdentityState({
+    state: step1GarmentTypeSelection.physicalOccurrenceIdentityState,
+    activeGarmentKeys: sortedOccurrences.map(
+      (occurrence) => occurrence.garmentKey,
+    ),
+  });
+  return sortedOccurrences.map((occurrence) => ({
+    ...occurrence,
+    occurrenceGeneration:
+      getPhysicalGarmentOccurrenceGeneration(
+        identityState,
+        occurrence.garmentKey,
+      ) ?? undefined,
+  }));
 };
 
 export const projectAuthoritativePhysicalOccurrences = ({
@@ -885,7 +921,7 @@ export const reconcileGuestDesignDraftDesignSource = (
   const source = draft.designSource;
 
   if (source?.kind === "uploaded") {
-    if (!isValidUploadedDesignSource(source)) {
+    if (!isValidUploadedDesignDraftSource(source)) {
       return clearInvalidDesignSourceDraftState(draft);
     }
     return {

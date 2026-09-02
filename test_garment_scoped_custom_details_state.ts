@@ -8,6 +8,7 @@ import type {
 } from "./src/types";
 import { createCustomerDesignUploadReference } from "./src/services/customerDesignUploadReference";
 import { createUploadedDesignSource } from "./src/utils/designSourceState";
+import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./src/utils/designSourceJourney";
 import {
   clearGarmentScopedCustomDetailSelection,
   cloneGarmentScopedCustomDetailsState,
@@ -415,6 +416,8 @@ const uploadedSource = createUploadedDesignSource({
 const baseDraft = (
   designSelections: GuestDesignDraft["designSelections"],
 ): GuestDesignDraft => ({
+  journeySchemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+  currentStageId: "garment_type",
   currentStep: 1,
   selectedFabricCode: null,
   selectedStyleId: null,
@@ -482,8 +485,11 @@ assert.deepEqual(
 assert.deepEqual(restored?.designSelections.customDetails, {
   shirt_construction: "legacy-stays-intact",
 });
-assert.equal(restored?.journeySchemaVersion, undefined);
-assert.equal(restored?.currentStageId, undefined);
+assert.equal(
+  restored?.journeySchemaVersion,
+  DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+);
+assert.equal(restored?.currentStageId, "garment_type");
 assert.equal(restored?.specialInstructions, "keep unrelated draft data");
 assert.equal(restored?.leftoverFabricChoice, "RETURN");
 assert.equal(restored?.designSource?.kind, "uploaded");

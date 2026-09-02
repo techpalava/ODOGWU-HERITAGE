@@ -6,6 +6,7 @@ import {
   Ruler,
   Shirt,
   Sparkles,
+  Trash2,
   Truck,
 } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
@@ -34,11 +35,19 @@ import {
   formatCustomerFacingFabricCapacityAmount,
   formatCustomerFacingFabricCapacityNoun,
 } from "../config/StyleFabricCapacityConfig";
+import type { FutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
+import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 
 interface DormantFuturePaymentReviewStepProps {
   result: FutureOrderCandidateBuildResult;
   onBack: () => void;
   onEditStage: (stage: Exclude<DesignStudioStageId, "payment">) => void;
+  survivorSummary?: FutureDesignStudioSummary | null;
+  removalTargets?: readonly FutureGarmentRemovalTarget[];
+  onRequestGarmentRemoval?: (
+    target: FutureGarmentRemovalTarget,
+    trigger: HTMLButtonElement,
+  ) => void;
 }
 
 const moneyFromCents = (amountCents: number): string =>
@@ -68,23 +77,68 @@ const EditButton = ({
   </button>
 );
 
+const GarmentRemovalAction = ({
+  target,
+  originStage,
+  reasonId,
+  onRequest,
+}: {
+  target: FutureGarmentRemovalTarget;
+  originStage: "payment";
+  reasonId: string;
+  onRequest?: DormantFuturePaymentReviewStepProps["onRequestGarmentRemoval"];
+}) => (
+  <div className="min-w-0 sm:text-right">
+    <button
+      type="button"
+      disabled={!target.canRequestRemoval}
+      aria-label={target.accessibleName}
+      aria-describedby={target.disabledReason ? reasonId : undefined}
+      data-garment-removal-button={target.garmentKey}
+      data-garment-removal-origin-stage={originStage}
+      onClick={(event) => {
+        event.stopPropagation();
+        onRequest?.(target, event.currentTarget);
+      }}
+      className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+    >
+      <Trash2 aria-hidden="true" size={15} />
+      Remove
+    </button>
+    {target.disabledReason && (
+      <p
+        id={reasonId}
+        className="mt-2 break-words text-left text-xs leading-relaxed text-heritage-ink/65 sm:max-w-56 sm:text-right"
+      >
+        {target.disabledReason}
+      </p>
+    )}
+  </div>
+);
+
 const ReviewSection = ({
   title,
   description,
   editLabel,
   onEdit,
+  removalHeadingMarker,
   children,
 }: {
   title: string;
   description?: string;
   editLabel?: string;
   onEdit?: () => void;
+  removalHeadingMarker?: string;
   children: React.ReactNode;
 }) => (
   <section className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
     <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
       <div className="min-w-0">
-        <h3 className="break-words font-serif text-lg font-bold text-heritage-green">
+        <h3
+          tabIndex={removalHeadingMarker ? -1 : undefined}
+          data-garment-removal-list-heading={removalHeadingMarker}
+          className="break-words font-serif text-lg font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+        >
           {title}
         </h3>
         {description && (
@@ -160,9 +214,13 @@ const CandidateAttention = ({
 const GarmentReview = ({
   candidate,
   onEditStage,
+  removalTargets,
+  onRequestGarmentRemoval,
 }: {
   candidate: FutureOrderCandidateV1;
   onEditStage: DormantFuturePaymentReviewStepProps["onEditStage"];
+  removalTargets: readonly FutureGarmentRemovalTarget[];
+  onRequestGarmentRemoval?: DormantFuturePaymentReviewStepProps["onRequestGarmentRemoval"];
 }) => {
   const garments = getFuturePaymentReviewGarments(candidate);
   return (
@@ -171,22 +229,43 @@ const GarmentReview = ({
       description="Each physical garment keeps its own construction, fabric assignment, and Custom Details."
       editLabel="Edit Garments"
       onEdit={() => onEditStage("garment_type")}
+      removalHeadingMarker="payment"
     >
       <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        {garments.map(({ garment, fabricAllocations, customDetails }) => (
-          <article
-            key={garment.garmentKey}
-            className="min-w-0 rounded-2xl border border-heritage-green/15 bg-heritage-cream/20 p-4 sm:p-5"
-          >
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <Shirt aria-hidden="true" className="shrink-0 text-heritage-gold" size={18} />
-              <h4 className="min-w-0 break-words font-serif text-lg font-bold text-heritage-green">
-                {garment.label}
-              </h4>
-              <span className="shrink-0 rounded-full border border-heritage-gold/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-heritage-gold">
-                {garment.role}
-              </span>
-            </div>
+        {garments.map(({ garment, fabricAllocations, customDetails }, index) => {
+          const removalTarget = removalTargets.find(
+            (target) => target.garmentKey === garment.garmentKey,
+          );
+          const reasonId = `payment-removal-reason-${index}`;
+          return (
+            <article
+              key={garment.garmentKey}
+              className="min-w-0 rounded-2xl border border-heritage-green/15 bg-heritage-cream/20 p-4 sm:p-5"
+              data-garment-removal-row={garment.garmentKey}
+            >
+              <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <Shirt aria-hidden="true" className="shrink-0 text-heritage-gold" size={18} />
+                  <h4
+                    tabIndex={-1}
+                    data-garment-removal-row-heading={garment.garmentKey}
+                    className="min-w-0 break-words font-serif text-lg font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                  >
+                    {garment.label}
+                  </h4>
+                  <span className="shrink-0 rounded-full border border-heritage-gold/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-heritage-gold">
+                    {garment.role}
+                  </span>
+                </div>
+                {removalTarget && (
+                  <GarmentRemovalAction
+                    target={removalTarget}
+                    originStage="payment"
+                    reasonId={reasonId}
+                    onRequest={onRequestGarmentRemoval}
+                  />
+                )}
+              </div>
             {garment.physicalComponents.length > 1 && (
               <div className="mt-3 rounded-xl bg-white/80 p-3">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/55">
@@ -318,17 +397,167 @@ const GarmentReview = ({
                 </ul>
               )}
             </div>
-          </article>
-        ))}
+            </article>
+          );
+        })}
       </div>
     </ReviewSection>
   );
 };
 
+const RetainedGarmentReview = ({
+  summary,
+  removalTargets,
+  onEditStage,
+  onRequestGarmentRemoval,
+}: {
+  summary: FutureDesignStudioSummary;
+  removalTargets: readonly FutureGarmentRemovalTarget[];
+  onEditStage: DormantFuturePaymentReviewStepProps["onEditStage"];
+  onRequestGarmentRemoval?: DormantFuturePaymentReviewStepProps["onRequestGarmentRemoval"];
+}) => (
+  <ReviewSection
+    title="Garments"
+    description="Your surviving garments remain visible while the updated order is reviewed."
+    editLabel="Edit Garments"
+    onEdit={() => onEditStage("garment_type")}
+    removalHeadingMarker="payment"
+  >
+    <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+      {summary.garmentSummary.map((garment, index) => {
+        const removalTarget = removalTargets.find(
+          (target) => target.garmentKey === garment.garmentKey,
+        );
+        const fabricAllocations = summary.fabricSummary.filter((allocation) =>
+          allocation.garments.some(
+            (assigned) => assigned.garmentKey === garment.garmentKey,
+          ),
+        );
+        const customDetails = summary.customDetailsSummary.find(
+          (group) => group.garmentKey === garment.garmentKey,
+        )?.occurrences || [];
+        const reasonId = `payment-retained-removal-reason-${index}`;
+        return (
+          <article
+            key={garment.garmentKey}
+            data-retained-payment-garment="true"
+            data-garment-removal-row={garment.garmentKey}
+            className="min-w-0 rounded-2xl border border-heritage-green/15 bg-heritage-cream/20 p-4 sm:p-5"
+          >
+            <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <Shirt
+                  aria-hidden="true"
+                  className="shrink-0 text-heritage-gold"
+                  size={18}
+                />
+                <h4
+                  tabIndex={-1}
+                  data-garment-removal-row-heading={garment.garmentKey}
+                  className="min-w-0 break-words font-serif text-lg font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  {garment.label}
+                </h4>
+                <span className="shrink-0 rounded-full border border-heritage-gold/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-heritage-gold">
+                  {garment.role}
+                </span>
+              </div>
+              {removalTarget && (
+                <GarmentRemovalAction
+                  target={removalTarget}
+                  originStage="payment"
+                  reasonId={reasonId}
+                  onRequest={onRequestGarmentRemoval}
+                />
+              )}
+            </div>
+
+            <dl className="mt-4 space-y-2 text-sm">
+              {garment.construction.map((component) => (
+                <div
+                  key={component.componentKey}
+                  className="flex min-w-0 flex-wrap justify-between gap-2"
+                >
+                  <dt className="min-w-0 break-words text-heritage-ink/70">
+                    {component.label}
+                  </dt>
+                  <dd className="shrink-0 font-mono font-bold text-heritage-green">
+                    {moneyFromCents(component.priceCents)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+
+            <div className="mt-4 rounded-xl border border-heritage-gold/15 bg-white p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/55">
+                Assigned fabric
+              </p>
+              {fabricAllocations.length > 0 ? (
+                <ul className="mt-2 space-y-2">
+                  {fabricAllocations.map((allocation) => (
+                    <li key={allocation.allocationId} className="min-w-0">
+                      <p className="break-words text-sm font-bold text-heritage-green">
+                        {allocation.fabricName}
+                      </p>
+                      <p className="break-words font-mono text-xs text-heritage-ink/55">
+                        {allocation.fabricCode}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-heritage-ink/60">
+                  Fabric assignment needs review.
+                </p>
+              )}
+            </div>
+
+            <div className="mt-4 min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/55">
+                Custom Details
+              </p>
+              {customDetails.length > 0 ? (
+                <ul className="mt-2 space-y-2">
+                  {customDetails.map((detail) => (
+                    <li
+                      key={detail.occurrenceKey}
+                      className="flex min-w-0 flex-wrap justify-between gap-2 rounded-xl bg-white/80 p-3 text-sm"
+                    >
+                      <span className="min-w-0 break-words text-heritage-ink/70">
+                        {detail.optionLabel}
+                      </span>
+                      <span className="shrink-0 font-mono font-bold text-heritage-green">
+                        {detail.priceStatus === "evaluation_required"
+                          ? "Price requires evaluation"
+                          : detail.priceCents === null
+                            ? "Price unavailable"
+                            : detail.priceCents === 0
+                              ? "Included"
+                              : moneyFromCents(detail.priceCents)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-heritage-ink/60">
+                  No optional details selected.
+                </p>
+              )}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  </ReviewSection>
+);
+
 export const DormantFuturePaymentReviewStep = ({
   result,
   onBack,
   onEditStage,
+  survivorSummary = null,
+  removalTargets = [],
+  onRequestGarmentRemoval,
 }: DormantFuturePaymentReviewStepProps) => {
   const candidate = result.candidate;
   const isReviewable = isFuturePaymentReviewStageUnlocked(result);
@@ -417,6 +646,15 @@ export const DormantFuturePaymentReviewStep = ({
 
       <CandidateAttention result={result} onEditStage={onEditStage} />
 
+      {!candidate && survivorSummary && (
+        <RetainedGarmentReview
+          summary={survivorSummary}
+          removalTargets={removalTargets}
+          onEditStage={onEditStage}
+          onRequestGarmentRemoval={onRequestGarmentRemoval}
+        />
+      )}
+
       {candidate && (
         <>
           <ReviewSection
@@ -467,7 +705,12 @@ export const DormantFuturePaymentReviewStep = ({
             )}
           </ReviewSection>
 
-          <GarmentReview candidate={candidate} onEditStage={onEditStage} />
+          <GarmentReview
+            candidate={candidate}
+            onEditStage={onEditStage}
+            removalTargets={removalTargets}
+            onRequestGarmentRemoval={onRequestGarmentRemoval}
+          />
 
           <ReviewSection
             title="Fabric selections"

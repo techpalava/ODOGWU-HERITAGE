@@ -33,6 +33,7 @@ import {
   normalizeCartItemDesignDomain,
 } from "../utils/cartDesignDomain";
 import { StorageService } from "./storageService";
+import { migrateLegacyAgbadaActiveDraft } from "../utils/legacyAgbadaActiveDraftMigration";
 
 export const GUEST_ORDER_SESSION_VERSION = "2026-07-30-guest-order-v1";
 
@@ -79,8 +80,9 @@ const createGuestCartId = (): string => {
 export const normalizeGuestDesignDraft = (
   designDraft: GuestDesignDraft,
 ): GuestDesignDraft => {
+  const activeDraftMigration = migrateLegacyAgbadaActiveDraft(designDraft);
   const sourceReconciledDraft =
-    reconcileGuestDesignDraftDesignSource(designDraft);
+    reconcileGuestDesignDraftDesignSource(activeDraftMigration.draft);
   const garmentTypeReconciledDraft =
     reconcileGuestDesignDraftGarmentTypeSelection(sourceReconciledDraft);
   const normalizedAiTryOnWorkflow = normalizeAiTryOnWorkflowState(

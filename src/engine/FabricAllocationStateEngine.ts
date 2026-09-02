@@ -343,6 +343,21 @@ export class FabricAllocationStateEngine {
       return state;
     }
 
+    const appendedState = this.attemptAppendResolvedGarments(state, [
+      state.pendingFabricGarment,
+    ]);
+    const appendedToActiveAllocation = appendedState.fabricAllocations
+      .find(
+        (allocation) => allocation.allocationId === state.activeAllocationId,
+      )
+      ?.garmentAssignments.some(
+        (assignment) =>
+          assignment.garmentKey === state.pendingFabricGarment?.garmentKey,
+      );
+    if (appendedToActiveAllocation) {
+      return appendedState;
+    }
+
     const allocationId = this.generateAllocationId(
       activeAllocation.fabricCode,
       state.fabricAllocations,
@@ -642,6 +657,48 @@ export class FabricAllocationStateEngine {
         state.pendingFabricGarment && keys.has(state.pendingFabricGarment.garmentKey)
           ? false
           : state.awaitingFabricForPendingGarment,
+    };
+  }
+
+  /**
+   * Removes physical occurrences from an order and prunes every allocation that
+   * becomes ownerless. Standard Remove Fabric intentionally keeps its primary
+   * allocation; garment removal must not leave that empty allocation behind.
+   */
+  static prunePhysicalGarmentAssignments(
+    state: FabricAllocationState,
+    garmentKeys: readonly string[],
+  ): FabricAllocationState {
+    const keys = new Set(garmentKeys);
+    if (keys.size === 0) return state;
+
+    const fabricAllocations = state.fabricAllocations
+      .map((allocation) => ({
+        ...allocation,
+        garmentAssignments: allocation.garmentAssignments.filter(
+          (assignment) => !keys.has(assignment.garmentKey),
+        ),
+      }))
+      .filter((allocation) => allocation.garmentAssignments.length > 0);
+    const activeAllocationId = fabricAllocations.some(
+      (allocation) => allocation.allocationId === state.activeAllocationId,
+    )
+      ? state.activeAllocationId
+      : fabricAllocations[0]?.allocationId || null;
+    const removesPendingGarment = Boolean(
+      state.pendingFabricGarment &&
+        keys.has(state.pendingFabricGarment.garmentKey),
+    );
+
+    return {
+      fabricAllocations,
+      activeAllocationId,
+      pendingFabricGarment: removesPendingGarment
+        ? null
+        : state.pendingFabricGarment,
+      awaitingFabricForPendingGarment: removesPendingGarment
+        ? false
+        : state.awaitingFabricForPendingGarment,
     };
   }
 

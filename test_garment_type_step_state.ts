@@ -403,9 +403,24 @@ StorageService.clearGuestOrderSession();
 GuestOrderSessionService.saveFutureDesignDraft(draftWithSelection);
 const persistedDraft = GuestOrderSessionService.getFutureDesignDraft();
 assert.deepEqual(
-  persistedDraft?.garmentTypeSelection,
-  draftWithSelection.garmentTypeSelection,
-  "Canonical garment identities and construction components must survive guest-session JSON persistence.",
+  persistedDraft?.garmentTypeSelection?.garmentTypes,
+  allGarments.filter((garmentType) => garmentType !== "agbada"),
+  "Active guest-draft persistence must migrate the retired Agbada choice.",
+);
+assert.equal(
+  persistedDraft?.garmentTypeSelection?.constructionByGarment.agbada,
+  undefined,
+  "Active guest-draft persistence must remove Agbada construction pricing.",
+);
+assert.deepEqual(
+  roundTripped.garmentTypes,
+  allGarments,
+  "Canonical historical garment data must remain readable without mutating the source record.",
+);
+assert.deepEqual(
+  roundTripped.constructionByGarment.agbada,
+  initial.selection.constructionByGarment.agbada,
+  "Canonical historical Agbada construction data must remain decodable.",
 );
 assert.equal(
   (persistedDraft as typeof draftWithSelection | null)?.unrelatedLegacyField
