@@ -10,7 +10,7 @@ import {
 import type { Customer, GuestDesignDraft } from "../types";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 import { hasAuthoritativeFutureDraftMarker } from "../utils/designStudioDraftPersistence";
-import { isValidUploadedDesignSource } from "../utils/designSourceState";
+import { isValidUploadedDesignDraftSource } from "../utils/designSourceState";
 import { normalizeGuestDesignDraft } from "./guestOrderSessionService";
 import { auth, db } from "./firebase";
 
@@ -342,7 +342,7 @@ export const getAuthenticatedDraftUploadedDesignOwnershipIssue = (
   if (draft.uploadedDesignOwnershipTransition?.status === "transfer_required") {
     return "uploaded_design_ownership_transfer_required";
   }
-  return isValidUploadedDesignSource(draft.designSource) &&
+  return isValidUploadedDesignDraftSource(draft.designSource) &&
     draft.designSource.uploadReference.ownerUid !== ownerUid
     ? "uploaded_design_owner_mismatch"
     : null;

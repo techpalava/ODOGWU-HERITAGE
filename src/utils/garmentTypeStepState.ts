@@ -10,6 +10,7 @@ import type {
   GarmentTypeStepSelection,
   GuestDesignDraft,
 } from "../types";
+import { normalizePhysicalGarmentOccurrenceIdentityState } from "./physicalGarmentOccurrenceIdentity";
 import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
   resolveGarmentConstructionPricing,
@@ -201,6 +202,10 @@ export const normalizePersistedGarmentTypeStepSelection = (
       : legacyDemographic
         ? [legacyDemographic]
         : [];
+  const physicalOccurrenceIdentityState =
+    normalizePhysicalGarmentOccurrenceIdentityState(
+      candidate.physicalOccurrenceIdentityState,
+    );
 
   return {
     garmentTypes,
@@ -208,6 +213,9 @@ export const normalizePersistedGarmentTypeStepSelection = (
       schemaVersion: GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
       demographics,
     },
+    ...(physicalOccurrenceIdentityState
+      ? { physicalOccurrenceIdentityState }
+      : {}),
     demographic: getGarmentTypeCompatibilityDemographic(demographics),
     constructionByGarment,
   };
@@ -357,6 +365,12 @@ export const reconcileGarmentTypeStepSelection = ({
         schemaVersion: GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
         demographics,
       },
+      ...(previous.physicalOccurrenceIdentityState
+        ? {
+            physicalOccurrenceIdentityState:
+              previous.physicalOccurrenceIdentityState,
+          }
+        : {}),
       demographic,
       constructionByGarment,
     },

@@ -273,9 +273,24 @@ assert.ok(
   source.includes("onAddAdditionalGarment={handleAddFutureAdditionalGarment}"),
   "the customer selector must call the UI-facing additional garment handler",
 );
-assert.ok(
-  source.includes("FabricAllocationStateEngine.attemptAppendGarment("),
-  "the UI-facing handler must delegate append behavior to the centralized allocation flow",
+const addGarmentHandlerSource = source.slice(
+  source.indexOf("const handleAddFutureAdditionalGarment"),
+  source.indexOf("const handleRemoveFuturePhysicalGarmentOccurrence"),
+);
+assert.match(
+  addGarmentHandlerSource,
+  /FabricAllocationStateEngine\.beginPendingAdditionalGarmentSelection\(/,
+  "the UI-facing handler must park the exact garment in the centralized pending flow",
+);
+assert.doesNotMatch(
+  addGarmentHandlerSource,
+  /FabricAllocationStateEngine\.attemptAppendGarment\(/,
+  "adding a garment must not consume allocation capacity before explicit Fabric choice",
+);
+assert.match(
+  addGarmentHandlerSource,
+  /phase: sameFabricAvailable \? "choice" : "catalogue"/,
+  "the existing Fabric chooser must open after either Custom Details mode",
 );
 assert.ok(
   !source.includes("additionalGarmentParentSection"),
@@ -365,19 +380,24 @@ assert.match(
   "cancelling the Fabric transaction must discard pending construction and copy state",
 );
 assert.match(
-  source,
-  /if \(!additionAccepted && !additionPending\) \{[\s\S]*additionalGarmentFabricSnapshotRef\.current = null;/,
-  "a rejected append must discard pending construction and copy state",
+  addGarmentHandlerSource,
+  /if \(pendingState\.pendingFabricGarment\?\.garmentKey !== garmentKey\) \{[\s\S]*additionalGarmentFabricSnapshotRef\.current = null;[\s\S]*return;[\s\S]*setDesignSelections\(authorization\.next\);/,
+  "a rejected pending transaction must leave construction and copy state unapplied",
 );
 assert.match(
   source,
   /isAdditionalGarmentCommitPending \|\|[\s\S]*!futureScopedCustomDetailsReconciliation/,
   "transient pre-construction reconciliation must not overwrite a copied occurrence",
 );
-assert.match(
+assert.doesNotMatch(
   customDetailsSource,
   /onClick=\{\(\) => onRemoveAdditionalGarment\(garment\.garmentKey\)\}/,
-  "removal must target only the selected physical garment occurrence",
+  "committed additional garments must no longer bypass the shared confirmation flow",
+);
+assert.match(
+  customDetailsSource,
+  /data-garment-removal-list="custom_details"[\s\S]*onRequestGarmentRemoval\?\.\(target, event\.currentTarget\)/,
+  "the shared Custom Details removal list must request confirmation with the exact projected occurrence target",
 );
 
 console.log("Optional additional garment UI regression checks passed.");

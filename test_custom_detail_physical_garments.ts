@@ -246,10 +246,13 @@ const capacityChangingReplacement = transitionCustomDetailPhysicalGarment({
   previousOption: bumShorts,
   nextOption: kaftan,
 });
-assert.equal(capacityChangingReplacement.status, "pending");
-assert.equal(
-  capacityChangingReplacement.state.pendingFabricGarment?.garmentType,
-  "kaftan",
+assert.equal(capacityChangingReplacement.status, "selected");
+assert.equal(capacityChangingReplacement.state.pendingFabricGarment, null);
+assert.deepEqual(
+  capacityChangingReplacement.state.fabricAllocations[0]?.garmentAssignments.map(
+    (assignment) => assignment.garmentType,
+  ),
+  ["shirt", "kaftan"],
 );
 
 const ordinaryDetailTransition = transitionCustomDetailPhysicalGarment({
@@ -339,8 +342,13 @@ assert.match(
 );
 assert.match(
   futureFabricStageSource,
-  /const selectedGarments = getFutureFabricGarmentSelections\(/,
+  /export const getFutureFabricGarmentSelections = \(/,
   "The Fabric stage must resolve the customer-selected physical garment composition",
+);
+assert.match(
+  futureFabricStageSource,
+  /getFabricGarmentSelectionsForComposition\(\s*getFutureFabricCapacityComposition\(selection\),\s*\)/,
+  "The Fabric stage must derive its assignments from the authoritative composition projection",
 );
 assert.match(
   futureFabricStageSource,

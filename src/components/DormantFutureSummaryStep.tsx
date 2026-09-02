@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   LockKeyhole,
   Pencil,
+  Trash2,
 } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type React from "react";
@@ -19,6 +20,7 @@ import {
   formatCustomerFacingFabricCapacityAmount,
   formatCustomerFacingFabricCapacityNoun,
 } from "../config/StyleFabricCapacityConfig";
+import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 
 interface DormantFutureSummaryStepProps {
   summary: FutureDesignStudioSummary;
@@ -32,6 +34,11 @@ interface DormantFutureSummaryStepProps {
   canContinueToShipping: boolean;
   onContinueToShipping: () => void;
   shippingResolution?: FutureShippingStageResolution | null;
+  removalTargets?: readonly FutureGarmentRemovalTarget[];
+  onRequestGarmentRemoval?: (
+    target: FutureGarmentRemovalTarget,
+    trigger: HTMLButtonElement,
+  ) => void;
 }
 
 const money = (value: number): string =>
@@ -60,18 +67,24 @@ const Section = ({
   description,
   editLabel,
   onEdit,
+  removalHeadingMarker,
   children,
 }: {
   title: string;
   description?: string;
   editLabel: string;
   onEdit: () => void;
+  removalHeadingMarker?: string;
   children: React.ReactNode;
 }) => (
   <section className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
     <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
       <div className="min-w-0">
-        <h3 className="font-serif text-lg font-bold text-heritage-green">
+        <h3
+          tabIndex={removalHeadingMarker ? -1 : undefined}
+          data-garment-removal-list-heading={removalHeadingMarker}
+          className="font-serif text-lg font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+        >
           {title}
         </h3>
         {description && (
@@ -98,6 +111,8 @@ export const DormantFutureSummaryStep = ({
   canContinueToShipping,
   onContinueToShipping,
   shippingResolution = null,
+  removalTargets = [],
+  onRequestGarmentRemoval,
 }: DormantFutureSummaryStepProps) => {
   const isReady = summary.status === "ready";
   const firstBlocker = summary.blockers[0] || null;
@@ -207,21 +222,67 @@ export const DormantFutureSummaryStep = ({
         description="Each garment keeps its own construction and fabric requirements."
         editLabel="Edit Garments"
         onEdit={onEditGarments}
+        removalHeadingMarker="summary"
       >
         <div className="space-y-3">
-          {summary.garmentSummary.map((garment) => (
-            <article
-              key={garment.garmentKey}
-              className="min-w-0 rounded-xl border border-heritage-green/12 bg-heritage-cream/20 p-4"
-            >
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <h4 className="min-w-0 break-words font-bold text-heritage-green">
-                  {garment.label}
-                </h4>
-                <span className="rounded-full border border-heritage-gold/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-heritage-gold">
-                  {garment.role}
-                </span>
-              </div>
+          {summary.garmentSummary.map((garment, index) => {
+            const removalTarget = removalTargets.find(
+              (target) => target.garmentKey === garment.garmentKey,
+            );
+            const reasonId = `summary-removal-reason-${index}`;
+            return (
+              <article
+                key={garment.garmentKey}
+                className="min-w-0 rounded-xl border border-heritage-green/12 bg-heritage-cream/20 p-4"
+                data-garment-removal-row={garment.garmentKey}
+              >
+                <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <h4
+                        tabIndex={-1}
+                        data-garment-removal-row-heading={garment.garmentKey}
+                        className="min-w-0 break-words font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                      >
+                        {garment.label}
+                      </h4>
+                      <span className="rounded-full border border-heritage-gold/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-heritage-gold">
+                        {garment.role}
+                      </span>
+                    </div>
+                    {removalTarget?.disabledReason && (
+                      <p
+                        id={reasonId}
+                        className="mt-2 break-words text-xs leading-relaxed text-heritage-ink/65"
+                      >
+                        {removalTarget.disabledReason}
+                      </p>
+                    )}
+                  </div>
+                  {removalTarget && (
+                    <button
+                      type="button"
+                      disabled={!removalTarget.canRequestRemoval}
+                      aria-label={removalTarget.accessibleName}
+                      aria-describedby={
+                        removalTarget.disabledReason ? reasonId : undefined
+                      }
+                      data-garment-removal-button={garment.garmentKey}
+                      data-garment-removal-origin-stage="summary"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRequestGarmentRemoval?.(
+                          removalTarget,
+                          event.currentTarget,
+                        );
+                      }}
+                      className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+                    >
+                      <Trash2 aria-hidden="true" size={15} />
+                      Remove
+                    </button>
+                  )}
+                </div>
               <p className="mt-1 text-xs capitalize text-heritage-ink/60">
                 {garment.demographic || "Demographic pending"} | {formatCustomerFacingFabricCapacityAmount(garment.fabricUnits)} fabric capacity {formatCustomerFacingFabricCapacityNoun(garment.fabricUnits)}
               </p>
@@ -243,8 +304,9 @@ export const DormantFutureSummaryStep = ({
                   </li>
                 ))}
               </ul>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       </Section>
 

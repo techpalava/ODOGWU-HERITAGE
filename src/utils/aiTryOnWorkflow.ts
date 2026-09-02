@@ -7,6 +7,7 @@ import type {
   GarmentScopedCustomDetailsStateV1,
   GarmentTypeStepSelection,
 } from "../types";
+import type { PhysicalGarmentOccurrence } from "./designSourceState";
 import type { GarmentScopedCustomDetailsCompletionResult } from "./garmentScopedCustomDetailsDomain";
 
 export const AI_TRY_ON_WORKFLOW_SCHEMA_VERSION = 1 as const;
@@ -154,6 +155,7 @@ const hashVisualIdentity = (value: unknown): string => {
 
 export interface AiTryOnVisualInput {
   garmentTypeSelection: GarmentTypeStepSelection;
+  physicalOccurrences?: readonly PhysicalGarmentOccurrence[];
   fabricAllocations: readonly FabricAllocation[];
   selectedStyleId: string;
   garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1;
@@ -223,6 +225,19 @@ export const createAiTryOnVisualInputFingerprint = (
     }))
     .sort((left, right) => left.garmentKey.localeCompare(right.garmentKey));
   const privatePhoto = input.customerPhotoAssetIdentity;
+  const occurrenceIdentities = input.physicalOccurrences
+    ? input.physicalOccurrences
+        .map((occurrence) => ({
+          garmentKey: occurrence.garmentKey,
+          generation: occurrence.occurrenceGeneration ?? null,
+        }))
+        .sort((left, right) => left.garmentKey.localeCompare(right.garmentKey))
+    : Object.entries(
+        input.garmentTypeSelection.physicalOccurrenceIdentityState
+          ?.activeGenerationByGarmentKey || {},
+      )
+        .map(([garmentKey, generation]) => ({ garmentKey, generation }))
+        .sort((left, right) => left.garmentKey.localeCompare(right.garmentKey));
 
   return hashVisualIdentity({
     demographic: input.garmentTypeSelection.demographic,
@@ -230,6 +245,7 @@ export const createAiTryOnVisualInputFingerprint = (
     construction,
     allocations,
     selectedStyleId: input.selectedStyleId,
+    occurrenceIdentities,
     detailSelections,
     personalizedInputRevision: input.personalizedInputRevision || null,
     customerPhotoAssetIdentity:

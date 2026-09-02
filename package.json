@@ -23,7 +23,7 @@
     "test:garment-type-step": "node scripts/tsxWithViteProductionFirebase.mjs test_garment_type_step_state.ts && tsx test_garment_type_step.tsx && tsx test_step1_garment_reference_images.tsx && tsx test_garment_type_fabric_planning.ts",
     "test:future-fabric-assignment": "tsx test_future_fabric_assignment_flow.ts",
     "test:additional-clothes-costs": "tsx test_additional_clothes_costs.ts",
-    "test:guest-checkout": "tsx test_guest_checkout.ts",
+    "test:guest-checkout": "node scripts/tsxWithViteProductionFirebase.mjs test_guest_checkout.ts",
     "test:homepage-gateway": "tsx test_homepage_order_gateway.ts",
     "test:fabric-capacity": "tsx test_fabric_capacity.ts",
     "test:fabric-allocation-state": "tsx test_fabric_allocation_state.ts",

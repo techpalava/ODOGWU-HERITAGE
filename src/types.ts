@@ -228,9 +228,16 @@ export interface GarmentTypeAudienceSelectionV1 {
   demographics: CustomDetailDemographic[];
 }
 
+export interface PhysicalGarmentOccurrenceIdentityStateV1 {
+  schemaVersion: 1;
+  nextGeneration: number;
+  activeGenerationByGarmentKey: Record<string, number>;
+}
+
 export interface GarmentTypeStepSelection {
   garmentTypes: CanonicalPhysicalGarmentType[];
   audienceSelection?: GarmentTypeAudienceSelectionV1;
+  physicalOccurrenceIdentityState?: PhysicalGarmentOccurrenceIdentityStateV1;
   /** Compatibility projection for downstream rules that still consume one value. */
   demographic: CustomDetailDemographic | null;
   constructionByGarment: Partial<
