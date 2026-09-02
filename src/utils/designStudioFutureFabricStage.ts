@@ -30,6 +30,12 @@ import {
   getStep1SelectableGarmentTypes,
   isStep1SelectableGarmentType,
 } from "./garmentConstructionPricing";
+import {
+  physicalOccurrencesToFabricRequirements,
+  validateRawFabricAssignments,
+  type AuthoritativePhysicalOrderDiagnostic,
+  type PhysicalGarmentOccurrence,
+} from "./designSourceState";
 
 export type FutureFabricStageBlockerCode =
   | "GARMENT_TYPE_INCOMPLETE"
@@ -41,7 +47,386 @@ export type FutureFabricStageBlockerCode =
   | "INVALID_ALLOCATION_CAPACITY"
   | "MALFORMED_ASSIGNMENT"
   | "FABRIC_QUANTITY_OVER_ALLOCATED"
-  | "FABRIC_STOCK_OVER_ALLOCATED";
+  | "FABRIC_STOCK_OVER_ALLOCATED"
+  | "RAW_FABRIC_INTEGRITY_BLOCKED";
+
+export interface FutureFabricHydrationIntegrity {
+  diagnostics: readonly AuthoritativePhysicalOrderDiagnostic[];
+  hasBlockingDiagnostics: boolean;
+}
+
+const cloneFabricAllocation = (
+  allocation: FabricAllocation,
+): FabricAllocation => ({
+  ...allocation,
+  garmentAssignments: allocation.garmentAssignments.map((assignment) => ({
+    ...assignment,
+    ...(assignment.garmentSpec
+      ? { garmentSpec: { ...assignment.garmentSpec } }
+      : {}),
+  })),
+});
+
+const cloneFabricAllocationList = (
+  allocations: readonly FabricAllocation[],
+): FabricAllocation[] => allocations.map(cloneFabricAllocation);
+
+export const validatePersistedFabricAllocationIntegrity = ({
+  fabricAllocationState,
+  authoritativeOccurrenceKeys,
+}: {
+  fabricAllocationState: FabricAllocationState;
+  authoritativeOccurrenceKeys: ReadonlySet<string>;
+}): FutureFabricHydrationIntegrity => {
+  const diagnostics = validateRawFabricAssignments({
+    authoritativeOccurrenceKeys,
+    fabricAllocationState,
+  }).diagnostics;
+  return {
+    diagnostics,
+    hasBlockingDiagnostics: diagnostics.length > 0,
+  };
+};
+
+export const prepareHydratedFabricAllocationState = ({
+  rawState,
+  garmentTypeSelection,
+  authoritativeOccurrenceKeys,
+  requiredPhysicalOccurrences,
+}: {
+  rawState: FabricAllocationState;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  authoritativeOccurrenceKeys: ReadonlySet<string>;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+}): {
+  integrity: FutureFabricHydrationIntegrity;
+  reconciledState: FabricAllocationState;
+  preservedRawFabricAllocations: FabricAllocation[] | null;
+} => {
+  const integrity = validatePersistedFabricAllocationIntegrity({
+    fabricAllocationState: rawState,
+    authoritativeOccurrenceKeys,
+  });
+  return {
+    integrity,
+    reconciledState: reconcileFutureFabricAllocationState({
+      state: rawState,
+      garmentTypeSelection,
+      requiredPhysicalOccurrences,
+    }),
+    preservedRawFabricAllocations: integrity.hasBlockingDiagnostics
+      ? cloneFabricAllocationList(rawState.fabricAllocations)
+      : null,
+  };
+};
+
+export interface HydratedFabricIntegrityRepairResolution {
+  integrity: FutureFabricHydrationIntegrity;
+  preservedRawFabricAllocations: FabricAllocation[] | null;
+  repairedGarmentKeys: readonly string[];
+}
+
+const getFabricAssignmentRepairSignature = (
+  allocation: FabricAllocation,
+  assignment: FabricGarmentAssignment,
+): string => {
+  const garmentSpec = assignment.garmentSpec;
+  return [
+    allocation.allocationId,
+    allocation.fabricCode,
+    assignment.garmentKey,
+    assignment.code,
+    assignment.garmentType,
+    String(assignment.fabricUnits),
+    assignment.lowerGarmentType ?? "",
+    garmentSpec?.key ?? "",
+    garmentSpec?.garmentType ?? "",
+    garmentSpec ? String(garmentSpec.fabricUnits) : "",
+    garmentSpec?.lowerGarmentType ?? "",
+    assignment.sourceRole ?? "",
+    assignment.mainGarmentKey ?? "",
+    assignment.mainGarmentType ?? "",
+    assignment.eligibilityRule ?? "",
+    assignment.dependencyStatus ?? "",
+  ].join("/");
+};
+
+export interface HydratedOrphanFabricAssignmentRepairTarget {
+  allocationId: string;
+  fabricCode: string;
+  garmentKey: string;
+  garmentType: FabricGarmentAssignment["garmentType"];
+  assignmentSignature: string;
+}
+
+export type HydratedOrphanFabricAssignmentRepairResult =
+  | {
+      status: "removed";
+      rawFabricAllocations: FabricAllocation[];
+      integrity: FutureFabricHydrationIntegrity;
+      preservedRawFabricAllocations: FabricAllocation[] | null;
+    }
+  | {
+      status: "blocked";
+      reason:
+        | "PRESERVED_RAW_STATE_UNAVAILABLE"
+        | "STALE_REPAIR_REQUEST"
+        | "AMBIGUOUS_REPAIR_TARGET"
+        | "ASSIGNMENT_IS_AUTHORIZED";
+    };
+
+export const getHydratedOrphanFabricAssignmentRepairTargets = ({
+  preservedRawFabricAllocations,
+  authoritativeOccurrenceKeys,
+}: {
+  preservedRawFabricAllocations: readonly FabricAllocation[];
+  authoritativeOccurrenceKeys: ReadonlySet<string>;
+}): HydratedOrphanFabricAssignmentRepairTarget[] => {
+  const rawState: FabricAllocationState = {
+    fabricAllocations: cloneFabricAllocationList(preservedRawFabricAllocations),
+    activeAllocationId: preservedRawFabricAllocations[0]?.allocationId ?? null,
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  };
+  const orphanKeys = new Set(
+    validatePersistedFabricAllocationIntegrity({
+      fabricAllocationState: rawState,
+      authoritativeOccurrenceKeys,
+    }).diagnostics
+      .filter((diagnostic) => diagnostic.code === "orphan_fabric_assignment")
+      .map((diagnostic) => diagnostic.garmentKey)
+      .filter((garmentKey): garmentKey is string => Boolean(garmentKey)),
+  );
+
+  return preservedRawFabricAllocations.flatMap((allocation) =>
+    allocation.garmentAssignments
+      .filter(
+        (assignment) =>
+          orphanKeys.has(assignment.garmentKey) &&
+          !authoritativeOccurrenceKeys.has(assignment.garmentKey),
+      )
+      .map((assignment) => ({
+        allocationId: allocation.allocationId,
+        fabricCode: allocation.fabricCode,
+        garmentKey: assignment.garmentKey,
+        garmentType: assignment.garmentType,
+        assignmentSignature: getFabricAssignmentRepairSignature(
+          allocation,
+          assignment,
+        ),
+      })),
+  );
+};
+
+const indexFabricAssignmentsForRepair = (
+  state: FabricAllocationState,
+): Map<string, string[]> => {
+  const byGarmentKey = new Map<string, string[]>();
+  state.fabricAllocations.forEach((allocation) =>
+    allocation.garmentAssignments.forEach((assignment) => {
+      const signatures = byGarmentKey.get(assignment.garmentKey) ?? [];
+      signatures.push(getFabricAssignmentRepairSignature(allocation, assignment));
+      byGarmentKey.set(assignment.garmentKey, signatures);
+    }),
+  );
+  byGarmentKey.forEach((signatures) => signatures.sort());
+  return byGarmentKey;
+};
+
+const getChangedFabricGarmentKeys = (
+  previousState: FabricAllocationState,
+  nextState: FabricAllocationState,
+): string[] => {
+  const previousByKey = indexFabricAssignmentsForRepair(previousState);
+  const nextByKey = indexFabricAssignmentsForRepair(nextState);
+  return [...new Set([...previousByKey.keys(), ...nextByKey.keys()])]
+    .filter(
+      (garmentKey) =>
+        JSON.stringify(previousByKey.get(garmentKey) ?? []) !==
+        JSON.stringify(nextByKey.get(garmentKey) ?? []),
+    )
+    .sort();
+};
+
+/**
+ * Applies only an explicit Fabric mutation to the preserved hydrated source.
+ * Unrelated raw assignments remain untouched so their diagnostics survive.
+ */
+export const revalidateHydratedFabricIntegrityAfterExplicitRepair = ({
+  preservedRawFabricAllocations,
+  previousRuntimeState,
+  nextRuntimeState,
+  authoritativeOccurrenceKeys,
+  explicitlyRepairedGarmentKeys = [],
+}: {
+  preservedRawFabricAllocations: readonly FabricAllocation[];
+  previousRuntimeState: FabricAllocationState;
+  nextRuntimeState: FabricAllocationState;
+  authoritativeOccurrenceKeys: ReadonlySet<string>;
+  explicitlyRepairedGarmentKeys?: readonly string[];
+}): HydratedFabricIntegrityRepairResolution => {
+  const repairedGarmentKeys = [
+    ...new Set([
+      ...getChangedFabricGarmentKeys(previousRuntimeState, nextRuntimeState),
+      ...explicitlyRepairedGarmentKeys.filter(Boolean),
+    ]),
+  ].sort();
+  const repairedKeySet = new Set(repairedGarmentKeys);
+  if (repairedKeySet.size === 0) {
+    const preserved = cloneFabricAllocationList(
+      preservedRawFabricAllocations,
+    );
+    const integrity = validatePersistedFabricAllocationIntegrity({
+      fabricAllocationState: {
+        fabricAllocations: preserved,
+        activeAllocationId: preserved[0]?.allocationId ?? null,
+        pendingFabricGarment: null,
+        awaitingFabricForPendingGarment: false,
+      },
+      authoritativeOccurrenceKeys,
+    });
+    return {
+      integrity,
+      preservedRawFabricAllocations: integrity.hasBlockingDiagnostics
+        ? preserved
+        : null,
+      repairedGarmentKeys,
+    };
+  }
+
+  const repairedRawAllocations = cloneFabricAllocationList(
+    preservedRawFabricAllocations,
+  )
+    .map((allocation) => ({
+      ...allocation,
+      garmentAssignments: allocation.garmentAssignments.filter(
+        (assignment) => !repairedKeySet.has(assignment.garmentKey),
+      ),
+    }))
+    .filter((allocation) => allocation.garmentAssignments.length > 0);
+
+  nextRuntimeState.fabricAllocations.forEach((runtimeAllocation) => {
+    const repairedAssignments = runtimeAllocation.garmentAssignments.filter(
+      (assignment) => repairedKeySet.has(assignment.garmentKey),
+    );
+    if (repairedAssignments.length === 0) return;
+    const existingAllocation = repairedRawAllocations.find(
+      (allocation) => allocation.allocationId === runtimeAllocation.allocationId,
+    );
+    if (existingAllocation) {
+      existingAllocation.fabricCode = runtimeAllocation.fabricCode;
+      existingAllocation.garmentAssignments.push(
+        ...repairedAssignments.map((assignment) => ({
+          ...assignment,
+          ...(assignment.garmentSpec
+            ? { garmentSpec: { ...assignment.garmentSpec } }
+            : {}),
+        })),
+      );
+      return;
+    }
+    repairedRawAllocations.push({
+      allocationId: runtimeAllocation.allocationId,
+      fabricCode: runtimeAllocation.fabricCode,
+      garmentAssignments: repairedAssignments.map((assignment) => ({
+        ...assignment,
+        ...(assignment.garmentSpec
+          ? { garmentSpec: { ...assignment.garmentSpec } }
+          : {}),
+      })),
+    });
+  });
+
+  const repairedRawState: FabricAllocationState = {
+    fabricAllocations: repairedRawAllocations,
+    activeAllocationId: repairedRawAllocations[0]?.allocationId ?? null,
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  };
+  const integrity = validatePersistedFabricAllocationIntegrity({
+    fabricAllocationState: repairedRawState,
+    authoritativeOccurrenceKeys,
+  });
+  return {
+    integrity,
+    preservedRawFabricAllocations: integrity.hasBlockingDiagnostics
+      ? cloneFabricAllocationList(repairedRawAllocations)
+      : null,
+    repairedGarmentKeys,
+  };
+};
+
+/**
+ * Removes one exact preserved orphan assignment, then delegates diagnostic
+ * rebuilding to the existing hydrated-integrity repair lifecycle.
+ */
+export const repairHydratedOrphanFabricAssignment = ({
+  preservedRawFabricAllocations,
+  runtimeState,
+  authoritativeOccurrenceKeys,
+  target,
+}: {
+  preservedRawFabricAllocations: readonly FabricAllocation[] | null;
+  runtimeState: FabricAllocationState;
+  authoritativeOccurrenceKeys: ReadonlySet<string>;
+  target: HydratedOrphanFabricAssignmentRepairTarget;
+}): HydratedOrphanFabricAssignmentRepairResult => {
+  if (!preservedRawFabricAllocations) {
+    return { status: "blocked", reason: "PRESERVED_RAW_STATE_UNAVAILABLE" };
+  }
+  if (authoritativeOccurrenceKeys.has(target.garmentKey)) {
+    return { status: "blocked", reason: "ASSIGNMENT_IS_AUTHORIZED" };
+  }
+
+  const allocationIndex = preservedRawFabricAllocations.findIndex(
+    (allocation) =>
+      allocation.allocationId === target.allocationId &&
+      allocation.fabricCode === target.fabricCode,
+  );
+  if (allocationIndex < 0) {
+    return { status: "blocked", reason: "STALE_REPAIR_REQUEST" };
+  }
+
+  const allocation = preservedRawFabricAllocations[allocationIndex]!;
+  const matchingAssignmentIndexes = allocation.garmentAssignments
+    .map((assignment, index) => ({ assignment, index }))
+    .filter(
+      ({ assignment }) =>
+        assignment.garmentKey === target.garmentKey &&
+        getFabricAssignmentRepairSignature(allocation, assignment) ===
+          target.assignmentSignature,
+    )
+    .map(({ index }) => index);
+  if (matchingAssignmentIndexes.length === 0) {
+    return { status: "blocked", reason: "STALE_REPAIR_REQUEST" };
+  }
+  if (matchingAssignmentIndexes.length > 1) {
+    return { status: "blocked", reason: "AMBIGUOUS_REPAIR_TARGET" };
+  }
+
+  const repairedRawFabricAllocations = cloneFabricAllocationList(
+    preservedRawFabricAllocations,
+  );
+  const repairedAllocation = repairedRawFabricAllocations[allocationIndex]!;
+  repairedAllocation.garmentAssignments.splice(matchingAssignmentIndexes[0]!, 1);
+  if (repairedAllocation.garmentAssignments.length === 0) {
+    repairedRawFabricAllocations.splice(allocationIndex, 1);
+  }
+
+  const revalidation = revalidateHydratedFabricIntegrityAfterExplicitRepair({
+    preservedRawFabricAllocations: repairedRawFabricAllocations,
+    previousRuntimeState: runtimeState,
+    nextRuntimeState: runtimeState,
+    authoritativeOccurrenceKeys,
+  });
+  return {
+    status: "removed",
+    rawFabricAllocations: repairedRawFabricAllocations,
+    integrity: revalidation.integrity,
+    preservedRawFabricAllocations:
+      revalidation.preservedRawFabricAllocations,
+  };
+};
 
 export interface FutureFabricStageBlocker {
   code: FutureFabricStageBlockerCode;
@@ -83,7 +468,11 @@ const resolveRequiredAssignments = (
 const resolveRequiredAssignmentsWithAdditional = (
   selection: GarmentTypeStepSelection,
   state: FabricAllocationState,
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[],
 ): FabricGarmentAssignment[] => {
+  if (requiredPhysicalOccurrences?.length) {
+    return physicalOccurrencesToFabricRequirements(requiredPhysicalOccurrences);
+  }
   const byKey = new Map(
     resolveRequiredAssignments(selection).map((assignment) => [
       assignment.garmentKey,
@@ -100,17 +489,35 @@ const resolveRequiredAssignmentsWithAdditional = (
       }
     }),
   );
-  if (
-    state.pendingFabricGarment?.sourceRole === "additional" &&
-    state.pendingFabricGarment.dependencyStatus !== "orphaned"
-  ) {
-    byKey.set(
-      state.pendingFabricGarment.garmentKey,
-      state.pendingFabricGarment,
-    );
-  }
   return [...byKey.values()];
 };
+
+const assignmentToSelection = (
+  assignment: FabricGarmentAssignment,
+): FabricGarmentInputAssignment => ({
+  code: assignment.code,
+  lowerGarmentType: assignment.lowerGarmentType,
+  garmentSpec: assignment.garmentSpec,
+  sourceRole: assignment.sourceRole,
+  mainGarmentKey: assignment.mainGarmentKey,
+  mainGarmentType: assignment.mainGarmentType,
+  eligibilityRule: assignment.eligibilityRule,
+  dependencyStatus: assignment.dependencyStatus,
+});
+
+const enrichFabricAssignmentForCapacity = (
+  assignment: FabricGarmentAssignment,
+): FabricGarmentAssignment =>
+  assignment.garmentSpec
+    ? assignment
+    : {
+        ...assignment,
+        garmentSpec: {
+          key: assignment.garmentKey,
+          garmentType: assignment.garmentType,
+          fabricUnits: assignment.fabricUnits,
+        },
+      };
 
 export interface FutureGarmentFabricPlanning {
   requiredGarmentCount: number;
@@ -225,21 +632,53 @@ export const getFutureFabricAssignmentTargets = (
     },
   }));
 
-export const getFutureUnassignedFabricTargets = ({
+const toFutureFabricAssignmentTargets = (
+  assignments: FabricGarmentAssignment[],
+): FutureFabricAssignmentTarget[] =>
+  assignments.map((assignment) => {
+    const enriched = enrichFabricAssignmentForCapacity(assignment);
+    return {
+      assignment: { ...enriched },
+      selection: assignmentToSelection(enriched),
+    };
+  });
+
+export const getFutureFabricAssignmentTargetsFromAuthority = ({
   garmentTypeSelection,
   fabricAllocationState,
+  requiredPhysicalOccurrences,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+}): FutureFabricAssignmentTarget[] =>
+  toFutureFabricAssignmentTargets(
+    resolveRequiredAssignmentsWithAdditional(
+      garmentTypeSelection,
+      fabricAllocationState,
+      requiredPhysicalOccurrences,
+    ),
+  );
+
+export const getFutureUnassignedFabricTargets = ({
+  garmentTypeSelection,
+  fabricAllocationState,
+  requiredPhysicalOccurrences,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FutureFabricAssignmentTarget[] => {
   const assignedKeys = new Set(
     fabricAllocationState.fabricAllocations.flatMap((allocation) =>
       allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
     ),
   );
-  return getFutureFabricAssignmentTargets(garmentTypeSelection).filter(
-    ({ assignment }) => !assignedKeys.has(assignment.garmentKey),
-  );
+  return getFutureFabricAssignmentTargetsFromAuthority({
+    garmentTypeSelection,
+    fabricAllocationState,
+    requiredPhysicalOccurrences,
+  }).filter(({ assignment }) => !assignedKeys.has(assignment.garmentKey));
 };
 
 const hasGarmentAssignment = (
@@ -281,14 +720,17 @@ export const getCommittedPhysicalFabricAllocationCount = (
 export const getRequiredPhysicalFabricAllocationCount = ({
   garmentTypeSelection,
   fabricAllocationState,
+  requiredPhysicalOccurrences,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): number =>
   getCustomerFacingFabricQuantityForAssignments(
     resolveRequiredAssignmentsWithAdditional(
       garmentTypeSelection,
       fabricAllocationState,
+      requiredPhysicalOccurrences,
     ),
   ).fabricQuantity;
 
@@ -300,15 +742,35 @@ export const getRequiredPhysicalFabricAllocationCount = ({
 export const canCreatePhysicalFabricAllocation = ({
   state,
   garmentTypeSelection,
+  requiredPhysicalOccurrences,
+  countPendingGarmentForCapacity = false,
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
-}): boolean =>
-  getCommittedPhysicalFabricAllocationCount(state) <
-  getRequiredPhysicalFabricAllocationCount({
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  countPendingGarmentForCapacity?: boolean;
+}): boolean => {
+  let required = getRequiredPhysicalFabricAllocationCount({
     garmentTypeSelection,
     fabricAllocationState: state,
+    requiredPhysicalOccurrences,
   });
+  if (countPendingGarmentForCapacity && state.pendingFabricGarment) {
+    const knownKeys = new Set(
+      resolveRequiredAssignmentsWithAdditional(
+        garmentTypeSelection,
+        state,
+        requiredPhysicalOccurrences,
+      ).map((assignment) => assignment.garmentKey),
+    );
+    if (!knownKeys.has(state.pendingFabricGarment.garmentKey)) {
+      required += getCustomerFacingFabricQuantityForAssignments([
+        state.pendingFabricGarment,
+      ]).fabricQuantity;
+    }
+  }
+  return getCommittedPhysicalFabricAllocationCount(state) < required;
+};
 
 export const isPhysicalFabricAllocationLimitReached = ({
   state,
@@ -411,13 +873,23 @@ const getFuturePartialFabricAllocationsWithRemainingCapacity = ({
     (summary) => summary.remainingUnits > 0,
   );
 
-const getFutureFabricAssignmentTargetForGarmentKey = (
-  garmentTypeSelection: GarmentTypeStepSelection,
-  garmentKey: string,
-): FutureFabricAssignmentTarget | null =>
-  getFutureFabricAssignmentTargets(garmentTypeSelection).find(
-    ({ assignment }) => assignment.garmentKey === garmentKey,
-  ) ?? null;
+const getFutureFabricAssignmentTargetForGarmentKey = ({
+  garmentTypeSelection,
+  fabricAllocationState,
+  garmentKey,
+  requiredPhysicalOccurrences,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+  garmentKey: string;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+}): FutureFabricAssignmentTarget | null =>
+  getFutureFabricAssignmentTargetForKey({
+    garmentTypeSelection,
+    fabricAllocationState,
+    garmentKey,
+    requiredPhysicalOccurrences,
+  });
 
 const canFutureGarmentFitFabricAllocation = ({
   allocation,
@@ -437,18 +909,22 @@ export const getFutureCompatiblePartialFabricAllocations = ({
   garmentTypeSelection,
   fabricAllocationState,
   garmentKey,
+  requiredPhysicalOccurrences,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
   garmentKey: string;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FuturePartialFabricAllocationSummary[] => {
   if (hasGarmentAssignment(fabricAllocationState, garmentKey)) {
     return [];
   }
-  const target = getFutureFabricAssignmentTargetForGarmentKey(
+  const target = getFutureFabricAssignmentTargetForGarmentKey({
     garmentTypeSelection,
+    fabricAllocationState,
     garmentKey,
-  );
+    requiredPhysicalOccurrences,
+  });
   if (!target) {
     return [];
   }
@@ -468,13 +944,16 @@ export const getFutureCompatiblePartialFabricAllocations = ({
 export const getFuturePartialFabricAllocationCompatibleTargets = ({
   garmentTypeSelection,
   fabricAllocationState,
+  requiredPhysicalOccurrences,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FuturePartialFabricCompatibleTargets[] => {
   const unassignedTargets = getFutureUnassignedFabricTargets({
     garmentTypeSelection,
     fabricAllocationState,
+    requiredPhysicalOccurrences,
   });
   return getFuturePartialFabricAllocationsWithRemainingCapacity({
     fabricAllocationState,
@@ -509,23 +988,28 @@ export const getFuturePartialFabricAllocationCompatibleTargets = ({
 export const hasAvoidablePartialFabricAllocation = ({
   garmentTypeSelection,
   fabricAllocationState,
+  requiredPhysicalOccurrences,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): boolean =>
   getFuturePartialFabricAllocationCompatibleTargets({
     garmentTypeSelection,
     fabricAllocationState,
+    requiredPhysicalOccurrences,
   }).some((entry) => entry.compatibleGarmentKeys.length > 0);
 
 export const isFutureFinalPartialFabricAllocation = ({
   garmentTypeSelection,
   fabricAllocationState,
   allocationId,
+  requiredPhysicalOccurrences,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
   allocationId: string;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): boolean => {
   const entry = getFuturePartialFabricAllocationSummaries({
     fabricAllocationState,
@@ -537,6 +1021,7 @@ export const isFutureFinalPartialFabricAllocation = ({
     getFutureUnassignedFabricTargets({
       garmentTypeSelection,
       fabricAllocationState,
+      requiredPhysicalOccurrences,
     }).length === 0
   );
 };
@@ -558,6 +1043,7 @@ const getFutureGarmentAssignmentLabel = (
   garmentKey: string,
   fabricAllocationState: FabricAllocationState,
   garmentTypeSelection: GarmentTypeStepSelection,
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[],
 ): string => {
   const assigned = fabricAllocationState.fabricAllocations
     .flatMap((allocation) => allocation.garmentAssignments)
@@ -565,9 +1051,12 @@ const getFutureGarmentAssignmentLabel = (
   if (assigned) {
     return getFabricGarmentLabel(assigned.garmentType);
   }
-  const target = getFutureFabricAssignmentTargets(garmentTypeSelection).find(
-    ({ assignment }) => assignment.garmentKey === garmentKey,
-  );
+  const target = getFutureFabricAssignmentTargetForGarmentKey({
+    garmentTypeSelection,
+    fabricAllocationState,
+    garmentKey,
+    requiredPhysicalOccurrences,
+  });
   return target
     ? getFabricGarmentLabel(target.assignment.garmentType)
     : garmentKey;
@@ -577,15 +1066,19 @@ export const getFuturePartialFabricAssignmentTargetPresentations = ({
   garmentTypeSelection,
   fabricAllocationState,
   garmentKey,
+  requiredPhysicalOccurrences,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
   garmentKey: string;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FuturePartialFabricAssignmentTargetPresentation[] => {
-  const target = getFutureFabricAssignmentTargetForGarmentKey(
+  const target = getFutureFabricAssignmentTargetForGarmentKey({
     garmentTypeSelection,
+    fabricAllocationState,
     garmentKey,
-  );
+    requiredPhysicalOccurrences,
+  });
   if (!target) {
     return [];
   }
@@ -593,6 +1086,7 @@ export const getFuturePartialFabricAssignmentTargetPresentations = ({
     garmentTypeSelection,
     fabricAllocationState,
     garmentKey,
+    requiredPhysicalOccurrences,
   }).map((summary) => {
     const fabricSelectionNumber =
       fabricAllocationState.fabricAllocations.findIndex(
@@ -611,6 +1105,7 @@ export const getFuturePartialFabricAssignmentTargetPresentations = ({
           assignedKey,
           fabricAllocationState,
           garmentTypeSelection,
+          requiredPhysicalOccurrences,
         ),
       ),
       addGarmentKey: garmentKey,
@@ -663,41 +1158,40 @@ const removeEmptyFabricAllocations = (
   };
 };
 
-const assignmentToSelection = (
-  assignment: FabricGarmentAssignment,
-): FabricGarmentInputAssignment => ({
-  code: assignment.code,
-  lowerGarmentType: assignment.lowerGarmentType,
-  garmentSpec: assignment.garmentSpec,
-  sourceRole: assignment.sourceRole,
-  mainGarmentKey: assignment.mainGarmentKey,
-  mainGarmentType: assignment.mainGarmentType,
-  eligibilityRule: assignment.eligibilityRule,
-  dependencyStatus: assignment.dependencyStatus,
-});
-
 const getFutureFabricAssignmentTargetForKey = ({
   garmentTypeSelection,
   fabricAllocationState,
   garmentKey,
+  requiredPhysicalOccurrences,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
   garmentKey: string;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FutureFabricAssignmentTarget | null => {
   const fromSelection = getFutureFabricAssignmentTargets(
     garmentTypeSelection,
   ).find(({ assignment }) => assignment.garmentKey === garmentKey);
   if (fromSelection) return fromSelection;
 
+  if (fabricAllocationState.pendingFabricGarment?.garmentKey === garmentKey) {
+    const assignment = fabricAllocationState.pendingFabricGarment;
+    return {
+      assignment: { ...assignment },
+      selection: assignmentToSelection(assignment),
+    };
+  }
+
   const assignment = resolveRequiredAssignmentsWithAdditional(
     garmentTypeSelection,
     fabricAllocationState,
+    requiredPhysicalOccurrences,
   ).find((candidate) => candidate.garmentKey === garmentKey);
   if (!assignment) return null;
+  const enriched = enrichFabricAssignmentForCapacity(assignment);
   return {
-    assignment: { ...assignment },
-    selection: assignmentToSelection(assignment),
+    assignment: { ...enriched },
+    selection: assignmentToSelection(enriched),
   };
 };
 
@@ -814,12 +1308,14 @@ const assignTargetToFabricCore = ({
   fabricCode,
   garmentTypeSelection,
   fabrics,
+  requiredPhysicalOccurrences,
 }: {
   state: FabricAllocationState;
   target: FutureFabricAssignmentTarget;
   fabricCode: string;
   garmentTypeSelection: GarmentTypeStepSelection;
   fabrics?: readonly Fabric[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FutureFabricAssignmentResult => {
   const appended = tryAppendToMatchingFabricAllocations({
     state,
@@ -840,6 +1336,7 @@ const assignTargetToFabricCore = ({
     !canCreatePhysicalFabricAllocation({
       state,
       garmentTypeSelection,
+      requiredPhysicalOccurrences,
     })
   ) {
     return {
@@ -884,12 +1381,14 @@ const assignTargetToFabric = ({
   fabricCode,
   garmentTypeSelection,
   fabrics,
+  requiredPhysicalOccurrences,
 }: {
   state: FabricAllocationState;
   target: FutureFabricAssignmentTarget;
   fabricCode: string;
   garmentTypeSelection: GarmentTypeStepSelection;
   fabrics?: readonly Fabric[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FutureFabricAssignmentResult => {
   if (state.pendingFabricGarment?.garmentKey === target.assignment.garmentKey) {
     const awaitingState = {
@@ -914,6 +1413,8 @@ const assignTargetToFabric = ({
       !canCreatePhysicalFabricAllocation({
         state: awaitingState,
         garmentTypeSelection,
+        requiredPhysicalOccurrences,
+        countPendingGarmentForCapacity: true,
       })
     ) {
       return {
@@ -959,6 +1460,7 @@ const assignTargetToFabric = ({
     fabricCode,
     garmentTypeSelection,
     fabrics,
+    requiredPhysicalOccurrences,
   });
   if (result.status !== "assigned") {
     return { ...result, state };
@@ -1002,12 +1504,14 @@ export const assignSameFabricProductToGarments = ({
   fabricCode,
   garmentKeys,
   fabrics,
+  requiredPhysicalOccurrences,
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricCode: string;
   garmentKeys: readonly string[];
   fabrics?: readonly Fabric[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FutureFabricBulkAssignmentResult => {
   let workingState = state;
   const assignedGarmentKeys: string[] = [];
@@ -1031,6 +1535,7 @@ export const assignSameFabricProductToGarments = ({
       garmentKey,
       fabricCode,
       fabrics,
+      requiredPhysicalOccurrences,
     });
     if (
       result.status !== "assigned" ||
@@ -1197,17 +1702,20 @@ export const assignFutureFabricToGarment = ({
   garmentKey,
   fabricCode,
   fabrics,
+  requiredPhysicalOccurrences,
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
   garmentKey: string;
   fabricCode: string;
   fabrics?: readonly Fabric[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FutureFabricAssignmentResult => {
   const target = getFutureFabricAssignmentTargetForKey({
     garmentTypeSelection,
     fabricAllocationState: state,
     garmentKey,
+    requiredPhysicalOccurrences,
   });
   if (!target) {
     return { status: "blocked", reason: "GARMENT_NOT_FOUND", state };
@@ -1225,6 +1733,7 @@ export const assignFutureFabricToGarment = ({
       fabricCode,
       garmentTypeSelection,
       fabrics,
+      requiredPhysicalOccurrences,
     });
   }
   if (sourceAllocation.fabricCode === fabricCode) {
@@ -1248,11 +1757,13 @@ export const assignFutureGarmentToExistingFabricAllocation = ({
   garmentTypeSelection,
   garmentKey,
   allocationId,
+  requiredPhysicalOccurrences,
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
   garmentKey: string;
   allocationId: string;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FutureFabricAssignmentResult => {
   const allocation = state.fabricAllocations.find(
     (candidate) => candidate.allocationId === allocationId,
@@ -1264,6 +1775,7 @@ export const assignFutureGarmentToExistingFabricAllocation = ({
     garmentTypeSelection,
     fabricAllocationState: state,
     garmentKey,
+    requiredPhysicalOccurrences,
   });
   if (!target) {
     return { status: "blocked", reason: "GARMENT_NOT_FOUND", state };
@@ -1316,12 +1828,14 @@ export const applyFutureFabricCardSelection = ({
   garmentKey,
   fabricCode,
   fabrics,
+  requiredPhysicalOccurrences,
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
   garmentKey: string;
   fabricCode: string;
   fabrics?: readonly Fabric[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FabricAllocationState => {
   if (state.pendingFabricGarment?.garmentKey === garmentKey) {
     const result = assignFutureFabricToGarment({
@@ -1330,6 +1844,7 @@ export const applyFutureFabricCardSelection = ({
       garmentKey,
       fabricCode,
       fabrics,
+      requiredPhysicalOccurrences,
     });
     return result.status === "assigned" ? result.state : state;
   }
@@ -1346,6 +1861,7 @@ export const applyFutureFabricCardSelection = ({
       fabricCode,
       targetGarmentKey: garmentKey,
       fabrics,
+      requiredPhysicalOccurrences,
     });
   }
 
@@ -1355,6 +1871,7 @@ export const applyFutureFabricCardSelection = ({
     garmentKey,
     fabricCode,
     fabrics,
+    requiredPhysicalOccurrences,
   }).state;
 };
 
@@ -1610,12 +2127,14 @@ export const resolveFutureFabricCatalogueCardPresentation = ({
   fabricAllocationState,
   currentTargetGarmentKey,
   fabrics,
+  requiredPhysicalOccurrences,
 }: {
   fabricCode: string;
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
   currentTargetGarmentKey: string | null;
   fabrics?: readonly Fabric[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FutureFabricCatalogueCardPresentation => {
   const usingFabric = collectUsingFabricGarmentKeys({
     fabricCode,
@@ -1645,6 +2164,23 @@ export const resolveFutureFabricCatalogueCardPresentation = ({
     };
   }
 
+  if (currentTargetGarmentKey && !assignedToCurrentTarget && usingFabric.length > 0) {
+    const untargetedCancelKeys = getFutureFabricCatalogueCancelTargets({
+      fabricCode,
+      garmentTypeSelection,
+      fabricAllocationState,
+      currentTargetGarmentKey: null,
+    });
+    if (untargetedCancelKeys.length > 1) {
+      return {
+        status,
+        action: "cancel",
+        cancelGarmentKey: null,
+        cancelGarmentKeys: untargetedCancelKeys,
+      };
+    }
+  }
+
   if (currentTargetGarmentKey) {
     const assignmentResult = assignFutureFabricToGarment({
       state: fabricAllocationState,
@@ -1652,6 +2188,7 @@ export const resolveFutureFabricCatalogueCardPresentation = ({
       garmentKey: currentTargetGarmentKey,
       fabricCode,
       fabrics,
+      requiredPhysicalOccurrences,
     });
     if (
       assignmentResult.status === "blocked" &&
@@ -1780,13 +2317,16 @@ export const getFutureFabricCapacityOffer = ({
 export const getFutureGarmentFabricPlanning = ({
   garmentTypeSelection,
   fabricAllocationState,
+  requiredPhysicalOccurrences,
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FutureGarmentFabricPlanning => {
   const requiredAssignments = resolveRequiredAssignmentsWithAdditional(
     garmentTypeSelection,
     fabricAllocationState,
+    requiredPhysicalOccurrences,
   );
   const required = getCustomerFacingFabricQuantityForAssignments(
     requiredAssignments,
@@ -1855,33 +2395,28 @@ export const getGarmentTypeStepSelectedFabricQuantity = ({
 export const reconcileFutureFabricAllocationState = ({
   state,
   garmentTypeSelection,
+  requiredPhysicalOccurrences,
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FabricAllocationState => {
-  const requiredAssignments = resolveRequiredAssignments(garmentTypeSelection);
+  const requiredAssignments = requiredPhysicalOccurrences?.length
+    ? physicalOccurrencesToFabricRequirements(requiredPhysicalOccurrences)
+    : resolveRequiredAssignments(garmentTypeSelection);
   const requiredByKey = new Map(
     requiredAssignments.map((assignment) => [assignment.garmentKey, assignment]),
   );
   state.fabricAllocations.forEach((allocation) =>
     allocation.garmentAssignments.forEach((assignment) => {
       if (
-        assignment.sourceRole === "additional" &&
+        requiredByKey.has(assignment.garmentKey) &&
         assignment.dependencyStatus !== "orphaned"
       ) {
         requiredByKey.set(assignment.garmentKey, assignment);
       }
     }),
   );
-  if (
-    state.pendingFabricGarment?.sourceRole === "additional" &&
-    state.pendingFabricGarment.dependencyStatus !== "orphaned"
-  ) {
-    requiredByKey.set(
-      state.pendingFabricGarment.garmentKey,
-      state.pendingFabricGarment,
-    );
-  }
   const retainedKeys = new Set<string>();
   const fabricAllocations = state.fabricAllocations.flatMap((allocation) => {
     const garmentAssignments = allocation.garmentAssignments.flatMap(
@@ -1983,13 +2518,16 @@ export const getFutureFabricAllocationStateSignature = (
 export const reconcileFutureFabricAllocationStateIfChanged = ({
   state,
   garmentTypeSelection,
+  requiredPhysicalOccurrences,
 }: {
   state: FabricAllocationState;
   garmentTypeSelection: GarmentTypeStepSelection;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FabricAllocationState => {
   const next = reconcileFutureFabricAllocationState({
     state,
     garmentTypeSelection,
+    requiredPhysicalOccurrences,
   });
   return getFutureFabricAllocationStateSignature(state) ===
     getFutureFabricAllocationStateSignature(next)
@@ -2003,12 +2541,14 @@ export const selectFutureFabric = ({
   garmentTypeSelection,
   targetGarmentKey,
   fabrics,
+  requiredPhysicalOccurrences,
 }: {
   state: FabricAllocationState;
   fabricCode: string;
   garmentTypeSelection: GarmentTypeStepSelection;
   targetGarmentKey?: string | null;
   fabrics?: readonly Fabric[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
 }): FabricAllocationState => {
   if (
     state.awaitingFabricForPendingGarment &&
@@ -2020,6 +2560,7 @@ export const selectFutureFabric = ({
       garmentTypeSelection,
       fabricAllocationState: state,
       garmentKey: state.pendingFabricGarment.garmentKey,
+      requiredPhysicalOccurrences,
     });
     if (!pendingTarget) return state;
     const pendingResult = assignTargetToFabric({
@@ -2028,6 +2569,7 @@ export const selectFutureFabric = ({
       fabricCode,
       garmentTypeSelection,
       fabrics,
+      requiredPhysicalOccurrences,
     });
     return pendingResult.status === "assigned" ? pendingResult.state : state;
   }
@@ -2042,11 +2584,13 @@ export const selectFutureFabric = ({
         garmentTypeSelection,
         fabricAllocationState: state,
         garmentKey: targetGarmentKey,
+        requiredPhysicalOccurrences,
       })
     : null;
   const remaining = getFutureUnassignedFabricTargets({
     garmentTypeSelection,
     fabricAllocationState: state,
+    requiredPhysicalOccurrences,
   });
   const target =
     requestedTarget && !assignedKeys.has(requestedTarget.assignment.garmentKey)
@@ -2060,6 +2604,7 @@ export const selectFutureFabric = ({
     fabricCode,
     garmentTypeSelection,
     fabrics,
+    requiredPhysicalOccurrences,
   });
   return result.status === "assigned" ? result.state : state;
 };
@@ -2091,20 +2636,32 @@ export const getFutureFabricStageCompletion = ({
   garmentTypeSelection,
   fabricAllocationState,
   fabrics,
+  requiredPhysicalOccurrences,
+  rawFabricIntegrityDiagnostics = [],
 }: {
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
   fabrics: Fabric[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+  rawFabricIntegrityDiagnostics?: readonly AuthoritativePhysicalOrderDiagnostic[];
 }): FutureFabricStageCompletion => {
   const requiredAssignments = resolveRequiredAssignmentsWithAdditional(
     garmentTypeSelection,
     fabricAllocationState,
+    requiredPhysicalOccurrences,
   );
   const requiredByKey = new Map(
     requiredAssignments.map((assignment) => [assignment.garmentKey, assignment]),
   );
   const assignedKeys = new Set<string>();
   const blockers: FutureFabricStageBlocker[] = [];
+
+  rawFabricIntegrityDiagnostics.forEach((diagnostic) => {
+    blockers.push({
+      code: "RAW_FABRIC_INTEGRITY_BLOCKED",
+      garmentKey: diagnostic.garmentKey,
+    });
+  });
 
   if (!getGarmentTypeStageCompletion(garmentTypeSelection).isComplete) {
     blockers.push({ code: "GARMENT_TYPE_INCOMPLETE" });
@@ -2184,6 +2741,7 @@ export const getFutureFabricStageCompletion = ({
   const planning = getFutureGarmentFabricPlanning({
     garmentTypeSelection,
     fabricAllocationState,
+    requiredPhysicalOccurrences,
   });
   if (planning.selectedFabricQuantity > planning.requiredFabricQuantity) {
     blockers.push({ code: "FABRIC_QUANTITY_OVER_ALLOCATED" });

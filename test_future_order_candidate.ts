@@ -2,20 +2,25 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type {
   AiTryOnWorkflowStateV1,
+  AdditionalGarmentConstructionStateV1,
   BusinessSettings,
   DesignSource,
   Fabric,
   FabricAllocationState,
+  FabricGarmentAssignment,
   FutureShippingStateV1,
   GarmentScopedCustomDetailsStateV1,
   GarmentTypeStepSelection,
   StyleCategory,
 } from "./src/types";
+import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
+import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import { calculateDesignPricing } from "./src/utils/designPricing";
 import {
   getFutureFabricCapacityComposition,
   getFutureFabricStageCompletion,
+  assignFutureFabricToGarment,
 } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileFutureDesignStyleSelection } from "./src/utils/designStudioFutureDesignStyle";
 import {
@@ -62,6 +67,17 @@ import {
   setFutureMeasurementRoute,
 } from "./src/utils/measurementBlueprint";
 import { resolveShippingGarmentPieceCount } from "./src/utils/shippingPricing";
+import {
+  buildAuthoritativePhysicalOccurrences,
+  validateFinalPhysicalOccurrenceAssignmentParity,
+  validateRawFabricAssignments,
+} from "./src/utils/designSourceState";
+import { cloneGarmentConstructionPricingResolution } from "./src/utils/additionalGarmentConstructionState";
+import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
+import {
+  buildEffectiveUploadedJourneyGarmentTypeSelection,
+  mergeUploadedDesignCompositionWithStep1,
+} from "./src/utils/uploadedDesignStep1";
 
 const inspection = inspectCustomDetailCatalog([]);
 const fabric: Fabric = {
@@ -98,26 +114,46 @@ const buildSelection = (
 
 const makeAllocationState = (
   garmentTypes: GarmentTypeStepSelection["garmentTypes"],
-): FabricAllocationState => ({
-  fabricAllocations: garmentTypes.map((garmentType, index) => ({
-    allocationId: `allocation-${index + 1}`,
-    fabricCode: fabric.code,
-    garmentAssignments: [{
-      garmentKey: `base:${garmentType}`,
-      code: `BASE_${garmentType.toUpperCase()}`,
-      garmentType,
-      fabricUnits:
-        garmentType === "full_length_gown" ||
-        garmentType === "agbada"
-          ? 2
-          : 1,
-      sourceRole: "main",
-    }],
-  })),
-  activeAllocationId: "allocation-1",
-  pendingFabricGarment: null,
-  awaitingFabricForPendingGarment: false,
-});
+): FabricAllocationState => {
+  const assignments: FabricGarmentAssignment[] = garmentTypes.map((garmentType) => ({
+    garmentKey: `base:${garmentType}`,
+    code: `BASE_${garmentType.toUpperCase()}`,
+    garmentType,
+    fabricUnits:
+      garmentType === "full_length_gown" ||
+      garmentType === "agbada"
+        ? 2
+        : 1,
+    sourceRole: "main" as const,
+  }));
+  const fabricAllocations: FabricAllocationState["fabricAllocations"] = [];
+  let batch: FabricGarmentAssignment[] = [];
+  let batchUnits = 0;
+  const flushBatch = () => {
+    if (batch.length === 0) return;
+    fabricAllocations.push({
+      allocationId: `allocation-${fabricAllocations.length + 1}`,
+      fabricCode: fabric.code,
+      garmentAssignments: batch,
+    });
+    batch = [];
+    batchUnits = 0;
+  };
+  for (const assignment of assignments) {
+    if (batchUnits + assignment.fabricUnits > 2 && batch.length > 0) {
+      flushBatch();
+    }
+    batch.push(assignment);
+    batchUnits += assignment.fabricUnits;
+  }
+  flushBatch();
+  return {
+    fabricAllocations,
+    activeAllocationId: fabricAllocations[0]?.allocationId || null,
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  };
+};
 
 const makeStyle = (
   garmentTypes: GarmentTypeStepSelection["garmentTypes"],
@@ -255,9 +291,6 @@ const buildSummaryAuthority = ({
     garmentTypeSelection,
     physicalGarments: getMeasurementPhysicalGarments({
       garmentTypeSelection,
-      fabricGarments: fabricAllocationState.fabricAllocations.flatMap(
-        (allocation) => allocation.garmentAssignments,
-      ),
     }),
     garmentScopedCustomDetails: customDetailsReconciliation.state,
   });
@@ -288,7 +321,12 @@ const buildSummaryAuthority = ({
     garmentTypeSelection,
   });
   return {
+    step1GarmentTypeSelection: garmentTypeSelection,
     garmentTypeSelection,
+    designSourceKind: "catalogue" as const,
+    uploadedCompositionSpecs: null,
+    additionalGarmentConstructionState: null,
+    pendingAdditionalGarment: null,
     catalogInspection: inspection,
     fabricAllocationState,
     fabricCompletion,
@@ -324,6 +362,286 @@ const deliveryState = (): FutureShippingStateV1 => ({
   destinationZoneId: "EUROPE",
   destinationZoneSource: "iso_resolved",
 });
+
+const fabricCompletionForAuthority = (
+  input: Pick<
+    FutureOrderCandidateBuildInput,
+    | "garmentTypeSelection"
+    | "step1GarmentTypeSelection"
+    | "fabricAllocationState"
+    | "designSourceKind"
+    | "uploadedCompositionSpecs"
+    | "additionalGarmentConstructionState"
+  >,
+) =>
+  getFutureFabricStageCompletion({
+    garmentTypeSelection: input.garmentTypeSelection,
+    fabricAllocationState: input.fabricAllocationState,
+    fabrics: [fabric],
+    requiredPhysicalOccurrences: buildAuthoritativePhysicalOccurrences({
+      sourceKind: input.designSourceKind,
+      step1GarmentTypeSelection: input.step1GarmentTypeSelection,
+      effectiveGarmentTypeSelection: input.garmentTypeSelection,
+      uploadedCompositionSpecs: input.uploadedCompositionSpecs,
+      additionalGarmentConstructionState:
+        input.additionalGarmentConstructionState,
+    }),
+  });
+
+const quoteShippingForAuthoritativeGarmentCount = (
+  input: FutureOrderCandidateBuildInput,
+  garmentCount: number,
+) => {
+  const summary = projectFutureDesignStudioSummary(input);
+  assert.equal(
+    summary.garmentSummary.length,
+    garmentCount,
+    "authoritative garment count must match summary.garmentSummary.length",
+  );
+  const weightKg = garmentCount * 0.5;
+  const shippingResolution = reconcileFutureShippingState({
+    state: deliveryState(),
+    garmentCount,
+    selectedDesignPrice:
+      summary.pricingSummary.selectedDesignPrice?.selectedDesignPrice ?? null,
+  });
+  return {
+    ...shippingResolution,
+    status: "quote_ready" as const,
+    quoteReady: true,
+    parcelWeightKg: weightKg,
+    state: {
+      ...shippingResolution.state,
+      quoteReference: shippingResolution.state.quoteReference
+        ? {
+            ...shippingResolution.state.quoteReference,
+            garmentCount,
+            weightKg,
+          }
+        : null,
+    },
+  };
+};
+
+const withStaleShippingGarmentCount = (
+  input: FutureOrderCandidateBuildInput,
+  quotedGarmentCount: number,
+) => {
+  const authoritativeCount = projectFutureDesignStudioSummary(input).garmentSummary
+    .length;
+  const shippingResolution = quoteShippingForAuthoritativeGarmentCount(
+    input,
+    authoritativeCount,
+  );
+  const weightKg = quotedGarmentCount * 0.5;
+  return {
+    ...shippingResolution,
+    parcelWeightKg: weightKg,
+    state: {
+      ...shippingResolution.state,
+      quoteReference: shippingResolution.state.quoteReference
+        ? {
+            ...shippingResolution.state.quoteReference,
+            garmentCount: quotedGarmentCount,
+            weightKg,
+          }
+        : null,
+    },
+  };
+};
+
+const buildUploadedJourneyCandidateInput = ({
+  step1GarmentTypes = ["shirt"] as GarmentTypeStepSelection["garmentTypes"],
+  uploadedExtraGarmentTypes = ["trouser"] as GarmentTypeStepSelection["garmentTypes"],
+  additionalGarmentConstructionState = null as AdditionalGarmentConstructionStateV1 | null,
+  effectiveGarmentTypeSelectionOverride = null as GarmentTypeStepSelection | null,
+} = {}): FutureOrderCandidateBuildInput => {
+  const step1GarmentTypeSelection = buildSelection(step1GarmentTypes);
+  const uploadedCompositionSpecs = mergeUploadedDesignCompositionWithStep1({
+    step1GarmentTypes,
+    additionalGarmentTypes: uploadedExtraGarmentTypes,
+  });
+  const garmentTypeSelection =
+    effectiveGarmentTypeSelectionOverride ??
+    buildEffectiveUploadedJourneyGarmentTypeSelection({
+      step1Selection: step1GarmentTypeSelection,
+      uploadedComposition: uploadedCompositionSpecs,
+      normalizedCustomDetailCatalog: inspection.activeOptions,
+    });
+  const fabrics = [fabric];
+  let fabricAllocationState = FabricAllocationStateEngine.initialize();
+  for (const garmentType of garmentTypeSelection.garmentTypes) {
+    const assignResult = assignFutureFabricToGarment({
+      state: fabricAllocationState,
+      garmentTypeSelection,
+      garmentKey: `base:${garmentType}`,
+      fabricCode: fabric.code,
+      fabrics,
+    });
+    if (assignResult.status === "assigned") {
+      fabricAllocationState = assignResult.state;
+    }
+  }
+  const fabricCompletion = fabricCompletionForAuthority({
+    step1GarmentTypeSelection,
+    garmentTypeSelection,
+    fabricAllocationState,
+    designSourceKind: "uploaded",
+    uploadedCompositionSpecs,
+    additionalGarmentConstructionState,
+  });
+  const materialPricing = resolveFabricAllocationMaterialPricing(
+    fabricAllocationState.fabricAllocations,
+    fabrics,
+  );
+  assert.equal(materialPricing.status, "resolved");
+  const style = makeStyle(garmentTypeSelection.garmentTypes);
+  const designStyleSelection = reconcileFutureDesignStyleSelection({
+    selectedStyleId: style.id,
+    styles: [style],
+    garmentTypeSelection,
+  });
+  const customDetailsReconciliation = reconcileGarmentScopedCustomDetails({
+    garmentTypeSelection,
+    style,
+    catalogInspection: inspection,
+    existingState: createEmptyGarmentScopedCustomDetailsState(),
+  });
+  const personalizedReconciliation = reconcileGarmentScopedPersonalizedInputs({
+    reconciliation: customDetailsReconciliation,
+    catalogInspection: inspection,
+    existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
+  });
+  const customDetailsCompletion = validateGarmentScopedCustomDetailsCompletion({
+    earlierStagesComplete: true,
+    reconciliation: customDetailsReconciliation,
+    personalizedInputs: personalizedReconciliation,
+    showAdditionalClothesCosts: true,
+  });
+  const customDetailsPricing = calculateGarmentScopedCustomDetailsPricing({
+    reconciliation: customDetailsReconciliation,
+    catalogInspection: inspection,
+    showAdditionalClothesCosts: true,
+  });
+  const measurementPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection,
+    physicalGarments: getMeasurementPhysicalGarments({
+      garmentTypeSelection,
+    }),
+    garmentScopedCustomDetails: customDetailsReconciliation.state,
+  });
+  let measurementState = createEmptyFutureMeasurementState("low_risk", "inch");
+  for (const requirement of measurementPlan.requirements.filter(
+    (candidate) => candidate.directInput,
+  )) {
+    measurementState = setFutureMeasurementInput({
+      state: measurementState,
+      requirement,
+      displayValue: 10,
+    });
+  }
+  measurementState = reconcileFutureMeasurementState({
+    state: measurementState,
+    plan: measurementPlan,
+  });
+  const basePricing = calculateDesignPricing({
+    route: "alone",
+    design: {},
+    materialPricing,
+    baseGarmentComposition: uploadedCompositionSpecs,
+    catalog: inspection.activeOptions,
+    businessSettings,
+    garmentConstructionSelectionMode: "garment_type_locked",
+    garmentTypeSelection,
+  });
+  const authority = {
+    step1GarmentTypeSelection,
+    garmentTypeSelection,
+    designSourceKind: "uploaded" as const,
+    uploadedCompositionSpecs,
+    additionalGarmentConstructionState,
+    pendingAdditionalGarment: null,
+    catalogInspection: inspection,
+    fabricAllocationState,
+    fabricCompletion,
+    materialPricing,
+    designStyleSelection,
+    customDetailsReconciliation,
+    customDetailsCompletion,
+    customDetailsPricing,
+    personalizedInputs: personalizedReconciliation.state,
+    aiTryOnWorkflow: {
+      schemaVersion: 1,
+      status: "skipped",
+      inputFingerprint: null,
+    } as AiTryOnWorkflowStateV1,
+    measurementPlan,
+    measurementState,
+    basePricing,
+  };
+  const summary = projectFutureDesignStudioSummary(authority);
+  const provisionalInput: FutureOrderCandidateBuildInput = {
+    ...authority,
+    source: {
+      kind: "catalog",
+      sourceKey: style.id,
+      styleId: style.id,
+    },
+    shippingResolution: reconcileFutureShippingState({
+      state: deliveryState(),
+      garmentCount: summary.garmentSummary.length,
+      selectedDesignPrice:
+        summary.pricingSummary.selectedDesignPrice?.selectedDesignPrice ?? null,
+    }),
+  };
+  return {
+    ...provisionalInput,
+    shippingResolution: quoteShippingForAuthoritativeGarmentCount(
+      provisionalInput,
+      summary.garmentSummary.length,
+    ),
+  };
+};
+
+const assertSummaryCandidateConstructionMatch = (
+  input: FutureOrderCandidateBuildInput,
+  candidateResult: ReturnType<typeof buildFutureOrderCandidate>,
+) => {
+  const summary = projectFutureDesignStudioSummary(input);
+  assert.ok(candidateResult.candidate);
+  for (const summaryGarment of summary.garmentSummary) {
+    const candidateGarment = candidateResult.candidate!.garments.find(
+      (row) => row.garmentKey === summaryGarment.garmentKey,
+    );
+    assert.ok(candidateGarment, summaryGarment.garmentKey);
+    assert.equal(
+      candidateGarment.constructionTotalCents,
+      summaryGarment.constructionTotalCents,
+    );
+    assert.deepEqual(
+      candidateGarment.construction.map((row) => ({
+        componentKey: row.componentKey,
+        selectionGroup: row.selectionGroup,
+        optionId: row.optionId,
+        label: row.label,
+        priceCents: row.priceCents,
+      })),
+      summaryGarment.construction.map((row) => ({
+        componentKey: row.componentKey,
+        selectionGroup: row.selectionGroup,
+        optionId: row.optionId,
+        label: row.label,
+        priceCents: row.priceCents,
+      })),
+    );
+    assert.equal(
+      candidateGarment.construction.some((row) => row.selectionGroup === "unknown"),
+      false,
+      `${summaryGarment.garmentKey} must not substitute unknown selectionGroup`,
+    );
+  }
+};
 
 const buildInput = (
   options: Parameters<typeof buildSummaryAuthority>[0] = {},
@@ -498,7 +816,7 @@ assert.deepEqual(
   ]),
   [["base:shirt", "shirt"], ["base:kaftan", "kaftan"]],
 );
-assert.equal(shirtKaftan.candidate.fabricAllocations.length, 2);
+assert.equal(shirtKaftan.candidate.fabricAllocations.length, 1);
 assert.ok(
   shirtKaftan.candidate.fabricAllocations.every(
     (allocation) =>
@@ -626,9 +944,6 @@ const switchedMidState = reconcileFutureMeasurementState({
     garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
     physicalGarments: getMeasurementPhysicalGarments({
       garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
-      fabricGarments: lowCompleteInput.fabricAllocationState.fabricAllocations.flatMap(
-        (allocation) => allocation.garmentAssignments,
-      ),
     }),
     garmentScopedCustomDetails: lowCompleteInput.customDetailsReconciliation.state,
   }),
@@ -638,9 +953,6 @@ const midPlan = planMeasurementRequirements({
   garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
   physicalGarments: getMeasurementPhysicalGarments({
     garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
-    fabricGarments: lowCompleteInput.fabricAllocationState.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
   }),
   garmentScopedCustomDetails: lowCompleteInput.customDetailsReconciliation.state,
 });
@@ -692,9 +1004,6 @@ const restoredLowPlan = planMeasurementRequirements({
   garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
   physicalGarments: getMeasurementPhysicalGarments({
     garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
-    fabricGarments: lowCompleteInput.fabricAllocationState.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
   }),
   garmentScopedCustomDetails: lowCompleteInput.customDetailsReconciliation.state,
 });
@@ -1362,9 +1671,6 @@ const midCandidatePlan = planMeasurementRequirements({
   garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
   physicalGarments: getMeasurementPhysicalGarments({
     garmentTypeSelection: lowCompleteInput.garmentTypeSelection,
-    fabricGarments: lowCompleteInput.fabricAllocationState.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
   }),
   garmentScopedCustomDetails: lowCompleteInput.customDetailsReconciliation.state,
 });
@@ -1424,9 +1730,6 @@ const dressTrouserInput = buildInput({
 });
 const dressTrouserPhysicalGarments = getMeasurementPhysicalGarments({
   garmentTypeSelection: dressTrouserInput.garmentTypeSelection,
-  fabricGarments: dressTrouserInput.fabricAllocationState.fabricAllocations.flatMap(
-    (allocation) => allocation.garmentAssignments,
-  ),
 });
 const buildHighRiskPlan = (physicalGarments: typeof dressTrouserPhysicalGarments) =>
   planMeasurementRequirements({
@@ -1487,5 +1790,702 @@ assert.equal(
   midCompleteCandidate.blockers.some((blocker) => blocker.code === "MEASUREMENT_CALCULATION_PENDING"),
   false,
 );
+
+// PHYSICAL_OCCURRENCE_MISMATCH matrix
+{
+  const step1 = buildSelection(["shirt", "trouser"]);
+  const occurrenceKeys = buildAuthoritativePhysicalOccurrences({
+    sourceKind: "catalogue",
+    step1GarmentTypeSelection: step1,
+    effectiveGarmentTypeSelection: step1,
+  }).map((occurrence) => occurrence.garmentKey);
+  const completeFabric = makeAllocationState(["shirt", "trouser"]);
+  assert.equal(
+    validateFinalPhysicalOccurrenceAssignmentParity({
+      authoritativeOccurrenceKeys: occurrenceKeys,
+      fabricAllocationState: completeFabric,
+    }).length,
+    0,
+  );
+  const partialFabric: FabricAllocationState = {
+    fabricAllocations: [
+      {
+        allocationId: "allocation-1",
+        fabricCode: fabric.code,
+        garmentAssignments: [
+          {
+            garmentKey: "base:shirt",
+            code: "BASE_SHIRT",
+            garmentType: "shirt",
+            fabricUnits: 1,
+            sourceRole: "main",
+          },
+        ],
+      },
+    ],
+    activeAllocationId: "allocation-1",
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  };
+  assert.equal(
+    validateRawFabricAssignments({
+      authoritativeOccurrenceKeys: new Set(occurrenceKeys),
+      fabricAllocationState: partialFabric,
+    }).diagnostics.length,
+    0,
+  );
+  assert.equal(
+    validateFinalPhysicalOccurrenceAssignmentParity({
+      authoritativeOccurrenceKeys: occurrenceKeys,
+      fabricAllocationState: partialFabric,
+    }).length,
+    1,
+  );
+  const orphanIntegrity = validateRawFabricAssignments({
+    authoritativeOccurrenceKeys: new Set(["base:shirt"]),
+    fabricAllocationState: {
+      fabricAllocations: [
+        {
+          allocationId: "allocation-1",
+          fabricCode: fabric.code,
+          garmentAssignments: [
+            {
+              garmentKey: "base:shirt",
+              code: "BASE_SHIRT",
+              garmentType: "shirt",
+              fabricUnits: 1,
+              sourceRole: "main",
+            },
+            {
+              garmentKey: "additional:gown:99",
+              code: "ORPHAN_GOWN",
+              garmentType: "full_length_gown",
+              fabricUnits: 2,
+              sourceRole: "additional",
+            },
+          ],
+        },
+      ],
+      activeAllocationId: "allocation-1",
+      pendingFabricGarment: null,
+      awaitingFabricForPendingGarment: false,
+    },
+  });
+  assert.equal(orphanIntegrity.diagnostics[0]?.code, "orphan_fabric_assignment");
+  const duplicateIntegrity = validateRawFabricAssignments({
+    authoritativeOccurrenceKeys: new Set(["base:shirt"]),
+    fabricAllocationState: {
+      fabricAllocations: [
+        {
+          allocationId: "allocation-1",
+          fabricCode: fabric.code,
+          garmentAssignments: [
+            {
+              garmentKey: "base:shirt",
+              code: "BASE_SHIRT_A",
+              garmentType: "shirt",
+              fabricUnits: 1,
+              sourceRole: "main",
+            },
+            {
+              garmentKey: "base:shirt",
+              code: "BASE_SHIRT_B",
+              garmentType: "shirt",
+              fabricUnits: 1,
+              sourceRole: "main",
+            },
+          ],
+        },
+      ],
+      activeAllocationId: "allocation-1",
+      pendingFabricGarment: null,
+      awaitingFabricForPendingGarment: false,
+    },
+  });
+  assert.equal(
+    duplicateIntegrity.diagnostics[0]?.code,
+    "duplicate_assignment_key",
+  );
+}
+
+const shirtTrouserAuthority = buildInput({ garmentTypes: ["shirt", "trouser"] });
+const partialShirtTrouserFabric: FabricAllocationState = {
+  fabricAllocations: [
+    {
+      allocationId: "allocation-1",
+      fabricCode: fabric.code,
+      garmentAssignments: [
+        {
+          garmentKey: "base:shirt",
+          code: "BASE_SHIRT",
+          garmentType: "shirt",
+          fabricUnits: 1,
+          sourceRole: "main",
+        },
+      ],
+    },
+  ],
+  activeAllocationId: "allocation-1",
+  pendingFabricGarment: null,
+  awaitingFabricForPendingGarment: false,
+};
+const incompleteCandidateInput: FutureOrderCandidateBuildInput = {
+  ...shirtTrouserAuthority,
+  fabricAllocationState: partialShirtTrouserFabric,
+  fabricCompletion: {
+    ...shirtTrouserAuthority.fabricCompletion,
+    isComplete: false,
+  },
+};
+assert.equal(
+  buildFutureOrderCandidate(incompleteCandidateInput).blockers.some(
+    (blocker) => blocker.code === "PHYSICAL_OCCURRENCE_MISMATCH",
+  ),
+  false,
+);
+assert.equal(
+  buildFutureOrderCandidate({
+    ...incompleteCandidateInput,
+    fabricCompletion: {
+      ...incompleteCandidateInput.fabricCompletion,
+      isComplete: true,
+    },
+  }).blockers.some((blocker) => blocker.code === "PHYSICAL_OCCURRENCE_MISMATCH"),
+  true,
+);
+
+const additionalShirtAssignment: FabricGarmentAssignment = {
+  garmentKey: "additional:shirt:1",
+  code: "ADDITIONAL_SHIRT",
+  garmentType: "shirt",
+  fabricUnits: 1,
+  sourceRole: "additional",
+};
+const baseShirtPricing = resolveGarmentConstructionPricing("shirt", inspection.activeOptions);
+assert.equal(baseShirtPricing.status, "resolved");
+const additionalShirtConstructionState = (() => {
+  const resolved = cloneGarmentConstructionPricingResolution(baseShirtPricing);
+  assert.equal(resolved.status, "resolved");
+  return {
+    schemaVersion: 1 as const,
+    byGarmentKey: {
+      "additional:shirt:1": {
+        ...resolved,
+        totalPriceCents: 7000,
+        totalPrice: 70,
+        components: resolved.components.map((component, index) =>
+          index === 0 ? { ...component, priceCents: 7000 } : component,
+        ),
+      },
+    },
+  };
+})();
+const repeatedShirtFabricState: FabricAllocationState = {
+  fabricAllocations: [
+    {
+      allocationId: "allocation-1",
+      fabricCode: fabric.code,
+      garmentAssignments: [
+        {
+          garmentKey: "base:shirt",
+          code: "BASE_SHIRT",
+          garmentType: "shirt",
+          fabricUnits: 1,
+          sourceRole: "main",
+        },
+        additionalShirtAssignment,
+      ],
+    },
+  ],
+  activeAllocationId: "allocation-1",
+  pendingFabricGarment: null,
+  awaitingFabricForPendingGarment: false,
+};
+const repeatedShirtBase = buildInput({ garmentTypes: ["shirt"] });
+const repeatedShirtCandidateInput: FutureOrderCandidateBuildInput = {
+  ...repeatedShirtBase,
+  fabricAllocationState: repeatedShirtFabricState,
+  additionalGarmentConstructionState: additionalShirtConstructionState,
+};
+const repeatedShirtCandidate = buildFutureOrderCandidate(repeatedShirtCandidateInput);
+assert.ok(repeatedShirtCandidate.candidate);
+const candidateGarments = repeatedShirtCandidate.candidate!.garments;
+assert.equal(
+  candidateGarments.find((garment) => garment.garmentKey === "base:shirt")
+    ?.constructionTotalCents,
+  6500,
+);
+assert.equal(
+  candidateGarments.find(
+    (garment) => garment.garmentKey === "additional:shirt:1",
+  )?.constructionTotalCents,
+  7000,
+);
+assert.equal(
+  candidateGarments.reduce(
+    (total, garment) => total + (garment.constructionTotalCents || 0),
+    0,
+  ),
+  13500,
+);
+
+const baseShirtOnlyFabric: FabricAllocationState = {
+  fabricAllocations: [
+    {
+      allocationId: "allocation-1",
+      fabricCode: fabric.code,
+      garmentAssignments: [
+        {
+          garmentKey: "base:shirt",
+          code: "BASE_SHIRT",
+          garmentType: "shirt",
+          fabricUnits: 1,
+          sourceRole: "main",
+        },
+      ],
+    },
+  ],
+  activeAllocationId: "allocation-1",
+  pendingFabricGarment: null,
+  awaitingFabricForPendingGarment: false,
+};
+
+// H3 — Candidate shipping authority uses summary.garmentSummary, not Fabric assignments
+{
+  const shirtBase = buildInput({ garmentTypes: ["shirt"] });
+  const authorizedUnassignedInput: FutureOrderCandidateBuildInput = {
+    ...shirtBase,
+    fabricAllocationState: baseShirtOnlyFabric,
+    additionalGarmentConstructionState: additionalShirtConstructionState,
+    fabricCompletion: fabricCompletionForAuthority({
+      ...shirtBase,
+      fabricAllocationState: baseShirtOnlyFabric,
+      additionalGarmentConstructionState: additionalShirtConstructionState,
+    }),
+  };
+  const authorizedUnassigned = buildFutureOrderCandidate({
+    ...authorizedUnassignedInput,
+    shippingResolution: quoteShippingForAuthoritativeGarmentCount(
+      authorizedUnassignedInput,
+      2,
+    ),
+  });
+  assert.equal(
+    authorizedUnassigned.blockers.some(
+      (blocker) => blocker.code === "STALE_SHIPPING_QUOTE",
+    ),
+    false,
+    "H3 A: incomplete Fabric must not masquerade as stale shipping",
+  );
+  assert.ok(
+    authorizedUnassigned.blockers.some((blocker) =>
+      blocker.code.startsWith("FABRIC_"),
+    ),
+    "H3 A: Fabric incomplete blocker remains distinct",
+  );
+
+  const actuallyStale = buildFutureOrderCandidate({
+    ...authorizedUnassignedInput,
+    shippingResolution: withStaleShippingGarmentCount(
+      authorizedUnassignedInput,
+      1,
+    ),
+  });
+  assert.ok(
+    actuallyStale.blockers.some(
+      (blocker) => blocker.code === "STALE_SHIPPING_QUOTE",
+    ),
+    "H3 B: quote undercounting authoritative garments must stay stale",
+  );
+
+  const completeValidInput: FutureOrderCandidateBuildInput = {
+    ...repeatedShirtCandidateInput,
+    fabricCompletion: fabricCompletionForAuthority(repeatedShirtCandidateInput),
+  };
+  const completeValid = buildFutureOrderCandidate({
+    ...completeValidInput,
+    shippingResolution: quoteShippingForAuthoritativeGarmentCount(
+      completeValidInput,
+      2,
+    ),
+  });
+  assert.equal(
+    completeValid.blockers.some(
+      (blocker) => blocker.code === "STALE_SHIPPING_QUOTE",
+    ),
+    false,
+    "H3 C: complete Fabric with matching quote must not be stale",
+  );
+  assert.equal(
+    completeValid.blockers.some(
+      (blocker) => blocker.code === "PHYSICAL_OCCURRENCE_MISMATCH",
+    ),
+    false,
+    "H3 C: complete valid journey must not report occurrence mismatch",
+  );
+
+  const orphanFabricState: FabricAllocationState = {
+    fabricAllocations: [
+      {
+        allocationId: "allocation-1",
+        fabricCode: fabric.code,
+        garmentAssignments: [
+          {
+            garmentKey: "base:shirt",
+            code: "BASE_SHIRT",
+            garmentType: "shirt",
+            fabricUnits: 1,
+            sourceRole: "main",
+          },
+          {
+            garmentKey: "additional:gown:99",
+            code: "ORPHAN_GOWN",
+            garmentType: "full_length_gown",
+            fabricUnits: 2,
+            sourceRole: "additional",
+          },
+        ],
+      },
+    ],
+    activeAllocationId: "allocation-1",
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  };
+  const orphanInput: FutureOrderCandidateBuildInput = {
+    ...shirtBase,
+    fabricAllocationState: orphanFabricState,
+    fabricCompletion: fabricCompletionForAuthority({
+      ...shirtBase,
+      fabricAllocationState: orphanFabricState,
+    }),
+  };
+  const orphanCandidate = buildFutureOrderCandidate({
+    ...orphanInput,
+    shippingResolution: quoteShippingForAuthoritativeGarmentCount(orphanInput, 1),
+  });
+  assert.equal(
+    orphanCandidate.blockers.some(
+      (blocker) => blocker.code === "STALE_SHIPPING_QUOTE",
+    ),
+    false,
+    "H3 D: orphan Fabric must not inflate shipping garment count",
+  );
+  assert.ok(
+    orphanCandidate.blockers.some(
+      (blocker) => blocker.code === "PHYSICAL_OCCURRENCE_MISMATCH",
+    ),
+    "H3 D: orphan Fabric must fail on integrity, not stale shipping",
+  );
+
+  const duplicateFabricState: FabricAllocationState = {
+    fabricAllocations: [
+      {
+        allocationId: "allocation-1",
+        fabricCode: fabric.code,
+        garmentAssignments: [
+          {
+            garmentKey: "base:shirt",
+            code: "BASE_SHIRT_A",
+            garmentType: "shirt",
+            fabricUnits: 1,
+            sourceRole: "main",
+          },
+          {
+            garmentKey: "base:shirt",
+            code: "BASE_SHIRT_B",
+            garmentType: "shirt",
+            fabricUnits: 1,
+            sourceRole: "main",
+          },
+        ],
+      },
+    ],
+    activeAllocationId: "allocation-1",
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  };
+  const duplicateInput: FutureOrderCandidateBuildInput = {
+    ...shirtBase,
+    fabricAllocationState: duplicateFabricState,
+    fabricCompletion: fabricCompletionForAuthority({
+      ...shirtBase,
+      fabricAllocationState: duplicateFabricState,
+    }),
+  };
+  const duplicateCandidate = buildFutureOrderCandidate({
+    ...duplicateInput,
+    shippingResolution: quoteShippingForAuthoritativeGarmentCount(
+      duplicateInput,
+      1,
+    ),
+  });
+  assert.equal(
+    duplicateCandidate.blockers.some(
+      (blocker) => blocker.code === "STALE_SHIPPING_QUOTE",
+    ),
+    false,
+    "H3 E: duplicate Fabric keys must not double shipping garment count",
+  );
+  assert.ok(
+    duplicateCandidate.blockers.some(
+      (blocker) => blocker.code === "PHYSICAL_OCCURRENCE_MISMATCH",
+    ),
+    "H3 E: duplicate Fabric must fail on integrity",
+  );
+
+  assert.equal(
+    projectFutureDesignStudioSummary(authorizedUnassignedInput).garmentSummary
+      .length,
+    2,
+    "H3 F: repeated same garment type remains two physical occurrences",
+  );
+
+  const uploadedShirtBase = buildInput({ garmentTypes: ["shirt"] });
+  const uploadedAdditionalInput: FutureOrderCandidateBuildInput = {
+    ...uploadedShirtBase,
+    designSourceKind: "uploaded",
+    uploadedCompositionSpecs: [createStyleBaseGarmentSpec("shirt")],
+    fabricAllocationState: baseShirtOnlyFabric,
+    additionalGarmentConstructionState: additionalShirtConstructionState,
+    fabricCompletion: fabricCompletionForAuthority({
+      ...uploadedShirtBase,
+      designSourceKind: "uploaded",
+      uploadedCompositionSpecs: [createStyleBaseGarmentSpec("shirt")],
+      fabricAllocationState: baseShirtOnlyFabric,
+      additionalGarmentConstructionState: additionalShirtConstructionState,
+    }),
+  };
+  const uploadedAdditional = buildFutureOrderCandidate({
+    ...uploadedAdditionalInput,
+    shippingResolution: quoteShippingForAuthoritativeGarmentCount(
+      uploadedAdditionalInput,
+      2,
+    ),
+  });
+  assert.equal(
+    uploadedAdditional.blockers.some(
+      (blocker) => blocker.code === "STALE_SHIPPING_QUOTE",
+    ),
+    false,
+    "H3 G: uploaded base plus authorized additional must not stale-quote on missing additional Fabric",
+  );
+
+  const gownThreeGarmentBase = buildInput({
+    garmentTypes: ["shirt", "trouser", "full_length_gown"],
+  });
+  assert.equal(
+    projectFutureDesignStudioSummary(gownThreeGarmentBase).garmentSummary.length,
+    3,
+    "H3 H: gown remains one physical garment despite two Fabric units",
+  );
+  const gownCandidate = buildFutureOrderCandidate({
+    ...gownThreeGarmentBase,
+    shippingResolution: quoteShippingForAuthoritativeGarmentCount(
+      gownThreeGarmentBase,
+      3,
+    ),
+  });
+  assert.equal(
+    gownCandidate.blockers.some(
+      (blocker) => blocker.code === "STALE_SHIPPING_QUOTE",
+    ),
+    false,
+    "H3 H: three-garment quote must match authoritative count, not Fabric units",
+  );
+
+  const shirtTrouserAdditionalBase = buildInput({
+    garmentTypes: ["shirt", "trouser"],
+  });
+  const shirtTrouserPartialFabric: FabricAllocationState = {
+    fabricAllocations: [
+      {
+        allocationId: "allocation-1",
+        fabricCode: fabric.code,
+        garmentAssignments: [
+          {
+            garmentKey: "base:shirt",
+            code: "BASE_SHIRT",
+            garmentType: "shirt",
+            fabricUnits: 1,
+            sourceRole: "main",
+          },
+          {
+            garmentKey: "base:trouser",
+            code: "BASE_TROUSER",
+            garmentType: "trouser",
+            fabricUnits: 1,
+            sourceRole: "main",
+          },
+        ],
+      },
+    ],
+    activeAllocationId: "allocation-1",
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  };
+  const additionalThreeGarmentInput: FutureOrderCandidateBuildInput = {
+    ...shirtTrouserAdditionalBase,
+    fabricAllocationState: shirtTrouserPartialFabric,
+    additionalGarmentConstructionState: additionalShirtConstructionState,
+    fabricCompletion: fabricCompletionForAuthority({
+      ...shirtTrouserAdditionalBase,
+      fabricAllocationState: shirtTrouserPartialFabric,
+      additionalGarmentConstructionState: additionalShirtConstructionState,
+    }),
+  };
+  const additionalThreeGarment = buildFutureOrderCandidate({
+    ...additionalThreeGarmentInput,
+    shippingResolution: quoteShippingForAuthoritativeGarmentCount(
+      additionalThreeGarmentInput,
+      3,
+    ),
+  });
+  assert.equal(
+    additionalThreeGarment.blockers.some(
+      (blocker) => blocker.code === "STALE_SHIPPING_QUOTE",
+    ),
+    false,
+    "H3 I: base shirt/trouser plus additional shirt must quote three garments",
+  );
+}
+
+// H6 — Candidate construction metadata authority
+{
+  const uploadedShirtTrouserInput = buildUploadedJourneyCandidateInput();
+  const uploadedShirtTrouserSummary = projectFutureDesignStudioSummary(
+    uploadedShirtTrouserInput,
+  );
+  const uploadedShirtTrouserCandidate = buildFutureOrderCandidate(
+    uploadedShirtTrouserInput,
+  );
+  assert.ok(uploadedShirtTrouserCandidate.candidate);
+  assert.deepEqual(
+    uploadedShirtTrouserCandidate.candidate!.garments.map((row) => row.garmentKey),
+    ["base:shirt", "base:trouser"],
+  );
+  const trouserCandidate = uploadedShirtTrouserCandidate.candidate!.garments.find(
+    (row) => row.garmentKey === "base:trouser",
+  );
+  assert.ok(trouserCandidate);
+  assert.equal(trouserCandidate.constructionTotalCents, 7500);
+  assert.ok(
+    trouserCandidate.construction.some(
+      (component) => component.selectionGroup === "trouser_fastening",
+    ),
+    "uploaded Trouser must keep authoritative fastening selectionGroup",
+  );
+  assert.equal(
+    trouserCandidate.construction.some(
+      (component) => component.selectionGroup === "unknown",
+    ),
+    false,
+  );
+  assertSummaryCandidateConstructionMatch(
+    uploadedShirtTrouserInput,
+    uploadedShirtTrouserCandidate,
+  );
+  void uploadedShirtTrouserSummary;
+
+  const uploadedMixedInput = buildUploadedJourneyCandidateInput({
+    additionalGarmentConstructionState: additionalShirtConstructionState,
+  });
+  const uploadedMixedCandidate = buildFutureOrderCandidate(uploadedMixedInput);
+  assert.ok(uploadedMixedCandidate.candidate);
+  assert.deepEqual(
+    uploadedMixedCandidate.candidate!.garments.map((row) => row.garmentKey),
+    ["base:shirt", "base:trouser", "additional:shirt:1"],
+  );
+  assert.equal(
+    uploadedMixedCandidate.candidate!.garments.find(
+      (row) => row.garmentKey === "base:shirt",
+    )?.constructionTotalCents,
+    6500,
+  );
+  assert.equal(
+    uploadedMixedCandidate.candidate!.garments.find(
+      (row) => row.garmentKey === "base:trouser",
+    )?.constructionTotalCents,
+    7500,
+  );
+  assert.equal(
+    uploadedMixedCandidate.candidate!.garments.find(
+      (row) => row.garmentKey === "additional:shirt:1",
+    )?.constructionTotalCents,
+    7000,
+  );
+  assertSummaryCandidateConstructionMatch(
+    uploadedMixedInput,
+    uploadedMixedCandidate,
+  );
+
+  const catalogueControlInput = buildInput({ garmentTypes: ["shirt"] });
+  const catalogueStyle = makeStyle(["shirt", "trouser"]);
+  const catalogueControlCandidate = buildFutureOrderCandidate({
+    ...catalogueControlInput,
+    designStyleSelection: reconcileFutureDesignStyleSelection({
+      selectedStyleId: catalogueStyle.id,
+      styles: [catalogueStyle],
+      garmentTypeSelection: catalogueControlInput.garmentTypeSelection,
+    }),
+    shippingResolution: quoteShippingForAuthoritativeGarmentCount(
+      catalogueControlInput,
+      1,
+    ),
+  });
+  assert.ok(catalogueControlCandidate.candidate);
+  assert.deepEqual(
+    catalogueControlCandidate.candidate!.garments.map((row) => row.garmentKey),
+    ["base:shirt"],
+  );
+  assert.equal(
+    catalogueControlCandidate.candidate!.garments[0]?.construction.some(
+      (component) => component.selectionGroup === "shirt_construction",
+    ),
+    true,
+  );
+
+  const uploadedJourney = buildEffectiveUploadedJourneyGarmentTypeSelection({
+    step1Selection: buildSelection(["shirt"]),
+    uploadedComposition: mergeUploadedDesignCompositionWithStep1({
+      step1GarmentTypes: ["shirt"],
+      additionalGarmentTypes: ["trouser"],
+    }),
+    normalizedCustomDetailCatalog: inspection.activeOptions,
+  });
+  const { trouser: _removedTrouserConstruction, ...constructionWithoutTrouser } =
+    uploadedJourney.constructionByGarment;
+  const missingUploadConstructionInput = buildUploadedJourneyCandidateInput({
+    effectiveGarmentTypeSelectionOverride: {
+      ...uploadedJourney,
+      constructionByGarment: constructionWithoutTrouser,
+    },
+  });
+  const missingUploadConstructionSummary = projectFutureDesignStudioSummary(
+    missingUploadConstructionInput,
+  );
+  const missingUploadConstructionCandidate = buildFutureOrderCandidate(
+    missingUploadConstructionInput,
+  );
+  assert.ok(
+    missingUploadConstructionSummary.blockers.some(
+      (blocker) =>
+        blocker.code === "GARMENT_CONSTRUCTION_INVALID" &&
+        blocker.garmentKey === "base:trouser",
+    ),
+  );
+  assert.ok(missingUploadConstructionCandidate.candidate);
+  assert.equal(
+    missingUploadConstructionCandidate.candidate!.garments.find(
+      (row) => row.garmentKey === "base:trouser",
+    )?.construction.length,
+    0,
+  );
+  assert.equal(
+    missingUploadConstructionCandidate.candidate!.garments
+      .flatMap((row) => row.construction)
+      .some((component) => component.selectionGroup === "unknown"),
+    false,
+  );
+}
 
 console.log("PASS: future order candidate contract and security boundary");

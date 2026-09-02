@@ -12,7 +12,7 @@ import {
 } from "./src/utils/designStudioFutureFabricStage";
 import { resolveStep1FabricCatalogueCardPresentation } from "./src/utils/step1FabricAssignmentPopup";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 
@@ -296,9 +296,7 @@ mixedAdditionalState = applyFutureFabricCardSelection({
 });
 const mixedAdditionalSelection = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
-  existingAssignments: mixedAdditionalState.fabricAllocations.flatMap(
-    (allocation) => allocation.garmentAssignments,
-  ),
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt", "trouser"]),
 });
 assert.equal(mixedAdditionalSelection.status, "resolved");
 if (mixedAdditionalSelection.status === "resolved") {

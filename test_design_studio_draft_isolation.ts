@@ -1,3 +1,8 @@
+/**
+ * Future vs legacy Design Studio draft isolation.
+ * Requires Vite production Firebase env — do not run with plain `tsx`.
+ * Canonical: npm run test:design-studio-draft-isolation
+ */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { DesignStudioStageId, GuestDesignDraft } from "./src/types";

@@ -444,18 +444,16 @@ export const getPersistableCartItemFabricAllocationsForOrder = (
 
 export const resolveDraftAutosaveFabricAllocations = ({
   preservedInvalidHydratedFabricAllocations,
-  preservedInvalidHydratedSelectionSignature,
-  currentSelectionSignature,
+  hasUnresolvedHydratedFabricIntegrity,
   generatedFabricAllocations,
 }: {
   preservedInvalidHydratedFabricAllocations: unknown | null;
-  preservedInvalidHydratedSelectionSignature: string | null;
-  currentSelectionSignature: string;
+  hasUnresolvedHydratedFabricIntegrity: boolean;
   generatedFabricAllocations: FabricAllocation[];
 }): DraftAutosaveAllocationResolution => {
   if (
     preservedInvalidHydratedFabricAllocations !== null &&
-    preservedInvalidHydratedSelectionSignature === currentSelectionSignature
+    hasUnresolvedHydratedFabricIntegrity
   ) {
     return {
       fabricAllocations:

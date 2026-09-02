@@ -113,15 +113,16 @@ export const projectCustomerGarmentConstructionBreakdown = ({
       (garmentType) => createStyleBaseGarmentSpec(garmentType).key,
     ),
   );
-  const additionalGarmentKeys = new Set(
-    additionalGarments
+  const additionalGarmentKeys = new Set([
+    ...Object.keys(additionalGarmentConstructions.byGarmentKey || {}),
+    ...additionalGarments
       .filter(
         (assignment) =>
           assignment.sourceRole === "additional" &&
           assignment.dependencyStatus !== "orphaned",
       )
       .map((assignment) => assignment.garmentKey),
-  );
+  ]);
   const activeOccurrences = new Map<
     string,
     Pick<FutureCustomDetailPhysicalSubject, "parentGarmentKey" | "parentGarmentType">

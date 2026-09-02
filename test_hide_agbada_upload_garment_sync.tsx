@@ -12,7 +12,7 @@ import {
   createStyleBaseGarmentSpec,
   STYLE_BASE_GARMENT_TYPES,
 } from "./src/config/StyleFabricCapacityConfig";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
@@ -309,7 +309,7 @@ assert.ok(
 {
   const rejected = createCatalogueAdditionalGarmentSelection({
     garmentType: "agbada",
-    existingAssignments: [],
+    authoritativePhysicalOccurrences: [],
   });
   assert.equal(rejected.status, "invalid");
   assert.ok(
@@ -318,27 +318,17 @@ assert.ok(
 
   const withoutParent = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: [],
+    authoritativePhysicalOccurrences: [],
   });
   assert.equal(
     withoutParent.status,
     "invalid",
-    "catalogue addition requires a committed parent assignment",
+    "catalogue addition requires an authoritative parent occurrence",
   );
 
   const allowed = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: [
-      {
-        garmentKey: "base:shirt",
-        code: "BASE_SHIRT",
-        garmentType: "shirt",
-        fabricUnits: 1,
-        garmentSpec: { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
-        sourceRole: "main",
-        dependencyStatus: "valid",
-      },
-    ],
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
   });
   assert.equal(allowed.status, "resolved");
   assert.ok(

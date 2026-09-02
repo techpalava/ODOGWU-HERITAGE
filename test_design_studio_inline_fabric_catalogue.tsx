@@ -4,7 +4,15 @@ import { act, create, type ReactTestInstance } from "react-test-renderer";
 import type { ReactElement } from "react";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
-import type { Fabric, GarmentTypeStepSelection } from "./src/types";
+import type {
+  Fabric,
+  FabricAllocationState,
+  GarmentTypeStepSelection,
+} from "./src/types";
+import type {
+  AuthoritativePhysicalOrderDiagnostic,
+  PhysicalGarmentOccurrence,
+} from "./src/utils/designSourceState";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import { STEP_1_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
@@ -23,10 +31,17 @@ import {
   formatRequiredFabricQuantitySentence,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
+  getHydratedOrphanFabricAssignmentRepairTargets,
+  prepareHydratedFabricAllocationState,
+  repairHydratedOrphanFabricAssignment,
   removeFutureFabricAssignment,
   selectFutureFabric,
+  type HydratedOrphanFabricAssignmentRepairResult,
+  type HydratedOrphanFabricAssignmentRepairTarget,
 } from "./src/utils/designStudioFutureFabricStage";
 import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
+import { buildAuthoritativePhysicalOccurrences } from "./src/utils/designSourceState";
+import { cloneGarmentConstructionPricingResolution } from "./src/utils/additionalGarmentConstructionState";
 import { STEP1_NO_GARMENTS_TO_ASSIGN_STATUS } from "./src/utils/step1FabricAssignmentPopup";
 
 const require = createRequire(import.meta.url);
@@ -222,15 +237,26 @@ const renderStep = (
       expectedAssignmentSignature: string;
     },
   ) => void = () => undefined,
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[],
+  integrityRepair?: {
+    diagnostics: readonly AuthoritativePhysicalOrderDiagnostic[];
+    targets: readonly HydratedOrphanFabricAssignmentRepairTarget[];
+    onRepair: (
+      target: HydratedOrphanFabricAssignmentRepairTarget,
+    ) => HydratedOrphanFabricAssignmentRepairResult;
+  },
 ) => {
   const completion = getFutureFabricStageCompletion({
     garmentTypeSelection: selection,
     fabricAllocationState: state,
     fabrics: catalogueFabrics,
+    requiredPhysicalOccurrences,
+    rawFabricIntegrityDiagnostics: integrityRepair?.diagnostics,
   });
   const planning = getFutureGarmentFabricPlanning({
     garmentTypeSelection: selection,
     fabricAllocationState: state,
+    requiredPhysicalOccurrences,
   });
   return (
     <DormantFutureFabricStep
@@ -241,8 +267,11 @@ const renderStep = (
       requiredFabricQuantity={planning.requiredFabricQuantity}
       selectedFabricQuantity={planning.selectedFabricQuantity}
       constructionPrice={constructionPrice ?? resolveConstructionTotal(selection)}
+      requiredPhysicalOccurrences={requiredPhysicalOccurrences}
+      orphanRepairTargets={integrityRepair?.targets}
       onAssignFabricToGarment={onAssign}
       onRemoveFabricFromGarment={onRemoveFabricFromGarment}
+      onRepairInvalidFabricAssignment={integrityRepair?.onRepair}
       onUseSameFabricForGarment={onUseSameFabricForGarment}
       onAssignSameFabricProduct={onAssignSameFabricProduct}
       onAssignGarmentToExistingAllocation={onAssignGarmentToExistingAllocation}
@@ -303,6 +332,7 @@ const applyExistingAllocationResult =
       state: ReturnType<typeof FabricAllocationStateEngine.initialize>,
     ) => void,
     selection: GarmentTypeStepSelection,
+    requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[],
   ) =>
   (garmentKey: string, allocationId: string) => {
     const result = assignFutureGarmentToExistingFabricAllocation({
@@ -310,6 +340,7 @@ const applyExistingAllocationResult =
       garmentTypeSelection: selection,
       garmentKey,
       allocationId,
+      requiredPhysicalOccurrences,
     });
     if (result.status === "assigned") setState(result.state);
     return result;
@@ -1438,6 +1469,7 @@ let activeFocusMock: FocusMock | null = null;
 let dialogFocusMock: FocusMock | null = null;
 let bulkChoiceDialogFocusMock: FocusMock | null = null;
 const bulkDialogFocusables: FocusMock[] = [];
+const orphanRepairDialogFocusables: FocusMock[] = [];
 const dialogButtonHandlers = new Map<string, () => void>();
 const focusMocks = new Map<string, FocusMock>();
 const mockDocument = {
@@ -1548,6 +1580,18 @@ const createFocusMock = (element: ReactElement): FocusMock => {
     mock.querySelectorAll = () =>
       bulkDialogFocusables.filter((element) => !element.hasAttribute("disabled"));
   }
+  if (props["data-testid"] === "invalid-fabric-assignment-repair-dialog") {
+    mock.querySelectorAll = () =>
+      orphanRepairDialogFocusables.filter(
+        (element) => !element.hasAttribute("disabled"),
+      );
+  }
+  if (
+    props["data-invalid-fabric-repair-cancel"] === "true" ||
+    props["data-invalid-fabric-repair-confirm"] === "true"
+  ) {
+    orphanRepairDialogFocusables.push(mock);
+  }
   if (
     props["data-bulk-choice-control"] ||
     props["data-step1-fabric-assignment-control"]
@@ -1575,6 +1619,9 @@ const createFocusMock = (element: ReactElement): FocusMock => {
   if (typeof ariaLabel === "string") {
     mock.label = ariaLabel;
     focusMocks.set(ariaLabel, mock);
+  }
+  if (props["data-fabric-integrity-repair-status"] === "true") {
+    mock.label = "fabric-integrity-repair-status";
   }
   const garmentKey = props["data-garment-key"];
   if (typeof garmentKey === "string") {
@@ -3403,9 +3450,10 @@ try {
     ["base:trouser", "base:skirt"],
   );
 
-  const { createCatalogueAdditionalGarmentSelection } = await import(
-    "./src/utils/additionalGarmentDomain"
-  );
+  const {
+    createCatalogueAdditionalGarmentSelection,
+    projectCatalogueStep1PhysicalOccurrences,
+  } = await import("./src/utils/additionalGarmentDomain");
   let additionalCancelState = applyFutureFabricCardSelection({
     state: FabricAllocationStateEngine.initialize(),
     garmentTypeSelection: shirtTrouserSelection,
@@ -3419,9 +3467,10 @@ try {
   );
   const additionalSelection = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: additionalCancelState.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences([
+      "shirt",
+      "trouser",
+    ]),
   });
   assert.equal(additionalSelection.status, "resolved");
   if (additionalSelection.status !== "resolved") {
@@ -3540,9 +3589,10 @@ try {
   });
   const mixedAdditionalSelection = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: mixedStep4UiState.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences([
+      "shirt",
+      "trouser",
+    ]),
   });
   assert.equal(mixedAdditionalSelection.status, "resolved");
   if (mixedAdditionalSelection.status !== "resolved") {
@@ -3608,25 +3658,27 @@ try {
     "Step 2 card X must not silently remove a Step 4 additional assignment.",
   );
 
-  const additionalOccurrences = (
-    state: typeof additionalCancelState,
-  ) => [
-    ...state.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
-    ...(state.pendingFabricGarment ? [state.pendingFabricGarment] : []),
-  ];
+  const authorizedInlineAdditionalKeys: string[] = [];
   const appendInlineAdditionalShirt = (
     state: typeof additionalCancelState,
     fabricCode?: string,
   ) => {
     const selection = createCatalogueAdditionalGarmentSelection({
       garmentType: "shirt",
-      existingAssignments: additionalOccurrences(state),
+      authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences([
+        "shirt",
+        "trouser",
+      ]),
+      authorizedOccurrenceKeys: authorizedInlineAdditionalKeys,
     });
     assert.equal(selection.status, "resolved");
     if (selection.status !== "resolved") {
       throw new Error("Expected additional shirt.");
+    }
+    const garmentKey = selection.selection.garmentSpec?.key;
+    assert.ok(garmentKey);
+    if (!authorizedInlineAdditionalKeys.includes(garmentKey)) {
+      authorizedInlineAdditionalKeys.push(garmentKey);
     }
     let next = FabricAllocationStateEngine.attemptAppendGarment(
       state,
@@ -4224,9 +4276,7 @@ try {
   });
   const pendingUiAdditional = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: pendingUiState.fabricAllocations.flatMap(
-      (allocation) => allocation.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
   });
   assert.equal(pendingUiAdditional.status, "resolved");
   if (pendingUiAdditional.status !== "resolved") {
@@ -4237,6 +4287,24 @@ try {
     pendingUiAdditional.selection,
   );
   assert.equal(pendingUiState.pendingFabricGarment?.garmentKey, "additional:shirt:1");
+  const pendingUiShirtConstruction = resolveGarmentConstructionPricing("shirt", catalog);
+  assert.equal(pendingUiShirtConstruction.status, "resolved");
+  if (pendingUiShirtConstruction.status !== "resolved") {
+    throw new Error("Expected shirt construction for pending UI test");
+  }
+  const pendingUiAuthorizedOccurrences = buildAuthoritativePhysicalOccurrences({
+    sourceKind: "catalogue",
+    step1GarmentTypeSelection: threeGarmentSelection,
+    effectiveGarmentTypeSelection: threeGarmentSelection,
+    additionalGarmentConstructionState: {
+      schemaVersion: 1,
+      byGarmentKey: {
+        "additional:shirt:1": cloneGarmentConstructionPricingResolution(
+          pendingUiShirtConstruction,
+        ),
+      },
+    },
+  });
   let pendingUiRenderer!: ReturnType<typeof create>;
   const renderPendingUi = () =>
     renderStep(
@@ -4247,6 +4315,10 @@ try {
           garmentTypeSelection: threeGarmentSelection,
           garmentKey,
           fabricCode: fabric.code,
+          requiredPhysicalOccurrences:
+            garmentKey === "additional:shirt:1"
+              ? pendingUiAuthorizedOccurrences
+              : undefined,
         });
         return pendingUiState;
       },
@@ -4353,6 +4425,16 @@ try {
   assert.ok(pendingCard);
   await act(async () => pendingCard!.props.onClick());
   await act(async () => pendingUiRenderer.update(renderPendingUi()));
+  if (pendingUiState.pendingFabricGarment?.garmentKey === "additional:shirt:1") {
+    pendingUiState = applyFutureFabricCardSelection({
+      state: pendingUiState,
+      garmentTypeSelection: threeGarmentSelection,
+      garmentKey: "additional:shirt:1",
+      fabricCode: "INLINE-B",
+      requiredPhysicalOccurrences: pendingUiAuthorizedOccurrences,
+    });
+    await act(async () => pendingUiRenderer.update(renderPendingUi()));
+  }
   assert.equal(pendingUiState.pendingFabricGarment, null);
   assert.ok(
     pendingUiState.fabricAllocations.some(
@@ -5767,6 +5849,460 @@ try {
       activeFocusMock?.label,
       "Assign fabric for Trouser",
       "Cancel must restore focus to the originating Assign to Fabric action.",
+    );
+  }
+
+  {
+    const shirtOnlySelection = reconcileGarmentTypeStepSelection({
+      selectedGarmentTypes: ["shirt"],
+      selectedDemographics: ["male"],
+      normalizedCustomDetailCatalog: catalog,
+    }).selection;
+    const shirtConstruction = resolveGarmentConstructionPricing("shirt", catalog);
+    assert.equal(shirtConstruction.status, "resolved");
+    if (shirtConstruction.status !== "resolved") {
+      throw new Error("Expected shirt construction pricing");
+    }
+    const authorizedAdditionalShirtOccurrences = buildAuthoritativePhysicalOccurrences({
+      sourceKind: "catalogue",
+      step1GarmentTypeSelection: shirtOnlySelection,
+      effectiveGarmentTypeSelection: shirtOnlySelection,
+      additionalGarmentConstructionState: {
+        schemaVersion: 1,
+        byGarmentKey: {
+          "additional:shirt:1": cloneGarmentConstructionPricingResolution(
+            shirtConstruction,
+          ),
+        },
+      },
+    });
+    let additionalPartialState = applyFutureFabricCardSelection({
+      state: FabricAllocationStateEngine.initialize(),
+      garmentTypeSelection: shirtOnlySelection,
+      garmentKey: "base:shirt",
+      fabricCode: "INLINE-A",
+    });
+    const shirtAllocationId =
+      additionalPartialState.fabricAllocations[0]?.allocationId;
+    assert.ok(shirtAllocationId);
+    let additionalPartialRenderer!: ReturnType<typeof create>;
+    const renderAdditionalPartial = () =>
+      renderStep(
+        additionalPartialState,
+        () => undefined,
+        shirtOnlySelection,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        undefined,
+        undefined,
+        fabrics,
+        applyExistingAllocationResult(
+          () => additionalPartialState,
+          (state) => {
+            additionalPartialState = state;
+          },
+          shirtOnlySelection,
+          authorizedAdditionalShirtOccurrences,
+        ),
+        undefined,
+        authorizedAdditionalShirtOccurrences,
+      );
+    await act(async () => {
+      additionalPartialRenderer = create(renderAdditionalPartial(), {
+        createNodeMock: createFocusMock,
+      });
+    });
+    const assignAdditionalShirtButton = additionalPartialRenderer.root.findByProps({
+      "data-testid": "assign-to-fabric-additional:shirt:1",
+    });
+    assert.ok(
+      assignAdditionalShirtButton,
+      "Authorized additional Shirt must expose Assign to Fabric for a partial allocation.",
+    );
+    assert.equal(
+      findButton(additionalPartialRenderer.root, "Add Fabric"),
+      undefined,
+      "Authorized additional Shirt must not be blocked behind Add Fabric at the limit.",
+    );
+    await act(async () => assignAdditionalShirtButton.props.onClick());
+    await act(async () => additionalPartialRenderer.update(renderAdditionalPartial()));
+    await act(async () =>
+      additionalPartialRenderer.root
+        .findByProps({ "data-testid": "partial-fabric-capacity-confirm" })
+        .props.onClick(),
+    );
+    await act(async () => additionalPartialRenderer.update(renderAdditionalPartial()));
+    const filledAllocation = additionalPartialState.fabricAllocations.find(
+      (allocation) => allocation.allocationId === shirtAllocationId,
+    );
+    assert.deepEqual(
+      filledAllocation?.garmentAssignments.map((assignment) => assignment.garmentKey).sort(),
+      ["additional:shirt:1", "base:shirt"],
+    );
+    assert.equal(additionalPartialState.fabricAllocations.length, 1);
+    assert.equal(
+      getFutureFabricStageCompletion({
+        garmentTypeSelection: shirtOnlySelection,
+        fabricAllocationState: additionalPartialState,
+        fabrics,
+        requiredPhysicalOccurrences: authorizedAdditionalShirtOccurrences,
+      }).isComplete,
+      true,
+    );
+  }
+
+  // H4 renders a scoped orphan repair flow without legitimizing the orphan card.
+  {
+    const orphanGarmentKey = "additional:full_length_gown:99";
+    const requiredOccurrences: PhysicalGarmentOccurrence[] = [
+      {
+        garmentKey: "base:shirt",
+        garmentType: "shirt",
+        sourceRole: "main",
+        fabricUnits: 1,
+      },
+    ];
+    const authoritativeOccurrenceKeys = new Set(["base:shirt"]);
+    const rawState: FabricAllocationState = {
+      fabricAllocations: [
+        {
+          allocationId: "integrity-mixed-allocation",
+          fabricCode: "INLINE-A",
+          garmentAssignments: [
+            {
+              garmentKey: "base:shirt",
+              code: "BASE_SHIRT",
+              garmentType: "shirt",
+              fabricUnits: 1,
+              sourceRole: "main",
+            },
+            {
+              garmentKey: orphanGarmentKey,
+              code: "ADDITIONAL_GOWN",
+              garmentType: "full_length_gown",
+              fabricUnits: 2,
+              sourceRole: "additional",
+            },
+          ],
+        },
+      ],
+      activeAllocationId: "integrity-mixed-allocation",
+      pendingFabricGarment: null,
+      awaitingFabricForPendingGarment: false,
+    };
+    const hydration = prepareHydratedFabricAllocationState({
+      rawState,
+      garmentTypeSelection,
+      authoritativeOccurrenceKeys,
+      requiredPhysicalOccurrences: requiredOccurrences,
+    });
+    const runtimeStateBeforeRepair = JSON.stringify(hydration.reconciledState);
+    let preservedRawAllocations = hydration.preservedRawFabricAllocations;
+    let integrityDiagnostics = hydration.integrity.diagnostics;
+    let repairTargets = getHydratedOrphanFabricAssignmentRepairTargets({
+      preservedRawFabricAllocations: preservedRawAllocations ?? [],
+      authoritativeOccurrenceKeys,
+    });
+    let repairCallCount = 0;
+    const repairOrphan = (
+      target: HydratedOrphanFabricAssignmentRepairTarget,
+    ): HydratedOrphanFabricAssignmentRepairResult => {
+      repairCallCount += 1;
+      const result = repairHydratedOrphanFabricAssignment({
+        preservedRawFabricAllocations: preservedRawAllocations,
+        runtimeState: hydration.reconciledState,
+        authoritativeOccurrenceKeys,
+        target,
+      });
+      if (result.status === "removed") {
+        preservedRawAllocations = result.preservedRawFabricAllocations;
+        integrityDiagnostics = result.integrity.diagnostics;
+        repairTargets = getHydratedOrphanFabricAssignmentRepairTargets({
+          preservedRawFabricAllocations: preservedRawAllocations ?? [],
+          authoritativeOccurrenceKeys,
+        });
+      }
+      return result;
+    };
+    const renderIntegrityRepair = () =>
+      renderStep(
+        hydration.reconciledState,
+        () => undefined,
+        garmentTypeSelection,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        undefined,
+        undefined,
+        fabrics,
+        () => undefined,
+        () => undefined,
+        requiredOccurrences,
+        {
+          diagnostics: integrityDiagnostics,
+          targets: repairTargets,
+          onRepair: repairOrphan,
+        },
+      );
+    orphanRepairDialogFocusables.length = 0;
+    let integrityRenderer!: ReturnType<typeof create>;
+    await act(async () => {
+      integrityRenderer = create(renderIntegrityRepair(), {
+        createNodeMock: createFocusMock,
+      });
+    });
+    assert.equal(
+      integrityRenderer.root.findAllByProps({
+        "data-fabric-integrity-repair-panel": "true",
+      }).length,
+      1,
+    );
+    assert.match(
+      textContent(integrityRenderer.root),
+      /Saved Fabric assignment needs repair/,
+    );
+    assert.equal(
+      integrityRenderer.root.findAllByProps({
+        "data-garment-key": orphanGarmentKey,
+      }).length,
+      0,
+      "An orphan must not render as an authoritative garment assignment card.",
+    );
+    assert.equal(
+      integrityRenderer.root.findAllByProps({
+        "data-garment-key": "base:shirt",
+        "data-assignment-status": "assigned",
+      }).length,
+      1,
+      "The valid assignment in the mixed allocation must remain visible.",
+    );
+
+    const repairButton = integrityRenderer.root.findByProps({
+      "data-remove-invalid-fabric-assignment": "true",
+    });
+    const repairButtonLabel =
+      "Remove invalid Fabric assignment for Long Dress (Gown)";
+    const repairButtonFocus = focusMocks.get(repairButtonLabel);
+    assert.ok(repairButtonFocus);
+    activeFocusMock = repairButtonFocus;
+    const rawBeforeCancel = JSON.stringify(preservedRawAllocations);
+    await act(async () =>
+      repairButton.props.onClick({ currentTarget: repairButtonFocus }),
+    );
+    const repairDialog = integrityRenderer.root.findByProps({
+      "data-testid": "invalid-fabric-assignment-repair-dialog",
+    });
+    assert.equal(repairDialog.props.role, "dialog");
+    assert.equal(repairDialog.props["aria-modal"], "true");
+    assert.equal(
+      repairDialog.props["data-repair-allocation-id"],
+      "integrity-mixed-allocation",
+    );
+    assert.equal(repairDialog.props["data-repair-garment-key"], orphanGarmentKey);
+    assert.match(
+      textContent(repairDialog),
+      /This removes the saved Fabric assignment only\. It will not add or remove garments from your order\./,
+    );
+    await act(async () =>
+      integrityRenderer.root
+        .findByProps({ "data-invalid-fabric-repair-cancel": "true" })
+        .props.onClick(),
+    );
+    flushAnimationFrames();
+    assert.equal(JSON.stringify(preservedRawAllocations), rawBeforeCancel);
+    assert.equal(repairCallCount, 0);
+    assert.equal(activeFocusMock, repairButtonFocus);
+
+    activeFocusMock = repairButtonFocus;
+    await act(async () =>
+      repairButton.props.onClick({ currentTarget: repairButtonFocus }),
+    );
+    assert.ok(dialogFocusMock);
+    await act(async () =>
+      dialogFocusMock!.dispatchKeyDown({
+        key: "Escape",
+        preventDefault: () => undefined,
+      }),
+    );
+    flushAnimationFrames();
+    assert.equal(JSON.stringify(preservedRawAllocations), rawBeforeCancel);
+    assert.equal(repairCallCount, 0);
+    assert.equal(activeFocusMock, repairButtonFocus);
+
+    await act(async () =>
+      repairButton.props.onClick({ currentTarget: repairButtonFocus }),
+    );
+    await act(async () =>
+      integrityRenderer.root
+        .findByProps({ "data-invalid-fabric-repair-confirm": "true" })
+        .props.onClick(),
+    );
+    await act(async () => integrityRenderer.update(renderIntegrityRepair()));
+    flushAnimationFrames();
+    assert.equal(repairCallCount, 1);
+    assert.equal(repairTargets.length, 0);
+    assert.equal(integrityDiagnostics.length, 0);
+    assert.equal(
+      integrityRenderer.root.findAllByProps({
+        "data-fabric-integrity-repair-panel": "true",
+      }).length,
+      0,
+    );
+    assert.equal(
+      integrityRenderer.root.findAllByProps({
+        "data-garment-key": "base:shirt",
+        "data-assignment-status": "assigned",
+      }).length,
+      1,
+    );
+    assert.equal(
+      JSON.stringify(hydration.reconciledState),
+      runtimeStateBeforeRepair,
+      "Orphan repair must not mutate valid runtime Fabric or membership state.",
+    );
+    assert.match(
+      textContent(
+        integrityRenderer.root.findByProps({
+          "data-fabric-integrity-repair-status": "true",
+        }),
+      ),
+      /Invalid saved assignment for Inline Heritage A removed\./,
+    );
+    assert.equal(activeFocusMock?.label, "fabric-integrity-repair-status");
+  }
+
+  // H4 keeps independent repair actions when more than one orphan remains.
+  {
+    const requiredOccurrences: PhysicalGarmentOccurrence[] = [
+      {
+        garmentKey: "base:shirt",
+        garmentType: "shirt",
+        sourceRole: "main",
+        fabricUnits: 1,
+      },
+    ];
+    const authoritativeOccurrenceKeys = new Set(["base:shirt"]);
+    const rawState: FabricAllocationState = {
+      fabricAllocations: [
+        {
+          allocationId: "orphan-gown-allocation",
+          fabricCode: "INLINE-A",
+          garmentAssignments: [
+            {
+              garmentKey: "additional:full_length_gown:99",
+              code: "ADDITIONAL_GOWN",
+              garmentType: "full_length_gown",
+              fabricUnits: 2,
+              sourceRole: "additional",
+            },
+          ],
+        },
+        {
+          allocationId: "orphan-trouser-allocation",
+          fabricCode: "INLINE-B",
+          garmentAssignments: [
+            {
+              garmentKey: "additional:trouser:88",
+              code: "ADDITIONAL_TROUSER",
+              garmentType: "trouser",
+              fabricUnits: 1,
+              sourceRole: "additional",
+            },
+          ],
+        },
+      ],
+      activeAllocationId: "orphan-gown-allocation",
+      pendingFabricGarment: null,
+      awaitingFabricForPendingGarment: false,
+    };
+    const hydration = prepareHydratedFabricAllocationState({
+      rawState,
+      garmentTypeSelection,
+      authoritativeOccurrenceKeys,
+      requiredPhysicalOccurrences: requiredOccurrences,
+    });
+    let preservedRawAllocations = hydration.preservedRawFabricAllocations;
+    let diagnostics = hydration.integrity.diagnostics;
+    let targets = getHydratedOrphanFabricAssignmentRepairTargets({
+      preservedRawFabricAllocations: preservedRawAllocations ?? [],
+      authoritativeOccurrenceKeys,
+    });
+    const onRepair = (target: HydratedOrphanFabricAssignmentRepairTarget) => {
+      const result = repairHydratedOrphanFabricAssignment({
+        preservedRawFabricAllocations: preservedRawAllocations,
+        runtimeState: hydration.reconciledState,
+        authoritativeOccurrenceKeys,
+        target,
+      });
+      if (result.status === "removed") {
+        preservedRawAllocations = result.preservedRawFabricAllocations;
+        diagnostics = result.integrity.diagnostics;
+        targets = getHydratedOrphanFabricAssignmentRepairTargets({
+          preservedRawFabricAllocations: preservedRawAllocations ?? [],
+          authoritativeOccurrenceKeys,
+        });
+      }
+      return result;
+    };
+    const renderMultipleRepairs = () =>
+      renderStep(
+        hydration.reconciledState,
+        () => undefined,
+        garmentTypeSelection,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        undefined,
+        undefined,
+        fabrics,
+        () => undefined,
+        () => undefined,
+        requiredOccurrences,
+        { diagnostics, targets, onRepair },
+      );
+    let multipleRepairRenderer!: ReturnType<typeof create>;
+    await act(async () => {
+      multipleRepairRenderer = create(renderMultipleRepairs(), {
+        createNodeMock: createFocusMock,
+      });
+    });
+    assert.equal(
+      multipleRepairRenderer.root.findAllByProps({
+        "data-fabric-integrity-repair-item": "true",
+      }).length,
+      2,
+    );
+    const gownRepairButton = multipleRepairRenderer.root.findByProps({
+      "aria-label": "Remove invalid Fabric assignment for Long Dress (Gown)",
+    });
+    await act(async () =>
+      gownRepairButton.props.onClick({
+        currentTarget: focusMocks.get(
+          "Remove invalid Fabric assignment for Long Dress (Gown)",
+        ),
+      }),
+    );
+    await act(async () =>
+      multipleRepairRenderer.root
+        .findByProps({ "data-invalid-fabric-repair-confirm": "true" })
+        .props.onClick(),
+    );
+    await act(async () =>
+      multipleRepairRenderer.update(renderMultipleRepairs()),
+    );
+    flushAnimationFrames();
+    assert.equal(targets.length, 1);
+    assert.equal(targets[0]?.garmentKey, "additional:trouser:88");
+    assert.equal(
+      multipleRepairRenderer.root.findAllByProps({
+        "data-fabric-integrity-repair-item": "true",
+      }).length,
+      1,
+    );
+    assert.equal(
+      activeFocusMock?.label,
+      "Remove invalid Fabric assignment for Trouser",
     );
   }
 

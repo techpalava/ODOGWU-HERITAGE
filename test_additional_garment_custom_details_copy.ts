@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import { cloneGarmentConstructionPricingResolution } from "./src/utils/additionalGarmentConstructionState";
 import {
   copyGarmentScopedCustomDetailsToAdditionalOccurrence,
@@ -46,20 +46,23 @@ const makeBaseShirtAssignment = (): FabricGarmentAssignment => ({
 });
 
 const makeAdditionalShirt = (
-  existingAssignments: FabricGarmentAssignment[],
+  _existingAssignments: FabricGarmentAssignment[],
+  authorizedOccurrenceKeys: string[],
 ): FabricGarmentAssignment => {
   const result = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments:
-      existingAssignments.length > 0
-        ? existingAssignments
-        : [makeBaseShirtAssignment()],
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
+    authorizedOccurrenceKeys,
   });
   if (result.status !== "resolved" || !result.selection.garmentSpec) {
     throw new Error("Expected an additional Shirt selection.");
   }
+  const garmentKey = result.selection.garmentSpec.key;
+  if (!authorizedOccurrenceKeys.includes(garmentKey)) {
+    authorizedOccurrenceKeys.push(garmentKey);
+  }
   return {
-    garmentKey: result.selection.garmentSpec.key,
+    garmentKey,
     code: result.selection.code,
     garmentType: "shirt",
     fabricUnits: 1,
@@ -72,14 +75,27 @@ const makeAdditionalShirt = (
   };
 };
 
-const firstAdditional = makeAdditionalShirt([]);
-const secondAdditional = makeAdditionalShirt([
-  makeBaseShirtAssignment(),
-  firstAdditional,
-]);
+const authorizedCopyOccurrenceKeys: string[] = [];
+const firstAdditional = makeAdditionalShirt([], authorizedCopyOccurrenceKeys);
+const secondAdditional = makeAdditionalShirt(
+  [makeBaseShirtAssignment(), firstAdditional],
+  authorizedCopyOccurrenceKeys,
+);
+assert.equal(sourceConstruction?.status, "resolved");
+if (sourceConstruction?.status !== "resolved") {
+  throw new Error("Expected resolved shirt construction for copy test");
+}
 const reconciliation = reconcileGarmentScopedCustomDetails({
   garmentTypeSelection,
   additionalGarments: [firstAdditional],
+  additionalGarmentConstructions: {
+    schemaVersion: 1,
+    byGarmentKey: {
+      [firstAdditional.garmentKey]: cloneGarmentConstructionPricingResolution(
+        sourceConstruction,
+      ),
+    },
+  },
   catalogInspection: catalog,
   existingState: undefined,
 });

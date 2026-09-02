@@ -2,7 +2,6 @@ import {
   isCustomerAvailableCustomDetailSelectionGroup,
   isCustomerFacingAdditionalClothesCostGroup,
 } from "../config/GarmentDetailsConfig";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import type {
   AdditionalGarmentConstructionStateV1,
   DesignSource,
@@ -312,40 +311,15 @@ const resolveTotal = ({
   };
 };
 
-const extraConstructionPresentation = ({
-  garmentKey,
-  additionalConstructionState,
-  catalogInspection,
-}: {
-  garmentKey: string;
-  additionalConstructionState: AdditionalGarmentConstructionStateV1 | null;
-  catalogInspection: CustomDetailCatalogInspection | null;
-}): { label: string | null; amountCents: number | null } => {
-  const resolution = additionalConstructionState?.byGarmentKey[garmentKey];
-  if (!resolution || resolution.status !== "resolved") {
-    return { label: null, amountCents: null };
-  }
-  const labels = resolution.components.map(
-    (component) =>
-      catalogInspection?.byOptionId.get(component.optionId)?.option?.label ||
-      null,
-  );
-  const resolved = labels.filter((label): label is string => Boolean(label));
-  return {
-    label: resolved.length > 0 ? resolved.join(", ") : null,
-    amountCents: resolution.totalPriceCents,
-  };
-};
-
 export const projectDesignStudioLiveOrderSummary = ({
   summary,
   shippingResolution,
   candidatePricing,
-  fabricAllocationState,
+  fabricAllocationState: _fabricAllocationState,
   measurementState,
   designSource,
-  additionalConstructionState = null,
-  catalogInspection = null,
+  additionalConstructionState: _additionalConstructionState = null,
+  catalogInspection: _catalogInspection = null,
   showAdditionalClothesCosts,
 }: {
   summary: FutureDesignStudioSummary;
@@ -364,22 +338,6 @@ export const projectDesignStudioLiveOrderSummary = ({
     label: garment.label,
   }));
   const garmentLabels = occurrenceLabels(garmentItems);
-  const pendingExtraKey = fabricAllocationState.awaitingFabricForPendingGarment
-    ? fabricAllocationState.pendingFabricGarment?.garmentKey || null
-    : null;
-  const extraAssignments = fabricAllocationState.fabricAllocations.flatMap(
-    (allocation) =>
-      allocation.garmentAssignments.filter(
-        (assignment) =>
-          assignment.sourceRole === "additional" &&
-          assignment.garmentKey !== pendingExtraKey,
-      ),
-  );
-  const extraItems = extraAssignments.map((assignment) => ({
-    garmentKey: assignment.garmentKey,
-    label: getFabricGarmentLabel(assignment.garmentType),
-  }));
-  const extraLabels = occurrenceLabels(extraItems);
 
   const garmentLines = committedLines(
     summary.garmentSummary.map((garment) => ({
@@ -390,8 +348,8 @@ export const projectDesignStudioLiveOrderSummary = ({
     })),
   );
 
-  const fabricLines: LiveOrderSummaryLine[] = [
-    ...summary.garmentSummary.flatMap((garment) => {
+  const fabricLines: LiveOrderSummaryLine[] = summary.garmentSummary.flatMap(
+    (garment) => {
       const fabric = assignedFabric.get(garment.garmentKey);
       if (!fabric) return [];
       return [
@@ -402,22 +360,8 @@ export const projectDesignStudioLiveOrderSummary = ({
           amountLabel: null,
         },
       ];
-    }),
-    ...extraAssignments.flatMap((assignment) => {
-      const fabric = assignedFabric.get(assignment.garmentKey);
-      if (!fabric) return [];
-      return [
-        {
-          id: `fabric-${assignment.garmentKey}`,
-          label:
-            extraLabels.get(assignment.garmentKey) ||
-            getFabricGarmentLabel(assignment.garmentType),
-          detail: fabric.name,
-          amountLabel: null,
-        },
-      ];
-    }),
-  ];
+    },
+  );
 
   const designStyleLines = committedLines(
     summary.designStyleSummary
@@ -453,28 +397,7 @@ export const projectDesignStudioLiveOrderSummary = ({
     })),
   );
 
-  const extraLines: LiveOrderSummaryLine[] = extraAssignments
-    .filter((assignment) => assignedFabric.has(assignment.garmentKey))
-    .map((assignment) => {
-      const fabric = assignedFabric.get(assignment.garmentKey);
-      const construction = extraConstructionPresentation({
-        garmentKey: assignment.garmentKey,
-        additionalConstructionState,
-        catalogInspection,
-      });
-      const details = [fabric?.name, construction.label].filter(Boolean);
-      return {
-        id: assignment.garmentKey,
-        label:
-          extraLabels.get(assignment.garmentKey) ||
-          getFabricGarmentLabel(assignment.garmentType),
-        detail: details.join(" · ") || null,
-        amountLabel:
-          construction.amountCents === null
-            ? null
-            : moneyFromCents(construction.amountCents),
-      };
-    });
+  const extraLines: LiveOrderSummaryLine[] = [];
 
   const additionalClothesLines: LiveOrderSummaryLine[] = summary.customDetailsSummary.flatMap((group) =>
     group.occurrences

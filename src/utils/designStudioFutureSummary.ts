@@ -1,11 +1,13 @@
 import { CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE } from "../config/GarmentDetailsConfig";
 import { resolveCustomDetailPhysicalComponents } from "../config/CustomDetailPhysicalComponentConfig";
-import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import type {
+  AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
   CanonicalPhysicalGarmentType,
   FabricAllocationState,
+  FabricCapacityGarmentSpec,
+  FabricGarmentAssignment,
   FutureMeasurementStateV1,
   FutureMeasurementValueV1,
   GarmentScopedCustomDetailInputsV1,
@@ -27,6 +29,7 @@ import {
   type AllInclusiveSelectedDesignPriceBreakdown,
   type AuthoritativeDesignPricing,
 } from "./designPricing";
+import { projectAuthoritativePhysicalOccurrences, resolveOccurrenceConstruction } from "./designSourceState";
 import {
   type GarmentScopedCustomDetailsCompletionResult,
   type GarmentScopedCustomDetailsPricingResult,
@@ -62,6 +65,7 @@ export interface FutureDesignStudioSummaryBlocker {
 
 export interface FutureSummaryConstructionOccurrence {
   componentKey: string;
+  selectionGroup: string;
   optionId: string;
   label: string;
   priceCents: number;
@@ -173,7 +177,12 @@ export interface FutureDesignStudioSummary {
 }
 
 export interface FutureDesignStudioSummaryInput {
+  step1GarmentTypeSelection: GarmentTypeStepSelection;
   garmentTypeSelection: GarmentTypeStepSelection;
+  designSourceKind: "catalogue" | "uploaded";
+  uploadedCompositionSpecs?: readonly FabricCapacityGarmentSpec[] | null;
+  additionalGarmentConstructionState?: AdditionalGarmentConstructionStateV1 | null;
+  pendingAdditionalGarment?: FabricGarmentAssignment | null;
   catalogInspection: CustomDetailCatalogInspection;
   fabricAllocationState: FabricAllocationState;
   fabricCompletion: FutureFabricStageCompletion;
@@ -268,20 +277,47 @@ const getSummaryStatus = ({
 };
 
 const mapGarments = ({
+  step1GarmentTypeSelection,
   garmentTypeSelection,
+  designSourceKind,
+  uploadedCompositionSpecs,
+  additionalGarmentConstructionState,
   catalogInspection,
   fabricAllocationState,
   blockers,
 }: Pick<
   FutureDesignStudioSummaryInput,
-  "garmentTypeSelection" | "catalogInspection" | "fabricAllocationState"
-> & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureSummaryGarment[] =>
-  garmentTypeSelection.garmentTypes.map((garmentType) => {
-    const garmentKey = createStyleBaseGarmentSpec(garmentType).key;
+  | "step1GarmentTypeSelection"
+  | "garmentTypeSelection"
+  | "designSourceKind"
+  | "uploadedCompositionSpecs"
+  | "additionalGarmentConstructionState"
+  | "catalogInspection"
+  | "fabricAllocationState"
+> & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureSummaryGarment[] => {
+  const authoritativeBaseConstructionSelection =
+    designSourceKind === "uploaded"
+      ? garmentTypeSelection
+      : step1GarmentTypeSelection;
+
+  return projectAuthoritativePhysicalOccurrences({
+    sourceKind: designSourceKind,
+    step1GarmentTypeSelection,
+    effectiveGarmentTypeSelection: garmentTypeSelection,
+    uploadedCompositionSpecs,
+    additionalGarmentConstructionState,
+  }).map((occurrence) => {
+    const { garmentKey, garmentType, sourceRole, fabricUnits } = occurrence;
     const allocationAssignment = fabricAllocationState.fabricAllocations
       .flatMap((allocation) => allocation.garmentAssignments)
       .find((assignment) => assignment.garmentKey === garmentKey);
-    const construction = garmentTypeSelection.constructionByGarment[garmentType];
+    const construction = resolveOccurrenceConstruction({
+      garmentKey,
+      garmentType,
+      sourceRole,
+      garmentTypeSelection: authoritativeBaseConstructionSelection,
+      additionalGarmentConstructionState,
+    });
     const physicalResolution = resolveCustomDetailPhysicalComponents({
       parentGarmentKey: garmentKey,
       garmentType,
@@ -316,6 +352,7 @@ const mapGarments = ({
             }
             return {
               componentKey: component.componentKey,
+              selectionGroup: component.selectionGroup,
               optionId: component.optionId,
               label: option?.label || "Construction option unavailable",
               priceCents: component.priceCents,
@@ -326,11 +363,10 @@ const mapGarments = ({
       garmentKey,
       garmentType,
       label: getFabricGarmentLabel(garmentType),
-      role: allocationAssignment?.sourceRole || "main",
+      role: allocationAssignment?.sourceRole || sourceRole,
       demographic: garmentTypeSelection.demographic,
       fabricUnits:
-        allocationAssignment?.fabricUnits ||
-        createStyleBaseGarmentSpec(garmentType).fabricUnits,
+        allocationAssignment?.fabricUnits || fabricUnits,
       physicalComponents:
         physicalResolution.status === "resolved"
           ? physicalResolution.components.map((component) => ({
@@ -344,6 +380,7 @@ const mapGarments = ({
         construction?.status === "resolved" ? construction.totalPriceCents : null,
     };
   });
+};
 
 const mapFabrics = ({
   fabricAllocationState,
@@ -731,7 +768,11 @@ export const projectFutureDesignStudioSummary = (
     });
   }
   const garmentSummary = mapGarments({
+    step1GarmentTypeSelection: input.step1GarmentTypeSelection,
     garmentTypeSelection: input.garmentTypeSelection,
+    designSourceKind: input.designSourceKind,
+    uploadedCompositionSpecs: input.uploadedCompositionSpecs,
+    additionalGarmentConstructionState: input.additionalGarmentConstructionState,
     catalogInspection: input.catalogInspection,
     fabricAllocationState: input.fabricAllocationState,
     blockers,

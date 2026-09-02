@@ -18,6 +18,7 @@ import {
   changeFutureFabricAllocationProduct,
   getFutureFabricAllocationAssignmentSignature,
   getFutureFabricStageCompletion,
+  getFutureGarmentFabricPlanning,
 } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import {
@@ -107,14 +108,18 @@ const FabricStepProductionBoundary = ({
     fabricAllocationState,
     fabrics,
   });
+  const planning = getFutureGarmentFabricPlanning({
+    garmentTypeSelection,
+    fabricAllocationState,
+  });
 
   return createElement(DormantFutureFabricStep, {
     fabrics,
     garmentTypeSelection,
     fabricAllocationState,
     completion,
-    requiredFabricQuantity: 0,
-    selectedFabricQuantity: 0,
+    requiredFabricQuantity: planning.requiredFabricQuantity,
+    selectedFabricQuantity: planning.selectedFabricQuantity,
     constructionPrice: 0,
     onAssignFabricToGarment: (fabric: Fabric, garmentKey: string) => {
       setFabricAllocationState((current) =>

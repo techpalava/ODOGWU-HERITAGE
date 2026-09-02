@@ -1,6 +1,8 @@
 /**
  * Production DesignStudioView integration for Step 4 inline Fabric picker.
- * Uses the Vite/Firebase harness: npm run test:with-vite-firebase -- <this-file>
+ * Requires Vite production Firebase env and asset transforms — do not run with plain `tsx`.
+ * Canonical: npm run test:design-studio-view-inline-fabric-integration
+ * Alternate: npm run test:with-vite-firebase -- test_design_studio_view_inline_fabric_integration.tsx
  *
  * Exercises production helpers and effects DesignStudioView actually imports,
  * plus a mounted DesignStudioView smoke path under a seeded store (no live Firestore).
@@ -20,7 +22,7 @@ import type {
   FabricAllocationState,
   StyleCategory,
 } from "./src/types";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import {
   applyAdditionalGarmentConstructionAndCopy,
   canCancelPendingForAdditionalGarmentTransaction,
@@ -116,6 +118,8 @@ const garmentTypeSelection = reconcileGarmentTypeStepSelection({
   normalizedCustomDetailCatalog: catalogInspection.activeOptions,
 }).selection;
 
+const integrationAuthoritativeOccurrences = projectCatalogueStep1PhysicalOccurrences(["shirt"]);
+
 const withBaseShirt = (): FabricAllocationState => {
   let state = FabricAllocationStateEngine.initialize();
   state = FabricAllocationStateEngine.createAllocationForFabric(
@@ -144,9 +148,7 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
   let state = withBaseShirt();
   const addition = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (a) => a.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: integrationAuthoritativeOccurrences,
   });
   assert.equal(addition.status, "resolved");
   const snapshot = state;
@@ -210,9 +212,7 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
   let state = withBaseShirt();
   const first = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (a) => a.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: integrationAuthoritativeOccurrences,
   });
   assert.equal(first.status, "resolved");
   state = FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(
@@ -230,9 +230,7 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
   // Simulate B replacing pending target
   const second = createCatalogueAdditionalGarmentSelection({
     garmentType: "trouser",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (a) => a.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: integrationAuthoritativeOccurrences,
   });
   assert.equal(second.status, "resolved");
   state = {
@@ -275,26 +273,30 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
 // --- Production success assign + commit confirmation ---
 {
   let state = withBaseShirt();
+  const authorizedOccurrenceKeys: string[] = [];
   // Fill capacity so the next additional shirt parks pending Fabric.
   const filler = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (a) => a.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: integrationAuthoritativeOccurrences,
+    authorizedOccurrenceKeys,
   });
   assert.equal(filler.status, "resolved");
+  const fillerKey = filler.selection.garmentSpec?.key;
+  assert.ok(fillerKey);
+  authorizedOccurrenceKeys.push(fillerKey);
   state = FabricAllocationStateEngine.attemptAppendGarment(
     state,
     filler.selection,
   );
   const addition = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (a) => a.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: integrationAuthoritativeOccurrences,
+    authorizedOccurrenceKeys,
   });
   assert.equal(addition.status, "resolved");
   const garmentKey = addition.selection.garmentSpec!.key;
+  assert.equal(fillerKey, "additional:shirt:1");
+  assert.equal(garmentKey, "additional:shirt:2");
   const pending = FabricAllocationStateEngine.attemptAppendGarment(
     state,
     addition.selection,
@@ -358,9 +360,7 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
 
   const addition = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (a) => a.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: integrationAuthoritativeOccurrences,
   });
   assert.equal(addition.status, "resolved");
   const garmentKey = addition.selection.garmentSpec!.key;
@@ -454,9 +454,7 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
   const state = withBaseShirt();
   const addition = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (a) => a.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: integrationAuthoritativeOccurrences,
   });
   assert.equal(addition.status, "resolved");
   const pending = FabricAllocationStateEngine.attemptAppendGarment(
@@ -532,9 +530,7 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
   const state = withBaseShirt();
   const addition = createCatalogueAdditionalGarmentSelection({
     garmentType: "shirt",
-    existingAssignments: state.fabricAllocations.flatMap(
-      (a) => a.garmentAssignments,
-    ),
+    authoritativePhysicalOccurrences: integrationAuthoritativeOccurrences,
   });
   assert.equal(addition.status, "resolved");
   const assigned = FabricAllocationStateEngine.useSameFabricForPendingGarment(

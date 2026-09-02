@@ -4,7 +4,7 @@ import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateE
 import { FabricCapacityEngine } from "./src/engine/FabricCapacityEngine";
 import type { Fabric, FabricGarmentType } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
-import { createCatalogueAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import { resolveAuthoritativePrimaryFabricCode } from "./src/utils/additionalGarmentFabricPicker";
 import {
   applyFutureFabricCardSelection,
@@ -395,9 +395,7 @@ assert.ok(!assignedKeys(staleCommit.state).includes("base:trouser"));
 const shirtOnly = assignOne(["shirt"], "base:shirt");
 const additionalSelection = createCatalogueAdditionalGarmentSelection({
   garmentType: "trouser",
-  existingAssignments: shirtOnly.fabricAllocations.flatMap(
-    (allocation) => allocation.garmentAssignments,
-  ),
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["shirt"]),
 });
 assert.equal(additionalSelection.status, "resolved");
 const withAdditional =

@@ -1,3 +1,8 @@
+/**
+ * Fabric allocation persistence and hydration normalization.
+ * Requires Vite production Firebase env — do not run with plain `tsx`.
+ * Canonical: npm run test:fabric-allocation-persistence
+ */
 import assert from "node:assert/strict";
 import type {
   CartItem,
@@ -415,40 +420,27 @@ assert.deepEqual(
   malformedModernAllocations,
   "malformed modern allocations must be preserved non-destructively and never partially rewritten",
 );
-const hydratedInvalidSelectionSignature = getFabricAllocationSyncSignature(
-  "FABRIC-A",
-  "G5.2",
-  "trousers",
-  style.id,
-);
 const preservedAutosaveAllocations = resolveDraftAutosaveFabricAllocations({
   preservedInvalidHydratedFabricAllocations: malformedModernAllocations,
-  preservedInvalidHydratedSelectionSignature: hydratedInvalidSelectionSignature,
-  currentSelectionSignature: hydratedInvalidSelectionSignature,
+  hasUnresolvedHydratedFabricIntegrity: true,
   generatedFabricAllocations: [],
 });
 assert.equal(preservedAutosaveAllocations.preserveInvalidHydratedModernData, true);
 assert.deepEqual(
   preservedAutosaveAllocations.fabricAllocations,
   malformedModernAllocations,
-  "hydration autosave must preserve malformed modern allocations until an allocation-relevant selection changes",
+  "hydration autosave must preserve malformed modern allocations while their integrity blocker remains unresolved",
 );
 const replacedAutosaveAllocations = resolveDraftAutosaveFabricAllocations({
   preservedInvalidHydratedFabricAllocations: malformedModernAllocations,
-  preservedInvalidHydratedSelectionSignature: hydratedInvalidSelectionSignature,
-  currentSelectionSignature: getFabricAllocationSyncSignature(
-    "FABRIC-B",
-    "G5.2",
-    "trousers",
-    style.id,
-  ),
+  hasUnresolvedHydratedFabricIntegrity: false,
   generatedFabricAllocations: multiAllocationFixture,
 });
 assert.equal(replacedAutosaveAllocations.preserveInvalidHydratedModernData, false);
 assert.deepEqual(
   replacedAutosaveAllocations.fabricAllocations,
   multiAllocationFixture,
-  "a real allocation-relevant selection change should allow regenerated valid allocations",
+  "an explicitly resolved integrity condition should allow regenerated valid allocations",
 );
 assert.notEqual(
   getFabricAllocationSyncSignature("FABRIC-A", "EXACT", undefined, "style-a"),
