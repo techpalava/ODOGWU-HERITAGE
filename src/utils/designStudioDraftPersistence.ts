@@ -3,6 +3,7 @@ import {
   DESIGN_STUDIO_NINE_STAGE_FOUNDATION,
   DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
 } from "./designSourceJourney";
+import { validateDesignStyleDraftFieldForStorage } from "./designStyleDraftPersistence";
 
 export const GUEST_ORDER_SESSION_STORAGE_NAMESPACE =
   "odogwu_guest_order_session_v1";
@@ -280,6 +281,15 @@ export const createDesignStudioDraftRepository = ({
   const saveFutureDraftV1 = (
     draft: GuestDesignDraft,
   ): FutureDesignStudioDraftSaveResult => {
+    const designStyleDraftValidation =
+      validateDesignStyleDraftFieldForStorage(draft);
+    if (designStyleDraftValidation.status === "invalid") {
+      return {
+        status: "rejected",
+        draft: null,
+        reason: designStyleDraftValidation.reason,
+      };
+    }
     const normalized = normalizeJsonSafeFutureDraft({
       value: draft,
       normalizeDraft,
@@ -289,6 +299,15 @@ export const createDesignStudioDraftRepository = ({
         status: "rejected",
         draft: null,
         reason: normalized.reason || "invalid_future_draft",
+      };
+    }
+    const normalizedDesignStyleDraftValidation =
+      validateDesignStyleDraftFieldForStorage(normalized.draft);
+    if (normalizedDesignStyleDraftValidation.status === "invalid") {
+      return {
+        status: "rejected",
+        draft: null,
+        reason: normalizedDesignStyleDraftValidation.reason,
       };
     }
     const envelope: FutureDesignStudioDraftEnvelopeV1 = {

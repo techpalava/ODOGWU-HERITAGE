@@ -1153,6 +1153,8 @@ export interface GuestDesignDraft {
   currentStageId?: DesignStudioStageId;
   currentStep: number;
   garmentTypeSelection?: GarmentTypeStepSelection;
+  /** Raw persisted Task 5C boundary. Parse before using as V2 authority. */
+  designStyleAssignmentDraft?: unknown;
   aiTryOnWorkflow?: AiTryOnWorkflowStateV1;
   futureMeasurementState?: FutureMeasurementStateV1;
   futureShippingState?: FutureShippingStateV1;

@@ -13,6 +13,7 @@ import { hasAuthoritativeFutureDraftMarker } from "../utils/designStudioDraftPer
 import { isValidUploadedDesignDraftSource } from "../utils/designSourceState";
 import { normalizeGuestDesignDraft } from "./guestOrderSessionService";
 import { auth, db } from "./firebase";
+import { validateDesignStyleDraftFieldForStorage } from "../utils/designStyleDraftPersistence";
 
 export const AUTHENTICATED_FUTURE_DRAFT_COLLECTION =
   "futureDesignStudioDrafts";
@@ -207,6 +208,11 @@ export const normalizeAuthenticatedFutureDraft = (
   if (forbidden) {
     return { draft: null, reason: `forbidden_sensitive_content:${forbidden}` };
   }
+  const designStyleDraftValidation =
+    validateDesignStyleDraftFieldForStorage(value);
+  if (designStyleDraftValidation.status === "invalid") {
+    return { draft: null, reason: designStyleDraftValidation.reason };
+  }
   try {
     const json = JSON.stringify(value);
     if (new TextEncoder().encode(json).byteLength > MAX_DRAFT_JSON_BYTES) {
@@ -217,6 +223,14 @@ export const normalizeAuthenticatedFutureDraft = (
     );
     if (!hasAuthoritativeFutureDraftMarker(normalized)) {
       return { draft: null, reason: "normalizer_removed_future_marker" };
+    }
+    const normalizedDesignStyleDraftValidation =
+      validateDesignStyleDraftFieldForStorage(normalized);
+    if (normalizedDesignStyleDraftValidation.status === "invalid") {
+      return {
+        draft: null,
+        reason: normalizedDesignStyleDraftValidation.reason,
+      };
     }
     const normalizedForbidden = inspectForbiddenDraftContent(normalized);
     if (normalizedForbidden) {

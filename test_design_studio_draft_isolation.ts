@@ -419,7 +419,10 @@ const studioSource = readFileSync(
   "utf8",
 );
 assert.match(studioSource, /getFutureDesignDraft\(\)/);
-assert.match(studioSource, /saveFutureDesignDraft\(guestDraft\)/);
+assert.match(studioSource, /prepareDesignStyleDraftAutosave\(/);
+assert.match(studioSource, /const canonicalGuestDraft =/);
+assert.match(studioSource, /saveFutureDesignDraft\(canonicalGuestDraft\)/);
+assert.doesNotMatch(studioSource, /saveFutureDesignDraft\(guestDraft\)/);
 assert.doesNotMatch(studioSource, /saveLegacyDesignDraft/);
 
 const browserStorage = new MemoryStorage();
