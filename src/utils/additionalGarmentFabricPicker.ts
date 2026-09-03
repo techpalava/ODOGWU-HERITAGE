@@ -19,6 +19,7 @@ export { isFabricAvailableForCustomerSelection } from "./fabricCatalogueAvailabi
 export type AdditionalGarmentFabricTransactionPhase =
   | "choice"
   | "catalogue"
+  | "custom_details_choice"
   | "assigning"
   | "awaiting_commit"
   | "committed";
@@ -29,6 +30,8 @@ export type AdditionalGarmentFabricTransaction = {
   origin: "new_addition" | "change_existing";
   garmentKey: string;
   garmentType: CanonicalPhysicalGarmentType;
+  occurrenceGeneration?: number;
+  fabricUnits?: number;
   requestedFabricCode?: string;
   previousFabricCode?: string;
   construction?: GarmentConstructionPricingResolution;
