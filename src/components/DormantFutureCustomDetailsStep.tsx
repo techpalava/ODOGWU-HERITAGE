@@ -99,9 +99,16 @@ interface DormantFutureCustomDetailsStepProps {
   onClearAccessories: () => void;
   onAddAdditionalGarment: (
     garmentType: CanonicalPhysicalGarmentType,
-    choice: AdditionalGarmentCustomDetailsChoice,
     triggerElement?: HTMLElement | null,
   ) => void;
+  additionalGarmentCustomDetailsRequest?: AdditionalGarmentCustomDetailsRequest | null;
+  onCompleteAdditionalGarmentCustomDetails?: (
+    request: AdditionalGarmentCustomDetailsRequest,
+    choice: AdditionalGarmentCustomDetailsChoice,
+  ) => boolean;
+  onCancelAdditionalGarmentCustomDetails?: (
+    request: AdditionalGarmentCustomDetailsRequest,
+  ) => boolean;
   /** Retained for test/consumer compatibility; committed removal uses the shared confirmation flow. */
   onRemoveAdditionalGarment?: (garmentKey: string) => void;
   removalTargets?: readonly FutureGarmentRemovalTarget[];
@@ -128,6 +135,13 @@ interface DormantFutureCustomDetailsStepProps {
 export type AdditionalGarmentCustomDetailsChoice =
   | { mode: "choose" }
   | { mode: "copy"; sourceParentGarmentKey: string };
+
+export type AdditionalGarmentCustomDetailsRequest = {
+  transactionId: number;
+  garmentKey: string;
+  garmentType: CanonicalPhysicalGarmentType;
+  occurrenceGeneration: number;
+};
 
 const money = (amount: number): string => `${PRICING_CURRENCY_SYMBOL}${amount.toFixed(2)}`;
 
@@ -233,6 +247,9 @@ export const DormantFutureCustomDetailsStep = ({
   onAccessoryToggle,
   onClearAccessories,
   onAddAdditionalGarment,
+  additionalGarmentCustomDetailsRequest,
+  onCompleteAdditionalGarmentCustomDetails,
+  onCancelAdditionalGarmentCustomDetails,
   removalTargets = [],
   onRequestGarmentRemoval,
   onChangeAdditionalGarmentFabric,
@@ -251,10 +268,11 @@ export const DormantFutureCustomDetailsStep = ({
     showAdditionalClothesCosts,
   );
   const [overLimitText, setOverLimitText] = useState<Record<string, string>>({});
-  const [additionalGarmentChoice, setAdditionalGarmentChoice] = useState<{
-    garmentType: CanonicalPhysicalGarmentType;
+  const [additionalGarmentChoice, setAdditionalGarmentChoice] = useState<
+    AdditionalGarmentCustomDetailsRequest & {
     sourceParentGarmentKey: string | null;
-  } | null>(null);
+    }
+  | null>(null);
   const choiceDialogRef = useRef<HTMLDivElement>(null);
   const choiceTriggerRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -348,6 +366,25 @@ export const DormantFutureCustomDetailsStep = ({
       : null);
 
   useEffect(() => {
+    if (!additionalGarmentCustomDetailsRequest) {
+      setAdditionalGarmentChoice(null);
+      return;
+    }
+    setAdditionalGarmentChoice((current) =>
+      current?.transactionId ===
+          additionalGarmentCustomDetailsRequest.transactionId &&
+        current.garmentKey === additionalGarmentCustomDetailsRequest.garmentKey &&
+        current.occurrenceGeneration ===
+          additionalGarmentCustomDetailsRequest.occurrenceGeneration
+        ? current
+        : {
+            ...additionalGarmentCustomDetailsRequest,
+            sourceParentGarmentKey: null,
+          },
+    );
+  }, [additionalGarmentCustomDetailsRequest]);
+
+  useEffect(() => {
     if (!additionalGarmentChoice) return;
     const dialog = choiceDialogRef.current;
     dialog?.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled])")?.focus();
@@ -426,7 +463,12 @@ export const DormantFutureCustomDetailsStep = ({
     event: React.KeyboardEvent<HTMLDivElement>,
   ) => {
     if (event.key === "Escape") {
-      closeAdditionalGarmentChoice({ restoreFocus: true });
+      if (
+        additionalGarmentChoice &&
+        onCancelAdditionalGarmentCustomDetails?.(additionalGarmentChoice)
+      ) {
+        closeAdditionalGarmentChoice({ restoreFocus: false });
+      }
       return;
     }
     if (event.key !== "Tab") return;
@@ -450,10 +492,20 @@ export const DormantFutureCustomDetailsStep = ({
     choice: AdditionalGarmentCustomDetailsChoice,
   ) => {
     if (!additionalGarmentChoice) return;
-    const { garmentType } = additionalGarmentChoice;
-    const trigger = choiceTriggerRef.current;
-    closeAdditionalGarmentChoice({ restoreFocus: false });
-    onAddAdditionalGarment(garmentType, choice, trigger);
+    if (
+      onCompleteAdditionalGarmentCustomDetails?.(
+        additionalGarmentChoice,
+        choice,
+      )
+    ) {
+      closeAdditionalGarmentChoice({ restoreFocus: false });
+    }
+  };
+  const cancelAdditionalGarmentChoice = () => {
+    if (!additionalGarmentChoice) return;
+    if (onCancelAdditionalGarmentCustomDetails?.(additionalGarmentChoice)) {
+      closeAdditionalGarmentChoice({ restoreFocus: false });
+    }
   };
 
   const renderOptions = (
@@ -990,7 +1042,7 @@ export const DormantFutureCustomDetailsStep = ({
               </div>
             ) : null}
             <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {additionalGarmentConstructionOptions.map(({ garmentType, construction }) => <button key={garmentType} type="button" onClick={(event) => { choiceTriggerRef.current = event.currentTarget; setAdditionalGarmentChoice({ garmentType, sourceParentGarmentKey: null }); }} className="inline-flex min-h-12 min-w-0 items-start justify-between gap-3 rounded-xl border-2 border-heritage-green/65 bg-white p-3 text-left text-xs font-bold text-heritage-green transition hover:border-heritage-gold hover:bg-heritage-gold/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><span className="flex min-w-0 items-center gap-2"><Plus aria-hidden="true" size={15} className="shrink-0" /><span className="min-w-0 break-words">Add {getFabricGarmentLabel(garmentType)}</span></span><span className="shrink-0 font-mono text-[11px] text-heritage-gold">{construction.status === "resolved" ? money(construction.totalPrice) : "Price pending"}</span></button>)}
+              {additionalGarmentConstructionOptions.map(({ garmentType, construction }) => <button key={garmentType} type="button" onClick={(event) => { choiceTriggerRef.current = event.currentTarget; onAddAdditionalGarment(garmentType, event.currentTarget); }} className="inline-flex min-h-12 min-w-0 items-start justify-between gap-3 rounded-xl border-2 border-heritage-green/65 bg-white p-3 text-left text-xs font-bold text-heritage-green transition hover:border-heritage-gold hover:bg-heritage-gold/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><span className="flex min-w-0 items-center gap-2"><Plus aria-hidden="true" size={15} className="shrink-0" /><span className="min-w-0 break-words">Add {getFabricGarmentLabel(garmentType)}</span></span><span className="shrink-0 font-mono text-[11px] text-heritage-gold">{construction.status === "resolved" ? money(construction.totalPrice) : "Price pending"}</span></button>)}
             </div>
             {additionalGarments.length > 0 && (
               <div className="mt-5 space-y-4 border-t border-heritage-gold/20 pt-4">
@@ -1153,9 +1205,10 @@ export const DormantFutureCustomDetailsStep = ({
 
       {additionalGarmentChoice && (
           <div
+            data-additional-garment-custom-details-dialog="true"
             className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/55 p-4"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeAdditionalGarmentChoice();
+            if (event.target === event.currentTarget) cancelAdditionalGarmentChoice();
           }}
         >
           <div
@@ -1175,7 +1228,7 @@ export const DormantFutureCustomDetailsStep = ({
                   Choose how you would like to configure this garment.
                 </p>
               </div>
-              <button type="button" onClick={() => closeAdditionalGarmentChoice()} aria-label="Close additional garment choices" className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/20 text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><X aria-hidden="true" size={18} /></button>
+              <button type="button" onClick={cancelAdditionalGarmentChoice} aria-label="Close additional garment choices" className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/20 text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><X aria-hidden="true" size={18} /></button>
             </div>
 
             {compatibleCopySources.length > 1 && (
@@ -1204,7 +1257,7 @@ export const DormantFutureCustomDetailsStep = ({
             </div>
             {!selectedCopySource && compatibleCopySources.length === 0 && <p className="mt-3 text-xs leading-relaxed text-heritage-ink/60">Use Same Custom Details is unavailable because no active garment of this type exists.</p>}
             {compatibleCopySources.length > 1 && !selectedCopySource && <p className="mt-3 text-xs leading-relaxed text-heritage-ink/60">Select the garment whose Custom Details you want to copy.</p>}
-            <button type="button" onClick={() => closeAdditionalGarmentChoice()} className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl text-sm font-bold text-heritage-ink underline decoration-heritage-gold underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">Cancel</button>
+            <button type="button" onClick={cancelAdditionalGarmentChoice} className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl text-sm font-bold text-heritage-ink underline decoration-heritage-gold underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">Cancel</button>
           </div>
         </div>
       )}
