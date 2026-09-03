@@ -58,6 +58,7 @@ import {
 import {
   DormantFutureCustomDetailsStep,
   type AdditionalGarmentCustomDetailsChoice,
+  type AdditionalGarmentCustomDetailsRequest,
 } from "./DormantFutureCustomDetailsStep";
 import { DormantFutureAiTryOnStep } from "./DormantFutureAiTryOnStep";
 import { DormantFutureMeasurementStep } from "./DormantFutureMeasurementStep";
@@ -193,6 +194,7 @@ import {
   isValidUploadedDesignDraftSource,
   projectAuthoritativePhysicalOccurrences,
   type AuthoritativePhysicalOrderDiagnostic,
+  type PhysicalGarmentOccurrence,
 } from "../utils/designSourceState";
 import {
   buildEffectiveUploadedJourneyGarmentTypeSelection,
@@ -211,7 +213,10 @@ import {
   UPLOADED_DESIGN_MISSING_REQUIRED_STEP1_GARMENTS_MESSAGE,
 } from "../utils/uploadedDesignStep1";
 import { useDesignStudioEffectiveJourneyComposition } from "../utils/useDesignStudioEffectiveJourneyComposition";
-import { reconcileGarmentTypeSelectionOccurrenceIdentities } from "../utils/physicalGarmentOccurrenceIdentity";
+import {
+  getPhysicalGarmentOccurrenceGeneration,
+  reconcileGarmentTypeSelectionOccurrenceIdentities,
+} from "../utils/physicalGarmentOccurrenceIdentity";
 import {
   CustomerDesignUploadError,
   CustomerDesignUploadService,
@@ -699,8 +704,44 @@ export default function DesignStudioView({
           additionalGarmentConstructionState:
             authoritativeAdditionalGarmentConstructionState,
         });
+  const provisionalAdditionalGarmentKey =
+    additionalGarmentFabricTransaction?.origin === "new_addition" &&
+    additionalGarmentFabricTransaction.phase !== "committed"
+      ? additionalGarmentFabricTransaction.garmentKey
+      : null;
+  const fabricTransactionPhysicalOccurrences = useMemo(
+    () => {
+      if (
+        !provisionalAdditionalGarmentKey ||
+        !additionalGarmentFabricTransaction?.occurrenceGeneration ||
+        !additionalGarmentFabricTransaction.fabricUnits ||
+        authoritativePhysicalOccurrencesForDomain.some(
+          (occurrence) =>
+            occurrence.garmentKey === provisionalAdditionalGarmentKey,
+        )
+      ) {
+        return authoritativePhysicalOccurrencesForDomain;
+      }
+      const provisionalOccurrence: PhysicalGarmentOccurrence = {
+        garmentKey: provisionalAdditionalGarmentKey,
+        garmentType: additionalGarmentFabricTransaction.garmentType,
+        sourceRole: "additional",
+        fabricUnits: additionalGarmentFabricTransaction.fabricUnits,
+        occurrenceGeneration:
+          additionalGarmentFabricTransaction.occurrenceGeneration,
+      };
+      return [...authoritativePhysicalOccurrencesForDomain, provisionalOccurrence];
+    },
+    [
+      authoritativePhysicalOccurrencesForDomain,
+      provisionalAdditionalGarmentKey,
+      additionalGarmentFabricTransaction?.garmentType,
+      additionalGarmentFabricTransaction?.fabricUnits,
+      additionalGarmentFabricTransaction?.occurrenceGeneration,
+    ],
+  );
   const authoritativeOccurrenceIdentityMembershipSignature = JSON.stringify(
-    authoritativePhysicalOccurrencesForDomain.map(
+    fabricTransactionPhysicalOccurrences.map(
       (occurrence) => occurrence.garmentKey,
     ),
   );
@@ -729,11 +770,6 @@ export default function DesignStudioView({
   const futurePhysicalGarmentRemovalAuthoritySignature =
     futurePhysicalGarmentRemovalAuthority.status === "resolved"
       ? futurePhysicalGarmentRemovalAuthority.signature
-      : null;
-  const provisionalAdditionalGarmentKey =
-    additionalGarmentFabricTransaction?.origin === "new_addition" &&
-    additionalGarmentFabricTransaction.phase !== "committed"
-      ? additionalGarmentFabricTransaction.garmentKey
       : null;
   const futureGarmentRemovalTargets =
     futurePhysicalGarmentRemovalAuthority.status === "resolved"
@@ -1387,7 +1423,7 @@ export default function DesignStudioView({
         previousRuntimeState: previousState,
         nextRuntimeState: nextState,
         authoritativeOccurrenceKeys: new Set(
-          authoritativePhysicalOccurrencesForDomain.map(
+          fabricTransactionPhysicalOccurrences.map(
             (occurrence) => occurrence.garmentKey,
           ),
         ),
@@ -2515,7 +2551,7 @@ export default function DesignStudioView({
       reconcileFutureFabricAllocationStateIfChanged({
         state: current,
         garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
-        requiredPhysicalOccurrences: authoritativePhysicalOccurrencesForDomain,
+        requiredPhysicalOccurrences: fabricTransactionPhysicalOccurrences,
       }),
     );
   }, [
@@ -2524,7 +2560,7 @@ export default function DesignStudioView({
     effectiveJourneyGarmentTypeSelection,
     garmentTypeStageCompletion.isComplete,
     activeUploadedDesignSource?.sourceKey,
-    authoritativePhysicalOccurrencesForDomain,
+    fabricTransactionPhysicalOccurrences,
   ]);
 
   useEffect(() => {
@@ -2810,7 +2846,7 @@ export default function DesignStudioView({
   }, [guestDraftHydrated, futureAiTryOnInputFingerprint]);
 
   useEffect(() => {
-    if (!guestDraftHydrated) return;
+    if (!guestDraftHydrated || isAdditionalGarmentCommitPending) return;
     if (
       futureDraftPersistenceStatus !== "ready" ||
       (futureDraftIdentity.status !== "guest" &&
@@ -2976,6 +3012,7 @@ export default function DesignStudioView({
     futureDraftIdentity,
     futureDraftPersistenceStatus,
     guestDraftHydrated,
+    isAdditionalGarmentCommitPending,
     futureDraftFabricIntegrityBlockers,
     selectedFabric,
     designSelections,
@@ -3486,39 +3523,61 @@ export default function DesignStudioView({
   const getCurrentAdditionalGarmentFabricOperation = ({
     transactionId,
     garmentKey,
+    occurrenceGeneration,
   }: {
     transactionId: number;
     garmentKey: string;
+    occurrenceGeneration?: number;
   }): AdditionalGarmentFabricTransaction | null => {
     const currentTransaction =
       additionalGarmentFabricTransactionRef.current;
-    return isCurrentAdditionalGarmentFabricOperation({
-      currentTransaction,
-      expectedTransactionId: transactionId,
-      expectedGarmentKey: garmentKey,
-    })
-      ? currentTransaction
-      : null;
+    if (
+      !isCurrentAdditionalGarmentFabricOperation({
+        currentTransaction,
+        expectedTransactionId: transactionId,
+        expectedGarmentKey: garmentKey,
+      }) ||
+      (occurrenceGeneration !== undefined &&
+        currentTransaction?.occurrenceGeneration !== occurrenceGeneration)
+    ) {
+      return null;
+    }
+    if (currentTransaction?.origin === "new_addition") {
+      const liveGeneration = getPhysicalGarmentOccurrenceGeneration(
+        garmentTypeSelection.physicalOccurrenceIdentityState,
+        garmentKey,
+      );
+      if (
+        !currentTransaction.occurrenceGeneration ||
+        liveGeneration !== currentTransaction.occurrenceGeneration
+      ) {
+        return null;
+      }
+    }
+    return currentTransaction;
   };
   const cancelAdditionalGarmentFabricTransaction = ({
     transactionId,
     garmentKey,
+    occurrenceGeneration,
   }: {
     transactionId: number;
     garmentKey: string;
+    occurrenceGeneration?: number;
   }): boolean => {
     const transaction = getCurrentAdditionalGarmentFabricOperation({
       transactionId,
       garmentKey,
+      occurrenceGeneration,
     });
     if (!transaction) return false;
 
+    const fabricSnapshot = additionalGarmentFabricSnapshotRef.current;
     additionalGarmentFabricTransactionRef.current = null;
     setAdditionalGarmentFabricError(null);
     additionalGarmentFabricPersistentErrorGarmentKeyRef.current = null;
     setAdditionalGarmentFabricPersistentError(null);
     setAdditionalGarmentFabricTransaction(null);
-    additionalGarmentFabricSnapshotRef.current = null;
     if (transaction.origin === "new_addition") {
       const cancellation = preparePendingAdditionalGarmentCancellationCommit({
         garmentKey: transaction.garmentKey,
@@ -3527,10 +3586,12 @@ export default function DesignStudioView({
       });
       revalidatePreservedFabricIntegrityAfterMutation({
         previousState: fabricAllocationState,
-        nextState: cancellation.fabricAllocationState,
+        nextState: fabricSnapshot || cancellation.fabricAllocationState,
         explicitlyRepairedGarmentKeys: [transaction.garmentKey],
       });
-      setFabricAllocationState(cancellation.fabricAllocationState);
+      setFabricAllocationState(
+        fabricSnapshot || cancellation.fabricAllocationState,
+      );
       setDesignSelections(cancellation.designSelections);
       setGarmentTypeSelection((current) =>
         reconcileGarmentTypeSelectionOccurrenceIdentities({
@@ -3544,12 +3605,12 @@ export default function DesignStudioView({
         }),
       );
     }
+    additionalGarmentFabricSnapshotRef.current = null;
     restoreAdditionalGarmentFabricFocus();
     return true;
   };
   const handleAddFutureAdditionalGarment = (
     garmentType: CanonicalPhysicalGarmentType,
-    choice: AdditionalGarmentCustomDetailsChoice,
     triggerElement?: HTMLElement | null,
   ) => {
     invalidateFutureGarmentRemovalRetention();
@@ -3562,7 +3623,7 @@ export default function DesignStudioView({
     if (
       fabricAllocationState.pendingFabricGarment ||
       fabricAllocationState.awaitingFabricForPendingGarment ||
-      additionalGarmentFabricTransaction
+      additionalGarmentFabricTransactionRef.current
     ) {
       setNotification({
         message: "Finish the current fabric assignment before adding another garment.",
@@ -3577,40 +3638,10 @@ export default function DesignStudioView({
         futureAdditionalConstructionReconciliation.state.byGarmentKey,
       ),
     });
-    const sourceSubject = choice.mode === "copy"
-      ? futureScopedCustomDetailsReconciliation.subjects.find(
-          (subject) =>
-            subject.parentGarmentKey === choice.sourceParentGarmentKey &&
-            subject.parentGarmentType === garmentType,
-        )
-      : null;
-    const sourceConstruction = sourceSubject
-      ? sourceSubject.parentGarmentKey.startsWith("base:")
-        ? garmentTypeSelection.constructionByGarment[garmentType]
-        : futureAdditionalConstructionReconciliation.state.byGarmentKey[
-            sourceSubject.parentGarmentKey
-          ]
-      : null;
-    if (choice.mode === "copy" && !sourceSubject) {
-      setNotification({
-        message: "The garment selected for copying is no longer available.",
-        type: "info",
-      });
-      return;
-    }
-    if (choice.mode === "copy" && sourceConstruction?.status !== "resolved") {
-      setNotification({
-        message: "The source garment construction needs review before it can be copied.",
-        type: "info",
-      });
-      return;
-    }
-    const construction = choice.mode === "copy"
-      ? sourceConstruction!
-      : resolveGarmentConstructionPricing(
-          garmentType,
-          normalizedGarmentTypeCatalog,
-        );
+    const construction = resolveGarmentConstructionPricing(
+      garmentType,
+      normalizedGarmentTypeCatalog,
+    );
     if (addition.status !== "resolved" || construction.status !== "resolved") {
       setNotification({
         message: "This garment construction price is not ready yet.",
@@ -3619,6 +3650,27 @@ export default function DesignStudioView({
       return;
     }
     const garmentKey = addition.selection.garmentSpec!.key;
+    const identitySelection =
+      reconcileGarmentTypeSelectionOccurrenceIdentities({
+        selection: garmentTypeSelection,
+        activeGarmentKeys: [
+          ...authoritativePhysicalOccurrencesForDomain.map(
+            (occurrence) => occurrence.garmentKey,
+          ),
+          garmentKey,
+        ],
+      });
+    const occurrenceGeneration = getPhysicalGarmentOccurrenceGeneration(
+      identitySelection.physicalOccurrenceIdentityState,
+      garmentKey,
+    );
+    if (!occurrenceGeneration) {
+      setNotification({
+        message: "This garment could not be added. Your existing order was not changed.",
+        type: "info",
+      });
+      return;
+    }
     additionalGarmentFabricTriggerRef.current = triggerElement || null;
     additionalGarmentFabricScrollYRef.current =
       typeof window !== "undefined" ? window.scrollY : null;
@@ -3628,39 +3680,15 @@ export default function DesignStudioView({
       origin: "new_addition" as const,
       garmentKey,
       garmentType,
+      occurrenceGeneration,
+      fabricUnits: addition.selection.garmentSpec!.fabricUnits,
       construction: cloneGarmentConstructionPricingResolution(construction),
-      ...(choice.mode === "copy"
-        ? { copyFromParentGarmentKey: choice.sourceParentGarmentKey }
-        : {}),
     };
     const pendingTransaction = beginAdditionalGarmentFabricTransaction({
       ...transactionBase,
       phase: "catalogue",
       openedModal: true,
     });
-    const authorization = applyAdditionalGarmentConstructionAndCopy({
-      current: designSelections,
-      transaction: {
-        ...pendingTransaction,
-        constructionAppliedForTransactionId: pendingTransaction.transactionId,
-      },
-      catalogInspection: futureCatalogInspection,
-    });
-    if (!authorization.applied) {
-      additionalGarmentFabricSnapshotRef.current = null;
-      setNotification({
-        message:
-          authorization.reason ||
-          "This garment could not be added. Your existing order was not changed.",
-        type: "info",
-      });
-      return;
-    }
-    const authorizedTransaction: AdditionalGarmentFabricTransaction = {
-      ...pendingTransaction,
-      constructionAppliedForTransactionId: pendingTransaction.transactionId,
-    };
-
     const activeAllocation = fabricAllocationState.fabricAllocations.find(
       (allocation) =>
         allocation.allocationId === fabricAllocationState.activeAllocationId,
@@ -3693,25 +3721,118 @@ export default function DesignStudioView({
     const sameFabricAvailable = Boolean(
       activeAllocation && activeFabricInfo.resolution.status === "resolved",
     );
-    setDesignSelections(authorization.next);
-    setFabricAllocationState(pendingState);
-    setGarmentTypeSelection((current) =>
-      reconcileGarmentTypeSelectionOccurrenceIdentities({
-        selection: current,
-        activeGarmentKeys: [
-          ...authoritativePhysicalOccurrencesForDomain.map(
-            (occurrence) => occurrence.garmentKey,
-          ),
-          garmentKey,
-        ],
-      }),
-    );
-    setAdditionalGarmentFabricTransaction({
-      ...authorizedTransaction,
+    const nextTransaction: AdditionalGarmentFabricTransaction = {
+      ...pendingTransaction,
       phase: sameFabricAvailable ? "choice" : "catalogue",
       openedModal: true,
-    });
+    };
+    additionalGarmentFabricTransactionRef.current = nextTransaction;
+    setGarmentTypeSelection(identitySelection);
+    setFabricAllocationState(pendingState);
+    setAdditionalGarmentFabricTransaction(nextTransaction);
   };
+  const handleCompleteAdditionalGarmentCustomDetails = (
+    request: AdditionalGarmentCustomDetailsRequest,
+    choice: AdditionalGarmentCustomDetailsChoice,
+  ): boolean => {
+    const transaction = getCurrentAdditionalGarmentFabricOperation({
+      transactionId: request.transactionId,
+      garmentKey: request.garmentKey,
+      occurrenceGeneration: request.occurrenceGeneration,
+    });
+    if (
+      !transaction ||
+      transaction.origin !== "new_addition" ||
+      transaction.phase !== "custom_details_choice"
+    ) {
+      return false;
+    }
+
+    const sourceSubject =
+      choice.mode === "copy"
+        ? futureScopedCustomDetailsReconciliation.subjects.find(
+            (subject) =>
+              subject.parentGarmentKey === choice.sourceParentGarmentKey &&
+              subject.parentGarmentType === transaction.garmentType,
+          )
+        : null;
+    const sourceConstruction = sourceSubject
+      ? sourceSubject.parentGarmentKey.startsWith("base:")
+        ? garmentTypeSelection.constructionByGarment[transaction.garmentType]
+        : futureAdditionalConstructionReconciliation.state.byGarmentKey[
+            sourceSubject.parentGarmentKey
+          ]
+      : null;
+    if (choice.mode === "copy" && !sourceSubject) {
+      setNotification({
+        message: "The garment selected for copying is no longer available.",
+        type: "info",
+      });
+      return false;
+    }
+    if (choice.mode === "copy" && sourceConstruction?.status !== "resolved") {
+      setNotification({
+        message:
+          "The source garment construction needs review before it can be copied.",
+        type: "info",
+      });
+      return false;
+    }
+    const construction =
+      choice.mode === "copy"
+        ? sourceConstruction!
+        : resolveGarmentConstructionPricing(
+            transaction.garmentType,
+            normalizedGarmentTypeCatalog,
+          );
+    if (construction.status !== "resolved") {
+      setNotification({
+        message: "This garment construction price is not ready yet.",
+        type: "info",
+      });
+      return false;
+    }
+
+    const transactionWithCustomDetails: AdditionalGarmentFabricTransaction = {
+      ...transaction,
+      construction: cloneGarmentConstructionPricingResolution(construction),
+      copyFromParentGarmentKey:
+        choice.mode === "copy" ? choice.sourceParentGarmentKey : undefined,
+    };
+    const authorization = applyAdditionalGarmentConstructionAndCopy({
+      current: designSelections,
+      transaction: transactionWithCustomDetails,
+      catalogInspection: futureCatalogInspection,
+    });
+    if (!authorization.applied) {
+      setNotification({
+        message:
+          authorization.reason ||
+          "This garment could not be added. Your existing order was not changed.",
+        type: "info",
+      });
+      return false;
+    }
+
+    const finishingTransaction: AdditionalGarmentFabricTransaction = {
+      ...transactionWithCustomDetails,
+      phase: "awaiting_commit",
+      openedModal: false,
+      constructionAppliedForTransactionId: transaction.transactionId,
+    };
+    additionalGarmentFabricTransactionRef.current = finishingTransaction;
+    setDesignSelections(authorization.next);
+    setAdditionalGarmentFabricTransaction(finishingTransaction);
+    return true;
+  };
+  const handleCancelAdditionalGarmentCustomDetails = (
+    request: AdditionalGarmentCustomDetailsRequest,
+  ): boolean =>
+    cancelAdditionalGarmentFabricTransaction({
+      transactionId: request.transactionId,
+      garmentKey: request.garmentKey,
+      occurrenceGeneration: request.occurrenceGeneration,
+    });
   const handleRemoveFuturePhysicalGarmentOccurrence = ({
     garmentKey,
     expectedAuthoritySignature,
@@ -4113,6 +4234,7 @@ export default function DesignStudioView({
       cancelAdditionalGarmentFabricTransaction({
         transactionId: transaction.transactionId,
         garmentKey: transaction.garmentKey,
+        occurrenceGeneration: transaction.occurrenceGeneration,
       });
       return;
     }
@@ -4138,6 +4260,7 @@ export default function DesignStudioView({
       !getCurrentAdditionalGarmentFabricOperation({
         transactionId: transaction.transactionId,
         garmentKey: transaction.garmentKey,
+        occurrenceGeneration: transaction.occurrenceGeneration,
       })
     ) {
       return;
@@ -4151,7 +4274,11 @@ export default function DesignStudioView({
     setAdditionalGarmentFabricError(null);
     const nextTransaction = {
       ...transaction,
-      phase: "assigning",
+      phase:
+        transaction.origin === "new_addition"
+          ? "custom_details_choice"
+          : "assigning",
+      openedModal: transaction.origin !== "new_addition",
       requestedFabricCode: fabricCode,
     } as AdditionalGarmentFabricTransaction;
     additionalGarmentFabricTransactionRef.current = nextTransaction;
@@ -4160,13 +4287,16 @@ export default function DesignStudioView({
   const handleAdditionalGarmentUseSameFabric = ({
     transactionId,
     garmentKey,
+    occurrenceGeneration,
   }: {
     transactionId: number;
     garmentKey: string;
+    occurrenceGeneration?: number;
   }) => {
     const transaction = getCurrentAdditionalGarmentFabricOperation({
       transactionId,
       garmentKey,
+      occurrenceGeneration,
     });
     if (!transaction) return;
     const previous = fabricAllocationState;
@@ -4212,14 +4342,17 @@ export default function DesignStudioView({
   const handleAdditionalGarmentChooseAnotherFabric = ({
     transactionId,
     garmentKey,
+    occurrenceGeneration,
   }: {
     transactionId: number;
     garmentKey: string;
+    occurrenceGeneration?: number;
   }) => {
     if (
       !getCurrentAdditionalGarmentFabricOperation({
         transactionId,
         garmentKey,
+        occurrenceGeneration,
       })
     ) {
       return;
@@ -4242,14 +4375,17 @@ export default function DesignStudioView({
     transactionId,
     garmentKey,
     fabricCode,
+    occurrenceGeneration,
   }: {
     transactionId: number;
     garmentKey: string;
     fabricCode: string;
+    occurrenceGeneration?: number;
   }) => {
     const transaction = getCurrentAdditionalGarmentFabricOperation({
       transactionId,
       garmentKey,
+      occurrenceGeneration,
     });
     if (!transaction) return;
     const resolved = resolveCurrentCatalogueFabricForAssignment({
@@ -4278,7 +4414,7 @@ export default function DesignStudioView({
       garmentKey: transaction.garmentKey,
       fabricCode: resolved.fabric.code,
       fabrics,
-      requiredPhysicalOccurrences: authoritativePhysicalOccurrencesForDomain,
+      requiredPhysicalOccurrences: fabricTransactionPhysicalOccurrences,
     });
     const result = confirmAdditionalGarmentFabricAssignment({
       previousState: previous,
@@ -4341,19 +4477,23 @@ export default function DesignStudioView({
   const handleCancelAdditionalGarmentFabricDialog = ({
     transactionId,
     garmentKey,
+    occurrenceGeneration,
   }: {
     transactionId: number;
     garmentKey: string;
+    occurrenceGeneration?: number;
   }) => {
     const transaction = getCurrentAdditionalGarmentFabricOperation({
       transactionId,
       garmentKey,
+      occurrenceGeneration,
     });
     if (!transaction) return;
     if (transaction.origin === "new_addition") {
       cancelAdditionalGarmentFabricTransaction({
         transactionId,
         garmentKey,
+        occurrenceGeneration,
       });
       return;
     }
@@ -4376,6 +4516,18 @@ export default function DesignStudioView({
         additionalGarmentFabricTransaction.phase === "assigning" ||
         additionalGarmentFabricTransaction.phase === "awaiting_commit"),
   );
+  const additionalGarmentCustomDetailsRequest: AdditionalGarmentCustomDetailsRequest | null =
+    additionalGarmentFabricTransaction?.origin === "new_addition" &&
+    additionalGarmentFabricTransaction.phase === "custom_details_choice" &&
+    additionalGarmentFabricTransaction.occurrenceGeneration
+      ? {
+          transactionId: additionalGarmentFabricTransaction.transactionId,
+          garmentKey: additionalGarmentFabricTransaction.garmentKey,
+          garmentType: additionalGarmentFabricTransaction.garmentType,
+          occurrenceGeneration:
+            additionalGarmentFabricTransaction.occurrenceGeneration,
+        }
+      : null;
   const garmentTypeBlockerMessage = !garmentTypeStageCompletion.isComplete
     ? "Select at least one garment, choose who the order is for, and resolve every construction price to continue to Fabric."
     : null;
@@ -4656,6 +4808,15 @@ export default function DesignStudioView({
           onAccessoryToggle={handleFutureAccessoryToggle}
           onClearAccessories={handleClearFutureAccessories}
           onAddAdditionalGarment={handleAddFutureAdditionalGarment}
+          additionalGarmentCustomDetailsRequest={
+            additionalGarmentCustomDetailsRequest
+          }
+          onCompleteAdditionalGarmentCustomDetails={
+            handleCompleteAdditionalGarmentCustomDetails
+          }
+          onCancelAdditionalGarmentCustomDetails={
+            handleCancelAdditionalGarmentCustomDetails
+          }
           removalTargets={futureGarmentRemovalTargets}
           onRequestGarmentRemoval={(target, trigger) =>
             openFutureGarmentRemovalDialog({
@@ -4783,6 +4944,8 @@ export default function DesignStudioView({
               transactionId:
                 additionalGarmentFabricTransaction.transactionId,
               garmentKey: additionalGarmentFabricTransaction.garmentKey,
+              occurrenceGeneration:
+                additionalGarmentFabricTransaction.occurrenceGeneration,
             })
           }
           onChooseAnotherFabric={() =>
@@ -4790,27 +4953,34 @@ export default function DesignStudioView({
               transactionId:
                 additionalGarmentFabricTransaction.transactionId,
               garmentKey: additionalGarmentFabricTransaction.garmentKey,
+              occurrenceGeneration:
+                additionalGarmentFabricTransaction.occurrenceGeneration,
             })
           }
-          onBackToChoice={() =>
-            setAdditionalGarmentFabricTransaction((current) =>
-              isCurrentAdditionalGarmentFabricOperation({
-                currentTransaction: current,
-                expectedTransactionId:
-                  additionalGarmentFabricTransaction.transactionId,
-                expectedGarmentKey:
-                  additionalGarmentFabricTransaction.garmentKey,
-              })
-                ? { ...current, phase: "choice" }
-                : current,
-            )
-          }
+          onBackToChoice={() => {
+            const current = getCurrentAdditionalGarmentFabricOperation({
+              transactionId:
+                additionalGarmentFabricTransaction.transactionId,
+              garmentKey: additionalGarmentFabricTransaction.garmentKey,
+              occurrenceGeneration:
+                additionalGarmentFabricTransaction.occurrenceGeneration,
+            });
+            if (!current) return;
+            const next: AdditionalGarmentFabricTransaction = {
+              ...current,
+              phase: "choice",
+            };
+            additionalGarmentFabricTransactionRef.current = next;
+            setAdditionalGarmentFabricTransaction(next);
+          }}
           onSelectFabric={(fabricCode) =>
             handleAdditionalGarmentSelectFabric({
               transactionId:
                 additionalGarmentFabricTransaction.transactionId,
               garmentKey: additionalGarmentFabricTransaction.garmentKey,
               fabricCode,
+              occurrenceGeneration:
+                additionalGarmentFabricTransaction.occurrenceGeneration,
             })
           }
           onCancel={() =>
@@ -4818,6 +4988,8 @@ export default function DesignStudioView({
               transactionId:
                 additionalGarmentFabricTransaction.transactionId,
               garmentKey: additionalGarmentFabricTransaction.garmentKey,
+              occurrenceGeneration:
+                additionalGarmentFabricTransaction.occurrenceGeneration,
             })
           }
         />

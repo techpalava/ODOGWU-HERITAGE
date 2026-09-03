@@ -275,6 +275,10 @@ assert.ok(
 );
 const addGarmentHandlerSource = source.slice(
   source.indexOf("const handleAddFutureAdditionalGarment"),
+  source.indexOf("const handleCompleteAdditionalGarmentCustomDetails"),
+);
+const completeCustomDetailsHandlerSource = source.slice(
+  source.indexOf("const handleCompleteAdditionalGarmentCustomDetails"),
   source.indexOf("const handleRemoveFuturePhysicalGarmentOccurrence"),
 );
 assert.match(
@@ -290,7 +294,7 @@ assert.doesNotMatch(
 assert.match(
   addGarmentHandlerSource,
   /phase: sameFabricAvailable \? "choice" : "catalogue"/,
-  "the existing Fabric chooser must open after either Custom Details mode",
+  "the existing Fabric chooser must open directly from Add",
 );
 assert.ok(
   !source.includes("additionalGarmentParentSection"),
@@ -312,8 +316,13 @@ assert.match(
 );
 assert.match(
   customDetailsSource,
+  /onAddAdditionalGarment\(garmentType, event\.currentTarget\)/,
+  "the customer control must begin the authoritative Fabric transaction directly",
+);
+assert.doesNotMatch(
+  customDetailsSource,
   /setAdditionalGarmentChoice\(\{ garmentType, sourceParentGarmentKey: null \}\)/,
-  "the customer control must ask how to configure the garment before invoking the transaction",
+  "the Add button must not open Custom Details before Fabric",
 );
 assert.match(customDetailsSource, /Use Same Custom Details/);
 assert.match(customDetailsSource, /Choose Custom Details/);
@@ -380,9 +389,14 @@ assert.match(
   "cancelling the Fabric transaction must discard pending construction and copy state",
 );
 assert.match(
+  completeCustomDetailsHandlerSource,
+  /phase !== "custom_details_choice"[\s\S]*applyAdditionalGarmentConstructionAndCopy\([\s\S]*phase: "awaiting_commit"/,
+  "construction and copy must apply only after the Fabric-first transaction reaches Custom Details",
+);
+assert.doesNotMatch(
   addGarmentHandlerSource,
-  /if \(pendingState\.pendingFabricGarment\?\.garmentKey !== garmentKey\) \{[\s\S]*additionalGarmentFabricSnapshotRef\.current = null;[\s\S]*return;[\s\S]*setDesignSelections\(authorization\.next\);/,
-  "a rejected pending transaction must leave construction and copy state unapplied",
+  /applyAdditionalGarmentConstructionAndCopy|setDesignSelections/,
+  "starting the Fabric-first transaction must not expose provisional construction or details",
 );
 assert.match(
   source,

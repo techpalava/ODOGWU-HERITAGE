@@ -304,9 +304,18 @@ const findButton = (label: string): ReactTestInstance => {
 act(() => {
   findButton("Add Trouser").props.onClick({ currentTarget: null });
 });
-act(() => {
-  findButton("Choose Custom Details").props.onClick();
-});
+
+assert.equal(
+  renderer.root
+    .findAllByType("button")
+    .some((button) =>
+      ["Use Same Custom Details", "Choose Custom Details"].some((label) =>
+        textContent(button).trim().startsWith(label),
+      ),
+    ),
+  false,
+  "Custom Details choices must not render before the additional garment has an explicit Fabric choice",
+);
 
 const renderedFabricDialogs = renderer.root.findAllByProps({
   "data-additional-garment-fabric-dialog": "true",
@@ -337,6 +346,9 @@ assert.match(
   /^additional:trouser:/,
 );
 const pendingTrouserKey = pendingState.pendingFabricGarment!.garmentKey;
+const pendingTrouserGeneration = dialog.props.transaction.occurrenceGeneration;
+assert.equal(Number.isSafeInteger(pendingTrouserGeneration), true);
+assert.ok(pendingTrouserGeneration > 0);
 const originalAllocationId = pendingState.fabricAllocations[0].allocationId;
 
 // A second add is blocked while the exact first transaction remains pending.
@@ -347,7 +359,6 @@ const customDetailsDuringPending = renderer.root.findByType(
 act(() => {
   customDetailsDuringPending.props.onAddAdditionalGarment(
     "skirt",
-    { mode: "choose" },
     null,
   );
 });
@@ -366,6 +377,7 @@ await act(async () => {
   renderer.root
     .findByProps({ "data-fabric-dialog-action": "use-same" })
     .props.onClick();
+  await Promise.resolve();
   await Promise.resolve();
 });
 const afterUseSame = renderer.root.findByType(
@@ -386,7 +398,65 @@ assert.deepEqual(
   ["base:shirt", pendingTrouserKey],
 );
 assert.equal(sameFabricState.pendingFabricGarment, null);
-assert.equal(afterUseSame.props.constructionSubtotal, 140);
+assert.equal(
+  renderer.root.findAllByType(FutureAdditionalGarmentFabricDialog).length,
+  0,
+  "Fabric success must close the Fabric dialog before Custom Details",
+);
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-additional-garment-custom-details-dialog": "true",
+  }).length,
+  1,
+  "Custom Details choices must open only after Fabric succeeds",
+);
+assert.equal(
+  afterUseSame.props.additionalGarmentCustomDetailsRequest.garmentKey,
+  pendingTrouserKey,
+);
+assert.equal(
+  afterUseSame.props.additionalGarmentCustomDetailsRequest.occurrenceGeneration,
+  pendingTrouserGeneration,
+);
+assert.equal(
+  Object.prototype.hasOwnProperty.call(
+    afterUseSame.props.designSelections.additionalGarmentConstructions
+      ?.byGarmentKey || {},
+    pendingTrouserKey,
+  ),
+  false,
+  "Fabric success alone must not expose a half-committed construction occurrence",
+);
+const completedTrouserRequest =
+  afterUseSame.props.additionalGarmentCustomDetailsRequest;
+const completeTrouserCustomDetails =
+  afterUseSame.props.onCompleteAdditionalGarmentCustomDetails;
+
+await act(async () => {
+  findButton("Choose Custom Details").props.onClick();
+  await Promise.resolve();
+  await Promise.resolve();
+});
+const finalizedTrouser = renderer.root.findByType(
+  DormantFutureCustomDetailsStep,
+);
+assert.equal(finalizedTrouser.props.constructionSubtotal, 140);
+assert.equal(
+  finalizedTrouser.props.additionalGarmentCustomDetailsRequest,
+  null,
+);
+let duplicateCompletionResult = true;
+act(() => {
+  duplicateCompletionResult = completeTrouserCustomDetails(
+    completedTrouserRequest,
+    { mode: "choose" },
+  );
+});
+assert.equal(
+  duplicateCompletionResult,
+  false,
+  "the same Custom Details completion callback must not finalize twice",
+);
 assert.equal(
   renderer.root.findAllByProps({
     "data-additional-garment-fabric-summary": pendingTrouserKey,
@@ -394,8 +464,8 @@ assert.equal(
   1,
 );
 
-// The copy mode must enter the same pending Fabric transaction through the
-// mounted production coordinator. It must not inherit the source Fabric.
+// Choosing another Fabric applies only to the provisional occurrence. Cancelling
+// the later Custom Details choice rolls the whole provisional addition back.
 assert.equal(
   renderer.root.findAllByProps({
     "data-additional-garment-fabric-dialog": "true",
@@ -406,62 +476,237 @@ assert.equal(
 act(() => {
   findButton("Add Shirt").props.onClick({ currentTarget: null });
 });
-act(() => {
-  findButton("Use Same Custom Details").props.onClick();
-});
-const renderedCopyDialog = renderer.root.findByType(
+const chooseAnotherDialog = renderer.root.findByType(
   FutureAdditionalGarmentFabricDialog,
 );
-const copyModeGarmentKey = renderedCopyDialog.props.transaction.garmentKey;
-const copyModePendingState =
-  renderedCopyDialog.props.fabricAllocationState as FabricAllocationState;
-assert.equal(renderedCopyDialog.props.transaction.phase, "choice");
-assert.equal(
-  renderedCopyDialog.props.transaction.copyFromParentGarmentKey,
-  "base:shirt",
+const cancelledShirtKey = chooseAnotherDialog.props.transaction.garmentKey;
+const cancelledShirtGeneration =
+  chooseAnotherDialog.props.transaction.occurrenceGeneration;
+act(() => {
+  renderer.root
+    .findByProps({ "data-fabric-dialog-action": "choose-another" })
+    .props.onClick();
+});
+act(() => {
+  renderer.root
+    .findByProps({
+      "data-fabric-card": "true",
+      "data-fabric-code": fabricB.code,
+      "data-fabric-action": "select",
+    })
+    .props.onClick();
+});
+const customDetailsAfterDifferentFabric = renderer.root.findByType(
+  DormantFutureCustomDetailsStep,
 );
-assert.match(copyModeGarmentKey, /^additional:shirt:/);
+const staleCustomDetailsRequest =
+  customDetailsAfterDifferentFabric.props
+    .additionalGarmentCustomDetailsRequest;
+const staleCustomDetailsCompletion =
+  customDetailsAfterDifferentFabric.props
+    .onCompleteAdditionalGarmentCustomDetails;
+assert.equal(
+  customDetailsAfterDifferentFabric.props.additionalGarmentCustomDetailsRequest
+    .garmentKey,
+  cancelledShirtKey,
+);
+const differentFabricState =
+  customDetailsAfterDifferentFabric.props
+    .fabricAllocationState as FabricAllocationState;
+assert.equal(differentFabricState.fabricAllocations.length, 2);
 assert.deepEqual(
-  copyModePendingState.fabricAllocations[0].garmentAssignments.map(
+  differentFabricState.fabricAllocations[0].garmentAssignments.map(
     (assignment) => assignment.garmentKey,
   ),
   ["base:shirt", pendingTrouserKey],
-  "copying Custom Details must not commit or copy Fabric before customer choice",
+  "the original allocation must remain unchanged after choosing another Fabric",
 );
 assert.equal(
-  copyModePendingState.pendingFabricGarment?.garmentKey,
-  copyModeGarmentKey,
+  differentFabricState.fabricAllocations[1].fabricCode,
+  fabricB.code,
 );
 act(() => {
-  renderedCopyDialog.props.onCancel();
+  findButton("Cancel").props.onClick();
 });
 assert.equal(
   renderer.root.findAllByType(FutureAdditionalGarmentFabricDialog).length,
   0,
   "cancelling copy-mode Fabric choice must close only its transaction",
 );
-const afterCopyCancellation = renderer.root.findByType(
+const afterCustomDetailsCancellation = renderer.root.findByType(
   DormantFutureCustomDetailsStep,
 );
 assert.deepEqual(
   (
-    afterCopyCancellation.props.fabricAllocationState as FabricAllocationState
+    afterCustomDetailsCancellation.props
+      .fabricAllocationState as FabricAllocationState
   ).fabricAllocations[0].garmentAssignments.map(
     (assignment) => assignment.garmentKey,
   ),
   ["base:shirt", pendingTrouserKey],
-  "copy-mode cancellation must preserve already committed sibling assignments",
+  "Custom Details cancellation must preserve already committed sibling assignments",
+);
+assert.equal(
+  (
+    afterCustomDetailsCancellation.props
+      .fabricAllocationState as FabricAllocationState
+  ).fabricAllocations.length,
+  1,
+  "Custom Details cancellation must restore the exact pre-add Fabric snapshot",
 );
 assert.equal(
   Object.prototype.hasOwnProperty.call(
-    afterCopyCancellation.props.designSelections
+    afterCustomDetailsCancellation.props.designSelections
       .additionalGarmentConstructions?.byGarmentKey || {},
-    copyModeGarmentKey,
+    cancelledShirtKey,
   ),
   false,
-  "copy-mode cancellation must remove only the provisional occurrence",
+  "Custom Details cancellation must remove only the provisional occurrence",
+);
+const cancelledStateSnapshot = JSON.stringify({
+  fabricAllocationState:
+    afterCustomDetailsCancellation.props.fabricAllocationState,
+  designSelections: afterCustomDetailsCancellation.props.designSelections,
+});
+let staleCompletionResult = true;
+act(() => {
+  staleCompletionResult = staleCustomDetailsCompletion(
+    staleCustomDetailsRequest,
+    { mode: "choose" },
+  );
+});
+assert.equal(staleCompletionResult, false);
+const afterStaleCompletion = renderer.root.findByType(
+  DormantFutureCustomDetailsStep,
+);
+assert.equal(
+  JSON.stringify({
+    fabricAllocationState: afterStaleCompletion.props.fabricAllocationState,
+    designSelections: afterStaleCompletion.props.designSelections,
+  }),
+  cancelledStateSnapshot,
+  "a stale Custom Details callback must not mutate a cancelled occurrence",
 );
 
+// Re-adding the same type uses a fresh occurrence generation. Copying Custom
+// Details after Fabric selection retains the explicitly selected Fabric.
+act(() => {
+  findButton("Add Shirt").props.onClick({ currentTarget: null });
+});
+act(() => {
+  renderer.root
+    .findByProps({ "data-fabric-dialog-action": "choose-another" })
+    .props.onClick();
+});
+act(() => {
+  renderer.root
+    .findByProps({
+      "data-fabric-card": "true",
+      "data-fabric-code": fabricB.code,
+      "data-fabric-action": "select",
+    })
+    .props.onClick();
+});
+const copyRequestStep = renderer.root.findByType(
+  DormantFutureCustomDetailsStep,
+);
+const copiedShirtRequest =
+  copyRequestStep.props.additionalGarmentCustomDetailsRequest;
+assert.match(copiedShirtRequest.garmentKey, /^additional:shirt:/);
+assert.notEqual(
+  copiedShirtRequest.occurrenceGeneration,
+  cancelledShirtGeneration,
+  "a removed provisional occurrence generation must never be reissued",
+);
+await act(async () => {
+  findButton("Use Same Custom Details").props.onClick();
+  await Promise.resolve();
+  await Promise.resolve();
+});
+const afterCopyCompletion = renderer.root.findByType(
+  DormantFutureCustomDetailsStep,
+);
+const copiedShirtFabricState =
+  afterCopyCompletion.props.fabricAllocationState as FabricAllocationState;
+const copiedShirtAllocation = copiedShirtFabricState.fabricAllocations.find(
+  (allocation) =>
+    allocation.garmentAssignments.some(
+      (assignment) => assignment.garmentKey === copiedShirtRequest.garmentKey,
+    ),
+);
+assert.equal(copiedShirtAllocation?.fabricCode, fabricB.code);
+assert.equal(
+  afterCopyCompletion.props.designSelections.additionalGarmentConstructions
+    ?.byGarmentKey?.[copiedShirtRequest.garmentKey]?.status,
+  "resolved",
+);
+
+act(() => renderer.unmount());
+
+// Cancelling either Fabric phase removes the provisional transaction without
+// ever exposing Custom Details or changing the original allocation.
+await mountSeededStudio();
+act(() => {
+  findButton("Add Trouser").props.onClick({ currentTarget: null });
+});
+act(() => {
+  renderer.root.findByType(FutureAdditionalGarmentFabricDialog).props.onCancel();
+});
+let afterInitialFabricCancel = renderer.root.findByType(
+  DormantFutureCustomDetailsStep,
+);
+assert.equal(
+  renderer.root.findAllByType(FutureAdditionalGarmentFabricDialog).length,
+  0,
+);
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-additional-garment-custom-details-dialog": "true",
+  }).length,
+  0,
+);
+assert.deepEqual(
+  (
+    afterInitialFabricCancel.props.fabricAllocationState as FabricAllocationState
+  ).fabricAllocations[0].garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
+  ["base:shirt"],
+);
+assert.equal(
+  Object.keys(
+    afterInitialFabricCancel.props.designSelections
+      .additionalGarmentConstructions?.byGarmentKey || {},
+  ).length,
+  0,
+);
+
+act(() => {
+  findButton("Add Trouser").props.onClick({ currentTarget: null });
+});
+act(() => {
+  renderer.root
+    .findByProps({ "data-fabric-dialog-action": "choose-another" })
+    .props.onClick();
+});
+act(() => {
+  renderer.root.findByType(FutureAdditionalGarmentFabricDialog).props.onCancel();
+});
+afterInitialFabricCancel = renderer.root.findByType(
+  DormantFutureCustomDetailsStep,
+);
+assert.equal(
+  renderer.root.findAllByType(FutureAdditionalGarmentFabricDialog).length,
+  0,
+);
+assert.deepEqual(
+  (
+    afterInitialFabricCancel.props.fabricAllocationState as FabricAllocationState
+  ).fabricAllocations[0].garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
+  ["base:shirt"],
+);
 act(() => renderer.unmount());
 
 // Copy mode uses the same production construction-copy and pending-Fabric
