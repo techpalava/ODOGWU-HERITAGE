@@ -171,6 +171,14 @@ export const applyLegacyStyleFabricCapacityConfig = <
 >(
   style: T,
 ): T => {
+  const authority = (
+    style as T & {
+      designStyleAuthority?: { schemaVersion?: unknown };
+    }
+  ).designStyleAuthority;
+  // The stable-ID map is an explicit decoder for pre-authority records only.
+  // A V1 projection must fail closed if its canonical eligibility is absent.
+  if (authority?.schemaVersion === 1) return style;
   if ((style.fabricCapacityComposition || []).length > 0) return style;
   const legacyComposition = LEGACY_STYLE_BASE_GARMENT_COMPOSITIONS[style.id];
   if (!legacyComposition) return style;

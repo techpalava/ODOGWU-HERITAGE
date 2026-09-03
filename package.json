@@ -41,6 +41,7 @@
     "test:uploaded-design-deletion-ui": "tsx test_uploaded_design_deletion_ui.tsx",
     "test:uploaded-design-auth-continuity": "tsx test_uploaded_design_auth_continuity.ts",
     "test:firestore-security": "tsx test_firestore_security.ts",
+    "test:design-style-authority": "tsx test_design_style_authority.ts && tsx test_design_style_publication.ts && tsx test_design_style_customer_projection.ts",
     "test:firebase-client-configuration": "tsx test_firebase_client_configuration.ts",
     "test:measurement-blueprint": "tsx test_measurement_blueprint.ts",
     "test:measurement-risk-selection": "tsx test_measurement_risk_selection.tsx",

@@ -59,6 +59,7 @@ import {
   FutureDiscount,
   DiscountSettings,
   DiscountPlanningRule,
+  CanonicalPhysicalGarmentType,
   FabricGarmentType,
   OutfitType,
 } from "../types";
@@ -109,6 +110,18 @@ import { getClosestColorName } from "../utils/colorMatcher";
 import { FabricService } from "../services/fabricService";
 import { StorageService } from "../services/storageService";
 import { ImageService } from "../services/imageService";
+import {
+  DesignStyleAuthorityService,
+  type AdminDesignStyleSnapshot,
+} from "../services/designStyleAuthorityService";
+import {
+  cloneReferenceComposition,
+  createDefaultDesignStyleAuthorityMetadata,
+  getDesignStyleAuthorityMetadata,
+  type DesignStyleAdminProjection,
+  type DesignStyleLifecycle,
+} from "../utils/designStyleAuthority";
+import { DesignStylePublicationError } from "../utils/designStylePublication";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 import { db } from "../services/firebase";
@@ -144,7 +157,7 @@ export default function DatabaseView({
   customers,
   setCustomers,
   styles,
-  setStyles,
+  setStyles: _setStyles,
   fabrics,
   setFabrics: _setFabrics,
   customGroups: _customGroups,
@@ -238,6 +251,16 @@ export default function DatabaseView({
   const [userSearch, setUserSearch] = useState("");
   const [styleSubTab, setStyleSubTab] = useState<"styles" | "catalogue">("styles");
   const [styleSearch, setStyleSearch] = useState("");
+  const [adminStyles, setAdminStyles] = useState<DesignStyleAdminProjection[]>([]);
+  const [adminStylesLoadState, setAdminStylesLoadState] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const [adminStylesLoadError, setAdminStylesLoadError] = useState<string | null>(
+    null,
+  );
+  const [adminStyleDiagnostics, setAdminStyleDiagnostics] = useState<
+    AdminDesignStyleSnapshot["diagnostics"]
+  >([]);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [editingCatalogOption, setEditingCatalogOption] = useState<any>(null);
   const [isNewCatalogOption, setIsNewCatalogOption] = useState(false);
@@ -246,6 +269,33 @@ export default function DatabaseView({
   const [orderSearch, setOrderSearch] = useState("");
   const [showpieceSearch, setShowpieceSearch] = useState("");
   const [photoSearch, setPhotoSearch] = useState("");
+
+  useEffect(() => {
+    if (!currentUser || !AuthorizationEngine.canManageReferenceData(currentUser)) {
+      setAdminStyles([]);
+      setAdminStyleDiagnostics([]);
+      setAdminStylesLoadState("error");
+      setAdminStylesLoadError("Administrator access is required.");
+      return;
+    }
+    setAdminStylesLoadState("loading");
+    setAdminStylesLoadError(null);
+    return DesignStyleAuthorityService.subscribeToAdminRecords(
+      (snapshot) => {
+        setAdminStyles([...snapshot.styles]);
+        setAdminStyleDiagnostics(snapshot.diagnostics);
+        setAdminStylesLoadState("ready");
+        setAdminStylesLoadError(null);
+      },
+      (error) => {
+        // Keep the last authoritative Admin snapshot visible on listener failure.
+        setAdminStylesLoadState("error");
+        setAdminStylesLoadError(
+          error.message || "Design Style records could not be loaded.",
+        );
+      },
+    );
+  }, [currentUser]);
 
   const communityPhotos = Array.isArray(_communityPhotos)
     ? _communityPhotos
@@ -926,35 +976,64 @@ export default function DatabaseView({
       }
     }
 
-    let nextStyles: StyleCategory[];
+    const authority = getDesignStyleAuthorityMetadata(item);
+    if (!authority) {
+      triggerStatus("This Design Style has no valid publication authority.", "error");
+      return;
+    }
     if (isNewRecord) {
-      if (styles.some((s) => s.id === item.id)) {
+      if (adminStyles.some((s) => s.id === item.id)) {
         alert("A style with this ID already exists.");
         return;
       }
-      nextStyles = [...styles, item];
-    } else {
-      nextStyles = styles.map((style) => (style.id === item.id ? item : style));
     }
 
     try {
-      await setStyles(nextStyles);
+      await DesignStyleAuthorityService.publish({
+        style: item,
+        lifecycle: authority.lifecycle,
+        displayOrder: authority.displayOrder,
+        referenceComposition: cloneReferenceComposition(
+          authority.referenceComposition,
+        ),
+        expectedPublicRevision: authority.publicRevision,
+      });
       triggerStatus(
-        `${isNewRecord ? "Created" : "Updated"} style ${item.name} successfully!`,
+        `${isNewRecord ? "Created" : "Updated"} ${authority.lifecycle} style ${item.name} successfully!`,
       );
       setEditingType(null);
     } catch (error) {
       console.error("Failed to persist style configuration", error);
-      triggerStatus("Failed to save the style configuration.", "error");
+      triggerStatus(
+        error instanceof DesignStylePublicationError &&
+          error.code === "STALE_PUBLIC_REVISION"
+          ? "This style changed in another Admin session. Reopen it before saving."
+          : "Failed to save the style configuration. No publication change was applied.",
+        "error",
+      );
     }
   };
 
-  const handleDeleteStyle = async (id: string) => {
+  const handleArchiveStyle = async (style: DesignStyleAdminProjection) => {
+    const authority = getDesignStyleAuthorityMetadata(style);
+    if (!authority) {
+      triggerStatus("This Design Style cannot be archived safely.", "error");
+      return;
+    }
     try {
-      await StorageService.deleteDocument("styles", id);
-      triggerStatus("Style class deleted.", "info");
-    } catch (err) {
-      triggerStatus("Failed to delete style class", "error");
+      await DesignStyleAuthorityService.publish({
+        style,
+        lifecycle: "archived",
+        displayOrder: authority.displayOrder,
+        referenceComposition: cloneReferenceComposition(
+          authority.referenceComposition,
+        ),
+        expectedPublicRevision: authority.publicRevision,
+      });
+      triggerStatus("Style archived. Its stable identity was retained.", "info");
+    } catch (error) {
+      console.error("Failed to archive Design Style", error);
+      triggerStatus("Failed to archive the style. No change was applied.", "error");
     }
   };
 
@@ -966,7 +1045,7 @@ export default function DatabaseView({
     const baseName = nameMatch ? nameMatch[1].trim() : style.name;
 
     let maxSeq = 0;
-    styles.forEach((s) => {
+    adminStyles.forEach((s) => {
       if (s.id === baseId) {
         maxSeq = Math.max(maxSeq, 1);
       } else {
@@ -985,16 +1064,22 @@ export default function DatabaseView({
     const newId = `${baseId}-${nextSeq}`;
     const newName = `${baseName} ${nextSeq}`;
 
-    const newStyle = {
+    const sourceAuthority = getDesignStyleAuthorityMetadata(style);
+    const newStyle: DesignStyleAdminProjection = {
       ...style,
       id: newId,
       name: newName,
+      designStyleAuthority: {
+        ...createDefaultDesignStyleAuthorityMetadata(adminStyles.length),
+        referenceComposition: sourceAuthority
+          ? cloneReferenceComposition(sourceAuthority.referenceComposition)
+          : { status: "legacy_unresolved", garmentTypes: [] },
+      },
     };
-    setStyles((prev) => [...prev, newStyle]);
-    triggerStatus(
-      `Duplicated style ${style.name} as ${newName} (${newId}) successfully!`,
-      "success",
-    );
+    setIsNewRecord(true);
+    setEditingItem(newStyle);
+    setEditingType("style");
+    triggerStatus(`Prepared ${newName} as a new draft. Save to persist it.`, "info");
   };
 
   // FABRICS
@@ -1234,12 +1319,16 @@ export default function DatabaseView({
       (c.role && c.role.toLowerCase().includes(userSearch.toLowerCase())),
   );
 
-  const filteredStyles = styles.filter(
+  const filteredStyles = adminStyles.filter(
     (s) =>
       s.name.toLowerCase().includes(styleSearch.toLowerCase()) ||
       s.id.toLowerCase().includes(styleSearch.toLowerCase()) ||
       s.description.toLowerCase().includes(styleSearch.toLowerCase()),
   );
+  const editingStyleAuthority =
+    editingType === "style" && editingItem
+      ? getDesignStyleAuthorityMetadata(editingItem as StyleCategory)
+      : null;
 
   const filteredFabrics = fabrics.filter(
     (f) =>
@@ -1870,6 +1959,59 @@ export default function DatabaseView({
                     </div>
                     <div className="space-y-1">
                       <label className="font-bold text-heritage-green">
+                        Publication Lifecycle
+                      </label>
+                      <select
+                        value={editingStyleAuthority?.lifecycle || "draft"}
+                        onChange={(event) => {
+                          if (!editingStyleAuthority) return;
+                          setEditingItem({
+                            ...editingItem,
+                            designStyleAuthority: {
+                              ...editingStyleAuthority,
+                              lifecycle: event.target.value as DesignStyleLifecycle,
+                            },
+                          });
+                        }}
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      >
+                        <option value="draft">Draft — Admin only</option>
+                        <option value="published">Published — Customer visible</option>
+                        <option value="disabled">Disabled — Unavailable</option>
+                        <option value="archived">Archived — Retained</option>
+                      </select>
+                      <p className="text-[10px] text-heritage-ink/60">
+                        Public revision {editingStyleAuthority?.publicRevision || 0};
+                        eligibility revision {editingStyleAuthority?.eligibilityRevision || 0}.
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
+                        Display Order
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={editingStyleAuthority?.displayOrder || 0}
+                        onChange={(event) => {
+                          if (!editingStyleAuthority) return;
+                          setEditingItem({
+                            ...editingItem,
+                            designStyleAuthority: {
+                              ...editingStyleAuthority,
+                              displayOrder: Math.max(
+                                0,
+                                Number.parseInt(event.target.value, 10) || 0,
+                              ),
+                            },
+                          });
+                        }}
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
                         Garment Style Name
                       </label>
                       <input
@@ -1885,7 +2027,7 @@ export default function DatabaseView({
                               .replace(/(^-|-$)/g, "");
                             if (baseSlug) {
                               let maxSequence = 0;
-                              styles.forEach((style) => {
+                              adminStyles.forEach((style) => {
                                 if (style.id.startsWith(`${baseSlug}-`)) {
                                   const parts = style.id.split("-");
                                   const lastPart = parts[parts.length - 1];
@@ -2093,6 +2235,191 @@ export default function DatabaseView({
                               );
                             })}
                           </div>
+                        </div>
+                        <div className="space-y-2 col-span-1 sm:col-span-2">
+                          <label className="font-bold text-heritage-green block">
+                            Reference Garments Shown
+                          </label>
+                          <p className="text-[10px] text-heritage-ink/60">
+                            Describe only what the reference image depicts. This
+                            does not control customer compatibility. Leave every
+                            option clear when the legacy reference is unresolved.
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {STYLE_BASE_GARMENT_TYPES.map((garmentType) => {
+                              const selected =
+                                editingStyleAuthority?.referenceComposition.status ===
+                                  "known" &&
+                                editingStyleAuthority.referenceComposition.garmentTypes.includes(
+                                  garmentType as CanonicalPhysicalGarmentType,
+                                );
+                              return (
+                                <label
+                                  key={`reference-${garmentType}`}
+                                  className="flex cursor-pointer items-center gap-2 rounded border border-gray-150 bg-white px-3 py-1.5 text-xs"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    onChange={(event) => {
+                                      if (!editingStyleAuthority) return;
+                                      const current =
+                                        editingStyleAuthority.referenceComposition.status ===
+                                        "known"
+                                          ? [
+                                              ...editingStyleAuthority
+                                                .referenceComposition.garmentTypes,
+                                            ]
+                                          : [];
+                                      const garmentTypes = event.target.checked
+                                        ? [...new Set([...current, garmentType])]
+                                        : current.filter(
+                                            (item) => item !== garmentType,
+                                          );
+                                      setEditingItem({
+                                        ...editingItem,
+                                        designStyleAuthority: {
+                                          ...editingStyleAuthority,
+                                          referenceComposition:
+                                            garmentTypes.length > 0
+                                              ? {
+                                                  status: "known",
+                                                  garmentTypes,
+                                                }
+                                              : {
+                                                  status: "legacy_unresolved",
+                                                  garmentTypes: [],
+                                                },
+                                        },
+                                      });
+                                    }}
+                                    className="h-4 w-4 rounded text-heritage-green"
+                                  />
+                                  <span>{getFabricGarmentLabel(garmentType)}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="space-y-2 col-span-1 sm:col-span-2">
+                          <label className="font-bold text-heritage-green block">
+                            Adaptability Authority
+                          </label>
+                          <select
+                            value={editingItem.styleApplicability?.mode || "exact_only"}
+                            onChange={(event) =>
+                              setEditingItem({
+                                ...editingItem,
+                                styleApplicability:
+                                  event.target.value === "adaptable"
+                                    ? {
+                                        mode: "adaptable",
+                                        garmentTypes: [],
+                                        demographics: [],
+                                      }
+                                    : { mode: "exact_only" },
+                              })
+                            }
+                            className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                          >
+                            <option value="exact_only">Exact supported garments only</option>
+                            <option value="adaptable">Explicitly adaptable</option>
+                          </select>
+                          {editingItem.styleApplicability?.mode === "adaptable" && (
+                            <div className="space-y-2 rounded-lg border border-heritage-gold/20 bg-white p-3">
+                              <p className="text-[10px] text-heritage-ink/60">
+                                Choose every additional garment and audience to
+                                which this design may be adapted. These values
+                                change assignment eligibility.
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {STYLE_BASE_GARMENT_TYPES.map((garmentType) => (
+                                  <label
+                                    key={`adaptable-${garmentType}`}
+                                    className="flex items-center gap-2 rounded border border-gray-150 px-3 py-1.5 text-xs"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(
+                                        editingItem.styleApplicability?.garmentTypes?.includes(
+                                          garmentType,
+                                        ),
+                                      )}
+                                      onChange={(event) => {
+                                        const current =
+                                          editingItem.styleApplicability
+                                            ?.garmentTypes || [];
+                                        setEditingItem({
+                                          ...editingItem,
+                                          styleApplicability: {
+                                            ...editingItem.styleApplicability,
+                                            mode: "adaptable",
+                                            garmentTypes: event.target.checked
+                                              ? [
+                                                  ...new Set([
+                                                    ...current,
+                                                    garmentType,
+                                                  ]),
+                                                ]
+                                              : current.filter(
+                                                  (item: string) =>
+                                                    item !== garmentType,
+                                                ),
+                                          },
+                                        });
+                                      }}
+                                      className="h-4 w-4 rounded text-heritage-green"
+                                    />
+                                    <span>{getFabricGarmentLabel(garmentType)}</span>
+                                  </label>
+                                ))}
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {(["male", "female", "unisex"] as const).map(
+                                  (demographic) => (
+                                    <label
+                                      key={`adaptable-${demographic}`}
+                                      className="flex items-center gap-2 rounded border border-gray-150 px-3 py-1.5 text-xs"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(
+                                          editingItem.styleApplicability?.demographics?.includes(
+                                            demographic,
+                                          ),
+                                        )}
+                                        onChange={(event) => {
+                                          const current =
+                                            editingItem.styleApplicability
+                                              ?.demographics || [];
+                                          setEditingItem({
+                                            ...editingItem,
+                                            styleApplicability: {
+                                              ...editingItem.styleApplicability,
+                                              mode: "adaptable",
+                                              demographics: event.target.checked
+                                                ? [
+                                                    ...new Set([
+                                                      ...current,
+                                                      demographic,
+                                                    ]),
+                                                  ]
+                                                : current.filter(
+                                                    (item: string) =>
+                                                      item !== demographic,
+                                                  ),
+                                            },
+                                          });
+                                        }}
+                                        className="h-4 w-4 rounded text-heritage-green"
+                                      />
+                                      <span className="capitalize">{demographic}</span>
+                                    </label>
+                                  ),
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <div className="space-y-2">
                           <label className="font-bold text-heritage-green block">Represented Genders</label>
@@ -2554,7 +2881,9 @@ export default function DatabaseView({
                         type="submit"
                         className="px-4 py-2 bg-heritage-green text-heritage-gold font-bold rounded-lg border border-heritage-gold/20"
                       >
-                        Save Style Class
+                        {editingStyleAuthority?.lifecycle === "published"
+                          ? "Publish Style"
+                          : "Save Style Record"}
                       </button>
                     </div>
                   </form>
@@ -4226,6 +4555,10 @@ export default function DatabaseView({
                           ],
                           enabled: true,
                         },
+                        designStyleAuthority:
+                          createDefaultDesignStyleAuthorityMetadata(
+                            adminStyles.length,
+                          ),
                       });
                       setEditingType("style");
                     }}
@@ -4234,6 +4567,29 @@ export default function DatabaseView({
                     <Plus size={13} /> Add Style Class
                   </button>
                 </div>
+
+                {adminStylesLoadState === "loading" && (
+                  <div className="rounded-xl border border-heritage-gold/20 bg-white p-4 text-xs text-heritage-ink/70">
+                    Loading authoritative Design Style records…
+                  </div>
+                )}
+                {adminStylesLoadState === "error" && (
+                  <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-800">
+                    {adminStylesLoadError ||
+                      "Authoritative Design Style records could not be loaded."}
+                    {adminStyles.length > 0 &&
+                      " The last successful snapshot remains visible."}
+                  </div>
+                )}
+                {adminStyleDiagnostics.length > 0 && (
+                  <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
+                    {adminStyleDiagnostics.filter(
+                      (item) => item.reason === "LEGACY_MIGRATION_REQUIRED",
+                    ).length} legacy style record(s) require an explicit Admin
+                    save into the versioned authority. Malformed records remain
+                    excluded and cannot be published implicitly.
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredStyles.map((s) => (
@@ -4266,6 +4622,11 @@ export default function DatabaseView({
                             {s.description}
                           </p>
                           <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                            <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-gray-100 text-gray-700 border border-gray-200">
+                              {s.designStyleAuthority.source === "legacy_migration"
+                                ? "Migration required"
+                                : s.designStyleAuthority.lifecycle}
+                            </span>
                             <span className="px-2 py-0.5 text-[8.5px] font-sans font-bold uppercase tracking-wider rounded bg-heritage-green/10 text-heritage-green border border-heritage-green/20">
                               {s.gender}
                             </span>
@@ -4347,9 +4708,9 @@ export default function DatabaseView({
                           <Copy size={12} />
                         </button>
                         <button
-                          onClick={() => handleDeleteStyle(s.id)}
+                          onClick={() => handleArchiveStyle(s)}
                           className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition flex items-center justify-center"
-                          title="Delete Garment Option"
+                          title="Archive Design Style"
                         >
                           <Trash2 size={12} />
                         </button>
