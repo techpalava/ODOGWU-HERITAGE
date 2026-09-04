@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
 import type { GarmentTypeStepSelection, StyleCategory } from "./src/types";
-import { buildFutureOrderCandidateV2OccurrenceStyles } from "./src/utils/futureOrderCandidate";
+import { buildFutureOrderCandidateOccurrenceStyleSnapshotsV2 } from "./src/utils/futureOrderCandidate";
 import { createDesignStyleStepTestModel } from "./testing/designStyleStepFixtures";
 
 const selection = (garmentTypes: GarmentTypeStepSelection["garmentTypes"]): GarmentTypeStepSelection => ({
@@ -37,7 +37,7 @@ const model = createDesignStyleStepTestModel({
   garmentTypeSelection: selection(["shirt", "skirt"]),
   selectedStyleIdByGarmentKey: { "base:shirt:1": "style-a", "base:skirt:1": "style-b" },
 });
-const result = buildFutureOrderCandidateV2OccurrenceStyles({
+const result = buildFutureOrderCandidateOccurrenceStyleSnapshotsV2({
   occurrences: model.occurrences,
   ledger: model.hydration.ledger!,
   validationAuthority: model.authority,
@@ -46,18 +46,17 @@ const result = buildFutureOrderCandidateV2OccurrenceStyles({
 });
 assert.equal(result.status, "valid");
 if (result.status !== "valid") throw new Error("Expected V2 candidate");
-assert.deepEqual(result.candidate.occurrenceStyleSnapshots.map((row) => [row.occurrence.label, row.catalogue?.styleId]), [["Shirt", "style-a"], ["Skirt", "style-b"]]);
-assert.equal(Object.isFrozen(result.candidate), true);
-assert.equal(Object.isFrozen(result.candidate.occurrenceStyleSnapshots), true);
+assert.deepEqual(result.snapshots.map((row) => [row.occurrence.label, row.catalogue?.styleId]), [["Shirt", "style-a"], ["Skirt", "style-b"]]);
+assert.equal(Object.isFrozen(result.snapshots), true);
 styles[0].name = "Admin rename after submission";
-assert.equal(result.candidate.occurrenceStyleSnapshots[0].catalogue?.name, "Classic Senator");
+assert.equal(result.snapshots[0].catalogue?.name, "Classic Senator");
 
 const missing = createDesignStyleStepTestModel({
   styles: [style("style-a", "Classic Senator")],
   garmentTypeSelection: selection(["shirt", "skirt"]),
   selectedStyleIdByGarmentKey: { "base:shirt:1": "style-a" },
 });
-const blocked = buildFutureOrderCandidateV2OccurrenceStyles({
+const blocked = buildFutureOrderCandidateOccurrenceStyleSnapshotsV2({
   occurrences: missing.occurrences,
   ledger: missing.hydration.ledger!,
   validationAuthority: missing.authority,

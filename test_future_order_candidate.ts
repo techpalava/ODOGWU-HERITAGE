@@ -32,6 +32,7 @@ import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAlloca
 import {
   FUTURE_ORDER_CANDIDATE_PRODUCTION_CONVERSION,
   buildFutureOrderCandidate,
+  buildFutureOrderCandidateV2,
   cloneFutureOrderCandidate,
   enumerateFutureOrderCandidateBlockers,
   enumerateFutureOrderCandidateCustomDetails,
@@ -69,9 +70,12 @@ import {
 import { resolveShippingGarmentPieceCount } from "./src/utils/shippingPricing";
 import {
   buildAuthoritativePhysicalOccurrences,
+  createUploadedDesignSource,
   validateFinalPhysicalOccurrenceAssignmentParity,
   validateRawFabricAssignments,
 } from "./src/utils/designSourceState";
+import { createCustomerDesignUploadReference } from "./src/services/customerDesignUploadReference";
+import { createDesignStyleStepTestModel } from "./testing/designStyleStepFixtures";
 import { cloneGarmentConstructionPricingResolution } from "./src/utils/additionalGarmentConstructionState";
 import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
 import {
@@ -2486,6 +2490,267 @@ const baseShirtOnlyFabric: FabricAllocationState = {
       .some((component) => component.selectionGroup === "unknown"),
     false,
   );
+}
+
+// Task 5F-C2 — V2 composes the complete shared non-style Candidate envelope
+// with exact occurrence-scoped Design Style snapshots.
+{
+  const base = buildInput({
+    garmentTypes: ["shirt", "skirt"],
+    demographic: "female",
+  });
+  const fabricAllocationState: FabricAllocationState = {
+    fabricAllocations: [
+      {
+        allocationId: "allocation-1",
+        fabricCode: fabric.code,
+        garmentAssignments: [
+          {
+            garmentKey: "base:shirt",
+            code: "BASE_SHIRT",
+            garmentType: "shirt",
+            fabricUnits: 1,
+            sourceRole: "main",
+          },
+          {
+            garmentKey: "base:skirt",
+            code: "BASE_SKIRT",
+            garmentType: "skirt",
+            fabricUnits: 1,
+            sourceRole: "main",
+          },
+        ],
+      },
+      {
+        allocationId: "allocation-2",
+        fabricCode: fabric.code,
+        garmentAssignments: [additionalShirtAssignment],
+      },
+    ],
+    activeAllocationId: "allocation-1",
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  };
+  const materialPricing = resolveFabricAllocationMaterialPricing(
+    fabricAllocationState.fabricAllocations,
+    [fabric],
+  );
+  assert.equal(materialPricing.status, "resolved");
+  const provisional: FutureOrderCandidateBuildInput = {
+    ...base,
+    fabricAllocationState,
+    materialPricing,
+    additionalGarmentConstructionState: additionalShirtConstructionState,
+    fabricCompletion: fabricCompletionForAuthority({
+      ...base,
+      fabricAllocationState,
+      additionalGarmentConstructionState: additionalShirtConstructionState,
+    }),
+  };
+  const physicalOccurrences = buildAuthoritativePhysicalOccurrences({
+    sourceKind: provisional.designSourceKind,
+    step1GarmentTypeSelection: provisional.step1GarmentTypeSelection,
+    effectiveGarmentTypeSelection: provisional.garmentTypeSelection,
+    uploadedCompositionSpecs: provisional.uploadedCompositionSpecs,
+    additionalGarmentConstructionState:
+      provisional.additionalGarmentConstructionState,
+  });
+  const measurementPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: provisional.garmentTypeSelection,
+    physicalGarments: getMeasurementPhysicalGarments({
+      garmentTypeSelection: provisional.garmentTypeSelection,
+      physicalOccurrences,
+    }),
+    garmentScopedCustomDetails:
+      provisional.customDetailsReconciliation?.state,
+    additionalGarmentConstructions: additionalShirtConstructionState,
+  });
+  let measurementState = createEmptyFutureMeasurementState("low_risk", "inch");
+  for (const requirement of measurementPlan.requirements.filter(
+    (candidate) => candidate.directInput,
+  )) {
+    measurementState = setFutureMeasurementInput({
+      state: measurementState,
+      requirement,
+      displayValue: 10,
+    });
+  }
+  measurementState = reconcileFutureMeasurementState({
+    state: measurementState,
+    plan: measurementPlan,
+  });
+  const measuredProvisional: FutureOrderCandidateBuildInput = {
+    ...provisional,
+    measurementPlan,
+    measurementState,
+  };
+  const coreInput: FutureOrderCandidateBuildInput = {
+    ...measuredProvisional,
+    shippingResolution: quoteShippingForAuthoritativeGarmentCount(
+      measuredProvisional,
+      3,
+    ),
+  };
+  const occurrences = buildAuthoritativePhysicalOccurrences({
+    sourceKind: coreInput.designSourceKind,
+    step1GarmentTypeSelection: coreInput.step1GarmentTypeSelection,
+    effectiveGarmentTypeSelection: coreInput.garmentTypeSelection,
+    uploadedCompositionSpecs: coreInput.uploadedCompositionSpecs,
+    additionalGarmentConstructionState:
+      coreInput.additionalGarmentConstructionState,
+  });
+  assert.deepEqual(
+    occurrences.map((occurrence) => occurrence.garmentKey),
+    ["base:shirt", "base:skirt", "additional:shirt:1"],
+  );
+
+  const styleA = {
+    ...makeStyle(["shirt", "skirt"], "female"),
+    id: "style-a",
+    name: "Style A",
+  };
+  const styleB = {
+    ...makeStyle(["shirt", "skirt"], "female"),
+    id: "style-b",
+    name: "Style B",
+  };
+  const uploadReference = createCustomerDesignUploadReference({
+    ownerUid: "candidate-v2-owner",
+    mimeType: "image/png",
+    designReferenceId: "candidate-v2-upload-x",
+    originalFileName: "private-design.png",
+    createdAt: "2026-09-04T00:00:00.000Z",
+  });
+  const uploadedSource = createUploadedDesignSource({
+    uploadReference,
+    fabricCapacityComposition: [createStyleBaseGarmentSpec("shirt")],
+    demographic: "female",
+  });
+  const styleModel = createDesignStyleStepTestModel({
+    styles: [styleA, styleB],
+    garmentTypeSelection: coreInput.garmentTypeSelection,
+    occurrences,
+    selectedStyleIdByGarmentKey: {
+      "base:shirt": "style-a",
+      "base:skirt": "style-b",
+    },
+    uploadedSource,
+    uploadedAssignmentGarmentKeys: ["additional:shirt:1"],
+    confirmedUploadedSourceKey: uploadedSource.sourceKey,
+    expectedUploadOwnerUid: uploadReference.ownerUid,
+  });
+  const uploadedAuthorityBySourceRef = {
+    [uploadReference.designReferenceId]: {
+      uploadedSourceRef: uploadReference.designReferenceId,
+      confirmed: true,
+      displayLabel: "Uploaded X",
+      previewReference: "candidate-v2-preview-x",
+    },
+  };
+  const v1 = buildFutureOrderCandidate(coreInput);
+  assert.equal(
+    v1.status,
+    "reviewable",
+    JSON.stringify({ blockers: v1.blockers, measurementState, measurementPlan }),
+  );
+  assert.ok(v1.candidate);
+  const v2 = buildFutureOrderCandidateV2({
+    coreInput,
+    ledger: styleModel.hydration.ledger!,
+    validationAuthority: styleModel.authority,
+    styles: styleModel.styles,
+    uploadedAuthorityBySourceRef,
+  });
+  assert.equal(v2.status, "valid");
+  if (v2.status !== "valid" || !v1.candidate) {
+    throw new Error("Expected complete V1 and V2 Candidates");
+  }
+  assert.equal(v2.candidate.schemaVersion, 2);
+  assert.deepEqual(
+    v2.candidate.occurrenceStyleSnapshots.map((row) => [
+      row.occurrence.label,
+      row.sourceKind === "catalogue"
+        ? row.catalogue?.styleId
+        : row.uploaded?.displayLabel,
+    ]),
+    [["Shirt", "style-a"], ["Skirt", "style-b"], ["Shirt 2", "Uploaded X"]],
+  );
+  for (const field of [
+    "journey",
+    "authorityVersions",
+    "garments",
+    "fabricAllocations",
+    "customDetails",
+    "aiTryOn",
+    "measurements",
+    "shipping",
+    "pricing",
+    "contentStatus",
+    "paymentStatus",
+    "blockers",
+  ] as const) {
+    assert.deepEqual(v2.candidate[field], v1.candidate[field], field);
+  }
+  assert.equal("source" in v2.candidate, false);
+  assert.equal("design" in v2.candidate, false);
+  assert.equal("selectedStyleId" in v2.candidate, false);
+  assert.equal("designSource" in v2.candidate, false);
+  assert.equal(JSON.stringify(v2.candidate).includes("selectedStyleId"), false);
+  assert.deepEqual(v2.candidate.pricing, v1.candidate.pricing);
+
+  const invalidMeasurement = buildFutureOrderCandidateV2({
+    coreInput: {
+      ...coreInput,
+      measurementState: createEmptyFutureMeasurementState("low_risk", "inch"),
+    },
+    ledger: styleModel.hydration.ledger!,
+    validationAuthority: styleModel.authority,
+    styles: styleModel.styles,
+    uploadedAuthorityBySourceRef,
+  });
+  assert.equal(invalidMeasurement.status, "blocked");
+  assert.ok(
+    invalidMeasurement.blockers.some(
+      (blocker) => blocker.stage === "measurement",
+    ),
+  );
+
+  const missingStyleModel = createDesignStyleStepTestModel({
+    styles: [styleA, styleB],
+    garmentTypeSelection: coreInput.garmentTypeSelection,
+    occurrences,
+    selectedStyleIdByGarmentKey: {
+      "base:shirt": "style-a",
+      "base:skirt": "style-b",
+    },
+  });
+  const invalidStyle = buildFutureOrderCandidateV2({
+    coreInput,
+    ledger: missingStyleModel.hydration.ledger!,
+    validationAuthority: missingStyleModel.authority,
+    styles: missingStyleModel.styles,
+    uploadedAuthorityBySourceRef: {},
+  });
+  assert.equal(invalidStyle.status, "blocked");
+  assert.ok(
+    invalidStyle.blockers.some(
+      (blocker) => blocker.code === "DESIGN_STYLE_ASSIGNMENT_INVALID",
+    ),
+  );
+
+  const immutableSnapshot = JSON.stringify(v2.candidate);
+  fabricAllocationState.fabricAllocations[0]!.garmentAssignments[0]!.code =
+    "MUTATED_SOURCE";
+  styleA.name = "Admin rename after Candidate";
+  uploadedAuthorityBySourceRef[uploadReference.designReferenceId].displayLabel =
+    "Mutated upload label";
+  assert.equal(JSON.stringify(v2.candidate), immutableSnapshot);
+  assert.equal(Object.isFrozen(v2.candidate), true);
+  assert.equal(Object.isFrozen(v2.candidate.garments[0]?.construction), true);
+  assert.equal(Object.isFrozen(v2.candidate.shipping.state), true);
+  assert.equal(Object.isFrozen(v2.candidate.measurements), true);
+  assert.equal(Object.isFrozen(v2.candidate.occurrenceStyleSnapshots), true);
 }
 
 console.log("PASS: future order candidate contract and security boundary");
