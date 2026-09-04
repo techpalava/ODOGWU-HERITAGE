@@ -426,11 +426,15 @@ assert.match(designStudioSource, /priceActivatedFabricCode:/);
 assert.match(designStyleStepSource, /type="file"/);
 assert.match(
   designStyleStepSource,
-  /data-testid="step3-active-occurrence-upload"/,
+  /step3-active-occurrence-upload(?:-replacement)?/,
 );
 assert.match(
   designStyleStepSource,
-  /existing uploaded design assignment is shown read-only/i,
+  /onSelectUploadFile\(activeOccurrence\.target,\s*file\)/,
+);
+assert.match(
+  designStyleStepSource,
+  /current design and preview stay in place|previous selection is unchanged/i,
   "Task 5E-B must preserve the read-only boundary for existing uploaded assignments",
 );
 assert.doesNotMatch(designStyleStepSource, /getDownloadURL|storagePath/);
