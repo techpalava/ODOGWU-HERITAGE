@@ -108,7 +108,29 @@ assert.equal(
 assert.equal(componentSource.includes("sessionStorage"), false);
 assert.equal(componentSource.includes('data-testid="upload-your-design-panel"'), false);
 assert.equal(componentSource.includes("Continue with Uploaded Design"), false);
-assert.match(componentSource, /existing uploaded design assignment is shown read-only/);
+assert.match(
+  componentSource,
+  /Current assignment:\s*\{\s*" "\s*\}/,
+);
+assert.match(
+  componentSource,
+  /activeOccurrence\.assignmentLabel \|\| "No design selected"/,
+);
+assert.match(
+  componentSource,
+  /activeOccurrence\.assignment\?\.sourceKind === "uploaded"/,
+);
+assert.match(
+  componentSource,
+  /Remove uploaded design from \$\{activeOccurrence\.label\}/,
+);
+assert.match(
+  componentSource,
+  /Removing this assignment keeps the uploaded source available[\s\S]*for any other garment/);
+assert.match(
+  componentSource,
+  /onClick=\{\(\)\s*=>\s*onClearAssignment\(clearRequest\)\}/,
+);
 assert.equal(componentSource.includes("handleStyleChange"), false);
 assert.equal(componentSource.includes("setFabricAllocationState"), false);
 assert.match(componentSource, /Continue to Custom Details/);
