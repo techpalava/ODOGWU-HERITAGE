@@ -92,7 +92,9 @@ import {
 } from "../utils/designStyleDraftPersistence";
 import {
   applyDesignStyleStepLedgerToHydration,
+  applyDesignStyleUploadForActiveOccurrence,
   assignCatalogueStyleThroughStepRuntime,
+  beginDesignStyleUploadForActiveOccurrence,
   bindDesignStyleStepCatalogueLedgerRevision,
   clearCatalogueStyleThroughStepRuntime,
   designStyleStepTargetsEqual,
@@ -102,6 +104,12 @@ import {
   type DesignStyleStepCatalogMutationRequest,
   type DesignStyleStepClearMutationRequest,
 } from "../utils/designStyleStepRuntime";
+import {
+  createDesignStyleUploadOperationState,
+  failDesignStyleUploadOperation,
+  type DesignStyleUploadOperationState,
+  type DesignStyleUploadOperationTicket,
+} from "../utils/designStyleUploadOperation";
 import { resolveDesignStudioFabricAllocationPricing } from "../utils/fabricAllocationPricing";
 import {
   cloneFabricAllocations,
@@ -430,6 +438,15 @@ interface FutureDesignStyleMutationAuthority {
   readonly stepIsActive: boolean;
 }
 
+interface FutureDesignStyleUploadUiState {
+  readonly garmentKey: string;
+  readonly occurrenceToken: string;
+  readonly operationGeneration: number;
+  readonly status: "pending" | "success" | "error";
+  readonly message?: string;
+  readonly previewUrl?: string;
+}
+
 const getFutureDesignStyleHydrationFingerprint = (
   result: DesignStyleDraftHydrationResult,
 ): string =>
@@ -485,6 +502,17 @@ export default function DesignStudioView({
     useState<string | null>(null);
   const futureDesignStyleMutationAuthorityRef =
     useRef<FutureDesignStyleMutationAuthority | null>(null);
+  const futureDesignStyleUploadOperationStateRef =
+    useRef<DesignStyleUploadOperationState>(
+      createDesignStyleUploadOperationState(),
+    );
+  const [futureDesignStyleUploadUiByGarmentKey, setFutureDesignStyleUploadUiByGarmentKey] =
+    useState<Readonly<Record<string, FutureDesignStyleUploadUiState>>>({});
+  const [futureDesignStyleUploadedSourceByGarmentKey, setFutureDesignStyleUploadedSourceByGarmentKey] =
+    useState<Readonly<Record<string, UploadedDesignSource>>>({});
+  const futureDesignStyleUploadPreviewUrlByGarmentKeyRef = useRef<
+    Record<string, string>
+  >({});
   const lastPersistedFutureDraftRef = useRef<GuestDesignDraft | null>(null);
   const lastScheduledFutureDraftRef = useRef<GuestDesignDraft | null>(null);
   const preservedInvalidHydratedDraftFabricAllocationsRef = useRef<
@@ -573,7 +601,9 @@ export default function DesignStudioView({
     useState<FabricGarmentType[]>([]);
   const [uploadedDesignDemographic, setUploadedDesignDemographic] =
     useState<CustomDetailDemographic | null>(null);
-  const [, setUploadedDesignPreviewUrl] = useState<string | null>(null);
+  const [uploadedDesignPreviewUrl, setUploadedDesignPreviewUrl] = useState<
+    string | null
+  >(null);
   const uploadedDesignPreviewUrlRef = useRef<string | null>(null);
   const [uploadedDesignPreviewReferenceId, setUploadedDesignPreviewReferenceId] =
     useState<string | null>(null);
@@ -1004,6 +1034,31 @@ export default function DesignStudioView({
       authoritativePhysicalOccurrencesForDomain,
     ],
   );
+  const futureOccurrenceUploadedDesignStyleAuthority = useMemo(
+    () =>
+      Object.values(futureDesignStyleUploadedSourceByGarmentKey).reduce<
+        ReturnType<typeof buildUploadedDesignStyleAuthority>
+      >(
+        (combined, source) => ({
+          ...combined,
+          ...buildUploadedDesignStyleAuthority({
+            source,
+            confirmedDesignSourceKey: source.sourceKey,
+            expectedOwnerUid:
+              firebaseDraftAuth.user?.uid || auth.currentUser?.uid || null,
+            ownershipTransferPending: false,
+            sourceOperationStable: true,
+            activeOccurrences: authoritativePhysicalOccurrencesForDomain,
+          }),
+        }),
+        {},
+      ),
+    [
+      futureDesignStyleUploadedSourceByGarmentKey,
+      firebaseDraftAuth.user?.uid,
+      authoritativePhysicalOccurrencesForDomain,
+    ],
+  );
   const futureDesignStyleDraftAuthority = useMemo(
     () =>
       buildDesignStyleDraftValidationAuthority({
@@ -1011,7 +1066,10 @@ export default function DesignStudioView({
         styles,
         garmentTypeSelection,
         activeOccurrences: authoritativePhysicalOccurrencesForDomain,
-        uploadedSourcesByKey: futureUploadedDesignStyleAuthority,
+        uploadedSourcesByKey: {
+          ...futureUploadedDesignStyleAuthority,
+          ...futureOccurrenceUploadedDesignStyleAuthority,
+        },
         unresolvedLegacyScalar: Boolean(
           currentFutureDesignStyleDraftHydration?.result.migrationEvidence,
         ),
@@ -1022,6 +1080,7 @@ export default function DesignStudioView({
       garmentTypeSelection,
       authoritativePhysicalOccurrencesForDomain,
       futureUploadedDesignStyleAuthority,
+      futureOccurrenceUploadedDesignStyleAuthority,
       currentFutureDesignStyleDraftHydration?.result.migrationEvidence,
     ],
   );
@@ -1079,6 +1138,50 @@ export default function DesignStudioView({
           target: resolvedFutureActiveDesignStyleOccurrence,
         }
       : null;
+  const activeFutureDesignStyleUploadUi =
+    resolvedFutureActiveDesignStyleOccurrence
+      ? futureDesignStyleUploadUiByGarmentKey[
+          resolvedFutureActiveDesignStyleOccurrence.garmentKey
+        ]
+      : null;
+  const activeFutureDesignStyleOccurrencePresentation =
+    futureDesignStyleStepProjection.occurrences.find((occurrence) =>
+      designStyleStepTargetsEqual(
+        occurrence.target,
+        resolvedFutureActiveDesignStyleOccurrence,
+      ),
+    ) || null;
+  const retainedUploadedDesignPreviewUrl =
+    activeFutureDesignStyleOccurrencePresentation?.assignment?.sourceKind ===
+      "uploaded" &&
+    activeUploadedDesignSource?.uploadReference.designReferenceId ===
+      activeFutureDesignStyleOccurrencePresentation.assignment.uploadedSourceRef &&
+    uploadedDesignPreviewReferenceId ===
+      activeFutureDesignStyleOccurrencePresentation.assignment.uploadedSourceRef
+      ? uploadedDesignPreviewUrl
+      : null;
+  const futureDesignStyleUploadStateForActiveOccurrence =
+    activeFutureDesignStyleUploadUi &&
+    resolvedFutureActiveDesignStyleOccurrence &&
+    activeFutureDesignStyleUploadUi.occurrenceToken ===
+      resolvedFutureActiveDesignStyleOccurrence.occurrenceToken
+      ? {
+          status: activeFutureDesignStyleUploadUi.status,
+          ...(activeFutureDesignStyleUploadUi.message
+            ? { message: activeFutureDesignStyleUploadUi.message }
+            : {}),
+          ...(activeFutureDesignStyleUploadUi.previewUrl
+            ? { previewUrl: activeFutureDesignStyleUploadUi.previewUrl }
+            : retainedUploadedDesignPreviewUrl
+              ? { previewUrl: retainedUploadedDesignPreviewUrl }
+            : {}),
+        }
+      : {
+          status: "idle" as const,
+          ...(retainedUploadedDesignPreviewUrl
+            ? { previewUrl: retainedUploadedDesignPreviewUrl }
+            : {}),
+        };
   const isFutureDesignSourceReadyForCustomDetails =
     futureDesignStyleStepProjection.isComplete;
   futureDesignStyleMutationAuthorityRef.current =
@@ -1266,6 +1369,9 @@ export default function DesignStudioView({
       if (uploadedDesignPreviewUrlRef.current) {
         URL.revokeObjectURL(uploadedDesignPreviewUrlRef.current);
       }
+      Object.values(
+        futureDesignStyleUploadPreviewUrlByGarmentKeyRef.current,
+      ).forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
     },
     [],
   );
@@ -3633,6 +3739,231 @@ export default function DesignStudioView({
     applyFutureDesignStyleMutationLedger(current, result.ledger);
   };
 
+  const clearFutureDesignStyleUploadUi = (
+    ticket: DesignStyleUploadOperationTicket,
+  ) => {
+    setFutureDesignStyleUploadUiByGarmentKey((current) => {
+      const existing = current[ticket.garmentKey];
+      if (
+        !existing ||
+        existing.occurrenceToken !== ticket.occurrenceToken ||
+        existing.operationGeneration !== ticket.operationGeneration
+      ) {
+        return current;
+      }
+      const { [ticket.garmentKey]: _cleared, ...remaining } = current;
+      return remaining;
+    });
+  };
+
+  const setFutureDesignStyleUploadUiForTicket = (
+    ticket: DesignStyleUploadOperationTicket,
+    next: Omit<FutureDesignStyleUploadUiState, "garmentKey" | "occurrenceToken" | "operationGeneration">,
+  ) => {
+    setFutureDesignStyleUploadUiByGarmentKey((current) => {
+      const existing = current[ticket.garmentKey];
+      if (
+        existing &&
+        (existing.occurrenceToken !== ticket.occurrenceToken ||
+          existing.operationGeneration > ticket.operationGeneration)
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        [ticket.garmentKey]: {
+          garmentKey: ticket.garmentKey,
+          occurrenceToken: ticket.occurrenceToken,
+          operationGeneration: ticket.operationGeneration,
+          ...next,
+        },
+      };
+    });
+  };
+
+  const finishFutureDesignStyleUploadWithoutMutation = ({
+    ticket,
+    ledger,
+    showError,
+    message,
+  }: {
+    ticket: DesignStyleUploadOperationTicket;
+    ledger: NonNullable<DesignStyleDraftHydrationResult["ledger"]>;
+    showError: boolean;
+    message?: string;
+  }) => {
+    const before = futureDesignStyleUploadOperationStateRef.current;
+    const failed = failDesignStyleUploadOperation({
+      state: before,
+      ticket,
+      ledger,
+      reason: "external-operation-failed",
+    });
+    futureDesignStyleUploadOperationStateRef.current = failed.state;
+    if (failed.state === before) return;
+    if (showError) {
+      setFutureDesignStyleUploadUiForTicket(ticket, {
+        status: "error",
+        message:
+          message ||
+          "The design could not be prepared. Your previous selection is unchanged. Try again.",
+      });
+    } else {
+      clearFutureDesignStyleUploadUi(ticket);
+    }
+  };
+
+  const handleFutureDesignStyleUploadFile = async (
+    target: DesignStyleStepClearMutationRequest["target"],
+    file: File,
+  ) => {
+    const captured = futureDesignStyleMutationAuthorityRef.current;
+    const ledger = captured?.hydration.ledger || null;
+    if (
+      !captured ||
+      !ledger ||
+      !captured.stepIsActive ||
+      !captured.hydration.canAutosave ||
+      captured.hydration.destructiveNormalizationProhibited ||
+      !designStyleStepTargetsEqual(captured.activeTarget, target)
+    ) {
+      rejectFutureDesignStyleMutation("STALE_ACTIVE_OCCURRENCE");
+      return;
+    }
+    const existingAssignment = ledger.assignmentsByGarmentKey[target.garmentKey];
+    if (existingAssignment?.sourceKind === "uploaded") return;
+    const operationKind = existingAssignment ? "replace" : "assign";
+    const started = beginDesignStyleUploadForActiveOccurrence({
+      state: futureDesignStyleUploadOperationStateRef.current,
+      ledger,
+      activeOccurrences: captured.activeOccurrences,
+      activeTarget: target,
+      operationKind,
+    });
+    if (started.status === "rejected") {
+      rejectFutureDesignStyleMutation(started.reason);
+      return;
+    }
+    futureDesignStyleUploadOperationStateRef.current = started.state;
+    setFutureDesignStyleUploadUiForTicket(started.ticket, { status: "pending" });
+
+    await runUploadedDesignOperation({
+      coordinator: uploadedDesignOperationCoordinatorRef.current,
+      kind: "upload",
+      onBegin: (operation) => {
+        uploadedDesignOperationGenerationRef.current = operation.generation;
+        uploadedDesignOperationPendingRef.current = true;
+        setIsUploadingDesign(true);
+      },
+      validate: () =>
+        CustomerDesignUploadService.validateCustomerDesignFile(file),
+      execute: async () => {
+        const reference =
+          await CustomerDesignUploadService.uploadCustomerDesignDraft(file);
+        const source = createUploadedDesignSourceWhenReady({
+          uploadReference: reference,
+          fabricCapacityComposition: mergeUploadedDesignCompositionWithStep1({
+            step1GarmentTypes: garmentTypeSelection.garmentTypes,
+            additionalGarmentTypes: [],
+            preservedHiddenComposition: [],
+          }),
+          demographic: garmentTypeSelection.demographic,
+        });
+        if (!source) {
+          throw new Error("UPLOADED_DESIGN_SOURCE_NOT_READY");
+        }
+        return source;
+      },
+      onSuccess: (source) => {
+        const latest = futureDesignStyleMutationAuthorityRef.current;
+        const latestLedger = latest?.hydration.ledger || null;
+        if (
+          !latest ||
+          !latestLedger ||
+          latest.identityKey !== captured.identityKey ||
+          latest.identityGeneration !== captured.identityGeneration ||
+          latest.runtimeGeneration !== captured.runtimeGeneration ||
+          !latest.stepIsActive ||
+          !latest.activeTarget
+        ) {
+          finishFutureDesignStyleUploadWithoutMutation({
+            ticket: started.ticket,
+            ledger: latestLedger || ledger,
+            showError: false,
+          });
+          return;
+        }
+        const result = applyDesignStyleUploadForActiveOccurrence({
+          state: futureDesignStyleUploadOperationStateRef.current,
+          ticket: started.ticket,
+          ledger: latestLedger,
+          activeOccurrences: latest.activeOccurrences,
+          activeTarget: latest.activeTarget,
+          operationKind,
+          source: {
+            sourceKey: source.sourceKey,
+            uploadedSourceRef: source.uploadReference.designReferenceId,
+          },
+        });
+        if (result.status === "rejected") {
+          finishFutureDesignStyleUploadWithoutMutation({
+            ticket: started.ticket,
+            ledger: latestLedger,
+            showError: false,
+          });
+          return;
+        }
+        futureDesignStyleUploadOperationStateRef.current = result.state;
+        if (result.assignmentResult.status === "rejected") {
+          setFutureDesignStyleUploadUiForTicket(started.ticket, {
+            status: "error",
+            message:
+              "The uploaded design could not be assigned safely. Your previous selection is unchanged. Try again.",
+          });
+          return;
+        }
+
+        const previousPreviewUrl =
+          futureDesignStyleUploadPreviewUrlByGarmentKeyRef.current[
+            started.ticket.garmentKey
+          ];
+        if (previousPreviewUrl) URL.revokeObjectURL(previousPreviewUrl);
+        const previewUrl = URL.createObjectURL(file);
+        futureDesignStyleUploadPreviewUrlByGarmentKeyRef.current[
+          started.ticket.garmentKey
+        ] = previewUrl;
+        setFutureDesignStyleUploadedSourceByGarmentKey((current) => ({
+          ...current,
+          [started.ticket.garmentKey]: source,
+        }));
+        setFutureDesignStyleUploadUiForTicket(started.ticket, {
+          status: "success",
+          previewUrl,
+        });
+        applyFutureDesignStyleMutationLedger(latest, result.ledger);
+      },
+      onError: (error) => {
+        const latestLedger =
+          futureDesignStyleMutationAuthorityRef.current?.hydration.ledger ||
+          ledger;
+        finishFutureDesignStyleUploadWithoutMutation({
+          ticket: started.ticket,
+          ledger: latestLedger,
+          showError: true,
+          message: getCustomerDesignUploadErrorMessage(error),
+        });
+      },
+      onFinish: (operation) => {
+        if (
+          uploadedDesignOperationGenerationRef.current === operation.generation
+        ) {
+          uploadedDesignOperationPendingRef.current = false;
+          setIsUploadingDesign(false);
+        }
+      },
+    });
+  };
+
   const isStageHistoricallyUnlocked = (stageId: DesignStudioStageId): boolean => {
     const index = DESIGN_STUDIO_STEPS.findIndex((step) => step.id === stageId);
     return index >= 0 && index <= highestUnlockedStageIndex;
@@ -5243,6 +5574,7 @@ export default function DesignStudioView({
           exactSetComplete={futureDesignStyleStepProjection.isComplete}
           reviewMessage={futureDesignStyleStepProjection.reviewMessage}
           mutationError={futureDesignStyleMutationError}
+          uploadState={futureDesignStyleUploadStateForActiveOccurrence}
           stagePrice={
             futureFabricAuthoritativePricing?.garmentConstructionSubtotal ??
             null
@@ -5252,6 +5584,7 @@ export default function DesignStudioView({
           onSelectOccurrence={handleSelectFutureDesignStyleOccurrence}
           onAssignCatalogueStyle={handleAssignFutureCatalogueStyle}
           onClearAssignment={handleClearFutureCatalogueStyle}
+          onSelectUploadFile={handleFutureDesignStyleUploadFile}
           onBack={() => setFutureStageId("fabric")}
           onReturnToGarmentType={() => setFutureStageId("garment_type")}
           onContinue={handleOpenDormantCustomDetailsStage}

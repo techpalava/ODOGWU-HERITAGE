@@ -30,6 +30,11 @@ interface DormantFutureDesignStyleStepProps {
   exactSetComplete: boolean;
   reviewMessage: string | null;
   mutationError: string | null;
+  uploadState?: {
+    readonly status: "idle" | "pending" | "success" | "error";
+    readonly message?: string;
+    readonly previewUrl?: string | null;
+  };
   stagePrice: number | null;
   isCatalogueLoading?: boolean;
   stylesLoadState?: "loading" | "ready" | "error";
@@ -40,6 +45,10 @@ interface DormantFutureDesignStyleStepProps {
     request: DesignStyleStepCatalogMutationRequest,
   ) => void;
   onClearAssignment: (request: DesignStyleStepClearMutationRequest) => void;
+  onSelectUploadFile?: (
+    target: DesignStyleStepOccurrencePresentation["target"],
+    file: File,
+  ) => void;
   onBack: () => void;
   onReturnToGarmentType: () => void;
   onContinue: () => void;
@@ -131,12 +140,14 @@ export const DormantFutureDesignStyleStep = ({
   exactSetComplete,
   reviewMessage,
   mutationError,
+  uploadState = { status: "idle" },
   stagePrice,
   isCatalogueLoading = false,
   stylesLoadState = "ready",
   onSelectOccurrence,
   onAssignCatalogueStyle,
   onClearAssignment,
+  onSelectUploadFile,
   onBack,
   onReturnToGarmentType,
   onContinue,
@@ -150,6 +161,7 @@ export const DormantFutureDesignStyleStep = ({
     useState<DesignStyleStepCatalogueEntry | null>(null);
   const adaptationTitleId = useId();
   const adaptationDescriptionId = useId();
+  const uploadInputId = useId();
   const catalogueReady = stylesLoadState === "ready";
   const mutationsEnabled =
     catalogueReady &&
@@ -576,11 +588,69 @@ export const DormantFutureDesignStyleStep = ({
                 )}
               </div>
               {activeOccurrence.assignment?.sourceKind === "uploaded" && (
-                <p className="mt-3 text-xs leading-relaxed text-heritage-ink/65">
-                  This existing uploaded design assignment is shown read-only.
-                  Upload changes remain managed by the secure upload workflow.
-                </p>
+                <div className="mt-3 space-y-3">
+                  {uploadState.previewUrl && (
+                    <img
+                      src={uploadState.previewUrl}
+                      alt={`Uploaded design preview for ${activeOccurrence.label}`}
+                      className="max-h-72 w-full rounded-xl border border-heritage-gold/20 bg-white object-contain"
+                    />
+                  )}
+                  <p className="text-xs leading-relaxed text-heritage-ink/65">
+                    This existing uploaded design assignment is shown read-only.
+                    Replacement and deletion are not available here.
+                  </p>
+                  {uploadState.status === "success" && (
+                    <p role="status" className="text-xs font-semibold text-heritage-green">
+                      Uploaded design ready for {activeOccurrence.label}.
+                    </p>
+                  )}
+                </div>
               )}
+              {activeOccurrence.assignment?.sourceKind !== "uploaded" &&
+                onSelectUploadFile && (
+                  <div
+                    data-testid="step3-active-occurrence-upload"
+                    className="mt-4 rounded-xl border border-dashed border-heritage-gold/35 bg-white p-4"
+                  >
+                    <label
+                      htmlFor={uploadInputId}
+                      className="block text-sm font-bold text-heritage-green"
+                    >
+                      Upload a design for {activeOccurrence.label}
+                    </label>
+                    <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
+                      Choose a JPEG, PNG, or WebP image. Your current design stays
+                      selected until the upload succeeds.
+                    </p>
+                    <input
+                      id={uploadInputId}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      disabled={!mutationsEnabled || uploadState.status === "pending"}
+                      aria-describedby={`${uploadInputId}-status`}
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0] || null;
+                        event.currentTarget.value = "";
+                        if (file) onSelectUploadFile(activeOccurrence.target, file);
+                      }}
+                      className="mt-3 block min-h-11 w-full min-w-0 rounded-xl border border-heritage-green/20 bg-white px-3 py-2 text-xs text-heritage-ink file:mr-3 file:rounded-lg file:border-0 file:bg-heritage-green file:px-3 file:py-2 file:text-xs file:font-bold file:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                    <div id={`${uploadInputId}-status`} className="mt-2" aria-live="polite">
+                      {uploadState.status === "pending" && (
+                        <p role="status" className="text-xs font-semibold text-heritage-green">
+                          Preparing your uploaded design for {activeOccurrence.label}...
+                        </p>
+                      )}
+                      {uploadState.status === "error" && (
+                        <p role="alert" className="text-xs font-semibold text-red-700">
+                          {uploadState.message ||
+                            "The design could not be prepared. Your previous selection is unchanged. Try again."}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
             </section>
           )}
 
