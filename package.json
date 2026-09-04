@@ -44,6 +44,7 @@
     "test:design-style-authority": "tsx test_design_style_authority.ts && tsx test_design_style_publication.ts && tsx test_design_style_customer_projection.ts",
     "test:design-style-draft-persistence": "tsx test_design_style_draft_persistence.ts && node scripts/tsxWithViteProductionFirebase.mjs test_design_style_draft_integration.ts",
     "test:design-style-step-runtime": "tsx test_design_style_step_runtime.ts && tsx test_design_style_step_runtime_ui.tsx",
+    "test:design-style-upload-operation": "tsx test_design_style_upload_operation.ts",
     "test:firebase-client-configuration": "tsx test_firebase_client_configuration.ts",
     "test:measurement-blueprint": "tsx test_measurement_blueprint.ts",
     "test:measurement-risk-selection": "tsx test_measurement_risk_selection.tsx",

@@ -30,6 +30,16 @@ import {
 } from "./designStyleDraftPersistence";
 import type { PhysicalGarmentOccurrence } from "./designSourceState";
 import { createPhysicalGarmentOccurrenceIdentityToken } from "./physicalGarmentOccurrenceIdentity";
+import {
+  applyDesignStyleUploadOperation,
+  beginDesignStyleUploadOperation,
+  type ApplyDesignStyleUploadOperationResult,
+  type BeginDesignStyleUploadOperationResult,
+  type DesignStyleUploadOperationKind,
+  type DesignStyleUploadOperationState,
+  type DesignStyleUploadOperationTicket,
+} from "./designStyleUploadOperation";
+import type { UploadedDesignStyleAssignmentInput } from "./garmentScopedDesignStyleAssignment";
 
 export type DesignStyleStepOccurrenceStatus =
   | "complete"
@@ -604,3 +614,51 @@ export const applyDesignStyleStepLedgerToHydration = ({
 };
 
 export const designStyleStepTargetsEqual = targetsEqual;
+
+export const beginDesignStyleUploadForActiveOccurrence = ({
+  state,
+  ledger,
+  activeOccurrences,
+  activeTarget,
+  operationKind,
+}: {
+  state: DesignStyleUploadOperationState;
+  ledger: GarmentScopedDesignStyleAssignmentLedgerV2;
+  activeOccurrences: readonly PhysicalGarmentOccurrence[];
+  activeTarget: GarmentDesignStyleAssignmentTarget;
+  operationKind: DesignStyleUploadOperationKind;
+}): BeginDesignStyleUploadOperationResult =>
+  beginDesignStyleUploadOperation({
+    state,
+    ledger,
+    activeOccurrences,
+    target: activeTarget,
+    operationKind,
+  });
+
+export const applyDesignStyleUploadForActiveOccurrence = ({
+  state,
+  ticket,
+  ledger,
+  activeOccurrences,
+  activeTarget,
+  operationKind,
+  source,
+}: {
+  state: DesignStyleUploadOperationState;
+  ticket: DesignStyleUploadOperationTicket;
+  ledger: GarmentScopedDesignStyleAssignmentLedgerV2;
+  activeOccurrences: readonly PhysicalGarmentOccurrence[];
+  activeTarget: GarmentDesignStyleAssignmentTarget;
+  operationKind: DesignStyleUploadOperationKind;
+  source: UploadedDesignStyleAssignmentInput;
+}): ApplyDesignStyleUploadOperationResult =>
+  applyDesignStyleUploadOperation({
+    state,
+    ticket,
+    ledger,
+    activeOccurrences,
+    callbackTarget: activeTarget,
+    callbackOperationKind: operationKind,
+    source,
+  });
