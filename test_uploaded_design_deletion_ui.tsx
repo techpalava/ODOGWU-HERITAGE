@@ -118,7 +118,21 @@ const renderUploadedAssignment = async (confirmed: boolean) => {
   const text = textContent(renderer.root);
   assert.equal(model.projection.isComplete, true);
   assert.match(text, /Current assignment:\s*Uploaded design/);
-  assert.match(text, /existing uploaded design assignment is shown read-only/i);
+  assert.match(
+    text,
+    /Removing this assignment keeps the uploaded source available/i,
+  );
+  assert.equal(
+    renderer.root.findAll((node) => {
+      return (
+        node.type === "button" &&
+        typeof node.props["aria-label"] === "string" &&
+        node.props["aria-label"].startsWith("Remove uploaded design from")
+      );
+    }).length,
+    1,
+    "Each confirmed uploaded assignment should expose an occurrence-scoped remove action.",
+  );
   assert.equal(
     renderer.root.findAllByType("input").length,
     0,
