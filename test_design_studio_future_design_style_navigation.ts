@@ -102,10 +102,38 @@ assert.match(
 );
 assert.match(
   studioSource,
-  /onClearAssignment=\{handleClearFutureCatalogueStyle\}/,
+  /onClearAssignment=\{handleClearFutureDesignStyleAssignment\}/,
 );
 assert.match(studioSource, /onContinue=\{handleOpenDormantDesignStyleStage\}/);
 assert.match(studioSource, /futureFabricStageCompletion\.isComplete/);
+const futureClearRequestSource = studioSource.slice(
+  studioSource.indexOf(
+    "const futureDesignStyleClearRequest: DesignStyleStepClearMutationRequest | null =",
+  ),
+  studioSource.indexOf("const activeFutureDesignStyleUploadUi"),
+);
+assert.match(futureClearRequestSource, /runtimeGeneration:/);
+assert.match(
+  futureClearRequestSource,
+  /target:\s*resolvedFutureActiveDesignStyleOccurrence/,
+);
+const clearAssignmentHandlerSource = studioSource.slice(
+  studioSource.indexOf("const handleClearFutureDesignStyleAssignment ="),
+  studioSource.indexOf("const handleOpenDormantCustomDetailsStage ="),
+);
+assert.ok(
+  clearAssignmentHandlerSource.includes("request.target"),
+  "Clear mutation must target the exact active occurrence",
+);
+assert.ok(
+  clearAssignmentHandlerSource.includes("detachUploadedStyleThroughStepRuntime"),
+  "Clear mutation should flow through the occurrence-level detach runtime path",
+);
+assert.equal(
+  clearAssignmentHandlerSource.includes("setFutureSelectedStyleId"),
+  false,
+  "Scalar Design Style setters must not be used for Step 3 clear",
+);
 const futureFabricSelectionHandler = studioSource.slice(
   studioSource.indexOf("const handleSelectFabric"),
   studioSource.indexOf("// STEP 3: Design Details"),
