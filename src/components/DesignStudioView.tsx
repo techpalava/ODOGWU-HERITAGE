@@ -85,6 +85,7 @@ import {
   buildUploadedDesignStyleAuthority,
   hydrateDesignStyleDraftEnvelope,
   hydrateDesignStyleDraftPersistence,
+  createDesignStylePersistenceAcknowledgement,
   prepareDesignStyleDraftAutosave,
   shouldAcceptDesignStyleDraftSaveCompletion,
   shouldApplyDesignStyleDraftHydration,
@@ -518,6 +519,9 @@ export default function DesignStudioView({
   const futureDesignStyleDetachedSourceLifecycleRef =
     useRef<UploadedDesignStyleDetachLifecycleOutcome | null>(null);
   const lastPersistedFutureDraftRef = useRef<GuestDesignDraft | null>(null);
+  const lastDesignStylePersistenceAcknowledgementRef = useRef<
+    ReturnType<typeof createDesignStylePersistenceAcknowledgement>
+  >(null);
   const lastScheduledFutureDraftRef = useRef<GuestDesignDraft | null>(null);
   const preservedInvalidHydratedDraftFabricAllocationsRef = useRef<
     FabricAllocation[] | null
@@ -2408,6 +2412,7 @@ export default function DesignStudioView({
     cloudFutureDraftSaveQueueRef.current = Promise.resolve();
     clearFutureDesignStyleRuntimeHydration();
     lastPersistedFutureDraftRef.current = null;
+    lastDesignStylePersistenceAcknowledgementRef.current = null;
     lastScheduledFutureDraftRef.current = null;
     setFutureDraftPersistenceStatus("resolving");
     setGuestDraftHydrated(false);
@@ -3429,6 +3434,7 @@ export default function DesignStudioView({
         return;
       }
       const saveGeneration = ++futureDraftAutosaveGenerationRef.current;
+      lastDesignStylePersistenceAcknowledgementRef.current = null;
       lastScheduledFutureDraftRef.current = canonicalGuestDraft;
       if (futureDraftIdentity.status === "guest") {
         const saved =
@@ -3444,6 +3450,17 @@ export default function DesignStudioView({
           })
         ) {
           lastPersistedFutureDraftRef.current = saved.draft;
+          lastDesignStylePersistenceAcknowledgementRef.current =
+            createDesignStylePersistenceAcknowledgement({
+              persistenceKind: "guest",
+              draftIdentity: futureDraftIdentityKey,
+              saveGeneration,
+              currentSaveGeneration: futureDraftAutosaveGenerationRef.current,
+              identityGeneration: designStyleHydration.identityGeneration,
+              currentIdentityGeneration:
+                futureDraftIdentityGenerationRef.current,
+              persistedDraft: saved.draft,
+            });
         } else if (
           saveGeneration === futureDraftAutosaveGenerationRef.current &&
           designStyleHydration.identityGeneration ===
@@ -3492,6 +3509,20 @@ export default function DesignStudioView({
                 ) {
                   lastPersistedFutureDraftRef.current =
                     result.record.draft || canonicalGuestDraft;
+                  if (result.record.draft) {
+                    lastDesignStylePersistenceAcknowledgementRef.current =
+                      createDesignStylePersistenceAcknowledgement({
+                        persistenceKind: "authenticated",
+                        draftIdentity: futureDraftIdentityKey,
+                        saveGeneration,
+                        currentSaveGeneration:
+                          futureDraftAutosaveGenerationRef.current,
+                        identityGeneration,
+                        currentIdentityGeneration:
+                          futureDraftIdentityGenerationRef.current,
+                        persistedDraft: result.record.draft,
+                      });
+                  }
                 }
               } else if (result.status === "conflict") {
                 futureDraftIdentityGenerationRef.current += 1;

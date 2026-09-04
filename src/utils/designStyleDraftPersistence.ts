@@ -1318,6 +1318,134 @@ export const shouldAcceptDesignStyleDraftSaveCompletion = ({
   saveGeneration === currentSaveGeneration &&
   identityGeneration === currentIdentityGeneration;
 
+export interface DesignStylePersistenceAcknowledgement {
+  readonly persistenceKind: "guest" | "authenticated";
+  readonly draftIdentity: string;
+  readonly saveGeneration: number;
+  readonly identityGeneration: number;
+  readonly designStyleLedgerRevision: number;
+  readonly designStyleEnvelopeFingerprint: string;
+  readonly persistedUploadedSourceRefs: readonly string[];
+}
+
+export type UploadedSourcePersistenceProofResult =
+  | { readonly status: "proven-absent" }
+  | { readonly status: "source-still-present" }
+  | { readonly status: "stale-acknowledgement" }
+  | { readonly status: "wrong-draft" }
+  | { readonly status: "revision-mismatch" }
+  | { readonly status: "fingerprint-mismatch" }
+  | { readonly status: "generation-mismatch" }
+  | { readonly status: "unsupported-or-missing-proof" };
+
+export const getPersistedDesignStyleEnvelopeFingerprint = (
+  envelope: PersistedDesignStyleDraftV2,
+): string | null => {
+  const serialized = serializePersistedDesignStyleDraftEnvelope(envelope);
+  return serialized ? stableSerialize(serialized) : null;
+};
+
+export const createDesignStylePersistenceAcknowledgement = ({
+  persistenceKind,
+  draftIdentity,
+  saveGeneration,
+  currentSaveGeneration,
+  identityGeneration,
+  currentIdentityGeneration,
+  persistedDraft,
+}: {
+  persistenceKind: "guest" | "authenticated";
+  draftIdentity: string;
+  saveGeneration: number;
+  currentSaveGeneration: number;
+  identityGeneration: number;
+  currentIdentityGeneration: number;
+  persistedDraft: GuestDesignDraft;
+}): DesignStylePersistenceAcknowledgement | null => {
+  if (
+    !isSafeIdentifier(draftIdentity) ||
+    !shouldAcceptDesignStyleDraftSaveCompletion({
+      saveGeneration,
+      currentSaveGeneration,
+      identityGeneration,
+      currentIdentityGeneration,
+    })
+  ) {
+    return null;
+  }
+  const parsed = inspectPersistedDesignStyleDraft(persistedDraft);
+  if (parsed.status !== "valid") return null;
+  const fingerprint = getPersistedDesignStyleEnvelopeFingerprint(parsed.envelope);
+  if (!fingerprint) return null;
+  const persistedUploadedSourceRefs = Object.values(
+    parsed.envelope.ledger.assignmentsByGarmentKey,
+  )
+    .flatMap((assignment) =>
+      assignment.sourceKind === "uploaded" ? [assignment.uploadedSourceRef] : [],
+    )
+    .filter((sourceRef, index, sourceRefs) => sourceRefs.indexOf(sourceRef) === index)
+    .sort((left, right) => left.localeCompare(right));
+  return {
+    persistenceKind,
+    draftIdentity,
+    saveGeneration,
+    identityGeneration,
+    designStyleLedgerRevision: parsed.envelope.ledger.revision,
+    designStyleEnvelopeFingerprint: fingerprint,
+    persistedUploadedSourceRefs,
+  };
+};
+
+export const proveUploadedSourceAbsentFromPersistedDesignStyle = ({
+  acknowledgement,
+  expectedDraftIdentity,
+  expectedLedgerRevision,
+  expectedFingerprint,
+  expectedSaveGeneration,
+  expectedIdentityGeneration,
+  currentSaveGeneration,
+  currentIdentityGeneration,
+  uploadedSourceRef,
+}: {
+  acknowledgement: DesignStylePersistenceAcknowledgement | null;
+  expectedDraftIdentity: string;
+  expectedLedgerRevision: number;
+  expectedFingerprint: string;
+  expectedSaveGeneration: number;
+  expectedIdentityGeneration: number;
+  currentSaveGeneration: number;
+  currentIdentityGeneration: number;
+  uploadedSourceRef: string;
+}): UploadedSourcePersistenceProofResult => {
+  if (!acknowledgement || !isOpaqueSourceReference(uploadedSourceRef)) {
+    return { status: "unsupported-or-missing-proof" };
+  }
+  if (
+    acknowledgement.saveGeneration !== currentSaveGeneration ||
+    acknowledgement.identityGeneration !== currentIdentityGeneration
+  ) {
+    return { status: "stale-acknowledgement" };
+  }
+  if (acknowledgement.draftIdentity !== expectedDraftIdentity) {
+    return { status: "wrong-draft" };
+  }
+  if (acknowledgement.designStyleLedgerRevision !== expectedLedgerRevision) {
+    return { status: "revision-mismatch" };
+  }
+  if (acknowledgement.designStyleEnvelopeFingerprint !== expectedFingerprint) {
+    return { status: "fingerprint-mismatch" };
+  }
+  if (
+    acknowledgement.saveGeneration !== expectedSaveGeneration ||
+    acknowledgement.identityGeneration !== expectedIdentityGeneration
+  ) {
+    return { status: "generation-mismatch" };
+  }
+  return acknowledgement.persistedUploadedSourceRefs.includes(uploadedSourceRef)
+    ? { status: "source-still-present" }
+    : { status: "proven-absent" };
+};
+
 export const prepareDesignStyleDraftAutosave = ({
   draft,
   hydrated,
