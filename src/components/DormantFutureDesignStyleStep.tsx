@@ -203,6 +203,67 @@ export const DormantFutureDesignStyleStep = ({
     onAssignCatalogueStyle(entry.request);
   };
 
+  const renderOccurrenceUploadControl = (replacement: boolean) => {
+    if (!activeOccurrence || !onSelectUploadFile || !mutationsEnabled) return null;
+    const actionLabel = replacement
+      ? `Replace uploaded design for ${activeOccurrence.label}`
+      : `Upload a design for ${activeOccurrence.label}`;
+    return (
+      <div
+        data-testid={
+          replacement
+            ? "step3-active-occurrence-upload-replacement"
+            : "step3-active-occurrence-upload"
+        }
+        className="mt-4 rounded-xl border border-dashed border-heritage-gold/35 bg-white p-4"
+      >
+        <p className="block text-sm font-bold text-heritage-green">
+          {actionLabel}
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
+          Choose a JPEG, PNG, or WebP image. Your current design and preview stay
+          in place until the new upload succeeds.
+        </p>
+        {uploadState.status !== "pending" && (
+          <>
+            <label htmlFor={uploadInputId} className="sr-only">
+              {actionLabel}
+            </label>
+            <input
+              id={uploadInputId}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={!mutationsEnabled}
+              aria-label={actionLabel}
+              aria-describedby={`${uploadInputId}-status`}
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0] || null;
+                event.currentTarget.value = "";
+                if (file) onSelectUploadFile(activeOccurrence.target, file);
+              }}
+              className="mt-3 block min-h-11 w-full min-w-0 rounded-xl border border-heritage-green/20 bg-white px-3 py-2 text-xs text-heritage-ink file:mr-3 file:rounded-lg file:border-0 file:bg-heritage-green file:px-3 file:py-2 file:text-xs file:font-bold file:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </>
+        )}
+        <div id={`${uploadInputId}-status`} className="mt-2" aria-live="polite">
+          {uploadState.status === "pending" && (
+            <p role="status" className="text-xs font-semibold text-heritage-green">
+              {replacement
+                ? `Preparing a replacement design for ${activeOccurrence.label}...`
+                : `Preparing your uploaded design for ${activeOccurrence.label}...`}
+            </p>
+          )}
+          {uploadState.status === "error" && (
+            <p role="alert" className="text-xs font-semibold text-red-700">
+              {uploadState.message ||
+                "The design could not be prepared. Your previous selection is unchanged. Try again."}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   useEffect(() => {
     if (!pendingAdaptableEntry) return;
     if (typeof document === "undefined" || !document.body?.style) return;
@@ -598,59 +659,18 @@ export const DormantFutureDesignStyleStep = ({
                   )}
                   <p className="text-xs leading-relaxed text-heritage-ink/65">
                     This existing uploaded design assignment is shown read-only.
-                    Replacement and deletion are not available here.
+                    Deletion is not available here.
                   </p>
                   {uploadState.status === "success" && (
                     <p role="status" className="text-xs font-semibold text-heritage-green">
                       Uploaded design ready for {activeOccurrence.label}.
                     </p>
                   )}
+                  {renderOccurrenceUploadControl(true)}
                 </div>
               )}
               {activeOccurrence.assignment?.sourceKind !== "uploaded" &&
-                onSelectUploadFile && (
-                  <div
-                    data-testid="step3-active-occurrence-upload"
-                    className="mt-4 rounded-xl border border-dashed border-heritage-gold/35 bg-white p-4"
-                  >
-                    <label
-                      htmlFor={uploadInputId}
-                      className="block text-sm font-bold text-heritage-green"
-                    >
-                      Upload a design for {activeOccurrence.label}
-                    </label>
-                    <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
-                      Choose a JPEG, PNG, or WebP image. Your current design stays
-                      selected until the upload succeeds.
-                    </p>
-                    <input
-                      id={uploadInputId}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      disabled={!mutationsEnabled || uploadState.status === "pending"}
-                      aria-describedby={`${uploadInputId}-status`}
-                      onChange={(event) => {
-                        const file = event.currentTarget.files?.[0] || null;
-                        event.currentTarget.value = "";
-                        if (file) onSelectUploadFile(activeOccurrence.target, file);
-                      }}
-                      className="mt-3 block min-h-11 w-full min-w-0 rounded-xl border border-heritage-green/20 bg-white px-3 py-2 text-xs text-heritage-ink file:mr-3 file:rounded-lg file:border-0 file:bg-heritage-green file:px-3 file:py-2 file:text-xs file:font-bold file:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                    <div id={`${uploadInputId}-status`} className="mt-2" aria-live="polite">
-                      {uploadState.status === "pending" && (
-                        <p role="status" className="text-xs font-semibold text-heritage-green">
-                          Preparing your uploaded design for {activeOccurrence.label}...
-                        </p>
-                      )}
-                      {uploadState.status === "error" && (
-                        <p role="alert" className="text-xs font-semibold text-red-700">
-                          {uploadState.message ||
-                            "The design could not be prepared. Your previous selection is unchanged. Try again."}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
+                renderOccurrenceUploadControl(false)}
             </section>
           )}
 

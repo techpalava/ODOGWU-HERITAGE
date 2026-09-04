@@ -3769,12 +3769,17 @@ export default function DesignStudioView({
       ) {
         return current;
       }
+      const preservedPreviewUrl =
+        existing?.occurrenceToken === ticket.occurrenceToken
+          ? existing.previewUrl
+          : undefined;
       return {
         ...current,
         [ticket.garmentKey]: {
           garmentKey: ticket.garmentKey,
           occurrenceToken: ticket.occurrenceToken,
           operationGeneration: ticket.operationGeneration,
+          ...(preservedPreviewUrl ? { previewUrl: preservedPreviewUrl } : {}),
           ...next,
         },
       };
@@ -3831,7 +3836,6 @@ export default function DesignStudioView({
       return;
     }
     const existingAssignment = ledger.assignmentsByGarmentKey[target.garmentKey];
-    if (existingAssignment?.sourceKind === "uploaded") return;
     const operationKind = existingAssignment ? "replace" : "assign";
     const started = beginDesignStyleUploadForActiveOccurrence({
       state: futureDesignStyleUploadOperationStateRef.current,

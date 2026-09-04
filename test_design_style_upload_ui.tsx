@@ -167,7 +167,7 @@ const uploadedInput = {
     uploadState: { status: "pending" },
   });
   assert.match(textContent(renderer.root), /Catalogue Shirt/);
-  assert.match(textContent(renderer.root), /current design stays selected/i);
+  assert.match(textContent(renderer.root), /current design and preview stay in place/i);
   assert.match(textContent(renderer.root), /Preparing your uploaded design for Shirt/i);
 
   const started = beginDesignStyleUploadForActiveOccurrence({
@@ -328,8 +328,8 @@ const uploadedInput = {
   assert.equal(current.assignmentResult.status, "applied");
 }
 
-// F. An existing uploaded assignment renders its preview and read-only status,
-// with no input, replacement control, or delete control.
+// F. An existing uploaded assignment keeps its preview and deletion remains
+// unavailable. Task 5E-C may add the separately guarded replacement input.
 {
   const reference = createCustomerDesignUploadReference({
     ownerUid: "upload-ui-owner",
@@ -359,13 +359,17 @@ const uploadedInput = {
       previewUrl: "blob:upload-ui-read-only",
     },
   });
-  assert.equal(renderer.root.findAllByProps({ type: "file" }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ type: "file" }).length, 1);
+  assert.match(
+    String(renderer.root.findByProps({ type: "file" }).props["aria-label"]),
+    /Replace uploaded design for Shirt/i,
+  );
   assert.equal(renderer.root.findAllByType("img").some((image) =>
     String(image.props.alt).includes("Uploaded design preview for Shirt")), true);
   const text = textContent(renderer.root);
   assert.match(text, /existing uploaded design assignment is shown read-only/i);
-  assert.match(text, /Replacement and deletion are not available here/i);
-  assert.doesNotMatch(text, /Replace upload|Delete upload/i);
+  assert.match(text, /Deletion is not available here/i);
+  assert.doesNotMatch(text, /Delete upload|Clear uploaded|Remove source/i);
   act(() => renderer.unmount());
 }
 
