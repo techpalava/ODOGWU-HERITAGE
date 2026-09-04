@@ -254,6 +254,7 @@ import {
   CustomerDesignUploadError,
   CustomerDesignUploadService,
 } from "../services/customerDesignUploadService";
+import { ensureCustomerUploadIdentity } from "../services/customerDesignUploadIdentity";
 import {
   deleteUploadedDesignBeforeSourceChange,
   deleteUploadedDesignCanonicalSource,
@@ -263,6 +264,7 @@ import {
   createUploadedSourceCleanupCandidate,
   type UploadedSourceCleanupCandidate,
 } from "../utils/designStyleUploadedSourceCleanup";
+import { designStylePrecanonicalUploadCleanupCoordinator } from "../utils/designStylePrecanonicalUploadCleanup";
 import {
   cloneGarmentConstructionPricingResolution,
   createEmptyAdditionalGarmentConstructionState,
@@ -4024,6 +4026,12 @@ export default function DesignStudioView({
     }
     futureDesignStyleUploadOperationStateRef.current = started.state;
     setFutureDesignStyleUploadUiForTicket(started.ticket, { status: "pending" });
+    const precanonicalCleanupOperation =
+      designStylePrecanonicalUploadCleanupCoordinator.registerOperation({
+        operationGeneration: started.ticket.operationGeneration,
+        garmentKey: started.ticket.garmentKey,
+        occurrenceToken: started.ticket.occurrenceToken,
+      });
 
     await runUploadedDesignOperation({
       coordinator: uploadedDesignOperationCoordinatorRef.current,
@@ -4036,8 +4044,25 @@ export default function DesignStudioView({
       validate: () =>
         CustomerDesignUploadService.validateCustomerDesignFile(file),
       execute: async () => {
+        const uploadIdentity = await ensureCustomerUploadIdentity();
+        const ownerBinding =
+          designStylePrecanonicalUploadCleanupCoordinator.bindOriginalOwner(
+            precanonicalCleanupOperation,
+            uploadIdentity.uid,
+          );
+        if (ownerBinding.status === "rejected") {
+          throw new Error("PRECANONICAL_UPLOAD_OWNER_BINDING_FAILED");
+        }
         const reference =
           await CustomerDesignUploadService.uploadCustomerDesignDraft(file);
+        const referenceBinding =
+          designStylePrecanonicalUploadCleanupCoordinator.attachReference(
+            precanonicalCleanupOperation,
+            reference,
+          );
+        if (referenceBinding.status === "rejected") {
+          throw new Error("PRECANONICAL_UPLOAD_REFERENCE_BINDING_FAILED");
+        }
         const source = createUploadedDesignSourceWhenReady({
           uploadReference: reference,
           fabricCapacityComposition: mergeUploadedDesignCompositionWithStep1({
@@ -4069,6 +4094,9 @@ export default function DesignStudioView({
             ledger: latestLedger || ledger,
             showError: false,
           });
+          designStylePrecanonicalUploadCleanupCoordinator.markDiscarded(
+            precanonicalCleanupOperation,
+          );
           return;
         }
         const result = applyDesignStyleUploadForActiveOccurrence({
@@ -4089,6 +4117,9 @@ export default function DesignStudioView({
             ledger: latestLedger,
             showError: false,
           });
+          designStylePrecanonicalUploadCleanupCoordinator.markDiscarded(
+            precanonicalCleanupOperation,
+          );
           return;
         }
         futureDesignStyleUploadOperationStateRef.current = result.state;
@@ -4098,6 +4129,9 @@ export default function DesignStudioView({
             message:
               "The uploaded design could not be assigned safely. Your previous selection is unchanged. Try again.",
           });
+          designStylePrecanonicalUploadCleanupCoordinator.markDiscarded(
+            precanonicalCleanupOperation,
+          );
           return;
         }
 
@@ -4135,8 +4169,19 @@ export default function DesignStudioView({
           previewUrl,
         });
         applyFutureDesignStyleMutationLedger(latest, result.ledger);
+        const canonicalHandoff =
+          designStylePrecanonicalUploadCleanupCoordinator.acceptCanonical(
+            precanonicalCleanupOperation,
+            source.uploadReference,
+          );
+        if (canonicalHandoff.status === "rejected") {
+          throw new Error("PRECANONICAL_UPLOAD_CANONICAL_HANDOFF_FAILED");
+        }
       },
       onError: (error) => {
+        designStylePrecanonicalUploadCleanupCoordinator.markDiscarded(
+          precanonicalCleanupOperation,
+        );
         const latestLedger =
           futureDesignStyleMutationAuthorityRef.current?.hydration.ledger ||
           ledger;
@@ -4156,6 +4201,33 @@ export default function DesignStudioView({
         }
       },
     });
+    designStylePrecanonicalUploadCleanupCoordinator.settleUpload(
+      precanonicalCleanupOperation,
+    );
+    const cleanupSnapshot =
+      designStylePrecanonicalUploadCleanupCoordinator.getSnapshot(
+        precanonicalCleanupOperation,
+      );
+    if (cleanupSnapshot?.disposition !== "accepted-canonical") {
+      designStylePrecanonicalUploadCleanupCoordinator.markDiscarded(
+        precanonicalCleanupOperation,
+      );
+      const cleanup =
+        await designStylePrecanonicalUploadCleanupCoordinator.cleanupDiscarded(
+          precanonicalCleanupOperation,
+          () => auth.currentUser,
+        );
+      if (
+        cleanup.status === "discarded-cleanup-failed" ||
+        cleanup.status === "discarded-cleanup-blocked"
+      ) {
+        setFutureDesignStyleUploadUiForTicket(started.ticket, {
+          status: "error",
+          message:
+            "The unused upload could not be safely removed. It was not assigned. Please try again before signing in.",
+        });
+      }
+    }
   };
 
   const isStageHistoricallyUnlocked = (stageId: DesignStudioStageId): boolean => {

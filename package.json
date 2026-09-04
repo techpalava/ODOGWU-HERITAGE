@@ -45,6 +45,7 @@
     "test:design-style-draft-persistence": "tsx test_design_style_draft_persistence.ts && node scripts/tsxWithViteProductionFirebase.mjs test_design_style_draft_integration.ts",
     "test:design-style-persistence-acknowledgement": "tsx test_design_style_persistence_acknowledgement.ts",
     "test:design-style-step-runtime": "tsx test_design_style_step_runtime.ts && tsx test_design_style_step_runtime_ui.tsx",
+    "test:design-style-precanonical-cross-auth-cleanup": "node scripts/tsxWithViteProductionFirebase.mjs test_design_style_precanonical_cross_auth_cleanup.ts",
     "test:design-style-upload-operation": "tsx test_design_style_upload_operation.ts",
     "test:design-style-upload-ui": "node scripts/tsxWithViteProductionFirebase.mjs test_design_style_upload_ui.tsx",
     "test:design-style-upload-replacement-ui": "node scripts/tsxWithViteProductionFirebase.mjs test_design_style_upload_replacement_ui.tsx",
