@@ -3665,7 +3665,7 @@ export default function DesignStudioView({
     designSelections,
     batchType,
     customGroupCode,
-    futureOrderCandidateResult.candidate?.pricing,
+    futurePaymentReviewHandoff?.candidate?.pricing,
     futureSummary.pricingSummary.selectedDesignPrice,
     futureGarmentPieceCount,
     fabricAllocationState.fabricAllocations,

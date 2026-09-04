@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DormantFuturePaymentReviewStep } from "./src/components/DormantFuturePaymentReviewStep";
 import type { FutureOrderCandidateV2 } from "./src/utils/futureOrderCandidate";
+import { createEmptyFutureMeasurementState } from "./src/utils/measurementBlueprint";
+import { createEmptyFutureShippingState } from "./src/utils/designStudioFutureShipping";
 import {
   createFutureOrderV2PaymentReviewHandoff,
   FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
@@ -10,7 +12,7 @@ import {
   isFuturePaymentReviewStageUnlocked,
 } from "./src/utils/designStudioFuturePaymentReview";
 
-const candidate = {
+const candidate: FutureOrderCandidateV2 = {
   schemaVersion: 2,
   journey: { mode: "future_nine_stage", schemaVersion: 1 },
   authorityVersions: {
@@ -40,9 +42,7 @@ const candidate = {
   customDetails: [],
   aiTryOn: { status: "skipped", reviewStatus: "skipped", verifiedPrivateResultReference: null },
   measurements: {
-    schemaVersion: 1,
-    route: "low_risk",
-    unit: "inch",
+    ...createEmptyFutureMeasurementState("low_risk", "inch"),
     entered: { shared: {}, byGarmentKey: {} },
     derived: { shared: {}, byGarmentKey: {} },
     blueprintVersion: "measurement-blueprint-v1",
@@ -52,7 +52,23 @@ const candidate = {
     diagnostics: [],
   },
   shipping: {
-    state: { schemaVersion: 1, fulfilmentMethod: "eindhoven_pickup", customerInformation: null },
+    state: {
+      ...createEmptyFutureShippingState(),
+      fulfilmentMethod: "eindhoven_pickup",
+      customerInformation: {
+        fullName: "Ada Heritage",
+        phone: "+31 6 1234 5678",
+        email: "ada@example.com",
+        deliveryAddress: {
+          addressLine1: "1 Heritage Way",
+          addressLine2: "Suite 4",
+          city: "Eindhoven",
+          postalCode: "5611 AA",
+          countryCode: "NL",
+        },
+        comment: "Please call before delivery.",
+      },
+    },
     status: "quote_ready",
     customerInformationComplete: true,
     formInputsComplete: true,
@@ -112,7 +128,7 @@ const candidate = {
       uploaded: { uploadedSourceRef: "upload-x", displayLabel: "Uploaded X", previewReference: "upload-x" },
     },
   ],
-} as FutureOrderCandidateV2;
+};
 
 const handoff = createFutureOrderV2PaymentReviewHandoff(candidate);
 assert.equal(handoff.candidate, candidate, "the exact V2 Candidate is handed to review");
