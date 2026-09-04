@@ -48,6 +48,11 @@ import {
   retainGarmentScopedCustomDetailInputIdentities,
   validateGarmentScopedCustomDetailText,
 } from "./garmentScopedCustomDetailInputsState";
+import type {
+  GarmentDesignStyleAssignmentTarget,
+  GarmentDesignStyleAssignmentV2,
+} from "./garmentScopedDesignStyleAssignment";
+import type { DesignStyleStepOccurrenceStatus } from "./designStyleStepRuntime";
 
 const FUTURE_CUSTOM_DETAIL_GARMENT_ORDER: readonly CanonicalPhysicalGarmentType[] = [
   "shirt",
@@ -157,7 +162,73 @@ export interface FutureCustomDetailPhysicalSubject {
   order: number;
   componentOrder: number;
   lockedSelectionGroups: readonly CustomDetailSelectionGroup[];
+  designStyleContext: FutureCustomDetailDesignStyleContext;
 }
+
+/**
+ * The Custom Details stage consumes only the exact occurrence projection from
+ * Step 3. This is presentation/context authority, not a pricing authority.
+ */
+export type FutureCustomDetailDesignStyleContext =
+  | {
+      status: "catalogue";
+      occurrenceToken: string;
+      sourceKey: string;
+      catalogStyleId: string;
+    }
+  | {
+      status: "uploaded";
+      occurrenceToken: string;
+      sourceKey: string;
+      uploadedSourceRef: string;
+    }
+  | {
+      status: "unassigned" | "needs_review" | "unavailable" | "upload_pending";
+      occurrenceToken: string;
+    }
+  | { status: "unavailable"; occurrenceToken: null };
+
+export interface FutureCustomDetailsDesignStyleOccurrence {
+  readonly target: GarmentDesignStyleAssignmentTarget;
+  readonly assignment: GarmentDesignStyleAssignmentV2 | null;
+  readonly status: DesignStyleStepOccurrenceStatus;
+}
+
+const unassignedDesignStyleContext = (): FutureCustomDetailDesignStyleContext => ({
+  status: "unavailable",
+  occurrenceToken: null,
+});
+
+const contextForDesignStyleOccurrence = (
+  occurrence: FutureCustomDetailsDesignStyleOccurrence | undefined,
+): FutureCustomDetailDesignStyleContext => {
+  if (!occurrence) return unassignedDesignStyleContext();
+  if (occurrence.assignment?.sourceKind === "catalog") {
+    return {
+      status: "catalogue",
+      occurrenceToken: occurrence.target.occurrenceToken,
+      sourceKey: occurrence.assignment.sourceKey,
+      catalogStyleId: occurrence.assignment.catalogStyleId,
+    };
+  }
+  if (occurrence.assignment?.sourceKind === "uploaded") {
+    return {
+      status: "uploaded",
+      occurrenceToken: occurrence.target.occurrenceToken,
+      sourceKey: occurrence.assignment.sourceKey,
+      uploadedSourceRef: occurrence.assignment.uploadedSourceRef,
+    };
+  }
+  return {
+    status:
+      occurrence.status === "needs_review" ||
+      occurrence.status === "unavailable" ||
+      occurrence.status === "upload_pending"
+        ? occurrence.status
+        : "unassigned",
+    occurrenceToken: occurrence.target.occurrenceToken,
+  };
+};
 
 export interface FutureCustomDetailPhysicalSubjectResolution {
   garmentTypeSelection: GarmentTypeStepSelection;
@@ -346,6 +417,7 @@ export const resolveFutureCustomDetailPhysicalSubjects = (
           parentGarmentType,
           component.garmentGroups,
         ),
+        designStyleContext: unassignedDesignStyleContext(),
       });
     });
   });
@@ -399,6 +471,7 @@ export const resolveFutureCustomDetailPhysicalSubjects = (
           construction,
           component.garmentGroups,
         ),
+        designStyleContext: unassignedDesignStyleContext(),
       });
     });
   });
@@ -527,6 +600,7 @@ export const copyGarmentScopedCustomDetailsToAdditionalOccurrence = ({
         order: targetComponent.order,
         componentOrder: targetComponent.order,
         lockedSelectionGroups: [],
+        designStyleContext: unassignedDesignStyleContext(),
       };
       const currentOptions = getSelectionOptionIds(rawSelection).flatMap(
         (optionId) => {
@@ -778,6 +852,7 @@ export const reconcileGarmentScopedCustomDetails = ({
   additionalGarments,
   additionalGarmentConstructions,
   style,
+  designStyleOccurrences,
   catalogInspection,
   existingState,
 }: {
@@ -785,6 +860,7 @@ export const reconcileGarmentScopedCustomDetails = ({
   additionalGarments?: readonly FabricGarmentAssignment[];
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
   style?: StyleCategory | null;
+  designStyleOccurrences?: readonly FutureCustomDetailsDesignStyleOccurrence[];
   catalogInspection: CustomDetailCatalogInspection;
   existingState: unknown;
 }): GarmentScopedCustomDetailsReconciliationResult => {
@@ -800,11 +876,21 @@ export const reconcileGarmentScopedCustomDetails = ({
       detail: `${diagnostic.code}:${diagnostic.path}`,
     })),
   ];
-  const subjectByKey = new Map(
-    subjectResolution.subjects.map((subject) => [subject.garmentKey, subject]),
+  const designStyleByGarmentKey = new Map(
+    (designStyleOccurrences || []).map((occurrence) => [
+      occurrence.target.garmentKey,
+      occurrence,
+    ] as const),
   );
+  const subjects = subjectResolution.subjects.map((subject) => ({
+    ...subject,
+    designStyleContext: contextForDesignStyleOccurrence(
+      designStyleByGarmentKey.get(subject.garmentKey),
+    ),
+  }));
+  const subjectByKey = new Map(subjects.map((subject) => [subject.garmentKey, subject]));
   const applicabilityByGarmentKey = new Map(
-    subjectResolution.subjects.map((subject) => {
+    subjects.map((subject) => {
       const applicability = resolveGarmentScopedCustomDetailApplicability({
         subject,
         style: style || null,
@@ -929,7 +1015,7 @@ export const reconcileGarmentScopedCustomDetails = ({
     normalizedExisting.diagnostics.length > 0 ||
     stableSerialize(normalizedExisting.state) !== stableSerialize(state);
   return {
-    subjects: subjectResolution.subjects,
+    subjects,
     applicabilityByGarmentKey,
     state,
     diagnostics,

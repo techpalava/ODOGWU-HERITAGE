@@ -107,6 +107,7 @@ import {
   type DesignStyleStepClearMutationRequest,
   type UploadedDesignStyleDetachLifecycleOutcome,
 } from "../utils/designStyleStepRuntime";
+import { removeExactGarmentDesignStyleAssignment } from "../utils/garmentScopedDesignStyleAssignment";
 import {
   createDesignStyleUploadOperationState,
   failDesignStyleUploadOperation,
@@ -1977,6 +1978,7 @@ export default function DesignStudioView({
       additionalGarmentConstructions:
         futureAdditionalConstructionReconciliation.state,
       style: futureDesignStyleSelection.selectedStyle,
+      designStyleOccurrences: futureDesignStyleStepProjection.occurrences,
       catalogInspection: futureCatalogInspection,
       existingState: designSelections.garmentScopedCustomDetails,
     });
@@ -5017,6 +5019,39 @@ export default function DesignStudioView({
       currentPriceActivatedFabricCode: futurePriceActivatedFabricCode,
     });
     if (prepared.status !== "removed") return prepared.result;
+
+    // Task 4 owns the physical removal transaction. Reconcile its proven
+    // survivor set into the Task 5A ledger here, using the exact target that
+    // was current before React publishes the removal commit.
+    const designStyleAuthority = futureDesignStyleMutationAuthorityRef.current;
+    const designStyleLedger = designStyleAuthority?.hydration.ledger || null;
+    const removalTarget = designStyleAuthority?.occurrenceTargets.find(
+      (target) => target.garmentKey === prepared.result.removedOccurrence.garmentKey,
+    );
+    if (designStyleAuthority && designStyleLedger && removalTarget) {
+      const styleRemoval = removeExactGarmentDesignStyleAssignment({
+        ledger: designStyleLedger,
+        expectedLedgerRevision: designStyleLedger.revision,
+        target: removalTarget,
+      });
+      if (styleRemoval.status === "rejected") {
+        setFutureDesignStyleMutationError(
+          "Your Design Style choices changed before this garment could be removed. Review the garment and try again.",
+        );
+        return prepared.result;
+      }
+      const nextHydration = applyDesignStyleStepLedgerToHydration({
+        hydration: designStyleAuthority.hydration,
+        ledger: styleRemoval.ledger,
+        activeOccurrences: prepared.result.survivorOccurrences,
+        authority: designStyleAuthority.authority,
+      });
+      publishFutureDesignStyleHydration({
+        identityKey: designStyleAuthority.identityKey,
+        identityGeneration: designStyleAuthority.identityGeneration,
+        result: nextHydration,
+      });
+    }
 
     const removalGeneration =
       ++futureGarmentRemovalGenerationRef.current;
