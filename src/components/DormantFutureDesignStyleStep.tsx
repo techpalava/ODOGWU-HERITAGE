@@ -658,14 +658,26 @@ export const DormantFutureDesignStyleStep = ({
                     />
                   )}
                   <p className="text-xs leading-relaxed text-heritage-ink/65">
-                    This existing uploaded design assignment is shown read-only.
-                    Deletion is not available here.
+                    Removing this assignment keeps the uploaded source available
+                    for any other garment that uses it.
                   </p>
                   {uploadState.status === "success" && (
                     <p role="status" className="text-xs font-semibold text-heritage-green">
                       Uploaded design ready for {activeOccurrence.label}.
                     </p>
                   )}
+                  {mutationsEnabled &&
+                    uploadState.status !== "pending" &&
+                    clearRequest && (
+                    <button
+                      type="button"
+                      onClick={() => onClearAssignment(clearRequest)}
+                      aria-label={`Remove uploaded design from ${activeOccurrence.label}`}
+                      className="inline-flex min-h-11 items-center justify-center rounded-xl border border-red-200 bg-white px-4 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                    >
+                      Remove uploaded design from {activeOccurrence.label}
+                    </button>
+                    )}
                   {renderOccurrenceUploadControl(true)}
                 </div>
               )}

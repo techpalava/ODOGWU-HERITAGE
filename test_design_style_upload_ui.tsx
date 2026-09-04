@@ -328,8 +328,8 @@ const uploadedInput = {
   assert.equal(current.assignmentResult.status, "applied");
 }
 
-// F. An existing uploaded assignment keeps its preview and deletion remains
-// unavailable. Task 5E-C may add the separately guarded replacement input.
+// F. An existing uploaded assignment keeps its preview while detach remains
+// distinct from physical source deletion.
 {
   const reference = createCustomerDesignUploadReference({
     ownerUid: "upload-ui-owner",
@@ -367,8 +367,8 @@ const uploadedInput = {
   assert.equal(renderer.root.findAllByType("img").some((image) =>
     String(image.props.alt).includes("Uploaded design preview for Shirt")), true);
   const text = textContent(renderer.root);
-  assert.match(text, /existing uploaded design assignment is shown read-only/i);
-  assert.match(text, /Deletion is not available here/i);
+  assert.match(text, /Removing this assignment keeps the uploaded source available/i);
+  assert.match(text, /Remove uploaded design from Shirt/i);
   assert.doesNotMatch(text, /Delete upload|Clear uploaded|Remove source/i);
   act(() => renderer.unmount());
 }

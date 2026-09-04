@@ -97,12 +97,14 @@ import {
   beginDesignStyleUploadForActiveOccurrence,
   bindDesignStyleStepCatalogueLedgerRevision,
   clearCatalogueStyleThroughStepRuntime,
+  detachUploadedStyleThroughStepRuntime,
   designStyleStepTargetsEqual,
   projectActiveOccurrenceDesignStyleCatalogue,
   projectDesignStyleStep,
   resolveActiveDesignStyleOccurrence,
   type DesignStyleStepCatalogMutationRequest,
   type DesignStyleStepClearMutationRequest,
+  type UploadedDesignStyleDetachLifecycleOutcome,
 } from "../utils/designStyleStepRuntime";
 import {
   createDesignStyleUploadOperationState,
@@ -513,6 +515,8 @@ export default function DesignStudioView({
   const futureDesignStyleUploadPreviewUrlByGarmentKeyRef = useRef<
     Record<string, string>
   >({});
+  const futureDesignStyleDetachedSourceLifecycleRef =
+    useRef<UploadedDesignStyleDetachLifecycleOutcome | null>(null);
   const lastPersistedFutureDraftRef = useRef<GuestDesignDraft | null>(null);
   const lastScheduledFutureDraftRef = useRef<GuestDesignDraft | null>(null);
   const preservedInvalidHydratedDraftFabricAllocationsRef = useRef<
@@ -3712,7 +3716,7 @@ export default function DesignStudioView({
     applyFutureDesignStyleMutationLedger(current, result.ledger);
   };
 
-  const handleClearFutureCatalogueStyle = (
+  const handleClearFutureDesignStyleAssignment = (
     request: DesignStyleStepClearMutationRequest,
   ) => {
     const current = futureDesignStyleMutationAuthorityRef.current;
@@ -3721,6 +3725,40 @@ export default function DesignStudioView({
       rejectFutureDesignStyleMutation("HYDRATION_NOT_MUTABLE");
       return;
     }
+    const assignment = ledger.assignmentsByGarmentKey[request.target.garmentKey];
+    const pendingUpload =
+      futureDesignStyleUploadUiByGarmentKey[request.target.garmentKey];
+    if (
+      assignment?.sourceKind === "uploaded" &&
+      assignment.occurrenceToken === request.target.occurrenceToken
+    ) {
+      const result = detachUploadedStyleThroughStepRuntime({
+        ledger,
+        activeOccurrences: current.activeOccurrences,
+        activeTarget: current.activeTarget,
+        request,
+        currentRuntimeGeneration: current.runtimeGeneration,
+        stepIsActive: current.stepIsActive,
+        hydrationMutable:
+          current.hydration.canAutosave &&
+          !current.hydration.destructiveNormalizationProhibited,
+        uploadOperationPending: Boolean(
+          pendingUpload?.status === "pending" &&
+            pendingUpload.occurrenceToken === request.target.occurrenceToken,
+        ),
+        deletionProof: {},
+      });
+      if (result.status !== "detached") {
+        rejectFutureDesignStyleMutation(
+          result.status === "rejected" ? result.reason : undefined,
+        );
+        return;
+      }
+      futureDesignStyleDetachedSourceLifecycleRef.current = result.lifecycle;
+      applyFutureDesignStyleMutationLedger(current, result.ledger);
+      return;
+    }
+
     const result = clearCatalogueStyleThroughStepRuntime({
       ledger,
       activeOccurrences: current.activeOccurrences,
@@ -5587,7 +5625,7 @@ export default function DesignStudioView({
           stylesLoadState={stylesLoadState}
           onSelectOccurrence={handleSelectFutureDesignStyleOccurrence}
           onAssignCatalogueStyle={handleAssignFutureCatalogueStyle}
-          onClearAssignment={handleClearFutureCatalogueStyle}
+          onClearAssignment={handleClearFutureDesignStyleAssignment}
           onSelectUploadFile={handleFutureDesignStyleUploadFile}
           onBack={() => setFutureStageId("fabric")}
           onReturnToGarmentType={() => setFutureStageId("garment_type")}

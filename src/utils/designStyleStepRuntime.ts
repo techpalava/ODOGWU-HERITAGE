@@ -40,6 +40,14 @@ import {
   type DesignStyleUploadOperationTicket,
 } from "./designStyleUploadOperation";
 import type { UploadedDesignStyleAssignmentInput } from "./garmentScopedDesignStyleAssignment";
+import {
+  buildUploadedSourceReferenceIndex,
+  evaluateUploadedSourceDeletionEligibility,
+  getUploadedSourceReferenceState,
+  projectUploadedSourceOccurrenceDetach,
+  type UploadedSourceDeletionEligibility,
+  type UploadedSourceDeletionProof,
+} from "./designStyleUploadedSourceLifecycle";
 
 export type DesignStyleStepOccurrenceStatus =
   | "complete"
@@ -108,7 +116,10 @@ export type DesignStyleStepMutationRejection =
   | "CATALOGUE_NOT_READY"
   | "STYLE_AUTHORITY_CHANGED"
   | "STYLE_NOT_ELIGIBLE"
-  | "ADAPTABILITY_CONFIRMATION_REQUIRED";
+  | "ADAPTABILITY_CONFIRMATION_REQUIRED"
+  | "UPLOAD_OPERATION_PENDING"
+  | "UPLOADED_ASSIGNMENT_NOT_FOUND"
+  | "LIFECYCLE_AUTHORITY_INCOMPLETE";
 
 export type DesignStyleStepMutationResult =
   | GarmentDesignStyleAssignmentMutationResult
@@ -117,6 +128,21 @@ export type DesignStyleStepMutationResult =
       readonly reason: DesignStyleStepMutationRejection;
       readonly ledger: GarmentScopedDesignStyleAssignmentLedgerV2;
     };
+
+export interface UploadedDesignStyleDetachLifecycleOutcome {
+  readonly sourceRef: string;
+  readonly referenceState: ReturnType<typeof getUploadedSourceReferenceState>;
+  readonly deletionEligibility: UploadedSourceDeletionEligibility;
+  readonly physicalDeletionPerformed: false;
+}
+
+export type UploadedDesignStyleDetachResult =
+  | {
+      readonly status: "detached";
+      readonly ledger: GarmentScopedDesignStyleAssignmentLedgerV2;
+      readonly lifecycle: UploadedDesignStyleDetachLifecycleOutcome;
+    }
+  | DesignStyleStepMutationResult;
 
 const targetsEqual = (
   left: GarmentDesignStyleAssignmentTarget | null,
@@ -578,6 +604,93 @@ export const clearCatalogueStyleThroughStepRuntime = ({
     activeOccurrences,
     target: request.target,
   });
+};
+
+export const detachUploadedStyleThroughStepRuntime = ({
+  ledger,
+  activeOccurrences,
+  activeTarget,
+  request,
+  currentRuntimeGeneration,
+  stepIsActive,
+  hydrationMutable,
+  uploadOperationPending,
+  deletionProof,
+}: {
+  ledger: GarmentScopedDesignStyleAssignmentLedgerV2;
+  activeOccurrences: readonly PhysicalGarmentOccurrence[];
+  activeTarget: GarmentDesignStyleAssignmentTarget | null;
+  request: DesignStyleStepClearMutationRequest;
+  currentRuntimeGeneration: number;
+  stepIsActive: boolean;
+  hydrationMutable: boolean;
+  uploadOperationPending: boolean;
+  deletionProof: UploadedSourceDeletionProof;
+}): UploadedDesignStyleDetachResult => {
+  if (!stepIsActive) return reject(ledger, "STEP_NOT_ACTIVE");
+  if (request.runtimeGeneration !== currentRuntimeGeneration) {
+    return reject(ledger, "STALE_RUNTIME_GENERATION");
+  }
+  if (!targetsEqual(request.target, activeTarget)) {
+    return reject(ledger, "STALE_ACTIVE_OCCURRENCE");
+  }
+  if (!hydrationMutable) return reject(ledger, "HYDRATION_NOT_MUTABLE");
+  if (uploadOperationPending) {
+    return reject(ledger, "UPLOAD_OPERATION_PENDING");
+  }
+
+  const assignment = ledger.assignmentsByGarmentKey[request.target.garmentKey];
+  if (
+    assignment?.sourceKind !== "uploaded" ||
+    assignment.occurrenceToken !== request.target.occurrenceToken
+  ) {
+    return reject(ledger, "UPLOADED_ASSIGNMENT_NOT_FOUND");
+  }
+  const sourceRef = assignment.uploadedSourceRef;
+  const beforeIndex = buildUploadedSourceReferenceIndex({
+    ledger,
+    activeOccurrences,
+  });
+  const detachProjection = projectUploadedSourceOccurrenceDetach({
+    index: beforeIndex,
+    sourceRef,
+    target: request.target,
+  });
+  if (detachProjection.status === "rejected") {
+    return reject(ledger, "LIFECYCLE_AUTHORITY_INCOMPLETE");
+  }
+
+  const clearResult = clearGarmentDesignStyleAssignment({
+    ledger,
+    expectedLedgerRevision: request.expectedLedgerRevision,
+    activeOccurrences,
+    target: request.target,
+  });
+  if (clearResult.status !== "applied") return clearResult;
+
+  const referenceIndex = buildUploadedSourceReferenceIndex({
+    ledger: clearResult.ledger,
+    activeOccurrences,
+  });
+  const referenceState = getUploadedSourceReferenceState({
+    index: referenceIndex,
+    sourceRef,
+  });
+  const deletionEligibility = evaluateUploadedSourceDeletionEligibility({
+    index: referenceIndex,
+    sourceRef,
+    proof: deletionProof,
+  });
+  return {
+    status: "detached",
+    ledger: clearResult.ledger,
+    lifecycle: {
+      sourceRef,
+      referenceState,
+      deletionEligibility,
+      physicalDeletionPerformed: false,
+    },
+  };
 };
 
 export const applyDesignStyleStepLedgerToHydration = ({
