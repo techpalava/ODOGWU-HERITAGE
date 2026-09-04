@@ -76,49 +76,48 @@ const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8")
 const appSource = readFileSync("src/App.tsx", "utf8");
 const adminSource = readFileSync("src/components/DatabaseView.tsx", "utf8");
 
-assert.match(componentSource, /No designs can currently be selected for this order/);
+assert.match(componentSource, /No designs can currently be selected for this garment/);
 assert.match(componentSource, /No exact catalogue matches yet/);
 assert.match(componentSource, /Return to Garment Type/);
 assert.match(
   componentSource,
-  /No catalogue designs are available right now/,
+  /Loading catalogue designs\. Your saved assignments are preserved/,
 );
 assert.match(
   componentSource,
-  /You can upload your own design below, or return to Garment Type/,
+  /catalogue is temporarily unavailable\. Your saved[\s\S]*assignments are preserved/,
 );
 assert.equal(
   /A current catalog design is required/.test(componentSource),
   false,
 );
-assert.match(componentSource, /aria-pressed=\{isSelected\}/);
-assert.match(componentSource, /aria-describedby=\{!isSelectable \? reasonId : undefined\}/);
+assert.match(componentSource, /aria-pressed=\{selected\}/);
+assert.match(componentSource, /aria-current=\{active \? "true" : undefined\}/);
 assert.match(componentSource, /min-h-11/);
 assert.match(componentSource, /sm:grid-cols-2 xl:grid-cols-3/);
 assert.match(componentSource, /Image unavailable/);
 assert.match(componentSource, /Originally shown as:/);
-assert.match(componentSource, /getFutureDesignStyleMatchPresentation/);
+assert.match(componentSource, /DesignStyleStepCatalogueEntry/);
 assert.match(componentSource, /All Designs/);
-assert.match(componentSource, /Upload Your Own Design/);
+assert.match(componentSource, /Choose a design for each garment/);
+assert.match(componentSource, /garment[\s\S]*has[\s\S]*a design/);
 assert.equal(
   componentSource.includes("ODOGWU_STEP3_DISCOVERY_QA_STYLES"),
   false,
 );
 assert.equal(componentSource.includes("sessionStorage"), false);
-assert.match(componentSource, /data-testid="upload-your-design-panel"/);
-assert(
-  componentSource.indexOf('data-testid="step3-explore-all"') <
-    componentSource.indexOf('data-testid="upload-your-design-panel"'),
-  "The catalogue must remain before the uploaded-design module.",
-);
-assert.match(componentSource, /Continue with Uploaded Design/);
-assert.match(componentSource, /Final review and payment for uploaded designs remain unavailable/);
+assert.equal(componentSource.includes('data-testid="upload-your-design-panel"'), false);
+assert.equal(componentSource.includes("Continue with Uploaded Design"), false);
+assert.match(componentSource, /existing uploaded design assignment is shown read-only/);
 assert.equal(componentSource.includes("handleStyleChange"), false);
 assert.equal(componentSource.includes("setFabricAllocationState"), false);
 assert.match(componentSource, /Continue to Custom Details/);
 assert.match(stepperSource, /aria-current=\{isCurrent \? "step" : undefined\}/);
 assert.match(stepperSource, /aria-disabled=\{!isClickable\}/);
 assert.match(studioSource, /onReturnToGarmentType=\{\(\) => setFutureStageId\("garment_type"\)\}/);
+assert.match(studioSource, /futureDesignStyleStepProjection\.isComplete/);
+assert.match(studioSource, /assignCatalogueStyleThroughStepRuntime/);
+assert.match(studioSource, /clearCatalogueStyleThroughStepRuntime/);
 assert.equal(appSource.includes("future_nine_stage"), false);
 assert.match(adminSource, /Compatible Physical Garments/);
 assert.match(

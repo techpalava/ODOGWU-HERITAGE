@@ -423,8 +423,16 @@ assert.match(designStudioSource, /CustomerDesignUploadService/);
 assert.match(designStudioSource, /designSource: activeDesignSource/);
 assert.match(designStudioSource, /confirmedDesignSourceKey:/);
 assert.match(designStudioSource, /priceActivatedFabricCode:/);
-assert.match(designStyleStepSource, /type="file"/);
-assert.match(designStyleStepSource, /data-testid="upload-your-design-panel"/);
+assert.doesNotMatch(designStyleStepSource, /type="file"/);
+assert.doesNotMatch(
+  designStyleStepSource,
+  /data-testid="upload-your-design-panel"/,
+);
+assert.match(
+  designStyleStepSource,
+  /existing uploaded design assignment is shown read-only/i,
+  "Task 5D may display hydrated uploaded authority but must defer mutation controls to Task 5E",
+);
 assert.doesNotMatch(designStyleStepSource, /getDownloadURL|storagePath/);
 assert.match(uploadServiceSource, /uploadCustomerDesignDraft/);
 assert.match(uploadServiceSource, /readCustomerDesignDraft/);

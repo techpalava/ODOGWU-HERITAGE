@@ -3,6 +3,7 @@ import {
   inspectCustomDetailCatalog,
 } from "../utils/catalogHelpers";
 import React, {
+  useCallback,
   useState,
   useEffect,
   useLayoutEffect,
@@ -51,7 +52,6 @@ import { DesignStudioJourneyStepper, DESIGN_STUDIO_STEPS } from "./DesignStudioJ
 import { resolveStep1CatalogueCoverage } from "../utils/step1CatalogueCoverage";
 import {
   canBeginFutureDesignDraftHydration,
-  isFutureDesignStyleStageCompleteForCustomDetails,
   preserveUnresolvedCatalogueStyleSelection,
   resolveHydratedDesignStyleSelection,
 } from "../utils/stylesCatalogueLoadState";
@@ -83,12 +83,25 @@ import {
 import {
   buildDesignStyleDraftValidationAuthority,
   buildUploadedDesignStyleAuthority,
+  hydrateDesignStyleDraftEnvelope,
   hydrateDesignStyleDraftPersistence,
   prepareDesignStyleDraftAutosave,
   shouldAcceptDesignStyleDraftSaveCompletion,
   shouldApplyDesignStyleDraftHydration,
   type DesignStyleDraftHydrationResult,
 } from "../utils/designStyleDraftPersistence";
+import {
+  applyDesignStyleStepLedgerToHydration,
+  assignCatalogueStyleThroughStepRuntime,
+  bindDesignStyleStepCatalogueLedgerRevision,
+  clearCatalogueStyleThroughStepRuntime,
+  designStyleStepTargetsEqual,
+  projectActiveOccurrenceDesignStyleCatalogue,
+  projectDesignStyleStep,
+  resolveActiveDesignStyleOccurrence,
+  type DesignStyleStepCatalogMutationRequest,
+  type DesignStyleStepClearMutationRequest,
+} from "../utils/designStyleStepRuntime";
 import { resolveDesignStudioFabricAllocationPricing } from "../utils/fabricAllocationPricing";
 import {
   cloneFabricAllocations,
@@ -194,13 +207,12 @@ import {
   reconcileFutureShippingState,
   refreshFutureShippingQuote,
 } from "../utils/designStudioFutureShipping";
-import { buildFutureOrderCandidate } from "../utils/futureOrderCandidate";
+import { blockFutureOrderCandidateUntilGarmentScopedDesignStyleMapping } from "../utils/futureOrderCandidate";
 import { isFuturePaymentReviewStageUnlocked } from "../utils/designStudioFuturePaymentReview";
 import {
-  activateFutureCatalogStyleSelection,
   buildAuthoritativePhysicalOccurrences,
+  activateFutureCatalogStyleSelection,
   createCatalogDesignSource,
-  isDesignSourceConfirmed,
   isValidUploadedDesignDraftSource,
   projectAuthoritativePhysicalOccurrences,
   type AuthoritativePhysicalOrderDiagnostic,
@@ -398,6 +410,44 @@ const findElementByExactDataValue = <T extends HTMLElement>(
   );
 };
 
+interface FutureDesignStyleRuntimeHydration {
+  readonly identityKey: string;
+  readonly identityGeneration: number;
+  readonly runtimeGeneration: number;
+  readonly result: DesignStyleDraftHydrationResult;
+  readonly fingerprint: string;
+}
+
+interface FutureDesignStyleMutationAuthority {
+  readonly identityKey: string;
+  readonly identityGeneration: number;
+  readonly runtimeGeneration: number;
+  readonly hydration: DesignStyleDraftHydrationResult;
+  readonly activeOccurrences: readonly PhysicalGarmentOccurrence[];
+  readonly occurrenceTargets: readonly DesignStyleStepClearMutationRequest["target"][];
+  readonly activeTarget: DesignStyleStepClearMutationRequest["target"] | null;
+  readonly authority: ReturnType<typeof buildDesignStyleDraftValidationAuthority>;
+  readonly stepIsActive: boolean;
+}
+
+const getFutureDesignStyleHydrationFingerprint = (
+  result: DesignStyleDraftHydrationResult,
+): string =>
+  JSON.stringify({
+    status: result.status,
+    envelope: result.envelope,
+    canAutosave: result.canAutosave,
+    destructiveNormalizationProhibited:
+      result.destructiveNormalizationProhibited,
+    authorityPending: result.authorityPending,
+    reviewRequired: result.reviewRequired,
+    shouldPersistEnvelope: result.shouldPersistEnvelope,
+    reconciliation: result.reconciliation,
+    validation: result.validation,
+    diagnostics: result.diagnostics,
+    legacyScalarFingerprint: result.legacyScalarFingerprint,
+  });
+
 export default function DesignStudioView({
   currentUser,
   orderContext,
@@ -421,10 +471,20 @@ export default function DesignStudioView({
   const futureDraftIdentityGenerationRef = useRef(0);
   const futureDraftHydrationRequestGenerationRef = useRef(0);
   const futureDraftAutosaveGenerationRef = useRef(0);
-  const futureDesignStyleDraftHydrationRef = useRef<{
-    identityGeneration: number;
-    result: DesignStyleDraftHydrationResult;
-  } | null>(null);
+  const futureDesignStyleRuntimeGenerationRef = useRef(0);
+  const futureDesignStyleDraftHydrationRef =
+    useRef<FutureDesignStyleRuntimeHydration | null>(null);
+  const [futureDesignStyleDraftHydration, setFutureDesignStyleDraftHydration] =
+    useState<FutureDesignStyleRuntimeHydration | null>(null);
+  const [futureActiveDesignStyleOccurrence, setFutureActiveDesignStyleOccurrence] =
+    useState<DesignStyleStepClearMutationRequest["target"] | null>(null);
+  const previousFutureDesignStyleOccurrenceOrderRef = useRef<
+    readonly DesignStyleStepClearMutationRequest["target"][]
+  >([]);
+  const [futureDesignStyleMutationError, setFutureDesignStyleMutationError] =
+    useState<string | null>(null);
+  const futureDesignStyleMutationAuthorityRef =
+    useRef<FutureDesignStyleMutationAuthority | null>(null);
   const lastPersistedFutureDraftRef = useRef<GuestDesignDraft | null>(null);
   const lastScheduledFutureDraftRef = useRef<GuestDesignDraft | null>(null);
   const preservedInvalidHydratedDraftFabricAllocationsRef = useRef<
@@ -513,13 +573,11 @@ export default function DesignStudioView({
     useState<FabricGarmentType[]>([]);
   const [uploadedDesignDemographic, setUploadedDesignDemographic] =
     useState<CustomDetailDemographic | null>(null);
-  const [uploadedDesignPreviewUrl, setUploadedDesignPreviewUrl] = useState<
-    string | null
-  >(null);
+  const [, setUploadedDesignPreviewUrl] = useState<string | null>(null);
   const uploadedDesignPreviewUrlRef = useRef<string | null>(null);
   const [uploadedDesignPreviewReferenceId, setUploadedDesignPreviewReferenceId] =
     useState<string | null>(null);
-  const [uploadedDesignError, setUploadedDesignError] = useState("");
+  const [, setUploadedDesignError] = useState("");
   const [isUploadingDesign, setIsUploadingDesign] = useState(false);
   const [isReplacingDesign, setIsReplacingDesign] = useState(false);
   const uploadedDesignOperationCoordinatorRef = useRef(
@@ -533,8 +591,50 @@ export default function DesignStudioView({
   const [pendingCatalogStyleId, setPendingCatalogStyleId] = useState<
     string | null
   >(null);
-  const [isLoadingUploadedDesignPreview, setIsLoadingUploadedDesignPreview] =
-    useState(false);
+  const [, setIsLoadingUploadedDesignPreview] = useState(false);
+
+  const publishFutureDesignStyleHydration = useCallback(
+    ({
+      identityKey,
+      identityGeneration,
+      result,
+    }: {
+      identityKey: string;
+      identityGeneration: number;
+      result: DesignStyleDraftHydrationResult;
+    }): FutureDesignStyleRuntimeHydration => {
+      const fingerprint = getFutureDesignStyleHydrationFingerprint(result);
+      const current = futureDesignStyleDraftHydrationRef.current;
+      if (
+        current?.identityKey === identityKey &&
+        current.identityGeneration === identityGeneration &&
+        current.fingerprint === fingerprint
+      ) {
+        return current;
+      }
+      const next: FutureDesignStyleRuntimeHydration = {
+        identityKey,
+        identityGeneration,
+        runtimeGeneration: ++futureDesignStyleRuntimeGenerationRef.current,
+        result,
+        fingerprint,
+      };
+      futureDesignStyleDraftHydrationRef.current = next;
+      setFutureDesignStyleDraftHydration(next);
+      return next;
+    },
+    [],
+  );
+
+  const clearFutureDesignStyleRuntimeHydration = useCallback(() => {
+    futureDesignStyleRuntimeGenerationRef.current += 1;
+    futureDesignStyleDraftHydrationRef.current = null;
+    futureDesignStyleMutationAuthorityRef.current = null;
+    setFutureDesignStyleDraftHydration(null);
+    setFutureActiveDesignStyleOccurrence(null);
+    previousFutureDesignStyleOccurrenceOrderRef.current = [];
+    setFutureDesignStyleMutationError(null);
+  }, []);
 
   const computedActiveBatch = getCurrentCommunityBatch(storeBatches || []);
   const defaultCtx: OrderContext = computedActiveBatch
@@ -871,35 +971,189 @@ export default function DesignStudioView({
         priceActivatedFabricCode: futurePriceActivatedFabricCode,
       })
     : null;
-  const isFutureUploadedDesignConfirmed = Boolean(
-    authoritativeUploadedDesignReadiness?.isProgressionReady,
-  );
   const isFutureUploadedDesignPricingActive = Boolean(
     authoritativeUploadedDesignReadiness?.isPricingEligible,
   );
-  const isFutureCatalogDesignPricingActive = Boolean(
-    !activeUploadedDesignSource &&
-      activeFutureDesignSource?.kind === "catalog" &&
-      futureConfirmedDesignSourceKey === activeFutureDesignSource.sourceKey &&
-      Boolean(futurePrimaryFabricCode) &&
-      futurePrimaryFabricCode === futurePriceActivatedFabricCode,
+  const currentFutureDesignStyleDraftHydration =
+    futureDesignStyleDraftHydration?.identityKey === futureDraftIdentityKey &&
+    futureDesignStyleDraftHydration.identityGeneration ===
+      futureDraftIdentityGenerationRef.current
+      ? futureDesignStyleDraftHydration
+      : null;
+  const futureUploadedDesignStyleAuthority = useMemo(
+    () =>
+      buildUploadedDesignStyleAuthority({
+        source: activeUploadedDesignSource,
+        confirmedDesignSourceKey: futureConfirmedDesignSourceKey,
+        expectedOwnerUid: firebaseDraftAuth.user?.uid || null,
+        ownershipTransferPending: Boolean(
+          lastPersistedFutureDraftRef.current
+            ?.uploadedDesignOwnershipTransition,
+        ),
+        sourceOperationStable:
+          !isUploadingDesign && !isReplacingDesign && !isRemovingDesign,
+        activeOccurrences: authoritativePhysicalOccurrencesForDomain,
+      }),
+    [
+      activeUploadedDesignSource,
+      futureConfirmedDesignSourceKey,
+      firebaseDraftAuth.user?.uid,
+      isUploadingDesign,
+      isReplacingDesign,
+      isRemovingDesign,
+      authoritativePhysicalOccurrencesForDomain,
+    ],
   );
-  const isFutureDesignSourceReadyForCustomDetails =
-    isFutureDesignStyleStageCompleteForCustomDetails({
+  const futureDesignStyleDraftAuthority = useMemo(
+    () =>
+      buildDesignStyleDraftValidationAuthority({
+        catalogueState: stylesLoadState,
+        styles,
+        garmentTypeSelection,
+        activeOccurrences: authoritativePhysicalOccurrencesForDomain,
+        uploadedSourcesByKey: futureUploadedDesignStyleAuthority,
+        unresolvedLegacyScalar: Boolean(
+          currentFutureDesignStyleDraftHydration?.result.migrationEvidence,
+        ),
+      }),
+    [
       stylesLoadState,
-      selectedStyleId: futureSelectedStyleId,
       styles,
       garmentTypeSelection,
-      designSource: activeFutureDesignSource,
-      isUploadedDesignConfirmed: isFutureUploadedDesignConfirmed,
-      isUploadedDesignPricingActive: isFutureUploadedDesignPricingActive,
-    }) &&
-    (activeUploadedDesignSource
-      ? true
-      : isFutureCatalogDesignPricingActive ||
-        // Catalogue styles activated before priceActivated tracking still pass
-        // style selection alone when no activation code has been recorded yet.
-        futurePriceActivatedFabricCode === null);
+      authoritativePhysicalOccurrencesForDomain,
+      futureUploadedDesignStyleAuthority,
+      currentFutureDesignStyleDraftHydration?.result.migrationEvidence,
+    ],
+  );
+  const futureDesignStyleStepProjection = useMemo(
+    () =>
+      projectDesignStyleStep({
+        activeOccurrences: authoritativePhysicalOccurrencesForDomain,
+        hydration: currentFutureDesignStyleDraftHydration?.result || null,
+        authority: futureDesignStyleDraftAuthority,
+        styles,
+      }),
+    [
+      authoritativePhysicalOccurrencesForDomain,
+      currentFutureDesignStyleDraftHydration,
+      futureDesignStyleDraftAuthority,
+      styles,
+    ],
+  );
+  const resolvedFutureActiveDesignStyleOccurrence =
+    resolveActiveDesignStyleOccurrence({
+      occurrences: futureDesignStyleStepProjection.occurrences,
+      current: futureActiveDesignStyleOccurrence,
+      previousOrder: previousFutureDesignStyleOccurrenceOrderRef.current,
+    });
+  const futureDesignStyleCatalogueEntries = useMemo(
+    () =>
+      bindDesignStyleStepCatalogueLedgerRevision({
+        entries: projectActiveOccurrenceDesignStyleCatalogue({
+          projection: futureDesignStyleStepProjection,
+          activeTarget: resolvedFutureActiveDesignStyleOccurrence,
+          styles,
+          authority: futureDesignStyleDraftAuthority,
+          runtimeGeneration:
+            currentFutureDesignStyleDraftHydration?.runtimeGeneration ?? -1,
+        }),
+        ledgerRevision:
+          currentFutureDesignStyleDraftHydration?.result.ledger?.revision ?? -1,
+      }),
+    [
+      futureDesignStyleStepProjection,
+      resolvedFutureActiveDesignStyleOccurrence,
+      styles,
+      futureDesignStyleDraftAuthority,
+      currentFutureDesignStyleDraftHydration,
+    ],
+  );
+  const futureDesignStyleClearRequest: DesignStyleStepClearMutationRequest | null =
+    resolvedFutureActiveDesignStyleOccurrence &&
+    currentFutureDesignStyleDraftHydration?.result.ledger
+      ? {
+          runtimeGeneration:
+            currentFutureDesignStyleDraftHydration.runtimeGeneration,
+          expectedLedgerRevision:
+            currentFutureDesignStyleDraftHydration.result.ledger.revision,
+          target: resolvedFutureActiveDesignStyleOccurrence,
+        }
+      : null;
+  const isFutureDesignSourceReadyForCustomDetails =
+    futureDesignStyleStepProjection.isComplete;
+  futureDesignStyleMutationAuthorityRef.current =
+    currentFutureDesignStyleDraftHydration?.result.ledger
+      ? {
+          identityKey: currentFutureDesignStyleDraftHydration.identityKey,
+          identityGeneration:
+            currentFutureDesignStyleDraftHydration.identityGeneration,
+          runtimeGeneration:
+            currentFutureDesignStyleDraftHydration.runtimeGeneration,
+          hydration: currentFutureDesignStyleDraftHydration.result,
+          activeOccurrences: authoritativePhysicalOccurrencesForDomain,
+          occurrenceTargets: futureDesignStyleStepProjection.occurrences.map(
+            (occurrence) => occurrence.target,
+          ),
+          activeTarget: resolvedFutureActiveDesignStyleOccurrence,
+          authority: futureDesignStyleDraftAuthority,
+          stepIsActive: futureStageId === "design_style",
+        }
+      : null;
+
+  useEffect(() => {
+    setFutureActiveDesignStyleOccurrence((current) =>
+      designStyleStepTargetsEqual(
+        current,
+        resolvedFutureActiveDesignStyleOccurrence,
+      )
+        ? current
+        : resolvedFutureActiveDesignStyleOccurrence,
+    );
+    previousFutureDesignStyleOccurrenceOrderRef.current =
+      futureDesignStyleStepProjection.occurrences.map(
+        (occurrence) => occurrence.target,
+      );
+  }, [
+    futureDesignStyleStepProjection.occurrences,
+    resolvedFutureActiveDesignStyleOccurrence,
+  ]);
+
+  useEffect(() => {
+    const current = futureDesignStyleDraftHydrationRef.current;
+    if (
+      !guestDraftHydrated ||
+      !current ||
+      current.identityKey !== futureDraftIdentityKey ||
+      current.identityGeneration !== futureDraftIdentityGenerationRef.current ||
+      !current.result.envelope ||
+      current.result.destructiveNormalizationProhibited
+    ) {
+      return;
+    }
+    const refreshed = hydrateDesignStyleDraftEnvelope({
+      envelope: current.result.envelope,
+      activeOccurrences: authoritativePhysicalOccurrencesForDomain,
+      authority: futureDesignStyleDraftAuthority,
+      legacyScalarFingerprint: current.result.legacyScalarFingerprint,
+    });
+    if (
+      getFutureDesignStyleHydrationFingerprint(refreshed) ===
+      current.fingerprint
+    ) {
+      return;
+    }
+    publishFutureDesignStyleHydration({
+      identityKey: futureDraftIdentityKey,
+      identityGeneration: current.identityGeneration,
+      result: refreshed,
+    });
+  }, [
+    guestDraftHydrated,
+    futureDraftIdentityKey,
+    authoritativePhysicalOccurrencesForDomain,
+    futureDesignStyleDraftAuthority,
+    publishFutureDesignStyleHydration,
+  ]);
 
   const [fabricSearchInput] = useState<string>("");
   const [fabricSearch, setFabricSearch] = useState<string>("");
@@ -1813,11 +2067,8 @@ export default function DesignStudioView({
       futureSelectedDesignPrice,
     ],
   );
-  const futureOrderCandidateResult = buildFutureOrderCandidate({
-    ...futureSummaryInput,
-    source: activeFutureDesignSource,
-    shippingResolution: futureShippingResolution,
-  });
+  const futureOrderCandidateResult =
+    blockFutureOrderCandidateUntilGarmentScopedDesignStyleMapping();
   const isFuturePaymentReviewUnlocked = isFuturePaymentReviewStageUnlocked(
     futureOrderCandidateResult,
   );
@@ -2045,7 +2296,7 @@ export default function DesignStudioView({
     futureDraftAutosaveGenerationRef.current += 1;
     cloudFutureDraftRevisionRef.current = null;
     cloudFutureDraftSaveQueueRef.current = Promise.resolve();
-    futureDesignStyleDraftHydrationRef.current = null;
+    clearFutureDesignStyleRuntimeHydration();
     lastPersistedFutureDraftRef.current = null;
     lastScheduledFutureDraftRef.current = null;
     setFutureDraftPersistenceStatus("resolving");
@@ -2088,7 +2339,7 @@ export default function DesignStudioView({
     setDesignSelections({ accessories: [] });
     setFabricAllocationState(FabricAllocationStateEngine.initialize());
     setSelectedFabric(null);
-  }, [futureDraftIdentityKey]);
+  }, [futureDraftIdentityKey, clearFutureDesignStyleRuntimeHydration]);
 
   useEffect(() => {
     if (
@@ -2278,10 +2529,11 @@ export default function DesignStudioView({
       ) {
         return;
       }
-      futureDesignStyleDraftHydrationRef.current = {
+      publishFutureDesignStyleHydration({
+        identityKey: futureDraftIdentityKey,
         identityGeneration,
         result: restoredDesignStyleDraftHydration,
-      };
+      });
       lastPersistedFutureDraftRef.current = storedDraft;
       lastScheduledFutureDraftRef.current = storedDraft;
       if (restoredDesignStyleDraftHydration.destructiveNormalizationProhibited) {
@@ -2320,29 +2572,13 @@ export default function DesignStudioView({
         styles,
         garmentTypeSelection: restoredGarmentTypeSelection,
       });
-      const restoredPrimaryFabricCode =
-        reconciledFabricState.fabricAllocations[0]?.fabricCode || null;
       const restoredDesignSource =
         restoredUploadedSource || createCatalogDesignSource(restoredStyleId || "");
-      const restoredUploadReadiness = restoredUploadedSource
-        ? evaluateAuthoritativeUploadedDesignReadiness({
-            uploadInput: {
-              uploadReference: restoredUploadedSource.uploadReference,
-              fabricCapacityComposition:
-                restoredUploadedSource.fabricCapacityComposition,
-              demographic: restoredUploadedSource.demographic,
-            },
-            step1GarmentTypes: restoredGarmentTypeSelection.garmentTypes,
-            designSource: restoredUploadedSource,
-            confirmedDesignSourceKey: storedDraft?.confirmedDesignSourceKey,
-            selectedFabricCode: restoredPrimaryFabricCode,
-            priceActivatedFabricCode: storedDraft?.priceActivatedFabricCode,
-          })
-        : null;
-      const restoredSourceReady = restoredUploadedSource
-        ? Boolean(restoredUploadReadiness?.isProgressionReady)
-        : stylesLoadState === "ready" &&
-          restoredStyleSelection.status === "selected";
+      const restoredSourceReady = Boolean(
+        !restoredDesignStyleDraftHydration.destructiveNormalizationProhibited &&
+          !restoredDesignStyleDraftHydration.migrationEvidence &&
+          restoredDesignStyleDraftHydration.validation?.isComplete,
+      );
       const restoredAiTryOnWorkflow =
         normalizeAiTryOnWorkflowState(storedDraft?.aiTryOnWorkflow) ||
         createEmptyAiTryOnWorkflowState();
@@ -2460,16 +2696,10 @@ export default function DesignStudioView({
       setFutureSelectedStyleId(restoredStyleId);
       setFutureDesignSource(restoredDesignSource);
       setFutureConfirmedDesignSourceKey(
-        restoredSourceReady
-          ? storedDraft?.confirmedDesignSourceKey ||
-              restoredDesignSource?.sourceKey ||
-              null
-          : null,
+        storedDraft?.confirmedDesignSourceKey || null,
       );
       setFuturePriceActivatedFabricCode(
-        restoredSourceReady
-          ? storedDraft?.priceActivatedFabricCode || restoredPrimaryFabricCode
-          : null,
+        storedDraft?.priceActivatedFabricCode || null,
       );
       if (restoredUploadedSource) {
         setUploadedDesignReference(restoredUploadedSource.uploadReference);
@@ -2536,6 +2766,7 @@ export default function DesignStudioView({
     customDetailCatalog,
     fabrics,
     styles,
+    publishFutureDesignStyleHydration,
   ]);
 
   useEffect(() => {
@@ -3067,10 +3298,11 @@ export default function DesignStudioView({
         currentHydrationGeneration: futureDraftIdentityGenerationRef.current,
       });
       if (preparedDesignStyleDraft.status === "blocked") return;
-      futureDesignStyleDraftHydrationRef.current = {
+      publishFutureDesignStyleHydration({
+        identityKey: futureDraftIdentityKey,
         identityGeneration: designStyleHydration.identityGeneration,
         result: preparedDesignStyleDraft.hydration,
-      };
+      });
       const canonicalGuestDraft = preparedDesignStyleDraft.draft;
       if (
         (lastScheduledFutureDraftRef.current &&
@@ -3210,6 +3442,9 @@ export default function DesignStudioView({
     isUploadingDesign,
     isReplacingDesign,
     isRemovingDesign,
+    futureDraftIdentityKey,
+    currentFutureDesignStyleDraftHydration?.result.ledger?.revision,
+    publishFutureDesignStyleHydration,
   ]);
 
   const handleDormantGarmentTypesChange = (
@@ -3288,6 +3523,116 @@ export default function DesignStudioView({
     );
   };
 
+  const rejectFutureDesignStyleMutation = (reason?: string) => {
+    setFutureDesignStyleMutationError(
+      reason === "ADAPTABILITY_CONFIRMATION_REQUIRED"
+        ? "Confirm this design adaptation before applying it to the garment."
+        : reason === "STYLE_NOT_ELIGIBLE" ||
+            reason === "STYLE_AUTHORITY_CHANGED"
+          ? "This design is no longer available for the selected garment. Review the current catalogue and try again."
+          : "Your Design Style choices changed before this action completed. Review the garment and try again.",
+    );
+  };
+
+  const applyFutureDesignStyleMutationLedger = (
+    current: FutureDesignStyleMutationAuthority,
+    ledger: NonNullable<DesignStyleDraftHydrationResult["ledger"]>,
+  ) => {
+    const latest = futureDesignStyleMutationAuthorityRef.current;
+    if (
+      !latest ||
+      latest.identityKey !== current.identityKey ||
+      latest.identityGeneration !== current.identityGeneration ||
+      latest.runtimeGeneration !== current.runtimeGeneration ||
+      !designStyleStepTargetsEqual(latest.activeTarget, current.activeTarget)
+    ) {
+      rejectFutureDesignStyleMutation("STALE_RUNTIME_GENERATION");
+      return;
+    }
+    const nextHydration = applyDesignStyleStepLedgerToHydration({
+      hydration: current.hydration,
+      ledger,
+      activeOccurrences: current.activeOccurrences,
+      authority: current.authority,
+    });
+    publishFutureDesignStyleHydration({
+      identityKey: current.identityKey,
+      identityGeneration: current.identityGeneration,
+      result: nextHydration,
+    });
+    setFutureDesignStyleMutationError(null);
+  };
+
+  const handleSelectFutureDesignStyleOccurrence = (
+    target: DesignStyleStepClearMutationRequest["target"],
+  ) => {
+    const current = futureDesignStyleMutationAuthorityRef.current;
+    const targetIsCurrent = current?.occurrenceTargets.some((candidate) =>
+      designStyleStepTargetsEqual(candidate, target),
+    );
+    if (!current?.stepIsActive || !targetIsCurrent) {
+      rejectFutureDesignStyleMutation("STALE_ACTIVE_OCCURRENCE");
+      return;
+    }
+    setFutureDesignStyleMutationError(null);
+    setFutureActiveDesignStyleOccurrence(target);
+  };
+
+  const handleAssignFutureCatalogueStyle = (
+    request: DesignStyleStepCatalogMutationRequest,
+  ) => {
+    const current = futureDesignStyleMutationAuthorityRef.current;
+    const ledger = current?.hydration.ledger || null;
+    if (!current || !ledger) {
+      rejectFutureDesignStyleMutation("HYDRATION_NOT_MUTABLE");
+      return;
+    }
+    const result = assignCatalogueStyleThroughStepRuntime({
+      ledger,
+      activeOccurrences: current.activeOccurrences,
+      activeTarget: current.activeTarget,
+      authority: current.authority,
+      request,
+      currentRuntimeGeneration: current.runtimeGeneration,
+      stepIsActive: current.stepIsActive,
+      hydrationMutable:
+        current.hydration.canAutosave &&
+        !current.hydration.destructiveNormalizationProhibited,
+    });
+    if (result.status === "rejected") {
+      rejectFutureDesignStyleMutation(result.reason);
+      return;
+    }
+    applyFutureDesignStyleMutationLedger(current, result.ledger);
+  };
+
+  const handleClearFutureCatalogueStyle = (
+    request: DesignStyleStepClearMutationRequest,
+  ) => {
+    const current = futureDesignStyleMutationAuthorityRef.current;
+    const ledger = current?.hydration.ledger || null;
+    if (!current || !ledger) {
+      rejectFutureDesignStyleMutation("HYDRATION_NOT_MUTABLE");
+      return;
+    }
+    const result = clearCatalogueStyleThroughStepRuntime({
+      ledger,
+      activeOccurrences: current.activeOccurrences,
+      activeTarget: current.activeTarget,
+      request,
+      currentRuntimeGeneration: current.runtimeGeneration,
+      stepIsActive: current.stepIsActive,
+      hydrationMutable:
+        current.hydration.canAutosave &&
+        !current.hydration.destructiveNormalizationProhibited,
+    });
+    if (result.status === "rejected") {
+      rejectFutureDesignStyleMutation(result.reason);
+      return;
+    }
+    applyFutureDesignStyleMutationLedger(current, result.ledger);
+  };
+
   const isStageHistoricallyUnlocked = (stageId: DesignStudioStageId): boolean => {
     const index = DESIGN_STUDIO_STEPS.findIndex((step) => step.id === stageId);
     return index >= 0 && index <= highestUnlockedStageIndex;
@@ -3307,15 +3652,6 @@ export default function DesignStudioView({
       !isStageHistoricallyUnlocked("design_style")
     ) {
       return;
-    }
-    if (
-      activeUploadedDesignSource &&
-      isDesignSourceConfirmed(
-        activeUploadedDesignSource,
-        futureConfirmedDesignSourceKey,
-      )
-    ) {
-      setFuturePriceActivatedFabricCode(futurePrimaryFabricCode);
     }
     setFutureStageId("design_style");
   };
@@ -3346,6 +3682,17 @@ export default function DesignStudioView({
     setFuturePriceActivatedFabricCode(null);
     setFutureStageId("fabric");
   };
+  // Task 5E will reconnect these existing upload operations to exact occurrence
+  // targets. Task 5D deliberately leaves them off the active Step 3 surface.
+  void [
+    handleUploadedDesignFile,
+    handleUploadedDesignCompositionToggle,
+    handleUploadedDesignDemographicChange,
+    handleRemoveUploadedDesign,
+    handleSelectFutureStyle,
+    handleRetryUploadedDesignDeletion,
+    handleContinueWithUploadedDesign,
+  ];
   const handleOpenDormantCustomDetailsStage = () => {
     if (
       (!futureFabricStageCompletion.isComplete ||
@@ -4886,52 +5233,25 @@ export default function DesignStudioView({
         />
       ) : futureStageId === "design_style" ? (
         <DormantFutureDesignStyleStep
-          styles={styles}
-          garmentTypeSelection={garmentTypeSelection}
-          selectedStyleId={futureSelectedStyleId}
+          occurrences={futureDesignStyleStepProjection.occurrences}
+          activeOccurrenceTarget={resolvedFutureActiveDesignStyleOccurrence}
+          catalogueEntries={futureDesignStyleCatalogueEntries}
+          clearRequest={futureDesignStyleClearRequest}
+          runtimeStatus={futureDesignStyleStepProjection.runtimeStatus}
+          completedCount={futureDesignStyleStepProjection.completedCount}
+          totalCount={futureDesignStyleStepProjection.totalCount}
+          exactSetComplete={futureDesignStyleStepProjection.isComplete}
+          reviewMessage={futureDesignStyleStepProjection.reviewMessage}
+          mutationError={futureDesignStyleMutationError}
           stagePrice={
             futureFabricAuthoritativePricing?.garmentConstructionSubtotal ??
             null
           }
           isCatalogueLoading={stylesLoadState === "loading"}
           stylesLoadState={stylesLoadState}
-          uploadedDesign={{
-            source: activeUploadedDesignSource,
-            reference:
-              activeUploadedDesignSource?.uploadReference ||
-              uploadedDesignReference,
-            composition:
-              activeUploadedDesignSource?.fabricCapacityComposition ||
-              uploadedDesignComposition,
-            demographic:
-              activeUploadedDesignSource?.demographic ||
-              uploadedDesignDemographic,
-            previewUrl: uploadedDesignPreviewUrl,
-            error: uploadedDesignError,
-            isUploading: isUploadingDesign,
-            isReplacing: isReplacingDesign,
-            isDeleting: isRemovingDesign,
-            isLoadingPreview: isLoadingUploadedDesignPreview,
-            isConfirmed: isFutureUploadedDesignConfirmed,
-            isPricingActive: isFutureUploadedDesignPricingActive,
-          }}
-          pendingCatalogStyleName={
-            styles.find((style) => style.id === pendingCatalogStyleId)?.name ||
-            null
-          }
-          onSelectStyle={handleSelectFutureStyle}
-          onUploadDesignFile={(file, isReplacement) =>
-            void handleUploadedDesignFile(file, isReplacement)
-          }
-          onToggleUploadedGarment={handleUploadedDesignCompositionToggle}
-          onUploadedDemographicChange={
-            handleUploadedDesignDemographicChange
-          }
-          onRemoveUploadedDesign={() => void handleRemoveUploadedDesign()}
-          onRetryUploadedDesignDeletion={
-            handleRetryUploadedDesignDeletion
-          }
-          onContinueUploadedDesign={handleContinueWithUploadedDesign}
+          onSelectOccurrence={handleSelectFutureDesignStyleOccurrence}
+          onAssignCatalogueStyle={handleAssignFutureCatalogueStyle}
+          onClearAssignment={handleClearFutureCatalogueStyle}
           onBack={() => setFutureStageId("fabric")}
           onReturnToGarmentType={() => setFutureStageId("garment_type")}
           onContinue={handleOpenDormantCustomDetailsStage}

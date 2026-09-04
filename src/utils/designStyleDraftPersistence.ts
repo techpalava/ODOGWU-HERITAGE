@@ -1186,6 +1186,28 @@ const hydrateValidEnvelope = ({
   });
 };
 
+/**
+ * Re-run the shared Task 5C hydration/reconciliation pipeline after a Task 5A
+ * runtime mutation without decoding legacy scalar fields again.
+ */
+export const hydrateDesignStyleDraftEnvelope = ({
+  envelope,
+  activeOccurrences,
+  authority,
+  legacyScalarFingerprint,
+}: {
+  envelope: PersistedDesignStyleDraftV2;
+  activeOccurrences: readonly PhysicalGarmentOccurrence[];
+  authority: GarmentScopedDesignStyleValidationAuthority;
+  legacyScalarFingerprint: string;
+}): DesignStyleDraftHydrationResult =>
+  hydrateValidEnvelope({
+    envelope,
+    activeOccurrences,
+    authority,
+    legacyScalarFingerprint,
+  });
+
 export const hydrateDesignStyleDraftPersistence = ({
   rawDraft,
   activeOccurrences,

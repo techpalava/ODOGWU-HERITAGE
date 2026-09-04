@@ -1,18 +1,14 @@
 import assert from "node:assert/strict";
-import {
-  act,
-  create,
-  type ReactTestInstance,
-  type ReactTestRenderer,
-} from "react-test-renderer";
+import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { DormantFutureDesignStyleStep } from "./src/components/DormantFutureDesignStyleStep";
 import { createCustomerDesignUploadReference } from "./src/services/customerDesignUploadReference";
-import type {
-  GarmentTypeStepSelection,
-  StyleCategory,
-} from "./src/types";
+import type { GarmentTypeStepSelection, StyleCategory } from "./src/types";
 import { createUploadedDesignSource } from "./src/utils/designSourceState";
 import { deleteUploadedDesignBeforeSourceChange } from "./src/utils/uploadedDesignDeletionOrchestration";
+import {
+  createDesignStyleStepRenderProps,
+  createDesignStyleStepTestModel,
+} from "./testing/designStyleStepFixtures";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -56,63 +52,8 @@ const textContent = (node: ReactTestInstance | string): string =>
     ? node
     : node.children.map((child) => textContent(child)).join("");
 
-const findButton = (
-  renderer: ReactTestRenderer,
-  predicate: (button: ReactTestInstance) => boolean,
-) => renderer.root.findAllByType("button").find(predicate);
-
-const callbacks = {
-  selectStyleCalls: 0,
-  removeCalls: 0,
-  retryCalls: 0,
-};
-
-const renderStep = ({
-  isDeleting,
-  error,
-}: {
-  isDeleting: boolean;
-  error: string;
-}) => (
-  <DormantFutureDesignStyleStep
-    styles={[catalogStyle]}
-    garmentTypeSelection={garmentTypeSelection}
-    selectedStyleId={null}
-    stagePrice={65}
-    uploadedDesign={{
-      source: uploadedSource,
-      reference: uploadReference,
-      composition: uploadedSource.fabricCapacityComposition,
-      demographic: "male",
-      previewUrl: "blob:private-uploaded-design-preview",
-      error,
-      isUploading: false,
-      isReplacing: false,
-      isDeleting,
-      isLoadingPreview: false,
-      isConfirmed: false,
-      isPricingActive: false,
-    }}
-    pendingCatalogStyleName="Heritage Senator Set"
-    onSelectStyle={() => {
-      callbacks.selectStyleCalls += 1;
-    }}
-    onUploadDesignFile={() => undefined}
-    onToggleUploadedGarment={() => undefined}
-    onUploadedDemographicChange={() => undefined}
-    onRemoveUploadedDesign={() => {
-      callbacks.removeCalls += 1;
-    }}
-    onRetryUploadedDesignDeletion={() => {
-      callbacks.retryCalls += 1;
-    }}
-    onContinueUploadedDesign={() => undefined}
-    onBack={() => undefined}
-    onReturnToGarmentType={() => undefined}
-    onContinue={() => undefined}
-  />
-);
-
+// The secure deletion coordinator still preserves the upload until deletion
+// succeeds and commits the source change exactly once.
 {
   let source = "uploaded";
   let preview = "blob:private-uploaded-design-preview";
@@ -150,90 +91,66 @@ const renderStep = ({
   assert.equal(commitCalls, 1);
 }
 
-let renderer!: ReactTestRenderer;
-await act(async () => {
-  renderer = create(renderStep({ isDeleting: true, error: "" }));
-});
+const renderUploadedAssignment = async (confirmed: boolean) => {
+  const model = createDesignStyleStepTestModel({
+    styles: [catalogStyle],
+    garmentTypeSelection,
+    uploadedSource,
+    uploadedAssignmentGarmentKeys: ["base:shirt:1"],
+    confirmedUploadedSourceKey: confirmed ? uploadedSource.sourceKey : null,
+    expectedUploadOwnerUid: uploadReference.ownerUid,
+  });
+  let renderer!: ReturnType<typeof create>;
+  await act(async () => {
+    renderer = create(
+      <DormantFutureDesignStyleStep
+        {...createDesignStyleStepRenderProps(model)}
+      />,
+    );
+  });
+  return { renderer, model };
+};
 
-const uploadPanel = renderer.root.findByProps({
-  "data-testid": "upload-your-design-panel",
-});
-assert.equal(uploadPanel.props["aria-busy"], true);
-assert.equal(
-  renderer.root.findByProps({ alt: "Your uploaded design reference" }).props
-    .src,
-  "blob:private-uploaded-design-preview",
-);
-assert.equal(
-  findButton(
-    renderer,
-    (button) =>
-      button.props["aria-label"] ===
-      "Select Heritage Senator Set design style",
-  )?.props.disabled,
-  true,
-);
-assert(
-  renderer.root.findAllByType("input").every((input) => input.props.disabled),
-  "Every conflicting uploaded-source input must be disabled while deletion is pending.",
-);
-assert.equal(
-  findButton(renderer, (button) =>
-    textContent(button).includes("Deleting..."),
-  )?.props.disabled,
-  true,
-);
-assert.equal(
-  findButton(
-    renderer,
-    (button) =>
-      button.props["aria-label"] ===
-      "Continue with Uploaded Design to Fabric",
-  )?.props.disabled,
-  true,
-);
-
-await act(async () => {
-  renderer.update(
-    renderStep({
-      isDeleting: false,
-      error: "We could not delete your private design. Please try again.",
-    }),
+// Task 5D shows an existing confirmed upload assignment as occurrence-scoped,
+// read-only evidence. Task 5E owns reconnecting secure upload mutations.
+{
+  const { renderer, model } = await renderUploadedAssignment(true);
+  const text = textContent(renderer.root);
+  assert.equal(model.projection.isComplete, true);
+  assert.match(text, /Current assignment:\s*Uploaded design/);
+  assert.match(text, /existing uploaded design assignment is shown read-only/i);
+  assert.equal(
+    renderer.root.findAllByType("input").length,
+    0,
+    "No legacy upload mutation input may be reconnected by Task 5D.",
   );
-});
+  assert.equal(text.includes("Delete Image"), false);
+  assert.equal(text.includes("Retry deleting"), false);
+  assert.equal(text.includes(uploadReference.storagePath), false);
+  assert.equal(text.includes(uploadReference.designReferenceId), false);
+  assert.equal(text.includes("blob:private-uploaded-design-preview"), false);
+  assert.equal(
+    renderer.root
+      .findByProps({ "data-testid": "future-design-style-continue-action" })
+      .findByType("button").props.disabled,
+    false,
+  );
+}
 
-assert.equal(
-  renderer.root.findByProps({ alt: "Your uploaded design reference" }).props
-    .src,
-  "blob:private-uploaded-design-preview",
-);
-assert.match(
-  textContent(renderer.root.findByProps({ role: "alert" })),
-  /could not delete your private design/i,
-);
-
-const retryButton = findButton(
-  renderer,
-  (button) =>
-    button.props["aria-label"] ===
-    "Retry deleting uploaded design and switch to Heritage Senator Set",
-);
-assert(retryButton);
-assert.equal(retryButton.props.disabled, false);
-await act(async () => retryButton.props.onClick());
-assert.equal(callbacks.retryCalls, 1);
-
-const deleteButton = findButton(renderer, (button) =>
-  textContent(button).includes("Delete Image"),
-);
-assert(deleteButton);
-assert.equal(deleteButton.props.disabled, false);
-await act(async () => deleteButton.props.onClick());
-assert.equal(callbacks.removeCalls, 1);
-assert.equal(callbacks.selectStyleCalls, 0);
-
-await act(async () => renderer.unmount());
+// A pending upload authority preserves identity but cannot satisfy completion.
+{
+  const { renderer, model } = await renderUploadedAssignment(false);
+  assert.equal(model.projection.isComplete, false);
+  assert.equal(model.projection.occurrences[0]?.status, "upload_pending");
+  assert.match(textContent(renderer.root), /Upload pending/);
+  assert.equal(
+    renderer.root
+      .findByProps({ "data-testid": "future-design-style-continue-action" })
+      .findByType("button").props.disabled,
+    true,
+  );
+}
 
 console.log(
-  "PASS: uploaded-design deletion keeps the source active and exposes retry/delete after rejection",
+  "PASS: uploaded deletion remains secure and Task 5D upload assignments are read-only",
 );

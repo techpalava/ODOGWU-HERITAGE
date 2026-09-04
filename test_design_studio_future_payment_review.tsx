@@ -480,7 +480,18 @@ for (const forbiddenSource of [
 ]) {
   assert.equal(componentSource.includes(forbiddenSource), false);
 }
-assert.ok(studioSource.includes("buildFutureOrderCandidate({"));
+assert.ok(
+  studioSource.includes(
+    "blockFutureOrderCandidateUntilGarmentScopedDesignStyleMapping()",
+  ),
+);
+assert.equal(
+  studioSource.includes(
+    "const futureOrderCandidateResult = buildFutureOrderCandidate({",
+  ),
+  false,
+  "Payment Review must remain fail closed until Task 5F maps occurrence-scoped Design Style authority",
+);
 assert.ok(studioSource.includes("isFuturePaymentReviewStageUnlocked"));
 assert.ok(studioSource.includes('futureStageId === "payment"'));
 assert.ok(studioSource.includes('onBack={() => setFutureStageId("shipping")}'));

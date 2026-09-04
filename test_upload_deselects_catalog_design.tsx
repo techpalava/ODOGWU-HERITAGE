@@ -29,6 +29,10 @@ import {
   runUploadedDesignOperation,
 } from "./src/utils/uploadedDesignStep1";
 import { DormantFutureDesignStyleStep } from "./src/components/DormantFutureDesignStyleStep";
+import {
+  createDesignStyleStepRenderProps,
+  createDesignStyleStepTestModel,
+} from "./testing/designStyleStepFixtures";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -732,43 +736,18 @@ const applySuccessfulPreview = (
 // I — rendered catalogue card loses selected state after successful upload
 // ---------------------------------------------------------------------------
 {
-  const emptyUploaded = {
-    source: null as ReturnType<typeof createUploadedDesignSource> | null,
-    reference: null,
-    composition: [] as FabricCapacityGarmentSpec[],
-    demographic: null as CustomDetailDemographic | null,
-    previewUrl: null as string | null,
-    error: "",
-    isUploading: false,
-    isReplacing: false,
-    isDeleting: false,
-    isLoadingPreview: false,
-    isConfirmed: false,
-    isPricingActive: false,
-  };
-
+  const selectedModel = createDesignStyleStepTestModel({
+    styles: [royalSenator],
+    garmentTypeSelection,
+    selectedStyleIdByGarmentKey: {
+      "base:shirt:1": royalSenator.id,
+    },
+  });
   let renderer!: ReturnType<typeof create>;
   await act(async () => {
     renderer = create(
       createElement(DormantFutureDesignStyleStep, {
-        styles: [royalSenator],
-        garmentTypeSelection,
-        selectedStyleId: royalSenator.id,
-        stagePrice: null,
-        isCatalogueLoading: false,
-        stylesLoadState: "ready" as const,
-        uploadedDesign: emptyUploaded,
-        pendingCatalogStyleName: null,
-        onSelectStyle: () => undefined,
-        onUploadDesignFile: async () => undefined,
-        onToggleUploadedGarment: () => undefined,
-        onUploadedDemographicChange: () => undefined,
-        onRemoveUploadedDesign: () => undefined,
-        onRetryUploadedDesignDeletion: () => undefined,
-        onContinueUploadedDesign: () => undefined,
-        onBack: () => undefined,
-        onContinue: () => undefined,
-        onReturnToGarmentType: () => undefined,
+        ...createDesignStyleStepRenderProps(selectedModel),
       }),
     );
   });
@@ -788,33 +767,23 @@ const applySuccessfulPreview = (
       fabricCapacityComposition: shirtComposition,
       demographic: null,
     });
+  const uploadedReviewModel = createDesignStyleStepTestModel({
+    styles: [royalSenator],
+    garmentTypeSelection,
+    rawDraft: {
+      selectedStyleId: incompleteAuthority.selectedStyleId,
+      designSource: incompleteAuthority.designSource,
+      confirmedDesignSourceKey:
+        incompleteAuthority.confirmedDesignSourceKey,
+      priceActivatedFabricCode:
+        incompleteAuthority.priceActivatedFabricCode,
+    },
+  });
 
   await act(async () => {
     renderer.update(
       createElement(DormantFutureDesignStyleStep, {
-        styles: [royalSenator],
-        garmentTypeSelection,
-        selectedStyleId: incompleteAuthority.selectedStyleId,
-        stagePrice: null,
-        isCatalogueLoading: false,
-        stylesLoadState: "ready" as const,
-        uploadedDesign: {
-          ...emptyUploaded,
-          reference: uploadReference,
-          composition: shirtComposition,
-          previewUrl: "blob:preview-visible",
-        },
-        pendingCatalogStyleName: null,
-        onSelectStyle: () => undefined,
-        onUploadDesignFile: async () => undefined,
-        onToggleUploadedGarment: () => undefined,
-        onUploadedDemographicChange: () => undefined,
-        onRemoveUploadedDesign: () => undefined,
-        onRetryUploadedDesignDeletion: () => undefined,
-        onContinueUploadedDesign: () => undefined,
-        onBack: () => undefined,
-        onContinue: () => undefined,
-        onReturnToGarmentType: () => undefined,
+        ...createDesignStyleStepRenderProps(uploadedReviewModel),
       }),
     );
   });

@@ -296,6 +296,32 @@ const deepFreeze = <T>(value: T): T => {
   return Object.freeze(value);
 };
 
+/**
+ * Task 5D activates occurrence-scoped Design Style authority before the order
+ * schema can represent it losslessly. Keep Candidate/payment closed until
+ * Task 5F replaces this temporary boundary with a versioned order mapping.
+ */
+export const blockFutureOrderCandidateUntilGarmentScopedDesignStyleMapping =
+  (): FutureOrderCandidateBuildResult =>
+    deepFreeze({
+      status: "invalid",
+      paymentStatus: "payment_provider_unavailable",
+      candidate: null,
+      blockers: [
+        {
+          code: "GARMENT_SCOPED_DESIGN_STYLE_MAPPING_PENDING",
+          stage: "design_style",
+          message:
+            "Design Style selections need downstream review before this order can continue.",
+        },
+        {
+          code: "PAYMENT_PROVIDER_UNAVAILABLE",
+          stage: "payment",
+          message: "Online payment is not available yet.",
+        },
+      ],
+    });
+
 const compareBlockers = (
   left: FutureOrderCandidateBlocker,
   right: FutureOrderCandidateBlocker,

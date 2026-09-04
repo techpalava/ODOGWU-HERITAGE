@@ -37,6 +37,10 @@ import {
   toggleUploadedDesignGarmentComposition,
   UPLOADED_DESIGN_GARMENT_OPTIONS,
 } from "./src/utils/uploadedDesignStep1";
+import {
+  createDesignStyleStepRenderProps,
+  createDesignStyleStepTestModel,
+} from "./testing/designStyleStepFixtures";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -69,21 +73,6 @@ const textContent = (node: ReactTestInstance | string | null): string =>
           .map((child) => textContent(child as ReactTestInstance | string))
           .join("")
       : "";
-
-const emptyUploaded = {
-  source: null,
-  reference: null,
-  composition: [] as ReturnType<typeof mergeUploadedDesignCompositionWithStep1>,
-  demographic: null,
-  previewUrl: null,
-  error: "",
-  isUploading: false,
-  isReplacing: false,
-  isDeleting: false,
-  isLoadingPreview: false,
-  isConfirmed: false,
-  isPricingActive: false,
-};
 
 // 1. Authoritative customer list excludes agbada; canonical still includes it.
 assert.deepEqual([...CUSTOMER_SELECTABLE_GARMENT_TYPES], [
@@ -126,76 +115,31 @@ assert.ok(
   assert.equal(markup.includes("agbada"), false);
 }
 
-// 3. Upload panel has no Agbada; Step 1 garments preselected and locked.
+// 3. Active Step 3 uses the projected Step 1 occurrences and exposes no legacy
+// order-wide upload composer. Upload composition behavior remains covered below.
 {
   const garmentTypeSelection = selection(["shirt", "trouser"]);
-  const composition = mergeUploadedDesignCompositionWithStep1({
-    step1GarmentTypes: garmentTypeSelection.garmentTypes,
-    additionalGarmentTypes: [],
+  const model = createDesignStyleStepTestModel({
+    styles: [],
+    garmentTypeSelection,
   });
-  const reference = {
-    designReferenceId: "upload-sync-test",
-    ownerUid: "guest",
-    storagePath: "customer-design-drafts/guest/upload-sync-test/original.png",
-    mimeType: "image/png" as const,
-    createdAt: "2026-08-24T00:00:00.000Z",
-  };
   let renderer!: ReturnType<typeof create>;
   await act(async () => {
     renderer = create(
       createElement(DormantFutureDesignStyleStep, {
-        styles: [],
-        garmentTypeSelection,
-        selectedStyleId: null,
-        stagePrice: null,
-        uploadedDesign: {
-          ...emptyUploaded,
-          reference,
-          composition,
-        },
-        pendingCatalogStyleName: null,
-        stylesLoadState: "ready",
-        onSelectStyle: () => undefined,
-        onUploadDesignFile: () => undefined,
-        onToggleUploadedGarment: () => undefined,
-        onUploadedDemographicChange: () => undefined,
-        onRemoveUploadedDesign: () => undefined,
-        onRetryUploadedDesignDeletion: () => undefined,
-        onContinueUploadedDesign: () => undefined,
-        onBack: () => undefined,
-        onReturnToGarmentType: () => undefined,
-        onContinue: () => undefined,
+        ...createDesignStyleStepRenderProps(model),
       }),
     );
   });
   const text = textContent(renderer.root);
   assert.equal(text.includes("Agbada"), false);
-  assert.match(text, /Selected in Step 1/);
-  const checkboxes = renderer.root.findAllByType("input").filter(
-    (node) => node.props.type === "checkbox",
+  assert.match(text, /Shirt/);
+  assert.match(text, /Trouser/);
+  assert.equal(
+    renderer.root.findAllByType("input").length,
+    0,
+    "Task 5D must not restore scalar upload-composition controls.",
   );
-  assert.equal(checkboxes.length, 8);
-  const shirt = checkboxes.find(
-    (node) =>
-      node.props.checked &&
-      node.props.disabled &&
-      String(textContent(node.parent as ReactTestInstance)).includes("Shirt"),
-  );
-  assert.ok(shirt, "Shirt from Step 1 must be checked and disabled");
-  const trouser = checkboxes.find(
-    (node) =>
-      node.props.checked &&
-      node.props.disabled &&
-      String(textContent(node.parent as ReactTestInstance)).includes("Trouser"),
-  );
-  assert.ok(trouser);
-  const skirt = checkboxes.find(
-    (node) =>
-      !node.props.checked &&
-      !node.props.disabled &&
-      String(textContent(node.parent as ReactTestInstance)).includes("Skirt"),
-  );
-  assert.ok(skirt);
 }
 
 // 4. Domain: dress+kaftan required; add/remove skirt; cannot remove required shirt.

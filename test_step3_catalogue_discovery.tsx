@@ -1,17 +1,18 @@
 /**
- * Step 3 full-catalogue discovery UX.
- * Fixtures only — does not mutate production catalogue records.
+ * Step 3 strict, active-occurrence catalogue discovery UX.
+ * Fixtures only; no production catalogue records are mutated.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
-import type { ReactElement } from "react";
 import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
-import type {
-  GarmentTypeStepSelection,
-  StyleCategory,
-} from "./src/types";
+import type { GarmentTypeStepSelection, StyleCategory } from "./src/types";
+import {
+  createDesignStyleStepRenderProps,
+  createDesignStyleStepTestModel,
+  type DesignStyleStepTestModel,
+} from "./testing/designStyleStepFixtures";
 
 const require = createRequire(import.meta.url);
 const reactDomRuntime = require("react-dom") as {
@@ -25,24 +26,22 @@ const { DormantFutureDesignStyleStep } = await import(
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const shirtTrouserMale: GarmentTypeStepSelection = {
-  garmentTypes: ["shirt", "trouser"],
-  demographic: "male",
-  audienceSelection: { schemaVersion: 1, demographics: ["male"] },
+const selection = (
+  garmentTypes: GarmentTypeStepSelection["garmentTypes"],
+  demographic: "male" | "female" | "unisex" = "male",
+): GarmentTypeStepSelection => ({
+  garmentTypes: [...garmentTypes],
+  demographic,
+  audienceSelection: { schemaVersion: 1, demographics: [demographic] },
   constructionByGarment: {},
-};
+});
 
-const dressFemale: GarmentTypeStepSelection = {
-  garmentTypes: ["dress"],
-  demographic: "female",
-  audienceSelection: { schemaVersion: 1, demographics: ["female"] },
-  constructionByGarment: {},
-};
+const shirtTrouserMale = selection(["shirt", "trouser"]);
 
-const styleA: StyleCategory = {
+const exactStyle: StyleCategory = {
   id: "style-a-exact",
   name: "Heritage Classic",
-  description: "Exact shirt + trouser match.",
+  description: "A strict published design for shirt and trouser.",
   gender: "male",
   targetDemographic: "male",
   options: [],
@@ -52,10 +51,10 @@ const styleA: StyleCategory = {
   ],
 };
 
-const styleB: StyleCategory = {
+const adaptableStyle: StyleCategory = {
   id: "style-b-adaptable",
   name: "Royal Senator",
-  description: "Kaftan original, explicitly adaptable.",
+  description: "A published Kaftan reference that may be adapted.",
   gender: "male",
   targetDemographic: "male",
   options: [],
@@ -63,152 +62,47 @@ const styleB: StyleCategory = {
   styleApplicability: {
     mode: "adaptable",
     garmentTypes: ["shirt", "trouser", "kaftan"],
+    demographics: ["male"],
   },
 };
 
-const styleC: StyleCategory = {
-  id: "style-c-blocked-garment",
+const unsupportedStyle: StyleCategory = {
+  id: "style-c-unsupported",
   name: "Palace Kaftan",
-  description: "Kaftan only, not approved for this order.",
+  description: "A Kaftan-only published design.",
   gender: "male",
   targetDemographic: "male",
   options: [],
   fabricCapacityComposition: [createStyleBaseGarmentSpec("kaftan")],
 };
 
-const styleD: StyleCategory = {
-  id: "style-d-blocked-demographic",
+const wrongAudienceStyle: StyleCategory = {
+  id: "style-d-wrong-audience",
   name: "Ladies Evening",
-  description: "Female shirt + trouser, demographic mismatch.",
+  description: "A female-audience design.",
   gender: "female",
   targetDemographic: "female",
   options: [],
-  fabricCapacityComposition: [
-    createStyleBaseGarmentSpec("shirt"),
-    createStyleBaseGarmentSpec("trouser"),
-  ],
+  fabricCapacityComposition: [createStyleBaseGarmentSpec("shirt")],
 };
 
-const styleE: StyleCategory = {
-  id: "style-e-indeterminate",
-  name: "Unreviewed Archive",
-  description: "Malformed catalogue metadata.",
-  gender: "male",
-  targetDemographic: "male",
-  options: [],
-};
-
-const styleF: StyleCategory = {
-  id: "style-f-disabled",
-  name: "Retired Classic",
-  description: "Disabled catalogue design.",
-  gender: "male",
-  targetDemographic: "male",
-  options: [],
-  fabricCapacityComposition: [
-    createStyleBaseGarmentSpec("shirt"),
-    createStyleBaseGarmentSpec("trouser"),
-  ],
-  isActive: false,
-} as StyleCategory;
-
-const fullCatalogue = [styleA, styleB, styleC, styleD, styleE, styleF];
-
-const audienceMaleStyle: StyleCategory = {
-  id: "audience-male-senator",
-  name: "Men's Senator Classic",
-  description: "Male-audience exact match.",
-  gender: "male",
-  targetDemographic: "male",
-  options: [],
-  fabricCapacityComposition: [
-    createStyleBaseGarmentSpec("shirt"),
-    createStyleBaseGarmentSpec("trouser"),
-  ],
-};
-
-const audienceFemaleStyle: StyleCategory = {
-  id: "audience-female-evening",
-  name: "Women's Evening Line",
-  description: "Female-audience catalogue design.",
-  gender: "female",
-  targetDemographic: "female",
-  options: [],
-  fabricCapacityComposition: [
-    createStyleBaseGarmentSpec("shirt"),
-    createStyleBaseGarmentSpec("trouser"),
-  ],
-};
-
-const audienceUnisexStyle: StyleCategory = {
-  id: "audience-unisex-family",
-  name: "Family Heritage Collection",
-  description: "Unisex / family audience design.",
+const unisexStyle: StyleCategory = {
+  id: "style-e-unisex",
+  name: "Family Heritage",
+  description: "A unisex published design.",
   gender: "unisex",
   targetDemographic: "unisex",
   options: [],
-  fabricCapacityComposition: [
-    createStyleBaseGarmentSpec("shirt"),
-    createStyleBaseGarmentSpec("trouser"),
-  ],
+  fabricCapacityComposition: [createStyleBaseGarmentSpec("shirt")],
 };
 
-const audienceAdaptableStyle: StyleCategory = {
-  id: "audience-adaptable-royal",
-  name: "Royal Senator Adapt",
-  description: "Male-audience adaptable design.",
-  gender: "male",
-  targetDemographic: "male",
-  options: [],
-  fabricCapacityComposition: [createStyleBaseGarmentSpec("kaftan")],
-  styleApplicability: {
-    mode: "adaptable",
-    garmentTypes: ["shirt", "trouser", "kaftan"],
-  },
-};
-
-const audienceBlockedMaleStyle: StyleCategory = {
-  id: "audience-blocked-male-kaftan",
-  name: "Men's Palace Kaftan",
-  description: "Male audience but blocked for this order.",
-  gender: "male",
-  targetDemographic: "male",
-  options: [],
-  fabricCapacityComposition: [createStyleBaseGarmentSpec("kaftan")],
-};
-
-const audienceIndeterminateUnisexStyle: StyleCategory = {
-  id: "audience-indeterminate-unisex",
-  name: "Unreviewed Family Archive",
-  description: "Unisex audience with missing composition metadata.",
-  gender: "unisex",
-  targetDemographic: "unisex",
-  options: [],
-};
-
-const audienceCatalogue = [
-  audienceMaleStyle,
-  audienceAdaptableStyle,
-  audienceFemaleStyle,
-  audienceUnisexStyle,
-  audienceBlockedMaleStyle,
-  audienceIndeterminateUnisexStyle,
+const fullCatalogue = [
+  exactStyle,
+  adaptableStyle,
+  unsupportedStyle,
+  wrongAudienceStyle,
+  unisexStyle,
 ];
-
-const emptyUploaded = {
-  source: null,
-  reference: null,
-  composition: [],
-  demographic: null,
-  previewUrl: null,
-  error: "",
-  isUploading: false,
-  isReplacing: false,
-  isDeleting: false,
-  isLoadingPreview: false,
-  isConfirmed: false,
-  isPricingActive: false,
-};
 
 const textContent = (node: ReactTestInstance | string | null): string =>
   typeof node === "string"
@@ -219,531 +113,269 @@ const textContent = (node: ReactTestInstance | string | null): string =>
           .join("")
       : "";
 
-const findCards = (
-  root: ReactTestInstance,
-  predicate?: (card: ReactTestInstance) => boolean,
-) =>
-  root
-    .findAll((node) => typeof node.props?.["data-style-card"] === "string")
-    .filter((card) => (predicate ? predicate(card) : true));
+const styleCards = (root: ReactTestInstance) =>
+  root.findAll((node) => node.props?.["data-style-card"] === "true");
 
 const cardsInSection = (root: ReactTestInstance, testId: string) =>
-  findCards(root.findByProps({ "data-testid": testId }));
+  root
+    .findByProps({ "data-testid": testId })
+    .findAll((node) => node.props?.["data-style-card"] === "true");
 
-const cardById = (root: ReactTestInstance, styleId: string) => {
-  const cards = findCards(
-    root,
-    (card) => card.props["data-style-card"] === styleId,
+const cardByName = (root: ReactTestInstance, name: string) => {
+  const cards = styleCards(root).filter(
+    (card) => card.props["data-style-name"] === name,
   );
-  assert.ok(cards.length > 0, `expected card ${styleId}`);
+  assert.ok(cards.length > 0, `Expected a rendered card for ${name}.`);
   return cards[0]!;
 };
 
-const buttonsByLabel = (root: ReactTestInstance, label: string) =>
-  root
-    .findAllByType("button")
-    .filter((button) => textContent(button).includes(label));
-
-const exploreCardIds = (root: ReactTestInstance) =>
-  cardsInSection(root, "step3-explore-all").map(
-    (card) => card.props["data-style-card"] as string,
+const actionButtons = (
+  root: ReactTestInstance,
+  styleName: string,
+  action: "Select Design" | "Use This Design" | "Selected",
+) =>
+  root.findAllByType("button").filter(
+    (button) =>
+      String(button.props["aria-label"] || "").startsWith(
+        `${action} ${styleName} for `,
+      ),
   );
 
-const clickCatalogueFilter = async (
-  renderer: ReturnType<typeof create>,
-  filterId: string,
+const renderModel = async (
+  model: DesignStyleStepTestModel,
+  overrides: Partial<
+    ReturnType<typeof createDesignStyleStepRenderProps>
+  > = {},
 ) => {
-  await act(async () => {
-    renderer.root
-      .findByProps({ "data-catalogue-filter": filterId })
-      .props.onClick();
-  });
-};
-
-const renderStep = async ({
-  styles,
-  garmentTypeSelection = shirtTrouserMale,
-  selectedStyleId = null,
-  onSelectStyle = () => undefined,
-}: {
-  styles: StyleCategory[];
-  garmentTypeSelection?: GarmentTypeStepSelection;
-  selectedStyleId?: string | null;
-  onSelectStyle?: (styleId: string) => void;
-}) => {
   let renderer!: ReturnType<typeof create>;
-  const tree: ReactElement = (
-    <DormantFutureDesignStyleStep
-      styles={styles}
-      garmentTypeSelection={garmentTypeSelection}
-      selectedStyleId={selectedStyleId}
-      stagePrice={null}
-      uploadedDesign={emptyUploaded}
-      pendingCatalogStyleName={null}
-      stylesLoadState="ready"
-      onSelectStyle={onSelectStyle}
-      onUploadDesignFile={() => undefined}
-      onToggleUploadedGarment={() => undefined}
-      onUploadedDemographicChange={() => undefined}
-      onRemoveUploadedDesign={() => undefined}
-      onRetryUploadedDesignDeletion={() => undefined}
-      onContinueUploadedDesign={() => undefined}
-      onBack={() => undefined}
-      onReturnToGarmentType={() => undefined}
-      onContinue={() => undefined}
-    />
-  );
   await act(async () => {
-    renderer = create(tree);
+    renderer = create(
+      <DormantFutureDesignStyleStep
+        {...createDesignStyleStepRenderProps(model)}
+        {...overrides}
+      />,
+    );
   });
-  return { renderer, tree };
+  return renderer;
 };
 
-// Full catalogue visibility
+// Only strict, eligible records for the active Shirt occurrence render.
 {
-  const { renderer } = await renderStep({ styles: fullCatalogue });
-  const ids = new Set(
-    findCards(renderer.root).map((card) => card.props["data-style-card"]),
+  const model = createDesignStyleStepTestModel({
+    styles: fullCatalogue,
+    garmentTypeSelection: shirtTrouserMale,
+  });
+  const renderer = await renderModel(model);
+  const names = new Set(
+    styleCards(renderer.root).map((card) => card.props["data-style-name"]),
   );
+  assert.deepEqual(names, new Set([
+    exactStyle.name,
+    adaptableStyle.name,
+    unisexStyle.name,
+  ]));
+  assert.equal(names.has(unsupportedStyle.name), false);
+  assert.equal(names.has(wrongAudienceStyle.name), false);
   assert.deepEqual(
-    [...ids].sort(),
-    fullCatalogue.map((style) => style.id).sort(),
-  );
-  assert.equal(cardById(renderer.root, styleC.id).props["data-style-tier"], "blocked");
-  assert.equal(
-    cardById(renderer.root, styleE.id).props["data-style-tier"],
-    "indeterminate",
-  );
-}
-
-// Best Matches section
-{
-  const { renderer } = await renderStep({ styles: fullCatalogue });
-  const bestMatchIds = cardsInSection(renderer.root, "step3-best-matches").map(
-    (card) => card.props["data-style-card"],
-  );
-  assert.deepEqual(bestMatchIds, [styleA.id]);
-  assert.equal(
-    textContent(cardById(renderer.root, styleA.id)).includes("BEST MATCH"),
-    true,
-  );
-  assert.equal(
-    cardsInSection(renderer.root, "step3-best-matches").some(
-      (card) => card.props["data-style-card"] === styleB.id,
+    cardsInSection(renderer.root, "step3-best-matches").map(
+      (card) => card.props["data-style-name"],
     ),
-    false,
-  );
-}
-
-// Zero exact, adaptable remains
-{
-  const { renderer } = await renderStep({
-    styles: [styleB, styleC],
-  });
-  assert.match(
-    textContent(renderer.root),
-    /No exact catalogue matches yet\. Explore adaptable designs below/,
+    [exactStyle.name, unisexStyle.name],
   );
   assert.equal(
-    textContent(renderer.root).includes("No matching design styles are available yet"),
-    false,
+    cardByName(renderer.root, adaptableStyle.name).props["data-style-tier"],
+    "adaptable",
   );
-  const adaptableCard = cardById(renderer.root, styleB.id);
-  assert.equal(adaptableCard.props["data-style-tier"], "adaptable");
-  assert.match(textContent(adaptableCard), /CAN BE ADAPTED/);
-  const useButtons = buttonsByLabel(renderer.root, "Use This Design");
-  assert.equal(useButtons.length, 1);
-  assert.equal(useButtons[0]!.props.disabled, false);
 }
 
-// Adaptable dialog isolation
+// Adaptability confirmation captures the exact occurrence request and does not
+// invoke assignment until the customer confirms.
 {
-  const selected: string[] = [];
-  const { renderer } = await renderStep({
-    styles: [styleA, styleB, styleC],
-    onSelectStyle: (styleId) => selected.push(styleId),
+  const assignedStyleIds: string[] = [];
+  const model = createDesignStyleStepTestModel({
+    styles: [exactStyle, adaptableStyle],
+    garmentTypeSelection: shirtTrouserMale,
   });
-  const useButton = buttonsByLabel(renderer.root, "Use This Design")[0]!;
-  await act(async () => {
-    useButton.props.onClick({ currentTarget: { focus() {} } });
+  const renderer = await renderModel(model, {
+    onAssignCatalogueStyle: (request) => assignedStyleIds.push(request.styleId),
   });
-  assert.deepEqual(selected, []);
+  const adaptableButton = actionButtons(
+    renderer.root,
+    adaptableStyle.name,
+    "Use This Design",
+  )[0];
+  assert.ok(adaptableButton);
+  await act(async () =>
+    adaptableButton.props.onClick({ currentTarget: { focus() {} } }),
+  );
+  assert.deepEqual(assignedStyleIds, []);
   const dialog = renderer.root.findByProps({
     "data-testid": "adapt-design-confirmation",
   });
   assert.equal(dialog.props.role, "dialog");
   assert.equal(dialog.props["aria-modal"], "true");
-  const dialogText = textContent(dialog);
-  assert.match(dialogText, /Adapt this design to your garments\?/);
-  assert.match(dialogText, /Long Shirt \(Kaftan\)/);
-  assert.match(dialogText, /Standard Shirt and Trouser/);
-  assert.match(dialogText, /Your garments and Fabric selections will not change/);
+  assert.match(textContent(dialog), /Adapt this design to your garment\?/);
+  assert.match(textContent(dialog), /shown as Kaftan/);
+  assert.match(textContent(dialog), /Shirt/);
+  assert.match(
+    textContent(dialog),
+    /Your garment and Fabric selection will not change/,
+  );
+  await act(async () =>
+    dialog
+      .findAllByType("button")
+      .find((button) => textContent(button).includes("Cancel"))!
+      .props.onClick(),
+  );
+  assert.deepEqual(assignedStyleIds, []);
 
-  await act(async () => {
-    buttonsByLabel(dialog, "Cancel")[0]!.props.onClick();
+  await act(async () =>
+    actionButtons(renderer.root, adaptableStyle.name, "Use This Design")[0]!
+      .props.onClick({ currentTarget: { focus() {} } }),
+  );
+  await act(async () =>
+    renderer.root
+      .findByProps({ "data-adapt-confirm": "true" })
+      .props.onClick(),
+  );
+  assert.deepEqual(assignedStyleIds, [adaptableStyle.id]);
+}
+
+// Exact matches dispatch directly. Duplicate presentation across Best Matches
+// and Explore does not weaken the exact captured request.
+{
+  const requests: string[] = [];
+  const model = createDesignStyleStepTestModel({
+    styles: [exactStyle, adaptableStyle],
+    garmentTypeSelection: shirtTrouserMale,
   });
-  assert.deepEqual(selected, []);
+  const renderer = await renderModel(model, {
+    onAssignCatalogueStyle: (request) => requests.push(request.styleId),
+  });
+  const exactButtons = actionButtons(
+    renderer.root,
+    exactStyle.name,
+    "Select Design",
+  );
+  assert.ok(exactButtons.length >= 1);
+  await act(async () =>
+    exactButtons[0]!.props.onClick({ currentTarget: { focus() {} } }),
+  );
+  assert.deepEqual(requests, [exactStyle.id]);
   assert.equal(
     renderer.root.findAllByProps({
       "data-testid": "adapt-design-confirmation",
     }).length,
     0,
   );
-
-  await act(async () => {
-    buttonsByLabel(renderer.root, "Use This Design")[0]!.props.onClick({
-      currentTarget: { focus() {} },
-    });
-  });
-  const confirm = renderer.root.findByProps({ "data-adapt-confirm": "true" });
-  await act(async () => {
-    confirm.props.onClick();
-  });
-  assert.deepEqual(selected, [styleB.id]);
 }
 
-// Exact match selects immediately, no dialog
+// Browse filters affect only already-eligible cards and never mutate garments.
 {
-  const selected: string[] = [];
-  const { renderer } = await renderStep({
-    styles: [styleA, styleB],
-    onSelectStyle: (styleId) => selected.push(styleId),
-  });
-  const selectButtons = buttonsByLabel(renderer.root, "Select Design").filter(
-    (button) => !button.props.disabled,
-  );
-  assert.equal(
-    selectButtons.length,
-    2,
-    "Exact-match styleA appears in Best Matches and All Designs.",
-  );
-  await act(async () => {
-    selectButtons[0]!.props.onClick();
-  });
-  assert.deepEqual(selected, [styleA.id]);
-  assert.equal(
-    renderer.root.findAllByProps({
-      "data-testid": "adapt-design-confirmation",
-    }).length,
-    0,
-  );
-}
-
-// Blocked garment + demographic
-{
-  const selected: string[] = [];
-  const { renderer } = await renderStep({
+  const originalSelection = structuredClone(shirtTrouserMale);
+  const model = createDesignStyleStepTestModel({
     styles: fullCatalogue,
-    onSelectStyle: (styleId) => selected.push(styleId),
+    garmentTypeSelection: originalSelection,
   });
-  const blockedGarment = cardById(renderer.root, styleC.id);
-  assert.equal(blockedGarment.props["data-style-tier"], "blocked");
-  assert.match(textContent(blockedGarment), /NOT AVAILABLE FOR THIS ORDER/);
-  assert.match(
-    textContent(blockedGarment),
-    /This design is not available for one or more garments in your order/,
-  );
-  const blockedDemo = cardById(renderer.root, styleD.id);
-  assert.match(textContent(blockedDemo), /NOT AVAILABLE FOR THIS ORDER/);
-  assert.match(
-    textContent(blockedDemo),
-    /This design does not match who the order is for/,
-  );
-  const blockedButtons = [blockedGarment, blockedDemo].flatMap((card) =>
-    card.findAllByType("button"),
-  );
-  assert.ok(blockedButtons.every((button) => button.props.disabled));
-  for (const button of blockedButtons) {
-    await act(async () => {
-      button.props.onClick?.({ currentTarget: { focus() {} } });
-    });
-  }
-  assert.deepEqual(selected, []);
-}
+  const renderer = await renderModel(model);
+  const exploreNames = () =>
+    cardsInSection(renderer.root, "step3-explore-all").map(
+      (card) => card.props["data-style-name"],
+    );
 
-// Indeterminate fail-closed
-{
-  const selected: string[] = [];
-  const { renderer } = await renderStep({
-    styles: [styleE],
-    onSelectStyle: (styleId) => selected.push(styleId),
-  });
-  const reviewCard = cardById(renderer.root, styleE.id);
-  assert.equal(reviewCard.props["data-style-tier"], "indeterminate");
-  assert.match(textContent(reviewCard), /CATALOGUE REVIEW/);
-  assert.match(
-    textContent(reviewCard),
-    /This design needs catalogue review before it can be selected/,
+  assert.deepEqual(
+    new Set(exploreNames()),
+    new Set([exactStyle.name, adaptableStyle.name, unisexStyle.name]),
   );
-  const reviewButton = reviewCard.findByType("button");
-  assert.equal(reviewButton.props.disabled, true);
-  await act(async () => {
-    reviewButton.props.onClick?.({ currentTarget: { focus() {} } });
-  });
-  assert.deepEqual(selected, []);
-}
-
-// Filters are presentation only
-{
-  const selected: string[] = [];
-  const frozenGarments = structuredClone(shirtTrouserMale);
-  const { renderer } = await renderStep({
-    styles: fullCatalogue,
-    garmentTypeSelection: frozenGarments,
-    onSelectStyle: (styleId) => selected.push(styleId),
-  });
-  const moreDesignsFilter = renderer.root.findByProps({
-    "data-catalogue-filter": "all_designs",
-  });
-  assert.equal(moreDesignsFilter.props["aria-pressed"], true);
-  assert.match(textContent(moreDesignsFilter), /All Designs/i);
-  const exploreBefore = cardsInSection(renderer.root, "step3-explore-all").map(
-    (card) => card.props["data-style-card"],
-  );
-  assert.equal(exploreBefore.includes(styleA.id), true);
-  assert.equal(exploreBefore.includes(styleB.id), true);
-  assert.equal(exploreBefore.includes(styleC.id), true);
-  assert.equal(exploreBefore.includes(styleD.id), true);
-  assert.equal(exploreBefore.includes(styleE.id), true);
-
-  await act(async () => {
+  await act(async () =>
     renderer.root
       .findByProps({ "data-catalogue-filter": "exact_match" })
-      .props.onClick();
-  });
-  assert.equal(
-    renderer.root.findByProps({ "data-catalogue-filter": "exact_match" }).props[
-      "aria-pressed"
-    ],
-    true,
+      .props.onClick(),
   );
-  const exactFiltered = cardsInSection(renderer.root, "step3-explore-all").map(
-    (card) => card.props["data-style-card"],
-  );
-  assert.deepEqual(exactFiltered, [styleA.id]);
-  assert.equal(
-    cardById(renderer.root, styleA.id).props["data-style-tier"],
-    "exact_match",
-  );
-
-  await act(async () => {
-    renderer.root
-      .findByProps({ "data-catalogue-filter": "all_designs" })
-      .props.onClick();
-  });
-  assert.equal(
-    cardById(renderer.root, styleC.id).props["data-style-tier"],
-    "blocked",
-  );
-
-  await act(async () => {
+  assert.deepEqual(exploreNames(), [exactStyle.name, unisexStyle.name]);
+  await act(async () =>
     renderer.root
       .findByProps({ "data-catalogue-filter": "adaptable" })
-      .props.onClick();
-  });
-  const adaptableFiltered = cardsInSection(
-    renderer.root,
-    "step3-explore-all",
-  ).map((card) => card.props["data-style-card"]);
-  assert.deepEqual(adaptableFiltered, [styleB.id]);
-  assert.deepEqual(selected, []);
-  assert.deepEqual(frozenGarments, shirtTrouserMale);
+      .props.onClick(),
+  );
+  assert.deepEqual(exploreNames(), [adaptableStyle.name]);
+  await act(async () =>
+    renderer.root
+      .findByProps({ "data-catalogue-filter": "male" })
+      .props.onClick(),
+  );
+  assert.deepEqual(new Set(exploreNames()), new Set([
+    exactStyle.name,
+    adaptableStyle.name,
+  ]));
+  await act(async () =>
+    renderer.root
+      .findByProps({ "data-catalogue-filter": "unisex" })
+      .props.onClick(),
+  );
+  assert.deepEqual(exploreNames(), [unisexStyle.name]);
+  assert.deepEqual(originalSelection, shirtTrouserMale);
 }
 
-// Audience filters (Male / Female / Unisex / Family)
+// A card is selected only for the current exact occurrence.
 {
-  const selected: string[] = [];
-  const { renderer } = await renderStep({
-    styles: audienceCatalogue,
-    onSelectStyle: (styleId) => selected.push(styleId),
-  });
-  assert.equal(
-    renderer.root.findByProps({ "data-catalogue-filter": "all_designs" }).props[
-      "aria-pressed"
-    ],
-    true,
-  );
-  assert.deepEqual(
-    new Set(exploreCardIds(renderer.root)),
-    new Set(audienceCatalogue.map((style) => style.id)),
-  );
-
-  await clickCatalogueFilter(renderer, "male");
-  assert.equal(
-    renderer.root.findByProps({ "data-catalogue-filter": "male" }).props[
-      "aria-pressed"
-    ],
-    true,
-  );
-  const maleFilteredIds = exploreCardIds(renderer.root);
-  assert.ok(maleFilteredIds.includes(audienceMaleStyle.id));
-  assert.ok(maleFilteredIds.includes(audienceBlockedMaleStyle.id));
-  assert.equal(maleFilteredIds.includes(audienceFemaleStyle.id), false);
-  assert.equal(maleFilteredIds.includes(audienceUnisexStyle.id), false);
-  assert.equal(maleFilteredIds.includes(audienceIndeterminateUnisexStyle.id), false);
-  const blockedMaleCard = cardById(renderer.root, audienceBlockedMaleStyle.id);
-  assert.equal(blockedMaleCard.props["data-style-tier"], "blocked");
-  assert.equal(blockedMaleCard.findByType("button").props.disabled, true);
-
-  await clickCatalogueFilter(renderer, "female");
-  assert.equal(
-    renderer.root.findByProps({ "data-catalogue-filter": "female" }).props[
-      "aria-pressed"
-    ],
-    true,
-  );
-  const femaleFilteredIds = exploreCardIds(renderer.root);
-  assert.ok(femaleFilteredIds.includes(audienceFemaleStyle.id));
-  assert.equal(femaleFilteredIds.includes(audienceMaleStyle.id), false);
-  assert.equal(femaleFilteredIds.includes(audienceBlockedMaleStyle.id), false);
-  assert.equal(femaleFilteredIds.includes(audienceUnisexStyle.id), false);
-  assert.equal(femaleFilteredIds.includes(audienceIndeterminateUnisexStyle.id), false);
-
-  await clickCatalogueFilter(renderer, "unisex");
-  assert.equal(
-    renderer.root.findByProps({ "data-catalogue-filter": "unisex" }).props[
-      "aria-pressed"
-    ],
-    true,
-  );
-  const unisexFilteredIds = exploreCardIds(renderer.root);
-  assert.ok(unisexFilteredIds.includes(audienceUnisexStyle.id));
-  assert.ok(unisexFilteredIds.includes(audienceIndeterminateUnisexStyle.id));
-  assert.equal(unisexFilteredIds.includes(audienceMaleStyle.id), false);
-  assert.equal(unisexFilteredIds.includes(audienceFemaleStyle.id), false);
-  assert.equal(unisexFilteredIds.includes(audienceBlockedMaleStyle.id), false);
-  const indeterminateUnisexCard = cardById(
-    renderer.root,
-    audienceIndeterminateUnisexStyle.id,
-  );
-  assert.equal(indeterminateUnisexCard.props["data-style-tier"], "indeterminate");
-  assert.equal(indeterminateUnisexCard.findByType("button").props.disabled, true);
-
-  await clickCatalogueFilter(renderer, "all_designs");
-  assert.equal(
-    renderer.root.findByProps({ "data-catalogue-filter": "all_designs" }).props[
-      "aria-pressed"
-    ],
-    true,
-  );
-  const restoredIds = exploreCardIds(renderer.root);
-  assert.deepEqual(
-    new Set(restoredIds),
-    new Set(audienceCatalogue.map((style) => style.id)),
-  );
-  assert.equal(
-    cardById(renderer.root, audienceMaleStyle.id).props["data-style-tier"],
-    "exact_match",
-  );
-  assert.equal(
-    cardById(renderer.root, audienceAdaptableStyle.id).props["data-style-tier"],
-    "adaptable",
-  );
-  assert.equal(
-    cardById(renderer.root, audienceBlockedMaleStyle.id).props["data-style-tier"],
-    "blocked",
-  );
-  assert.equal(
-    cardById(renderer.root, audienceIndeterminateUnisexStyle.id).props[
-      "data-style-tier"
-    ],
-    "indeterminate",
-  );
-  assert.deepEqual(selected, []);
-}
-
-// Zero selectable still shows catalogue + upload
-{
-  const { renderer } = await renderStep({
-    styles: [styleC, styleD, styleE],
-  });
-  assert.match(
-    textContent(renderer.root),
-    /No designs can currently be selected for this order/,
-  );
-  assert.equal(
-    textContent(renderer.root).includes("No matching design styles are available yet"),
-    false,
-  );
-  const ids = new Set(
-    findCards(renderer.root).map((card) => card.props["data-style-card"]),
-  );
-  assert.deepEqual([...ids].sort(), [styleC.id, styleD.id, styleE.id].sort());
-  renderer.root.findByProps({ "data-testid": "upload-your-design-panel" });
-}
-
-// Selected exact retains Best Match + Selected
-{
-  const { renderer } = await renderStep({
-    styles: [styleA],
-    selectedStyleId: styleA.id,
-  });
-  const selectedCard = cardById(renderer.root, styleA.id);
-  assert.equal(selectedCard.props["data-style-selected"], "true");
-  assert.match(textContent(selectedCard), /SELECTED/i);
-  assert.match(textContent(selectedCard), /BEST MATCH/);
-  const selectedButton = selectedCard.findByType("button");
-  assert.equal(selectedButton.props["aria-pressed"], true);
-}
-
-// Step 1 reconciliation surfaces reselection
-{
-  const { renderer } = await renderStep({
-    styles: [styleB],
+  const selectedModel = createDesignStyleStepTestModel({
+    styles: [exactStyle],
     garmentTypeSelection: shirtTrouserMale,
-    selectedStyleId: styleB.id,
+    selectedStyleIdByGarmentKey: {
+      "base:shirt:1": exactStyle.id,
+    },
   });
+  assert.equal(selectedModel.projection.occurrences[0]!.label, "Shirt");
+  assert.equal(selectedModel.projection.occurrences[0]!.status, "complete");
+  assert.equal(selectedModel.projection.occurrences[1]!.status, "incomplete");
   assert.equal(
-    textContent(renderer.root).includes("Select another design"),
+    selectedModel.activeTarget?.garmentKey,
+    "base:trouser:1",
+    "Initial focus should prefer the first occurrence requiring action.",
+  );
+  const trouserRenderer = await renderModel(selectedModel);
+  assert.equal(
+    styleCards(trouserRenderer.root).some(
+      (card) => card.props["data-style-selected"] === "true",
+    ),
     false,
   );
-  await act(async () => {
-    renderer.update(
-      <DormantFutureDesignStyleStep
-        styles={[styleB]}
-        garmentTypeSelection={dressFemale}
-        selectedStyleId={styleB.id}
-        stagePrice={null}
-        uploadedDesign={emptyUploaded}
-        pendingCatalogStyleName={null}
-        stylesLoadState="ready"
-        onSelectStyle={() => undefined}
-        onUploadDesignFile={() => undefined}
-        onToggleUploadedGarment={() => undefined}
-        onUploadedDemographicChange={() => undefined}
-        onRemoveUploadedDesign={() => undefined}
-        onRetryUploadedDesignDeletion={() => undefined}
-        onContinueUploadedDesign={() => undefined}
-        onBack={() => undefined}
-        onReturnToGarmentType={() => undefined}
-        onContinue={() => undefined}
-      />,
-    );
+
+  const shirtActiveModel = createDesignStyleStepTestModel({
+    styles: [exactStyle],
+    garmentTypeSelection: shirtTrouserMale,
+    selectedStyleIdByGarmentKey: {
+      "base:shirt:1": exactStyle.id,
+    },
+    activeTarget: selectedModel.projection.occurrences[0]!.target,
   });
-  assert.match(textContent(renderer.root), /Select another design/);
-  assert.equal(
-    cardById(renderer.root, styleB.id).props["data-style-tier"],
-    "blocked",
+  const shirtRenderer = await renderModel(shirtActiveModel);
+  assert.ok(
+    styleCards(shirtRenderer.root).some(
+      (card) => card.props["data-style-selected"] === "true",
+    ),
   );
 }
 
-// Upload panel independent of catalogue filters
+// No eligible strict records produces a truthful active-occurrence blocker and
+// does not restore the order-wide upload panel.
 {
-  const { renderer } = await renderStep({ styles: fullCatalogue });
-  await act(async () => {
-    renderer.root
-      .findByProps({ "data-catalogue-filter": "adaptable" })
-      .props.onClick();
+  const model = createDesignStyleStepTestModel({
+    styles: [unsupportedStyle, wrongAudienceStyle],
+    garmentTypeSelection: shirtTrouserMale,
   });
-  const upload = renderer.root.findByProps({
-    "data-testid": "upload-your-design-panel",
-  });
-  assert.match(textContent(upload), /Upload Your Own Design/);
+  const renderer = await renderModel(model);
+  assert.match(
+    textContent(renderer.root.findByProps({ "data-testid": "step3-zero-selectable" })),
+    /No designs can currently be selected for this garment/,
+  );
+  assert.equal(styleCards(renderer.root).length, 0);
   assert.equal(
-    renderer.root.findByProps({ "data-catalogue-filter": "adaptable" }).props[
-      "aria-pressed"
-    ],
-    true,
+    renderer.root.findAllByProps({
+      "data-testid": "upload-your-design-panel",
+    }).length,
+    0,
   );
 }
 
@@ -751,15 +383,11 @@ const componentSource = readFileSync(
   "src/components/DormantFutureDesignStyleStep.tsx",
   "utf8",
 );
-assert.equal(
-  componentSource.includes("ODOGWU_STEP3_DISCOVERY_QA_STYLES"),
-  false,
-  "Production Step 3 must not read catalogue styles from sessionStorage",
-);
+assert.equal(componentSource.includes("ODOGWU_STEP3_DISCOVERY_QA_STYLES"), false);
 assert.equal(componentSource.includes("sessionStorage"), false);
 assert.equal(componentSource.includes("localStorage"), false);
 assert.match(componentSource, /All Designs/);
 assert.match(componentSource, /all_designs/);
 assert.match(componentSource, /useState<CatalogueBrowseFilter>\("all_designs"\)/);
 
-console.log("PASS: Step 3 full-catalogue discovery UX");
+console.log("PASS: Step 3 strict active-occurrence catalogue discovery UX");
