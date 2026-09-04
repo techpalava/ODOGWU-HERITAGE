@@ -65,6 +65,7 @@
     "test:future-order-candidate": "tsx test_future_order_candidate.ts",
     "test:future-order-candidate-occurrence-styles": "tsx test_future_order_candidate_occurrence_styles.ts",
     "test:future-order-payment-review-v2-handoff": "tsx test_future_order_payment_review_v2_handoff.tsx",
+    "test:future-order-v2-persistence": "node scripts/tsxWithViteProductionFirebase.mjs test_future_order_v2_persistence.ts",
     "test:future-cart-order-occurrence-styles": "tsx test_future_cart_order_occurrence_styles.ts",
     "test:future-payment-review": "tsx test_design_studio_future_payment_review.tsx",
     "test:design-studio-draft-isolation": "node scripts/tsxWithViteProductionFirebase.mjs test_design_studio_draft_isolation.ts",
