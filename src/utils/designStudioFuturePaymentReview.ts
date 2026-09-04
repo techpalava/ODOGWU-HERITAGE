@@ -7,6 +7,7 @@ import {
   type FutureOrderCandidateGarmentV1,
   type FutureOrderCandidatePricingV1,
   type FutureOrderCandidateV1,
+  type FutureOrderCandidateV2,
 } from "./futureOrderCandidate";
 import {
   fromCanonicalCentimetres,
@@ -17,6 +18,36 @@ export const FUTURE_PAYMENT_UNAVAILABLE_MESSAGE =
   "Online payment is not available yet.";
 export const FUTURE_ORDER_NOT_SUBMITTED_MESSAGE =
   "Your order has not been submitted or charged.";
+export const FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE =
+  "This reviewed order cannot proceed to payment until V2 order persistence is established.";
+
+export type FuturePaymentReviewCandidate =
+  | FutureOrderCandidateV1
+  | FutureOrderCandidateV2;
+
+export interface FutureOrderV2PaymentReviewHandoff {
+  readonly status: "reviewable";
+  readonly candidate: FutureOrderCandidateV2;
+  readonly blockers: readonly [FutureOrderCandidateBlocker];
+}
+
+export type FuturePaymentReviewResult =
+  | FutureOrderCandidateBuildResult
+  | FutureOrderV2PaymentReviewHandoff;
+
+export const createFutureOrderV2PaymentReviewHandoff = (
+  candidate: FutureOrderCandidateV2,
+): FutureOrderV2PaymentReviewHandoff => ({
+  status: "reviewable",
+  candidate,
+  blockers: [
+    {
+      code: "FUTURE_ORDER_V2_PERSISTENCE_PENDING",
+      stage: "payment",
+      message: FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
+    },
+  ],
+});
 
 export interface FuturePaymentReviewGarment {
   readonly garment: FutureOrderCandidateGarmentV1;
@@ -55,20 +86,22 @@ const humanizeIdentifier = (value: string): string =>
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 export const isFuturePaymentReviewStageUnlocked = (
-  result: FutureOrderCandidateBuildResult,
+  result: FuturePaymentReviewResult,
 ): boolean =>
   result.status === "reviewable" &&
   result.candidate?.contentStatus === "reviewable";
 
 export const getFuturePaymentReviewContentBlockers = (
-  result: FutureOrderCandidateBuildResult,
+  result: FuturePaymentReviewResult,
 ): readonly FutureOrderCandidateBlocker[] =>
   result.blockers.filter(
-    (blocker) => blocker.code !== "PAYMENT_PROVIDER_UNAVAILABLE",
+    (blocker) =>
+      blocker.code !== "PAYMENT_PROVIDER_UNAVAILABLE" &&
+      blocker.code !== "FUTURE_ORDER_V2_PERSISTENCE_PENDING",
   );
 
 export const getFuturePaymentReviewContentStatusLabel = (
-  candidate: FutureOrderCandidateV1,
+  candidate: FuturePaymentReviewCandidate,
 ): "Ready to review" | "Needs attention" | "Review unavailable" =>
   candidate.contentStatus === "reviewable"
     ? "Ready to review"
@@ -96,7 +129,7 @@ export const getFuturePaymentReviewEditLabel = (
   })[stage];
 
 export const getFuturePaymentReviewGarments = (
-  candidate: FutureOrderCandidateV1,
+  candidate: FuturePaymentReviewCandidate,
 ): readonly FuturePaymentReviewGarment[] =>
   candidate.garments.map((garment) => ({
     garment,
@@ -153,7 +186,7 @@ const mergeMeasurements = ({
 };
 
 export const getFuturePaymentReviewMeasurementGroups = (
-  candidate: FutureOrderCandidateV1,
+  candidate: FuturePaymentReviewCandidate,
 ): readonly FuturePaymentReviewMeasurementGroup[] => {
   const state = candidate.measurements;
   const garmentLabels = new Map(
@@ -192,7 +225,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
 };
 
 export const getFuturePaymentReviewAiStatusLabel = (
-  candidate: FutureOrderCandidateV1,
+  candidate: FuturePaymentReviewCandidate,
 ): "Completed" | "Skipped" | "Unavailable" | "Needs attention" => {
   if (candidate.aiTryOn.status === "completed") return "Completed";
   if (candidate.aiTryOn.status === "skipped") return "Skipped";
@@ -201,7 +234,7 @@ export const getFuturePaymentReviewAiStatusLabel = (
 };
 
 export const getFuturePaymentReviewShippingStatusLabel = (
-  candidate: FutureOrderCandidateV1,
+  candidate: FuturePaymentReviewCandidate,
 ): string =>
   ({
     quote_ready: "Delivery ready",

@@ -219,8 +219,16 @@ import {
   reconcileFutureShippingState,
   refreshFutureShippingQuote,
 } from "../utils/designStudioFutureShipping";
-import { blockFutureOrderCandidateUntilGarmentScopedDesignStyleMapping } from "../utils/futureOrderCandidate";
-import { isFuturePaymentReviewStageUnlocked } from "../utils/designStudioFuturePaymentReview";
+import {
+  buildFutureOrderCandidateV2,
+  type FutureOrderCandidateBlocker,
+  type FutureOrderCandidateUploadedStyleAuthorityV2,
+} from "../utils/futureOrderCandidate";
+import {
+  createFutureOrderV2PaymentReviewHandoff,
+  isFuturePaymentReviewStageUnlocked,
+  type FutureOrderV2PaymentReviewHandoff,
+} from "../utils/designStudioFuturePaymentReview";
 import {
   buildAuthoritativePhysicalOccurrences,
   activateFutureCatalogStyleSelection,
@@ -514,6 +522,10 @@ export default function DesignStudioView({
   >([]);
   const [futureDesignStyleMutationError, setFutureDesignStyleMutationError] =
     useState<string | null>(null);
+  const [futurePaymentReviewHandoff, setFuturePaymentReviewHandoff] =
+    useState<FutureOrderV2PaymentReviewHandoff | null>(null);
+  const [futurePaymentReviewTransitionBlockers, setFuturePaymentReviewTransitionBlockers] =
+    useState<readonly FutureOrderCandidateBlocker[]>([]);
   const futureDesignStyleMutationAuthorityRef =
     useRef<FutureDesignStyleMutationAuthority | null>(null);
   const futureDesignStyleUploadOperationStateRef =
@@ -1112,6 +1124,32 @@ export default function DesignStudioView({
       currentFutureDesignStyleDraftHydration?.result.migrationEvidence,
     ],
   );
+  const futurePaymentReviewUploadedAuthorityBySourceRef = useMemo(() => {
+    const sources = [
+      ...(activeUploadedDesignSource ? [activeUploadedDesignSource] : []),
+      ...Object.values(futureDesignStyleUploadedSourceByGarmentKey),
+    ];
+    return sources.reduce<Record<string, FutureOrderCandidateUploadedStyleAuthorityV2>>(
+      (authorityBySourceRef, source) => {
+        const uploadedSourceRef = source.uploadReference.designReferenceId;
+        const validation = futureDesignStyleDraftAuthority.uploadedSourcesByKey[
+          source.sourceKey
+        ];
+        authorityBySourceRef[uploadedSourceRef] = {
+          uploadedSourceRef,
+          confirmed: validation?.status === "confirmed",
+          displayLabel: source.uploadReference.originalFileName,
+          previewReference: uploadedSourceRef,
+        };
+        return authorityBySourceRef;
+      },
+      {},
+    );
+  }, [
+    activeUploadedDesignSource,
+    futureDesignStyleUploadedSourceByGarmentKey,
+    futureDesignStyleDraftAuthority,
+  ]);
   const futureDesignStyleStepProjection = useMemo(
     () =>
       projectDesignStyleStep({
@@ -2204,10 +2242,9 @@ export default function DesignStudioView({
       futureSelectedDesignPrice,
     ],
   );
-  const futureOrderCandidateResult =
-    blockFutureOrderCandidateUntilGarmentScopedDesignStyleMapping();
-  const isFuturePaymentReviewUnlocked = isFuturePaymentReviewStageUnlocked(
-    futureOrderCandidateResult,
+  const isFuturePaymentReviewUnlocked = Boolean(
+    futurePaymentReviewHandoff &&
+      isFuturePaymentReviewStageUnlocked(futurePaymentReviewHandoff),
   );
   const showPersistentLiveOrderSummary =
     shouldShowPersistentLiveOrderSummary(futureStageId);
@@ -2216,7 +2253,7 @@ export default function DesignStudioView({
       projectDesignStudioLiveOrderSummary({
         summary: futureSummary,
         shippingResolution: futureShippingResolution,
-        candidatePricing: futureOrderCandidateResult.candidate?.pricing ?? null,
+        candidatePricing: null,
         fabricAllocationState,
         measurementState: reconciledFutureMeasurementState,
         designSource: activeFutureDesignSource,
@@ -2228,7 +2265,6 @@ export default function DesignStudioView({
     [
       futureSummary,
       futureShippingResolution,
-      futureOrderCandidateResult.candidate?.pricing,
       fabricAllocationState,
       reconciledFutureMeasurementState,
       activeFutureDesignSource,
@@ -4341,12 +4377,39 @@ export default function DesignStudioView({
     setFutureStageId("shipping");
   };
   const handleOpenDormantPaymentReviewStage = () => {
-    if (
-      !isFuturePaymentReviewUnlocked &&
-      !isStageHistoricallyUnlocked("payment")
-    ) {
+    const ledger = currentFutureDesignStyleDraftHydration?.result.ledger;
+    if (!ledger) {
+      setFuturePaymentReviewHandoff(null);
+      setFuturePaymentReviewTransitionBlockers([
+        {
+          code: "DESIGN_STYLE_ASSIGNMENT_INVALID",
+          stage: "design_style",
+          message: "Design Style assignments are not ready for review.",
+        },
+      ]);
       return;
     }
+    const result = buildFutureOrderCandidateV2({
+      coreInput: {
+        ...futureSummaryInput,
+        source: activeFutureDesignSource,
+        shippingResolution: futureShippingResolution,
+      },
+      ledger,
+      validationAuthority: futureDesignStyleDraftAuthority,
+      styles,
+      uploadedAuthorityBySourceRef:
+        futurePaymentReviewUploadedAuthorityBySourceRef,
+    });
+    if (result.status !== "valid") {
+      setFuturePaymentReviewHandoff(null);
+      setFuturePaymentReviewTransitionBlockers(result.blockers);
+      return;
+    }
+    setFuturePaymentReviewTransitionBlockers([]);
+    setFuturePaymentReviewHandoff(
+      createFutureOrderV2PaymentReviewHandoff(result.candidate),
+    );
     setFutureStageId("payment");
   };
   const handleLiveOrderSummaryEdit = (stage: DesignStudioStageId) => {
@@ -6022,32 +6085,49 @@ export default function DesignStudioView({
           }
         />
       ) : futureStageId === "shipping" ? (
-        <DormantFutureShippingStep
-          state={futureShippingResolution.state}
-          resolution={futureShippingResolution}
-          selectedDesignPrice={futureSelectedDesignPrice}
-          garmentCount={futureGarmentPieceCount}
-          onChange={setFutureShippingState}
-          onRefreshQuote={handleRefreshDormantShippingQuote}
-          onBack={() => setFutureStageId("summary")}
-          canContinueToReview={isFuturePaymentReviewUnlocked}
-          onContinueToReview={handleOpenDormantPaymentReviewStage}
-        />
+        <>
+          {futurePaymentReviewTransitionBlockers[0] && (
+            <div
+              role="alert"
+              data-future-payment-review-blocker={
+                futurePaymentReviewTransitionBlockers[0].code
+              }
+              className="mb-4 rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4 text-sm text-heritage-ink/75"
+            >
+              {futurePaymentReviewTransitionBlockers[0].message}
+            </div>
+          )}
+          <DormantFutureShippingStep
+            state={futureShippingResolution.state}
+            resolution={futureShippingResolution}
+            selectedDesignPrice={futureSelectedDesignPrice}
+            garmentCount={futureGarmentPieceCount}
+            onChange={setFutureShippingState}
+            onRefreshQuote={handleRefreshDormantShippingQuote}
+            onBack={() => setFutureStageId("summary")}
+            canContinueToReview={isFutureShippingStepComplete(
+              futureShippingResolution,
+            )}
+            onContinueToReview={handleOpenDormantPaymentReviewStage}
+          />
+        </>
       ) : futureStageId === "payment" ? (
-        <DormantFuturePaymentReviewStep
-          result={futureOrderCandidateResult}
-          survivorSummary={futureSummary}
-          removalTargets={futureGarmentRemovalTargets}
-          onRequestGarmentRemoval={(target, trigger) =>
-            openFutureGarmentRemovalDialog({
-              target,
-              originStage: "payment",
-              opener: trigger,
-            })
-          }
-          onBack={() => setFutureStageId("shipping")}
-          onEditStage={(stage) => setFutureStageId(stage)}
-        />
+        futurePaymentReviewHandoff ? (
+          <DormantFuturePaymentReviewStep
+            result={futurePaymentReviewHandoff}
+            survivorSummary={futureSummary}
+            removalTargets={futureGarmentRemovalTargets}
+            onRequestGarmentRemoval={(target, trigger) =>
+              openFutureGarmentRemovalDialog({
+                target,
+                originStage: "payment",
+                opener: trigger,
+              })
+            }
+            onBack={() => setFutureStageId("shipping")}
+            onEditStage={(stage) => setFutureStageId(stage)}
+          />
+        ) : null
       ) : null}
         </div>
         {showShellLiveOrderSummary ? (

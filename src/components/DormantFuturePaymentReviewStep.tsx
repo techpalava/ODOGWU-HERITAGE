@@ -13,12 +13,12 @@ import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type React from "react";
 import type { DesignStudioStageId } from "../types";
 import {
-  type FutureOrderCandidateBuildResult,
-  type FutureOrderCandidateV1,
+  type FutureOrderCandidateV2,
 } from "../utils/futureOrderCandidate";
 import {
   FUTURE_ORDER_NOT_SUBMITTED_MESSAGE,
   FUTURE_PAYMENT_UNAVAILABLE_MESSAGE,
+  FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
   getFuturePaymentReviewAiStatusLabel,
   getFuturePaymentReviewContentBlockers,
   getFuturePaymentReviewContentStatusLabel,
@@ -29,6 +29,8 @@ import {
   getFuturePaymentReviewPricingRows,
   getFuturePaymentReviewShippingStatusLabel,
   isFuturePaymentReviewStageUnlocked,
+  type FuturePaymentReviewCandidate,
+  type FuturePaymentReviewResult,
 } from "../utils/designStudioFuturePaymentReview";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
@@ -39,7 +41,7 @@ import type { FutureDesignStudioSummary } from "../utils/designStudioFutureSumma
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 
 interface DormantFuturePaymentReviewStepProps {
-  result: FutureOrderCandidateBuildResult;
+  result: FuturePaymentReviewResult;
   onBack: () => void;
   onEditStage: (stage: Exclude<DesignStudioStageId, "payment">) => void;
   survivorSummary?: FutureDesignStudioSummary | null;
@@ -58,6 +60,10 @@ const PendingAmount = () => (
     Pending
   </span>
 );
+
+const isV2PaymentReviewCandidate = (
+  candidate: FuturePaymentReviewCandidate | null,
+): candidate is FutureOrderCandidateV2 => candidate?.schemaVersion === 2;
 
 const EditButton = ({
   label,
@@ -157,7 +163,7 @@ const CandidateAttention = ({
   result,
   onEditStage,
 }: {
-  result: FutureOrderCandidateBuildResult;
+  result: FuturePaymentReviewResult;
   onEditStage: DormantFuturePaymentReviewStepProps["onEditStage"];
 }) => {
   const blockers = getFuturePaymentReviewContentBlockers(result);
@@ -217,7 +223,7 @@ const GarmentReview = ({
   removalTargets,
   onRequestGarmentRemoval,
 }: {
-  candidate: FutureOrderCandidateV1;
+  candidate: FuturePaymentReviewCandidate;
   onEditStage: DormantFuturePaymentReviewStepProps["onEditStage"];
   removalTargets: readonly FutureGarmentRemovalTarget[];
   onRequestGarmentRemoval?: DormantFuturePaymentReviewStepProps["onRequestGarmentRemoval"];
@@ -663,7 +669,36 @@ export const DormantFuturePaymentReviewStep = ({
             editLabel="Edit Design Style"
             onEdit={() => onEditStage("design_style")}
           >
-            {candidate.design ? (
+            {isV2PaymentReviewCandidate(candidate) ? (
+              <div className="grid min-w-0 gap-3 md:grid-cols-2">
+                {candidate.occurrenceStyleSnapshots.map((snapshot) => (
+                  <article
+                    key={snapshot.occurrence.occurrenceToken}
+                    data-occurrence-style-snapshot={snapshot.occurrence.garmentKey}
+                    className="min-w-0 rounded-xl border border-heritage-green/12 bg-heritage-cream/20 p-4"
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+                      {snapshot.occurrence.label}
+                    </p>
+                    <h3 className="mt-1 break-words font-serif text-lg font-bold text-heritage-green">
+                      {snapshot.sourceKind === "catalogue"
+                        ? snapshot.catalogue?.name
+                        : snapshot.uploaded?.displayLabel}
+                    </h3>
+                    <p className="mt-1 break-words font-mono text-xs text-heritage-ink/55">
+                      {snapshot.sourceKind === "catalogue"
+                        ? `Catalogue style: ${snapshot.catalogue?.styleId}`
+                        : "Confirmed uploaded design"}
+                    </p>
+                    {snapshot.sourceKind === "catalogue" && snapshot.catalogue && (
+                      <p className="mt-2 break-words text-xs text-heritage-ink/60">
+                        Eligibility revision {snapshot.catalogue.eligibilityRevision}
+                      </p>
+                    )}
+                  </article>
+                ))}
+              </div>
+            ) : candidate.design ? (
               <div className="grid min-w-0 gap-4 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-center">
                 <div className="aspect-[4/5] overflow-hidden rounded-xl bg-heritage-cream/35">
                   {candidate.design.image ? (
@@ -971,7 +1006,9 @@ export const DormantFuturePaymentReviewStep = ({
               {FUTURE_PAYMENT_UNAVAILABLE_MESSAGE}
             </h2>
             <p id="future-payment-pending-explanation" className="mt-2 break-words text-sm leading-relaxed text-white/80">
-              {FUTURE_ORDER_NOT_SUBMITTED_MESSAGE}
+              {isV2PaymentReviewCandidate(candidate)
+                ? FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE
+                : FUTURE_ORDER_NOT_SUBMITTED_MESSAGE}
             </p>
             <p className="mt-1 text-xs leading-relaxed text-white/65">
               Authentication and a verified payment provider will be required before real payment can begin.
