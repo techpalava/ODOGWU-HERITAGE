@@ -33,6 +33,17 @@ import {
   normalizeStep8CountryCode,
   resolveStep8WeightTier,
 } from "./step8AdditionalDelivery";
+import type { PhysicalGarmentOccurrence } from "./designSourceState";
+import {
+  validateGarmentScopedDesignStyleAssignmentLedger,
+  type GarmentScopedDesignStyleAssignmentLedgerV2,
+  type GarmentScopedDesignStyleValidationAuthority,
+} from "./garmentScopedDesignStyleAssignment";
+import {
+  getDesignStyleAuthorityMetadata,
+  isAuthoritativeDesignStyleProjection,
+} from "./designStyleAuthority";
+import { createPhysicalGarmentOccurrenceIdentityToken } from "./physicalGarmentOccurrenceIdentity";
 
 export const FUTURE_ORDER_CANDIDATE_SCHEMA_VERSION = 1 as const;
 
@@ -203,6 +214,58 @@ export interface FutureOrderCandidateV1 {
   readonly blockers: readonly FutureOrderCandidateBlocker[];
 }
 
+export interface FutureOrderCandidateOccurrenceStyleSnapshotV2 {
+  readonly occurrence: Readonly<{
+    garmentKey: string;
+    occurrenceToken: string;
+    label: string;
+    garmentType: string;
+  }>;
+  readonly assignmentRevision: number;
+  readonly sourceKind: "catalogue" | "uploaded";
+  readonly sourceKey: string;
+  readonly catalogue: Readonly<{
+    styleId: string;
+    name: string;
+    image: string | null;
+    publicRevision: number;
+    eligibilityRevision: number;
+    eligibilityFingerprint: string;
+    adaptabilityConfirmationFingerprint: string | null;
+  }> | null;
+  readonly uploaded: Readonly<{
+    uploadedSourceRef: string;
+    displayLabel: string;
+    previewReference: string | null;
+  }> | null;
+}
+
+/** Additive domain-only V2; it is intentionally not wired to cart or checkout. */
+export interface FutureOrderCandidateV2 {
+  readonly schemaVersion: 2;
+  readonly occurrenceStyleSnapshots: readonly FutureOrderCandidateOccurrenceStyleSnapshotV2[];
+}
+
+export interface FutureOrderCandidateUploadedStyleAuthorityV2 {
+  readonly uploadedSourceRef: string;
+  readonly confirmed: boolean;
+  readonly displayLabel?: string;
+  /** Already-safe persistent display evidence only; never a Storage path or object URL. */
+  readonly previewReference?: string | null;
+}
+
+export interface FutureOrderCandidateV2BuildInput {
+  readonly occurrences: readonly PhysicalGarmentOccurrence[];
+  readonly ledger: GarmentScopedDesignStyleAssignmentLedgerV2;
+  readonly validationAuthority: GarmentScopedDesignStyleValidationAuthority;
+  readonly styles: readonly import("../types").StyleCategory[];
+  readonly uploadedAuthorityBySourceRef: Readonly<Record<string, FutureOrderCandidateUploadedStyleAuthorityV2 | undefined>>;
+}
+
+export type FutureOrderCandidateV2BuildResult =
+  | { readonly status: "valid"; readonly candidate: FutureOrderCandidateV2; readonly blockers: readonly [] }
+  | { readonly status: "blocked"; readonly candidate: null; readonly blockers: readonly FutureOrderCandidateBlocker[] };
+
 export interface FutureOrderCandidateBuildInput
   extends FutureDesignStudioSummaryInput {
   readonly source: DesignSource | null;
@@ -294,6 +357,135 @@ const deepFreeze = <T>(value: T): T => {
     deepFreeze(nested),
   );
   return Object.freeze(value);
+};
+
+const candidateV2Blocker = (
+  code: string,
+  message: string,
+  garmentKey?: string,
+): FutureOrderCandidateBlocker => ({
+  code,
+  stage: "design_style",
+  message,
+  ...(garmentKey ? { garmentKey } : {}),
+});
+
+const isSafeCandidatePreviewReference = (value: unknown): value is string =>
+  typeof value === "string" && value.length > 0 && value.length <= 256 &&
+  !/[\\/]/.test(value);
+
+/**
+ * Builds the Task 5F occurrence-style submission snapshot only. It is pure,
+ * deep-frozen, and deliberately separate from the V1/cart conversion path.
+ */
+export const buildFutureOrderCandidateV2OccurrenceStyles = (
+  input: FutureOrderCandidateV2BuildInput,
+): FutureOrderCandidateV2BuildResult => {
+  const validation = validateGarmentScopedDesignStyleAssignmentLedger({
+    ledger: input.ledger,
+    activeOccurrences: input.occurrences,
+    authority: input.validationAuthority,
+  });
+  const blockers: FutureOrderCandidateBlocker[] = [];
+  if (validation.orphanedAssignmentGarmentKeys.length > 0) {
+    validation.orphanedAssignmentGarmentKeys.forEach((garmentKey) =>
+      blockers.push(candidateV2Blocker(
+        "DESIGN_STYLE_ORPHAN_ASSIGNMENT",
+        "Reconcile removed garment Design Style assignments before continuing.",
+        garmentKey,
+      )),
+    );
+  }
+  const stylesById = new Map(
+    input.styles
+      .filter(isAuthoritativeDesignStyleProjection)
+      .map((style) => [style.id, style] as const),
+  );
+  const counts = new Map<string, number>();
+  const snapshots: FutureOrderCandidateOccurrenceStyleSnapshotV2[] = [];
+  input.occurrences.forEach((occurrence) => {
+    const count = (counts.get(occurrence.garmentType) || 0) + 1;
+    counts.set(occurrence.garmentType, count);
+    const token = Number.isSafeInteger(occurrence.occurrenceGeneration) &&
+      occurrence.occurrenceGeneration! > 0
+      ? createPhysicalGarmentOccurrenceIdentityToken({
+          garmentKey: occurrence.garmentKey,
+          generation: occurrence.occurrenceGeneration!,
+        })
+      : null;
+    const label = `${occurrence.garmentType[0].toUpperCase()}${occurrence.garmentType.slice(1)}${count > 1 ? ` ${count}` : ""}`;
+    const resolved = validation.occurrencesByGarmentKey[occurrence.garmentKey];
+    if (!token || !resolved) {
+      blockers.push(candidateV2Blocker("DESIGN_STYLE_OCCURRENCE_MISSING", "This garment's Design Style needs review.", occurrence.garmentKey));
+      return;
+    }
+    if (resolved.occurrenceToken !== token) {
+      blockers.push(candidateV2Blocker("DESIGN_STYLE_OCCURRENCE_STALE", "This garment occurrence changed. Review its Design Style.", occurrence.garmentKey));
+      return;
+    }
+    if (!resolved.assignment || resolved.status !== "valid") {
+      const code = resolved.status === "needs_review"
+        ? "DESIGN_STYLE_NEEDS_REVIEW"
+        : resolved.status === "awaiting_validation"
+          ? "DESIGN_STYLE_UPLOAD_UNCONFIRMED"
+          : "DESIGN_STYLE_ASSIGNMENT_INVALID";
+      blockers.push(candidateV2Blocker(code, "This garment's Design Style is not ready for submission.", occurrence.garmentKey));
+      return;
+    }
+    const assignment = resolved.assignment;
+    if (assignment.sourceKind === "catalog") {
+      const style = stylesById.get(assignment.catalogStyleId);
+      const metadata = style ? getDesignStyleAuthorityMetadata(style) : null;
+      if (!style || !metadata || metadata.lifecycle !== "published" ||
+        metadata.eligibilityFingerprint !== assignment.eligibilityFingerprint) {
+        blockers.push(candidateV2Blocker("DESIGN_STYLE_SOURCE_UNAVAILABLE", "The selected catalogue Design Style is no longer available.", occurrence.garmentKey));
+        return;
+      }
+      snapshots.push({
+        occurrence: { garmentKey: occurrence.garmentKey, occurrenceToken: token, label, garmentType: occurrence.garmentType },
+        assignmentRevision: assignment.assignmentRevision,
+        sourceKind: "catalogue",
+        sourceKey: assignment.sourceKey,
+        catalogue: {
+          styleId: style.id,
+          name: style.name,
+          image: style.image?.trim() || null,
+          publicRevision: metadata.publicRevision,
+          eligibilityRevision: metadata.eligibilityRevision,
+          eligibilityFingerprint: metadata.eligibilityFingerprint,
+          adaptabilityConfirmationFingerprint: assignment.adaptabilityConfirmationFingerprint || null,
+        },
+        uploaded: null,
+      });
+      return;
+    }
+    const uploaded = input.uploadedAuthorityBySourceRef[assignment.uploadedSourceRef];
+    if (!uploaded || !uploaded.confirmed || uploaded.uploadedSourceRef !== assignment.uploadedSourceRef) {
+      blockers.push(candidateV2Blocker("DESIGN_STYLE_UPLOAD_UNCONFIRMED", "The uploaded Design Style needs confirmation before submission.", occurrence.garmentKey));
+      return;
+    }
+    snapshots.push({
+      occurrence: { garmentKey: occurrence.garmentKey, occurrenceToken: token, label, garmentType: occurrence.garmentType },
+      assignmentRevision: assignment.assignmentRevision,
+      sourceKind: "uploaded",
+      sourceKey: assignment.sourceKey,
+      catalogue: null,
+      uploaded: {
+        uploadedSourceRef: assignment.uploadedSourceRef,
+        displayLabel: uploaded.displayLabel?.trim() || "Uploaded design",
+        previewReference: isSafeCandidatePreviewReference(uploaded.previewReference)
+          ? uploaded.previewReference : null,
+      },
+    });
+  });
+  if (blockers.length > 0 || snapshots.length !== input.occurrences.length) {
+    return deepFreeze({ status: "blocked", candidate: null, blockers: sortBlockers(blockers.length ? blockers : [candidateV2Blocker("DESIGN_STYLE_SNAPSHOT_UNREPRESENTABLE", "Design Style snapshots could not be represented safely.")]) });
+  }
+  return deepFreeze({
+    status: "valid",
+    candidate: { schemaVersion: 2, occurrenceStyleSnapshots: snapshots },
+    blockers: [],
+  });
 };
 
 /**
