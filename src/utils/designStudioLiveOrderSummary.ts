@@ -317,7 +317,7 @@ export const projectDesignStudioLiveOrderSummary = ({
   candidatePricing,
   fabricAllocationState: _fabricAllocationState,
   measurementState,
-  designSource,
+  designSource: _designSource,
   additionalConstructionState: _additionalConstructionState = null,
   catalogInspection: _catalogInspection = null,
   showAdditionalClothesCosts,
@@ -364,25 +364,12 @@ export const projectDesignStudioLiveOrderSummary = ({
   );
 
   const designStyleLines = committedLines(
-    summary.designStyleSummary
-      ? [
-          {
-            id: summary.designStyleSummary.styleId,
-            label: summary.designStyleSummary.name,
-            detail: summary.designStyleSummary.compositionLabel,
-            amountLabel: null,
-          },
-        ]
-      : designSource?.kind === "uploaded"
-        ? [
-            {
-              id: designSource.sourceKey,
-              label: LIVE_ORDER_SUMMARY_OWN_DESIGN_TITLE,
-              detail: LIVE_ORDER_SUMMARY_OWN_DESIGN_DETAIL,
-              amountLabel: null,
-            },
-          ]
-        : [],
+    (summary.designStyleOccurrences || []).map((occurrence, index) => ({
+      id: `design-style-${index}`,
+      label: occurrence.occurrenceLabel,
+      detail: `${occurrence.name}${occurrence.detail ? ` — ${occurrence.detail}` : ""}`,
+      amountLabel: null,
+    })),
   );
 
   const constructionLines = committedLines(

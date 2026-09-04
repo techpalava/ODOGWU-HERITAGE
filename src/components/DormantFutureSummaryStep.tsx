@@ -372,14 +372,16 @@ export const DormantFutureSummaryStep = ({
         editLabel="Edit Design Style"
         onEdit={onEditDesignStyle}
       >
-        {summary.designStyleSummary ? (
-          <div className="grid min-w-0 gap-4 sm:grid-cols-[96px_minmax(0,1fr)] sm:items-center">
+        {(summary.designStyleOccurrences || []).length > 0 ? (
+          <div className="space-y-4">
+            {(summary.designStyleOccurrences || []).map((occurrence) => (
+          <div key={occurrence.occurrenceLabel} className="grid min-w-0 gap-4 sm:grid-cols-[96px_minmax(0,1fr)] sm:items-center">
             <div className="aspect-[4/5] overflow-hidden rounded-xl bg-heritage-cream/35">
-              {summary.designStyleSummary.image ? (
+              {occurrence.image ? (
                 <>
                   <img
-                    src={summary.designStyleSummary.image}
-                    alt={`${summary.designStyleSummary.name} design`}
+                    src={occurrence.image}
+                    alt={`${occurrence.name} design`}
                     className="h-full w-full object-contain"
                     referrerPolicy="no-referrer"
                     onError={(event) => {
@@ -399,15 +401,13 @@ export const DormantFutureSummaryStep = ({
             </div>
             <div className="min-w-0">
               <h4 className="break-words font-bold text-heritage-green">
-                {summary.designStyleSummary.name}
+                {occurrence.occurrenceLabel}: {occurrence.name}
               </h4>
-              <p className="mt-1 break-words text-sm text-heritage-ink/70">
-                {summary.designStyleSummary.compositionLabel}
-              </p>
-              <p className="mt-1 text-xs capitalize text-heritage-ink/55">
-                {summary.designStyleSummary.demographic}
-              </p>
+              {occurrence.detail ? <p className="mt-1 break-words text-sm text-heritage-ink/70">{occurrence.detail}</p> : null}
+              {occurrence.status !== "selected" ? <p className="mt-1 text-xs capitalize text-heritage-ink/55">{occurrence.status.replaceAll("_", " ")}</p> : null}
             </div>
+          </div>
+            ))}
           </div>
         ) : (
           <p className="text-sm text-heritage-ink/65">Design Style needs review.</p>

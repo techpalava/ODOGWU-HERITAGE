@@ -444,6 +444,25 @@ const buildAuthority = ({
     fabricCompletion,
     materialPricing,
     designStyleSelection,
+    designStyleOccurrences: garmentTypeSelection.garmentTypes.map((garmentType) => ({
+      target: { garmentKey: `base:${garmentType}`, occurrenceToken: `base:${garmentType}#1` },
+      garmentType,
+      label: garmentType[0].toUpperCase() + garmentType.slice(1),
+      status: includeStyle ? ("complete" as const) : ("incomplete" as const),
+      assignment: includeStyle
+        ? {
+            garmentKey: `base:${garmentType}`,
+            occurrenceToken: `base:${garmentType}#1`,
+            assignmentRevision: 1,
+            sourceKind: "catalog" as const,
+            sourceKey: `catalog-style:${style.id}`,
+            catalogStyleId: style.id,
+            eligibilityFingerprint: "fixture-eligible",
+          }
+        : null,
+      assignmentLabel: includeStyle ? style.name : null,
+    })),
+    styles: [style],
     customDetailsReconciliation,
     customDetailsCompletion,
     customDetailsPricing,
@@ -529,7 +548,11 @@ assert.equal(
   false,
 );
 hiddenSection(early.view, "fabrics");
-hiddenSection(early.view, "design_style");
+assert.deepEqual(
+  section(early.view, "design_style").lines.map((line) => `${line.label} — ${line.detail}`),
+  ["Shirt — Not selected"],
+  "authoritative unassigned occurrences remain visible without inheriting a sibling style",
+);
 hiddenSection(early.view, "measurements");
 hiddenSection(early.view, "delivery");
 hiddenSection(early.view, "optional_extras");
@@ -664,7 +687,7 @@ assert.equal(
   false,
 );
 hiddenSection(step1Only.view, "fabrics");
-hiddenSection(step1Only.view, "design_style");
+assert.equal(section(step1Only.view, "design_style").lines[0]?.detail, "Not selected");
 hiddenSection(step1Only.view, "measurements");
 hiddenSection(step1Only.view, "delivery");
 hiddenSection(step1Only.view, "optional_extras");
@@ -715,7 +738,7 @@ assert.deepEqual(
   ),
   ["Trouser — Royal Forest Mosaic"],
 );
-hiddenSection(afterFabric.view, "design_style");
+assert.equal(section(afterFabric.view, "design_style").lines[0]?.detail, "Not selected");
 hiddenSection(afterFabric.view, "measurements");
 hiddenSection(afterFabric.view, "delivery");
 
@@ -1233,7 +1256,17 @@ const uploadedDesignSource = {
 };
 
 const uploaded = projectDesignStudioLiveOrderSummary({
-  summary: early.summary,
+  summary: {
+    ...early.summary,
+    designStyleOccurrences: [{
+      occurrenceLabel: "Shirt",
+      sourceKind: "uploaded",
+      status: "selected",
+      name: "Uploaded design",
+      image: null,
+      detail: "Uploaded design selected",
+    }],
+  },
   shippingResolution: early.shippingResolution,
   candidatePricing: null,
   fabricAllocationState: early.allocation,
@@ -1242,11 +1275,11 @@ const uploaded = projectDesignStudioLiveOrderSummary({
 });
 assert.equal(
   section(uploaded, "design_style").lines[0]?.label,
-  LIVE_ORDER_SUMMARY_OWN_DESIGN_TITLE,
+  "Shirt",
 );
 assert.equal(
   section(uploaded, "design_style").lines[0]?.detail,
-  LIVE_ORDER_SUMMARY_OWN_DESIGN_DETAIL,
+  "Uploaded design — Uploaded design selected",
 );
 assert.notEqual(uploaded.totalLabel, LIVE_ORDER_SUMMARY_TOTAL_LABEL);
 

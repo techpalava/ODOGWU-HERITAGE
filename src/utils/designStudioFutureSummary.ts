@@ -30,6 +30,7 @@ import {
   type AuthoritativeDesignPricing,
 } from "./designPricing";
 import { projectAuthoritativePhysicalOccurrences, resolveOccurrenceConstruction } from "./designSourceState";
+import type { DesignStyleStepOccurrencePresentation } from "./designStyleStepRuntime";
 import {
   type GarmentScopedCustomDetailsCompletionResult,
   type GarmentScopedCustomDetailsPricingResult,
@@ -110,6 +111,15 @@ export interface FutureSummaryDesignStyle {
   compositionLabel: string;
 }
 
+export interface FutureSummaryDesignStyleOccurrence {
+  occurrenceLabel: string;
+  sourceKind: "catalogue" | "uploaded" | "unassigned";
+  status: "selected" | "unassigned" | "needs_review" | "unavailable" | "awaiting_validation" | "upload_pending";
+  name: string;
+  image: string | null;
+  detail: string | null;
+}
+
 export interface FutureSummaryCustomDetailOccurrence {
   occurrenceKey: string;
   garmentKey: string;
@@ -166,6 +176,9 @@ export interface FutureDesignStudioSummary {
   garmentSummary: FutureSummaryGarment[];
   fabricSummary: FutureSummaryFabricAllocation[];
   designStyleSummary: FutureSummaryDesignStyle | null;
+  /** Exact customer-safe occurrence rows. The legacy scalar remains null so
+   * downstream Candidate authority cannot infer a representative style. */
+  designStyleOccurrences?: FutureSummaryDesignStyleOccurrence[];
   customDetailsSummary: Array<{
     garmentKey: string;
     garmentLabel: string;
@@ -188,6 +201,8 @@ export interface FutureDesignStudioSummaryInput {
   fabricCompletion: FutureFabricStageCompletion;
   materialPricing: FabricAllocationPricingResult | null;
   designStyleSelection: FutureDesignStyleSelectionResolution;
+  designStyleOccurrences?: readonly DesignStyleStepOccurrencePresentation[];
+  styles?: readonly StyleCategory[];
   customDetailsReconciliation: GarmentScopedCustomDetailsReconciliationResult | null;
   customDetailsCompletion: GarmentScopedCustomDetailsCompletionResult | null;
   customDetailsPricing: GarmentScopedCustomDetailsPricingResult | null;
@@ -440,26 +455,56 @@ const mapFabrics = ({
   });
 };
 
-const mapStyle = (
-  selection: FutureDesignStyleSelectionResolution,
-  blockers: FutureDesignStudioSummaryBlocker[],
-): FutureSummaryDesignStyle | null => {
-  if (selection.status !== "selected" || !selection.selectedStyle) {
-    blockers.push({
-      code: "DESIGN_STYLE_INVALID",
-      section: "design_style",
-      message: "Select a current compatible Design Style.",
-    });
-    return null;
-  }
-  const style: StyleCategory = selection.selectedStyle;
-  return {
-    styleId: style.id,
-    name: style.name,
-    image: style.image?.trim() || null,
-    demographic: style.targetDemographic || style.gender,
-    compositionLabel: getFutureDesignStyleCompositionLabel(style),
-  };
+const mapOccurrenceStyles = ({
+  occurrences,
+  styles,
+  blockers,
+}: {
+  occurrences: readonly DesignStyleStepOccurrencePresentation[];
+  styles: readonly StyleCategory[];
+  blockers: FutureDesignStudioSummaryBlocker[];
+}): FutureSummaryDesignStyleOccurrence[] => {
+  const stylesById = new Map(styles.map((style) => [style.id, style] as const));
+  const rows: FutureSummaryDesignStyleOccurrence[] = occurrences.map((occurrence) => {
+    const assignment = occurrence.assignment;
+    if (assignment?.sourceKind === "catalog") {
+      const style = stylesById.get(assignment.catalogStyleId);
+      if (style) return {
+        occurrenceLabel: occurrence.label,
+        sourceKind: "catalogue" as const,
+        status: "selected" as const,
+        name: style.name,
+        image: style.image?.trim() || null,
+        detail: getFutureDesignStyleCompositionLabel(style),
+      };
+    }
+    if (assignment?.sourceKind === "uploaded") return {
+      occurrenceLabel: occurrence.label,
+      sourceKind: "uploaded" as const,
+      status: "selected" as const,
+      name: "Uploaded design",
+      image: null,
+      detail: "Uploaded design selected",
+    };
+    const status: FutureSummaryDesignStyleOccurrence["status"] = occurrence.status === "needs_review" || occurrence.status === "unavailable" ||
+      occurrence.status === "awaiting_validation" || occurrence.status === "upload_pending"
+      ? occurrence.status
+      : "unassigned";
+    return {
+      occurrenceLabel: occurrence.label,
+      sourceKind: "unassigned" as const,
+      status,
+      name: status === "unassigned" ? "Not selected" : "Design Style needs review",
+      image: null,
+      detail: null,
+    };
+  });
+  if (rows.some((row) => row.status !== "selected")) blockers.push({
+    code: "DESIGN_STYLE_INVALID",
+    section: "design_style",
+    message: "Choose a current Design Style for each garment.",
+  });
+  return rows;
 };
 
 const mapCustomDetails = ({
@@ -783,7 +828,15 @@ export const projectFutureDesignStudioSummary = (
     materialPricing: input.materialPricing,
     blockers,
   });
-  const designStyleSummary = mapStyle(input.designStyleSelection, blockers);
+  // Do not carry a representative scalar forward: Candidate remains fail closed
+  // until Task 5F-C owns immutable occurrence-to-style submission data.
+  void input.designStyleSelection;
+  const designStyleSummary = null;
+  const designStyleOccurrences = mapOccurrenceStyles({
+    occurrences: input.designStyleOccurrences || [],
+    styles: input.styles || [],
+    blockers,
+  });
   const customDetailsSummary = mapCustomDetails({
     customDetailsReconciliation: input.customDetailsReconciliation,
     customDetailsCompletion: input.customDetailsCompletion,
@@ -820,6 +873,7 @@ export const projectFutureDesignStudioSummary = (
     garmentSummary,
     fabricSummary,
     designStyleSummary,
+    designStyleOccurrences,
     customDetailsSummary,
     aiTryOnSummary,
     measurementSummary,
