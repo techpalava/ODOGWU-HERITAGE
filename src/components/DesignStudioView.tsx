@@ -254,7 +254,15 @@ import {
   CustomerDesignUploadError,
   CustomerDesignUploadService,
 } from "../services/customerDesignUploadService";
-import { deleteUploadedDesignBeforeSourceChange } from "../utils/uploadedDesignDeletionOrchestration";
+import {
+  deleteUploadedDesignBeforeSourceChange,
+  deleteUploadedDesignCanonicalSource,
+} from "../utils/uploadedDesignDeletionOrchestration";
+import {
+  coordinateUploadedSourceCleanup,
+  createUploadedSourceCleanupCandidate,
+  type UploadedSourceCleanupCandidate,
+} from "../utils/designStyleUploadedSourceCleanup";
 import {
   cloneGarmentConstructionPricingResolution,
   createEmptyAdditionalGarmentConstructionState,
@@ -522,6 +530,15 @@ export default function DesignStudioView({
   const lastDesignStylePersistenceAcknowledgementRef = useRef<
     ReturnType<typeof createDesignStylePersistenceAcknowledgement>
   >(null);
+  const uploadedSourceCleanupCandidatesRef = useRef<
+    Map<
+      string,
+      {
+        readonly candidate: UploadedSourceCleanupCandidate;
+        readonly reference: CustomerDesignUploadReference;
+      }
+    >
+  >(new Map());
   const lastScheduledFutureDraftRef = useRef<GuestDesignDraft | null>(null);
   const preservedInvalidHydratedDraftFabricAllocationsRef = useRef<
     FabricAllocation[] | null
@@ -2413,6 +2430,7 @@ export default function DesignStudioView({
     clearFutureDesignStyleRuntimeHydration();
     lastPersistedFutureDraftRef.current = null;
     lastDesignStylePersistenceAcknowledgementRef.current = null;
+    uploadedSourceCleanupCandidatesRef.current.clear();
     lastScheduledFutureDraftRef.current = null;
     setFutureDraftPersistenceStatus("resolving");
     setGuestDraftHydrated(false);
@@ -3267,6 +3285,43 @@ export default function DesignStudioView({
     );
   }, [guestDraftHydrated, futureAiTryOnInputFingerprint]);
 
+  const coordinatePersistedUploadedSourceCleanup = (
+    acknowledgement: NonNullable<
+      ReturnType<typeof createDesignStylePersistenceAcknowledgement>
+    >,
+  ) => {
+    uploadedSourceCleanupCandidatesRef.current.forEach((pending, sourceRef) => {
+      void coordinateUploadedSourceCleanup({
+        candidate: pending.candidate,
+        acknowledgement,
+        currentSaveGeneration: futureDraftAutosaveGenerationRef.current,
+        currentIdentityGeneration: futureDraftIdentityGenerationRef.current,
+        activeOccurrences: authoritativePhysicalOccurrencesForDomain,
+        // Task 5F history and the other deletion authorities are not yet
+        // available here. Explicit unknown values retain the source fail-closed.
+        lifecycleProof: {
+          referenceAuthorityStatus: "complete",
+          currentDraftReferenceStatus: "not-referenced",
+          ownershipStatus: "unknown",
+          ownershipTransferStatus: "unknown",
+          confirmationStatus: "unknown",
+          historySafetyStatus: "unknown",
+        },
+        deleteCanonicalSource: async () => {
+          const deletion = await deleteUploadedDesignCanonicalSource({
+            reference: pending.reference,
+            deleteDraft: CustomerDesignUploadService.deleteCustomerDesignDraft,
+          });
+          if (deletion.status === "failed") throw deletion.error;
+        },
+      }).then((result) => {
+        if (result.status === "deleted") {
+          uploadedSourceCleanupCandidatesRef.current.delete(sourceRef);
+        }
+      });
+    });
+  };
+
   useEffect(() => {
     if (!guestDraftHydrated || isAdditionalGarmentCommitPending) return;
     if (
@@ -3450,8 +3505,7 @@ export default function DesignStudioView({
           })
         ) {
           lastPersistedFutureDraftRef.current = saved.draft;
-          lastDesignStylePersistenceAcknowledgementRef.current =
-            createDesignStylePersistenceAcknowledgement({
+          const acknowledgement = createDesignStylePersistenceAcknowledgement({
               persistenceKind: "guest",
               draftIdentity: futureDraftIdentityKey,
               saveGeneration,
@@ -3461,6 +3515,10 @@ export default function DesignStudioView({
                 futureDraftIdentityGenerationRef.current,
               persistedDraft: saved.draft,
             });
+          lastDesignStylePersistenceAcknowledgementRef.current = acknowledgement;
+          if (acknowledgement) {
+            coordinatePersistedUploadedSourceCleanup(acknowledgement);
+          }
         } else if (
           saveGeneration === futureDraftAutosaveGenerationRef.current &&
           designStyleHydration.identityGeneration ===
@@ -3510,8 +3568,7 @@ export default function DesignStudioView({
                   lastPersistedFutureDraftRef.current =
                     result.record.draft || canonicalGuestDraft;
                   if (result.record.draft) {
-                    lastDesignStylePersistenceAcknowledgementRef.current =
-                      createDesignStylePersistenceAcknowledgement({
+                    const acknowledgement = createDesignStylePersistenceAcknowledgement({
                         persistenceKind: "authenticated",
                         draftIdentity: futureDraftIdentityKey,
                         saveGeneration,
@@ -3522,6 +3579,11 @@ export default function DesignStudioView({
                           futureDraftIdentityGenerationRef.current,
                         persistedDraft: result.record.draft,
                       });
+                    lastDesignStylePersistenceAcknowledgementRef.current =
+                      acknowledgement;
+                    if (acknowledgement) {
+                      coordinatePersistedUploadedSourceCleanup(acknowledgement);
+                    }
                   }
                 }
               } else if (result.status === "conflict") {
@@ -3747,6 +3809,39 @@ export default function DesignStudioView({
     applyFutureDesignStyleMutationLedger(current, result.ledger);
   };
 
+  const queueUploadedSourceCleanupCandidate = ({
+    source,
+    sourceRef,
+    reason,
+    ledger,
+    identityKey,
+    identityGeneration,
+  }: {
+    source: UploadedDesignSource | undefined;
+    sourceRef: string;
+    reason: "detach" | "replacement";
+    ledger: NonNullable<DesignStyleDraftHydrationResult["ledger"]>;
+    identityKey: string;
+    identityGeneration: number;
+  }) => {
+    if (source?.uploadReference.designReferenceId !== sourceRef) return;
+    const candidate = createUploadedSourceCleanupCandidate({
+      sourceRef,
+      reason,
+      draftIdentity: identityKey,
+      // The mutation has already published its ledger; the next autosave is
+      // the only save that may establish this candidate's proof.
+      expectedSaveGeneration: futureDraftAutosaveGenerationRef.current + 1,
+      expectedIdentityGeneration: identityGeneration,
+      ledger,
+    });
+    if (!candidate) return;
+    uploadedSourceCleanupCandidatesRef.current.set(sourceRef, {
+      candidate,
+      reference: source.uploadReference,
+    });
+  };
+
   const handleClearFutureDesignStyleAssignment = (
     request: DesignStyleStepClearMutationRequest,
   ) => {
@@ -3786,6 +3881,16 @@ export default function DesignStudioView({
         return;
       }
       futureDesignStyleDetachedSourceLifecycleRef.current = result.lifecycle;
+      queueUploadedSourceCleanupCandidate({
+        source: futureDesignStyleUploadedSourceByGarmentKey[
+          request.target.garmentKey
+        ],
+        sourceRef: result.lifecycle.sourceRef,
+        reason: "detach",
+        ledger: result.ledger,
+        identityKey: current.identityKey,
+        identityGeneration: current.identityGeneration,
+      });
       applyFutureDesignStyleMutationLedger(current, result.ledger);
       return;
     }
@@ -4000,6 +4105,22 @@ export default function DesignStudioView({
           futureDesignStyleUploadPreviewUrlByGarmentKeyRef.current[
             started.ticket.garmentKey
           ];
+        const previousAssignment =
+          result.assignmentResult.status === "applied"
+            ? result.assignmentResult.previousAssignment
+            : null;
+        if (previousAssignment?.sourceKind === "uploaded") {
+          queueUploadedSourceCleanupCandidate({
+            source: futureDesignStyleUploadedSourceByGarmentKey[
+              started.ticket.garmentKey
+            ],
+            sourceRef: previousAssignment.uploadedSourceRef,
+            reason: "replacement",
+            ledger: result.ledger,
+            identityKey: latest.identityKey,
+            identityGeneration: latest.identityGeneration,
+          });
+        }
         if (previousPreviewUrl) URL.revokeObjectURL(previousPreviewUrl);
         const previewUrl = URL.createObjectURL(file);
         futureDesignStyleUploadPreviewUrlByGarmentKeyRef.current[
