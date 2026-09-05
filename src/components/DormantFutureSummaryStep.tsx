@@ -152,7 +152,7 @@ export const DormantFutureSummaryStep = ({
       aria-labelledby="future-summary-title"
       data-stage-id="summary"
       data-summary-status={summary.status}
-      className="mx-auto max-w-6xl space-y-5 font-sans"
+      className="mx-auto min-w-0 max-w-6xl space-y-5 font-sans [overflow-wrap:anywhere]"
     >
       <header className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
         <DesignStudioBackButton
@@ -376,12 +376,12 @@ export const DormantFutureSummaryStep = ({
           <div className="space-y-4">
             {(summary.designStyleOccurrences || []).map((occurrence) => (
           <div key={occurrence.occurrenceLabel} className="grid min-w-0 gap-4 sm:grid-cols-[96px_minmax(0,1fr)] sm:items-center">
-            <div className="aspect-[4/5] overflow-hidden rounded-xl bg-heritage-cream/35">
+            <div className="aspect-[4/5] w-24 max-w-full overflow-hidden rounded-xl bg-heritage-cream/35">
               {occurrence.image ? (
                 <>
                   <img
                     src={occurrence.image}
-                    alt={`${occurrence.name} design`}
+                    alt={`${occurrence.name} design for ${occurrence.occurrenceLabel}`}
                     className="h-full w-full object-contain"
                     referrerPolicy="no-referrer"
                     onError={(event) => {
@@ -539,7 +539,7 @@ export const DormantFutureSummaryStep = ({
               </p>
             )}
           </div>
-          <dl className="grid shrink-0 grid-cols-2 gap-x-4 gap-y-1 text-xs">
+          <dl className="grid min-w-0 w-full grid-cols-2 gap-x-4 gap-y-1 text-xs sm:w-auto">
             <dt className="text-white/65">Custom Details</dt>
             <dd className="text-right font-mono">
               {summary.pricingSummary.status === "pending"

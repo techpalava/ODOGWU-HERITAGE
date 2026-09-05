@@ -495,7 +495,7 @@ export const DormantFutureDesignStyleStep = ({
         aria-labelledby="future-design-style-title"
         data-stage-id="design_style"
         data-stage-complete={exactSetComplete}
-        className={`space-y-6 font-sans ${
+        className={`min-w-0 space-y-6 font-sans [overflow-wrap:anywhere] ${
           exactSetComplete ? "pb-28 sm:pb-32" : ""
         }`}
       >
@@ -595,7 +595,7 @@ export const DormantFutureDesignStyleStep = ({
                       aria-current={active ? "true" : undefined}
                       aria-label={`${occurrence.label}: ${OCCURRENCE_STATUS_LABEL[occurrence.status]}`}
                       onClick={() => onSelectOccurrence(occurrence.target)}
-                      className={`min-h-11 min-w-0 rounded-xl border px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+                      className={`min-h-11 min-w-0 max-w-full rounded-xl border px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
                         active
                           ? "border-heritage-green bg-heritage-green text-white"
                           : "border-heritage-green/20 bg-white text-heritage-green"
@@ -641,6 +641,7 @@ export const DormantFutureDesignStyleStep = ({
                   <button
                     type="button"
                     disabled={!mutationsEnabled || !clearRequest}
+                    aria-label={`Clear design for ${activeOccurrence.label}`}
                     onClick={() => clearRequest && onClearAssignment(clearRequest)}
                     className="inline-flex min-h-11 items-center justify-center rounded-xl border border-red-200 bg-white px-4 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
                   >
@@ -761,7 +762,7 @@ export const DormantFutureDesignStyleStep = ({
         </div>
 
         <aside className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm">
-          <div className="flex min-w-0 items-start justify-between gap-3 text-sm">
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-sm">
             <span className="min-w-0 text-heritage-ink/70">
               Garment Construction Subtotal
             </span>
@@ -777,7 +778,7 @@ export const DormantFutureDesignStyleStep = ({
           </p>
         </aside>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <DesignStudioBackButton destination="Fabric" onClick={onBack} />
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
             <button

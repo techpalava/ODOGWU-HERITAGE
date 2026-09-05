@@ -618,7 +618,7 @@ export const DormantFuturePaymentReviewStep = ({
       aria-labelledby="future-payment-review-title"
       data-stage-id="payment"
       data-candidate-status={result.status}
-      className="mx-auto max-w-6xl space-y-5 font-sans"
+      className="mx-auto min-w-0 max-w-6xl space-y-5 font-sans [overflow-wrap:anywhere]"
     >
       <header className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
         <DesignStudioBackButton
@@ -1040,9 +1040,9 @@ export const DormantFuturePaymentReviewStep = ({
                   ? "Payment authorization"
                   : FUTURE_PAYMENT_UNAVAILABLE_MESSAGE}
             </h2>
-            <p id="future-payment-pending-explanation" className="mt-2 break-words text-sm leading-relaxed text-white/80">
+            <p id="future-payment-pending-explanation" role="status" aria-atomic="true" className="mt-2 break-words text-sm leading-relaxed text-white/80">
               {isV2PaymentReviewCandidate(candidate)
-                ? preparationMessage
+                ? preparationIsPending ? "Preparing your order..." : preparationMessage
                 : FUTURE_ORDER_NOT_SUBMITTED_MESSAGE}
             </p>
             {!preparationIsComplete && (
@@ -1055,7 +1055,7 @@ export const DormantFuturePaymentReviewStep = ({
                 {preparationIsComplete ? (
                   <p
                     data-future-order-v2-prepared={preparation?.status}
-                    className="mt-4 text-sm font-semibold text-heritage-gold"
+                    className="mt-4 break-words text-sm font-semibold text-heritage-gold"
                   >
                     Order prepared with ID {preparation.orderId}.
                   </p>
@@ -1064,8 +1064,10 @@ export const DormantFuturePaymentReviewStep = ({
                     type="button"
                     data-future-order-v2-prepare
                     disabled={!isReviewable || preparationIsPending}
+                    aria-busy={preparationIsPending}
+                    aria-describedby="future-payment-pending-explanation"
                     onClick={onPrepareOrder}
-                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white sm:mr-3 sm:w-auto"
                   >
                     <CheckCircle2 aria-hidden="true" size={14} />
                     {preparationIsPending
@@ -1080,7 +1082,8 @@ export const DormantFuturePaymentReviewStep = ({
                 type="button"
                 data-future-order-v2-payment
                 onClick={onExecutePayment}
-                className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white sm:w-auto"
+                aria-describedby="future-payment-pending-explanation"
+                className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green sm:w-auto"
               >
                 <CheckCircle2 aria-hidden="true" size={14} />
                 Authorize payment
@@ -1091,6 +1094,7 @@ export const DormantFuturePaymentReviewStep = ({
                 type="button"
                 data-future-order-v2-payment
                 disabled
+                aria-busy="true"
                 aria-describedby="future-payment-unavailable-title future-payment-pending-explanation"
                 className="mt-4 inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-white/20 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
               >

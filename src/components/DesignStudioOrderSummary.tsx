@@ -29,7 +29,7 @@ const SummarySection = ({
           onClick={onEdit}
           aria-label={`Edit ${section.title}`}
           data-testid={`live-order-summary-edit-${section.id}`}
-          className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-lg px-1.5 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-lg px-2 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
         >
           <Pencil aria-hidden="true" size={11} />
           Edit
@@ -42,7 +42,7 @@ const SummarySection = ({
           <li
             key={line.id}
             data-line-id={line.id}
-            className="flex min-w-0 items-start justify-between gap-2"
+            className="flex min-w-0 flex-wrap items-start justify-between gap-2"
           >
             <div className="min-w-0">
               <p className="break-words text-[13px] font-semibold leading-snug text-heritage-ink">
@@ -69,7 +69,7 @@ const SummarySection = ({
         data-testid={`live-order-summary-${section.id}-subtotal`}
         data-subtotal-cents={section.footer.amountCents}
       >
-        <div className="flex min-w-0 items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
           <p className="min-w-0 break-words text-[13px] font-semibold leading-snug text-heritage-ink">
             {section.footer.label}
           </p>
@@ -122,7 +122,7 @@ export const DesignStudioOrderSummary = ({
     <aside
       aria-labelledby={headingId}
       data-testid="live-order-summary-sidebar"
-      className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-3 shadow-sm sm:p-3.5 lg:sticky lg:top-24 lg:self-start"
+      className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-3 shadow-sm [overflow-wrap:anywhere] sm:p-3.5 lg:sticky lg:top-24 lg:self-start"
     >
       <div className="flex min-w-0 items-center gap-2 border-b border-gray-100 pb-2">
         <UsersRound
@@ -152,7 +152,7 @@ export const DesignStudioOrderSummary = ({
           data-testid="live-order-summary-total"
           data-total-status={view.totalStatus}
         >
-          <div className="flex min-w-0 items-baseline justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
             <p className="min-w-0 break-words text-[13px] font-semibold text-heritage-ink">
               {view.totalLabel}
             </p>
