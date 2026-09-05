@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { GuestDesignDraft } from "./src/types";
+import type { CustomerDesignUploadReference, GuestDesignDraft } from "./src/types";
 import {
   createDesignStylePersistenceAcknowledgement,
   DESIGN_STYLE_DRAFT_FIELD,
@@ -9,6 +9,7 @@ import {
   coordinateUploadedSourceCleanup,
   createUploadedSourceCleanupCandidate,
 } from "./src/utils/designStyleUploadedSourceCleanup";
+import { deleteUploadedDesignCanonicalSource } from "./src/utils/uploadedDesignDeletionOrchestration";
 import {
   assignUploadedDesignStyleToGarmentOccurrence,
   clearGarmentDesignStyleAssignment,
@@ -139,16 +140,22 @@ assert.equal((await run({ candidate: { ...candidate, expectedFingerprint: "wrong
 
 // G: production history remains unknown even after exact absence proof.
 assert.equal((await run({ lifecycleProof: { ...safeProof, historySafetyStatus: "unknown" } })).status, "retained-history-unknown");
+assert.equal((await run({ lifecycleProof: { ...safeProof, historySafetyStatus: "retain" } })).status, "retained-lifecycle-incomplete");
 
-// H: only an injected complete authority can reach physical deletion.
+// H: ownership, transfer, and confirmation are all independent fail-closed proofs.
+assert.equal((await run({ lifecycleProof: { ...safeProof, ownershipStatus: "unknown" } })).status, "retained-ownership-unresolved");
+assert.equal((await run({ lifecycleProof: { ...safeProof, ownershipTransferStatus: "unknown" } })).status, "retained-ownership-unresolved");
+assert.equal((await run({ lifecycleProof: { ...safeProof, confirmationStatus: "unknown" } })).status, "retained-lifecycle-incomplete");
+
+// I: only an injected complete authority can reach physical deletion exactly once.
 assert.equal((await run()).status, "deleted");
 assert.equal(deletes, 1);
 
-// I: a physical failure never changes the already-detached ledger.
+// J: a physical failure never changes the already-detached ledger.
 assert.equal((await run({ deleteCanonicalSource: async () => { throw new Error("storage failed"); } })).status, "deletion-failed");
 assert.equal(detached.assignmentsByGarmentKey[shirt.garmentKey], undefined);
 
-// J/K: replacement and detach candidates remain unproved before acknowledgement.
+// K: replacement cannot delete A before its post-replacement ledger is persisted.
 const replacement = assign(initial, occurrences, shirt, "source-B");
 const replacementCandidate = createUploadedSourceCleanupCandidate({
   sourceRef: "source-A", reason: "replacement", draftIdentity: "guest", expectedSaveGeneration: 2,
@@ -156,5 +163,37 @@ const replacementCandidate = createUploadedSourceCleanupCandidate({
 })!;
 assert.equal((await run({ candidate: replacementCandidate, acknowledgement: null })).status, "retained-persistence-unproven");
 assert.equal((await run({ acknowledgement: null })).status, "retained-persistence-unproven");
+
+// L: only persisted replacement A is eligible; B remains independently referenced.
+const replacementResult = await run({
+  candidate: replacementCandidate,
+  acknowledgement: acknowledgementFor(replacement),
+});
+assert.deepEqual(replacementResult, { status: "deleted", sourceRef: "source-A" });
+assert.equal(deletes, 2);
+const replacementAssignment = replacement.assignmentsByGarmentKey[shirt.garmentKey];
+assert.equal(replacementAssignment?.sourceKind, "uploaded");
+if (replacementAssignment?.sourceKind !== "uploaded") {
+  throw new Error("expected replacement B to remain an uploaded assignment");
+}
+assert.equal(replacementAssignment.uploadedSourceRef, "source-B");
+
+// M: physical deletion receives only the exact canonical reference, not a path.
+const canonicalReference: CustomerDesignUploadReference = {
+  designReferenceId: "source-A",
+  ownerUid: "owner-A",
+  storagePath: "customer-designs/owner-A/source-A.png",
+  mimeType: "image/png",
+  createdAt: "2026-01-01T00:00:00.000Z",
+};
+let deletedReference: typeof canonicalReference | null = null;
+assert.deepEqual(
+  await deleteUploadedDesignCanonicalSource({
+    reference: canonicalReference,
+    deleteDraft: async (reference) => { deletedReference = reference; },
+  }),
+  { status: "deleted" },
+);
+assert.strictEqual(deletedReference, canonicalReference);
 
 console.log("Uploaded source cleanup coordinator tests passed.");

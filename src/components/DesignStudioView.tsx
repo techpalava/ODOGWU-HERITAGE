@@ -569,9 +569,15 @@ export default function DesignStudioView({
       {
         readonly candidate: UploadedSourceCleanupCandidate;
         readonly reference: CustomerDesignUploadReference;
+        readonly confirmation: {
+          readonly sourceKey: string;
+          readonly uploadedSourceRef: string;
+          readonly ownerUid: string;
+        } | null;
       }
     >
   >(new Map());
+  const uploadedSourceCleanupInFlightRef = useRef(new Set<string>());
   const lastScheduledFutureDraftRef = useRef<GuestDesignDraft | null>(null);
   const preservedInvalidHydratedDraftFabricAllocationsRef = useRef<
     FabricAllocation[] | null
@@ -2491,6 +2497,7 @@ export default function DesignStudioView({
     lastPersistedFutureDraftRef.current = null;
     lastDesignStylePersistenceAcknowledgementRef.current = null;
     uploadedSourceCleanupCandidatesRef.current.clear();
+    uploadedSourceCleanupInFlightRef.current.clear();
     lastScheduledFutureDraftRef.current = null;
     setFutureDraftPersistenceStatus("resolving");
     futureOrderV2PreparationRef.current = null;
@@ -3356,34 +3363,61 @@ export default function DesignStudioView({
     >,
   ) => {
     uploadedSourceCleanupCandidatesRef.current.forEach((pending, sourceRef) => {
+      if (uploadedSourceCleanupInFlightRef.current.has(sourceRef)) return;
+      uploadedSourceCleanupInFlightRef.current.add(sourceRef);
       void (async () => {
-        const historySafetyStatus = await getFutureOrderV2HistorySafetyStatus(
-          sourceRef,
-        );
-        const result = await coordinateUploadedSourceCleanup({
-        candidate: pending.candidate,
-        acknowledgement,
-        currentSaveGeneration: futureDraftAutosaveGenerationRef.current,
-        currentIdentityGeneration: futureDraftIdentityGenerationRef.current,
-        activeOccurrences: authoritativePhysicalOccurrencesForDomain,
-        lifecycleProof: {
-          referenceAuthorityStatus: "complete",
-          currentDraftReferenceStatus: "not-referenced",
-          ownershipStatus: "unknown",
-          ownershipTransferStatus: "unknown",
-          confirmationStatus: "unknown",
-          historySafetyStatus,
-        },
-        deleteCanonicalSource: async () => {
-          const deletion = await deleteUploadedDesignCanonicalSource({
-            reference: pending.reference,
-            deleteDraft: CustomerDesignUploadService.deleteCustomerDesignDraft,
+        try {
+          const historySafetyStatus = await getFutureOrderV2HistorySafetyStatus(
+            sourceRef,
+          );
+          const firebaseUser = firebaseDraftAuth.user || auth.currentUser;
+          const exactCanonicalSource =
+            pending.confirmation?.sourceKey === `uploaded:${sourceRef}` &&
+            pending.confirmation.uploadedSourceRef === sourceRef &&
+            pending.confirmation.ownerUid === pending.reference.ownerUid &&
+            pending.reference.designReferenceId === sourceRef;
+          const exactAuthenticatedOwner =
+            exactCanonicalSource &&
+            firebaseDraftAuth.resolved &&
+            Boolean(firebaseUser) &&
+            !firebaseUser?.isAnonymous &&
+            futureDraftIdentity.status === "authenticated" &&
+            futureDraftIdentity.ownerUid === firebaseUser?.uid &&
+            pending.reference.ownerUid === firebaseUser?.uid;
+          const result = await coordinateUploadedSourceCleanup({
+            candidate: pending.candidate,
+            acknowledgement,
+            currentSaveGeneration: futureDraftAutosaveGenerationRef.current,
+            currentIdentityGeneration: futureDraftIdentityGenerationRef.current,
+            activeOccurrences: authoritativePhysicalOccurrencesForDomain,
+            lifecycleProof: {
+              referenceAuthorityStatus: "complete",
+              currentDraftReferenceStatus: "not-referenced",
+              ownershipStatus: exactAuthenticatedOwner
+                ? "settled"
+                : "unknown",
+              ownershipTransferStatus: exactAuthenticatedOwner
+                ? "settled"
+                : "unknown",
+              confirmationStatus: exactCanonicalSource
+                ? "settled"
+                : "unknown",
+              historySafetyStatus,
+            },
+            deleteCanonicalSource: async () => {
+              const deletion = await deleteUploadedDesignCanonicalSource({
+                reference: pending.reference,
+                deleteDraft:
+                  CustomerDesignUploadService.deleteCustomerDesignDraft,
+              });
+              if (deletion.status === "failed") throw deletion.error;
+            },
           });
-          if (deletion.status === "failed") throw deletion.error;
-        },
-        });
-        if (result.status === "deleted") {
-          uploadedSourceCleanupCandidatesRef.current.delete(sourceRef);
+          if (result.status === "deleted") {
+            uploadedSourceCleanupCandidatesRef.current.delete(sourceRef);
+          }
+        } finally {
+          uploadedSourceCleanupInFlightRef.current.delete(sourceRef);
         }
       })();
     });
@@ -3891,7 +3925,7 @@ export default function DesignStudioView({
     identityKey: string;
     identityGeneration: number;
   }) => {
-    if (source?.uploadReference.designReferenceId !== sourceRef) return;
+    if (!source || source.uploadReference.designReferenceId !== sourceRef) return;
     const candidate = createUploadedSourceCleanupCandidate({
       sourceRef,
       reason,
@@ -3903,9 +3937,22 @@ export default function DesignStudioView({
       ledger,
     });
     if (!candidate) return;
+    const authority =
+      futureDesignStyleDraftAuthority.uploadedSourcesByKey[source.sourceKey];
+    const confirmation =
+      authority?.status === "confirmed" &&
+      authority.sourceKey === source.sourceKey &&
+      authority.uploadedSourceRef === sourceRef
+        ? {
+            sourceKey: source.sourceKey,
+            uploadedSourceRef: sourceRef,
+            ownerUid: source.uploadReference.ownerUid,
+          }
+        : null;
     uploadedSourceCleanupCandidatesRef.current.set(sourceRef, {
       candidate,
       reference: source.uploadReference,
+      confirmation,
     });
   };
 
