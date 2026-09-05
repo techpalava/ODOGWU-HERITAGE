@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DormantFuturePaymentReviewStep } from "./src/components/DormantFuturePaymentReviewStep";
 import {
-  FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING_MESSAGE,
+  FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE,
   createFutureOrderV2PaymentReviewHandoff,
 } from "./src/utils/designStudioFuturePaymentReview";
 import {
@@ -210,22 +210,20 @@ const preparedHandoff = createFutureOrderV2PaymentReviewHandoff(candidate, {
   cartItemId: ids.cartItemId,
   orderId: ids.orderId,
 });
-assert.equal(
-  preparedHandoff.blockers[0].code,
-  "FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING",
-);
+assert.deepEqual(preparedHandoff.blockers, []);
+assert.equal(preparedHandoff.payment.status, "ready");
 const markup = renderToStaticMarkup(
   createElement(DormantFuturePaymentReviewStep, {
     result: preparedHandoff,
     onBack: () => undefined,
     onEditStage: () => undefined,
     onPrepareOrder: () => undefined,
+    onExecutePayment: () => undefined,
   }),
 );
-assert.ok(markup.includes(FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING_MESSAGE));
+assert.ok(markup.includes(FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE));
 assert.ok(markup.includes(ids.orderId));
-assert.ok(markup.includes("Payment integration pending"));
-assert.ok(markup.includes('disabled=""'));
+assert.ok(markup.includes("Authorize payment"));
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 assert.match(studioSource, /buildCurrentFutureOrderCandidateV2\(\)/);

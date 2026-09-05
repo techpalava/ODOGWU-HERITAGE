@@ -18,8 +18,8 @@ import {
 import {
   FUTURE_ORDER_NOT_SUBMITTED_MESSAGE,
   FUTURE_PAYMENT_UNAVAILABLE_MESSAGE,
-  FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING_MESSAGE,
   FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
+  FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE,
   getFuturePaymentReviewAiStatusLabel,
   getFuturePaymentReviewContentBlockers,
   getFuturePaymentReviewContentStatusLabel,
@@ -33,6 +33,7 @@ import {
   type FuturePaymentReviewCandidate,
   type FuturePaymentReviewResult,
   type FutureOrderV2PreparationPresentation,
+  type FutureOrderV2PaymentPresentation,
 } from "../utils/designStudioFuturePaymentReview";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
@@ -53,6 +54,7 @@ interface DormantFuturePaymentReviewStepProps {
     trigger: HTMLButtonElement,
   ) => void;
   onPrepareOrder?: () => void;
+  onExecutePayment?: () => void;
 }
 
 const moneyFromCents = (amountCents: number): string =>
@@ -568,6 +570,7 @@ export const DormantFuturePaymentReviewStep = ({
   removalTargets = [],
   onRequestGarmentRemoval,
   onPrepareOrder,
+  onExecutePayment,
 }: DormantFuturePaymentReviewStepProps) => {
   const candidate = result.candidate;
   const isReviewable = isFuturePaymentReviewStageUnlocked(result);
@@ -589,12 +592,25 @@ export const DormantFuturePaymentReviewStep = ({
     "preparation" in result ? result.preparation : null;
   const preparationIsPending = preparation?.status === "preparing";
   const preparationIsComplete = preparation?.status === "prepared";
+  const payment: FutureOrderV2PaymentPresentation | null =
+    "payment" in result ? result.payment : null;
+  const paymentIsProcessing = payment?.status === "processing";
+  const paymentIsAuthorized = payment?.status === "authorized";
+  const paymentCanExecute =
+    preparationIsComplete &&
+    (payment?.status === "ready" || payment?.status === "failed");
   const preparationMessage =
-    preparation?.status === "authentication_required" ||
-    preparation?.status === "error"
+    payment?.status === "authorized"
+      ? `Payment authorized for this prepared order. Reference: ${payment.providerTransactionReference}.`
+      : payment?.status === "processing"
+        ? "Authorizing payment for this prepared order..."
+        : payment?.status === "failed"
+          ? payment.message
+          : preparation?.status === "authentication_required" ||
+            preparation?.status === "error"
       ? preparation.message
       : preparationIsComplete
-        ? FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING_MESSAGE
+        ? FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE
         : FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE;
 
   return (
@@ -1018,16 +1034,22 @@ export const DormantFuturePaymentReviewStep = ({
               id="future-payment-unavailable-title"
               className="font-serif text-xl font-bold"
             >
-              {FUTURE_PAYMENT_UNAVAILABLE_MESSAGE}
+              {paymentIsAuthorized
+                ? "Payment authorized"
+                : paymentCanExecute || paymentIsProcessing
+                  ? "Payment authorization"
+                  : FUTURE_PAYMENT_UNAVAILABLE_MESSAGE}
             </h2>
             <p id="future-payment-pending-explanation" className="mt-2 break-words text-sm leading-relaxed text-white/80">
               {isV2PaymentReviewCandidate(candidate)
                 ? preparationMessage
                 : FUTURE_ORDER_NOT_SUBMITTED_MESSAGE}
             </p>
-            <p className="mt-1 text-xs leading-relaxed text-white/65">
-              Authentication and a verified payment provider will be required before real payment can begin.
-            </p>
+            {!preparationIsComplete && (
+              <p className="mt-1 text-xs leading-relaxed text-white/65">
+                Authentication and a verified payment provider will be required before real payment can begin.
+              </p>
+            )}
             {isV2PaymentReviewCandidate(candidate) && onPrepareOrder && (
               <>
                 {preparationIsComplete ? (
@@ -1035,7 +1057,7 @@ export const DormantFuturePaymentReviewStep = ({
                     data-future-order-v2-prepared={preparation?.status}
                     className="mt-4 text-sm font-semibold text-heritage-gold"
                   >
-                    Order prepared with ID {preparation.orderId}. Payment remains unavailable.
+                    Order prepared with ID {preparation.orderId}.
                   </p>
                 ) : (
                   <button
@@ -1053,15 +1075,40 @@ export const DormantFuturePaymentReviewStep = ({
                 )}
               </>
             )}
-            <button
-              type="button"
-              disabled
-              aria-describedby="future-payment-unavailable-title future-payment-pending-explanation"
-              className="mt-4 inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-white/20 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
-            >
-              <LockKeyhole aria-hidden="true" size={14} />
-              Payment integration pending
-            </button>
+            {paymentCanExecute && onExecutePayment && (
+              <button
+                type="button"
+                data-future-order-v2-payment
+                onClick={onExecutePayment}
+                className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white sm:w-auto"
+              >
+                <CheckCircle2 aria-hidden="true" size={14} />
+                Authorize payment
+              </button>
+            )}
+            {paymentIsProcessing && (
+              <button
+                type="button"
+                data-future-order-v2-payment
+                disabled
+                aria-describedby="future-payment-unavailable-title future-payment-pending-explanation"
+                className="mt-4 inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-white/20 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
+              >
+                <LockKeyhole aria-hidden="true" size={14} />
+                Authorizing payment...
+              </button>
+            )}
+            {!preparationIsComplete && (
+              <button
+                type="button"
+                disabled
+                aria-describedby="future-payment-unavailable-title future-payment-pending-explanation"
+                className="mt-4 inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-white/20 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
+              >
+                <LockKeyhole aria-hidden="true" size={14} />
+                Payment integration pending
+              </button>
+            )}
           </div>
         </div>
       </section>

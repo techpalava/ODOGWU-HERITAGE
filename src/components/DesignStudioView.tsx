@@ -234,6 +234,11 @@ import {
   prepareFutureOrderV2Submission,
   type FutureOrderV2PreparationAttempt,
 } from "../utils/futureOrderV2Preparation";
+import {
+  authorizeFutureOrderV2Payment,
+  executeFutureOrderV2Payment,
+  type FutureOrderV2PaymentAttempt,
+} from "../utils/futureOrderV2Payment";
 import { persistFutureOrderV2 } from "../services/futureOrderV2Persistence";
 import {
   buildAuthoritativePhysicalOccurrences,
@@ -533,6 +538,9 @@ export default function DesignStudioView({
   const futureOrderV2PreparationRef =
     useRef<FutureOrderV2PreparationAttempt | null>(null);
   const futureOrderV2PreparationInFlightRef = useRef(false);
+  const futureOrderV2PaymentAttemptRef =
+    useRef<FutureOrderV2PaymentAttempt | null>(null);
+  const futureOrderV2PaymentInFlightRef = useRef(false);
   const [futurePaymentReviewTransitionBlockers, setFuturePaymentReviewTransitionBlockers] =
     useState<readonly FutureOrderCandidateBlocker[]>([]);
   const futureDesignStyleMutationAuthorityRef =
@@ -2486,6 +2494,8 @@ export default function DesignStudioView({
     setFutureDraftPersistenceStatus("resolving");
     futureOrderV2PreparationRef.current = null;
     futureOrderV2PreparationInFlightRef.current = false;
+    futureOrderV2PaymentAttemptRef.current = null;
+    futureOrderV2PaymentInFlightRef.current = false;
     setFuturePaymentReviewHandoff(null);
     setGuestDraftHydrated(false);
     preservedInvalidHydratedDraftFabricAllocationsRef.current = null;
@@ -4419,6 +4429,8 @@ export default function DesignStudioView({
   const handleOpenDormantPaymentReviewStage = () => {
     futureOrderV2PreparationRef.current = null;
     futureOrderV2PreparationInFlightRef.current = false;
+    futureOrderV2PaymentAttemptRef.current = null;
+    futureOrderV2PaymentInFlightRef.current = false;
     const result = buildCurrentFutureOrderCandidateV2();
     if (result.status !== "valid") {
       setFuturePaymentReviewHandoff(null);
@@ -4506,13 +4518,13 @@ export default function DesignStudioView({
     }
     futureOrderV2PreparationRef.current = outcome.attempt;
     if (outcome.status === "prepared") {
-        setFuturePaymentReviewHandoff(
-          createFutureOrderV2PaymentReviewHandoff(outcome.attempt.candidate, {
-            status: "prepared",
-            cartItemId: outcome.attempt.cartItemId,
-            orderId: outcome.attempt.orderId,
-          }),
-        );
+      setFuturePaymentReviewHandoff(
+        createFutureOrderV2PaymentReviewHandoff(outcome.attempt.candidate, {
+          status: "prepared",
+          cartItemId: outcome.attempt.cartItemId,
+          orderId: outcome.attempt.orderId,
+        }),
+      );
       return;
     }
     setFuturePaymentReviewHandoff(
@@ -4523,6 +4535,69 @@ export default function DesignStudioView({
             ? "This order ID cannot be prepared safely. Your reviewed order was not replaced."
             : "We could not confirm order preparation. Retry using the same reviewed order.",
       }),
+    );
+  };
+  const handleExecuteFutureOrderV2Payment = async () => {
+    if (futureOrderV2PaymentInFlightRef.current) return;
+    const reviewed = futurePaymentReviewHandoff;
+    const prepared = futureOrderV2PreparationRef.current;
+    if (
+      !reviewed ||
+      reviewed.preparation.status !== "prepared" ||
+      !prepared ||
+      reviewed.preparation.orderId !== prepared.orderId ||
+      reviewed.preparation.cartItemId !== prepared.cartItemId ||
+      reviewed.payment.status === "authorized"
+    ) {
+      return;
+    }
+
+    futureOrderV2PaymentInFlightRef.current = true;
+    const existingAttempt = futureOrderV2PaymentAttemptRef.current;
+    const paymentReference =
+      existingAttempt?.orderId === prepared.orderId
+        ? existingAttempt.paymentReference
+        : `future-v2-payment-${prepared.orderId}`;
+    setFuturePaymentReviewHandoff(
+      createFutureOrderV2PaymentReviewHandoff(
+        reviewed.candidate,
+        reviewed.preparation,
+        { status: "processing", paymentReference },
+      ),
+    );
+    const outcome = await executeFutureOrderV2Payment({
+      prepared,
+      existingAttempt,
+      authorize: authorizeFutureOrderV2Payment,
+    });
+    futureOrderV2PaymentInFlightRef.current = false;
+    if (outcome.status === "invalid") {
+      setFuturePaymentReviewHandoff(
+        createFutureOrderV2PaymentReviewHandoff(
+          reviewed.candidate,
+          reviewed.preparation,
+          { status: "failed", paymentReference, message: outcome.message },
+        ),
+      );
+      return;
+    }
+    futureOrderV2PaymentAttemptRef.current = outcome.attempt;
+    setFuturePaymentReviewHandoff(
+      createFutureOrderV2PaymentReviewHandoff(
+        reviewed.candidate,
+        reviewed.preparation,
+        outcome.status === "authorized"
+          ? {
+              status: "authorized",
+              paymentReference: outcome.attempt.paymentReference,
+              providerTransactionReference: outcome.providerTransactionReference,
+            }
+          : {
+              status: "failed",
+              paymentReference: outcome.attempt.paymentReference,
+              message: outcome.message,
+            },
+      ),
     );
   };
   const handleLiveOrderSummaryEdit = (stage: DesignStudioStageId) => {
@@ -6240,6 +6315,7 @@ export default function DesignStudioView({
             onBack={() => setFutureStageId("shipping")}
             onEditStage={(stage) => setFutureStageId(stage)}
             onPrepareOrder={handlePrepareFutureOrderV2}
+            onExecutePayment={handleExecuteFutureOrderV2Payment}
           />
         ) : null
       ) : null}

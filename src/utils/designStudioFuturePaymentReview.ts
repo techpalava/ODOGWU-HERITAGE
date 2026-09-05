@@ -22,6 +22,8 @@ export const FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE =
   "This reviewed order cannot proceed to payment until V2 order persistence is established.";
 export const FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING_MESSAGE =
   "Your order has been prepared. Payment activation is still unavailable.";
+export const FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE =
+  "Your prepared order is ready for payment authorization.";
 
 export type FuturePaymentReviewCandidate =
   | FutureOrderCandidateV1
@@ -38,11 +40,23 @@ export type FutureOrderV2PreparationPresentation =
       readonly orderId: string;
     };
 
+export type FutureOrderV2PaymentPresentation =
+  | { readonly status: "not_ready" }
+  | { readonly status: "ready" }
+  | { readonly status: "processing"; readonly paymentReference: string }
+  | { readonly status: "failed"; readonly paymentReference: string; readonly message: string }
+  | {
+      readonly status: "authorized";
+      readonly paymentReference: string;
+      readonly providerTransactionReference: string;
+    };
+
 export interface FutureOrderV2PaymentReviewHandoff {
   readonly status: "reviewable";
   readonly candidate: FutureOrderCandidateV2;
-  readonly blockers: readonly [FutureOrderCandidateBlocker];
+  readonly blockers: readonly FutureOrderCandidateBlocker[];
   readonly preparation: FutureOrderV2PreparationPresentation;
+  readonly payment: FutureOrderV2PaymentPresentation;
 }
 
 export type FuturePaymentReviewResult =
@@ -54,23 +68,25 @@ export const createFutureOrderV2PaymentReviewHandoff = (
   preparation: FutureOrderV2PreparationPresentation = {
     status: "review_required",
   },
+  payment: FutureOrderV2PaymentPresentation =
+    preparation.status === "prepared"
+      ? { status: "ready" }
+      : { status: "not_ready" },
 ): FutureOrderV2PaymentReviewHandoff => ({
   status: "reviewable",
   candidate,
   preparation,
-  blockers: [
-    {
-      code:
-        preparation.status === "prepared"
-          ? "FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING"
-          : "FUTURE_ORDER_V2_PERSISTENCE_PENDING",
-      stage: "payment",
-      message:
-        preparation.status === "prepared"
-          ? FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING_MESSAGE
-          : FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
-    },
-  ],
+  payment,
+  blockers:
+    preparation.status === "prepared"
+      ? []
+      : [
+          {
+            code: "FUTURE_ORDER_V2_PERSISTENCE_PENDING",
+            stage: "payment",
+            message: FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
+          },
+        ],
 });
 
 export interface FuturePaymentReviewGarment {
