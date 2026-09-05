@@ -21,7 +21,6 @@ import {
 import {
   buildDesignStyleDraftValidationAuthority,
   buildUploadedDesignStyleAuthority,
-  createDesignStyleAdaptabilityConfirmationFingerprint,
   decodeLegacyDesignStyleScalarEvidence,
   hydrateDesignStyleDraftPersistence,
   inspectPersistedDesignStyleDraft,
@@ -451,39 +450,33 @@ const combinedStyle = publishedStyle("style-combined", ["shirt", "trouser"]);
   assert.equal(malformedScalar.destructiveNormalizationProhibited, true);
 }
 
-// One exact catalogue scalar migrates once through Task 5A with current Task 5B identity.
+// A legacy scalar never manufactures a V2 occurrence assignment, even when
+// there is only one possible garment.
 {
   const result = hydrateDesignStyleDraftPersistence({
     rawDraft: catalogScalar(combinedStyle.id),
     activeOccurrences: [shirt],
     authority: authorityFor({ styles: [combinedStyle], occurrences: [shirt] }),
   });
-  assert.equal(result.status, "legacy-migrated");
-  assert.equal(result.ledger?.revision, 1);
-  const assignment = result.ledger?.assignmentsByGarmentKey[shirt.garmentKey];
-  assert.equal(assignment?.occurrenceToken, tokenFor(shirt));
-  assert.equal(assignment?.sourceKind, "catalog");
-  assert.equal(
-    assignment?.sourceKind === "catalog" && assignment.catalogStyleId,
-    combinedStyle.id,
-  );
-  assert.equal(
-    assignment?.sourceKind === "catalog" && assignment.sourceKey,
-    combinedStyle.designStyleAuthority.sourceKey,
-  );
-  assert.equal(
-    assignment?.sourceKind === "catalog" && assignment.eligibilityFingerprint,
-    combinedStyle.designStyleAuthority.eligibilityFingerprint,
-  );
-  assert.equal(result.validation?.status, "complete");
+  assert.equal(result.status, "legacy-review-required");
+  assert.equal(result.migrationEvidence?.reason, "explicit_reselection_required");
+  assert.equal(result.ledger?.revision, 0);
+  assert.deepEqual(result.ledger?.assignmentsByGarmentKey, {});
+  assert.equal(result.validation?.isComplete, false);
 }
 
 // Cosmetic publication changes preserve validity; eligibility changes preserve evidence for review.
 {
   const initialRecord = recordFor({ id: "style-revision", garmentTypes: ["shirt"] });
   const initialStyle = projectPublishedDesignStyleRecord(initialRecord)!;
+  const explicitLedger = assignCatalog({
+    ledger: createEmptyGarmentScopedDesignStyleAssignmentLedger(),
+    occurrence: shirt,
+    activeOccurrences: [shirt],
+    style: initialStyle,
+  });
   const migrated = hydrateDesignStyleDraftPersistence({
-    rawDraft: catalogScalar(initialStyle.id),
+    rawDraft: { [DESIGN_STYLE_DRAFT_FIELD]: { schemaVersion: 2, ledger: explicitLedger } },
     activeOccurrences: [shirt],
     authority: authorityFor({ styles: [initialStyle], occurrences: [shirt] }),
   });
@@ -534,7 +527,7 @@ const combinedStyle = publishedStyle("style-combined", ["shirt", "trouser"]);
   );
 }
 
-// Loading and error preserve retryable scalar evidence; ready retries without reading scalar again.
+// Legacy scalar evidence remains a review state across catalogue loading changes.
 for (const catalogueState of ["loading", "error"] as const) {
   const pending = hydrateDesignStyleDraftPersistence({
     rawDraft: catalogScalar(shirtStyle.id),
@@ -545,7 +538,7 @@ for (const catalogueState of ["loading", "error"] as const) {
       catalogueState,
     }),
   });
-  assert.equal(pending.status, "legacy-migration-pending-catalogue");
+  assert.equal(pending.status, "legacy-review-required");
   assert.equal(pending.ledger?.revision, 0);
   assert.ok(pending.migrationEvidence);
   const retried = hydrateDesignStyleDraftPersistence({
@@ -556,22 +549,20 @@ for (const catalogueState of ["loading", "error"] as const) {
     activeOccurrences: [shirt],
     authority: authorityFor({ styles: [shirtStyle], occurrences: [shirt] }),
   });
-  assert.equal(retried.status, "legacy-migrated");
-  const retriedAssignment =
-    retried.ledger?.assignmentsByGarmentKey[shirt.garmentKey];
-  assert.equal(retriedAssignment?.sourceKind, "catalog");
-  assert.equal(
-    retriedAssignment?.sourceKind === "catalog"
-      ? retriedAssignment.catalogStyleId
-      : null,
-    shirtStyle.id,
-  );
+  assert.equal(retried.status, "legacy-review-required");
+  assert.deepEqual(retried.ledger?.assignmentsByGarmentKey, {});
 }
 
 // Existing V2 evidence survives catalogue loading/error without scalar fallback or clearing.
 {
+  const ledger = assignCatalog({
+    ledger: createEmptyGarmentScopedDesignStyleAssignmentLedger(),
+    occurrence: shirt,
+    activeOccurrences: [shirt],
+    style: shirtStyle,
+  });
   const migrated = hydrateDesignStyleDraftPersistence({
-    rawDraft: catalogScalar(shirtStyle.id),
+    rawDraft: { [DESIGN_STYLE_DRAFT_FIELD]: { schemaVersion: 2, ledger } },
     activeOccurrences: [shirt],
     authority: authorityFor({ styles: [shirtStyle], occurrences: [shirt] }),
   });
@@ -635,10 +626,10 @@ for (const catalogueState of ["loading", "error"] as const) {
     authority: authorityFor({ styles: [trouserStyle], occurrences: [shirt] }),
   });
   assert.equal(incompatible.status, "legacy-review-required");
-  assert.equal(incompatible.migrationEvidence?.reason, "catalog_style_incompatible");
+  assert.equal(incompatible.migrationEvidence?.reason, "explicit_reselection_required");
 }
 
-// Adaptable scalar migration requires real legacy confirmation and captures current fingerprint.
+// Legacy adaptable scalar evidence also requires an explicit Step 3 choice.
 {
   const adaptable = publishedStyle("style-adaptable", ["dress"], {
     styleApplicability: {
@@ -655,7 +646,7 @@ for (const catalogueState of ["loading", "error"] as const) {
   assert.equal(unconfirmed.status, "legacy-review-required");
   assert.equal(
     unconfirmed.migrationEvidence?.reason,
-    "adaptability_confirmation_required",
+    "explicit_reselection_required",
   );
 
   const confirmed = hydrateDesignStyleDraftPersistence({
@@ -663,55 +654,9 @@ for (const catalogueState of ["loading", "error"] as const) {
     activeOccurrences: [shirt],
     authority: authorityFor({ styles: [adaptable], occurrences: [shirt] }),
   });
-  assert.equal(confirmed.status, "legacy-migrated");
-  const assignment = confirmed.ledger?.assignmentsByGarmentKey[shirt.garmentKey];
-  assert.equal(
-    assignment?.sourceKind === "catalog" &&
-      assignment.adaptabilityConfirmationFingerprint,
-    createDesignStyleAdaptabilityConfirmationFingerprint({
-      eligibilityFingerprint: adaptable.designStyleAuthority.eligibilityFingerprint,
-      occurrenceToken: tokenFor(shirt),
-    }),
-  );
-  const currentAuthority = authorityFor({
-    styles: [adaptable],
-    occurrences: [shirt],
-  });
-  const currentStyleAuthority = currentAuthority.catalogStylesById[adaptable.id]!;
-  const changedConfirmationAuthority = {
-    ...currentAuthority,
-    catalogStylesById: {
-      ...currentAuthority.catalogStylesById,
-      [adaptable.id]: {
-        ...currentStyleAuthority,
-        occurrenceEligibilityByToken: {
-          ...currentStyleAuthority.occurrenceEligibilityByToken,
-          [tokenFor(shirt)]: {
-            status: "adaptable" as const,
-            requiredConfirmationFingerprint: "changed-confirmation-fingerprint",
-          },
-        },
-      },
-    },
-  };
-  const confirmationMismatch = hydrateDesignStyleDraftPersistence({
-    rawDraft: {
-      [DESIGN_STYLE_DRAFT_FIELD]: confirmed.envelope,
-    },
-    activeOccurrences: [shirt],
-    authority: changedConfirmationAuthority,
-  });
-  assert.equal(confirmationMismatch.status, "assignments-need-review");
-  const mismatchedAssignment =
-    confirmationMismatch.ledger?.assignmentsByGarmentKey[shirt.garmentKey];
-  assert.equal(
-    mismatchedAssignment?.sourceKind === "catalog"
-      ? mismatchedAssignment.adaptabilityConfirmationFingerprint
-      : null,
-    assignment?.sourceKind === "catalog"
-      ? assignment.adaptabilityConfirmationFingerprint
-      : null,
-  );
+  assert.equal(confirmed.status, "legacy-review-required");
+  assert.equal(confirmed.migrationEvidence?.reason, "explicit_reselection_required");
+  assert.deepEqual(confirmed.ledger?.assignmentsByGarmentKey, {});
 }
 
 // Uploaded migration is ownership/confirmation scoped and persists only an opaque reference.
@@ -751,13 +696,9 @@ for (const catalogueState of ["loading", "error"] as const) {
       uploadedSourcesByKey: confirmedAuthority,
     }),
   });
-  assert.equal(migrated.status, "legacy-migrated");
-  const assignment = migrated.ledger?.assignmentsByGarmentKey[shirt.garmentKey];
-  assert.equal(assignment?.sourceKind, "uploaded");
-  assert.equal(
-    assignment?.sourceKind === "uploaded" && assignment.uploadedSourceRef,
-    "upload-reference-1",
-  );
+  assert.equal(migrated.status, "legacy-review-required");
+  assert.equal(migrated.migrationEvidence?.reason, "explicit_reselection_required");
+  assert.deepEqual(migrated.ledger?.assignmentsByGarmentKey, {});
   assert.doesNotMatch(JSON.stringify(migrated.envelope), /storagePath|owner-1/);
 
   const pendingAuthority = buildUploadedDesignStyleAuthority({
@@ -777,7 +718,7 @@ for (const catalogueState of ["loading", "error"] as const) {
       uploadedSourcesByKey: pendingAuthority,
     }),
   });
-  assert.equal(pending.status, "legacy-migration-pending-upload");
+  assert.equal(pending.status, "legacy-review-required");
   assert.equal(pending.ledger?.revision, 0);
 
   const foreignAuthority = buildUploadedDesignStyleAuthority({
@@ -836,7 +777,10 @@ for (const catalogueState of ["loading", "error"] as const) {
     }),
   });
   assert.equal(ambiguousUpload.status, "legacy-review-required");
-  assert.equal(ambiguousUpload.migrationEvidence?.reason, "multiple_occurrences");
+  assert.equal(
+    ambiguousUpload.migrationEvidence?.reason,
+    "explicit_reselection_required",
+  );
   assert.deepEqual(ambiguousUpload.ledger?.assignmentsByGarmentKey, {});
 }
 
@@ -857,7 +801,7 @@ for (const occurrences of [
   assert.equal(result.validation?.isComplete, false);
   assert.equal(
     result.status,
-    occurrences.length === 0 ? "occurrences-unresolved" : "legacy-review-required",
+    "legacy-review-required",
   );
 }
 
@@ -952,7 +896,7 @@ for (const occurrences of [
     firstSelection.status === "ready"
       ? firstSelection.hydration.status
       : null,
-    "legacy-migrated",
+    "legacy-review-required",
   );
   const stillEmpty = prepareDesignStyleDraftAutosave({
     draft: {} as GuestDesignDraft,
@@ -1038,7 +982,17 @@ for (const occurrences of [
 // Parent hydration generation/revision precedence rejects delayed scalar and older V2 payloads.
 {
   const current = hydrateDesignStyleDraftPersistence({
-    rawDraft: catalogScalar(shirtStyle.id),
+    rawDraft: {
+      [DESIGN_STYLE_DRAFT_FIELD]: {
+        schemaVersion: 2,
+        ledger: assignCatalog({
+          ledger: createEmptyGarmentScopedDesignStyleAssignmentLedger(),
+          occurrence: shirt,
+          activeOccurrences: [shirt],
+          style: shirtStyle,
+        }),
+      },
+    },
     activeOccurrences: [shirt],
     authority: authorityFor({ styles: [shirtStyle], occurrences: [shirt] }),
   });

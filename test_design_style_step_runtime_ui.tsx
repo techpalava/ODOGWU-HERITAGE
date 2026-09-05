@@ -126,7 +126,9 @@ const continueButton = (root: ReactTestInstance) =>
   const rows = renderer.root.findAll(
     (node) => node.props?.["data-occurrence-label"],
   );
-  assert.match(rows[1]!.props.className, /border-heritage-gold/);
+  assert.equal(rows[0]!.props.className, rows[1]!.props.className);
+  assert.equal(rows[1]!.props.className, rows[2]!.props.className);
+  assert.doesNotMatch(rows[1]!.props.className, /border-heritage-gold|heritage-cream/);
   await act(async () =>
     rows[2]!
       .findAllByType("button")
@@ -175,6 +177,41 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     ],
     complete,
   );
+}
+
+// Clear controls are available per assigned occurrence; Clear All belongs with
+// the mapping section rather than a selected row.
+{
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt", "skirt", "bum_shorts"]),
+    selectedStyleIdByGarmentKey: {
+      "base:shirt:1": style.id,
+      "base:skirt:1": style.id,
+    },
+  });
+  let clearAllCalls = 0;
+  const renderer = await renderModel(model, {
+    onClearAllAssignments: () => {
+      clearAllCalls += 1;
+    },
+  });
+  const rows = renderer.root.findAll(
+    (node) => node.props?.["data-occurrence-label"],
+  );
+  assert.equal(
+    rows[0]!.findAllByType("button").some((button) => textContent(button) === "Clear"),
+    true,
+  );
+  assert.equal(
+    rows[1]!.findAllByType("button").some((button) => textContent(button) === "Clear"),
+    true,
+  );
+  const clearAll = renderer.root
+    .findAllByType("button")
+    .find((button) => textContent(button) === "Clear All")!;
+  await act(async () => clearAll.props.onClick());
+  assert.equal(clearAllCalls, 1);
 }
 
 // Ambiguous scalar migration is visible, assigns nothing, and remains blocked.

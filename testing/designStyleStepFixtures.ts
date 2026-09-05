@@ -84,6 +84,7 @@ export interface DesignStyleStepTestModel {
     typeof bindDesignStyleStepCatalogueLedgerRevision
   >;
   readonly clearRequest: DesignStyleStepClearMutationRequest | null;
+  readonly clearRequests: readonly DesignStyleStepClearMutationRequest[];
 }
 
 export const createDesignStyleStepTestModel = ({
@@ -246,6 +247,13 @@ export const createDesignStyleStepTestModel = ({
             target: resolvedActiveTarget,
           }
         : null,
+    clearRequests: hydration.ledger
+      ? projection.occurrences.map((occurrence) => ({
+          runtimeGeneration,
+          expectedLedgerRevision: hydration.ledger!.revision,
+          target: occurrence.target,
+        }))
+      : [],
   };
 };
 
@@ -256,6 +264,7 @@ export const createDesignStyleStepRenderProps = (
   activeOccurrenceTarget: model.activeTarget,
   catalogueEntries: model.catalogueEntries,
   clearRequest: model.clearRequest,
+  clearRequests: model.clearRequests,
   runtimeStatus: model.projection.runtimeStatus,
   completedCount: model.projection.completedCount,
   totalCount: model.projection.totalCount,

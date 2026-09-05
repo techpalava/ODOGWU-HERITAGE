@@ -17,8 +17,6 @@ import {
   type PhysicalGarmentOccurrence,
 } from "./designSourceState";
 import {
-  assignCatalogDesignStyleToGarmentOccurrence,
-  assignUploadedDesignStyleToGarmentOccurrence,
   createEmptyGarmentScopedDesignStyleAssignmentLedger,
   reconcileGarmentScopedDesignStyleAssignmentLedger,
   validateGarmentScopedDesignStyleAssignmentLedger,
@@ -42,6 +40,7 @@ const MAX_ASSIGNMENT_COUNT = 512;
 export type DesignStyleMigrationReason =
   | "zero_occurrences"
   | "multiple_occurrences"
+  | "explicit_reselection_required"
   | "occurrence_identity_unresolved"
   | "catalogue_loading"
   | "catalogue_error"
@@ -343,6 +342,7 @@ const parseLedger = (
 const MIGRATION_REASONS = new Set<DesignStyleMigrationReason>([
   "zero_occurrences",
   "multiple_occurrences",
+  "explicit_reselection_required",
   "occurrence_identity_unresolved",
   "catalogue_loading",
   "catalogue_error",
@@ -356,6 +356,7 @@ const MIGRATION_REASONS = new Set<DesignStyleMigrationReason>([
 const CATALOG_MIGRATION_REASONS = new Set<DesignStyleMigrationReason>([
   "zero_occurrences",
   "multiple_occurrences",
+  "explicit_reselection_required",
   "occurrence_identity_unresolved",
   "catalogue_loading",
   "catalogue_error",
@@ -367,6 +368,7 @@ const CATALOG_MIGRATION_REASONS = new Set<DesignStyleMigrationReason>([
 const UPLOADED_MIGRATION_REASONS = new Set<DesignStyleMigrationReason>([
   "zero_occurrences",
   "multiple_occurrences",
+  "explicit_reselection_required",
   "occurrence_identity_unresolved",
   "uploaded_authority_pending",
   "uploaded_authority_unavailable",
@@ -996,115 +998,11 @@ const migrateLegacyEvidence = ({
     });
   };
 
-  if (activeOccurrences.length === 0) return preserve("zero_occurrences");
-  if (activeOccurrences.length > 1) return preserve("multiple_occurrences");
-  const occurrence = activeOccurrences[0];
-  const occurrenceToken = occurrenceTokenFor(occurrence);
-  if (!occurrenceToken) return preserve("occurrence_identity_unresolved");
-
-  if (evidence.sourceKind === "catalog") {
-    if (authority.catalogueState === "loading") return preserve("catalogue_loading");
-    if (authority.catalogueState === "error") return preserve("catalogue_error");
-    const style = authority.catalogStylesById[evidence.catalogStyleId];
-    if (
-      !style ||
-      style.availability !== "available" ||
-      style.styleId !== evidence.catalogStyleId ||
-      !isSafeIdentifier(style.sourceKey) ||
-      !isSafeIdentifier(style.eligibilityFingerprint)
-    ) {
-      return preserve("catalog_style_unavailable");
-    }
-    const eligibility = style.occurrenceEligibilityByToken[occurrenceToken];
-    if (!eligibility || eligibility.status === "incompatible") {
-      return preserve("catalog_style_incompatible");
-    }
-    if (
-      eligibility.status === "adaptable" &&
-      evidence.confirmationStatus !== "confirmed"
-    ) {
-      return preserve("adaptability_confirmation_required");
-    }
-    const assigned = assignCatalogDesignStyleToGarmentOccurrence({
-      ledger: emptyLedger,
-      expectedLedgerRevision: emptyLedger.revision,
-      activeOccurrences,
-      target: { garmentKey: occurrence.garmentKey, occurrenceToken },
-      source: {
-        sourceKey: style.sourceKey,
-        catalogStyleId: style.styleId,
-        eligibilityFingerprint: style.eligibilityFingerprint,
-        ...(eligibility.status === "adaptable"
-          ? {
-              adaptabilityConfirmationFingerprint:
-                eligibility.requiredConfirmationFingerprint,
-            }
-          : {}),
-      },
-    });
-    if (assigned.status === "rejected") {
-      return preserve("occurrence_identity_unresolved");
-    }
-    const envelope = envelopeFor(assigned.ledger);
-    const validation = validateLedger({
-      ledger: assigned.ledger,
-      activeOccurrences,
-      authority,
-      unresolvedLegacyScalar: false,
-    });
-    return baseResult({
-      status: "legacy-migrated",
-      envelope,
-      validation,
-      diagnostics: [diagnostic("LEGACY_CATALOG_MIGRATED")],
-      reviewRequired: validation.status === "needs_review",
-      authorityPending: validation.status === "awaiting_validation",
-      legacyScalarFingerprint,
-    });
-  }
-
-  const upload = authority.uploadedSourcesByKey[evidence.sourceKey];
-  if (!upload || upload.status === "pending") {
-    return preserve("uploaded_authority_pending");
-  }
-  if (
-    upload.status !== "confirmed" ||
-    upload.sourceKey !== evidence.sourceKey ||
-    upload.uploadedSourceRef !== evidence.uploadedSourceRef ||
-    evidence.confirmationStatus !== "confirmed" ||
-    !upload.eligibleOccurrenceTokens.includes(occurrenceToken)
-  ) {
-    return preserve("uploaded_authority_unavailable");
-  }
-  const assigned = assignUploadedDesignStyleToGarmentOccurrence({
-    ledger: emptyLedger,
-    expectedLedgerRevision: emptyLedger.revision,
-    activeOccurrences,
-    target: { garmentKey: occurrence.garmentKey, occurrenceToken },
-    source: {
-      sourceKey: upload.sourceKey,
-      uploadedSourceRef: upload.uploadedSourceRef,
-    },
-  });
-  if (assigned.status === "rejected") {
-    return preserve("occurrence_identity_unresolved");
-  }
-  const envelope = envelopeFor(assigned.ledger);
-  const validation = validateLedger({
-    ledger: assigned.ledger,
-    activeOccurrences,
-    authority,
-    unresolvedLegacyScalar: false,
-  });
-  return baseResult({
-    status: "legacy-migrated",
-    envelope,
-    validation,
-    diagnostics: [diagnostic("LEGACY_UPLOAD_MIGRATED")],
-    reviewRequired: validation.status === "needs_review",
-    authorityPending: validation.status === "awaiting_validation",
-    legacyScalarFingerprint,
-  });
+  // A legacy scalar identifies a reference, not the exact garment occurrence
+  // the customer chose. Keep the evidence for review, but never manufacture a
+  // V2 assignment from it. Explicit V2 ledgers remain the only restorable
+  // occurrence mapping authority.
+  return preserve("explicit_reselection_required");
 };
 
 const retryableMigrationReason = (reason: DesignStyleMigrationReason): boolean =>

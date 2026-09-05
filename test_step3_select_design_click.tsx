@@ -93,7 +93,11 @@ await act(async () => {
 const useButton = () =>
   renderer.root
     .findAllByType("button")
-    .find((button) => button.props["aria-label"] === `Use This Design ${style.name}`)!;
+    .find(
+      (button) =>
+        button.props["aria-label"] === `Use This Design ${style.name}` ||
+        button.props["aria-label"] === `Use Again ${style.name}`,
+    )!;
 const openDialog = async () => {
   await act(async () => useButton().props.onClick({ currentTarget: { focus() {} } }));
   return renderer.root.findByProps({ "data-testid": "design-garment-mapping-dialog" });
@@ -145,7 +149,7 @@ assert.deepEqual(
 assert.ok(
   renderer.root
     .findAll((node) => node.props?.["data-style-card"] === "true")
-    .some((card) => /Used for 3/.test(textContent(card))),
+    .some((card) => /IN USE/.test(textContent(card))),
 );
 
 console.log("PASS: Step 3 reuses one style across exact garment occurrences");

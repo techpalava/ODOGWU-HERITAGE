@@ -81,7 +81,11 @@ const styleCards = (root: ReactTestInstance) =>
 const styleButton = (root: ReactTestInstance, styleName: string) =>
   root
     .findAllByType("button")
-    .find((button) => button.props["aria-label"] === `Use This Design ${styleName}`)!;
+    .find(
+      (button) =>
+        button.props["aria-label"] === `Use This Design ${styleName}` ||
+        button.props["aria-label"] === `Use Again ${styleName}`,
+    )!;
 
 const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
   dialog
@@ -101,11 +105,11 @@ const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
     styles.map((style) => style.name),
   );
   for (const card of styleCards(renderer.root)) {
-    const title = card.findByType("h3");
+    const title = card.findByType("h4");
     assert.equal(textContent(title), card.props["data-style-name"]);
     assert.match(
       title.props.className,
-      /min-w-0 break-words font-serif text-base font-bold text-heritage-green/,
+      /break-words font-serif text-base font-bold text-heritage-green/,
     );
   }
   assert.equal(renderer.root.findAllByProps({ "data-testid": "step3-best-matches" }).length, 0);
@@ -182,7 +186,11 @@ const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
   const card = styleCards(renderer.root).find(
     (candidate) => candidate.props["data-style-name"] === styles[0]!.name,
   )!;
-  assert.match(textContent(card), /Used for 2/);
+  assert.match(textContent(card), /IN USE/);
+  assert.equal(
+    styleButton(card, styles[0]!.name).props["aria-label"],
+    `Use Again ${styles[0]!.name}`,
+  );
   assert.equal(styleButton(card, styles[0]!.name).props.disabled, false);
   await act(async () =>
     styleButton(card, styles[0]!.name).props.onClick({

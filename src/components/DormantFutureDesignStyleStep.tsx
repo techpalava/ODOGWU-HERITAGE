@@ -19,6 +19,7 @@ interface DormantFutureDesignStyleStepProps {
   activeOccurrenceTarget: DesignStyleStepOccurrencePresentation["target"] | null;
   catalogueEntries: readonly DesignStyleStepCatalogueEntry[];
   clearRequest: DesignStyleStepClearMutationRequest | null;
+  clearRequests?: readonly DesignStyleStepClearMutationRequest[];
   runtimeStatus: DesignStyleStepRuntimeStatus;
   completedCount: number;
   totalCount: number;
@@ -40,6 +41,7 @@ interface DormantFutureDesignStyleStepProps {
     requests: readonly DesignStyleStepCatalogMutationRequest[],
   ) => void;
   onClearAssignment: (request: DesignStyleStepClearMutationRequest) => void;
+  onClearAllAssignments?: () => void;
   onSelectUploadFile?: (
     target: DesignStyleStepOccurrencePresentation["target"],
     file: File,
@@ -65,6 +67,7 @@ export const DormantFutureDesignStyleStep = ({
   activeOccurrenceTarget,
   catalogueEntries,
   clearRequest,
+  clearRequests = [],
   runtimeStatus,
   completedCount,
   totalCount,
@@ -78,6 +81,7 @@ export const DormantFutureDesignStyleStep = ({
   onSelectOccurrence,
   onAssignCatalogueStyle,
   onClearAssignment,
+  onClearAllAssignments,
   onSelectUploadFile,
   onBack,
   onReturnToGarmentType,
@@ -355,19 +359,22 @@ export const DormantFutureDesignStyleStep = ({
 
           {occurrences.length > 0 && (
             <section aria-labelledby="current-design-mappings-title" className="mt-5">
-              <h3 id="current-design-mappings-title" className="font-serif text-lg font-bold text-heritage-green">Your Garments</h3>
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <h3 id="current-design-mappings-title" className="font-serif text-lg font-bold text-heritage-green">Your Garments</h3>
+                {occurrences.some((occurrence) => occurrence.assignment) && onClearAllAssignments && <button type="button" onClick={onClearAllAssignments} disabled={!mutationsEnabled} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Clear All</button>}
+              </div>
               <div role="list" className="mt-2 divide-y divide-heritage-green/10 overflow-hidden rounded-xl border border-heritage-green/15 bg-white">
                 {occurrences.map((occurrence) => {
-                  const active = designStyleStepTargetsEqual(occurrence.target, activeOccurrenceTarget);
+                  const occurrenceClearRequest = clearRequests.find((request) => designStyleStepTargetsEqual(request.target, occurrence.target)) || (designStyleStepTargetsEqual(occurrence.target, activeOccurrenceTarget) ? clearRequest : null);
                   return (
-                    <article key={occurrence.target.occurrenceToken} role="listitem" data-occurrence-label={occurrence.label} className={`flex min-w-0 flex-col gap-2 border-l-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-4 ${active ? "border-heritage-gold bg-heritage-cream/35" : "border-transparent bg-white"}`}>
+                    <article key={occurrence.target.occurrenceToken} role="listitem" data-occurrence-label={occurrence.label} className="flex min-w-0 flex-col gap-2 border-l-2 border-transparent bg-white px-3 py-2.5 sm:flex-row sm:items-center sm:gap-4">
                       <div className="grid min-w-0 flex-1 gap-0.5 sm:grid-cols-[minmax(6rem,0.35fr)_minmax(0,1fr)] sm:items-baseline sm:gap-x-4">
                         <p className="font-serif text-sm font-bold text-heritage-green">{occurrence.label}</p>
                         <p className="break-words text-xs leading-relaxed text-heritage-ink/70"><span className="font-semibold text-heritage-green">{occurrence.assignmentLabel || "No design selected"}</span></p>
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-2 sm:self-center">
                         <button type="button" onClick={() => { onSelectOccurrence(occurrence.target); allDesignsRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-xs font-bold text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">{occurrence.assignment ? "Change" : "Choose Design"}</button>
-                        {active && occurrence.assignment && clearRequest && <button type="button" onClick={() => onClearAssignment(clearRequest)} aria-label={occurrence.assignment.sourceKind === "uploaded" ? `Remove uploaded design from ${occurrence.label}` : `Clear design for ${occurrence.label}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2">{occurrence.assignment.sourceKind === "uploaded" ? `Remove uploaded design from ${occurrence.label}` : "Clear"}</button>}
+                        {occurrence.assignment && occurrenceClearRequest && <button type="button" onClick={() => onClearAssignment(occurrenceClearRequest)} aria-label={occurrence.assignment.sourceKind === "uploaded" ? `Remove uploaded design from ${occurrence.label}` : `Clear design for ${occurrence.label}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2">{occurrence.assignment.sourceKind === "uploaded" ? `Remove uploaded design from ${occurrence.label}` : "Clear"}</button>}
                       </div>
                     </article>
                   );
@@ -387,14 +394,14 @@ export const DormantFutureDesignStyleStep = ({
                   <article key={entry.style.id} data-style-card="true" data-style-name={entry.style.name} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm">
                     <div className="relative aspect-[4/5] overflow-hidden bg-heritage-cream/35">
                       {entry.style.image ? <img src={entry.style.image} alt={`${entry.style.name} design`} loading="lazy" className="h-full w-full object-contain" referrerPolicy="no-referrer" /> : <div className="flex h-full items-center justify-center px-4 text-center text-xs text-heritage-ink/45">Image unavailable</div>}
-                      {entry.selectedOccurrenceLabels.length > 0 && <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm"><Check aria-hidden="true" size={14} />Used for {entry.selectedOccurrenceLabels.length}</span>}
+                      {entry.selectedOccurrenceLabels.length > 0 && <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm"><Check aria-hidden="true" size={14} />IN USE</span>}
                     </div>
                     <div className="flex min-w-0 flex-1 flex-col p-4">
-                      <h3 className="min-w-0 break-words font-serif text-base font-bold text-heritage-green">{entry.style.name}</h3>
+                      <h4 className="break-words font-serif text-base font-bold text-heritage-green">{entry.style.name}</h4>
                       <p className="mt-3 break-words text-xs leading-relaxed text-heritage-ink/75"><span className="font-semibold text-heritage-green">Reference outfit:</span> {getFutureDesignStyleCompositionLabel(entry.style)}</p>
                       {entry.selectedOccurrenceLabels.length > 0 && <p className="mt-2 break-words text-xs text-heritage-ink/60">Applied to {entry.selectedOccurrenceLabels.join(", ")}</p>}
                       {entry.style.description && <p className="mt-3 break-words text-xs leading-relaxed text-heritage-ink/65">{entry.style.description}</p>}
-                      <button type="button" disabled={!mutationsEnabled} onClick={(event) => openDialog(entry, event.currentTarget)} aria-label={`Use This Design ${entry.style.name}`} className="mt-auto inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 py-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-heritage-ink/45">Use This Design</button>
+                      <button type="button" disabled={!mutationsEnabled} onClick={(event) => openDialog(entry, event.currentTarget)} aria-label={`${entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"} ${entry.style.name}`} className="mt-auto inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 py-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-heritage-ink/45">{entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"}</button>
                     </div>
                   </article>
                 ))}
