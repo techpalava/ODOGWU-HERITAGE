@@ -390,7 +390,7 @@ export const DormantFutureDesignStyleStep = ({
                       {entry.selectedOccurrenceLabels.length > 0 && <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm"><Check aria-hidden="true" size={14} />Used for {entry.selectedOccurrenceLabels.length}</span>}
                     </div>
                     <div className="flex min-w-0 flex-1 flex-col p-4">
-                      <h4 className="break-words font-serif text-base font-bold text-heritage-green">{entry.style.name}</h4>
+                      <h3 className="min-w-0 break-words font-serif text-base font-bold text-heritage-green">{entry.style.name}</h3>
                       <p className="mt-3 break-words text-xs leading-relaxed text-heritage-ink/75"><span className="font-semibold text-heritage-green">Reference outfit:</span> {getFutureDesignStyleCompositionLabel(entry.style)}</p>
                       {entry.selectedOccurrenceLabels.length > 0 && <p className="mt-2 break-words text-xs text-heritage-ink/60">Applied to {entry.selectedOccurrenceLabels.join(", ")}</p>}
                       {entry.style.description && <p className="mt-3 break-words text-xs leading-relaxed text-heritage-ink/65">{entry.style.description}</p>}

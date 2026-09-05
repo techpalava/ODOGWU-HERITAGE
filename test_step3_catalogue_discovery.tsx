@@ -100,6 +100,14 @@ const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
     styleCards(renderer.root).map((card) => card.props["data-style-name"]),
     styles.map((style) => style.name),
   );
+  for (const card of styleCards(renderer.root)) {
+    const title = card.findByType("h3");
+    assert.equal(textContent(title), card.props["data-style-name"]);
+    assert.match(
+      title.props.className,
+      /min-w-0 break-words font-serif text-base font-bold text-heritage-green/,
+    );
+  }
   assert.equal(renderer.root.findAllByProps({ "data-testid": "step3-best-matches" }).length, 0);
   assert.equal(renderer.root.findAllByProps({ "aria-label": "Catalogue design filters" }).length, 0);
   assert.equal(textContent(renderer.root).includes("Adaptable"), false);
