@@ -81,6 +81,7 @@ import {
   BATCH_FLAT_RATE_EUR_PER_GARMENT,
   BATCH_MINIMUM_GARMENTS,
 } from "../utils/shippingPricing";
+import { presentFutureOrderV2History } from "../utils/futureOrderV2History";
 
 interface DatabaseViewProps {
   customers: Customer[];
@@ -1345,14 +1346,35 @@ export default function DatabaseView({
         b.pickupLocation.toLowerCase().includes(batchSearch.toLowerCase())),
   );
 
-  const filteredOrders = orders.filter(
-    (o) =>
-      o.shipment.trackingId.toLowerCase().includes(orderSearch.toLowerCase()) ||
-      o.customer.name.toLowerCase().includes(orderSearch.toLowerCase()) ||
-      o.customer.email.toLowerCase().includes(orderSearch.toLowerCase()) ||
-      o.style.name.toLowerCase().includes(orderSearch.toLowerCase()) ||
-      o.fabric.name.toLowerCase().includes(orderSearch.toLowerCase()),
-  );
+  const filteredOrders = orders.filter((order) => {
+    const query = orderSearch.toLowerCase();
+    const v2History = presentFutureOrderV2History(order);
+    if (v2History.status === "valid") {
+      return [
+        v2History.value.orderId,
+        v2History.value.customer.fullName,
+        v2History.value.customer.email,
+        ...v2History.value.occurrences.flatMap((occurrence) => [
+          occurrence.garmentLabel,
+          occurrence.style.kind === "catalogue"
+            ? occurrence.style.name
+            : occurrence.style.displayLabel,
+        ]),
+      ].some((value) => value.toLowerCase().includes(query));
+    }
+    if (v2History.status === "invalid_history") {
+      return String((order as unknown as { orderId?: unknown }).orderId || "")
+        .toLowerCase()
+        .includes(query);
+    }
+    return (
+      order.shipment.trackingId.toLowerCase().includes(query) ||
+      order.customer.name.toLowerCase().includes(query) ||
+      order.customer.email.toLowerCase().includes(query) ||
+      order.style.name.toLowerCase().includes(query) ||
+      order.fabric.name.toLowerCase().includes(query)
+    );
+  });
 
   const filteredPhotos = communityPhotos.filter(
     (p) =>
@@ -5562,7 +5584,102 @@ export default function DatabaseView({
                             </td>
                           </tr>
                         ) : (
-                          filteredOrders.map((o) => (
+                          filteredOrders.map((o) => {
+                            const v2History = presentFutureOrderV2History(o);
+                            if (v2History.status === "valid") {
+                              const history = v2History.value;
+                              return (
+                                <tr
+                                  key={history.orderId}
+                                  data-future-order-v2={history.orderId}
+                                  className="hover:bg-heritage-forest/5 transition"
+                                >
+                                  <td className="px-4 py-3 font-mono font-bold text-heritage-green">
+                                    {history.orderId}
+                                  </td>
+                                  <td className="px-4 py-3 space-y-0.5">
+                                    <p className="font-semibold text-heritage-ink leading-tight">
+                                      {history.customer.fullName}
+                                    </p>
+                                    <p className="text-[9px] text-gray-400 font-mono">
+                                      {history.customer.email}
+                                    </p>
+                                  </td>
+                                  <td className="px-4 py-3 text-[10px] text-gray-500">
+                                    Submitted V2 snapshot
+                                  </td>
+                                  <td className="px-4 py-3" colSpan={3}>
+                                    <div className="space-y-1.5" data-future-order-v2-occurrences>
+                                      {history.occurrences.map((occurrence) => (
+                                        <div
+                                          key={`${occurrence.garmentKey}:${occurrence.occurrenceToken}`}
+                                          data-future-order-v2-occurrence={occurrence.occurrenceToken}
+                                          className="flex min-w-0 items-center gap-2 text-[10px]"
+                                        >
+                                          <span className="shrink-0 font-semibold text-heritage-ink">
+                                            {occurrence.garmentLabel} →
+                                          </span>
+                                          {occurrence.style.kind === "catalogue" ? (
+                                            <span className="min-w-0 text-heritage-green">
+                                              {occurrence.style.image && (
+                                                <img
+                                                  src={occurrence.style.image}
+                                                  alt=""
+                                                  className="mr-1 inline-block h-4 w-4 rounded object-cover align-middle"
+                                                />
+                                              )}
+                                              {occurrence.style.name}
+                                              <span className="ml-1 text-gray-400">
+                                                (submitted r{occurrence.style.evidence.publicRevision})
+                                              </span>
+                                            </span>
+                                          ) : (
+                                            <span className="min-w-0 text-heritage-green">
+                                              Uploaded design: {occurrence.style.displayLabel}
+                                            </span>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-xs">
+                                    <span className="px-2 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-600 text-[9px] uppercase tracking-wider">
+                                      V2 submitted
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-[10px] font-mono">
+                                    {history.paymentStatus.replaceAll("_", " ")}
+                                  </td>
+                                  <td className="px-4 py-3 text-[10px] font-mono text-heritage-gold">
+                                    Immutable snapshot
+                                  </td>
+                                  <td className="px-4 py-3 text-[10px] font-mono text-blue-600">
+                                    {history.shippingStatus.replaceAll("_", " ")}
+                                  </td>
+                                  <td className="px-4 py-3 font-bold text-heritage-green">
+                                    {history.exactTotalCents === null
+                                      ? "Pending"
+                                      : `€${(history.exactTotalCents / 100).toFixed(2)}`}
+                                  </td>
+                                  <td className="px-4 py-3 text-[10px] text-gray-400">
+                                    {history.persistedAt}
+                                  </td>
+                                  <td className="px-4 py-3 text-right text-[10px] text-gray-400">
+                                    Read-only
+                                  </td>
+                                </tr>
+                              );
+                            }
+                            if (v2History.status === "invalid_history") {
+                              return (
+                                <tr key={`invalid-v2-${String((o as unknown as { orderId?: unknown }).orderId || "unknown")}`}>
+                                  <td colSpan={13} className="px-4 py-3 text-xs text-red-700">
+                                    Invalid V2 historical order record. No legacy fallback was applied.
+                                  </td>
+                                </tr>
+                              );
+                            }
+                            return (
                             <tr
                               key={o.shipment.trackingId}
                               className="hover:bg-heritage-forest/5 transition"
@@ -5649,7 +5766,8 @@ export default function DatabaseView({
                                 </div>
                               </td>
                             </tr>
-                          ))
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
