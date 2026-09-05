@@ -42,7 +42,7 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 bg-heritage-green border-b border-heritage-gold/25 shadow-md">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-20 items-center justify-between">
+        <div className="flex min-h-20 items-center justify-between sm:h-20">
           {/* Logo */}
           <div
             onClick={() => {
