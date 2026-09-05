@@ -37,6 +37,23 @@ const candidate: FutureOrderCandidateV2 = {
       construction: [],
       constructionTotalCents: 10000,
     },
+    {
+      garmentKey: "additional:shirt:1",
+      garmentType: "shirt",
+      label: "Shirt 2",
+      role: "additional",
+      demographic: "male",
+      fabricUnits: 1,
+      physicalComponents: [
+        {
+          garmentKey: "additional:shirt:1",
+          garmentType: "shirt",
+          label: "Shirt 2",
+        },
+      ],
+      construction: [],
+      constructionTotalCents: 0,
+    },
   ],
   fabricAllocations: [],
   customDetails: [],
@@ -156,6 +173,19 @@ for (const expected of [
   assert.ok(markup.includes(expected), `Missing V2 review text: ${expected}`);
 }
 assert.equal((markup.match(/data-occurrence-style-snapshot/g) || []).length, 3);
+assert.equal(
+  (markup.match(/data-garment-removal-row="base:shirt"/g) || []).length,
+  1,
+);
+assert.equal(
+  (markup.match(/data-garment-removal-row="additional:shirt:1"/g) || []).length,
+  1,
+  "the repeated Shirt occurrence remains its own garment row",
+);
+assert.ok(
+  (markup.match(/>Shirt 2</g) || []).length >= 2,
+  "the repeated Shirt label is retained in both the style and garment reviews",
+);
 assert.ok(markup.includes('disabled=""'));
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");

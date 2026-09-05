@@ -117,8 +117,11 @@ export interface FuturePaymentReviewPricingRow {
     | "post_eindhoven";
   readonly label: string;
   readonly amountCents: number | null;
-  readonly valueLabel?: string;
+  readonly presentation: "amount" | "supporting_note";
 }
+
+export const FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE =
+  "Fabric, tax, Lagos-to-Eindhoven shipping, and sewing included.";
 
 const humanizeIdentifier = (value: string): string =>
   value
@@ -295,22 +298,25 @@ export const getFuturePaymentReviewPricingRows = (
       id: "garment_construction",
       label: "Garment Construction Subtotal",
       amountCents: pricing.garmentConstructionSubtotalCents,
+      presentation: "amount",
     },
     {
       id: "included_components",
-      label: "Fabric, tax, Lagos-to-Eindhoven shipping, and sewing",
+      label: FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE,
       amountCents: null,
-      valueLabel: "Included in Garment Construction",
+      presentation: "supporting_note",
     },
     {
       id: "custom_details",
-      label: "Custom Details",
+      label: "Custom Details Subtotal",
       amountCents: pricing.customDetailsCents,
+      presentation: "amount",
     },
     {
       id: "post_eindhoven",
       label: "Additional Delivery",
       amountCents: pricing.postEindhovenAdjustmentCents,
+      presentation: "amount",
     },
   ];
   return rows;
