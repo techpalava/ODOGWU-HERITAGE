@@ -16,6 +16,7 @@ import {
   clearGarmentDesignStyleAssignment,
   validateGarmentScopedDesignStyleAssignmentLedger,
   type GarmentDesignStyleAssignmentMutationResult,
+  type GarmentDesignStyleAssignmentMutationRejection,
   type GarmentDesignStyleAssignmentTarget,
   type GarmentDesignStyleAssignmentV2,
   type GarmentDesignStyleOccurrenceValidationStatus,
@@ -105,8 +106,26 @@ export interface DesignStyleStepCatalogueEntry {
   readonly presentation: FutureDesignStyleMatchPresentation;
   readonly selected: boolean;
   readonly request: DesignStyleStepCatalogMutationRequest;
+  readonly requestsByOccurrenceToken: Readonly<
+    Record<string, DesignStyleStepCatalogMutationRequest>
+  >;
+  readonly selectedOccurrenceLabels: readonly string[];
+  readonly referenceGarmentTypes: readonly CanonicalPhysicalGarmentType[];
   readonly adaptationCopy: FutureDesignStyleAdaptationConfirmationCopy | null;
 }
+
+export type DesignStyleStepBatchMutationResult =
+  | {
+      readonly status: "applied" | "unchanged";
+      readonly ledger: GarmentScopedDesignStyleAssignmentLedgerV2;
+    }
+  | {
+      readonly status: "rejected";
+      readonly reason:
+        | DesignStyleStepMutationRejection
+        | GarmentDesignStyleAssignmentMutationRejection;
+      readonly ledger: GarmentScopedDesignStyleAssignmentLedgerV2;
+    };
 
 export type DesignStyleStepMutationRejection =
   | "STEP_NOT_ACTIVE"
@@ -116,6 +135,7 @@ export type DesignStyleStepMutationRejection =
   | "CATALOGUE_NOT_READY"
   | "STYLE_AUTHORITY_CHANGED"
   | "STYLE_NOT_ELIGIBLE"
+  | "STALE_LEDGER_REVISION"
   | "ADAPTABILITY_CONFIRMATION_REQUIRED"
   | "UPLOAD_OPERATION_PENDING"
   | "UPLOADED_ASSIGNMENT_NOT_FOUND"
@@ -431,19 +451,19 @@ export const projectActiveOccurrenceDesignStyleCatalogue = ({
     if (!isAuthoritativeDesignStyleProjection(style)) return [];
     const metadata = getDesignStyleAuthorityMetadata(style);
     const facts = authority.catalogStylesById[style.id];
-    const eligibility =
-      facts?.occurrenceEligibilityByToken[activeTarget.occurrenceToken];
     if (
       !metadata ||
       !facts ||
       facts.availability !== "available" ||
       facts.sourceKey !== metadata.sourceKey ||
-      facts.eligibilityFingerprint !== metadata.eligibilityFingerprint ||
-      !eligibility ||
-      eligibility.status === "incompatible"
+      facts.eligibilityFingerprint !== metadata.eligibilityFingerprint
     ) {
       return [];
     }
+    const eligibility =
+      facts.occurrenceEligibilityByToken[activeTarget.occurrenceToken] || {
+        status: "incompatible" as const,
+      };
     const { presentation, adaptationCopy } = presentationForEligibility({
       style,
       garmentType: activeOccurrence.garmentType,
@@ -453,6 +473,32 @@ export const projectActiveOccurrenceDesignStyleCatalogue = ({
       eligibility.status === "adaptable"
         ? eligibility.requiredConfirmationFingerprint
         : undefined;
+    const requestForOccurrence = (
+      occurrence: DesignStyleStepOccurrencePresentation,
+    ): DesignStyleStepCatalogMutationRequest => {
+      const occurrenceEligibility =
+        facts.occurrenceEligibilityByToken[occurrence.target.occurrenceToken];
+      return {
+        runtimeGeneration,
+        expectedLedgerRevision: -1,
+        target: occurrence.target,
+        styleId: style.id,
+        sourceKey: facts.sourceKey,
+        eligibilityFingerprint: facts.eligibilityFingerprint,
+        ...(occurrenceEligibility?.status === "adaptable"
+          ? {
+              adaptabilityConfirmationFingerprint:
+                occurrenceEligibility.requiredConfirmationFingerprint,
+            }
+          : {}),
+      };
+    };
+    const requestsByOccurrenceToken = Object.fromEntries(
+      projection.occurrences.map((occurrence) => [
+        occurrence.target.occurrenceToken,
+        requestForOccurrence(occurrence),
+      ]),
+    );
     return [
       {
         style,
@@ -473,6 +519,18 @@ export const projectActiveOccurrenceDesignStyleCatalogue = ({
             ? { adaptabilityConfirmationFingerprint }
             : {}),
         },
+        requestsByOccurrenceToken,
+        selectedOccurrenceLabels: projection.occurrences
+          .filter(
+            (occurrence) =>
+              occurrence.assignment?.sourceKind === "catalog" &&
+              occurrence.assignment.catalogStyleId === style.id,
+          )
+          .map((occurrence) => occurrence.label),
+        referenceGarmentTypes:
+          metadata.referenceComposition.status === "known"
+            ? metadata.referenceComposition.garmentTypes
+            : [],
         adaptationCopy,
       },
     ];
@@ -489,6 +547,12 @@ export const bindDesignStyleStepCatalogueLedgerRevision = ({
   entries.map((entry) => ({
     ...entry,
     request: { ...entry.request, expectedLedgerRevision: ledgerRevision },
+    requestsByOccurrenceToken: Object.fromEntries(
+      Object.entries(entry.requestsByOccurrenceToken).map(([token, request]) => [
+        token,
+        { ...request, expectedLedgerRevision: ledgerRevision },
+      ]),
+    ),
   }));
 
 const reject = (
@@ -536,20 +600,16 @@ export const assignCatalogueStyleThroughStepRuntime = ({
   ) {
     return reject(ledger, "STYLE_AUTHORITY_CHANGED");
   }
-  const eligibility =
-    facts.occurrenceEligibilityByToken[request.target.occurrenceToken];
-  if (!eligibility || eligibility.status === "incompatible") {
-    return reject(ledger, "STYLE_NOT_ELIGIBLE");
-  }
+  const eligibility = facts.occurrenceEligibilityByToken[request.target.occurrenceToken];
   if (
-    eligibility.status === "adaptable" &&
+    eligibility?.status === "adaptable" &&
     eligibility.requiredConfirmationFingerprint !==
       request.adaptabilityConfirmationFingerprint
   ) {
     return reject(ledger, "ADAPTABILITY_CONFIRMATION_REQUIRED");
   }
   if (
-    eligibility.status === "eligible" &&
+    eligibility?.status === "eligible" &&
     request.adaptabilityConfirmationFingerprint !== undefined
   ) {
     return reject(ledger, "STYLE_AUTHORITY_CHANGED");
@@ -571,6 +631,57 @@ export const assignCatalogueStyleThroughStepRuntime = ({
         : {}),
     },
   });
+};
+
+export const assignCatalogueStyleToOccurrencesThroughStepRuntime = ({
+  ledger,
+  activeOccurrences,
+  authority,
+  requests,
+  currentRuntimeGeneration,
+  stepIsActive,
+  hydrationMutable,
+}: {
+  ledger: GarmentScopedDesignStyleAssignmentLedgerV2;
+  activeOccurrences: readonly PhysicalGarmentOccurrence[];
+  authority: GarmentScopedDesignStyleValidationAuthority;
+  requests: readonly DesignStyleStepCatalogMutationRequest[];
+  currentRuntimeGeneration: number;
+  stepIsActive: boolean;
+  hydrationMutable: boolean;
+}): DesignStyleStepBatchMutationResult => {
+  if (requests.length === 0) return reject(ledger, "STYLE_NOT_ELIGIBLE");
+  const targetKeys = new Set<string>();
+  let nextLedger = ledger;
+  let applied = false;
+
+  for (const request of requests) {
+    const targetKey = `${request.target.garmentKey}\u0000${request.target.occurrenceToken}`;
+    if (
+      targetKeys.has(targetKey) ||
+      request.expectedLedgerRevision !== ledger.revision
+    ) {
+      return reject(ledger, "STALE_LEDGER_REVISION") as DesignStyleStepBatchMutationResult;
+    }
+    targetKeys.add(targetKey);
+    const result = assignCatalogueStyleThroughStepRuntime({
+      ledger: nextLedger,
+      activeOccurrences,
+      activeTarget: request.target,
+      authority,
+      request: { ...request, expectedLedgerRevision: nextLedger.revision },
+      currentRuntimeGeneration,
+      stepIsActive,
+      hydrationMutable,
+    });
+    if (result.status === "rejected") {
+      return { ...result, ledger };
+    }
+    nextLedger = result.ledger;
+    applied ||= result.status === "applied";
+  }
+
+  return { status: applied ? "applied" : "unchanged", ledger: nextLedger };
 };
 
 export const clearCatalogueStyleThroughStepRuntime = ({

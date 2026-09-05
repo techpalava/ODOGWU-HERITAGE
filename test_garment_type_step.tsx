@@ -366,7 +366,7 @@ assert.ok(populatedMarkup.includes("Fabric, tax, shipping, and other selected op
 assert.equal(/uploaded design complete|design source/i.test(populatedMarkup), false);
 assert.ok(
   populatedMarkup.includes(
-    "Step 3 will show all catalogue designs and highlight which ones best match or can be adapted to your order.",
+    "Step 3 will show every published Design Style, and you can map any reference to the exact garments you choose.",
   ),
 );
 
@@ -374,15 +374,15 @@ const coverageWarningMarkup = renderStep({
   selectedGarmentTypes: ["skirt"],
   selectedDemographics: ["female"],
   catalogueCoverageMessage: {
-    headline: "No directly compatible catalogue design found",
+    headline: "No direct catalogue composition match found",
     detail:
-      "You can still continue to Step 3 to browse all designs. Designs that match your order or can be adapted will be selectable. Other designs will remain visible for reference, or you can Upload Your Own Design.",
+      "You can still continue to Step 3 to browse and use every published design. Reference-composition differences are advisory and will not block selection, or you can Upload Your Own Design.",
   },
 });
 assert.ok(
-  coverageWarningMarkup.includes("No directly compatible catalogue design found"),
+  coverageWarningMarkup.includes("No direct catalogue composition match found"),
 );
-assert.ok(coverageWarningMarkup.includes("browse all designs"));
+assert.ok(coverageWarningMarkup.includes("browse and use every published design"));
 assert.ok(coverageWarningMarkup.includes("Upload Your Own Design"));
 
 const allEightStep1Markup = renderStep({

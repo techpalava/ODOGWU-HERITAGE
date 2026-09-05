@@ -150,9 +150,7 @@ export const createDesignStyleStepTestModel = ({
       generation: occurrence.occurrenceGeneration,
     });
     const eligibility = facts?.occurrenceEligibilityByToken[occurrenceToken];
-    if (!facts || !eligibility || eligibility.status === "incompatible") {
-      throw new Error(`STYLE_NOT_ELIGIBLE:${styleId}`);
-    }
+    if (!facts) throw new Error(`STYLE_NOT_AVAILABLE:${styleId}`);
     const result = assignCatalogDesignStyleToGarmentOccurrence({
       ledger,
       expectedLedgerRevision: ledger.revision,
@@ -162,7 +160,7 @@ export const createDesignStyleStepTestModel = ({
         sourceKey: facts.sourceKey,
         catalogStyleId: styleId,
         eligibilityFingerprint: facts.eligibilityFingerprint,
-        ...(eligibility.status === "adaptable"
+        ...(eligibility?.status === "adaptable"
           ? {
               adaptabilityConfirmationFingerprint:
                 eligibility.requiredConfirmationFingerprint,
@@ -271,7 +269,7 @@ export const createDesignStyleStepRenderProps = (
     _target: DesignStyleStepClearMutationRequest["target"],
   ) => undefined,
   onAssignCatalogueStyle: (
-    _request: DesignStyleStepCatalogMutationRequest,
+    _requests: readonly DesignStyleStepCatalogMutationRequest[],
   ) => undefined,
   onClearAssignment: (_request: DesignStyleStepClearMutationRequest) =>
     undefined,

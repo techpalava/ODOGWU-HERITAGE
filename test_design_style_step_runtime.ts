@@ -579,8 +579,8 @@ for (const [name, designStyleAssignmentDraft] of [
   assert.equal(delayedConfirmation.reason, "STALE_ACTIVE_OCCURRENCE");
 }
 
-// Active-occurrence eligibility is independent of reference composition and
-// demographic-incompatible records never become selectable.
+// Every published style remains selectable. Compatibility and demographic
+// differences are advisory presentation data, not catalogue gates.
 {
   const shirtModel = createDesignStyleStepTestModel({
     styles: [styleA, adaptableStyle, wrongAudienceStyle],
@@ -588,7 +588,7 @@ for (const [name, designStyleAssignmentDraft] of [
   });
   assert.deepEqual(
     new Set(shirtModel.catalogueEntries.map((item) => item.style.id)),
-    new Set([styleA.id, adaptableStyle.id]),
+    new Set([styleA.id, adaptableStyle.id, wrongAudienceStyle.id]),
   );
   assert.equal(
     shirtModel.catalogueEntries.find(
@@ -600,7 +600,7 @@ for (const [name, designStyleAssignmentDraft] of [
     shirtModel.catalogueEntries.some(
       (item) => item.style.id === wrongAudienceStyle.id,
     ),
-    false,
+    true,
   );
 
   const kaftanReferenceOnly = style({
@@ -612,7 +612,7 @@ for (const [name, designStyleAssignmentDraft] of [
     styles: [kaftanReferenceOnly],
     garmentTypeSelection: selection(["shirt"]),
   });
-  assert.equal(referenceBoundary.catalogueEntries.length, 0);
+  assert.equal(referenceBoundary.catalogueEntries.length, 1);
 }
 
 // Loading and listener error preserve the exact assignment identity while

@@ -933,16 +933,8 @@ export const validateGarmentScopedDesignStyleAssignmentLedger = ({
           status = "needs_review";
         } else {
           const eligibility = style.occurrenceEligibilityByToken[token];
-          if (!eligibility || eligibility.status === "incompatible") {
-            pushOccurrenceDiagnostic({
-              code: "GARMENT_INCOMPATIBLE",
-              garmentKey,
-              occurrenceToken: token,
-              sourceKey: assignment.sourceKey,
-            });
-            status = "incompatible";
-          } else if (
-            eligibility.status === "adaptable" &&
+          if (
+            eligibility?.status === "adaptable" &&
             assignment.adaptabilityConfirmationFingerprint !==
               eligibility.requiredConfirmationFingerprint
           ) {

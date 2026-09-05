@@ -726,7 +726,8 @@ const assignCatalog = ({
   );
 }
 
-// Current authoritative incompatibility is occurrence-specific and fail-closed.
+// Catalogue composition incompatibility is advisory and does not make an
+// otherwise current published assignment incomplete.
 {
   const skirt = occurrence("base:skirt", "skirt", 1);
   const target = targetFor(skirt);
@@ -747,15 +748,16 @@ const assignCatalog = ({
     activeOccurrences: [skirt],
     authority: validationAuthority({ styles: [incompatibleStyle] }),
   });
-  assert.equal(result.isComplete, false);
+  assert.equal(result.isComplete, true);
   assert.equal(
     result.occurrencesByGarmentKey[skirt.garmentKey]?.status,
-    "incompatible",
+    "valid",
   );
-  assert.ok(
+  assert.equal(
     result.diagnostics.some(
       (diagnostic) => diagnostic.code === "GARMENT_INCOMPATIBLE",
     ),
+    false,
   );
 }
 

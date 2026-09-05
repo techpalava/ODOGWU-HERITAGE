@@ -94,7 +94,7 @@ import {
 import {
   applyDesignStyleStepLedgerToHydration,
   applyDesignStyleUploadForActiveOccurrence,
-  assignCatalogueStyleThroughStepRuntime,
+  assignCatalogueStyleToOccurrencesThroughStepRuntime,
   beginDesignStyleUploadForActiveOccurrence,
   bindDesignStyleStepCatalogueLedgerRevision,
   clearCatalogueStyleThroughStepRuntime,
@@ -3883,7 +3883,7 @@ export default function DesignStudioView({
   };
 
   const handleAssignFutureCatalogueStyle = (
-    request: DesignStyleStepCatalogMutationRequest,
+    requests: readonly DesignStyleStepCatalogMutationRequest[],
   ) => {
     const current = futureDesignStyleMutationAuthorityRef.current;
     const ledger = current?.hydration.ledger || null;
@@ -3891,12 +3891,11 @@ export default function DesignStudioView({
       rejectFutureDesignStyleMutation("HYDRATION_NOT_MUTABLE");
       return;
     }
-    const result = assignCatalogueStyleThroughStepRuntime({
+    const result = assignCatalogueStyleToOccurrencesThroughStepRuntime({
       ledger,
       activeOccurrences: current.activeOccurrences,
-      activeTarget: current.activeTarget,
       authority: current.authority,
-      request,
+      requests,
       currentRuntimeGeneration: current.runtimeGeneration,
       stepIsActive: current.stepIsActive,
       hydrationMutable:

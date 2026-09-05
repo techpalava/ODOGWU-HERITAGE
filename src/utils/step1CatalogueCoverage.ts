@@ -142,7 +142,7 @@ export const resolveStep1CatalogueCoverage = ({
     "no_match",
     selectedGarments,
     selectedDemographics,
-    "No directly compatible catalogue design found",
-    `You can still continue to Step 3 to browse all designs. Designs that match your order or can be adapted will be selectable. Other designs will remain visible for reference, or you can Upload Your Own Design.`,
+    "No direct catalogue composition match found",
+    `You can still continue to Step 3 to browse and use every published design. Reference-composition differences are advisory and will not block selection, or you can Upload Your Own Design.`,
   );
 };

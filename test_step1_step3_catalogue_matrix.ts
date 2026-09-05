@@ -290,9 +290,9 @@ for (const garment of ["skirt", "standard_shorts", "bum_shorts"] as const) {
   assert.equal(noMatch.status, "no_match");
   assert.equal(
     noMatch.customerHeadline,
-    "No directly compatible catalogue design found",
+    "No direct catalogue composition match found",
   );
-  assert.match(noMatch.customerDetail || "", /browse all designs/i);
+  assert.match(noMatch.customerDetail || "", /browse and use every published design/i);
   assert.match(noMatch.customerDetail || "", /Upload Your Own Design/);
   assert.equal(noMatch.compatibleCount, 0);
 

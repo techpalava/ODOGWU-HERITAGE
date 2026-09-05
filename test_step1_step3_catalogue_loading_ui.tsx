@@ -187,7 +187,7 @@ const renderStep3 = async ({
     garmentTypeSelection: selection(["shirt", "trouser"], ["male"]),
     stylesLoadState: "ready",
   });
-  assert.match(step3.text, /No designs can currently be selected for this garment/);
+  assert.match(step3.text, /No published Design Styles are currently available/);
   assert.equal(step3.text.includes("A current catalog design is required"), false);
 }
 
@@ -212,8 +212,8 @@ const renderStep3 = async ({
   });
   assert.equal(coverage.status, "no_match");
   const step1 = renderStep1(coverage);
-  assert.match(step1, /No directly compatible catalogue design found/);
-  assert.match(step1, /browse all designs/i);
+  assert.match(step1, /No direct catalogue composition match found/);
+  assert.match(step1, /browse and use every published design/i);
   assert.match(step1, /upload your own design/i);
   assert.equal(step1.includes("No catalogue design matches this selection"), false);
   const step3 = await renderStep3({
@@ -221,7 +221,8 @@ const renderStep3 = async ({
     garmentTypeSelection: selection(["shirt", "trouser"], ["male"]),
     stylesLoadState: "ready",
   });
-  assert.match(step3.text, /No designs can currently be selected for this garment/);
+  assert.match(step3.text, /All Designs/);
+  assert.match(step3.text, /Use This Design/);
   assert.equal(step3.text.includes("No matching design styles are available yet"), false);
 }
 
@@ -251,9 +252,9 @@ const renderStep3 = async ({
   assert.equal(coverage.compatibleCount, 0);
   assert.equal(
     coverage.customerHeadline,
-    "No directly compatible catalogue design found",
+    "No direct catalogue composition match found",
   );
-  assert.match(coverage.customerDetail || "", /browse all designs/i);
+  assert.match(coverage.customerDetail || "", /browse and use every published design/i);
 }
 
 // 5. saved selection while loading must not show upload-only; then matched
@@ -341,7 +342,8 @@ const renderStep3 = async ({
     },
   });
   assert.match(explicitV2.text, /2 of 2 garments have a design/);
-  assert.match(explicitV2.text, /Selected/);
+  assert.match(explicitV2.text, /Used for 2/);
+  assert.match(explicitV2.text, /Use This Design/);
   assert.equal(explicitV2.continueDisabled, false);
   assert.equal(explicitV2.stageComplete, true);
   assert.equal(explicitV2.continueDocked, true);

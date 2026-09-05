@@ -76,19 +76,12 @@ const continueButton = (root: ReactTestInstance) =>
   const renderer = await renderModel(model, {
     onSelectOccurrence: (target) => selectedTargets.push(target),
   });
-  const occurrenceButtons = renderer.root
-    .findByProps({
-      role: "group",
-      "aria-label": "Garments requiring a Design Style",
-    })
-    .findAllByType("button");
-  assert.ok(
-    occurrenceButtons.every((button) => button.props.role === undefined),
-    "Occurrence controls must retain their native button semantics",
+  const occurrenceRows = renderer.root.findAll(
+    (node) => node.props?.["data-occurrence-label"],
   );
   assert.deepEqual(
-    occurrenceButtons.map((button) => button.props["aria-label"]),
-    ["Shirt: Incomplete", "Shirt 2: Incomplete", "Shirt 3: Incomplete"],
+    occurrenceRows.map((row) => row.props["data-occurrence-label"]),
+    ["Shirt", "Shirt 2", "Shirt 3"],
   );
   assert.match(
     textContent(
@@ -101,7 +94,12 @@ const continueButton = (root: ReactTestInstance) =>
     assert.equal(visibleText.includes(occurrence.target.garmentKey), false);
     assert.equal(visibleText.includes(occurrence.target.occurrenceToken), false);
   }
-  await act(async () => occurrenceButtons[1]!.props.onClick());
+  await act(async () =>
+    occurrenceRows[1]!
+      .findAllByType("button")
+      .find((button) => textContent(button).includes("Choose Design"))!
+      .props.onClick(),
+  );
   assert.deepEqual(selectedTargets, [model.projection.occurrences[1]!.target]);
   assert.equal(
     Object.keys(model.hydration.ledger!.assignmentsByGarmentKey).length,
@@ -110,7 +108,7 @@ const continueButton = (root: ReactTestInstance) =>
   );
 }
 
-// Previous/Next use exact authoritative order and preserve boundary disabling.
+// Current mapping actions select the exact authoritative occurrence.
 {
   const base = createDesignStyleStepTestModel({
     styles: [style],
@@ -125,24 +123,17 @@ const continueButton = (root: ReactTestInstance) =>
   const renderer = await renderModel(middle, {
     onSelectOccurrence: (target) => selectedTargets.push(target),
   });
-  assert.match(
-    textContent(renderer.root.findByProps({ id: "step3-active-garment-title" })),
-    /Skirt/,
+  const rows = renderer.root.findAll(
+    (node) => node.props?.["data-occurrence-label"],
   );
-  const previous = renderer.root
-    .findAllByType("button")
-    .find((button) => textContent(button).includes("Previous garment"))!;
-  const next = renderer.root
-    .findAllByType("button")
-    .find((button) => textContent(button).includes("Next garment"))!;
-  assert.equal(previous.props.disabled, false);
-  assert.equal(next.props.disabled, false);
-  await act(async () => previous.props.onClick());
-  await act(async () => next.props.onClick());
-  assert.deepEqual(selectedTargets, [
-    middle.projection.occurrences[0]!.target,
-    middle.projection.occurrences[2]!.target,
-  ]);
+  assert.match(rows[1]!.props.className, /border-heritage-gold/);
+  await act(async () =>
+    rows[2]!
+      .findAllByType("button")
+      .find((button) => textContent(button).includes("Choose Design"))!
+      .props.onClick(),
+  );
+  assert.deepEqual(selectedTargets, [middle.projection.occurrences[2]!.target]);
 }
 
 // Progress and Continue are driven by exact-set V2 validation only.
