@@ -13,6 +13,7 @@ import {
 import { handleUploadedDesignTransfer } from "./src/server/uploadedDesignTransferHttp";
 import { handleCreateUploadedDesignOwnershipClaim } from "./src/server/uploadedDesignOwnershipClaimHttp";
 import { handleUploadedDesignDraftTransfer } from "./src/server/uploadedDesignDraftTransferHttp";
+import { handleFutureOrderV2Persistence } from "./src/server/futureOrderV2PersistenceHttp";
 
 dotenv.config();
 
@@ -51,6 +52,10 @@ app.post(
 app.post(
   "/api/design-studio/transfer-uploaded-design-draft",
   handleUploadedDesignDraftTransfer,
+);
+app.post(
+  "/api/orders/persist-future-order-v2",
+  handleFutureOrderV2Persistence,
 );
 
 // API route for AI sizing estimation using Gemini 3.5 Flash

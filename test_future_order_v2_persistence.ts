@@ -7,7 +7,7 @@ import {
   type FutureOrderV2PersistenceAdapter,
   type FutureOrderV2PersistenceTransaction,
   type PersistedFutureOrderV2,
-} from "./src/services/futureOrderV2Persistence";
+} from "./src/utils/futureOrderV2PersistenceContract";
 import type { FutureOrderCandidateV2 } from "./src/utils/futureOrderCandidate";
 import {
   createFutureOrderCartItemV2,
@@ -17,6 +17,14 @@ import {
 
 const OWNER_UID = "owner-u1";
 const PERSISTED_AT = new Date("2026-09-04T08:00:00.000Z");
+
+const contractSource = readFileSync(
+  "src/utils/futureOrderV2PersistenceContract.ts",
+  "utf8",
+);
+assert.doesNotMatch(contractSource, /from ["']firebase\//);
+assert.doesNotMatch(contractSource, /from ["']react["']/);
+assert.doesNotMatch(contractSource, /\bdocument\.|\bwindow\./);
 
 const catalogueStyle = (garmentKey: string, token: string, label: string) => ({
   occurrence: { garmentKey, occurrenceToken: token, label, garmentType: "shirt" },
