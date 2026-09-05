@@ -20,15 +20,29 @@ export const FUTURE_ORDER_NOT_SUBMITTED_MESSAGE =
   "Your order has not been submitted or charged.";
 export const FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE =
   "This reviewed order cannot proceed to payment until V2 order persistence is established.";
+export const FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING_MESSAGE =
+  "Your order has been prepared. Payment activation is still unavailable.";
 
 export type FuturePaymentReviewCandidate =
   | FutureOrderCandidateV1
   | FutureOrderCandidateV2;
 
+export type FutureOrderV2PreparationPresentation =
+  | { readonly status: "review_required" }
+  | { readonly status: "preparing" }
+  | { readonly status: "authentication_required"; readonly message: string }
+  | { readonly status: "error"; readonly message: string }
+  | {
+      readonly status: "prepared";
+      readonly cartItemId: string;
+      readonly orderId: string;
+    };
+
 export interface FutureOrderV2PaymentReviewHandoff {
   readonly status: "reviewable";
   readonly candidate: FutureOrderCandidateV2;
   readonly blockers: readonly [FutureOrderCandidateBlocker];
+  readonly preparation: FutureOrderV2PreparationPresentation;
 }
 
 export type FuturePaymentReviewResult =
@@ -37,14 +51,24 @@ export type FuturePaymentReviewResult =
 
 export const createFutureOrderV2PaymentReviewHandoff = (
   candidate: FutureOrderCandidateV2,
+  preparation: FutureOrderV2PreparationPresentation = {
+    status: "review_required",
+  },
 ): FutureOrderV2PaymentReviewHandoff => ({
   status: "reviewable",
   candidate,
+  preparation,
   blockers: [
     {
-      code: "FUTURE_ORDER_V2_PERSISTENCE_PENDING",
+      code:
+        preparation.status === "prepared"
+          ? "FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING"
+          : "FUTURE_ORDER_V2_PERSISTENCE_PENDING",
       stage: "payment",
-      message: FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
+      message:
+        preparation.status === "prepared"
+          ? FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING_MESSAGE
+          : FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
     },
   ],
 });
@@ -97,7 +121,8 @@ export const getFuturePaymentReviewContentBlockers = (
   result.blockers.filter(
     (blocker) =>
       blocker.code !== "PAYMENT_PROVIDER_UNAVAILABLE" &&
-      blocker.code !== "FUTURE_ORDER_V2_PERSISTENCE_PENDING",
+      blocker.code !== "FUTURE_ORDER_V2_PERSISTENCE_PENDING" &&
+      blocker.code !== "FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING",
   );
 
 export const getFuturePaymentReviewContentStatusLabel = (

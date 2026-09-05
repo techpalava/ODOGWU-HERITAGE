@@ -363,9 +363,14 @@ assert.match(legacySaveOrder, /setDoc\([\s\S]*?\{ merge: true \}/);
 assert.match(legacySaveOrder, /ownerUid: order\.ownerUid \|\| firebaseUser\.uid/);
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
-assert.equal(studioSource.includes("persistFutureOrderV2"), false);
+assert.ok(studioSource.includes("persistFutureOrderV2"));
+assert.ok(studioSource.includes("prepareFutureOrderV2Submission"));
+assert.equal(studioSource.includes("firebase/firestore"), false);
+assert.equal(studioSource.includes("StorageService.saveOrder"), false);
+assert.equal(studioSource.includes("processPayment"), false);
 assert.ok(studioSource.includes("createFutureOrderV2PaymentReviewHandoff"));
 const paymentReviewSource = readFileSync("src/utils/designStudioFuturePaymentReview.ts", "utf8");
 assert.ok(paymentReviewSource.includes("FUTURE_ORDER_V2_PERSISTENCE_PENDING"));
+assert.ok(paymentReviewSource.includes("FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING"));
 
 console.log("PASS: future order V2 persistence, ownership, and idempotency authority");

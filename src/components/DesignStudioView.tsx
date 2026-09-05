@@ -223,12 +223,18 @@ import {
   buildFutureOrderCandidateV2,
   type FutureOrderCandidateBlocker,
   type FutureOrderCandidateUploadedStyleAuthorityV2,
+  type FutureOrderCandidateV2BuildResult,
 } from "../utils/futureOrderCandidate";
 import {
   createFutureOrderV2PaymentReviewHandoff,
   isFuturePaymentReviewStageUnlocked,
   type FutureOrderV2PaymentReviewHandoff,
 } from "../utils/designStudioFuturePaymentReview";
+import {
+  prepareFutureOrderV2Submission,
+  type FutureOrderV2PreparationAttempt,
+} from "../utils/futureOrderV2Preparation";
+import { persistFutureOrderV2 } from "../services/futureOrderV2Persistence";
 import {
   buildAuthoritativePhysicalOccurrences,
   activateFutureCatalogStyleSelection,
@@ -524,6 +530,9 @@ export default function DesignStudioView({
     useState<string | null>(null);
   const [futurePaymentReviewHandoff, setFuturePaymentReviewHandoff] =
     useState<FutureOrderV2PaymentReviewHandoff | null>(null);
+  const futureOrderV2PreparationRef =
+    useRef<FutureOrderV2PreparationAttempt | null>(null);
+  const futureOrderV2PreparationInFlightRef = useRef(false);
   const [futurePaymentReviewTransitionBlockers, setFuturePaymentReviewTransitionBlockers] =
     useState<readonly FutureOrderCandidateBlocker[]>([]);
   const futureDesignStyleMutationAuthorityRef =
@@ -2475,6 +2484,9 @@ export default function DesignStudioView({
     uploadedSourceCleanupCandidatesRef.current.clear();
     lastScheduledFutureDraftRef.current = null;
     setFutureDraftPersistenceStatus("resolving");
+    futureOrderV2PreparationRef.current = null;
+    futureOrderV2PreparationInFlightRef.current = false;
+    setFuturePaymentReviewHandoff(null);
     setGuestDraftHydrated(false);
     preservedInvalidHydratedDraftFabricAllocationsRef.current = null;
     setFutureDraftFabricIntegrityBlockers([]);
@@ -4376,20 +4388,22 @@ export default function DesignStudioView({
     }
     setFutureStageId("shipping");
   };
-  const handleOpenDormantPaymentReviewStage = () => {
+  const buildCurrentFutureOrderCandidateV2 = (): FutureOrderCandidateV2BuildResult => {
     const ledger = currentFutureDesignStyleDraftHydration?.result.ledger;
     if (!ledger) {
-      setFuturePaymentReviewHandoff(null);
-      setFuturePaymentReviewTransitionBlockers([
-        {
-          code: "DESIGN_STYLE_ASSIGNMENT_INVALID",
-          stage: "design_style",
-          message: "Design Style assignments are not ready for review.",
-        },
-      ]);
-      return;
+      return {
+        status: "blocked",
+        candidate: null,
+        blockers: [
+          {
+            code: "DESIGN_STYLE_ASSIGNMENT_INVALID",
+            stage: "design_style",
+            message: "Design Style assignments are not ready for review.",
+          },
+        ],
+      };
     }
-    const result = buildFutureOrderCandidateV2({
+    return buildFutureOrderCandidateV2({
       coreInput: {
         ...futureSummaryInput,
         source: activeFutureDesignSource,
@@ -4401,6 +4415,11 @@ export default function DesignStudioView({
       uploadedAuthorityBySourceRef:
         futurePaymentReviewUploadedAuthorityBySourceRef,
     });
+  };
+  const handleOpenDormantPaymentReviewStage = () => {
+    futureOrderV2PreparationRef.current = null;
+    futureOrderV2PreparationInFlightRef.current = false;
+    const result = buildCurrentFutureOrderCandidateV2();
     if (result.status !== "valid") {
       setFuturePaymentReviewHandoff(null);
       setFuturePaymentReviewTransitionBlockers(result.blockers);
@@ -4411,6 +4430,100 @@ export default function DesignStudioView({
       createFutureOrderV2PaymentReviewHandoff(result.candidate),
     );
     setFutureStageId("payment");
+  };
+  const handlePrepareFutureOrderV2 = async () => {
+    if (futureOrderV2PreparationInFlightRef.current) return;
+    const reviewed = futurePaymentReviewHandoff?.candidate;
+    if (!reviewed) return;
+    const firebaseUser = firebaseDraftAuth.user || auth.currentUser;
+    if (
+      !firebaseDraftAuth.resolved ||
+      !firebaseUser ||
+      firebaseUser.isAnonymous
+    ) {
+      setFuturePaymentReviewHandoff(
+        createFutureOrderV2PaymentReviewHandoff(reviewed, {
+          status: "authentication_required",
+          message:
+            "Sign in with a non-anonymous account before preparing this order.",
+        }),
+      );
+      return;
+    }
+
+    futureOrderV2PreparationInFlightRef.current = true;
+    setFuturePaymentReviewHandoff(
+      createFutureOrderV2PaymentReviewHandoff(reviewed, {
+        status: "preparing",
+      }),
+    );
+    const outcome = await prepareFutureOrderV2Submission({
+      reviewed,
+      fresh: buildCurrentFutureOrderCandidateV2(),
+      identity: { uid: firebaseUser.uid, isAnonymous: firebaseUser.isAnonymous },
+      existingAttempt: futureOrderV2PreparationRef.current,
+      persist: persistFutureOrderV2,
+    });
+    futureOrderV2PreparationInFlightRef.current = false;
+    if (outcome.status === "invalid_current") {
+      futureOrderV2PreparationRef.current = null;
+      const nextStage =
+        outcome.blockers.find((blocker) => blocker.stage !== "payment")?.stage ||
+        "shipping";
+      setFuturePaymentReviewHandoff(null);
+      setFuturePaymentReviewTransitionBlockers(outcome.blockers);
+      setFutureStageId(nextStage);
+      return;
+    }
+    if (outcome.status === "review_refresh_required") {
+      futureOrderV2PreparationRef.current = null;
+      setFuturePaymentReviewTransitionBlockers([]);
+      setFuturePaymentReviewHandoff(
+        createFutureOrderV2PaymentReviewHandoff(outcome.candidate, {
+          status: "review_required",
+        }),
+      );
+      return;
+    }
+    if (outcome.status === "authentication_required") {
+      setFuturePaymentReviewHandoff(
+        createFutureOrderV2PaymentReviewHandoff(reviewed, {
+          status: "authentication_required",
+          message:
+            "Sign in with a non-anonymous account before preparing this order.",
+        }),
+      );
+      return;
+    }
+    if (outcome.status === "preparation_invalid") {
+      setFuturePaymentReviewHandoff(
+        createFutureOrderV2PaymentReviewHandoff(outcome.candidate, {
+          status: "error",
+          message: "This order could not be prepared safely. Review the highlighted details.",
+        }),
+      );
+      return;
+    }
+    futureOrderV2PreparationRef.current = outcome.attempt;
+    if (outcome.status === "prepared") {
+        setFuturePaymentReviewHandoff(
+          createFutureOrderV2PaymentReviewHandoff(outcome.attempt.candidate, {
+            status: "prepared",
+            cartItemId: outcome.attempt.cartItemId,
+            orderId: outcome.attempt.orderId,
+          }),
+        );
+      return;
+    }
+    setFuturePaymentReviewHandoff(
+      createFutureOrderV2PaymentReviewHandoff(outcome.attempt.candidate, {
+        status: "error",
+        message:
+          outcome.result?.status === "conflict"
+            ? "This order ID cannot be prepared safely. Your reviewed order was not replaced."
+            : "We could not confirm order preparation. Retry using the same reviewed order.",
+      }),
+    );
   };
   const handleLiveOrderSummaryEdit = (stage: DesignStudioStageId) => {
     if (!isStageHistoricallyUnlocked(stage)) return;
@@ -6126,6 +6239,7 @@ export default function DesignStudioView({
             }
             onBack={() => setFutureStageId("shipping")}
             onEditStage={(stage) => setFutureStageId(stage)}
+            onPrepareOrder={handlePrepareFutureOrderV2}
           />
         ) : null
       ) : null}

@@ -18,6 +18,7 @@ import {
 import {
   FUTURE_ORDER_NOT_SUBMITTED_MESSAGE,
   FUTURE_PAYMENT_UNAVAILABLE_MESSAGE,
+  FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING_MESSAGE,
   FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
   getFuturePaymentReviewAiStatusLabel,
   getFuturePaymentReviewContentBlockers,
@@ -31,6 +32,7 @@ import {
   isFuturePaymentReviewStageUnlocked,
   type FuturePaymentReviewCandidate,
   type FuturePaymentReviewResult,
+  type FutureOrderV2PreparationPresentation,
 } from "../utils/designStudioFuturePaymentReview";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
@@ -50,6 +52,7 @@ interface DormantFuturePaymentReviewStepProps {
     target: FutureGarmentRemovalTarget,
     trigger: HTMLButtonElement,
   ) => void;
+  onPrepareOrder?: () => void;
 }
 
 const moneyFromCents = (amountCents: number): string =>
@@ -564,6 +567,7 @@ export const DormantFuturePaymentReviewStep = ({
   survivorSummary = null,
   removalTargets = [],
   onRequestGarmentRemoval,
+  onPrepareOrder,
 }: DormantFuturePaymentReviewStepProps) => {
   const candidate = result.candidate;
   const isReviewable = isFuturePaymentReviewStageUnlocked(result);
@@ -581,6 +585,17 @@ export const DormantFuturePaymentReviewStep = ({
   );
   const isDelivery =
     candidate?.shipping.state.fulfilmentMethod === "destination_delivery";
+  const preparation: FutureOrderV2PreparationPresentation | null =
+    "preparation" in result ? result.preparation : null;
+  const preparationIsPending = preparation?.status === "preparing";
+  const preparationIsComplete = preparation?.status === "prepared";
+  const preparationMessage =
+    preparation?.status === "authentication_required" ||
+    preparation?.status === "error"
+      ? preparation.message
+      : preparationIsComplete
+        ? FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING_MESSAGE
+        : FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE;
 
   return (
     <main
@@ -1007,12 +1022,37 @@ export const DormantFuturePaymentReviewStep = ({
             </h2>
             <p id="future-payment-pending-explanation" className="mt-2 break-words text-sm leading-relaxed text-white/80">
               {isV2PaymentReviewCandidate(candidate)
-                ? FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE
+                ? preparationMessage
                 : FUTURE_ORDER_NOT_SUBMITTED_MESSAGE}
             </p>
             <p className="mt-1 text-xs leading-relaxed text-white/65">
               Authentication and a verified payment provider will be required before real payment can begin.
             </p>
+            {isV2PaymentReviewCandidate(candidate) && onPrepareOrder && (
+              <>
+                {preparationIsComplete ? (
+                  <p
+                    data-future-order-v2-prepared={preparation?.status}
+                    className="mt-4 text-sm font-semibold text-heritage-gold"
+                  >
+                    Order prepared with ID {preparation.orderId}. Payment remains unavailable.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    data-future-order-v2-prepare
+                    disabled={!isReviewable || preparationIsPending}
+                    onClick={onPrepareOrder}
+                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                  >
+                    <CheckCircle2 aria-hidden="true" size={14} />
+                    {preparationIsPending
+                      ? "Preparing order..."
+                      : "Prepare order for future payment"}
+                  </button>
+                )}
+              </>
+            )}
             <button
               type="button"
               disabled
