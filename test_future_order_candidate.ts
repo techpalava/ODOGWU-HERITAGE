@@ -1668,7 +1668,7 @@ assert.doesNotMatch(
   /futureOrderCandidateResult\.candidate\.pricing/,
   "An incomplete journey must not dereference a missing order candidate",
 );
-assert.match(studioSource, /futureOrderCandidateResult\.candidate\?\.pricing/);
+assert.match(studioSource, /futurePaymentReviewHandoff\?\.candidate\?\.pricing/);
 
 const midCandidatePlan = planMeasurementRequirements({
   route: "medium_risk",
