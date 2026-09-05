@@ -47,7 +47,9 @@ const textContent = (node: ReactTestInstance | string | null): string =>
 
 const renderModel = async (
   model: DesignStyleStepTestModel,
-  overrides: Partial<ReturnType<typeof createDesignStyleStepRenderProps>> = {},
+  overrides: Partial<ReturnType<typeof createDesignStyleStepRenderProps>> & {
+    onClearAllAssignments?: () => void;
+  } = {},
 ) => {
   let renderer!: ReturnType<typeof create>;
   await act(async () => {
