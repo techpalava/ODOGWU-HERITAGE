@@ -49,18 +49,6 @@ interface DormantFutureDesignStyleStepProps {
   onContinue: () => void;
 }
 
-const OCCURRENCE_STATUS_LABEL: Record<
-  DesignStyleStepOccurrencePresentation["status"],
-  string
-> = {
-  complete: "Complete",
-  incomplete: "Incomplete",
-  awaiting_validation: "Awaiting validation",
-  needs_review: "Needs review",
-  unavailable: "Unavailable",
-  upload_pending: "Upload pending",
-};
-
 const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
   Array.from(
     container.querySelectorAll<HTMLElement>(
@@ -357,7 +345,7 @@ export const DormantFutureDesignStyleStep = ({
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">Step 3 of 9</p>
           <h2 id="future-design-style-title" className="mt-2 font-serif text-2xl font-bold text-heritage-green sm:text-3xl">Design Style</h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">Choose a design reference for your garments. Your garments and Fabric selections remain unchanged.</p>
-          <div aria-live="polite" data-testid="step3-assignment-progress" className="mt-5 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 px-4 py-3"><p className="font-serif text-base font-bold text-heritage-green">{completedCount} of {totalCount} garment{totalCount === 1 ? " has" : "s have"} a design</p></div>
+          <div aria-live="polite" data-testid="step3-assignment-progress" className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-heritage-gold/25 bg-heritage-cream/30 px-3 py-1.5 text-xs font-bold text-heritage-green">{exactSetComplete && <Check aria-hidden="true" size={14} />}<span>{completedCount} of {totalCount} garment{totalCount === 1 ? "" : "s"} assigned</span></div>
           {reviewMessage && <div role="alert" data-testid="step3-migration-review" className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-bold">Review your Design Style choices</p><p className="mt-1 text-xs leading-relaxed">{reviewMessage}</p></div>}
           {mutationError && <div role="alert" className="mt-4 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-900">{mutationError}</div>}
           {runtimeStatus === "hydrating" && <div role="status" className="mt-5 rounded-2xl border border-dashed border-heritage-gold/30 p-5 text-sm text-heritage-ink/70">Restoring your Design Style choices...</div>}
@@ -366,19 +354,20 @@ export const DormantFutureDesignStyleStep = ({
           {runtimeStatus === "error" && <div role="alert" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">The Design Style catalogue is temporarily unavailable. Your saved assignments are preserved.</div>}
 
           {occurrences.length > 0 && (
-            <section aria-labelledby="current-design-mappings-title" className="mt-7">
-              <h3 id="current-design-mappings-title" className="font-serif text-xl font-bold text-heritage-green">Your Garments / Current Design Mappings</h3>
-              <div role="list" className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
+            <section aria-labelledby="current-design-mappings-title" className="mt-5">
+              <h3 id="current-design-mappings-title" className="font-serif text-lg font-bold text-heritage-green">Your Garments</h3>
+              <div role="list" className="mt-2 divide-y divide-heritage-green/10 overflow-hidden rounded-xl border border-heritage-green/15 bg-white">
                 {occurrences.map((occurrence) => {
                   const active = designStyleStepTargetsEqual(occurrence.target, activeOccurrenceTarget);
                   return (
-                    <article key={occurrence.target.occurrenceToken} role="listitem" data-occurrence-label={occurrence.label} className={`min-w-0 rounded-2xl border p-4 ${active ? "border-heritage-gold bg-heritage-cream/25" : "border-heritage-green/15 bg-white"}`}>
-                      <p className="font-serif text-lg font-bold text-heritage-green">{occurrence.label}</p>
-                      <p className="mt-1 break-words text-sm text-heritage-ink/70">Design: <span className="font-bold text-heritage-green">{occurrence.assignmentLabel || "No design selected"}</span></p>
-                      <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-heritage-ink/50">{OCCURRENCE_STATUS_LABEL[occurrence.status]}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <button type="button" onClick={() => { onSelectOccurrence(occurrence.target); allDesignsRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green/25 px-3 text-xs font-bold text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">{occurrence.assignment ? "Change / Choose Design" : "Choose Design"}</button>
-                        {active && occurrence.assignment && clearRequest && <button type="button" onClick={() => onClearAssignment(clearRequest)} aria-label={occurrence.assignment.sourceKind === "uploaded" ? `Remove uploaded design from ${occurrence.label}` : `Clear design for ${occurrence.label}`} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2">{occurrence.assignment.sourceKind === "uploaded" ? `Remove uploaded design from ${occurrence.label}` : "Clear"}</button>}
+                    <article key={occurrence.target.occurrenceToken} role="listitem" data-occurrence-label={occurrence.label} className={`flex min-w-0 flex-col gap-2 border-l-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-4 ${active ? "border-heritage-gold bg-heritage-cream/35" : "border-transparent bg-white"}`}>
+                      <div className="grid min-w-0 flex-1 gap-0.5 sm:grid-cols-[minmax(6rem,0.35fr)_minmax(0,1fr)] sm:items-baseline sm:gap-x-4">
+                        <p className="font-serif text-sm font-bold text-heritage-green">{occurrence.label}</p>
+                        <p className="break-words text-xs leading-relaxed text-heritage-ink/70"><span className="font-semibold text-heritage-green">{occurrence.assignmentLabel || "No design selected"}</span></p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2 sm:self-center">
+                        <button type="button" onClick={() => { onSelectOccurrence(occurrence.target); allDesignsRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-xs font-bold text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">{occurrence.assignment ? "Change" : "Choose Design"}</button>
+                        {active && occurrence.assignment && clearRequest && <button type="button" onClick={() => onClearAssignment(clearRequest)} aria-label={occurrence.assignment.sourceKind === "uploaded" ? `Remove uploaded design from ${occurrence.label}` : `Clear design for ${occurrence.label}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2">{occurrence.assignment.sourceKind === "uploaded" ? `Remove uploaded design from ${occurrence.label}` : "Clear"}</button>}
                       </div>
                     </article>
                   );

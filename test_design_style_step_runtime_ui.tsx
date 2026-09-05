@@ -87,7 +87,7 @@ const continueButton = (root: ReactTestInstance) =>
     textContent(
       renderer.root.findByProps({ "data-testid": "step3-assignment-progress" }),
     ),
-    /0 of 3 garments have a design/,
+    /0 of 3 garments assigned/,
   );
   const visibleText = textContent(renderer.root);
   for (const occurrence of model.projection.occurrences) {
@@ -166,7 +166,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     textContent(
       renderer.root.findByProps({ "data-testid": "step3-assignment-progress" }),
     ),
-    new RegExp(`${count} of 3 garments have a design`),
+    new RegExp(`${count} of 3 garments assigned`),
   );
   assert.equal(continueButton(renderer.root).props.disabled, !complete);
   assert.equal(

@@ -110,14 +110,14 @@ const continueButton = () =>
     .findByProps({ "data-testid": "future-design-style-continue-action" })
     .findByType("button");
 
-assert.match(progress(), /0 of 3 garments have a design/);
+assert.match(progress(), /0 of 3 garments assigned/);
 let dialog = await openDialog();
 await act(async () => checkbox(dialog, "Shirt").props.onChange());
 await act(async () => checkbox(dialog, "Trouser").props.onChange());
 assert.equal(renderer.root.findByProps({ "data-testid": "apply-design-mapping" }).props.disabled, false);
 await act(async () => renderer.root.findByProps({ "data-testid": "apply-design-mapping" }).props.onClick());
 
-assert.match(progress(), /2 of 3 garments have a design/);
+assert.match(progress(), /2 of 3 garments assigned/);
 assert.equal(continueButton().props.disabled, true);
 assert.deepEqual(
   textContent(renderer.root.findByProps({ "data-testid": "assignment-keys" })).split("|").sort(),
@@ -136,7 +136,7 @@ assert.match(
 );
 await act(async () => renderer.root.findByProps({ "data-testid": "apply-design-mapping" }).props.onClick());
 
-assert.match(progress(), /3 of 3 garments have a design/);
+assert.match(progress(), /3 of 3 garments assigned/);
 assert.equal(continueButton().props.disabled, false);
 assert.deepEqual(
   textContent(renderer.root.findByProps({ "data-testid": "assignment-keys" })).split("|").sort(),
