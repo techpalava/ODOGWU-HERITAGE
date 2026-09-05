@@ -284,6 +284,7 @@ import {
   createUploadedSourceCleanupCandidate,
   type UploadedSourceCleanupCandidate,
 } from "../utils/designStyleUploadedSourceCleanup";
+import { getFutureOrderV2HistorySafetyStatus } from "../services/futureOrderV2History";
 import { designStylePrecanonicalUploadCleanupCoordinator } from "../utils/designStylePrecanonicalUploadCleanup";
 import {
   cloneGarmentConstructionPricingResolution,
@@ -3355,21 +3356,23 @@ export default function DesignStudioView({
     >,
   ) => {
     uploadedSourceCleanupCandidatesRef.current.forEach((pending, sourceRef) => {
-      void coordinateUploadedSourceCleanup({
+      void (async () => {
+        const historySafetyStatus = await getFutureOrderV2HistorySafetyStatus(
+          sourceRef,
+        );
+        const result = await coordinateUploadedSourceCleanup({
         candidate: pending.candidate,
         acknowledgement,
         currentSaveGeneration: futureDraftAutosaveGenerationRef.current,
         currentIdentityGeneration: futureDraftIdentityGenerationRef.current,
         activeOccurrences: authoritativePhysicalOccurrencesForDomain,
-        // Task 5F history and the other deletion authorities are not yet
-        // available here. Explicit unknown values retain the source fail-closed.
         lifecycleProof: {
           referenceAuthorityStatus: "complete",
           currentDraftReferenceStatus: "not-referenced",
           ownershipStatus: "unknown",
           ownershipTransferStatus: "unknown",
           confirmationStatus: "unknown",
-          historySafetyStatus: "unknown",
+          historySafetyStatus,
         },
         deleteCanonicalSource: async () => {
           const deletion = await deleteUploadedDesignCanonicalSource({
@@ -3378,11 +3381,11 @@ export default function DesignStudioView({
           });
           if (deletion.status === "failed") throw deletion.error;
         },
-      }).then((result) => {
+        });
         if (result.status === "deleted") {
           uploadedSourceCleanupCandidatesRef.current.delete(sourceRef);
         }
-      });
+      })();
     });
   };
 

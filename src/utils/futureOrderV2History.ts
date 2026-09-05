@@ -1,7 +1,7 @@
 import {
   parsePersistedFutureOrderV2,
   type PersistedFutureOrderV2,
-} from "./futureOrderV2PersistenceContract";
+} from "./futureOrderV2PersistenceContract.js";
 
 export type FutureOrderV2HistoricalStylePresentation =
   | {

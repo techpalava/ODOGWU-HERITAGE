@@ -9,6 +9,7 @@ import pinRegisterHandler from "./api/auth/pin-register.js";
 import uploadedDesignTransferHandler from "./api/orders/transfer-uploaded-design.js";
 import uploadedDesignOwnershipClaimHandler from "./api/orders/create-uploaded-design-ownership-claim.js";
 import futureOrderV2PersistenceHandler from "./api/orders/persist-future-order-v2.js";
+import futureOrderV2HistoryHandler from "./api/orders/lookup-future-order-v2-history.js";
 import uploadedDesignDraftTransferHandler from "./api/design-studio/transfer-uploaded-design-draft.js";
 import type {
   HttpRequest,
@@ -123,6 +124,7 @@ async function run() {
   assert.equal(typeof uploadedDesignTransferHandler, "function");
   assert.equal(typeof uploadedDesignOwnershipClaimHandler, "function");
   assert.equal(typeof futureOrderV2PersistenceHandler, "function");
+  assert.equal(typeof futureOrderV2HistoryHandler, "function");
   assert.equal(typeof uploadedDesignDraftTransferHandler, "function");
 
   const health = createResponse();
@@ -185,6 +187,17 @@ async function run() {
   );
   assert.equal(futureOrderPersistence.state.status, 401);
   assert.deepEqual(futureOrderPersistence.state.body, {
+    error: "Firebase authentication is required.",
+    code: "AUTH_REQUIRED",
+  });
+
+  const futureOrderHistory = createResponse();
+  await futureOrderV2HistoryHandler(
+    request("POST", { body: {} }),
+    futureOrderHistory.response,
+  );
+  assert.equal(futureOrderHistory.state.status, 401);
+  assert.deepEqual(futureOrderHistory.state.body, {
     error: "Firebase authentication is required.",
     code: "AUTH_REQUIRED",
   });
