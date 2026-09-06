@@ -386,6 +386,15 @@ assert.match(
   /futureDraftPersistenceStatus !== "ready"/,
   "A cleared or conflicted cloud record must block autosave.",
 );
+const failedAutosaveSource = studioSource.slice(
+  studioSource.indexOf('} else if (result.status === "conflict") {'),
+  studioSource.indexOf('  }, [', studioSource.indexOf('} else if (result.status === "conflict") {')),
+);
+assert.doesNotMatch(
+  failedAutosaveSource,
+  /futureDraftIdentityGenerationRef\.current \+= 1/,
+  "A failed save must not invalidate the current customer identity and hide the reconciled Step 3 catalogue.",
+);
 assert.match(studioSource, /createFirebaseAuthenticatedFutureDraftRepository/);
 assert.match(studioSource, /futureDraftIdentity\.status === "authenticated"/);
 assert.doesNotMatch(studioSource, /isFutureNineStageMode/);

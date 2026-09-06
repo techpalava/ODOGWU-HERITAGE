@@ -3703,10 +3703,12 @@ export default function DesignStudioView({
                   }
                 }
               } else if (result.status === "conflict") {
-                futureDraftIdentityGenerationRef.current += 1;
+                // A persistence conflict belongs to this same customer draft.
+                // Advancing the identity generation here detached the current
+                // reconciled Step 3 hydration permanently, which hid the
+                // catalogue behind its hydrator guard after a stale action.
                 setFutureDraftPersistenceStatus("conflict");
               } else {
-                futureDraftIdentityGenerationRef.current += 1;
                 setFutureDraftPersistenceStatus(result.status);
               }
             })
@@ -3719,7 +3721,6 @@ export default function DesignStudioView({
                     lastPersistedFutureDraftRef.current;
                 }
                 console.error("Future draft autosave failed.", error);
-                futureDraftIdentityGenerationRef.current += 1;
                 setFutureDraftPersistenceStatus("blocked");
               }
             });
