@@ -14,6 +14,7 @@ import {
   validateGarmentScopedCustomDetailsCompletion,
 } from "./src/utils/garmentScopedCustomDetailsDomain";
 import {
+  clearGarmentScopedCustomDetailSelection,
   createEmptyGarmentScopedCustomDetailsState,
   setGarmentScopedCustomDetailSelection,
 } from "./src/utils/garmentScopedCustomDetailsState";
@@ -210,6 +211,38 @@ let neckLayoutPricing = calculateGarmentScopedCustomDetailsPricing({
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let neckRenderer!: ReturnType<typeof create>;
+const refreshNeckLayout = (
+  nextState: typeof neckLayoutReconciliation.state,
+  nextInputs = neckLayoutInputs.state,
+) => {
+  neckLayoutReconciliation = reconcileGarmentScopedCustomDetails({
+    garmentTypeSelection: neckLayoutGarmentTypeSelection,
+    catalogInspection,
+    existingState: nextState,
+  });
+  neckLayoutInputs = reconcileGarmentScopedPersonalizedInputs({
+    reconciliation: neckLayoutReconciliation,
+    catalogInspection,
+    existingInputs: nextInputs,
+  });
+  neckLayoutCatalogue = projectFutureCustomDetailsCatalogue({
+    garmentTypeSelection: neckLayoutGarmentTypeSelection,
+    style: null,
+    reconciliation: neckLayoutReconciliation,
+    activeOptions: catalogInspection.activeOptions,
+    additionalGarments: [],
+  });
+  neckLayoutCompletion = validateGarmentScopedCustomDetailsCompletion({
+    earlierStagesComplete: true,
+    reconciliation: neckLayoutReconciliation,
+    personalizedInputs: neckLayoutInputs,
+  });
+  neckLayoutPricing = calculateGarmentScopedCustomDetailsPricing({
+    reconciliation: neckLayoutReconciliation,
+    catalogInspection,
+  });
+  neckRenderer.update(createNeckStep());
+};
 const createNeckStep = ({
   constructionBreakdown = { status: "complete" as const, rows: [] },
   constructionSubtotal = 0,
@@ -233,44 +266,47 @@ const createNeckStep = ({
     additionalGarments: [],
     additionalGarmentConstructionOptions: [],
     onSingleSelect: (garmentKey, selectionGroup, optionId) => {
-      const nextState = setGarmentScopedCustomDetailSelection(
-        neckLayoutReconciliation.state,
-        garmentKey,
-        selectionGroup,
-        optionId,
+      refreshNeckLayout(
+        setGarmentScopedCustomDetailSelection(
+          neckLayoutReconciliation.state,
+          garmentKey,
+          selectionGroup,
+          optionId,
+        ),
       );
-      neckLayoutReconciliation = reconcileGarmentScopedCustomDetails({
-        garmentTypeSelection: neckLayoutGarmentTypeSelection,
-        catalogInspection,
-        existingState: nextState,
-      });
-      neckLayoutInputs = reconcileGarmentScopedPersonalizedInputs({
-        reconciliation: neckLayoutReconciliation,
-        catalogInspection,
-        existingInputs: neckLayoutInputs.state,
-      });
-      neckLayoutCatalogue = projectFutureCustomDetailsCatalogue({
-        garmentTypeSelection: neckLayoutGarmentTypeSelection,
-        style: null,
-        reconciliation: neckLayoutReconciliation,
-        activeOptions: catalogInspection.activeOptions,
-        additionalGarments: [],
-      });
-      neckLayoutCompletion = validateGarmentScopedCustomDetailsCompletion({
-        earlierStagesComplete: true,
-        reconciliation: neckLayoutReconciliation,
-        personalizedInputs: neckLayoutInputs,
-      });
-      neckLayoutPricing = calculateGarmentScopedCustomDetailsPricing({
-        reconciliation: neckLayoutReconciliation,
-        catalogInspection,
-      });
-      neckRenderer.update(createNeckStep());
     },
-    onClearSelection: () => undefined,
+    onClearSelection: (garmentKey, selectionGroup) => {
+      refreshNeckLayout(
+        clearGarmentScopedCustomDetailSelection(
+          neckLayoutReconciliation.state,
+          garmentKey,
+          selectionGroup,
+        ),
+      );
+    },
     onConstructionSelect: () => undefined,
-    onToggleMultiSelect: () => undefined,
-    onPersonalizedTextChange: () => undefined,
+    onToggleMultiSelect: (garmentKey, selectionGroup, optionId) => {
+      refreshNeckLayout(
+        setGarmentScopedCustomDetailSelection(
+          neckLayoutReconciliation.state,
+          garmentKey,
+          selectionGroup,
+          optionId,
+        ),
+      );
+    },
+    onPersonalizedTextChange: (garmentKey, selectionGroup, optionId, text) => {
+      refreshNeckLayout(
+        neckLayoutReconciliation.state,
+        setGarmentScopedCustomDetailText({
+          state: neckLayoutInputs.state,
+          garmentKey,
+          selectionGroup,
+          optionId,
+          text,
+        }).state,
+      );
+    },
     onDecorativeFeatureToggle: () => undefined,
     onClearDecorativeFeatures: () => undefined,
     onMonogramPlacementChange: () => undefined,
@@ -303,18 +339,26 @@ assert.match(
   /(?:^|\s)lg:col-span-2(?:\s|$)/,
   "Rendered Neck fieldset must span the full Custom Details section width",
 );
+const personalizedLayoutFieldset = neckRenderer.root.findByProps({
+  "data-custom-detail-group": PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
+});
+assert.match(
+  String(personalizedLayoutFieldset.props.className),
+  /(?:^|\s)lg:col-span-2(?:\s|$)/,
+  "Personalized Additional must span the available Custom Details width",
+);
 const ordinaryFieldsets = neckRenderer.root
   .findAllByType("fieldset")
-  .filter((fieldset) => fieldset !== neckFieldset);
+  .filter((fieldset) => fieldset !== neckFieldset && fieldset !== personalizedLayoutFieldset);
 assert.ok(
   ordinaryFieldsets.length > 0,
-  "Rendered tree must contain at least one ordinary non-Neck fieldset",
+  "Rendered tree must contain at least one ordinary non-spanning fieldset",
 );
 assert.ok(
   ordinaryFieldsets.every(
     (fieldset) => !String(fieldset.props.className).includes("lg:col-span-2"),
   ),
-  "Ordinary Custom Details fieldsets must retain their normal layout",
+  "Only the wide-option Custom Details fieldsets may span the full layout",
 );
 
 const collarGridClass =
@@ -365,7 +409,7 @@ assert.equal(
   "None must occupy the full-width block before the collar grid",
 );
 assert.ok(
-  String(noneLabel.parent?.props.className).includes("space-y-3"),
+  /(?:^|\s)space-y-\S+/.test(String(noneLabel.parent?.props.className)),
   "None must remain a full-width sibling of the collar grid",
 );
 
@@ -454,6 +498,101 @@ if (neckLayoutPricing.status === "exact") {
     "The selected Included Neck option must contribute exactly €0",
   );
 }
+
+const personalizedFieldset = () => neckRenderer.root.findByProps({
+  "data-custom-detail-group": PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
+});
+const personalizedOptionGrid = () => neckRenderer.root.findByProps({
+  "data-custom-detail-option-grid": PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
+});
+const personalizedOptionLabel = () => personalizedFieldset()
+  .findAllByType("label")
+  .find((label) => textContent(label).includes("Personalized Additional Requirement"));
+const personalizedNoneLabel = () => personalizedFieldset()
+  .findAllByType("label")
+  .find((label) => textContent(label).trim().startsWith("None"));
+
+assert.ok(personalizedNoneLabel(), "Personalized Additional must retain None");
+assert.ok(
+  personalizedOptionLabel(),
+  "Personalized Additional must retain its evaluation-required option",
+);
+assert.equal(personalizedNoneLabel()?.findByType("input").props.checked, true);
+assert.match(
+  String(personalizedOptionGrid().props.className),
+  /sm:grid-cols-2/,
+  "ordinary Step 4 option groups must use their available desktop width",
+);
+assert.equal(
+  personalizedNoneLabel()?.parent,
+  personalizedOptionGrid(),
+  "None must share the personalized option grid",
+);
+assert.equal(
+  personalizedOptionLabel()?.parent?.parent,
+  personalizedOptionGrid(),
+  "the personalized option card must share the same option grid as None",
+);
+assert.equal(
+  neckRenderer.root.findAllByProps({
+    "data-custom-detail-conditional-row": PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
+  }).length,
+  0,
+  "the conditional detail must remain hidden until Personalized Additional is selected",
+);
+
+act(() => {
+  personalizedOptionLabel()?.findByType("input").props.onChange();
+});
+const personalizedDetail = neckRenderer.root.findByProps({
+  "data-custom-detail-conditional-row": PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
+});
+assert.equal(
+  personalizedDetail.props["data-custom-detail-conditional-group"],
+  PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
+  "the conditional detail must remain associated with Personalized Additional",
+);
+assert.equal(
+  personalizedDetail.parent,
+  personalizedOptionGrid().parent,
+  "the conditional detail must be a full-width sibling of the option grid",
+);
+assert.ok(
+  personalizedDetail.parent!.children.indexOf(personalizedDetail) >
+    personalizedDetail.parent!.children.indexOf(personalizedOptionGrid()),
+  "the conditional detail must follow the entire option grid",
+);
+const personalizedTextarea = personalizedDetail.findByType("textarea");
+act(() => {
+  personalizedTextarea.props.onChange({ target: { value: "Add a family crest on the left chest." } });
+});
+assert.equal(
+  neckRenderer.root
+    .findByProps({
+      "data-custom-detail-conditional-row": PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
+    })
+    .findByType("textarea").props.value,
+  "Add a family crest on the left chest.",
+  "the displayed conditional detail must retain the selected option's persisted text",
+);
+assert.equal(
+  neckLayoutReconciliation.state.selectionsByGarmentKey["base:shirt"]?.[
+    PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP
+  ],
+  PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
+  "selecting Personalized Additional must retain the existing selection authority",
+);
+act(() => {
+  personalizedNoneLabel()?.findByType("input").props.onChange();
+});
+assert.equal(personalizedNoneLabel()?.findByType("input").props.checked, true);
+assert.equal(
+  neckRenderer.root.findAllByProps({
+    "data-custom-detail-conditional-row": PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
+  }).length,
+  0,
+  "selecting None must hide the personalized detail without changing the option catalogue",
+);
 
 let constructionBreakdownRenderer!: ReturnType<typeof create>;
 act(() => {
