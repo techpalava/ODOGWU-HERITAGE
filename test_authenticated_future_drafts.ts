@@ -1,13 +1,21 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import type { DesignStudioStageId, GuestDesignDraft } from "./src/types";
+import type {
+  DesignStudioStageId,
+  GarmentTypeStepSelection,
+  GuestDesignDraft,
+  StyleCategory,
+} from "./src/types";
 import {
   createAuthenticatedFutureDraftRepository,
+  isPristineFutureDesignDraft,
   resolveAuthenticatedFutureDraftIdentity,
   type AuthenticatedFutureDraftIdentity,
   type AuthenticatedFutureDraftPersistenceAdapter,
 } from "./src/services/authenticatedFutureDraftService";
 import { createUploadedDesignSource } from "./src/utils/designSourceState";
+import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
+import { createDesignStyleStepTestModel } from "./testing/designStyleStepFixtures";
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -223,8 +231,172 @@ const cloudOnly = await transferRepository.synchronize(null);
 assert.equal(cloudOnly.status, "cloud_restored");
 assert.equal(cloudOnly.draft?.currentStageId, "custom_details");
 
+// A fresh authenticated runtime may briefly hold the untouched Step 1 shell
+// while the persisted cloud draft is being loaded. The shell must never turn
+// the cold hydration into a conflict or replace the saved customer draft.
+const pristineColdStartDraft: GuestDesignDraft = {
+  ...makeDraft("garment_type"),
+  currentStep: 1,
+  garmentTypeSelection: {
+    garmentTypes: [],
+    demographic: null,
+    constructionByGarment: {},
+  },
+  selectedFabricCode: null,
+  selectedStyleId: null,
+  selectedGarment: null,
+  fabricAllocations: [],
+  designSource: null,
+  confirmedStyleId: null,
+  confirmedDesignSourceKey: null,
+  priceActivatedFabricCode: null,
+};
+assert.equal(isPristineFutureDesignDraft(pristineColdStartDraft), true);
+const coldHydration = await transferRepository.synchronize(pristineColdStartDraft);
+assert.equal(coldHydration.status, "cloud_restored");
+assert.equal(coldHydration.draft?.currentStageId, "custom_details");
+assert.equal(coldHydration.draft?.selectedFabricCode, "FABRIC-A");
+assert.equal(coldHydration.draft?.selectedStyleId, "STYLE-A");
+
+// This simulates a new authenticated runtime: an existing V2 cloud draft with
+// Shirt + Trouser Fabric and exact occurrence assignments is loaded after a
+// transient pristine local shell has been created. The cloud draft must remain
+// authoritative through V2 reconciliation and expose the published catalogue.
+const coldHydrationSelection: GarmentTypeStepSelection = {
+  garmentTypes: ["shirt", "trouser"],
+  demographic: "male",
+  audienceSelection: { schemaVersion: 1, demographics: ["male"] },
+  constructionByGarment: {},
+};
+const coldHydrationStyle: StyleCategory = {
+  id: "cold-hydration-style",
+  name: "Cold Hydration Style",
+  description: "Authenticated cold-hydration regression style.",
+  gender: "male",
+  targetDemographic: "male",
+  options: [],
+  fabricCapacityComposition: [
+    createStyleBaseGarmentSpec("shirt"),
+    createStyleBaseGarmentSpec("trouser"),
+  ],
+};
+const persistedV2Model = createDesignStyleStepTestModel({
+  styles: [coldHydrationStyle],
+  garmentTypeSelection: coldHydrationSelection,
+  selectedStyleIdByGarmentKey: {
+    "base:shirt:1": coldHydrationStyle.id,
+    "base:trouser:1": coldHydrationStyle.id,
+  },
+});
+assert.ok(persistedV2Model.hydration.envelope);
+const persistedV2Draft: GuestDesignDraft = {
+  ...makeDraft("design_style"),
+  garmentTypeSelection: coldHydrationSelection,
+  selectedStyleId: null,
+  designSource: null,
+  confirmedStyleId: null,
+  confirmedDesignSourceKey: null,
+  designStyleAssignmentDraft: persistedV2Model.hydration.envelope,
+  fabricAllocations: [
+    {
+      allocationId: "cold-hydration-fabric",
+      fabricCode: "FABRIC-A",
+      garmentAssignments: [
+        {
+          garmentKey: "base:shirt:1",
+          code: "SHIRT",
+          garmentType: "shirt",
+          fabricUnits: 1,
+        },
+        {
+          garmentKey: "base:trouser:1",
+          code: "TROUSER",
+          garmentType: "trouser",
+          fabricUnits: 1,
+        },
+      ],
+    },
+  ],
+};
+const coldBoundaryAdapter = new MemoryAdapter();
+const coldBoundaryRepository = createAuthenticatedFutureDraftRepository({
+  adapter: coldBoundaryAdapter,
+  getIdentity: () => ({ status: "authenticated" as const, ownerUid: "uid-cold" }),
+});
+assert.equal((await coldBoundaryRepository.save(persistedV2Draft, null)).status, "saved");
+const coldBoundarySync = await coldBoundaryRepository.synchronize(
+  pristineColdStartDraft,
+);
+assert.equal(coldBoundarySync.status, "cloud_restored");
+assert.equal(coldBoundarySync.draft?.fabricAllocations?.[0]?.garmentAssignments.length, 2);
+const freshV2Model = createDesignStyleStepTestModel({
+  styles: persistedV2Model.styles,
+  garmentTypeSelection: coldHydrationSelection,
+  rawDraft: coldBoundarySync.draft || {},
+});
+assert.equal(freshV2Model.projection.runtimeStatus, "ready");
+assert.equal(freshV2Model.projection.completedCount, 2);
+assert.equal(freshV2Model.catalogueEntries.length, 1);
+assert.deepEqual(
+  Object.keys(freshV2Model.hydration.ledger?.assignmentsByGarmentKey || {}).sort(),
+  ["base:shirt:1", "base:trouser:1"],
+);
+
+// A meaningful local snapshot can be restored before this page has resolved
+// its authenticated customer. It is not a competing authenticated edit, so a
+// saved cloud draft must still win during the first authenticated hydration.
+const preAuthLocalSelection: GarmentTypeStepSelection = {
+  garmentTypes: ["shirt"],
+  demographic: "male",
+  audienceSelection: { schemaVersion: 1, demographics: ["male"] },
+  constructionByGarment: {},
+};
+const preAuthLocalStyle: StyleCategory = {
+  ...coldHydrationStyle,
+  id: "pre-auth-local-style",
+  name: "Pre-auth local runtime style",
+  fabricCapacityComposition: [createStyleBaseGarmentSpec("shirt")],
+};
+const preAuthLocalModel = createDesignStyleStepTestModel({
+  styles: [preAuthLocalStyle],
+  garmentTypeSelection: preAuthLocalSelection,
+  selectedStyleIdByGarmentKey: {
+    "base:shirt:1": preAuthLocalStyle.id,
+  },
+});
+assert.ok(preAuthLocalModel.hydration.envelope);
+const meaningfulPreAuthLocalDraft: GuestDesignDraft = {
+  ...makeDraft("design_style", "Pre-auth local runtime"),
+  garmentTypeSelection: preAuthLocalSelection,
+  selectedStyleId: null,
+  designSource: null,
+  confirmedStyleId: null,
+  confirmedDesignSourceKey: null,
+  designStyleAssignmentDraft: preAuthLocalModel.hydration.envelope,
+};
+const meaningfulPreAuthSync = await coldBoundaryRepository.synchronize(
+  meaningfulPreAuthLocalDraft,
+  { localDraftProvenance: "pre_authenticated_cloud_authority" },
+);
+assert.equal(meaningfulPreAuthSync.status, "cloud_restored");
+assert.equal(meaningfulPreAuthSync.draft?.currentStageId, "design_style");
+assert.equal(
+  meaningfulPreAuthSync.draft?.fabricAllocations?.[0]?.garmentAssignments.length,
+  2,
+);
+const meaningfulPreAuthRestoredModel = createDesignStyleStepTestModel({
+  styles: persistedV2Model.styles,
+  garmentTypeSelection: coldHydrationSelection,
+  rawDraft: meaningfulPreAuthSync.draft || {},
+});
+assert.equal(meaningfulPreAuthRestoredModel.projection.runtimeStatus, "ready");
+assert.equal(meaningfulPreAuthRestoredModel.projection.completedCount, 2);
+assert.equal(meaningfulPreAuthRestoredModel.catalogueEntries.length, 1);
+
 const differentGuest = makeDraft("custom_details", "Different Customer");
-const conflict = await transferRepository.synchronize(differentGuest);
+const conflict = await transferRepository.synchronize(differentGuest, {
+  localDraftProvenance: "authenticated_user_edit",
+});
 assert.equal(conflict.status, "conflict");
 assert.equal(conflict.status === "conflict" && conflict.cloudDraft.customerName, "Future Customer");
 assert.equal(conflict.status === "conflict" && conflict.guestDraft.customerName, "Different Customer");
@@ -397,6 +569,21 @@ assert.doesNotMatch(
 );
 assert.match(studioSource, /createFirebaseAuthenticatedFutureDraftRepository/);
 assert.match(studioSource, /futureDraftIdentity\.status === "authenticated"/);
+assert.match(
+  studioSource,
+  /repository\.synchronize\(localDraft,\s*\{\s*localDraftProvenance,\s*\}\)/,
+  "The first authenticated hydration must mark existing local state as pre-authority.",
+);
+assert.match(
+  studioSource,
+  /authenticatedCloudDraftAuthorityEstablishedRef\.current = true/,
+  "The authenticated cloud authority boundary must be established only after restoration.",
+);
+assert.match(
+  studioSource,
+  /if \(!guestDraftHydrated \|\| isAdditionalGarmentCommitPending\) return;/,
+  "Autosave must remain suppressed before hydration reaches ready.",
+);
 assert.doesNotMatch(studioSource, /isFutureNineStageMode/);
 
 console.log("PASS: authenticated future draft persistence and isolation");

@@ -13,7 +13,10 @@ import { hasAuthoritativeFutureDraftMarker } from "../utils/designStudioDraftPer
 import { isValidUploadedDesignDraftSource } from "../utils/designSourceState";
 import { normalizeGuestDesignDraft } from "./guestOrderSessionService";
 import { auth, db } from "./firebase";
-import { validateDesignStyleDraftFieldForStorage } from "../utils/designStyleDraftPersistence";
+import {
+  inspectPersistedDesignStyleDraft,
+  validateDesignStyleDraftFieldForStorage,
+} from "../utils/designStyleDraftPersistence";
 
 export const AUTHENTICATED_FUTURE_DRAFT_COLLECTION =
   "futureDesignStudioDrafts";
@@ -126,6 +129,15 @@ export type AuthenticatedFutureDraftSyncResult =
       draft: null;
       reason: string;
     };
+
+/**
+ * The caller, not draft content, knows whether a local snapshot predates the
+ * current page's authenticated cloud authority. Defaulting to a real edit
+ * preserves conflict protection for direct callers and future sync paths.
+ */
+export type AuthenticatedFutureDraftLocalProvenance =
+  | "pre_authenticated_cloud_authority"
+  | "authenticated_user_edit";
 
 export interface AuthenticatedFutureDraftPersistenceAdapter {
   load(ownerUid: string): Promise<unknown | null>;
@@ -311,6 +323,45 @@ export const areFutureDraftsEquivalent = (
   );
 };
 
+/**
+ * A local draft can be written while the client is still resolving an existing
+ * authenticated session. It is not a customer edit when it has not progressed
+ * beyond the untouched Step 1 shell. If a cloud draft already exists, letting
+ * that shell win would turn a cold refresh into a false conflict and prevent
+ * the authenticated draft from hydrating.
+ *
+ * This deliberately stays narrow: any garment, Fabric, Design Style, legacy
+ * source evidence, or non-empty V2 assignment ledger remains a real local
+ * draft and follows the existing conflict path.
+ */
+export const isPristineFutureDesignDraft = (
+  draft: GuestDesignDraft,
+): boolean => {
+  if (draft.currentStageId !== "garment_type") return false;
+  if (draft.garmentTypeSelection?.garmentTypes.length) return false;
+  if (draft.fabricAllocations?.length) return false;
+  if (
+    draft.selectedFabricCode !== null ||
+    draft.selectedStyleId !== null ||
+    draft.designSource ||
+    draft.confirmedStyleId ||
+    draft.confirmedDesignSourceKey ||
+    draft.priceActivatedFabricCode ||
+    draft.selectedGarment
+  ) {
+    return false;
+  }
+
+  const persistedDesignStyle = inspectPersistedDesignStyleDraft(draft);
+  if (persistedDesignStyle.status === "absent") return true;
+  return (
+    persistedDesignStyle.status === "valid" &&
+    !persistedDesignStyle.envelope.migration &&
+    Object.keys(persistedDesignStyle.envelope.ledger.assignmentsByGarmentKey)
+      .length === 0
+  );
+};
+
 export const resolveAuthenticatedFutureDraftIdentity = ({
   authResolved,
   firebaseUser,
@@ -492,6 +543,11 @@ export const createAuthenticatedFutureDraftRepository = ({
 
   const synchronize = async (
     guestDraftValue: unknown | null,
+    {
+      localDraftProvenance = "authenticated_user_edit",
+    }: {
+      localDraftProvenance?: AuthenticatedFutureDraftLocalProvenance;
+    } = {},
   ): Promise<AuthenticatedFutureDraftSyncResult> => {
     const guest =
       guestDraftValue === null
@@ -549,6 +605,12 @@ export const createAuthenticatedFutureDraftRepository = ({
       }
       if (areFutureDraftsEquivalent(cloudDraft, guest.draft)) {
         return { status: "equivalent", record, draft: cloudDraft };
+      }
+      if (localDraftProvenance === "pre_authenticated_cloud_authority") {
+        return { status: "cloud_restored", record, draft: cloudDraft };
+      }
+      if (isPristineFutureDesignDraft(guest.draft)) {
+        return { status: "cloud_restored", record, draft: cloudDraft };
       }
       return {
         status: "conflict",

@@ -40,6 +40,8 @@ interface DormantFutureDesignStyleStepProps {
   exactSetComplete: boolean;
   reviewMessage: string | null;
   mutationError: string | null;
+  /** An authenticated draft read failed before V2 hydration could begin. */
+  draftHydrationFailed?: boolean;
   uploadState?: {
     readonly status: "idle" | "pending" | "success" | "error";
     readonly message?: string;
@@ -112,6 +114,7 @@ export const DormantFutureDesignStyleStep = ({
   exactSetComplete,
   reviewMessage,
   mutationError,
+  draftHydrationFailed = false,
   uploadState = { status: "idle" },
   stagePrice,
   isCatalogueLoading = false,
@@ -494,7 +497,8 @@ export const DormantFutureDesignStyleStep = ({
           <div aria-live="polite" data-testid="step3-assignment-progress" className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-heritage-gold/25 bg-heritage-cream/30 px-3 py-1.5 text-xs font-bold text-heritage-green">{exactSetComplete && <Check aria-hidden="true" size={14} />}<span>{completedCount} of {totalCount} garment{totalCount === 1 ? "" : "s"} assigned</span></div>
           {reviewMessage && <div role="alert" data-testid="step3-migration-review" className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-bold">Review your Design Style choices</p><p className="mt-1 text-xs leading-relaxed">{reviewMessage}</p></div>}
           {mutationError && <div role="alert" className="mt-4 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-900">{mutationError}</div>}
-          {runtimeStatus === "hydrating" && <div role="status" className="mt-5 rounded-2xl border border-dashed border-heritage-gold/30 p-5 text-sm text-heritage-ink/70">Restoring your Design Style choices...</div>}
+          {runtimeStatus === "hydrating" && !draftHydrationFailed && <div role="status" className="mt-5 rounded-2xl border border-dashed border-heritage-gold/30 p-5 text-sm text-heritage-ink/70">Restoring your Design Style choices...</div>}
+          {draftHydrationFailed && <div role="alert" data-testid="step3-draft-hydration-failed" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">We could not restore your saved Design Style choices. Reload and try again; your saved draft was not replaced.</div>}
           {runtimeStatus === "blocked" && <div role="alert" className="mt-5 rounded-2xl border border-red-300 bg-red-50 p-5 text-sm text-red-900">Your saved Design Style choices cannot be changed safely here. Nothing has been overwritten.</div>}
           {(isCatalogueLoading || runtimeStatus === "loading") && <div role="status" className="mt-5 rounded-2xl border border-dashed border-heritage-gold/30 p-5 text-sm text-heritage-ink/70">Loading catalogue designs. Your saved assignments are preserved.</div>}
           {runtimeStatus === "error" && <div role="alert" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">The Design Style catalogue is temporarily unavailable. Your saved assignments are preserved.</div>}

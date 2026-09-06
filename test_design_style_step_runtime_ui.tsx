@@ -74,6 +74,22 @@ const continueButton = (root: ReactTestInstance) =>
     .findByProps({ "data-testid": "future-design-style-continue-action" })
     .findByType("button");
 
+// A failed authenticated draft read is terminal and recoverable; Step 3 must
+// not indefinitely claim that it is still restoring choices.
+{
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt"]),
+  });
+  const renderer = await renderModel(model, {
+    runtimeStatus: "hydrating",
+    draftHydrationFailed: true,
+  });
+  const visibleText = textContent(renderer.root);
+  assert.match(visibleText, /could not restore your saved Design Style choices/i);
+  assert.equal(visibleText.includes("Restoring your Design Style choices..."), false);
+}
+
 // Customer Step 3 intentionally has no demographic selector. Published styles
 // remain visible regardless of their demographic reference metadata.
 {
