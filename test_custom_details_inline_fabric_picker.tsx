@@ -12,7 +12,10 @@ import {
   type AdditionalGarmentFabricTransaction,
 } from "./src/utils/additionalGarmentFabricPicker";
 import { getFabricAvailabilityMessage } from "./src/utils/fabricCatalogueAvailability";
-import { applyFutureFabricCardSelection } from "./src/utils/designStudioFutureFabricStage";
+import {
+  applyFutureFabricCardSelection,
+  assignFutureFabricToGarment,
+} from "./src/utils/designStudioFutureFabricStage";
 import { resolveFutureStageCorrection } from "./src/utils/resolveFutureStageCorrection";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
@@ -263,6 +266,77 @@ const parked = FabricAllocationStateEngine.beginPendingAdditionalGarmentSelectio
 );
 assert.equal(parked.pendingFabricGarment?.garmentKey, secondKey);
 assert.equal(parked.awaitingFabricForPendingGarment, true);
+
+// When the new exact occurrence is already represented in the authoritative
+// physical set, its total capacity can still fit the reusable Fabric. Choosing
+// a different Fabric must create its own validated allocation instead of being
+// blocked by that minimum-capacity projection.
+const alternateAddition = createCatalogueAdditionalGarmentSelection({
+  garmentType: "standard_shorts",
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences([
+    "shirt",
+  ]),
+});
+assert.equal(alternateAddition.status, "resolved");
+const alternateGarmentKey = alternateAddition.selection.garmentSpec!.key;
+const alternatePending =
+  FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(
+    withBaseForParking,
+    alternateAddition.selection,
+  );
+const alternateRequiredOccurrences = [
+  ...projectCatalogueStep1PhysicalOccurrences(["shirt"]),
+  {
+    garmentKey: alternateGarmentKey,
+    garmentType: "standard_shorts" as const,
+    sourceRole: "additional" as const,
+    fabricUnits: alternateAddition.selection.garmentSpec!.fabricUnits,
+    occurrenceGeneration: 1,
+  },
+];
+const alternateAssigned = assignFutureFabricToGarment({
+  state: alternatePending,
+  garmentTypeSelection,
+  garmentKey: alternateGarmentKey,
+  fabricCode: fabricB.code,
+  fabrics: [fabricA, fabricB],
+  requiredPhysicalOccurrences: alternateRequiredOccurrences,
+});
+assert.equal(alternateAssigned.status, "assigned");
+const alternateConfirmation = confirmAdditionalGarmentFabricAssignment({
+  previousState: alternatePending,
+  nextState: alternateAssigned.state,
+  garmentKey: alternateGarmentKey,
+  fabricCode: fabricB.code,
+});
+assert.equal(alternateConfirmation.status, "assigned");
+assert.deepEqual(
+  alternateConfirmation.state.fabricAllocations[0].garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
+  ["base:shirt"],
+  "the existing garment must retain its reusable Fabric",
+);
+assert.deepEqual(
+  alternateConfirmation.state.fabricAllocations[1].garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
+  [alternateGarmentKey],
+  "the selected alternate Fabric must bind only the new exact occurrence",
+);
+assert.equal(alternateConfirmation.state.fabricAllocations[1].fabricCode, fabricB.code);
+const outOfStockAlternate = assignFutureFabricToGarment({
+  state: alternatePending,
+  garmentTypeSelection,
+  garmentKey: alternateGarmentKey,
+  fabricCode: fabricOutOfStock.code,
+  fabrics: [fabricA, fabricOutOfStock],
+  requiredPhysicalOccurrences: alternateRequiredOccurrences,
+});
+assert.equal(outOfStockAlternate.status, "blocked");
+if (outOfStockAlternate.status === "blocked") {
+  assert.equal(outOfStockAlternate.reason, "FABRIC_STOCK_EXHAUSTED");
+}
 
 const baseRejected = FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(
   empty,

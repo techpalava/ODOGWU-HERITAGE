@@ -1409,20 +1409,11 @@ const assignTargetToFabric = ({
         fallbackState: state,
       });
     }
-    if (
-      !canCreatePhysicalFabricAllocation({
-        state: awaitingState,
-        garmentTypeSelection,
-        requiredPhysicalOccurrences,
-        countPendingGarmentForCapacity: true,
-      })
-    ) {
-      return {
-        status: "blocked",
-        reason: "FABRIC_QUANTITY_LIMIT_REACHED",
-        state,
-      };
-    }
+    // The required allocation count is a minimum capacity projection. A
+    // customer who declines reusable Fabric and selects a different one needs
+    // a separate allocation for this exact pending occurrence, even if the
+    // garments could otherwise share the existing allocation. Stock and the
+    // per-allocation capacity authority below still validate the new choice.
     const stockBlocked = blockNewPhysicalAllocationForStock({
       fabricCode,
       fabrics,
