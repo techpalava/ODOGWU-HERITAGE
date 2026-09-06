@@ -156,10 +156,6 @@ export interface GarmentTypeStepProps {
     resolutions: GarmentConstructionPricingResolution[],
   ) => void;
   statusMessage?: string | null;
-  catalogueCoverageMessage?: {
-    headline: string;
-    detail: string;
-  } | null;
   orderSummary?: ReactNode;
   idPrefix?: string;
 }
@@ -269,7 +265,6 @@ export const GarmentTypeStep = ({
   onDemographicsChange,
   onConstructionDefaultsChange,
   statusMessage = null,
-  catalogueCoverageMessage = null,
   orderSummary = null,
   idPrefix = "garment-type-step",
 }: GarmentTypeStepProps) => {
@@ -353,18 +348,6 @@ export const GarmentTypeStep = ({
             Step 3 will show every published Design Style, and you can map any reference to the exact garments you choose.
           </p>
         </div>
-
-        {catalogueCoverageMessage && (
-          <div
-            role="status"
-            className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950"
-          >
-            <p className="font-bold">{catalogueCoverageMessage.headline}</p>
-            <p className="mt-1 text-xs leading-relaxed text-amber-950/80">
-              {catalogueCoverageMessage.detail}
-            </p>
-          </div>
-        )}
 
         <fieldset className="mt-6 min-w-0 lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-6 lg:gap-y-1">
           <legend className="font-serif text-lg font-bold text-heritage-green lg:col-start-1 lg:row-start-1">

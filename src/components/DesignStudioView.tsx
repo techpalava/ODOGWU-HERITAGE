@@ -49,7 +49,6 @@ import { GarmentTypeStep } from "./GarmentTypeStep";
 import { DormantFutureFabricStep } from "./DormantFutureFabricStep";
 import { DormantFutureDesignStyleStep } from "./DormantFutureDesignStyleStep";
 import { DesignStudioJourneyStepper, DESIGN_STUDIO_STEPS } from "./DesignStudioJourneyStepper";
-import { resolveStep1CatalogueCoverage } from "../utils/step1CatalogueCoverage";
 import {
   canBeginFutureDesignDraftHydration,
   preserveUnresolvedCatalogueStyleSelection,
@@ -842,11 +841,6 @@ export default function DesignStudioView({
           garmentTypeSelection,
         })
       : preserveUnresolvedCatalogueStyleSelection(futureSelectedStyleId);
-  const step1CatalogueCoverage = resolveStep1CatalogueCoverage({
-    garmentTypeSelection,
-    styles,
-    stylesLoadState,
-  });
   const activeFutureDesignSource =
     futureDesignSource || createCatalogDesignSource(futureSelectedStyleId || "");
   const activeUploadedDesignSource =
@@ -6206,18 +6200,6 @@ export default function DesignStudioView({
               handleDormantConstructionDefaultsChange
             }
             statusMessage={garmentTypeBlockerMessage}
-            catalogueCoverageMessage={
-              (step1CatalogueCoverage.status === "no_match" ||
-                step1CatalogueCoverage.status === "empty_catalogue" ||
-                step1CatalogueCoverage.status === "catalogue_unavailable") &&
-              step1CatalogueCoverage.customerHeadline &&
-              step1CatalogueCoverage.customerDetail
-                ? {
-                    headline: step1CatalogueCoverage.customerHeadline,
-                    detail: step1CatalogueCoverage.customerDetail,
-                  }
-                : null
-            }
             idPrefix="future-garment-type-step"
             orderSummary={
               embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null

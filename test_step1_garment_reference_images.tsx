@@ -41,6 +41,10 @@ assert.equal(
   false,
   "Agbada must not receive a customer Step 1 reference-image mapping",
 );
+assert.deepEqual(getStep1GarmentReferenceImage("skirt"), {
+  filename: "ankara-standard-skirt.webp",
+  src: "/images/garments/ankara-standard-skirt.webp",
+});
 
 for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
   assert.ok(

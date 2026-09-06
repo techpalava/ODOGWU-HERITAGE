@@ -72,16 +72,6 @@ const renderStep1 = (coverage: ReturnType<typeof resolveStep1CatalogueCoverage>)
       selectedGarmentTypes: coverage.selectedGarments as never,
       selectedDemographics: coverage.selectedDemographics as never,
       normalizedCustomDetailCatalog: catalog,
-      catalogueCoverageMessage:
-        (coverage.status === "no_match" ||
-          coverage.status === "empty_catalogue") &&
-        coverage.customerHeadline &&
-        coverage.customerDetail
-          ? {
-              headline: coverage.customerHeadline,
-              detail: coverage.customerDetail,
-            }
-          : null,
       onGarmentTypesChange: () => undefined,
       onDemographicsChange: () => undefined,
       onConstructionDefaultsChange: () => undefined,
@@ -171,7 +161,7 @@ const renderStep3 = async ({
   assert.equal(step3.continueDisabled, true);
 }
 
-// 2. loading=false + styles=[] => empty catalogue + Upload Your Own Design
+// 2. loading=false + styles=[] => Step 1 remains garment-only; Step 3 describes catalogue state
 {
   const coverage = resolveStep1CatalogueCoverage({
     garmentTypeSelection: selection(["shirt", "trouser"], ["male"]),
@@ -180,8 +170,8 @@ const renderStep3 = async ({
   });
   assert.equal(coverage.status, "empty_catalogue");
   const step1 = renderStep1(coverage);
-  assert.match(step1, /No catalogue designs are available right now/);
-  assert.match(step1, /Upload Your Own Design/);
+  assert.equal(step1.includes("No catalogue designs are available right now"), false);
+  assert.equal(step1.includes("Upload Your Own Design"), false);
   const step3 = await renderStep3({
     styles: [],
     garmentTypeSelection: selection(["shirt", "trouser"], ["male"]),
@@ -203,7 +193,7 @@ const renderStep3 = async ({
   assert.equal(step1.includes("No catalogue design matches"), false);
 }
 
-// 4. no_match => upload-later warning
+// 4. no_match => Step 1 remains garment-only; Step 3 shows all published styles
 {
   const coverage = resolveStep1CatalogueCoverage({
     garmentTypeSelection: selection(["shirt", "trouser"], ["male"]),
@@ -212,9 +202,9 @@ const renderStep3 = async ({
   });
   assert.equal(coverage.status, "no_match");
   const step1 = renderStep1(coverage);
-  assert.match(step1, /No direct catalogue composition match found/);
-  assert.match(step1, /browse and use every published design/i);
-  assert.match(step1, /upload your own design/i);
+  assert.equal(step1.includes("No direct catalogue composition match found"), false);
+  assert.equal(step1.includes("browse and use every published design"), false);
+  assert.equal(step1.includes("Upload Your Own Design"), false);
   assert.equal(step1.includes("No catalogue design matches this selection"), false);
   const step3 = await renderStep3({
     styles: [incompatibleStyle],
@@ -341,9 +331,9 @@ const renderStep3 = async ({
       "base:trouser:1": compatibleStyle.id,
     },
   });
-  assert.match(explicitV2.text, /2 of 2 garments have a design/);
-  assert.match(explicitV2.text, /Used for 2/);
-  assert.match(explicitV2.text, /Use This Design/);
+  assert.match(explicitV2.text, /2 of 2 garments assigned/);
+  assert.match(explicitV2.text, /Applied to Shirt, Trouser/);
+  assert.match(explicitV2.text, /Use Again/);
   assert.equal(explicitV2.continueDisabled, false);
   assert.equal(explicitV2.stageComplete, true);
   assert.equal(explicitV2.continueDocked, true);

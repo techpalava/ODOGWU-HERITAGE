@@ -42,16 +42,11 @@ const renderStep = ({
   selectedDemographics = [],
   selectedFabricQuantity,
   normalizedCustomDetailCatalog = catalog,
-  catalogueCoverageMessage = null,
 }: {
   selectedGarmentTypes?: readonly FabricGarmentType[];
   selectedDemographics?: readonly CustomDetailDemographic[];
   selectedFabricQuantity?: number;
   normalizedCustomDetailCatalog?: readonly CustomDetailOption[];
-  catalogueCoverageMessage?: {
-    headline: string;
-    detail: string;
-  } | null;
 } = {}) =>
   renderToStaticMarkup(
     createElement(GarmentTypeStep, {
@@ -59,7 +54,6 @@ const renderStep = ({
       selectedDemographics,
       selectedFabricQuantity,
       normalizedCustomDetailCatalog,
-      catalogueCoverageMessage,
       onGarmentTypesChange: () => undefined,
       onDemographicsChange: () => undefined,
       onConstructionDefaultsChange: () => undefined,
@@ -370,20 +364,17 @@ assert.ok(
   ),
 );
 
-const coverageWarningMarkup = renderStep({
+const skirtOnlyMarkup = renderStep({
   selectedGarmentTypes: ["skirt"],
   selectedDemographics: ["female"],
-  catalogueCoverageMessage: {
-    headline: "No direct catalogue composition match found",
-    detail:
-      "You can still continue to Step 3 to browse and use every published design. Reference-composition differences are advisory and will not block selection, or you can Upload Your Own Design.",
-  },
 });
-assert.ok(
-  coverageWarningMarkup.includes("No direct catalogue composition match found"),
+assert.equal(
+  skirtOnlyMarkup.includes("No direct catalogue composition match found"),
+  false,
+  "Step 1 must focus on physical garment selection, without catalogue-composition messaging",
 );
-assert.ok(coverageWarningMarkup.includes("browse and use every published design"));
-assert.ok(coverageWarningMarkup.includes("Upload Your Own Design"));
+assert.ok(skirtOnlyMarkup.includes("Standard Skirt"));
+assert.ok(skirtOnlyMarkup.includes("Uses 1/2 fabric capacity unit."));
 
 const allEightStep1Markup = renderStep({
   selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],
