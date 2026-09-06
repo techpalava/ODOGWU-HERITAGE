@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { DormantFutureFabricStep } from "./src/components/DormantFutureFabricStep";
+import { FutureRemainingFabricCapacityOfferCard } from "./src/components/FutureRemainingFabricCapacityOffer";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import type { Fabric, FabricGarmentType } from "./src/types";
@@ -14,6 +15,7 @@ import {
   cancelFutureFabricCatalogueAssignment,
   getFutureFabricAssignmentTargets,
   getFutureFabricCapacityOffer,
+  getFutureRemainingFabricCapacityOffers,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
   reconcileFutureFabricAllocationState,
@@ -181,6 +183,181 @@ assert.equal(
   }),
   null,
   "A full active allocation must not offer another garment.",
+);
+
+// The restored offer is only for a completed current Fabric stage. It is
+// allocation-scoped and leaves the existing Additional Garment domain to the
+// caller that supplies eligibility.
+const completedHalfCapacityState = assign(
+  FabricAllocationStateEngine.initialize(),
+  ["shirt"],
+  "base:shirt",
+  "FAB-A",
+);
+const completedHalfCapacityCompletion = getFutureFabricStageCompletion({
+  garmentTypeSelection: createSelection(["shirt"]),
+  fabricAllocationState: completedHalfCapacityState,
+  fabrics,
+});
+assert.equal(completedHalfCapacityCompletion.isComplete, true);
+const completedHalfCapacityOffers = getFutureRemainingFabricCapacityOffers({
+  fabricAllocationState: completedHalfCapacityState,
+  fabricStageComplete: completedHalfCapacityCompletion.isComplete,
+  hasEligibleHalfCapacityAdditionalGarment: true,
+});
+assert.equal(completedHalfCapacityOffers.length, 1);
+assert.equal(completedHalfCapacityOffers[0].fabricCode, "FAB-A");
+assert.equal(completedHalfCapacityOffers[0].remainingUnits, 1);
+assert.equal(
+  getFutureRemainingFabricCapacityOffers({
+    fabricAllocationState: completedHalfCapacityState,
+    fabricStageComplete: completedHalfCapacityCompletion.isComplete,
+    hasEligibleHalfCapacityAdditionalGarment: false,
+  }).length,
+  0,
+  "the offer must remain hidden when the existing Additional Garment domain has no eligible half-capacity choice",
+);
+assert.equal(
+  getFutureRemainingFabricCapacityOffers({
+    fabricAllocationState: shared,
+    fabricStageComplete: false,
+    hasEligibleHalfCapacityAdditionalGarment: true,
+  }).length,
+  0,
+  "unassigned current garments must suppress the optional capacity offer",
+);
+assert.equal(
+  getFutureRemainingFabricCapacityOffers({
+    fabricAllocationState: customerCardState,
+    fabricStageComplete: true,
+    hasEligibleHalfCapacityAdditionalGarment: true,
+  }).length,
+  0,
+  "a full two-half allocation must not offer another garment",
+);
+
+const gownCapacityState = assign(
+  FabricAllocationStateEngine.initialize(),
+  ["full_length_gown"],
+  "base:full_length_gown",
+  "FAB-A",
+);
+assert.equal(
+  getFutureRemainingFabricCapacityOffers({
+    fabricAllocationState: gownCapacityState,
+    fabricStageComplete:
+      getFutureFabricStageCompletion({
+        garmentTypeSelection: createSelection(["full_length_gown"]),
+        fabricAllocationState: gownCapacityState,
+        fabrics,
+      }).isComplete,
+    hasEligibleHalfCapacityAdditionalGarment: true,
+  }).length,
+  0,
+  "a full-capacity Long Dress (Gown) must not create a half-capacity offer",
+);
+
+let capacityOfferDismissals = 0;
+let selectedCapacityOfferGarment: FabricGarmentType | null = null;
+let capacityOfferRenderer!: ReturnType<typeof create>;
+act(() => {
+  capacityOfferRenderer = create(
+    createElement(FutureRemainingFabricCapacityOfferCard, {
+      offer: completedHalfCapacityOffers[0],
+      fabric: fabrics[0],
+      eligibleGarmentTypes: ["trouser"],
+      onAddAdditionalGarment: (garmentType) => {
+        selectedCapacityOfferGarment = garmentType;
+      },
+      onDismiss: () => {
+        capacityOfferDismissals += 1;
+      },
+    }),
+  );
+});
+assert.match(
+  capacityOfferRenderer.toJSON() ? JSON.stringify(capacityOfferRenderer.toJSON()) : "",
+  /Your fabric can carry one more garment\. \(Optional\)/,
+);
+act(() => {
+  capacityOfferRenderer.root
+    .findByProps({ "data-testid": "remaining-fabric-capacity-offer-accept" })
+    .props.onClick();
+});
+assert.equal(
+  capacityOfferRenderer.root.findAllByProps({
+    "data-testid": "remaining-fabric-capacity-offer-selector",
+  }).length,
+  1,
+  "accepting the Step 2 offer must reveal the Additional Garment selection",
+);
+act(() => {
+  capacityOfferRenderer.root
+    .findByProps({
+      "data-testid": "remaining-fabric-capacity-offer-select-trouser",
+    })
+    .props.onClick();
+});
+assert.equal(selectedCapacityOfferGarment, "trouser");
+act(() => {
+  capacityOfferRenderer.root
+    .findByProps({ "aria-label": "Dismiss fabric capacity suggestion" })
+    .props.onClick();
+});
+assert.equal(capacityOfferDismissals, 1);
+act(() => capacityOfferRenderer.unmount());
+
+// A completed Step 4 additional-garment Fabric operation uses the same
+// allocation-scoped authority. Only the distinct half-used allocation can
+// trigger the next optional offer.
+const stepFourAdditionalAllocationId = "step4-additional-fabric";
+const stepFourAdditionalPartialState = {
+  ...customerCardState,
+  fabricAllocations: [
+    ...customerCardState.fabricAllocations,
+    {
+      allocationId: stepFourAdditionalAllocationId,
+      fabricCode: "FAB-A",
+      garmentAssignments: [
+        {
+          garmentKey: "additional:trouser:step4",
+          code: "additional:trouser:step4",
+          garmentType: "trouser" as const,
+          fabricUnits: 1 as const,
+          garmentSpec: {
+            key: "additional:trouser:step4",
+            garmentType: "trouser" as const,
+            fabricUnits: 1 as const,
+          },
+          sourceRole: "additional" as const,
+          mainGarmentKey: "base:shirt",
+          mainGarmentType: "shirt" as const,
+          eligibilityRule: "catalog_all" as const,
+          dependencyStatus: "valid" as const,
+        },
+      ],
+    },
+  ],
+};
+const stepFourCapacityOffers = getFutureRemainingFabricCapacityOffers({
+  fabricAllocationState: stepFourAdditionalPartialState,
+  fabricStageComplete: true,
+  hasEligibleHalfCapacityAdditionalGarment: true,
+});
+assert.deepEqual(
+  stepFourCapacityOffers.map((offer) => ({
+    allocationId: offer.allocationId,
+    fabricCode: offer.fabricCode,
+    assignedGarmentKeys: offer.assignedGarmentKeys,
+  })),
+  [
+    {
+      allocationId: stepFourAdditionalAllocationId,
+      fabricCode: "FAB-A",
+      assignedGarmentKeys: ["additional:trouser:step4"],
+    },
+  ],
+  "a Step 4 additional garment can offer only its own remaining Fabric allocation",
 );
 
 let separate = assign(shared, threeRegular, "base:skirt", "FAB-B");
@@ -1124,8 +1301,8 @@ assert.doesNotMatch(
 assert.match(studioSource, /assignSameFabricProductToGarments\(/);
 assert.match(
   studioSource,
-  /onBack=\{\(\) => setFutureStageId\("garment_type"\)\}/,
-  "Step 2 Back must still return to Garment Type.",
+  /onBack=\{\(\) => navigateToFutureStage\("garment_type"\)\}/,
+  "Step 2 Back must retain the approved navigation helper and return to Garment Type.",
 );
 assert.match(
   studioSource,

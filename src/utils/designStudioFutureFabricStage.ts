@@ -829,6 +829,19 @@ export interface FuturePartialFabricCompatibleTargets {
   compatibleGarmentKeys: readonly string[];
 }
 
+/**
+ * A completed Fabric stage can leave one standard half-capacity slot unused.
+ * This is deliberately allocation-scoped: separate Fabric purchases must
+ * never be combined to advertise capacity that no individual Fabric has.
+ */
+export interface FutureRemainingFabricCapacityOffer {
+  allocationId: string;
+  fabricCode: string;
+  usedUnits: number;
+  remainingUnits: number;
+  assignedGarmentKeys: readonly string[];
+}
+
 const resolveFuturePartialFabricAllocationSummary = (
   allocation: FabricAllocation,
 ): FuturePartialFabricAllocationSummary | null => {
@@ -863,6 +876,40 @@ export const getFuturePartialFabricAllocationSummaries = ({
     const summary = resolveFuturePartialFabricAllocationSummary(allocation);
     return summary ? [summary] : [];
   });
+
+/**
+ * Finds the existing physical Fabric allocations that can take exactly one
+ * additional standard garment after the current Fabric stage is complete.
+ * The caller supplies the Additional Garment-domain eligibility result so
+ * this capacity helper does not recreate that domain.
+ */
+export const getFutureRemainingFabricCapacityOffers = ({
+  fabricAllocationState,
+  fabricStageComplete,
+  hasEligibleHalfCapacityAdditionalGarment,
+}: {
+  fabricAllocationState: FabricAllocationState;
+  fabricStageComplete: boolean;
+  hasEligibleHalfCapacityAdditionalGarment: boolean;
+}): FutureRemainingFabricCapacityOffer[] => {
+  if (
+    !fabricStageComplete ||
+    !hasEligibleHalfCapacityAdditionalGarment ||
+    fabricAllocationState.pendingFabricGarment ||
+    fabricAllocationState.awaitingFabricForPendingGarment
+  ) {
+    return [];
+  }
+
+  return getFuturePartialFabricAllocationSummaries({
+    fabricAllocationState,
+  }).filter(
+    (summary) =>
+      summary.usedUnits ===
+        FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION - 1 &&
+      summary.remainingUnits === 1,
+  );
+};
 
 const getFuturePartialFabricAllocationsWithRemainingCapacity = ({
   fabricAllocationState,

@@ -261,8 +261,8 @@ const futureNavigationSource = source.slice(
 );
 assert.match(
   futureNavigationSource,
-  /setFutureStageId\("custom_details"\)/,
-  "completed-step navigation must update the authoritative nine-stage state",
+  /navigateToFutureStage\("custom_details"/,
+  "completed-step navigation must retain the approved authoritative nine-stage helper",
 );
 assert.doesNotMatch(
   futureNavigationSource,

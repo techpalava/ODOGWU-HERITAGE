@@ -147,6 +147,7 @@ import {
   getGarmentTypeStepSelectedFabricQuantity,
   getFutureFabricCapacityComposition,
   getFutureFabricGarmentSelections,
+  getFutureRemainingFabricCapacityOffers,
   getFutureFabricStageCompletion,
   getHydratedOrphanFabricAssignmentRepairTargets,
   prepareHydratedFabricAllocationState,
@@ -183,6 +184,7 @@ import {
 } from "../utils/additionalGarmentFabricPicker";
 import { resolveFutureStageCorrection } from "../utils/resolveFutureStageCorrection";
 import { FutureAdditionalGarmentFabricDialog } from "./FutureAdditionalGarmentFabricDialog";
+import { FutureRemainingFabricCapacityOfferCard } from "./FutureRemainingFabricCapacityOffer";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import {
   clearGarmentScopedCustomDetailSelection,
@@ -868,6 +870,8 @@ export default function DesignStudioView({
   >(null);
   const [additionalGarmentFabricAnnouncement, setAdditionalGarmentFabricAnnouncement] =
     useState("");
+  const [dismissedRemainingFabricCapacityOfferKeys, setDismissedRemainingFabricCapacityOfferKeys] =
+    useState<ReadonlySet<string>>(() => new Set());
   const additionalGarmentFabricAnnouncementGarmentKeyRef = useRef<
     string | null
   >(null);
@@ -2093,6 +2097,68 @@ export default function DesignStudioView({
         normalizedGarmentTypeCatalog,
       ),
     }));
+  const remainingFabricCapacityOfferGarmentTypes = useMemo(
+    () =>
+      futureAdditionalGarmentConstructionOptions.flatMap(
+        ({ garmentType, construction }) => {
+          if (construction.status !== "resolved") return [];
+          const addition = createCatalogueAdditionalGarmentSelection({
+            garmentType,
+            authoritativePhysicalOccurrences:
+              authoritativePhysicalOccurrencesForDomain,
+            authorizedOccurrenceKeys: Object.keys(
+              futureAdditionalConstructionReconciliation.state.byGarmentKey,
+            ),
+          });
+          return addition.status === "resolved" &&
+            addition.selection.garmentSpec?.fabricUnits === 1
+            ? [garmentType]
+            : [];
+        },
+      ),
+    [
+      authoritativePhysicalOccurrencesForDomain,
+      futureAdditionalGarmentConstructionOptions,
+      futureAdditionalConstructionReconciliation.state.byGarmentKey,
+    ],
+  );
+  const remainingFabricCapacityOffers = useMemo(
+    () =>
+      getFutureRemainingFabricCapacityOffers({
+        fabricAllocationState,
+        fabricStageComplete:
+          futureFabricStageCompletion.isComplete &&
+          !additionalGarmentFabricTransaction &&
+          (futureStageId === "fabric" || futureStageId === "custom_details"),
+        hasEligibleHalfCapacityAdditionalGarment:
+          remainingFabricCapacityOfferGarmentTypes.length > 0,
+      }),
+    [
+      additionalGarmentFabricTransaction,
+      fabricAllocationState,
+      futureFabricStageCompletion.isComplete,
+      futureStageId,
+      remainingFabricCapacityOfferGarmentTypes.length,
+    ],
+  );
+  const remainingFabricCapacityOffer = useMemo(
+    () =>
+      remainingFabricCapacityOffers.find(
+        (offer) =>
+          !dismissedRemainingFabricCapacityOfferKeys.has(
+            `${offer.allocationId}:${offer.fabricCode}:${offer.assignedGarmentKeys.join("|")}`,
+          ),
+      ) || null,
+    [
+      dismissedRemainingFabricCapacityOfferKeys,
+      remainingFabricCapacityOffers,
+    ],
+  );
+  const remainingFabricCapacityOfferFabric = remainingFabricCapacityOffer
+    ? fabrics.find(
+        (fabric) => fabric.code === remainingFabricCapacityOffer.fabricCode,
+      ) || null
+    : null;
   const futureCatalogInspection =
     inspectCustomDetailCatalog(customDetailCatalog);
   const futureScopedCustomDetailsReconciliation =
@@ -5328,7 +5394,12 @@ export default function DesignStudioView({
   const handleAddFutureAdditionalGarment = (
     garmentType: CanonicalPhysicalGarmentType,
     triggerElement?: HTMLElement | null,
-    context?: { origin: "design_style_reuse"; styleId: string },
+    context?:
+      | { origin: "design_style_reuse"; styleId: string }
+      | {
+          origin: "remaining_fabric_capacity_offer";
+          allocationId: string;
+        },
   ) => {
     invalidateFutureGarmentRemovalRetention();
     setFutureCustomDetailsFocusGarmentKey(null);
@@ -5409,10 +5480,28 @@ export default function DesignStudioView({
       phase: "catalogue",
       openedModal: true,
     });
+    const targetAllocationId =
+      context?.origin === "remaining_fabric_capacity_offer"
+        ? context.allocationId
+        : fabricAllocationState.activeAllocationId;
     const activeAllocation = fabricAllocationState.fabricAllocations.find(
       (allocation) =>
-        allocation.allocationId === fabricAllocationState.activeAllocationId,
+        allocation.allocationId === targetAllocationId,
     );
+    if (
+      context?.origin === "remaining_fabric_capacity_offer" &&
+      !remainingFabricCapacityOffers.some(
+        (offer) => offer.allocationId === context.allocationId,
+      )
+    ) {
+      additionalGarmentFabricSnapshotRef.current = null;
+      setNotification({
+        message:
+          "This Fabric no longer has capacity for another garment. Your existing order was not changed.",
+        type: "info",
+      });
+      return;
+    }
 
     const readyState = activeAllocation
       ? FabricAllocationStateEngine.activateAllocation(
@@ -5450,6 +5539,12 @@ export default function DesignStudioView({
     setGarmentTypeSelection(identitySelection);
     setFabricAllocationState(pendingState);
     setAdditionalGarmentFabricTransaction(nextTransaction);
+    if (context?.origin === "remaining_fabric_capacity_offer") {
+      // The capacity offer starts on Step 2, while the established additional
+      // garment completion choice belongs to Step 4. Keep that existing
+      // transaction mounted through its Fabric confirmation.
+      setFutureStageId("custom_details");
+    }
   };
   const handleCompleteAdditionalGarmentCustomDetails = (
     request: AdditionalGarmentCustomDetailsRequest,
@@ -6705,6 +6800,29 @@ export default function DesignStudioView({
           </div>
         ) : null}
       </div>
+      {remainingFabricCapacityOffer && remainingFabricCapacityOfferFabric && (
+        <FutureRemainingFabricCapacityOfferCard
+          offer={remainingFabricCapacityOffer}
+          fabric={remainingFabricCapacityOfferFabric}
+          eligibleGarmentTypes={remainingFabricCapacityOfferGarmentTypes}
+          onDismiss={() => {
+            const offerKey = `${remainingFabricCapacityOffer.allocationId}:${remainingFabricCapacityOffer.fabricCode}:${remainingFabricCapacityOffer.assignedGarmentKeys.join("|")}`;
+            setDismissedRemainingFabricCapacityOfferKeys((current) =>
+              new Set([...current, offerKey]),
+            );
+          }}
+          onAddAdditionalGarment={(garmentType) => {
+            const offerKey = `${remainingFabricCapacityOffer.allocationId}:${remainingFabricCapacityOffer.fabricCode}:${remainingFabricCapacityOffer.assignedGarmentKeys.join("|")}`;
+            setDismissedRemainingFabricCapacityOfferKeys((current) =>
+              new Set([...current, offerKey]),
+            );
+            handleAddFutureAdditionalGarment(garmentType, null, {
+              origin: "remaining_fabric_capacity_offer",
+              allocationId: remainingFabricCapacityOffer.allocationId,
+            });
+          }}
+        />
+      )}
       {showAdditionalGarmentFabricDialog &&
         additionalGarmentFabricTransaction && (
         <FutureAdditionalGarmentFabricDialog
