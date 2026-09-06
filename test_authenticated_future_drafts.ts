@@ -342,6 +342,111 @@ assert.deepEqual(
   ["base:shirt:1", "base:trouser:1"],
 );
 
+// Reset clears only the old cloud draft. The first meaningful post-reset
+// mutation must reactivate that same revision-checked record, then a cold
+// hydration must restore garments, Fabric, occurrence Design Styles, and
+// Custom Details without reviving the pre-reset payload.
+const clearedReactivationAdapter = new MemoryAdapter();
+const clearedReactivationRepository = createAuthenticatedFutureDraftRepository({
+  adapter: clearedReactivationAdapter,
+  getIdentity: () => ({
+    status: "authenticated" as const,
+    ownerUid: "uid-cleared-reactivation",
+  }),
+});
+const preResetDraft: GuestDesignDraft = {
+  ...persistedV2Draft,
+  currentStageId: "custom_details",
+  currentStep: 4,
+  customerName: "Pre-reset Customer",
+  specialInstructions: "old pre-reset instruction",
+};
+assert.equal(
+  (await clearedReactivationRepository.save(preResetDraft, null)).status,
+  "saved",
+);
+const clearedBeforeFreshDraft = await clearedReactivationRepository.clear(1);
+assert.equal(clearedBeforeFreshDraft.status, "saved");
+assert.equal(
+  clearedBeforeFreshDraft.status === "saved" &&
+    clearedBeforeFreshDraft.record.lifecycleStatus,
+  "cleared",
+);
+assert.equal(
+  clearedBeforeFreshDraft.status === "saved" &&
+    clearedBeforeFreshDraft.record.revision,
+  2,
+);
+const freshPostResetDraft: GuestDesignDraft = {
+  ...persistedV2Draft,
+  currentStageId: "custom_details",
+  currentStep: 4,
+  customerName: "Fresh post-reset Customer",
+  specialInstructions: "fresh post-reset instruction",
+  designSelections: {
+    ...persistedV2Draft.designSelections,
+    garmentScopedCustomDetails: {
+      schemaVersion: 1,
+      selectionsByGarmentKey: {
+        "base:shirt:1": { shirt_construction: "fresh-shirt-construction" },
+      },
+      snapshotsByGarmentKey: {},
+    },
+  },
+};
+assert.equal(isPristineFutureDesignDraft(freshPostResetDraft), false);
+const reactivatedAfterClear = await clearedReactivationRepository.save(
+  freshPostResetDraft,
+  clearedBeforeFreshDraft.status === "saved"
+    ? clearedBeforeFreshDraft.record.revision
+    : null,
+);
+assert.equal(reactivatedAfterClear.status, "saved");
+assert.equal(
+  reactivatedAfterClear.status === "saved" &&
+    reactivatedAfterClear.record.lifecycleStatus,
+  "active",
+);
+assert.equal(
+  reactivatedAfterClear.status === "saved" &&
+    reactivatedAfterClear.record.revision,
+  3,
+);
+const freshPostResetHydration =
+  await clearedReactivationRepository.synchronize(pristineColdStartDraft);
+assert.equal(freshPostResetHydration.status, "cloud_restored");
+assert.deepEqual(
+  freshPostResetHydration.draft?.garmentTypeSelection?.garmentTypes,
+  ["shirt", "trouser"],
+);
+assert.equal(
+  freshPostResetHydration.draft?.fabricAllocations?.[0]?.garmentAssignments.length,
+  2,
+);
+const freshPostResetModel = createDesignStyleStepTestModel({
+  styles: persistedV2Model.styles,
+  garmentTypeSelection: coldHydrationSelection,
+  rawDraft: freshPostResetHydration.draft || {},
+});
+assert.equal(freshPostResetModel.projection.completedCount, 2);
+assert.deepEqual(
+  freshPostResetHydration.draft?.designSelections.garmentScopedCustomDetails,
+  freshPostResetDraft.designSelections.garmentScopedCustomDetails,
+);
+assert.equal(
+  freshPostResetHydration.draft?.customerName,
+  "Fresh post-reset Customer",
+);
+assert.notEqual(
+  freshPostResetHydration.draft?.specialInstructions,
+  preResetDraft.specialInstructions,
+);
+const stalePostResetWrite = await clearedReactivationRepository.save(
+  freshPostResetDraft,
+  2,
+);
+assert.equal(stalePostResetWrite.status, "conflict");
+
 // A meaningful local snapshot can be restored before this page has resolved
 // its authenticated customer. It is not a competing authenticated edit, so a
 // saved cloud draft must still win during the first authenticated hydration.
@@ -555,8 +660,13 @@ assert.match(
 );
 assert.match(
   studioSource,
-  /futureDraftPersistenceStatus !== "ready"/,
-  "A cleared or conflicted cloud record must block autosave.",
+  /awaitingFreshAuthenticatedDraftMutationRef\.current/,
+  "A cleared cloud tombstone must wait for the first meaningful customer mutation.",
+);
+assert.match(
+  studioSource,
+  /isPristineFutureDesignDraft\(canonicalGuestDraft\)/,
+  "The untouched post-reset Step 1 shell must not reactivate a draft automatically.",
 );
 const failedAutosaveSource = studioSource.slice(
   studioSource.indexOf('} else if (result.status === "conflict") {'),

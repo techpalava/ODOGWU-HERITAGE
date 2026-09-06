@@ -75,6 +75,7 @@ import { auth } from "../services/firebase";
 import {
   areFutureDraftsEquivalent,
   createFirebaseAuthenticatedFutureDraftRepository,
+  isPristineFutureDesignDraft,
   resolveAuthenticatedFutureDraftIdentity,
   type AuthenticatedFutureDraftIntegrationStatus,
   type AuthenticatedFutureDraftIdentity,
@@ -523,6 +524,7 @@ export default function DesignStudioView({
   const futureDraftAutosaveGenerationRef = useRef(0);
   const authenticatedCloudDraftAuthorityEstablishedRef = useRef(false);
   const authenticatedCloudDraftUserMutationRef = useRef(false);
+  const awaitingFreshAuthenticatedDraftMutationRef = useRef(false);
   const futureDesignStyleRuntimeGenerationRef = useRef(0);
   const futureDesignStyleDraftHydrationRef =
     useRef<FutureDesignStyleRuntimeHydration | null>(null);
@@ -2519,6 +2521,7 @@ export default function DesignStudioView({
     futureDraftAutosaveGenerationRef.current += 1;
     authenticatedCloudDraftAuthorityEstablishedRef.current = false;
     authenticatedCloudDraftUserMutationRef.current = false;
+    awaitingFreshAuthenticatedDraftMutationRef.current = false;
     cloudFutureDraftRevisionRef.current = null;
     cloudFutureDraftSaveQueueRef.current = Promise.resolve();
     clearFutureDesignStyleRuntimeHydration();
@@ -2602,8 +2605,7 @@ export default function DesignStudioView({
     void (async () => {
       const localDraft = GuestOrderSessionService.getFutureDesignDraft();
       let storedDraft = localDraft;
-      let hydratedPersistenceStatus: "ready" | "cleared" | "invalid" =
-        "ready";
+      let hydratedPersistenceStatus: "ready" | "invalid" = "ready";
       if (futureDraftIdentity.status === "authenticated") {
         const localDraftProvenance =
           authenticatedCloudDraftAuthorityEstablishedRef.current &&
@@ -2670,7 +2672,10 @@ export default function DesignStudioView({
         }
         storedDraft = synchronization.draft;
         if (synchronization.status === "cloud_cleared") {
-          hydratedPersistenceStatus = "cleared";
+          // A cleared tombstone is the authority for the old draft only. Keep
+          // its revision for the next checked write, and wait until the
+          // customer makes a meaningful new Studio change before reactivating.
+          awaitingFreshAuthenticatedDraftMutationRef.current = true;
         }
       }
       if (
@@ -3655,6 +3660,19 @@ export default function DesignStudioView({
           ))
       ) {
         return;
+      }
+      if (
+        futureDraftIdentity.status === "authenticated" &&
+        awaitingFreshAuthenticatedDraftMutationRef.current
+      ) {
+        // Hydration creates an untouched Step 1 shell after a reset. It must
+        // not recreate a cloud draft until the customer actually starts a new
+        // Studio draft; the first meaningful mutation then uses the cleared
+        // record's revision-checked active transition.
+        if (isPristineFutureDesignDraft(canonicalGuestDraft)) {
+          return;
+        }
+        awaitingFreshAuthenticatedDraftMutationRef.current = false;
       }
       if (
         futureDraftIdentity.status === "authenticated" &&
