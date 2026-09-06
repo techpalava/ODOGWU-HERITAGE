@@ -1222,7 +1222,9 @@ const getFutureFabricAssignmentTargetForKey = ({
   if (fromSelection) return fromSelection;
 
   if (fabricAllocationState.pendingFabricGarment?.garmentKey === garmentKey) {
-    const assignment = fabricAllocationState.pendingFabricGarment;
+    const assignment = enrichFabricAssignmentForCapacity(
+      fabricAllocationState.pendingFabricGarment,
+    );
     return {
       assignment: { ...assignment },
       selection: assignmentToSelection(assignment),

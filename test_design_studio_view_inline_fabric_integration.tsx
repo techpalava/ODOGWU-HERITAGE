@@ -28,7 +28,6 @@ import {
   canCancelPendingForAdditionalGarmentTransaction,
   confirmAdditionalGarmentFabricAssignment,
   confirmAdditionalGarmentTransactionCommitted,
-  getActiveFabricForAdditionalGarmentPicker,
   isAdditionalGarmentFabricTransactionTargetValid,
   resolveAuthoritativePrimaryFabricCode,
   resolveCurrentCatalogueFabricForAssignment,
@@ -138,7 +137,8 @@ assert.match(
   studioSource,
   /fabricPersistentError=\{additionalGarmentFabricPersistentError\}/,
 );
-assert.match(studioSource, /activeFabricResolution=\{activeInlineFabricPicker\.resolution\}/);
+assert.match(studioSource, /handleAdditionalGarmentSelectExistingAllocation/);
+assert.doesNotMatch(studioSource, /getActiveFabricForAdditionalGarmentPicker/);
 assert.match(studioSource, /beginPendingAdditionalGarmentSelection/);
 assert.match(studioSource, /STALE_ADDITIONAL_GARMENT_FABRIC_MESSAGE/);
 assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
@@ -160,7 +160,7 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
   const garmentKey = addition.selection.garmentSpec!.key;
   const transaction: AdditionalGarmentFabricTransaction = {
     transactionId: 1,
-    phase: "choice",
+    phase: "catalogue",
     origin: "new_addition",
     garmentKey,
     garmentType: "shirt",
@@ -448,7 +448,7 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
   );
 }
 
-// --- Focus handoff: choice → fabric modal (single aria-modal) ---
+// --- Direct catalogue modal keeps one aria-modal and reuses its exact allocation ---
 {
   let assignCalls = 0;
   const state = withBaseShirt();
@@ -457,21 +457,18 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
     authoritativePhysicalOccurrences: integrationAuthoritativeOccurrences,
   });
   assert.equal(addition.status, "resolved");
-  const pending = FabricAllocationStateEngine.attemptAppendGarment(
+  const pending = FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(
     state,
     addition.selection,
   );
-  const active = getActiveFabricForAdditionalGarmentPicker({
-    fabrics: [fabricA, fabricB],
-    fabricAllocationState: pending,
-  });
+  const allocationId = pending.fabricAllocations[0]!.allocationId;
   let renderer!: ReturnType<typeof create>;
   act(() => {
     renderer = create(
       createElement(FutureAdditionalGarmentFabricDialog, {
         transaction: {
           transactionId: 4,
-          phase: "choice",
+          phase: "catalogue",
           garmentKey: addition.selection.garmentSpec!.key,
           garmentType: "shirt",
           origin: "new_addition",
@@ -480,16 +477,10 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
         fabrics: [fabricA, fabricB],
         garmentTypeSelection,
         fabricAllocationState: pending,
-        activeFabric: active.displayFabric || active.fabric,
-        activeFabricSelectionIndex: active.selectionIndex,
-        activeFabricResolution: active.resolution,
-        activeFabricCode: active.fabricCode,
         errorMessage: null,
-        onUseSameFabric: () => {
+        onSelectExistingAllocation: () => {
           assignCalls += 1;
         },
-        onChooseAnotherFabric: () => undefined,
-        onBackToChoice: () => undefined,
         onSelectFabric: () => undefined,
         onCancel: () => undefined,
       }),
@@ -499,10 +490,9 @@ assert.match(studioSource, /setAdditionalGarmentFabricPersistentError/);
     renderer.root.findAllByProps({ "aria-modal": "true" }).length,
     1,
   );
-  assert.equal(active.resolution.status, "resolved");
   act(() => {
     renderer.root
-      .findByProps({ "data-fabric-dialog-action": "use-same" })
+      .findByProps({ "data-fabric-existing-allocation": allocationId })
       .props.onClick();
   });
   assert.equal(assignCalls, 1);

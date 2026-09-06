@@ -644,7 +644,7 @@ const withBaseShirt = (): FabricAllocationState => {
   assert.equal(parked.awaitingFabricForPendingGarment, true);
 }
 
-// --- Duplicate Same Fabric presentation + live re-resolution ---
+// --- Direct catalogue reuse keeps one card per code and exact allocation identity ---
 {
   const { FutureAdditionalGarmentFabricDialog } = await import(
     "./src/components/FutureAdditionalGarmentFabricDialog"
@@ -683,11 +683,12 @@ const withBaseShirt = (): FabricAllocationState => {
   };
   let assignCalls = 0;
   let dialog!: ReturnType<typeof create>;
+  const allocationId = pending.fabricAllocations[0]!.allocationId;
   const renderDialog = (fabrics: Fabric[]) =>
     createElement(FutureAdditionalGarmentFabricDialog, {
       transaction: {
         transactionId: 7,
-        phase: "choice",
+        phase: "catalogue",
         garmentKey: "additional:shirt:1",
         garmentType: "shirt",
         origin: "new_addition",
@@ -696,19 +697,10 @@ const withBaseShirt = (): FabricAllocationState => {
       fabrics,
       garmentTypeSelection,
       fabricAllocationState: pending,
-      activeFabric: fabrics[0] || null,
-      activeFabricSelectionIndex: 1,
-      activeFabricResolution: resolveCurrentCatalogueFabricForAssignment({
-        fabrics,
-        fabricCode: fabricA.code,
-      }),
-      activeFabricCode: fabricA.code,
       errorMessage: null,
-      onUseSameFabric: () => {
+      onSelectExistingAllocation: () => {
         assignCalls += 1;
       },
-      onChooseAnotherFabric: () => undefined,
-      onBackToChoice: () => undefined,
       onSelectFabric: () => undefined,
       onCancel: () => undefined,
     });
@@ -717,34 +709,33 @@ const withBaseShirt = (): FabricAllocationState => {
     dialog = create(renderDialog([fabricA]));
   });
   assert.equal(
-    dialog.root.findByProps({ "data-fabric-dialog-action": "use-same" }).props
-      .disabled,
-    false,
+    dialog.root.findAllByProps({
+      "data-fabric-existing-allocation": allocationId,
+    }).length,
+    1,
   );
+  act(() => {
+    dialog.root
+      .findByProps({ "data-fabric-existing-allocation": allocationId })
+      .props.onClick();
+  });
+  assert.equal(assignCalls, 1);
 
   act(() => {
     dialog.update(renderDialog([fabricA, { ...fabricA, name: "Duplicate A" }]));
   });
-  const sameBtn = dialog.root.findByProps({
-    "data-fabric-dialog-action": "use-same",
-  });
-  assert.equal(sameBtn.props.disabled, true);
-  assert.match(textContent(dialog.root), /catalogue review/i);
   assert.equal(
-    dialog.root.findAllByProps({ "data-fabric-dialog-action": "choose-another" })
-      .length,
+    dialog.root.findAllByProps({ "data-fabric-card-code": fabricA.code }).length,
     1,
+    "duplicate catalogue records do not create duplicate fabric cards",
   );
-  act(() => {
-    sameBtn.props.onClick();
-  });
-  assert.equal(assignCalls, 1, "disabled control still invokes handler in test renderer");
-  // Handler path must revalidate: simulate production click-time check
-  const blockedAtClick = resolveCurrentCatalogueFabricForAssignment({
-    fabrics: [fabricA, { ...fabricA, name: "Duplicate A" }],
-    fabricCode: fabricA.code,
-  });
-  assert.equal(blockedAtClick.status, "blocked");
+  assert.equal(
+    dialog.root.findAllByProps({
+      "data-fabric-existing-allocation": allocationId,
+    }).length,
+    0,
+    "an ambiguous duplicate catalogue code is not offered for allocation reuse",
+  );
 
   act(() => {
     dialog.update(
@@ -752,9 +743,10 @@ const withBaseShirt = (): FabricAllocationState => {
     );
   });
   assert.equal(
-    dialog.root.findByProps({ "data-fabric-dialog-action": "use-same" }).props
-      .disabled,
-    true,
+    dialog.root.findAllByProps({
+      "data-fabric-existing-allocation": allocationId,
+    }).length,
+    0,
   );
 
   act(() => {
@@ -763,18 +755,16 @@ const withBaseShirt = (): FabricAllocationState => {
     );
   });
   assert.equal(
-    dialog.root.findByProps({ "data-fabric-dialog-action": "use-same" }).props
-      .disabled,
-    true,
+    dialog.root.findAllByProps({ "data-fabric-card-code": fabricA.code }).length,
+    0,
   );
 
   act(() => {
     dialog.update(renderDialog([]));
   });
   assert.equal(
-    dialog.root.findByProps({ "data-fabric-dialog-action": "use-same" }).props
-      .disabled,
-    true,
+    dialog.root.findAllByProps({ "data-fabric-catalogue-card": "true" }).length,
+    0,
   );
 }
 

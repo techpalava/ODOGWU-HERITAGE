@@ -17,7 +17,6 @@ import {
 export { isFabricAvailableForCustomerSelection } from "./fabricCatalogueAvailability";
 
 export type AdditionalGarmentFabricTransactionPhase =
-  | "choice"
   | "catalogue"
   | "custom_details_choice"
   | "assigning"

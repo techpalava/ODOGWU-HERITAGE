@@ -175,7 +175,6 @@ import {
   canCancelPendingForAdditionalGarmentTransaction,
   confirmAdditionalGarmentFabricAssignment,
   confirmAdditionalGarmentTransactionCommitted,
-  getActiveFabricForAdditionalGarmentPicker,
   isAdditionalGarmentFabricTransactionTargetValid,
   resolveAuthoritativePrimaryFabricCode,
   resolveCurrentCatalogueFabricForAssignment,
@@ -5480,14 +5479,6 @@ export default function DesignStudioView({
       phase: "catalogue",
       openedModal: true,
     });
-    const targetAllocationId =
-      context?.origin === "remaining_fabric_capacity_offer"
-        ? context.allocationId
-        : fabricAllocationState.activeAllocationId;
-    const activeAllocation = fabricAllocationState.fabricAllocations.find(
-      (allocation) =>
-        allocation.allocationId === targetAllocationId,
-    );
     if (
       context?.origin === "remaining_fabric_capacity_offer" &&
       !remainingFabricCapacityOffers.some(
@@ -5503,15 +5494,9 @@ export default function DesignStudioView({
       return;
     }
 
-    const readyState = activeAllocation
-      ? FabricAllocationStateEngine.activateAllocation(
-          fabricAllocationState,
-          activeAllocation.allocationId,
-        )
-      : fabricAllocationState;
     const pendingState =
       FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(
-        readyState,
+        fabricAllocationState,
         addition.selection,
       );
     if (pendingState.pendingFabricGarment?.garmentKey !== garmentKey) {
@@ -5523,16 +5508,12 @@ export default function DesignStudioView({
       return;
     }
 
-    const activeFabricInfo = getActiveFabricForAdditionalGarmentPicker({
-      fabrics,
-      fabricAllocationState: pendingState,
-    });
-    const sameFabricAvailable = Boolean(
-      activeAllocation && activeFabricInfo.resolution.status === "resolved",
-    );
     const nextTransaction: AdditionalGarmentFabricTransaction = {
       ...pendingTransaction,
-      phase: sameFabricAvailable ? "choice" : "catalogue",
+      // An accepted capacity offer identifies an opportunity, never a selected
+      // Fabric. All new additional garments therefore begin in the shared
+      // catalogue with no preselection.
+      phase: "catalogue",
       openedModal: true,
     };
     additionalGarmentFabricTransactionRef.current = nextTransaction;
@@ -6132,13 +6113,15 @@ export default function DesignStudioView({
     additionalGarmentFabricTransactionRef.current = nextTransaction;
     setAdditionalGarmentFabricTransaction(nextTransaction);
   };
-  const handleAdditionalGarmentUseSameFabric = ({
+  const handleAdditionalGarmentSelectExistingAllocation = ({
     transactionId,
     garmentKey,
+    allocationId,
     occurrenceGeneration,
   }: {
     transactionId: number;
     garmentKey: string;
+    allocationId: string;
     occurrenceGeneration?: number;
   }) => {
     const transaction = getCurrentAdditionalGarmentFabricOperation({
@@ -6148,32 +6131,35 @@ export default function DesignStudioView({
     });
     if (!transaction) return;
     const previous = fabricAllocationState;
-    const active =
-      previous.fabricAllocations.find(
-        (allocation) => allocation.allocationId === previous.activeAllocationId,
-      ) || previous.fabricAllocations[0];
+    const allocation = previous.fabricAllocations.find(
+      (candidate) => candidate.allocationId === allocationId,
+    );
     const resolved = resolveCurrentCatalogueFabricForAssignment({
       fabrics,
-      fabricCode: active?.fabricCode || "",
+      fabricCode: allocation?.fabricCode || "",
     });
     if (resolved.status !== "resolved") {
       setAdditionalGarmentFabricError(resolved.reason);
-      setAdditionalGarmentFabricTransaction((current) =>
-        isCurrentAdditionalGarmentFabricOperation({
-          currentTransaction: current,
-          expectedTransactionId: transactionId,
-          expectedGarmentKey: garmentKey,
-        })
-          ? { ...current, phase: "catalogue", openedModal: true }
-          : current,
+      return;
+    }
+    const assignment = assignFutureGarmentToExistingFabricAllocation({
+      state: previous,
+      garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+      garmentKey: transaction.garmentKey,
+      allocationId,
+      requiredPhysicalOccurrences: fabricTransactionPhysicalOccurrences,
+    });
+    if (assignment.status !== "assigned") {
+      setAdditionalGarmentFabricError(
+        assignment.reason === "INVALID_CAPACITY"
+          ? "That Fabric no longer has enough capacity for this garment."
+          : "That Fabric selection is no longer available. Choose another fabric.",
       );
       return;
     }
-    const nextState =
-      FabricAllocationStateEngine.useSameFabricForPendingGarment(previous);
     const result = confirmAdditionalGarmentFabricAssignment({
       previousState: previous,
-      nextState,
+      nextState: assignment.state,
       garmentKey: transaction.garmentKey,
       fabricCode: resolved.fabric.code,
     });
@@ -6186,38 +6172,6 @@ export default function DesignStudioView({
       nextState: result.state,
       fabricCode: result.fabricCode,
     });
-  };
-  const handleAdditionalGarmentChooseAnotherFabric = ({
-    transactionId,
-    garmentKey,
-    occurrenceGeneration,
-  }: {
-    transactionId: number;
-    garmentKey: string;
-    occurrenceGeneration?: number;
-  }) => {
-    if (
-      !getCurrentAdditionalGarmentFabricOperation({
-        transactionId,
-        garmentKey,
-        occurrenceGeneration,
-      })
-    ) {
-      return;
-    }
-    setAdditionalGarmentFabricError(null);
-    setFabricAllocationState((current) =>
-      FabricAllocationStateEngine.beginChooseAnotherFabric(current),
-    );
-    setAdditionalGarmentFabricTransaction((current) =>
-      isCurrentAdditionalGarmentFabricOperation({
-        currentTransaction: current,
-        expectedTransactionId: transactionId,
-        expectedGarmentKey: garmentKey,
-      })
-        ? { ...current, phase: "catalogue", openedModal: true }
-        : current,
-    );
   };
   const handleAdditionalGarmentSelectFabric = ({
     transactionId,
@@ -6366,14 +6320,9 @@ export default function DesignStudioView({
     additionalGarmentFabricSnapshotRef.current = null;
     restoreAdditionalGarmentFabricFocus();
   };
-  const activeInlineFabricPicker = getActiveFabricForAdditionalGarmentPicker({
-    fabrics,
-    fabricAllocationState,
-  });
   const showAdditionalGarmentFabricDialog = Boolean(
     additionalGarmentFabricTransaction?.openedModal &&
-      (additionalGarmentFabricTransaction.phase === "choice" ||
-        additionalGarmentFabricTransaction.phase === "catalogue" ||
+      (additionalGarmentFabricTransaction.phase === "catalogue" ||
         additionalGarmentFabricTransaction.phase === "assigning" ||
         additionalGarmentFabricTransaction.phase === "awaiting_commit"),
   );
@@ -6830,55 +6779,24 @@ export default function DesignStudioView({
           fabrics={fabrics}
           garmentTypeSelection={effectiveJourneyGarmentTypeSelection}
           fabricAllocationState={fabricAllocationState}
-          activeFabric={
-            activeInlineFabricPicker.displayFabric ||
-            activeInlineFabricPicker.fabric
-          }
-          activeFabricSelectionIndex={activeInlineFabricPicker.selectionIndex}
-          activeFabricResolution={activeInlineFabricPicker.resolution}
-          activeFabricCode={activeInlineFabricPicker.fabricCode}
           requiredPhysicalOccurrences={fabricTransactionPhysicalOccurrences}
           errorMessage={additionalGarmentFabricError}
-          onUseSameFabric={() =>
-            handleAdditionalGarmentUseSameFabric({
-              transactionId:
-                additionalGarmentFabricTransaction.transactionId,
-              garmentKey: additionalGarmentFabricTransaction.garmentKey,
-              occurrenceGeneration:
-                additionalGarmentFabricTransaction.occurrenceGeneration,
-            })
-          }
-          onChooseAnotherFabric={() =>
-            handleAdditionalGarmentChooseAnotherFabric({
-              transactionId:
-                additionalGarmentFabricTransaction.transactionId,
-              garmentKey: additionalGarmentFabricTransaction.garmentKey,
-              occurrenceGeneration:
-                additionalGarmentFabricTransaction.occurrenceGeneration,
-            })
-          }
-          onBackToChoice={() => {
-            const current = getCurrentAdditionalGarmentFabricOperation({
-              transactionId:
-                additionalGarmentFabricTransaction.transactionId,
-              garmentKey: additionalGarmentFabricTransaction.garmentKey,
-              occurrenceGeneration:
-                additionalGarmentFabricTransaction.occurrenceGeneration,
-            });
-            if (!current) return;
-            const next: AdditionalGarmentFabricTransaction = {
-              ...current,
-              phase: "choice",
-            };
-            additionalGarmentFabricTransactionRef.current = next;
-            setAdditionalGarmentFabricTransaction(next);
-          }}
           onSelectFabric={(fabricCode) =>
             handleAdditionalGarmentSelectFabric({
               transactionId:
                 additionalGarmentFabricTransaction.transactionId,
               garmentKey: additionalGarmentFabricTransaction.garmentKey,
               fabricCode,
+              occurrenceGeneration:
+                additionalGarmentFabricTransaction.occurrenceGeneration,
+            })
+          }
+          onSelectExistingAllocation={(allocationId) =>
+            handleAdditionalGarmentSelectExistingAllocation({
+              transactionId:
+                additionalGarmentFabricTransaction.transactionId,
+              garmentKey: additionalGarmentFabricTransaction.garmentKey,
+              allocationId,
               occurrenceGeneration:
                 additionalGarmentFabricTransaction.occurrenceGeneration,
             })

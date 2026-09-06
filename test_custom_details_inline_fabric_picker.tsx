@@ -383,24 +383,15 @@ assert.equal(isFabricAvailableForCustomerSelection(null), false);
 assert.equal(isFabricAvailableForCustomerSelection(fabricNoPrice), false);
 assert.ok(getFabricAvailabilityMessage(fabricOutOfStock));
 
-const resolvedOk = {
-  status: "resolved" as const,
-  fabric: fabricA,
-};
-const blockedOutOfStock = {
-  status: "blocked" as const,
-  code: "out_of_stock" as const,
-  reason: getFabricAvailabilityMessage(fabricOutOfStock) || "Currently out of stock.",
-};
-
-// Dialog — available same fabric shows Use Same
+// Dialog — every additional garment opens the catalogue, without a same-or-
+// another-fabric decision.
 let renderer!: ReturnType<typeof create>;
 act(() => {
   renderer = create(
     createElement(FutureAdditionalGarmentFabricDialog, {
       transaction: {
         transactionId: 1,
-        phase: "choice",
+        phase: "catalogue",
         garmentKey: secondKey,
         garmentType: "shirt",
         origin: "new_addition",
@@ -409,33 +400,27 @@ act(() => {
       fabrics: [fabricA, fabricB],
       garmentTypeSelection,
       fabricAllocationState: pendingState,
-      activeFabric: fabricA,
-      activeFabricSelectionIndex: 1,
-      activeFabricResolution: resolvedOk,
-      activeFabricCode: fabricA.code,
       errorMessage: null,
-      onUseSameFabric: () => undefined,
-      onChooseAnotherFabric: () => undefined,
-      onBackToChoice: () => undefined,
       onSelectFabric: () => undefined,
+      onSelectExistingAllocation: () => undefined,
       onCancel: () => undefined,
     }),
   );
 });
-assert.match(textContent(renderer.root), /Use Same Fabric Again/);
+assert.match(textContent(renderer.root), /Choose fabric for Shirt/);
 assert.equal(
-  renderer.root.findByProps({ "data-fabric-dialog-action": "use-same" }).props
-    .disabled,
-  false,
+  renderer.root.findAllByProps({ "data-dialog-phase": "catalogue" }).length,
+  1,
 );
+assert.doesNotMatch(textContent(renderer.root), /Use Same Fabric Again|Choose Another Fabric/);
 
-// OUT_OF_STOCK active fabric keeps choice UI but disables Same Fabric
+// OUT_OF_STOCK current-order fabric stays unavailable in the catalogue.
 act(() => {
   renderer.update(
     createElement(FutureAdditionalGarmentFabricDialog, {
       transaction: {
         transactionId: 2,
-        phase: "choice",
+        phase: "catalogue",
         garmentKey: secondKey,
         garmentType: "shirt",
         origin: "new_addition",
@@ -444,33 +429,25 @@ act(() => {
       fabrics: [fabricOutOfStock, fabricB],
       garmentTypeSelection,
       fabricAllocationState: pendingState,
-      activeFabric: fabricOutOfStock,
-      activeFabricSelectionIndex: 1,
-      activeFabricResolution: blockedOutOfStock,
-      activeFabricCode: fabricOutOfStock.code,
       errorMessage: null,
-      onUseSameFabric: () => undefined,
-      onChooseAnotherFabric: () => undefined,
-      onBackToChoice: () => undefined,
       onSelectFabric: () => undefined,
+      onSelectExistingAllocation: () => undefined,
       onCancel: () => undefined,
     }),
   );
 });
 assert.equal(
   renderer.root.findByProps({
-    "data-dialog-phase": "choice",
+    "data-dialog-phase": "catalogue",
   }).props["data-dialog-phase"],
-  "choice",
+  "catalogue",
 );
 assert.equal(
-  renderer.root.findByProps({ "data-fabric-dialog-action": "use-same" }).props
-    .disabled,
-  true,
-);
-assert.ok(
-  renderer.root.findAllByProps({ "data-same-fabric-unavailable-reason": "true" })
-    .length >= 1,
+  renderer.root.findAllByProps({
+    "data-fabric-existing-allocation": pendingState.fabricAllocations[0]!.allocationId,
+  }).length,
+  0,
+  "an out-of-stock allocation is not offered for reuse",
 );
 
 // awaiting_commit keeps modal open with finishing state
@@ -489,15 +466,9 @@ act(() => {
       fabrics: [fabricA, fabricB],
       garmentTypeSelection,
       fabricAllocationState: chooseResult.state,
-      activeFabric: fabricA,
-      activeFabricSelectionIndex: 1,
-      activeFabricResolution: resolvedOk,
-      activeFabricCode: fabricA.code,
       errorMessage: null,
-      onUseSameFabric: () => undefined,
-      onChooseAnotherFabric: () => undefined,
-      onBackToChoice: () => undefined,
       onSelectFabric: () => undefined,
+      onSelectExistingAllocation: () => undefined,
       onCancel: () => undefined,
     }),
   );

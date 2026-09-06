@@ -293,8 +293,13 @@ assert.doesNotMatch(
 );
 assert.match(
   addGarmentHandlerSource,
-  /phase: sameFabricAvailable \? "choice" : "catalogue"/,
-  "the existing Fabric chooser must open directly from Add",
+  /phase: "catalogue"/,
+  "an additional garment must open the shared Fabric catalogue directly from Add",
+);
+assert.doesNotMatch(
+  addGarmentHandlerSource,
+  /sameFabricAvailable|phase: "choice"/,
+  "an additional garment must not enter an intermediate same-or-another Fabric choice",
 );
 assert.ok(
   !source.includes("additionalGarmentParentSection"),

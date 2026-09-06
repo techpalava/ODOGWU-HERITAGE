@@ -1,6 +1,6 @@
 /**
- * Additional garments must enter the explicit Step 4 Fabric transaction before
- * any spare capacity is consumed. Requires the Vite production Firebase harness.
+ * Additional garments must enter the direct Step 4 Fabric catalogue before any
+ * spare capacity is consumed. Requires the Vite production Firebase harness.
  */
 import assert from "node:assert/strict";
 import { createElement } from "react";
@@ -28,7 +28,6 @@ import {
 } from "./src/utils/additionalGarmentDomain";
 import {
   applyAdditionalGarmentConstructionAndCopy,
-  getActiveFabricForAdditionalGarmentPicker,
   type AdditionalGarmentFabricTransaction,
 } from "./src/utils/additionalGarmentFabricPicker";
 import {
@@ -328,10 +327,10 @@ assert.equal(
 
 const dialog = renderer.root.findByType(FutureAdditionalGarmentFabricDialog);
 const pendingState = dialog.props.fabricAllocationState as FabricAllocationState;
-assert.equal(dialog.props.transaction.phase, "choice");
+assert.equal(dialog.props.transaction.phase, "catalogue");
 assert.equal(dialog.props.transaction.openedModal, true);
-assert.match(textContent(dialog), /Use Same Fabric Again/);
-assert.match(textContent(dialog), /Choose Another Fabric/);
+assert.match(textContent(dialog), /Choose fabric for Trouser/);
+assert.doesNotMatch(textContent(dialog), /Use Same Fabric Again|Choose Another Fabric/);
 assert.equal(pendingState.fabricAllocations.length, 1);
 assert.deepEqual(
   pendingState.fabricAllocations[0].garmentAssignments.map(
@@ -372,10 +371,11 @@ assert.equal(
   "a second add must not mutate the active pending transaction",
 );
 
-// Use Same consumes real spare capacity only after the explicit customer choice.
+// Choosing the tagged physical allocation consumes real spare capacity only
+// after explicit customer selection in the catalogue.
 await act(async () => {
   renderer.root
-    .findByProps({ "data-fabric-dialog-action": "use-same" })
+    .findByProps({ "data-fabric-existing-allocation": originalAllocationId })
     .props.onClick();
   await Promise.resolve();
   await Promise.resolve();
@@ -484,11 +484,6 @@ const cancelledShirtGeneration =
   chooseAnotherDialog.props.transaction.occurrenceGeneration;
 act(() => {
   renderer.root
-    .findByProps({ "data-fabric-dialog-action": "choose-another" })
-    .props.onClick();
-});
-act(() => {
-  renderer.root
     .findByProps({
       "data-fabric-card": "true",
       "data-fabric-code": fabricB.code,
@@ -595,11 +590,6 @@ act(() => {
 });
 act(() => {
   renderer.root
-    .findByProps({ "data-fabric-dialog-action": "choose-another" })
-    .props.onClick();
-});
-act(() => {
-  renderer.root
     .findByProps({
       "data-fabric-card": "true",
       "data-fabric-code": fabricB.code,
@@ -685,11 +675,6 @@ act(() => {
   findButton("Add Trouser").props.onClick({ currentTarget: null });
 });
 act(() => {
-  renderer.root
-    .findByProps({ "data-fabric-dialog-action": "choose-another" })
-    .props.onClick();
-});
-act(() => {
   renderer.root.findByType(FutureAdditionalGarmentFabricDialog).props.onCancel();
 });
 afterInitialFabricCancel = renderer.root.findByType(
@@ -725,7 +710,7 @@ const copyConstruction = resolveGarmentConstructionPricing(
 assert.equal(copyConstruction.status, "resolved");
 const copyTransaction: AdditionalGarmentFabricTransaction = {
   transactionId: 21,
-  phase: "choice",
+  phase: "catalogue",
   origin: "new_addition",
   garmentKey: copiedGarmentKey,
   garmentType: "shirt",
@@ -774,12 +759,10 @@ assert.equal(
   false,
 );
 
-// Choose Another keeps the original allocation unchanged and assigns exactly
-// the pending occurrence to the selected catalogue product.
-const chooseAnotherPending =
-  FabricAllocationStateEngine.beginChooseAnotherFabric(copyPending);
+// A different catalogue fabric keeps the original allocation unchanged and
+// assigns exactly the pending occurrence to a new physical allocation.
 const choseAnother = applyFutureFabricCardSelection({
-  state: chooseAnotherPending,
+  state: copyPending,
   garmentTypeSelection,
   garmentKey: copiedGarmentKey,
   fabricCode: fabricB.code,
@@ -837,8 +820,9 @@ assert.equal(
   noAllocationAddition.selection.garmentSpec?.key,
 );
 
-// A full allocation remains unchanged before choice; choosing the same product
-// creates the required next physical allocation without disturbing siblings.
+// A full allocation remains unchanged before catalogue selection; choosing the
+// same product creates the required next physical allocation without disturbing
+// siblings.
 let fullState = createBaseFabricState();
 const firstRepeated = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
@@ -869,18 +853,13 @@ assert.deepEqual(
   ),
   ["base:shirt", firstRepeatedKey],
 );
-const fullActiveFabric = getActiveFabricForAdditionalGarmentPicker({
-  fabrics: [fabricA, fabricB],
-  fabricAllocationState: fullPending,
-});
-assert.equal(fullActiveFabric.resolution.status, "resolved");
 let fullDialogRenderer!: ReturnType<typeof create>;
 act(() => {
   fullDialogRenderer = create(
     createElement(FutureAdditionalGarmentFabricDialog, {
       transaction: {
         transactionId: 99,
-        phase: "choice",
+        phase: "catalogue",
         origin: "new_addition",
         garmentKey: secondRepeated.selection.garmentSpec!.key,
         garmentType: "shirt",
@@ -889,15 +868,9 @@ act(() => {
       fabrics: [fabricA, fabricB],
       garmentTypeSelection,
       fabricAllocationState: fullPending,
-      activeFabric: fullActiveFabric.displayFabric,
-      activeFabricSelectionIndex: fullActiveFabric.selectionIndex,
-      activeFabricResolution: fullActiveFabric.resolution,
-      activeFabricCode: fullActiveFabric.fabricCode,
       errorMessage: null,
-      onUseSameFabric: () => undefined,
-      onChooseAnotherFabric: () => undefined,
-      onBackToChoice: () => undefined,
       onSelectFabric: () => undefined,
+      onSelectExistingAllocation: () => undefined,
       onCancel: () => undefined,
     }),
   );
@@ -908,8 +881,13 @@ assert.equal(
   }).length,
   1,
 );
-const fullAssigned =
-  FabricAllocationStateEngine.useSameFabricForPendingGarment(fullPending);
+const fullAssigned = applyFutureFabricCardSelection({
+  state: fullPending,
+  garmentTypeSelection,
+  garmentKey: secondRepeated.selection.garmentSpec!.key,
+  fabricCode: fabricA.code,
+  fabrics: [fabricA, fabricB],
+});
 assert.equal(fullAssigned.fabricAllocations.length, 2);
 assert.deepEqual(
   fullAssigned.fabricAllocations[0].garmentAssignments.map(
@@ -926,6 +904,4 @@ assert.deepEqual(
 act(() => fullDialogRenderer.unmount());
 StorageService.clearGuestOrderSession();
 
-console.log(
-  "PASS: additional garment Fabric choice opens before spare capacity is consumed",
-);
+console.log("PASS: additional garment direct Fabric catalogue opens before spare capacity is consumed");
