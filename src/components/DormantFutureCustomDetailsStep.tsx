@@ -527,6 +527,9 @@ export const DormantFutureCustomDetailsStep = ({
     );
     const renderOptionCard = (option: CustomDetailOption) => {
       const optionId = `${groupId}-${option.id}`;
+      const isPersonalizedRequirement =
+        group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP &&
+        option.id === PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID;
       const checked = group.isConstruction
         ? selectedConstructionId === option.id
         : isSelected(reconciliation.state, occurrence.subject.garmentKey, group.selectionGroup, option.id);
@@ -557,8 +560,8 @@ export const DormantFutureCustomDetailsStep = ({
                 <span className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">{option.label}</span>
                 <span className="shrink-0 font-mono text-xs font-bold text-heritage-gold">{getOptionPriceLabel(option, group.isConstruction, checked)}</span>
               </span>
-              {option.description && <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">{option.description}</span>}
-              {option.requiresEvaluation && <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-heritage-ink/50">Confirmed after tailoring review</span>}
+              {!isPersonalizedRequirement && option.description && <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">{option.description}</span>}
+              {!isPersonalizedRequirement && option.requiresEvaluation && <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-heritage-ink/50">Confirmed after tailoring review</span>}
             </span>
           </label>
         </div>
@@ -603,7 +606,9 @@ export const DormantFutureCustomDetailsStep = ({
           data-custom-detail-conditional-garment={garmentKey}
           className="min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/20 p-3"
         >
-          <label htmlFor={`${optionId}-text`} className="text-xs font-bold text-heritage-green">Describe your personalized requirement</label>
+          {option.description && <p className="text-xs leading-relaxed text-heritage-ink/65">{option.description}</p>}
+          {option.requiresEvaluation && <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-heritage-ink/50">Confirmed after tailoring review</p>}
+          <label htmlFor={`${optionId}-text`} className="mt-3 block text-xs font-bold text-heritage-green">Describe your personalized requirement</label>
           <textarea
             id={`${optionId}-text`}
             value={text}
@@ -650,7 +655,7 @@ export const DormantFutureCustomDetailsStep = ({
     const renderOptionGrid = (options: readonly CustomDetailOption[]) => (
       <div
         data-custom-detail-option-grid={group.selectionGroup}
-        className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2"
+        className="grid min-w-0 grid-cols-1 items-start gap-2.5 sm:grid-cols-2"
       >
         {!group.isConstruction && renderNoneOption()}
         {options.map(renderOptionCard)}
@@ -784,7 +789,7 @@ export const DormantFutureCustomDetailsStep = ({
     groups: readonly FutureCustomDetailsCatalogueGroup[],
     headingMode: "base" | "added",
   ) => (
-    <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+    <div className="mt-4 grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-2">
       {groups.map((group) => renderGroupFieldset(group, headingMode))}
     </div>
   );

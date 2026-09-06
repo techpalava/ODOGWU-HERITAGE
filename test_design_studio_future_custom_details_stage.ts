@@ -517,6 +517,18 @@ assert.ok(
   personalizedOptionLabel(),
   "Personalized Additional must retain its evaluation-required option",
 );
+assert.ok(
+  !textContent(personalizedOptionLabel() || null).includes(
+    "Additional cost will depend on evaluation of personalized needs.",
+  ),
+  "the concise Personalized card must not carry the selected-only evaluation explanation",
+);
+assert.ok(
+  !textContent(personalizedOptionLabel() || null).includes(
+    "Confirmed after tailoring review",
+  ),
+  "the concise Personalized card must not carry the selected-only review notice",
+);
 assert.equal(personalizedNoneLabel()?.findByType("input").props.checked, true);
 assert.match(
   String(personalizedOptionGrid().props.className),
@@ -551,6 +563,16 @@ assert.equal(
   personalizedDetail.props["data-custom-detail-conditional-group"],
   PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
   "the conditional detail must remain associated with Personalized Additional",
+);
+assert.ok(
+  textContent(personalizedDetail).includes(
+    "Additional cost will depend on evaluation of personalized needs.",
+  ),
+  "the selected-only detail must retain the evaluation explanation",
+);
+assert.ok(
+  textContent(personalizedDetail).includes("Confirmed after tailoring review"),
+  "the selected-only detail must retain the tailoring-review notice",
 );
 assert.equal(
   personalizedDetail.parent,
