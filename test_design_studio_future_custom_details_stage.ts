@@ -449,7 +449,7 @@ assert.ok(
         new Set(String(title?.props.className).split(/\s+/)).has("min-w-0") &&
         new Set(String(title?.props.className).split(/\s+/)).has("break-words") &&
         !new Set(String(title?.props.className).split(/\s+/)).has("break-all") &&
-        String(label.props.className).includes("min-h-12") &&
+        String(label.props.className).includes("min-h-20") &&
         String(label.props.className).includes("focus-within:ring-2") &&
         textContent(label).includes("Included")
       );
@@ -533,7 +533,7 @@ assert.equal(personalizedNoneLabel()?.findByType("input").props.checked, true);
 assert.match(
   String(personalizedOptionGrid().props.className),
   /sm:grid-cols-2/,
-  "ordinary Step 4 option groups must use their available desktop width",
+  "Personalized Additional must retain its two peer choices",
 );
 assert.equal(
   personalizedNoneLabel()?.parent,
@@ -544,6 +544,39 @@ assert.equal(
   personalizedOptionLabel()?.parent?.parent,
   personalizedOptionGrid(),
   "the personalized option card must share the same option grid as None",
+);
+const ordinaryOptionGrids = neckRenderer.root
+  .findAll((node) => node.props["data-custom-detail-option-grid"])
+  .filter(
+    (grid) =>
+      grid.props["data-custom-detail-option-grid"] !==
+      PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
+  );
+assert.ok(
+  ordinaryOptionGrids.length > 0,
+  "the rendered Step 4 catalogue must include ordinary option groups",
+);
+assert.ok(
+  ordinaryOptionGrids.every(
+    (grid) => !String(grid.props.className).includes("sm:grid-cols-2"),
+  ),
+  "ordinary Step 4 option groups must keep one vertical option stack inside their category column",
+);
+const ordinaryNoneLabel = ordinaryOptionGrids
+  .flatMap((grid) => grid.findAllByType("label"))
+  .find((label) => textContent(label).trim().startsWith("None"));
+const ordinaryOptionLabel = ordinaryOptionGrids
+  .flatMap((grid) => grid.findAllByType("label"))
+  .find((label) => !textContent(label).trim().startsWith("None"));
+assert.ok(ordinaryNoneLabel, "ordinary option groups must retain None");
+assert.ok(ordinaryOptionLabel, "ordinary option groups must retain their options");
+assert.ok(
+  [ordinaryNoneLabel, ordinaryOptionLabel].every((label) =>
+    ["min-h-20", "items-start", "gap-3", "p-3"].every((token) =>
+      String(label?.props.className).includes(token),
+    ),
+  ),
+  "None and ordinary choices must share the same normal option-card geometry",
 );
 assert.equal(
   neckRenderer.root.findAllByProps({

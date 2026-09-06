@@ -525,6 +525,8 @@ export const DormantFutureCustomDetailsStep = ({
       occurrence.subject.garmentKey,
       group.selectionGroup,
     );
+    const optionCardClassName = (checked: boolean) =>
+      `flex min-h-20 min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${checked ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`;
     const renderOptionCard = (option: CustomDetailOption) => {
       const optionId = `${groupId}-${option.id}`;
       const isPersonalizedRequirement =
@@ -537,7 +539,7 @@ export const DormantFutureCustomDetailsStep = ({
         <div key={option.id} className="min-w-0">
           <label
             htmlFor={optionId}
-            className={`flex min-h-12 min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${checked ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}
+            className={optionCardClassName(checked)}
           >
             <input
               id={optionId}
@@ -637,15 +639,15 @@ export const DormantFutureCustomDetailsStep = ({
     };
 
     const renderNoneOption = () => (
-      <label className={`flex min-h-12 min-w-0 cursor-pointer items-center gap-3 rounded-xl border-2 p-3 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${noneSelected ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}>
+      <label className={optionCardClassName(noneSelected)}>
         <input
           type="radio"
           name={`${groupId}-none`}
           checked={noneSelected}
           onChange={() => onClearSelection(occurrence.subject.garmentKey, group.selectionGroup)}
-          className="size-4 shrink-0 accent-heritage-green"
+          className="mt-0.5 size-5 shrink-0 accent-heritage-green"
         />
-        <span className="min-w-0">
+        <span className="min-w-0 flex-1">
           <span className="block text-sm font-bold text-heritage-green">None</span>
           <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">No selection for this category</span>
         </span>
@@ -655,7 +657,11 @@ export const DormantFutureCustomDetailsStep = ({
     const renderOptionGrid = (options: readonly CustomDetailOption[]) => (
       <div
         data-custom-detail-option-grid={group.selectionGroup}
-        className="grid min-w-0 grid-cols-1 items-start gap-2.5 sm:grid-cols-2"
+        className={`grid min-w-0 grid-cols-1 items-start gap-2.5${
+          group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP
+            ? " sm:grid-cols-2"
+            : ""
+        }`}
       >
         {!group.isConstruction && renderNoneOption()}
         {options.map(renderOptionCard)}
