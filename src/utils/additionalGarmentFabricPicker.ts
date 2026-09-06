@@ -37,6 +37,13 @@ export type AdditionalGarmentFabricTransaction = {
   construction?: GarmentConstructionPricingResolution;
   copyFromParentGarmentKey?: string;
   constructionAppliedForTransactionId?: number;
+  /**
+   * A Step 3 design-reuse request returns to its still-open mapping dialog once
+   * Fabric and the authoritative additional occurrence have been committed.
+   */
+  designStyleReuse?: {
+    styleId: string;
+  };
   /** True when the Step 4 fabric dialog was opened for this transaction. */
   openedModal?: boolean;
 };

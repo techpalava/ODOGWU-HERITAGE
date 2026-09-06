@@ -2,9 +2,17 @@ import assert from "node:assert/strict";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { DormantFutureDesignStyleStep } from "./src/components/DormantFutureDesignStyleStep";
 import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
-import type { GarmentTypeStepSelection, StyleCategory } from "./src/types";
+import type {
+  GarmentConstructionPricingResolution,
+  GarmentTypeStepSelection,
+  StyleCategory,
+} from "./src/types";
+import type { PhysicalGarmentOccurrence } from "./src/utils/designSourceState";
 import { createCatalogDesignSource } from "./src/utils/designSourceState";
-import type { DesignStyleStepClearMutationRequest } from "./src/utils/designStyleStepRuntime";
+import type {
+  DesignStyleStepCatalogMutationRequest,
+  DesignStyleStepClearMutationRequest,
+} from "./src/utils/designStyleStepRuntime";
 import {
   createDesignStyleStepRenderProps,
   createDesignStyleStepTestModel,
@@ -47,9 +55,7 @@ const textContent = (node: ReactTestInstance | string | null): string =>
 
 const renderModel = async (
   model: DesignStyleStepTestModel,
-  overrides: Partial<ReturnType<typeof createDesignStyleStepRenderProps>> & {
-    onClearAllAssignments?: () => void;
-  } = {},
+  overrides: Partial<Parameters<typeof DormantFutureDesignStyleStep>[0]> = {},
 ) => {
   let renderer!: ReturnType<typeof create>;
   await act(async () => {
@@ -335,6 +341,240 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     );
     assert.equal(continueButton(renderer.root).props.disabled, true);
   }
+}
+
+// Reusing a Design Style can add an exact physical occurrence only after the
+// existing Fabric transaction confirms it. The Step 3 dialog must retain its
+// mapping context, then leave the new occurrence unassigned until Apply.
+{
+  const additionalGarmentOptions = [
+    {
+      garmentType: "shirt" as const,
+      construction: {
+        status: "resolved" as const,
+        garmentType: "shirt" as const,
+        components: [],
+        totalPriceCents: 6500,
+        totalPrice: 65,
+      } satisfies GarmentConstructionPricingResolution,
+    },
+  ];
+  const allAssigned = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt"]),
+    selectedStyleIdByGarmentKey: { "base:shirt:1": style.id },
+  });
+  const mappingRequests: DesignStyleStepCatalogMutationRequest[][] = [];
+  const additions: Array<{
+    garmentType: string;
+    context: { readonly origin: "design_style_reuse"; readonly styleId: string };
+  }> = [];
+  const handledOccurrences: string[] = [];
+  const reuseProps = {
+    additionalGarmentOptions,
+    onAssignCatalogueStyle: (requests: readonly DesignStyleStepCatalogMutationRequest[]) =>
+      mappingRequests.push([...requests]),
+    onAddAdditionalGarment: (
+      garmentType: "shirt",
+      _trigger: HTMLElement,
+      context: { readonly origin: "design_style_reuse"; readonly styleId: string },
+    ) => additions.push({ garmentType, context }),
+    onReuseAddedOccurrenceHandled: (garmentKey: string) =>
+      handledOccurrences.push(garmentKey),
+  };
+  const renderer = await renderModel(allAssigned, reuseProps);
+  const useAgain = renderer.root
+    .findAllByType("button")
+    .find((button) => button.props["aria-label"] === `Use Again ${style.name}`)!;
+  await act(async () =>
+    useAgain.props.onClick({
+      currentTarget: { focus: () => undefined } as unknown as HTMLButtonElement,
+    }),
+  );
+  assert.match(textContent(renderer.root), /Want to use this design for another garment\?/);
+  const mappingCheckbox = renderer.root
+    .findByProps({ "data-testid": "design-garment-mapping-dialog" })
+    .findByType("input");
+  await act(async () => mappingCheckbox.props.onChange());
+  assert.equal(mappingCheckbox.props.checked, false);
+
+  const addAnother = renderer.root
+    .findByProps({ "data-testid": "design-reuse-add-another-garment" })
+    .findByType("button");
+  await act(async () => addAnother.props.onClick());
+  assert.equal(
+    renderer.root.findByProps({ "data-testid": "design-garment-mapping-dialog" })
+      .props["data-dialog-view"],
+    "add_garment",
+  );
+  assert.match(textContent(renderer.root), /Add a garment/);
+  assert.equal(
+    renderer.root.findAllByProps({ "data-testid": "design-reuse-add-garment-card-shirt" })
+      .length,
+    1,
+    "the reuse flow must render the shared Step 1 garment option",
+  );
+  const backToDesign = renderer.root
+    .findAllByType("button")
+    .find((button) => textContent(button) === "Back to Design")!;
+  await act(async () => backToDesign.props.onClick());
+  assert.equal(
+    renderer.root
+      .findByProps({ "data-testid": "design-garment-mapping-dialog" })
+      .findByType("input").props.checked,
+    false,
+  );
+
+  await act(async () =>
+    renderer.root
+      .findByProps({ "data-testid": "design-reuse-add-another-garment" })
+      .findByType("button").props.onClick(),
+  );
+  const addShirt = renderer.root
+    .findAllByType("button")
+    .find((button) => button.props["aria-label"] === "Add Standard Shirt to use this design")!;
+  await act(async () =>
+    addShirt.props.onClick({ currentTarget: {} as HTMLElement }),
+  );
+  assert.deepEqual(additions, [
+    {
+      garmentType: "shirt",
+      context: { origin: "design_style_reuse", styleId: style.id },
+    },
+  ]);
+
+  const addedOccurrence: PhysicalGarmentOccurrence = {
+    garmentKey: "additional:shirt:1",
+    garmentType: "shirt",
+    sourceRole: "additional",
+    fabricUnits: 1,
+    occurrenceGeneration: 2,
+  };
+  const afterFabric = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt"]),
+    occurrences: [allAssigned.occurrences[0]!, addedOccurrence],
+    selectedStyleIdByGarmentKey: { "base:shirt:1": style.id },
+  });
+  assert.equal(
+    afterFabric.projection.occurrences[1]!.assignment,
+    null,
+    "the returned occurrence must not receive a style before Apply Design",
+  );
+  await act(async () => {
+    renderer.update(
+      <DormantFutureDesignStyleStep
+        {...createDesignStyleStepRenderProps(afterFabric)}
+        {...reuseProps}
+        reuseFabricPending={false}
+        reuseAddedOccurrence={{ garmentKey: addedOccurrence.garmentKey, styleId: style.id }}
+      />,
+    );
+  });
+  const returnedDialog = renderer.root.findByProps({
+    "data-testid": "design-garment-mapping-dialog",
+  });
+  assert.equal(returnedDialog.props["data-dialog-view"], "mapping");
+  const returnedChecks = returnedDialog.findAllByType("input");
+  assert.deepEqual(
+    returnedChecks.map((input) => input.props.checked),
+    [false, true],
+    "the new exact occurrence should be pre-checked while existing mapping state is preserved",
+  );
+  assert.deepEqual(handledOccurrences, [addedOccurrence.garmentKey]);
+  const apply = returnedDialog.findByProps({ "data-testid": "apply-design-mapping" });
+  assert.equal(apply.props.disabled, false);
+  await act(async () => apply.props.onClick());
+  assert.deepEqual(
+    mappingRequests.map((requests) => requests.map((request) => request.target.garmentKey)),
+    [[addedOccurrence.garmentKey]],
+    "Apply Design is the only action that assigns the selected style to the new occurrence",
+  );
+}
+
+// A current unassigned occurrence remains an in-dialog mapping choice; the
+// creation CTA is reserved for the true empty-reuse state.
+{
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt", "skirt"]),
+    selectedStyleIdByGarmentKey: { "base:shirt:1": style.id },
+  });
+  const renderer = await renderModel(model, {
+    additionalGarmentOptions: [],
+    onAddAdditionalGarment: () => undefined,
+  });
+  const useAgain = renderer.root
+    .findAllByType("button")
+    .find((button) => button.props["aria-label"] === `Use Again ${style.name}`)!;
+  await act(async () =>
+    useAgain.props.onClick({
+      currentTarget: { focus: () => undefined } as unknown as HTMLButtonElement,
+    }),
+  );
+  assert.equal(
+    renderer.root.findAllByProps({ "data-testid": "design-reuse-add-another-garment" })
+      .length,
+    0,
+  );
+  assert.equal(
+    renderer.root
+      .findByProps({ "data-testid": "design-garment-mapping-dialog" })
+      .findAllByType("input").length,
+    2,
+    "the existing unassigned garment remains available in the normal mapping dialog",
+  );
+}
+
+// A composition mismatch remains advisory for a newly available exact
+// occurrence: selecting it keeps Apply Design enabled.
+{
+  const mismatchOccurrence: PhysicalGarmentOccurrence = {
+    garmentKey: "additional:kaftan:1",
+    garmentType: "kaftan",
+    sourceRole: "additional",
+    fabricUnits: 1,
+    occurrenceGeneration: 2,
+  };
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt"]),
+    occurrences: [
+      {
+        garmentKey: "base:shirt:1",
+        garmentType: "shirt",
+        sourceRole: "main",
+        fabricUnits: 1,
+        occurrenceGeneration: 1,
+      },
+      mismatchOccurrence,
+    ],
+    selectedStyleIdByGarmentKey: { "base:shirt:1": style.id },
+  });
+  const renderer = await renderModel(model);
+  const useAgain = renderer.root
+    .findAllByType("button")
+    .find((button) => button.props["aria-label"] === `Use Again ${style.name}`)!;
+  await act(async () =>
+    useAgain.props.onClick({
+      currentTarget: { focus: () => undefined } as unknown as HTMLButtonElement,
+    }),
+  );
+  const mapping = renderer.root.findByProps({
+    "data-testid": "design-garment-mapping-dialog",
+  });
+  const checks = mapping.findAllByType("input");
+  await act(async () => checks[1]!.props.onChange());
+  assert.equal(
+    mapping.findAllByProps({ "data-testid": "reference-composition-warning" })
+      .length,
+    1,
+  );
+  assert.equal(
+    mapping.findByProps({ "data-testid": "apply-design-mapping" }).props.disabled,
+    false,
+    "a mismatch warning must not block Apply Design",
+  );
 }
 
 console.log("PASS: garment-scoped Design Style Step 3 rendered runtime");

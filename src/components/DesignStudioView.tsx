@@ -807,6 +807,8 @@ export default function DesignStudioView({
   const additionalGarmentFabricTransactionIdRef = useRef(0);
   const [additionalGarmentFabricTransaction, setAdditionalGarmentFabricTransaction] =
     useState<AdditionalGarmentFabricTransaction | null>(null);
+  const [designStyleReuseAddedOccurrence, setDesignStyleReuseAddedOccurrence] =
+    useState<{ garmentKey: string; styleId: string } | null>(null);
   const additionalGarmentFabricTransactionRef =
     useRef<AdditionalGarmentFabricTransaction | null>(null);
   additionalGarmentFabricTransactionRef.current =
@@ -3272,6 +3274,16 @@ export default function DesignStudioView({
     };
     additionalGarmentFabricTransactionRef.current = committedTransaction;
     setAdditionalGarmentFabricTransaction(committedTransaction);
+    if (transaction.designStyleReuse) {
+      setDesignStyleReuseAddedOccurrence({
+        garmentKey: commitResult.garmentKey,
+        styleId: transaction.designStyleReuse.styleId,
+      });
+      additionalGarmentFabricTransactionRef.current = null;
+      setAdditionalGarmentFabricTransaction(null);
+      setFutureStageId("design_style");
+      return;
+    }
     setFutureCustomDetailsFocusGarmentKey(commitResult.garmentKey);
     setFutureStageId("custom_details");
   }, [
@@ -5124,6 +5136,7 @@ export default function DesignStudioView({
   const handleAddFutureAdditionalGarment = (
     garmentType: CanonicalPhysicalGarmentType,
     triggerElement?: HTMLElement | null,
+    context?: { origin: "design_style_reuse"; styleId: string },
   ) => {
     invalidateFutureGarmentRemovalRetention();
     setFutureCustomDetailsFocusGarmentKey(null);
@@ -5195,6 +5208,9 @@ export default function DesignStudioView({
       occurrenceGeneration,
       fabricUnits: addition.selection.garmentSpec!.fabricUnits,
       construction: cloneGarmentConstructionPricingResolution(construction),
+      ...(context?.origin === "design_style_reuse"
+        ? { designStyleReuse: { styleId: context.styleId } }
+        : {}),
     };
     const pendingTransaction = beginAdditionalGarmentFabricTransaction({
       ...transactionBase,
@@ -5820,7 +5836,7 @@ export default function DesignStudioView({
     const nextTransaction = {
       ...transaction,
       phase:
-        transaction.origin === "new_addition"
+        transaction.origin === "new_addition" && !transaction.designStyleReuse
           ? "custom_details_choice"
           : "assigning",
       openedModal: transaction.origin !== "new_addition",
@@ -6273,11 +6289,22 @@ export default function DesignStudioView({
           }
           isCatalogueLoading={stylesLoadState === "loading"}
           stylesLoadState={stylesLoadState}
+          additionalGarmentOptions={futureAdditionalGarmentConstructionOptions}
+          reuseFabricPending={Boolean(
+            additionalGarmentFabricTransaction?.designStyleReuse,
+          )}
+          reuseAddedOccurrence={designStyleReuseAddedOccurrence}
           onSelectOccurrence={handleSelectFutureDesignStyleOccurrence}
           onAssignCatalogueStyle={handleAssignFutureCatalogueStyle}
           onClearAssignment={handleClearFutureDesignStyleAssignment}
           onClearAllAssignments={handleClearAllFutureDesignStyleAssignments}
           onSelectUploadFile={handleFutureDesignStyleUploadFile}
+          onAddAdditionalGarment={handleAddFutureAdditionalGarment}
+          onReuseAddedOccurrenceHandled={(garmentKey) => {
+            setDesignStyleReuseAddedOccurrence((current) =>
+              current?.garmentKey === garmentKey ? null : current,
+            );
+          }}
           onBack={() => setFutureStageId("fabric")}
           onReturnToGarmentType={() => setFutureStageId("garment_type")}
           onContinue={handleOpenDormantCustomDetailsStage}

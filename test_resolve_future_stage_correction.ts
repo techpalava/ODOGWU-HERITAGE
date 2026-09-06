@@ -35,6 +35,24 @@ assert.equal(
 
 assert.equal(
   resolveFutureStageCorrection({
+    currentStageId: "design_style",
+    garmentTypeComplete: true,
+    fabricComplete: false,
+    designSourceReady: false,
+    customDetailsReady: false,
+    measurementUnlocked: false,
+    summaryUnlocked: false,
+    inlineAdditionalGarmentFabricTransaction: {
+      garmentKey: "additional:shirt:1",
+      designStyleReuse: { styleId: "reuse-style" },
+    },
+  }),
+  null,
+  "a reuse transaction keeps the customer in the existing Design Style context",
+);
+
+assert.equal(
+  resolveFutureStageCorrection({
     currentStageId: "summary",
     garmentTypeComplete: true,
     fabricComplete: true,

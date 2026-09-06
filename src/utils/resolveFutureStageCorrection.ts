@@ -3,6 +3,7 @@ import type { DesignStudioStageId } from "../types";
 export type InlineAdditionalGarmentFabricTransactionLike = {
   garmentKey: string;
   phase?: string;
+  designStyleReuse?: unknown;
 } | null;
 
 /**
@@ -43,10 +44,13 @@ export const resolveFutureStageCorrection = ({
   }
 
   const inlineActive = inlineAdditionalGarmentFabricTransaction !== null;
+  const reuseInDesignStyle =
+    currentStageId === "design_style" &&
+    Boolean(inlineAdditionalGarmentFabricTransaction?.designStyleReuse);
   const suppressFabricIncompleteRedirect =
-    currentStageId === "custom_details" && inlineActive;
+    (currentStageId === "custom_details" && inlineActive) || reuseInDesignStyle;
   const suppressDesignSourceRedirect =
-    currentStageId === "custom_details" && inlineActive;
+    (currentStageId === "custom_details" && inlineActive) || reuseInDesignStyle;
 
   const fabricCompleteForCorrection =
     fabricComplete || suppressFabricIncompleteRedirect;
