@@ -68,6 +68,43 @@ const continueButton = (root: ReactTestInstance) =>
     .findByProps({ "data-testid": "future-design-style-continue-action" })
     .findByType("button");
 
+// Customer Step 3 intentionally has no demographic selector. Published styles
+// remain visible regardless of their demographic reference metadata.
+{
+  const publishedStyles: StyleCategory[] = [
+    { ...style, id: "step3-male-reference", name: "Emerald Reference", gender: "male", targetDemographic: "male" },
+    { ...style, id: "step3-female-reference", name: "Gold Reference", gender: "female", targetDemographic: "female" },
+    { ...style, id: "step3-unisex-reference", name: "Ivory Reference", gender: "unisex", targetDemographic: "unisex" },
+  ];
+  const model = createDesignStyleStepTestModel({
+    styles: publishedStyles,
+    garmentTypeSelection: selection(["shirt"]),
+  });
+  const renderer = await renderModel(model);
+  const visibleText = textContent(renderer.root);
+
+  assert.equal(visibleText.includes("Who is this design for?"), false);
+  assert.equal(visibleText.includes("Unisex / Family"), false);
+  assert.equal(
+    renderer.root.findAllByType("input").some(
+      (input) => input.props.type === "checkbox",
+    ),
+    false,
+  );
+  assert.match(
+    textContent(renderer.root.findByProps({ "data-testid": "step3-all-designs" })),
+    /All Designs/,
+  );
+  assert.deepEqual(
+    renderer.root
+      .findAll((node) => node.props?.["data-style-name"] !== undefined)
+      .map((card) => card.props["data-style-name"]),
+    ["Emerald Reference", "Gold Reference", "Ivory Reference"],
+  );
+  assert.equal(visibleText.includes("Your Garments"), true);
+  assert.equal(visibleText.includes("Choose Design"), true);
+}
+
 // Repeated occurrences render independently, in order, without internal IDs.
 {
   const model = createDesignStyleStepTestModel({
