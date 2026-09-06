@@ -78,20 +78,57 @@ const renderModel = async (
 const styleCards = (root: ReactTestInstance) =>
   root.findAll((node) => node.props?.["data-style-card"] === "true");
 
-const styleButton = (root: ReactTestInstance, styleName: string) =>
-  root
+const styleDisplayLabel = (styleName: string): string => {
+  const visibleName = String(styleName ?? "").trim();
+  return /^ODG(\s+|-)\d+$/i.test(visibleName)
+    ? visibleName.replace(/^ODG(\s+|-)/i, "ODGH$1")
+    : visibleName;
+};
+
+const styleButton = (root: ReactTestInstance, styleName: string) => {
+  const visibleName = styleDisplayLabel(styleName);
+  return root
     .findAllByType("button")
     .find(
       (button) =>
         button.props["aria-label"] === `Use This Design ${styleName}` ||
-        button.props["aria-label"] === `Use Again ${styleName}`,
+        button.props["aria-label"] === `Use Again ${styleName}` ||
+        button.props["aria-label"] === `Use This Design ${visibleName}` ||
+        button.props["aria-label"] === `Use Again ${visibleName}`,
     )!;
+};
 
 const checkboxFor = (dialog: ReactTestInstance, occurrenceLabel: string) =>
   dialog
     .findAllByType("label")
     .find((label) => textContent(label).startsWith(occurrenceLabel))!
     .findByType("input");
+
+// ODG display labels should be presentation-formatted to ODGH.
+{
+  const canonicalName = "ODG-004";
+  const canonicalId = canonicalName;
+  const model = createDesignStyleStepTestModel({
+    styles: [makeStyle(canonicalId, canonicalName, "kaftan", "male")],
+    garmentTypeSelection: selection,
+  });
+  const renderer = await renderModel(model);
+  const visibleName = styleDisplayLabel(canonicalName);
+
+  assert.equal(model.styles[0]!.name, canonicalName);
+  assert.equal(model.styles[0]!.id, canonicalId);
+
+  const card = styleCards(renderer.root).find(
+    (candidate) => candidate.props["data-style-name"] === canonicalName,
+  )!;
+  const cardHeading = textContent(card.findByType("h4"));
+  assert.equal(cardHeading, visibleName);
+  assert.equal(cardHeading.includes(canonicalName), false);
+  assert.equal(
+    styleButton(renderer.root, canonicalName).props["aria-label"],
+    `Use This Design ${visibleName}`,
+  );
+}
 
 // All published projections render once, without filters or compatibility groups.
 {

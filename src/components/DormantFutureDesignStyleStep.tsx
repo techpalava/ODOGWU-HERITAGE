@@ -15,6 +15,7 @@ import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import type {
   CanonicalPhysicalGarmentType,
   GarmentConstructionPricingResolution,
+  StyleCategory,
 } from "../types";
 import {
   getGarmentTypeStepLabel,
@@ -78,6 +79,15 @@ interface DormantFutureDesignStyleStepProps {
   onReturnToGarmentType: () => void;
   onContinue: () => void;
 }
+
+const formatDisplayStyleLabel = (style: StyleCategory): string => {
+  const visibleName = String(style.name ?? "").trim();
+  const fromCanonicalId = /^ODG(\s+|-)\d+$/i;
+  if (fromCanonicalId.test(visibleName)) {
+    return visibleName.replace(/^ODG(\s+|-)/i, "ODGH$1");
+  }
+  return visibleName;
+};
 
 const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
   Array.from(
@@ -408,6 +418,10 @@ export const DormantFutureDesignStyleStep = ({
     );
   };
 
+  const pendingDisplayStyleName = pendingEntry
+    ? formatDisplayStyleLabel(pendingEntry.style)
+    : null;
+
   const mappingDialog = pendingEntry ? (
     <div
       className={`fixed inset-0 ${reuseFabricPending ? "z-[70]" : "z-[10000]"} flex items-end justify-center bg-heritage-ink/45 p-3 sm:items-center sm:p-6`}
@@ -422,7 +436,7 @@ export const DormantFutureDesignStyleStep = ({
         aria-describedby={dialogDescriptionId}
         tabIndex={-1}
         data-testid="design-garment-mapping-dialog"
-        data-pending-style={pendingEntry.style.name}
+        data-pending-style={pendingDisplayStyleName || ""}
         data-dialog-view={dialogView}
         onClick={(event) => event.stopPropagation()}
         className="flex max-h-[92vh] w-full max-w-xl min-w-0 flex-col overflow-hidden rounded-3xl border border-heritage-gold/40 bg-white shadow-xl"
@@ -430,13 +444,13 @@ export const DormantFutureDesignStyleStep = ({
         <header className="flex min-w-0 items-start justify-between gap-3 border-b border-heritage-gold/20 px-4 py-4 sm:px-5">
           <div className="min-w-0">
             <h2 id={dialogTitleId} className="font-serif text-xl font-bold text-heritage-green sm:text-2xl">{dialogView === "add_garment" ? "Add a garment" : "Apply Design Style"}</h2>
-            {dialogView === "mapping" ? <><p className="mt-1 break-words font-serif text-lg font-semibold text-heritage-green">{pendingEntry.style.name}</p><p id={dialogDescriptionId} className="mt-2 text-sm leading-relaxed text-heritage-ink/70">Choose every exact garment occurrence that should use this design.</p></> : <p id={dialogDescriptionId} className="mt-2 text-sm leading-relaxed text-heritage-ink/70">Choose a garment type to add. Fabric will be selected for the new occurrence before you apply this design.</p>}
+            {dialogView === "mapping" ? <><p className="mt-1 break-words font-serif text-lg font-semibold text-heritage-green">{pendingDisplayStyleName}</p><p id={dialogDescriptionId} className="mt-2 text-sm leading-relaxed text-heritage-ink/70">Choose every exact garment occurrence that should use this design.</p></> : <p id={dialogDescriptionId} className="mt-2 text-sm leading-relaxed text-heritage-ink/70">Choose a garment type to add. Fabric will be selected for the new occurrence before you apply this design.</p>}
           </div>
           <button ref={dialogInitialFocusRef} type="button" onClick={closeDialog} aria-label="Close garment mapping dialog" className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/20 text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><X aria-hidden="true" size={18} /></button>
         </header>
         <div ref={dialogContentRef} className="min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
           {dialogView === "mapping" ? <>
-          {pendingEntry.style.image && <img src={pendingEntry.style.image} alt={`${pendingEntry.style.name} design reference`} className="mb-4 max-h-56 w-full rounded-2xl bg-heritage-cream/35 object-contain" />}
+          {pendingEntry.style.image && pendingDisplayStyleName && <img src={pendingEntry.style.image} alt={`${pendingDisplayStyleName} design reference`} className="mb-4 max-h-56 w-full rounded-2xl bg-heritage-cream/35 object-contain" />}
           <p className="text-xs leading-relaxed text-heritage-ink/70"><span className="font-bold text-heritage-green">Reference outfit:</span> {getFutureDesignStyleCompositionLabel(pendingEntry.style)}</p>
           <fieldset className="mt-4 space-y-2">
             <legend className="mb-2 text-sm font-bold text-heritage-green">Which of your garments should use this design?</legend>
@@ -457,7 +471,7 @@ export const DormantFutureDesignStyleStep = ({
             })}
           </fieldset>
           {allCurrentOccurrencesUsePendingEntry && onAddAdditionalGarment && additionalGarmentOptions.length > 0 && <section className="mt-4 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4" data-testid="design-reuse-add-another-garment"><p className="font-serif text-base font-bold text-heritage-green">Want to use this design for another garment?</p><button type="button" onClick={() => { mappingScrollTopRef.current = dialogContentRef.current?.scrollTop || 0; setDialogView("add_garment"); }} aria-label="Add another garment to use this design" className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/30 bg-white px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><Plus aria-hidden="true" size={15} />Add Another Garment</button></section>}
-          {replacementOccurrences.length > 0 && <div role="status" className="mt-4 space-y-1 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">{replacementOccurrences.map((occurrence) => <p key={occurrence.target.occurrenceToken}>{occurrence.label} currently uses {occurrence.assignmentLabel}. Applying {pendingEntry.style.name} will replace it for {occurrence.label}.</p>)}</div>}
+          {replacementOccurrences.length > 0 && <div role="status" className="mt-4 space-y-1 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">{replacementOccurrences.map((occurrence) => <p key={occurrence.target.occurrenceToken}>{occurrence.label} currently uses {occurrence.assignmentLabel}. Applying {pendingDisplayStyleName} will replace it for {occurrence.label}.</p>)}</div>}
           {mismatchOccurrences.length > 0 && <div role="status" data-testid="reference-composition-warning" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">This reference design features {pendingEntry.referenceGarmentTypes.map(getFabricGarmentLabel).join(" + ")}. {mismatchOccurrences.map((occurrence) => occurrence.label).join(" + ")} {mismatchOccurrences.length === 1 ? "is" : "are"} not part of the reference outfit, so the design may need to be adapted. You can still apply it.</div>}
           </> : <section data-testid="design-reuse-add-garment-options"><p className="text-xs leading-relaxed text-heritage-ink/70">These are the same customer-selectable Step 1 garment types. A new exact physical occurrence is created only after its Fabric selection is confirmed.</p><div className="mt-4 grid min-w-0 grid-cols-2 gap-2.5 max-[340px]:grid-cols-1 sm:grid-cols-3">{additionalGarmentOptions.map(({ garmentType, construction }, index) => { const label = getGarmentTypeStepLabel(garmentType); const isReady = construction.status === "resolved"; const referenceImage = isStep1GarmentReferenceType(garmentType) ? getStep1GarmentReferenceImage(garmentType) : null; return <article key={garmentType} data-testid={`design-reuse-add-garment-card-${garmentType}`} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-heritage-gold/20 bg-white"><Step1GarmentReferencePhoto src={referenceImage?.src || null} alt={getStep1GarmentReferenceAlt(label)} eager={index < 3} /><div className="flex min-w-0 flex-1 flex-col p-2.5 sm:p-3"><div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1"><h3 className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">{label}</h3><p className="shrink-0 font-mono text-sm font-bold text-heritage-green">{isReady ? `${PRICING_CURRENCY_SYMBOL}${construction.totalPrice.toFixed(2)}` : "Pending"}</p></div><button type="button" disabled={!isReady || reuseFabricPending} aria-label={`Add ${label} to use this design`} onClick={(event) => onAddAdditionalGarment?.(garmentType, event.currentTarget, { origin: "design_style_reuse", styleId: pendingEntry.style.id })} className="mt-2.5 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-heritage-green bg-heritage-cream px-2 text-[11px] font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"><Plus aria-hidden="true" size={14} />Add</button>{!isReady && <p className="mt-2 text-[11px] font-semibold text-amber-800">Construction pricing needs review.</p>}</div></article>; })}</div></section>}
         </div>
@@ -518,21 +532,23 @@ export const DormantFutureDesignStyleStep = ({
               <h3 className="font-serif text-xl font-bold text-heritage-green">All Designs</h3>
               <p className="mt-1 text-xs leading-relaxed text-heritage-ink/65">Every published design is available as a visual reference for any of your garments.</p>
               <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {catalogueEntries.map((entry) => (
+                {catalogueEntries.map((entry) => {
+                  const displayStyleName = formatDisplayStyleLabel(entry.style);
+                  return (
                   <article key={entry.style.id} data-style-card="true" data-style-name={entry.style.name} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm">
                     <div className="relative aspect-[4/5] overflow-hidden bg-heritage-cream/35">
-                      {entry.style.image ? <img src={entry.style.image} alt={`${entry.style.name} design`} loading="lazy" className="h-full w-full object-contain" referrerPolicy="no-referrer" /> : <div className="flex h-full items-center justify-center px-4 text-center text-xs text-heritage-ink/45">Image unavailable</div>}
+                      {entry.style.image ? <img src={entry.style.image} alt={`${displayStyleName} design`} loading="lazy" className="h-full w-full object-contain" referrerPolicy="no-referrer" /> : <div className="flex h-full items-center justify-center px-4 text-center text-xs text-heritage-ink/45">Image unavailable</div>}
                       {entry.selectedOccurrenceLabels.length > 0 && <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm"><Check aria-hidden="true" size={14} />IN USE</span>}
                     </div>
                     <div className="flex min-w-0 flex-1 flex-col p-4">
-                      <h4 className="break-words font-serif text-base font-bold text-heritage-green">{entry.style.name}</h4>
+                      <h4 className="break-words font-serif text-base font-bold text-heritage-green">{displayStyleName}</h4>
                       <p className="mt-3 break-words text-xs leading-relaxed text-heritage-ink/75"><span className="font-semibold text-heritage-green">Reference outfit:</span> {getFutureDesignStyleCompositionLabel(entry.style)}</p>
                       {entry.selectedOccurrenceLabels.length > 0 && <p className="mt-2 break-words text-xs text-heritage-ink/60">Applied to {entry.selectedOccurrenceLabels.join(", ")}</p>}
                       {entry.style.description && <p className="mt-3 break-words text-xs leading-relaxed text-heritage-ink/65">{entry.style.description}</p>}
-                      <button type="button" disabled={!mutationsEnabled} onClick={(event) => openDialog(entry, event.currentTarget)} aria-label={`${entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"} ${entry.style.name}`} className="mt-auto inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 py-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-heritage-ink/45">{entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"}</button>
+                      <button type="button" disabled={!mutationsEnabled} onClick={(event) => openDialog(entry, event.currentTarget)} aria-label={`${entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"} ${displayStyleName}`} className="mt-auto inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 py-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-heritage-ink/45">{entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"}</button>
                     </div>
                   </article>
-                ))}
+                );})}
               </div>
             </section>
           )}
