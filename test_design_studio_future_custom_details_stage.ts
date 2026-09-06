@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createElement } from "react";
+import { createElement, useRef, useState } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { DormantFutureCustomDetailsStep } from "./src/components/DormantFutureCustomDetailsStep";
+import { DesignStudioOrderSummary } from "./src/components/DesignStudioOrderSummary";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
@@ -32,10 +33,11 @@ import {
 import {
   reconcileAdditionalGarmentConstructionState,
 } from "./src/utils/additionalGarmentConstructionState";
-import type { FabricGarmentAssignment } from "./src/types";
+import type { DesignStudioStageId, FabricGarmentAssignment } from "./src/types";
 import { createDormantDesignStudioJourneyState } from "./src/utils/designStudioJourneyMode";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
+import type { LiveOrderSummaryView } from "./src/utils/designStudioLiveOrderSummary";
 
 const catalogInspection = inspectCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const garmentTypeSelection = reconcileGarmentTypeStepSelection({
@@ -823,35 +825,48 @@ const additionalPricing = calculateGarmentScopedCustomDetailsPricing({
   catalogInspection,
 });
 let additionalRenderer!: ReturnType<typeof create>;
+let additionalFabricRepairKey: string | null = null;
+const additionalStepProps = {
+  reconciliation: additionalReconciliation,
+  catalogue: additionalCatalogue,
+  personalizedInputs: additionalInputs.state,
+  completion: additionalCompletion,
+  pricing: additionalPricing,
+  orderLevelCustomDetailsPrice: 0,
+  constructionBreakdown: { status: "complete" as const, rows: [] },
+  constructionSubtotal: 0,
+  designSelections: {},
+  selectedStyle: null,
+  additionalGarments: liveAdditionalGarments,
+  additionalGarmentConstructionOptions: [],
+  onSingleSelect: () => undefined,
+  onClearSelection: () => undefined,
+  onConstructionSelect: () => undefined,
+  onToggleMultiSelect: () => undefined,
+  onPersonalizedTextChange: () => undefined,
+  onDecorativeFeatureToggle: () => undefined,
+  onClearDecorativeFeatures: () => undefined,
+  onMonogramPlacementChange: () => undefined,
+  onAccessoryToggle: () => undefined,
+  onClearAccessories: () => undefined,
+  onAddAdditionalGarment: () => undefined,
+  onRemoveAdditionalGarment: () => undefined,
+  onChangeAdditionalGarmentFabric: (garmentKey: string) => {
+    additionalFabricRepairKey = garmentKey;
+  },
+  fabricAllocationState: {
+    fabricAllocations: [],
+    activeAllocationId: null,
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  },
+  onBack: () => undefined,
+  onContinue: () => undefined,
+};
 act(() => {
-  additionalRenderer = create(createElement(DormantFutureCustomDetailsStep, {
-    reconciliation: additionalReconciliation,
-    catalogue: additionalCatalogue,
-    personalizedInputs: additionalInputs.state,
-    completion: additionalCompletion,
-    pricing: additionalPricing,
-    orderLevelCustomDetailsPrice: 0,
-    constructionBreakdown: { status: "complete", rows: [] },
-    constructionSubtotal: 0,
-    designSelections: {},
-    selectedStyle: null,
-    additionalGarments: liveAdditionalGarments,
-    additionalGarmentConstructionOptions: [],
-    onSingleSelect: () => undefined,
-    onClearSelection: () => undefined,
-    onConstructionSelect: () => undefined,
-    onToggleMultiSelect: () => undefined,
-    onPersonalizedTextChange: () => undefined,
-    onDecorativeFeatureToggle: () => undefined,
-    onClearDecorativeFeatures: () => undefined,
-    onMonogramPlacementChange: () => undefined,
-    onAccessoryToggle: () => undefined,
-    onClearAccessories: () => undefined,
-    onAddAdditionalGarment: () => undefined,
-    onRemoveAdditionalGarment: () => undefined,
-    onBack: () => undefined,
-    onContinue: () => undefined,
-  }));
+  additionalRenderer = create(
+    createElement(DormantFutureCustomDetailsStep, additionalStepProps),
+  );
 });
 const mainDetails = additionalRenderer.root.findByProps({
   "data-custom-detail-section": "main-garment-details",
@@ -885,11 +900,256 @@ assert.ok(
   addSection.findByProps({ "data-added-garment-heading": "true" }),
   "a newly added garment must expose a stable focus target inside Add Additional Garment",
 );
+assert.equal(
+  addSection.props["data-additional-garment-management"],
+  "true",
+  "the Additional Garment management section exposes the section-level focus target",
+);
+assert.equal(
+  addSection
+    .findByProps({ "data-additional-garment-management-heading": "true" })
+    .props.tabIndex,
+  -1,
+  "the section-level Additional Garment focus target is programmatically focusable",
+);
 assert.ok(
   addSection.findByProps({
     "data-additional-garment-details": additionalAssignment.garmentKey,
   }),
 );
+const addFabricButton = addSection.findByProps({
+  "data-change-additional-garment-fabric": additionalAssignment.garmentKey,
+});
+assert.equal(addFabricButton.props["data-additional-garment-fabric-action"], "add");
+assert.match(textContent(addFabricButton), /Add Fabric/);
+act(() => {
+  addFabricButton.props.onClick({ currentTarget: null });
+});
+assert.equal(
+  additionalFabricRepairKey,
+  additionalAssignment.garmentKey,
+  "a ledger-authorized Additional garment without Fabric exposes its Step 4 repair control",
+);
+
+const originalWindow = globalThis.window;
+Object.assign(globalThis, {
+  window: {
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
+  },
+});
+const navigationEvents: string[] = [];
+const exactRepairControl = {
+  focus: () => navigationEvents.push("exact-focus"),
+  scrollIntoView: () => navigationEvents.push("exact-scroll"),
+};
+const exactGarmentTarget = {
+  dataset: { parentGarmentKey: additionalAssignment.garmentKey },
+  querySelector: (selector: string) =>
+    selector === "[data-additional-garment-fabric-action]"
+      ? exactRepairControl
+      : null,
+  setAttribute: () => undefined,
+  removeAttribute: () => undefined,
+};
+const sectionFocusTarget = {
+  focus: () => navigationEvents.push("section-focus"),
+  scrollIntoView: () => navigationEvents.push("section-scroll"),
+};
+const additionalManagementTarget = {
+  querySelector: (selector: string) =>
+    selector === "[data-additional-garment-management-heading]"
+      ? sectionFocusTarget
+      : null,
+  setAttribute: () => undefined,
+  removeAttribute: () => undefined,
+};
+const contentNodeMock = {
+  querySelectorAll: (selector: string) =>
+    selector === "[data-parent-garment-key]" ? [exactGarmentTarget] : [],
+  querySelector: (selector: string) =>
+    selector === "[data-additional-garment-management]"
+      ? additionalManagementTarget
+      : null,
+};
+const handledNavigationRequests: number[] = [];
+let navigationRenderer!: ReturnType<typeof create>;
+const createNavigationRequestStep = (
+  requestId: number,
+  focusGarmentKey: string | null,
+) =>
+  createElement(DormantFutureCustomDetailsStep, {
+    ...additionalStepProps,
+    focusAdditionalGarmentKey: focusGarmentKey,
+    additionalGarmentNavigationRequestId: requestId,
+    onAdditionalGarmentNavigationHandled: (handledRequestId) => {
+      handledNavigationRequests.push(handledRequestId);
+    },
+  });
+try {
+  act(() => {
+    navigationRenderer = create(
+      createNavigationRequestStep(1, additionalAssignment.garmentKey),
+      {
+        createNodeMock: (element) => {
+          const props = element.props as { className?: unknown };
+          return element.type === "div" &&
+            props.className === "min-w-0 space-y-4"
+            ? contentNodeMock
+            : null;
+        },
+      },
+    );
+  });
+  act(() => {
+    navigationRenderer.update(
+      createNavigationRequestStep(2, additionalAssignment.garmentKey),
+    );
+  });
+  act(() => {
+    navigationRenderer.update(createNavigationRequestStep(3, null));
+  });
+  assert.deepEqual(
+    handledNavigationRequests,
+    [1, 2, 3],
+    "each Order Summary request is consumed independently, including repeated Step 4 clicks",
+  );
+  assert.deepEqual(
+    navigationEvents,
+    [
+      "exact-focus",
+      "exact-scroll",
+      "exact-focus",
+      "exact-scroll",
+      "section-focus",
+      "section-scroll",
+    ],
+    "missing Fabric targets its exact control while complete additions target the management section",
+  );
+
+  // Exercise the persistent Summary callback and its Step 4 consumer in one
+  // production-component tree. This catches a request that is emitted by the
+  // Summary but never reaches the rendered exact Additional occurrence.
+  const persistentSummaryView: LiveOrderSummaryView = {
+    sections: [
+      {
+        id: "construction",
+        title: "Garment Construction",
+        editStage: "garment_type",
+        lines: [],
+        subsections: [
+          {
+            id: "additional_garments",
+            title: "Additional Garments",
+            editStage: "custom_details",
+            focusGarmentKey: additionalAssignment.garmentKey,
+            lines: [
+              {
+                id: `construction-${additionalAssignment.garmentKey}`,
+                label: "Shirt 2",
+                detail: "Standard Shirt",
+                supportingDetail: "Fabric: Needs fabric",
+                amountLabel: null,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    totalStatus: "hidden",
+    totalLabel: "",
+    totalValueLabel: "",
+    totalAmountCents: null,
+    quoteRequired: false,
+  };
+  const persistentSummaryNavigationEvents: string[] = [];
+  const persistentSummaryFabricRequests: string[] = [];
+  const PersistentSummaryStep4Harness = () => {
+    const nextRequestIdRef = useRef(0);
+    const [focusGarmentKey, setFocusGarmentKey] = useState<string | null>(null);
+    const [requestId, setRequestId] = useState<number | null>(null);
+    return createElement(
+      "div",
+      null,
+      createElement(DesignStudioOrderSummary, {
+        view: persistentSummaryView,
+        unlockedStages: new Set<DesignStudioStageId>(["custom_details"]),
+        currentStageId: "custom_details",
+        onEditStage: (stage, options) => {
+          assert.equal(stage, "custom_details");
+          setFocusGarmentKey(options?.focusAdditionalGarmentKey || null);
+          nextRequestIdRef.current += 1;
+          setRequestId(nextRequestIdRef.current);
+        },
+      }),
+      createElement(DormantFutureCustomDetailsStep, {
+        ...additionalStepProps,
+        focusAdditionalGarmentKey: focusGarmentKey,
+        additionalGarmentNavigationRequestId: requestId,
+        onAdditionalGarmentNavigationHandled: (handledRequestId) => {
+          persistentSummaryNavigationEvents.push(String(handledRequestId));
+          setRequestId((current) =>
+            current === handledRequestId ? null : current,
+          );
+        },
+        onChangeAdditionalGarmentFabric: (garmentKey: string) => {
+          persistentSummaryFabricRequests.push(garmentKey);
+        },
+      }),
+    );
+  };
+  let persistentSummaryRenderer!: ReturnType<typeof create>;
+  act(() => {
+    persistentSummaryRenderer = create(
+      createElement(PersistentSummaryStep4Harness),
+      {
+        createNodeMock: (element) => {
+          const props = element.props as { className?: unknown };
+          return element.type === "div" &&
+            props.className === "min-w-0 space-y-4"
+            ? contentNodeMock
+            : null;
+        },
+      },
+    );
+  });
+  const persistentEdit = () =>
+    persistentSummaryRenderer.root.findByProps({
+      "data-testid": "live-order-summary-edit-additional_garments",
+    });
+  act(() => {
+    persistentEdit().props.onClick();
+  });
+  act(() => {
+    persistentEdit().props.onClick();
+  });
+  assert.deepEqual(
+    persistentSummaryNavigationEvents,
+    ["1", "2"],
+    "repeated persistent Summary edits reach the rendered exact Additional target independently",
+  );
+  assert.deepEqual(
+    navigationEvents.slice(-4),
+    ["exact-focus", "exact-scroll", "exact-focus", "exact-scroll"],
+    "persistent Summary edits visibly focus and scroll the exact Step 4 repair control",
+  );
+  act(() => {
+    persistentSummaryRenderer.root
+      .findByProps({
+        "data-change-additional-garment-fabric": additionalAssignment.garmentKey,
+      })
+      .props.onClick({ currentTarget: null });
+  });
+  assert.deepEqual(
+    persistentSummaryFabricRequests,
+    [additionalAssignment.garmentKey],
+    "the rendered Step 4 Add Fabric action retains the exact Additional occurrence key",
+  );
+  act(() => persistentSummaryRenderer.unmount());
+} finally {
+  act(() => navigationRenderer.unmount());
+  Object.assign(globalThis, { window: originalWindow });
+}
 
 const componentSource = readFileSync(
   "src/components/DormantFutureCustomDetailsStep.tsx",
@@ -921,6 +1181,10 @@ assert.doesNotMatch(componentSource, /Not currently included/);
 assert.match(componentSource, /Included in your selected design/);
 assert.match(componentSource, /data-custom-detail-section="main-garment-details"/);
 assert.match(componentSource, /data-additional-garment-details/);
+assert.match(componentSource, /additionalGarmentNavigationRequestId/);
+assert.match(componentSource, /lastHandledAdditionalGarmentNavigationRequestIdRef/);
+assert.match(componentSource, /data-additional-garment-management/);
+assert.match(componentSource, /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/);
 assert.match(componentSource, /partitionCatalogueGroupsByRole/);
 assert.match(componentSource, /Added garment/);
 assert.match(componentSource, /Add Additional Garment/);

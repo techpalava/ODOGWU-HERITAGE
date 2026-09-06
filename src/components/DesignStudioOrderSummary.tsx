@@ -2,6 +2,7 @@ import { UsersRound, Pencil } from "lucide-react";
 import type { DesignStudioStageId } from "../types";
 import type {
   LiveOrderSummarySection,
+  LiveOrderSummarySubsection,
   LiveOrderSummaryView,
 } from "../utils/designStudioLiveOrderSummary";
 import { LIVE_ORDER_SUMMARY_HEADING } from "../utils/designStudioLiveOrderSummary";
@@ -9,27 +10,34 @@ import { LIVE_ORDER_SUMMARY_HEADING } from "../utils/designStudioLiveOrderSummar
 const SummarySection = ({
   section,
   canEdit,
+  canEditAdditionalGarments,
   onEdit,
+  onEditAdditionalGarments,
 }: {
   section: LiveOrderSummarySection;
   canEdit: boolean;
+  canEditAdditionalGarments: boolean;
   onEdit?: () => void;
+  onEditAdditionalGarments?: (focusGarmentKey?: string | null) => void;
 }) => (
   <section
     data-testid={`live-order-summary-section-${section.id}`}
     className="min-w-0"
   >
-    <div className="flex min-w-0 items-start justify-between gap-2">
-      <h3 className="min-w-0 break-words text-[15px] font-bold leading-snug text-heritage-green">
+    <div
+      data-testid={`live-order-summary-section-header-${section.id}`}
+      className="flex min-w-0 items-center justify-between gap-2"
+    >
+      <h3 className="min-w-0 flex-1 break-words text-[15px] font-bold leading-snug text-heritage-green">
         {section.title}
       </h3>
       {canEdit && onEdit ? (
         <button
           type="button"
           onClick={onEdit}
-          aria-label={`Edit ${section.title}`}
+          aria-label={section.editLabel || `Edit ${section.title}`}
           data-testid={`live-order-summary-edit-${section.id}`}
-          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-lg px-2 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+          className="inline-flex min-h-8 shrink-0 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
         >
           <Pencil aria-hidden="true" size={11} />
           Edit
@@ -53,6 +61,11 @@ const SummarySection = ({
                   {line.detail}
                 </p>
               ) : null}
+              {line.supportingDetail ? (
+                <p className="mt-0.5 break-words text-[11px] font-semibold leading-snug text-heritage-ink/65">
+                  {line.supportingDetail}
+                </p>
+              ) : null}
             </div>
             {line.amountLabel ? (
               <span className="shrink-0 text-right font-mono text-[13px] font-semibold text-heritage-green">
@@ -63,6 +76,18 @@ const SummarySection = ({
         ))}
       </ul>
     ) : null}
+    {section.subsections?.map((subsection) => (
+      <SummarySubsection
+        key={subsection.id}
+        subsection={subsection}
+        canEdit={
+          subsection.id === "additional_garments" &&
+          canEditAdditionalGarments &&
+          Boolean(onEditAdditionalGarments)
+        }
+        onEdit={onEditAdditionalGarments}
+      />
+    ))}
     {section.footer ? (
       <div
         className="mt-1.5 border-t border-heritage-gold/20 pt-1.5"
@@ -88,6 +113,72 @@ const SummarySection = ({
   </section>
 );
 
+const SummarySubsection = ({
+  subsection,
+  canEdit,
+  onEdit,
+}: {
+  subsection: LiveOrderSummarySubsection;
+  canEdit: boolean;
+  onEdit?: (focusGarmentKey?: string | null) => void;
+}) => (
+  <section
+    data-testid={`live-order-summary-subsection-${subsection.id}`}
+    className="mt-3 border-t border-heritage-gold/15 pt-3"
+  >
+    <div
+      data-testid={`live-order-summary-subsection-header-${subsection.id}`}
+      className="flex min-w-0 items-center justify-between gap-2"
+    >
+      <h4 className="min-w-0 flex-1 break-words text-[13px] font-bold tracking-wide text-heritage-green">
+        {subsection.title}
+      </h4>
+      {canEdit && onEdit ? (
+        <button
+          type="button"
+          onClick={() => onEdit(subsection.focusGarmentKey)}
+          aria-label="Edit additional garments"
+          data-testid={`live-order-summary-edit-${subsection.id}`}
+          className="inline-flex min-h-8 shrink-0 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+        >
+          <Pencil aria-hidden="true" size={11} />
+          Edit
+        </button>
+      ) : null}
+    </div>
+    <ul className="mt-1.5 space-y-1">
+      {subsection.lines.map((line) => (
+        <li
+          key={line.id}
+          data-line-id={line.id}
+          className="flex min-w-0 flex-wrap items-start justify-between gap-2"
+        >
+          <div className="min-w-0">
+            <p className="break-words text-[13px] font-semibold leading-snug text-heritage-ink">
+              {line.label}
+            </p>
+            {line.detail ? (
+              <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
+                {line.detail}
+              </p>
+            ) : null}
+            {line.supportingDetail ? (
+              <p className="mt-0.5 break-words text-[11px] font-semibold leading-snug text-heritage-ink/65">
+                {line.supportingDetail}
+              </p>
+            ) : null}
+          </div>
+          {line.amountLabel ? (
+            <span className="shrink-0 text-right font-mono text-[13px] font-semibold text-heritage-green">
+              {line.amountLabel}
+            </span>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  </section>
+);
+
 export const DesignStudioOrderSummary = ({
   view,
   unlockedStages,
@@ -97,22 +188,39 @@ export const DesignStudioOrderSummary = ({
   view: LiveOrderSummaryView;
   unlockedStages: ReadonlySet<DesignStudioStageId>;
   currentStageId?: DesignStudioStageId | null;
-  onEditStage?: (stage: DesignStudioStageId) => void;
+  onEditStage?: (
+    stage: DesignStudioStageId,
+    options?: { focusAdditionalGarmentKey?: string | null },
+  ) => void;
 }) => {
   const headingId = "live-order-summary-heading";
+  const canEditStage = (stage: DesignStudioStageId | null): boolean =>
+    Boolean(
+      stage &&
+        unlockedStages.has(stage) &&
+        stage !== currentStageId &&
+        onEditStage,
+    );
   const renderSection = (section: LiveOrderSummarySection) => (
     <SummarySection
       key={section.id}
       section={section}
-      canEdit={Boolean(
-        section.editStage &&
-          unlockedStages.has(section.editStage) &&
-          section.editStage !== currentStageId &&
-          onEditStage,
+      canEdit={canEditStage(section.editStage)}
+      canEditAdditionalGarments={Boolean(
+        onEditStage &&
+          section.subsections?.some(
+            (subsection) => subsection.id === "additional_garments",
+          ),
       )}
       onEdit={
         section.editStage && onEditStage
           ? () => onEditStage(section.editStage as DesignStudioStageId)
+          : undefined
+      }
+      onEditAdditionalGarments={
+        onEditStage
+          ? (focusAdditionalGarmentKey) =>
+              onEditStage("custom_details", { focusAdditionalGarmentKey })
           : undefined
       }
     />

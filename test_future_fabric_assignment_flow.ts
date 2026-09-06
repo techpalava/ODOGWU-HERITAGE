@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { act, create } from "react-test-renderer";
+import { DormantFutureFabricStep } from "./src/components/DormantFutureFabricStep";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import type { Fabric, FabricGarmentType } from "./src/types";
@@ -616,6 +619,145 @@ const additionalAuthorizedOccurrences = buildAuthoritativePhysicalOccurrences({
     },
   },
 });
+
+// Browser regression: all base Step 1 garments can have Fabric while an
+// exact Step 4 Additional occurrence still needs Fabric. The production
+// Fabric-stage wrapper must keep that target out of the Step 1 bulk-card
+// path, where every card would otherwise say ALL GARMENTS HAVE FABRIC.
+let missingAdditionalFabricState = applyFutureFabricCardSelection({
+  state: FabricAllocationStateEngine.initialize(),
+  garmentTypeSelection: additionalFlowSelection,
+  garmentKey: "base:shirt",
+  fabricCode: "FAB-A",
+  fabrics,
+});
+missingAdditionalFabricState = commitSameFabric({
+  state: missingAdditionalFabricState,
+  garmentTypeSelection: additionalFlowSelection,
+  fabricCode: "FAB-A",
+  garmentKeys: ["base:trouser"],
+});
+const repairPickerFabrics = [
+  ...fabrics,
+  createFabric("FAB-OUT", "Out of Stock Fabric", 15, "OUT_OF_STOCK"),
+];
+const missingAdditionalPlanning = getFutureGarmentFabricPlanning({
+  garmentTypeSelection: additionalFlowSelection,
+  fabricAllocationState: missingAdditionalFabricState,
+  requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+});
+assert.equal(
+  getFutureFabricStageCompletion({
+    garmentTypeSelection: additionalFlowSelection,
+    fabricAllocationState: missingAdditionalFabricState,
+    fabrics: repairPickerFabrics,
+    requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+  }).isComplete,
+  false,
+  "The missing exact Additional occurrence must keep completion blocked before repair.",
+);
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+let repairPickerRenderer!: ReturnType<typeof create>;
+act(() => {
+  repairPickerRenderer = create(
+    createElement(DormantFutureFabricStep, {
+      fabrics: repairPickerFabrics,
+      garmentTypeSelection: additionalFlowSelection,
+      fabricAllocationState: missingAdditionalFabricState,
+      completion: getFutureFabricStageCompletion({
+        garmentTypeSelection: additionalFlowSelection,
+        fabricAllocationState: missingAdditionalFabricState,
+        fabrics: repairPickerFabrics,
+        requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+      }),
+      requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+      requiredFabricQuantity: missingAdditionalPlanning.requiredFabricQuantity,
+      selectedFabricQuantity: missingAdditionalPlanning.selectedFabricQuantity,
+      constructionPrice: 0,
+      onAssignFabricToGarment: (fabric, garmentKey) => {
+        const result = assignFutureFabricToGarment({
+          state: missingAdditionalFabricState,
+          garmentTypeSelection: additionalFlowSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+          fabrics: repairPickerFabrics,
+          requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+        });
+        assert.equal(result.status, "assigned");
+        if (result.status === "assigned") {
+          missingAdditionalFabricState = result.state;
+        }
+        return missingAdditionalFabricState;
+      },
+      onChangeFabricAllocationProduct: () => undefined,
+      onRemoveFabricFromGarment: () => undefined,
+      onUseSameFabricForGarment: () => undefined,
+      onAssignSameFabricProduct: () => undefined,
+      onAssignGarmentToExistingAllocation: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+      onUseSameFabric: () => undefined,
+      onChooseAnotherFabric: () => undefined,
+      onCancelPendingFabric: () => undefined,
+    }),
+  );
+});
+const additionalRepairButton = repairPickerRenderer.root.findByProps({
+  "aria-label": "Add fabric for Standard Shirt",
+});
+act(() => {
+  additionalRepairButton.props.onClick({ currentTarget: {} });
+});
+const repairCatalogueCopy = repairPickerRenderer.root
+  .findByProps({ id: "future-fabric-catalogue-help" })
+  .children.join("");
+assert.match(
+  repairCatalogueCopy,
+  /Select a fabric card to assign it to Standard Shirt\./,
+  "The production picker must give target-occurrence guidance.",
+);
+assert.doesNotMatch(
+  repairCatalogueCopy,
+  /All selected garments have fabric assignments\./,
+  "A missing Additional occurrence must not be classified as base-only complete.",
+);
+const selectableRepairFabric = repairPickerRenderer.root.findByProps({
+  "data-fabric-code": "FAB-B",
+});
+assert.equal(selectableRepairFabric.props.disabled, false);
+assert.equal(selectableRepairFabric.props["data-fabric-action"], "select");
+const outOfStockRepairFabric = repairPickerRenderer.root.findByProps({
+  "data-fabric-code": "FAB-OUT",
+});
+assert.equal(outOfStockRepairFabric.props.disabled, true);
+act(() => {
+  selectableRepairFabric.props.onClick({ currentTarget: {} });
+});
+assert.deepEqual(
+  missingAdditionalFabricState.fabricAllocations.map((allocation) => ({
+    fabricCode: allocation.fabricCode,
+    garmentKeys: allocation.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+  })),
+  [
+    { fabricCode: "FAB-A", garmentKeys: ["base:shirt", "base:trouser"] },
+    { fabricCode: "FAB-B", garmentKeys: ["additional:shirt:1"] },
+  ],
+  "Selecting Fabric B repairs only the exact Additional Shirt and preserves both base assignments.",
+);
+assert.equal(
+  getFutureFabricStageCompletion({
+    garmentTypeSelection: additionalFlowSelection,
+    fabricAllocationState: missingAdditionalFabricState,
+    fabrics: repairPickerFabrics,
+    requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+  }).isComplete,
+  true,
+  "Completion may update only after the exact Additional occurrence is assigned.",
+);
+act(() => repairPickerRenderer.unmount());
+
 const reassignmentResult = assignFutureFabricToGarment({
   state: additionalState,
   garmentTypeSelection: additionalFlowSelection,

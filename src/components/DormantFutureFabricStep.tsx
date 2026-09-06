@@ -553,8 +553,16 @@ export const DormantFutureFabricStep = ({
       (!catalogueTargetGarmentKey ||
         catalogueTargetGarmentKey === pendingAdditionalAssignment.garmentKey),
   );
+  // A targeted Additional occurrence is repaired one occurrence at a time.
+  // It must never fall through to the Step 1 bulk catalogue, whose candidate
+  // set deliberately excludes later additional occurrences.
+  const isTargetedAdditionalCatalogueTarget = Boolean(
+    activeCatalogueTarget?.assignment.sourceRole === "additional",
+  );
   const isStep1CatalogueMode =
-    !isChangeFabricTarget && !isPendingAdditionalCatalogueTarget;
+    !isChangeFabricTarget &&
+    !isPendingAdditionalCatalogueTarget &&
+    !isTargetedAdditionalCatalogueTarget;
   const isOverAllocated = isPhysicalFabricQuantityOverAllocated({
     selectedFabricQuantity,
     requiredFabricQuantity,
@@ -2430,7 +2438,7 @@ export const DormantFutureFabricStep = ({
                       )}. Changing it will update both garments.`
                     : changeFabricPresentation
                       ? `Select a replacement Fabric for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}.`
-                      : activeCatalogueTarget && isChangeFabricTarget
+                      : activeCatalogueTarget
                         ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
                             activeCatalogueTarget.assignment.garmentType,
                           )}.`

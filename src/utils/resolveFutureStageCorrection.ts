@@ -23,6 +23,7 @@ export const resolveFutureStageCorrection = ({
   measurementUnlocked,
   summaryUnlocked,
   inlineAdditionalGarmentFabricTransaction,
+  additionalGarmentFabricRepairTargeted = false,
 }: {
   currentStageId: DesignStudioStageId;
   garmentTypeComplete: boolean;
@@ -32,6 +33,8 @@ export const resolveFutureStageCorrection = ({
   measurementUnlocked: boolean;
   summaryUnlocked: boolean;
   inlineAdditionalGarmentFabricTransaction: InlineAdditionalGarmentFabricTransactionLike;
+  /** A Summary-to-Step-4 repair target owned by an additional garment. */
+  additionalGarmentFabricRepairTargeted?: boolean;
 }): DesignStudioStageId | null => {
   if (
     currentStageId !== "design_style" &&
@@ -48,7 +51,9 @@ export const resolveFutureStageCorrection = ({
     currentStageId === "design_style" &&
     Boolean(inlineAdditionalGarmentFabricTransaction?.designStyleReuse);
   const suppressFabricIncompleteRedirect =
-    (currentStageId === "custom_details" && inlineActive) || reuseInDesignStyle;
+    (currentStageId === "custom_details" &&
+      (inlineActive || additionalGarmentFabricRepairTargeted)) ||
+    reuseInDesignStyle;
   const suppressDesignSourceRedirect =
     (currentStageId === "custom_details" && inlineActive) || reuseInDesignStyle;
 

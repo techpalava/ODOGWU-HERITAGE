@@ -27,7 +27,7 @@ export type AdditionalGarmentFabricTransactionPhase =
 export type AdditionalGarmentFabricTransaction = {
   transactionId: number;
   phase: AdditionalGarmentFabricTransactionPhase;
-  origin: "new_addition" | "change_existing";
+  origin: "new_addition" | "change_existing" | "repair_missing";
   garmentKey: string;
   garmentType: CanonicalPhysicalGarmentType;
   occurrenceGeneration?: number;
@@ -345,6 +345,15 @@ export const isAdditionalGarmentFabricTransactionTargetValid = ({
     return (
       matching.length === 1 &&
       matching[0].assignment.sourceRole === "additional" &&
+      fabricAllocationState.pendingFabricGarment?.garmentKey !==
+        transaction.garmentKey
+    );
+  }
+  if (transaction.origin === "repair_missing") {
+    return (
+      (matching.length === 0 ||
+        (matching.length === 1 &&
+          matching[0].assignment.sourceRole === "additional")) &&
       fabricAllocationState.pendingFabricGarment?.garmentKey !==
         transaction.garmentKey
     );

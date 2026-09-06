@@ -125,6 +125,9 @@ interface DormantFutureCustomDetailsStepProps {
   fabricAnnouncement?: string;
   fabricPersistentError?: string | null;
   focusAdditionalGarmentKey?: string | null;
+  /** A one-shot Order Summary focus request that can re-fire for the same target. */
+  additionalGarmentNavigationRequestId?: number | null;
+  onAdditionalGarmentNavigationHandled?: (requestId: number) => void;
   fabricModalOpen?: boolean;
   onViewAdditionalGarment?: (garmentKey: string) => void;
   onBack: () => void;
@@ -258,6 +261,8 @@ export const DormantFutureCustomDetailsStep = ({
   fabricAnnouncement = "",
   fabricPersistentError = null,
   focusAdditionalGarmentKey,
+  additionalGarmentNavigationRequestId = null,
+  onAdditionalGarmentNavigationHandled,
   fabricModalOpen = false,
   onViewAdditionalGarment,
   onBack,
@@ -276,6 +281,13 @@ export const DormantFutureCustomDetailsStep = ({
   const choiceDialogRef = useRef<HTMLDivElement>(null);
   const choiceTriggerRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const additionalGarmentTargetRefs = useRef(
+    new Map<string, HTMLDivElement>(),
+  );
+  const lastFocusedAdditionalGarmentKeyRef = useRef<string | null>(null);
+  const lastHandledAdditionalGarmentNavigationRequestIdRef = useRef<
+    number | null
+  >(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const goToTopDetachRef = useRef<(() => void) | null>(null);
@@ -391,26 +403,76 @@ export const DormantFutureCustomDetailsStep = ({
   }, [additionalGarmentChoice]);
 
   useEffect(() => {
-    if (!focusAdditionalGarmentKey) return;
-    const target = Array.from(
-      contentRef.current?.querySelectorAll<HTMLElement>(
-        "[data-parent-garment-key]",
-      ) || [],
-    ).find(
-      (element) =>
-        element.dataset.parentGarmentKey === focusAdditionalGarmentKey,
-    );
-    const heading =
-      target?.querySelector<HTMLElement>("[data-added-garment-heading]") ||
-      target;
-    if (!heading) return;
-    heading.focus({ preventScroll: true });
+    const explicitNavigationRequested =
+      additionalGarmentNavigationRequestId !== null;
+    if (
+      !explicitNavigationRequested &&
+      !focusAdditionalGarmentKey
+    ) {
+      lastFocusedAdditionalGarmentKeyRef.current = null;
+      return;
+    }
+    if (
+      !explicitNavigationRequested &&
+      lastFocusedAdditionalGarmentKeyRef.current === focusAdditionalGarmentKey
+    ) {
+      return;
+    }
+    if (
+      explicitNavigationRequested &&
+      lastHandledAdditionalGarmentNavigationRequestIdRef.current ===
+        additionalGarmentNavigationRequestId
+    ) {
+      return;
+    }
+    const target = focusAdditionalGarmentKey
+      ? additionalGarmentTargetRefs.current.get(focusAdditionalGarmentKey) ||
+        Array.from(
+          contentRef.current?.querySelectorAll<HTMLElement>(
+            "[data-parent-garment-key]",
+          ) || [],
+        ).find(
+          (element) =>
+            element.dataset.parentGarmentKey === focusAdditionalGarmentKey,
+        ) || null
+      : contentRef.current?.querySelector<HTMLElement>(
+          "[data-additional-garment-management]",
+        ) || null;
+    const heading = focusAdditionalGarmentKey
+      ? target?.querySelector<HTMLElement>("[data-added-garment-heading]") ||
+        target
+      : target?.querySelector<HTMLElement>(
+          "[data-additional-garment-management-heading]",
+        ) || target;
+    const repairControl = focusAdditionalGarmentKey
+      ? target?.querySelector<HTMLButtonElement>(
+          "[data-additional-garment-fabric-action]",
+        )
+      : null;
+    const focusTarget = repairControl || heading;
+    if (!focusTarget) return;
+    focusTarget.focus({ preventScroll: true });
+    focusTarget.scrollIntoView({ behavior: "smooth", block: "center" });
     target?.setAttribute("data-additional-garment-highlight", "true");
+    lastFocusedAdditionalGarmentKeyRef.current = focusAdditionalGarmentKey || null;
+    if (explicitNavigationRequested) {
+      lastHandledAdditionalGarmentNavigationRequestIdRef.current =
+        additionalGarmentNavigationRequestId;
+      onAdditionalGarmentNavigationHandled?.(
+        additionalGarmentNavigationRequestId,
+      );
+    }
     const timer = window.setTimeout(() => {
       target?.removeAttribute("data-additional-garment-highlight");
     }, 2400);
     return () => window.clearTimeout(timer);
-  }, [focusAdditionalGarmentKey, catalogue.coreGroups]);
+  }, [
+    additionalGarmentNavigationRequestId,
+    additionalGarments,
+    catalogue.coreGroups,
+    focusAdditionalGarmentKey,
+    onAdditionalGarmentNavigationHandled,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1063,8 +1125,8 @@ export const DormantFutureCustomDetailsStep = ({
             </div>
           </section>
 
-          <section data-custom-detail-section="add-additional-garment" className="min-w-0 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/25 p-4 shadow-sm sm:p-5">
-            <h3 className="border-b border-heritage-gold/35 pb-3 font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Add Additional Garment</h3>
+          <section data-custom-detail-section="add-additional-garment" data-additional-garment-management="true" className="min-w-0 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/25 p-4 shadow-sm sm:p-5">
+            <h3 data-additional-garment-management-heading="true" tabIndex={-1} className="border-b border-heritage-gold/35 pb-3 font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Add Additional Garment</h3>
             <p className="mt-1 text-xs leading-relaxed text-heritage-ink/65">Add a physical garment occurrence. Its default construction and fabric requirements will be resolved through the same order workflow.</p>
             {fabricPersistentError ? (
               <div
@@ -1104,6 +1166,18 @@ export const DormantFutureCustomDetailsStep = ({
                   return (
                     <div
                       key={garment.garmentKey}
+                      ref={(element) => {
+                        if (element) {
+                          additionalGarmentTargetRefs.current.set(
+                            garment.garmentKey,
+                            element,
+                          );
+                        } else {
+                          additionalGarmentTargetRefs.current.delete(
+                            garment.garmentKey,
+                          );
+                        }
+                      }}
                       data-parent-garment-key={garment.garmentKey}
                       data-additional-garment-details={garment.garmentKey}
                       className="min-w-0 space-y-4 rounded-xl border border-heritage-green/15 bg-white p-3 sm:p-4"
@@ -1119,7 +1193,39 @@ export const DormantFutureCustomDetailsStep = ({
                       </div>
                       {(() => {
                         const assigned = getAssignedFabricForGarment(garment.garmentKey);
-                        if (!assigned) return null;
+                        if (!assigned) {
+                          return (
+                            <div
+                              data-additional-garment-fabric-summary={garment.garmentKey}
+                              className="flex min-w-0 flex-col gap-3 rounded-xl border border-amber-300/60 bg-amber-50/60 p-3 sm:flex-row sm:items-center sm:justify-between"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-heritage-green">
+                                  Fabric: Needs fabric
+                                </p>
+                                <p className="mt-1 text-[11px] leading-relaxed text-heritage-ink/65">
+                                  Assign fabric for this added garment here.
+                                </p>
+                              </div>
+                              {onChangeAdditionalGarmentFabric ? (
+                                <button
+                                  type="button"
+                                  data-change-additional-garment-fabric={garment.garmentKey}
+                                  data-additional-garment-fabric-action="add"
+                                  onClick={(event) =>
+                                    onChangeAdditionalGarmentFabric(
+                                      garment.garmentKey,
+                                      event.currentTarget,
+                                    )
+                                  }
+                                  className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/25 px-3 text-xs font-bold uppercase tracking-wide text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                                >
+                                  Add Fabric
+                                </button>
+                              ) : null}
+                            </div>
+                          );
+                        }
                         return (
                           <div
                             data-additional-garment-fabric-summary={garment.garmentKey}
@@ -1150,6 +1256,7 @@ export const DormantFutureCustomDetailsStep = ({
                               <button
                                 type="button"
                                 data-change-additional-garment-fabric={garment.garmentKey}
+                                data-additional-garment-fabric-action="change"
                                 onClick={(event) =>
                                   onChangeAdditionalGarmentFabric(
                                     garment.garmentKey,

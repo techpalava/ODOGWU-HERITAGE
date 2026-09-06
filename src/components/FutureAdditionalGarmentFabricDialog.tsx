@@ -6,6 +6,7 @@ import type {
   FabricAllocationState,
   GarmentTypeStepSelection,
 } from "../types";
+import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import {
   resolveFutureFabricCatalogueCardPresentation,
@@ -40,6 +41,7 @@ export const FutureAdditionalGarmentFabricDialog = ({
   activeFabric,
   activeFabricSelectionIndex,
   activeFabricResolution,
+  requiredPhysicalOccurrences,
   activeFabricCode = null,
   errorMessage,
   onUseSameFabric,
@@ -57,6 +59,7 @@ export const FutureAdditionalGarmentFabricDialog = ({
   activeFabricResolution: ReturnType<
     typeof resolveCurrentCatalogueFabricForAssignment
   >;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
   activeFabricCode?: string | null;
   errorMessage: string | null;
   onUseSameFabric: () => void;
@@ -309,7 +312,9 @@ export const FutureAdditionalGarmentFabricDialog = ({
                 >
                   {transaction.origin === "change_existing"
                     ? "Keep Current Fabric"
-                    : "Cancel Adding Garment"}
+                    : transaction.origin === "repair_missing"
+                      ? "Cancel"
+                      : "Cancel Adding Garment"}
                 </button>
               </div>
               {!sameFabricAvailable && sameFabricUnavailableReason && (
@@ -346,6 +351,7 @@ export const FutureAdditionalGarmentFabricDialog = ({
                     fabricAllocationState,
                     currentTargetGarmentKey: transaction.garmentKey,
                     fabrics,
+                    requiredPhysicalOccurrences,
                   });
                   const stockConstraintMessage =
                     getFabricNewAllocationStockConstraintMessage(
@@ -400,7 +406,9 @@ export const FutureAdditionalGarmentFabricDialog = ({
                 >
                   {transaction.origin === "change_existing"
                     ? "Keep Current Fabric"
-                    : "Cancel Adding Garment"}
+                    : transaction.origin === "repair_missing"
+                      ? "Cancel"
+                      : "Cancel Adding Garment"}
                 </button>
               </div>
             </div>

@@ -18,12 +18,30 @@ const sampleView: LiveOrderSummaryView = {
       id: "construction",
       title: "Garment Construction",
       editStage: "garment_type",
+      editLabel: "Edit base garments",
       lines: [
         {
           id: "construction-base:shirt",
           label: "Shirt",
           detail: "Standard Length Shirt, Mid-Long Sleeve",
           amountLabel: "€70.00",
+        },
+      ],
+      subsections: [
+        {
+          id: "additional_garments",
+          title: "Additional Garments",
+          editStage: "custom_details",
+          focusGarmentKey: "additional:shirt:1",
+          lines: [
+            {
+              id: "construction-additional:shirt:1",
+              label: "Shirt 2",
+              detail: "Standard Length Shirt, Short Sleeve",
+              supportingDetail: "Fabric: Needs fabric",
+              amountLabel: "€65.00",
+            },
+          ],
         },
       ],
       footer: {
@@ -57,6 +75,20 @@ const sampleView: LiveOrderSummaryView = {
           label: "Shirt",
           detail: "Royal Forest Mosaic",
           amountLabel: null,
+        },
+      ],
+      subsections: [
+        {
+          id: "additional_garment_fabrics",
+          title: "Additional Garment Fabrics",
+          lines: [
+            {
+              id: "fabric-additional:shirt:1",
+              label: "Shirt 2",
+              detail: "Needs fabric",
+              amountLabel: null,
+            },
+          ],
         },
       ],
     },
@@ -164,6 +196,46 @@ assert.equal(
   0,
   "locked Measurement Edit must stay hidden",
 );
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-edit-additional_garments",
+  }).length,
+  1,
+  "authoritative Additional Garment presence renders its Edit independently of transient stage state",
+);
+assert.ok(textOf(renderer.root).includes("Additional Garments"));
+assert.ok(textOf(renderer.root).includes("Fabric: Needs fabric"));
+assert.ok(textOf(renderer.root).includes("Additional Garment Fabrics"));
+assert.ok(textOf(renderer.root).includes("Needs fabric"));
+const additionalGarmentsHeading = renderer.root
+  .findByProps({
+    "data-testid": "live-order-summary-subsection-additional_garments",
+  })
+  .findByType("h4");
+const additionalGarmentFabricsHeading = renderer.root
+  .findByProps({
+    "data-testid": "live-order-summary-subsection-additional_garment_fabrics",
+  })
+  .findByType("h4");
+assert.equal(textOf(additionalGarmentsHeading), "Additional Garments");
+assert.equal(textOf(additionalGarmentFabricsHeading), "Additional Garment Fabrics");
+assert.doesNotMatch(
+  String(additionalGarmentsHeading.props.className),
+  /(?:^|\s)uppercase(?:\s|$)/,
+  "Additional Garments must remain Title Case in the visible summary",
+);
+assert.doesNotMatch(
+  String(additionalGarmentFabricsHeading.props.className),
+  /(?:^|\s)uppercase(?:\s|$)/,
+  "Additional Garment Fabrics must remain Title Case in the visible summary",
+);
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-edit-additional_garment_fabrics",
+  }).length,
+  0,
+  "the additional-Fabric clarity subsection does not add a second Edit route",
+);
 
 const markup = textOf(renderer.root);
 const constructionIndex = markup.indexOf("Garment Construction");
@@ -247,6 +319,18 @@ assert.doesNotMatch(
 const constructionHeading = renderer.root
   .findByProps({ "data-testid": "live-order-summary-section-construction" })
   .findByType("h3");
+const constructionEdit = renderer.root.findByProps({
+  "data-testid": "live-order-summary-edit-construction",
+});
+const constructionHeader = renderer.root.findByProps({
+  "data-testid": "live-order-summary-section-header-construction",
+});
+const additionalGarmentsEdit = renderer.root.findByProps({
+  "data-testid": "live-order-summary-edit-additional_garments",
+});
+const additionalGarmentsHeader = renderer.root.findByProps({
+  "data-testid": "live-order-summary-subsection-header-additional_garments",
+});
 const fabricsHeading = renderer.root
   .findByProps({ "data-testid": "live-order-summary-section-fabrics" })
   .findByType("h3");
@@ -256,6 +340,30 @@ const constructionSubtotalLabel = renderer.root
 assert.match(constructionHeading.props.className, /text-\[15px\]/);
 assert.match(constructionHeading.props.className, /font-bold/);
 assert.match(constructionHeading.props.className, /text-heritage-green/);
+assert.equal(
+  constructionHeading.parent,
+  constructionEdit.parent,
+  "Garment Construction and Edit share one compact header row",
+);
+assert.equal(
+  constructionHeading.parent,
+  constructionHeader,
+  "the Garment Construction header row is the shared section header container",
+);
+assert.equal(
+  additionalGarmentsHeading.parent,
+  additionalGarmentsEdit.parent,
+  "Additional Garments and Edit share one compact header row",
+);
+assert.equal(
+  additionalGarmentsHeading.parent,
+  additionalGarmentsHeader,
+  "the Additional Garments header row is the shared subsection header container",
+);
+assert.match(constructionHeader.props.className, /items-center/);
+assert.match(additionalGarmentsHeader.props.className, /items-center/);
+assert.doesNotMatch(constructionEdit.props.className, /min-h-11|min-w-11/);
+assert.doesNotMatch(additionalGarmentsEdit.props.className, /min-h-11|min-w-11/);
 assert.match(fabricsHeading.props.className, /text-\[15px\]/);
 assert.match(fabricsHeading.props.className, /font-bold/);
 assert.match(fabricsHeading.props.className, /text-heritage-green/);
@@ -288,16 +396,36 @@ assert.equal(
   0,
   "Edit for the current stage stays hidden",
 );
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-edit-additional_garments",
+  }).length,
+  1,
+  "Additional Garments Edit remains visible while a different summary stage is current",
+);
 
 let editedStage: DesignStudioStageId | null = null;
+let additionalFocusKey: string | null = null;
+const additionalEditRequests: Array<string | null> = [];
 act(() => {
   renderer.update(
     createElement(DesignStudioOrderSummary, {
       view: sampleView,
-      unlockedStages: new Set<DesignStudioStageId>(["fabric", "measurement"]),
+      unlockedStages: new Set<DesignStudioStageId>([
+        "garment_type",
+        "fabric",
+        "custom_details",
+        "measurement",
+      ]),
       currentStageId: "shipping",
-      onEditStage: (stage) => {
+      onEditStage: (stage, options) => {
         editedStage = stage;
+        additionalFocusKey = options?.focusAdditionalGarmentKey || null;
+        if (stage === "custom_details") {
+          additionalEditRequests.push(
+            options?.focusAdditionalGarmentKey || null,
+          );
+        }
       },
     }),
   );
@@ -308,6 +436,132 @@ act(() => {
     .props.onClick();
 });
 assert.equal(editedStage, "fabric");
+act(() => {
+  renderer.root
+    .findByProps({ "data-testid": "live-order-summary-edit-construction" })
+    .props.onClick();
+});
+assert.equal(editedStage, "garment_type");
+act(() => {
+  renderer.root
+    .findByProps({
+      "data-testid": "live-order-summary-edit-additional_garments",
+    })
+    .props.onClick();
+});
+assert.equal(editedStage, "custom_details");
+assert.equal(
+  additionalFocusKey,
+  "additional:shirt:1",
+  "Additional Garments Edit passes its exact repair occurrence to Step 4",
+);
+act(() => {
+  renderer.root
+    .findByProps({
+      "data-testid": "live-order-summary-edit-additional_garments",
+    })
+    .props.onClick();
+});
+assert.deepEqual(
+  additionalEditRequests,
+  ["additional:shirt:1", "additional:shirt:1"],
+  "repeated Additional Garments Edit clicks issue repeatable exact-occurrence requests",
+);
+assert.equal(
+  renderer.root
+    .findByProps({ "data-testid": "live-order-summary-edit-construction" })
+    .props["aria-label"],
+  "Edit base garments",
+  "the existing Garment Construction control remains explicitly base-owned",
+);
+
+act(() => {
+  renderer.update(
+    createElement(DesignStudioOrderSummary, {
+      view: sampleView,
+      unlockedStages: new Set<DesignStudioStageId>(["custom_details"]),
+      currentStageId: "custom_details",
+      onEditStage: () => undefined,
+    }),
+  );
+});
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-edit-additional_garments",
+  }).length,
+  1,
+  "Additional Garments Edit remains visible when Step 4 is the current stage",
+);
+
+const completeAdditionalView: LiveOrderSummaryView = {
+  ...sampleView,
+  sections: sampleView.sections.map((section) =>
+    section.id === "construction"
+      ? {
+          ...section,
+          subsections: section.subsections?.map((subsection) =>
+            subsection.id === "additional_garments"
+              ? { ...subsection, focusGarmentKey: null }
+              : subsection,
+          ),
+        }
+      : section,
+  ),
+};
+let sectionLevelEditStage: DesignStudioStageId | null = null;
+let sectionLevelFocusKey: string | null | undefined;
+act(() => {
+  renderer.update(
+    createElement(DesignStudioOrderSummary, {
+      view: completeAdditionalView,
+      unlockedStages: new Set<DesignStudioStageId>(["custom_details"]),
+      currentStageId: "custom_details",
+      onEditStage: (stage, options) => {
+        sectionLevelEditStage = stage;
+        sectionLevelFocusKey = options?.focusAdditionalGarmentKey;
+      },
+    }),
+  );
+});
+act(() => {
+  renderer.root
+    .findByProps({
+      "data-testid": "live-order-summary-edit-additional_garments",
+    })
+    .props.onClick();
+});
+assert.equal(sectionLevelEditStage, "custom_details");
+assert.equal(
+  sectionLevelFocusKey,
+  null,
+  "complete additions use the Step 4 Additional Garment management section target",
+);
+
+const baseOnlyView: LiveOrderSummaryView = {
+  ...sampleView,
+  sections: sampleView.sections.map((section) =>
+    section.id === "construction" || section.id === "fabrics"
+      ? { ...section, subsections: undefined }
+      : section,
+  ),
+};
+act(() => {
+  renderer.update(
+    createElement(DesignStudioOrderSummary, {
+      view: baseOnlyView,
+      unlockedStages: new Set<DesignStudioStageId>(["custom_details"]),
+      currentStageId: "shipping",
+      onEditStage: () => undefined,
+    }),
+  );
+});
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-edit-additional_garments",
+  }).length,
+  0,
+  "base-only orders render neither an Additional Garments heading nor its Edit control",
+);
 
 const viewSource = readFileSync(
   new URL("./src/components/DesignStudioView.tsx", import.meta.url),
@@ -315,6 +569,16 @@ const viewSource = readFileSync(
 );
 assert.match(viewSource, /showShellLiveOrderSummary/);
 assert.match(viewSource, /embedPersistentLiveOrderSummary/);
+assert.match(
+  viewSource,
+  /futureAdditionalGarmentNavigationRequestIdRef\.current \+= 1/,
+  "Additional Edit creates a new navigation request even when Step 4 is already active",
+);
+assert.match(
+  viewSource,
+  /setFutureAdditionalGarmentNavigationRequestId/,
+  "Additional Edit forwards the distinct navigation request to Step 4",
+);
 assert.doesNotMatch(viewSource, /lg:max-h-\[calc\(100vh-2rem\)\]/);
 assert.doesNotMatch(viewSource, /lg:overflow-y-auto/);
 assert.doesNotMatch(viewSource, /position:\s*fixed/);
