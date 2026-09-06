@@ -65,6 +65,14 @@ import { DormantFutureSummaryStep } from "./DormantFutureSummaryStep";
 import { DormantFutureShippingStep } from "./DormantFutureShippingStep";
 import { DormantFuturePaymentReviewStep } from "./DormantFuturePaymentReviewStep";
 import { DesignStudioOrderSummary } from "./DesignStudioOrderSummary";
+import {
+  createDesignStudioNavigationRequest,
+  getMainStageNavigationTarget,
+  getOrderSummaryNavigationTarget,
+  getValidationNavigationTarget,
+  type DesignStudioNavigationRequest,
+  type DesignStudioNavigationTarget,
+} from "../utils/designStudioNavigation";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import {
 } from "../utils/shippingPricing";
@@ -619,6 +627,32 @@ export default function DesignStudioView({
     getGarmentTypeStageCompletion(garmentTypeSelection);
   const [futureStageId, setFutureStageId] =
     useState<DesignStudioStageId>("garment_type");
+  const futureStageNavigationRequestIdRef = useRef(0);
+  const [futureStageNavigationRequest, setFutureStageNavigationRequest] =
+    useState<DesignStudioNavigationRequest | null>(null);
+  const futureStageNavigationTargetRef = useRef<HTMLElement | null>(null);
+  /**
+   * Only explicit customer navigation is routed through this helper. Hydration,
+   * safety correction, and modal/sub-flow state updates continue to set the
+   * stage directly so they preserve their existing context.
+   */
+  const navigateToFutureStage = useCallback(
+    (
+      stage: DesignStudioStageId,
+      target: DesignStudioNavigationTarget = getMainStageNavigationTarget(),
+    ) => {
+      futureStageNavigationRequestIdRef.current += 1;
+      setFutureStageId(stage);
+      setFutureStageNavigationRequest(
+        createDesignStudioNavigationRequest({
+          id: futureStageNavigationRequestIdRef.current,
+          stage,
+          target,
+        }),
+      );
+    },
+    [],
+  );
   const futureGarmentRemovalGenerationRef = useRef(0);
   const futureGarmentRemovalStageRetentionLeaseRef =
     useRef<RemovalStageRetentionLease | null>(null);
@@ -2367,6 +2401,55 @@ export default function DesignStudioView({
       previousFutureStageIdRef.current = futureStageId;
     }
   }, [futureStageId]);
+
+  useLayoutEffect(() => {
+    const request = futureStageNavigationRequest;
+    if (!request || request.stage !== futureStageId) return;
+
+    // Exact Additional Garment requests are fulfilled by Step 4 after its
+    // occurrence cards mount. They must not first scroll to the stage top.
+    if (request.target.kind === "additional_garment") {
+      setFutureStageNavigationRequest((current) =>
+        current?.id === request.id ? null : current,
+      );
+      return;
+    }
+
+    const stageTarget = futureStageNavigationTargetRef.current;
+    if (!stageTarget || typeof window === "undefined") return;
+    const validationTarget =
+      request.target.kind === "validation_target"
+        ? stageTarget.querySelector<HTMLElement>(
+            '[aria-invalid="true"], [data-validation-target="true"]',
+          ) ||
+          stageTarget.querySelector<HTMLElement>('[role="alert"]') ||
+          stageTarget
+        : stageTarget;
+
+    let focusFrame: number | null = null;
+    const frame = window.requestAnimationFrame(() => {
+      validationTarget.scrollIntoView({ behavior: "auto", block: "start" });
+      // Let the click that initiated the transition settle before placing
+      // logical focus, otherwise Chromium can restore focus to the old action.
+      focusFrame = window.requestAnimationFrame(() => {
+        if (validationTarget === stageTarget) {
+          stageTarget.focus({ preventScroll: true });
+        } else {
+          validationTarget.focus?.({ preventScroll: true });
+          if (document.activeElement !== validationTarget) {
+            stageTarget.focus({ preventScroll: true });
+          }
+        }
+        setFutureStageNavigationRequest((current) =>
+          current?.id === request.id ? null : current,
+        );
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (focusFrame !== null) window.cancelAnimationFrame(focusFrame);
+    };
+  }, [futureStageId, futureStageNavigationRequest]);
 
   useEffect(() => {
     if (
@@ -4521,18 +4604,20 @@ export default function DesignStudioView({
       !garmentTypeStageCompletion.isComplete &&
       !isStageHistoricallyUnlocked("fabric")
     ) {
+      navigateToFutureStage("garment_type", getValidationNavigationTarget());
       return;
     }
-    setFutureStageId("fabric");
+    navigateToFutureStage("fabric");
   };
   const handleOpenDormantDesignStyleStage = () => {
     if (
       !futureFabricStageCompletion.isComplete &&
       !isStageHistoricallyUnlocked("design_style")
     ) {
+      navigateToFutureStage("fabric", getValidationNavigationTarget());
       return;
     }
-    setFutureStageId("design_style");
+    navigateToFutureStage("design_style");
   };
   const handleContinueWithUploadedDesign = () => {
     if (!activeUploadedDesignSource) return;
@@ -4555,11 +4640,12 @@ export default function DesignStudioView({
           UPLOADED_DESIGN_MISSING_REQUIRED_STEP1_GARMENTS_MESSAGE,
         );
       }
+      navigateToFutureStage("design_style", getValidationNavigationTarget());
       return;
     }
     setFutureConfirmedDesignSourceKey(activeUploadedDesignSource.sourceKey);
     setFuturePriceActivatedFabricCode(null);
-    setFutureStageId("fabric");
+    navigateToFutureStage("fabric");
   };
   // Task 5E will reconnect these existing upload operations to exact occurrence
   // targets. Task 5D deliberately leaves them off the active Step 3 surface.
@@ -4572,51 +4658,58 @@ export default function DesignStudioView({
     handleRetryUploadedDesignDeletion,
     handleContinueWithUploadedDesign,
   ];
-  const handleOpenDormantCustomDetailsStage = () => {
+  const handleOpenDormantCustomDetailsStage = (
+    target: DesignStudioNavigationTarget = getMainStageNavigationTarget(),
+  ) => {
     if (
       (!futureFabricStageCompletion.isComplete ||
         !isFutureDesignSourceReadyForCustomDetails) &&
       !isStageHistoricallyUnlocked("custom_details")
     ) {
+      navigateToFutureStage("design_style", getValidationNavigationTarget());
       return;
     }
-    setFutureStageId("custom_details");
+    navigateToFutureStage("custom_details", target);
   };
   const handleOpenDormantAiTryOnStage = () => {
     if (
       !isFutureCustomDetailsStageReady &&
       !isStageHistoricallyUnlocked("try_on")
     ) {
+      navigateToFutureStage("custom_details", getValidationNavigationTarget());
       return;
     }
-    setFutureStageId("try_on");
+    navigateToFutureStage("try_on");
   };
   const handleOpenDormantMeasurementStage = () => {
     if (
       !isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow) &&
       !isStageHistoricallyUnlocked("measurement")
     ) {
+      navigateToFutureStage("try_on", getValidationNavigationTarget());
       return;
     }
-    setFutureStageId("measurement");
+    navigateToFutureStage("measurement");
   };
   const handleOpenDormantSummaryStage = () => {
     if (
       !isFutureSummaryStageUnlocked &&
       !isStageHistoricallyUnlocked("summary")
     ) {
+      navigateToFutureStage("measurement", getValidationNavigationTarget());
       return;
     }
-    setFutureStageId("summary");
+    navigateToFutureStage("summary");
   };
   const handleOpenDormantShippingStage = () => {
     if (
       !isFutureShippingUnlocked &&
       !isStageHistoricallyUnlocked("shipping")
     ) {
+      navigateToFutureStage("summary", getValidationNavigationTarget());
       return;
     }
-    setFutureStageId("shipping");
+    navigateToFutureStage("shipping");
   };
   const buildCurrentFutureOrderCandidateV2 = (): FutureOrderCandidateV2BuildResult => {
     const ledger = currentFutureDesignStyleDraftHydration?.result.ledger;
@@ -4655,13 +4748,14 @@ export default function DesignStudioView({
     if (result.status !== "valid") {
       setFuturePaymentReviewHandoff(null);
       setFuturePaymentReviewTransitionBlockers(result.blockers);
+      navigateToFutureStage("shipping", getValidationNavigationTarget());
       return;
     }
     setFuturePaymentReviewTransitionBlockers([]);
     setFuturePaymentReviewHandoff(
       createFutureOrderV2PaymentReviewHandoff(result.candidate),
     );
-    setFutureStageId("payment");
+    navigateToFutureStage("payment");
   };
   const handlePrepareFutureOrderV2 = async () => {
     if (futureOrderV2PreparationInFlightRef.current) return;
@@ -4704,7 +4798,7 @@ export default function DesignStudioView({
         "shipping";
       setFuturePaymentReviewHandoff(null);
       setFuturePaymentReviewTransitionBlockers(outcome.blockers);
-      setFutureStageId(nextStage);
+      navigateToFutureStage(nextStage, getValidationNavigationTarget());
       return;
     }
     if (outcome.status === "review_refresh_required") {
@@ -4829,7 +4923,7 @@ export default function DesignStudioView({
     // up; the already mounted stage is safe to target in that case.
     if (!isStageHistoricallyUnlocked(stage) && futureStageId !== stage) return;
     if (stage === "garment_type") {
-      setFutureStageId("garment_type");
+      navigateToFutureStage("garment_type");
       return;
     }
     if (stage === "fabric") {
@@ -4850,11 +4944,23 @@ export default function DesignStudioView({
           futureAdditionalGarmentNavigationRequestIdRef.current,
         );
       }
-      handleOpenDormantCustomDetailsStage();
+      handleOpenDormantCustomDetailsStage(
+        getOrderSummaryNavigationTarget({
+          focusAdditionalGarmentKey: options?.focusAdditionalGarmentKey,
+        }),
+      );
       return;
     }
     if (stage === "measurement") {
       handleOpenDormantMeasurementStage();
+      return;
+    }
+    if (stage === "try_on") {
+      handleOpenDormantAiTryOnStage();
+      return;
+    }
+    if (stage === "summary") {
+      handleOpenDormantSummaryStage();
       return;
     }
     if (stage === "shipping") {
@@ -4894,7 +5000,7 @@ export default function DesignStudioView({
     });
     if (!transition.ok) return;
     setFutureAiTryOnWorkflow(transition.state);
-    setFutureStageId("measurement");
+    navigateToFutureStage("measurement");
   };
   const handleFutureMeasurementRouteChange = (route: MeasurementRiskRoute) => {
     setFutureMeasurementState((current) =>
@@ -6272,7 +6378,7 @@ export default function DesignStudioView({
         canEnterSummary={isFutureSummaryStageUnlocked}
         canEnterShipping={isFutureShippingUnlocked}
         canEnterPayment={isFuturePaymentReviewUnlocked}
-        onSelectGarmentType={() => setFutureStageId("garment_type")}
+        onSelectGarmentType={() => navigateToFutureStage("garment_type")}
         onSelectFabric={handleOpenDormantFabricStage}
         onSelectDesignStyle={handleOpenDormantDesignStyleStage}
         onSelectCustomDetails={handleOpenDormantCustomDetailsStage}
@@ -6289,7 +6395,13 @@ export default function DesignStudioView({
             : "mt-4"
         }
       >
-        <div className="min-w-0">
+        <section
+          ref={futureStageNavigationTargetRef}
+          tabIndex={-1}
+          aria-label={`Step ${DESIGN_STUDIO_STEPS.findIndex((step) => step.id === futureStageId) + 1}: ${DESIGN_STUDIO_STEPS.find((step) => step.id === futureStageId)?.label || "Design Studio"}`}
+          data-design-studio-stage-target={futureStageId}
+          className="min-w-0 scroll-mt-24 outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+        >
       {futureStageId === "garment_type" ? (
         <div className="space-y-5">
           <GarmentTypeStep
@@ -6347,7 +6459,7 @@ export default function DesignStudioView({
           onAssignGarmentToExistingAllocation={
             handleAssignGarmentToExistingAllocation
           }
-          onBack={() => setFutureStageId("garment_type")}
+          onBack={() => navigateToFutureStage("garment_type")}
           onContinue={handleOpenDormantDesignStyleStage}
           onUseSameFabric={handleUseSameFutureFabric}
           onChooseAnotherFabric={handleChooseAnotherFutureFabric}
@@ -6398,8 +6510,8 @@ export default function DesignStudioView({
               current?.garmentKey === garmentKey ? null : current,
             );
           }}
-          onBack={() => setFutureStageId("fabric")}
-          onReturnToGarmentType={() => setFutureStageId("garment_type")}
+          onBack={() => navigateToFutureStage("fabric")}
+          onReturnToGarmentType={() => navigateToFutureStage("garment_type")}
           onContinue={handleOpenDormantCustomDetailsStage}
         />
       ) : futureStageId === "custom_details" &&
@@ -6493,7 +6605,7 @@ export default function DesignStudioView({
                 ?.scrollIntoView({ behavior: "smooth", block: "start" });
             });
           }}
-          onBack={() => setFutureStageId("design_style")}
+          onBack={() => navigateToFutureStage("design_style")}
           onContinue={handleOpenDormantAiTryOnStage}
           orderSummary={
             embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
@@ -6503,7 +6615,7 @@ export default function DesignStudioView({
         <DormantFutureAiTryOnStep
           workflow={futureAiTryOnWorkflow}
           skipAllowed
-          onBack={() => setFutureStageId("custom_details")}
+          onBack={() => navigateToFutureStage("custom_details")}
           onRetry={handleRetryDormantAiTryOn}
           onSkip={handleSkipDormantAiTryOn}
           onContinue={handleOpenDormantMeasurementStage}
@@ -6514,14 +6626,14 @@ export default function DesignStudioView({
           state={reconciledFutureMeasurementState}
           onChange={setFutureMeasurementState}
           onRouteChange={handleFutureMeasurementRouteChange}
-          onBack={() => setFutureStageId("try_on")}
+          onBack={() => navigateToFutureStage("try_on")}
           onContinue={handleOpenDormantSummaryStage}
         />
       ) : futureStageId === "summary" ? (
         <DormantFutureSummaryStep
           summary={futureSummary}
-          onBack={() => setFutureStageId("measurement")}
-          onEditGarments={() => setFutureStageId("garment_type")}
+          onBack={() => navigateToFutureStage("measurement")}
+          onEditGarments={() => navigateToFutureStage("garment_type")}
           onEditFabrics={handleOpenDormantFabricStage}
           onEditDesignStyle={handleOpenDormantDesignStyleStage}
           onEditCustomDetails={handleOpenDormantCustomDetailsStage}
@@ -6559,7 +6671,7 @@ export default function DesignStudioView({
             garmentCount={futureGarmentPieceCount}
             onChange={setFutureShippingState}
             onRefreshQuote={handleRefreshDormantShippingQuote}
-            onBack={() => setFutureStageId("summary")}
+            onBack={() => navigateToFutureStage("summary")}
             canContinueToReview={isFutureShippingStepComplete(
               futureShippingResolution,
             )}
@@ -6579,14 +6691,14 @@ export default function DesignStudioView({
                 opener: trigger,
               })
             }
-            onBack={() => setFutureStageId("shipping")}
-            onEditStage={(stage) => setFutureStageId(stage)}
+            onBack={() => navigateToFutureStage("shipping")}
+            onEditStage={(stage) => navigateToFutureStage(stage)}
             onPrepareOrder={handlePrepareFutureOrderV2}
             onExecutePayment={handleExecuteFutureOrderV2Payment}
           />
         ) : null
       ) : null}
-        </div>
+        </section>
         {showShellLiveOrderSummary ? (
           <div className="min-w-0">
             {liveOrderSummaryCard}

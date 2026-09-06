@@ -451,21 +451,35 @@ export const DormantFutureCustomDetailsStep = ({
       : null;
     const focusTarget = repairControl || heading;
     if (!focusTarget) return;
-    focusTarget.focus({ preventScroll: true });
-    focusTarget.scrollIntoView({ behavior: "smooth", block: "center" });
-    target?.setAttribute("data-additional-garment-highlight", "true");
-    lastFocusedAdditionalGarmentKeyRef.current = focusAdditionalGarmentKey || null;
-    if (explicitNavigationRequested) {
-      lastHandledAdditionalGarmentNavigationRequestIdRef.current =
-        additionalGarmentNavigationRequestId;
-      onAdditionalGarmentNavigationHandled?.(
-        additionalGarmentNavigationRequestId,
-      );
-    }
-    const timer = window.setTimeout(() => {
-      target?.removeAttribute("data-additional-garment-highlight");
-    }, 2400);
-    return () => window.clearTimeout(timer);
+    let focusFrame: number | null = null;
+    let timer: number | null = null;
+    const scrollFrame = window.requestAnimationFrame(() => {
+      // A Summary Edit can cause Chromium to scroll its source button into
+      // view after the click. Defer this explicit target until that browser
+      // behavior has settled so a repeated Edit always lands here again.
+      focusTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+      focusFrame = window.requestAnimationFrame(() => {
+        focusTarget.focus({ preventScroll: true });
+        target?.setAttribute("data-additional-garment-highlight", "true");
+        lastFocusedAdditionalGarmentKeyRef.current =
+          focusAdditionalGarmentKey || null;
+        if (explicitNavigationRequested) {
+          lastHandledAdditionalGarmentNavigationRequestIdRef.current =
+            additionalGarmentNavigationRequestId;
+          onAdditionalGarmentNavigationHandled?.(
+            additionalGarmentNavigationRequestId,
+          );
+        }
+        timer = window.setTimeout(() => {
+          target?.removeAttribute("data-additional-garment-highlight");
+        }, 2400);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(scrollFrame);
+      if (focusFrame !== null) window.cancelAnimationFrame(focusFrame);
+      if (timer !== null) window.clearTimeout(timer);
+    };
   }, [
     additionalGarmentNavigationRequestId,
     additionalGarments,

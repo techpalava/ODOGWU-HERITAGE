@@ -114,9 +114,9 @@ for (const file of [
   assert.match(source, /DesignStudioBackButton/);
 }
 
-assert.match(studioSource, /onBack=\{\(\) => setFutureStageId\("garment_type"\)\}/);
-assert.match(studioSource, /onBack=\{\(\) => setFutureStageId\("design_style"\)\}/);
-assert.match(studioSource, /onBack=\{\(\) => setFutureStageId\("shipping"\)\}/);
+assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("garment_type"\)\}/);
+assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("design_style"\)\}/);
+assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("shipping"\)\}/);
 assert.equal(studioSource.includes("legacy_five_stage"), false);
 
 console.log("PASS: nine-stage navigation states and back controls");
