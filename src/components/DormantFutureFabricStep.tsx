@@ -1345,7 +1345,6 @@ export const DormantFutureFabricStep = ({
   const openStep1FabricAssignment = (
     fabric: Fabric,
     trigger?: HTMLElement,
-    originatingGarmentKey: string | null = catalogueTargetGarmentKey,
   ) => {
     const presentation = resolveStep1FabricCatalogueCardPresentation({
       fabricCode: fabric.code,
@@ -1395,18 +1394,9 @@ export const DormantFutureFabricStep = ({
     setVisibleActionError(null);
     setStep1AssignmentError(null);
     closeFabricRemovalChooser(false);
-    const preselectedGarmentKeys =
-      originatingGarmentKey &&
-      candidates.some(
-        (candidate) => candidate.garmentKey === originatingGarmentKey,
-      )
-        ? [originatingGarmentKey]
-        : candidates.length === 1
-          ? [candidates[0]!.garmentKey]
-          : [];
     setPendingStep1FabricAssignment({
       fabricCode: fabric.code,
-      selectedGarmentKeys: preselectedGarmentKeys,
+      selectedGarmentKeys: [],
       displayFabric: createStep1FabricAssignmentDisplaySnapshot(fabric),
     });
   };
