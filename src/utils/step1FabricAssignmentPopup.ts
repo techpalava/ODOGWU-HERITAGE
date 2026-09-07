@@ -123,6 +123,8 @@ export type Step1FabricAssignmentEvaluation = {
   canAssignSelected: boolean;
   canUseForAll: boolean;
   groupingCapacityStatus: string | null;
+  /** A product-stock failure belongs to the Fabric header, never a garment row. */
+  fabricLevelError: string | null;
   selectedCapacityMessage: string | null;
   remainingCapacityMessage: string | null;
   candidateMessages: Record<string, string | null>;
@@ -416,7 +418,7 @@ export const buildStep1FabricAssignmentCandidates = ({
         ? null
         : result.status === "blocked" &&
             result.reason === "FABRIC_STOCK_EXHAUSTED"
-          ? formatFabricStockExhaustedCopy()
+          ? null
           : result.status === "blocked" &&
               result.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
             ? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
@@ -520,6 +522,12 @@ export const evaluateStep1FabricAssignmentSelection = ({
   const remainingFailure = !canUseForAll
     ? failureFromDryRun(remainingResult)
     : null;
+  const fabricLevelError =
+    selected.length > 0 &&
+    selectedResult?.status === "blocked" &&
+    selectedResult.reason === "FABRIC_STOCK_EXHAUSTED"
+      ? formatFabricStockExhaustedCopy()
+      : null;
   const candidateByKey = new Map(
     candidates.map((candidate) => [candidate.garmentKey, candidate]),
   );
@@ -578,8 +586,9 @@ export const evaluateStep1FabricAssignmentSelection = ({
     canAssignSelected,
     canUseForAll,
     groupingCapacityStatus,
+    fabricLevelError,
     selectedCapacityMessage:
-      selected.length > 0 && !canAssignSelected
+      !fabricLevelError && selected.length > 0 && !canAssignSelected
         ? globalMessageForBlockedDryRun({
             result: selectedResult,
             failure: selectedFailure,
@@ -588,7 +597,10 @@ export const evaluateStep1FabricAssignmentSelection = ({
           })
         : null,
     remainingCapacityMessage:
-      remainingKeys.length > 0 && !canUseForAll
+      !fabricLevelError &&
+      remainingResult?.reason !== "FABRIC_STOCK_EXHAUSTED" &&
+      remainingKeys.length > 0 &&
+      !canUseForAll
         ? globalMessageForBlockedDryRun({
             result: remainingResult,
             failure: remainingFailure,

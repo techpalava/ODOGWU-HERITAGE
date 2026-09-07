@@ -1112,4 +1112,54 @@ assert.doesNotMatch(
   /This Fabric cannot cover all selected garments/,
 );
 
+let fabricStockErrorRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  fabricStockErrorRenderer = create(
+    <Step1FabricAssignmentDialog
+      displayFabric={fabrics[0]}
+      currentFabric={fabrics[0]}
+      candidates={blockedDialogCandidates}
+      selectedGarmentKeys={["base:shirt", "base:trouser"]}
+      selectedCount={2}
+      selectedCapacityUnits={2}
+      maxCapacityUnits={2}
+      canAssignSelected={false}
+      canUseForAll={false}
+      groupingCapacityStatus={STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE}
+      fabricLevelError="No additional stock is available for this Fabric."
+      selectedCapacityMessage={null}
+      remainingCapacityMessage={null}
+      errorMessage="No additional stock is available for this Fabric."
+      onToggleGarmentKey={() => undefined}
+      onAssignSelected={() => undefined}
+      onUseForAll={() => undefined}
+      onCancel={() => undefined}
+    />,
+  );
+});
+const fabricStockErrorDialog = fabricStockErrorRenderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+const fabricStockErrors = fabricStockErrorDialog.findAllByProps({
+  "data-testid": "step1-fabric-assignment-fabric-error",
+});
+assert.equal(fabricStockErrors.length, 1);
+assert.equal(
+  textContent(fabricStockErrorDialog).match(/No additional stock is available for this Fabric\./g)?.length,
+  1,
+  "A Fabric-level stock failure must render exactly once.",
+);
+assert.ok(
+  renderOrderIndex(
+    fabricStockErrorDialog,
+    (node) => node.props?.["data-testid"] === "step1-fabric-assignment-header",
+  ) <
+    renderOrderIndex(
+      fabricStockErrorDialog,
+      (node) =>
+        node.props?.["data-testid"] === "step1-fabric-assignment-fabric-error",
+    ),
+  "The Fabric-level stock failure must appear directly below the Fabric header.",
+);
+
 console.log("test_step1_fabric_assignment_popup_ui.tsx: all assertions passed");

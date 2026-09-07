@@ -824,6 +824,40 @@ const gownTypes = ["shirt", "trouser", "full_length_gown"] satisfies FabricGarme
 const stockOneFabric = [
   createFabric("FAB-STOCK", "Heritage Stock", 10, { stock: 1 }),
 ];
+const stockPairTypes = ["shirt", "trouser"] satisfies FabricGarmentType[];
+const stockPairCandidates = buildStep1FabricAssignmentCandidates({
+  garmentTypeSelection: createSelection(stockPairTypes),
+  fabricAllocationState: empty,
+  fabricCode: "FAB-STOCK",
+  fabrics: stockOneFabric,
+});
+const stockPairEvaluation = evaluateStep1FabricAssignmentSelection({
+  candidates: stockPairCandidates,
+  selectedGarmentKeys: ["base:shirt", "base:trouser"],
+  garmentTypeSelection: createSelection(stockPairTypes),
+  fabricAllocationState: empty,
+  fabricCode: "FAB-STOCK",
+  fabrics: stockOneFabric,
+});
+assert.equal(stockPairEvaluation.selectedCapacityUnits, 2);
+assert.equal(stockPairEvaluation.canAssignSelected, true);
+assert.equal(stockPairEvaluation.fabricLevelError, null);
+assert.equal(stockPairEvaluation.selectedCapacityMessage, null);
+assert.equal(stockPairEvaluation.remainingCapacityMessage, null);
+const stockPairCommit = commitStep1FabricAssignment({
+  state: empty,
+  garmentTypeSelection: createSelection(stockPairTypes),
+  fabrics: stockOneFabric,
+  fabricCode: "FAB-STOCK",
+  selectedGarmentKeys: ["base:shirt", "base:trouser"],
+  mode: "selected",
+});
+assert.equal(stockPairCommit.status, "assigned");
+assertLegalSameProductAllocations(stockPairCommit.state, "FAB-STOCK", 1);
+assert.deepEqual(assignedKeys(stockPairCommit.state).sort(), [
+  "base:shirt",
+  "base:trouser",
+]);
 const gownCandidates = buildStep1FabricAssignmentCandidates({
   garmentTypeSelection: createSelection(gownTypes),
   fabricAllocationState: empty,
@@ -864,15 +898,40 @@ const gownUseAll = evaluateStep1FabricAssignmentSelection({
 });
 assert.equal(gownUseAll.canUseForAll, false);
 assert.equal(gownUseAll.remainingFailure, null);
-assert.equal(
-  gownUseAll.remainingCapacityMessage,
-  formatFabricStockExhaustedCopy(),
-);
+assert.equal(gownUseAll.fabricLevelError, formatFabricStockExhaustedCopy());
+assert.equal(gownUseAll.remainingCapacityMessage, null);
 assert.equal(gownUseAll.candidateMessages["base:full_length_gown"] ?? null, null);
 assert.notEqual(
   gownUseAll.candidateMessages["base:full_length_gown"],
   STEP1_GARMENT_CAPACITY_MESSAGE,
 );
+
+const secondAllocationSelection = createSelection([
+  "shirt",
+  "trouser",
+  "skirt",
+]);
+const secondAllocationCandidates = buildStep1FabricAssignmentCandidates({
+  garmentTypeSelection: secondAllocationSelection,
+  fabricAllocationState: stockPairCommit.state,
+  fabricCode: "FAB-STOCK",
+  fabrics: stockOneFabric,
+});
+const secondAllocationEvaluation = evaluateStep1FabricAssignmentSelection({
+  candidates: secondAllocationCandidates,
+  selectedGarmentKeys: ["base:skirt"],
+  garmentTypeSelection: secondAllocationSelection,
+  fabricAllocationState: stockPairCommit.state,
+  fabricCode: "FAB-STOCK",
+  fabrics: stockOneFabric,
+});
+assert.equal(
+  secondAllocationEvaluation.fabricLevelError,
+  formatFabricStockExhaustedCopy(),
+);
+assert.equal(secondAllocationEvaluation.selectedCapacityMessage, null);
+assert.equal(secondAllocationEvaluation.remainingCapacityMessage, null);
+assert.equal(secondAllocationCandidates[0]?.disabledReason, null);
 
 const stockTwoFabric = [
   createFabric("FAB-STOCK", "Heritage Stock", 10, { stock: 2 }),

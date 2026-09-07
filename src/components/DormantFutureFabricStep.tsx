@@ -2605,6 +2605,7 @@ export const DormantFutureFabricStep = ({
           groupingCapacityStatus={
             step1AssignmentEvaluation.groupingCapacityStatus
           }
+          fabricLevelError={step1AssignmentEvaluation.fabricLevelError}
           selectedCapacityMessage={
             step1AssignmentEvaluation.selectedCapacityMessage
           }
