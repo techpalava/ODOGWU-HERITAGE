@@ -15,10 +15,13 @@ export const INLINE_OPTIONAL_SHORTS_LABELS: Readonly<
   bum_shorts: "Standard Bum Shorts",
 };
 
-/** Customer-visible Step 4 labels, including labels supplied by pricing rows. */
+/** Customer-visible garment labels, preserving repeated-occurrence numbers. */
 export const formatCustomDetailsGarmentLabel = (label: string): string => {
-  if (label === "Nikka / Standard Shorts") return INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts;
-  if (label === "Bum Shorts") return INLINE_OPTIONAL_SHORTS_LABELS.bum_shorts;
+  const match = /^(Nikka \/ Standard Shorts|Bum Shorts)( \d+)?$/.exec(label);
+  if (match) {
+    const garmentType = match[1] === "Bum Shorts" ? "bum_shorts" : "standard_shorts";
+    return `${INLINE_OPTIONAL_SHORTS_LABELS[garmentType]}${match[2] || ""}`;
+  }
   return label;
 };
 

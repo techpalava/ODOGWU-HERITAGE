@@ -789,6 +789,41 @@ assert.doesNotMatch(
   /overflow-y-auto|max-h-\[/,
 );
 
+const shortsLines = [
+  { id: "construction-base:standard_shorts", label: "Nikka / Standard Shorts", detail: "With Rope", amountLabel: "€70.00" },
+  { id: "construction-base:bum_shorts", label: "Bum Shorts", detail: "With Rope", amountLabel: "€70.00" },
+];
+const shortsView: LiveOrderSummaryView = {
+  ...sampleView,
+  sections: [{
+    ...sampleView.sections[0],
+    lines: shortsLines,
+    subsections: [{
+      id: "additional_garments",
+      title: "Additional Garments",
+      lines: shortsLines.map((line) => ({ ...line, id: `${line.id}:2`, label: `${line.label} 2` })),
+    }],
+    footer: { ...sampleView.sections[0].footer!, amountCents: 28000, amountLabel: "€280.00" },
+  }],
+  totalAmountCents: 28000,
+  totalValueLabel: "€280.00",
+};
+const shortsViewBefore = JSON.stringify(shortsView);
+act(() => renderer.update(createElement(DesignStudioOrderSummary, {
+  view: shortsView,
+  unlockedStages: new Set<DesignStudioStageId>(),
+  currentStageId: "custom_details",
+})));
+for (const [index, label] of ["Standard Nikka Shorts", "Standard Bum Shorts"].entries()) {
+  for (const suffix of ["", ":2"]) {
+    const row = renderer.root.findByProps({ "data-line-id": `${shortsLines[index].id}${suffix}` });
+    assert.equal(textOf(row.findAllByType("p")[0]), `${label}${suffix ? " 2" : ""}`);
+    assert.ok(textOf(row).includes("With Rope€70.00"));
+  }
+}
+assert.equal(textOf(renderer.root.findByProps({ "data-testid": "live-order-summary-total-value" })), "€280.00");
+assert.equal(JSON.stringify(shortsView), shortsViewBefore, "Rendering labels must not mutate order IDs or pricing data");
+
 const emptySummaryView: LiveOrderSummaryView = {
   sections: [],
   totalStatus: "hidden",

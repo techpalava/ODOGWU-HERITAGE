@@ -1037,7 +1037,7 @@ export const DormantFutureCustomDetailsStep = ({
                       data-garment-removal-row-heading={target.garmentKey}
                       className="break-words text-sm font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                     >
-                      {target.occurrenceLabel}
+                      {formatCustomDetailsGarmentLabel(target.occurrenceLabel)}
                     </h4>
                     <p className="mt-1 break-words text-[10px] font-bold uppercase tracking-wide text-heritage-gold">
                       {target.roleLabel}
@@ -1054,7 +1054,7 @@ export const DormantFutureCustomDetailsStep = ({
                   <button
                     type="button"
                     disabled={!target.canRequestRemoval}
-                    aria-label={target.accessibleName}
+                    aria-label={`Remove ${formatCustomDetailsGarmentLabel(target.occurrenceLabel)}, ${target.roleLabel}`}
                     aria-describedby={target.disabledReason ? reasonId : undefined}
                     data-garment-removal-button={target.garmentKey}
                     data-garment-removal-origin-stage="custom_details"

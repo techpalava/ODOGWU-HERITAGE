@@ -6,6 +6,7 @@ import type {
   LiveOrderSummaryView,
 } from "../utils/designStudioLiveOrderSummary";
 import { LIVE_ORDER_SUMMARY_HEADING } from "../utils/designStudioLiveOrderSummary";
+import { formatCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 
 const SummarySection = ({
   section,
@@ -54,7 +55,7 @@ const SummarySection = ({
           >
             <div className="min-w-0">
               <p className="break-words text-[13px] font-semibold leading-snug text-heritage-ink">
-                {line.label}
+                {formatCustomDetailsGarmentLabel(line.label)}
               </p>
               {line.detail ? (
                 <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
@@ -155,7 +156,7 @@ const SummarySubsection = ({
         >
           <div className="min-w-0">
             <p className="break-words text-[13px] font-semibold leading-snug text-heritage-ink">
-              {line.label}
+              {formatCustomDetailsGarmentLabel(line.label)}
             </p>
             {line.detail ? (
               <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
