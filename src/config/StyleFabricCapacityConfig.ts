@@ -33,17 +33,17 @@ const DEFAULT_CUSTOM_DETAILS_BY_GARMENT_TYPE: Readonly<
     bum_shorts_pockets: "bum_pocket_none",
   },
   dress: {
-    dress_construction: "dress_std_short",
+    dress_construction: "dress_std_sleeveless",
     dress_pockets: "dress_pocket_0",
     neck_design: "neck_no_round",
   },
   kaftan: {
-    shirt_construction: "shirt_long_short",
+    shirt_construction: "shirt_long_midlong",
     shirt_pockets: "shirt_pocket_0",
     neck_design: "neck_no_round",
   },
   full_length_gown: {
-    dress_construction: "dress_long_short",
+    dress_construction: "dress_long_midlong",
     dress_pockets: "dress_pocket_0",
     neck_design: "neck_no_round",
   },

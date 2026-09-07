@@ -8,7 +8,7 @@ import {
   isCompanionCustomerAdditionalClothesCostGroup,
   resolveShowAdditionalClothesCosts,
 } from "../config/GarmentDetailsConfig";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import { formatCustomDetailsGarmentLabel, getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type {
   CanonicalPhysicalGarmentType,
@@ -151,10 +151,10 @@ const money = (amount: number): string => `${PRICING_CURRENCY_SYMBOL}${amount.to
 const getSubjectLabel = (
   subject: GarmentScopedCustomDetailsReconciliationResult["subjects"][number],
 ): string => {
-  const garmentLabel = getFabricGarmentLabel(subject.garmentType);
+  const garmentLabel = getCustomDetailsGarmentLabel(subject.garmentType);
   return subject.parentGarmentType === subject.garmentType
     ? garmentLabel
-    : `${getFabricGarmentLabel(subject.parentGarmentType)} ${garmentLabel}`;
+    : `${getCustomDetailsGarmentLabel(subject.parentGarmentType)} ${garmentLabel}`;
 };
 
 const getSelection = (
@@ -346,8 +346,8 @@ export const DormantFutureCustomDetailsStep = ({
       ...row,
       occurrenceLabel:
         sameGarmentCount > 1
-          ? `${row.garmentLabel} ${priorOccurrences + 1}`
-          : row.garmentLabel,
+          ? `${formatCustomDetailsGarmentLabel(row.garmentLabel)} ${priorOccurrences + 1}`
+          : formatCustomDetailsGarmentLabel(row.garmentLabel),
     };
   });
   const subjectLabelByGarmentKey = new Map(
@@ -1155,7 +1155,7 @@ export const DormantFutureCustomDetailsStep = ({
               </div>
             ) : null}
             <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {additionalGarmentConstructionOptions.map(({ garmentType, construction }) => <button key={garmentType} type="button" onClick={(event) => { choiceTriggerRef.current = event.currentTarget; onAddAdditionalGarment(garmentType, event.currentTarget); }} className="inline-flex min-h-12 min-w-0 items-start justify-between gap-3 rounded-xl border-2 border-heritage-green/65 bg-white p-3 text-left text-xs font-bold text-heritage-green transition hover:border-heritage-gold hover:bg-heritage-gold/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><span className="flex min-w-0 items-center gap-2"><Plus aria-hidden="true" size={15} className="shrink-0" /><span className="min-w-0 break-words">Add {getFabricGarmentLabel(garmentType)}</span></span><span className="shrink-0 font-mono text-[11px] text-heritage-gold">{construction.status === "resolved" ? money(construction.totalPrice) : "Price pending"}</span></button>)}
+              {additionalGarmentConstructionOptions.map(({ garmentType, construction }) => <button key={garmentType} type="button" onClick={(event) => { choiceTriggerRef.current = event.currentTarget; onAddAdditionalGarment(garmentType, event.currentTarget); }} className="inline-flex min-h-12 min-w-0 items-start justify-between gap-3 rounded-xl border-2 border-heritage-green/65 bg-white p-3 text-left text-xs font-bold text-heritage-green transition hover:border-heritage-gold hover:bg-heritage-gold/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><span className="flex min-w-0 items-center gap-2"><Plus aria-hidden="true" size={15} className="shrink-0" /><span className="min-w-0 break-words">Add {getCustomDetailsGarmentLabel(garmentType)}</span></span><span className="shrink-0 font-mono text-[11px] text-heritage-gold">{construction.status === "resolved" ? money(construction.totalPrice) : "Price pending"}</span></button>)}
             </div>
             {additionalGarments.length > 0 && (
               <div className="mt-5 space-y-4 border-t border-heritage-gold/20 pt-4">
@@ -1202,7 +1202,7 @@ export const DormantFutureCustomDetailsStep = ({
                           tabIndex={-1}
                           className="min-w-0 break-words text-sm font-bold uppercase tracking-wide text-heritage-gold outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                         >
-                          {getFabricGarmentLabel(garment.garmentType)} - Added garment
+                          {getCustomDetailsGarmentLabel(garment.garmentType)} - Added garment
                         </h4>
                       </div>
                       {(() => {
@@ -1249,7 +1249,7 @@ export const DormantFutureCustomDetailsStep = ({
                               <AssignedFabricPreview
                                 fabric={assigned.fabric}
                                 garmentKey={garment.garmentKey}
-                                garmentLabel={getFabricGarmentLabel(garment.garmentType)}
+                                garmentLabel={getCustomDetailsGarmentLabel(garment.garmentType)}
                                 fabricCode={assigned.fabricCode}
                               />
                               <div className="min-w-0">
@@ -1380,7 +1380,7 @@ export const DormantFutureCustomDetailsStep = ({
             <div className="flex min-w-0 items-start justify-between gap-4">
               <div className="min-w-0">
                 <h3 id="additional-garment-choice-title" className="break-words font-serif text-xl font-bold text-heritage-green">
-                  Add {getFabricGarmentLabel(additionalGarmentChoice.garmentType)}
+                  Add {getCustomDetailsGarmentLabel(additionalGarmentChoice.garmentType)}
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-heritage-ink/70">
                   Choose how you would like to configure this garment.
@@ -1396,7 +1396,7 @@ export const DormantFutureCustomDetailsStep = ({
                   {compatibleCopySources.map((source) => (
                     <label key={source.parentGarmentKey} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-heritage-green/20 px-3 py-2 text-sm text-heritage-green focus-within:ring-2 focus-within:ring-heritage-gold">
                       <input type="radio" name="additional-garment-copy-source" checked={additionalGarmentChoice.sourceParentGarmentKey === source.parentGarmentKey} onChange={() => setAdditionalGarmentChoice((current) => current ? { ...current, sourceParentGarmentKey: source.parentGarmentKey } : current)} className="size-5 shrink-0 accent-heritage-green" />
-                      <span className="min-w-0 break-words">{getFabricGarmentLabel(additionalGarmentChoice.garmentType)} - {source.role}</span>
+                      <span className="min-w-0 break-words">{getCustomDetailsGarmentLabel(additionalGarmentChoice.garmentType)} - {source.role}</span>
                     </label>
                   ))}
                 </div>

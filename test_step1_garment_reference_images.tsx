@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
@@ -29,6 +29,34 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const repoRoot = dirname(fileURLToPath(import.meta.url));
+const approvedImageFiles = {
+  shirt: "ankara-standard-shirt.webp",
+  kaftan: "ankara-kaftan.webp",
+  dress: "ankara-standard-dress.webp",
+  full_length_gown: "ankara-long-dress-gown.webp",
+  standard_shorts: "ankara-standard-shorts.webp",
+  bum_shorts: "ankara-bum-shorts.webp",
+  trouser: "ankara-trouser.webp",
+  skirt: "ankara-standard-skirt.webp",
+};
+
+const webpDimensions = (data: Buffer): number[] => {
+  assert.equal(data.toString("ascii", 0, 4), "RIFF");
+  assert.equal(data.toString("ascii", 8, 12), "WEBP");
+  for (let offset = 12; offset + 8 < data.length;) {
+    const chunk = data.toString("ascii", offset, offset + 4);
+    const start = offset + 8;
+    if (chunk === "VP8X") return [1 + data.readUIntLE(start + 4, 3), 1 + data.readUIntLE(start + 7, 3)];
+    if (chunk === "VP8 ") return [data.readUInt16LE(start + 6) & 0x3fff, data.readUInt16LE(start + 8) & 0x3fff];
+    if (chunk === "VP8L") {
+      const bits = data.readUInt32LE(start + 1);
+      return [(bits & 0x3fff) + 1, ((bits >>> 14) & 0x3fff) + 1];
+    }
+    const size = data.readUInt32LE(offset + 4);
+    offset = start + size + (size % 2);
+  }
+  throw new Error("WebP image dimensions missing");
+};
 
 assert.deepEqual(listMissingStep1GarmentReferenceImageKeys(), []);
 assert.deepEqual(
@@ -52,6 +80,7 @@ for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
     `${garmentType} must have Step 1 reference-image config`,
   );
   const config = getStep1GarmentReferenceImage(garmentType);
+  assert.equal(config.filename, approvedImageFiles[garmentType]);
   assert.ok(config.src.startsWith("/images/garments/"));
   assert.ok(config.filename.endsWith(".webp"));
   assert.equal(config.src, `/images/garments/${config.filename}`);
@@ -60,6 +89,7 @@ for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
     existsSync(diskPath),
     `Expected local reference asset at ${diskPath}`,
   );
+  assert.deepEqual(webpDimensions(readFileSync(diskPath)), [720, 1080], config.filename);
   const label = getGarmentTypeStepLabel(garmentType);
   assert.equal(
     getStep1GarmentReferenceAlt(label),

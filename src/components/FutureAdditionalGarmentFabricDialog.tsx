@@ -7,7 +7,7 @@ import type {
   GarmentTypeStepSelection,
 } from "../types";
 import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import {
   getFutureCompatiblePartialFabricAllocations,
   resolveFutureFabricCatalogueCardPresentation,
@@ -63,7 +63,7 @@ export const FutureAdditionalGarmentFabricDialog = ({
   const helpId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const initialFocusRef = useRef<HTMLButtonElement | null>(null);
-  const garmentLabel = getFabricGarmentLabel(transaction.garmentType);
+  const garmentLabel = getCustomDetailsGarmentLabel(transaction.garmentType);
   const { visibleFabricByCode, duplicateFabricCodes } = useMemo(() => {
     const nextVisibleFabricByCode = new Map<string, Fabric>();
     const nextDuplicateFabricCodes = new Set<string>();

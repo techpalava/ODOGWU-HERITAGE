@@ -1,4 +1,5 @@
 import type { CustomDetailParentSectionId } from "../config/GarmentDetailsConfig";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import type { FabricGarmentType } from "../types";
 import type { AllowedAdditionalGarment } from "./additionalGarmentDomain";
 
@@ -10,9 +11,19 @@ export type InlineOptionalShortsGarmentType = Extract<
 export const INLINE_OPTIONAL_SHORTS_LABELS: Readonly<
   Record<InlineOptionalShortsGarmentType, string>
 > = {
-  standard_shorts: "Nikka / Standard Shorts",
-  bum_shorts: "Bum Shorts",
+  standard_shorts: "Standard Nikka Shorts",
+  bum_shorts: "Standard Bum Shorts",
 };
+
+/** Customer-visible Step 4 labels, including labels supplied by pricing rows. */
+export const formatCustomDetailsGarmentLabel = (label: string): string => {
+  if (label === "Nikka / Standard Shorts") return INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts;
+  if (label === "Bum Shorts") return INLINE_OPTIONAL_SHORTS_LABELS.bum_shorts;
+  return label;
+};
+
+export const getCustomDetailsGarmentLabel = (garmentType: FabricGarmentType): string =>
+  formatCustomDetailsGarmentLabel(getFabricGarmentLabel(garmentType));
 
 const SHORTS_SECTION_BY_GARMENT: Readonly<
   Record<InlineOptionalShortsGarmentType, CustomDetailParentSectionId>

@@ -184,7 +184,7 @@ import {
 import { resolveFutureStageCorrection } from "../utils/resolveFutureStageCorrection";
 import { FutureAdditionalGarmentFabricDialog } from "./FutureAdditionalGarmentFabricDialog";
 import { FutureRemainingFabricCapacityOfferCard } from "./FutureRemainingFabricCapacityOffer";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import {
   clearGarmentScopedCustomDetailSelection,
   getGarmentScopedCustomDetailSelection,
@@ -3448,7 +3448,7 @@ export default function DesignStudioView({
     const fabricName =
       fabrics.find((fabric) => fabric.code === commitResult.fabricCode)?.name ||
       commitResult.fabricCode;
-    const garmentLabel = getFabricGarmentLabel(transaction.garmentType);
+    const garmentLabel = getCustomDetailsGarmentLabel(transaction.garmentType);
     setAdditionalGarmentFabricError(null);
     additionalGarmentFabricPersistentErrorGarmentKeyRef.current = null;
     setAdditionalGarmentFabricPersistentError(null);

@@ -15,6 +15,8 @@ import {
 } from "./src/utils/additionalGarmentDomain";
 import {
   composeInlineOptionalShortsSections,
+  getCustomDetailsGarmentLabel,
+  formatCustomDetailsGarmentLabel,
   INLINE_OPTIONAL_SHORTS_LABELS,
 } from "./src/utils/optionalShortsPresentation";
 import { getRequiredCustomDetailGroups } from "./src/utils/catalogHelpers";
@@ -250,9 +252,21 @@ assert.deepEqual(
 );
 assert.equal(
   INLINE_OPTIONAL_SHORTS_LABELS.standard_shorts,
-  "Nikka / Standard Shorts",
+  "Standard Nikka Shorts",
 );
-assert.equal(INLINE_OPTIONAL_SHORTS_LABELS.bum_shorts, "Bum Shorts");
+assert.equal(INLINE_OPTIONAL_SHORTS_LABELS.bum_shorts, "Standard Bum Shorts");
+for (const [garmentType, label, legacyLabel] of [
+  ["standard_shorts", "Standard Nikka Shorts", "Nikka / Standard Shorts"],
+  ["bum_shorts", "Standard Bum Shorts", "Bum Shorts"],
+] as const) {
+  assert.equal(getCustomDetailsGarmentLabel(garmentType), label);
+  assert.equal(formatCustomDetailsGarmentLabel(legacyLabel), label);
+  assert.equal(
+    SEED_CUSTOM_DETAIL_CATALOG.find((option) => option.id === `additional_garment_${garmentType}`)?.label,
+    label,
+  );
+}
+assert.equal(getCustomDetailsGarmentLabel("shirt"), "Shirt");
 
 const source = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const futureNavigationSource = source.slice(

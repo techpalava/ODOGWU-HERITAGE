@@ -220,8 +220,8 @@ export const CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION: Readonly<
   shirt: { title: "SHIRT" },
   dress: { title: "DRESS (LADIES)" },
   neck: { title: "NECK DESIGN" },
-  standard_shorts: { title: "STANDARD LEG SHORTS (NIKKA)" },
-  bum_shorts: { title: "BUM (LEG) SHORTS" },
+  standard_shorts: { title: "STANDARD NIKKA SHORTS" },
+  bum_shorts: { title: "STANDARD BUM SHORTS" },
   trousers: { title: "LEG PANTS (TROUSER)" },
   skirts: { title: "SKIRTS (LADIES)" },
 };
@@ -403,9 +403,9 @@ export const ADDITIONAL_CLOTHES_COST_SECTION_PRESENTATION: Readonly<
   neck_additional: { title: "Neck Design - Additional" },
   trouser_additional: { title: "Leg Pants (Trouser) - Additional" },
   standard_shorts_additional: {
-    title: "Standard Leg Shorts (Nikka) - Additional",
+    title: "Standard Nikka Shorts - Additional",
   },
-  bum_shorts_additional: { title: "Bum (Leg) Shorts - Additional" },
+  bum_shorts_additional: { title: "Standard Bum Shorts - Additional" },
   skirt_additional: { title: "Skirts (Ladies) - Additional" },
   personalized_additional: {
     title: "Miscellaneous - Personalized Additional",
@@ -492,12 +492,12 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
   ),
   createAdditionalPhysicalGarmentOption(
     "standard_shorts",
-    "Nikka / Standard Shorts",
+    "Standard Nikka Shorts",
     "Add one pair of standard-length shorts.",
   ),
   createAdditionalPhysicalGarmentOption(
     "bum_shorts",
-    "Bum Shorts",
+    "Standard Bum Shorts",
     "Add one pair of bum shorts.",
   ),
   createAdditionalPhysicalGarmentOption(

@@ -414,6 +414,34 @@ assert.equal(
 );
 assert.doesNotMatch(textContent(renderer.root), /Use Same Fabric Again|Choose Another Fabric/);
 
+for (const [garmentType, label] of [
+  ["standard_shorts", "Standard Nikka Shorts"],
+  ["bum_shorts", "Standard Bum Shorts"],
+] as const) {
+  act(() => {
+    renderer.update(
+      createElement(FutureAdditionalGarmentFabricDialog, {
+        transaction: {
+          transactionId: 1,
+          phase: "catalogue",
+          garmentKey: secondKey,
+          garmentType,
+          origin: "new_addition",
+          openedModal: true,
+        },
+        fabrics: [fabricA, fabricB],
+        garmentTypeSelection,
+        fabricAllocationState: pendingState,
+        errorMessage: null,
+        onSelectFabric: () => undefined,
+        onSelectExistingAllocation: () => undefined,
+        onCancel: () => undefined,
+      }),
+    );
+  });
+  assert.ok(textContent(renderer.root).includes(`Choose fabric for ${label}`));
+}
+
 // OUT_OF_STOCK current-order fabric stays unavailable in the catalogue.
 act(() => {
   renderer.update(
