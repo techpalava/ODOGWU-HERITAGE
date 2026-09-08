@@ -16,6 +16,7 @@ import {
   getFutureFabricAssignmentTargets,
   getFutureFabricCapacityOffer,
   getFutureRemainingFabricCapacityOffers,
+  getRemainingFabricCapacityOfferSignature,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
   reconcileFutureFabricAllocationState,
@@ -257,14 +258,47 @@ assert.equal(
   "a full-capacity Long Dress (Gown) must not create a half-capacity offer",
 );
 
+// Deliberately separate half Fabrics complete the stage and are charged once each.
+const twoGarmentSelection = createSelection(["shirt", "trouser"]);
+const firstHalfState = assign(FabricAllocationStateEngine.initialize(), ["shirt", "trouser"], "base:shirt", "FAB-A");
+const firstHalfCompletion = getFutureFabricStageCompletion({ garmentTypeSelection: twoGarmentSelection, fabricAllocationState: firstHalfState, fabrics });
+assert.equal(firstHalfCompletion.isComplete, false);
+assert.deepEqual(getFutureRemainingFabricCapacityOffers({ fabricAllocationState: firstHalfState, fabricStageComplete: firstHalfCompletion.isComplete, hasEligibleHalfCapacityAdditionalGarment: true }), []);
+const separateHalvesState = assign(firstHalfState, ["shirt", "trouser"], "base:trouser", "FAB-B");
+const separateHalvesCompletion = getFutureFabricStageCompletion({ garmentTypeSelection: twoGarmentSelection, fabricAllocationState: separateHalvesState, fabrics });
+assert.equal(separateHalvesCompletion.isComplete, true);
+assert.deepEqual(separateHalvesCompletion.blockers, []);
+assert.equal(separateHalvesState.fabricAllocations.length, 2);
+const separateHalvesPricing = resolveFabricAllocationMaterialPricing(separateHalvesState.fabricAllocations, fabrics);
+assert.equal(separateHalvesPricing.status, "resolved");
+if (separateHalvesPricing.status !== "resolved") throw new Error("Expected material pricing");
+assert.equal(separateHalvesPricing.allocationCount, 2);
+assert.equal(separateHalvesPricing.totalMaterialPrice, 30);
+const combinedCapacityOffers = getFutureRemainingFabricCapacityOffers({ fabricAllocationState: separateHalvesState, fabricStageComplete: separateHalvesCompletion.isComplete, hasEligibleHalfCapacityAdditionalGarment: true });
+assert.deepEqual(combinedCapacityOffers.map((offer) => offer.fabricCode), ["FAB-A", "FAB-B"]);
+const combinedSignature = getRemainingFabricCapacityOfferSignature(combinedCapacityOffers);
+const dismissedSignatures = new Set([combinedSignature]);
+assert.equal(dismissedSignatures.has(getRemainingFabricCapacityOfferSignature([...combinedCapacityOffers].reverse())), true);
+assert.equal(dismissedSignatures.has(getRemainingFabricCapacityOfferSignature(combinedCapacityOffers.slice(1))), false);
+assert.notEqual(combinedSignature, getRemainingFabricCapacityOfferSignature(combinedCapacityOffers.map((offer) => ({ ...offer, fabricCode: "FAB-C" }))));
+assert.equal(getRemainingFabricCapacityOfferSignature([]), "");
+for (const malformedState of [
+  { ...separateHalvesState, fabricAllocations: [...separateHalvesState.fabricAllocations, separateHalvesState.fabricAllocations[0]] },
+  { ...separateHalvesState, fabricAllocations: separateHalvesState.fabricAllocations.map((allocation) => ({ ...allocation, allocationId: "duplicate-id" })) },
+]) {
+  const completion = getFutureFabricStageCompletion({ garmentTypeSelection: twoGarmentSelection, fabricAllocationState: malformedState, fabrics });
+  assert.equal(completion.isComplete, false);
+  assert.ok(completion.blockers.some((blocker) => blocker.code === "MALFORMED_ASSIGNMENT"));
+}
+
 let capacityOfferDismissals = 0;
 let selectedCapacityOfferGarment: FabricGarmentType | null = null;
 let capacityOfferRenderer!: ReturnType<typeof create>;
 act(() => {
   capacityOfferRenderer = create(
     createElement(FutureRemainingFabricCapacityOfferCard, {
-      offer: completedHalfCapacityOffers[0],
-      fabric: fabrics[0],
+      offers: combinedCapacityOffers,
+      fabrics,
       eligibleGarmentTypes: ["trouser"],
       onAddAdditionalGarment: (garmentType) => {
         selectedCapacityOfferGarment = garmentType;
@@ -277,8 +311,12 @@ act(() => {
 });
 assert.match(
   capacityOfferRenderer.toJSON() ? JSON.stringify(capacityOfferRenderer.toJSON()) : "",
-  /Your fabric can carry one more garment\. \(Optional\)/,
+  /UNUSED FABRIC CAPACITY AVAILABLE/,
 );
+assert.equal(capacityOfferRenderer.root.findAllByProps({ role: "dialog" }).length, 1);
+assert.equal(capacityOfferRenderer.root.findAllByType("li").length, 2);
+assert.match(JSON.stringify(capacityOfferRenderer.toJSON()), /Fabric A/);
+assert.match(JSON.stringify(capacityOfferRenderer.toJSON()), /Fabric B/);
 act(() => {
   capacityOfferRenderer.root
     .findByProps({ "data-testid": "remaining-fabric-capacity-offer-accept" })
@@ -1176,6 +1214,20 @@ const stepSource = readFileSync(
   "utf8",
 );
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
+const remainingOfferGate = studioSource.slice(
+  studioSource.indexOf("const remainingFabricCapacityOffers ="),
+  studioSource.indexOf("const futureCatalogInspection ="),
+);
+assert.match(remainingOfferGate, /futureFabricStageCompletion\.isComplete/);
+assert.match(remainingOfferGate, /additionalGarmentFabricTransaction\.phase === "committed"/,
+  "A terminal Fabric commit must not suppress the shared offer while Design Style is unfinished.");
+assert.match(remainingOfferGate, /futureStageId === "fabric" \|\| futureStageId === "custom_details"/);
+const capacityAdditionHandler = studioSource.slice(
+  studioSource.indexOf("const handleAddFutureAdditionalGarment ="),
+  studioSource.indexOf("const handleCompleteAdditionalGarmentCustomDetails ="),
+);
+assert.match(capacityAdditionHandler, /context\?\.origin === "remaining_fabric_capacity_offer" &&\s*additionalGarmentFabricTransactionRef\.current\.phase === "committed"/,
+  "Accepting the shared offer may supersede a terminal transaction, never an in-flight assignment.");
 assert.doesNotMatch(
   stepSource,
   />\s*Select Fabric\s*</,
@@ -1199,8 +1251,8 @@ assert.doesNotMatch(
 );
 assert.match(
   stepSource,
-  /\$\{selectedFabricQuantity\}\/\$\{requiredFabricQuantity\}/,
-  "Fabrics Selected must use X/Y with no spaces around the slash.",
+  /\$\{selectedFabricQuantity\} · Minimum needed: \$\{requiredFabricQuantity\}/,
+  "The efficient minimum must not look like a mandatory maximum.",
 );
 assert.match(
   stepSource,

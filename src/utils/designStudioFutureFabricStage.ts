@@ -735,9 +735,8 @@ export const getRequiredPhysicalFabricAllocationCount = ({
   ).fabricQuantity;
 
 /**
- * Authoritative ceiling: a NEW physical Fabric allocation may be created
- * only while the committed allocation count is still below the required
- * quantity from Fabric Capacity units.
+ * Each required exact occurrence may use its own physical Fabric. Capacity
+ * planning is an efficient minimum, not a limit on deliberate selections.
  */
 export const canCreatePhysicalFabricAllocation = ({
   state,
@@ -750,23 +749,17 @@ export const canCreatePhysicalFabricAllocation = ({
   requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
   countPendingGarmentForCapacity?: boolean;
 }): boolean => {
-  let required = getRequiredPhysicalFabricAllocationCount({
-    garmentTypeSelection,
-    fabricAllocationState: state,
-    requiredPhysicalOccurrences,
-  });
+  const knownKeys = new Set(
+    resolveRequiredAssignmentsWithAdditional(
+      garmentTypeSelection,
+      state,
+      requiredPhysicalOccurrences,
+    ).map((assignment) => assignment.garmentKey),
+  );
+  let required = knownKeys.size;
   if (countPendingGarmentForCapacity && state.pendingFabricGarment) {
-    const knownKeys = new Set(
-      resolveRequiredAssignmentsWithAdditional(
-        garmentTypeSelection,
-        state,
-        requiredPhysicalOccurrences,
-      ).map((assignment) => assignment.garmentKey),
-    );
     if (!knownKeys.has(state.pendingFabricGarment.garmentKey)) {
-      required += getCustomerFacingFabricQuantityForAssignments([
-        state.pendingFabricGarment,
-      ]).fabricQuantity;
+      required += 1;
     }
   }
   return getCommittedPhysicalFabricAllocationCount(state) < required;
@@ -783,11 +776,11 @@ export const isPhysicalFabricAllocationLimitReached = ({
 
 export const isPhysicalFabricQuantityOverAllocated = ({
   selectedFabricQuantity,
-  requiredFabricQuantity,
+  requiredGarmentCount,
 }: {
   selectedFabricQuantity: number;
-  requiredFabricQuantity: number;
-}): boolean => selectedFabricQuantity > requiredFabricQuantity;
+  requiredGarmentCount: number;
+}): boolean => selectedFabricQuantity > requiredGarmentCount;
 
 export const formatFabricQuantityLimitReachedCopy = (
   requiredFabricQuantity: number,
@@ -841,6 +834,21 @@ export interface FutureRemainingFabricCapacityOffer {
   remainingUnits: number;
   assignedGarmentKeys: readonly string[];
 }
+
+/** Stable for reordering, distinct when the qualifying allocation set changes. */
+export const getRemainingFabricCapacityOfferSignature = (
+  offers: readonly FutureRemainingFabricCapacityOffer[],
+): string =>
+  offers.length === 0
+    ? ""
+    : JSON.stringify(
+        offers.map((offer) => [
+          offer.allocationId,
+          offer.fabricCode,
+          offer.remainingUnits,
+          [...offer.assignedGarmentKeys].sort(),
+        ]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+      );
 
 const resolveFuturePartialFabricAllocationSummary = (
   allocation: FabricAllocation,
@@ -2694,6 +2702,7 @@ export const getFutureFabricStageCompletion = ({
     requiredAssignments.map((assignment) => [assignment.garmentKey, assignment]),
   );
   const assignedKeys = new Set<string>();
+  const allocationIds = new Set<string>();
   const blockers: FutureFabricStageBlocker[] = [];
 
   rawFabricIntegrityDiagnostics.forEach((diagnostic) => {
@@ -2708,6 +2717,16 @@ export const getFutureFabricStageCompletion = ({
   }
 
   for (const allocation of fabricAllocationState.fabricAllocations) {
+    if (
+      !allocation.allocationId?.trim() ||
+      allocationIds.has(allocation.allocationId)
+    ) {
+      blockers.push({
+        code: "MALFORMED_ASSIGNMENT",
+        allocationId: allocation.allocationId,
+      });
+    }
+    allocationIds.add(allocation.allocationId);
     const fabric = fabrics.find(
       (candidate) => candidate.code === allocation.fabricCode,
     );
@@ -2776,15 +2795,6 @@ export const getFutureFabricStageCompletion = ({
     fabricAllocationState.awaitingFabricForPendingGarment
   ) {
     blockers.push({ code: "PENDING_GARMENT_ASSIGNMENT" });
-  }
-
-  const planning = getFutureGarmentFabricPlanning({
-    garmentTypeSelection,
-    fabricAllocationState,
-    requiredPhysicalOccurrences,
-  });
-  if (planning.selectedFabricQuantity > planning.requiredFabricQuantity) {
-    blockers.push({ code: "FABRIC_QUANTITY_OVER_ALLOCATED" });
   }
 
   for (const overAllocation of getFabricStockOverAllocations(

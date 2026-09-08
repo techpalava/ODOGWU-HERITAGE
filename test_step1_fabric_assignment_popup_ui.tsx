@@ -265,9 +265,9 @@ let selectedDialog = renderer.root.findByProps({
 assert.equal(
   selectedDialog.findByProps({ "data-testid": "step1-fabric-assignment-confirm" })
     .props.disabled,
-  true,
+  false,
 );
-assert.match(textContent(selectedDialog), /Select 1 more standard garment/);
+assert.match(textContent(selectedDialog), /1\/2 fabric capacity will remain available/);
 await act(async () =>
   selectedDialog
     .findByProps({ "data-step1-fabric-assignment-checkbox": "base:trouser" })
@@ -424,7 +424,7 @@ assert.equal(state.fabricAllocations.length, 2);
 assert.ok(
   state.fabricAllocations.every((allocation) => allocation.fabricCode === "FAB-A"),
 );
-assert.match(textContent(renderer.root), /Fabrics Selected: 2\/2/);
+assert.match(textContent(renderer.root), /Fabrics Selected: 2 · Minimum needed: 2/);
 assert.match(textContent(renderer.root), /Garments assigned: 3\/3/);
 
 const twoSelection = reconcileGarmentTypeStepSelection({
@@ -565,21 +565,28 @@ await act(async () => {
 });
 const unusedOneCard = findFabricCardByCode(oneRenderer.root, "FAB-C");
 assert.equal(unusedOneCard?.props["data-fabric-status"], "SELECT");
-assert.equal(unusedOneCard?.props["data-fabric-action"], "none");
-assert.equal(unusedOneCard?.props.disabled, true);
-assert.match(
+assert.equal(unusedOneCard?.props["data-fabric-action"], "select");
+assert.equal(unusedOneCard?.props.disabled, false);
+assert.doesNotMatch(
   textContent(oneRenderer.root),
   /You have selected the 1 fabric needed for this order/,
 );
 await act(async () => unusedOneCard?.props.onClick({ currentTarget: {} }));
+await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
+assert.equal(dialogCount(oneRenderer.root), 1);
+const separateFabricDialog = oneRenderer.root.findByProps({ "data-testid": "step1-fabric-assignment-dialog" });
+assert.equal(separateFabricDialog.findByProps({ "data-step1-fabric-assignment-checkbox": "base:trouser" }).props.checked, false);
+await act(async () => separateFabricDialog.findByProps({ "data-step1-fabric-assignment-checkbox": "base:trouser" }).props.onChange({ currentTarget: { checked: true } }));
+assert.equal(oneRenderer.root.findByProps({ "data-testid": "step1-fabric-assignment-confirm" }).props.disabled, false);
+await act(async () => oneRenderer.root.findByProps({ "data-testid": "step1-fabric-assignment-confirm" }).props.onClick());
 await act(async () => oneRenderer.update(renderTwoStep(oneState, applyTwoBulk)));
 assert.equal(dialogCount(oneRenderer.root), 0);
 assert.deepEqual(
   oneState.fabricAllocations.flatMap((allocation) =>
     allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
   ),
-  ["base:shirt"],
-  "An unused Fabric product must not create a second allocation at the required limit.",
+  ["base:shirt", "base:trouser"],
+  "A customer may select another Fabric for the last current garment.",
 );
 
 oneState = applyFutureFabricCardSelection({
@@ -903,10 +910,10 @@ const oneHalfDialog = oneHalfRenderer.root.findByProps({
 assert.match(textContent(oneHalfDialog), /Fabric Capacity: 1\/2/);
 assert.match(
   textContent(oneHalfDialog),
-  /Select 1 more standard garment to complete this Fabric/,
+  /1\/2 fabric capacity will remain available/,
 );
 assertCapacityGuidanceTone(oneHalfDialog, {
-  includes: ["bg-heritage-gold/10", "border-heritage-gold/35"],
+  includes: ["bg-heritage-green/5", "border-heritage-green/25"],
 });
 
 let completeRenderer!: ReturnType<typeof create>;
@@ -988,7 +995,7 @@ const residualDialog = residualRenderer.root.findByProps({
 assert.match(textContent(residualDialog), /Fabric Capacity: 1\/2/);
 assert.match(
   textContent(residualDialog),
-  /Final Fabric — the remaining half will be unused/,
+  /1\/2 fabric capacity will remain available/,
 );
 assert.doesNotMatch(
   textContent(residualDialog),
