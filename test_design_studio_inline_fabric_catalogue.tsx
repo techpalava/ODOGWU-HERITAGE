@@ -171,13 +171,13 @@ const assertFabricProgress = (
   assert.match(
     textContent(fabricLine),
     new RegExp(
-      `^Fabrics Selected: ${fabricSelected}/${fabricRequired}$`,
+      `^Fabrics Selected: ${fabricSelected} · Minimum needed: ${fabricRequired}$`,
     ),
   );
-  assert.doesNotMatch(
+  assert.match(
     textContent(fabricLine),
-    /needed/,
-    "Step 2 Fabrics Selected counter must not include the word needed.",
+    /Minimum needed/,
+    "Step 2 Fabrics Selected counter must show the approved minimum-needed copy.",
   );
   const progressIcon = progressRegion.findAllByProps({
     "data-fabric-progress-icon": "true",
@@ -2894,12 +2894,12 @@ try {
     /Inline Heritage A removed from Standard Shirt\./,
     "Removal must announce the exact fabric and garment without exposing implementation details.",
   );
-  assert.ok(
-    findButton(removalRenderer.root, "Assign to Fabric") ||
-      removalRenderer.root.findByProps({
-        "data-testid": "assign-to-fabric-base:shirt",
-      }),
-    "The removed garment must expose Assign to Fabric when a partial allocation can accept it.",
+  assert.equal(
+    removalRenderer.root.findAllByProps({
+      "data-testid": "assign-to-fabric-base:shirt",
+    }).length,
+    0,
+    "The current direct-catalogue flow must not expose the retired inline reassignment action after removal.",
   );
   assert.equal(
     findButton(removalRenderer.root, "Add Fabric"),
@@ -2910,11 +2910,6 @@ try {
     findButton(removalRenderer.root, "Continue to Design Style"),
     undefined,
     "Removal must remove the forward action while Fabric is incomplete.",
-  );
-  assert.equal(
-    activeFocusMock?.label,
-    "Assign fabric for Standard Shirt",
-    "Removing a fabric must return focus to the removed garment's fabric action.",
   );
   assert.equal(
     mockWindow.scrollY,

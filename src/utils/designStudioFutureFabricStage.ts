@@ -830,6 +830,12 @@ export interface FuturePartialFabricCompatibleTargets {
 export interface FutureRemainingFabricCapacityOffer {
   allocationId: string;
   fabricCode: string;
+  /**
+   * The physical allocation ordinal from the complete allocation list. This
+   * must survive offer filtering so customers can identify the Fabric they
+   * actually selected earlier in the journey.
+   */
+  selectionOrdinal: number;
   usedUnits: number;
   remainingUnits: number;
   assignedGarmentKeys: readonly string[];
@@ -909,13 +915,18 @@ export const getFutureRemainingFabricCapacityOffers = ({
     return [];
   }
 
-  return getFuturePartialFabricAllocationSummaries({
-    fabricAllocationState,
-  }).filter(
-    (summary) =>
-      summary.usedUnits ===
-        FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION - 1 &&
-      summary.remainingUnits === 1,
+  return fabricAllocationState.fabricAllocations.flatMap(
+    (allocation, allocationIndex) => {
+      const summary = resolveFuturePartialFabricAllocationSummary(allocation);
+      if (
+        !summary ||
+        summary.usedUnits !== FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION - 1 ||
+        summary.remainingUnits !== 1
+      ) {
+        return [];
+      }
+      return [{ ...summary, selectionOrdinal: allocationIndex + 1 }];
+    },
   );
 };
 

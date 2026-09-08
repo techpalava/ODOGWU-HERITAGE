@@ -3560,6 +3560,12 @@ export default function DesignStudioView({
       return;
     }
     if (transaction.capacityReuse) {
+      // Reusing a known spare slot is fully authoritative once the occurrence
+      // and its exact allocation assignment have both committed. Design Style
+      // belongs to Step 3, so it must not keep this Fabric transaction alive
+      // and block the autosave that protects the physical result on refresh.
+      additionalGarmentFabricTransactionRef.current = null;
+      setAdditionalGarmentFabricTransaction(null);
       setFutureStageId(transaction.capacityReuse.returnStage);
       return;
     }

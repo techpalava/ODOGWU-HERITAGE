@@ -95,14 +95,14 @@ export const FutureRemainingFabricCapacityOfferCard = ({
       </div>
 
       <ul className="mt-3 space-y-3 text-sm text-heritage-green">
-        {offers.map((offer, index) => (
+        {offers.map((offer) => (
           <li key={offer.allocationId} className="rounded-xl border border-heritage-gold/20 p-3" data-fabric-capacity-offer-allocation-id={offer.allocationId}>
             <p className="break-words font-bold">
               {fabrics.find((fabric) => fabric.code === offer.fabricCode)?.name || offer.fabricCode}
             </p>
-            {offers.length > 1 && (
-              <p className="mt-1 text-xs text-heritage-ink/65">Fabric Selection {index + 1}</p>
-            )}
+            <p className="mt-1 text-xs text-heritage-ink/65">
+              Fabric Selection {offer.selectionOrdinal}
+            </p>
             <p className="mt-1 text-xs text-heritage-ink/65">{offer.remainingUnits}/2 capacity available</p>
             <button
               type="button"

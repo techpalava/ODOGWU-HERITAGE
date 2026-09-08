@@ -364,6 +364,81 @@ act(() => {
 assert.equal(capacityOfferDismissals, 1);
 act(() => capacityOfferRenderer.unmount());
 
+// Physical allocation ordinals must be calculated before partial allocations
+// are filtered. Here Selection 1 is full while Selections 2 and 3 still have
+// one standard-garment slot each.
+const threePhysicalSelections = [
+  "shirt",
+  "trouser",
+  "skirt",
+  "kaftan",
+] satisfies FabricGarmentType[];
+let ordinalState = assign(
+  FabricAllocationStateEngine.initialize(),
+  threePhysicalSelections,
+  "base:shirt",
+  "FAB-A",
+);
+ordinalState = assign(ordinalState, threePhysicalSelections, "base:trouser", "FAB-A");
+ordinalState = assign(ordinalState, threePhysicalSelections, "base:skirt", "FAB-B");
+ordinalState = assign(ordinalState, threePhysicalSelections, "base:kaftan", "FAB-C");
+const ordinalOffers = getFutureRemainingFabricCapacityOffers({
+  fabricAllocationState: ordinalState,
+  fabricStageComplete: true,
+  hasEligibleHalfCapacityAdditionalGarment: true,
+});
+assert.deepEqual(
+  ordinalOffers.map(({ allocationId, selectionOrdinal }) => ({ allocationId, selectionOrdinal })),
+  ordinalState.fabricAllocations.slice(1).map((allocation, index) => ({
+    allocationId: allocation.allocationId,
+    selectionOrdinal: index + 2,
+  })),
+  "Filtered spare offers must retain the full physical Fabric selection ordinal.",
+);
+let ordinalActionAllocationId: string | null = null;
+let ordinalOfferRenderer!: ReturnType<typeof create>;
+act(() => {
+  ordinalOfferRenderer = create(
+    createElement(FutureRemainingFabricCapacityOfferCard, {
+      offers: ordinalOffers,
+      fabrics,
+      eligibleGarmentTypes: ["trouser"],
+      onAddAdditionalGarment: (_garmentType, allocationId) => {
+        ordinalActionAllocationId = allocationId;
+      },
+      onContinue: () => undefined,
+      onDismiss: () => undefined,
+    }),
+  );
+});
+assert.deepEqual(
+  ordinalOfferRenderer.root
+    .findAllByType("li")
+    .map((offer) => offer.findAllByType("p")[1].children.join("")),
+  ["Fabric Selection 2", "Fabric Selection 3"],
+  "The filtered popup must render the authoritative Selection 2 and 3 labels.",
+);
+act(() => {
+  ordinalOfferRenderer.root
+    .findByProps({
+      "data-testid": `remaining-fabric-capacity-offer-accept-${ordinalOffers[1].allocationId}`,
+    })
+    .props.onClick();
+});
+act(() => {
+  ordinalOfferRenderer.root
+    .findByProps({
+      "data-testid": "remaining-fabric-capacity-offer-select-trouser",
+    })
+    .props.onClick();
+});
+assert.equal(
+  ordinalActionAllocationId,
+  ordinalOffers[1].allocationId,
+  "The Selection 3 card action must retain Selection 3's allocation identity.",
+);
+act(() => ordinalOfferRenderer.unmount());
+
 // A completed Step 4 additional-garment Fabric operation uses the same
 // allocation-scoped authority. Only the distinct half-used allocation can
 // trigger the next optional offer.
@@ -1264,8 +1339,8 @@ const capacityOfferSource = readFileSync(
   "utf8",
 );
 assert.match(capacityOfferSource, /Add Garment Using This Fabric/);
-assert.match(capacityOfferSource, /Fabric Selection \{index \+ 1\}/,
-  "Multiple partial allocations must be identified independently.");
+assert.match(capacityOfferSource, /Fabric Selection \{offer\.selectionOrdinal\}/,
+  "Offer labels must retain their physical allocation ordinal after filtering.");
 assert.doesNotMatch(capacityOfferSource, /Add Another Garment/,
   "The ambiguous generic capacity action must not remain.");
 assert.doesNotMatch(
