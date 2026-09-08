@@ -11,6 +11,17 @@ export interface Step1GarmentReferenceImageConfig {
   filename: string;
 }
 
+/**
+ * Temporary Step 1 presentation-only preview. The canonical option remains
+ * selectable and priced only in Step 4; this value must never enter order state.
+ */
+export const STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW = {
+  optionId: "shirt_std_midlong",
+  label: "Mid-Long Sleeve",
+  filename: "ankara-standard-shirt-midlong-sleeve.webp",
+  src: "/images/garments/ankara-standard-shirt-midlong-sleeve.webp",
+} as const;
+
 const garmentReferenceImage = (
   filename: string,
 ): Step1GarmentReferenceImageConfig => ({

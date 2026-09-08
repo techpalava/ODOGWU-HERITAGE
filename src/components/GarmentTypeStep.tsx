@@ -26,6 +26,7 @@ import {
 } from "../utils/garmentConstructionPricing";
 import {
   STEP1_GARMENT_REFERENCE_DISCLAIMER,
+  STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW,
   getStep1GarmentReferenceAlt,
   getStep1GarmentReferenceImage,
   isStep1GarmentReferenceType,
@@ -269,6 +270,9 @@ export const GarmentTypeStep = ({
   idPrefix = "garment-type-step",
 }: GarmentTypeStepProps) => {
   void selectedFabricQuantity;
+  const [shirtImagePreview, setShirtImagePreview] = useState<
+    "base" | "midlong"
+  >("base");
   const presentation = getGarmentTypeStepPresentation({
     selectedGarmentTypes,
     normalizedCustomDetailCatalog,
@@ -372,7 +376,15 @@ export const GarmentTypeStep = ({
               )
                 ? getStep1GarmentReferenceImage(category.garmentType)
                 : null;
-              const referenceAlt = getStep1GarmentReferenceAlt(category.label);
+              const isStandardShirt = category.garmentType === "shirt";
+              const showingMidLongSleevePreview =
+                isStandardShirt && shirtImagePreview === "midlong";
+              const displayedReferenceImage = showingMidLongSleevePreview
+                ? STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW
+                : referenceImage;
+              const referenceAlt = showingMidLongSleevePreview
+                ? "Ankara Standard Shirt, Mid-Long Sleeve style preview"
+                : getStep1GarmentReferenceAlt(category.label);
               return (
                 <article
                   key={category.garmentType}
@@ -387,11 +399,58 @@ export const GarmentTypeStep = ({
                       : ""
                   }`}
                 >
-                  <Step1GarmentReferencePhoto
-                    src={referenceImage?.src ?? null}
-                    alt={referenceAlt}
-                    eager={index < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
-                  />
+                  <div className="relative">
+                    <Step1GarmentReferencePhoto
+                      key={displayedReferenceImage?.src ?? "missing"}
+                      src={displayedReferenceImage?.src ?? null}
+                      alt={referenceAlt}
+                      eager={index < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
+                    />
+                    {isStandardShirt && (
+                      <span
+                        data-testid="step1-shirt-preview-badge"
+                        className="absolute left-2 top-2 rounded-full border border-white/40 bg-heritage-green/90 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-heritage-cream shadow-sm"
+                      >
+                        {showingMidLongSleevePreview
+                          ? "Style Preview"
+                          : "Base Garment"}
+                      </span>
+                    )}
+                  </div>
+                  {isStandardShirt && (
+                    <div
+                      role="group"
+                      aria-label="Standard Shirt image preview"
+                      className="flex min-w-0 gap-1 border-b border-heritage-gold/15 bg-heritage-cream/20 p-1.5"
+                    >
+                      <button
+                        type="button"
+                        aria-pressed={shirtImagePreview === "base"}
+                        data-testid="step1-shirt-preview-base"
+                        onClick={() => setShirtImagePreview("base")}
+                        className={`min-h-7 min-w-0 flex-[1.08] whitespace-nowrap rounded-md px-1 text-[8px] font-bold uppercase tracking-normal sm:tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-green focus-visible:ring-offset-1 ${
+                          shirtImagePreview === "base"
+                            ? "bg-heritage-green text-heritage-cream"
+                            : "text-heritage-green hover:bg-white"
+                        }`}
+                      >
+                        Base
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={shirtImagePreview === "midlong"}
+                        data-testid="step1-shirt-preview-midlong"
+                        onClick={() => setShirtImagePreview("midlong")}
+                        className={`min-h-7 min-w-0 flex-[1.7] whitespace-nowrap rounded-md px-1 text-[8px] font-bold uppercase tracking-normal sm:tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-green focus-visible:ring-offset-1 ${
+                          shirtImagePreview === "midlong"
+                            ? "bg-heritage-green text-heritage-cream"
+                            : "text-heritage-green hover:bg-white"
+                        }`}
+                      >
+                        Mid-Long Sleeve
+                      </button>
+                    </div>
+                  )}
                   <div
                     className={`flex min-w-0 flex-1 flex-col p-2.5 sm:p-3 ${
                       category.selected && !isResolved

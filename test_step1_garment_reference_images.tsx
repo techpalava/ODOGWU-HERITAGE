@@ -17,6 +17,7 @@ import {
 import { CUSTOMER_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
 import {
   STEP1_GARMENT_REFERENCE_IMAGES,
+  STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW,
   getStep1GarmentReferenceAlt,
   getStep1GarmentReferenceImage,
   isStep1GarmentReferenceType,
@@ -73,6 +74,24 @@ assert.deepEqual(getStep1GarmentReferenceImage("skirt"), {
   filename: "ankara-standard-skirt.webp",
   src: "/images/garments/ankara-standard-skirt.webp",
 });
+assert.deepEqual(STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW, {
+  optionId: "shirt_std_midlong",
+  label: "Mid-Long Sleeve",
+  filename: "ankara-standard-shirt-midlong-sleeve.webp",
+  src: "/images/garments/ankara-standard-shirt-midlong-sleeve.webp",
+});
+assert.ok(
+  existsSync(
+    join(
+      repoRoot,
+      "public",
+      "images",
+      "garments",
+      STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW.filename,
+    ),
+  ),
+  "The Standard Shirt mid-long sleeve preview must be present locally",
+);
 
 for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
   assert.ok(
@@ -117,6 +136,8 @@ assert.ok(
 );
 assert.ok(emptyMarkup.includes('alt="Ankara Standard Shirt reference"'));
 assert.ok(emptyMarkup.includes("Standard Shirt"));
+assert.ok(emptyMarkup.includes("Base Garment"));
+assert.equal(emptyMarkup.includes("Style Preview"), false);
 assert.ok(emptyMarkup.includes("Uses 1/2 fabric capacity unit."));
 assert.ok(emptyMarkup.includes(">SELECT<"));
 assert.equal(emptyMarkup.includes("✓ SELECTED"), false);
@@ -250,6 +271,54 @@ const renderSelectable = (selected: readonly FabricGarmentType[]) =>
 act(() => {
   selectableRenderer = create(renderSelectable([]));
 });
+const initialShirtImage = selectableRenderer.root
+  .findByProps({ "data-testid": "step1-garment-card-shirt" })
+  .findByProps({ "data-testid": "step1-garment-reference-image" });
+assert.equal(initialShirtImage.props.src, STEP1_GARMENT_REFERENCE_IMAGES.shirt.src);
+assert.equal(
+  selectableRenderer.root.findByProps({
+    "data-testid": "step1-shirt-preview-base",
+  }).props["aria-pressed"],
+  true,
+);
+assert.equal(
+  selectableRenderer.root.findByProps({
+    "data-testid": "step1-shirt-preview-midlong",
+  }).props["aria-pressed"],
+  false,
+);
+act(() => {
+  selectableRenderer.root
+    .findByProps({ "data-testid": "step1-shirt-preview-midlong" })
+    .props.onClick();
+});
+assert.equal(
+  selectableRenderer.root
+    .findByProps({ "data-testid": "step1-garment-card-shirt" })
+    .findByProps({ "data-testid": "step1-garment-reference-image" }).props.src,
+  STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW.src,
+);
+assert.equal(selectedGarmentTypes.length, 0, "Preview must not select a garment");
+assert.equal(garmentChangeCount, 0, "Preview must not change garment state");
+assert.equal(constructionChangeCount, 0, "Preview must not change construction state");
+assert.ok(
+  JSON.stringify(
+    selectableRenderer.root.findByProps({
+      "data-testid": "step1-shirt-preview-badge",
+    }).children,
+  ).includes("Style Preview"),
+);
+act(() => {
+  selectableRenderer.root
+    .findByProps({ "data-testid": "step1-shirt-preview-base" })
+    .props.onClick();
+});
+assert.equal(
+  selectableRenderer.root
+    .findByProps({ "data-testid": "step1-garment-card-shirt" })
+    .findByProps({ "data-testid": "step1-garment-reference-image" }).props.src,
+  STEP1_GARMENT_REFERENCE_IMAGES.shirt.src,
+);
 act(() => {
   selectableRenderer.root
     .findByProps({ "data-testid": "step1-garment-card-shirt" })
