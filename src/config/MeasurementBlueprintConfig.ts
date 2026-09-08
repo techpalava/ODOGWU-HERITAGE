@@ -520,7 +520,7 @@ export const MEASUREMENT_PROFILES: readonly MeasurementProfile[] = [
   profile("A", "Shirt — Standard Length, Short Sleeve", "SHIRT (SL-SS)", 13, "shirt", allDemographics, ["shirt_std_short"]),
   profile("B", "Shirt — Standard Length, Mid or Long Sleeve", "SHIRT (SL-MS or LS)", 31, "shirt", allDemographics, ["shirt_std_midlong"]),
   profile("C", "Shirt — Long Length, Short Sleeve", "SHIRT (LL-SS)", 50, "shirt", allDemographics, ["shirt_long_short"]),
-  profile("D", "Shirt — Long Length, Mid or Long Sleeve", "SHIRT (LL-MS or LS)", 69, "shirt", allDemographics, ["shirt_long_midlong"]),
+  profile("D", "Shirt — Long Length, Mid or Long Sleeve", "SHIRT (LL-MS or LS)", 69, "shirt", allDemographics, ["shirt_long_midlong"], { shirt_long_midlong: "sleeve_length_long" }),
   profile("E", "Dress — Standard Length, Sleeveless or Short Sleeve", "DRESS (SL-SLL or SS)", 89, "dress", femaleDemographics, ["dress_std_sleeveless", "dress_std_short"], { dress_std_sleeveless: "sleeve_length_sleeveless", dress_std_short: "sleeve_length_short" }),
   profile("F", "Dress — Standard Length, Mid or Long Sleeve", "DRESS (SL-MS or LS)", 114, "dress", femaleDemographics, ["dress_std_midlong"]),
   profile("G", "Dress — Long Length, Sleeveless or Short Sleeve", "DRESS (LL-SLL or SS)", 139, "dress", femaleDemographics, ["dress_long_sleeveless", "dress_long_short"], { dress_long_sleeveless: "sleeve_length_sleeveless", dress_long_short: "sleeve_length_short" }),
