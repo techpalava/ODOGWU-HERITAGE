@@ -292,7 +292,9 @@ for (const malformedState of [
 }
 
 let capacityOfferDismissals = 0;
+let capacityOfferContinues = 0;
 let selectedCapacityOfferGarment: FabricGarmentType | null = null;
+let selectedCapacityOfferAllocationId: string | null = null;
 let capacityOfferRenderer!: ReturnType<typeof create>;
 act(() => {
   capacityOfferRenderer = create(
@@ -300,8 +302,12 @@ act(() => {
       offers: combinedCapacityOffers,
       fabrics,
       eligibleGarmentTypes: ["trouser"],
-      onAddAdditionalGarment: (garmentType) => {
+      onAddAdditionalGarment: (garmentType, allocationId) => {
         selectedCapacityOfferGarment = garmentType;
+        selectedCapacityOfferAllocationId = allocationId;
+      },
+      onContinue: () => {
+        capacityOfferContinues += 1;
       },
       onDismiss: () => {
         capacityOfferDismissals += 1;
@@ -319,7 +325,15 @@ assert.match(JSON.stringify(capacityOfferRenderer.toJSON()), /Fabric A/);
 assert.match(JSON.stringify(capacityOfferRenderer.toJSON()), /Fabric B/);
 act(() => {
   capacityOfferRenderer.root
-    .findByProps({ "data-testid": "remaining-fabric-capacity-offer-accept" })
+    .findByProps({ "data-testid": "remaining-fabric-capacity-offer-decline" })
+    .props.onClick();
+});
+assert.equal(capacityOfferContinues, 1);
+act(() => {
+  capacityOfferRenderer.root
+    .findByProps({
+      "data-testid": `remaining-fabric-capacity-offer-accept-${combinedCapacityOffers[0].allocationId}`,
+    })
     .props.onClick();
 });
 assert.equal(
@@ -337,6 +351,11 @@ act(() => {
     .props.onClick();
 });
 assert.equal(selectedCapacityOfferGarment, "trouser");
+assert.equal(
+  selectedCapacityOfferAllocationId,
+  combinedCapacityOffers[0].allocationId,
+  "the selected garment must retain the specific physical Fabric allocation",
+);
 act(() => {
   capacityOfferRenderer.root
     .findByProps({ "aria-label": "Dismiss fabric capacity suggestion" })
@@ -1228,6 +1247,27 @@ const capacityAdditionHandler = studioSource.slice(
 );
 assert.match(capacityAdditionHandler, /context\?\.origin === "remaining_fabric_capacity_offer" &&\s*additionalGarmentFabricTransactionRef\.current\.phase === "committed"/,
   "Accepting the shared offer may supersede a terminal transaction, never an in-flight assignment.");
+assert.match(capacityAdditionHandler, /capacityReuse:\s*\{[\s\S]*allocationId: selectedCapacityOffer\.allocationId/,
+  "A spare-capacity transaction must retain the exact selected physical allocation.");
+assert.match(capacityAdditionHandler, /openedModal: !selectedCapacityOffer/,
+  "A spare-capacity transaction must not open the normal Fabric catalogue.");
+assert.doesNotMatch(capacityAdditionHandler, /setFutureStageId\("custom_details"\)/,
+  "Step 2 spare-capacity acceptance must not route through Custom Details.");
+assert.match(studioSource, /transaction\.phase === "catalogue" &&\s*transaction\.capacityReuse/,
+  "The spare-capacity transaction must commit from its targeted state, not a catalogue selection.");
+assert.match(studioSource, /assignFutureGarmentToExistingFabricAllocation\(/,
+  "Spare capacity must reuse an existing allocation through Fabric authority.");
+assert.match(studioSource, /setFutureStageId\(transaction\.capacityReuse\.returnStage\)/,
+  "The transaction must return to Step 2 or Step 4 without a Custom Details copy detour.");
+const capacityOfferSource = readFileSync(
+  "src/components/FutureRemainingFabricCapacityOffer.tsx",
+  "utf8",
+);
+assert.match(capacityOfferSource, /Add Garment Using This Fabric/);
+assert.match(capacityOfferSource, /Fabric Selection \{index \+ 1\}/,
+  "Multiple partial allocations must be identified independently.");
+assert.doesNotMatch(capacityOfferSource, /Add Another Garment/,
+  "The ambiguous generic capacity action must not remain.");
 assert.doesNotMatch(
   stepSource,
   />\s*Select Fabric\s*</,

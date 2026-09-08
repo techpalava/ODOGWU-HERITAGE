@@ -9,15 +9,20 @@ export const FutureRemainingFabricCapacityOfferCard = ({
   fabrics,
   eligibleGarmentTypes,
   onAddAdditionalGarment,
+  onContinue,
   onDismiss,
 }: {
   offers: readonly FutureRemainingFabricCapacityOffer[];
   fabrics: readonly Fabric[];
   eligibleGarmentTypes: readonly CanonicalPhysicalGarmentType[];
-  onAddAdditionalGarment: (garmentType: CanonicalPhysicalGarmentType) => void;
+  onAddAdditionalGarment: (
+    garmentType: CanonicalPhysicalGarmentType,
+    allocationId: string,
+  ) => void;
+  onContinue: () => void;
   onDismiss: () => void;
 }) => {
-  const [selectingGarment, setSelectingGarment] = useState(false);
+  const [selectedAllocationId, setSelectedAllocationId] = useState<string | null>(null);
   const offerIdentity = getRemainingFabricCapacityOfferSignature(offers);
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -25,8 +30,12 @@ export const FutureRemainingFabricCapacityOfferCard = ({
   dismissRef.current = onDismiss;
 
   useEffect(() => {
-    setSelectingGarment(false);
+    setSelectedAllocationId(null);
   }, [offerIdentity]);
+
+  const selectedOffer = offers.find(
+    (offer) => offer.allocationId === selectedAllocationId,
+  );
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -85,29 +94,42 @@ export const FutureRemainingFabricCapacityOfferCard = ({
         </button>
       </div>
 
-      <ul className="mt-3 space-y-2 text-sm text-heritage-green">
-        {offers.map((offer) => (
-          <li key={offer.allocationId} className="break-words" data-fabric-capacity-offer-allocation-id={offer.allocationId}>
-            {fabrics.find((fabric) => fabric.code === offer.fabricCode)?.name || offer.fabricCode}
-            {" — "}{offer.remainingUnits}/2 available
+      <ul className="mt-3 space-y-3 text-sm text-heritage-green">
+        {offers.map((offer, index) => (
+          <li key={offer.allocationId} className="rounded-xl border border-heritage-gold/20 p-3" data-fabric-capacity-offer-allocation-id={offer.allocationId}>
+            <p className="break-words font-bold">
+              {fabrics.find((fabric) => fabric.code === offer.fabricCode)?.name || offer.fabricCode}
+            </p>
+            {offers.length > 1 && (
+              <p className="mt-1 text-xs text-heritage-ink/65">Fabric Selection {index + 1}</p>
+            )}
+            <p className="mt-1 text-xs text-heritage-ink/65">{offer.remainingUnits}/2 capacity available</p>
+            <button
+              type="button"
+              onClick={() => setSelectedAllocationId(offer.allocationId)}
+              data-testid={`remaining-fabric-capacity-offer-accept-${offer.allocationId}`}
+              className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              Add Garment Using This Fabric
+            </button>
           </li>
         ))}
       </ul>
 
-      {selectingGarment ? (
+      {selectedOffer ? (
         <div
           data-testid="remaining-fabric-capacity-offer-selector"
           className="mt-3 border-t border-heritage-gold/20 pt-3"
         >
           <p className="text-xs font-bold text-heritage-green">
-            Choose another garment, then choose its Fabric.
+            Choose a garment to use with {fabrics.find((fabric) => fabric.code === selectedOffer.fabricCode)?.name || selectedOffer.fabricCode}.
           </p>
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {eligibleGarmentTypes.map((garmentType) => (
               <button
                 key={garmentType}
                 type="button"
-                onClick={() => onAddAdditionalGarment(garmentType)}
+                onClick={() => onAddAdditionalGarment(garmentType, selectedOffer.allocationId)}
                 aria-label={`Add ${getFabricGarmentLabel(garmentType)}`}
                 data-testid={`remaining-fabric-capacity-offer-select-${garmentType}`}
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-3 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
@@ -119,29 +141,21 @@ export const FutureRemainingFabricCapacityOfferCard = ({
           </div>
           <button
             type="button"
-            onClick={() => setSelectingGarment(false)}
+            onClick={() => setSelectedAllocationId(null)}
             className="mt-3 inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green/30 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
           >
             Back
           </button>
         </div>
       ) : (
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <div className="mt-3 flex flex-col gap-2">
           <button
             type="button"
-            onClick={() => setSelectingGarment(true)}
-            data-testid="remaining-fabric-capacity-offer-accept"
-            className="min-h-11 rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-          >
-            Add Another Garment
-          </button>
-          <button
-            type="button"
-            onClick={onDismiss}
+            onClick={onContinue}
             data-testid="remaining-fabric-capacity-offer-decline"
             className="min-h-11 rounded-xl border border-heritage-green/30 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
           >
-            Continue Without Adding
+            Continue to Design Style
           </button>
         </div>
       )}

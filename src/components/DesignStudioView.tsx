@@ -3327,6 +3327,93 @@ export default function DesignStudioView({
       transaction.phase !== "assigning" &&
       transaction.phase !== "awaiting_commit"
     ) {
+      if (
+        transaction.phase === "catalogue" &&
+        transaction.capacityReuse
+      ) {
+        const reuse = transaction.capacityReuse;
+        const allocation = fabricAllocationState.fabricAllocations.find(
+          (candidate) => candidate.allocationId === reuse.allocationId,
+        );
+        const liveAssignedGarmentKeys = allocation
+          ? allocation.garmentAssignments
+              .map((assignment) => assignment.garmentKey)
+              .sort()
+          : [];
+        const expectedAssignedGarmentKeys = [...reuse.assignedGarmentKeys].sort();
+        if (
+          !allocation ||
+          allocation.fabricCode !== reuse.fabricCode ||
+          JSON.stringify(liveAssignedGarmentKeys) !==
+            JSON.stringify(expectedAssignedGarmentKeys)
+        ) {
+          cancelAdditionalGarmentFabricTransaction({
+            transactionId: transaction.transactionId,
+            garmentKey: transaction.garmentKey,
+            occurrenceGeneration: transaction.occurrenceGeneration,
+          });
+          setNotification({
+            message:
+              "This Fabric capacity offer is no longer current. Your existing order was not changed.",
+            type: "info",
+          });
+          return;
+        }
+        const assignment = assignFutureGarmentToExistingFabricAllocation({
+          state: fabricAllocationState,
+          garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+          garmentKey: transaction.garmentKey,
+          allocationId: reuse.allocationId,
+          requiredPhysicalOccurrences: fabricTransactionPhysicalOccurrences,
+        });
+        if (assignment.status !== "assigned") {
+          cancelAdditionalGarmentFabricTransaction({
+            transactionId: transaction.transactionId,
+            garmentKey: transaction.garmentKey,
+            occurrenceGeneration: transaction.occurrenceGeneration,
+          });
+          setNotification({
+            message:
+              "That Fabric no longer has enough capacity for this garment. Your existing order was not changed.",
+            type: "info",
+          });
+          return;
+        }
+        const confirmed = confirmAdditionalGarmentFabricAssignment({
+          previousState: fabricAllocationState,
+          nextState: assignment.state,
+          garmentKey: transaction.garmentKey,
+          fabricCode: reuse.fabricCode,
+        });
+        if (confirmed.status !== "assigned") {
+          cancelAdditionalGarmentFabricTransaction({
+            transactionId: transaction.transactionId,
+            garmentKey: transaction.garmentKey,
+            occurrenceGeneration: transaction.occurrenceGeneration,
+          });
+          setNotification({
+            message:
+              "This Fabric could not be reused for that garment. Your existing order was not changed.",
+            type: "info",
+          });
+          return;
+        }
+        revalidatePreservedFabricIntegrityAfterMutation({
+          previousState: fabricAllocationState,
+          nextState: confirmed.state,
+          explicitlyRepairedGarmentKeys: [transaction.garmentKey],
+        });
+        const assigningTransaction: AdditionalGarmentFabricTransaction = {
+          ...transaction,
+          phase: "assigning",
+          openedModal: false,
+          requestedFabricCode: confirmed.fabricCode,
+        };
+        additionalGarmentFabricTransactionRef.current = assigningTransaction;
+        setFabricAllocationState(confirmed.state);
+        setAdditionalGarmentFabricError(null);
+        setAdditionalGarmentFabricTransaction(assigningTransaction);
+      }
       return;
     }
 
@@ -3472,6 +3559,10 @@ export default function DesignStudioView({
       setFutureStageId("design_style");
       return;
     }
+    if (transaction.capacityReuse) {
+      setFutureStageId(transaction.capacityReuse.returnStage);
+      return;
+    }
     setFutureCustomDetailsFocusGarmentKey(commitResult.garmentKey);
     setFutureStageId("custom_details");
   }, [
@@ -3481,6 +3572,8 @@ export default function DesignStudioView({
     futureCatalogInspection,
     futureScopedCustomDetailsReconciliation,
     fabrics,
+    effectiveJourneyGarmentTypeSelection,
+    fabricTransactionPhysicalOccurrences,
   ]);
 
   useEffect(() => {
@@ -5390,6 +5483,7 @@ export default function DesignStudioView({
       | {
           origin: "remaining_fabric_capacity_offer";
           offerSignature: string;
+          allocationId: string;
         },
   ) => {
     invalidateFutureGarmentRemovalRetention();
@@ -5408,6 +5502,29 @@ export default function DesignStudioView({
     ) {
       setNotification({
         message: "Finish the current fabric assignment before adding another garment.",
+        type: "info",
+      });
+      return;
+    }
+    const selectedCapacityOffer =
+      context?.origin === "remaining_fabric_capacity_offer"
+        ? remainingFabricCapacityOffers.find(
+            (offer) =>
+              offer.allocationId === context.allocationId &&
+              context.offerSignature === remainingFabricCapacityOfferSignature,
+          )
+        : null;
+    const selectedCapacityOfferSignature =
+      context?.origin === "remaining_fabric_capacity_offer"
+        ? context.offerSignature
+        : null;
+    if (
+      context?.origin === "remaining_fabric_capacity_offer" &&
+      !selectedCapacityOffer
+    ) {
+      setNotification({
+        message:
+          "This Fabric no longer has capacity for another garment. Your existing order was not changed.",
         type: "info",
       });
       return;
@@ -5467,25 +5584,26 @@ export default function DesignStudioView({
       ...(context?.origin === "design_style_reuse"
         ? { designStyleReuse: { styleId: context.styleId } }
         : {}),
+      ...(selectedCapacityOffer
+        ? {
+            capacityReuse: {
+              allocationId: selectedCapacityOffer.allocationId,
+              fabricCode: selectedCapacityOffer.fabricCode,
+              remainingUnits: selectedCapacityOffer.remainingUnits,
+              assignedGarmentKeys: selectedCapacityOffer.assignedGarmentKeys,
+              offerSignature: selectedCapacityOfferSignature!,
+              returnStage: (futureStageId === "custom_details"
+                ? "custom_details"
+                : "fabric") as "fabric" | "custom_details",
+            },
+          }
+        : {}),
     };
     const pendingTransaction = beginAdditionalGarmentFabricTransaction({
       ...transactionBase,
       phase: "catalogue",
-      openedModal: true,
+      openedModal: !selectedCapacityOffer,
     });
-    if (
-      context?.origin === "remaining_fabric_capacity_offer" &&
-      (!remainingFabricCapacityOfferSignature ||
-        context.offerSignature !== remainingFabricCapacityOfferSignature)
-    ) {
-      additionalGarmentFabricSnapshotRef.current = null;
-      setNotification({
-        message:
-          "This Fabric no longer has capacity for another garment. Your existing order was not changed.",
-        type: "info",
-      });
-      return;
-    }
 
     const pendingState =
       FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(
@@ -5503,22 +5621,15 @@ export default function DesignStudioView({
 
     const nextTransaction: AdditionalGarmentFabricTransaction = {
       ...pendingTransaction,
-      // An accepted capacity offer identifies an opportunity, never a selected
-      // Fabric. All new additional garments therefore begin in the shared
-      // catalogue with no preselection.
+      // Normal additions open the catalogue. A capacity offer carries an
+      // explicit allocation identity and is committed atomically below.
       phase: "catalogue",
-      openedModal: true,
+      openedModal: !selectedCapacityOffer,
     };
     additionalGarmentFabricTransactionRef.current = nextTransaction;
     setGarmentTypeSelection(identitySelection);
     setFabricAllocationState(pendingState);
     setAdditionalGarmentFabricTransaction(nextTransaction);
-    if (context?.origin === "remaining_fabric_capacity_offer") {
-      // The capacity offer starts on Step 2, while the established additional
-      // garment completion choice belongs to Step 4. Keep that existing
-      // transaction mounted through its Fabric confirmation.
-      setFutureStageId("custom_details");
-    }
   };
   const handleCompleteAdditionalGarmentCustomDetails = (
     request: AdditionalGarmentCustomDetailsRequest,
@@ -6097,7 +6208,9 @@ export default function DesignStudioView({
     const nextTransaction = {
       ...transaction,
       phase:
-        transaction.origin === "new_addition" && !transaction.designStyleReuse
+        transaction.origin === "new_addition" &&
+        !transaction.designStyleReuse &&
+        !transaction.capacityReuse
           ? "custom_details_choice"
           : "assigning",
       openedModal: transaction.origin !== "new_addition",
@@ -6752,13 +6865,20 @@ export default function DesignStudioView({
               new Set([...current, remainingFabricCapacityOfferSignature]),
             );
           }}
-          onAddAdditionalGarment={(garmentType) => {
+          onContinue={() => {
+            setDismissedRemainingFabricCapacityOfferKeys((current) =>
+              new Set([...current, remainingFabricCapacityOfferSignature]),
+            );
+            navigateToFutureStage("design_style");
+          }}
+          onAddAdditionalGarment={(garmentType, allocationId) => {
             setDismissedRemainingFabricCapacityOfferKeys((current) =>
               new Set([...current, remainingFabricCapacityOfferSignature]),
             );
             handleAddFutureAdditionalGarment(garmentType, null, {
               origin: "remaining_fabric_capacity_offer",
               offerSignature: remainingFabricCapacityOfferSignature,
+              allocationId,
             });
           }}
         />

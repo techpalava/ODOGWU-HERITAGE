@@ -43,6 +43,20 @@ export type AdditionalGarmentFabricTransaction = {
   designStyleReuse?: {
     styleId: string;
   };
+  /**
+   * An explicitly selected, still-valid spare slot in an existing physical
+   * Fabric allocation. This is intentionally distinct from the normal
+   * additional-garment catalogue flow: it must reuse this allocation without
+   * creating a new Fabric purchase or opening the catalogue.
+   */
+  capacityReuse?: {
+    allocationId: string;
+    fabricCode: string;
+    remainingUnits: number;
+    assignedGarmentKeys: readonly string[];
+    offerSignature: string;
+    returnStage: "fabric" | "custom_details";
+  };
   /** True when the Step 4 fabric dialog was opened for this transaction. */
   openedModal?: boolean;
 };
