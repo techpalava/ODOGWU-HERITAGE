@@ -19,10 +19,14 @@ import type {
   UploadedDesignSource,
 } from "../types";
 import { isCustomerDesignDraftStoragePath } from "../services/customerDesignUploadReference";
-import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
+import {
+  createStyleBaseGarmentSpec,
+  FABRIC_GARMENT_CAPACITY_UNITS,
+} from "../config/StyleFabricCapacityConfig";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import {
   isCanonicalPhysicalGarmentType,
+  isCustomerSelectableGarmentType,
 } from "./garmentConstructionPricing";
 import {
   buildEffectiveUploadedJourneyGarmentTypeSelection,
@@ -320,6 +324,14 @@ export type PhysicalGarmentOccurrence = {
   sourceRole: "main" | "additional";
   fabricUnits: number;
   occurrenceGeneration?: number;
+  /**
+   * Runtime-only proof that an additional occurrence was created by a
+   * catalogue additional-garment authority, rather than inferred from an
+   * uploaded composition. It is deliberately not persisted as Fabric data.
+   */
+  additionalPersistenceAuthority?:
+    | "construction_ledger"
+    | "authorized_pending_transaction";
 };
 
 export type AuthoritativePhysicalOrderDiagnosticCode =
@@ -351,16 +363,41 @@ const collectRawFabricAssignments = (
 export const physicalOccurrencesToFabricRequirements = (
   occurrences: readonly PhysicalGarmentOccurrence[],
 ): FabricGarmentAssignment[] =>
-  occurrences.map((occurrence) => ({
-    garmentKey: occurrence.garmentKey,
-    code:
-      occurrence.sourceRole === "additional"
-        ? `ADDITIONAL_${occurrence.garmentType.toUpperCase()}`
-        : `BASE_${occurrence.garmentType.toUpperCase()}`,
-    garmentType: occurrence.garmentType,
-    fabricUnits: occurrence.fabricUnits as FabricUnitCount,
-    sourceRole: occurrence.sourceRole,
-  }));
+  occurrences.map((occurrence) => {
+    const isCanonicalCatalogueAdditional =
+      occurrence.sourceRole === "additional" &&
+      (occurrence.additionalPersistenceAuthority === "construction_ledger" ||
+        occurrence.additionalPersistenceAuthority ===
+          "authorized_pending_transaction") &&
+      isCustomerSelectableGarmentType(occurrence.garmentType) &&
+      occurrence.fabricUnits ===
+        FABRIC_GARMENT_CAPACITY_UNITS[occurrence.garmentType] &&
+      new RegExp(
+        `^additional:${occurrence.garmentType}:[1-9][0-9]*$`,
+      ).test(occurrence.garmentKey);
+
+    return {
+      garmentKey: occurrence.garmentKey,
+      code:
+        occurrence.sourceRole === "additional"
+          ? `ADDITIONAL_${occurrence.garmentType.toUpperCase()}`
+          : `BASE_${occurrence.garmentType.toUpperCase()}`,
+      garmentType: occurrence.garmentType,
+      fabricUnits: occurrence.fabricUnits as FabricUnitCount,
+      sourceRole: occurrence.sourceRole,
+      ...(isCanonicalCatalogueAdditional
+        ? {
+            garmentSpec: {
+              key: occurrence.garmentKey,
+              garmentType: occurrence.garmentType,
+              fabricUnits: occurrence.fabricUnits as FabricUnitCount,
+            },
+            eligibilityRule: "catalog_all" as const,
+            dependencyStatus: "valid" as const,
+          }
+        : {}),
+    };
+  });
 
 export const parseAdditionalGarmentTypeFromKey = (
   garmentKey: string,
@@ -407,6 +444,7 @@ const projectAuthorizedAdditionalPhysicalOccurrences = ({
         garmentType,
         sourceRole: "additional",
         fabricUnits: createStyleBaseGarmentSpec(garmentType).fabricUnits,
+        additionalPersistenceAuthority: "construction_ledger",
       });
     },
   );
@@ -908,7 +946,11 @@ const clearInvalidDesignSourceDraftState = (
     ...draft.designSelections,
     customDetails: {},
   },
-  fabricAllocations: undefined,
+  // Fabric has an independent persistence safety contract. In particular, a
+  // non-empty malformed Fabric payload must reach its strict reader intact so
+  // hydration can block autosave instead of silently treating it as absent.
+  // The Design Studio will not make it authoritative unless that reader
+  // accepts it.
 });
 
 /**

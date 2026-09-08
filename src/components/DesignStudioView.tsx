@@ -127,6 +127,7 @@ import {
   cloneFabricAllocations,
   resolveDraftAutosaveFabricAllocations,
   resolveDraftHydrationAllocations,
+  type InvalidPersistedFabricAllocationDiagnostic,
 } from "../utils/fabricAllocationPersistence";
 import {
   acceptDormantGarmentConstructionDefaults,
@@ -595,6 +596,10 @@ export default function DesignStudioView({
   const preservedInvalidHydratedDraftFabricAllocationsRef = useRef<
     FabricAllocation[] | null
   >(null);
+  const blockedPersistedFabricHydrationRef = useRef<{
+    rawFabricAllocations: unknown;
+    diagnostic: InvalidPersistedFabricAllocationDiagnostic;
+  } | null>(null);
   const businessSettings = useAppStore((state) => state.businessSettings);
   const isLoadingData = useAppStore((state) => state.isLoadingData);
   const stylesLoadState = useAppStore((state) => state.stylesLoadState);
@@ -984,6 +989,7 @@ export default function DesignStudioView({
         fabricUnits: additionalGarmentFabricTransaction.fabricUnits,
         occurrenceGeneration:
           additionalGarmentFabricTransaction.occurrenceGeneration,
+        additionalPersistenceAuthority: "authorized_pending_transaction",
       };
       return [...authoritativePhysicalOccurrencesForDomain, provisionalOccurrence];
     },
@@ -2678,6 +2684,7 @@ export default function DesignStudioView({
     setFuturePaymentReviewHandoff(null);
     setGuestDraftHydrated(false);
     preservedInvalidHydratedDraftFabricAllocationsRef.current = null;
+    blockedPersistedFabricHydrationRef.current = null;
     setFutureDraftFabricIntegrityBlockers([]);
 
     // Remove the previous identity's dormant draft from rendered state before
@@ -2851,7 +2858,18 @@ export default function DesignStudioView({
       const hydratedAllocations = storedDraft
         ? resolveDraftHydrationAllocations(storedDraft)
         : null;
-      const rawFabricState = hydratedAllocations?.hasValidModernAllocations
+      const blockedPersistedFabricHydration =
+        hydratedAllocations?.status === "invalid"
+          ? {
+              rawFabricAllocations: hydratedAllocations.rawFabricAllocations,
+              diagnostic: hydratedAllocations.diagnostic,
+            }
+          : null;
+      blockedPersistedFabricHydrationRef.current = blockedPersistedFabricHydration;
+      if (blockedPersistedFabricHydration) {
+        hydratedPersistenceStatus = "invalid";
+      }
+      const rawFabricState = hydratedAllocations?.status === "valid"
         ? {
             fabricAllocations:
               cloneFabricAllocations(hydratedAllocations.fabricAllocations) ||
@@ -2937,25 +2955,28 @@ export default function DesignStudioView({
       const restoredAuthoritativeOccurrenceKeys = new Set(
         restoredMembershipOccurrences.map((occurrence) => occurrence.garmentKey),
       );
-      const hydratedFabricPreparation = prepareHydratedFabricAllocationState({
-        rawState: rawFabricState,
-        garmentTypeSelection: restoredFabricPlanningSelection,
-        authoritativeOccurrenceKeys: restoredAuthoritativeOccurrenceKeys,
-        requiredPhysicalOccurrences: restoredMembershipOccurrences,
-      });
+      const hydratedFabricPreparation = blockedPersistedFabricHydration
+        ? null
+        : prepareHydratedFabricAllocationState({
+            rawState: rawFabricState,
+            garmentTypeSelection: restoredFabricPlanningSelection,
+            authoritativeOccurrenceKeys: restoredAuthoritativeOccurrenceKeys,
+            requiredPhysicalOccurrences: restoredMembershipOccurrences,
+          });
       preservedInvalidHydratedDraftFabricAllocationsRef.current =
-        hydratedFabricPreparation.preservedRawFabricAllocations;
+        hydratedFabricPreparation?.preservedRawFabricAllocations ?? null;
       setFutureDraftFabricIntegrityBlockers([
-        ...hydratedFabricPreparation.integrity.diagnostics,
+        ...(hydratedFabricPreparation?.integrity.diagnostics || []),
       ]);
-      const reconciledFabricState = hydratedFabricPreparation.reconciledState;
+      const reconciledFabricState =
+        hydratedFabricPreparation?.reconciledState ?? rawFabricState;
       const restoredFabricCompletion = getFutureFabricStageCompletion({
         garmentTypeSelection: restoredFabricPlanningSelection,
         fabricAllocationState: reconciledFabricState,
         fabrics,
         requiredPhysicalOccurrences: restoredMembershipOccurrences,
         rawFabricIntegrityDiagnostics:
-          hydratedFabricPreparation.integrity.diagnostics,
+          hydratedFabricPreparation?.integrity.diagnostics || [],
       });
       const restoredStyleId = restoredUploadedSource
         ? null
@@ -3735,7 +3756,13 @@ export default function DesignStudioView({
   };
 
   useEffect(() => {
-    if (!guestDraftHydrated || isAdditionalGarmentCommitPending) return;
+    if (
+      !guestDraftHydrated ||
+      isAdditionalGarmentCommitPending ||
+      blockedPersistedFabricHydrationRef.current !== null
+    ) {
+      return;
+    }
     if (
       futureDraftPersistenceStatus !== "ready" ||
       (futureDraftIdentity.status !== "guest" &&
@@ -3753,6 +3780,10 @@ export default function DesignStudioView({
             preservedInvalidHydratedDraftFabricAllocationsRef.current !== null,
           generatedFabricAllocations: fabricAllocationState.fabricAllocations,
         });
+      if (autosaveAllocationResolution.blockedByInvalidGeneratedAllocations) {
+        setFutureDraftPersistenceStatus("invalid");
+        return;
+      }
       if (!autosaveAllocationResolution.preserveInvalidHydratedModernData) {
         preservedInvalidHydratedDraftFabricAllocationsRef.current = null;
       }
