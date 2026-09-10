@@ -68,19 +68,6 @@ export const getGarmentTypeStepLabel = (
   garmentType: Exclude<FabricGarmentType, "other">,
 ): string => GARMENT_TYPE_STEP_LABELS[garmentType];
 
-const GARMENT_TYPE_STEP_DESCRIPTIONS: Partial<
-  Record<Exclude<FabricGarmentType, "other">, string>
-> = {
-  long_skirt: "Skirt length is From Waist Up to Ankle",
-};
-
-export const getGarmentTypeStepDescription = (
-  garmentType: FabricGarmentType,
-): string | undefined =>
-  garmentType === "other"
-    ? undefined
-    : GARMENT_TYPE_STEP_DESCRIPTIONS[garmentType];
-
 const FIRST_VISIBLE_REFERENCE_IMAGE_COUNT = 3;
 
 /** Half-height Step 1 reference frame (~50% shorter than the prior square crop). */
@@ -354,6 +341,15 @@ export const GarmentTypeStep = ({
     );
   };
 
+  const isInteractiveCardTarget = (target: EventTarget | null): boolean => {
+    const element = target as Element | null;
+    return Boolean(
+      element?.closest?.(
+        "button, a, input, select, textarea, [role='button'], [contenteditable='true']",
+      ),
+    );
+  };
+
   const fabricQuantitySummary = (
     <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-heritage-gold/20 bg-heritage-cream/35 p-3 sm:p-4">
       <Layers3 aria-hidden="true" size={20} className="mt-0.5 shrink-0 text-heritage-gold" />
@@ -429,14 +425,16 @@ export const GarmentTypeStep = ({
                 ? getStep1GarmentSecondaryReferenceImage(dualImageGarmentType)
                 : null;
               const referenceAlt = getStep1GarmentReferenceAlt(category.label);
-              const description = getGarmentTypeStepDescription(
-                category.garmentType,
-              );
               return (
                 <article
                   key={category.garmentType}
                   data-testid={`step1-garment-card-${category.garmentType}`}
-                  className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border ${
+                  onClick={(event) => {
+                    if (!isInteractiveCardTarget(event.target)) {
+                      toggleGarment(category.garmentType);
+                    }
+                  }}
+                  className={`flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-2xl border transition-shadow hover:shadow-md ${
                     category.selected
                       ? "border-heritage-green shadow-sm ring-2 ring-heritage-green/25"
                       : "border-heritage-gold/20 bg-white"
@@ -494,14 +492,6 @@ export const GarmentTypeStep = ({
                     <p className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60">
                       {category.fabricCapacityUsage}
                     </p>
-                    {description && (
-                      <p
-                        className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60"
-                        data-testid={`step1-garment-description-${category.garmentType}`}
-                      >
-                        {description}
-                      </p>
-                    )}
                     {category.selected && !isResolved && (
                       <p className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
                         <AlertCircle aria-hidden="true" size={14} className="mt-0.5 shrink-0" />
