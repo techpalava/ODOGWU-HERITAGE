@@ -830,14 +830,8 @@ export const DormantFuturePaymentReviewStep = ({
                       </dd>
                     </div>
                     <div className="flex min-w-0 flex-wrap justify-between gap-2">
-                      <dt>Material price</dt>
-                      <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
-                        {allocation.materialPriceCents === null ? (
-                          <PendingAmount />
-                        ) : (
-                          moneyFromCents(allocation.materialPriceCents)
-                        )}
-                      </dd>
+                      <dt>Fabric</dt>
+                      <dd className="font-bold text-heritage-green">Included</dd>
                     </div>
                   </dl>
                   <p className="mt-3 text-xs font-semibold capitalize text-heritage-ink/60">

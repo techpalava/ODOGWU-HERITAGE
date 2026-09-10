@@ -367,6 +367,13 @@ for (const expected of [
   assert.ok(reviewMarkup.includes(expected), `Missing review text: ${expected}`);
 }
 assert.equal((reviewMarkup.match(/Fabric Selection/g) || []).length, 2);
+assert.ok(reviewMarkup.includes("HiTarget Royal Heritage Pattern With A Long Name"));
+assert.ok(reviewMarkup.includes("Ceremonial Lace"));
+assert.ok(reviewMarkup.includes("Assigned to: Shirt, Kaftan"));
+assert.ok(reviewMarkup.includes("Assigned to: Agbada"));
+assert.equal((reviewMarkup.match(/>Included</g) || []).length, 2);
+assert.equal(reviewMarkup.includes("Material price"), false);
+assert.equal(reviewMarkup.includes("€10.00"), false);
 assert.equal((reviewMarkup.match(/data-pricing-row="included_components"/g) || []).length, 1);
 const priceBreakdownMarkup = reviewMarkup.slice(
   reviewMarkup.indexOf("Price breakdown"),
@@ -510,7 +517,20 @@ assert.equal(studioSource.includes("createFutureOrderMasterOrderV2"), false);
 assert.equal(studioSource.includes("StorageService.saveOrder"), false);
 assert.ok(studioSource.includes("isFuturePaymentReviewStageUnlocked"));
 assert.ok(studioSource.includes('futureStageId === "payment"'));
-assert.ok(studioSource.includes('onBack={() => setFutureStageId("shipping")}'));
+const paymentReviewStageSource = studioSource.slice(
+  studioSource.indexOf('futureStageId === "payment"'),
+);
+assert.ok(paymentReviewStageSource.includes("<DormantFuturePaymentReviewStep"));
+assert.ok(
+  paymentReviewStageSource.includes(
+    'onBack={() => navigateToFutureStage("shipping")}',
+  ),
+);
+assert.ok(
+  paymentReviewStageSource.includes(
+    "onEditStage={(stage) => navigateToFutureStage(stage)}",
+  ),
+);
 assert.ok(stepperSource.includes("canEnterPayment"));
 assert.ok(stepperSource.includes("onSelectPayment"));
 assert.ok(shippingSource.includes("canContinueToReview"));
