@@ -42,6 +42,8 @@
     "test:uploaded-design-auth-continuity": "node scripts/tsxWithViteProductionFirebase.mjs test_uploaded_design_auth_continuity.ts",
     "test:firestore-security": "tsx test_firestore_security.ts",
     "test:design-style-authority": "tsx test_design_style_authority.ts && tsx test_design_style_publication.ts && tsx test_design_style_customer_projection.ts",
+    "test:design-style-id": "tsx test_design_style_id.ts",
+    "test:design-style-admin-overrides": "node scripts/tsxWithViteFirestoreMock.mjs test_design_style_admin_overrides.tsx",
     "test:design-style-draft-persistence": "tsx test_design_style_draft_persistence.ts && node scripts/tsxWithViteProductionFirebase.mjs test_design_style_draft_integration.ts",
     "test:design-style-persistence-acknowledgement": "tsx test_design_style_persistence_acknowledgement.ts",
     "test:design-style-step-runtime": "tsx test_design_style_step_runtime.ts && tsx test_design_style_step_runtime_ui.tsx",
