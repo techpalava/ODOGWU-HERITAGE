@@ -208,10 +208,17 @@ assert.equal(
   getStep1GarmentSecondaryReferenceImage("kaftan")?.filename,
   "ankara-kaftan-short-sleeve.webp",
 );
-assert.ok(
+assert.equal(
   emptyMarkup.includes("Skirt length is From Waist Up to Ankle"),
-  "Long Skirt must render its approved card description.",
+  false,
+  "Long Skirt's shared Custom Details description must not render on its Step 1 card.",
 );
+assert.ok(emptyMarkup.includes("Long Skirt"));
+assert.ok(emptyMarkup.includes('data-testid="step1-garment-select-long_skirt"'));
+const selectedLongSkirtMarkup = renderStepMarkup(["long_skirt"]);
+assert.ok(selectedLongSkirtMarkup.includes("Long Skirt"));
+assert.ok(selectedLongSkirtMarkup.includes("€80.00"));
+assert.ok(selectedLongSkirtMarkup.includes('data-testid="step1-garment-select-long_skirt"'));
 assert.ok(emptyMarkup.includes("Uses 1/2 fabric capacity unit."));
 assert.ok(emptyMarkup.includes(">SELECT<"));
 assert.equal(emptyMarkup.includes("✓ SELECTED"), false);
@@ -383,8 +390,50 @@ assert.equal(
   }).length,
   0,
 );
+for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
+  const card = selectableRenderer.root.findByProps({
+    "data-testid": `step1-garment-card-${garmentType}`,
+  });
+  const changeCountBeforeCardClick = garmentChangeCount;
+  assert.ok(card.props.className.includes("cursor-pointer"));
+  act(() => {
+    card.props.onClick({ target: null });
+  });
+  assert.equal(
+    garmentChangeCount,
+    changeCountBeforeCardClick + 1,
+    `Clicking ${garmentType}'s non-button card area must select it exactly once.`,
+  );
+  assert.ok(selectedGarmentTypes.includes(garmentType));
+  act(() => {
+    selectableRenderer.update(renderSelectable(selectedGarmentTypes));
+  });
+  const selectedCard = selectableRenderer.root.findByProps({
+    "data-testid": `step1-garment-card-${garmentType}`,
+  });
+  act(() => {
+    selectedCard.props.onClick({ target: null });
+  });
+  assert.equal(
+    garmentChangeCount,
+    changeCountBeforeCardClick + 2,
+    `Clicking selected ${garmentType}'s non-button card area must deselect it exactly once.`,
+  );
+  assert.equal(selectedGarmentTypes.includes(garmentType), false);
+  act(() => {
+    selectableRenderer.update(renderSelectable(selectedGarmentTypes));
+  });
+}
+assert.equal(selectedGarmentTypes.length, 0);
+assert.equal(garmentChangeCount, CUSTOMER_SELECTABLE_GARMENT_TYPES.length * 2);
+assert.equal(constructionChangeCount, CUSTOMER_SELECTABLE_GARMENT_TYPES.length * 2);
+garmentChangeCount = 0;
+constructionChangeCount = 0;
 const shirtSelect = selectableRenderer.root.findByProps({
   "data-testid": "step1-garment-select-shirt",
+});
+const shirtCard = selectableRenderer.root.findByProps({
+  "data-testid": "step1-garment-card-shirt",
 });
 assert.equal(shirtSelect.props.type, "button");
 assert.equal(shirtSelect.props["aria-pressed"], false);
@@ -400,8 +449,17 @@ assert.ok(
 assert.ok(shirtSelect.props.className.includes("min-h-11"));
 act(() => {
   shirtSelect.props.onClick();
+  shirtCard.props.onClick({
+    target: {
+      closest: () => ({}),
+    },
+  });
 });
-assert.equal(garmentChangeCount, 1, "one SELECT click must produce one garment-state transition");
+assert.equal(
+  garmentChangeCount,
+  1,
+  "A button click plus its card bubble must produce one garment-state transition.",
+);
 assert.equal(constructionChangeCount, 1);
 assert.deepEqual(selectedGarmentTypes, ["shirt"]);
 act(() => {
