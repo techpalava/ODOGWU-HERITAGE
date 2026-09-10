@@ -885,6 +885,81 @@ assert.equal(
 assert.equal(gownAlone.candidateMessages["base:full_length_gown"] ?? null, null);
 assert.equal(gownAlone.selectedFailure, null);
 
+const shirtThenGown = evaluateStep1FabricAssignmentSelection({
+  candidates: gownCandidates,
+  selectedGarmentKeys: ["base:shirt"],
+  garmentTypeSelection: createSelection(gownTypes),
+  fabricAllocationState: empty,
+  fabricCode: "FAB-STOCK",
+  fabrics: stockOneFabric,
+});
+assert.equal(shirtThenGown.canAssignSelected, true);
+assert.equal(shirtThenGown.candidateEnabled["base:shirt"], true);
+assert.equal(shirtThenGown.candidateEnabled["base:trouser"], true);
+assert.equal(shirtThenGown.candidateEnabled["base:full_length_gown"], false);
+assert.equal(
+  shirtThenGown.candidateMessages["base:full_length_gown"],
+  "Needs another Fabric piece; no additional stock available.",
+);
+assert.equal(shirtThenGown.fabricLevelError, null);
+assert.equal(shirtThenGown.selectedCapacityMessage, null);
+
+const shirtDeselected = evaluateStep1FabricAssignmentSelection({
+  candidates: gownCandidates,
+  selectedGarmentKeys: [],
+  garmentTypeSelection: createSelection(gownTypes),
+  fabricAllocationState: empty,
+  fabricCode: "FAB-STOCK",
+  fabrics: stockOneFabric,
+});
+assert.equal(shirtDeselected.candidateEnabled["base:full_length_gown"], true);
+
+const gownThenShirt = evaluateStep1FabricAssignmentSelection({
+  candidates: gownCandidates,
+  selectedGarmentKeys: ["base:full_length_gown"],
+  garmentTypeSelection: createSelection(gownTypes),
+  fabricAllocationState: empty,
+  fabricCode: "FAB-STOCK",
+  fabrics: stockOneFabric,
+});
+assert.equal(gownThenShirt.candidateEnabled["base:full_length_gown"], true);
+assert.equal(gownThenShirt.candidateEnabled["base:shirt"], false);
+
+const shirtThenTrouserProjection = evaluateStep1FabricAssignmentSelection({
+  candidates: stockPairCandidates,
+  selectedGarmentKeys: ["base:shirt"],
+  garmentTypeSelection: createSelection(stockPairTypes),
+  fabricAllocationState: empty,
+  fabricCode: "FAB-STOCK",
+  fabrics: stockOneFabric,
+});
+assert.equal(shirtThenTrouserProjection.candidateEnabled["base:trouser"], true);
+
+const existingPartialState = commitStep1FabricAssignment({
+  state: empty,
+  garmentTypeSelection: createSelection(gownTypes),
+  fabrics: stockOneFabric,
+  fabricCode: "FAB-STOCK",
+  selectedGarmentKeys: ["base:shirt"],
+  mode: "selected",
+}).state;
+const existingPartialCandidates = buildStep1FabricAssignmentCandidates({
+  garmentTypeSelection: createSelection(gownTypes),
+  fabricAllocationState: existingPartialState,
+  fabricCode: "FAB-STOCK",
+  fabrics: stockOneFabric,
+});
+const existingPartialProjection = evaluateStep1FabricAssignmentSelection({
+  candidates: existingPartialCandidates,
+  selectedGarmentKeys: [],
+  garmentTypeSelection: createSelection(gownTypes),
+  fabricAllocationState: existingPartialState,
+  fabricCode: "FAB-STOCK",
+  fabrics: stockOneFabric,
+});
+assert.equal(existingPartialProjection.candidateEnabled["base:trouser"], true);
+assert.equal(existingPartialProjection.candidateEnabled["base:full_length_gown"], false);
+
 const gownUseAll = evaluateStep1FabricAssignmentSelection({
   candidates: gownCandidates,
   selectedGarmentKeys: gownCandidates.map((candidate) => candidate.garmentKey),
@@ -933,6 +1008,15 @@ assert.equal(secondAllocationCandidates[0]?.disabledReason, null);
 const stockTwoFabric = [
   createFabric("FAB-STOCK", "Heritage Stock", 10, { stock: 2 }),
 ];
+const stockTwoShirtThenGown = evaluateStep1FabricAssignmentSelection({
+  candidates: gownCandidates,
+  selectedGarmentKeys: ["base:shirt"],
+  garmentTypeSelection: createSelection(gownTypes),
+  fabricAllocationState: empty,
+  fabricCode: "FAB-STOCK",
+  fabrics: stockTwoFabric,
+});
+assert.equal(stockTwoShirtThenGown.candidateEnabled["base:full_length_gown"], true);
 const gownUseAllCommit = commitStep1FabricAssignment({
   state: empty,
   garmentTypeSelection: createSelection(gownTypes),

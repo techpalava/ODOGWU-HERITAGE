@@ -86,6 +86,7 @@ export const Step1FabricAssignmentDialog = ({
   fabricLevelError = null,
   selectedCapacityMessage,
   remainingCapacityMessage,
+  candidateEnabled = {},
   candidateMessages = {},
   selectedFailure = null,
   remainingFailure = null,
@@ -108,6 +109,7 @@ export const Step1FabricAssignmentDialog = ({
   fabricLevelError?: string | null;
   selectedCapacityMessage: string | null;
   remainingCapacityMessage: string | null;
+  candidateEnabled?: Record<string, boolean>;
   candidateMessages?: Record<string, string | null>;
   selectedFailure?: Step1FabricAssignmentFailure | null;
   remainingFailure?: Step1FabricAssignmentFailure | null;
@@ -335,6 +337,11 @@ export const Step1FabricAssignmentDialog = ({
               const checkboxId = `step1-fabric-assignment-${candidate.garmentKey}`;
               const warningId = getRowWarningId(candidate.garmentKey);
               const checked = selectedGarmentKeys.includes(candidate.garmentKey);
+              const enabled =
+                checked ||
+                candidateEnabled[candidate.garmentKey] ||
+                (!Object.hasOwn(candidateEnabled, candidate.garmentKey) &&
+                  candidate.individuallyAssignable);
               const rowWarning =
                 candidateMessages[candidate.garmentKey] ??
                 candidate.disabledReason;
@@ -344,7 +351,7 @@ export const Step1FabricAssignmentDialog = ({
                   htmlFor={checkboxId}
                   data-step1-fabric-assignment-row={candidate.garmentKey}
                   className={`flex min-h-11 min-w-0 cursor-pointer items-start gap-3 rounded-xl border border-heritage-gold/25 bg-heritage-cream/25 px-3 py-2 ${
-                    candidate.individuallyAssignable
+                    enabled
                       ? "text-heritage-green"
                       : "cursor-not-allowed opacity-60"
                   }`}
@@ -356,7 +363,7 @@ export const Step1FabricAssignmentDialog = ({
                     data-step1-fabric-assignment-control="true"
                     ref={registerControl}
                     checked={checked}
-                    disabled={!candidate.individuallyAssignable}
+                    disabled={!enabled}
                     aria-describedby={rowWarning ? warningId : undefined}
                     aria-invalid={rowWarning ? true : undefined}
                     onChange={(event) =>
