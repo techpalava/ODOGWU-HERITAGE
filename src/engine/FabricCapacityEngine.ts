@@ -29,6 +29,7 @@ export const FABRIC_GARMENT_LABELS: Record<FabricGarmentType, string> = {
   shirt: "Shirt",
   trouser: "Trouser",
   skirt: "Skirt",
+  long_skirt: "Long Skirt",
   standard_shorts: "Nikka / Standard Shorts",
   bum_shorts: "Bum Shorts",
   dress: "Dress",

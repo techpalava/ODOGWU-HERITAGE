@@ -98,6 +98,7 @@ const ALLOWED_MEASUREMENT_PROFILE_IDS_BY_PHYSICAL_GARMENT: Partial<
   Readonly<Record<FabricGarmentType, readonly MeasurementProfileId[]>>
 > = {
   kaftan: ["C", "D"],
+  long_skirt: ["M"],
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -292,7 +293,12 @@ export const resolveMeasurementProfile = ({
   if (!demographic) {
     return { status: "unresolved", garmentKey, garmentType, code: "demographic_ineligible" };
   }
-  const measurementFamily = garmentType === "kaftan" ? "shirt" : garmentType;
+  const measurementFamily =
+    garmentType === "kaftan"
+      ? "shirt"
+      : garmentType === "long_skirt"
+        ? "skirt"
+        : garmentType;
   const allowedProfileIds =
     ALLOWED_MEASUREMENT_PROFILE_IDS_BY_PHYSICAL_GARMENT[garmentType];
   const candidates = MEASUREMENT_PROFILES.filter(

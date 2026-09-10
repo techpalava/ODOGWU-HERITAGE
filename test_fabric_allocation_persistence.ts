@@ -552,6 +552,35 @@ assert.equal(
   "FABRIC-B",
   "conflicting selectedFabricCode must not override authoritative modern allocation ownership",
 );
+const longSkirtDraft = makeGuestDraft({
+  fabricAllocations: [
+    {
+      allocationId: "draft-long-skirt-1",
+      fabricCode: "FABRIC-LONG-SKIRT",
+      garmentAssignments: [
+        {
+          garmentKey: "base:long_skirt",
+          code: "BASE_LONG_SKIRT",
+          garmentType: "long_skirt",
+          fabricUnits: 1,
+          sourceRole: "main",
+        },
+      ],
+    },
+  ],
+});
+const longSkirtHydration = resolveDraftHydrationAllocations(longSkirtDraft);
+assert.equal(
+  longSkirtHydration.hasValidModernAllocations,
+  true,
+  "Strict hydration must accept the canonical Long Skirt occurrence.",
+);
+assert.deepEqual(
+  longSkirtHydration.fabricAllocations[0]?.garmentAssignments.map(
+    (assignment) => [assignment.garmentKey, assignment.garmentType],
+  ),
+  [["base:long_skirt", "long_skirt"]],
+);
 const customDetailGarmentDraft = makeGuestDraft({
   fabricAllocations: [
     multiAllocationFixture[0],

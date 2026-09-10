@@ -35,13 +35,14 @@ const expectedGarmentLabels = [
   "Standard Bum Shorts",
   "Trouser",
   "Standard Skirt",
+  "Long Skirt",
 ];
 const hiddenStep1GarmentLabels = ["Long Shirt (Agbada)"];
 const approvedGarmentIds = [
   "shirt", "kaftan", "dress", "full_length_gown",
-  "standard_shorts", "bum_shorts", "trouser", "skirt",
+  "standard_shorts", "bum_shorts", "trouser", "skirt", "long_skirt",
 ] as const;
-const approvedPrices = [65, 75, 70, 80, 70, 70, 75, 75];
+const approvedPrices = [65, 75, 70, 80, 70, 70, 75, 75, 80];
 assert.deepEqual(STEP_1_SELECTABLE_GARMENT_TYPES, approvedGarmentIds);
 
 const renderStep = ({
@@ -75,10 +76,10 @@ assert.equal(emptyPresentation.selectedGarmentTypes.length, 0);
 assert.equal(emptyPresentation.constructionPricing.length, 0);
 assert.equal(emptyPresentation.constructionSubtotalCents, 0);
 assert.equal(emptyPresentation.customerFacingCapacityAmount, "0");
-assert.equal(emptyPresentation.categories.length, 8);
+assert.equal(emptyPresentation.categories.length, 9);
 assert.deepEqual(emptyPresentation.categories.map((item) => item.garmentType), approvedGarmentIds);
 assert.deepEqual(emptyPresentation.categories.map((item) => item.label), expectedGarmentLabels);
-assert.deepEqual(emptyPresentation.categories.map((item) => item.fabricUnits), [1, 1, 1, 2, 1, 1, 1, 1]);
+assert.deepEqual(emptyPresentation.categories.map((item) => item.fabricUnits), [1, 1, 1, 2, 1, 1, 1, 1, 1]);
 
 for (const demographic of ["male", "female", "unisex"] as const) {
   const markup = renderStep({ selectedDemographics: [demographic] });
@@ -104,6 +105,7 @@ assert.deepEqual(
     "bum_shorts",
     "trouser",
     "skirt",
+    "long_skirt",
   ].map((garmentType) =>
     getGarmentTypeStepLabel(
       garmentType as Exclude<FabricGarmentType, "other">,
@@ -144,6 +146,7 @@ const confirmedPricePresentation = getGarmentTypeStepPresentation({
     "bum_shorts",
     "trouser",
     "skirt",
+    "long_skirt",
   ],
   normalizedCustomDetailCatalog: catalog,
 });
@@ -156,6 +159,7 @@ assert.deepEqual(
     ["shirt", 6500],
     ["trouser", 7500],
     ["skirt", 7500],
+    ["long_skirt", 8000],
     ["standard_shorts", 7000],
     ["bum_shorts", 7000],
     ["dress", 7000],
@@ -193,6 +197,7 @@ const halfCapacitySelectableTypes = [
   "shirt",
   "trouser",
   "skirt",
+  "long_skirt",
   "standard_shorts",
   "bum_shorts",
   "dress",
@@ -222,7 +227,7 @@ assert.equal(
 );
 
 const emptyMarkup = renderStep();
-assert.equal((emptyMarkup.match(/Uses 1\/2 fabric capacity unit\./g) || []).length, 7);
+assert.equal((emptyMarkup.match(/Uses 1\/2 fabric capacity unit\./g) || []).length, 8);
 assert.equal((emptyMarkup.match(/Uses 1 fabric capacity unit\./g) || []).length, 1);
 assert.equal(emptyMarkup.includes("Uses one fabric capacity unit."), false);
 assert.equal(emptyMarkup.includes("Uses two fabric capacity units."), false);
@@ -256,6 +261,7 @@ assertSelectionCapacity(["shirt"], 1, "1/2", 1);
 assertSelectionCapacity(["shirt", "trouser"], 2, "1", 1);
 assertSelectionCapacity(["shirt", "trouser", "skirt"], 3, "1 1/2", 2);
 assertSelectionCapacity(["shirt", "trouser", "skirt", "dress"], 4, "2", 2);
+assertSelectionCapacity(["skirt", "long_skirt"], 2, "1", 1);
 assertSelectionCapacity(["full_length_gown"], 2, "1", 1);
 assertSelectionCapacity(["shirt", "full_length_gown"], 3, "1 1/2", 2);
 assertSelectionCapacity(["shirt", "trouser", "full_length_gown"], 4, "2", 2);
@@ -391,9 +397,9 @@ const allEightStep1Markup = renderStep({
   selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],
   selectedDemographics: ["male"],
 });
-assert.ok(allEightStep1Markup.includes("5 fabrics · 8 garments"));
+assert.ok(allEightStep1Markup.includes("5 fabrics · 9 garments"));
 assert.ok(
-  allEightStep1Markup.includes("You need 5 fabrics for your 8 garments."),
+  allEightStep1Markup.includes("You need 5 fabrics for your 9 garments."),
 );
 
 const allEightWithSelectedFabricMarkup = renderStep({
@@ -401,7 +407,7 @@ const allEightWithSelectedFabricMarkup = renderStep({
   selectedDemographics: ["male"],
   selectedFabricQuantity: 1,
 });
-assert.ok(allEightWithSelectedFabricMarkup.includes("5 fabrics · 8 garments"));
+assert.ok(allEightWithSelectedFabricMarkup.includes("5 fabrics · 9 garments"));
 assert.equal(
   allEightWithSelectedFabricMarkup.includes("Fabrics selected:"),
   false,
@@ -412,10 +418,10 @@ const allEightWithHiddenAgbadaMarkup = renderStep({
   selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES, "agbada"],
   selectedDemographics: ["male"],
 });
-assert.ok(allEightWithHiddenAgbadaMarkup.includes("5 fabrics · 8 garments"));
+assert.ok(allEightWithHiddenAgbadaMarkup.includes("5 fabrics · 9 garments"));
 assert.ok(
   allEightWithHiddenAgbadaMarkup.includes(
-    "You need 5 fabrics for your 8 garments.",
+    "You need 5 fabrics for your 9 garments.",
   ),
 );
 
@@ -464,7 +470,7 @@ const deselectedShirtMarkup = renderStep({
   ),
   selectedDemographics: ["male"],
 });
-assert.ok(deselectedShirtMarkup.includes("4 fabrics · 7 garments"));
+assert.ok(deselectedShirtMarkup.includes("5 fabrics · 8 garments"));
 
 const allEightSelection = reconcileGarmentTypeStepSelection({
   selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],
@@ -482,7 +488,7 @@ assert.deepEqual(
   approvedPrices,
   "Downstream construction projection must receive every approved catalogue price",
 );
-assert.equal(approvedProjection.readOnlyConstructionRows.reduce((sum, row) => sum + row.priceCents, 0), 58000);
+assert.equal(approvedProjection.readOnlyConstructionRows.reduce((sum, row) => sum + row.priceCents, 0), 66000);
 for (const [garmentType, optionId] of [
   ["kaftan", "shirt_long_midlong"],
   ["full_length_gown", "dress_long_midlong"],
@@ -496,7 +502,7 @@ for (const [garmentType, optionId] of [
   );
 }
 assert.deepEqual(allEightSelection.garmentTypes, [
-  "shirt", "trouser", "skirt", "standard_shorts", "bum_shorts", "dress", "kaftan", "full_length_gown",
+  "shirt", "trouser", "skirt", "long_skirt", "standard_shorts", "bum_shorts", "dress", "kaftan", "full_length_gown",
 ], "Display reordering must preserve canonical selection identity and ordering");
 const renderedCards = [...allEightStep1Markup.matchAll(/<article[^>]+data-testid="step1-garment-card-([^"]+)"[^>]*>([\s\S]*?)<\/article>/g)];
 assert.deepEqual(renderedCards.map((match) => match[1]), approvedGarmentIds);
@@ -538,7 +544,7 @@ const additionalOnlyFabricMarkup = renderStep({
   selectedDemographics: ["male"],
   selectedFabricQuantity: 0,
 });
-assert.ok(additionalOnlyFabricMarkup.includes("5 fabrics · 8 garments"));
+assert.ok(additionalOnlyFabricMarkup.includes("5 fabrics · 9 garments"));
 assert.equal(
   additionalOnlyFabricMarkup.includes("Fabrics selected:"),
   false,

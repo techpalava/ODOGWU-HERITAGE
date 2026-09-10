@@ -11,17 +11,6 @@ export interface Step1GarmentReferenceImageConfig {
   filename: string;
 }
 
-/**
- * Temporary Step 1 presentation-only preview. The canonical option remains
- * selectable and priced only in Step 4; this value must never enter order state.
- */
-export const STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW = {
-  optionId: "shirt_std_midlong",
-  label: "Mid-Long Sleeve",
-  filename: "ankara-standard-shirt-midlong-sleeve.webp",
-  src: "/images/garments/ankara-standard-shirt-midlong-sleeve.webp",
-} as const;
-
 const garmentReferenceImage = (
   filename: string,
 ): Step1GarmentReferenceImageConfig => ({
@@ -40,6 +29,7 @@ export const STEP1_GARMENT_REFERENCE_IMAGES: {
   shirt: garmentReferenceImage("ankara-standard-shirt.webp"),
   trouser: garmentReferenceImage("ankara-trouser.webp"),
   skirt: garmentReferenceImage("ankara-standard-skirt.webp"),
+  long_skirt: garmentReferenceImage("ankara-long-skirt.webp"),
   standard_shorts: garmentReferenceImage("ankara-standard-shorts.webp"),
   bum_shorts: garmentReferenceImage("ankara-bum-shorts.webp"),
   dress: garmentReferenceImage("ankara-standard-dress.webp"),
@@ -47,10 +37,49 @@ export const STEP1_GARMENT_REFERENCE_IMAGES: {
   full_length_gown: garmentReferenceImage("ankara-long-dress-gown.webp"),
 };
 
+/**
+ * These cards always reserve a paired, presentation-only image layout. A
+ * secondary reference is only configured once its approved asset is present;
+ * the card then renders its neutral unavailable state rather than substituting
+ * a different garment image.
+ */
+export const STEP1_DUAL_IMAGE_GARMENT_TYPES = [
+  "shirt",
+  "kaftan",
+  "dress",
+  "full_length_gown",
+] as const satisfies readonly CustomerSelectableGarmentType[];
+
+export type Step1DualImageGarmentType =
+  (typeof STEP1_DUAL_IMAGE_GARMENT_TYPES)[number];
+
+export const STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES: Readonly<
+  Partial<Record<Step1DualImageGarmentType, Step1GarmentReferenceImageConfig>>
+> = {
+  shirt: garmentReferenceImage("ankara-standard-shirt-long-sleeve.webp"),
+  kaftan: garmentReferenceImage("ankara-kaftan-short-sleeve.webp"),
+  dress: garmentReferenceImage("ankara-standard-dress-long-sleeve.webp"),
+  full_length_gown: garmentReferenceImage(
+    "ankara-long-dress-gown-short-sleeve.webp",
+  ),
+};
+
 export const getStep1GarmentReferenceImage = (
   garmentType: CustomerSelectableGarmentType,
 ): Step1GarmentReferenceImageConfig =>
   STEP1_GARMENT_REFERENCE_IMAGES[garmentType];
+
+export const isStep1DualImageGarmentType = (
+  garmentType: string,
+): garmentType is Step1DualImageGarmentType =>
+  STEP1_DUAL_IMAGE_GARMENT_TYPES.includes(
+    garmentType as Step1DualImageGarmentType,
+  );
+
+export const getStep1GarmentSecondaryReferenceImage = (
+  garmentType: Step1DualImageGarmentType,
+): Step1GarmentReferenceImageConfig | null =>
+  STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES[garmentType] || null;
 
 export const isStep1GarmentReferenceType = (
   garmentType: string,

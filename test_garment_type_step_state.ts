@@ -20,6 +20,8 @@ import {
   reduceGarmentTypeStepSelection,
 } from "./src/utils/garmentTypeStepState";
 import { CANONICAL_PHYSICAL_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
+import { buildAuthoritativePhysicalOccurrences } from "./src/utils/designSourceState";
+import { resolveMeasurementProfile } from "./src/utils/measurementBlueprint";
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const allGarments = [...CANONICAL_PHYSICAL_GARMENT_TYPES];
@@ -34,6 +36,7 @@ const initial = reconcileGarmentTypeStepSelection({
     "trouser",
     "full_length_gown",
     "skirt",
+    "long_skirt",
     "standard_shorts",
     "bum_shorts",
     "kaftan",
@@ -47,18 +50,29 @@ assert.deepEqual(initial.selection.audienceSelection, {
   schemaVersion: GARMENT_TYPE_AUDIENCE_SCHEMA_VERSION,
   demographics: ["unisex"],
 });
-assert.equal(Object.keys(initial.selection.constructionByGarment).length, 9);
+assert.equal(Object.keys(initial.selection.constructionByGarment).length, 10);
 
 const shirt = initial.selection.constructionByGarment.shirt;
 const kaftan = initial.selection.constructionByGarment.kaftan;
+const standardSkirt = initial.selection.constructionByGarment.skirt;
+const longSkirt = initial.selection.constructionByGarment.long_skirt;
 assert.equal(shirt?.status, "resolved");
 assert.equal(kaftan?.status, "resolved");
+assert.equal(standardSkirt?.status, "resolved");
+assert.equal(longSkirt?.status, "resolved");
 if (shirt?.status === "resolved" && kaftan?.status === "resolved") {
   assert.equal(shirt.components[0].optionId, "shirt_std_short");
   assert.equal(kaftan.components[0].optionId, "shirt_long_midlong");
   assert.notEqual(shirt.components[0].componentKey, kaftan.components[0].componentKey);
   assert.match(shirt.components[0].componentKey, /^shirt:/);
   assert.match(kaftan.components[0].componentKey, /^kaftan:/);
+}
+
+if (standardSkirt?.status === "resolved" && longSkirt?.status === "resolved") {
+  assert.equal(standardSkirt.components[0].optionId, "skirt_std");
+  assert.equal(standardSkirt.totalPriceCents, 7500);
+  assert.equal(longSkirt.components[0].optionId, "skirt_long");
+  assert.equal(longSkirt.totalPriceCents, 8000);
 }
 
 const agbada = initial.selection.constructionByGarment.agbada;
@@ -84,6 +98,42 @@ assert.deepEqual(
   hydrated.selection.constructionByGarment.agbada,
   initial.selection.constructionByGarment.agbada,
 );
+assert.deepEqual(hydrated.selection.constructionByGarment.skirt, standardSkirt);
+assert.deepEqual(hydrated.selection.constructionByGarment.long_skirt, longSkirt);
+
+const malformedSkirtPair = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["skirt", "long_skirt"],
+  selectedDemographic: "female",
+  normalizedCustomDetailCatalog: catalog,
+}).selection;
+assert.ok(standardSkirt?.status === "resolved");
+malformedSkirtPair.constructionByGarment.long_skirt = {
+  ...standardSkirt,
+  garmentType: "long_skirt",
+  components: standardSkirt.components.map((component) => ({
+    ...component,
+    componentKey: `long_skirt:${component.selectionGroup}:${component.optionId}`,
+  })),
+};
+const repairedSkirtPair = reconcileGarmentTypeStepSelection({
+  persistedSelection: JSON.parse(JSON.stringify(malformedSkirtPair)),
+  normalizedCustomDetailCatalog: catalog,
+}).selection;
+assert.deepEqual(repairedSkirtPair.constructionByGarment.skirt, standardSkirt);
+assert.deepEqual(repairedSkirtPair.constructionByGarment.long_skirt, longSkirt,
+  "Malformed long_skirt + skirt_std must repair to the catalogue's skirt_long / EUR80 default.");
+const repairedOccurrences = buildAuthoritativePhysicalOccurrences({
+  sourceKind: "catalogue",
+  step1GarmentTypeSelection: repairedSkirtPair,
+  effectiveGarmentTypeSelection: repairedSkirtPair,
+});
+assert.deepEqual(repairedOccurrences.map((garment) => {
+  const result = resolveMeasurementProfile({ garment, garmentTypeSelection: repairedSkirtPair });
+  assert.equal(result.status, "resolved");
+  return result.status === "resolved"
+    ? [garment.garmentKey, result.profile.id, result.constructionOptionId]
+    : null;
+}), [["base:skirt", "L", "skirt_std"], ["base:long_skirt", "M", "skirt_long"]]);
 
 const deselected = reconcileGarmentTypeStepSelection({
   persistedSelection: initial.selection,
@@ -292,7 +342,7 @@ const controlled = getGarmentTypeStepControlledState(initial.selection);
 assert.deepEqual(controlled.selectedGarmentTypes, allGarments);
 assert.deepEqual(controlled.selectedDemographics, ["unisex"]);
 assert.equal(controlled.selectedDemographic, "unisex");
-assert.equal(controlled.constructionDefaults.length, 9);
+assert.equal(controlled.constructionDefaults.length, 10);
 
 const demographicChanged = reduceGarmentTypeStepSelection(
   initial.selection,

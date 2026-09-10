@@ -194,6 +194,8 @@ const occurrencesWithIdentity = ({
 
 const baseShirtKey = createStyleBaseGarmentSpec("shirt").key;
 const baseTrouserKey = createStyleBaseGarmentSpec("trouser").key;
+const baseStandardSkirtKey = createStyleBaseGarmentSpec("skirt").key;
+const baseLongSkirtKey = createStyleBaseGarmentSpec("long_skirt").key;
 const additionalShirt1Key = "additional:shirt:1";
 const additionalShirt2Key = "additional:shirt:2";
 
@@ -225,6 +227,36 @@ assert.equal(
   malformedIdentitySelection.physicalOccurrenceIdentityState,
   undefined,
   "Malformed identity metadata must never become callback authority.",
+);
+
+// Local autosave + refresh must preserve the two canonical skirt identities.
+const skirtPairIdentity = reconcilePhysicalGarmentOccurrenceIdentityState({
+  state: null,
+  activeGarmentKeys: [baseStandardSkirtKey, baseLongSkirtKey],
+});
+const hydratedSkirtPairSelection = roundTripLocally({
+  ...makeSelection({
+    garmentTypes: ["skirt", "long_skirt"],
+    identityState: skirtPairIdentity,
+  }),
+  audienceSelection: { schemaVersion: 1, demographics: ["female"] },
+  demographic: "female",
+});
+assert.deepEqual(hydratedSkirtPairSelection.garmentTypes, [
+  "skirt",
+  "long_skirt",
+]);
+assert.deepEqual(
+  buildAuthoritativePhysicalOccurrences({
+    sourceKind: "catalogue",
+    step1GarmentTypeSelection: hydratedSkirtPairSelection,
+    effectiveGarmentTypeSelection: hydratedSkirtPairSelection,
+  }).map((occurrence) => [occurrence.garmentKey, occurrence.garmentType]),
+  [
+    [baseStandardSkirtKey, "skirt"],
+    [baseLongSkirtKey, "long_skirt"],
+  ],
+  "Refresh must retain both distinct physical skirt occurrences.",
 );
 
 // Additional/repeated: the compatibility key may be reused, but identity cannot.

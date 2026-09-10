@@ -28,6 +28,7 @@ const GARMENT_TYPES: readonly FabricGarmentType[] = [
   "trouser",
   "dress",
   "skirt",
+  "long_skirt",
   "kaftan",
   "full_length_gown",
   "bum_shorts",

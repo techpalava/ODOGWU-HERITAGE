@@ -307,6 +307,7 @@ const halfCapacityGarments = [
   "shirt",
   "trouser",
   "skirt",
+  "long_skirt",
   "standard_shorts",
   "bum_shorts",
   "dress",
@@ -326,15 +327,15 @@ assertPlanning(["shirt", "trouser", "skirt"], emptyState(), {
   requiredFabricQuantity: 2,
 });
 assertPlanning([...halfCapacityGarments], emptyState(), {
-  requiredGarmentCount: 7,
+  requiredGarmentCount: 8,
   requiredFabricQuantity: 4,
 });
 assertPlanning([...halfCapacityGarments, "full_length_gown"], emptyState(), {
-  requiredGarmentCount: 8,
+  requiredGarmentCount: 9,
   requiredFabricQuantity: 5,
 });
 assertPlanning([...STEP_1_SELECTABLE_GARMENT_TYPES], emptyState(), {
-  requiredGarmentCount: 8,
+  requiredGarmentCount: 9,
   requiredFabricQuantity: 5,
 });
 
@@ -360,7 +361,7 @@ const staleInflatedState: FabricAllocationState = {
   awaitingFabricForPendingGarment: false,
 };
 assertPlanning([...STEP_1_SELECTABLE_GARMENT_TYPES], staleInflatedState, {
-  requiredGarmentCount: 8,
+  requiredGarmentCount: 9,
   requiredFabricQuantity: 5,
 });
 
@@ -432,8 +433,8 @@ const allEightWithAdditionalShirtState: FabricAllocationState = {
   awaitingFabricForPendingGarment: false,
 };
 assertPlanning([...STEP_1_SELECTABLE_GARMENT_TYPES], allEightWithAdditionalShirtState, {
-  requiredGarmentCount: 9,
-  requiredFabricQuantity: 5,
+  requiredGarmentCount: 10,
+  requiredFabricQuantity: 6,
 });
 assert.equal(
   getFutureGarmentFabricPlanning({
@@ -603,7 +604,7 @@ assertPlanning(
     awaitingFabricForPendingGarment: false,
   },
   {
-    requiredGarmentCount: 9,
+    requiredGarmentCount: 10,
     requiredFabricQuantity: 6,
   },
 );
@@ -630,11 +631,11 @@ const sevenHalfUnits = getFutureGarmentFabricPlanning({
   garmentTypeSelection: createSelection([...halfCapacityGarments]),
   fabricAllocationState: emptyState(),
 });
-assert.equal(sevenHalfUnits.requiredGarmentCount, 7);
+assert.equal(sevenHalfUnits.requiredGarmentCount, 8);
 assert.equal(
   sevenHalfUnits.requiredFabricQuantity,
   4,
-  "Seven half-unit garments require 4 fabrics, not ceil(7/2) from a different rule.",
+  "Eight half-unit garments require 4 fabrics.",
 );
 const sevenHalfPlusGown = getFutureGarmentFabricPlanning({
   garmentTypeSelection: createSelection([
@@ -643,7 +644,7 @@ const sevenHalfPlusGown = getFutureGarmentFabricPlanning({
   ]),
   fabricAllocationState: emptyState(),
 });
-assert.equal(sevenHalfPlusGown.requiredGarmentCount, 8);
+assert.equal(sevenHalfPlusGown.requiredGarmentCount, 9);
 assert.equal(
   sevenHalfPlusGown.requiredFabricQuantity,
   5,
@@ -654,7 +655,7 @@ assert.equal(
     sevenHalfPlusGown.requiredFabricQuantity,
     sevenHalfPlusGown.requiredGarmentCount,
   ),
-  "You need 5 fabrics for your 8 garments.",
+  "You need 5 fabrics for your 9 garments.",
 );
 
 const step1AllEight = getGarmentTypeStepPresentation({
@@ -665,10 +666,10 @@ const step2AllEight = getFutureGarmentFabricPlanning({
   garmentTypeSelection: createSelection([...STEP_1_SELECTABLE_GARMENT_TYPES]),
   fabricAllocationState: emptyState(),
 });
-assert.equal(step1AllEight.capacityUnits, 9);
-assert.equal(step1AllEight.garmentCount, 8);
+assert.equal(step1AllEight.capacityUnits, 10);
+assert.equal(step1AllEight.garmentCount, 9);
 assert.equal(step1AllEight.fabricQuantity, 5);
-assert.equal(step2AllEight.requiredGarmentCount, 8);
+assert.equal(step2AllEight.requiredGarmentCount, 9);
 assert.equal(step2AllEight.requiredFabricQuantity, 5);
 assert.equal(
   step1AllEight.fabricQuantity,

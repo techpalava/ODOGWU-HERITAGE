@@ -9,6 +9,11 @@ import DesignStudioView from "./src/components/DesignStudioView";
 import { DormantFutureCustomDetailsStep } from "./src/components/DormantFutureCustomDetailsStep";
 import { DormantFutureDesignStyleStep } from "./src/components/DormantFutureDesignStyleStep";
 import { DormantFutureFabricStep } from "./src/components/DormantFutureFabricStep";
+import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
+import { DormantFutureSummaryStep } from "./src/components/DormantFutureSummaryStep";
+import { DormantFutureShippingStep } from "./src/components/DormantFutureShippingStep";
+import { DormantFuturePaymentReviewStep } from "./src/components/DormantFuturePaymentReviewStep";
+import { FutureRemainingFabricCapacityOfferCard } from "./src/components/FutureRemainingFabricCapacityOffer";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { DEFAULT_BUSINESS_SETTINGS } from "./src/data/mockData";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
@@ -16,7 +21,7 @@ import { useAppStore } from "./src/store/useAppStore";
 import type { Fabric, GuestDesignDraft, Measurements, StyleCategory } from "./src/types";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import { prepareAuthoritativeDesignStyleRecord, projectPublishedDesignStyleRecord } from "./src/utils/designStyleAuthority";
-import { createCatalogDesignSource } from "./src/utils/designSourceState";
+import { buildAuthoritativePhysicalOccurrences, createCatalogDesignSource, physicalOccurrencesToFabricRequirements } from "./src/utils/designSourceState";
 import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./src/utils/designSourceJourney";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
@@ -24,6 +29,11 @@ import { resolveDraftHydrationAllocations } from "./src/utils/fabricAllocationPe
 import { inspectPersistedDesignStyleDraft } from "./src/utils/designStyleDraftPersistence";
 import { createDesignStyleStepTestModel } from "./testing/designStyleStepFixtures";
 import { createRevision342FabricHydrationFixture } from "./testing/revision342FabricHydrationFixture";
+import { reconcileGarmentTypeSelectionOccurrenceIdentities } from "./src/utils/physicalGarmentOccurrenceIdentity";
+import { createEmptyFutureMeasurementState, reconcileFutureMeasurementState, setFutureMeasurementInput } from "./src/utils/measurementBlueprint";
+import { createEmptyFutureShippingState } from "./src/utils/designStudioFutureShipping";
+import { getFuturePaymentReviewGarments } from "./src/utils/designStudioFuturePaymentReview";
+import { STEP_1_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -123,6 +133,12 @@ const mount = async (
 };
 
 await mount(initialDraft);
+assert.ok(STEP_1_SELECTABLE_GARMENT_TYPES.includes("long_skirt"));
+assert.deepEqual(
+  renderer.root.findByType(FutureRemainingFabricCapacityOfferCard).props.eligibleGarmentTypes,
+  ["shirt", "trouser", "skirt", "standard_shorts", "bum_shorts", "dress", "kaftan"],
+  "The spare-capacity selector must retain only the approved additional garments.",
+);
 assert.equal(renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props["data-stage-id"], "fabric");
 const allocationId = baseFabricState.fabricAllocations[0].allocationId;
 assert.equal(renderer.root.findAllByProps({ "data-testid": "remaining-fabric-capacity-offer" }).length, 1);
@@ -130,6 +146,9 @@ await act(async () => {
   renderer.root.findByProps({ "data-testid": `remaining-fabric-capacity-offer-accept-${allocationId}` }).props.onClick();
   await flush();
 });
+assert.equal(renderer.root.findAllByProps({
+  "data-testid": "remaining-fabric-capacity-offer-select-long_skirt",
+}).length, 0, "The remaining-capacity offer must not expose Long Skirt.");
 await act(async () => {
   renderer.root.findByProps({ "data-testid": "remaining-fabric-capacity-offer-select-bum_shorts" }).props.onClick();
   await flush();
@@ -195,6 +214,13 @@ const completedStyleStep = renderer.root.findByType(DormantFutureDesignStyleStep
 assert.equal(completedStyleStep.props.exactSetComplete, true);
 await act(async () => { completedStyleStep.props.onContinue(); await flush(); });
 assert.equal(renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props["data-stage-id"], "custom_details");
+assert.deepEqual(
+  renderer.root.findByType(DormantFutureCustomDetailsStep).props.additionalGarmentConstructionOptions.map(
+    (item: { garmentType: string }) => item.garmentType,
+  ),
+  ["shirt", "trouser", "skirt", "standard_shorts", "bum_shorts", "dress", "kaftan", "full_length_gown"],
+  "The normal Additional Garments selector must exclude Long Skirt.",
+);
 await act(async () => {
   renderer.root.findByType(DormantFutureCustomDetailsStep).props.onAddAdditionalGarment("trouser", null);
   await flush();
@@ -503,4 +529,177 @@ assert.deepEqual(
 act(() => renderer.unmount());
 StorageService.clearGuestOrderSession();
 
+// Both skirt identities traverse the production component's hydrate/autosave/
+// unmount/remount path, followed by its actual fresh V2 Payment Review handoff.
+const skirtKeys = ["base:skirt", "base:long_skirt"];
+const skirtSelection = reconcileGarmentTypeSelectionOccurrenceIdentities({
+  selection: reconcileGarmentTypeStepSelection({
+    selectedGarmentTypes: ["skirt", "long_skirt"], selectedDemographic: "female",
+    normalizedCustomDetailCatalog: inspectCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG).activeOptions,
+  }).selection,
+  activeGarmentKeys: skirtKeys,
+});
+const skirtOccurrences = buildAuthoritativePhysicalOccurrences({
+  sourceKind: "catalogue", step1GarmentTypeSelection: skirtSelection,
+  effectiveGarmentTypeSelection: skirtSelection,
+});
+const skirtFabrics = ["SKIRT-FABRIC-A", "SKIRT-FABRIC-B"].map((code) => ({
+  ...fabric, code, name: code,
+}));
+const skirtStyles = ["standard", "long"].map((id) => ({
+  ...revision342StyleDraft, id: `skirt-style-${id}`, name: `Skirt Style ${id}`,
+  garmentTypes: ["skirt", "long_skirt"],
+  fabricCapacityComposition: skirtOccurrences.map((occurrence) => ({
+    key: occurrence.garmentKey, garmentType: occurrence.garmentType, fabricUnits: 1 as const,
+  })),
+}));
+const skirtStyleModel = createDesignStyleStepTestModel({
+  styles: skirtStyles, garmentTypeSelection: skirtSelection, occurrences: skirtOccurrences,
+  selectedStyleIdByGarmentKey: {
+    "base:skirt": "skirt-style-standard", "base:long_skirt": "skirt-style-long",
+  },
+});
+assert.equal(skirtStyleModel.projection.completedCount, 2);
+assert.ok(skirtStyleModel.hydration.envelope);
+const skirtSource = createCatalogDesignSource(skirtStyles[0].id);
+assert.ok(skirtSource);
+const skirtDraft: GuestDesignDraft = {
+  ...initialDraft, currentStageId: "measurement", currentStep: 6,
+  garmentTypeSelection: skirtSelection, garmentPieceCount: 2,
+  selectedFabricCode: skirtFabrics[0].code, priceActivatedFabricCode: skirtFabrics[0].code,
+  selectedStyleId: skirtStyles[0].id, confirmedStyleId: skirtStyles[0].id,
+  designSource: skirtSource, confirmedDesignSourceKey: skirtSource.sourceKey,
+  designStyleAssignmentDraft: skirtStyleModel.hydration.envelope,
+  fabricAllocations: physicalOccurrencesToFabricRequirements(skirtOccurrences).map((assignment, index) => ({
+    allocationId: `skirt-allocation-${index}`, fabricCode: skirtFabrics[index].code,
+    garmentAssignments: [assignment],
+  })),
+  designSelections: {
+    accessories: [], garmentScopedCustomDetails: {
+      schemaVersion: 1,
+      selectionsByGarmentKey: {
+        "base:skirt": { skirt_pockets: "skirt_pocket_1" },
+        "base:long_skirt": { skirt_pockets: "skirt_pocket_2" },
+      },
+      snapshotsByGarmentKey: {},
+    },
+  },
+  aiTryOnWorkflow: { schemaVersion: 1, status: "skipped", inputFingerprint: null },
+  futureMeasurementState: createEmptyFutureMeasurementState("low_risk", "cm"),
+  updatedAt: "2026-09-10T08:00:00.000Z",
+};
+const skirtMountOptions = { styles: [...skirtStyleModel.styles], fabrics: skirtFabrics };
+await mount(skirtDraft, skirtMountOptions);
+const skirtMeasurementStep = renderer.root.findByType(DormantFutureMeasurementStep);
+const initialSkirtProfiles = skirtMeasurementStep.props.plan.profiles;
+assert.deepEqual(skirtMeasurementStep.props.plan.profiles.map((profile: {
+  garmentKey: string; profile: { id: string }; constructionOptionId: string;
+}) => [profile.garmentKey, profile.profile.id, profile.constructionOptionId]), [
+  ["base:long_skirt", "M", "skirt_long"], ["base:skirt", "L", "skirt_std"],
+]);
+let skirtMeasurements = skirtMeasurementStep.props.state;
+const skirtMeasurementValuesCm: Record<string, number> = {
+  waist_circumference: 76, hip_circumference: 100, thigh_circumference: 58,
+  waist_to_hip_length: 20, skirt_bottom_circumference: 110,
+  waist_to_lap_length: 35, waist_to_knee_length: 55, waist_to_ankle_length: 95,
+  total_height: 170, height_head_to_lower_neck: 30,
+  height_lower_neck_to_waist: 40, height_waist_to_feet: 100,
+};
+for (const requirement of skirtMeasurementStep.props.plan.requirements.filter(
+  (item: { directInput: boolean }) => item.directInput,
+)) {
+  assert.ok(skirtMeasurementValuesCm[requirement.measurementId],
+    `Missing fixture value for ${requirement.measurementId}`);
+  skirtMeasurements = setFutureMeasurementInput({
+    state: skirtMeasurements, requirement,
+    displayValue: skirtMeasurementValuesCm[requirement.measurementId],
+  });
+}
+await act(async () => {
+  skirtMeasurementStep.props.onChange(reconcileFutureMeasurementState({
+    state: skirtMeasurements, plan: skirtMeasurementStep.props.plan,
+  }));
+  await flush();
+});
+await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+const skirtAutosaved = GuestOrderSessionService.getFutureDesignDraft();
+assert.ok(skirtAutosaved);
+assert.notEqual(skirtAutosaved.updatedAt, skirtDraft.updatedAt, "The production autosave must actually run.");
+assert.deepEqual(skirtAutosaved.futureMeasurementState?.entered, skirtMeasurements.entered,
+  "Persist customer measurements; derived measurement status is rebuilt on hydration.");
+act(() => renderer.unmount());
+await mount(null, skirtMountOptions);
+await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+const remountedSkirts = GuestOrderSessionService.getFutureDesignDraft();
+assert.ok(remountedSkirts);
+assert.deepEqual(remountedSkirts.garmentTypeSelection, skirtAutosaved.garmentTypeSelection);
+assert.deepEqual(remountedSkirts.garmentTypeSelection.physicalOccurrenceIdentityState,
+  skirtSelection.physicalOccurrenceIdentityState);
+assert.deepEqual(remountedSkirts.fabricAllocations, skirtDraft.fabricAllocations);
+assert.deepEqual(remountedSkirts.designSelections.garmentScopedCustomDetails?.selectionsByGarmentKey,
+  skirtDraft.designSelections.garmentScopedCustomDetails?.selectionsByGarmentKey);
+const remountedStyleDraft = inspectPersistedDesignStyleDraft(remountedSkirts);
+assert.ok(remountedStyleDraft.status === "valid");
+assert.deepEqual(remountedStyleDraft.envelope.ledger.assignmentsByGarmentKey,
+  skirtStyleModel.hydration.envelope.ledger.assignmentsByGarmentKey);
+const remountedOccurrences = buildAuthoritativePhysicalOccurrences({
+  sourceKind: "catalogue", step1GarmentTypeSelection: remountedSkirts.garmentTypeSelection,
+  effectiveGarmentTypeSelection: remountedSkirts.garmentTypeSelection,
+});
+assert.deepEqual(remountedOccurrences.map((item) => [item.garmentKey, item.garmentType]),
+  [["base:skirt", "skirt"], ["base:long_skirt", "long_skirt"]]);
+const remountedMeasurementStep = renderer.root.findByType(DormantFutureMeasurementStep);
+assert.deepEqual(remountedMeasurementStep.props.plan.profiles, initialSkirtProfiles);
+assert.equal(remountedMeasurementStep.props.state.calculationStatus, "complete",
+  JSON.stringify(remountedMeasurementStep.props.state.diagnostics));
+await act(async () => { remountedMeasurementStep.props.onContinue(); await flush(); });
+const skirtSummary = renderer.root.findByType(DormantFutureSummaryStep);
+const expectedSkirtRows = [
+  ["base:skirt", "skirt", "Skirt", "skirt_std", 7500],
+  ["base:long_skirt", "long_skirt", "Long Skirt", "skirt_long", 8000],
+];
+const summarizeSkirtRow = (garment: {
+  garmentKey: string; garmentType: string; label: string;
+  construction: readonly { optionId: string }[]; constructionTotalCents: number | null;
+}) => [garment.garmentKey, garment.garmentType, garment.label,
+  garment.construction[0].optionId, garment.constructionTotalCents];
+assert.deepEqual(skirtSummary.props.summary.garmentSummary.map(summarizeSkirtRow), expectedSkirtRows);
+assert.equal(skirtSummary.props.canContinueToShipping, true);
+await act(async () => { skirtSummary.props.onContinueToShipping(); await flush(); });
+await act(async () => {
+  renderer.root.findByType(DormantFutureShippingStep).props.onChange({
+    ...createEmptyFutureShippingState(), fulfilmentMethod: "eindhoven_pickup",
+    customerInformation: {
+      ...createEmptyFutureShippingState().customerInformation,
+      fullName: "Skirt Regression", phone: "+31612345678", email: "skirts@example.test",
+    },
+  });
+  await flush();
+});
+const skirtShipping = renderer.root.findByType(DormantFutureShippingStep);
+assert.equal(skirtShipping.props.canContinueToReview, true);
+await act(async () => { skirtShipping.props.onContinueToReview(); await flush(); });
+const skirtPayment = renderer.root.findByType(DormantFuturePaymentReviewStep).props.result;
+assert.equal(skirtPayment.status, "reviewable");
+assert.equal(skirtPayment.candidate.schemaVersion, 2, "Exercise the production occurrence-aware V2 builder.");
+assert.deepEqual(getFuturePaymentReviewGarments(skirtPayment.candidate).map(({ garment }) =>
+  summarizeSkirtRow(garment)), expectedSkirtRows);
+assert.deepEqual(skirtPayment.candidate.occurrenceStyleSnapshots.map((row: {
+  occurrence: { garmentKey: string }; catalogue: { styleId: string };
+}) => [row.occurrence.garmentKey, row.catalogue.styleId]), [
+  ["base:skirt", "skirt-style-standard"], ["base:long_skirt", "skirt-style-long"],
+]);
+assert.deepEqual(skirtPayment.candidate.fabricAllocations.map((allocation: {
+  fabricCode: string; garmentAssignments: readonly { garmentKey: string }[];
+}) => [allocation.fabricCode, allocation.garmentAssignments.map((item) => item.garmentKey)]), [
+  ["SKIRT-FABRIC-A", ["base:skirt"]], ["SKIRT-FABRIC-B", ["base:long_skirt"]],
+]);
+assert.deepEqual(skirtPayment.candidate.customDetails.map((detail: {
+  garmentKey: string; optionId: string;
+}) => [detail.garmentKey, detail.optionId]).sort(), [
+  ["base:long_skirt", "skirt_pocket_2"], ["base:skirt", "skirt_pocket_1"],
+]);
+act(() => renderer.unmount());
+StorageService.clearGuestOrderSession();
+console.log("PASS: Standard Skirt + Long Skirt component autosave/remount and V2 Payment Review coexistence");
 console.log("PASS: spare capacity Fabric commits finalize and persist before Design Style");
