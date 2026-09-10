@@ -16,15 +16,24 @@ import {
   FABRIC_GARMENT_CAPACITY_UNITS,
 } from "../config/StyleFabricCapacityConfig";
 import {
+  isAdditionalGarmentType,
   resolveAdditionalGarmentPolicyCandidates,
   resolveShortsGarmentUnitPriceCents,
 } from "../config/AdditionalGarmentPolicy";
 import type { PhysicalGarmentOccurrence } from "./designSourceState";
 import {
   isCanonicalPhysicalGarmentType,
-  isCustomerSelectableGarmentType,
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
 } from "./garmentConstructionPricing";
+
+/** Creation/presentation authority for catalogue additions, separate from Step 1. */
+export const CATALOGUE_ADDITIONAL_GARMENT_TYPES: readonly CanonicalPhysicalGarmentType[] =
+  CUSTOMER_SELECTABLE_GARMENT_TYPES.filter(isAdditionalGarmentType);
+
+const isCatalogueAdditionalGarmentType = (garmentType: FabricGarmentType): boolean =>
+  CATALOGUE_ADDITIONAL_GARMENT_TYPES.includes(
+    garmentType as CanonicalPhysicalGarmentType,
+  );
 
 const ADDITIONAL_ELIGIBILITY_RULES: readonly AdditionalGarmentEligibilityRule[] =
   ["same_type", "demographic_policy", "catalog_all"];
@@ -105,7 +114,10 @@ export const validateCanonicalAdditionalGarmentSelectionForParking = ({
   if (typeof garmentSpec.key !== "string" || garmentSpec.key.trim().length === 0) {
     return { status: "invalid", reason: "garment_key_missing" };
   }
-  if (!isCanonicalPhysicalGarmentType(garmentSpec.garmentType)) {
+  if (
+    !isCanonicalPhysicalGarmentType(garmentSpec.garmentType) ||
+    !isAdditionalGarmentType(garmentSpec.garmentType)
+  ) {
     return { status: "invalid", reason: "garment_type_invalid" };
   }
   const expectedUnits = FABRIC_GARMENT_CAPACITY_UNITS[garmentSpec.garmentType];
@@ -188,7 +200,7 @@ export const validateCanonicalAdditionalGarmentSelectionForParking = ({
     ) {
       return { status: "invalid", reason: "catalog_all_parent_ineligible" };
     }
-    if (!isCustomerSelectableGarmentType(garmentSpec.garmentType)) {
+    if (!isCatalogueAdditionalGarmentType(garmentSpec.garmentType)) {
       return { status: "invalid", reason: "eligibility_relationship_invalid" };
     }
   }
@@ -415,11 +427,11 @@ export const createCatalogueAdditionalGarmentSelection = ({
   authoritativePhysicalOccurrences: readonly PhysicalGarmentOccurrence[];
   authorizedOccurrenceKeys?: readonly string[];
 }): AdditionalGarmentSelectionResolution => {
-  if (!isCustomerSelectableGarmentType(garmentType)) {
+  if (!isCatalogueAdditionalGarmentType(garmentType)) {
     return {
       status: "invalid",
       attemptedGarmentType: garmentType,
-      allowedGarments: CUSTOMER_SELECTABLE_GARMENT_TYPES.map((candidate) => ({
+      allowedGarments: CATALOGUE_ADDITIONAL_GARMENT_TYPES.map((candidate) => ({
         garmentType: candidate,
         label: getFabricGarmentLabel(candidate),
         garmentSpec: createStyleBaseGarmentSpec(candidate),
@@ -435,7 +447,7 @@ export const createCatalogueAdditionalGarmentSelection = ({
     return {
       status: "invalid",
       attemptedGarmentType: garmentType,
-      allowedGarments: CUSTOMER_SELECTABLE_GARMENT_TYPES.map((candidate) => ({
+      allowedGarments: CATALOGUE_ADDITIONAL_GARMENT_TYPES.map((candidate) => ({
         garmentType: candidate,
         label: getFabricGarmentLabel(candidate),
         garmentSpec: createStyleBaseGarmentSpec(candidate),
@@ -451,7 +463,7 @@ export const createCatalogueAdditionalGarmentSelection = ({
   const garmentSpec = createStyleBaseGarmentSpec(garmentType);
   return {
     status: "resolved",
-    allowedGarments: CUSTOMER_SELECTABLE_GARMENT_TYPES.map((candidate) => ({
+    allowedGarments: CATALOGUE_ADDITIONAL_GARMENT_TYPES.map((candidate) => ({
       garmentType: candidate,
       label: getFabricGarmentLabel(candidate),
       garmentSpec: createStyleBaseGarmentSpec(candidate),
@@ -481,7 +493,8 @@ export const reconcileAdditionalGarmentDependencies = (
   );
   const getDependencyStatus = (assignment: FabricGarmentAssignment) =>
     assignment.eligibilityRule === "catalog_all" &&
-    isCanonicalPhysicalGarmentType(assignment.garmentType)
+    isCanonicalPhysicalGarmentType(assignment.garmentType) &&
+    isAdditionalGarmentType(assignment.garmentType)
       ? "valid"
       : allowedTypes.has(assignment.garmentType)
         ? "valid"

@@ -63,6 +63,7 @@ const PARENT_SECTIONS_BY_GARMENT: Readonly<
   shirt: ["shirt", "neck"],
   trouser: ["trousers"],
   skirt: ["skirts"],
+  long_skirt: ["skirts"],
   standard_shorts: ["standard_shorts"],
   bum_shorts: ["bum_shorts"],
   dress: ["dress", "neck"],

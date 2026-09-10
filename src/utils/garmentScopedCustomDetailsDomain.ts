@@ -59,6 +59,7 @@ const FUTURE_CUSTOM_DETAIL_GARMENT_ORDER: readonly CanonicalPhysicalGarmentType[
   "trouser",
   "standard_shorts",
   "skirt",
+  "long_skirt",
   "bum_shorts",
   "dress",
   "kaftan",

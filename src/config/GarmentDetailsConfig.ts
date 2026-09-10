@@ -1196,7 +1196,7 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
 {
     id: "skirt_long",
     label: "Long Length",
-    description: "Skirt extending from knee level toward the ankle.",
+    description: "Skirt length is From Waist Up to Ankle",
     priceCents: 8000,
     garmentGroup: "skirt",
     eligibleDemographics: ["female", "unisex"],

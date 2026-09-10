@@ -177,6 +177,7 @@ export type FabricGarmentType =
  | "shirt"
  | "trouser"
  | "skirt"
+ | "long_skirt"
  | "standard_shorts"
  | "bum_shorts"
  | "dress"

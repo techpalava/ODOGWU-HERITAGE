@@ -43,6 +43,7 @@ import {
   serializeFutureOrderCandidate,
   type FutureOrderCandidateBuildInput,
 } from "./src/utils/futureOrderCandidate";
+import { getFuturePaymentReviewGarments } from "./src/utils/designStudioFuturePaymentReview";
 import {
   calculateGarmentScopedCustomDetailsPricing,
   reconcileGarmentScopedCustomDetails,
@@ -835,6 +836,71 @@ assert.equal(
   ).length,
   2,
   "repeated option IDs remain occurrence-safe by garment",
+);
+
+const distinctSkirtPairInput = buildInput({
+  garmentTypes: ["skirt", "long_skirt"],
+  demographic: "female",
+});
+const distinctSkirtPairSummary = projectFutureDesignStudioSummary(
+  distinctSkirtPairInput,
+);
+assert.deepEqual(
+  distinctSkirtPairSummary.garmentSummary.map((garment) => [
+    garment.garmentKey,
+    garment.garmentType,
+    garment.label,
+    garment.constructionTotalCents,
+  ]),
+  [
+    ["base:skirt", "skirt", "Skirt", 7500],
+    ["base:long_skirt", "long_skirt", "Long Skirt", 8000],
+  ],
+  "Summary must preserve both skirt occurrence identities and canonical prices.",
+);
+assert.deepEqual(
+  distinctSkirtPairInput.measurementPlan.profiles.map((profile) =>
+    profile.status === "resolved"
+      ? [profile.garmentKey, profile.profile.id, profile.constructionOptionId]
+      : [profile.garmentKey, profile.status],
+  ),
+  [
+    ["base:long_skirt", "M", "skirt_long"],
+    ["base:skirt", "L", "skirt_std"],
+  ],
+  "Measurement resolution must remain construction-aware despite the shared skirt detail family.",
+);
+const distinctSkirtPair = buildFutureOrderCandidate(distinctSkirtPairInput);
+assert.ok(distinctSkirtPair.candidate);
+assert.deepEqual(
+  distinctSkirtPair.candidate.garments.map((garment) => [
+    garment.garmentKey,
+    garment.garmentType,
+    garment.label,
+    garment.constructionTotalCents,
+  ]),
+  [
+    ["base:skirt", "skirt", "Skirt", 7500],
+    ["base:long_skirt", "long_skirt", "Long Skirt", 8000],
+  ],
+  "Candidate generation must not collapse Long Skirt into Standard Skirt.",
+);
+assert.deepEqual(
+  distinctSkirtPair.candidate.fabricAllocations.flatMap((allocation) =>
+    allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+  ),
+  ["base:skirt", "base:long_skirt"],
+  "Fabric allocation must retain two exact base occurrence keys.",
+);
+assert.deepEqual(
+  getFuturePaymentReviewGarments(distinctSkirtPair.candidate).map(
+    ({ garment }) => [garment.garmentKey, garment.label],
+  ),
+  [
+    ["base:skirt", "Skirt"],
+    ["base:long_skirt", "Long Skirt"],
+  ],
+  "Payment Review must receive Long Skirt as its own labelled garment.",
 );
 
 const agbada = buildFutureOrderCandidate(

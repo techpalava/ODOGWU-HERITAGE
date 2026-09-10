@@ -53,6 +53,7 @@ export const STEP_1_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmentT
   "bum_shorts",
   "trouser",
   "skirt",
+  "long_skirt",
 ];
 
 const CUSTOMER_SELECTABLE_GARMENT_TYPE_SET = new Set<CanonicalPhysicalGarmentType>(
@@ -90,6 +91,7 @@ const DERIVED_CONSTRUCTION_GARMENT_TYPES = new Set<FabricGarmentType>([
   "kaftan",
   "full_length_gown",
   "agbada",
+  "long_skirt",
 ]);
 
 const isValidConstructionOption = (

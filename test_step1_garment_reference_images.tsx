@@ -16,10 +16,13 @@ import {
 } from "./src/components/GarmentTypeStep";
 import { CUSTOMER_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
 import {
+  STEP1_DUAL_IMAGE_GARMENT_TYPES,
   STEP1_GARMENT_REFERENCE_IMAGES,
-  STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW,
+  STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES,
   getStep1GarmentReferenceAlt,
   getStep1GarmentReferenceImage,
+  getStep1GarmentSecondaryReferenceImage,
+  isStep1DualImageGarmentType,
   isStep1GarmentReferenceType,
   listMissingStep1GarmentReferenceImageKeys,
 } from "./src/utils/step1GarmentReferenceImages";
@@ -39,7 +42,31 @@ const approvedImageFiles = {
   bum_shorts: "ankara-bum-shorts.webp",
   trouser: "ankara-trouser.webp",
   skirt: "ankara-standard-skirt.webp",
+  long_skirt: "ankara-long-skirt.webp",
 };
+const approvedImageDimensions = {
+  shirt: [720, 1080],
+  kaftan: [720, 1080],
+  dress: [720, 1080],
+  full_length_gown: [720, 1080],
+  standard_shorts: [720, 1080],
+  bum_shorts: [720, 1080],
+  trouser: [720, 1080],
+  skirt: [720, 1080],
+  long_skirt: [1086, 1448],
+};
+const approvedSecondaryImageFiles = {
+  shirt: "ankara-standard-shirt-long-sleeve.webp",
+  kaftan: "ankara-kaftan-short-sleeve.webp",
+  dress: "ankara-standard-dress-long-sleeve.webp",
+  full_length_gown: "ankara-long-dress-gown-short-sleeve.webp",
+} as const;
+const approvedSecondaryImageDimensions = {
+  shirt: [1024, 1536],
+  kaftan: [1024, 1536],
+  dress: [1024, 1536],
+  full_length_gown: [1024, 1536],
+} as const;
 
 const webpDimensions = (data: Buffer): number[] => {
   assert.equal(data.toString("ascii", 0, 4), "RIFF");
@@ -74,23 +101,21 @@ assert.deepEqual(getStep1GarmentReferenceImage("skirt"), {
   filename: "ankara-standard-skirt.webp",
   src: "/images/garments/ankara-standard-skirt.webp",
 });
-assert.deepEqual(STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW, {
-  optionId: "shirt_std_midlong",
-  label: "Mid-Long Sleeve",
-  filename: "ankara-standard-shirt-midlong-sleeve.webp",
-  src: "/images/garments/ankara-standard-shirt-midlong-sleeve.webp",
-});
-assert.ok(
-  existsSync(
-    join(
-      repoRoot,
-      "public",
-      "images",
-      "garments",
-      STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW.filename,
-    ),
+assert.deepEqual(STEP1_DUAL_IMAGE_GARMENT_TYPES, [
+  "shirt",
+  "kaftan",
+  "dress",
+  "full_length_gown",
+]);
+assert.deepEqual(
+  Object.fromEntries(
+    STEP1_DUAL_IMAGE_GARMENT_TYPES.map((garmentType) => [
+      garmentType,
+      STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES[garmentType]?.filename,
+    ]),
   ),
-  "The Standard Shirt mid-long sleeve preview must be present locally",
+  approvedSecondaryImageFiles,
+  "Every dual-image card must use its approved secondary asset.",
 );
 
 for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
@@ -108,7 +133,11 @@ for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
     existsSync(diskPath),
     `Expected local reference asset at ${diskPath}`,
   );
-  assert.deepEqual(webpDimensions(readFileSync(diskPath)), [720, 1080], config.filename);
+  assert.deepEqual(
+    webpDimensions(readFileSync(diskPath)),
+    approvedImageDimensions[garmentType],
+    config.filename,
+  );
   const label = getGarmentTypeStepLabel(garmentType);
   assert.equal(
     getStep1GarmentReferenceAlt(label),
@@ -136,8 +165,53 @@ assert.ok(
 );
 assert.ok(emptyMarkup.includes('alt="Ankara Standard Shirt reference"'));
 assert.ok(emptyMarkup.includes("Standard Shirt"));
-assert.ok(emptyMarkup.includes("Base Garment"));
+assert.equal(emptyMarkup.includes("Base Garment"), false);
 assert.equal(emptyMarkup.includes("Style Preview"), false);
+assert.equal(emptyMarkup.includes("Mid-Long Sleeve"), false);
+assert.equal(emptyMarkup.includes("step1-shirt-preview"), false);
+assert.equal(
+  (emptyMarkup.match(/data-testid="step1-garment-reference-gallery"/g) || []).length,
+  4,
+  "Exactly the four approved garment cards must reserve the dual-image layout.",
+);
+assert.equal(
+  (emptyMarkup.match(/ankara-standard-shirt-long-sleeve\.webp/g) || []).length,
+  1,
+  "The Standard Shirt alternate must render alongside its primary image.",
+);
+for (const garmentType of STEP1_DUAL_IMAGE_GARMENT_TYPES) {
+  assert.equal(isStep1DualImageGarmentType(garmentType), true);
+  const secondary = getStep1GarmentSecondaryReferenceImage(garmentType);
+  assert.equal(secondary?.filename, approvedSecondaryImageFiles[garmentType]);
+  assert.ok(
+    existsSync(join(repoRoot, "public", "images", "garments", secondary!.filename)),
+    `${garmentType} must have a local approved secondary asset.`,
+  );
+  assert.deepEqual(
+    webpDimensions(
+      readFileSync(
+        join(repoRoot, "public", "images", "garments", secondary!.filename),
+      ),
+    ),
+    approvedSecondaryImageDimensions[garmentType],
+    `${garmentType} secondary image dimensions`,
+  );
+  assert.ok(
+    emptyMarkup.includes(`src="${secondary!.src}"`),
+    `${garmentType} must render its secondary image alongside the primary one.`,
+  );
+}
+assert.equal(isStep1DualImageGarmentType("skirt"), false);
+assert.equal(isStep1DualImageGarmentType("long_skirt"), false);
+assert.equal(getStep1GarmentSecondaryReferenceImage("shirt")?.filename, "ankara-standard-shirt-long-sleeve.webp");
+assert.equal(
+  getStep1GarmentSecondaryReferenceImage("kaftan")?.filename,
+  "ankara-kaftan-short-sleeve.webp",
+);
+assert.ok(
+  emptyMarkup.includes("Skirt length is From Waist Up to Ankle"),
+  "Long Skirt must render its approved card description.",
+);
 assert.ok(emptyMarkup.includes("Uses 1/2 fabric capacity unit."));
 assert.ok(emptyMarkup.includes(">SELECT<"));
 assert.equal(emptyMarkup.includes("✓ SELECTED"), false);
@@ -169,7 +243,11 @@ assert.ok(
   emptyMarkup.includes('class="relative aspect-[2/1] w-full'),
   "Step 1 reference frames must use the half-height 2/1 aspect crop",
 );
-assert.equal(emptyMarkup.includes("aspect-square"), false);
+assert.equal(
+  (emptyMarkup.match(/aspect-square/g) || []).length,
+  8,
+  "Each of the four dual-image cards must render two equal-width image frames.",
+);
 
 for (const garmentType of CUSTOMER_SELECTABLE_GARMENT_TYPES) {
   assert.ok(isStep1GarmentReferenceType(garmentType));
@@ -271,60 +349,33 @@ const renderSelectable = (selected: readonly FabricGarmentType[]) =>
 act(() => {
   selectableRenderer = create(renderSelectable([]));
 });
-const initialShirtImage = selectableRenderer.root
+const shirtGallery = selectableRenderer.root
   .findByProps({ "data-testid": "step1-garment-card-shirt" })
-  .findByProps({ "data-testid": "step1-garment-reference-image" });
-assert.equal(initialShirtImage.props.src, STEP1_GARMENT_REFERENCE_IMAGES.shirt.src);
+  .findByProps({ "data-testid": "step1-garment-reference-gallery" });
+const shirtGalleryImages = shirtGallery.findAllByProps({
+  "data-testid": "step1-garment-reference-image",
+});
+assert.equal(shirtGalleryImages.length, 2);
+assert.equal(shirtGalleryImages[0]?.props.src, STEP1_GARMENT_REFERENCE_IMAGES.shirt.src);
 assert.equal(
-  selectableRenderer.root.findByProps({
+  shirtGalleryImages[1]?.props.src,
+  STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES.shirt?.src,
+);
+assert.equal(
+  selectableRenderer.root.findAllByProps({
     "data-testid": "step1-shirt-preview-base",
-  }).props["aria-pressed"],
-  true,
+  }).length,
+  0,
 );
 assert.equal(
-  selectableRenderer.root.findByProps({
+  selectableRenderer.root.findAllByProps({
     "data-testid": "step1-shirt-preview-midlong",
-  }).props["aria-pressed"],
-  false,
+  }).length,
+  0,
 );
-act(() => {
-  selectableRenderer.root
-    .findByProps({ "data-testid": "step1-shirt-preview-midlong" })
-    .props.onClick();
-});
-assert.equal(
-  selectableRenderer.root
-    .findByProps({ "data-testid": "step1-garment-card-shirt" })
-    .findByProps({ "data-testid": "step1-garment-reference-image" }).props.src,
-  STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW.src,
-);
-assert.equal(selectedGarmentTypes.length, 0, "Preview must not select a garment");
-assert.equal(garmentChangeCount, 0, "Preview must not change garment state");
-assert.equal(constructionChangeCount, 0, "Preview must not change construction state");
-assert.ok(
-  JSON.stringify(
-    selectableRenderer.root.findByProps({
-      "data-testid": "step1-shirt-preview-badge",
-    }).children,
-  ).includes("Style Preview"),
-);
-act(() => {
-  selectableRenderer.root
-    .findByProps({ "data-testid": "step1-shirt-preview-base" })
-    .props.onClick();
-});
-assert.equal(
-  selectableRenderer.root
-    .findByProps({ "data-testid": "step1-garment-card-shirt" })
-    .findByProps({ "data-testid": "step1-garment-reference-image" }).props.src,
-  STEP1_GARMENT_REFERENCE_IMAGES.shirt.src,
-);
-act(() => {
-  selectableRenderer.root
-    .findByProps({ "data-testid": "step1-garment-card-shirt" })
-    .findByProps({ "data-testid": "step1-garment-reference-image" })
-    .props.onError();
-});
+assert.equal(selectedGarmentTypes.length, 0, "Gallery presentation must not select a garment");
+assert.equal(garmentChangeCount, 0, "Gallery presentation must not change garment state");
+assert.equal(constructionChangeCount, 0, "Gallery presentation must not change construction state");
 assert.equal(
   selectableRenderer.root.findAllByProps({
     type: "checkbox",

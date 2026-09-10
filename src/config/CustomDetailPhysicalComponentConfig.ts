@@ -69,6 +69,7 @@ export const CUSTOM_DETAIL_PHYSICAL_COMPONENTS_BY_GARMENT: Readonly<
     ["standard_shorts"],
   ),
   skirt: parentComponent("skirt", "skirt", ["skirt"]),
+  long_skirt: parentComponent("long_skirt", "long_skirt", ["skirt"]),
   bum_shorts: parentComponent("bum_shorts", "bum_shorts", ["bum_shorts"]),
   dress: parentComponent("dress", "dress", ["dress", "neck"]),
   kaftan: parentComponent("kaftan", "kaftan", ["shirt", "neck"]),

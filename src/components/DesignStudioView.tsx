@@ -304,7 +304,7 @@ import {
   removeAdditionalGarmentConstruction,
   selectAdditionalGarmentConstructionOption,
 } from "../utils/additionalGarmentConstructionState";
-import { createCatalogueAdditionalGarmentSelection } from "../utils/additionalGarmentDomain";
+import { CATALOGUE_ADDITIONAL_GARMENT_TYPES, createCatalogueAdditionalGarmentSelection } from "../utils/additionalGarmentDomain";
 import {
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
   resolveGarmentConstructionPricing,
@@ -2096,7 +2096,7 @@ export default function DesignStudioView({
     [designSelections, showAdditionalClothesCosts],
   );
   const futureAdditionalGarmentConstructionOptions =
-    CUSTOMER_SELECTABLE_GARMENT_TYPES.map((garmentType) => ({
+    CATALOGUE_ADDITIONAL_GARMENT_TYPES.map((garmentType) => ({
       garmentType,
       construction: resolveGarmentConstructionPricing(
         garmentType,

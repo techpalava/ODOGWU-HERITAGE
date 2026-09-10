@@ -7,6 +7,7 @@ import {
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import type { BusinessSettings, FabricAllocationState, StyleCategory } from "./src/types";
 import {
+  CATALOGUE_ADDITIONAL_GARMENT_TYPES,
   createAdditionalGarmentSelection,
   createCatalogueAdditionalGarmentSelection,
   getAllowedAdditionalGarmentLabels,
@@ -14,6 +15,7 @@ import {
   reconcileAdditionalGarmentDependencies,
   resolveAdditionalGarmentPriceRows,
   resolveAllowedAdditionalGarments,
+  validateCanonicalAdditionalGarmentSelectionForParking,
 } from "./src/utils/additionalGarmentDomain";
 import {
   cloneGarmentConstructionPricingResolution,
@@ -463,6 +465,40 @@ const explicitRemovalPricing = calculateDesignPricing({
 assert.equal(explicitRemovalPricing.additionalGarmentPriceRows.length, 0);
 
 const shirtOnlyOccurrences = projectCatalogueStep1PhysicalOccurrences(["shirt"]);
+
+assert.deepEqual(CATALOGUE_ADDITIONAL_GARMENT_TYPES, [
+  "shirt", "trouser", "skirt", "standard_shorts", "bum_shorts", "dress",
+  "kaftan", "full_length_gown",
+], "The approved additional catalogue stays unchanged when Step 1 gains Long Skirt.");
+for (const garmentType of CATALOGUE_ADDITIONAL_GARMENT_TYPES) {
+  assert.equal(createCatalogueAdditionalGarmentSelection({
+    garmentType,
+    authoritativePhysicalOccurrences: shirtOnlyOccurrences,
+  }).status, "resolved");
+}
+for (const parentType of ["shirt", "long_skirt"] as const) {
+  const mainComposition = [createStyleBaseGarmentSpec(parentType)];
+  const rejected = createCatalogueAdditionalGarmentSelection({
+    garmentType: "long_skirt",
+    authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences([parentType]),
+  });
+  assert.equal(rejected.status, "invalid");
+  assert.equal(rejected.allowedGarments.some((item) => item.garmentType === "long_skirt"), false);
+  assert.equal(createAdditionalGarmentSelection({
+    garmentType: "long_skirt", mainComposition, existingAssignments: [],
+  }).status, "invalid", "The same-type creation path must also reject Long Skirt.");
+  assert.equal(resolveAllowedAdditionalGarments(mainComposition).some(
+    (item) => item.garmentType === "long_skirt",
+  ), false);
+}
+assert.deepEqual(validateCanonicalAdditionalGarmentSelectionForParking({
+  state: FabricAllocationStateEngine.initialize(),
+  selection: {
+    code: "ADDITIONAL_LONG_SKIRT_1", sourceRole: "additional",
+    garmentSpec: { key: "additional:long_skirt:1", garmentType: "long_skirt", fabricUnits: 1 },
+  },
+}), { status: "invalid", reason: "garment_type_invalid" },
+"A manually constructed Long Skirt addition cannot bypass creation through parking.");
 
 const catalogueWithoutFabric = createCatalogueAdditionalGarmentSelection({
   garmentType: "shirt",
