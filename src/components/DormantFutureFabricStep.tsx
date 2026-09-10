@@ -2615,6 +2615,7 @@ export const DormantFutureFabricStep = ({
           remainingCapacityMessage={
             step1AssignmentEvaluation.remainingCapacityMessage
           }
+          candidateEnabled={step1AssignmentEvaluation.candidateEnabled}
           candidateMessages={step1AssignmentEvaluation.candidateMessages}
           selectedFailure={step1AssignmentEvaluation.selectedFailure}
           remainingFailure={step1AssignmentEvaluation.remainingFailure}
