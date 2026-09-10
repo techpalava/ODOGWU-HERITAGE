@@ -49,6 +49,7 @@ const FABRIC_GARMENT_TYPES = new Set([
   "shirt",
   "trouser",
   "skirt",
+  "long_skirt",
   "standard_shorts",
   "bum_shorts",
   "dress",

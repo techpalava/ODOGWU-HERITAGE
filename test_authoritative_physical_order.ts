@@ -14,6 +14,7 @@ import {
   buildAuthoritativePhysicalOccurrences,
   createCatalogDesignSource,
   createUploadedDesignSource,
+  physicalOccurrencesToFabricRequirements,
   projectAuthoritativePhysicalOccurrences,
   resolveAuthoritativePhysicalOrder,
   resolveActiveDesignComposition,
@@ -29,6 +30,7 @@ import { assignSameFabricProductToGarments } from "./src/utils/designStudioFutur
 import { reconcileFutureDesignStyleSelection } from "./src/utils/designStudioFutureDesignStyle";
 import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
 import { cloneGarmentConstructionPricingResolution } from "./src/utils/additionalGarmentConstructionState";
+import { resolveMeasurementProfile } from "./src/utils/measurementBlueprint";
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 
@@ -157,6 +159,55 @@ const fabricStateWithAssignments = (
   pendingFabricGarment: null,
   awaitingFabricForPendingGarment: false,
 });
+
+// Standard Skirt and Long Skirt are separate canonical base occurrences even
+// though Long Skirt shares the skirt Custom Details family.
+{
+  const step1 = selection(["skirt", "long_skirt"], ["female"]);
+  const occurrences = buildAuthoritativePhysicalOccurrences({
+    sourceKind: "catalogue",
+    step1GarmentTypeSelection: step1,
+    effectiveGarmentTypeSelection: step1,
+  });
+  assert.deepEqual(
+    occurrences.map((occurrence) => [
+      occurrence.garmentKey,
+      occurrence.garmentType,
+      occurrence.fabricUnits,
+    ]),
+    [
+      ["base:skirt", "skirt", 1],
+      ["base:long_skirt", "long_skirt", 1],
+    ],
+  );
+  assert.deepEqual(
+    physicalOccurrencesToFabricRequirements(occurrences).map((requirement) => [
+      requirement.garmentKey,
+      requirement.garmentType,
+      requirement.code,
+      requirement.fabricUnits,
+    ]),
+    [
+      ["base:skirt", "skirt", "BASE_SKIRT", 1],
+      ["base:long_skirt", "long_skirt", "BASE_LONG_SKIRT", 1],
+    ],
+  );
+  assert.deepEqual(
+    occurrences.map((occurrence) => {
+      const profile = resolveMeasurementProfile({
+        garment: occurrence,
+        garmentTypeSelection: step1,
+      });
+      return profile.status === "resolved"
+        ? [occurrence.garmentKey, profile.profile.id, profile.constructionOptionId]
+        : [occurrence.garmentKey, profile.status];
+    }),
+    [
+      ["base:skirt", "L", "skirt_std"],
+      ["base:long_skirt", "M", "skirt_long"],
+    ],
+  );
+}
 
 const additionalConstruction = (
   garmentKey: string,

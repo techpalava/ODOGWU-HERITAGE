@@ -70,8 +70,9 @@ export const resolveGarmentPolicyDemographic = (
   };
 };
 
-const isPhysicalGarment = (garmentType: FabricGarmentType): boolean =>
-  garmentType !== "other";
+/** Long Skirt is currently authorized only as a base garment. */
+export const isAdditionalGarmentType = (garmentType: FabricGarmentType): boolean =>
+  garmentType !== "other" && garmentType !== "long_skirt";
 
 export const resolveAdditionalGarmentPolicyCandidates = (
   mainComposition: readonly FabricCapacityGarmentSpec[],
@@ -79,7 +80,7 @@ export const resolveAdditionalGarmentPolicyCandidates = (
 ): AdditionalGarmentPolicyCandidate[] => {
   const candidates = new Map<FabricGarmentType, AdditionalGarmentPolicyCandidate>();
   for (const spec of mainComposition) {
-    if (!isPhysicalGarment(spec.garmentType) || candidates.has(spec.garmentType)) {
+    if (!isAdditionalGarmentType(spec.garmentType) || candidates.has(spec.garmentType)) {
       continue;
     }
     candidates.set(spec.garmentType, {
@@ -125,6 +126,7 @@ export const ADDITIONAL_GARMENT_DISPLAY_ORDER: Readonly<
   full_length_gown: 40,
   agbada: 50,
   skirt: 60,
+  long_skirt: 65,
   bum_shorts: 70,
   trouser: 80,
   standard_shorts: 90,

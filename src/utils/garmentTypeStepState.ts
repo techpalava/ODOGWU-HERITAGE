@@ -237,6 +237,14 @@ export const reconcileGarmentConstructionResolution = (
   const components = previous.components.flatMap((component, index) => {
     const expected = canonicalDefault.components[index];
     if (component.selectionGroup !== expected.selectionGroup) return [];
+    // Long Skirt has a fixed base length. Reject another skirt length so the
+    // caller applies the existing deterministic canonical-default repair.
+    if (
+      canonicalDefault.garmentType === "long_skirt" &&
+      component.optionId !== expected.optionId
+    ) {
+      return [];
+    }
     const option = normalizedCustomDetailCatalog.find(
       (candidate) => candidate.id === component.optionId,
     );

@@ -26,9 +26,10 @@ import {
 } from "../utils/garmentConstructionPricing";
 import {
   STEP1_GARMENT_REFERENCE_DISCLAIMER,
-  STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW,
   getStep1GarmentReferenceAlt,
   getStep1GarmentReferenceImage,
+  getStep1GarmentSecondaryReferenceImage,
+  isStep1DualImageGarmentType,
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
 import { formatRequiredFabricQuantitySentence } from "../utils/designStudioFutureFabricStage";
@@ -54,6 +55,7 @@ const GARMENT_TYPE_STEP_LABELS: Record<
   shirt: "Standard Shirt",
   trouser: "Trouser",
   skirt: "Standard Skirt",
+  long_skirt: "Long Skirt",
   standard_shorts: "Standard Nikka Shorts",
   bum_shorts: "Standard Bum Shorts",
   dress: "Standard Dress",
@@ -65,6 +67,19 @@ const GARMENT_TYPE_STEP_LABELS: Record<
 export const getGarmentTypeStepLabel = (
   garmentType: Exclude<FabricGarmentType, "other">,
 ): string => GARMENT_TYPE_STEP_LABELS[garmentType];
+
+const GARMENT_TYPE_STEP_DESCRIPTIONS: Partial<
+  Record<Exclude<FabricGarmentType, "other">, string>
+> = {
+  long_skirt: "Skirt length is From Waist Up to Ankle",
+};
+
+export const getGarmentTypeStepDescription = (
+  garmentType: FabricGarmentType,
+): string | undefined =>
+  garmentType === "other"
+    ? undefined
+    : GARMENT_TYPE_STEP_DESCRIPTIONS[garmentType];
 
 const FIRST_VISIBLE_REFERENCE_IMAGE_COUNT = 3;
 
@@ -82,16 +97,18 @@ export const Step1GarmentReferencePhoto = ({
   src,
   alt,
   eager = false,
+  frameClassName = STEP1_GARMENT_REFERENCE_FRAME_CLASS,
 }: {
   src: string | null;
   alt: string;
   eager?: boolean;
+  frameClassName?: string;
 }) => {
   const [failed, setFailed] = useState(!src);
 
   return (
     <div
-      className={STEP1_GARMENT_REFERENCE_FRAME_CLASS}
+      className={frameClassName}
       data-testid="step1-garment-reference-frame"
     >
       {failed || !src ? (
@@ -124,6 +141,36 @@ export const Step1GarmentReferencePhoto = ({
     </div>
   );
 };
+
+export const Step1GarmentReferenceGallery = ({
+  primary,
+  secondary,
+  garmentLabel,
+  eager = false,
+}: {
+  primary: { src: string; alt: string } | null;
+  secondary: { src: string; alt: string } | null;
+  garmentLabel: string;
+  eager?: boolean;
+}) => (
+  <div
+    className="grid grid-cols-2 gap-px overflow-hidden rounded-t-2xl bg-heritage-gold/15"
+    data-testid="step1-garment-reference-gallery"
+    aria-label={`${garmentLabel} reference photos`}
+  >
+    <Step1GarmentReferencePhoto
+      src={primary?.src ?? null}
+      alt={primary?.alt ?? `Ankara ${garmentLabel} reference`}
+      eager={eager}
+      frameClassName="relative aspect-square min-w-0 overflow-hidden bg-[#f4eee6]"
+    />
+    <Step1GarmentReferencePhoto
+      src={secondary?.src ?? null}
+      alt={secondary?.alt ?? `Ankara ${garmentLabel} reference`}
+      frameClassName="relative aspect-square min-w-0 overflow-hidden bg-[#f4eee6]"
+    />
+  </div>
+);
 
 export interface GarmentTypeStepCategoryPresentation {
   garmentType: FabricGarmentType;
@@ -270,9 +317,6 @@ export const GarmentTypeStep = ({
   idPrefix = "garment-type-step",
 }: GarmentTypeStepProps) => {
   void selectedFabricQuantity;
-  const [shirtImagePreview, setShirtImagePreview] = useState<
-    "base" | "midlong"
-  >("base");
   const presentation = getGarmentTypeStepPresentation({
     selectedGarmentTypes,
     normalizedCustomDetailCatalog,
@@ -376,15 +420,18 @@ export const GarmentTypeStep = ({
               )
                 ? getStep1GarmentReferenceImage(category.garmentType)
                 : null;
-              const isStandardShirt = category.garmentType === "shirt";
-              const showingMidLongSleevePreview =
-                isStandardShirt && shirtImagePreview === "midlong";
-              const displayedReferenceImage = showingMidLongSleevePreview
-                ? STANDARD_SHIRT_MIDLONG_SLEEVE_PREVIEW
-                : referenceImage;
-              const referenceAlt = showingMidLongSleevePreview
-                ? "Ankara Standard Shirt, Mid-Long Sleeve style preview"
-                : getStep1GarmentReferenceAlt(category.label);
+              const dualImageGarmentType = isStep1DualImageGarmentType(
+                category.garmentType,
+              )
+                ? category.garmentType
+                : null;
+              const secondaryReferenceImage = dualImageGarmentType
+                ? getStep1GarmentSecondaryReferenceImage(dualImageGarmentType)
+                : null;
+              const referenceAlt = getStep1GarmentReferenceAlt(category.label);
+              const description = getGarmentTypeStepDescription(
+                category.garmentType,
+              );
               return (
                 <article
                   key={category.garmentType}
@@ -399,57 +446,31 @@ export const GarmentTypeStep = ({
                       : ""
                   }`}
                 >
-                  <div className="relative">
+                  {dualImageGarmentType ? (
+                    <Step1GarmentReferenceGallery
+                      primary={
+                        referenceImage
+                          ? { src: referenceImage.src, alt: referenceAlt }
+                          : null
+                      }
+                      secondary={
+                        secondaryReferenceImage
+                          ? {
+                              src: secondaryReferenceImage.src,
+                              alt: `${referenceAlt}, alternate view`,
+                            }
+                          : null
+                      }
+                      garmentLabel={category.label}
+                      eager={index < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
+                    />
+                  ) : (
                     <Step1GarmentReferencePhoto
-                      key={displayedReferenceImage?.src ?? "missing"}
-                      src={displayedReferenceImage?.src ?? null}
+                      key={referenceImage?.src ?? "missing"}
+                      src={referenceImage?.src ?? null}
                       alt={referenceAlt}
                       eager={index < FIRST_VISIBLE_REFERENCE_IMAGE_COUNT}
                     />
-                    {isStandardShirt && (
-                      <span
-                        data-testid="step1-shirt-preview-badge"
-                        className="absolute left-2 top-2 rounded-full border border-white/40 bg-heritage-green/90 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-heritage-cream shadow-sm"
-                      >
-                        {showingMidLongSleevePreview
-                          ? "Style Preview"
-                          : "Base Garment"}
-                      </span>
-                    )}
-                  </div>
-                  {isStandardShirt && (
-                    <div
-                      role="group"
-                      aria-label="Standard Shirt image preview"
-                      className="flex min-w-0 gap-1 border-b border-heritage-gold/15 bg-heritage-cream/20 p-1.5"
-                    >
-                      <button
-                        type="button"
-                        aria-pressed={shirtImagePreview === "base"}
-                        data-testid="step1-shirt-preview-base"
-                        onClick={() => setShirtImagePreview("base")}
-                        className={`min-h-7 min-w-0 flex-[1.08] whitespace-nowrap rounded-md px-1 text-[8px] font-bold uppercase tracking-normal sm:tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-green focus-visible:ring-offset-1 ${
-                          shirtImagePreview === "base"
-                            ? "bg-heritage-green text-heritage-cream"
-                            : "text-heritage-green hover:bg-white"
-                        }`}
-                      >
-                        Base
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={shirtImagePreview === "midlong"}
-                        data-testid="step1-shirt-preview-midlong"
-                        onClick={() => setShirtImagePreview("midlong")}
-                        className={`min-h-7 min-w-0 flex-[1.7] whitespace-nowrap rounded-md px-1 text-[8px] font-bold uppercase tracking-normal sm:tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-green focus-visible:ring-offset-1 ${
-                          shirtImagePreview === "midlong"
-                            ? "bg-heritage-green text-heritage-cream"
-                            : "text-heritage-green hover:bg-white"
-                        }`}
-                      >
-                        Mid-Long Sleeve
-                      </button>
-                    </div>
                   )}
                   <div
                     className={`flex min-w-0 flex-1 flex-col p-2.5 sm:p-3 ${
@@ -473,6 +494,14 @@ export const GarmentTypeStep = ({
                     <p className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60">
                       {category.fabricCapacityUsage}
                     </p>
+                    {description && (
+                      <p
+                        className="mt-1 break-words text-[11px] leading-relaxed text-heritage-ink/60"
+                        data-testid={`step1-garment-description-${category.garmentType}`}
+                      >
+                        {description}
+                      </p>
+                    )}
                     {category.selected && !isResolved && (
                       <p className="mt-2 flex min-w-0 items-start gap-1.5 text-[11px] font-semibold text-amber-800">
                         <AlertCircle aria-hidden="true" size={14} className="mt-0.5 shrink-0" />

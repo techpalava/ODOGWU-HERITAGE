@@ -68,6 +68,7 @@ const allGarments = buildStepSelection(
     "dress",
     "bum_shorts",
     "skirt",
+    "long_skirt",
     "standard_shorts",
     "trouser",
     "shirt",
@@ -82,6 +83,7 @@ assert.deepEqual(
     "trouser",
     "standard_shorts",
     "skirt",
+    "long_skirt",
     "bum_shorts",
     "dress",
     "kaftan",
@@ -103,6 +105,31 @@ assert.deepEqual(
   ["base:agbada:shirt", "base:agbada:trouser"],
   "Agbada expands through authoritative stable component identities",
 );
+
+const skirtAndLongSkirt = resolveFutureCustomDetailPhysicalSubjects(
+  buildStepSelection(["skirt", "long_skirt"], "female"),
+).subjects;
+assert.deepEqual(
+  skirtAndLongSkirt.map((subject) => [
+    subject.parentGarmentKey,
+    subject.parentGarmentType,
+  ]),
+  [
+    ["base:skirt", "skirt"],
+    ["base:long_skirt", "long_skirt"],
+  ],
+  "Standard Skirt and Long Skirt must retain independent Custom Details occurrences.",
+);
+for (const subject of skirtAndLongSkirt) {
+  assert.deepEqual(
+    resolveGarmentScopedCustomDetailApplicability({
+      subject,
+      catalogInspection: seedInspection,
+    }).groups.map((group) => group.selectionGroup),
+    ["skirt_pockets", "skirt_additional", "personalized_additional"],
+    "Long Skirt reuses the skirt detail family without reusing its physical key.",
+  );
+}
 
 for (const demographic of ["male", "female", "unisex"] as const) {
   const nikka = resolveFutureCustomDetailPhysicalSubjects(
