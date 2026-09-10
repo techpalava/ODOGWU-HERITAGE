@@ -261,6 +261,26 @@ const buildSummaryInput = ({
     fabricCompletion,
     materialPricing,
     designStyleSelection,
+    designStyleOccurrences: garmentTypes.map((garmentType) => ({
+      target: {
+        garmentKey: `base:${garmentType}`,
+        occurrenceToken: `base:${garmentType}#1`,
+      },
+      garmentType,
+      label: garmentType[0].toUpperCase() + garmentType.slice(1),
+      status: "complete" as const,
+      assignment: {
+        garmentKey: `base:${garmentType}`,
+        occurrenceToken: `base:${garmentType}#1`,
+        assignmentRevision: 1,
+        sourceKind: "catalog" as const,
+        sourceKey: `catalog-style:${style.id}`,
+        catalogStyleId: style.id,
+        eligibilityFingerprint: "fixture-eligible",
+      },
+      assignmentLabel: style.name,
+    })),
+    styles: [style],
     customDetailsReconciliation,
     customDetailsCompletion,
     customDetailsPricing,
@@ -484,7 +504,8 @@ assert.deepEqual(
   "projection must be deterministic",
 );
 assert.deepEqual(exactSummary.garmentSummary.map((row) => row.garmentType), ["shirt"]);
-assert.equal(exactSummary.designStyleSummary?.styleId, "style-shirt");
+assert.equal(exactSummary.designStyleSummary, null);
+assert.deepEqual(exactSummary.designStyleOccurrences?.map((row) => row.name), ["Heritage Complete Look"]);
 assert.equal(exactSummary.customDetailsSummary[0].occurrences[0].priceCents, 0);
 assert.equal(exactSummary.aiTryOnSummary.label, "Skipped by choice");
 assert.ok(exactSummary.measurementSummary.shared.length > 0);

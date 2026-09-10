@@ -12,7 +12,10 @@ import {
   type AdditionalGarmentFabricTransaction,
 } from "./src/utils/additionalGarmentFabricPicker";
 import { getFabricAvailabilityMessage } from "./src/utils/fabricCatalogueAvailability";
-import { applyFutureFabricCardSelection } from "./src/utils/designStudioFutureFabricStage";
+import {
+  applyFutureFabricCardSelection,
+  assignFutureFabricToGarment,
+} from "./src/utils/designStudioFutureFabricStage";
 import { resolveFutureStageCorrection } from "./src/utils/resolveFutureStageCorrection";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
@@ -264,6 +267,77 @@ const parked = FabricAllocationStateEngine.beginPendingAdditionalGarmentSelectio
 assert.equal(parked.pendingFabricGarment?.garmentKey, secondKey);
 assert.equal(parked.awaitingFabricForPendingGarment, true);
 
+// When the new exact occurrence is already represented in the authoritative
+// physical set, its total capacity can still fit the reusable Fabric. Choosing
+// a different Fabric must create its own validated allocation instead of being
+// blocked by that minimum-capacity projection.
+const alternateAddition = createCatalogueAdditionalGarmentSelection({
+  garmentType: "standard_shorts",
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences([
+    "shirt",
+  ]),
+});
+assert.equal(alternateAddition.status, "resolved");
+const alternateGarmentKey = alternateAddition.selection.garmentSpec!.key;
+const alternatePending =
+  FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(
+    withBaseForParking,
+    alternateAddition.selection,
+  );
+const alternateRequiredOccurrences = [
+  ...projectCatalogueStep1PhysicalOccurrences(["shirt"]),
+  {
+    garmentKey: alternateGarmentKey,
+    garmentType: "standard_shorts" as const,
+    sourceRole: "additional" as const,
+    fabricUnits: alternateAddition.selection.garmentSpec!.fabricUnits,
+    occurrenceGeneration: 1,
+  },
+];
+const alternateAssigned = assignFutureFabricToGarment({
+  state: alternatePending,
+  garmentTypeSelection,
+  garmentKey: alternateGarmentKey,
+  fabricCode: fabricB.code,
+  fabrics: [fabricA, fabricB],
+  requiredPhysicalOccurrences: alternateRequiredOccurrences,
+});
+assert.equal(alternateAssigned.status, "assigned");
+const alternateConfirmation = confirmAdditionalGarmentFabricAssignment({
+  previousState: alternatePending,
+  nextState: alternateAssigned.state,
+  garmentKey: alternateGarmentKey,
+  fabricCode: fabricB.code,
+});
+assert.equal(alternateConfirmation.status, "assigned");
+assert.deepEqual(
+  alternateConfirmation.state.fabricAllocations[0].garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
+  ["base:shirt"],
+  "the existing garment must retain its reusable Fabric",
+);
+assert.deepEqual(
+  alternateConfirmation.state.fabricAllocations[1].garmentAssignments.map(
+    (assignment) => assignment.garmentKey,
+  ),
+  [alternateGarmentKey],
+  "the selected alternate Fabric must bind only the new exact occurrence",
+);
+assert.equal(alternateConfirmation.state.fabricAllocations[1].fabricCode, fabricB.code);
+const outOfStockAlternate = assignFutureFabricToGarment({
+  state: alternatePending,
+  garmentTypeSelection,
+  garmentKey: alternateGarmentKey,
+  fabricCode: fabricOutOfStock.code,
+  fabrics: [fabricA, fabricOutOfStock],
+  requiredPhysicalOccurrences: alternateRequiredOccurrences,
+});
+assert.equal(outOfStockAlternate.status, "blocked");
+if (outOfStockAlternate.status === "blocked") {
+  assert.equal(outOfStockAlternate.reason, "FABRIC_STOCK_EXHAUSTED");
+}
+
 const baseRejected = FabricAllocationStateEngine.beginPendingAdditionalGarmentSelection(
   empty,
   {
@@ -309,24 +383,15 @@ assert.equal(isFabricAvailableForCustomerSelection(null), false);
 assert.equal(isFabricAvailableForCustomerSelection(fabricNoPrice), false);
 assert.ok(getFabricAvailabilityMessage(fabricOutOfStock));
 
-const resolvedOk = {
-  status: "resolved" as const,
-  fabric: fabricA,
-};
-const blockedOutOfStock = {
-  status: "blocked" as const,
-  code: "out_of_stock" as const,
-  reason: getFabricAvailabilityMessage(fabricOutOfStock) || "Currently out of stock.",
-};
-
-// Dialog — available same fabric shows Use Same
+// Dialog — every additional garment opens the catalogue, without a same-or-
+// another-fabric decision.
 let renderer!: ReturnType<typeof create>;
 act(() => {
   renderer = create(
     createElement(FutureAdditionalGarmentFabricDialog, {
       transaction: {
         transactionId: 1,
-        phase: "choice",
+        phase: "catalogue",
         garmentKey: secondKey,
         garmentType: "shirt",
         origin: "new_addition",
@@ -335,33 +400,55 @@ act(() => {
       fabrics: [fabricA, fabricB],
       garmentTypeSelection,
       fabricAllocationState: pendingState,
-      activeFabric: fabricA,
-      activeFabricSelectionIndex: 1,
-      activeFabricResolution: resolvedOk,
-      activeFabricCode: fabricA.code,
       errorMessage: null,
-      onUseSameFabric: () => undefined,
-      onChooseAnotherFabric: () => undefined,
-      onBackToChoice: () => undefined,
       onSelectFabric: () => undefined,
+      onSelectExistingAllocation: () => undefined,
       onCancel: () => undefined,
     }),
   );
 });
-assert.match(textContent(renderer.root), /Use Same Fabric Again/);
+assert.match(textContent(renderer.root), /Choose fabric for Shirt/);
 assert.equal(
-  renderer.root.findByProps({ "data-fabric-dialog-action": "use-same" }).props
-    .disabled,
-  false,
+  renderer.root.findAllByProps({ "data-dialog-phase": "catalogue" }).length,
+  1,
 );
+assert.doesNotMatch(textContent(renderer.root), /Use Same Fabric Again|Choose Another Fabric/);
 
-// OUT_OF_STOCK active fabric keeps choice UI but disables Same Fabric
+for (const [garmentType, label] of [
+  ["standard_shorts", "Standard Nikka Shorts"],
+  ["bum_shorts", "Standard Bum Shorts"],
+] as const) {
+  act(() => {
+    renderer.update(
+      createElement(FutureAdditionalGarmentFabricDialog, {
+        transaction: {
+          transactionId: 1,
+          phase: "catalogue",
+          garmentKey: secondKey,
+          garmentType,
+          origin: "new_addition",
+          openedModal: true,
+        },
+        fabrics: [fabricA, fabricB],
+        garmentTypeSelection,
+        fabricAllocationState: pendingState,
+        errorMessage: null,
+        onSelectFabric: () => undefined,
+        onSelectExistingAllocation: () => undefined,
+        onCancel: () => undefined,
+      }),
+    );
+  });
+  assert.ok(textContent(renderer.root).includes(`Choose fabric for ${label}`));
+}
+
+// OUT_OF_STOCK current-order fabric stays unavailable in the catalogue.
 act(() => {
   renderer.update(
     createElement(FutureAdditionalGarmentFabricDialog, {
       transaction: {
         transactionId: 2,
-        phase: "choice",
+        phase: "catalogue",
         garmentKey: secondKey,
         garmentType: "shirt",
         origin: "new_addition",
@@ -370,33 +457,25 @@ act(() => {
       fabrics: [fabricOutOfStock, fabricB],
       garmentTypeSelection,
       fabricAllocationState: pendingState,
-      activeFabric: fabricOutOfStock,
-      activeFabricSelectionIndex: 1,
-      activeFabricResolution: blockedOutOfStock,
-      activeFabricCode: fabricOutOfStock.code,
       errorMessage: null,
-      onUseSameFabric: () => undefined,
-      onChooseAnotherFabric: () => undefined,
-      onBackToChoice: () => undefined,
       onSelectFabric: () => undefined,
+      onSelectExistingAllocation: () => undefined,
       onCancel: () => undefined,
     }),
   );
 });
 assert.equal(
   renderer.root.findByProps({
-    "data-dialog-phase": "choice",
+    "data-dialog-phase": "catalogue",
   }).props["data-dialog-phase"],
-  "choice",
+  "catalogue",
 );
 assert.equal(
-  renderer.root.findByProps({ "data-fabric-dialog-action": "use-same" }).props
-    .disabled,
-  true,
-);
-assert.ok(
-  renderer.root.findAllByProps({ "data-same-fabric-unavailable-reason": "true" })
-    .length >= 1,
+  renderer.root.findAllByProps({
+    "data-fabric-existing-allocation": pendingState.fabricAllocations[0]!.allocationId,
+  }).length,
+  0,
+  "an out-of-stock allocation is not offered for reuse",
 );
 
 // awaiting_commit keeps modal open with finishing state
@@ -415,15 +494,9 @@ act(() => {
       fabrics: [fabricA, fabricB],
       garmentTypeSelection,
       fabricAllocationState: chooseResult.state,
-      activeFabric: fabricA,
-      activeFabricSelectionIndex: 1,
-      activeFabricResolution: resolvedOk,
-      activeFabricCode: fabricA.code,
       errorMessage: null,
-      onUseSameFabric: () => undefined,
-      onChooseAnotherFabric: () => undefined,
-      onBackToChoice: () => undefined,
       onSelectFabric: () => undefined,
+      onSelectExistingAllocation: () => undefined,
       onCancel: () => undefined,
     }),
   );

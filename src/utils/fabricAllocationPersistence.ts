@@ -1,4 +1,8 @@
 import { FabricCapacityEngine } from "../engine/FabricCapacityEngine";
+import {
+  createStyleBaseGarmentSpec,
+  FABRIC_GARMENT_CAPACITY_UNITS,
+} from "../config/StyleFabricCapacityConfig";
 import type {
   CartItem,
   FabricAllocation,
@@ -11,6 +15,11 @@ import type {
   GuestDesignDraft,
   MasterOrder,
 } from "../types";
+import { getCatalogDesignSourceKey } from "./designSourceState";
+import {
+  isCanonicalPhysicalGarmentType,
+  isCustomerSelectableGarmentType,
+} from "./garmentConstructionPricing";
 
 type LowerGarmentType = "trousers" | "skirt";
 const GARMENT_TYPES: readonly FabricGarmentType[] = [
@@ -61,6 +70,154 @@ const normalizeAdditionalEligibilityRule = (
     ? value
     : undefined;
 
+type ReservedCanonicalOccurrenceIdentity = {
+  sourceRole: FabricGarmentRole;
+  garmentType: FabricGarmentType;
+  allowedCodes: readonly string[];
+};
+
+const isReservedCanonicalOccurrenceKeyFamily = (garmentKey: string): boolean =>
+  garmentKey.startsWith("base:") || garmentKey.startsWith("additional:");
+
+/**
+ * A reserved key is its own persisted identity. Keep the parser stricter than
+ * the older additional-key reader: leading-zero sequences are not canonical
+ * occurrence identities and must not fall through to legacy normalization.
+ */
+const getReservedCanonicalOccurrenceIdentity = (
+  garmentKey: string,
+): ReservedCanonicalOccurrenceIdentity | null => {
+  const additionalMatch = garmentKey.match(
+    /^additional:([^:]+):([1-9][0-9]*)$/,
+  );
+  if (additionalMatch) {
+    const garmentType = normalizeGarmentType(additionalMatch[1]);
+    if (!garmentType || !isCanonicalPhysicalGarmentType(garmentType)) {
+      return null;
+    }
+    const sequence = additionalMatch[2];
+    return {
+      sourceRole: "additional",
+      garmentType,
+      allowedCodes: [
+        `ADDITIONAL_${garmentType.toUpperCase()}`,
+        `ADDITIONAL_${garmentType.toUpperCase()}_${sequence}`,
+      ],
+    };
+  }
+
+  const baseMatch = garmentKey.match(/^base:([^:]+)$/);
+  if (baseMatch) {
+    const garmentType = normalizeGarmentType(baseMatch[1]);
+    if (
+      !garmentType ||
+      !isCanonicalPhysicalGarmentType(garmentType) ||
+      garmentKey !== createStyleBaseGarmentSpec(garmentType).key
+    ) {
+      return null;
+    }
+    return {
+      sourceRole: "main",
+      garmentType,
+      allowedCodes: [
+        `BASE_${garmentType.toUpperCase()}`,
+        `STYLE_BASE_${garmentType.toUpperCase()}`,
+      ],
+    };
+  }
+
+  return null;
+};
+
+const isLegacyAdditionalGarmentShape = (
+  assignment: FabricGarmentAssignment,
+): boolean =>
+  assignment.code.startsWith("CUSTOM_DETAIL_ADDITIONAL_GARMENT_") ||
+  assignment.garmentSpec?.key.startsWith(
+    "custom-detail:additional_physical_garment:",
+  ) === true;
+
+const isCanonicalCatalogueAdditionalOccurrence = ({
+  garmentKey,
+  code,
+  garmentType,
+  fabricUnits,
+}: Pick<
+  FabricGarmentAssignment,
+  "garmentKey" | "code" | "garmentType" | "fabricUnits"
+>): boolean =>
+  isCustomerSelectableGarmentType(garmentType) &&
+  fabricUnits === FABRIC_GARMENT_CAPACITY_UNITS[garmentType] &&
+  code === `ADDITIONAL_${garmentType.toUpperCase()}` &&
+  new RegExp(`^additional:${garmentType}:[1-9][0-9]*$`).test(garmentKey);
+
+/**
+ * Reserved occurrence keys are complete identities. They always validate their
+ * role, code, type, and capacity, whether the historical row supplied a role
+ * or not. Generic historical keys remain outside this canonical contract.
+ */
+const hasCoherentCanonicalOccurrenceIdentity = ({
+  assignment,
+}: {
+  assignment: FabricGarmentAssignment;
+}): boolean => {
+  const identity = getReservedCanonicalOccurrenceIdentity(
+    assignment.garmentKey,
+  );
+  if (!identity) {
+    // A malformed claim to a reserved key is never a generic legacy key.
+    return !isReservedCanonicalOccurrenceKeyFamily(assignment.garmentKey);
+  }
+  return (
+    assignment.sourceRole === identity.sourceRole &&
+    assignment.garmentType === identity.garmentType &&
+    assignment.fabricUnits === FABRIC_GARMENT_CAPACITY_UNITS[identity.garmentType] &&
+    identity.allowedCodes.includes(assignment.code)
+  );
+};
+
+const hasCoherentGarmentSpec = (
+  assignment: FabricGarmentAssignment,
+): boolean =>
+  !assignment.garmentSpec ||
+  (!assignment.garmentKey.startsWith("base:") &&
+    !assignment.garmentKey.startsWith("additional:")) ||
+  (assignment.garmentSpec.key === assignment.garmentKey &&
+    assignment.garmentSpec.garmentType === assignment.garmentType &&
+    assignment.garmentSpec.fabricUnits === assignment.fabricUnits &&
+    assignment.garmentSpec.lowerGarmentType === assignment.lowerGarmentType);
+
+/**
+ * Generic Custom Detail additional rows predate structured role metadata. If
+ * they are promoted, their legacy code/spec must still describe the same
+ * garment as the final normalized assignment.
+ */
+const hasCoherentLegacyAdditionalIdentity = (
+  assignment: FabricGarmentAssignment,
+): boolean => {
+  if (!isLegacyAdditionalGarmentShape(assignment)) return true;
+  if (assignment.sourceRole !== "additional") return false;
+  if (
+    assignment.code.startsWith("CUSTOM_DETAIL_ADDITIONAL_GARMENT_") &&
+    assignment.code !==
+      `CUSTOM_DETAIL_ADDITIONAL_GARMENT_${assignment.garmentType.toUpperCase()}`
+  ) {
+    return false;
+  }
+  return (
+    !assignment.garmentSpec ||
+    (assignment.garmentSpec.garmentType === assignment.garmentType &&
+      assignment.garmentSpec.fabricUnits === assignment.fabricUnits)
+  );
+};
+
+const hasCoherentFinalAssignmentIdentity = (
+  assignment: FabricGarmentAssignment,
+): boolean =>
+  hasCoherentCanonicalOccurrenceIdentity({ assignment }) &&
+  hasCoherentGarmentSpec(assignment) &&
+  hasCoherentLegacyAdditionalIdentity(assignment);
+
 const normalizeGarmentSpecStrict = (
   value: unknown,
 ): FabricCapacityGarmentSpec | null => {
@@ -85,8 +242,18 @@ const normalizeGarmentSpecStrict = (
   };
 };
 
+interface FabricAllocationInspectionOptions {
+  /**
+   * Revision-342-era catalogue additions omitted relationship metadata. This
+   * compatibility path is intentionally available only to a draft whose
+   * persisted design source structurally proves catalogue lineage.
+   */
+  allowHistoricalCatalogueAdditionalFallback?: boolean;
+}
+
 const normalizeGarmentAssignmentStrict = (
   value: unknown,
+  options: FabricAllocationInspectionOptions = {},
 ): FabricGarmentAssignment | null => {
   if (!isRecord(value)) return null;
 
@@ -119,6 +286,25 @@ const normalizeGarmentAssignmentStrict = (
 
   const sourceRole = normalizeGarmentRole(value.sourceRole);
   if (hasOwn(value, "sourceRole") && !sourceRole) return null;
+  const reservedCanonicalIdentity = getReservedCanonicalOccurrenceIdentity(
+    garmentKey,
+  );
+  if (
+    isReservedCanonicalOccurrenceKeyFamily(garmentKey) &&
+    !reservedCanonicalIdentity
+  ) {
+    return null;
+  }
+  if (
+    reservedCanonicalIdentity &&
+    sourceRole &&
+    sourceRole !== reservedCanonicalIdentity.sourceRole
+  ) {
+    return null;
+  }
+  if (reservedCanonicalIdentity) {
+    assignment.sourceRole = reservedCanonicalIdentity.sourceRole;
+  }
   const mainGarmentKey =
     typeof value.mainGarmentKey === "string" && value.mainGarmentKey
       ? value.mainGarmentKey
@@ -134,19 +320,6 @@ const normalizeGarmentAssignmentStrict = (
     value.eligibilityRule,
   );
   if (hasOwn(value, "eligibilityRule") && !eligibilityRule) return null;
-  if (
-    sourceRole === "additional" &&
-    !mainGarmentType &&
-    eligibilityRule !== "demographic_policy" &&
-    eligibilityRule !== "catalog_all"
-  ) return null;
-
-  if (sourceRole) assignment.sourceRole = sourceRole;
-  if (mainGarmentKey) assignment.mainGarmentKey = mainGarmentKey;
-  if (mainGarmentType) assignment.mainGarmentType = mainGarmentType;
-  if (eligibilityRule) assignment.eligibilityRule = eligibilityRule;
-  if (dependencyStatus) assignment.dependencyStatus = dependencyStatus;
-
   if (hasOwn(value, "garmentSpec")) {
     const garmentSpec = normalizeGarmentSpecStrict(value.garmentSpec);
     if (!garmentSpec) {
@@ -154,13 +327,44 @@ const normalizeGarmentAssignmentStrict = (
     }
     assignment.garmentSpec = garmentSpec;
   }
+  if (
+    !hasCoherentCanonicalOccurrenceIdentity({ assignment }) ||
+    !hasCoherentGarmentSpec(assignment)
+  ) {
+    return null;
+  }
+  const isHistoricalCatalogueAdditional =
+    options.allowHistoricalCatalogueAdditionalFallback === true &&
+    assignment.sourceRole === "additional" &&
+    !hasOwn(value, "mainGarmentKey") &&
+    !hasOwn(value, "mainGarmentType") &&
+    !hasOwn(value, "eligibilityRule") &&
+    !hasOwn(value, "dependencyStatus") &&
+    !hasOwn(value, "garmentSpec") &&
+    isCanonicalCatalogueAdditionalOccurrence(assignment);
+  if (isHistoricalCatalogueAdditional) {
+    assignment.eligibilityRule = "catalog_all";
+    assignment.dependencyStatus = "valid";
+  }
+  if (
+    (assignment.sourceRole ?? sourceRole) === "additional" &&
+    !mainGarmentType &&
+    assignment.eligibilityRule !== "demographic_policy" &&
+    assignment.eligibilityRule !== "catalog_all" &&
+    eligibilityRule !== "demographic_policy" &&
+    eligibilityRule !== "catalog_all"
+  ) return null;
+
+  if (sourceRole && !reservedCanonicalIdentity) assignment.sourceRole = sourceRole;
+  if (mainGarmentKey) assignment.mainGarmentKey = mainGarmentKey;
+  if (mainGarmentType) assignment.mainGarmentType = mainGarmentType;
+  if (eligibilityRule) assignment.eligibilityRule = eligibilityRule;
+  if (dependencyStatus) assignment.dependencyStatus = dependencyStatus;
 
   const isLegacyAdditionalGarment =
+    !isReservedCanonicalOccurrenceKeyFamily(garmentKey) &&
     !sourceRole &&
-    (code.startsWith("CUSTOM_DETAIL_ADDITIONAL_GARMENT_") ||
-      assignment.garmentSpec?.key.startsWith(
-        "custom-detail:additional_physical_garment:",
-      ));
+    isLegacyAdditionalGarmentShape(assignment);
   if (isLegacyAdditionalGarment) {
     assignment.sourceRole = "additional";
     assignment.mainGarmentType = garmentType;
@@ -168,11 +372,12 @@ const normalizeGarmentAssignmentStrict = (
     assignment.dependencyStatus = "valid";
   }
 
-  return assignment;
+  return hasCoherentFinalAssignmentIdentity(assignment) ? assignment : null;
 };
 
 const inspectFabricAllocationsField = (
   container: unknown,
+  options: FabricAllocationInspectionOptions = {},
 ): FabricAllocationInspection => {
   if (!hasOwn(container, "fabricAllocations")) {
     return { status: "absent" };
@@ -181,13 +386,22 @@ const inspectFabricAllocationsField = (
   const rawFabricAllocations = (container as Record<string, unknown>)
     .fabricAllocations;
   if (!Array.isArray(rawFabricAllocations)) {
-    return { status: "invalid" };
+    return invalidFabricAllocationInspection({
+      rawFabricAllocations,
+      code: "fabric_allocations_not_array",
+    });
   }
 
   const normalizedAllocations: FabricAllocation[] = [];
-  for (const rawAllocation of rawFabricAllocations) {
+  const seenAllocationIds = new Set<string>();
+  const seenAssignmentKeys = new Set<string>();
+  for (const [allocationIndex, rawAllocation] of rawFabricAllocations.entries()) {
     if (!isRecord(rawAllocation)) {
-      return { status: "invalid" };
+      return invalidFabricAllocationInspection({
+        rawFabricAllocations,
+        code: "fabric_allocation_not_object",
+        allocationIndex,
+      });
     }
 
     const allocationId =
@@ -198,28 +412,79 @@ const inspectFabricAllocationsField = (
       typeof rawAllocation.fabricCode === "string"
         ? rawAllocation.fabricCode
         : null;
-    if (!allocationId || !fabricCode) {
-      return { status: "invalid" };
+    if (!allocationId || !allocationId.trim()) {
+      return invalidFabricAllocationInspection({
+        rawFabricAllocations,
+        code: "allocation_id_invalid",
+        allocationIndex,
+      });
+    }
+    if (!fabricCode || !fabricCode.trim()) {
+      return invalidFabricAllocationInspection({
+        rawFabricAllocations,
+        code: "fabric_code_invalid",
+        allocationIndex,
+      });
     }
 
     if (!Array.isArray(rawAllocation.garmentAssignments)) {
-      return { status: "invalid" };
+      return invalidFabricAllocationInspection({
+        rawFabricAllocations,
+        code: "garment_assignments_not_array",
+        allocationIndex,
+      });
     }
+    if (seenAllocationIds.has(allocationId)) {
+      return invalidFabricAllocationInspection({
+        rawFabricAllocations,
+        code: "allocation_id_duplicate",
+        allocationIndex,
+      });
+    }
+    seenAllocationIds.add(allocationId);
 
     const garmentAssignments: FabricGarmentAssignment[] = [];
-    for (const rawAssignment of rawAllocation.garmentAssignments) {
-      const normalizedAssignment = normalizeGarmentAssignmentStrict(rawAssignment);
+    for (const [assignmentIndex, rawAssignment] of rawAllocation.garmentAssignments.entries()) {
+      const normalizedAssignment = normalizeGarmentAssignmentStrict(
+        rawAssignment,
+        options,
+      );
       if (!normalizedAssignment) {
-        return { status: "invalid" };
+        return invalidFabricAllocationInspection({
+          rawFabricAllocations,
+          code: "garment_assignment_invalid",
+          allocationIndex,
+          assignmentIndex,
+        });
       }
+      if (seenAssignmentKeys.has(normalizedAssignment.garmentKey)) {
+        return invalidFabricAllocationInspection({
+          rawFabricAllocations,
+          code: "duplicate_garment_assignment",
+          allocationIndex,
+          assignmentIndex,
+        });
+      }
+      seenAssignmentKeys.add(normalizedAssignment.garmentKey);
       garmentAssignments.push(normalizedAssignment);
     }
 
-    normalizedAllocations.push({
+    const normalizedAllocation: FabricAllocation = {
       allocationId,
       fabricCode,
       garmentAssignments,
-    });
+    };
+    if (
+      FabricCapacityEngine.resolveFabricAllocation(normalizedAllocation).status !==
+      "resolved"
+    ) {
+      return invalidFabricAllocationInspection({
+        rawFabricAllocations,
+        code: "allocation_capacity_invalid",
+        allocationIndex,
+      });
+    }
+    normalizedAllocations.push(normalizedAllocation);
   }
 
   return { status: "valid", fabricAllocations: normalizedAllocations };
@@ -265,20 +530,85 @@ const getLegacyGarmentCodeFromCartLike = (
     : null;
 };
 
+export type FabricAllocationPersistenceDiagnosticCode =
+  | "fabric_allocations_not_array"
+  | "fabric_allocation_not_object"
+  | "allocation_id_invalid"
+  | "fabric_code_invalid"
+  | "allocation_id_duplicate"
+  | "garment_assignments_not_array"
+  | "garment_assignment_invalid"
+  | "duplicate_garment_assignment"
+  | "allocation_capacity_invalid";
+
+export interface InvalidPersistedFabricAllocationDiagnostic {
+  code: FabricAllocationPersistenceDiagnosticCode;
+  field: "fabricAllocations";
+  rawAllocationCount: number | null;
+  allocationIndex?: number;
+  assignmentIndex?: number;
+}
+
 export type FabricAllocationInspection =
   | { status: "absent" }
-  | { status: "invalid" }
+  | {
+      status: "invalid";
+      rawFabricAllocations: unknown;
+      diagnostic: InvalidPersistedFabricAllocationDiagnostic;
+    }
   | { status: "valid"; fabricAllocations: FabricAllocation[] };
 
-export interface DraftHydrationAllocationResolution {
-  hasValidModernAllocations: boolean;
-  fabricAllocations: FabricAllocation[];
-  primaryFabricCode: string | null;
-}
+const invalidFabricAllocationInspection = ({
+  rawFabricAllocations,
+  code,
+  allocationIndex,
+  assignmentIndex,
+}: {
+  rawFabricAllocations: unknown;
+  code: FabricAllocationPersistenceDiagnosticCode;
+  allocationIndex?: number;
+  assignmentIndex?: number;
+}): Extract<FabricAllocationInspection, { status: "invalid" }> => ({
+  status: "invalid",
+  rawFabricAllocations,
+  diagnostic: {
+    code,
+    field: "fabricAllocations",
+    rawAllocationCount: Array.isArray(rawFabricAllocations)
+      ? rawFabricAllocations.length
+      : null,
+    ...(allocationIndex === undefined ? {} : { allocationIndex }),
+    ...(assignmentIndex === undefined ? {} : { assignmentIndex }),
+  },
+});
+
+export type DraftHydrationAllocationResolution =
+  | {
+      status: "valid";
+      hasValidModernAllocations: true;
+      fabricAllocations: FabricAllocation[];
+      primaryFabricCode: string | null;
+    }
+  | {
+      status: "absent";
+      hasValidModernAllocations: false;
+      fabricAllocations: [];
+      primaryFabricCode: string | null;
+    }
+  | {
+      status: "invalid";
+      hasValidModernAllocations: false;
+      fabricAllocations: [];
+      primaryFabricCode: string | null;
+      rawFabricAllocations: unknown;
+      diagnostic: InvalidPersistedFabricAllocationDiagnostic;
+    };
 
 export interface DraftAutosaveAllocationResolution {
   fabricAllocations: FabricAllocation[] | undefined;
   preserveInvalidHydratedModernData: boolean;
+  blockedByInvalidGeneratedAllocations: boolean;
+  diagnostic?: InvalidPersistedFabricAllocationDiagnostic;
 }
 
 export const cloneFabricAllocations = (
@@ -316,9 +646,23 @@ export const cloneFabricAllocations = (
   }));
 };
 
+const hasVerifiedCatalogueDraftLineage = (draft: GuestDesignDraft): boolean => {
+  const source = draft.designSource;
+  return (
+    source?.kind === "catalog" &&
+    typeof source.styleId === "string" &&
+    source.styleId.trim().length > 0 &&
+    source.sourceKey === getCatalogDesignSourceKey(source.styleId)
+  );
+};
+
 export const inspectDraftFabricAllocations = (
   draft: GuestDesignDraft,
-): FabricAllocationInspection => inspectFabricAllocationsField(draft);
+): FabricAllocationInspection =>
+  inspectFabricAllocationsField(draft, {
+    allowHistoricalCatalogueAdditionalFallback:
+      hasVerifiedCatalogueDraftLineage(draft),
+  });
 
 export const inspectCartItemFabricAllocations = (
   item: CartItem,
@@ -332,8 +676,19 @@ export const resolveDraftHydrationAllocations = (
   draft: GuestDesignDraft,
 ): DraftHydrationAllocationResolution => {
   const inspection = inspectDraftFabricAllocations(draft);
-  if (inspection.status !== "valid") {
+  if (inspection.status === "invalid") {
     return {
+      status: "invalid",
+      hasValidModernAllocations: false,
+      fabricAllocations: [],
+      primaryFabricCode: draft.selectedFabricCode,
+      rawFabricAllocations: inspection.rawFabricAllocations,
+      diagnostic: inspection.diagnostic,
+    };
+  }
+  if (inspection.status === "absent") {
+    return {
+      status: "absent",
       hasValidModernAllocations: false,
       fabricAllocations: [],
       primaryFabricCode: draft.selectedFabricCode,
@@ -346,6 +701,7 @@ export const resolveDraftHydrationAllocations = (
     ) || inspection.fabricAllocations[0];
 
   return {
+    status: "valid",
     hasValidModernAllocations: true,
     fabricAllocations: cloneFabricAllocations(inspection.fabricAllocations) || [],
     primaryFabricCode: preferredAllocation?.fabricCode || null,
@@ -459,12 +815,34 @@ export const resolveDraftAutosaveFabricAllocations = ({
       fabricAllocations:
         preservedInvalidHydratedFabricAllocations as FabricAllocation[],
       preserveInvalidHydratedModernData: true,
+      blockedByInvalidGeneratedAllocations: false,
+    };
+  }
+
+  // Validate the exact JSON-safe representation that will be persisted. Runtime
+  // engines may retain optional properties with an `undefined` value; the
+  // canonical clone deliberately omits those properties before storage.
+  const generatedPersistableFabricAllocations =
+    cloneFabricAllocations(generatedFabricAllocations) || [];
+  const generatedInspection = inspectFabricAllocationsField({
+    fabricAllocations: generatedPersistableFabricAllocations,
+  });
+  if (generatedInspection.status === "invalid") {
+    return {
+      fabricAllocations: undefined,
+      preserveInvalidHydratedModernData: false,
+      blockedByInvalidGeneratedAllocations: true,
+      diagnostic: generatedInspection.diagnostic,
     };
   }
 
   return {
-    fabricAllocations: cloneFabricAllocations(generatedFabricAllocations),
+    fabricAllocations:
+      generatedInspection.status === "valid"
+        ? cloneFabricAllocations(generatedInspection.fabricAllocations)
+        : undefined,
     preserveInvalidHydratedModernData: false,
+    blockedByInvalidGeneratedAllocations: false,
   };
 };
 

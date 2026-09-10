@@ -43,8 +43,17 @@ export const CUSTOMER_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmen
     (garmentType) => garmentType !== "agbada",
   );
 
-/** @deprecated Prefer CUSTOMER_SELECTABLE_GARMENT_TYPES — same authoritative list. */
-export const STEP_1_SELECTABLE_GARMENT_TYPES = CUSTOMER_SELECTABLE_GARMENT_TYPES;
+/** Approved Step 1 display order; canonical selection ordering remains unchanged. */
+export const STEP_1_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmentType[] = [
+  "shirt",
+  "kaftan",
+  "dress",
+  "full_length_gown",
+  "standard_shorts",
+  "bum_shorts",
+  "trouser",
+  "skirt",
+];
 
 const CUSTOMER_SELECTABLE_GARMENT_TYPE_SET = new Set<CanonicalPhysicalGarmentType>(
   CUSTOMER_SELECTABLE_GARMENT_TYPES,

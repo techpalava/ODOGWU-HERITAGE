@@ -1,126 +1,94 @@
-import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ImagePlus, LockKeyhole, Trash2, Upload, X } from "lucide-react";
-import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { Check, LockKeyhole, Plus, X } from "lucide-react";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import { getFutureDesignStyleCompositionLabel } from "../utils/designStudioFutureDesignStyle";
+import {
+  designStyleStepTargetsEqual,
+  type DesignStyleStepCatalogMutationRequest,
+  type DesignStyleStepCatalogueEntry,
+  type DesignStyleStepClearMutationRequest,
+  type DesignStyleStepOccurrencePresentation,
+  type DesignStyleStepRuntimeStatus,
+} from "../utils/designStyleStepRuntime";
+import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import type {
-  CustomDetailDemographic,
-  CustomerDesignUploadReference,
-  FabricCapacityGarmentSpec,
-  FabricGarmentType,
-  GarmentTypeStepSelection,
+  CanonicalPhysicalGarmentType,
+  GarmentConstructionPricingResolution,
   StyleCategory,
-  UploadedDesignSource,
 } from "../types";
 import {
-  FUTURE_DESIGN_STYLE_TIER_BADGE,
-  getFutureDesignStyleAdaptationConfirmationCopy,
-  getFutureDesignStyleCompositionLabel,
-  getFutureDesignStyleMatchPresentation,
-  isFutureDesignStyleSelectable,
-  reconcileFutureDesignStyleSelection,
-  type FutureDesignStyleMatchPresentation,
-  type FutureDesignStyleMatchTier,
-} from "../utils/designStudioFutureDesignStyle";
-import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+  getGarmentTypeStepLabel,
+  Step1GarmentReferencePhoto,
+} from "./GarmentTypeStep";
 import {
-  getUploadedDesignCapacitySummary,
-  getUploadedDesignRequiredStep1GarmentTypes,
-  evaluateAuthoritativeUploadedDesignReadiness,
-  UPLOADED_DESIGN_GARMENT_OPTIONS,
-} from "../utils/uploadedDesignStep1";
-import { CUSTOMER_DESIGN_IMAGE_MIME_TYPES } from "../services/customerDesignUploadReference";
-
-interface UploadedDesignPanelState {
-  source: UploadedDesignSource | null;
-  reference: CustomerDesignUploadReference | null;
-  composition: FabricCapacityGarmentSpec[];
-  demographic: CustomDetailDemographic | null;
-  previewUrl: string | null;
-  error: string;
-  isUploading: boolean;
-  isReplacing: boolean;
-  isDeleting: boolean;
-  isLoadingPreview: boolean;
-  isConfirmed: boolean;
-  isPricingActive: boolean;
-}
+  getStep1GarmentReferenceAlt,
+  getStep1GarmentReferenceImage,
+  isStep1GarmentReferenceType,
+} from "../utils/step1GarmentReferenceImages";
+import { DesignStudioBackButton } from "./DesignStudioBackButton";
 
 interface DormantFutureDesignStyleStepProps {
-  styles: StyleCategory[];
-  garmentTypeSelection: GarmentTypeStepSelection;
-  selectedStyleId: string | null;
+  occurrences: readonly DesignStyleStepOccurrencePresentation[];
+  activeOccurrenceTarget: DesignStyleStepOccurrencePresentation["target"] | null;
+  catalogueEntries: readonly DesignStyleStepCatalogueEntry[];
+  clearRequest: DesignStyleStepClearMutationRequest | null;
+  clearRequests?: readonly DesignStyleStepClearMutationRequest[];
+  runtimeStatus: DesignStyleStepRuntimeStatus;
+  completedCount: number;
+  totalCount: number;
+  exactSetComplete: boolean;
+  reviewMessage: string | null;
+  mutationError: string | null;
+  /** An authenticated draft read failed before V2 hydration could begin. */
+  draftHydrationFailed?: boolean;
+  uploadState?: {
+    readonly status: "idle" | "pending" | "success" | "error";
+    readonly message?: string;
+    readonly previewUrl?: string | null;
+  };
   stagePrice: number | null;
-  uploadedDesign: UploadedDesignPanelState;
-  pendingCatalogStyleName: string | null;
   isCatalogueLoading?: boolean;
   stylesLoadState?: "loading" | "ready" | "error";
-  onSelectStyle: (styleId: string) => void;
-  onUploadDesignFile: (file: File, isReplacement: boolean) => void;
-  onToggleUploadedGarment: (garmentType: FabricGarmentType) => void;
-  onUploadedDemographicChange: (
-    demographic: CustomDetailDemographic,
+  additionalGarmentOptions?: readonly {
+    readonly garmentType: CanonicalPhysicalGarmentType;
+    readonly construction: GarmentConstructionPricingResolution;
+  }[];
+  reuseFabricPending?: boolean;
+  reuseAddedOccurrence?: {
+    readonly garmentKey: string;
+    readonly styleId: string;
+  } | null;
+  onSelectOccurrence: (
+    target: DesignStyleStepOccurrencePresentation["target"],
   ) => void;
-  onRemoveUploadedDesign: () => void;
-  onRetryUploadedDesignDeletion: () => void;
-  onContinueUploadedDesign: () => void;
+  onAssignCatalogueStyle: (
+    requests: readonly DesignStyleStepCatalogMutationRequest[],
+  ) => void;
+  onClearAssignment: (request: DesignStyleStepClearMutationRequest) => void;
+  onClearAllAssignments?: () => void;
+  onSelectUploadFile?: (
+    target: DesignStyleStepOccurrencePresentation["target"],
+    file: File,
+  ) => void;
+  onAddAdditionalGarment?: (
+    garmentType: CanonicalPhysicalGarmentType,
+    triggerElement: HTMLElement,
+    context: { readonly origin: "design_style_reuse"; readonly styleId: string },
+  ) => void;
+  onReuseAddedOccurrenceHandled?: (garmentKey: string) => void;
   onBack: () => void;
   onReturnToGarmentType: () => void;
   onContinue: () => void;
 }
 
-type CatalogueBrowseFilter =
-  | "all_designs"
-  | "exact_match"
-  | "adaptable"
-  | "male"
-  | "female"
-  | "unisex";
-
-const CATALOGUE_FILTERS: ReadonlyArray<{
-  id: CatalogueBrowseFilter;
-  label: string;
-}> = [
-  { id: "all_designs", label: "All Designs" },
-  { id: "exact_match", label: "Best Matches" },
-  { id: "adaptable", label: "Can Be Adapted" },
-  { id: "male", label: "Male" },
-  { id: "female", label: "Female" },
-  { id: "unisex", label: "Unisex / Family" },
-];
-
-const getStyleBrowseAudience = (
-  style: StyleCategory,
-): "male" | "female" | "unisex" => {
-  const declared = String(style.targetDemographic || style.gender || "")
-    .trim()
-    .toLowerCase();
-  if (declared === "male") return "male";
-  if (declared === "female") return "female";
-  return "unisex";
-};
-
-const styleMatchesBrowseFilter = (
-  style: StyleCategory,
-  presentation: FutureDesignStyleMatchPresentation,
-  filter: CatalogueBrowseFilter,
-): boolean => {
-  if (filter === "all_designs") return true;
-  if (filter === "exact_match") return presentation.tier === "exact_match";
-  if (filter === "adaptable") return presentation.tier === "adaptable";
-  return getStyleBrowseAudience(style) === filter;
-};
-
-const tierBadgeClass = (tier: FutureDesignStyleMatchTier, selected: boolean) => {
-  if (selected) {
-    return "border-heritage-gold/40 bg-heritage-gold/15 text-heritage-green";
+const formatDisplayStyleLabel = (style: StyleCategory): string => {
+  const visibleName = String(style.name ?? "").trim();
+  const fromCanonicalId = /^ODG(\s+|-)\d+$/i;
+  if (fromCanonicalId.test(visibleName)) {
+    return visibleName.replace(/^ODG(\s+|-)/i, "ODGH$1");
   }
-  if (tier === "exact_match") {
-    return "border-heritage-green/20 bg-heritage-green/5 text-heritage-green";
-  }
-  if (tier === "adaptable") {
-    return "border-heritage-gold/30 bg-heritage-gold/10 text-heritage-green";
-  }
-  return "border-heritage-gold/25 bg-heritage-cream/55 text-heritage-ink/65";
+  return visibleName;
 };
 
 const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
@@ -135,202 +103,203 @@ const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
   );
 
 export const DormantFutureDesignStyleStep = ({
-  styles,
-  garmentTypeSelection,
-  selectedStyleId,
+  occurrences,
+  activeOccurrenceTarget,
+  catalogueEntries,
+  clearRequest,
+  clearRequests = [],
+  runtimeStatus,
+  completedCount,
+  totalCount,
+  exactSetComplete,
+  reviewMessage,
+  mutationError,
+  draftHydrationFailed = false,
+  uploadState = { status: "idle" },
   stagePrice,
-  uploadedDesign,
-  pendingCatalogStyleName,
   isCatalogueLoading = false,
   stylesLoadState = "ready",
-  onSelectStyle,
-  onUploadDesignFile,
-  onToggleUploadedGarment,
-  onUploadedDemographicChange,
-  onRemoveUploadedDesign,
-  onRetryUploadedDesignDeletion,
-  onContinueUploadedDesign,
+  additionalGarmentOptions = [],
+  reuseFabricPending = false,
+  reuseAddedOccurrence = null,
+  onSelectOccurrence,
+  onAssignCatalogueStyle,
+  onClearAssignment,
+  onClearAllAssignments,
+  onSelectUploadFile,
+  onAddAdditionalGarment,
+  onReuseAddedOccurrenceHandled,
   onBack,
   onReturnToGarmentType,
   onContinue,
 }: DormantFutureDesignStyleStepProps) => {
-  const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const replacementInputRef = useRef<HTMLInputElement | null>(null);
-  const adaptationDialogRef = useRef<HTMLDivElement | null>(null);
-  const adaptationInitialFocusRef = useRef<HTMLButtonElement | null>(null);
-  const adaptationTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const [exploreFilter, setExploreFilter] =
-    useState<CatalogueBrowseFilter>("all_designs");
-  const [pendingAdaptableStyleId, setPendingAdaptableStyleId] = useState<
-    string | null
-  >(null);
-  const adaptationTitleId = useId();
-  const adaptationDescriptionId = useId();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const dialogContentRef = useRef<HTMLDivElement | null>(null);
+  const dialogInitialFocusRef = useRef<HTMLButtonElement | null>(null);
+  const dialogTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const allDesignsRef = useRef<HTMLDivElement | null>(null);
+  const mappingScrollTopRef = useRef(0);
+  const hasSeenReuseFabricRef = useRef(false);
+  const handledReuseAddedOccurrenceRef = useRef<string | null>(null);
+  const [pendingEntry, setPendingEntry] =
+    useState<DesignStyleStepCatalogueEntry | null>(null);
+  const [selectedOccurrenceTokens, setSelectedOccurrenceTokens] = useState<
+    ReadonlySet<string>
+  >(new Set());
+  const [dialogView, setDialogView] = useState<"mapping" | "add_garment">(
+    "mapping",
+  );
+  const dialogTitleId = useId();
+  const dialogDescriptionId = useId();
+  const uploadInputId = useId();
   const catalogueReady = stylesLoadState === "ready";
-  const catalogueSelection = catalogueReady
-    ? reconcileFutureDesignStyleSelection({
-        selectedStyleId,
-        styles,
-        garmentTypeSelection,
-      })
-    : null;
-  const catalogueByStyle = catalogueReady
-    ? styles.map((style) => {
-        const presentation = getFutureDesignStyleMatchPresentation({
-          garmentTypeSelection,
-          style,
-        });
-        return { style, presentation };
-      })
-    : [];
-  const exactStyles = catalogueByStyle.filter(
-    ({ presentation }) => presentation.tier === "exact_match",
+  const mutationsEnabled =
+    catalogueReady && (runtimeStatus === "ready" || runtimeStatus === "review");
+  const activeOccurrence =
+    occurrences.find((occurrence) =>
+      designStyleStepTargetsEqual(occurrence.target, activeOccurrenceTarget),
+    ) || null;
+  const firstIncompleteOccurrence = occurrences.find(
+    (occurrence) => occurrence.status !== "complete",
   );
-  const adaptableStyles = catalogueByStyle.filter(
-    ({ presentation }) => presentation.tier === "adaptable",
-  );
-  const selectableStyleCount = catalogueByStyle.filter(({ presentation }) =>
-    isFutureDesignStyleSelectable(presentation.tier),
-  ).length;
-  const exploredStyles = catalogueByStyle.filter(({ style, presentation }) =>
-    styleMatchesBrowseFilter(style, presentation, exploreFilter),
-  );
-  const pendingAdaptableStyle =
-    catalogueByStyle.find(({ style }) => style.id === pendingAdaptableStyleId) ||
-    null;
-  const adaptationCopy = pendingAdaptableStyle
-    ? getFutureDesignStyleAdaptationConfirmationCopy({
-        garmentTypeSelection,
-        style: pendingAdaptableStyle.style,
-      })
-    : null;
-  const uploadReadiness = evaluateAuthoritativeUploadedDesignReadiness({
-    uploadInput: {
-      uploadReference:
-        uploadedDesign.source?.uploadReference || uploadedDesign.reference,
-      fabricCapacityComposition: uploadedDesign.composition,
-      demographic: uploadedDesign.demographic,
-    },
-    step1GarmentTypes: garmentTypeSelection.garmentTypes,
-    designSource: uploadedDesign.source,
-    confirmedDesignSourceKey: uploadedDesign.isConfirmed
-      ? uploadedDesign.source?.sourceKey || null
-      : null,
-  });
-  const uploadCapacity = getUploadedDesignCapacitySummary(
-    uploadedDesign.composition,
-  );
-  const requiredStep1GarmentTypes = new Set(
-    getUploadedDesignRequiredStep1GarmentTypes(
-      garmentTypeSelection.garmentTypes,
-    ),
-  );
-  const uploadedSourceSelected = uploadedDesign.source !== null;
-  const uploadBusy =
-    uploadedDesign.isUploading ||
-    uploadedDesign.isReplacing ||
-    uploadedDesign.isDeleting;
-  const canContinueToCustomDetails =
-    !uploadBusy &&
-    !uploadedDesign.error &&
-    (uploadedSourceSelected
-      ? uploadReadiness.isProgressionReady
-      : selectedStyleId &&
-        catalogueReady &&
-        catalogueSelection?.status === "selected");
-  const stageCompleteForAttribute = uploadedSourceSelected
-    ? canContinueToCustomDetails
-    : catalogueReady && catalogueSelection?.status === "selected";
-  const uploadStatus = uploadedDesign.isUploading
-    ? "Uploading"
-    : uploadedDesign.isReplacing
-      ? "Replacing"
-      : uploadedDesign.isDeleting
-        ? "Deleting"
-        : uploadedDesign.error
-          ? "Needs attention"
-          : uploadedSourceSelected && uploadedDesign.isPricingActive
-            ? "Ready for Custom Details"
-            : uploadedSourceSelected && uploadedDesign.isConfirmed
-              ? "Fabric confirmation required"
-              : uploadReadiness.isReady
-                ? "Uploaded and ready"
-                : uploadedDesign.reference
-                  ? "Complete required details"
-                  : "No uploaded design";
-  const handleFileInput = (
-    event: ChangeEvent<HTMLInputElement>,
-    isReplacement: boolean,
-  ) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (file) onUploadDesignFile(file, isReplacement);
-  };
+  const showCatalogue =
+    occurrences.length > 0 &&
+    runtimeStatus !== "blocked" &&
+    runtimeStatus !== "hydrating" &&
+    catalogueReady;
 
-  const closeAdaptationDialog = () => {
-    setPendingAdaptableStyleId(null);
-    const trigger = adaptationTriggerRef.current;
-    if (trigger && typeof trigger.focus === "function") {
-      trigger.focus();
-    }
-  };
+  const selectedOccurrences = useMemo(
+    () =>
+      occurrences.filter((occurrence) =>
+        selectedOccurrenceTokens.has(occurrence.target.occurrenceToken),
+      ),
+    [occurrences, selectedOccurrenceTokens],
+  );
+  const replacementOccurrences = useMemo(
+    () =>
+      pendingEntry
+        ? selectedOccurrences.filter((occurrence) => {
+            const assignment = occurrence.assignment;
+            return Boolean(
+              assignment &&
+                !(
+                  assignment.sourceKind === "catalog" &&
+                  assignment.catalogStyleId === pendingEntry.style.id
+                ),
+            );
+          })
+        : [],
+    [pendingEntry, selectedOccurrences],
+  );
+  const mismatchOccurrences = useMemo(() => {
+    if (!pendingEntry || pendingEntry.referenceGarmentTypes.length === 0) return [];
+    const referenceTypes = new Set(pendingEntry.referenceGarmentTypes);
+    return selectedOccurrences.filter(
+      (occurrence) => !referenceTypes.has(occurrence.garmentType),
+    );
+  }, [pendingEntry, selectedOccurrences]);
+  const allCurrentOccurrencesUsePendingEntry = Boolean(
+    pendingEntry &&
+      occurrences.length > 0 &&
+      occurrences.every(
+        (occurrence) =>
+          occurrence.assignment?.sourceKind === "catalog" &&
+          occurrence.assignment.catalogStyleId === pendingEntry.style.id,
+      ),
+  );
+  const canApplyMapping =
+    selectedOccurrences.length > 0 &&
+    selectedOccurrences.every(
+      (occurrence) =>
+        Boolean(
+          pendingEntry?.requestsByOccurrenceToken[
+            occurrence.target.occurrenceToken
+          ],
+        ),
+    );
 
-  const confirmAdaptation = () => {
-    const styleId = pendingAdaptableStyleId;
-    setPendingAdaptableStyleId(null);
-    if (styleId) onSelectStyle(styleId);
-    const trigger = adaptationTriggerRef.current;
-    if (trigger && typeof trigger.focus === "function") {
-      trigger.focus();
-    }
-  };
-
-  const handleStyleAction = (
-    style: StyleCategory,
-    presentation: FutureDesignStyleMatchPresentation,
-    trigger?: HTMLButtonElement | null,
-  ) => {
-    if (!presentation.selectable || uploadBusy) return;
-    if (presentation.requiresAdaptationConfirmation) {
-      const alreadySelected =
-        catalogueSelection?.status === "selected" &&
-        catalogueSelection.selectedStyleId === style.id;
-      if (alreadySelected) {
-        onSelectStyle(style.id);
-        return;
+  const restoreMappingScroll = () => {
+    if (typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      if (dialogContentRef.current) {
+        dialogContentRef.current.scrollTop = mappingScrollTopRef.current;
       }
-      adaptationTriggerRef.current = trigger || null;
-      setPendingAdaptableStyleId(style.id);
-      return;
-    }
-    onSelectStyle(style.id);
+    });
+  };
+
+  const returnToMappingDialog = () => {
+    setDialogView("mapping");
+    restoreMappingScroll();
+  };
+
+  const closeDialog = () => {
+    setPendingEntry(null);
+    setSelectedOccurrenceTokens(new Set());
+    setDialogView("mapping");
+    mappingScrollTopRef.current = 0;
+    dialogTriggerRef.current?.focus?.();
+  };
+
+  const openDialog = (
+    entry: DesignStyleStepCatalogueEntry,
+    trigger: HTMLButtonElement,
+  ) => {
+    if (!mutationsEnabled) return;
+    dialogTriggerRef.current = trigger;
+    setPendingEntry(entry);
+    setDialogView("mapping");
+    setSelectedOccurrenceTokens(
+      new Set(
+        occurrences
+          .filter(
+            (occurrence) =>
+              occurrence.assignment?.sourceKind === "catalog" &&
+              occurrence.assignment.catalogStyleId === entry.style.id,
+          )
+          .map((occurrence) => occurrence.target.occurrenceToken),
+      ),
+    );
+  };
+
+  const applyMapping = () => {
+    if (!pendingEntry || selectedOccurrences.length === 0) return;
+    const requests = selectedOccurrences.flatMap((occurrence) => {
+      const request =
+        pendingEntry.requestsByOccurrenceToken[
+          occurrence.target.occurrenceToken
+        ];
+      return request ? [request] : [];
+    });
+    if (requests.length !== selectedOccurrences.length) return;
+    setPendingEntry(null);
+    setSelectedOccurrenceTokens(new Set());
+    onAssignCatalogueStyle(requests);
+    dialogTriggerRef.current?.focus?.();
   };
 
   useEffect(() => {
-    if (!pendingAdaptableStyleId) return;
+    if (!pendingEntry) return;
     if (typeof document === "undefined" || !document.body?.style) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [pendingAdaptableStyleId]);
+  }, [pendingEntry]);
 
   useEffect(() => {
-    if (!pendingAdaptableStyleId) return;
-    const dialog = adaptationDialogRef.current;
-    const node = adaptationInitialFocusRef.current || dialog;
-    node?.focus?.();
-  }, [pendingAdaptableStyleId]);
+    if (!pendingEntry) return;
+    (dialogInitialFocusRef.current || dialogRef.current)?.focus?.();
+  }, [pendingEntry]);
 
   useEffect(() => {
-    if (!pendingAdaptableStyleId) return;
-    const dialog = adaptationDialogRef.current;
+    if (!pendingEntry) return;
+    const dialog = dialogRef.current;
     if (!dialog) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        closeAdaptationDialog();
+        closeDialog();
         return;
       }
       if (event.key !== "Tab") return;
@@ -348,806 +317,267 @@ export const DormantFutureDesignStyleStep = ({
     };
     dialog.addEventListener("keydown", handleKeyDown);
     return () => dialog.removeEventListener("keydown", handleKeyDown);
-  }, [pendingAdaptableStyleId]);
+  }, [pendingEntry]);
 
-  const renderStyleCard = ({
-    style,
-    presentation,
-  }: {
-    style: StyleCategory;
-    presentation: FutureDesignStyleMatchPresentation;
-  }) => {
-    const isSelectable = presentation.selectable;
-    const isSelected =
-      isSelectable && catalogueSelection?.selectedStyleId === style.id;
-    const reasonId = `future-style-reason-${style.id}`;
-    const originalLabel =
-      presentation.originalCompositionLabel ||
-      getFutureDesignStyleCompositionLabel(style);
-    const selectedOrderLabel = presentation.selectedGarmentLabels.join(" + ");
-    const actionLabel = isSelected
-      ? "Selected"
-      : presentation.tier === "adaptable"
-        ? "Use This Design"
-        : "Select Design";
-    const ariaAction = isSelected
-      ? "Selected"
-      : presentation.tier === "adaptable"
-        ? "Use This Design"
-        : "Select";
+  useEffect(() => {
+    if (!pendingEntry) return;
+    const currentEntry = catalogueEntries.find(
+      (entry) => entry.style.id === pendingEntry.style.id,
+    );
+    if (!currentEntry) {
+      setPendingEntry(null);
+      setSelectedOccurrenceTokens(new Set());
+      return;
+    }
+    if (currentEntry !== pendingEntry) setPendingEntry(currentEntry);
+  }, [catalogueEntries, pendingEntry]);
+
+  useEffect(() => {
+    if (reuseFabricPending) {
+      hasSeenReuseFabricRef.current = true;
+      return;
+    }
+    if (!hasSeenReuseFabricRef.current) return;
+    hasSeenReuseFabricRef.current = false;
+    returnToMappingDialog();
+  }, [reuseFabricPending]);
+
+  useEffect(() => {
+    if (!reuseAddedOccurrence) {
+      handledReuseAddedOccurrenceRef.current = null;
+      return;
+    }
+    if (
+      !pendingEntry ||
+      reuseAddedOccurrence.styleId !== pendingEntry.style.id
+    ) {
+      return;
+    }
+    const addedOccurrence = occurrences.find(
+      (occurrence) =>
+        occurrence.target.garmentKey === reuseAddedOccurrence.garmentKey,
+    );
+    if (!addedOccurrence) return;
+    const handledKey = `${reuseAddedOccurrence.styleId}:${reuseAddedOccurrence.garmentKey}`;
+    if (handledReuseAddedOccurrenceRef.current === handledKey) return;
+    handledReuseAddedOccurrenceRef.current = handledKey;
+    setSelectedOccurrenceTokens((current) => {
+      if (current.has(addedOccurrence.target.occurrenceToken)) return current;
+      const next = new Set(current);
+      next.add(addedOccurrence.target.occurrenceToken);
+      return next;
+    });
+    setDialogView("mapping");
+    restoreMappingScroll();
+    onReuseAddedOccurrenceHandled?.(reuseAddedOccurrence.garmentKey);
+  }, [
+    occurrences,
+    onReuseAddedOccurrenceHandled,
+    pendingEntry,
+    reuseAddedOccurrence,
+  ]);
+
+  const renderUploadControl = (replacement: boolean) => {
+    if (!activeOccurrence || !onSelectUploadFile || !mutationsEnabled) return null;
+    const actionLabel = replacement
+      ? `Replace uploaded design for ${activeOccurrence.label}`
+      : `Upload a design for ${activeOccurrence.label}`;
     return (
-      <article
-        key={style.id}
-        data-style-card={style.id}
-        data-style-tier={presentation.tier}
-        data-compatibility-status={presentation.tier}
-        data-style-selected={isSelected ? "true" : "false"}
-        className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 bg-white shadow-sm ${
-          isSelected
-            ? "border-heritage-gold"
-            : isSelectable
-              ? "border-gray-200"
-              : "border-gray-200 opacity-70"
-        }`}
-      >
-        <div className="relative aspect-[4/5] overflow-hidden bg-heritage-cream/35">
-          {style.image ? (
-            <>
-              <img
-                src={style.image}
-                alt={`${style.name} design`}
-                loading="lazy"
-                className="h-full w-full object-contain"
-                referrerPolicy="no-referrer"
-                onError={(event) => {
-                  event.currentTarget.classList.add("hidden");
-                  event.currentTarget.nextElementSibling?.classList.remove(
-                    "hidden",
-                  );
-                }}
-              />
-              <div className="hidden h-full items-center justify-center px-4 text-center text-xs text-heritage-ink/45">
-                Image unavailable
-              </div>
-            </>
-          ) : (
-            <div className="flex h-full items-center justify-center px-4 text-center text-xs text-heritage-ink/45">
-              Image unavailable
-            </div>
-          )}
-          {isSelected && (
-            <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">
-              <Check aria-hidden="true" size={15} strokeWidth={3} />
-              <span>Selected</span>
-            </span>
-          )}
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col p-4">
-          <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-            <h3 className="min-w-0 break-words font-serif text-base font-bold text-heritage-green">
-              {style.name}
-            </h3>
-            <div className="flex min-w-0 shrink-0 flex-wrap justify-end gap-1.5">
-              {isSelected && (
-                <span
-                  data-style-selected-badge="true"
-                  className="rounded-full border border-heritage-gold/40 bg-heritage-gold px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white"
-                >
-                  Selected
-                </span>
-              )}
-              <span
-                data-style-badge={presentation.tier}
-                className={`rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wide ${tierBadgeClass(
-                  presentation.tier,
-                  isSelected,
-                )}`}
-              >
-                {FUTURE_DESIGN_STYLE_TIER_BADGE[presentation.tier]}
-              </span>
-            </div>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className="rounded border border-heritage-green/15 bg-heritage-green/5 px-2 py-1 text-[9px] font-bold uppercase text-heritage-green">
-              {style.gender}
-            </span>
-          </div>
-          <p className="mt-3 break-words text-xs leading-relaxed text-heritage-ink/75">
-            <span className="font-semibold text-heritage-green">
-              Originally shown as:
-            </span>{" "}
-            {originalLabel}
-          </p>
-          {presentation.tier === "exact_match" && (
-            <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/75">
-              <span className="font-semibold text-heritage-green">
-                Matches your order:
-              </span>{" "}
-              {selectedOrderLabel}
+      <div className="mt-4 rounded-xl border border-dashed border-heritage-gold/35 bg-white p-4">
+        <p className="text-sm font-bold text-heritage-green">{actionLabel}</p>
+        <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
+          Choose a JPEG, PNG, or WebP image. Your current design and preview
+          stay in place until the new upload succeeds.
+        </p>
+        {uploadState.status !== "pending" && (
+          <input
+            id={uploadInputId}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            aria-label={actionLabel}
+            aria-describedby={`${uploadInputId}-status`}
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0] || null;
+              event.currentTarget.value = "";
+              if (file) onSelectUploadFile(activeOccurrence.target, file);
+            }}
+            className="mt-3 block min-h-11 w-full min-w-0 rounded-xl border border-heritage-green/20 bg-white px-3 py-2 text-xs text-heritage-ink file:mr-3 file:rounded-lg file:border-0 file:bg-heritage-green file:px-3 file:py-2 file:text-xs file:font-bold file:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+          />
+        )}
+        <div id={`${uploadInputId}-status`} className="mt-2" aria-live="polite">
+          {uploadState.status === "pending" && (
+            <p role="status" className="text-xs font-semibold text-heritage-green">
+              Preparing your uploaded design for {activeOccurrence.label}...
             </p>
           )}
-          {presentation.tier === "adaptable" && (
-            <>
-              <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/75">
-                <span className="font-semibold text-heritage-green">
-                  For your order:
-                </span>{" "}
-                {selectedOrderLabel}
-              </p>
-              <p className="mt-2 text-[11px] leading-relaxed text-heritage-ink/65">
-                This design can be adapted to your selected garments.
-              </p>
-            </>
-          )}
-          <p className="mt-3 break-words text-xs leading-relaxed text-heritage-ink/65">
-            {style.description}
-          </p>
-          {!isSelectable && (
-            <p
-              id={reasonId}
-              className="mt-3 rounded-lg bg-heritage-cream/50 p-2 text-[11px] leading-relaxed text-heritage-ink/70"
-            >
-              {presentation.customerReason}
+          {uploadState.status === "error" && (
+            <p role="alert" className="text-xs font-semibold text-red-700">
+              {uploadState.message ||
+                "The design could not be prepared. Your previous selection is unchanged. Try again."}
             </p>
           )}
-          <button
-            type="button"
-            disabled={!isSelectable || uploadBusy}
-            onClick={(event) =>
-              handleStyleAction(
-                style,
-                presentation,
-                event && "currentTarget" in event
-                  ? event.currentTarget
-                  : null,
-              )
-            }
-            aria-label={`${ariaAction} ${style.name} design style`}
-            aria-pressed={isSelected}
-            aria-disabled={!isSelectable || uploadBusy}
-            aria-describedby={!isSelectable ? reasonId : undefined}
-            className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-heritage-ink/45"
-          >
-            {actionLabel}
-          </button>
         </div>
-      </article>
+      </div>
     );
   };
 
-  const adaptationDialog =
-    pendingAdaptableStyle && adaptationCopy ? (
+  const pendingDisplayStyleName = pendingEntry
+    ? formatDisplayStyleLabel(pendingEntry.style)
+    : null;
+
+  const mappingDialog = pendingEntry ? (
+    <div
+      className={`fixed inset-0 ${reuseFabricPending ? "z-[70]" : "z-[10000]"} flex items-end justify-center bg-heritage-ink/45 p-3 sm:items-center sm:p-6`}
+      onClick={closeDialog}
+    >
       <div
-        className="fixed inset-0 z-[10000] flex items-end justify-center bg-heritage-ink/40 p-3 sm:items-center sm:p-6"
-        onClick={closeAdaptationDialog}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-hidden={reuseFabricPending || undefined}
+        aria-labelledby={dialogTitleId}
+        aria-describedby={dialogDescriptionId}
+        tabIndex={-1}
+        data-testid="design-garment-mapping-dialog"
+        data-pending-style={pendingDisplayStyleName || ""}
+        data-dialog-view={dialogView}
+        onClick={(event) => event.stopPropagation()}
+        className="flex max-h-[92vh] w-full max-w-xl min-w-0 flex-col overflow-hidden rounded-3xl border border-heritage-gold/40 bg-white shadow-xl"
       >
-        <div
-          ref={adaptationDialogRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={adaptationTitleId}
-          aria-describedby={adaptationDescriptionId}
-          tabIndex={-1}
-          data-testid="adapt-design-confirmation"
-          data-pending-adaptable-style={pendingAdaptableStyle.style.id}
-          onClick={(event) => event.stopPropagation()}
-          className="flex max-h-[90vh] w-full max-w-lg min-w-0 flex-col overflow-hidden rounded-3xl border border-heritage-gold/40 bg-white shadow-xl"
-        >
-          <header className="flex min-w-0 items-start justify-between gap-3 border-b border-heritage-gold/20 px-4 py-4 sm:px-5">
-            <div className="min-w-0">
-              <h2
-                id={adaptationTitleId}
-                className="break-words font-serif text-xl font-bold text-heritage-green sm:text-2xl"
-              >
-                {adaptationCopy.title}
-              </h2>
-              <p className="mt-2 break-words font-serif text-sm font-semibold text-heritage-green">
-                {pendingAdaptableStyle.style.name}
-              </p>
-              <p
-                id={adaptationDescriptionId}
-                className="mt-2 break-words text-sm leading-relaxed text-heritage-ink/70"
-              >
-                {adaptationCopy.body}
-              </p>
-            </div>
-            <button
-              ref={adaptationInitialFocusRef}
-              type="button"
-              onClick={closeAdaptationDialog}
-              aria-label="Close adapt design confirmation"
-              className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/20 text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-            >
-              <X aria-hidden="true" size={18} />
-            </button>
-          </header>
-          <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:justify-end sm:px-5">
-            <button
-              type="button"
-              onClick={closeAdaptationDialog}
-              className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green/25 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={confirmAdaptation}
-              data-adapt-confirm="true"
-              className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-            >
-              Use This Design
-            </button>
+        <header className="flex min-w-0 items-start justify-between gap-3 border-b border-heritage-gold/20 px-4 py-4 sm:px-5">
+          <div className="min-w-0">
+            <h2 id={dialogTitleId} className="font-serif text-xl font-bold text-heritage-green sm:text-2xl">{dialogView === "add_garment" ? "Add a garment" : "Apply Design Style"}</h2>
+            {dialogView === "mapping" ? <><p className="mt-1 break-words font-serif text-lg font-semibold text-heritage-green">{pendingDisplayStyleName}</p><p id={dialogDescriptionId} className="mt-2 text-sm leading-relaxed text-heritage-ink/70">Choose every exact garment occurrence that should use this design.</p></> : <p id={dialogDescriptionId} className="mt-2 text-sm leading-relaxed text-heritage-ink/70">Choose a garment type to add. Fabric will be selected for the new occurrence before you apply this design.</p>}
           </div>
+          <button ref={dialogInitialFocusRef} type="button" onClick={closeDialog} aria-label="Close garment mapping dialog" className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/20 text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><X aria-hidden="true" size={18} /></button>
+        </header>
+        <div ref={dialogContentRef} className="min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
+          {dialogView === "mapping" ? <>
+          {pendingEntry.style.image && pendingDisplayStyleName && <img src={pendingEntry.style.image} alt={`${pendingDisplayStyleName} design reference`} className="mb-4 max-h-56 w-full rounded-2xl bg-heritage-cream/35 object-contain" />}
+          <p className="text-xs leading-relaxed text-heritage-ink/70"><span className="font-bold text-heritage-green">Reference outfit:</span> {getFutureDesignStyleCompositionLabel(pendingEntry.style)}</p>
+          <fieldset className="mt-4 space-y-2">
+            <legend className="mb-2 text-sm font-bold text-heritage-green">Which of your garments should use this design?</legend>
+            {occurrences.map((occurrence) => {
+              const token = occurrence.target.occurrenceToken;
+              const checked = selectedOccurrenceTokens.has(token);
+              const alreadyUsing = occurrence.assignment?.sourceKind === "catalog" && occurrence.assignment.catalogStyleId === pendingEntry.style.id;
+              return (
+                <label key={token} className="flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border border-heritage-green/15 px-3 py-3 text-sm focus-within:ring-2 focus-within:ring-heritage-gold">
+                  <input type="checkbox" checked={checked} onChange={() => setSelectedOccurrenceTokens((current) => { const next = new Set(current); if (next.has(token)) next.delete(token); else next.add(token); return next; })} className="mt-0.5 size-4 shrink-0 accent-heritage-green" />
+                  <span className="min-w-0 break-words">
+                    <span className="font-bold text-heritage-green">{occurrence.label}</span>
+                    {alreadyUsing && <span className="ml-2 text-xs font-semibold text-heritage-ink/60">Already using this design</span>}
+                    {!alreadyUsing && occurrence.assignmentLabel && <span className="mt-0.5 block text-xs text-heritage-ink/60">Current: {occurrence.assignmentLabel}</span>}
+                  </span>
+                </label>
+              );
+            })}
+          </fieldset>
+          {allCurrentOccurrencesUsePendingEntry && onAddAdditionalGarment && additionalGarmentOptions.length > 0 && <section className="mt-4 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4" data-testid="design-reuse-add-another-garment"><p className="font-serif text-base font-bold text-heritage-green">Want to use this design for another garment?</p><button type="button" onClick={() => { mappingScrollTopRef.current = dialogContentRef.current?.scrollTop || 0; setDialogView("add_garment"); }} aria-label="Add another garment to use this design" className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-heritage-green/30 bg-white px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"><Plus aria-hidden="true" size={15} />Add Another Garment</button></section>}
+          {replacementOccurrences.length > 0 && <div role="status" className="mt-4 space-y-1 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">{replacementOccurrences.map((occurrence) => <p key={occurrence.target.occurrenceToken}>{occurrence.label} currently uses {occurrence.assignmentLabel}. Applying {pendingDisplayStyleName} will replace it for {occurrence.label}.</p>)}</div>}
+          {mismatchOccurrences.length > 0 && <div role="status" data-testid="reference-composition-warning" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">This reference design features {pendingEntry.referenceGarmentTypes.map(getFabricGarmentLabel).join(" + ")}. {mismatchOccurrences.map((occurrence) => occurrence.label).join(" + ")} {mismatchOccurrences.length === 1 ? "is" : "are"} not part of the reference outfit, so the design may need to be adapted. You can still apply it.</div>}
+          </> : <section data-testid="design-reuse-add-garment-options"><p className="text-xs leading-relaxed text-heritage-ink/70">These are the same customer-selectable Step 1 garment types. A new exact physical occurrence is created only after its Fabric selection is confirmed.</p><div className="mt-4 grid min-w-0 grid-cols-2 gap-2.5 max-[340px]:grid-cols-1 sm:grid-cols-3">{additionalGarmentOptions.map(({ garmentType, construction }, index) => { const label = getGarmentTypeStepLabel(garmentType); const isReady = construction.status === "resolved"; const referenceImage = isStep1GarmentReferenceType(garmentType) ? getStep1GarmentReferenceImage(garmentType) : null; return <article key={garmentType} data-testid={`design-reuse-add-garment-card-${garmentType}`} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-heritage-gold/20 bg-white"><Step1GarmentReferencePhoto src={referenceImage?.src || null} alt={getStep1GarmentReferenceAlt(label)} eager={index < 3} /><div className="flex min-w-0 flex-1 flex-col p-2.5 sm:p-3"><div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1"><h3 className="min-w-0 break-words text-sm font-bold leading-snug text-heritage-green">{label}</h3><p className="shrink-0 font-mono text-sm font-bold text-heritage-green">{isReady ? `${PRICING_CURRENCY_SYMBOL}${construction.totalPrice.toFixed(2)}` : "Pending"}</p></div><button type="button" disabled={!isReady || reuseFabricPending} aria-label={`Add ${label} to use this design`} onClick={(event) => onAddAdditionalGarment?.(garmentType, event.currentTarget, { origin: "design_style_reuse", styleId: pendingEntry.style.id })} className="mt-2.5 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-heritage-green bg-heritage-cream px-2 text-[11px] font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"><Plus aria-hidden="true" size={14} />Add</button>{!isReady && <p className="mt-2 text-[11px] font-semibold text-amber-800">Construction pricing needs review.</p>}</div></article>; })}</div></section>}
         </div>
+        <footer className="flex flex-col gap-2 border-t border-heritage-gold/20 px-4 py-4 sm:flex-row sm:justify-end sm:px-5">
+          <button type="button" onClick={closeDialog} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green/25 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">Cancel</button>
+          {dialogView === "add_garment" ? <button type="button" onClick={returnToMappingDialog} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">Back to Design</button> : <button type="button" onClick={applyMapping} disabled={!canApplyMapping} data-testid="apply-design-mapping" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Apply Design</button>}
+        </footer>
       </div>
-    ) : null;
+    </div>
+  ) : null;
 
   return (
     <>
-    <section
-      aria-labelledby="future-design-style-title"
-      data-stage-id="design_style"
-      data-stage-complete={stageCompleteForAttribute}
-      className={`space-y-6 font-sans ${
-        canContinueToCustomDetails ? "pb-28 sm:pb-32" : ""
-      }`}
-    >
-      <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
-        <DesignStudioBackButton
-          destination="Fabric"
-          onClick={onBack}
-          className="mb-5"
-        />
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
-          Step 3 of 9
-        </p>
-        <h2
-          id="future-design-style-title"
-          className="mt-2 font-serif text-2xl font-bold text-heritage-green sm:text-3xl"
-        >
-          Design Style
-        </h2>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
-          Browse all designs. Best Match designs were created for your selected
-          garments. Designs marked Can Be Adapted can also be tailored to your
-          selected garments without changing your order.
-        </p>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
-          Your garment and Fabric selections remain unchanged.
-        </p>
-        <p className="mt-2 max-w-3xl text-xs leading-relaxed text-heritage-ink/60">
-          Your Step 1 garments remain unchanged when you choose a design.
-        </p>
+      <section aria-labelledby="future-design-style-title" data-stage-id="design_style" data-stage-complete={exactSetComplete} className={`min-w-0 space-y-6 font-sans [overflow-wrap:anywhere] ${exactSetComplete ? "pb-28 sm:pb-32" : ""}`}>
+        <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
+          <DesignStudioBackButton destination="Fabric" onClick={onBack} className="mb-5" />
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">Step 3 of 9</p>
+          <h2 id="future-design-style-title" className="mt-2 font-serif text-2xl font-bold text-heritage-green sm:text-3xl">Design Style</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">Choose a design reference for your garments. Your garments and Fabric selections remain unchanged.</p>
+          <div aria-live="polite" data-testid="step3-assignment-progress" className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-heritage-gold/25 bg-heritage-cream/30 px-3 py-1.5 text-xs font-bold text-heritage-green">{exactSetComplete && <Check aria-hidden="true" size={14} />}<span>{completedCount} of {totalCount} garment{totalCount === 1 ? "" : "s"} assigned</span></div>
+          {reviewMessage && <div role="alert" data-testid="step3-migration-review" className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-bold">Review your Design Style choices</p><p className="mt-1 text-xs leading-relaxed">{reviewMessage}</p></div>}
+          {mutationError && <div role="alert" className="mt-4 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-900">{mutationError}</div>}
+          {runtimeStatus === "hydrating" && !draftHydrationFailed && <div role="status" className="mt-5 rounded-2xl border border-dashed border-heritage-gold/30 p-5 text-sm text-heritage-ink/70">Restoring your Design Style choices...</div>}
+          {draftHydrationFailed && <div role="alert" data-testid="step3-draft-hydration-failed" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">We could not restore your saved Design Style choices. Reload and try again; your saved draft was not replaced.</div>}
+          {runtimeStatus === "blocked" && <div role="alert" className="mt-5 rounded-2xl border border-red-300 bg-red-50 p-5 text-sm text-red-900">Your saved Design Style choices cannot be changed safely here. Nothing has been overwritten.</div>}
+          {(isCatalogueLoading || runtimeStatus === "loading") && <div role="status" className="mt-5 rounded-2xl border border-dashed border-heritage-gold/30 p-5 text-sm text-heritage-ink/70">Loading catalogue designs. Your saved assignments are preserved.</div>}
+          {runtimeStatus === "error" && <div role="alert" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">The Design Style catalogue is temporarily unavailable. Your saved assignments are preserved.</div>}
 
-        {catalogueReady && catalogueSelection?.status === "reselection_required" && (
-          <div
-            role="alert"
-            className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
-          >
-            <p className="font-bold">Select another design</p>
-            <p className="mt-1 text-xs leading-relaxed">
-              {catalogueSelection.compatibility?.customerReason}
-            </p>
-          </div>
-        )}
-
-        {stylesLoadState === "ready" &&
-          styles.length > 0 &&
-          selectableStyleCount === 0 && (
-          <div
-            role="status"
-            data-testid="step3-zero-selectable"
-            className="mt-5 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4"
-          >
-            <p className="font-bold text-heritage-green">
-              No designs can currently be selected for this order.
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-heritage-ink/70">
-              You can adjust Garment Type or upload your own design.
-            </p>
-            <button
-              type="button"
-              onClick={onReturnToGarmentType}
-              className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-heritage-green/25 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-            >
-              Return to Garment Type
-            </button>
-          </div>
-        )}
-
-        <div className="mt-6 space-y-8">
-          {(isCatalogueLoading || stylesLoadState === "loading") && (
-            <div
-              role="status"
-              className="rounded-2xl border border-dashed border-heritage-gold/30 bg-heritage-cream/25 p-6 text-center"
-            >
-              <p className="font-serif text-base font-bold text-heritage-green">
-                Loading catalogue designs
-              </p>
-              <p className="mt-2 text-xs leading-relaxed text-heritage-ink/65">
-                Design styles are still loading. Your garment selection is
-                preserved.
-              </p>
-            </div>
-          )}
-          {stylesLoadState === "error" && (
-            <div
-              role="status"
-              className="rounded-2xl border border-dashed border-heritage-gold/30 bg-heritage-cream/25 p-6 text-center"
-            >
-              <p className="font-serif text-base font-bold text-heritage-green">
-                Design Style catalogue temporarily unavailable
-              </p>
-              <p className="mt-2 text-xs leading-relaxed text-heritage-ink/65">
-                Catalogue designs could not be loaded right now. You can upload
-                your own design below, or return to Garment Type and try again
-                shortly.
-              </p>
-              <button
-                type="button"
-                onClick={onReturnToGarmentType}
-                className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-heritage-green/25 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-              >
-                Return to Garment Type
-              </button>
-            </div>
-          )}
-          {stylesLoadState === "ready" && styles.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-heritage-gold/30 bg-heritage-cream/25 p-6 text-center">
-              <p className="font-serif text-base font-bold text-heritage-green">
-                No catalogue designs are available right now
-              </p>
-              <p className="mt-2 text-xs leading-relaxed text-heritage-ink/65">
-                You can upload your own design below, or return to Garment Type.
-              </p>
-              <button
-                type="button"
-                onClick={onReturnToGarmentType}
-                className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-heritage-green/25 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-              >
-                Return to Garment Type
-              </button>
-            </div>
-          )}
-          {stylesLoadState === "ready" && styles.length > 0 && (
-            <>
-              <section
-                data-testid="step3-best-matches"
-                aria-labelledby="step3-best-matches-title"
-                className="min-w-0"
-              >
-                <h3
-                  id="step3-best-matches-title"
-                  className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold"
-                >
-                  Best Matches for your order
-                </h3>
-                <p className="mt-2 text-xs leading-relaxed text-heritage-ink/70">
-                  These designs were created for the garments selected in Step 1.
-                </p>
-                {exactStyles.length > 0 ? (
-                  <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {exactStyles.map(renderStyleCard)}
-                  </div>
-                ) : adaptableStyles.length > 0 ? (
-                  <p
-                    data-testid="step3-no-exact-matches"
-                    className="mt-3 rounded-xl border border-heritage-gold/20 bg-heritage-cream/35 px-3 py-2 text-xs leading-relaxed text-heritage-ink/70"
-                  >
-                    No exact catalogue matches yet. Explore adaptable designs
-                    below.
-                  </p>
-                ) : null}
-              </section>
-              <section
-                data-testid="step3-explore-all"
-                aria-labelledby="step3-explore-all-title"
-                className="min-w-0"
-              >
-                <h3
-                  id="step3-explore-all-title"
-                  className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold"
-                >
-                  Explore All Designs
-                </h3>
-                <p className="mt-2 text-xs leading-relaxed text-heritage-ink/70">
-                  Browse the full catalogue, including Best Matches and designs
-                  that may not be available for this order.
-                </p>
-                <div
-                  role="group"
-                  aria-label="Catalogue design filters"
-                  className="mt-3 flex min-w-0 flex-wrap gap-2"
-                >
-                  {CATALOGUE_FILTERS.map((filter) => {
-                    const pressed = exploreFilter === filter.id;
-                    return (
-                      <button
-                        key={filter.id}
-                        type="button"
-                        data-catalogue-filter={filter.id}
-                        aria-pressed={pressed}
-                        onClick={() => setExploreFilter(filter.id)}
-                        className={`inline-flex min-h-11 min-w-0 items-center justify-center rounded-xl border px-3 text-[11px] font-bold uppercase tracking-wider transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
-                          pressed
-                            ? "border-heritage-green bg-heritage-green text-white"
-                            : "border-heritage-green/20 bg-white text-heritage-green hover:bg-heritage-cream/50"
-                        }`}
-                      >
-                        {filter.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                {exploredStyles.length > 0 ? (
-                  <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {exploredStyles.map(renderStyleCard)}
-                  </div>
-                ) : (
-                  <p
-                    data-testid="step3-explore-empty"
-                    className="mt-4 text-xs leading-relaxed text-heritage-ink/65"
-                  >
-                    No designs match this filter.
-                  </p>
-                )}
-              </section>
-            </>
-          )}
-        </div>
-
-        <div className="my-8 flex items-center gap-4" aria-hidden="true">
-          <span className="h-px flex-1 bg-heritage-gold/30" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-heritage-gold">
-            Or
-          </span>
-          <span className="h-px flex-1 bg-heritage-gold/30" />
-        </div>
-
-        <section
-          data-testid="upload-your-design-panel"
-          aria-labelledby="upload-your-design-title"
-          aria-busy={uploadBusy}
-          className={`min-w-0 rounded-2xl border-2 p-4 sm:p-5 ${
-            uploadedSourceSelected
-              ? "border-heritage-gold bg-heritage-gold/5"
-              : "border-heritage-green/20 bg-heritage-cream/20"
-          }`}
-        >
-          <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-heritage-gold">
-                Private design reference
-              </p>
-              <h3
-                id="upload-your-design-title"
-                className="mt-1 break-words font-serif text-xl font-bold text-heritage-green"
-              >
-                Upload Your Own Design
-              </h3>
-              <p className="mt-2 max-w-2xl text-xs leading-relaxed text-heritage-ink/65">
-                Add a private reference image, then identify every physical
-                garment shown and who the design is for.
-              </p>
-            </div>
-            <span
-              role="status"
-              className="shrink-0 rounded-full border border-heritage-gold/30 bg-white px-3 py-1.5 text-[9px] font-bold uppercase tracking-wide text-heritage-green"
-            >
-              {uploadStatus}
-            </span>
-          </div>
-
-          <input
-            ref={uploadInputRef}
-            type="file"
-            disabled={uploadBusy}
-            accept={CUSTOMER_DESIGN_IMAGE_MIME_TYPES.join(",")}
-            aria-label="Upload your private design reference"
-            className="sr-only"
-            onChange={(event) => handleFileInput(event, false)}
-          />
-          <input
-            ref={replacementInputRef}
-            type="file"
-            disabled={uploadBusy}
-            accept={CUSTOMER_DESIGN_IMAGE_MIME_TYPES.join(",")}
-            aria-label="Replace your private design reference"
-            className="sr-only"
-            onChange={(event) => handleFileInput(event, true)}
-          />
-
-          {!uploadedDesign.reference ? (
-            <button
-              type="button"
-              disabled={uploadBusy}
-              onClick={() => uploadInputRef.current?.click()}
-              className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
-            >
-              <Upload aria-hidden="true" size={16} />
-              {uploadedDesign.isUploading ? "Uploading..." : "Upload Your Design"}
-            </button>
-          ) : (
-            <div className="mt-5 grid min-w-0 gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-              <div className="min-w-0 rounded-xl border border-heritage-gold/20 bg-white p-3">
-                <div className="flex min-h-48 items-center justify-center overflow-hidden rounded-lg bg-heritage-cream/50">
-                  {uploadedDesign.isLoadingPreview ? (
-                    <span className="px-4 text-center text-xs font-semibold text-heritage-ink/60">
-                      Loading preview...
-                    </span>
-                  ) : uploadedDesign.previewUrl ? (
-                    <img
-                      src={uploadedDesign.previewUrl}
-                      alt="Your uploaded design reference"
-                      className="max-h-72 w-full object-contain"
-                    />
-                  ) : (
-                    <span className="px-4 text-center text-xs leading-relaxed text-heritage-ink/60">
-                      Preview unavailable. Your private design reference is
-                      still protected.
-                    </span>
-                  )}
-                </div>
-                <div className="mt-3 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    disabled={uploadBusy}
-                    onClick={() => replacementInputRef.current?.click()}
-                    className="inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-lg border border-heritage-gold/35 bg-white px-3 text-xs font-bold text-heritage-green transition hover:bg-heritage-gold/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    <ImagePlus aria-hidden="true" size={15} />
-                    {uploadedDesign.isReplacing ? "Replacing..." : "Replace Image"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={uploadBusy}
-                    onClick={onRemoveUploadedDesign}
-                    className="inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    <Trash2 aria-hidden="true" size={15} />
-                    {uploadedDesign.isDeleting ? "Deleting..." : "Delete Image"}
-                  </button>
-                </div>
+          {occurrences.length > 0 && (
+            <section aria-labelledby="current-design-mappings-title" className="mt-5">
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <h3 id="current-design-mappings-title" className="font-serif text-lg font-bold text-heritage-green">Your Garments</h3>
+                {occurrences.some((occurrence) => occurrence.assignment) && onClearAllAssignments && <button type="button" onClick={onClearAllAssignments} disabled={!mutationsEnabled} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Clear All</button>}
               </div>
-
-              <div className="min-w-0 space-y-5 rounded-xl border border-heritage-gold/20 bg-white p-4">
-                <fieldset className="min-w-0">
-                  <legend className="text-xs font-bold text-heritage-green">
-                    What garments are included in your design?
-                  </legend>
-                  <p className="mt-1 text-[11px] leading-relaxed text-heritage-ink/65">
-                    Step 1 garments stay selected. You may add more garments
-                    shown in your reference.
-                  </p>
-                  <div className="mt-3 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-                    {UPLOADED_DESIGN_GARMENT_OPTIONS.map((option) => {
-                      const requiredFromStep1 = requiredStep1GarmentTypes.has(
-                        option.garmentType,
-                      );
-                      const checked =
-                        requiredFromStep1 ||
-                        uploadedDesign.composition.some(
-                          (spec) => spec.garmentType === option.garmentType,
-                        );
-                      const locked = requiredFromStep1 || uploadBusy;
-                      return (
-                        <label
-                          key={option.garmentType}
-                          className={`flex min-h-11 min-w-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
-                            locked && !requiredFromStep1
-                              ? "cursor-not-allowed opacity-60"
-                              : requiredFromStep1
-                                ? "cursor-default"
-                                : "cursor-pointer"
-                          } ${
-                            checked
-                              ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green"
-                              : "border-gray-200 text-heritage-ink hover:border-heritage-gold/45"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            disabled={locked}
-                            checked={checked}
-                            aria-description={
-                              requiredFromStep1
-                                ? "Selected in Step 1"
-                                : undefined
-                            }
-                            onChange={() => {
-                              if (requiredFromStep1) return;
-                              onToggleUploadedGarment(option.garmentType);
-                            }}
-                            className="size-5 shrink-0 accent-heritage-green"
-                          />
-                          <span className="min-w-0 flex-1 break-words font-semibold">
-                            {option.label}
-                            {requiredFromStep1 && (
-                              <span className="mt-0.5 block text-[10px] font-medium text-heritage-ink/60">
-                                Selected in Step 1
-                              </span>
-                            )}
-                          </span>
-                          {option.fabricUnits === 2 && (
-                            <span className="shrink-0 text-[9px] text-heritage-gold">
-                              Full fabric quantity
-                            </span>
-                          )}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </fieldset>
-
-                <div className="rounded-lg bg-heritage-cream/45 px-3 py-2 text-[11px] leading-relaxed text-heritage-ink/75">
-                  {uploadCapacity.garmentCount > 0 ? (
-                    <>
-                      <strong className="text-heritage-green">
-                        {uploadCapacity.garmentCount} garment
-                        {uploadCapacity.garmentCount === 1 ? "" : "s"} ·{" "}
-                        {uploadCapacity.fabricQuantity} fabric quantit
-                        {uploadCapacity.fabricQuantity === 1 ? "y" : "ies"}
-                      </strong>
-                      {uploadCapacity.requiresAdditionalAllocation && (
-                        <p className="mt-1">
-                          This composition needs more than one fabric allocation.
-                          The existing Fabric step will guide each assignment.
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    "Select the garments in your reference to continue."
-                  )}
-                </div>
-
-                <fieldset>
-                  <legend className="text-xs font-bold text-heritage-green">
-                    Who is this design for?
-                  </legend>
-                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    {([
-                      ["male", "Male"],
-                      ["female", "Female"],
-                      ["unisex", "Unisex / Family"],
-                    ] as const).map(([value, label]) => (
-                      <label
-                        key={value}
-                        className={`flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
-                          uploadBusy
-                            ? "cursor-not-allowed opacity-60"
-                            : "cursor-pointer"
-                        } ${
-                          uploadedDesign.demographic === value
-                            ? "border-heritage-gold bg-heritage-gold/10 text-heritage-green"
-                            : "border-gray-200 text-heritage-ink hover:border-heritage-gold/45"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          disabled={uploadBusy}
-                          name="uploaded-design-demographic"
-                          checked={uploadedDesign.demographic === value}
-                          onChange={() => onUploadedDemographicChange(value)}
-                          className="size-5 shrink-0 accent-heritage-green"
-                        />
-                        <span className="min-w-0 break-words">{label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-
-                <p className="text-[11px] leading-relaxed text-heritage-ink/65">
-                  {uploadReadiness.isReady
-                    ? uploadedDesign.isConfirmed && uploadedDesign.isPricingActive
-                      ? "Your uploaded design and Fabric assignments are confirmed."
-                      : "Uploaded design complete. Continue to Fabric to confirm its assignments."
-                    : "Image, garment composition, and recipient context are required."}
-                </p>
-                <p className="rounded-lg border border-heritage-gold/20 bg-heritage-cream/35 px-3 py-2 text-[11px] leading-relaxed text-heritage-ink/70">
-                  Final review and payment for uploaded designs remain unavailable
-                  until the secure uploaded-order contract supports this journey.
-                </p>
+              <div role="list" className="mt-2 divide-y divide-heritage-green/10 overflow-hidden rounded-xl border border-heritage-green/15 bg-white">
+                {occurrences.map((occurrence) => {
+                  const occurrenceClearRequest = clearRequests.find((request) => designStyleStepTargetsEqual(request.target, occurrence.target)) || (designStyleStepTargetsEqual(occurrence.target, activeOccurrenceTarget) ? clearRequest : null);
+                  return (
+                    <article key={occurrence.target.occurrenceToken} role="listitem" data-occurrence-label={occurrence.label} className="flex min-w-0 flex-col gap-2 border-l-2 border-transparent bg-white px-3 py-2.5 sm:flex-row sm:items-center sm:gap-4">
+                      <div className="grid min-w-0 flex-1 gap-0.5 sm:grid-cols-[minmax(6rem,0.35fr)_minmax(0,1fr)] sm:items-baseline sm:gap-x-4">
+                        <p className="font-serif text-sm font-bold text-heritage-green">{occurrence.label}</p>
+                        <p className="break-words text-xs leading-relaxed text-heritage-ink/70"><span className="font-semibold text-heritage-green">{occurrence.assignmentLabel || "No design selected"}</span></p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2 sm:self-center">
+                        <button type="button" onClick={() => { onSelectOccurrence(occurrence.target); allDesignsRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); }} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-xs font-bold text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">{occurrence.assignment ? "Change" : "Choose Design"}</button>
+                        {occurrence.assignment && occurrenceClearRequest && <button type="button" onClick={() => onClearAssignment(occurrenceClearRequest)} aria-label={occurrence.assignment.sourceKind === "uploaded" ? `Remove uploaded design from ${occurrence.label}` : `Clear design for ${occurrence.label}`} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2">{occurrence.assignment.sourceKind === "uploaded" ? `Remove uploaded design from ${occurrence.label}` : "Clear"}</button>}
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
-            </div>
+            </section>
           )}
 
-          {uploadedDesign.error && (
-            <div
-              role="alert"
-              className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-xs font-medium leading-relaxed text-red-700"
-            >
-              <p>{uploadedDesign.error}</p>
-              {pendingCatalogStyleName && (
-                <button
-                  type="button"
-                  disabled={uploadBusy}
-                  onClick={onRetryUploadedDesignDeletion}
-                  aria-label={`Retry deleting uploaded design and switch to ${pendingCatalogStyleName}`}
-                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-red-300 bg-white px-4 text-xs font-bold text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
-                >
-                  Retry and switch to {pendingCatalogStyleName}
-                </button>
-              )}
-            </div>
-          )}
-        </section>
-      </div>
+          {showCatalogue && catalogueEntries.length === 0 && <div role="status" data-testid="step3-zero-selectable" className="mt-7 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4"><p className="font-bold text-heritage-green">No published Design Styles are currently available.</p><button type="button" onClick={onReturnToGarmentType} className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-heritage-green/25 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green">Return to Garment Type</button></div>}
 
-      <aside className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm">
-        <div className="flex min-w-0 items-start justify-between gap-3 text-sm">
-          <span className="min-w-0 text-heritage-ink/70">
-            Garment Construction Subtotal
-          </span>
-          <span className="shrink-0 font-mono font-bold text-heritage-green">
-            {stagePrice === null
-              ? "Pending"
-              : `${PRICING_CURRENCY_SYMBOL}${stagePrice.toFixed(2)}`}
-          </span>
+          {showCatalogue && catalogueEntries.length > 0 && (
+            <section ref={allDesignsRef} data-testid="step3-all-designs" className="mt-8 min-w-0 scroll-mt-24">
+              <h3 className="font-serif text-xl font-bold text-heritage-green">All Designs</h3>
+              <p className="mt-1 text-xs leading-relaxed text-heritage-ink/65">Every published design is available as a visual reference for any of your garments.</p>
+              <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {catalogueEntries.map((entry) => {
+                  const displayStyleName = formatDisplayStyleLabel(entry.style);
+                  return (
+                  <article key={entry.style.id} data-style-card="true" data-style-name={entry.style.name} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm">
+                    <div className="relative aspect-[4/5] overflow-hidden bg-heritage-cream/35">
+                      {entry.style.image ? <img src={entry.style.image} alt={`${displayStyleName} design`} loading="lazy" className="h-full w-full object-contain" referrerPolicy="no-referrer" /> : <div className="flex h-full items-center justify-center px-4 text-center text-xs text-heritage-ink/45">Image unavailable</div>}
+                      {entry.selectedOccurrenceLabels.length > 0 && <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm"><Check aria-hidden="true" size={14} />IN USE</span>}
+                    </div>
+                    <div className="flex min-w-0 flex-1 flex-col p-4">
+                      <h4 className="break-words font-serif text-base font-bold text-heritage-green">{displayStyleName}</h4>
+                      <p className="mt-3 break-words text-xs leading-relaxed text-heritage-ink/75"><span className="font-semibold text-heritage-green">Reference outfit:</span> {getFutureDesignStyleCompositionLabel(entry.style)}</p>
+                      {entry.selectedOccurrenceLabels.length > 0 && <p className="mt-2 break-words text-xs text-heritage-ink/60">Applied to {entry.selectedOccurrenceLabels.join(", ")}</p>}
+                      {entry.style.description && <p className="mt-3 break-words text-xs leading-relaxed text-heritage-ink/65">{entry.style.description}</p>}
+                      <button type="button" disabled={!mutationsEnabled} onClick={(event) => openDialog(entry, event.currentTarget)} aria-label={`${entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"} ${displayStyleName}`} className="mt-auto inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 py-3 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-heritage-ink/45">{entry.selectedOccurrenceLabels.length > 0 ? "Use Again" : "Use This Design"}</button>
+                    </div>
+                  </article>
+                );})}
+              </div>
+            </section>
+          )}
+
+          {activeOccurrence && (
+            <section aria-labelledby="upload-own-design-title" className="mt-8 rounded-2xl border border-heritage-green/15 bg-heritage-green/5 p-4">
+              <h3 id="upload-own-design-title" className="font-serif text-xl font-bold text-heritage-green">Upload Your Own Design</h3>
+              <p className="mt-1 text-xs text-heritage-ink/65">Upload for the currently active garment: <span className="font-bold text-heritage-green">{activeOccurrence.label}</span>.</p>
+              {activeOccurrence.assignment?.sourceKind === "uploaded" && uploadState.previewUrl && <img src={uploadState.previewUrl} alt={`Uploaded design preview for ${activeOccurrence.label}`} className="mt-3 max-h-72 w-full rounded-xl border border-heritage-gold/20 bg-white object-contain" />}
+              {activeOccurrence.assignment?.sourceKind === "uploaded" && <p className="mt-3 text-xs leading-relaxed text-heritage-ink/65">Removing this assignment keeps the uploaded source available for any other garment that uses it.</p>}
+              {renderUploadControl(activeOccurrence.assignment?.sourceKind === "uploaded")}
+            </section>
+          )}
         </div>
-        <p className="mt-2 text-[11px] leading-relaxed text-heritage-ink/55">
-          Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing. Design
-          Style does not add another charge.
-        </p>
-      </aside>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <DesignStudioBackButton destination="Fabric" onClick={onBack} />
-        <div
-          data-testid="future-design-style-continue-action"
-          data-docked={canContinueToCustomDetails}
-          className={
-            canContinueToCustomDetails
-              ? "fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3"
-              : ""
-          }
-        >
-          <div
-            className={
-              canContinueToCustomDetails
-                ? "mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm sm:px-4 sm:py-3.5"
-                : ""
-            }
-          >
-            <button
-              type="button"
-              onClick={
-                uploadedSourceSelected &&
-                (!uploadedDesign.isConfirmed || !uploadedDesign.isPricingActive)
-                  ? onContinueUploadedDesign
-                  : onContinue
-              }
-              disabled={
-                uploadBusy ||
-                (uploadedSourceSelected
-                  ? !uploadReadiness.isReady
-                  : !catalogueReady ||
-                    catalogueSelection?.status !== "selected")
-              }
-              aria-label={
-                uploadedSourceSelected &&
-                (!uploadedDesign.isConfirmed || !uploadedDesign.isPricingActive)
-                  ? "Continue with Uploaded Design to Fabric"
-                  : "Continue to Custom Details"
-              }
-              className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 ${
-                canContinueToCustomDetails ? "w-full sm:w-auto" : ""
-              }`}
-            >
-              <LockKeyhole aria-hidden="true" size={14} />
-              {uploadedSourceSelected &&
-              (!uploadedDesign.isConfirmed || !uploadedDesign.isPricingActive)
-                ? "Continue with Uploaded Design"
-                : "Continue to Custom Details"}
-            </button>
+        <aside className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm"><div className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-sm"><span className="min-w-0 text-heritage-ink/70">Garment Construction Subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{stagePrice === null ? "Pending" : `${PRICING_CURRENCY_SYMBOL}${stagePrice.toFixed(2)}`}</span></div><p className="mt-2 text-[11px] leading-relaxed text-heritage-ink/55">Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing. Design Style does not add another charge.</p></aside>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+          <DesignStudioBackButton destination="Fabric" onClick={onBack} />
+          <div className="min-w-0">
+            {!exactSetComplete && firstIncompleteOccurrence && <p role="status" className="mb-2 max-w-sm text-xs font-semibold text-amber-800">Choose a design reference for {firstIncompleteOccurrence.label} to continue.</p>}
+            <div data-testid="future-design-style-continue-action" data-docked={exactSetComplete} className={exactSetComplete ? "fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3" : ""}><div className={exactSetComplete ? "mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm" : ""}><button type="button" onClick={onContinue} disabled={!exactSetComplete} aria-label="Continue to Custom Details" className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 ${exactSetComplete ? "w-full sm:w-auto" : ""}`}><LockKeyhole aria-hidden="true" size={14} />Continue to Custom Details</button></div></div>
           </div>
         </div>
-      </div>
-    </section>
-    {adaptationDialog
-      ? typeof document !== "undefined" && document.body
-        ? createPortal(adaptationDialog, document.body)
-        : adaptationDialog
-      : null}
+      </section>
+      {mappingDialog ? (typeof document !== "undefined" && document.body ? createPortal(mappingDialog, document.body) : mappingDialog) : null}
     </>
   );
 };

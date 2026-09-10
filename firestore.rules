@@ -79,6 +79,323 @@ service cloud.firestore {
         );
     }
 
+    function hasValidDesignStyleLifecycle(data) {
+      return data.lifecycle == "draft"
+        || data.lifecycle == "published"
+        || data.lifecycle == "disabled"
+        || data.lifecycle == "archived";
+    }
+
+    function hasValidDesignStylePresentation(data) {
+      return data is map
+        && data.keys().hasOnly([
+          "name",
+          "description",
+          "image",
+          "displayOrder",
+          "gender",
+          "outfitType",
+          "garmentComposition",
+          "fabricCategory",
+          "options",
+          "designCategories",
+          "detectedColors",
+          "constructionDetails",
+          "customDetailConfiguration",
+          "includedDesignFeatures",
+          "monogramCuffEligible",
+          "embroideryProminence",
+          "defaultGarmentDetails"
+        ])
+        && data.keys().hasAll([
+          "name",
+          "description",
+          "image",
+          "displayOrder",
+          "gender",
+          "outfitType",
+          "garmentComposition",
+          "fabricCategory",
+          "options",
+          "designCategories",
+          "detectedColors",
+          "constructionDetails",
+          "customDetailConfiguration",
+          "includedDesignFeatures",
+          "monogramCuffEligible",
+          "embroideryProminence",
+          "defaultGarmentDetails"
+        ])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 160
+        && data.description is string
+        && data.description.size() <= 2000
+        && data.image is string
+        && data.image.size() <= 3000
+        && data.displayOrder is int
+        && data.displayOrder >= 0
+        && data.gender in ["male", "female", "unisex", "couple", "family"]
+        && data.outfitType is string
+        && data.garmentComposition is string
+        && data.fabricCategory is string
+        && data.options is list
+        && data.options.size() <= 100
+        && data.designCategories is list
+        && data.designCategories.size() <= 100
+        && data.detectedColors is map
+        && data.detectedColors.keys().hasOnly(["main", "secondary"])
+        && data.detectedColors.keys().hasAll(["main", "secondary"])
+        && data.detectedColors.main is string
+        && data.detectedColors.secondary is string
+        && data.constructionDetails is list
+        && data.constructionDetails.size() <= 100
+        && data.customDetailConfiguration is map
+        && data.customDetailConfiguration.keys().hasOnly([
+          "supportedGarmentGroups",
+          "requiredSelectionGroups",
+          "enabled"
+        ])
+        && data.customDetailConfiguration.keys().hasAll([
+          "supportedGarmentGroups",
+          "requiredSelectionGroups",
+          "enabled"
+        ])
+        && data.customDetailConfiguration.supportedGarmentGroups is list
+        && data.customDetailConfiguration.requiredSelectionGroups is list
+        && data.customDetailConfiguration.enabled is bool
+        && data.includedDesignFeatures is map
+        && data.includedDesignFeatures.keys().hasOnly([
+          "hasMonogram",
+          "hasEmbroidery",
+          "hasMonogramTrimming"
+        ])
+        && data.includedDesignFeatures.keys().hasAll([
+          "hasMonogram",
+          "hasEmbroidery",
+          "hasMonogramTrimming"
+        ])
+        && data.includedDesignFeatures.hasMonogram is bool
+        && data.includedDesignFeatures.hasEmbroidery is bool
+        && data.includedDesignFeatures.hasMonogramTrimming is bool
+        && data.monogramCuffEligible is bool
+        && data.embroideryProminence in ["standard", "heavy"]
+        && data.defaultGarmentDetails is map;
+    }
+
+    function hasValidDesignStyleEligibility(data) {
+      return data is map
+        && data.keys().hasOnly([
+          "garmentTypes",
+          "demographics",
+          "adaptability"
+        ])
+        && data.keys().hasAll([
+          "garmentTypes",
+          "demographics",
+          "adaptability"
+        ])
+        && data.garmentTypes is list
+        && data.garmentTypes.hasOnly([
+          "shirt",
+          "trouser",
+          "skirt",
+          "standard_shorts",
+          "bum_shorts",
+          "dress",
+          "kaftan",
+          "full_length_gown",
+          "agbada"
+        ])
+        && data.demographics is list
+        && data.demographics.hasOnly(["male", "female"])
+        && data.adaptability is map
+        && data.adaptability.keys().hasOnly([
+          "mode",
+          "garmentTypes",
+          "demographics"
+        ])
+        && data.adaptability.keys().hasAll([
+          "mode",
+          "garmentTypes",
+          "demographics"
+        ])
+        && data.adaptability.mode in ["exact_only", "adaptable"]
+        && data.adaptability.garmentTypes is list
+        && data.adaptability.garmentTypes.hasOnly([
+          "shirt",
+          "trouser",
+          "skirt",
+          "standard_shorts",
+          "bum_shorts",
+          "dress",
+          "kaftan",
+          "full_length_gown",
+          "agbada"
+        ])
+        && data.adaptability.demographics is list
+        && data.adaptability.demographics.hasOnly(["male", "female"])
+        && (
+          (
+            data.adaptability.mode == "exact_only"
+            && data.adaptability.garmentTypes.size() == 0
+            && data.adaptability.demographics.size() == 0
+          )
+          || (
+            data.adaptability.mode == "adaptable"
+            && data.adaptability.garmentTypes.size() > 0
+          )
+        );
+    }
+
+    function hasValidDesignStyleReferenceComposition(data) {
+      return data is map
+        && data.keys().hasOnly(["status", "garmentTypes"])
+        && data.keys().hasAll(["status", "garmentTypes"])
+        && data.status in ["known", "legacy_unresolved"]
+        && data.garmentTypes is list
+        && data.garmentTypes.hasOnly([
+          "shirt",
+          "trouser",
+          "skirt",
+          "standard_shorts",
+          "bum_shorts",
+          "dress",
+          "kaftan",
+          "full_length_gown",
+          "agbada"
+        ])
+        && (
+          (data.status == "known" && data.garmentTypes.size() > 0)
+          || (
+            data.status == "legacy_unresolved"
+            && data.garmentTypes.size() == 0
+          )
+        );
+    }
+
+    function hasValidDesignStyleRecord(data) {
+      return data is map
+        && data.keys().hasOnly([
+          "schemaVersion",
+          "id",
+          "lifecycle",
+          "publicRevision",
+          "eligibilityRevision",
+          "eligibilityFingerprint",
+          "presentation",
+          "eligibility",
+          "referenceComposition"
+        ])
+        && data.keys().hasAll([
+          "schemaVersion",
+          "id",
+          "lifecycle",
+          "publicRevision",
+          "eligibilityRevision",
+          "eligibilityFingerprint",
+          "presentation",
+          "eligibility",
+          "referenceComposition"
+        ])
+        && data.schemaVersion == 1
+        && data.id is string
+        && data.id.size() > 0
+        && data.id.size() <= 128
+        && hasValidDesignStyleLifecycle(data)
+        && data.publicRevision is int
+        && data.publicRevision > 0
+        && data.eligibilityRevision is int
+        && data.eligibilityRevision > 0
+        && data.eligibilityFingerprint is string
+        && data.eligibilityFingerprint.size() > 0
+        && data.eligibilityFingerprint.size() <= 128
+        && hasValidDesignStylePresentation(data.presentation)
+        && hasValidDesignStyleEligibility(data.eligibility)
+        && hasValidDesignStyleReferenceComposition(data.referenceComposition)
+        && (
+          data.lifecycle != "published"
+          || (
+            data.eligibility.garmentTypes.size() > 0
+            && data.eligibility.demographics.size() > 0
+          )
+        );
+    }
+
+    function hasValidDesignStyleCreate(styleId) {
+      return hasValidDesignStyleRecord(request.resource.data)
+        && request.resource.data.id == styleId
+        && request.resource.data.publicRevision == 1
+        && request.resource.data.eligibilityRevision == 1;
+    }
+
+    function hasDesignStyleAuthorityEnvelope(data) {
+      return data is map
+        && data.keys().hasAll([
+          "schemaVersion",
+          "id",
+          "publicRevision",
+          "eligibilityRevision",
+          "eligibilityFingerprint",
+          "eligibility"
+        ])
+        && data.schemaVersion == 1
+        && data.id is string
+        && data.publicRevision is int
+        && data.eligibilityRevision is int
+        && data.eligibilityFingerprint is string
+        && data.eligibility is map;
+    }
+
+    function isExplicitLegacyDesignStyleMigration(styleId) {
+      return resource.data is map
+        && !hasDesignStyleAuthorityEnvelope(resource.data)
+        && !resource.data.keys().hasAny([
+          "schemaVersion",
+          "lifecycle",
+          "publicRevision",
+          "eligibilityRevision",
+          "eligibilityFingerprint",
+          "presentation",
+          "eligibility",
+          "referenceComposition"
+        ])
+        && resource.data.id == styleId
+        && resource.data.fabricCapacityComposition is list
+        && resource.data.fabricCapacityComposition.size() > 0;
+    }
+
+    function hasValidDesignStyleUpdate(styleId) {
+      return hasValidDesignStyleRecord(request.resource.data)
+        && request.resource.data.id == styleId
+        && (
+          (
+            hasDesignStyleAuthorityEnvelope(resource.data)
+            && resource.data.id == styleId
+            && request.resource.data.id == resource.data.id
+            && request.resource.data.schemaVersion == resource.data.schemaVersion
+            && request.resource.data.publicRevision == resource.data.publicRevision + 1
+            && (
+              (
+                request.resource.data.eligibility == resource.data.eligibility
+                && request.resource.data.eligibilityRevision == resource.data.eligibilityRevision
+                && request.resource.data.eligibilityFingerprint == resource.data.eligibilityFingerprint
+              )
+              || (
+                request.resource.data.eligibility != resource.data.eligibility
+                && request.resource.data.eligibilityRevision == resource.data.eligibilityRevision + 1
+                && request.resource.data.eligibilityFingerprint != resource.data.eligibilityFingerprint
+              )
+            )
+          )
+          || (
+            isExplicitLegacyDesignStyleMigration(styleId)
+            && request.resource.data.publicRevision == 1
+            && request.resource.data.eligibilityRevision == 1
+          )
+        );
+    }
+
     match /fabrics/{fabricId} {
       allow read: if true;
       allow write: if isAdmin();
@@ -89,8 +406,22 @@ service cloud.firestore {
     }
 
     match /styles/{styleId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow get: if isAdmin()
+        || (
+          hasValidDesignStyleRecord(resource.data)
+          && resource.data.lifecycle == "published"
+        );
+      // Firestore list authorization must be provable from the public query.
+      // Strict nested validation is enforced on every Admin mutation and again
+      // by the customer projection before a snapshot becomes authoritative.
+      allow list: if isAdmin()
+        || (
+          resource.data.schemaVersion == 1
+          && resource.data.lifecycle == "published"
+        );
+      allow create: if isAdmin() && hasValidDesignStyleCreate(styleId);
+      allow update: if isAdmin() && hasValidDesignStyleUpdate(styleId);
+      allow delete: if false;
     }
 
     match /batches/{batchId} {

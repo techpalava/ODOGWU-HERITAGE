@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
-import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
+import {
+  createStyleBaseGarmentSpec,
+  getDefaultGarmentDetailsForSpec,
+} from "./src/config/StyleFabricCapacityConfig";
 import { FABRIC_APPEND_GARMENT_CHOICES } from "./src/engine/FabricCapacityEngine";
 import type {
   CustomDetailOption,
@@ -51,10 +54,10 @@ const expectedDefaults: Record<
   },
   bum_shorts: { optionIds: ["bum_rope"], totalPriceCents: 7000 },
   dress: { optionIds: ["dress_std_sleeveless"], totalPriceCents: 7000 },
-  kaftan: { optionIds: ["shirt_long_short"], totalPriceCents: 7000 },
+  kaftan: { optionIds: ["shirt_long_midlong"], totalPriceCents: 7500 },
   full_length_gown: {
-    optionIds: ["dress_long_short"],
-    totalPriceCents: 7500,
+    optionIds: ["dress_long_midlong"],
+    totalPriceCents: 8000,
   },
   agbada: {
     optionIds: ["shirt_std_short", "trouser_rope"],
@@ -75,6 +78,31 @@ for (const garmentType of expectedGarments) {
     expectedDefaults[garmentType].totalPriceCents,
   );
 }
+
+for (const [garmentType, selectionGroup, optionId] of [
+  ["kaftan", "shirt_construction", "shirt_long_midlong"],
+  ["full_length_gown", "dress_construction", "dress_long_midlong"],
+  ["dress", "dress_construction", "dress_std_sleeveless"],
+] as const) {
+  assert.equal(
+    getDefaultGarmentDetailsForSpec(createStyleBaseGarmentSpec(garmentType))?.[selectionGroup],
+    optionId,
+    `${garmentType} must use the same configured construction across steps`,
+  );
+}
+
+for (const [optionId, label, priceCents] of [
+  ["shirt_long_short", "Long Length Shirt, Short Sleeve", 7000],
+  ["dress_long_short", "Long Length, Short Sleeve", 7500],
+] as const) {
+  const option = catalog.find((entry) => entry.id === optionId)!;
+  assert.equal(option.label, label);
+  assert.equal(option.priceCents, priceCents, "Short-sleeve prices must remain unchanged");
+}
+assert.equal(
+  catalog.find((option) => option.id === "dress_std_sleeveless")?.description,
+  "Dress length extends from the waist to crotch level; one-piece dress.",
+);
 
 const femaleShirtStyle: StyleCategory = {
   id: "female-shirt-demographic-check",
@@ -222,7 +250,7 @@ assert.equal(shirt.status, "resolved");
 assert.equal(kaftan.status, "resolved");
 if (shirt.status === "resolved" && kaftan.status === "resolved") {
   assert.equal(shirt.components[0]?.optionId, "shirt_std_short");
-  assert.equal(kaftan.components[0]?.optionId, "shirt_long_short");
+  assert.equal(kaftan.components[0]?.optionId, "shirt_long_midlong");
   assert.notEqual(
     shirt.components[0]?.componentKey,
     kaftan.components[0]?.componentKey,

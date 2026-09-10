@@ -424,7 +424,19 @@ assert.match(designStudioSource, /designSource: activeDesignSource/);
 assert.match(designStudioSource, /confirmedDesignSourceKey:/);
 assert.match(designStudioSource, /priceActivatedFabricCode:/);
 assert.match(designStyleStepSource, /type="file"/);
-assert.match(designStyleStepSource, /data-testid="upload-your-design-panel"/);
+assert.match(
+  designStyleStepSource,
+  /step3-active-occurrence-upload(?:-replacement)?/,
+);
+assert.match(
+  designStyleStepSource,
+  /onSelectUploadFile\(activeOccurrence\.target,\s*file\)/,
+);
+assert.match(
+  designStyleStepSource,
+  /current design and preview stay in place|previous selection is unchanged/i,
+  "Task 5E-B must preserve the read-only boundary for existing uploaded assignments",
+);
 assert.doesNotMatch(designStyleStepSource, /getDownloadURL|storagePath/);
 assert.match(uploadServiceSource, /uploadCustomerDesignDraft/);
 assert.match(uploadServiceSource, /readCustomerDesignDraft/);

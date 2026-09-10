@@ -24,12 +24,12 @@ export const STEP1_FABRIC_ASSIGNMENT_DESCRIPTION =
   "Choose which garments should use this Fabric.";
 export const STEP1_FABRIC_GROUP_ASSIGN_BUTTON_LABEL = "Assign Fabric";
 export const STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE =
-  "Select 1 more standard garment to complete this Fabric.";
+  "1/2 fabric capacity will remain available.";
 export const STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE = "Fabric capacity complete.";
 export const STEP1_ZERO_CAPACITY_GUIDANCE_MESSAGE =
   "Select garments to use this Fabric.";
 export const STEP1_FINAL_RESIDUAL_CAPACITY_MESSAGE =
-  "Final Fabric — the remaining half will be unused.";
+  "1/2 fabric capacity will remain available.";
 export const formatStep1FabricCapacityProgress = (
   usedUnits: number,
   maxUnits: number = FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION,
@@ -123,6 +123,8 @@ export type Step1FabricAssignmentEvaluation = {
   canAssignSelected: boolean;
   canUseForAll: boolean;
   groupingCapacityStatus: string | null;
+  /** A product-stock failure belongs to the Fabric header, never a garment row. */
+  fabricLevelError: string | null;
   selectedCapacityMessage: string | null;
   remainingCapacityMessage: string | null;
   candidateMessages: Record<string, string | null>;
@@ -416,7 +418,7 @@ export const buildStep1FabricAssignmentCandidates = ({
         ? null
         : result.status === "blocked" &&
             result.reason === "FABRIC_STOCK_EXHAUSTED"
-          ? formatFabricStockExhaustedCopy()
+          ? null
           : result.status === "blocked" &&
               result.reason === "FABRIC_QUANTITY_LIMIT_REACHED"
             ? formatFabricQuantityLimitChangeCopy(requiredFabricQuantity)
@@ -511,7 +513,7 @@ export const evaluateStep1FabricAssignmentSelection = ({
           garmentKeys: remainingKeys,
           fabrics,
         });
-  let canAssignSelected = selectedResult?.status === "assigned";
+  const canAssignSelected = selectedResult?.status === "assigned";
   const canUseForAll = remainingResult?.status === "assigned";
   const selectedFailure =
     selected.length > 0 && !canAssignSelected
@@ -520,6 +522,12 @@ export const evaluateStep1FabricAssignmentSelection = ({
   const remainingFailure = !canUseForAll
     ? failureFromDryRun(remainingResult)
     : null;
+  const fabricLevelError =
+    selected.length > 0 &&
+    selectedResult?.status === "blocked" &&
+    selectedResult.reason === "FABRIC_STOCK_EXHAUSTED"
+      ? formatFabricStockExhaustedCopy()
+      : null;
   const candidateByKey = new Map(
     candidates.map((candidate) => [candidate.garmentKey, candidate]),
   );
@@ -529,32 +537,13 @@ export const evaluateStep1FabricAssignmentSelection = ({
     0,
   );
   const maxCapacityUnits = FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION;
-  const unselectedCandidates = candidates.filter(
-    (candidate) => !selected.includes(candidate.garmentKey),
-  );
   let groupingCapacityStatus: string | null = null;
   if (selected.length === 0) {
     groupingCapacityStatus = STEP1_ZERO_CAPACITY_GUIDANCE_MESSAGE;
   } else if (selectedCapacityUnits >= maxCapacityUnits) {
     groupingCapacityStatus = STEP1_FABRIC_CAPACITY_COMPLETE_MESSAGE;
-  } else if (candidates.length === 1) {
-    groupingCapacityStatus = STEP1_FINAL_RESIDUAL_CAPACITY_MESSAGE;
   } else {
-    const canGroupWithAnother = unselectedCandidates.some((candidate) =>
-      dryRunAssignGarmentKeys({
-        state: fabricAllocationState,
-        garmentTypeSelection,
-        fabricCode,
-        garmentKeys: [...selected, candidate.garmentKey],
-        fabrics,
-      }).status === "assigned",
-    );
-    if (canGroupWithAnother) {
-      groupingCapacityStatus = STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE;
-      if (selectedResult?.status === "assigned") {
-        canAssignSelected = false;
-      }
-    }
+    groupingCapacityStatus = STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE;
   }
   const candidateMessages: Record<string, string | null> = {};
   for (const candidate of candidates) {
@@ -578,8 +567,9 @@ export const evaluateStep1FabricAssignmentSelection = ({
     canAssignSelected,
     canUseForAll,
     groupingCapacityStatus,
+    fabricLevelError,
     selectedCapacityMessage:
-      selected.length > 0 && !canAssignSelected
+      !fabricLevelError && selected.length > 0 && !canAssignSelected
         ? globalMessageForBlockedDryRun({
             result: selectedResult,
             failure: selectedFailure,
@@ -588,7 +578,13 @@ export const evaluateStep1FabricAssignmentSelection = ({
           })
         : null,
     remainingCapacityMessage:
-      remainingKeys.length > 0 && !canUseForAll
+      !fabricLevelError &&
+      !(
+        remainingResult?.status === "blocked" &&
+        remainingResult.reason === "FABRIC_STOCK_EXHAUSTED"
+      ) &&
+      remainingKeys.length > 0 &&
+      !canUseForAll
         ? globalMessageForBlockedDryRun({
             result: remainingResult,
             failure: remainingFailure,

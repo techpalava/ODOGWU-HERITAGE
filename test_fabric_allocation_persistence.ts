@@ -11,14 +11,23 @@ import type {
   GuestDesignDraft,
   StyleCategory,
 } from "./src/types";
+import { FabricCapacityEngine } from "./src/engine/FabricCapacityEngine";
 import { stampCurrentCartShippingItem } from "./src/utils/shippingPricing";
 import {
   getFabricAllocationSyncSignature,
   getPersistableCartItemFabricAllocationsForOrder,
+  inspectDraftFabricAllocations,
   resolveDraftAutosaveFabricAllocations,
   resolveDraftHydrationAllocations,
 } from "./src/utils/fabricAllocationPersistence";
+import {
+  createCatalogDesignSource,
+  createUploadedDesignSource,
+  physicalOccurrencesToFabricRequirements,
+  type PhysicalGarmentOccurrence,
+} from "./src/utils/designSourceState";
 import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./src/utils/designSourceJourney";
+import { createRevision342FabricHydrationFixture } from "./testing/revision342FabricHydrationFixture";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -637,5 +646,438 @@ assert.equal(
   Object.prototype.hasOwnProperty.call(restoredDraft, "quantity"),
   false,
 );
+
+const revision342Fixture = createRevision342FabricHydrationFixture();
+const currentWriterRequirementsByKey = new Map(
+  physicalOccurrencesToFabricRequirements(revision342Fixture.occurrences).map(
+    (assignment) => [assignment.garmentKey, assignment],
+  ),
+);
+const currentWriterAllocations = revision342Fixture.legacyFabricAllocations.map(
+  (allocation) => ({
+    allocationId: allocation.allocationId,
+    fabricCode: allocation.fabricCode,
+    garmentAssignments: allocation.garmentAssignments.map((assignment) => {
+      const requirement = currentWriterRequirementsByKey.get(
+        assignment.garmentKey,
+      );
+      assert.ok(requirement, `Missing writer requirement for ${assignment.garmentKey}`);
+      return { ...requirement };
+    }),
+  }),
+);
+const currentWriterRoundTrip = inspectDraftFabricAllocations(
+  JSON.parse(
+    JSON.stringify(
+      makeGuestDraft({ fabricAllocations: currentWriterAllocations }),
+    ),
+  ) as GuestDesignDraft,
+);
+assert.equal(currentWriterRoundTrip.status, "valid");
+if (currentWriterRoundTrip.status === "valid") {
+  assert.deepEqual(
+    currentWriterRoundTrip.fabricAllocations,
+    currentWriterAllocations,
+    "current physical-occurrence Fabric requirements must survive a strict JSON persistence round-trip",
+  );
+}
+const currentWriterAdditionalRequirements = [
+  "additional:kaftan:1",
+  "additional:bum_shorts:1",
+  "additional:shirt:1",
+].map((garmentKey) => {
+  const requirement = currentWriterRequirementsByKey.get(garmentKey);
+  assert.ok(requirement, `Missing current additional requirement for ${garmentKey}`);
+  return requirement;
+});
+currentWriterAdditionalRequirements.forEach((assignment) => {
+  assert.equal(assignment.sourceRole, "additional");
+  assert.deepEqual(assignment.garmentSpec, {
+    key: assignment.garmentKey,
+    garmentType: assignment.garmentType,
+    fabricUnits: assignment.fabricUnits,
+  });
+  assert.equal(assignment.eligibilityRule, "catalog_all");
+  assert.equal(assignment.dependencyStatus, "valid");
+  assert.equal(assignment.mainGarmentKey, undefined);
+  assert.equal(assignment.mainGarmentType, undefined);
+});
+
+const revision342CatalogSource = createCatalogDesignSource(style.id);
+assert.ok(revision342CatalogSource);
+const inspectHistoricalFabricMutation = (
+  mutate: (fabricAllocations: FabricAllocation[]) => void,
+) => {
+  const fabricAllocations = JSON.parse(
+    JSON.stringify(revision342Fixture.legacyFabricAllocations),
+  ) as FabricAllocation[];
+  mutate(fabricAllocations);
+  return inspectDraftFabricAllocations(
+    makeGuestDraft({
+      selectedFabricCode: "ODG-009",
+      designSource: revision342CatalogSource,
+      confirmedDesignSourceKey: revision342CatalogSource.sourceKey,
+      fabricAllocations,
+    }),
+  );
+};
+assert.equal(
+  inspectHistoricalFabricMutation((fabricAllocations) => {
+    fabricAllocations[1].garmentAssignments[1].sourceRole = "main";
+  }).status,
+  "invalid",
+  "An additional occurrence must not claim the main role.",
+);
+assert.equal(
+  inspectHistoricalFabricMutation((fabricAllocations) => {
+    fabricAllocations[1].garmentAssignments[1].garmentSpec = {
+      key: "additional:dress:1",
+      garmentType: "dress",
+      fabricUnits: 1,
+    };
+  }).status,
+  "invalid",
+  "An explicit garment spec must describe the same occurrence as its assignment.",
+);
+assert.equal(
+  inspectHistoricalFabricMutation((fabricAllocations) => {
+    fabricAllocations[0].garmentAssignments[0].sourceRole = "additional";
+  }).status,
+  "invalid",
+  "A base occurrence must not claim the additional role.",
+);
+assert.equal(
+  inspectHistoricalFabricMutation((fabricAllocations) => {
+    fabricAllocations[1].garmentAssignments[1].fabricUnits = 2;
+  }).status,
+  "invalid",
+  "Canonical garment capacity must agree with occurrence identity.",
+);
+assert.equal(
+  inspectHistoricalFabricMutation((fabricAllocations) => {
+    fabricAllocations[2].garmentAssignments.push({
+      garmentKey: "base:shirt",
+      code: "BASE_SHIRT",
+      garmentType: "shirt",
+      fabricUnits: 1,
+      sourceRole: "main",
+    });
+  }).status,
+  "invalid",
+  "A persisted physical occurrence may be assigned only once.",
+);
+assert.equal(
+  inspectHistoricalFabricMutation((fabricAllocations) => {
+    fabricAllocations[2].garmentAssignments.push({
+      garmentKey: "legacy:extra-shirt",
+      code: "LEGACY_SHIRT",
+      garmentType: "shirt",
+      fabricUnits: 1,
+    });
+  }).status,
+  "invalid",
+  "An allocation that exceeds its physical capacity must fail strict parsing.",
+);
+assert.equal(
+  inspectHistoricalFabricMutation((fabricAllocations) => {
+    fabricAllocations[0].allocationId = " ";
+  }).status,
+  "invalid",
+  "Allocation identity must be non-blank.",
+);
+
+const inspectReservedOccurrenceCase = (
+  assignment: FabricAllocation["garmentAssignments"][number],
+) => {
+  const fabricAllocations: FabricAllocation[] = [
+    {
+      allocationId: "reserved-key-case-1",
+      fabricCode: "ODG-009",
+      garmentAssignments: [assignment],
+    },
+  ];
+  const draft = makeGuestDraft({
+    selectedFabricCode: "ODG-009",
+    designSource: revision342CatalogSource,
+    confirmedDesignSourceKey: revision342CatalogSource.sourceKey,
+    fabricAllocations,
+  });
+  return { fabricAllocations, draft, inspection: inspectDraftFabricAllocations(draft) };
+};
+
+const assertReservedOccurrenceRejected = (
+  label: string,
+  assignment: FabricAllocation["garmentAssignments"][number],
+) => {
+  const { fabricAllocations, draft, inspection } = inspectReservedOccurrenceCase(
+    assignment,
+  );
+  assert.equal(inspection.status, "invalid", label);
+  if (inspection.status === "invalid") {
+    assert.equal(inspection.diagnostic.code, "garment_assignment_invalid", label);
+    assert.deepEqual(inspection.rawFabricAllocations, fabricAllocations, label);
+  }
+  const hydration = resolveDraftHydrationAllocations(draft);
+  assert.equal(hydration.status, "invalid", label);
+  if (hydration.status === "invalid") {
+    assert.deepEqual(hydration.rawFabricAllocations, fabricAllocations, label);
+  }
+};
+
+// Reserved identities must always enforce their canonical semantics before a
+// generic historical fallback is considered. These exercise inspection and
+// hydration, which is the path that protects an invalid non-empty payload from
+// an autosave replacement.
+assertReservedOccurrenceRejected("reserved base cannot use a legacy additional code", {
+  garmentKey: "base:shirt",
+  code: "CUSTOM_DETAIL_ADDITIONAL_GARMENT_SHIRT",
+  garmentType: "shirt",
+  fabricUnits: 1,
+});
+assertReservedOccurrenceRejected("reserved base cannot use another additional code", {
+  garmentKey: "base:shirt",
+  code: "ADDITIONAL_KAFTAN",
+  garmentType: "shirt",
+  fabricUnits: 1,
+});
+assertReservedOccurrenceRejected("reserved base cannot use a different base code", {
+  garmentKey: "base:shirt",
+  code: "BASE_DRESS",
+  garmentType: "shirt",
+  fabricUnits: 1,
+});
+assertReservedOccurrenceRejected("reserved additional cannot use a base code", {
+  garmentKey: "additional:kaftan:1",
+  code: "BASE_SHIRT",
+  garmentType: "kaftan",
+  fabricUnits: 1,
+});
+
+const validReservedBase = inspectReservedOccurrenceCase({
+  garmentKey: "base:shirt",
+  code: "BASE_SHIRT",
+  garmentType: "shirt",
+  fabricUnits: 1,
+});
+assert.equal(validReservedBase.inspection.status, "valid");
+if (validReservedBase.inspection.status === "valid") {
+  assert.equal(
+    validReservedBase.inspection.fabricAllocations[0]?.garmentAssignments[0]
+      ?.sourceRole,
+    "main",
+    "A role-less reserved base must normalize to its canonical main role.",
+  );
+}
+
+const validReservedAdditional = inspectReservedOccurrenceCase({
+  garmentKey: "additional:kaftan:1",
+  code: "ADDITIONAL_KAFTAN",
+  garmentType: "kaftan",
+  fabricUnits: 1,
+});
+assert.equal(validReservedAdditional.inspection.status, "valid");
+if (validReservedAdditional.inspection.status === "valid") {
+  assert.equal(
+    validReservedAdditional.inspection.fabricAllocations[0]
+      ?.garmentAssignments[0]?.sourceRole,
+    "additional",
+  );
+}
+
+const supportedGenericLegacyAdditional = inspectReservedOccurrenceCase({
+  garmentKey: "custom-detail:additional_physical_garment:bum_shorts",
+  code: "CUSTOM_DETAIL_ADDITIONAL_GARMENT_BUM_SHORTS",
+  garmentType: "bum_shorts",
+  fabricUnits: 1,
+  garmentSpec: {
+    key: "custom-detail:additional_physical_garment:bum_shorts",
+    garmentType: "bum_shorts",
+    fabricUnits: 1,
+  },
+});
+assert.equal(
+  supportedGenericLegacyAdditional.inspection.status,
+  "valid",
+  "A non-reserved historical Custom Detail key must retain legacy compatibility.",
+);
+if (supportedGenericLegacyAdditional.inspection.status === "valid") {
+  assert.equal(
+    supportedGenericLegacyAdditional.inspection.fabricAllocations[0]
+      ?.garmentAssignments[0]?.sourceRole,
+    "additional",
+  );
+}
+
+assertReservedOccurrenceRejected(
+  "final legacy promotion validation must reject a contradictory generic code",
+  {
+    garmentKey: "custom-detail:additional_physical_garment:shirt",
+    code: "CUSTOM_DETAIL_ADDITIONAL_GARMENT_KAFTAN",
+    garmentType: "shirt",
+    fabricUnits: 1,
+    garmentSpec: {
+      key: "custom-detail:additional_physical_garment:shirt",
+      garmentType: "shirt",
+      fabricUnits: 1,
+    },
+  },
+);
+const historicalRevision342Draft = JSON.parse(
+  JSON.stringify(
+    makeGuestDraft({
+      selectedFabricCode: "ODG-009",
+      designSource: revision342CatalogSource,
+      confirmedDesignSourceKey: revision342CatalogSource.sourceKey,
+      fabricAllocations: revision342Fixture.legacyFabricAllocations,
+    }),
+  ),
+) as GuestDesignDraft;
+const historicalRevision342Inspection = inspectDraftFabricAllocations(
+  historicalRevision342Draft,
+);
+assert.equal(historicalRevision342Inspection.status, "valid");
+const historicalRevision342Hydration = resolveDraftHydrationAllocations(
+  historicalRevision342Draft,
+);
+assert.equal(historicalRevision342Hydration.status, "valid");
+assert.equal(historicalRevision342Hydration.fabricAllocations.length, 3);
+assert.equal(
+  historicalRevision342Hydration.fabricAllocations.flatMap(
+    (allocation) => allocation.garmentAssignments,
+  ).length,
+  6,
+);
+assert.deepEqual(
+  historicalRevision342Hydration.fabricAllocations.map(
+    (allocation) => allocation.allocationId,
+  ),
+  ["ODG-009-1", "ODG-010-1", "ODG-012-1"],
+);
+assert.deepEqual(
+  historicalRevision342Hydration.fabricAllocations.flatMap((allocation) =>
+    allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+  ),
+  revision342Fixture.legacyFabricAllocations.flatMap((allocation) =>
+    allocation.garmentAssignments.map((assignment) => assignment.garmentKey),
+  ),
+);
+historicalRevision342Hydration.fabricAllocations
+  .flatMap((allocation) => allocation.garmentAssignments)
+  .filter((assignment) => assignment.sourceRole === "additional")
+  .forEach((assignment) => {
+    assert.equal(assignment.eligibilityRule, "catalog_all");
+    assert.equal(assignment.dependencyStatus, "valid");
+    assert.equal(assignment.mainGarmentKey, undefined);
+    assert.equal(assignment.mainGarmentType, undefined);
+  });
+historicalRevision342Hydration.fabricAllocations.forEach((allocation) => {
+  const capacity = FabricCapacityEngine.resolveFabricAllocation(allocation);
+  assert.equal(
+    capacity.status,
+    "resolved",
+    `Restored ${allocation.allocationId} must retain valid Fabric capacity`,
+  );
+});
+
+// Revision-342 bare additional assignments are readable only when the draft
+// establishes verified catalogue lineage. A selected style id by itself must
+// not widen the historical fallback to an uploaded or otherwise unproven draft.
+const sourceLessRevision342Shape = makeGuestDraft({
+  selectedFabricCode: "ODG-009",
+  fabricAllocations: revision342Fixture.legacyFabricAllocations,
+});
+const sourceLessRevision342Inspection = inspectDraftFabricAllocations(
+  sourceLessRevision342Shape,
+);
+assert.equal(sourceLessRevision342Inspection.status, "invalid");
+if (sourceLessRevision342Inspection.status === "invalid") {
+  assert.deepEqual(
+    sourceLessRevision342Inspection.rawFabricAllocations,
+    revision342Fixture.legacyFabricAllocations,
+  );
+}
+
+const unprovenUploadedOccurrence: PhysicalGarmentOccurrence = {
+  garmentKey: "additional:shirt:1",
+  garmentType: "shirt",
+  sourceRole: "additional",
+  fabricUnits: 1,
+};
+const [unprovenUploadedAdditionalRequirement] =
+  physicalOccurrencesToFabricRequirements([unprovenUploadedOccurrence]);
+assert.ok(unprovenUploadedAdditionalRequirement);
+assert.equal(unprovenUploadedAdditionalRequirement.garmentSpec, undefined);
+assert.equal(unprovenUploadedAdditionalRequirement.eligibilityRule, undefined);
+assert.equal(unprovenUploadedAdditionalRequirement.dependencyStatus, undefined);
+const invalidNonEmptyFabricAllocations: FabricAllocation[] = [
+  {
+    allocationId: "invalid-additional-1",
+    fabricCode: "ODG-INVALID",
+    garmentAssignments: [unprovenUploadedAdditionalRequirement],
+  },
+];
+const uploadedSource = createUploadedDesignSource({
+  uploadReference: {
+    designReferenceId: "persistence-fixture-upload",
+    ownerUid: "fixture-owner",
+    storagePath:
+      "customer-design-drafts/fixture-owner/persistence-fixture-upload/original.jpg",
+    mimeType: "image/jpeg",
+    createdAt: "2026-09-08T08:00:00.000Z",
+  },
+  fabricCapacityComposition: [
+    {
+      key: "additional:shirt:1",
+      garmentType: "shirt",
+      fabricUnits: 1,
+    },
+  ],
+  demographic: "male",
+  displayLabel: "Persistence Fixture Upload",
+});
+const invalidNonEmptyDraft = makeGuestDraft({
+  designSource: uploadedSource,
+  selectedStyleId: null,
+  fabricAllocations: invalidNonEmptyFabricAllocations,
+});
+const invalidNonEmptyInspection = inspectDraftFabricAllocations(
+  invalidNonEmptyDraft,
+);
+assert.equal(invalidNonEmptyInspection.status, "invalid");
+if (invalidNonEmptyInspection.status === "invalid") {
+  assert.equal(invalidNonEmptyInspection.diagnostic.field, "fabricAllocations");
+  assert.equal(invalidNonEmptyInspection.diagnostic.rawAllocationCount, 1);
+  assert.equal(invalidNonEmptyInspection.diagnostic.allocationIndex, 0);
+  assert.equal(invalidNonEmptyInspection.diagnostic.assignmentIndex, 0);
+  assert.deepEqual(
+    invalidNonEmptyInspection.rawFabricAllocations,
+    invalidNonEmptyFabricAllocations,
+    "invalid modern data must remain available to a hydration blocker rather than becoming a valid empty array",
+  );
+}
+const invalidNonEmptyHydration = resolveDraftHydrationAllocations(
+  invalidNonEmptyDraft,
+);
+assert.equal(invalidNonEmptyHydration.status, "invalid");
+if (invalidNonEmptyHydration.status === "invalid") {
+  assert.deepEqual(
+    invalidNonEmptyHydration.rawFabricAllocations,
+    invalidNonEmptyFabricAllocations,
+  );
+}
+const invalidGeneratedAutosave = resolveDraftAutosaveFabricAllocations({
+  preservedInvalidHydratedFabricAllocations: null,
+  hasUnresolvedHydratedFabricIntegrity: false,
+  generatedFabricAllocations: invalidNonEmptyFabricAllocations,
+});
+assert.equal(invalidGeneratedAutosave.blockedByInvalidGeneratedAllocations, true);
+assert.equal(invalidGeneratedAutosave.fabricAllocations, undefined);
+
+const trueEmptyHydration = resolveDraftHydrationAllocations(
+  makeGuestDraft({ fabricAllocations: [] }),
+);
+assert.equal(trueEmptyHydration.status, "valid");
+assert.equal(trueEmptyHydration.hasValidModernAllocations, true);
+assert.deepEqual(trueEmptyHydration.fabricAllocations, []);
 
 console.log("PASS: stage 4 fabric allocation persistence and normalization");

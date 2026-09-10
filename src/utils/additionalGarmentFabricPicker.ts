@@ -17,7 +17,6 @@ import {
 export { isFabricAvailableForCustomerSelection } from "./fabricCatalogueAvailability";
 
 export type AdditionalGarmentFabricTransactionPhase =
-  | "choice"
   | "catalogue"
   | "custom_details_choice"
   | "assigning"
@@ -27,7 +26,7 @@ export type AdditionalGarmentFabricTransactionPhase =
 export type AdditionalGarmentFabricTransaction = {
   transactionId: number;
   phase: AdditionalGarmentFabricTransactionPhase;
-  origin: "new_addition" | "change_existing";
+  origin: "new_addition" | "change_existing" | "repair_missing";
   garmentKey: string;
   garmentType: CanonicalPhysicalGarmentType;
   occurrenceGeneration?: number;
@@ -37,6 +36,27 @@ export type AdditionalGarmentFabricTransaction = {
   construction?: GarmentConstructionPricingResolution;
   copyFromParentGarmentKey?: string;
   constructionAppliedForTransactionId?: number;
+  /**
+   * A Step 3 design-reuse request returns to its still-open mapping dialog once
+   * Fabric and the authoritative additional occurrence have been committed.
+   */
+  designStyleReuse?: {
+    styleId: string;
+  };
+  /**
+   * An explicitly selected, still-valid spare slot in an existing physical
+   * Fabric allocation. This is intentionally distinct from the normal
+   * additional-garment catalogue flow: it must reuse this allocation without
+   * creating a new Fabric purchase or opening the catalogue.
+   */
+  capacityReuse?: {
+    allocationId: string;
+    fabricCode: string;
+    remainingUnits: number;
+    assignedGarmentKeys: readonly string[];
+    offerSignature: string;
+    returnStage: "fabric" | "custom_details";
+  };
   /** True when the Step 4 fabric dialog was opened for this transaction. */
   openedModal?: boolean;
 };
@@ -338,6 +358,15 @@ export const isAdditionalGarmentFabricTransactionTargetValid = ({
     return (
       matching.length === 1 &&
       matching[0].assignment.sourceRole === "additional" &&
+      fabricAllocationState.pendingFabricGarment?.garmentKey !==
+        transaction.garmentKey
+    );
+  }
+  if (transaction.origin === "repair_missing") {
+    return (
+      (matching.length === 0 ||
+        (matching.length === 1 &&
+          matching[0].assignment.sourceRole === "additional")) &&
       fabricAllocationState.pendingFabricGarment?.garmentKey !==
         transaction.garmentKey
     );

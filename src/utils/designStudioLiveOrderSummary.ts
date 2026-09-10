@@ -53,6 +53,8 @@ export interface LiveOrderSummaryLine {
   readonly id: string;
   readonly label: string;
   readonly detail: string | null;
+  /** A second customer-facing status line, used when the primary detail is construction. */
+  readonly supportingDetail?: string | null;
   readonly amountLabel: string | null;
 }
 
@@ -62,6 +64,19 @@ export interface LiveOrderSummarySectionFooter {
   readonly amountLabel: string;
   readonly amountCents: number;
   readonly note: string;
+}
+
+export interface LiveOrderSummarySubsection {
+  readonly id: "additional_garments" | "additional_garment_fabrics";
+  readonly title: string;
+  /** Only the additional-garments subsection is an edit destination. */
+  readonly editStage?: "custom_details";
+  /**
+   * The exact Step 4 occurrence to bring into view when Fabric is missing.
+   * A null target means focus the Additional Garment management section.
+   */
+  readonly focusGarmentKey?: string | null;
+  readonly lines: readonly LiveOrderSummaryLine[];
 }
 
 export interface LiveOrderSummarySection {
@@ -83,7 +98,10 @@ export interface LiveOrderSummarySection {
     | "measurement"
     | "shipping"
     | null;
+  /** Visible copy remains EDIT while the accessible name can be ownership-specific. */
+  readonly editLabel?: string;
   readonly lines: readonly LiveOrderSummaryLine[];
+  readonly subsections?: readonly LiveOrderSummarySubsection[];
   readonly footer?: LiveOrderSummarySectionFooter | null;
 }
 
@@ -317,7 +335,7 @@ export const projectDesignStudioLiveOrderSummary = ({
   candidatePricing,
   fabricAllocationState: _fabricAllocationState,
   measurementState,
-  designSource,
+  designSource: _designSource,
   additionalConstructionState: _additionalConstructionState = null,
   catalogInspection: _catalogInspection = null,
   showAdditionalClothesCosts,
@@ -348,53 +366,77 @@ export const projectDesignStudioLiveOrderSummary = ({
     })),
   );
 
-  const fabricLines: LiveOrderSummaryLine[] = summary.garmentSummary.flatMap(
-    (garment) => {
-      const fabric = assignedFabric.get(garment.garmentKey);
-      if (!fabric) return [];
-      return [
-        {
-          id: `fabric-${garment.garmentKey}`,
-          label: garmentLabels.get(garment.garmentKey) || garment.label,
-          detail: fabric.name,
-          amountLabel: null,
-        },
-      ];
-    },
+  const fabricLineFor = (
+    garment: (typeof summary.garmentSummary)[number],
+    includeMissingFabric: boolean,
+  ): LiveOrderSummaryLine | null => {
+    const fabric = assignedFabric.get(garment.garmentKey);
+    if (!fabric && !includeMissingFabric) return null;
+    return {
+      id: `fabric-${garment.garmentKey}`,
+      label: garmentLabels.get(garment.garmentKey) || garment.label,
+      detail: fabric?.name || "Needs fabric",
+      amountLabel: null,
+    };
+  };
+  const baseFabricLines = committedLines(
+    summary.garmentSummary.flatMap((garment) =>
+      garment.role === "additional"
+        ? []
+        : [fabricLineFor(garment, false)].filter(
+            (line): line is LiveOrderSummaryLine => line !== null,
+          ),
+    ),
+  );
+  const additionalFabricLines = committedLines(
+    summary.garmentSummary.flatMap((garment) =>
+      garment.role === "additional"
+        ? [fabricLineFor(garment, true)].filter(
+            (line): line is LiveOrderSummaryLine => line !== null,
+          )
+        : [],
+    ),
   );
 
   const designStyleLines = committedLines(
-    summary.designStyleSummary
-      ? [
-          {
-            id: summary.designStyleSummary.styleId,
-            label: summary.designStyleSummary.name,
-            detail: summary.designStyleSummary.compositionLabel,
-            amountLabel: null,
-          },
-        ]
-      : designSource?.kind === "uploaded"
-        ? [
-            {
-              id: designSource.sourceKey,
-              label: LIVE_ORDER_SUMMARY_OWN_DESIGN_TITLE,
-              detail: LIVE_ORDER_SUMMARY_OWN_DESIGN_DETAIL,
-              amountLabel: null,
-            },
-          ]
-        : [],
+    (summary.designStyleOccurrences || []).map((occurrence, index) => ({
+      id: `design-style-${index}`,
+      label: occurrence.occurrenceLabel,
+      detail: `${occurrence.name}${occurrence.detail ? ` — ${occurrence.detail}` : ""}`,
+      amountLabel: null,
+    })),
   );
 
-  const constructionLines = committedLines(
-    summary.garmentSummary.map((garment) => ({
+  const constructionLineFor = (
+    garment: (typeof summary.garmentSummary)[number],
+    includeFabricStatus: boolean,
+  ): LiveOrderSummaryLine => {
+    const fabric = assignedFabric.get(garment.garmentKey);
+    return {
       id: `construction-${garment.garmentKey}`,
       label: garmentLabels.get(garment.garmentKey) || garment.label,
       detail: constructionLabel(summary, garment.garmentKey),
+      supportingDetail: includeFabricStatus
+        ? `Fabric: ${fabric?.name || "Needs fabric"}`
+        : null,
       amountLabel:
         garment.constructionTotalCents === null
           ? null
           : moneyFromCents(garment.constructionTotalCents),
-    })),
+    };
+  };
+  const baseConstructionLines = committedLines(
+    summary.garmentSummary
+      .filter((garment) => garment.role !== "additional")
+      .map((garment) => constructionLineFor(garment, false)),
+  );
+  const additionalConstructionLines = committedLines(
+    summary.garmentSummary
+      .filter((garment) => garment.role === "additional")
+      .map((garment) => constructionLineFor(garment, true)),
+  );
+  const additionalGarments = summary.garmentSummary.filter(
+    (garment) => garment.role === "additional",
   );
 
   const extraLines: LiveOrderSummaryLine[] = [];
@@ -447,9 +489,35 @@ export const projectDesignStudioLiveOrderSummary = ({
           amountCents: constructionSubtotalCents,
           note: LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
         };
-  const visibleConstructionLines = constructionLines.filter(
+  const visibleBaseConstructionLines = baseConstructionLines.filter(
     (line) => line.amountLabel || line.detail,
   );
+  const visibleAdditionalConstructionLines = additionalConstructionLines.filter(
+    (line) => line.amountLabel || line.detail || line.supportingDetail,
+  );
+  const firstAdditionalMissingFabric = summary.garmentSummary.find(
+    (garment) =>
+      garment.role === "additional" &&
+      !assignedFabric.has(garment.garmentKey),
+  );
+  const additionalGarmentSubsection: LiveOrderSummarySubsection | null =
+    additionalGarments.length === 0
+      ? null
+      : {
+          id: "additional_garments",
+          title: "Additional Garments",
+          editStage: "custom_details",
+          focusGarmentKey: firstAdditionalMissingFabric?.garmentKey || null,
+          lines: visibleAdditionalConstructionLines,
+        };
+  const additionalGarmentFabricSubsection: LiveOrderSummarySubsection | null =
+    additionalGarments.length === 0
+      ? null
+      : {
+          id: "additional_garment_fabrics",
+          title: "Additional Garment Fabrics",
+          lines: additionalFabricLines,
+        };
 
   const total = resolveTotal({
     summary,
@@ -462,7 +530,11 @@ export const projectDesignStudioLiveOrderSummary = ({
       id: "construction",
       title: "Garment Construction",
       editStage: "garment_type",
-      lines: visibleConstructionLines,
+      editLabel: "Edit base garments",
+      lines: visibleBaseConstructionLines,
+      ...(additionalGarmentSubsection
+        ? { subsections: [additionalGarmentSubsection] }
+        : {}),
       footer: constructionFooter,
     },
     {
@@ -481,13 +553,19 @@ export const projectDesignStudioLiveOrderSummary = ({
       id: "garments",
       title: "Garments",
       editStage: "garment_type",
-      lines: constructionLines.length > 0 ? [] : garmentLines,
+      lines:
+        baseConstructionLines.length + additionalConstructionLines.length > 0
+          ? []
+          : garmentLines,
     },
     {
       id: "fabrics",
       title: "Fabrics",
       editStage: "fabric",
-      lines: fabricLines,
+      lines: baseFabricLines,
+      ...(additionalGarmentFabricSubsection
+        ? { subsections: [additionalGarmentFabricSubsection] }
+        : {}),
     },
     {
       id: "design_style",
@@ -509,7 +587,10 @@ export const projectDesignStudioLiveOrderSummary = ({
     },
   ];
   const sections = allSections.filter(
-    (section) => section.lines.length > 0 || Boolean(section.footer),
+    (section) =>
+      section.lines.length > 0 ||
+      Boolean(section.subsections?.length) ||
+      Boolean(section.footer),
   );
 
   return {

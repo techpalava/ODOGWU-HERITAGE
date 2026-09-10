@@ -55,7 +55,7 @@ assert.equal(shirt?.status, "resolved");
 assert.equal(kaftan?.status, "resolved");
 if (shirt?.status === "resolved" && kaftan?.status === "resolved") {
   assert.equal(shirt.components[0].optionId, "shirt_std_short");
-  assert.equal(kaftan.components[0].optionId, "shirt_long_short");
+  assert.equal(kaftan.components[0].optionId, "shirt_long_midlong");
   assert.notEqual(shirt.components[0].componentKey, kaftan.components[0].componentKey);
   assert.match(shirt.components[0].componentKey, /^shirt:/);
   assert.match(kaftan.components[0].componentKey, /^kaftan:/);

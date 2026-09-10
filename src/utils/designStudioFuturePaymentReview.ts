@@ -7,6 +7,7 @@ import {
   type FutureOrderCandidateGarmentV1,
   type FutureOrderCandidatePricingV1,
   type FutureOrderCandidateV1,
+  type FutureOrderCandidateV2,
 } from "./futureOrderCandidate";
 import {
   fromCanonicalCentimetres,
@@ -17,6 +18,76 @@ export const FUTURE_PAYMENT_UNAVAILABLE_MESSAGE =
   "Online payment is not available yet.";
 export const FUTURE_ORDER_NOT_SUBMITTED_MESSAGE =
   "Your order has not been submitted or charged.";
+export const FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE =
+  "This reviewed order cannot proceed to payment until V2 order persistence is established.";
+export const FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING_MESSAGE =
+  "Your order has been prepared. Payment activation is still unavailable.";
+export const FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE =
+  "Your prepared order is ready for payment authorization.";
+
+export type FuturePaymentReviewCandidate =
+  | FutureOrderCandidateV1
+  | FutureOrderCandidateV2;
+
+export type FutureOrderV2PreparationPresentation =
+  | { readonly status: "review_required" }
+  | { readonly status: "preparing" }
+  | { readonly status: "authentication_required"; readonly message: string }
+  | { readonly status: "error"; readonly message: string }
+  | {
+      readonly status: "prepared";
+      readonly cartItemId: string;
+      readonly orderId: string;
+    };
+
+export type FutureOrderV2PaymentPresentation =
+  | { readonly status: "not_ready" }
+  | { readonly status: "ready" }
+  | { readonly status: "processing"; readonly paymentReference: string }
+  | { readonly status: "failed"; readonly paymentReference: string; readonly message: string }
+  | {
+      readonly status: "authorized";
+      readonly paymentReference: string;
+      readonly providerTransactionReference: string;
+    };
+
+export interface FutureOrderV2PaymentReviewHandoff {
+  readonly status: "reviewable";
+  readonly candidate: FutureOrderCandidateV2;
+  readonly blockers: readonly FutureOrderCandidateBlocker[];
+  readonly preparation: FutureOrderV2PreparationPresentation;
+  readonly payment: FutureOrderV2PaymentPresentation;
+}
+
+export type FuturePaymentReviewResult =
+  | FutureOrderCandidateBuildResult
+  | FutureOrderV2PaymentReviewHandoff;
+
+export const createFutureOrderV2PaymentReviewHandoff = (
+  candidate: FutureOrderCandidateV2,
+  preparation: FutureOrderV2PreparationPresentation = {
+    status: "review_required",
+  },
+  payment: FutureOrderV2PaymentPresentation =
+    preparation.status === "prepared"
+      ? { status: "ready" }
+      : { status: "not_ready" },
+): FutureOrderV2PaymentReviewHandoff => ({
+  status: "reviewable",
+  candidate,
+  preparation,
+  payment,
+  blockers:
+    preparation.status === "prepared"
+      ? []
+      : [
+          {
+            code: "FUTURE_ORDER_V2_PERSISTENCE_PENDING",
+            stage: "payment",
+            message: FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
+          },
+        ],
+});
 
 export interface FuturePaymentReviewGarment {
   readonly garment: FutureOrderCandidateGarmentV1;
@@ -46,8 +117,11 @@ export interface FuturePaymentReviewPricingRow {
     | "post_eindhoven";
   readonly label: string;
   readonly amountCents: number | null;
-  readonly valueLabel?: string;
+  readonly presentation: "amount" | "supporting_note";
 }
+
+export const FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE =
+  "Fabric, tax, Lagos-to-Eindhoven shipping, and sewing included.";
 
 const humanizeIdentifier = (value: string): string =>
   value
@@ -55,20 +129,23 @@ const humanizeIdentifier = (value: string): string =>
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 export const isFuturePaymentReviewStageUnlocked = (
-  result: FutureOrderCandidateBuildResult,
+  result: FuturePaymentReviewResult,
 ): boolean =>
   result.status === "reviewable" &&
   result.candidate?.contentStatus === "reviewable";
 
 export const getFuturePaymentReviewContentBlockers = (
-  result: FutureOrderCandidateBuildResult,
+  result: FuturePaymentReviewResult,
 ): readonly FutureOrderCandidateBlocker[] =>
   result.blockers.filter(
-    (blocker) => blocker.code !== "PAYMENT_PROVIDER_UNAVAILABLE",
+    (blocker) =>
+      blocker.code !== "PAYMENT_PROVIDER_UNAVAILABLE" &&
+      blocker.code !== "FUTURE_ORDER_V2_PERSISTENCE_PENDING" &&
+      blocker.code !== "FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING",
   );
 
 export const getFuturePaymentReviewContentStatusLabel = (
-  candidate: FutureOrderCandidateV1,
+  candidate: FuturePaymentReviewCandidate,
 ): "Ready to review" | "Needs attention" | "Review unavailable" =>
   candidate.contentStatus === "reviewable"
     ? "Ready to review"
@@ -96,7 +173,7 @@ export const getFuturePaymentReviewEditLabel = (
   })[stage];
 
 export const getFuturePaymentReviewGarments = (
-  candidate: FutureOrderCandidateV1,
+  candidate: FuturePaymentReviewCandidate,
 ): readonly FuturePaymentReviewGarment[] =>
   candidate.garments.map((garment) => ({
     garment,
@@ -153,7 +230,7 @@ const mergeMeasurements = ({
 };
 
 export const getFuturePaymentReviewMeasurementGroups = (
-  candidate: FutureOrderCandidateV1,
+  candidate: FuturePaymentReviewCandidate,
 ): readonly FuturePaymentReviewMeasurementGroup[] => {
   const state = candidate.measurements;
   const garmentLabels = new Map(
@@ -192,7 +269,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
 };
 
 export const getFuturePaymentReviewAiStatusLabel = (
-  candidate: FutureOrderCandidateV1,
+  candidate: FuturePaymentReviewCandidate,
 ): "Completed" | "Skipped" | "Unavailable" | "Needs attention" => {
   if (candidate.aiTryOn.status === "completed") return "Completed";
   if (candidate.aiTryOn.status === "skipped") return "Skipped";
@@ -201,7 +278,7 @@ export const getFuturePaymentReviewAiStatusLabel = (
 };
 
 export const getFuturePaymentReviewShippingStatusLabel = (
-  candidate: FutureOrderCandidateV1,
+  candidate: FuturePaymentReviewCandidate,
 ): string =>
   ({
     quote_ready: "Delivery ready",
@@ -221,22 +298,25 @@ export const getFuturePaymentReviewPricingRows = (
       id: "garment_construction",
       label: "Garment Construction Subtotal",
       amountCents: pricing.garmentConstructionSubtotalCents,
+      presentation: "amount",
     },
     {
       id: "included_components",
-      label: "Fabric, tax, Lagos-to-Eindhoven shipping, and sewing",
+      label: FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE,
       amountCents: null,
-      valueLabel: "Included in Garment Construction",
+      presentation: "supporting_note",
     },
     {
       id: "custom_details",
-      label: "Custom Details",
+      label: "Custom Details Subtotal",
       amountCents: pricing.customDetailsCents,
+      presentation: "amount",
     },
     {
       id: "post_eindhoven",
       label: "Additional Delivery",
       amountCents: pricing.postEindhovenAdjustmentCents,
+      presentation: "amount",
     },
   ];
   return rows;

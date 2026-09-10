@@ -23,35 +23,37 @@ import type {
   FabricGarmentType,
 } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
+import { resolveLockedGarmentConstructionBridge } from "./src/utils/garmentConstructionCustomDetails";
 
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const expectedGarmentLabels = [
   "Standard Shirt",
+  "Long Shirt (Kaftan)",
+  "Standard Dress",
+  "Long Dress (Gown)",
+  "Standard Nikka Shorts",
+  "Standard Bum Shorts",
   "Trouser",
   "Standard Skirt",
-  "Standard Shorts (Nikka)",
-  "Bum Shorts",
-  "Standard Dress",
-  "Long Shirt (Kaftan)",
-  "Long Dress (Gown)",
 ];
 const hiddenStep1GarmentLabels = ["Long Shirt (Agbada)"];
+const approvedGarmentIds = [
+  "shirt", "kaftan", "dress", "full_length_gown",
+  "standard_shorts", "bum_shorts", "trouser", "skirt",
+] as const;
+const approvedPrices = [65, 75, 70, 80, 70, 70, 75, 75];
+assert.deepEqual(STEP_1_SELECTABLE_GARMENT_TYPES, approvedGarmentIds);
 
 const renderStep = ({
   selectedGarmentTypes = [],
   selectedDemographics = [],
   selectedFabricQuantity,
   normalizedCustomDetailCatalog = catalog,
-  catalogueCoverageMessage = null,
 }: {
   selectedGarmentTypes?: readonly FabricGarmentType[];
   selectedDemographics?: readonly CustomDetailDemographic[];
   selectedFabricQuantity?: number;
   normalizedCustomDetailCatalog?: readonly CustomDetailOption[];
-  catalogueCoverageMessage?: {
-    headline: string;
-    detail: string;
-  } | null;
 } = {}) =>
   renderToStaticMarkup(
     createElement(GarmentTypeStep, {
@@ -59,7 +61,6 @@ const renderStep = ({
       selectedDemographics,
       selectedFabricQuantity,
       normalizedCustomDetailCatalog,
-      catalogueCoverageMessage,
       onGarmentTypesChange: () => undefined,
       onDemographicsChange: () => undefined,
       onConstructionDefaultsChange: () => undefined,
@@ -74,6 +75,10 @@ assert.equal(emptyPresentation.selectedGarmentTypes.length, 0);
 assert.equal(emptyPresentation.constructionPricing.length, 0);
 assert.equal(emptyPresentation.constructionSubtotalCents, 0);
 assert.equal(emptyPresentation.customerFacingCapacityAmount, "0");
+assert.equal(emptyPresentation.categories.length, 8);
+assert.deepEqual(emptyPresentation.categories.map((item) => item.garmentType), approvedGarmentIds);
+assert.deepEqual(emptyPresentation.categories.map((item) => item.label), expectedGarmentLabels);
+assert.deepEqual(emptyPresentation.categories.map((item) => item.fabricUnits), [1, 1, 1, 2, 1, 1, 1, 1]);
 
 for (const demographic of ["male", "female", "unisex"] as const) {
   const markup = renderStep({ selectedDemographics: [demographic] });
@@ -92,13 +97,13 @@ assert.deepEqual(
   expectedGarmentLabels,
   [
     "shirt",
-    "trouser",
-    "skirt",
+    "kaftan",
+    "dress",
+    "full_length_gown",
     "standard_shorts",
     "bum_shorts",
-    "dress",
-    "kaftan",
-    "full_length_gown",
+    "trouser",
+    "skirt",
   ].map((garmentType) =>
     getGarmentTypeStepLabel(
       garmentType as Exclude<FabricGarmentType, "other">,
@@ -175,8 +180,8 @@ const kaftanPricing = kaftanPresentation.constructionPricing.find(
 );
 assert.equal(kaftanPricing?.status, "resolved");
 if (kaftanPricing?.status === "resolved") {
-  assert.equal(kaftanPricing.totalPriceCents, 7000);
-  assert.equal(kaftanPricing.components[0].optionId, "shirt_long_short");
+  assert.equal(kaftanPricing.totalPriceCents, 7500);
+  assert.equal(kaftanPricing.components[0].optionId, "shirt_long_midlong");
 }
 assert.equal(
   kaftanPresentation.categories.find((category) => category.garmentType === "kaftan")
@@ -264,7 +269,7 @@ const kaftanPlusShirtPresentation = getGarmentTypeStepPresentation({
 });
 assert.equal(
   kaftanPlusShirtPresentation.constructionSubtotalCents,
-  7000 + 6500,
+  7500 + 6500,
   "Kaftan must contribute exactly once to the construction subtotal",
 );
 
@@ -366,24 +371,21 @@ assert.ok(populatedMarkup.includes("Fabric, tax, shipping, and other selected op
 assert.equal(/uploaded design complete|design source/i.test(populatedMarkup), false);
 assert.ok(
   populatedMarkup.includes(
-    "Step 3 will show all catalogue designs and highlight which ones best match or can be adapted to your order.",
+    "Step 3 will show every published Design Style, and you can map any reference to the exact garments you choose.",
   ),
 );
 
-const coverageWarningMarkup = renderStep({
+const skirtOnlyMarkup = renderStep({
   selectedGarmentTypes: ["skirt"],
   selectedDemographics: ["female"],
-  catalogueCoverageMessage: {
-    headline: "No directly compatible catalogue design found",
-    detail:
-      "You can still continue to Step 3 to browse all designs. Designs that match your order or can be adapted will be selectable. Other designs will remain visible for reference, or you can Upload Your Own Design.",
-  },
 });
-assert.ok(
-  coverageWarningMarkup.includes("No directly compatible catalogue design found"),
+assert.equal(
+  skirtOnlyMarkup.includes("No direct catalogue composition match found"),
+  false,
+  "Step 1 must focus on physical garment selection, without catalogue-composition messaging",
 );
-assert.ok(coverageWarningMarkup.includes("browse all designs"));
-assert.ok(coverageWarningMarkup.includes("Upload Your Own Design"));
+assert.ok(skirtOnlyMarkup.includes("Standard Skirt"));
+assert.ok(skirtOnlyMarkup.includes("Uses 1/2 fabric capacity unit."));
 
 const allEightStep1Markup = renderStep({
   selectedGarmentTypes: [...STEP_1_SELECTABLE_GARMENT_TYPES],
@@ -437,7 +439,7 @@ assert.deepEqual(
   shirtTrouserDressPresentation.categories
     .filter((category) => category.selected)
     .map((category) => category.garmentType),
-  ["shirt", "trouser", "dress"],
+  ["shirt", "dress", "trouser"],
 );
 assert.equal(shirtTrouserDressPresentation.constructionSubtotalCents, 21000);
 assert.equal(
@@ -469,6 +471,40 @@ const allEightSelection = reconcileGarmentTypeStepSelection({
   selectedDemographics: ["male"],
   normalizedCustomDetailCatalog: catalog,
 }).selection;
+const approvedProjection = resolveLockedGarmentConstructionBridge({
+  mode: "garment_type_locked",
+  garmentTypeSelection: allEightSelection,
+  catalog,
+  selections: {},
+});
+assert.deepEqual(
+  approvedGarmentIds.map((id) => approvedProjection.readOnlyConstructionRows.find((row) => row.garmentType === id)?.price),
+  approvedPrices,
+  "Downstream construction projection must receive every approved catalogue price",
+);
+assert.equal(approvedProjection.readOnlyConstructionRows.reduce((sum, row) => sum + row.priceCents, 0), 58000);
+for (const [garmentType, optionId] of [
+  ["kaftan", "shirt_long_midlong"],
+  ["full_length_gown", "dress_long_midlong"],
+  ["dress", "dress_std_sleeveless"],
+] as const) {
+  assert.deepEqual(
+    approvedProjection.readOnlyConstructionRows.find((row) => row.garmentType === garmentType)
+      ?.components.map((component) => component.optionId),
+    [optionId],
+    `${garmentType} must preserve its Step 1 construction in Custom Details`,
+  );
+}
+assert.deepEqual(allEightSelection.garmentTypes, [
+  "shirt", "trouser", "skirt", "standard_shorts", "bum_shorts", "dress", "kaftan", "full_length_gown",
+], "Display reordering must preserve canonical selection identity and ordering");
+const renderedCards = [...allEightStep1Markup.matchAll(/<article[^>]+data-testid="step1-garment-card-([^"]+)"[^>]*>([\s\S]*?)<\/article>/g)];
+assert.deepEqual(renderedCards.map((match) => match[1]), approvedGarmentIds);
+renderedCards.forEach((match, index) => {
+  assert.ok(match[2].includes(expectedGarmentLabels[index]));
+  assert.ok(match[2].includes(`€${approvedPrices[index].toFixed(2)}`));
+  assert.equal(/With Rope|LONG SLEEVES|crotch|upper-thigh/.test(match[2]), false);
+});
 const additionalOnlyFabricState = {
   fabricAllocations: [
     {

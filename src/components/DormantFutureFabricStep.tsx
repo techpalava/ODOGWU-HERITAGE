@@ -142,7 +142,7 @@ const OTHER_ADDITIONAL_GARMENT_PENDING_MESSAGE =
   "Finish assigning fabric to the pending additional garment before removing fabric from another additional garment.";
 
 const STEP2_FABRIC_CAPACITY_INTRO =
-  "One Fabric makes two standard garments. A Long Dress (Gown) uses one full Fabric. We'll group your garments so you use the correct number of Fabrics.";
+  "One Fabric can make up to two standard garments. A Long Dress (Gown) uses one full Fabric. You may reuse available capacity or choose different Fabrics for your garments.";
 
 const UNASSIGNED_FABRIC_NO_CAPACITY_MESSAGE =
   "No selected Fabric has capacity for this garment. Change a Fabric assignment or remove a Fabric selection.";
@@ -167,7 +167,7 @@ const formatFabricSelectionProgress = (
   selectedFabricQuantity: number,
   requiredFabricQuantity: number,
 ): string =>
-  `Fabrics Selected: ${selectedFabricQuantity}/${requiredFabricQuantity}`;
+  `Fabrics Selected: ${selectedFabricQuantity} · Minimum needed: ${requiredFabricQuantity}`;
 
 const formatGarmentAssignmentProgress = (
   assignedGarmentCount: number,
@@ -553,11 +553,19 @@ export const DormantFutureFabricStep = ({
       (!catalogueTargetGarmentKey ||
         catalogueTargetGarmentKey === pendingAdditionalAssignment.garmentKey),
   );
+  // A targeted Additional occurrence is repaired one occurrence at a time.
+  // It must never fall through to the Step 1 bulk catalogue, whose candidate
+  // set deliberately excludes later additional occurrences.
+  const isTargetedAdditionalCatalogueTarget = Boolean(
+    activeCatalogueTarget?.assignment.sourceRole === "additional",
+  );
   const isStep1CatalogueMode =
-    !isChangeFabricTarget && !isPendingAdditionalCatalogueTarget;
+    !isChangeFabricTarget &&
+    !isPendingAdditionalCatalogueTarget &&
+    !isTargetedAdditionalCatalogueTarget;
   const isOverAllocated = isPhysicalFabricQuantityOverAllocated({
     selectedFabricQuantity,
-    requiredFabricQuantity,
+    requiredGarmentCount: completion.requiredGarmentCount,
   });
   const partialAllocationSummaryById = useMemo(
     () =>
@@ -589,9 +597,9 @@ export const DormantFutureFabricStep = ({
     compatiblePartialTargets.some(
       (entry) => entry.compatibleGarmentKeys.length > 1,
     )
-      ? "Complete your selected Fabrics by assigning the remaining garments to available Fabric capacity."
-      : "Complete your selected Fabric by assigning the remaining garment to it.";
-  const fabricSlotsAvailable = selectedFabricQuantity < requiredFabricQuantity;
+      ? "You may reuse available Fabric capacity or choose another Fabric for the remaining garments."
+      : "You may reuse available Fabric capacity or choose another Fabric for the remaining garment.";
+  const fabricSlotsAvailable = selectedFabricQuantity < completion.requiredGarmentCount;
   const resolveUnassignedGarmentFabricAction = (
     garmentKey: string,
   ): "add_fabric" | "assign_to_fabric" | "blocked" => {
@@ -631,8 +639,8 @@ export const DormantFutureFabricStep = ({
     : [];
   const showAllocationLimitCopy =
     !isOverAllocated &&
-    selectedFabricQuantity >= requiredFabricQuantity &&
-    requiredFabricQuantity > 0 &&
+    selectedFabricQuantity >= completion.requiredGarmentCount &&
+    completion.requiredGarmentCount > 0 &&
     (unassignedStep1Targets.length > 0 ||
       unassignedTargets.length > 0 ||
       Boolean(pendingAdditionalAssignment));
@@ -1337,7 +1345,6 @@ export const DormantFutureFabricStep = ({
   const openStep1FabricAssignment = (
     fabric: Fabric,
     trigger?: HTMLElement,
-    originatingGarmentKey: string | null = catalogueTargetGarmentKey,
   ) => {
     const presentation = resolveStep1FabricCatalogueCardPresentation({
       fabricCode: fabric.code,
@@ -1387,18 +1394,9 @@ export const DormantFutureFabricStep = ({
     setVisibleActionError(null);
     setStep1AssignmentError(null);
     closeFabricRemovalChooser(false);
-    const preselectedGarmentKeys =
-      originatingGarmentKey &&
-      candidates.some(
-        (candidate) => candidate.garmentKey === originatingGarmentKey,
-      )
-        ? [originatingGarmentKey]
-        : candidates.length === 1
-          ? [candidates[0]!.garmentKey]
-          : [];
     setPendingStep1FabricAssignment({
       fabricCode: fabric.code,
-      selectedGarmentKeys: preselectedGarmentKeys,
+      selectedGarmentKeys: [],
       displayFabric: createStep1FabricAssignmentDisplaySnapshot(fabric),
     });
   };
@@ -2252,6 +2250,9 @@ export const DormantFutureFabricStep = ({
                             {allocationCapacity.usedUnits}/
                             {allocationCapacity.usedUnits +
                               allocationCapacity.remainingUnits}
+                            {allocationCapacity.remainingUnits > 0
+                              ? ` · ${allocationCapacity.remainingUnits}/2 available`
+                              : ""}
                           </p>
                         ) : null}
                       </>
@@ -2430,7 +2431,7 @@ export const DormantFutureFabricStep = ({
                       )}. Changing it will update both garments.`
                     : changeFabricPresentation
                       ? `Select a replacement Fabric for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}.`
-                      : activeCatalogueTarget && isChangeFabricTarget
+                      : activeCatalogueTarget
                         ? `Select a fabric card to assign it to ${getFutureGarmentLabel(
                             activeCatalogueTarget.assignment.garmentType,
                           )}.`
@@ -2607,6 +2608,7 @@ export const DormantFutureFabricStep = ({
           groupingCapacityStatus={
             step1AssignmentEvaluation.groupingCapacityStatus
           }
+          fabricLevelError={step1AssignmentEvaluation.fabricLevelError}
           selectedCapacityMessage={
             step1AssignmentEvaluation.selectedCapacityMessage
           }

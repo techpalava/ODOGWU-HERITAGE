@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { act, create } from "react-test-renderer";
+import { DormantFutureFabricStep } from "./src/components/DormantFutureFabricStep";
+import { FutureRemainingFabricCapacityOfferCard } from "./src/components/FutureRemainingFabricCapacityOffer";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import type { Fabric, FabricGarmentType } from "./src/types";
@@ -11,6 +15,8 @@ import {
   cancelFutureFabricCatalogueAssignment,
   getFutureFabricAssignmentTargets,
   getFutureFabricCapacityOffer,
+  getFutureRemainingFabricCapacityOffers,
+  getRemainingFabricCapacityOfferSignature,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
   reconcileFutureFabricAllocationState,
@@ -178,6 +184,312 @@ assert.equal(
   }),
   null,
   "A full active allocation must not offer another garment.",
+);
+
+// The restored offer is only for a completed current Fabric stage. It is
+// allocation-scoped and leaves the existing Additional Garment domain to the
+// caller that supplies eligibility.
+const completedHalfCapacityState = assign(
+  FabricAllocationStateEngine.initialize(),
+  ["shirt"],
+  "base:shirt",
+  "FAB-A",
+);
+const completedHalfCapacityCompletion = getFutureFabricStageCompletion({
+  garmentTypeSelection: createSelection(["shirt"]),
+  fabricAllocationState: completedHalfCapacityState,
+  fabrics,
+});
+assert.equal(completedHalfCapacityCompletion.isComplete, true);
+const completedHalfCapacityOffers = getFutureRemainingFabricCapacityOffers({
+  fabricAllocationState: completedHalfCapacityState,
+  fabricStageComplete: completedHalfCapacityCompletion.isComplete,
+  hasEligibleHalfCapacityAdditionalGarment: true,
+});
+assert.equal(completedHalfCapacityOffers.length, 1);
+assert.equal(completedHalfCapacityOffers[0].fabricCode, "FAB-A");
+assert.equal(completedHalfCapacityOffers[0].remainingUnits, 1);
+assert.equal(
+  getFutureRemainingFabricCapacityOffers({
+    fabricAllocationState: completedHalfCapacityState,
+    fabricStageComplete: completedHalfCapacityCompletion.isComplete,
+    hasEligibleHalfCapacityAdditionalGarment: false,
+  }).length,
+  0,
+  "the offer must remain hidden when the existing Additional Garment domain has no eligible half-capacity choice",
+);
+assert.equal(
+  getFutureRemainingFabricCapacityOffers({
+    fabricAllocationState: shared,
+    fabricStageComplete: false,
+    hasEligibleHalfCapacityAdditionalGarment: true,
+  }).length,
+  0,
+  "unassigned current garments must suppress the optional capacity offer",
+);
+assert.equal(
+  getFutureRemainingFabricCapacityOffers({
+    fabricAllocationState: customerCardState,
+    fabricStageComplete: true,
+    hasEligibleHalfCapacityAdditionalGarment: true,
+  }).length,
+  0,
+  "a full two-half allocation must not offer another garment",
+);
+
+const gownCapacityState = assign(
+  FabricAllocationStateEngine.initialize(),
+  ["full_length_gown"],
+  "base:full_length_gown",
+  "FAB-A",
+);
+assert.equal(
+  getFutureRemainingFabricCapacityOffers({
+    fabricAllocationState: gownCapacityState,
+    fabricStageComplete:
+      getFutureFabricStageCompletion({
+        garmentTypeSelection: createSelection(["full_length_gown"]),
+        fabricAllocationState: gownCapacityState,
+        fabrics,
+      }).isComplete,
+    hasEligibleHalfCapacityAdditionalGarment: true,
+  }).length,
+  0,
+  "a full-capacity Long Dress (Gown) must not create a half-capacity offer",
+);
+
+// Deliberately separate half Fabrics complete the stage and are charged once each.
+const twoGarmentSelection = createSelection(["shirt", "trouser"]);
+const firstHalfState = assign(FabricAllocationStateEngine.initialize(), ["shirt", "trouser"], "base:shirt", "FAB-A");
+const firstHalfCompletion = getFutureFabricStageCompletion({ garmentTypeSelection: twoGarmentSelection, fabricAllocationState: firstHalfState, fabrics });
+assert.equal(firstHalfCompletion.isComplete, false);
+assert.deepEqual(getFutureRemainingFabricCapacityOffers({ fabricAllocationState: firstHalfState, fabricStageComplete: firstHalfCompletion.isComplete, hasEligibleHalfCapacityAdditionalGarment: true }), []);
+const separateHalvesState = assign(firstHalfState, ["shirt", "trouser"], "base:trouser", "FAB-B");
+const separateHalvesCompletion = getFutureFabricStageCompletion({ garmentTypeSelection: twoGarmentSelection, fabricAllocationState: separateHalvesState, fabrics });
+assert.equal(separateHalvesCompletion.isComplete, true);
+assert.deepEqual(separateHalvesCompletion.blockers, []);
+assert.equal(separateHalvesState.fabricAllocations.length, 2);
+const separateHalvesPricing = resolveFabricAllocationMaterialPricing(separateHalvesState.fabricAllocations, fabrics);
+assert.equal(separateHalvesPricing.status, "resolved");
+if (separateHalvesPricing.status !== "resolved") throw new Error("Expected material pricing");
+assert.equal(separateHalvesPricing.allocationCount, 2);
+assert.equal(separateHalvesPricing.totalMaterialPrice, 30);
+const combinedCapacityOffers = getFutureRemainingFabricCapacityOffers({ fabricAllocationState: separateHalvesState, fabricStageComplete: separateHalvesCompletion.isComplete, hasEligibleHalfCapacityAdditionalGarment: true });
+assert.deepEqual(combinedCapacityOffers.map((offer) => offer.fabricCode), ["FAB-A", "FAB-B"]);
+const combinedSignature = getRemainingFabricCapacityOfferSignature(combinedCapacityOffers);
+const dismissedSignatures = new Set([combinedSignature]);
+assert.equal(dismissedSignatures.has(getRemainingFabricCapacityOfferSignature([...combinedCapacityOffers].reverse())), true);
+assert.equal(dismissedSignatures.has(getRemainingFabricCapacityOfferSignature(combinedCapacityOffers.slice(1))), false);
+assert.notEqual(combinedSignature, getRemainingFabricCapacityOfferSignature(combinedCapacityOffers.map((offer) => ({ ...offer, fabricCode: "FAB-C" }))));
+assert.equal(getRemainingFabricCapacityOfferSignature([]), "");
+for (const malformedState of [
+  { ...separateHalvesState, fabricAllocations: [...separateHalvesState.fabricAllocations, separateHalvesState.fabricAllocations[0]] },
+  { ...separateHalvesState, fabricAllocations: separateHalvesState.fabricAllocations.map((allocation) => ({ ...allocation, allocationId: "duplicate-id" })) },
+]) {
+  const completion = getFutureFabricStageCompletion({ garmentTypeSelection: twoGarmentSelection, fabricAllocationState: malformedState, fabrics });
+  assert.equal(completion.isComplete, false);
+  assert.ok(completion.blockers.some((blocker) => blocker.code === "MALFORMED_ASSIGNMENT"));
+}
+
+let capacityOfferDismissals = 0;
+let capacityOfferContinues = 0;
+let selectedCapacityOfferGarment: FabricGarmentType | null = null;
+let selectedCapacityOfferAllocationId: string | null = null;
+let capacityOfferRenderer!: ReturnType<typeof create>;
+act(() => {
+  capacityOfferRenderer = create(
+    createElement(FutureRemainingFabricCapacityOfferCard, {
+      offers: combinedCapacityOffers,
+      fabrics,
+      eligibleGarmentTypes: ["trouser"],
+      onAddAdditionalGarment: (garmentType, allocationId) => {
+        selectedCapacityOfferGarment = garmentType;
+        selectedCapacityOfferAllocationId = allocationId;
+      },
+      onContinue: () => {
+        capacityOfferContinues += 1;
+      },
+      onDismiss: () => {
+        capacityOfferDismissals += 1;
+      },
+    }),
+  );
+});
+assert.match(
+  capacityOfferRenderer.toJSON() ? JSON.stringify(capacityOfferRenderer.toJSON()) : "",
+  /UNUSED FABRIC CAPACITY AVAILABLE/,
+);
+assert.equal(capacityOfferRenderer.root.findAllByProps({ role: "dialog" }).length, 1);
+assert.equal(capacityOfferRenderer.root.findAllByType("li").length, 2);
+assert.match(JSON.stringify(capacityOfferRenderer.toJSON()), /Fabric A/);
+assert.match(JSON.stringify(capacityOfferRenderer.toJSON()), /Fabric B/);
+act(() => {
+  capacityOfferRenderer.root
+    .findByProps({ "data-testid": "remaining-fabric-capacity-offer-decline" })
+    .props.onClick();
+});
+assert.equal(capacityOfferContinues, 1);
+act(() => {
+  capacityOfferRenderer.root
+    .findByProps({
+      "data-testid": `remaining-fabric-capacity-offer-accept-${combinedCapacityOffers[0].allocationId}`,
+    })
+    .props.onClick();
+});
+assert.equal(
+  capacityOfferRenderer.root.findAllByProps({
+    "data-testid": "remaining-fabric-capacity-offer-selector",
+  }).length,
+  1,
+  "accepting the Step 2 offer must reveal the Additional Garment selection",
+);
+act(() => {
+  capacityOfferRenderer.root
+    .findByProps({
+      "data-testid": "remaining-fabric-capacity-offer-select-trouser",
+    })
+    .props.onClick();
+});
+assert.equal(selectedCapacityOfferGarment, "trouser");
+assert.equal(
+  selectedCapacityOfferAllocationId,
+  combinedCapacityOffers[0].allocationId,
+  "the selected garment must retain the specific physical Fabric allocation",
+);
+act(() => {
+  capacityOfferRenderer.root
+    .findByProps({ "aria-label": "Dismiss fabric capacity suggestion" })
+    .props.onClick();
+});
+assert.equal(capacityOfferDismissals, 1);
+act(() => capacityOfferRenderer.unmount());
+
+// Physical allocation ordinals must be calculated before partial allocations
+// are filtered. Here Selection 1 is full while Selections 2 and 3 still have
+// one standard-garment slot each.
+const threePhysicalSelections = [
+  "shirt",
+  "trouser",
+  "skirt",
+  "kaftan",
+] satisfies FabricGarmentType[];
+let ordinalState = assign(
+  FabricAllocationStateEngine.initialize(),
+  threePhysicalSelections,
+  "base:shirt",
+  "FAB-A",
+);
+ordinalState = assign(ordinalState, threePhysicalSelections, "base:trouser", "FAB-A");
+ordinalState = assign(ordinalState, threePhysicalSelections, "base:skirt", "FAB-B");
+ordinalState = assign(ordinalState, threePhysicalSelections, "base:kaftan", "FAB-C");
+const ordinalOffers = getFutureRemainingFabricCapacityOffers({
+  fabricAllocationState: ordinalState,
+  fabricStageComplete: true,
+  hasEligibleHalfCapacityAdditionalGarment: true,
+});
+assert.deepEqual(
+  ordinalOffers.map(({ allocationId, selectionOrdinal }) => ({ allocationId, selectionOrdinal })),
+  ordinalState.fabricAllocations.slice(1).map((allocation, index) => ({
+    allocationId: allocation.allocationId,
+    selectionOrdinal: index + 2,
+  })),
+  "Filtered spare offers must retain the full physical Fabric selection ordinal.",
+);
+let ordinalActionAllocationId: string | null = null;
+let ordinalOfferRenderer!: ReturnType<typeof create>;
+act(() => {
+  ordinalOfferRenderer = create(
+    createElement(FutureRemainingFabricCapacityOfferCard, {
+      offers: ordinalOffers,
+      fabrics,
+      eligibleGarmentTypes: ["trouser"],
+      onAddAdditionalGarment: (_garmentType, allocationId) => {
+        ordinalActionAllocationId = allocationId;
+      },
+      onContinue: () => undefined,
+      onDismiss: () => undefined,
+    }),
+  );
+});
+assert.deepEqual(
+  ordinalOfferRenderer.root
+    .findAllByType("li")
+    .map((offer) => offer.findAllByType("p")[1].children.join("")),
+  ["Fabric Selection 2", "Fabric Selection 3"],
+  "The filtered popup must render the authoritative Selection 2 and 3 labels.",
+);
+act(() => {
+  ordinalOfferRenderer.root
+    .findByProps({
+      "data-testid": `remaining-fabric-capacity-offer-accept-${ordinalOffers[1].allocationId}`,
+    })
+    .props.onClick();
+});
+act(() => {
+  ordinalOfferRenderer.root
+    .findByProps({
+      "data-testid": "remaining-fabric-capacity-offer-select-trouser",
+    })
+    .props.onClick();
+});
+assert.equal(
+  ordinalActionAllocationId,
+  ordinalOffers[1].allocationId,
+  "The Selection 3 card action must retain Selection 3's allocation identity.",
+);
+act(() => ordinalOfferRenderer.unmount());
+
+// A completed Step 4 additional-garment Fabric operation uses the same
+// allocation-scoped authority. Only the distinct half-used allocation can
+// trigger the next optional offer.
+const stepFourAdditionalAllocationId = "step4-additional-fabric";
+const stepFourAdditionalPartialState = {
+  ...customerCardState,
+  fabricAllocations: [
+    ...customerCardState.fabricAllocations,
+    {
+      allocationId: stepFourAdditionalAllocationId,
+      fabricCode: "FAB-A",
+      garmentAssignments: [
+        {
+          garmentKey: "additional:trouser:step4",
+          code: "additional:trouser:step4",
+          garmentType: "trouser" as const,
+          fabricUnits: 1 as const,
+          garmentSpec: {
+            key: "additional:trouser:step4",
+            garmentType: "trouser" as const,
+            fabricUnits: 1 as const,
+          },
+          sourceRole: "additional" as const,
+          mainGarmentKey: "base:shirt",
+          mainGarmentType: "shirt" as const,
+          eligibilityRule: "catalog_all" as const,
+          dependencyStatus: "valid" as const,
+        },
+      ],
+    },
+  ],
+};
+const stepFourCapacityOffers = getFutureRemainingFabricCapacityOffers({
+  fabricAllocationState: stepFourAdditionalPartialState,
+  fabricStageComplete: true,
+  hasEligibleHalfCapacityAdditionalGarment: true,
+});
+assert.deepEqual(
+  stepFourCapacityOffers.map((offer) => ({
+    allocationId: offer.allocationId,
+    fabricCode: offer.fabricCode,
+    assignedGarmentKeys: offer.assignedGarmentKeys,
+  })),
+  [
+    {
+      allocationId: stepFourAdditionalAllocationId,
+      fabricCode: "FAB-A",
+      assignedGarmentKeys: ["additional:trouser:step4"],
+    },
+  ],
+  "a Step 4 additional garment can offer only its own remaining Fabric allocation",
 );
 
 let separate = assign(shared, threeRegular, "base:skirt", "FAB-B");
@@ -616,6 +928,145 @@ const additionalAuthorizedOccurrences = buildAuthoritativePhysicalOccurrences({
     },
   },
 });
+
+// Browser regression: all base Step 1 garments can have Fabric while an
+// exact Step 4 Additional occurrence still needs Fabric. The production
+// Fabric-stage wrapper must keep that target out of the Step 1 bulk-card
+// path, where every card would otherwise say ALL GARMENTS HAVE FABRIC.
+let missingAdditionalFabricState = applyFutureFabricCardSelection({
+  state: FabricAllocationStateEngine.initialize(),
+  garmentTypeSelection: additionalFlowSelection,
+  garmentKey: "base:shirt",
+  fabricCode: "FAB-A",
+  fabrics,
+});
+missingAdditionalFabricState = commitSameFabric({
+  state: missingAdditionalFabricState,
+  garmentTypeSelection: additionalFlowSelection,
+  fabricCode: "FAB-A",
+  garmentKeys: ["base:trouser"],
+});
+const repairPickerFabrics = [
+  ...fabrics,
+  createFabric("FAB-OUT", "Out of Stock Fabric", 15, "OUT_OF_STOCK"),
+];
+const missingAdditionalPlanning = getFutureGarmentFabricPlanning({
+  garmentTypeSelection: additionalFlowSelection,
+  fabricAllocationState: missingAdditionalFabricState,
+  requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+});
+assert.equal(
+  getFutureFabricStageCompletion({
+    garmentTypeSelection: additionalFlowSelection,
+    fabricAllocationState: missingAdditionalFabricState,
+    fabrics: repairPickerFabrics,
+    requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+  }).isComplete,
+  false,
+  "The missing exact Additional occurrence must keep completion blocked before repair.",
+);
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+let repairPickerRenderer!: ReturnType<typeof create>;
+act(() => {
+  repairPickerRenderer = create(
+    createElement(DormantFutureFabricStep, {
+      fabrics: repairPickerFabrics,
+      garmentTypeSelection: additionalFlowSelection,
+      fabricAllocationState: missingAdditionalFabricState,
+      completion: getFutureFabricStageCompletion({
+        garmentTypeSelection: additionalFlowSelection,
+        fabricAllocationState: missingAdditionalFabricState,
+        fabrics: repairPickerFabrics,
+        requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+      }),
+      requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+      requiredFabricQuantity: missingAdditionalPlanning.requiredFabricQuantity,
+      selectedFabricQuantity: missingAdditionalPlanning.selectedFabricQuantity,
+      constructionPrice: 0,
+      onAssignFabricToGarment: (fabric, garmentKey) => {
+        const result = assignFutureFabricToGarment({
+          state: missingAdditionalFabricState,
+          garmentTypeSelection: additionalFlowSelection,
+          garmentKey,
+          fabricCode: fabric.code,
+          fabrics: repairPickerFabrics,
+          requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+        });
+        assert.equal(result.status, "assigned");
+        if (result.status === "assigned") {
+          missingAdditionalFabricState = result.state;
+        }
+        return missingAdditionalFabricState;
+      },
+      onChangeFabricAllocationProduct: () => undefined,
+      onRemoveFabricFromGarment: () => undefined,
+      onUseSameFabricForGarment: () => undefined,
+      onAssignSameFabricProduct: () => undefined,
+      onAssignGarmentToExistingAllocation: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+      onUseSameFabric: () => undefined,
+      onChooseAnotherFabric: () => undefined,
+      onCancelPendingFabric: () => undefined,
+    }),
+  );
+});
+const additionalRepairButton = repairPickerRenderer.root.findByProps({
+  "aria-label": "Add fabric for Standard Shirt",
+});
+act(() => {
+  additionalRepairButton.props.onClick({ currentTarget: {} });
+});
+const repairCatalogueCopy = repairPickerRenderer.root
+  .findByProps({ id: "future-fabric-catalogue-help" })
+  .children.join("");
+assert.match(
+  repairCatalogueCopy,
+  /Select a fabric card to assign it to Standard Shirt\./,
+  "The production picker must give target-occurrence guidance.",
+);
+assert.doesNotMatch(
+  repairCatalogueCopy,
+  /All selected garments have fabric assignments\./,
+  "A missing Additional occurrence must not be classified as base-only complete.",
+);
+const selectableRepairFabric = repairPickerRenderer.root.findByProps({
+  "data-fabric-code": "FAB-B",
+});
+assert.equal(selectableRepairFabric.props.disabled, false);
+assert.equal(selectableRepairFabric.props["data-fabric-action"], "select");
+const outOfStockRepairFabric = repairPickerRenderer.root.findByProps({
+  "data-fabric-code": "FAB-OUT",
+});
+assert.equal(outOfStockRepairFabric.props.disabled, true);
+act(() => {
+  selectableRepairFabric.props.onClick({ currentTarget: {} });
+});
+assert.deepEqual(
+  missingAdditionalFabricState.fabricAllocations.map((allocation) => ({
+    fabricCode: allocation.fabricCode,
+    garmentKeys: allocation.garmentAssignments.map(
+      (assignment) => assignment.garmentKey,
+    ),
+  })),
+  [
+    { fabricCode: "FAB-A", garmentKeys: ["base:shirt", "base:trouser"] },
+    { fabricCode: "FAB-B", garmentKeys: ["additional:shirt:1"] },
+  ],
+  "Selecting Fabric B repairs only the exact Additional Shirt and preserves both base assignments.",
+);
+assert.equal(
+  getFutureFabricStageCompletion({
+    garmentTypeSelection: additionalFlowSelection,
+    fabricAllocationState: missingAdditionalFabricState,
+    fabrics: repairPickerFabrics,
+    requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+  }).isComplete,
+  true,
+  "Completion may update only after the exact Additional occurrence is assigned.",
+);
+act(() => repairPickerRenderer.unmount());
+
 const reassignmentResult = assignFutureFabricToGarment({
   state: additionalState,
   garmentTypeSelection: additionalFlowSelection,
@@ -857,6 +1308,41 @@ const stepSource = readFileSync(
   "utf8",
 );
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
+const remainingOfferGate = studioSource.slice(
+  studioSource.indexOf("const remainingFabricCapacityOffers ="),
+  studioSource.indexOf("const futureCatalogInspection ="),
+);
+assert.match(remainingOfferGate, /futureFabricStageCompletion\.isComplete/);
+assert.match(remainingOfferGate, /additionalGarmentFabricTransaction\.phase === "committed"/,
+  "A terminal Fabric commit must not suppress the shared offer while Design Style is unfinished.");
+assert.match(remainingOfferGate, /futureStageId === "fabric" \|\| futureStageId === "custom_details"/);
+const capacityAdditionHandler = studioSource.slice(
+  studioSource.indexOf("const handleAddFutureAdditionalGarment ="),
+  studioSource.indexOf("const handleCompleteAdditionalGarmentCustomDetails ="),
+);
+assert.match(capacityAdditionHandler, /context\?\.origin === "remaining_fabric_capacity_offer" &&\s*additionalGarmentFabricTransactionRef\.current\.phase === "committed"/,
+  "Accepting the shared offer may supersede a terminal transaction, never an in-flight assignment.");
+assert.match(capacityAdditionHandler, /capacityReuse:\s*\{[\s\S]*allocationId: selectedCapacityOffer\.allocationId/,
+  "A spare-capacity transaction must retain the exact selected physical allocation.");
+assert.match(capacityAdditionHandler, /openedModal: !selectedCapacityOffer/,
+  "A spare-capacity transaction must not open the normal Fabric catalogue.");
+assert.doesNotMatch(capacityAdditionHandler, /setFutureStageId\("custom_details"\)/,
+  "Step 2 spare-capacity acceptance must not route through Custom Details.");
+assert.match(studioSource, /transaction\.phase === "catalogue" &&\s*transaction\.capacityReuse/,
+  "The spare-capacity transaction must commit from its targeted state, not a catalogue selection.");
+assert.match(studioSource, /assignFutureGarmentToExistingFabricAllocation\(/,
+  "Spare capacity must reuse an existing allocation through Fabric authority.");
+assert.match(studioSource, /setFutureStageId\(transaction\.capacityReuse\.returnStage\)/,
+  "The transaction must return to Step 2 or Step 4 without a Custom Details copy detour.");
+const capacityOfferSource = readFileSync(
+  "src/components/FutureRemainingFabricCapacityOffer.tsx",
+  "utf8",
+);
+assert.match(capacityOfferSource, /Add Garment Using This Fabric/);
+assert.match(capacityOfferSource, /Fabric Selection \{offer\.selectionOrdinal\}/,
+  "Offer labels must retain their physical allocation ordinal after filtering.");
+assert.doesNotMatch(capacityOfferSource, /Add Another Garment/,
+  "The ambiguous generic capacity action must not remain.");
 assert.doesNotMatch(
   stepSource,
   />\s*Select Fabric\s*</,
@@ -880,8 +1366,8 @@ assert.doesNotMatch(
 );
 assert.match(
   stepSource,
-  /\$\{selectedFabricQuantity\}\/\$\{requiredFabricQuantity\}/,
-  "Fabrics Selected must use X/Y with no spaces around the slash.",
+  /\$\{selectedFabricQuantity\} · Minimum needed: \$\{requiredFabricQuantity\}/,
+  "The efficient minimum must not look like a mandatory maximum.",
 );
 assert.match(
   stepSource,
@@ -982,8 +1468,8 @@ assert.doesNotMatch(
 assert.match(studioSource, /assignSameFabricProductToGarments\(/);
 assert.match(
   studioSource,
-  /onBack=\{\(\) => setFutureStageId\("garment_type"\)\}/,
-  "Step 2 Back must still return to Garment Type.",
+  /onBack=\{\(\) => navigateToFutureStage\("garment_type"\)\}/,
+  "Step 2 Back must retain the approved navigation helper and return to Garment Type.",
 );
 assert.match(
   studioSource,

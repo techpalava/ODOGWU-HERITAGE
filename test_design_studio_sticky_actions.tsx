@@ -4,16 +4,18 @@ import { DormantFutureFabricStep } from "./src/components/DormantFutureFabricSte
 import { DormantFutureDesignStyleStep } from "./src/components/DormantFutureDesignStyleStep";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
-import { createCustomerDesignUploadReference } from "./src/services/customerDesignUploadReference";
-import type { Fabric, GarmentTypeStepSelection, StyleCategory } from "./src/types";
+import type { Fabric, StyleCategory } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
   assignFutureFabricToGarment,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
 } from "./src/utils/designStudioFutureFabricStage";
-import { createUploadedDesignSource } from "./src/utils/designSourceState";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
+import {
+  createDesignStyleStepRenderProps,
+  createDesignStyleStepTestModel,
+} from "./testing/designStyleStepFixtures";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -185,71 +187,29 @@ const compatibleStyle: StyleCategory = {
     { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
   ],
 };
-const uploadReference = createCustomerDesignUploadReference({
-  ownerUid: "sticky-actions-owner",
-  mimeType: "image/png",
-  designReferenceId: "sticky-actions-reference",
-  originalFileName: "sticky-actions.png",
-  createdAt: "2026-08-15T12:00:00.000Z",
-});
-const uploadedSource = createUploadedDesignSource({
-  uploadReference,
-  fabricCapacityComposition: compatibleStyle.fabricCapacityComposition,
-  demographic: "male",
-});
-
 let styleContinueCalls = 0;
-const renderStyleStep = ({
-  selectedStyleId = "sticky-style",
-  source = null as typeof uploadedSource | null,
-  isConfirmed = false,
-  isPricingActive = false,
-  isDeleting = false,
-}: {
-  selectedStyleId?: string | null;
-  source?: typeof uploadedSource | null;
-  isConfirmed?: boolean;
-  isPricingActive?: boolean;
-  isDeleting?: boolean;
-} = {}) => (
-  <DormantFutureDesignStyleStep
-    styles={[compatibleStyle]}
-    garmentTypeSelection={garmentTypeSelection as GarmentTypeStepSelection}
-    selectedStyleId={selectedStyleId}
-    stagePrice={65}
-    uploadedDesign={{
-      source,
-      reference: source ? uploadReference : null,
-      composition: source ? source.fabricCapacityComposition : [],
-      demographic: source ? "male" : null,
-      previewUrl: null,
-      error: "",
-      isUploading: false,
-      isReplacing: false,
-      isDeleting,
-      isLoadingPreview: false,
-      isConfirmed,
-      isPricingActive,
-    }}
-    pendingCatalogStyleName={null}
-    onSelectStyle={() => undefined}
-    onUploadDesignFile={() => undefined}
-    onToggleUploadedGarment={() => undefined}
-    onUploadedDemographicChange={() => undefined}
-    onRemoveUploadedDesign={() => undefined}
-    onRetryUploadedDesignDeletion={() => undefined}
-    onContinueUploadedDesign={() => undefined}
-    onBack={() => undefined}
-    onReturnToGarmentType={() => undefined}
-    onContinue={() => {
-      styleContinueCalls += 1;
-    }}
-  />
-);
+const renderStyleStep = (complete: boolean) => {
+  const model = createDesignStyleStepTestModel({
+    styles: [compatibleStyle],
+    garmentTypeSelection,
+    selectedStyleIdByGarmentKey: complete
+      ? { "base:shirt:1": compatibleStyle.id }
+      : {},
+  });
+  return (
+    <DormantFutureDesignStyleStep
+      {...createDesignStyleStepRenderProps(model)}
+      stagePrice={65}
+      onContinue={() => {
+        styleContinueCalls += 1;
+      }}
+    />
+  );
+};
 
 let styleRenderer!: ReturnType<typeof create>;
 await act(async () => {
-  styleRenderer = create(renderStyleStep({ selectedStyleId: null }));
+  styleRenderer = create(renderStyleStep(false));
 });
 assert.equal(
   Boolean(
@@ -262,7 +222,7 @@ assert.equal(
 );
 
 await act(async () => {
-  styleRenderer.update(renderStyleStep());
+  styleRenderer.update(renderStyleStep(true));
 });
 const completeStyleAction = styleRenderer.root.findByProps({
   "data-testid": "future-design-style-continue-action",
@@ -276,62 +236,5 @@ const styleForwardButton = findForwardButtons(
 assert.equal(styleForwardButton.length, 1);
 styleForwardButton[0].props.onClick();
 assert.equal(styleContinueCalls, 1, "The existing Style handler must remain intact.");
-
-await act(async () => {
-  styleRenderer.update(
-    renderStyleStep({
-      selectedStyleId: null,
-      source: uploadedSource,
-    }),
-  );
-});
-assert.equal(
-  Boolean(
-    styleRenderer.root.findByProps({
-      "data-testid": "future-design-style-continue-action",
-    }).props["data-docked"],
-  ),
-  false,
-  "An uploaded source must not dock before Fabric activation is confirmed.",
-);
-
-await act(async () => {
-  styleRenderer.update(
-    renderStyleStep({
-      selectedStyleId: null,
-      source: uploadedSource,
-      isConfirmed: true,
-      isPricingActive: true,
-    }),
-  );
-});
-assert.equal(
-  styleRenderer.root.findByProps({
-    "data-testid": "future-design-style-continue-action",
-  }).props["data-docked"],
-  true,
-  "A confirmed and activated uploaded design can use the existing Custom Details action.",
-);
-
-await act(async () => {
-  styleRenderer.update(
-    renderStyleStep({
-      selectedStyleId: null,
-      source: uploadedSource,
-      isConfirmed: true,
-      isPricingActive: true,
-      isDeleting: true,
-    }),
-  );
-});
-assert.equal(
-  Boolean(
-    styleRenderer.root.findByProps({
-      "data-testid": "future-design-style-continue-action",
-    }).props["data-docked"],
-  ),
-  false,
-  "A pending uploaded-design deletion must suppress the docked action.",
-);
 
 console.log("PASS: sticky completed Fabric and Design Style actions");

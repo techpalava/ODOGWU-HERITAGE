@@ -11,6 +11,9 @@ import {
 import { DormantFuturePaymentReviewStep } from "./src/components/DormantFuturePaymentReviewStep";
 import { DormantFutureSummaryStep } from "./src/components/DormantFutureSummaryStep";
 import type { DesignSelections } from "./src/types";
+import { FABRIC_GARMENT_CAPACITY_UNITS } from "./src/config/StyleFabricCapacityConfig";
+import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
+import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
 import { createEmptyFutureShippingState } from "./src/utils/designStudioFutureShipping";
 import type { FutureDesignStudioSummary } from "./src/utils/designStudioFutureSummary";
 import type {
@@ -316,6 +319,44 @@ assert.ok(
   !textContent(customRenderer.root).includes("additional:shirt:2"),
   "raw garment keys must not be customer-facing text",
 );
+
+const shortsOccurrences = ["standard_shorts", "bum_shorts"].map((garmentType) => ({
+  garmentKey: `base:${garmentType}`,
+  garmentType: garmentType as "standard_shorts" | "bum_shorts",
+  sourceRole: "main" as const,
+  fabricUnits: 1 as const,
+}));
+const shortsTargets = projectFutureGarmentRemovalTargets({
+  occurrences: shortsOccurrences,
+  provisionalGarmentKey: null,
+});
+const shortsBefore = JSON.stringify({ shortsOccurrences, shortsTargets });
+let requestedShortsTarget: FutureGarmentRemovalTarget | undefined;
+const shortsRenderer = render(createElement(DormantFutureCustomDetailsStep, {
+  ...customDetailsProps,
+  removalTargets: shortsTargets,
+  onRequestGarmentRemoval: (target) => { requestedShortsTarget = target; },
+}));
+const shortsList = shortsRenderer.root.findByProps({ "data-garment-removal-list": "custom_details" });
+assert.deepEqual(
+  shortsList.findAllByType("h4").map(textContent),
+  ["Standard Nikka Shorts", "Standard Bum Shorts"],
+  "Garments in this order must render only the approved standalone shorts labels",
+);
+for (const [index, label] of ["Standard Nikka Shorts", "Standard Bum Shorts"].entries()) {
+  const occurrence = shortsOccurrences[index];
+  const button = shortsList.findByProps({ "data-garment-removal-button": occurrence.garmentKey });
+  assert.equal(button.props["aria-label"], `Remove ${label}, base garment`);
+  act(() => button.props.onClick({ currentTarget: {} }));
+  assert.equal(requestedShortsTarget, shortsTargets[index], "Display formatting must preserve the exact removal target");
+  assert.equal(FABRIC_GARMENT_CAPACITY_UNITS[occurrence.garmentType], 1);
+  const price = resolveGarmentConstructionPricing(occurrence.garmentType, SEED_CUSTOM_DETAIL_CATALOG);
+  assert.equal(price.status, "resolved");
+  if (price.status === "resolved") assert.equal(price.totalPriceCents, 7000);
+}
+assert.deepEqual(shortsOccurrences.map((item) => item.garmentType), ["standard_shorts", "bum_shorts"]);
+assert.equal(JSON.stringify({ shortsOccurrences, shortsTargets }), shortsBefore);
+act(() => shortsRenderer.unmount());
 
 const candidateGarments = summary.garmentSummary.map((garment) => ({ ...garment }));
 const candidate: FutureOrderCandidateV1 = {

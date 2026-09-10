@@ -18,6 +18,7 @@ import {
   type FutureDesignStudioSummaryInput,
 } from "./designStudioFutureSummary";
 import {
+  buildAuthoritativePhysicalOccurrences,
   validateFinalPhysicalOccurrenceAssignmentParity,
   validateRawFabricAssignments,
 } from "./designSourceState";
@@ -33,6 +34,17 @@ import {
   normalizeStep8CountryCode,
   resolveStep8WeightTier,
 } from "./step8AdditionalDelivery";
+import type { PhysicalGarmentOccurrence } from "./designSourceState";
+import {
+  validateGarmentScopedDesignStyleAssignmentLedger,
+  type GarmentScopedDesignStyleAssignmentLedgerV2,
+  type GarmentScopedDesignStyleValidationAuthority,
+} from "./garmentScopedDesignStyleAssignment";
+import {
+  getDesignStyleAuthorityMetadata,
+  isAuthoritativeDesignStyleProjection,
+} from "./designStyleAuthority";
+import { createPhysicalGarmentOccurrenceIdentityToken } from "./physicalGarmentOccurrenceIdentity";
 
 export const FUTURE_ORDER_CANDIDATE_SCHEMA_VERSION = 1 as const;
 
@@ -203,6 +215,75 @@ export interface FutureOrderCandidateV1 {
   readonly blockers: readonly FutureOrderCandidateBlocker[];
 }
 
+export interface FutureOrderCandidateOccurrenceStyleSnapshotV2 {
+  readonly occurrence: Readonly<{
+    garmentKey: string;
+    occurrenceToken: string;
+    label: string;
+    garmentType: string;
+  }>;
+  readonly assignmentRevision: number;
+  readonly sourceKind: "catalogue" | "uploaded";
+  readonly sourceKey: string;
+  readonly catalogue: Readonly<{
+    styleId: string;
+    name: string;
+    image: string | null;
+    publicRevision: number;
+    eligibilityRevision: number;
+    eligibilityFingerprint: string;
+    adaptabilityConfirmationFingerprint: string | null;
+  }> | null;
+  readonly uploaded: Readonly<{
+    uploadedSourceRef: string;
+    displayLabel: string;
+    previewReference: string | null;
+  }> | null;
+}
+
+type FutureOrderCandidateNonStyleEnvelope = Omit<
+  FutureOrderCandidateV1,
+  "schemaVersion" | "source" | "design"
+>;
+
+/** Complete immutable V2 envelope; it is intentionally not wired to cart or checkout. */
+export type FutureOrderCandidateV2 = Readonly<
+  FutureOrderCandidateNonStyleEnvelope & {
+    readonly schemaVersion: 2;
+    readonly occurrenceStyleSnapshots: readonly FutureOrderCandidateOccurrenceStyleSnapshotV2[];
+  }
+>;
+
+export interface FutureOrderCandidateUploadedStyleAuthorityV2 {
+  readonly uploadedSourceRef: string;
+  readonly confirmed: boolean;
+  readonly displayLabel?: string;
+  /** Already-safe persistent display evidence only; never a Storage path or object URL. */
+  readonly previewReference?: string | null;
+}
+
+export interface FutureOrderCandidateOccurrenceStylesBuildInput {
+  readonly occurrences: readonly PhysicalGarmentOccurrence[];
+  readonly ledger: GarmentScopedDesignStyleAssignmentLedgerV2;
+  readonly validationAuthority: GarmentScopedDesignStyleValidationAuthority;
+  readonly styles: readonly import("../types").StyleCategory[];
+  readonly uploadedAuthorityBySourceRef: Readonly<Record<string, FutureOrderCandidateUploadedStyleAuthorityV2 | undefined>>;
+}
+
+export interface FutureOrderCandidateV2BuildInput
+  extends Omit<FutureOrderCandidateOccurrenceStylesBuildInput, "occurrences"> {
+  /** Existing authoritative Candidate input; scalar style output is not consumed by V2. */
+  readonly coreInput: FutureOrderCandidateBuildInput;
+}
+
+type FutureOrderCandidateOccurrenceStylesBuildResult =
+  | { readonly status: "valid"; readonly snapshots: readonly FutureOrderCandidateOccurrenceStyleSnapshotV2[]; readonly blockers: readonly [] }
+  | { readonly status: "blocked"; readonly snapshots: null; readonly blockers: readonly FutureOrderCandidateBlocker[] };
+
+export type FutureOrderCandidateV2BuildResult =
+  | { readonly status: "valid"; readonly candidate: FutureOrderCandidateV2; readonly blockers: readonly [] }
+  | { readonly status: "blocked"; readonly candidate: null; readonly blockers: readonly FutureOrderCandidateBlocker[] };
+
 export interface FutureOrderCandidateBuildInput
   extends FutureDesignStudioSummaryInput {
   readonly source: DesignSource | null;
@@ -295,6 +376,161 @@ const deepFreeze = <T>(value: T): T => {
   );
   return Object.freeze(value);
 };
+
+const candidateV2Blocker = (
+  code: string,
+  message: string,
+  garmentKey?: string,
+): FutureOrderCandidateBlocker => ({
+  code,
+  stage: "design_style",
+  message,
+  ...(garmentKey ? { garmentKey } : {}),
+});
+
+const isSafeCandidatePreviewReference = (value: unknown): value is string =>
+  typeof value === "string" && value.length > 0 && value.length <= 256 &&
+  !/[\\/]/.test(value);
+
+/**
+ * Builds the Task 5F occurrence-style submission snapshot only. It is pure,
+ * deep-frozen, and deliberately separate from the V1/cart conversion path.
+ */
+export const buildFutureOrderCandidateOccurrenceStyleSnapshotsV2 = (
+  input: FutureOrderCandidateOccurrenceStylesBuildInput,
+): FutureOrderCandidateOccurrenceStylesBuildResult => {
+  const validation = validateGarmentScopedDesignStyleAssignmentLedger({
+    ledger: input.ledger,
+    activeOccurrences: input.occurrences,
+    authority: input.validationAuthority,
+  });
+  const blockers: FutureOrderCandidateBlocker[] = [];
+  if (validation.orphanedAssignmentGarmentKeys.length > 0) {
+    validation.orphanedAssignmentGarmentKeys.forEach((garmentKey) =>
+      blockers.push(candidateV2Blocker(
+        "DESIGN_STYLE_ORPHAN_ASSIGNMENT",
+        "Reconcile removed garment Design Style assignments before continuing.",
+        garmentKey,
+      )),
+    );
+  }
+  const stylesById = new Map(
+    input.styles
+      .filter(isAuthoritativeDesignStyleProjection)
+      .map((style) => [style.id, style] as const),
+  );
+  const counts = new Map<string, number>();
+  const snapshots: FutureOrderCandidateOccurrenceStyleSnapshotV2[] = [];
+  input.occurrences.forEach((occurrence) => {
+    const count = (counts.get(occurrence.garmentType) || 0) + 1;
+    counts.set(occurrence.garmentType, count);
+    const token = Number.isSafeInteger(occurrence.occurrenceGeneration) &&
+      occurrence.occurrenceGeneration! > 0
+      ? createPhysicalGarmentOccurrenceIdentityToken({
+          garmentKey: occurrence.garmentKey,
+          generation: occurrence.occurrenceGeneration!,
+        })
+      : null;
+    const label = `${occurrence.garmentType[0].toUpperCase()}${occurrence.garmentType.slice(1)}${count > 1 ? ` ${count}` : ""}`;
+    const resolved = validation.occurrencesByGarmentKey[occurrence.garmentKey];
+    if (!token || !resolved) {
+      blockers.push(candidateV2Blocker("DESIGN_STYLE_OCCURRENCE_MISSING", "This garment's Design Style needs review.", occurrence.garmentKey));
+      return;
+    }
+    if (resolved.occurrenceToken !== token) {
+      blockers.push(candidateV2Blocker("DESIGN_STYLE_OCCURRENCE_STALE", "This garment occurrence changed. Review its Design Style.", occurrence.garmentKey));
+      return;
+    }
+    if (!resolved.assignment || resolved.status !== "valid") {
+      const code = resolved.status === "needs_review"
+        ? "DESIGN_STYLE_NEEDS_REVIEW"
+        : resolved.status === "awaiting_validation"
+          ? "DESIGN_STYLE_UPLOAD_UNCONFIRMED"
+          : "DESIGN_STYLE_ASSIGNMENT_INVALID";
+      blockers.push(candidateV2Blocker(code, "This garment's Design Style is not ready for submission.", occurrence.garmentKey));
+      return;
+    }
+    const assignment = resolved.assignment;
+    if (assignment.sourceKind === "catalog") {
+      const style = stylesById.get(assignment.catalogStyleId);
+      const metadata = style ? getDesignStyleAuthorityMetadata(style) : null;
+      if (!style || !metadata || metadata.lifecycle !== "published" ||
+        metadata.eligibilityFingerprint !== assignment.eligibilityFingerprint) {
+        blockers.push(candidateV2Blocker("DESIGN_STYLE_SOURCE_UNAVAILABLE", "The selected catalogue Design Style is no longer available.", occurrence.garmentKey));
+        return;
+      }
+      snapshots.push({
+        occurrence: { garmentKey: occurrence.garmentKey, occurrenceToken: token, label, garmentType: occurrence.garmentType },
+        assignmentRevision: assignment.assignmentRevision,
+        sourceKind: "catalogue",
+        sourceKey: assignment.sourceKey,
+        catalogue: {
+          styleId: style.id,
+          name: style.name,
+          image: style.image?.trim() || null,
+          publicRevision: metadata.publicRevision,
+          eligibilityRevision: metadata.eligibilityRevision,
+          eligibilityFingerprint: metadata.eligibilityFingerprint,
+          adaptabilityConfirmationFingerprint: assignment.adaptabilityConfirmationFingerprint || null,
+        },
+        uploaded: null,
+      });
+      return;
+    }
+    const uploaded = input.uploadedAuthorityBySourceRef[assignment.uploadedSourceRef];
+    if (!uploaded || !uploaded.confirmed || uploaded.uploadedSourceRef !== assignment.uploadedSourceRef) {
+      blockers.push(candidateV2Blocker("DESIGN_STYLE_UPLOAD_UNCONFIRMED", "The uploaded Design Style needs confirmation before submission.", occurrence.garmentKey));
+      return;
+    }
+    snapshots.push({
+      occurrence: { garmentKey: occurrence.garmentKey, occurrenceToken: token, label, garmentType: occurrence.garmentType },
+      assignmentRevision: assignment.assignmentRevision,
+      sourceKind: "uploaded",
+      sourceKey: assignment.sourceKey,
+      catalogue: null,
+      uploaded: {
+        uploadedSourceRef: assignment.uploadedSourceRef,
+        displayLabel: uploaded.displayLabel?.trim() || "Uploaded design",
+        previewReference: isSafeCandidatePreviewReference(uploaded.previewReference)
+          ? uploaded.previewReference : null,
+      },
+    });
+  });
+  if (blockers.length > 0 || snapshots.length !== input.occurrences.length) {
+    return deepFreeze({ status: "blocked", snapshots: null, blockers: sortBlockers(blockers.length ? blockers : [candidateV2Blocker("DESIGN_STYLE_SNAPSHOT_UNREPRESENTABLE", "Design Style snapshots could not be represented safely.")]) });
+  }
+  return deepFreeze({
+    status: "valid",
+    snapshots,
+    blockers: [],
+  });
+};
+
+/**
+ * Task 5D activates occurrence-scoped Design Style authority before the order
+ * schema can represent it losslessly. Keep Candidate/payment closed until
+ * Task 5F replaces this temporary boundary with a versioned order mapping.
+ */
+export const blockFutureOrderCandidateUntilGarmentScopedDesignStyleMapping =
+  (): FutureOrderCandidateBuildResult =>
+    deepFreeze({
+      status: "invalid",
+      paymentStatus: "payment_provider_unavailable",
+      candidate: null,
+      blockers: [
+        {
+          code: "GARMENT_SCOPED_DESIGN_STYLE_MAPPING_PENDING",
+          stage: "design_style",
+          message:
+            "Design Style selections need downstream review before this order can continue.",
+        },
+        {
+          code: "PAYMENT_PROVIDER_UNAVAILABLE",
+          stage: "payment",
+          message: "Online payment is not available yet.",
+        },
+      ],
+    });
 
 const compareBlockers = (
   left: FutureOrderCandidateBlocker,
@@ -557,33 +793,21 @@ const INVALID_CONTENT_CODES = new Set([
   "PHYSICAL_OCCURRENCE_MISMATCH",
 ]);
 
-export const buildFutureOrderCandidate = (
-  input: FutureOrderCandidateBuildInput,
-): FutureOrderCandidateBuildResult => {
-  const source = getCatalogSource(input.source);
-  if (!source) {
-    const blocker: FutureOrderCandidateBlocker = {
-      code: "UNSUPPORTED_FUTURE_SOURCE",
-      stage: "design_style",
-      message: "This design source is not supported in the future order review yet.",
-    };
-    return deepFreeze({
-      status: "invalid",
-      paymentStatus: "payment_provider_unavailable",
-      candidate: null,
-      blockers: sortBlockers([blocker, PAYMENT_BLOCKER]),
-    });
-  }
+interface FutureOrderCandidateCoreBuildResult {
+  readonly core: FutureOrderCandidateNonStyleEnvelope;
+  readonly contentBlockers: readonly FutureOrderCandidateBlocker[];
+}
 
-  const summary = projectFutureDesignStudioSummary(input);
-  const blockers = summary.blockers.map(mapSummaryBlocker);
-  if (source.styleId !== input.designStyleSelection.selectedStyleId) {
-    blockers.push({
-      code: "SOURCE_STYLE_MISMATCH",
-      stage: "design_style",
-      message: "Select the Design Style again before reviewing the order.",
-    });
-  }
+const buildFutureOrderCandidateCore = ({
+  input,
+  summary,
+  initialBlockers,
+}: {
+  input: FutureOrderCandidateBuildInput;
+  summary: ReturnType<typeof projectFutureDesignStudioSummary>;
+  initialBlockers: readonly FutureOrderCandidateBlocker[];
+}): FutureOrderCandidateCoreBuildResult => {
+  const blockers = [...initialBlockers];
   const physicalGarmentCount = summary.garmentSummary.length;
   const shippingGarmentCount =
     input.shippingResolution.state.quoteReference?.garmentCount;
@@ -696,17 +920,6 @@ export const buildFutureOrderCandidate = (
         };
       }),
     );
-  const compatibility = input.designStyleSelection.compatibility;
-  const design = summary.designStyleSummary
-    ? {
-        ...summary.designStyleSummary,
-        resolutionStatus: "selected" as const,
-        compatibilityStatus: compatibility?.status || "indeterminate",
-        compatibilityCode: compatibility?.code || "STYLE_ID_MISSING",
-        compatibilityMessage:
-          compatibility?.customerReason || "Design Style compatibility needs review.",
-      }
-    : null;
   const verifiedPrivateResultReference =
     input.aiTryOnWorkflow.status === "completed" &&
     input.aiTryOnWorkflow.resultReference?.kind ===
@@ -725,8 +938,7 @@ export const buildFutureOrderCandidate = (
       ? "reviewable"
       : "blocked";
   const quoteReference = input.shippingResolution.state.quoteReference;
-  const candidate: FutureOrderCandidateV1 = {
-    schemaVersion: FUTURE_ORDER_CANDIDATE_SCHEMA_VERSION,
+  const core: FutureOrderCandidateNonStyleEnvelope = {
     journey: {
       mode: "future_nine_stage",
       schemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
@@ -742,12 +954,6 @@ export const buildFutureOrderCandidate = (
       shippingRuleFingerprint: quoteReference?.ruleFingerprint || null,
       shippingInputFingerprint: quoteReference?.inputFingerprint || null,
     },
-    source: {
-      kind: "catalog",
-      sourceKey: source.sourceKey,
-      styleId: source.styleId,
-    },
-    design,
     garments,
     fabricAllocations,
     customDetails,
@@ -783,12 +989,133 @@ export const buildFutureOrderCandidate = (
     paymentStatus: "payment_provider_unavailable",
     blockers: sortedBlockers,
   };
+  return { core, contentBlockers };
+};
+
+export const buildFutureOrderCandidate = (
+  input: FutureOrderCandidateBuildInput,
+): FutureOrderCandidateBuildResult => {
+  const source = getCatalogSource(input.source);
+  if (!source) {
+    const blocker: FutureOrderCandidateBlocker = {
+      code: "UNSUPPORTED_FUTURE_SOURCE",
+      stage: "design_style",
+      message: "This design source is not supported in the future order review yet.",
+    };
+    return deepFreeze({
+      status: "invalid",
+      paymentStatus: "payment_provider_unavailable",
+      candidate: null,
+      blockers: sortBlockers([blocker, PAYMENT_BLOCKER]),
+    });
+  }
+
+  const summary = projectFutureDesignStudioSummary(input);
+  const blockers = summary.blockers.map(mapSummaryBlocker);
+  if (source.styleId !== input.designStyleSelection.selectedStyleId) {
+    blockers.push({
+      code: "SOURCE_STYLE_MISMATCH",
+      stage: "design_style",
+      message: "Select the Design Style again before reviewing the order.",
+    });
+  }
+  const { core } = buildFutureOrderCandidateCore({
+    input,
+    summary,
+    initialBlockers: blockers,
+  });
+  const compatibility = input.designStyleSelection.compatibility;
+  const design = summary.designStyleSummary
+    ? {
+        ...summary.designStyleSummary,
+        resolutionStatus: "selected" as const,
+        compatibilityStatus: compatibility?.status || "indeterminate",
+        compatibilityCode: compatibility?.code || "STYLE_ID_MISSING",
+        compatibilityMessage:
+          compatibility?.customerReason || "Design Style compatibility needs review.",
+      }
+    : null;
+  const candidate: FutureOrderCandidateV1 = {
+    schemaVersion: FUTURE_ORDER_CANDIDATE_SCHEMA_VERSION,
+    journey: core.journey,
+    authorityVersions: core.authorityVersions,
+    source: {
+      kind: "catalog",
+      sourceKey: source.sourceKey,
+      styleId: source.styleId,
+    },
+    design,
+    garments: core.garments,
+    fabricAllocations: core.fabricAllocations,
+    customDetails: core.customDetails,
+    aiTryOn: core.aiTryOn,
+    measurements: core.measurements,
+    shipping: core.shipping,
+    pricing: core.pricing,
+    contentStatus: core.contentStatus,
+    paymentStatus: core.paymentStatus,
+    blockers: core.blockers,
+  };
   const frozen = deepFreeze(cloneJsonValue(candidate));
   return deepFreeze({
-    status: contentStatus,
+    status: frozen.contentStatus,
     paymentStatus: frozen.paymentStatus,
     candidate: frozen,
     blockers: frozen.blockers,
+  });
+};
+
+export const buildFutureOrderCandidateV2 = (
+  input: FutureOrderCandidateV2BuildInput,
+): FutureOrderCandidateV2BuildResult => {
+  const summary = projectFutureDesignStudioSummary(input.coreInput);
+  const nonStyleSummaryBlockers = summary.blockers
+    .filter((blocker) => blocker.section !== "design_style")
+    .map(mapSummaryBlocker);
+  const coreResult = buildFutureOrderCandidateCore({
+    input: input.coreInput,
+    summary,
+    initialBlockers: nonStyleSummaryBlockers,
+  });
+  const occurrences = buildAuthoritativePhysicalOccurrences({
+    sourceKind: input.coreInput.designSourceKind,
+    step1GarmentTypeSelection: input.coreInput.step1GarmentTypeSelection,
+    effectiveGarmentTypeSelection: input.coreInput.garmentTypeSelection,
+    uploadedCompositionSpecs: input.coreInput.uploadedCompositionSpecs,
+    additionalGarmentConstructionState:
+      input.coreInput.additionalGarmentConstructionState,
+  });
+  const styleResult = buildFutureOrderCandidateOccurrenceStyleSnapshotsV2({
+    ...input,
+    occurrences,
+  });
+  const blockers = sortBlockers([
+    ...coreResult.contentBlockers,
+    ...(styleResult.status === "blocked" ? styleResult.blockers : []),
+  ]);
+  if (blockers.length > 0 || styleResult.status === "blocked") {
+    return deepFreeze({ status: "blocked", candidate: null, blockers });
+  }
+  const candidate: FutureOrderCandidateV2 = {
+    schemaVersion: 2,
+    journey: coreResult.core.journey,
+    authorityVersions: coreResult.core.authorityVersions,
+    garments: coreResult.core.garments,
+    fabricAllocations: coreResult.core.fabricAllocations,
+    customDetails: coreResult.core.customDetails,
+    aiTryOn: coreResult.core.aiTryOn,
+    measurements: coreResult.core.measurements,
+    shipping: coreResult.core.shipping,
+    pricing: coreResult.core.pricing,
+    contentStatus: coreResult.core.contentStatus,
+    paymentStatus: coreResult.core.paymentStatus,
+    blockers: coreResult.core.blockers,
+    occurrenceStyleSnapshots: styleResult.snapshots,
+  };
+  return deepFreeze({
+    status: "valid",
+    candidate: deepFreeze(cloneJsonValue(candidate)),
+    blockers: [],
   });
 };
 
