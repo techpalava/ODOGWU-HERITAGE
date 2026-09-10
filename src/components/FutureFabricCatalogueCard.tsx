@@ -26,6 +26,7 @@ export const FutureFabricCatalogueCard = ({
   onRemove,
   removeTargetGarmentLabel,
   dataAttributes,
+  orderAllocationOptions,
 }: {
   fabric: Fabric;
   presentation: FutureFabricCatalogueCardPresentation;
@@ -46,6 +47,12 @@ export const FutureFabricCatalogueCard = ({
   ) => void;
   removeTargetGarmentLabel?: string;
   dataAttributes?: Record<string, string | undefined>;
+  orderAllocationOptions?: ReadonlyArray<{
+    allocationId: string;
+    selectionLabel: string;
+    availabilityLabel: string;
+    onSelect: () => void;
+  }>;
 }) => {
   const availabilityMessage = getFabricAvailabilityMessage(fabric);
   const isCancelAction =
@@ -151,6 +158,7 @@ export const FutureFabricCatalogueCard = ({
     <article
       className="flex min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm"
       data-fabric-catalogue-card="true"
+      data-fabric-card-code={fabric.code}
       {...Object.fromEntries(
         Object.entries(dataAttributes || {}).filter(
           ([, value]) => value !== undefined,
@@ -215,7 +223,39 @@ export const FutureFabricCatalogueCard = ({
             {stockConstraintMessage}
           </p>
         )}
-        {isCancelAction && removeButton ? (
+        {orderAllocationOptions && orderAllocationOptions.length > 0 ? (
+          <div
+            className="mt-auto space-y-2 pt-4"
+            data-fabric-order-capacity-options="true"
+          >
+            <p
+              className="text-[10px] font-bold uppercase tracking-wide text-heritage-gold"
+              data-fabric-in-current-order="true"
+            >
+              In Your Order • {orderAllocationOptions[0]!.availabilityLabel}
+            </p>
+            {orderAllocationOptions.map((option) => (
+              <button
+                key={option.allocationId}
+                type="button"
+                onClick={option.onSelect}
+                data-fabric-card="true"
+                data-fabric-code={fabric.code}
+                data-fabric-action="reuse-existing-allocation"
+                data-fabric-existing-allocation={option.allocationId}
+                aria-label={`Select ${fabric.name} from ${option.selectionLabel} for ${
+                  targetGarmentLabel || "the selected garment"
+                }`}
+                aria-describedby={describedByValue}
+                className={actionClassName}
+              >
+                {orderAllocationOptions.length === 1
+                  ? "Select This Fabric"
+                  : `Select ${option.selectionLabel}`}
+              </button>
+            ))}
+          </div>
+        ) : isCancelAction && removeButton ? (
           <div className="mt-auto flex min-w-0 items-stretch gap-2 pt-4">
             <span
               data-fabric-in-use="true"

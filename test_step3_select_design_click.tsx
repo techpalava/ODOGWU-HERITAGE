@@ -1,54 +1,36 @@
-/**
- * Rendered Step 3 Select Design click regression.
- * Exercises activateFutureCatalogStyleSelection (production activation path)
- * through DormantFutureDesignStyleStep — not a mocked local setter.
- */
+/** Rendered Step 3 batch-mapping bridge through the Task 5 occurrence ledger. */
 import assert from "node:assert/strict";
 import { useState } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { DormantFutureDesignStyleStep } from "./src/components/DormantFutureDesignStyleStep";
 import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
-import type {
-  DesignSource,
-  GarmentTypeStepSelection,
-  StyleCategory,
-} from "./src/types";
-import { activateFutureCatalogStyleSelection } from "./src/utils/designSourceState";
+import type { GarmentTypeStepSelection, StyleCategory } from "./src/types";
+import {
+  applyDesignStyleStepLedgerToHydration,
+  assignCatalogueStyleToOccurrencesThroughStepRuntime,
+} from "./src/utils/designStyleStepRuntime";
+import {
+  createDesignStyleStepRenderProps,
+  createDesignStyleStepTestModel,
+} from "./testing/designStyleStepFixtures";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const garmentTypeSelection: GarmentTypeStepSelection = {
-  garmentTypes: ["shirt", "trouser"],
+  garmentTypes: ["shirt", "trouser", "bum_shorts"],
   demographic: "male",
   audienceSelection: { schemaVersion: 1, demographics: ["male"] },
   constructionByGarment: {},
 };
 
-const compatibleStyle: StyleCategory = {
+const style: StyleCategory = {
   id: "casual-native-1",
   name: "Casual Native",
-  description: "Shirt + Trouser male catalogue fixture.",
+  description: "A shirt reference that can be mapped to any garment.",
   gender: "male",
+  targetDemographic: "male",
   options: [],
-  fabricCapacityComposition: [
-    createStyleBaseGarmentSpec("shirt"),
-    createStyleBaseGarmentSpec("trouser"),
-  ],
-};
-
-const emptyUploadedDesign = {
-  source: null,
-  reference: null,
-  composition: [],
-  demographic: null,
-  previewUrl: null,
-  error: "",
-  isUploading: false,
-  isReplacing: false,
-  isDeleting: false,
-  isLoadingPreview: false,
-  isConfirmed: false,
-  isPricingActive: false,
+  fabricCapacityComposition: [createStyleBaseGarmentSpec("shirt")],
 };
 
 const textContent = (node: ReactTestInstance | string | null): string =>
@@ -60,119 +42,114 @@ const textContent = (node: ReactTestInstance | string | null): string =>
           .join("")
       : "";
 
-/** Mirrors DesignStudioView.activateFutureCatalogStyle production wiring. */
-const Step3SelectDesignHarness = () => {
-  const [selectedStyleId, setSelectedStyleId] = useState<string | null>(null);
-  const [futureDesignSource, setFutureDesignSource] =
-    useState<DesignSource | null>(null);
-  const [confirmedKey, setConfirmedKey] = useState<string | null>(null);
-
-  const activateFutureCatalogStyle = (styleId: string) => {
-    const activated = activateFutureCatalogStyleSelection({
-      styleId,
-      primaryFabricCode: null,
-    });
-    setSelectedStyleId(activated.selectedStyleId);
-    setFutureDesignSource(activated.designSource);
-    setConfirmedKey(activated.confirmedDesignSourceKey);
-  };
-
+const Step3Harness = () => {
+  const [rawDraft, setRawDraft] = useState<Record<string, unknown>>({});
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection,
+    rawDraft,
+  });
   return (
-    <div data-testid="step3-select-design-harness">
+    <div>
       <DormantFutureDesignStyleStep
-        styles={[compatibleStyle]}
-        garmentTypeSelection={garmentTypeSelection}
-        selectedStyleId={selectedStyleId}
-        stagePrice={65}
-        uploadedDesign={emptyUploadedDesign}
-        pendingCatalogStyleName={null}
-        isCatalogueLoading={false}
-        stylesLoadState="ready"
-        onSelectStyle={activateFutureCatalogStyle}
-        onUploadDesignFile={() => undefined}
-        onToggleUploadedGarment={() => undefined}
-        onUploadedDemographicChange={() => undefined}
-        onRemoveUploadedDesign={() => undefined}
-        onRetryUploadedDesignDeletion={() => undefined}
-        onContinueUploadedDesign={() => undefined}
-        onBack={() => undefined}
-        onReturnToGarmentType={() => undefined}
-        onContinue={() => undefined}
+        {...createDesignStyleStepRenderProps(model)}
+        stagePrice={140}
+        onAssignCatalogueStyle={(requests) => {
+          const ledger = model.hydration.ledger;
+          if (!ledger) throw new Error("Expected mutable V2 ledger.");
+          const result = assignCatalogueStyleToOccurrencesThroughStepRuntime({
+            ledger,
+            activeOccurrences: model.occurrences,
+            authority: model.authority,
+            requests,
+            currentRuntimeGeneration: 1,
+            stepIsActive: true,
+            hydrationMutable: true,
+          });
+          if (result.status === "rejected") throw new Error(result.reason);
+          const nextHydration = applyDesignStyleStepLedgerToHydration({
+            hydration: model.hydration,
+            ledger: result.ledger,
+            activeOccurrences: model.occurrences,
+            authority: model.authority,
+          });
+          setRawDraft({
+            designStyleAssignmentDraft: structuredClone(nextHydration.envelope),
+          });
+        }}
       />
-      <div data-testid="harness-selected-style-id">
-        {selectedStyleId ?? ""}
+      <div data-testid="assignment-keys">
+        {Object.keys(model.hydration.ledger?.assignmentsByGarmentKey || {}).join("|")}
       </div>
-      <div data-testid="harness-design-source-kind">
-        {futureDesignSource?.kind ?? ""}
-      </div>
-      <div data-testid="harness-design-source-style-id">
-        {futureDesignSource?.kind === "catalog"
-          ? futureDesignSource.styleId
-          : ""}
-      </div>
-      <div data-testid="harness-confirmed-source-key">{confirmedKey ?? ""}</div>
     </div>
   );
 };
 
 let renderer!: ReturnType<typeof create>;
 await act(async () => {
-  renderer = create(<Step3SelectDesignHarness />);
+  renderer = create(<Step3Harness />);
 });
 
-const selectButtonsBefore = renderer.root
-  .findAllByType("button")
-  .filter((button) => textContent(button).includes("Select Design"));
-assert.equal(selectButtonsBefore.length, 1, "one enabled Select Design expected");
-assert.equal(selectButtonsBefore[0]!.props.disabled, false);
-assert.equal(selectButtonsBefore[0]!.props["aria-pressed"], false);
+const useButton = () =>
+  renderer.root
+    .findAllByType("button")
+    .find(
+      (button) =>
+        button.props["aria-label"] === `Use This Design ${style.name}` ||
+        button.props["aria-label"] === `Use Again ${style.name}`,
+    )!;
+const openDialog = async () => {
+  await act(async () => useButton().props.onClick({ currentTarget: { focus() {} } }));
+  return renderer.root.findByProps({ "data-testid": "design-garment-mapping-dialog" });
+};
+const checkbox = (dialog: ReactTestInstance, label: string) =>
+  dialog
+    .findAllByType("label")
+    .find((candidate) => textContent(candidate).startsWith(label))!
+    .findByType("input");
+const progress = () =>
+  textContent(renderer.root.findByProps({ "data-testid": "step3-assignment-progress" }));
+const continueButton = () =>
+  renderer.root
+    .findByProps({ "data-testid": "future-design-style-continue-action" })
+    .findByType("button");
 
-const continueBefore = renderer.root
-  .findByProps({ "data-testid": "future-design-style-continue-action" })
-  .findByType("button");
-assert.equal(continueBefore.props.disabled, true);
+assert.match(progress(), /0 of 3 garments assigned/);
+let dialog = await openDialog();
+await act(async () => checkbox(dialog, "Shirt").props.onChange());
+await act(async () => checkbox(dialog, "Trouser").props.onChange());
+assert.equal(renderer.root.findByProps({ "data-testid": "apply-design-mapping" }).props.disabled, false);
+await act(async () => renderer.root.findByProps({ "data-testid": "apply-design-mapping" }).props.onClick());
 
-await act(async () => {
-  selectButtonsBefore[0]!.props.onClick();
-});
-
-assert.equal(
-  textContent(
-    renderer.root.findByProps({ "data-testid": "harness-selected-style-id" }),
-  ),
-  "casual-native-1",
-);
-assert.equal(
-  textContent(
-    renderer.root.findByProps({ "data-testid": "harness-design-source-kind" }),
-  ),
-  "catalog",
-);
-assert.equal(
-  textContent(
-    renderer.root.findByProps({
-      "data-testid": "harness-design-source-style-id",
-    }),
-  ),
-  "casual-native-1",
-);
-assert.equal(
-  textContent(
-    renderer.root.findByProps({ "data-testid": "harness-confirmed-source-key" }),
-  ),
-  "catalog:casual-native-1",
+assert.match(progress(), /2 of 3 garments assigned/);
+assert.equal(continueButton().props.disabled, true);
+assert.deepEqual(
+  textContent(renderer.root.findByProps({ "data-testid": "assignment-keys" })).split("|").sort(),
+  ["base:shirt:1", "base:trouser:1"],
 );
 
-const selectedButtons = renderer.root
-  .findAllByType("button")
-  .filter((button) => textContent(button).trim() === "Selected");
-assert.equal(selectedButtons.length, 1);
-assert.equal(selectedButtons[0]!.props["aria-pressed"], true);
+// The same card remains clickable and adds another occurrence without clearing prior mappings.
+assert.equal(useButton().props.disabled, false);
+dialog = await openDialog();
+assert.equal(checkbox(dialog, "Shirt").props.checked, true);
+assert.equal(checkbox(dialog, "Trouser").props.checked, true);
+await act(async () => checkbox(dialog, "Bum Shorts").props.onChange());
+assert.match(
+  textContent(renderer.root.findByProps({ "data-testid": "reference-composition-warning" })),
+  /Bum Shorts.*still apply/i,
+);
+await act(async () => renderer.root.findByProps({ "data-testid": "apply-design-mapping" }).props.onClick());
 
-const continueAfter = renderer.root
-  .findByProps({ "data-testid": "future-design-style-continue-action" })
-  .findByType("button");
-assert.equal(continueAfter.props.disabled, false);
-assert.match(textContent(continueAfter), /Continue to Custom Details/i);
+assert.match(progress(), /3 of 3 garments assigned/);
+assert.equal(continueButton().props.disabled, false);
+assert.deepEqual(
+  textContent(renderer.root.findByProps({ "data-testid": "assignment-keys" })).split("|").sort(),
+  ["base:bum_shorts:1", "base:shirt:1", "base:trouser:1"],
+);
+assert.ok(
+  renderer.root
+    .findAll((node) => node.props?.["data-style-card"] === "true")
+    .some((card) => /IN USE/.test(textContent(card))),
+);
 
-console.log("PASS: Step 3 Select Design click activates catalogue source");
+console.log("PASS: Step 3 reuses one style across exact garment occurrences");

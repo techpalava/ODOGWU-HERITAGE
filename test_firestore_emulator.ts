@@ -12,14 +12,17 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   serverTimestamp,
   setDoc,
   Timestamp,
+  where,
 } from "firebase/firestore";
 
 const PROJECT_ID = "demo-odogwu-future-drafts";
 const COLLECTION = "futureDesignStudioDrafts";
 const STAFF_PREVIEW_COLLECTION = "staffPreviewEntitlements";
+const STYLE_COLLECTION = "styles";
 const OWNER_UID = "future-draft-owner";
 const OTHER_UID = "different-future-draft-owner";
 
@@ -43,6 +46,12 @@ const anonymous = (): RulesTestContext =>
     firebase: { sign_in_provider: "anonymous" },
   });
 
+const admin = (): RulesTestContext =>
+  testEnvironment.authenticatedContext("design-style-admin", {
+    admin: true,
+    firebase: { sign_in_provider: "password" },
+  });
+
 const reference = (context: RulesTestContext, ownerUid = OWNER_UID) =>
   doc(context.firestore(), COLLECTION, ownerUid);
 
@@ -50,6 +59,70 @@ const staffPreviewReference = (
   context: RulesTestContext,
   ownerUid = OWNER_UID,
 ) => doc(context.firestore(), STAFF_PREVIEW_COLLECTION, ownerUid);
+
+const styleReference = (
+  context: RulesTestContext,
+  styleId = "strict-style-1",
+) => doc(context.firestore(), STYLE_COLLECTION, styleId);
+
+const validStyleRecord = (overrides: Record<string, unknown> = {}) => ({
+  schemaVersion: 1,
+  id: "strict-style-1",
+  lifecycle: "published",
+  publicRevision: 1,
+  eligibilityRevision: 1,
+  eligibilityFingerprint: "style-eligibility-v1-test",
+  presentation: {
+    name: "Strict Style",
+    description: "Published through the strict Admin contract.",
+    image: "https://example.test/style.webp",
+    displayOrder: 1,
+    gender: "unisex",
+    outfitType: "Senator Set",
+    garmentComposition: "2-Piece Set",
+    fabricCategory: "Any",
+    options: [],
+    designCategories: [],
+    detectedColors: { main: "", secondary: "" },
+    constructionDetails: [],
+    customDetailConfiguration: {
+      supportedGarmentGroups: ["shirt", "trousers"],
+      requiredSelectionGroups: ["shirt_construction"],
+      enabled: true,
+    },
+    includedDesignFeatures: {
+      hasMonogram: false,
+      hasEmbroidery: false,
+      hasMonogramTrimming: false,
+    },
+    monogramCuffEligible: false,
+    embroideryProminence: "standard",
+    defaultGarmentDetails: {},
+  },
+  eligibility: {
+    garmentTypes: ["shirt", "trouser"],
+    demographics: ["male", "female"],
+    adaptability: {
+      mode: "exact_only",
+      garmentTypes: [],
+      demographics: [],
+    },
+  },
+  referenceComposition: {
+    status: "known",
+    garmentTypes: ["shirt", "trouser"],
+  },
+  ...overrides,
+});
+
+const seedStyle = async (
+  record: Record<string, unknown> = validStyleRecord(),
+  styleId = "strict-style-1",
+) => {
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(styleReference(context, styleId), record);
+  });
+};
 
 const validDraft = (overrides: Record<string, unknown> = {}) => ({
   journeySchemaVersion: 1,
@@ -435,6 +508,184 @@ try {
     await assertFails(deleteDoc(ownerReference));
   });
 
+  await runCase("public reads are limited to valid published Design Styles", async () => {
+    await seedStyle();
+    await seedStyle(
+      validStyleRecord({
+        id: "draft-style-1",
+        lifecycle: "draft",
+      }),
+      "draft-style-1",
+    );
+    const unauthenticated = testEnvironment.unauthenticatedContext();
+    await assertSucceeds(getDoc(styleReference(unauthenticated)));
+    await assertFails(getDoc(styleReference(unauthenticated, "draft-style-1")));
+    const snapshot = await assertSucceeds(
+      getDocs(
+        query(
+          collection(unauthenticated.firestore(), STYLE_COLLECTION),
+          where("schemaVersion", "==", 1),
+          where("lifecycle", "==", "published"),
+        ),
+      ),
+    );
+    assert.deepEqual(snapshot.docs.map((item) => item.id), ["strict-style-1"]);
+  });
+
+  await runCase("unbounded public Design Style listing is denied", async () => {
+    await seedStyle();
+    await assertFails(
+      getDocs(
+        collection(
+          testEnvironment.unauthenticatedContext().firestore(),
+          STYLE_COLLECTION,
+        ),
+      ),
+    );
+    await assertSucceeds(
+      getDocs(collection(admin().firestore(), STYLE_COLLECTION)),
+    );
+  });
+
+  await runCase("anonymous and non-admin Design Style writes are denied", async () => {
+    await assertFails(
+      setDoc(
+        styleReference(testEnvironment.unauthenticatedContext()),
+        validStyleRecord(),
+      ),
+    );
+    await assertFails(setDoc(styleReference(anonymous()), validStyleRecord()));
+    await assertFails(
+      setDoc(styleReference(signedIn(OWNER_UID)), validStyleRecord()),
+    );
+  });
+
+  await runCase("admin can create a strict Design Style record", async () => {
+    await assertSucceeds(setDoc(styleReference(admin()), validStyleRecord()));
+    const snapshot = await assertSucceeds(getDoc(styleReference(admin())));
+    assert.equal(snapshot.data()?.lifecycle, "published");
+  });
+
+  await runCase("admin cannot write malformed, unknown, or mismatched style data", async () => {
+    await assertFails(
+      setDoc(
+        styleReference(admin()),
+        validStyleRecord({ id: "different-style-id" }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        styleReference(admin()),
+        validStyleRecord({ lifecycle: "deleted" }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        styleReference(admin()),
+        validStyleRecord({ injectedPrivateField: "unsafe" }),
+      ),
+    );
+  });
+
+  await runCase("Design Style updates enforce public and eligibility revisions", async () => {
+    await seedStyle();
+    const adminReference = styleReference(admin());
+    await assertSucceeds(
+      setDoc(
+        adminReference,
+        validStyleRecord({
+          publicRevision: 2,
+          presentation: {
+            ...(validStyleRecord().presentation as Record<string, unknown>),
+            name: "Cosmetic Rename",
+          },
+        }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        adminReference,
+        validStyleRecord({ publicRevision: 2 }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        adminReference,
+        validStyleRecord({
+          publicRevision: 3,
+          eligibility: {
+            ...(validStyleRecord().eligibility as Record<string, unknown>),
+            garmentTypes: ["dress"],
+          },
+        }),
+      ),
+    );
+    await assertSucceeds(
+      setDoc(
+        adminReference,
+        validStyleRecord({
+          publicRevision: 3,
+          eligibilityRevision: 2,
+          eligibilityFingerprint: "style-eligibility-v1-updated",
+          eligibility: {
+            ...(validStyleRecord().eligibility as Record<string, unknown>),
+            garmentTypes: ["dress"],
+          },
+        }),
+      ),
+    );
+  });
+
+  await runCase("admin can explicitly migrate a valid legacy style", async () => {
+    await seedStyle(
+      {
+        id: "strict-style-1",
+        name: "Legacy Style",
+        fabricCapacityComposition: [
+          { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+        ],
+      },
+      "strict-style-1",
+    );
+    await assertSucceeds(setDoc(styleReference(admin()), validStyleRecord()));
+    await seedStyle(
+      {
+        id: "malformed-legacy-style",
+        name: "Malformed legacy style",
+      },
+      "malformed-legacy-style",
+    );
+    await assertFails(
+      setDoc(
+        styleReference(admin(), "malformed-legacy-style"),
+        validStyleRecord({ id: "malformed-legacy-style" }),
+      ),
+    );
+    await seedStyle(
+      {
+        schemaVersion: 1,
+        id: "malformed-v1-style",
+        fabricCapacityComposition: [
+          { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+        ],
+      },
+      "malformed-v1-style",
+    );
+    await assertFails(
+      setDoc(
+        styleReference(admin(), "malformed-v1-style"),
+        validStyleRecord({ id: "malformed-v1-style" }),
+      ),
+    );
+  });
+
+  await runCase("Design Style hard deletion is denied even to admin", async () => {
+    await seedStyle();
+    await assertFails(deleteDoc(styleReference(admin())));
+    const snapshot = await assertSucceeds(getDoc(styleReference(admin())));
+    assert.equal(snapshot.exists(), true);
+  });
+
   await runCase("representative unrelated collection rules are unchanged", async () => {
     const publicFabric = doc(
       testEnvironment.unauthenticatedContext().firestore(),
@@ -450,8 +701,8 @@ try {
     await assertFails(setDoc(publicFabric, { name: "Tampered fabric" }));
   });
 
-  assert.equal(passed, 29);
-  console.log(`Firestore emulator security matrix passed (${passed}/29).`);
+  assert.equal(passed, 37);
+  console.log(`Firestore emulator security matrix passed (${passed}/37).`);
 } finally {
   await testEnvironment.cleanup();
 }

@@ -87,11 +87,53 @@ const stepperSource = readFileSync(
 );
 const appSource = readFileSync("src/App.tsx", "utf8");
 
-assert.match(studioSource, /setFutureSelectedStyleId/);
-assert.match(studioSource, /onSelectStyle=\{handleSelectFutureStyle\}/);
-assert.match(studioSource, /onContinueUploadedDesign=\{handleContinueWithUploadedDesign\}/);
+assert.match(studioSource, /occurrences=\{futureDesignStyleStepProjection\.occurrences\}/);
+assert.match(
+  studioSource,
+  /exactSetComplete=\{futureDesignStyleStepProjection\.isComplete\}/,
+);
+assert.match(
+  studioSource,
+  /onSelectOccurrence=\{handleSelectFutureDesignStyleOccurrence\}/,
+);
+assert.match(
+  studioSource,
+  /onAssignCatalogueStyle=\{handleAssignFutureCatalogueStyle\}/,
+);
+assert.match(
+  studioSource,
+  /onClearAssignment=\{handleClearFutureDesignStyleAssignment\}/,
+);
 assert.match(studioSource, /onContinue=\{handleOpenDormantDesignStyleStage\}/);
 assert.match(studioSource, /futureFabricStageCompletion\.isComplete/);
+const futureClearRequestSource = studioSource.slice(
+  studioSource.indexOf(
+    "const futureDesignStyleClearRequest: DesignStyleStepClearMutationRequest | null =",
+  ),
+  studioSource.indexOf("const activeFutureDesignStyleUploadUi"),
+);
+assert.match(futureClearRequestSource, /runtimeGeneration:/);
+assert.match(
+  futureClearRequestSource,
+  /target:\s*resolvedFutureActiveDesignStyleOccurrence/,
+);
+const clearAssignmentHandlerSource = studioSource.slice(
+  studioSource.indexOf("const handleClearFutureDesignStyleAssignment ="),
+  studioSource.indexOf("const handleOpenDormantCustomDetailsStage ="),
+);
+assert.ok(
+  clearAssignmentHandlerSource.includes("request.target"),
+  "Clear mutation must target the exact active occurrence",
+);
+assert.ok(
+  clearAssignmentHandlerSource.includes("detachUploadedStyleThroughStepRuntime"),
+  "Clear mutation should flow through the occurrence-level detach runtime path",
+);
+assert.equal(
+  clearAssignmentHandlerSource.includes("setFutureSelectedStyleId"),
+  false,
+  "Scalar Design Style setters must not be used for Step 3 clear",
+);
 const futureFabricSelectionHandler = studioSource.slice(
   studioSource.indexOf("const handleSelectFabric"),
   studioSource.indexOf("// STEP 3: Design Details"),
@@ -108,10 +150,47 @@ const futurePricingBlock = studioSource.slice(
 assert.equal(futurePricingBlock.includes("style:"), false);
 assert.equal(styleStepSource.includes("handleStyleChange"), false);
 assert.equal(styleStepSource.includes("setFabricAllocationState"), false);
-assert.match(styleStepSource, /Upload Your Own Design/);
-assert.match(styleStepSource, /Continue with Uploaded Design/);
+assert.equal(styleStepSource.includes("Upload Your Own Design"), false);
+assert.equal(styleStepSource.includes("Continue with Uploaded Design"), false);
+assert.match(styleStepSource, /Choose a design for/);
+assert.match(styleStepSource, /Previous garment/);
+assert.match(styleStepSource, /Next garment/);
 assert.match(styleStepSource, /Continue to Custom Details/);
 assert.match(styleStepSource, /disabled/);
+const occurrenceMutationHandlers = studioSource.slice(
+  studioSource.indexOf("const handleAssignFutureCatalogueStyle"),
+  studioSource.indexOf("const isStageHistoricallyUnlocked"),
+);
+assert.equal(
+  occurrenceMutationHandlers.includes("setFutureSelectedStyleId"),
+  false,
+  "Occurrence-scoped Step 3 mutations must not dual-write the legacy scalar style",
+);
+assert.equal(
+  occurrenceMutationHandlers.includes("setFutureDesignSource"),
+  false,
+  "Occurrence-scoped Step 3 mutations must not dual-write the legacy scalar source",
+);
+assert.equal(
+  occurrenceMutationHandlers.includes("setFuturePriceActivatedFabricCode"),
+  false,
+  "Occurrence-scoped Step 3 mutations must not use price activation as completion",
+);
+const futureDraftAutosaveEffect = studioSource.slice(
+  studioSource.indexOf(
+    "if (!guestDraftHydrated || isAdditionalGarmentCommitPending) return;",
+  ),
+  studioSource.indexOf("const handleDormantGarmentTypesChange"),
+);
+assert.ok(
+  futureDraftAutosaveEffect.length > 0,
+  "Expected to locate the future-draft autosave effect",
+);
+assert.match(
+  futureDraftAutosaveEffect,
+  /currentFutureDesignStyleDraftHydration\?\.result\.ledger\?\.revision/,
+  "A Step 3 ledger revision must schedule the canonical Task 5C autosave path",
+);
 assert.match(stepperSource, /canEnterDesignStyle/);
 assert.equal(appSource.includes("future_nine_stage"), false);
 assert.equal(studioSource.includes("legacy_five_stage"), false);

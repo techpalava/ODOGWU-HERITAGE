@@ -735,9 +735,8 @@ export const getRequiredPhysicalFabricAllocationCount = ({
   ).fabricQuantity;
 
 /**
- * Authoritative ceiling: a NEW physical Fabric allocation may be created
- * only while the committed allocation count is still below the required
- * quantity from Fabric Capacity units.
+ * Each required exact occurrence may use its own physical Fabric. Capacity
+ * planning is an efficient minimum, not a limit on deliberate selections.
  */
 export const canCreatePhysicalFabricAllocation = ({
   state,
@@ -750,23 +749,17 @@ export const canCreatePhysicalFabricAllocation = ({
   requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
   countPendingGarmentForCapacity?: boolean;
 }): boolean => {
-  let required = getRequiredPhysicalFabricAllocationCount({
-    garmentTypeSelection,
-    fabricAllocationState: state,
-    requiredPhysicalOccurrences,
-  });
+  const knownKeys = new Set(
+    resolveRequiredAssignmentsWithAdditional(
+      garmentTypeSelection,
+      state,
+      requiredPhysicalOccurrences,
+    ).map((assignment) => assignment.garmentKey),
+  );
+  let required = knownKeys.size;
   if (countPendingGarmentForCapacity && state.pendingFabricGarment) {
-    const knownKeys = new Set(
-      resolveRequiredAssignmentsWithAdditional(
-        garmentTypeSelection,
-        state,
-        requiredPhysicalOccurrences,
-      ).map((assignment) => assignment.garmentKey),
-    );
     if (!knownKeys.has(state.pendingFabricGarment.garmentKey)) {
-      required += getCustomerFacingFabricQuantityForAssignments([
-        state.pendingFabricGarment,
-      ]).fabricQuantity;
+      required += 1;
     }
   }
   return getCommittedPhysicalFabricAllocationCount(state) < required;
@@ -783,11 +776,11 @@ export const isPhysicalFabricAllocationLimitReached = ({
 
 export const isPhysicalFabricQuantityOverAllocated = ({
   selectedFabricQuantity,
-  requiredFabricQuantity,
+  requiredGarmentCount,
 }: {
   selectedFabricQuantity: number;
-  requiredFabricQuantity: number;
-}): boolean => selectedFabricQuantity > requiredFabricQuantity;
+  requiredGarmentCount: number;
+}): boolean => selectedFabricQuantity > requiredGarmentCount;
 
 export const formatFabricQuantityLimitReachedCopy = (
   requiredFabricQuantity: number,
@@ -829,6 +822,40 @@ export interface FuturePartialFabricCompatibleTargets {
   compatibleGarmentKeys: readonly string[];
 }
 
+/**
+ * A completed Fabric stage can leave one standard half-capacity slot unused.
+ * This is deliberately allocation-scoped: separate Fabric purchases must
+ * never be combined to advertise capacity that no individual Fabric has.
+ */
+export interface FutureRemainingFabricCapacityOffer {
+  allocationId: string;
+  fabricCode: string;
+  /**
+   * The physical allocation ordinal from the complete allocation list. This
+   * must survive offer filtering so customers can identify the Fabric they
+   * actually selected earlier in the journey.
+   */
+  selectionOrdinal: number;
+  usedUnits: number;
+  remainingUnits: number;
+  assignedGarmentKeys: readonly string[];
+}
+
+/** Stable for reordering, distinct when the qualifying allocation set changes. */
+export const getRemainingFabricCapacityOfferSignature = (
+  offers: readonly FutureRemainingFabricCapacityOffer[],
+): string =>
+  offers.length === 0
+    ? ""
+    : JSON.stringify(
+        offers.map((offer) => [
+          offer.allocationId,
+          offer.fabricCode,
+          offer.remainingUnits,
+          [...offer.assignedGarmentKeys].sort(),
+        ]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+      );
+
 const resolveFuturePartialFabricAllocationSummary = (
   allocation: FabricAllocation,
 ): FuturePartialFabricAllocationSummary | null => {
@@ -863,6 +890,45 @@ export const getFuturePartialFabricAllocationSummaries = ({
     const summary = resolveFuturePartialFabricAllocationSummary(allocation);
     return summary ? [summary] : [];
   });
+
+/**
+ * Finds the existing physical Fabric allocations that can take exactly one
+ * additional standard garment after the current Fabric stage is complete.
+ * The caller supplies the Additional Garment-domain eligibility result so
+ * this capacity helper does not recreate that domain.
+ */
+export const getFutureRemainingFabricCapacityOffers = ({
+  fabricAllocationState,
+  fabricStageComplete,
+  hasEligibleHalfCapacityAdditionalGarment,
+}: {
+  fabricAllocationState: FabricAllocationState;
+  fabricStageComplete: boolean;
+  hasEligibleHalfCapacityAdditionalGarment: boolean;
+}): FutureRemainingFabricCapacityOffer[] => {
+  if (
+    !fabricStageComplete ||
+    !hasEligibleHalfCapacityAdditionalGarment ||
+    fabricAllocationState.pendingFabricGarment ||
+    fabricAllocationState.awaitingFabricForPendingGarment
+  ) {
+    return [];
+  }
+
+  return fabricAllocationState.fabricAllocations.flatMap(
+    (allocation, allocationIndex) => {
+      const summary = resolveFuturePartialFabricAllocationSummary(allocation);
+      if (
+        !summary ||
+        summary.usedUnits !== FabricCapacityEngine.MAX_UNITS_PER_ALLOCATION - 1 ||
+        summary.remainingUnits !== 1
+      ) {
+        return [];
+      }
+      return [{ ...summary, selectionOrdinal: allocationIndex + 1 }];
+    },
+  );
+};
 
 const getFuturePartialFabricAllocationsWithRemainingCapacity = ({
   fabricAllocationState,
@@ -1175,7 +1241,9 @@ const getFutureFabricAssignmentTargetForKey = ({
   if (fromSelection) return fromSelection;
 
   if (fabricAllocationState.pendingFabricGarment?.garmentKey === garmentKey) {
-    const assignment = fabricAllocationState.pendingFabricGarment;
+    const assignment = enrichFabricAssignmentForCapacity(
+      fabricAllocationState.pendingFabricGarment,
+    );
     return {
       assignment: { ...assignment },
       selection: assignmentToSelection(assignment),
@@ -1409,20 +1477,11 @@ const assignTargetToFabric = ({
         fallbackState: state,
       });
     }
-    if (
-      !canCreatePhysicalFabricAllocation({
-        state: awaitingState,
-        garmentTypeSelection,
-        requiredPhysicalOccurrences,
-        countPendingGarmentForCapacity: true,
-      })
-    ) {
-      return {
-        status: "blocked",
-        reason: "FABRIC_QUANTITY_LIMIT_REACHED",
-        state,
-      };
-    }
+    // The required allocation count is a minimum capacity projection. A
+    // customer who declines reusable Fabric and selects a different one needs
+    // a separate allocation for this exact pending occurrence, even if the
+    // garments could otherwise share the existing allocation. Stock and the
+    // per-allocation capacity authority below still validate the new choice.
     const stockBlocked = blockNewPhysicalAllocationForStock({
       fabricCode,
       fabrics,
@@ -2654,6 +2713,7 @@ export const getFutureFabricStageCompletion = ({
     requiredAssignments.map((assignment) => [assignment.garmentKey, assignment]),
   );
   const assignedKeys = new Set<string>();
+  const allocationIds = new Set<string>();
   const blockers: FutureFabricStageBlocker[] = [];
 
   rawFabricIntegrityDiagnostics.forEach((diagnostic) => {
@@ -2668,6 +2728,16 @@ export const getFutureFabricStageCompletion = ({
   }
 
   for (const allocation of fabricAllocationState.fabricAllocations) {
+    if (
+      !allocation.allocationId?.trim() ||
+      allocationIds.has(allocation.allocationId)
+    ) {
+      blockers.push({
+        code: "MALFORMED_ASSIGNMENT",
+        allocationId: allocation.allocationId,
+      });
+    }
+    allocationIds.add(allocation.allocationId);
     const fabric = fabrics.find(
       (candidate) => candidate.code === allocation.fabricCode,
     );
@@ -2736,15 +2806,6 @@ export const getFutureFabricStageCompletion = ({
     fabricAllocationState.awaitingFabricForPendingGarment
   ) {
     blockers.push({ code: "PENDING_GARMENT_ASSIGNMENT" });
-  }
-
-  const planning = getFutureGarmentFabricPlanning({
-    garmentTypeSelection,
-    fabricAllocationState,
-    requiredPhysicalOccurrences,
-  });
-  if (planning.selectedFabricQuantity > planning.requiredFabricQuantity) {
-    blockers.push({ code: "FABRIC_QUANTITY_OVER_ALLOCATED" });
   }
 
   for (const overAllocation of getFabricStockOverAllocations(

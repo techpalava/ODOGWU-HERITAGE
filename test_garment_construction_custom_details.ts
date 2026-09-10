@@ -225,7 +225,7 @@ assert.deepEqual(
   [
     ["shirt", 65],
     ["trouser", 75],
-    ["kaftan", 70],
+    ["kaftan", 75],
     ["agbada", 140],
   ],
 );
@@ -269,10 +269,10 @@ const lockedPricing = calculateDesignPricing({
 });
 assert.ok(lockedPricing);
 assert.equal(lockedPricing.baseGarmentPricingStatus, "resolved");
-assert.equal(lockedPricing.clothingPrice, 350);
+assert.equal(lockedPricing.clothingPrice, 355);
 assert.equal(lockedPricing.constructionUpgradesPrice, 10);
 assert.equal(lockedPricing.customDetailsPrice, 10);
-assert.equal(lockedPricing.garmentSubtotal, 360);
+assert.equal(lockedPricing.garmentSubtotal, 365);
 
 const individualLockedPricing = calculateDesignPricing({
   route: "alone",
@@ -284,7 +284,7 @@ const individualLockedPricing = calculateDesignPricing({
   garmentTypeSelection: combinedSelection,
 });
 assert.ok(individualLockedPricing);
-assert.equal(individualLockedPricing.clothingPrice, 350);
+assert.equal(individualLockedPricing.clothingPrice, 355);
 assert.equal(individualLockedPricing.constructionSewingCost, 0);
 
 const legacyPricingOmitted = calculateDesignPricing({

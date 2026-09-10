@@ -9,6 +9,7 @@ import type {
 import {
   FUTURE_ORDER_NOT_SUBMITTED_MESSAGE,
   FUTURE_PAYMENT_UNAVAILABLE_MESSAGE,
+  FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE,
   getFuturePaymentReviewContentBlockers,
   getFuturePaymentReviewContentStatusLabel,
   getFuturePaymentReviewEditStage,
@@ -319,11 +320,16 @@ assert.equal(getFuturePaymentReviewContentStatusLabel(candidate), "Ready to revi
 assert.equal(getFuturePaymentReviewGarments(candidate).length, 3);
 assert.equal(getFuturePaymentReviewGarments(candidate)[0].customDetails.length, 1);
 assert.equal(getFuturePaymentReviewGarments(candidate)[1].customDetails.length, 1);
-assert.equal(
-  getFuturePaymentReviewPricingRows(candidate.pricing).filter(
-    (row) => row.id === "included_components",
-  ).length,
-  1,
+const pricingRows = getFuturePaymentReviewPricingRows(candidate.pricing);
+assert.deepEqual(
+  pricingRows.map((row) => [row.id, row.label, row.amountCents, row.presentation]),
+  [
+    ["garment_construction", "Garment Construction Subtotal", 30000, "amount"],
+    ["included_components", FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE, null, "supporting_note"],
+    ["custom_details", "Custom Details Subtotal", 2400, "amount"],
+    ["post_eindhoven", "Additional Delivery", 2660, "amount"],
+  ],
+  "the presentation helper preserves every authoritative monetary value",
 );
 
 const reviewMarkup = renderToStaticMarkup(
@@ -361,11 +367,34 @@ for (const expected of [
   assert.ok(reviewMarkup.includes(expected), `Missing review text: ${expected}`);
 }
 assert.equal((reviewMarkup.match(/Fabric Selection/g) || []).length, 2);
+assert.ok(reviewMarkup.includes("HiTarget Royal Heritage Pattern With A Long Name"));
+assert.ok(reviewMarkup.includes("Ceremonial Lace"));
+assert.ok(reviewMarkup.includes("Assigned to: Shirt, Kaftan"));
+assert.ok(reviewMarkup.includes("Assigned to: Agbada"));
+assert.equal((reviewMarkup.match(/>Included</g) || []).length, 2);
+assert.equal(reviewMarkup.includes("Material price"), false);
+assert.equal(reviewMarkup.includes("€10.00"), false);
 assert.equal((reviewMarkup.match(/data-pricing-row="included_components"/g) || []).length, 1);
-assert.equal((reviewMarkup.match(/€131\.25/g) || []).length, 0);
-assert.equal((reviewMarkup.match(/€26\.60/g) || []).length, 1);
-assert.equal((reviewMarkup.match(/€350\.60/g) || []).length, 1);
-assert.ok(reviewMarkup.includes("Included in Garment Construction"));
+const priceBreakdownMarkup = reviewMarkup.slice(
+  reviewMarkup.indexOf("Price breakdown"),
+  reviewMarkup.indexOf(FUTURE_PAYMENT_UNAVAILABLE_MESSAGE),
+);
+assert.ok(priceBreakdownMarkup.includes(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE));
+assert.equal(priceBreakdownMarkup.includes("Included in Garment Construction"), false);
+assert.equal((priceBreakdownMarkup.match(/>Included</g) || []).length, 0);
+assert.ok(
+  priceBreakdownMarkup.indexOf("Garment Construction Subtotal") <
+    priceBreakdownMarkup.indexOf(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE) &&
+    priceBreakdownMarkup.indexOf(FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE) <
+      priceBreakdownMarkup.indexOf("Custom Details Subtotal"),
+  "the included note immediately follows the construction subtotal",
+);
+assert.equal((priceBreakdownMarkup.match(/€300\.00/g) || []).length, 1);
+assert.equal((priceBreakdownMarkup.match(/€24\.00/g) || []).length, 1);
+assert.equal((priceBreakdownMarkup.match(/€26\.60/g) || []).length, 1);
+assert.equal((priceBreakdownMarkup.match(/€350\.60/g) || []).length, 1);
+assert.equal((priceBreakdownMarkup.match(/data-pricing-final-total/g) || []).length, 1);
+assert.equal((priceBreakdownMarkup.match(/>Total</g) || []).length, 1);
 assert.ok(reviewMarkup.includes("disabled=\"\""));
 assert.ok(
   reviewMarkup.includes(
@@ -480,10 +509,28 @@ for (const forbiddenSource of [
 ]) {
   assert.equal(componentSource.includes(forbiddenSource), false);
 }
-assert.ok(studioSource.includes("buildFutureOrderCandidate({"));
+assert.ok(studioSource.includes("buildFutureOrderCandidateV2({"));
+assert.ok(studioSource.includes("currentFutureDesignStyleDraftHydration?.result.ledger"));
+assert.ok(studioSource.includes("createFutureOrderV2PaymentReviewHandoff(result.candidate)"));
+assert.equal(studioSource.includes("createFutureOrderCartItemV2"), false);
+assert.equal(studioSource.includes("createFutureOrderMasterOrderV2"), false);
+assert.equal(studioSource.includes("StorageService.saveOrder"), false);
 assert.ok(studioSource.includes("isFuturePaymentReviewStageUnlocked"));
 assert.ok(studioSource.includes('futureStageId === "payment"'));
-assert.ok(studioSource.includes('onBack={() => setFutureStageId("shipping")}'));
+const paymentReviewStageSource = studioSource.slice(
+  studioSource.indexOf('futureStageId === "payment"'),
+);
+assert.ok(paymentReviewStageSource.includes("<DormantFuturePaymentReviewStep"));
+assert.ok(
+  paymentReviewStageSource.includes(
+    'onBack={() => navigateToFutureStage("shipping")}',
+  ),
+);
+assert.ok(
+  paymentReviewStageSource.includes(
+    "onEditStage={(stage) => navigateToFutureStage(stage)}",
+  ),
+);
 assert.ok(stepperSource.includes("canEnterPayment"));
 assert.ok(stepperSource.includes("onSelectPayment"));
 assert.ok(shippingSource.includes("canContinueToReview"));

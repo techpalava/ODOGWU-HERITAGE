@@ -18,6 +18,7 @@ import {
   type Step1FabricAssignmentCandidate,
   type Step1FabricAssignmentFailure,
 } from "../utils/step1FabricAssignmentPopup";
+import { formatFabricStockExhaustedCopy } from "../utils/fabricStockAvailability";
 
 const getCapacityGuidanceTone = (
   selectedCapacityUnits: number,
@@ -82,6 +83,7 @@ export const Step1FabricAssignmentDialog = ({
   canAssignSelected,
   canUseForAll,
   groupingCapacityStatus,
+  fabricLevelError = null,
   selectedCapacityMessage,
   remainingCapacityMessage,
   candidateMessages = {},
@@ -103,6 +105,7 @@ export const Step1FabricAssignmentDialog = ({
   canAssignSelected: boolean;
   canUseForAll: boolean;
   groupingCapacityStatus: string | null;
+  fabricLevelError?: string | null;
   selectedCapacityMessage: string | null;
   remainingCapacityMessage: string | null;
   candidateMessages?: Record<string, string | null>;
@@ -132,6 +135,10 @@ export const Step1FabricAssignmentDialog = ({
   const stockPresentation = currentFabric
     ? getFabricStockPresentation(currentFabric)
     : null;
+  const isFabricStockError =
+    errorMessage === formatFabricStockExhaustedCopy();
+  const headerError = fabricLevelError || (isFabricStockError ? errorMessage : null);
+  const dialogError = isFabricStockError ? null : errorMessage;
 
   useEffect(() => {
     if (typeof document === "undefined" || !document.body?.style) return;
@@ -182,14 +189,14 @@ export const Step1FabricAssignmentDialog = ({
     groupingCapacityStatus ? groupingCapacityId : null,
     selectedCapacityMessage ? selectedCapacityId : null,
     selectedFailure ? getRowWarningId(selectedFailure.garmentKey) : null,
-    errorMessage ? errorId : null,
+    dialogError ? errorId : null,
   ]
     .filter(Boolean)
     .join(" ");
   const useForAllDescribedBy = [
     remainingCapacityMessage ? remainingCapacityId : null,
     remainingFailure ? getRowWarningId(remainingFailure.garmentKey) : null,
-    errorMessage ? errorId : null,
+    dialogError ? errorId : null,
   ]
     .filter(Boolean)
     .join(" ");
@@ -241,7 +248,7 @@ export const Step1FabricAssignmentDialog = ({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-5">
-          {errorMessage ? (
+          {dialogError ? (
             <p
               id={errorId}
               role="alert"
@@ -249,7 +256,7 @@ export const Step1FabricAssignmentDialog = ({
               data-testid="step1-fabric-assignment-error"
               className="mb-4 break-words rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800"
             >
-              {errorMessage}
+              {dialogError}
             </p>
           ) : null}
 
@@ -308,6 +315,16 @@ export const Step1FabricAssignmentDialog = ({
               )}
             </div>
           </div>
+          {headerError ? (
+            <p
+              role="alert"
+              aria-live="assertive"
+              data-testid="step1-fabric-assignment-fabric-error"
+              className="mt-2 break-words text-sm font-semibold text-red-700"
+            >
+              {headerError}
+            </p>
+          ) : null}
 
           <fieldset className="mt-4 space-y-2">
             <legend className="sr-only">

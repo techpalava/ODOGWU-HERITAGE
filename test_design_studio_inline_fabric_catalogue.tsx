@@ -171,13 +171,13 @@ const assertFabricProgress = (
   assert.match(
     textContent(fabricLine),
     new RegExp(
-      `^Fabrics Selected: ${fabricSelected}/${fabricRequired}$`,
+      `^Fabrics Selected: ${fabricSelected} · Minimum needed: ${fabricRequired}$`,
     ),
   );
-  assert.doesNotMatch(
+  assert.match(
     textContent(fabricLine),
-    /needed/,
-    "Step 2 Fabrics Selected counter must not include the word needed.",
+    /Minimum needed/,
+    "Step 2 Fabrics Selected counter must show the approved minimum-needed copy.",
   );
   const progressIcon = progressRegion.findAllByProps({
     "data-fabric-progress-icon": "true",
@@ -433,17 +433,16 @@ assert.equal(
 
 let shirtTrouserState = FabricAllocationStateEngine.initialize();
 let shirtTrouserRenderer!: ReturnType<typeof create>;
-const applyShirtTrouserFabric = (fabric: Fabric, garmentKey: string) => {
+  const applyShirtTrouserFabric = (fabric: Fabric, garmentKey: string) => {
   shirtTrouserState = applyFutureFabricCardSelection({
     state: shirtTrouserState,
     garmentTypeSelection: shirtTrouserSelection,
     garmentKey,
     fabricCode: fabric.code,
   });
-  return shirtTrouserState;
-};
-await act(async () => {
-  shirtTrouserRenderer = create(
+    return shirtTrouserState;
+  };
+  const renderShirtTrouserStep = () =>
     renderStep(
       shirtTrouserState,
       applyShirtTrouserFabric,
@@ -460,9 +459,10 @@ await act(async () => {
           },
           shirtTrouserSelection,
         )(fabricCode, garmentKeys),
-    ),
-  );
-});
+    );
+  await act(async () => {
+    shirtTrouserRenderer = create(renderShirtTrouserStep());
+  });
 assert.equal(
   shirtTrouserRenderer.root.findAllByProps({
     "data-assignment-status": "unassigned",
@@ -478,6 +478,16 @@ assert.equal(
   findButton(shirtTrouserRenderer.root, "Continue to Design Style"),
   undefined,
   "Incomplete Fabric must not render a forward action.",
+);
+await act(async () => {
+  shirtTrouserRenderer.root
+    .findByProps({ "aria-label": "Add fabric for Standard Shirt" })
+    .props.onClick({ currentTarget: {} });
+});
+assert.match(
+  textContent(shirtTrouserRenderer.root),
+  /Choosing fabric for: Standard Shirt/,
+  "The normal Step 2 Add Fabric route must retain its clicked garment context.",
 );
 const shirtCard = shirtTrouserRenderer.root
   .findAllByProps({ "data-fabric-card": "true" })
@@ -519,6 +529,216 @@ assert.equal(
 assert.match(
   textContent(shirtTrouserRenderer.root),
   /Assign Fabric to Garments/,
+);
+const freshAssignmentDialog = shirtTrouserRenderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+const freshShirtCheckbox = freshAssignmentDialog.findByProps({
+  "data-step1-fabric-assignment-checkbox": "base:shirt",
+});
+const freshTrouserCheckbox = freshAssignmentDialog.findByProps({
+  "data-step1-fabric-assignment-checkbox": "base:trouser",
+});
+assert.equal(
+  freshShirtCheckbox.props.checked,
+  false,
+  "A fresh normal Step 2 Fabric assignment must not preselect its originating Shirt.",
+);
+assert.equal(
+  freshTrouserCheckbox.props.checked,
+  false,
+  "A fresh normal Step 2 Fabric assignment must not preselect Trouser.",
+);
+assert.equal(
+  freshAssignmentDialog.findByProps({
+    "data-testid": "step1-fabric-assignment-confirm",
+  }).props.disabled,
+  true,
+  "Assign Fabric must remain disabled until the customer selects an occurrence.",
+);
+await act(async () =>
+  freshShirtCheckbox.props.onChange({ currentTarget: { checked: true } }),
+);
+await act(async () =>
+  shirtTrouserRenderer.update(
+    renderStep(
+      shirtTrouserState,
+      applyShirtTrouserFabric,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      (fabricCode, garmentKeys) =>
+        applySameFabricResult(
+          () => shirtTrouserState,
+          (state) => {
+            shirtTrouserState = state;
+          },
+          shirtTrouserSelection,
+        )(fabricCode, garmentKeys),
+    ),
+  ),
+);
+const singleSelectedDialog = shirtTrouserRenderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+assert.equal(
+  singleSelectedDialog.findByProps({
+    "data-step1-fabric-assignment-checkbox": "base:shirt",
+  }).props.checked,
+  true,
+  "Selecting Shirt must check only Shirt.",
+);
+assert.equal(
+  singleSelectedDialog.findByProps({
+    "data-step1-fabric-assignment-checkbox": "base:trouser",
+  }).props.checked,
+  false,
+  "Selecting Shirt must leave Trouser unchecked.",
+);
+await act(async () =>
+  singleSelectedDialog
+    .findByProps({ "data-testid": "step1-fabric-assignment-cancel" })
+    .props.onClick(),
+);
+await act(async () =>
+  shirtTrouserRenderer.update(
+    renderStep(
+      shirtTrouserState,
+      applyShirtTrouserFabric,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      (fabricCode, garmentKeys) =>
+        applySameFabricResult(
+          () => shirtTrouserState,
+          (state) => {
+            shirtTrouserState = state;
+          },
+          shirtTrouserSelection,
+        )(fabricCode, garmentKeys),
+    ),
+  ),
+);
+const secondFreshCard = shirtTrouserRenderer.root
+  .findAllByProps({ "data-fabric-card": "true" })
+  .find((card) => card.props["data-fabric-code"] === "INLINE-B");
+assert.ok(secondFreshCard);
+await act(async () => secondFreshCard.props.onClick({ currentTarget: {} }));
+await act(async () =>
+  shirtTrouserRenderer.update(
+    renderStep(
+      shirtTrouserState,
+      applyShirtTrouserFabric,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      (fabricCode, garmentKeys) =>
+        applySameFabricResult(
+          () => shirtTrouserState,
+          (state) => {
+            shirtTrouserState = state;
+          },
+          shirtTrouserSelection,
+        )(fabricCode, garmentKeys),
+    ),
+  ),
+);
+const secondFreshDialog = shirtTrouserRenderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+assert.equal(
+  secondFreshDialog.findByProps({
+    "data-step1-fabric-assignment-checkbox": "base:shirt",
+  }).props.checked,
+  false,
+  "Opening a different fresh Fabric assignment must start with Shirt unchecked.",
+);
+assert.equal(
+  secondFreshDialog.findByProps({
+    "data-step1-fabric-assignment-checkbox": "base:trouser",
+  }).props.checked,
+  false,
+  "Opening a different fresh Fabric assignment must start with Trouser unchecked.",
+);
+await act(async () =>
+  secondFreshDialog
+    .findByProps({ "data-testid": "step1-fabric-assignment-cancel" })
+    .props.onClick(),
+);
+await act(async () =>
+  shirtTrouserRenderer.update(
+    renderStep(
+      shirtTrouserState,
+      applyShirtTrouserFabric,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      (fabricCode, garmentKeys) =>
+        applySameFabricResult(
+          () => shirtTrouserState,
+          (state) => {
+            shirtTrouserState = state;
+          },
+          shirtTrouserSelection,
+        )(fabricCode, garmentKeys),
+    ),
+  ),
+);
+await act(async () => shirtTrouserRenderer.unmount());
+await act(async () => {
+  shirtTrouserRenderer = create(
+    renderStep(
+      shirtTrouserState,
+      applyShirtTrouserFabric,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      (fabricCode, garmentKeys) =>
+        applySameFabricResult(
+          () => shirtTrouserState,
+          (state) => {
+            shirtTrouserState = state;
+          },
+          shirtTrouserSelection,
+        )(fabricCode, garmentKeys),
+    ),
+  );
+});
+const finalFreshCard = shirtTrouserRenderer.root
+  .findAllByProps({ "data-fabric-card": "true" })
+  .find((card) => card.props["data-fabric-code"] === "INLINE-A");
+assert.ok(finalFreshCard);
+await act(async () => finalFreshCard.props.onClick({ currentTarget: {} }));
+await act(async () =>
+  shirtTrouserRenderer.update(
+    renderStep(
+      shirtTrouserState,
+      applyShirtTrouserFabric,
+      shirtTrouserSelection,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      undefined,
+      (fabricCode, garmentKeys) =>
+        applySameFabricResult(
+          () => shirtTrouserState,
+          (state) => {
+            shirtTrouserState = state;
+          },
+          shirtTrouserSelection,
+        )(fabricCode, garmentKeys),
+    ),
+  ),
 );
 await clickBulkYes(shirtTrouserRenderer.root);
 await act(async () =>
@@ -2674,12 +2894,12 @@ try {
     /Inline Heritage A removed from Standard Shirt\./,
     "Removal must announce the exact fabric and garment without exposing implementation details.",
   );
-  assert.ok(
-    findButton(removalRenderer.root, "Assign to Fabric") ||
-      removalRenderer.root.findByProps({
-        "data-testid": "assign-to-fabric-base:shirt",
-      }),
-    "The removed garment must expose Assign to Fabric when a partial allocation can accept it.",
+  assert.equal(
+    removalRenderer.root.findAllByProps({
+      "data-testid": "assign-to-fabric-base:shirt",
+    }).length,
+    0,
+    "The current direct-catalogue flow must not expose the retired inline reassignment action after removal.",
   );
   assert.equal(
     findButton(removalRenderer.root, "Add Fabric"),
@@ -2690,11 +2910,6 @@ try {
     findButton(removalRenderer.root, "Continue to Design Style"),
     undefined,
     "Removal must remove the forward action while Fabric is incomplete.",
-  );
-  assert.equal(
-    activeFocusMock?.label,
-    "Assign fabric for Standard Shirt",
-    "Removing a fabric must return focus to the removed garment's fabric action.",
   );
   assert.equal(
     mockWindow.scrollY,
@@ -4387,6 +4602,14 @@ try {
   );
   await act(async () =>
     pendingUiRenderer.root
+      .findByProps({
+        "data-step1-fabric-assignment-checkbox": "base:skirt",
+      })
+      .props.onChange({ currentTarget: { checked: true } }),
+  );
+  await act(async () => pendingUiRenderer.update(renderPendingUi()));
+  await act(async () =>
+    pendingUiRenderer.root
       .findByProps({ "data-testid": "step1-fabric-assignment-confirm" })
       .props.onClick(),
   );
@@ -5406,6 +5629,20 @@ try {
         "data-testid": "step1-fabric-assignment-capacity-progress",
       }),
     ),
+    /Fabric Capacity: 0\/2/,
+  );
+  await act(async () =>
+    shirtTrouserGroupRenderer.root
+      .findByProps({ "data-step1-fabric-assignment-checkbox": "base:shirt" })
+      .props.onChange({ currentTarget: { checked: true } }),
+  );
+  await act(async () => shirtTrouserGroupRenderer.update(renderShirtTrouserGroup()));
+  assert.match(
+    textContent(
+      shirtTrouserGroupRenderer.root.findByProps({
+        "data-testid": "step1-fabric-assignment-capacity-progress",
+      }),
+    ),
     /Fabric Capacity: 1\/2/,
   );
   await act(async () =>
@@ -5528,8 +5765,14 @@ try {
     oddResidualRenderer.root.findByProps({
       "data-testid": "step1-fabric-assignment-confirm",
     }).props.disabled,
-    false,
+    true,
   );
+  await act(async () =>
+    oddResidualRenderer.root
+      .findByProps({ "data-step1-fabric-assignment-checkbox": "base:skirt" })
+      .props.onChange({ currentTarget: { checked: true } }),
+  );
+  await act(async () => oddResidualRenderer.update(renderOddResidual()));
   await act(async () =>
     oddResidualRenderer.root
       .findByProps({ "data-testid": "step1-fabric-assignment-confirm" })
@@ -5578,6 +5821,28 @@ try {
     gownOnlyRenderer.root
       .findAllByProps({ "data-fabric-card": "true" })[0]
       .props.onClick({ currentTarget: {} }),
+  );
+  await act(async () => gownOnlyRenderer.update(renderGownOnly()));
+  assert.match(
+    textContent(
+      gownOnlyRenderer.root.findByProps({
+        "data-testid": "step1-fabric-assignment-capacity-progress",
+      }),
+    ),
+    /Fabric Capacity: 0\/2/,
+  );
+  assert.equal(
+    gownOnlyRenderer.root.findByProps({
+      "data-testid": "step1-fabric-assignment-confirm",
+    }).props.disabled,
+    true,
+  );
+  await act(async () =>
+    gownOnlyRenderer.root
+      .findByProps({
+        "data-step1-fabric-assignment-checkbox": "base:full_length_gown",
+      })
+      .props.onChange({ currentTarget: { checked: true } }),
   );
   await act(async () => gownOnlyRenderer.update(renderGownOnly()));
   assert.match(
@@ -5640,6 +5905,12 @@ try {
   await act(async () => sameProductRenderer.update(renderSameProduct()));
   await act(async () =>
     sameProductRenderer.root
+      .findByProps({ "data-step1-fabric-assignment-checkbox": "base:shirt" })
+      .props.onChange({ currentTarget: { checked: true } }),
+  );
+  await act(async () => sameProductRenderer.update(renderSameProduct()));
+  await act(async () =>
+    sameProductRenderer.root
       .findByProps({ "data-step1-fabric-assignment-checkbox": "base:trouser" })
       .props.onChange({ currentTarget: { checked: true } }),
   );
@@ -5661,6 +5932,14 @@ try {
       .findAllByProps({ "data-fabric-card": "true" })
       .find((card) => card.props["data-fabric-code"] === "INLINE-A")!
       .props.onClick({ currentTarget: {} }),
+  );
+  await act(async () => sameProductRenderer.update(renderSameProduct()));
+  await act(async () =>
+    sameProductRenderer.root
+      .findByProps({
+        "data-step1-fabric-assignment-checkbox": "base:standard_shorts",
+      })
+      .props.onChange({ currentTarget: { checked: true } }),
   );
   await act(async () => sameProductRenderer.update(renderSameProduct()));
   await act(async () =>

@@ -9,6 +9,7 @@ import {
   MEASUREMENT_ROUTE_MARKER_STYLE,
 } from "./src/config/MeasurementBlueprintConfig";
 import type {
+  AdditionalGarmentConstructionStateV1,
   FutureMeasurementStateV1,
   GarmentTypeStepSelection,
   MeasurementRiskRoute,
@@ -38,6 +39,7 @@ import {
   setFutureMeasurementRoute,
 } from "./src/utils/measurementBlueprint";
 import { createDormantDesignStudioJourneyState } from "./src/utils/designStudioJourneyMode";
+import { reconcileGuestDesignDraftGarmentTypeSelection } from "./src/utils/garmentTypeStepState";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
 import { inspectCustomDetailCatalog } from "./src/utils/catalogHelpers";
@@ -169,14 +171,149 @@ const shirtResolution = resolveMeasurementProfile({
 });
 assert.equal(shirtResolution.status, "resolved");
 assert.equal(shirtResolution.status === "resolved" && shirtResolution.profile.id, "A");
-assert.equal(
-  resolveMeasurementProfile({
-    garment: { garmentKey: "kaftan:1", garmentType: "kaftan" },
-    garmentTypeSelection: selection,
-  }).status,
-  "unmapped",
+const kaftanMidlongSelection: GarmentTypeStepSelection = {
+  garmentTypes: ["kaftan"],
+  demographic: "male",
+  constructionByGarment: {
+    kaftan: construction("kaftan", "shirt_long_midlong", "shirt_construction"),
+  },
+};
+const kaftanShortSelection: GarmentTypeStepSelection = {
+  ...kaftanMidlongSelection,
+  constructionByGarment: {
+    kaftan: construction("kaftan", "shirt_long_short", "shirt_construction"),
+  },
+};
+const assertResolvedProfile = (
+  garment: { garmentKey: string; garmentType: "shirt" | "dress" | "kaftan" },
+  garmentTypeSelection: GarmentTypeStepSelection,
+  expectedProfileId: string,
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1,
+) => {
+  const result = resolveMeasurementProfile({
+    garment,
+    garmentTypeSelection,
+    additionalGarmentConstructions,
+  });
+  assert.equal(result.status, "resolved");
+  assert.equal(
+    result.status === "resolved" && result.profile.id,
+    expectedProfileId,
+  );
+};
+
+assertResolvedProfile(
+  { garmentKey: "base:kaftan", garmentType: "kaftan" },
+  kaftanMidlongSelection,
+  "D",
 );
-for (const garmentType of ["kaftan", "full_length_gown", "agbada"] as const) {
+assertResolvedProfile(
+  { garmentKey: "base:kaftan", garmentType: "kaftan" },
+  kaftanShortSelection,
+  "C",
+);
+const hydrateKaftanConstruction = (optionId: string) =>
+  reconcileGuestDesignDraftGarmentTypeSelection({
+    garmentTypeSelection: JSON.parse(JSON.stringify({
+      ...kaftanMidlongSelection,
+      constructionByGarment: {
+        kaftan: construction("kaftan", optionId, "shirt_construction"),
+      },
+    })),
+  } as any).garmentTypeSelection!;
+const assertUnresolvedKaftanConstruction = (optionId: string) => {
+  const hydratedSelection = hydrateKaftanConstruction(optionId);
+  const resolution = resolveMeasurementProfile({
+    garment: { garmentKey: "hydrated:kaftan", garmentType: "kaftan" },
+    garmentTypeSelection: hydratedSelection,
+  });
+  assert.equal(resolution.status, "unresolved");
+  const plan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: hydratedSelection,
+    physicalGarments: [{ garmentKey: "hydrated:kaftan", garmentType: "kaftan" }],
+  });
+  assert.equal(plan.requirements.length, 0);
+  const reconciled = reconcileFutureMeasurementState({
+    state: createEmptyFutureMeasurementState("low_risk", "cm"),
+    plan,
+  });
+  assert.equal(reconciled.calculationStatus, "incomplete");
+  assert.equal(isFutureSummaryUnlockedByMeasurements(reconciled), false);
+  if (optionId === "shirt_std_short") {
+    const profileAPlan = planMeasurementRequirements({
+      route: "low_risk",
+      garmentTypeSelection: {
+        garmentTypes: ["shirt"],
+        demographic: "male",
+        constructionByGarment: {
+          shirt: construction("shirt", "shirt_std_short", "shirt_construction"),
+        },
+      },
+      physicalGarments: [{ garmentKey: "hydrated:kaftan", garmentType: "shirt" }],
+    });
+    let profileACompleteState = createEmptyFutureMeasurementState("low_risk", "cm");
+    for (const requirement of profileAPlan.requirements.filter(({ directInput }) => directInput)) {
+      profileACompleteState = setFutureMeasurementInput({
+        state: profileACompleteState,
+        requirement,
+        displayValue: 10,
+      });
+    }
+    profileACompleteState = reconcileFutureMeasurementState({
+      state: profileACompleteState,
+      plan: profileAPlan,
+    });
+    assert.equal(profileACompleteState.calculationStatus, "complete");
+    const blockedWithProfileAValues = reconcileFutureMeasurementState({
+      state: profileACompleteState,
+      plan,
+    });
+    assert.equal(blockedWithProfileAValues.calculationStatus, "incomplete");
+    assert.equal(isFutureSummaryUnlockedByMeasurements(blockedWithProfileAValues), false);
+  }
+};
+assertUnresolvedKaftanConstruction("shirt_std_short");
+assertUnresolvedKaftanConstruction("shirt_std_midlong");
+assertUnresolvedKaftanConstruction("shirt_unknown");
+assertResolvedProfile(
+  { garmentKey: "hydrated:kaftan", garmentType: "kaftan" },
+  hydrateKaftanConstruction("shirt_long_midlong"),
+  "D",
+);
+assertResolvedProfile(
+  { garmentKey: "base:shirt", garmentType: "shirt" },
+  selection,
+  "A",
+);
+assertResolvedProfile(
+  { garmentKey: "base:shirt", garmentType: "shirt" },
+  {
+    ...selection,
+    constructionByGarment: {
+      ...selection.constructionByGarment,
+      shirt: construction("shirt", "shirt_std_midlong", "shirt_construction"),
+    },
+  },
+  "B",
+);
+const additionalKaftanConstructions: AdditionalGarmentConstructionStateV1 = {
+  schemaVersion: 1,
+  byGarmentKey: {
+    "additional:kaftan:manual": construction(
+      "kaftan",
+      "shirt_long_short",
+      "shirt_construction",
+    ),
+  },
+};
+assertResolvedProfile(
+  { garmentKey: "additional:kaftan:manual", garmentType: "kaftan" },
+  kaftanMidlongSelection,
+  "C",
+  additionalKaftanConstructions,
+);
+for (const garmentType of ["full_length_gown", "agbada"] as const) {
   const result = resolveMeasurementProfile({
     garment: { garmentKey: `${garmentType}:1`, garmentType },
     garmentTypeSelection: selection,
@@ -261,6 +398,21 @@ const longDressSelection: GarmentTypeStepSelection = {
     dress: construction("dress", "dress_long_short", "dress_construction"),
   },
 };
+assertResolvedProfile(
+  { garmentKey: "base:dress", garmentType: "dress" },
+  longDressSelection,
+  "G",
+);
+assertResolvedProfile(
+  { garmentKey: "base:dress", garmentType: "dress" },
+  {
+    ...longDressSelection,
+    constructionByGarment: {
+      dress: construction("dress", "dress_long_midlong", "dress_construction"),
+    },
+  },
+  "H",
+);
 const factorlessManualPlan = planMeasurementRequirements({
   route: "medium_risk",
   garmentTypeSelection: longDressSelection,
@@ -341,18 +493,60 @@ for (const requirement of highPlan.requirements.filter(({ directInput }) => dire
 highState = reconcileFutureMeasurementState({ state: highState, plan: highPlan });
 assert.equal(highState.calculationStatus, "complete");
 
-const unmappedPlan = planMeasurementRequirements({
+const kaftanMidlongPlan = planMeasurementRequirements({
   route: "low_risk",
-  garmentTypeSelection: selection,
-  physicalGarments: [{ garmentKey: "kaftan:1", garmentType: "kaftan" }],
+  garmentTypeSelection: kaftanMidlongSelection,
+  physicalGarments: [{ garmentKey: "base:kaftan", garmentType: "kaftan" }],
+});
+assert.deepEqual(
+  kaftanMidlongPlan.profiles.map((profile) =>
+    profile.status === "resolved" ? profile.profile.id : profile.status,
+  ),
+  ["D"],
+);
+assert.equal(kaftanMidlongPlan.diagnostics.length, 0);
+let completeKaftanState = createEmptyFutureMeasurementState("low_risk", "cm");
+for (const requirement of kaftanMidlongPlan.requirements.filter(({ directInput }) => directInput)) {
+  completeKaftanState = setFutureMeasurementInput({
+    state: completeKaftanState,
+    requirement,
+    displayValue: 10,
+  });
+}
+completeKaftanState = reconcileFutureMeasurementState({
+  state: completeKaftanState,
+  plan: kaftanMidlongPlan,
 });
 assert.equal(
-  reconcileFutureMeasurementState({
-    state: createEmptyFutureMeasurementState("low_risk"),
-    plan: unmappedPlan,
-  }).calculationStatus,
-  "profile_mapping_pending",
+  completeKaftanState.calculationStatus,
+  "complete",
+  "A fully entered Profile D Kaftan must clear measurement setup pending.",
 );
+assert.equal(isFutureSummaryUnlockedByMeasurements(completeKaftanState), true);
+for (const route of ["medium_risk", "high_risk"] as const) {
+  const kaftanPlan = planMeasurementRequirements({
+    route,
+    garmentTypeSelection: kaftanMidlongSelection,
+    physicalGarments: [{ garmentKey: "base:kaftan", garmentType: "kaftan" }],
+  });
+  assert.equal(
+    kaftanPlan.profiles[0]?.status === "resolved" && kaftanPlan.profiles[0].profile.id,
+    "D",
+  );
+  let kaftanState = createEmptyFutureMeasurementState(route, "cm");
+  for (const requirement of kaftanPlan.requirements.filter(({ directInput }) => directInput)) {
+    kaftanState = setFutureMeasurementInput({ state: kaftanState, requirement, displayValue: 10 });
+  }
+  kaftanState = reconcileFutureMeasurementState({ state: kaftanState, plan: kaftanPlan });
+  assert.equal(kaftanState.calculationStatus, "complete", `Profile D ${route} completes normally.`);
+  assert.equal(isFutureSummaryUnlockedByMeasurements(kaftanState), true);
+}
+const incompleteKaftanState = reconcileFutureMeasurementState({
+  state: createEmptyFutureMeasurementState("low_risk", "cm"),
+  plan: kaftanMidlongPlan,
+});
+assert.equal(incompleteKaftanState.calculationStatus, "incomplete");
+assert.equal(isFutureSummaryUnlockedByMeasurements(incompleteKaftanState), false);
 
 const invalidState = setFutureMeasurementInput({
   state: createEmptyFutureMeasurementState("medium_risk"),

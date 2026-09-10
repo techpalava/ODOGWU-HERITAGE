@@ -77,5 +77,32 @@ assert.match(
   rules,
   /match \/staffPreviewEntitlements\/\{ownerUid\} \{\s*allow get: if ownsDocumentPath\(ownerUid\);\s*allow list, create, update, delete: if false;/,
 );
+assert.match(rules, /function hasValidDesignStyleRecord\(data\)/);
+assert.match(
+  rules,
+  /match \/styles\/\{styleId\} \{[\s\S]*?resource\.data\.lifecycle == "published"/,
+);
+assert.match(
+  rules,
+  /match \/styles\/\{styleId\} \{[\s\S]*?allow create: if isAdmin\(\) && hasValidDesignStyleCreate\(styleId\)/,
+);
+assert.match(
+  rules,
+  /request\.resource\.data\.publicRevision == resource\.data\.publicRevision \+ 1/,
+);
+assert.match(
+  rules,
+  /request\.resource\.data\.eligibilityRevision == resource\.data\.eligibilityRevision \+ 1/,
+);
+assert.match(rules, /isExplicitLegacyDesignStyleMigration\(styleId\)/);
+assert.match(
+  rules,
+  /resource\.data\.fabricCapacityComposition\.size\(\) > 0/,
+);
+assert.match(rules, /!resource\.data\.keys\(\)\.hasAny\(\[/);
+assert.match(
+  rules,
+  /match \/styles\/\{styleId\} \{[\s\S]*?allow delete: if false;/,
+);
 
 console.log("PASS: Firebase identity and Firestore rule security checks");

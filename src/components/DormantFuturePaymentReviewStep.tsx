@@ -13,12 +13,13 @@ import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type React from "react";
 import type { DesignStudioStageId } from "../types";
 import {
-  type FutureOrderCandidateBuildResult,
-  type FutureOrderCandidateV1,
+  type FutureOrderCandidateV2,
 } from "../utils/futureOrderCandidate";
 import {
   FUTURE_ORDER_NOT_SUBMITTED_MESSAGE,
   FUTURE_PAYMENT_UNAVAILABLE_MESSAGE,
+  FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
+  FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE,
   getFuturePaymentReviewAiStatusLabel,
   getFuturePaymentReviewContentBlockers,
   getFuturePaymentReviewContentStatusLabel,
@@ -29,6 +30,10 @@ import {
   getFuturePaymentReviewPricingRows,
   getFuturePaymentReviewShippingStatusLabel,
   isFuturePaymentReviewStageUnlocked,
+  type FuturePaymentReviewCandidate,
+  type FuturePaymentReviewResult,
+  type FutureOrderV2PreparationPresentation,
+  type FutureOrderV2PaymentPresentation,
 } from "../utils/designStudioFuturePaymentReview";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
@@ -39,7 +44,7 @@ import type { FutureDesignStudioSummary } from "../utils/designStudioFutureSumma
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 
 interface DormantFuturePaymentReviewStepProps {
-  result: FutureOrderCandidateBuildResult;
+  result: FuturePaymentReviewResult;
   onBack: () => void;
   onEditStage: (stage: Exclude<DesignStudioStageId, "payment">) => void;
   survivorSummary?: FutureDesignStudioSummary | null;
@@ -48,6 +53,8 @@ interface DormantFuturePaymentReviewStepProps {
     target: FutureGarmentRemovalTarget,
     trigger: HTMLButtonElement,
   ) => void;
+  onPrepareOrder?: () => void;
+  onExecutePayment?: () => void;
 }
 
 const moneyFromCents = (amountCents: number): string =>
@@ -58,6 +65,10 @@ const PendingAmount = () => (
     Pending
   </span>
 );
+
+const isV2PaymentReviewCandidate = (
+  candidate: FuturePaymentReviewCandidate | null,
+): candidate is FutureOrderCandidateV2 => candidate?.schemaVersion === 2;
 
 const EditButton = ({
   label,
@@ -122,6 +133,7 @@ const ReviewSection = ({
   editLabel,
   onEdit,
   removalHeadingMarker,
+  compact = false,
   children,
 }: {
   title: string;
@@ -129,15 +141,26 @@ const ReviewSection = ({
   editLabel?: string;
   onEdit?: () => void;
   removalHeadingMarker?: string;
+  compact?: boolean;
   children: React.ReactNode;
 }) => (
-  <section className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
-    <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+  <section
+    className={`min-w-0 rounded-2xl border border-heritage-gold/20 bg-white shadow-sm ${
+      compact ? "p-4 sm:p-5" : "p-5 sm:p-6"
+    }`}
+  >
+    <div
+      className={`grid min-w-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start ${
+        compact ? "gap-2" : "gap-3"
+      }`}
+    >
       <div className="min-w-0">
         <h3
           tabIndex={removalHeadingMarker ? -1 : undefined}
           data-garment-removal-list-heading={removalHeadingMarker}
-          className="break-words font-serif text-lg font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+          className={`break-words font-serif font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+            compact ? "text-base" : "text-lg"
+          }`}
         >
           {title}
         </h3>
@@ -149,7 +172,7 @@ const ReviewSection = ({
       </div>
       {editLabel && onEdit && <EditButton label={editLabel} onClick={onEdit} />}
     </div>
-    <div className="mt-4 min-w-0">{children}</div>
+    <div className={`min-w-0 ${compact ? "mt-3" : "mt-4"}`}>{children}</div>
   </section>
 );
 
@@ -157,7 +180,7 @@ const CandidateAttention = ({
   result,
   onEditStage,
 }: {
-  result: FutureOrderCandidateBuildResult;
+  result: FuturePaymentReviewResult;
   onEditStage: DormantFuturePaymentReviewStepProps["onEditStage"];
 }) => {
   const blockers = getFuturePaymentReviewContentBlockers(result);
@@ -217,7 +240,7 @@ const GarmentReview = ({
   removalTargets,
   onRequestGarmentRemoval,
 }: {
-  candidate: FutureOrderCandidateV1;
+  candidate: FuturePaymentReviewCandidate;
   onEditStage: DormantFuturePaymentReviewStepProps["onEditStage"];
   removalTargets: readonly FutureGarmentRemovalTarget[];
   onRequestGarmentRemoval?: DormantFuturePaymentReviewStepProps["onRequestGarmentRemoval"];
@@ -226,12 +249,13 @@ const GarmentReview = ({
   return (
     <ReviewSection
       title="Garments"
-      description="Each physical garment keeps its own construction, fabric assignment, and Custom Details."
+      description="Each physical garment, fabric assignment, and Custom Detail remains listed."
       editLabel="Edit Garments"
       onEdit={() => onEditStage("garment_type")}
       removalHeadingMarker="payment"
+      compact
     >
-      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+      <div className="grid min-w-0 gap-3 lg:grid-cols-2">
         {garments.map(({ garment, fabricAllocations, customDetails }, index) => {
           const removalTarget = removalTargets.find(
             (target) => target.garmentKey === garment.garmentKey,
@@ -240,16 +264,16 @@ const GarmentReview = ({
           return (
             <article
               key={garment.garmentKey}
-              className="min-w-0 rounded-2xl border border-heritage-green/15 bg-heritage-cream/20 p-4 sm:p-5"
+              className="min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/20 p-3 sm:p-4"
               data-garment-removal-row={garment.garmentKey}
             >
-              <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Shirt aria-hidden="true" className="shrink-0 text-heritage-gold" size={18} />
                   <h4
                     tabIndex={-1}
                     data-garment-removal-row-heading={garment.garmentKey}
-                    className="min-w-0 break-words font-serif text-lg font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                    className="min-w-0 break-words font-serif text-base font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                   >
                     {garment.label}
                   </h4>
@@ -267,11 +291,11 @@ const GarmentReview = ({
                 )}
               </div>
             {garment.physicalComponents.length > 1 && (
-              <div className="mt-3 rounded-xl bg-white/80 p-3">
+              <div className="mt-2 rounded-lg bg-white/80 p-2">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/55">
                   Garment components
                 </p>
-                <ul className="mt-2 space-y-1 text-sm text-heritage-ink/70">
+                <ul className="mt-1 space-y-0.5 text-sm text-heritage-ink/70">
                   {garment.physicalComponents.map((component) => (
                     <li key={component.garmentKey} className="break-words">
                       {component.label}
@@ -281,11 +305,11 @@ const GarmentReview = ({
               </div>
             )}
 
-            <div className="mt-4 min-w-0">
+            <div className="mt-3 min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/55">
                 Construction
               </p>
-              <dl className="mt-2 space-y-2 text-sm">
+              <dl className="mt-1 space-y-1.5 text-sm">
                 {garment.construction.map((component) => (
                   <div
                     key={component.componentKey}
@@ -299,7 +323,7 @@ const GarmentReview = ({
                     </dd>
                   </div>
                 ))}
-                <div className="flex min-w-0 flex-wrap justify-between gap-2 border-t border-heritage-green/10 pt-2">
+                <div className="flex min-w-0 flex-wrap justify-between gap-2 border-t border-heritage-green/10 pt-1.5">
                   <dt className="font-bold text-heritage-green">Construction total</dt>
                   <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
                     {garment.constructionTotalCents === null ? (
@@ -312,14 +336,14 @@ const GarmentReview = ({
               </dl>
             </div>
 
-            <div className="mt-4 rounded-xl border border-heritage-gold/15 bg-white p-3">
-              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="mt-3 rounded-lg border border-heritage-gold/15 bg-white p-2.5">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/55">
                     Assigned fabric
                   </p>
                   {fabricAllocations.length > 0 ? (
-                    <ul className="mt-2 space-y-2">
+                    <ul className="mt-1 space-y-1">
                       {fabricAllocations.map((allocation) => (
                         <li key={allocation.allocationId} className="min-w-0">
                           <p className="break-words text-sm font-bold text-heritage-green">
@@ -342,8 +366,8 @@ const GarmentReview = ({
               </div>
             </div>
 
-            <div className="mt-4 min-w-0">
-              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="mt-3 min-w-0">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/55">
                   Custom Details
                 </p>
@@ -353,13 +377,13 @@ const GarmentReview = ({
                 />
               </div>
               {customDetails.length === 0 ? (
-                <p className="mt-2 text-sm text-heritage-ink/60">No optional details selected.</p>
+                <p className="mt-1 text-sm text-heritage-ink/60">No optional details selected.</p>
               ) : (
-                <ul className="mt-3 space-y-3">
+                <ul className="mt-2 space-y-2">
                   {customDetails.map((detail) => (
                     <li
                       key={detail.occurrenceKey}
-                      className="min-w-0 rounded-xl bg-white/80 p-3"
+                      className="min-w-0 rounded-lg bg-white/80 p-2.5"
                     >
                       <div className="flex min-w-0 flex-wrap justify-between gap-2">
                         <div className="min-w-0">
@@ -383,7 +407,7 @@ const GarmentReview = ({
                         </span>
                       </div>
                       {detail.personalizedText && (
-                        <div className="mt-2 rounded-lg border border-heritage-gold/15 bg-heritage-cream/30 p-2">
+                        <div className="mt-1.5 rounded-lg border border-heritage-gold/15 bg-heritage-cream/30 p-2">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
                             Personalized requirement
                           </p>
@@ -422,8 +446,9 @@ const RetainedGarmentReview = ({
     editLabel="Edit Garments"
     onEdit={() => onEditStage("garment_type")}
     removalHeadingMarker="payment"
+    compact
   >
-    <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+    <div className="grid min-w-0 gap-3 lg:grid-cols-2">
       {summary.garmentSummary.map((garment, index) => {
         const removalTarget = removalTargets.find(
           (target) => target.garmentKey === garment.garmentKey,
@@ -442,9 +467,9 @@ const RetainedGarmentReview = ({
             key={garment.garmentKey}
             data-retained-payment-garment="true"
             data-garment-removal-row={garment.garmentKey}
-            className="min-w-0 rounded-2xl border border-heritage-green/15 bg-heritage-cream/20 p-4 sm:p-5"
+            className="min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/20 p-3 sm:p-4"
           >
-            <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+            <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Shirt
                   aria-hidden="true"
@@ -454,7 +479,7 @@ const RetainedGarmentReview = ({
                 <h4
                   tabIndex={-1}
                   data-garment-removal-row-heading={garment.garmentKey}
-                  className="min-w-0 break-words font-serif text-lg font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                  className="min-w-0 break-words font-serif text-base font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                 >
                   {garment.label}
                 </h4>
@@ -472,7 +497,7 @@ const RetainedGarmentReview = ({
               )}
             </div>
 
-            <dl className="mt-4 space-y-2 text-sm">
+            <dl className="mt-3 space-y-1.5 text-sm">
               {garment.construction.map((component) => (
                 <div
                   key={component.componentKey}
@@ -488,12 +513,12 @@ const RetainedGarmentReview = ({
               ))}
             </dl>
 
-            <div className="mt-4 rounded-xl border border-heritage-gold/15 bg-white p-3">
+            <div className="mt-3 rounded-lg border border-heritage-gold/15 bg-white p-2.5">
               <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/55">
                 Assigned fabric
               </p>
               {fabricAllocations.length > 0 ? (
-                <ul className="mt-2 space-y-2">
+                <ul className="mt-1 space-y-1">
                   {fabricAllocations.map((allocation) => (
                     <li key={allocation.allocationId} className="min-w-0">
                       <p className="break-words text-sm font-bold text-heritage-green">
@@ -506,22 +531,22 @@ const RetainedGarmentReview = ({
                   ))}
                 </ul>
               ) : (
-                <p className="mt-2 text-sm text-heritage-ink/60">
+                <p className="mt-1 text-sm text-heritage-ink/60">
                   Fabric assignment needs review.
                 </p>
               )}
             </div>
 
-            <div className="mt-4 min-w-0">
+            <div className="mt-3 min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/55">
                 Custom Details
               </p>
               {customDetails.length > 0 ? (
-                <ul className="mt-2 space-y-2">
+                <ul className="mt-1 space-y-1.5">
                   {customDetails.map((detail) => (
                     <li
                       key={detail.occurrenceKey}
-                      className="flex min-w-0 flex-wrap justify-between gap-2 rounded-xl bg-white/80 p-3 text-sm"
+                      className="flex min-w-0 flex-wrap justify-between gap-2 rounded-lg bg-white/80 p-2.5 text-sm"
                     >
                       <span className="min-w-0 break-words text-heritage-ink/70">
                         {detail.optionLabel}
@@ -558,6 +583,8 @@ export const DormantFuturePaymentReviewStep = ({
   survivorSummary = null,
   removalTargets = [],
   onRequestGarmentRemoval,
+  onPrepareOrder,
+  onExecutePayment,
 }: DormantFuturePaymentReviewStepProps) => {
   const candidate = result.candidate;
   const isReviewable = isFuturePaymentReviewStageUnlocked(result);
@@ -575,13 +602,37 @@ export const DormantFuturePaymentReviewStep = ({
   );
   const isDelivery =
     candidate?.shipping.state.fulfilmentMethod === "destination_delivery";
+  const preparation: FutureOrderV2PreparationPresentation | null =
+    "preparation" in result ? result.preparation : null;
+  const preparationIsPending = preparation?.status === "preparing";
+  const preparationIsComplete = preparation?.status === "prepared";
+  const payment: FutureOrderV2PaymentPresentation | null =
+    "payment" in result ? result.payment : null;
+  const paymentIsProcessing = payment?.status === "processing";
+  const paymentIsAuthorized = payment?.status === "authorized";
+  const paymentCanExecute =
+    preparationIsComplete &&
+    (payment?.status === "ready" || payment?.status === "failed");
+  const preparationMessage =
+    payment?.status === "authorized"
+      ? `Payment authorized for this prepared order. Reference: ${payment.providerTransactionReference}.`
+      : payment?.status === "processing"
+        ? "Authorizing payment for this prepared order..."
+        : payment?.status === "failed"
+          ? payment.message
+          : preparation?.status === "authentication_required" ||
+            preparation?.status === "error"
+      ? preparation.message
+      : preparationIsComplete
+        ? FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE
+        : FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE;
 
   return (
     <main
       aria-labelledby="future-payment-review-title"
       data-stage-id="payment"
       data-candidate-status={result.status}
-      className="mx-auto max-w-6xl space-y-5 font-sans"
+      className="mx-auto min-w-0 max-w-6xl space-y-5 font-sans [overflow-wrap:anywhere]"
     >
       <header className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
         <DesignStudioBackButton
@@ -662,10 +713,37 @@ export const DormantFuturePaymentReviewStep = ({
             description="One active future Design Studio configuration."
             editLabel="Edit Design Style"
             onEdit={() => onEditStage("design_style")}
+            compact
           >
-            {candidate.design ? (
-              <div className="grid min-w-0 gap-4 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-center">
-                <div className="aspect-[4/5] overflow-hidden rounded-xl bg-heritage-cream/35">
+            {isV2PaymentReviewCandidate(candidate) ? (
+              <ul className="divide-y divide-heritage-green/10 overflow-hidden rounded-xl border border-heritage-green/12 bg-heritage-cream/20">
+                {candidate.occurrenceStyleSnapshots.map((snapshot) => (
+                  <li
+                    key={snapshot.occurrence.occurrenceToken}
+                    data-occurrence-style-snapshot={snapshot.occurrence.garmentKey}
+                    className="grid min-w-0 gap-x-4 gap-y-1 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                  >
+                    <div className="min-w-0">
+                      <p className="break-words text-sm font-bold text-heritage-green">
+                        {snapshot.occurrence.label}
+                      </p>
+                      <p className="break-words text-xs text-heritage-ink/60">
+                        {snapshot.sourceKind === "catalogue"
+                          ? `Catalogue style: ${snapshot.catalogue?.styleId}${snapshot.catalogue ? ` · Eligibility revision ${snapshot.catalogue.eligibilityRevision}` : ""}`
+                          : "Confirmed uploaded design"}
+                      </p>
+                    </div>
+                    <p className="min-w-0 break-words text-sm font-semibold text-heritage-green sm:text-right">
+                      {snapshot.sourceKind === "catalogue"
+                        ? snapshot.catalogue?.name
+                        : snapshot.uploaded?.displayLabel}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : candidate.design ? (
+              <div className="grid min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-3 sm:grid-cols-[80px_minmax(0,1fr)] sm:items-center">
+                <div className="aspect-[4/5] overflow-hidden rounded-lg bg-heritage-cream/35">
                   {candidate.design.image ? (
                     <img
                       src={candidate.design.image}
@@ -683,19 +761,19 @@ export const DormantFuturePaymentReviewStep = ({
                   <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
                     Design Style
                   </p>
-                  <h2 className="mt-1 break-words font-serif text-xl font-bold text-heritage-green">
+                  <h2 className="mt-1 break-words font-serif text-lg font-bold text-heritage-green">
                     {candidate.design.name}
                   </h2>
                   <p className="mt-1 break-words text-sm text-heritage-ink/70">
                     {candidate.design.compositionLabel}
                   </p>
-                  <p className="mt-2 text-xs capitalize text-heritage-ink/55">
+                  <p className="mt-1 text-xs capitalize text-heritage-ink/55">
                     For: {candidate.design.demographic}
                   </p>
                   <p className="mt-1 break-words font-mono text-xs text-heritage-ink/50">
                     Catalog style: {candidate.source.styleId}
                   </p>
-                  <p className="mt-2 text-xs font-semibold text-heritage-green">
+                  <p className="mt-1 text-xs font-semibold text-heritage-green">
                     Status: {getFuturePaymentReviewContentStatusLabel(candidate)}
                   </p>
                 </div>
@@ -752,14 +830,8 @@ export const DormantFuturePaymentReviewStep = ({
                       </dd>
                     </div>
                     <div className="flex min-w-0 flex-wrap justify-between gap-2">
-                      <dt>Material price</dt>
-                      <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
-                        {allocation.materialPriceCents === null ? (
-                          <PendingAmount />
-                        ) : (
-                          moneyFromCents(allocation.materialPriceCents)
-                        )}
-                      </dd>
+                      <dt>Fabric</dt>
+                      <dd className="font-bold text-heritage-green">Included</dd>
                     </div>
                   </dl>
                   <p className="mt-3 text-xs font-semibold capitalize text-heritage-ink/60">
@@ -924,26 +996,43 @@ export const DormantFuturePaymentReviewStep = ({
           <ReviewSection title="Price breakdown">
             <dl className="space-y-3 text-sm">
               {pricingRows.map((row) => (
-                <div
-                  key={row.id}
-                  data-pricing-row={row.id}
-                  className="flex min-w-0 flex-wrap justify-between gap-2"
-                >
-                  <dt className="min-w-0 break-words text-heritage-ink/70">{row.label}</dt>
-                  <dd className="min-w-0 max-w-full break-words text-right font-mono font-bold text-heritage-green">
-                    {row.valueLabel ? (
-                      row.valueLabel
-                    ) : row.amountCents === null ? (
-                      <PendingAmount />
-                    ) : (
-                      moneyFromCents(row.amountCents)
-                    )}
-                  </dd>
-                </div>
+                row.presentation === "supporting_note" ? (
+                  <div
+                    key={row.id}
+                    id="garment-construction-included-note"
+                    data-pricing-row={row.id}
+                    className="-mt-1 border-b border-heritage-green/10 pb-3 text-xs leading-relaxed text-heritage-ink/60"
+                  >
+                    {row.label}
+                  </div>
+                ) : (
+                  <div
+                    key={row.id}
+                    data-pricing-row={row.id}
+                    aria-describedby={
+                      row.id === "garment_construction"
+                        ? "garment-construction-included-note"
+                        : undefined
+                    }
+                    className="flex min-w-0 flex-wrap justify-between gap-2"
+                  >
+                    <dt className="min-w-0 break-words text-heritage-ink/70">{row.label}</dt>
+                    <dd className="min-w-0 max-w-full break-words text-right font-mono font-medium text-heritage-green">
+                      {row.amountCents === null ? (
+                        <PendingAmount />
+                      ) : (
+                        moneyFromCents(row.amountCents)
+                      )}
+                    </dd>
+                  </div>
+                )
               ))}
-              <div className="flex min-w-0 flex-wrap justify-between gap-2 border-t border-heritage-green/15 pt-4 text-base">
-                <dt className="font-bold text-heritage-green">Exact total</dt>
-                <dd className="min-w-0 max-w-full break-words text-right font-mono text-lg font-bold text-heritage-green">
+              <div
+                data-pricing-final-total
+                className="flex min-w-0 flex-wrap justify-between gap-3 border-t-2 border-heritage-green/25 pt-4 text-base"
+              >
+                <dt className="font-bold uppercase tracking-wide text-heritage-green">Total</dt>
+                <dd className="min-w-0 max-w-full break-words text-right font-mono text-xl font-bold text-heritage-green sm:text-2xl">
                   {candidate.pricing.status === "exact" &&
                   candidate.pricing.exactTotalCents !== null ? (
                     moneyFromCents(candidate.pricing.exactTotalCents)
@@ -968,23 +1057,85 @@ export const DormantFuturePaymentReviewStep = ({
               id="future-payment-unavailable-title"
               className="font-serif text-xl font-bold"
             >
-              {FUTURE_PAYMENT_UNAVAILABLE_MESSAGE}
+              {paymentIsAuthorized
+                ? "Payment authorized"
+                : paymentCanExecute || paymentIsProcessing
+                  ? "Payment authorization"
+                  : FUTURE_PAYMENT_UNAVAILABLE_MESSAGE}
             </h2>
-            <p id="future-payment-pending-explanation" className="mt-2 break-words text-sm leading-relaxed text-white/80">
-              {FUTURE_ORDER_NOT_SUBMITTED_MESSAGE}
+            <p id="future-payment-pending-explanation" role="status" aria-atomic="true" className="mt-2 break-words text-sm leading-relaxed text-white/80">
+              {isV2PaymentReviewCandidate(candidate)
+                ? preparationIsPending ? "Preparing your order..." : preparationMessage
+                : FUTURE_ORDER_NOT_SUBMITTED_MESSAGE}
             </p>
-            <p className="mt-1 text-xs leading-relaxed text-white/65">
-              Authentication and a verified payment provider will be required before real payment can begin.
-            </p>
-            <button
-              type="button"
-              disabled
-              aria-describedby="future-payment-unavailable-title future-payment-pending-explanation"
-              className="mt-4 inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-white/20 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
-            >
-              <LockKeyhole aria-hidden="true" size={14} />
-              Payment integration pending
-            </button>
+            {!preparationIsComplete && (
+              <p className="mt-1 text-xs leading-relaxed text-white/65">
+                Authentication and a verified payment provider will be required before real payment can begin.
+              </p>
+            )}
+            {isV2PaymentReviewCandidate(candidate) && onPrepareOrder && (
+              <>
+                {preparationIsComplete ? (
+                  <p
+                    data-future-order-v2-prepared={preparation?.status}
+                    className="mt-4 break-words text-sm font-semibold text-heritage-gold"
+                  >
+                    Order prepared with ID {preparation.orderId}.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    data-future-order-v2-prepare
+                    disabled={!isReviewable || preparationIsPending}
+                    aria-busy={preparationIsPending}
+                    aria-describedby="future-payment-pending-explanation"
+                    onClick={onPrepareOrder}
+                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white sm:mr-3 sm:w-auto"
+                  >
+                    <CheckCircle2 aria-hidden="true" size={14} />
+                    {preparationIsPending
+                      ? "Preparing order..."
+                      : "Prepare order for future payment"}
+                  </button>
+                )}
+              </>
+            )}
+            {paymentCanExecute && onExecutePayment && (
+              <button
+                type="button"
+                data-future-order-v2-payment
+                onClick={onExecutePayment}
+                aria-describedby="future-payment-pending-explanation"
+                className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green sm:w-auto"
+              >
+                <CheckCircle2 aria-hidden="true" size={14} />
+                Authorize payment
+              </button>
+            )}
+            {paymentIsProcessing && (
+              <button
+                type="button"
+                data-future-order-v2-payment
+                disabled
+                aria-busy="true"
+                aria-describedby="future-payment-unavailable-title future-payment-pending-explanation"
+                className="mt-4 inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-white/20 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
+              >
+                <LockKeyhole aria-hidden="true" size={14} />
+                Authorizing payment...
+              </button>
+            )}
+            {!preparationIsComplete && (
+              <button
+                type="button"
+                disabled
+                aria-describedby="future-payment-unavailable-title future-payment-pending-explanation"
+                className="mt-4 inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-white/20 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
+              >
+                <LockKeyhole aria-hidden="true" size={14} />
+                Payment integration pending
+              </button>
+            )}
           </div>
         </div>
       </section>

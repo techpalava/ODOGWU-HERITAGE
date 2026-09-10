@@ -32,6 +32,7 @@ import {
   GUEST_UPLOAD_TRANSFER_REQUIRED_MESSAGE,
   guestUploadedDesignOwnershipContinuity,
 } from "../services/guestUploadedDesignOwnershipContinuity";
+import { designStylePrecanonicalUploadCleanupCoordinator } from "../utils/designStylePrecanonicalUploadCleanup";
 
 interface LoginViewProps {
   onLogin: (customer: Customer) => void;
@@ -61,6 +62,14 @@ export default function LoginView({
     useState(false);
 
   const prepareGuestUploadTransition = async (): Promise<boolean> => {
+    const precanonicalPreparation =
+      await designStylePrecanonicalUploadCleanupCoordinator.prepareForAuthTransition(
+        () => auth.currentUser,
+      );
+    if (precanonicalPreparation.status === "blocked") {
+      setError(GUEST_UPLOAD_TRANSFER_REQUIRED_MESSAGE);
+      return false;
+    }
     const preparation =
       await guestUploadedDesignOwnershipContinuity.prepare(auth.currentUser);
     if (preparation.status === "transfer_required") {

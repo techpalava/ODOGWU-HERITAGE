@@ -35,6 +35,40 @@ assert.equal(
 
 assert.equal(
   resolveFutureStageCorrection({
+    currentStageId: "custom_details",
+    garmentTypeComplete: true,
+    fabricComplete: false,
+    designSourceReady: true,
+    customDetailsReady: true,
+    measurementUnlocked: false,
+    summaryUnlocked: false,
+    inlineAdditionalGarmentFabricTransaction: null,
+    additionalGarmentFabricRepairTargeted: true,
+  }),
+  null,
+  "a Summary-targeted additional Fabric repair remains in its Step 4 owner instead of redirecting to Fabric",
+);
+
+assert.equal(
+  resolveFutureStageCorrection({
+    currentStageId: "design_style",
+    garmentTypeComplete: true,
+    fabricComplete: false,
+    designSourceReady: false,
+    customDetailsReady: false,
+    measurementUnlocked: false,
+    summaryUnlocked: false,
+    inlineAdditionalGarmentFabricTransaction: {
+      garmentKey: "additional:shirt:1",
+      designStyleReuse: { styleId: "reuse-style" },
+    },
+  }),
+  null,
+  "a reuse transaction keeps the customer in the existing Design Style context",
+);
+
+assert.equal(
+  resolveFutureStageCorrection({
     currentStageId: "summary",
     garmentTypeComplete: true,
     fabricComplete: true,

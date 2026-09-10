@@ -1,4 +1,5 @@
 import type { CustomDetailParentSectionId } from "../config/GarmentDetailsConfig";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import type { FabricGarmentType } from "../types";
 import type { AllowedAdditionalGarment } from "./additionalGarmentDomain";
 
@@ -10,9 +11,22 @@ export type InlineOptionalShortsGarmentType = Extract<
 export const INLINE_OPTIONAL_SHORTS_LABELS: Readonly<
   Record<InlineOptionalShortsGarmentType, string>
 > = {
-  standard_shorts: "Nikka / Standard Shorts",
-  bum_shorts: "Bum Shorts",
+  standard_shorts: "Standard Nikka Shorts",
+  bum_shorts: "Standard Bum Shorts",
 };
+
+/** Customer-visible garment labels, preserving repeated-occurrence numbers. */
+export const formatCustomDetailsGarmentLabel = (label: string): string => {
+  const match = /^(Nikka \/ Standard Shorts|Bum Shorts)( \d+)?$/.exec(label);
+  if (match) {
+    const garmentType = match[1] === "Bum Shorts" ? "bum_shorts" : "standard_shorts";
+    return `${INLINE_OPTIONAL_SHORTS_LABELS[garmentType]}${match[2] || ""}`;
+  }
+  return label;
+};
+
+export const getCustomDetailsGarmentLabel = (garmentType: FabricGarmentType): string =>
+  formatCustomDetailsGarmentLabel(getFabricGarmentLabel(garmentType));
 
 const SHORTS_SECTION_BY_GARMENT: Readonly<
   Record<InlineOptionalShortsGarmentType, CustomDetailParentSectionId>

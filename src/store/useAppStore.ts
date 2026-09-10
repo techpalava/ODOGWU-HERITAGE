@@ -31,6 +31,7 @@ import { migrateLegacyCartShippingItems } from "../utils/shippingPricing";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
 import { FirebaseCustomerAuth } from "../services/firebaseCustomerAuth";
 import { guestUploadedDesignOwnershipContinuity } from "../services/guestUploadedDesignOwnershipContinuity";
+import { DesignStyleAuthorityService } from "../services/designStyleAuthorityService";
 import type { StylesLoadState } from "../utils/stylesCatalogueLoadState";
 import {
   applyStylesCatalogueListenerEvent,
@@ -588,8 +589,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
 
       storeUnsubs.push(
-        StorageService.subscribeToCollection<StyleCategory>(
-          "styles",
+        DesignStyleAuthorityService.subscribeToPublished(
           (styles) => {
             if (
               !isCurrentStylesCatalogueLoadGeneration(

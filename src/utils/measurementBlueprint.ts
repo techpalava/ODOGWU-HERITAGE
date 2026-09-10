@@ -94,6 +94,12 @@ export const isSelectedMeasurementRiskRoute = (
 const VALID_UNITS = new Set<MeasurementUnit>(["inch", "cm"]);
 const SQUARE_NECK_OPTION_ID_SET = new Set<string>(SQUARE_NECK_OPTION_IDS);
 
+const ALLOWED_MEASUREMENT_PROFILE_IDS_BY_PHYSICAL_GARMENT: Partial<
+  Readonly<Record<FabricGarmentType, readonly MeasurementProfileId[]>>
+> = {
+  kaftan: ["C", "D"],
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
 
@@ -279,15 +285,20 @@ export const resolveMeasurementProfile = ({
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
 }): MeasurementProfileResolution => {
   const { garmentKey, garmentType } = garment;
-  if (["kaftan", "full_length_gown", "agbada", "other"].includes(garmentType)) {
+  if (["full_length_gown", "agbada", "other"].includes(garmentType)) {
     return { status: "unmapped", garmentKey, garmentType, code: "measurement_profile_unmapped" };
   }
   const demographic = garmentTypeSelection.demographic;
   if (!demographic) {
     return { status: "unresolved", garmentKey, garmentType, code: "demographic_ineligible" };
   }
+  const measurementFamily = garmentType === "kaftan" ? "shirt" : garmentType;
+  const allowedProfileIds =
+    ALLOWED_MEASUREMENT_PROFILE_IDS_BY_PHYSICAL_GARMENT[garmentType];
   const candidates = MEASUREMENT_PROFILES.filter(
-    (profile) => profile.garmentType === garmentType,
+    (profile) =>
+      profile.garmentType === measurementFamily &&
+      (!allowedProfileIds || allowedProfileIds.includes(profile.id)),
   );
   const eligible = candidates.filter((profile) =>
     profile.demographics.includes(demographic),

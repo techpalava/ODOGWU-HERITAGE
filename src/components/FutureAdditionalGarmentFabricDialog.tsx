@@ -6,8 +6,10 @@ import type {
   FabricAllocationState,
   GarmentTypeStepSelection,
 } from "../types";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
+import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import {
+  getFutureCompatiblePartialFabricAllocations,
   resolveFutureFabricCatalogueCardPresentation,
 } from "../utils/designStudioFutureFabricStage";
 import {
@@ -15,11 +17,14 @@ import {
   getOrderAwareFabricStockPresentation,
 } from "../utils/fabricStockAvailability";
 import type { AdditionalGarmentFabricTransaction } from "../utils/additionalGarmentFabricPicker";
-import {
-  resolveCurrentCatalogueFabricForAssignment,
-} from "../utils/additionalGarmentFabricPicker";
+import { getFabricAvailabilityMessage } from "../utils/fabricCatalogueAvailability";
 import { FutureFabricCatalogueCard } from "./FutureFabricCatalogueCard";
-import { AssignedFabricPreview } from "./AssignedFabricPreview";
+
+type ReusableFabricAllocationOption = {
+  allocationId: string;
+  selectionLabel: string;
+  availabilityLabel: string;
+};
 
 const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
   Array.from(
@@ -37,32 +42,20 @@ export const FutureAdditionalGarmentFabricDialog = ({
   fabrics,
   garmentTypeSelection,
   fabricAllocationState,
-  activeFabric,
-  activeFabricSelectionIndex,
-  activeFabricResolution,
-  activeFabricCode = null,
+  requiredPhysicalOccurrences,
   errorMessage,
-  onUseSameFabric,
-  onChooseAnotherFabric,
-  onBackToChoice,
   onSelectFabric,
+  onSelectExistingAllocation,
   onCancel,
 }: {
   transaction: AdditionalGarmentFabricTransaction;
   fabrics: readonly Fabric[];
   garmentTypeSelection: GarmentTypeStepSelection;
   fabricAllocationState: FabricAllocationState;
-  activeFabric: Fabric | null;
-  activeFabricSelectionIndex: number | null;
-  activeFabricResolution: ReturnType<
-    typeof resolveCurrentCatalogueFabricForAssignment
-  >;
-  activeFabricCode?: string | null;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
   errorMessage: string | null;
-  onUseSameFabric: () => void;
-  onChooseAnotherFabric: () => void;
-  onBackToChoice: () => void;
   onSelectFabric: (fabricCode: string) => void;
+  onSelectExistingAllocation: (allocationId: string) => void;
   onCancel: () => void;
 }) => {
   const titleId = useId();
@@ -70,40 +63,78 @@ export const FutureAdditionalGarmentFabricDialog = ({
   const helpId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const initialFocusRef = useRef<HTMLButtonElement | null>(null);
-  const garmentLabel = getFabricGarmentLabel(transaction.garmentType);
+  const garmentLabel = getCustomDetailsGarmentLabel(transaction.garmentType);
+  const { visibleFabricByCode, duplicateFabricCodes } = useMemo(() => {
+    const nextVisibleFabricByCode = new Map<string, Fabric>();
+    const nextDuplicateFabricCodes = new Set<string>();
+    fabrics
+      .filter((fabric) => fabric.stockStatus !== "HIDDEN")
+      .forEach((fabric) => {
+        if (nextVisibleFabricByCode.has(fabric.code)) {
+          nextDuplicateFabricCodes.add(fabric.code);
+          return;
+        }
+        nextVisibleFabricByCode.set(fabric.code, fabric);
+      });
+    return {
+      visibleFabricByCode: nextVisibleFabricByCode,
+      duplicateFabricCodes: nextDuplicateFabricCodes,
+    };
+  }, [fabrics]);
+  const reusableAllocationOptionsByFabricCode = useMemo(() => {
+    const optionsByFabricCode = new Map<
+      string,
+      ReusableFabricAllocationOption[]
+    >();
+    getFutureCompatiblePartialFabricAllocations({
+      garmentTypeSelection,
+      fabricAllocationState,
+      garmentKey: transaction.garmentKey,
+      requiredPhysicalOccurrences,
+    }).forEach((allocation) => {
+      const fabric = visibleFabricByCode.get(allocation.fabricCode);
+      if (
+        !fabric ||
+        duplicateFabricCodes.has(allocation.fabricCode) ||
+        getFabricAvailabilityMessage(fabric)
+      ) {
+        return;
+      }
+      const selectionIndex = fabricAllocationState.fabricAllocations.findIndex(
+        (candidate) => candidate.allocationId === allocation.allocationId,
+      );
+      if (selectionIndex < 0) return;
+      const options = optionsByFabricCode.get(allocation.fabricCode) || [];
+      options.push({
+        allocationId: allocation.allocationId,
+        selectionLabel: `Fabric Selection ${selectionIndex + 1}`,
+        availabilityLabel: `${allocation.remainingUnits}/2 Available`,
+      });
+      optionsByFabricCode.set(allocation.fabricCode, options);
+    });
+    return optionsByFabricCode;
+  }, [
+    duplicateFabricCodes,
+    fabricAllocationState,
+    garmentTypeSelection,
+    requiredPhysicalOccurrences,
+    transaction.garmentKey,
+    visibleFabricByCode,
+  ]);
   const visibleFabrics = useMemo(
-    () => fabrics.filter((fabric) => fabric.stockStatus !== "HIDDEN"),
-    [fabrics],
+    () =>
+      Array.from(visibleFabricByCode.values())
+        .sort((left, right) => {
+          const leftReusable = reusableAllocationOptionsByFabricCode.has(left.code);
+          const rightReusable = reusableAllocationOptionsByFabricCode.has(right.code);
+          if (leftReusable !== rightReusable) return leftReusable ? -1 : 1;
+          return left.name.localeCompare(right.name);
+        }),
+    [reusableAllocationOptionsByFabricCode, visibleFabricByCode],
   );
-  const liveResolution = resolveCurrentCatalogueFabricForAssignment({
-    fabrics,
-    fabricCode:
-      activeFabricCode ||
-      (activeFabricResolution.status === "resolved"
-        ? activeFabricResolution.fabric.code
-        : activeFabric?.code || ""),
-  });
-  const sameFabricAvailable = liveResolution.status === "resolved";
-  const sameFabricUnavailableReason =
-    liveResolution.status === "blocked"
-      ? liveResolution.reason
-      : "No active fabric is available to reuse.";
-  const previewFabric =
-    liveResolution.status === "resolved"
-      ? liveResolution.fabric
-      : activeFabric;
-  const hasActiveFabricContext = Boolean(
-    activeFabricCode || previewFabric || activeFabric,
-  );
-  const canOfferSameFabricChoice =
-    transaction.origin === "new_addition" && hasActiveFabricContext;
   const isFinishing =
     transaction.phase === "assigning" ||
     transaction.phase === "awaiting_commit";
-  const showChoicePhase =
-    transaction.phase === "choice" &&
-    canOfferSameFabricChoice &&
-    !isFinishing;
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -118,7 +149,7 @@ export const FutureAdditionalGarmentFabricDialog = ({
     if (isFinishing) return;
     const node = initialFocusRef.current || dialogRef.current;
     node?.focus?.({ preventScroll: true });
-  }, [transaction.phase, showChoicePhase, isFinishing]);
+  }, [transaction.phase, isFinishing]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -126,10 +157,6 @@ export const FutureAdditionalGarmentFabricDialog = ({
       if (event.key === "Escape") {
         event.preventDefault();
         if (isFinishing) return;
-        if (transaction.phase === "catalogue" && canOfferSameFabricChoice) {
-          onBackToChoice();
-          return;
-        }
         onCancel();
         return;
       }
@@ -149,25 +176,13 @@ export const FutureAdditionalGarmentFabricDialog = ({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    canOfferSameFabricChoice,
-    isFinishing,
-    onBackToChoice,
-    onCancel,
-    transaction.phase,
-  ]);
+  }, [isFinishing, onCancel]);
 
   const content = (
     <div
       className="fixed inset-0 z-[80] flex items-end justify-center bg-heritage-ink/45 p-0 sm:items-center sm:p-4"
       data-additional-garment-fabric-dialog="true"
-      data-dialog-phase={
-        isFinishing
-          ? transaction.phase
-          : showChoicePhase
-            ? "choice"
-            : "catalogue"
-      }
+      data-dialog-phase={isFinishing ? transaction.phase : "catalogue"}
       data-dialog-origin={transaction.origin}
       data-target-garment-key={transaction.garmentKey}
     >
@@ -197,9 +212,7 @@ export const FutureAdditionalGarmentFabricDialog = ({
             >
               {isFinishing
                 ? `Finishing ${garmentLabel} setup`
-                : showChoicePhase
-                  ? `Choose fabric for ${garmentLabel}`
-                  : `Choose another fabric for ${garmentLabel}`}
+                : `Choose fabric for ${garmentLabel}`}
             </h2>
             <p
               id={descriptionId}
@@ -207,9 +220,7 @@ export const FutureAdditionalGarmentFabricDialog = ({
             >
               {isFinishing
                 ? "Finishing garment setup…"
-                : showChoicePhase
-                  ? `You’re adding ${garmentLabel}. Use the same fabric again or choose another fabric.`
-                  : `Select one fabric for this ${garmentLabel} only. Other garments keep their current fabric.`}
+                : `Select one fabric for this ${garmentLabel} only. Other garments keep their current fabric.`}
             </p>
           </div>
           {!isFinishing && (
@@ -245,107 +256,22 @@ export const FutureAdditionalGarmentFabricDialog = ({
             >
               Finishing garment setup…
             </p>
-          ) : showChoicePhase ? (
-            <div className="space-y-4">
-              {previewFabric ? (
-                <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 p-3 sm:flex-row sm:items-center">
-                  <AssignedFabricPreview
-                    fabric={previewFabric}
-                    garmentKey={transaction.garmentKey}
-                    garmentLabel={garmentLabel}
-                    fabricCode={previewFabric.code}
-                  />
-                  <div className="min-w-0">
-                    <p className="font-serif text-base font-bold text-heritage-green">
-                      {previewFabric.name}
-                    </p>
-                    <p className="mt-1 font-mono text-xs text-heritage-ink/60">
-                      {previewFabric.code}
-                    </p>
-                    {activeFabricSelectionIndex !== null && (
-                      <p className="mt-1 text-xs font-semibold text-heritage-gold">
-                        Fabric Selection {activeFabricSelectionIndex}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ) : activeFabricCode ? (
-                <div className="rounded-2xl border border-heritage-gold/25 bg-heritage-cream/30 p-3">
-                  <p className="font-mono text-xs text-heritage-ink/60">
-                    {activeFabricCode}
-                  </p>
-                </div>
-              ) : null}
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                <button
-                  ref={initialFocusRef}
-                  type="button"
-                  onClick={onUseSameFabric}
-                  data-fabric-dialog-action="use-same"
-                  disabled={!sameFabricAvailable}
-                  aria-disabled={!sameFabricAvailable}
-                  title={
-                    sameFabricAvailable
-                      ? undefined
-                      : sameFabricUnavailableReason || undefined
-                  }
-                  className="min-h-11 rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  Use Same Fabric Again
-                </button>
-                <button
-                  type="button"
-                  onClick={onChooseAnotherFabric}
-                  data-fabric-dialog-action="choose-another"
-                  className="min-h-11 rounded-xl border border-heritage-green/30 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-                >
-                  Choose Another Fabric
-                </button>
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  data-fabric-dialog-action="cancel"
-                  className="min-h-11 rounded-xl border border-red-200 px-4 text-xs font-bold uppercase tracking-wider text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
-                >
-                  {transaction.origin === "change_existing"
-                    ? "Keep Current Fabric"
-                    : "Cancel Adding Garment"}
-                </button>
-              </div>
-              {!sameFabricAvailable && sameFabricUnavailableReason && (
-                <p
-                  role="status"
-                  data-same-fabric-unavailable-reason="true"
-                  className="text-sm font-semibold text-red-700"
-                >
-                  {sameFabricUnavailableReason}
-                </p>
-              )}
-            </div>
           ) : (
             <div className="space-y-4">
               <p id={helpId} className="sr-only">
                 Choose a fabric card to assign it to {garmentLabel}.
               </p>
-              {!sameFabricAvailable &&
-                transaction.origin === "new_addition" &&
-                hasActiveFabricContext && (
-                  <p
-                    role="status"
-                    data-same-fabric-unavailable-reason="true"
-                    className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm font-semibold text-amber-900"
-                  >
-                    {sameFabricUnavailableReason} Choose another fabric below.
-                  </p>
-                )}
               <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {visibleFabrics.map((fabric) => {
+                  const reusableAllocationOptions =
+                    reusableAllocationOptionsByFabricCode.get(fabric.code);
                   const presentation = resolveFutureFabricCatalogueCardPresentation({
                     fabricCode: fabric.code,
                     garmentTypeSelection,
                     fabricAllocationState,
                     currentTargetGarmentKey: transaction.garmentKey,
                     fabrics,
+                    requiredPhysicalOccurrences,
                   });
                   const stockConstraintMessage =
                     getFabricNewAllocationStockConstraintMessage(
@@ -370,29 +296,21 @@ export const FutureAdditionalGarmentFabricDialog = ({
                       )}
                       stockConstraintMessage={stockConstraintMessage}
                       describedBy={helpId}
+                      actionLabel="Select This Fabric"
                       onAction={() => onSelectFabric(fabric.code)}
+                      orderAllocationOptions={reusableAllocationOptions?.map(
+                        (option) => ({
+                          ...option,
+                          onSelect: () => onSelectExistingAllocation(option.allocationId),
+                        }),
+                      )}
                     />
                   );
                 })}
               </div>
               <div className="flex flex-col gap-3 sm:flex-row">
-                {canOfferSameFabricChoice && sameFabricAvailable && (
-                  <button
-                    ref={initialFocusRef}
-                    type="button"
-                    onClick={onBackToChoice}
-                    data-fabric-dialog-action="back-to-choice"
-                    className="min-h-11 rounded-xl border border-heritage-green/30 px-4 text-xs font-bold uppercase tracking-wider text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-                  >
-                    Back to Fabric Choice
-                  </button>
-                )}
                 <button
-                  ref={
-                    canOfferSameFabricChoice && sameFabricAvailable
-                      ? undefined
-                      : initialFocusRef
-                  }
+                  ref={initialFocusRef}
                   type="button"
                   onClick={onCancel}
                   data-fabric-dialog-action="cancel"
@@ -400,7 +318,9 @@ export const FutureAdditionalGarmentFabricDialog = ({
                 >
                   {transaction.origin === "change_existing"
                     ? "Keep Current Fabric"
-                    : "Cancel Adding Garment"}
+                    : transaction.origin === "repair_missing"
+                      ? "Cancel"
+                      : "Cancel Adding Garment"}
                 </button>
               </div>
             </div>
