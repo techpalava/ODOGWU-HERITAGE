@@ -270,6 +270,30 @@ const guarded = applyLegacyStyleFabricCapacityConfig(
 );
 assert.equal(guarded.fabricCapacityComposition, undefined);
 
+// Persisted catalogue IDs are immutable reference keys. The historical ODG
+// namespace and the new ODGH namespace must therefore both remain readable
+// without an in-place migration or display rewrite.
+const historicalOdg = createRecord(
+  "published",
+  null,
+  baseStyle({ id: "ODG-042" }),
+);
+const generatedOdgh = createRecord(
+  "published",
+  null,
+  baseStyle({ id: "ODGH-043" }),
+);
+assert.equal(
+  parseAuthoritativeDesignStyleRecord("ODG-042", historicalOdg).status,
+  "valid",
+);
+assert.equal(
+  parseAuthoritativeDesignStyleRecord("ODGH-043", generatedOdgh).status,
+  "valid",
+);
+assert.equal(projectPublishedDesignStyleRecord(historicalOdg)?.id, "ODG-042");
+assert.equal(projectPublishedDesignStyleRecord(generatedOdgh)?.id, "ODGH-043");
+
 console.log(
   "PASS: strict Design Style authority schema, lifecycle, revisions, projection, and legacy boundary",
 );

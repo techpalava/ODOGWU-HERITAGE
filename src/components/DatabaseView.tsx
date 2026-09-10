@@ -6,15 +6,6 @@ import { AuthorizationEngine } from "../engine/AuthorizationEngine";
 
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import namer from "color-namer";
-
-const getColorName = (hex: string) => {
-  try {
-    return namer(hex).ntc[0].name;
-  } catch (e) {
-    return hex;
-  }
-};
 import {
   Database,
   Search,
@@ -123,6 +114,8 @@ import {
   type DesignStyleLifecycle,
 } from "../utils/designStyleAuthority";
 import { DesignStylePublicationError } from "../utils/designStylePublication";
+import { getNextDesignStyleId } from "../utils/designStyleId";
+import { DesignStyleDecorativePriceOverrides } from "./DesignStyleDecorativePriceOverrides";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 import { db } from "../services/firebase";
@@ -176,38 +169,11 @@ export default function DatabaseView({
   initialTab,
   onInitialTabApplied,
 }: DatabaseViewProps) {
-  const genderOptions = useReferenceDataFallback("genders", [
-    { value: "male", label: "Male" },
-    { value: "female", label: "Female" },
-    { value: "unisex", label: "Unisex" },
-    { value: "couple", label: "Couple" },
-    { value: "family", label: "Family" },
-  ]);
-
   const genderOptionsCollection = useReferenceDataFallback("genders", [
     { value: "male", label: "Men's Collection" },
     { value: "female", label: "Women's Collection" },
     { value: "unisex", label: "Unisex Collection" },
     { value: "family", label: "Family Collection" },
-  ]);
-
-  const outfitTypeOptions = useReferenceDataFallback("outfit_types", [
-    { value: "Senator Set", label: "Senator Set" },
-    { value: "Kaftan Set", label: "Kaftan Set" },
-    { value: "Boubou", label: "Boubou" },
-    { value: "Agbada", label: "Agbada" },
-  ]);
-
-  const garmentCompositionOptions = useReferenceDataFallback("garment_compositions", [
-    { value: "Shirt Only", label: "Shirt Only" },
-    { value: "Trouser Only", label: "Trouser Only" },
-    { value: "Shorts Only", label: "Shorts Only" },
-    { value: "Blouse Only", label: "Blouse Only" },
-    { value: "Top Only", label: "Top Only" },
-    { value: "Dress Only", label: "Dress Only" },
-    { value: "2-Piece Set", label: "2-Piece Set" },
-    { value: "3-Piece Set", label: "3-Piece Set" },
-    { value: "4-Piece Set", label: "4-Piece Set" },
   ]);
 
   const fabricCategoryOptions = useReferenceDataFallback("fabric_categories", [
@@ -961,7 +927,7 @@ export default function DatabaseView({
     }
     
     if (!item.targetDemographic && !item.gender) {
-      alert("Target Demographic is required.");
+      alert("A Design Style audience is required.");
       return;
     }
     
@@ -1039,31 +1005,17 @@ export default function DatabaseView({
   };
 
   const handleDuplicateStyle = (style: StyleCategory) => {
-    const idMatch = style.id.match(/^(.*?)-(\d+)$/);
-    const baseId = idMatch ? idMatch[1] : style.id;
-
     const nameMatch = style.name.match(/^(.*?)\s*[-#]?\s*(\d+)$/);
     const baseName = nameMatch ? nameMatch[1].trim() : style.name;
-
-    let maxSeq = 0;
-    adminStyles.forEach((s) => {
-      if (s.id === baseId) {
-        maxSeq = Math.max(maxSeq, 1);
-      } else {
-        const m = s.id.match(
-          new RegExp(
-            `^${baseId.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")}-(\\d+)$`,
-          ),
-        );
-        if (m) {
-          maxSeq = Math.max(maxSeq, parseInt(m[1], 10));
-        }
-      }
-    });
-
-    const nextSeq = maxSeq + 1;
-    const newId = `${baseId}-${nextSeq}`;
-    const newName = `${baseName} ${nextSeq}`;
+    let newId: string;
+    try {
+      newId = getNextDesignStyleId(adminStyles.map((item) => item.id));
+    } catch (error) {
+      console.error("Unable to generate a Design Style ID", error);
+      triggerStatus("A new Design Style ID cannot be generated safely.", "error");
+      return;
+    }
+    const newName = `${baseName} Copy`;
 
     const sourceAuthority = getDesignStyleAuthorityMetadata(style);
     const newStyle: DesignStyleAdminProjection = {
@@ -1441,7 +1393,7 @@ export default function DatabaseView({
               },
               { id: "operations", label: "Operations Dashboard", icon: Layers, condition: AuthorizationEngine.canViewReports(currentUser) },
               { id: "users", label: "Users & Profiles", icon: User, condition: AuthorizationEngine.canManageCustomers(currentUser) },
-              { id: "styles", label: "Garment Options", icon: Shirt, condition: AuthorizationEngine.canManageReferenceData(currentUser) },
+              { id: "styles", label: "Design Styles", icon: Shirt, condition: AuthorizationEngine.canManageReferenceData(currentUser) },
               { id: "fabrics", label: "Fabrics Catalogue", icon: Layers, condition: AuthorizationEngine.canManageFabrics(currentUser) },
               { id: "batches", label: "Sourcing Batches", icon: Layers2, condition: AuthorizationEngine.canManageBatches(currentUser) },
               { id: "orders", label: "Master Orders", icon: ClipboardList, condition: AuthorizationEngine.canManageOrders(currentUser) },
@@ -1963,20 +1915,20 @@ export default function DatabaseView({
                     onSubmit={handleSaveStyle}
                     className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans"
                   >
+                    <div className="col-span-1 sm:col-span-2 border-b border-heritage-gold/20 pb-2">
+                      <h3 className="font-serif text-lg font-bold text-heritage-green">Core information</h3>
+                      <p className="mt-1 text-[11px] leading-relaxed text-heritage-ink/60">Create the customer-facing Design Style here. Its generated ID remains stable after publication.</p>
+                    </div>
                     <div className="space-y-1">
                       <label className="font-bold text-heritage-green">
-                        Style ID / Code (Primary Key)
+                        Design Style ID (Generated)
                       </label>
                       <input
                         type="text"
                         required
-                        disabled={!isNewRecord}
+                        readOnly
                         value={editingItem.id}
-                        onChange={(e) =>
-                          setEditingItem({ ...editingItem, id: e.target.value })
-                        }
-                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
-                        placeholder="e.g. style-kaftan"
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-gray-50 text-heritage-ink/65 rounded-lg font-mono"
                       />
                     </div>
                     <div className="space-y-1">
@@ -2034,7 +1986,7 @@ export default function DatabaseView({
                     </div>
                     <div className="space-y-1">
                       <label className="font-bold text-heritage-green">
-                        Garment Style Name
+                        Design Style Name
                       </label>
                       <input
                         type="text"
@@ -2042,69 +1994,11 @@ export default function DatabaseView({
                         value={editingItem.name}
                         onChange={(e) => {
                           const newName = e.target.value;
-                          if (isNewRecord) {
-                            const baseSlug = newName
-                              .toLowerCase()
-                              .replace(/[^a-z0-9]+/g, "-")
-                              .replace(/(^-|-$)/g, "");
-                            if (baseSlug) {
-                              let maxSequence = 0;
-                              adminStyles.forEach((style) => {
-                                if (style.id.startsWith(`${baseSlug}-`)) {
-                                  const parts = style.id.split("-");
-                                  const lastPart = parts[parts.length - 1];
-                                  if (!isNaN(parseInt(lastPart))) {
-                                    maxSequence = Math.max(
-                                      maxSequence,
-                                      parseInt(lastPart),
-                                    );
-                                  }
-                                } else if (style.id === baseSlug) {
-                                  // If someone manually created one without a sequence
-                                  maxSequence = Math.max(maxSequence, 0);
-                                }
-                              });
-                              setEditingItem({
-                                ...editingItem,
-                                name: newName,
-                                id: `${baseSlug}-${maxSequence + 1}`,
-                              });
-                            } else {
-                              setEditingItem({
-                                ...editingItem,
-                                name: newName,
-                                id: "",
-                              });
-                            }
-                          } else {
-                            setEditingItem({ ...editingItem, name: newName });
-                          }
+                          setEditingItem({ ...editingItem, name: newName });
                         }}
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                         placeholder="e.g. Royal Senator"
                       />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="font-bold text-heritage-green">
-                        Target Demographic
-                      </label>
-                      <select
-                        value={editingItem.gender || "unisex"}
-                        onChange={(e) =>
-                          setEditingItem({
-                            ...editingItem,
-                            gender: e.target.value,
-                            targetDemographic: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
-                      >
-                        {genderOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
                     </div>
                     <div className="space-y-2 col-span-1 sm:col-span-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/10 p-4">
                       <div>
@@ -2188,19 +2082,17 @@ export default function DatabaseView({
                       </div>
                     </div>
                     <div className="space-y-4 col-span-1 sm:col-span-2 bg-heritage-cream/10 p-4 rounded-xl border border-heritage-gold/20">
-                      <h4 className="font-bold text-heritage-green text-sm mb-2 border-b border-heritage-gold/20 pb-2">Step 3 Custom Detail Configuration</h4>
+                      <h4 className="font-bold text-heritage-green text-sm mb-2 border-b border-heritage-gold/20 pb-2">Garment Guidance</h4>
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2 col-span-1 sm:col-span-2">
                           <label className="font-bold text-heritage-green block">
-                            Compatible Physical Garments
+                            Garment types shown by this design
                           </label>
                           <p className="text-[10px] text-heritage-ink/60">
-                            Select every garment type that this design style can
-                            support. Customers may select any one supported
-                            garment or a compatible combination. These
-                            selections do not automatically add garments to the
-                            customer&apos;s order.
+                            This retained catalogue metadata describes the
+                            garment types represented by the design. It does not
+                            restrict customer selection in Step 3.
                           </p>
                           <div className="flex flex-wrap gap-2">
                             {STYLE_BASE_GARMENT_TYPES.map((garmentType) => {
@@ -2260,12 +2152,12 @@ export default function DatabaseView({
                         </div>
                         <div className="space-y-2 col-span-1 sm:col-span-2">
                           <label className="font-bold text-heritage-green block">
-                            Reference Garments Shown
+                            Originally designed for
                           </label>
                           <p className="text-[10px] text-heritage-ink/60">
-                            Describe only what the reference image depicts. This
-                            does not control customer compatibility. Leave every
-                            option clear when the legacy reference is unresolved.
+                            Describe only what the reference image depicts.
+                            Customers can still use the design for other
+                            garments; this is advisory context only.
                           </p>
                           <div className="flex flex-wrap gap-2">
                             {STYLE_BASE_GARMENT_TYPES.map((garmentType) => {
@@ -2323,128 +2215,8 @@ export default function DatabaseView({
                             })}
                           </div>
                         </div>
-                        <div className="space-y-2 col-span-1 sm:col-span-2">
-                          <label className="font-bold text-heritage-green block">
-                            Adaptability Authority
-                          </label>
-                          <select
-                            value={editingItem.styleApplicability?.mode || "exact_only"}
-                            onChange={(event) =>
-                              setEditingItem({
-                                ...editingItem,
-                                styleApplicability:
-                                  event.target.value === "adaptable"
-                                    ? {
-                                        mode: "adaptable",
-                                        garmentTypes: [],
-                                        demographics: [],
-                                      }
-                                    : { mode: "exact_only" },
-                              })
-                            }
-                            className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
-                          >
-                            <option value="exact_only">Exact supported garments only</option>
-                            <option value="adaptable">Explicitly adaptable</option>
-                          </select>
-                          {editingItem.styleApplicability?.mode === "adaptable" && (
-                            <div className="space-y-2 rounded-lg border border-heritage-gold/20 bg-white p-3">
-                              <p className="text-[10px] text-heritage-ink/60">
-                                Choose every additional garment and audience to
-                                which this design may be adapted. These values
-                                change assignment eligibility.
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {STYLE_BASE_GARMENT_TYPES.map((garmentType) => (
-                                  <label
-                                    key={`adaptable-${garmentType}`}
-                                    className="flex items-center gap-2 rounded border border-gray-150 px-3 py-1.5 text-xs"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={Boolean(
-                                        editingItem.styleApplicability?.garmentTypes?.includes(
-                                          garmentType,
-                                        ),
-                                      )}
-                                      onChange={(event) => {
-                                        const current =
-                                          editingItem.styleApplicability
-                                            ?.garmentTypes || [];
-                                        setEditingItem({
-                                          ...editingItem,
-                                          styleApplicability: {
-                                            ...editingItem.styleApplicability,
-                                            mode: "adaptable",
-                                            garmentTypes: event.target.checked
-                                              ? [
-                                                  ...new Set([
-                                                    ...current,
-                                                    garmentType,
-                                                  ]),
-                                                ]
-                                              : current.filter(
-                                                  (item: string) =>
-                                                    item !== garmentType,
-                                                ),
-                                          },
-                                        });
-                                      }}
-                                      className="h-4 w-4 rounded text-heritage-green"
-                                    />
-                                    <span>{getFabricGarmentLabel(garmentType)}</span>
-                                  </label>
-                                ))}
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                {(["male", "female", "unisex"] as const).map(
-                                  (demographic) => (
-                                    <label
-                                      key={`adaptable-${demographic}`}
-                                      className="flex items-center gap-2 rounded border border-gray-150 px-3 py-1.5 text-xs"
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={Boolean(
-                                          editingItem.styleApplicability?.demographics?.includes(
-                                            demographic,
-                                          ),
-                                        )}
-                                        onChange={(event) => {
-                                          const current =
-                                            editingItem.styleApplicability
-                                              ?.demographics || [];
-                                          setEditingItem({
-                                            ...editingItem,
-                                            styleApplicability: {
-                                              ...editingItem.styleApplicability,
-                                              mode: "adaptable",
-                                              demographics: event.target.checked
-                                                ? [
-                                                    ...new Set([
-                                                      ...current,
-                                                      demographic,
-                                                    ]),
-                                                  ]
-                                                : current.filter(
-                                                    (item: string) =>
-                                                      item !== demographic,
-                                                  ),
-                                            },
-                                          });
-                                        }}
-                                        className="h-4 w-4 rounded text-heritage-green"
-                                      />
-                                      <span className="capitalize">{demographic}</span>
-                                    </label>
-                                  ),
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
                         <div className="space-y-2">
-                          <label className="font-bold text-heritage-green block">Represented Genders</label>
+                          <label className="font-bold text-heritage-green block">Design audience</label>
                           <div className="flex gap-4">
                             {['male', 'female'].map(g => (
                               <label key={g} className="flex items-center gap-2 cursor-pointer">
@@ -2454,11 +2226,15 @@ export default function DatabaseView({
                                   onChange={(e) => {
                                     const conf = editingItem.customDetailConfig || { representedGenders: [], featuresMaleAndFemale: false, supportedGarmentGroups: [], requiredSelectionGroups: [], enabled: true };
                                     const list = conf.representedGenders || [];
+                                    const representedGenders = e.target.checked ? [...list, g] : list.filter((i: string) => i !== g);
                                     setEditingItem({
                                       ...editingItem,
                                       customDetailConfig: {
                                         ...conf,
-                                        representedGenders: e.target.checked ? [...list, g] : list.filter((i: string) => i !== g)
+                                        representedGenders,
+                                        featuresMaleAndFemale:
+                                          representedGenders.includes("male") &&
+                                          representedGenders.includes("female"),
                                       }
                                     });
                                   }}
@@ -2470,29 +2246,11 @@ export default function DatabaseView({
                           </div>
                         </div>
 
-                        <div className="space-y-2">
-                          <label className="flex items-center gap-2 cursor-pointer mt-6">
-                            <input
-                              type="checkbox"
-                              checked={editingItem.customDetailConfig?.featuresMaleAndFemale || false}
-                              onChange={(e) => {
-                                const conf = editingItem.customDetailConfig || { representedGenders: [], featuresMaleAndFemale: false, supportedGarmentGroups: [], requiredSelectionGroups: [], enabled: true };
-                                setEditingItem({
-                                  ...editingItem,
-                                  customDetailConfig: { ...conf, featuresMaleAndFemale: e.target.checked }
-                                });
-                              }}
-                              className="h-4 w-4 text-heritage-green rounded"
-                            />
-                            <span className="font-bold text-heritage-green">Explicitly features BOTH male and female garments</span>
-                          </label>
-                        </div>
-
                         <div className="space-y-2 col-span-1 sm:col-span-2">
                           <label className="font-bold text-heritage-green block">Supported Garment Groups</label>
                           <p className="text-[10px] text-heritage-ink/60">
-                            If no group is selected, Step 3 automatically uses
-                            the style demographic and garment description.
+                            Used by the downstream Custom Details configuration;
+                            it does not filter the Step 3 catalogue.
                           </p>
                           <div className="flex flex-wrap gap-2">
                             {['shirt', 'dress', 'neck', 'standard_shorts', 'bum_shorts', 'trousers', 'skirt'].map(g => (
@@ -2539,8 +2297,9 @@ export default function DatabaseView({
                             Required Selection Groups
                           </label>
                           <p className="text-[10px] text-heritage-ink/60">
-                            Customers must complete checked groups before leaving
-                            Step 3. Only groups supported by this style are shown.
+                            Used downstream to determine the Custom Details
+                            groups that must be completed. Only supported groups
+                            are available.
                           </p>
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                             {CUSTOM_DETAIL_SELECTION_GROUPS.filter((group) =>
@@ -2595,73 +2354,9 @@ export default function DatabaseView({
                         </div>
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <label className="font-bold text-heritage-green">
-                        Outfit Type
-                      </label>
-                      <select
-                        value={editingItem.outfitType || "Senator Set"}
-                        onChange={(e) =>
-                          setEditingItem({
-                            ...editingItem,
-                            outfitType: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
-                      >
-                        {outfitTypeOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="font-bold text-heritage-green">
-                        Garment Composition
-                      </label>
-                      <select
-                        value={editingItem.garmentComposition || "2-Piece Set"}
-                        onChange={(e) =>
-                          setEditingItem({
-                            ...editingItem,
-                            garmentComposition: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
-                      >
-                        {garmentCompositionOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="font-bold text-heritage-green">
-                        Fabric Category
-                      </label>
-                      <select
-                        value={editingItem.fabricCategory || "Any"}
-                        onChange={(e) =>
-                          setEditingItem({
-                            ...editingItem,
-                            fabricCategory: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
-                      >
-                        <option value="Any">Any Fabric</option>
-                        {fabricCategoryOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
                     <div className="space-y-1 sm:col-span-2">
                       <label className="font-bold text-heritage-green">
-                        Style Description
+                        Description
                       </label>
                       <input
                         type="text"
@@ -2678,7 +2373,7 @@ export default function DatabaseView({
                     </div>
                     <div className="space-y-2 sm:col-span-2">
                       <label className="font-bold text-heritage-green flex justify-between items-center">
-                        <span>Style Reference Image URL</span>
+                        <span>Design Style Image</span>
                         <span className="text-gray-400 font-normal">
                           Enter URL or drag file
                         </span>
@@ -2750,147 +2445,13 @@ export default function DatabaseView({
                         )}
                       </div>
 
-                      {editingItem.image && editingItem.detectedColors && (
-                        <div className="flex items-center justify-between mt-2 p-2 bg-white rounded-lg border border-gray-200">
-                          <span className="text-[10px] font-bold text-heritage-green">
-                            Detected Garment Colors:
-                          </span>
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-1.5">
-                              <label className="text-[9px] text-gray-500 font-bold uppercase">
-                                Main
-                              </label>
-                              <input
-                                type="color"
-                                value={editingItem.detectedColors.main}
-                                onChange={(e) =>
-                                  setEditingItem({
-                                    ...editingItem,
-                                    detectedColors: {
-                                      ...editingItem.detectedColors,
-                                      main: e.target.value,
-                                    },
-                                  })
-                                }
-                                className="w-6 h-6 p-0 border-0 rounded cursor-pointer bg-transparent"
-                                title="Edit Main Color"
-                              />
-                              <span
-                                className="text-[9px] text-heritage-ink/70 font-medium w-16 truncate"
-                                title={getColorName(
-                                  editingItem.detectedColors.main,
-                                )}
-                              >
-                                {getColorName(editingItem.detectedColors.main)}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5 border-l border-gray-200 pl-3">
-                              <label className="text-[9px] text-gray-500 font-bold uppercase">
-                                Accent
-                              </label>
-                              <input
-                                type="color"
-                                value={editingItem.detectedColors.secondary}
-                                onChange={(e) =>
-                                  setEditingItem({
-                                    ...editingItem,
-                                    detectedColors: {
-                                      ...editingItem.detectedColors,
-                                      secondary: e.target.value,
-                                    },
-                                  })
-                                }
-                                className="w-6 h-6 p-0 border-0 rounded cursor-pointer bg-transparent"
-                                title="Edit Secondary Color"
-                              />
-                              <span
-                                className="text-[9px] text-heritage-ink/70 font-medium w-16 truncate"
-                                title={getColorName(
-                                  editingItem.detectedColors.secondary,
-                                )}
-                              >
-                                {getColorName(
-                                  editingItem.detectedColors.secondary,
-                                )}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
-                    <div className="sm:col-span-2 space-y-3 p-4 bg-gray-50 border border-gray-200 rounded-xl">
-                      <label className="font-bold text-heritage-green">
-                        Legacy Embroidery and Accessory Price Overrides
-                      </label>
-                      <p className="text-[10px] text-gray-500">
-                        Step 3 garment choices and prices come from the Custom
-                        Detail Catalogue. Keep only style-specific legacy
-                        embroidery or accessory overrides here.
-                      </p>
-                      
-                      {editingItem.constructionDetails && editingItem.constructionDetails.length > 0 ? (
-                        <div className="space-y-4 mt-2">
-                          {Object.entries(
-                            (editingItem.constructionDetails as any[]).reduce((acc: any, curr: any) => {
-                              if (!acc[curr.type]) acc[curr.type] = [];
-                              acc[curr.type].push(curr);
-                              return acc;
-                            }, {})
-                          ).map(([type, details]: [string, any]) => (
-                            <div key={type} className="border border-gray-200 rounded-lg p-3 bg-white">
-                              <h4 className="font-bold text-[10px] uppercase text-heritage-green mb-2">{type.replace(/([A-Z])/g, ' $1')}</h4>
-                              <div className="space-y-2">
-                                {details.map((detail: any, idx: number) => (
-                                  <div key={idx} className="flex gap-2 items-center">
-                                    <input 
-                                      type="text" 
-                                      value={detail.code}
-                                      onChange={(e) => {
-                                        const newArr = [...(editingItem.constructionDetails || [])];
-                                        const i = newArr.findIndex(c => c.type === type && c.code === detail.code);
-                                        if (i !== -1) newArr[i] = { ...newArr[i], code: e.target.value };
-                                        setEditingItem({ ...editingItem, constructionDetails: newArr });
-                                      }}
-                                      className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded"
-                                    />
-                                    <span className="text-xs text-gray-500">€</span>
-                                    <input 
-                                      type="number" 
-                                      step="0.01"
-                                      value={detail.price}
-                                      onChange={(e) => {
-                                        const newArr = [...(editingItem.constructionDetails || [])];
-                                        const i = newArr.findIndex(c => c.type === type && c.code === detail.code);
-                                        if (i !== -1) newArr[i] = { ...newArr[i], price: parseFloat(e.target.value) || 0 };
-                                        setEditingItem({ ...editingItem, constructionDetails: newArr });
-                                      }}
-                                      className="w-20 px-2 py-1 text-xs border border-gray-200 rounded text-right"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const newArr = [...(editingItem.constructionDetails || [])];
-                                        const i = newArr.findIndex(c => c.type === type && c.code === detail.code);
-                                        if (i !== -1) newArr.splice(i, 1);
-                                        setEditingItem({ ...editingItem, constructionDetails: newArr });
-                                      }}
-                                      className="text-red-500 hover:text-red-700 p-1"
-                                    >
-                                      ✕
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-[10px] text-gray-500 italic p-2 border border-dashed border-gray-300 rounded text-center">
-                          No style-specific legacy price overrides.
-                        </div>
-                      )}
-                    </div>
-
+                    <DesignStyleDecorativePriceOverrides
+                      constructionDetails={editingItem.constructionDetails || []}
+                      onChange={(constructionDetails) =>
+                        setEditingItem({ ...editingItem, constructionDetails })
+                      }
+                    />
                     <div className="sm:col-span-2 pt-4 flex gap-2 justify-end">
                       <button
                         type="button"
@@ -4540,9 +4101,22 @@ export default function DatabaseView({
                   </div>
                   <button
                     onClick={() => {
+                      let nextStyleId: string;
+                      try {
+                        nextStyleId = getNextDesignStyleId(
+                          adminStyles.map((style) => style.id),
+                        );
+                      } catch (error) {
+                        console.error("Unable to generate a Design Style ID", error);
+                        triggerStatus(
+                          "A new Design Style ID cannot be generated safely.",
+                          "error",
+                        );
+                        return;
+                      }
                       setIsNewRecord(true);
                       setEditingItem({
-                        id: `style-${Date.now().toString().slice(-4)}`,
+                        id: nextStyleId,
                         name: "",
                         description: "",
                         gender: "unisex",
@@ -4586,7 +4160,7 @@ export default function DatabaseView({
                     }}
                     className="flex items-center gap-1.5 px-4 py-2 bg-heritage-green text-heritage-gold text-xs font-bold rounded-xl border border-heritage-gold/20 shadow-sm cursor-pointer select-none uppercase tracking-wider shrink-0"
                   >
-                    <Plus size={13} /> Add Style Class
+                    <Plus size={13} /> Add Design Style
                   </button>
                 </div>
 

@@ -3,6 +3,7 @@ import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { DormantFutureDesignStyleStep } from "./src/components/DormantFutureDesignStyleStep";
 import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
 import type {
+  CanonicalPhysicalGarmentType,
   GarmentConstructionPricingResolution,
   GarmentTypeStepSelection,
   StyleCategory,
@@ -74,6 +75,15 @@ const continueButton = (root: ReactTestInstance) =>
     .findByProps({ "data-testid": "future-design-style-continue-action" })
     .findByType("button");
 
+const withReferenceGarmentTypes = (
+  model: DesignStyleStepTestModel,
+  referenceGarmentTypes: readonly CanonicalPhysicalGarmentType[],
+) =>
+  model.catalogueEntries.map((entry) => ({
+    ...entry,
+    referenceGarmentTypes,
+  }));
+
 // A failed authenticated draft read is terminal and recoverable; Step 3 must
 // not indefinitely claim that it is still restoring choices.
 {
@@ -115,7 +125,7 @@ const continueButton = (root: ReactTestInstance) =>
   );
   assert.match(
     textContent(renderer.root.findByProps({ "data-testid": "step3-all-designs" })),
-    /All Designs/,
+    /Choose design styles you like/,
   );
   assert.deepEqual(
     renderer.root
@@ -125,6 +135,147 @@ const continueButton = (root: ReactTestInstance) =>
   );
   assert.equal(visibleText.includes("Your Garments"), true);
   assert.equal(visibleText.includes("Choose Design"), true);
+}
+
+// Upload and catalogue are equivalent pathways, but upload is presented first.
+// Catalogue cards keep the full description for an accessible details dialog
+// while their visible preview stays compact.
+{
+  const longDescription =
+    "An intentionally long Design Style description that remains intact in the details dialog while the catalogue card only previews two compact lines for a stable grid.";
+  const detailedStyle = { ...style, id: "details-style", description: longDescription };
+  const model = createDesignStyleStepTestModel({
+    styles: [detailedStyle],
+    garmentTypeSelection: selection(["shirt"]),
+  });
+  const renderer = await renderModel(model, {
+    catalogueEntries: withReferenceGarmentTypes(model, ["trouser"]),
+  });
+  const upload = renderer.root.findByProps({
+    "data-testid": "step3-upload-own-design",
+  });
+  const catalogue = renderer.root.findByProps({
+    "data-testid": "step3-all-designs",
+  });
+  const orderedSections = renderer.root
+    .findAll(
+      (node) =>
+        node.props?.["data-testid"] === "step3-upload-own-design" ||
+        node.props?.["data-testid"] === "step3-all-designs",
+    )
+    .map((node) => node.props["data-testid"]);
+  assert.deepEqual(orderedSections, ["step3-upload-own-design", "step3-all-designs"]);
+  assert.match(textContent(upload), /Option 1.*Upload your own design/i);
+  assert.match(textContent(catalogue), /Option 2.*Choose design styles you like/i);
+
+  const card = renderer.root.findByProps({ "data-style-name": detailedStyle.name });
+  const preview = card.findByProps({
+    "data-testid": "design-style-description-preview",
+  });
+  assert.match(preview.props.className, /line-clamp-2/);
+  const readMore = card.findByProps({
+    "aria-label": `Read more about ${detailedStyle.name}`,
+  });
+  await act(async () =>
+    readMore.props.onClick({
+      stopPropagation: () => undefined,
+      currentTarget: { focus: () => undefined },
+    }),
+  );
+  assert.equal(
+    renderer.root.findAllByProps({ "data-testid": "design-garment-mapping-dialog" })
+      .length,
+    0,
+    "Read more must not select the Design Style.",
+  );
+  const details = renderer.root.findByProps({
+    "data-testid": "design-style-details-dialog",
+  });
+  assert.match(textContent(details), new RegExp(longDescription));
+  assert.match(textContent(details), /Originally designed for:.*Trouser/);
+  assert.doesNotMatch(textContent(details), /Standard Shirt/);
+  await act(async () =>
+    details
+      .findByProps({ "aria-label": "Close Design Style details" })
+      .props.onClick(),
+  );
+  assert.equal(
+    renderer.root.findAllByProps({ "data-testid": "design-garment-mapping-dialog" })
+      .length,
+    0,
+  );
+
+  const cardClickTarget = card.findByProps({
+    "aria-label": `Select ${detailedStyle.name}`,
+  });
+  await act(async () =>
+    cardClickTarget.props.onClick({
+      currentTarget: { focus: () => undefined },
+    }),
+  );
+  assert.equal(
+    renderer.root.findAllByProps({ "data-testid": "design-garment-mapping-dialog" })
+      .length,
+    1,
+    "The card-wide click target must reuse the primary mapping dialog.",
+  );
+  assert.match(
+    textContent(
+      renderer.root.findByProps({
+        "data-testid": "design-garment-mapping-dialog",
+      }),
+    ),
+    /Originally designed for:.*Trouser/,
+  );
+}
+
+// The advisory is omitted entirely when the authoritative reference metadata
+// is unresolved, even when capacity composition remains present.
+{
+  const model = createDesignStyleStepTestModel({
+    styles: [{ ...style, id: "no-reference-style", name: "No Reference Style" }],
+    garmentTypeSelection: selection(["shirt"]),
+  });
+  const renderer = await renderModel(model, {
+    catalogueEntries: withReferenceGarmentTypes(model, []),
+  });
+  const noReferenceCard = renderer.root.findByProps({
+    "data-style-name": "No Reference Style",
+  });
+  await act(async () =>
+    noReferenceCard
+      .findByProps({ "aria-label": "Read more about No Reference Style" })
+      .props.onClick({
+        stopPropagation: () => undefined,
+        currentTarget: { focus: () => undefined },
+      }),
+  );
+  assert.doesNotMatch(
+    textContent(
+      renderer.root.findByProps({
+        "data-testid": "design-style-details-dialog",
+      }),
+    ),
+    /Originally designed for:/,
+  );
+  await act(async () =>
+    renderer.root
+      .findByProps({ "aria-label": "Close Design Style details" })
+      .props.onClick(),
+  );
+  await act(async () =>
+    noReferenceCard
+      .findByProps({ "aria-label": "Select No Reference Style" })
+      .props.onClick({ currentTarget: { focus: () => undefined } }),
+  );
+  assert.doesNotMatch(
+    textContent(
+      renderer.root.findByProps({
+        "data-testid": "design-garment-mapping-dialog",
+      }),
+    ),
+    /Originally designed for:/,
+  );
 }
 
 // Repeated occurrences render independently, in order, without internal IDs.
