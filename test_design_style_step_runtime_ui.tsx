@@ -3,15 +3,17 @@ import { act, create, type ReactTestInstance } from "react-test-renderer";
 import { DormantFutureDesignStyleStep } from "./src/components/DormantFutureDesignStyleStep";
 import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
 import type {
+  CanonicalPhysicalGarmentType,
   GarmentConstructionPricingResolution,
   GarmentTypeStepSelection,
   StyleCategory,
 } from "./src/types";
 import type { PhysicalGarmentOccurrence } from "./src/utils/designSourceState";
 import { createCatalogDesignSource } from "./src/utils/designSourceState";
-import type {
-  DesignStyleStepCatalogMutationRequest,
-  DesignStyleStepClearMutationRequest,
+import {
+  assignCatalogueStyleToOccurrencesThroughStepRuntime,
+  type DesignStyleStepCatalogMutationRequest,
+  type DesignStyleStepClearMutationRequest,
 } from "./src/utils/designStyleStepRuntime";
 import {
   createDesignStyleStepRenderProps,
@@ -74,6 +76,15 @@ const continueButton = (root: ReactTestInstance) =>
     .findByProps({ "data-testid": "future-design-style-continue-action" })
     .findByType("button");
 
+const withReferenceGarmentTypes = (
+  model: DesignStyleStepTestModel,
+  referenceGarmentTypes: readonly CanonicalPhysicalGarmentType[],
+) =>
+  model.catalogueEntries.map((entry) => ({
+    ...entry,
+    referenceGarmentTypes,
+  }));
+
 // A failed authenticated draft read is terminal and recoverable; Step 3 must
 // not indefinitely claim that it is still restoring choices.
 {
@@ -115,7 +126,7 @@ const continueButton = (root: ReactTestInstance) =>
   );
   assert.match(
     textContent(renderer.root.findByProps({ "data-testid": "step3-all-designs" })),
-    /All Designs/,
+    /Choose design styles you like/,
   );
   assert.deepEqual(
     renderer.root
@@ -125,6 +136,147 @@ const continueButton = (root: ReactTestInstance) =>
   );
   assert.equal(visibleText.includes("Your Garments"), true);
   assert.equal(visibleText.includes("Choose Design"), true);
+}
+
+// Upload and catalogue are equivalent pathways, but upload is presented first.
+// Catalogue cards keep the full description for an accessible details dialog
+// while their visible preview stays compact.
+{
+  const longDescription =
+    "An intentionally long Design Style description that remains intact in the details dialog while the catalogue card only previews two compact lines for a stable grid.";
+  const detailedStyle = { ...style, id: "details-style", description: longDescription };
+  const model = createDesignStyleStepTestModel({
+    styles: [detailedStyle],
+    garmentTypeSelection: selection(["shirt"]),
+  });
+  const renderer = await renderModel(model, {
+    catalogueEntries: withReferenceGarmentTypes(model, ["trouser"]),
+  });
+  const upload = renderer.root.findByProps({
+    "data-testid": "step3-upload-own-design",
+  });
+  const catalogue = renderer.root.findByProps({
+    "data-testid": "step3-all-designs",
+  });
+  const orderedSections = renderer.root
+    .findAll(
+      (node) =>
+        node.props?.["data-testid"] === "step3-upload-own-design" ||
+        node.props?.["data-testid"] === "step3-all-designs",
+    )
+    .map((node) => node.props["data-testid"]);
+  assert.deepEqual(orderedSections, ["step3-upload-own-design", "step3-all-designs"]);
+  assert.match(textContent(upload), /Option 1.*Upload your own design/i);
+  assert.match(textContent(catalogue), /Option 2.*Choose design styles you like/i);
+
+  const card = renderer.root.findByProps({ "data-style-name": detailedStyle.name });
+  const preview = card.findByProps({
+    "data-testid": "design-style-description-preview",
+  });
+  assert.match(preview.props.className, /line-clamp-2/);
+  const readMore = card.findByProps({
+    "aria-label": `Read more about ${detailedStyle.name}`,
+  });
+  await act(async () =>
+    readMore.props.onClick({
+      stopPropagation: () => undefined,
+      currentTarget: { focus: () => undefined },
+    }),
+  );
+  assert.equal(
+    renderer.root.findAllByProps({ "data-testid": "design-garment-mapping-dialog" })
+      .length,
+    0,
+    "Read more must not select the Design Style.",
+  );
+  const details = renderer.root.findByProps({
+    "data-testid": "design-style-details-dialog",
+  });
+  assert.match(textContent(details), new RegExp(longDescription));
+  assert.match(textContent(details), /Originally designed for:.*Trouser/);
+  assert.doesNotMatch(textContent(details), /Standard Shirt/);
+  await act(async () =>
+    details
+      .findByProps({ "aria-label": "Close Design Style details" })
+      .props.onClick(),
+  );
+  assert.equal(
+    renderer.root.findAllByProps({ "data-testid": "design-garment-mapping-dialog" })
+      .length,
+    0,
+  );
+
+  const cardClickTarget = card.findByProps({
+    "aria-label": `Select ${detailedStyle.name}`,
+  });
+  await act(async () =>
+    cardClickTarget.props.onClick({
+      currentTarget: { focus: () => undefined },
+    }),
+  );
+  assert.equal(
+    renderer.root.findAllByProps({ "data-testid": "design-garment-mapping-dialog" })
+      .length,
+    1,
+    "The card-wide click target must reuse the primary mapping dialog.",
+  );
+  assert.match(
+    textContent(
+      renderer.root.findByProps({
+        "data-testid": "design-garment-mapping-dialog",
+      }),
+    ),
+    /Originally designed for:.*Trouser/,
+  );
+}
+
+// The advisory is omitted entirely when the authoritative reference metadata
+// is unresolved, even when capacity composition remains present.
+{
+  const model = createDesignStyleStepTestModel({
+    styles: [{ ...style, id: "no-reference-style", name: "No Reference Style" }],
+    garmentTypeSelection: selection(["shirt"]),
+  });
+  const renderer = await renderModel(model, {
+    catalogueEntries: withReferenceGarmentTypes(model, []),
+  });
+  const noReferenceCard = renderer.root.findByProps({
+    "data-style-name": "No Reference Style",
+  });
+  await act(async () =>
+    noReferenceCard
+      .findByProps({ "aria-label": "Read more about No Reference Style" })
+      .props.onClick({
+        stopPropagation: () => undefined,
+        currentTarget: { focus: () => undefined },
+      }),
+  );
+  assert.doesNotMatch(
+    textContent(
+      renderer.root.findByProps({
+        "data-testid": "design-style-details-dialog",
+      }),
+    ),
+    /Originally designed for:/,
+  );
+  await act(async () =>
+    renderer.root
+      .findByProps({ "aria-label": "Close Design Style details" })
+      .props.onClick(),
+  );
+  await act(async () =>
+    noReferenceCard
+      .findByProps({ "aria-label": "Select No Reference Style" })
+      .props.onClick({ currentTarget: { focus: () => undefined } }),
+  );
+  assert.doesNotMatch(
+    textContent(
+      renderer.root.findByProps({
+        "data-testid": "design-garment-mapping-dialog",
+      }),
+    ),
+    /Originally designed for:/,
+  );
 }
 
 // Repeated occurrences render independently, in order, without internal IDs.
@@ -359,6 +511,223 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   }
 }
 
+// The mapping dialog initializes from authoritative exact-occurrence assignments
+// and presents replacement intent only after the customer selects it.
+{
+  const casualNative = {
+    ...style,
+    id: "ODG-042",
+    name: "Casual Native",
+  };
+  const contemporaryAnkara = {
+    ...style,
+    id: "ODGH-043",
+    name: "Contemporary Ankara",
+  };
+  const unassignedStyle = {
+    ...style,
+    id: "ODGH-044",
+    name: "Unassigned Style",
+  };
+  const exactOccurrences: PhysicalGarmentOccurrence[] = [
+    {
+      garmentKey: "base:shirt:1",
+      garmentType: "shirt",
+      sourceRole: "main",
+      fabricUnits: 1,
+      occurrenceGeneration: 1,
+    },
+    {
+      garmentKey: "additional:shirt:1",
+      garmentType: "shirt",
+      sourceRole: "additional",
+      fabricUnits: 1,
+      occurrenceGeneration: 2,
+    },
+  ];
+  const model = createDesignStyleStepTestModel({
+    styles: [casualNative, contemporaryAnkara, unassignedStyle],
+    garmentTypeSelection: selection(["shirt"]),
+    occurrences: exactOccurrences,
+    selectedStyleIdByGarmentKey: {
+      "base:shirt:1": casualNative.id,
+      "additional:shirt:1": contemporaryAnkara.id,
+    },
+  });
+  const mappingRequests: DesignStyleStepCatalogMutationRequest[][] = [];
+  const renderer = await renderModel(model, {
+    onAssignCatalogueStyle: (requests) => mappingRequests.push([...requests]),
+  });
+  const openStyle = async (styleName: string) => {
+    const control = renderer.root
+      .findAllByType("button")
+      .find(
+        (button) =>
+          button.props["aria-label"] === `Use Again ${styleName}` ||
+          button.props["aria-label"] === `Use This Design ${styleName}`,
+      );
+    assert.ok(control, `Expected a catalogue control for ${styleName}.`);
+    await act(async () =>
+      control.props.onClick({
+        currentTarget: { focus: () => undefined } as unknown as HTMLButtonElement,
+        stopPropagation: () => undefined,
+      }),
+    );
+    return renderer.root.findByProps({
+      "data-testid": "design-garment-mapping-dialog",
+    });
+  };
+  const checkboxFor = (dialog: ReactTestInstance, occurrenceIndex: number) =>
+    dialog
+      .findByProps({
+        "data-occurrence-token":
+          model.projection.occurrences[occurrenceIndex]!.target.occurrenceToken,
+      })
+      .findByType("input");
+
+  // Exact stored IDs, including legacy ODG IDs, determine the initial checked
+  // set. Repeated shirts remain separate physical occurrences.
+  let dialog = await openStyle(casualNative.name);
+  assert.match(
+    textContent(dialog),
+    /Choose the garments you want to use this design on\./,
+  );
+  const sameStyleCheckbox = checkboxFor(dialog, 0);
+  const differentStyleCheckbox = checkboxFor(dialog, 1);
+  assert.equal(sameStyleCheckbox.props.checked, true);
+  assert.equal(sameStyleCheckbox.props.disabled, true);
+  await act(async () => sameStyleCheckbox.props.onChange());
+  assert.equal(
+    checkboxFor(dialog, 0).props.checked,
+    true,
+    "A disabled same-style checkbox cannot remove an assign-only mapping.",
+  );
+  assert.equal(differentStyleCheckbox.props.checked, false);
+  assert.equal(differentStyleCheckbox.props.disabled, false);
+  assert.match(
+    textContent(
+      dialog.findByProps({
+        "data-occurrence-token": model.projection.occurrences[0]!.target.occurrenceToken,
+      }),
+    ),
+    /Using this design/,
+  );
+  assert.match(
+    textContent(
+      dialog.findByProps({
+        "data-occurrence-token": model.projection.occurrences[1]!.target.occurrenceToken,
+      }),
+    ),
+    /Current design: Contemporary Ankara/,
+  );
+  assert.equal(
+    dialog.findAllByProps({ "data-testid": "design-style-replacement-warning" })
+      .length,
+    0,
+    "Opening the dialog must not imply that an existing different style will be replaced.",
+  );
+  const noChanges = dialog.findByProps({ "data-testid": "apply-design-mapping" });
+  assert.equal(noChanges.props.disabled, true);
+  assert.equal(textContent(noChanges), "No changes");
+  await act(async () =>
+    dialog
+      .findByProps({ "aria-label": "Close garment mapping dialog" })
+      .props.onClick(),
+  );
+  assert.deepEqual(mappingRequests, []);
+  assert.equal(
+    model.hydration.ledger?.assignmentsByGarmentKey["base:shirt:1"]
+      ?.sourceKind === "catalog" &&
+      model.hydration.ledger.assignmentsByGarmentKey["base:shirt:1"].catalogStyleId,
+    casualNative.id,
+    "Opening and closing cannot mutate the authoritative assignment ledger.",
+  );
+
+  // A checked different-style row shows a row-level warning only while the
+  // customer has explicitly selected that replacement.
+  dialog = await openStyle(casualNative.name);
+  const additionalCheckbox = checkboxFor(dialog, 1);
+  await act(async () => additionalCheckbox.props.onChange());
+  const warning = dialog.findByProps({
+    "data-testid": "design-style-replacement-warning",
+  });
+  assert.equal(
+    warning.props["data-occurrence-token"],
+    model.projection.occurrences[1]!.target.occurrenceToken,
+  );
+  assert.equal(
+    textContent(warning),
+    "This garment currently uses Contemporary Ankara. Applying Casual Native will replace it.",
+  );
+  await act(async () => additionalCheckbox.props.onChange());
+  assert.equal(
+    dialog.findAllByProps({ "data-testid": "design-style-replacement-warning" })
+      .length,
+    0,
+  );
+  await act(async () => additionalCheckbox.props.onChange());
+  const apply = dialog.findByProps({ "data-testid": "apply-design-mapping" });
+  assert.equal(textContent(apply), "Apply to 2 garments");
+  assert.equal(apply.props.disabled, false);
+  await act(async () => apply.props.onClick());
+  assert.deepEqual(
+    mappingRequests[0]?.map((request) => request.target.occurrenceToken),
+    model.projection.occurrences.map((occurrence) => occurrence.target.occurrenceToken),
+  );
+  const replacement = assignCatalogueStyleToOccurrencesThroughStepRuntime({
+    ledger: model.hydration.ledger!,
+    activeOccurrences: model.occurrences,
+    authority: model.authority,
+    requests: mappingRequests[0]!,
+    currentRuntimeGeneration: 1,
+    stepIsActive: true,
+    hydrationMutable: true,
+  });
+  assert.equal(replacement.status, "applied");
+  assert.equal(
+    replacement.ledger.assignmentsByGarmentKey["base:shirt:1"]?.sourceKind ===
+      "catalog" &&
+      replacement.ledger.assignmentsByGarmentKey["base:shirt:1"].catalogStyleId,
+    casualNative.id,
+  );
+  assert.equal(
+    replacement.ledger.assignmentsByGarmentKey["additional:shirt:1"]
+      ?.sourceKind === "catalog" &&
+      replacement.ledger.assignmentsByGarmentKey["additional:shirt:1"]
+        .catalogStyleId,
+    casualNative.id,
+  );
+  assert.equal(
+    replacement.ledger.assignmentsByGarmentKey["additional:shirt:1"]
+      ?.occurrenceToken,
+    model.projection.occurrences[1]!.target.occurrenceToken,
+  );
+
+  // New ODGH IDs use the same exact-ID comparison. An unassigned card starts
+  // with no checked rows and neither opening path creates a warning.
+  dialog = await openStyle(contemporaryAnkara.name);
+  assert.equal(checkboxFor(dialog, 0).props.checked, false);
+  assert.equal(checkboxFor(dialog, 1).props.checked, true);
+  assert.equal(
+    dialog.findAllByProps({ "data-testid": "design-style-replacement-warning" })
+      .length,
+    0,
+  );
+  await act(async () =>
+    dialog
+      .findByProps({ "aria-label": "Close garment mapping dialog" })
+      .props.onClick(),
+  );
+  dialog = await openStyle(unassignedStyle.name);
+  assert.equal(checkboxFor(dialog, 0).props.checked, false);
+  assert.equal(checkboxFor(dialog, 1).props.checked, false);
+  assert.equal(
+    dialog.findAllByProps({ "data-testid": "design-style-replacement-warning" })
+      .length,
+    0,
+  );
+}
+
 // Reusing a Design Style can add an exact physical occurrence only after the
 // existing Fabric transaction confirms it. The Step 3 dialog must retain its
 // mapping context, then leave the new occurrence unassigned until Apply.
@@ -411,8 +780,10 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   const mappingCheckbox = renderer.root
     .findByProps({ "data-testid": "design-garment-mapping-dialog" })
     .findByType("input");
+  assert.equal(mappingCheckbox.props.checked, true);
+  assert.equal(mappingCheckbox.props.disabled, true);
   await act(async () => mappingCheckbox.props.onChange());
-  assert.equal(mappingCheckbox.props.checked, false);
+  assert.equal(mappingCheckbox.props.checked, true);
 
   const addAnother = renderer.root
     .findByProps({ "data-testid": "design-reuse-add-another-garment" })
@@ -438,7 +809,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     renderer.root
       .findByProps({ "data-testid": "design-garment-mapping-dialog" })
       .findByType("input").props.checked,
-    false,
+    true,
   );
 
   await act(async () =>
@@ -494,8 +865,8 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   const returnedChecks = returnedDialog.findAllByType("input");
   assert.deepEqual(
     returnedChecks.map((input) => input.props.checked),
-    [false, true],
-    "the new exact occurrence should be pre-checked while existing mapping state is preserved",
+    [true, true],
+    "the new exact occurrence is pre-checked while the existing assignment stays active",
   );
   assert.deepEqual(handledOccurrences, [addedOccurrence.garmentKey]);
   const apply = returnedDialog.findByProps({ "data-testid": "apply-design-mapping" });
@@ -503,7 +874,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   await act(async () => apply.props.onClick());
   assert.deepEqual(
     mappingRequests.map((requests) => requests.map((request) => request.target.garmentKey)),
-    [[addedOccurrence.garmentKey]],
+    [["base:shirt:1", addedOccurrence.garmentKey]],
     "Apply Design is the only action that assigns the selected style to the new occurrence",
   );
 }
