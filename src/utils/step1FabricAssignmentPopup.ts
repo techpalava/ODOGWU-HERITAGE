@@ -127,9 +127,29 @@ export type Step1FabricAssignmentEvaluation = {
   fabricLevelError: string | null;
   selectedCapacityMessage: string | null;
   remainingCapacityMessage: string | null;
+  /**
+   * Candidate interactivity is projected from the same bulk assignment
+   * transaction used by the confirmation action. Selected rows deliberately
+   * remain enabled so that a customer can always deselect them.
+   */
+  candidateEnabled: Record<string, boolean>;
   candidateMessages: Record<string, string | null>;
   selectedFailure: Step1FabricAssignmentFailure | null;
   remainingFailure: Step1FabricAssignmentFailure | null;
+};
+
+const formatPredictiveCandidateFailure = (
+  result: FutureFabricBulkAssignmentResult | null,
+): string => {
+  if (result?.status === "blocked") {
+    if (result.reason === "FABRIC_STOCK_EXHAUSTED") {
+      return "Needs another Fabric piece; no additional stock available.";
+    }
+    if (result.reason === "FABRIC_QUANTITY_LIMIT_REACHED") {
+      return "Needs another Fabric piece; the Fabric quantity limit has been reached.";
+    }
+  }
+  return "This garment cannot be added to the current Fabric selection.";
 };
 
 const candidateGarmentKeys = (
@@ -545,10 +565,33 @@ export const evaluateStep1FabricAssignmentSelection = ({
   } else {
     groupingCapacityStatus = STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE;
   }
+  const selectedKeySet = new Set(selected);
+  const candidateEnabled: Record<string, boolean> = {};
   const candidateMessages: Record<string, string | null> = {};
   for (const candidate of candidates) {
     const messages: string[] = [];
-    if (candidate.disabledReason) {
+    const isSelected = selectedKeySet.has(candidate.garmentKey);
+    const projectedResult = isSelected
+      ? null
+      : dryRunAssignGarmentKeys({
+          state: fabricAllocationState,
+          garmentTypeSelection,
+          fabricCode,
+          garmentKeys: [...selected, candidate.garmentKey],
+          fabrics,
+        });
+    const canAddCandidate = projectedResult?.status === "assigned";
+    candidateEnabled[candidate.garmentKey] = isSelected || canAddCandidate;
+    if (!isSelected && !canAddCandidate) {
+      messages.push(
+        projectedResult?.status === "blocked" &&
+        (projectedResult.reason === "FABRIC_STOCK_EXHAUSTED" ||
+          projectedResult.reason === "FABRIC_QUANTITY_LIMIT_REACHED")
+          ? formatPredictiveCandidateFailure(projectedResult)
+          : candidate.disabledReason ??
+              formatPredictiveCandidateFailure(projectedResult),
+      );
+    } else if (candidate.disabledReason) {
       messages.push(candidate.disabledReason);
     }
     if (selectedFailure?.garmentKey === candidate.garmentKey) {
@@ -592,6 +635,7 @@ export const evaluateStep1FabricAssignmentSelection = ({
             requiredFabricQuantity,
           })
         : null,
+    candidateEnabled,
     candidateMessages,
     selectedFailure,
     remainingFailure,

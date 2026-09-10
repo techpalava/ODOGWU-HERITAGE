@@ -1169,4 +1169,82 @@ assert.ok(
   "The Fabric-level stock failure must appear directly below the Fabric header.",
 );
 
+let predictiveRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  predictiveRenderer = renderCapacityDialog({
+    candidates: [
+      {
+        garmentKey: "base:shirt",
+        garmentType: "shirt",
+        fabricUnits: 1,
+        capacityUsageCopy: "Uses 1/2 fabric capacity unit.",
+        individuallyAssignable: true,
+        disabledReason: null,
+      },
+      {
+        garmentKey: "base:full_length_gown",
+        garmentType: "full_length_gown",
+        fabricUnits: 2,
+        capacityUsageCopy: "Uses 1 fabric capacity unit.",
+        individuallyAssignable: true,
+        disabledReason: null,
+      },
+    ],
+    selectedGarmentKeys: ["base:shirt"],
+    selectedCount: 1,
+    selectedCapacityUnits: 1,
+    canAssignSelected: true,
+    canUseForAll: false,
+    groupingCapacityStatus: STEP1_SELECT_MORE_GARMENT_CAPACITY_MESSAGE,
+    candidateEnabled: {
+      "base:shirt": true,
+      "base:full_length_gown": false,
+    },
+    candidateMessages: {
+      "base:shirt": null,
+      "base:full_length_gown":
+        "Needs another Fabric piece; no additional stock available.",
+    },
+  });
+});
+const predictiveDialog = predictiveRenderer.root.findByProps({
+  "data-testid": "step1-fabric-assignment-dialog",
+});
+assert.equal(
+  predictiveDialog.findByProps({
+    "data-step1-fabric-assignment-checkbox": "base:shirt",
+  }).props.disabled,
+  false,
+  "A selected garment must stay available for deselection.",
+);
+assert.equal(
+  predictiveDialog.findByProps({
+    "data-step1-fabric-assignment-checkbox": "base:full_length_gown",
+  }).props.disabled,
+  true,
+  "A projected-infeasible garment must be semantically disabled.",
+);
+assert.match(
+  textContent(
+    predictiveDialog.findByProps({
+      "data-step1-fabric-assignment-row": "base:full_length_gown",
+    }),
+  ),
+  /Needs another Fabric piece; no additional stock available/,
+);
+assert.equal(
+  predictiveDialog.findByProps({
+    "data-testid": "step1-fabric-assignment-confirm",
+  }).props.disabled,
+  false,
+  "A valid partial selection must still be assignable.",
+);
+assert.equal(
+  predictiveDialog.findAllByProps({
+    "data-testid": "step1-fabric-assignment-fabric-error",
+  }).length,
+  0,
+  "A disabled candidate must not create a Fabric-level error.",
+);
+
 console.log("test_step1_fabric_assignment_popup_ui.tsx: all assertions passed");
