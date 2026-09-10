@@ -174,6 +174,19 @@ const withReferenceGarmentTypes = (
     "data-testid": "design-style-description-preview",
   });
   assert.match(preview.props.className, /line-clamp-2/);
+  assert.match(card.props.className, /h-full/);
+  assert.match(
+    card.findByProps({ "data-testid": "design-style-card-title-zone" }).props.className,
+    /min-h-\[2\.75rem\]/,
+  );
+  assert.match(
+    card.findByProps({ "data-testid": "design-style-card-description-zone" }).props.className,
+    /min-h-\[2\.5rem\]/,
+  );
+  assert.match(
+    card.findByProps({ "data-testid": "design-style-card-cta-zone" }).props.className,
+    /mt-auto/,
+  );
   const readMore = card.findByProps({
     "aria-label": `Read more about ${detailedStyle.name}`,
   });
@@ -204,6 +217,28 @@ const withReferenceGarmentTypes = (
     renderer.root.findAllByProps({ "data-testid": "design-garment-mapping-dialog" })
       .length,
     0,
+  );
+
+  const useThisDesign = card.findByProps({
+    "aria-label": `Use This Design ${detailedStyle.name}`,
+  });
+  await act(async () =>
+    useThisDesign.props.onClick({
+      stopPropagation: () => undefined,
+      currentTarget: { focus: () => undefined },
+    }),
+  );
+  assert.equal(
+    renderer.root.findAllByProps({ "data-testid": "design-garment-mapping-dialog" })
+      .length,
+    1,
+    "The CTA must open one mapping dialog without a parent-card double trigger.",
+  );
+  await act(async () =>
+    renderer.root
+      .findByProps({ "data-testid": "design-garment-mapping-dialog" })
+      .findByProps({ "aria-label": "Close garment mapping dialog" })
+      .props.onClick(),
   );
 
   const cardClickTarget = card.findByProps({
