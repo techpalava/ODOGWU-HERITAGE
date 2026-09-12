@@ -4,7 +4,10 @@ import { StorageService } from "../services/storageService";
 import { Eye, Save, Settings } from "lucide-react";
 import { InputField, SelectField } from "./ui/FormControls";
 import { normalizeBatchStatus } from "../utils/batchStatus";
-import { getHomepageOrderGatewayState } from "../utils/homepageOrderGateway";
+import {
+  getHomepageJoinBatchLabel,
+  getHomepageOrderGatewayState,
+} from "../utils/homepageOrderGateway";
 
 interface BatchManagementPanelProps {
   batches: Batch[];
@@ -149,7 +152,7 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
       );
       setSaveFeedback(
         nextHomepageState.joinBatch
-          ? `Saved. The homepage button is now "Join ${nextHomepageState.joinBatch.name}".`
+          ? `Saved. The homepage button is now "${getHomepageJoinBatchLabel(nextHomepageState.joinBatch.name)}".`
           : "Saved. No Type B homepage button is currently eligible.",
       );
       setEditingBatchId(null);
@@ -199,7 +202,7 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
             </p>
             <p className="mt-1 font-display text-lg font-bold text-heritage-green">
               {homepageState.joinBatch
-                ? `Join ${homepageState.joinBatch.name}`
+                ? getHomepageJoinBatchLabel(homepageState.joinBatch.name)
                 : "Hidden - no joinable sourcing batch"}
             </p>
           </div>

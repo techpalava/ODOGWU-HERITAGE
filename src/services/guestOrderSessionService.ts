@@ -26,6 +26,7 @@ import {
 } from "../utils/measurementBlueprint";
 import {
   createDesignStudioDraftRepository,
+  GUEST_ORDER_SESSION_STORAGE_NAMESPACE,
   type DesignStudioDraftRepository,
 } from "../utils/designStudioDraftPersistence";
 import {
@@ -291,6 +292,36 @@ const getDesignStudioDraftRepository =
       legacy: {
         // Migration inspects the stored source without normalizing or rewriting it.
         load: () => StorageService.getGuestOrderSession()?.designDraft || null,
+        inspect: () => {
+          let raw: string | null;
+          try {
+            raw = window.localStorage.getItem(GUEST_ORDER_SESSION_STORAGE_NAMESPACE);
+          } catch {
+            return { status: "unavailable" as const, reason: "legacy_session_read_failed" };
+          }
+          if (raw === null) return { status: "empty" as const };
+          try {
+            const session: unknown = JSON.parse(raw);
+            if (!session || typeof session !== "object" || Array.isArray(session)) {
+              return { status: "invalid" as const, reason: "invalid_legacy_session" };
+            }
+            const draft = (session as { designDraft?: unknown }).designDraft;
+            if (draft === undefined || draft === null) {
+              return { status: "empty" as const };
+            }
+            if (typeof draft !== "object" || Array.isArray(draft)) {
+              return { status: "invalid" as const, reason: "invalid_legacy_draft" };
+            }
+            return {
+              status: "valid" as const,
+              draft: draft as GuestDesignDraft,
+              // The complete source session is the legacy concurrency token.
+              fingerprint: raw,
+            };
+          } catch {
+            return { status: "invalid" as const, reason: "invalid_legacy_session" };
+          }
+        },
       },
       normalizeDraft: normalizeGuestDesignDraft,
       legacySourceVersion: GUEST_ORDER_SESSION_VERSION,
@@ -382,6 +413,32 @@ export const GuestOrderSessionService = {
     if (!repository) return null;
     const result = repository.loadFutureDraftWithMigration();
     return result.status === "loaded" ? result.draft : null;
+  },
+
+  /** A pure, explicit result for homepage preflight and safety checks. */
+  inspectFutureDesignDraft: () => {
+    const repository = getDesignStudioDraftRepository();
+    if (!repository) {
+      return { status: "unavailable" as const, reason: "guest_storage_unavailable" };
+    }
+    return repository.inspectFutureDraftForHomepage();
+  },
+
+  /**
+   * Studio hydration intentionally performs legacy migration only after the
+   * customer has entered/resumed the Studio. It preserves invalid/unavailable
+   * outcomes instead of treating them as an empty draft.
+   */
+  loadFutureDesignDraftForHydration: () => {
+    const repository = getDesignStudioDraftRepository();
+    if (!repository) {
+      return { status: "unavailable" as const, reason: "guest_storage_unavailable" };
+    }
+    try {
+      return repository.loadFutureDraftWithMigration();
+    } catch {
+      return { status: "unavailable" as const, reason: "guest_draft_load_failed" };
+    }
   },
 
   saveFutureDesignDraft: (designDraft: GuestDesignDraft) =>

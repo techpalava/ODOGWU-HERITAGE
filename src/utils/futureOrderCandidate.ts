@@ -1,5 +1,6 @@
 import type {
   AiTryOnWorkflowStateV1,
+  Batch,
   CatalogDesignSource,
   DesignSource,
   DesignStudioStageId,
@@ -7,6 +8,7 @@ import type {
   FutureMeasurementStateV1,
   FutureShippingStateV1,
 } from "../types";
+import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./designSourceJourney";
 import {
   reconcileFutureShippingState,
@@ -23,6 +25,10 @@ import {
   validateRawFabricAssignments,
 } from "./designSourceState";
 import { projectActiveFutureMeasurementState } from "./measurementBlueprint";
+import {
+  getCanonicalOrderIdentity,
+  type CanonicalOrderIdentity,
+} from "./orderContextIdentity";
 import {
   isStep8CustomerSelectableCountry,
   isStep8DestinationZone,
@@ -250,6 +256,8 @@ type FutureOrderCandidateNonStyleEnvelope = Omit<
 export type FutureOrderCandidateV2 = Readonly<
   FutureOrderCandidateNonStyleEnvelope & {
     readonly schemaVersion: 2;
+    /** New candidates retain stable routing identity; older V2 records omit it. */
+    readonly orderIdentity?: CanonicalOrderIdentity;
     readonly occurrenceStyleSnapshots: readonly FutureOrderCandidateOccurrenceStyleSnapshotV2[];
   }
 >;
@@ -274,7 +282,40 @@ export interface FutureOrderCandidateV2BuildInput
   extends Omit<FutureOrderCandidateOccurrenceStylesBuildInput, "occurrences"> {
   /** Existing authoritative Candidate input; scalar style output is not consumed by V2. */
   readonly coreInput: FutureOrderCandidateBuildInput;
+  readonly orderIdentity: CanonicalOrderIdentity | null;
+  /** Live batch records are consulted only for retained Community eligibility. */
+  readonly liveBatches: readonly Batch[];
 }
+
+/**
+ * New Community candidates retain their exact batch ID. Review, preparation,
+ * and the payment boundary use this same helper so an eligible homepage batch
+ * can never replace a closed retained batch.
+ */
+export const getRetainedCommunityBatchEligibilityBlocker = (
+  orderIdentity: CanonicalOrderIdentity,
+  liveBatches: readonly Batch[],
+): FutureOrderCandidateBlocker | null => {
+  if (orderIdentity.orderType !== "Community") return null;
+  const retainedBatch = liveBatches.find(
+    (batch) => batch.id === orderIdentity.batchId,
+  );
+  if (!retainedBatch) {
+    return {
+      code: "RETAINED_COMMUNITY_BATCH_MISSING",
+      stage: "payment",
+      message: "This batch is no longer available for orders.",
+    };
+  }
+  if (!BatchBusinessRules.canAcceptOrders(retainedBatch).canAcceptOrders) {
+    return {
+      code: "RETAINED_COMMUNITY_BATCH_INELIGIBLE",
+      stage: "payment",
+      message: "This batch is no longer accepting orders.",
+    };
+  }
+  return null;
+};
 
 type FutureOrderCandidateOccurrenceStylesBuildResult =
   | { readonly status: "valid"; readonly snapshots: readonly FutureOrderCandidateOccurrenceStyleSnapshotV2[]; readonly blockers: readonly [] }
@@ -1068,6 +1109,32 @@ export const buildFutureOrderCandidate = (
 export const buildFutureOrderCandidateV2 = (
   input: FutureOrderCandidateV2BuildInput,
 ): FutureOrderCandidateV2BuildResult => {
+  const orderIdentity = getCanonicalOrderIdentity(input.orderIdentity);
+  if (!orderIdentity) {
+    return deepFreeze({
+      status: "blocked",
+      candidate: null,
+      blockers: [
+        {
+          code: "ORDER_CONTEXT_IDENTITY_INVALID",
+          stage: "summary",
+          message: "The order context needs review before payment.",
+        },
+      ],
+    });
+  }
+  const retainedBatchEligibilityBlocker =
+    getRetainedCommunityBatchEligibilityBlocker(
+      orderIdentity,
+      input.liveBatches,
+    );
+  if (retainedBatchEligibilityBlocker) {
+    return deepFreeze({
+      status: "blocked",
+      candidate: null,
+      blockers: [retainedBatchEligibilityBlocker],
+    });
+  }
   const summary = projectFutureDesignStudioSummary(input.coreInput);
   const nonStyleSummaryBlockers = summary.blockers
     .filter((blocker) => blocker.section !== "design_style")
@@ -1098,6 +1165,7 @@ export const buildFutureOrderCandidateV2 = (
   }
   const candidate: FutureOrderCandidateV2 = {
     schemaVersion: 2,
+    orderIdentity,
     journey: coreResult.core.journey,
     authorityVersions: coreResult.core.authorityVersions,
     garments: coreResult.core.garments,

@@ -1,13 +1,24 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Batch, OrderContext } from "./src/types";
 import HomepageOrderGateway, {
   getJoinCurrentBatchButtonLabel,
 } from "./src/components/HomepageOrderGateway";
-import { getHomepageOrderGatewayState } from "./src/utils/homepageOrderGateway";
+import { createJoinRenderedBatchAction } from "./src/utils/homepageCurrentBatchAction";
+import {
+  getHomepageJoinBatchLabel,
+  getHomepageOrderGatewayState,
+  resolveHomepageCommunityBatchEntry,
+} from "./src/utils/homepageOrderGateway";
 import { BatchBusinessRules } from "./src/engine/BatchBusinessRules";
 import { OrderRoutingEngine } from "./src/engine/OrderRoutingEngine";
+import {
+  getCanonicalOrderIdentity,
+  getPersistedDraftOrderIdentity,
+  resolvePersistedDraftOrderContext,
+} from "./src/utils/orderContextIdentity";
 
 const day = 24 * 60 * 60 * 1000;
 const now = Date.now();
@@ -33,18 +44,28 @@ const openState = getHomepageOrderGatewayState([makeBatch()]);
 assert.equal(openState.joinBatch?.id, "batch-6");
 assert.equal(openState.joinBatch?.name, "Avatars");
 assert.equal(openState.minimumGarments, 10);
-assert.equal(getJoinCurrentBatchButtonLabel("Avatars"), "Join Avatars");
+assert.equal(getJoinCurrentBatchButtonLabel("Avatars"), "Join the Avatars");
 assert.equal(
   getJoinCurrentBatchButtonLabel("  Summer Heritage Group  "),
-  "Join Summer Heritage Group",
+  "Join the   Summer Heritage Group  ",
 );
 assert.equal(
   getJoinCurrentBatchButtonLabel("A Very Long Community Batch Name For Every Family"),
-  "Join A Very Long Community Batch Name For Every Family",
+  "Join the A Very Long Community Batch Name For Every Family",
 );
 assert.equal(
   getJoinCurrentBatchButtonLabel("Avatars", true),
   "Join Current Batch",
+);
+
+const pioneersState = getHomepageOrderGatewayState([
+  makeBatch({ id: "batch-8", name: "Pioneers" }),
+]);
+assert.equal(pioneersState.joinBatch?.id, "batch-8");
+assert.equal(
+  getHomepageJoinBatchLabel(pioneersState.joinBatch?.name),
+  "Join the Pioneers",
+  "The homepage label must use the exact current Admin batch name.",
 );
 assert.equal(getJoinCurrentBatchButtonLabel(" "), "Join Current Batch");
 assert.equal(getJoinCurrentBatchButtonLabel(null), "Join Current Batch");
@@ -64,8 +85,10 @@ const findElementById = (node: any, id: string): any => {
 };
 
 let joinCallbackCalls = 0;
-const joinCallback = () => {
+let joinedBatchId: string | null = null;
+const joinCallback = (batch: Batch) => {
   joinCallbackCalls += 1;
+  joinedBatchId = batch.id;
 };
 const joinGatewayTree = HomepageOrderGateway({
   state: openState,
@@ -75,10 +98,58 @@ const joinGatewayTree = HomepageOrderGateway({
   onBrowseGallery: () => undefined,
 });
 const joinButton = findElementById(joinGatewayTree, "btn-quick-join-cohort");
-assert.equal(joinButton?.props.onClick, joinCallback);
+assert.equal(typeof joinButton?.props.onClick, "function");
 assert.equal(joinButton?.props.disabled, false);
 joinButton.props.onClick();
 assert.equal(joinCallbackCalls, 1, "The existing join callback must remain intact");
+assert.equal(
+  joinedBatchId,
+  "batch-6",
+  "Join action must hand off the exact rendered batch ID.",
+);
+
+let heroJoinedBatchId: string | null = null;
+const renderedHeroJoin = createJoinRenderedBatchAction(
+  makeBatch({ id: "batch-8", name: "Pioneers" }),
+  (batch) => {
+    heroJoinedBatchId = batch.id;
+  },
+);
+renderedHeroJoin();
+assert.equal(
+  heroJoinedBatchId,
+  "batch-8",
+  "Every hero CTA must close over the exact rendered batch, not receive a click event.",
+);
+
+const homepageEntry = resolveHomepageCommunityBatchEntry(
+  [makeBatch()],
+  "batch-6",
+  "Veldhoven Campus Lockers",
+  new Date(now),
+);
+assert.deepEqual(homepageEntry?.orderContext, {
+  orderType: "Community",
+  batchId: "batch-6",
+  batchName: "Avatars",
+  closingDate: new Date(now + day).toISOString(),
+  deliveryWindow: "",
+  expectedParticipants: 40,
+  currentMembers: 12,
+  allowOrders: true,
+  batchStatus: "OPEN",
+  pickupLocation: "Veldhoven Campus Lockers",
+});
+assert.equal(
+  resolveHomepageCommunityBatchEntry(
+    [makeBatch({ id: "batch-8", name: "Pioneers" })],
+    "batch-6",
+    "Veldhoven Campus Lockers",
+    new Date(now),
+  ),
+  null,
+  "A stale Avatars CTA must not silently switch the customer into Pioneers.",
+);
 
 const openCommunityContext: OrderContext = {
   orderType: "Community",
@@ -99,6 +170,74 @@ assert.equal(
   OrderRoutingEngine.evaluateOrder(openCommunityContext, [makeBatch()]).mode,
   "COMMUNITY_OPEN",
   "The routing engine must preserve an eligible homepage community context",
+);
+assert.equal(
+  OrderRoutingEngine.evaluateOrder(
+    { orderType: "Individual" },
+    [makeBatch()],
+  ).mode,
+  "INDIVIDUAL",
+  "Individual entry must remain separate from the current community batch.",
+);
+
+const persistedAvatarsDraft = {
+  batchType: "community" as const,
+  batchId: "batch-7",
+  batchName: "Avatars",
+};
+assert.deepEqual(getPersistedDraftOrderIdentity(persistedAvatarsDraft), {
+  orderType: "Community",
+  batchId: "batch-7",
+});
+assert.deepEqual(
+  getPersistedDraftOrderIdentity({ batchType: "alone" }),
+  { orderType: "Individual" },
+  "An Individual draft remains separate from a Community batch identity.",
+);
+assert.deepEqual(
+  resolvePersistedDraftOrderContext(
+    persistedAvatarsDraft,
+    [
+      makeBatch({ id: "batch-7", name: "Avatars", status: "CLOSED" }),
+      makeBatch({ id: "batch-8", name: "Pioneers" }),
+    ],
+    "Veldhoven Campus Lockers",
+  ),
+  {
+    orderType: "Community",
+    batchId: "batch-7",
+    batchName: "Avatars",
+    closingDate: new Date(now + day).toISOString(),
+    deliveryWindow: "",
+    expectedParticipants: 40,
+    currentMembers: 12,
+    allowOrders: true,
+    batchStatus: "CLOSED",
+    pickupLocation: "Veldhoven Campus Lockers",
+  },
+  "Reload must resolve a Community draft by its retained batch ID, not the current homepage batch.",
+);
+assert.deepEqual(
+  resolvePersistedDraftOrderContext(
+    persistedAvatarsDraft,
+    [makeBatch({ id: "batch-8", name: "Pioneers" })],
+    "Veldhoven Campus Lockers",
+  ),
+  {
+    orderType: "Community",
+    batchId: "batch-7",
+    batchName: "Avatars",
+  },
+  "A missing saved batch must remain unbound rather than fall back to the current registration batch.",
+);
+assert.deepEqual(
+  getCanonicalOrderIdentity({ orderType: "Individual" }),
+  { orderType: "Individual" },
+);
+assert.equal(
+  getCanonicalOrderIdentity({ orderType: "Community" }),
+  null,
+  "Community identity cannot be inferred from a display name or current batch.",
 );
 
 const productionState = getHomepageOrderGatewayState([
@@ -286,6 +425,12 @@ assert.equal(
   "Disabling orders in Sourcing Batches must hide the Join action",
 );
 
+assert.equal(
+  getHomepageOrderGatewayState([]).joinBatch,
+  null,
+  "No eligible batch must produce no community join target.",
+);
+
 const joinMarkup = renderToStaticMarkup(
   createElement(HomepageOrderGateway, {
     state: openState,
@@ -297,7 +442,7 @@ const joinMarkup = renderToStaticMarkup(
   }),
 );
 assert.match(joinMarkup, /Join an Existing Batch or Group \(Avatars\)/);
-assert.match(joinMarkup, /Join Avatars/);
+assert.match(joinMarkup, /Join the Avatars/);
 assert.match(joinMarkup, /Join an Existing Batch or Group/);
 assert.match(joinMarkup, /Individual Custom Order/);
 assert.match(joinMarkup, /Ready to Wear/);
@@ -359,6 +504,21 @@ assert.ok(
       customerMarkup.indexOf("Ready to Wear"),
   "Private batch must remain first when no community batch is joinable",
 );
+
+const homeViewSource = readFileSync("src/components/HomeView.tsx", "utf8");
+const batchManagementSource = readFileSync(
+  "src/components/BatchManagementPanel.tsx",
+  "utf8",
+);
+assert.match(homeViewSource, /getJoinCurrentBatchButtonLabel\([\s\S]{0,120}joinBatch\?\.name/);
+assert.equal(
+  (homeViewSource.match(/onClick=\{handleHeroPrimaryAction\}/g) || []).length,
+  5,
+  "All five hero CTAs must use the one no-argument rendered-batch action.",
+);
+assert.doesNotMatch(homeViewSource, /onClick=\{onJoinCommunityBatch\}/);
+assert.match(batchManagementSource, /getHomepageOrderGatewayState\(batches\)/);
+assert.match(batchManagementSource, /getHomepageJoinBatchLabel\(homepageState\.joinBatch\.name\)/);
 
 console.log(
   "PASS: homepage order gateway source-of-truth, boundaries, and labels",

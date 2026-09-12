@@ -75,6 +75,12 @@ import {
 } from "../utils/designStudioNavigation";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import {
+  canonicalOrderIdentitiesMatch,
+  getCanonicalOrderIdentity,
+  getPersistedDraftOrderIdentity,
+  resolvePersistedDraftHydrationContext,
+} from "../utils/orderContextIdentity";
+import {
 } from "../utils/shippingPricing";
 import { calculateDesignPricing } from "../utils/designPricing";
 import { projectCustomerGarmentConstructionBreakdown } from "../utils/designPriceBreakdownPresentation";
@@ -248,6 +254,7 @@ import {
 import {
   authorizeFutureOrderV2Payment,
   executeFutureOrderV2Payment,
+  validatePreparedFutureOrderV2PaymentEligibility,
   type FutureOrderV2PaymentAttempt,
 } from "../utils/futureOrderV2Payment";
 import { persistFutureOrderV2 } from "../services/futureOrderV2Persistence";
@@ -520,6 +527,12 @@ export default function DesignStudioView({
   clearInitialPreset,
 }: DesignStudioViewProps) {
   const [guestDraftHydrated, setGuestDraftHydrated] = useState<boolean>(false);
+  const [hydratedOrderContext, setHydratedOrderContext] =
+    useState<OrderContext | null>(null);
+  const [persistedOrderContextStatus, setPersistedOrderContextStatus] =
+    useState<"resolving" | "empty" | "valid" | "invalid" | "unavailable">(
+      "resolving",
+    );
   const [firebaseDraftAuth, setFirebaseDraftAuth] = useState<{
     resolved: boolean;
     user: User | null;
@@ -805,41 +818,76 @@ export default function DesignStudioView({
         batchStatus: "CLOSED",
       };
 
-  const ctx = orderContext || defaultCtx;
+  const isPersistedOrderContextBlocked =
+    !orderContext &&
+    !hydratedOrderContext &&
+    (persistedOrderContextStatus === "invalid" ||
+      persistedOrderContextStatus === "unavailable");
+  // This intentionally lacks a batchId. It represents an inspected persisted
+  // identity which cannot be used, and prevents defaultCtx from attaching the
+  // current registration batch to invalid saved bytes.
+  const blockedPersistedOrderContext: OrderContext = {
+    orderType: "Community",
+    batchName: "Saved order requires recovery",
+    allowOrders: false,
+    batchStatus: "CLOSED",
+  };
+  const ctx =
+    orderContext ||
+    hydratedOrderContext ||
+    (isPersistedOrderContextBlocked ? blockedPersistedOrderContext : defaultCtx);
 
   // Automatically adapt batchType based on the custom orderContext passed down
   useEffect(() => {
-    if (orderContext) {
-      if (orderContext.orderType === "Individual") {
+    if (isPersistedOrderContextBlocked) {
+      setBatchType("community");
+      return;
+    }
+    const effectiveOrderContext = orderContext || hydratedOrderContext;
+    if (effectiveOrderContext) {
+      if (effectiveOrderContext.orderType === "Individual") {
         setBatchType("alone");
-      } else if (orderContext.orderType === "Group Organizer") {
+      } else if (effectiveOrderContext.orderType === "Group Organizer") {
         setBatchType("personalized");
         setCustomGroupCode(
-          orderContext.batchId || orderContext.batchName || "",
+          effectiveOrderContext.batchId || effectiveOrderContext.batchName || "",
         );
-      } else if (orderContext.orderType === "Group Member") {
+      } else if (effectiveOrderContext.orderType === "Group Member") {
         setBatchType("personalized");
         setCustomGroupCode(
-          orderContext.batchId || orderContext.batchName || "",
+          effectiveOrderContext.batchId || effectiveOrderContext.batchName || "",
         );
       } else {
-        const eligibility = BatchBusinessRules.canAcceptOrders(orderContext);
+        const eligibility = BatchBusinessRules.canAcceptOrders(
+          effectiveOrderContext,
+        );
         if (!eligibility.canAcceptOrders) {
           setNotification({
             message:
-              "This batch is no longer accepting orders. Your order has been switched to individual pricing.",
+              "This batch is no longer accepting orders. Please review your saved order.",
             type: "info",
           });
           window.setTimeout(() => setNotification(null), 4000);
-          // NOTE: The batch closed, so the user is rerouted to individual pricing.
-          // Keep the notification above synchronized with this pricing change.
-          setBatchType("alone");
+          // A persisted Community order retains its canonical batch identity.
+          // The live batch is closed, so downstream actions must revalidate and
+          // fail closed; it must not be silently rebound to individual pricing.
+          if (!effectiveOrderContext.batchId) {
+            setBatchType("alone");
+          } else {
+            setBatchType("community");
+          }
         } else {
           setBatchType("community");
         }
       }
     }
-  }, [orderContext, setNotification, storeBatches]);
+  }, [
+    orderContext,
+    hydratedOrderContext,
+    isPersistedOrderContextBlocked,
+    setNotification,
+    storeBatches,
+  ]);
 
   // STEP 2: Fabric Selection, Filtering & Pagination States
   const [selectedFabric, setSelectedFabric] = useState<Fabric | null>(null);
@@ -2268,6 +2316,7 @@ export default function DesignStudioView({
   const [customGroupCode, setCustomGroupCode] = useState<string>("");
 
   useEffect(() => {
+    if (isPersistedOrderContextBlocked) return;
     const dynamicCtx = { ...ctx };
     if (batchType === "alone") dynamicCtx.orderType = "Individual";
     else if (batchType === "personalized")
@@ -2280,12 +2329,21 @@ export default function DesignStudioView({
     );
 
     if (!initialRouteSet && storeBatches) {
-      if (decision.mode === "COMMUNITY_CLOSED" && batchType === "community") {
+      if (
+        decision.mode === "COMMUNITY_CLOSED" &&
+        batchType === "community" &&
+        !dynamicCtx.batchId
+      ) {
         setBatchType("alone");
       }
       setInitialRouteSet(true);
     }
-  }, [batchType, storeBatches, initialRouteSet]);
+  }, [
+    batchType,
+    storeBatches,
+    initialRouteSet,
+    isPersistedOrderContextBlocked,
+  ]);
 
   const futureFabricMaterialPricing =
     fabricAllocationState.fabricAllocations.length > 0
@@ -2366,6 +2424,17 @@ export default function DesignStudioView({
     basePricing: futureFabricAuthoritativePricing,
   };
   const futureSummary = projectFutureDesignStudioSummary(futureSummaryInput);
+  const futureOrderIdentity = isPersistedOrderContextBlocked
+    ? null
+    : getCanonicalOrderIdentity({
+        orderType:
+          batchType === "alone"
+            ? "Individual"
+            : batchType === "community"
+              ? "Community"
+              : ctx.orderType,
+        batchId: batchType === "community" ? ctx.batchId : undefined,
+      });
   const isFutureSummaryStageUnlocked =
     (futureSummary.status === "ready" ||
       futureSummary.status === "pricing_pending") &&
@@ -2677,6 +2746,8 @@ export default function DesignStudioView({
     uploadedSourceCleanupInFlightRef.current.clear();
     lastScheduledFutureDraftRef.current = null;
     setFutureDraftPersistenceStatus("resolving");
+    setHydratedOrderContext(null);
+    setPersistedOrderContextStatus("resolving");
     futureOrderV2PreparationRef.current = null;
     futureOrderV2PreparationInFlightRef.current = false;
     futureOrderV2PaymentAttemptRef.current = null;
@@ -2750,7 +2821,44 @@ export default function DesignStudioView({
       ++futureDraftHydrationRequestGenerationRef.current;
     let cancelled = false;
     void (async () => {
-      const localDraft = GuestOrderSessionService.getFutureDesignDraft();
+      const localInspection = GuestOrderSessionService.inspectFutureDesignDraft();
+      if (localInspection.status === "invalid") {
+        setFutureDraftPersistenceStatus("invalid");
+        setPersistedOrderContextStatus("invalid");
+        setGuestDraftHydrated(true);
+        return;
+      }
+      if (localInspection.status === "unavailable") {
+        setFutureDraftPersistenceStatus("blocked");
+        setPersistedOrderContextStatus("unavailable");
+        setGuestDraftHydrated(true);
+        return;
+      }
+      let localDraft = null;
+      if (localInspection.status === "valid") {
+        // The intentional Studio entry may now perform the established legacy
+        // migration. Preflight itself never reaches this mutating loader.
+        const loaded = GuestOrderSessionService.loadFutureDesignDraftForHydration();
+        if (loaded.status === "invalid") {
+          setFutureDraftPersistenceStatus("invalid");
+          setPersistedOrderContextStatus("invalid");
+          setGuestDraftHydrated(true);
+          return;
+        }
+        if (loaded.status === "unavailable") {
+          setFutureDraftPersistenceStatus("blocked");
+          setPersistedOrderContextStatus("unavailable");
+          setGuestDraftHydrated(true);
+          return;
+        }
+        if (loaded.status !== "loaded") {
+          setFutureDraftPersistenceStatus("invalid");
+          setPersistedOrderContextStatus("invalid");
+          setGuestDraftHydrated(true);
+          return;
+        }
+        localDraft = loaded.draft;
+      }
       let storedDraft = localDraft;
       let hydratedPersistenceStatus: "ready" | "invalid" = "ready";
       if (futureDraftIdentity.status === "authenticated") {
@@ -2778,6 +2886,7 @@ export default function DesignStudioView({
           ) {
             console.error("Future draft synchronization failed.", error);
             setFutureDraftPersistenceStatus("blocked");
+            setPersistedOrderContextStatus("unavailable");
           }
           return;
         }
@@ -2792,6 +2901,7 @@ export default function DesignStudioView({
         if (synchronization.status === "conflict") {
           cloudFutureDraftRevisionRef.current = synchronization.record.revision;
           setFutureDraftPersistenceStatus("conflict");
+          setPersistedOrderContextStatus("unavailable");
           return;
         }
         if (
@@ -2799,6 +2909,20 @@ export default function DesignStudioView({
           synchronization.status === "blocked"
         ) {
           setFutureDraftPersistenceStatus(synchronization.status);
+          setPersistedOrderContextStatus(
+            synchronization.status === "invalid" ? "invalid" : "unavailable",
+          );
+          return;
+        }
+        if (
+          synchronization.draft &&
+          !getPersistedDraftOrderIdentity(synchronization.draft)
+        ) {
+          // Do not record cloud synchronization or clear a guest copy before
+          // an authenticated payload has a canonical order identity.
+          setFutureDraftPersistenceStatus("invalid");
+          setPersistedOrderContextStatus("invalid");
+          setGuestDraftHydrated(true);
           return;
         }
         cloudFutureDraftRevisionRef.current =
@@ -2833,10 +2957,51 @@ export default function DesignStudioView({
       ) {
         return;
       }
+      // Persisted identity must be valid before any selections hydrate. This
+      // applies equally after a reload without an in-memory order context: a
+      // missing Community batch ID may never fall back to the current batch.
+      const persistedHydration = storedDraft
+        ? resolvePersistedDraftHydrationContext(
+            storedDraft,
+            storeBatches || [],
+            businessSettings.productionSettings.defaultPickupLocation ||
+              "Veldhoven Campus Lockers",
+          )
+        : null;
+      const resolvedPersistedHydration =
+        persistedHydration?.status === "valid" ? persistedHydration : null;
+      if (storedDraft && !resolvedPersistedHydration) {
+        setFutureDraftPersistenceStatus("invalid");
+        setPersistedOrderContextStatus("invalid");
+        setGuestDraftHydrated(true);
+        return;
+      }
+      // Homepage entry preflights the same condition. Keep this guard at the
+      // hydration boundary so a stale or direct caller can never combine an
+      // existing draft's selections with a newly supplied order context.
+      if (
+        storedDraft &&
+        orderContext &&
+        !canonicalOrderIdentitiesMatch(
+          resolvedPersistedHydration?.identity || null,
+          getCanonicalOrderIdentity(orderContext),
+        )
+      ) {
+        setFutureDraftPersistenceStatus("blocked");
+        setPersistedOrderContextStatus("unavailable");
+        setGuestDraftHydrated(true);
+        return;
+      }
       const futureJourney = createDormantDesignStudioJourneyState({
         persistedDraft: storedDraft,
         normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
       });
+      if (!orderContext) {
+        setHydratedOrderContext(resolvedPersistedHydration?.context || null);
+      }
+      setPersistedOrderContextStatus(
+        storedDraft ? "valid" : "empty",
+      );
       invalidateFutureGarmentRemovalRetention();
       const restoredUploadedSource = isValidUploadedDesignDraftSource(
         storedDraft?.designSource,
@@ -3174,6 +3339,7 @@ export default function DesignStudioView({
       ) {
         console.error("Future draft hydration failed.", error);
         setFutureDraftPersistenceStatus("invalid");
+        setPersistedOrderContextStatus("invalid");
       }
     });
 
@@ -3191,6 +3357,9 @@ export default function DesignStudioView({
     customDetailCatalog,
     fabrics,
     styles,
+    orderContext,
+    storeBatches,
+    businessSettings.productionSettings.defaultPickupLocation,
     publishFutureDesignStyleHydration,
   ]);
 
@@ -4919,6 +5088,8 @@ export default function DesignStudioView({
         source: activeFutureDesignSource,
         shippingResolution: futureShippingResolution,
       },
+      orderIdentity: futureOrderIdentity,
+      liveBatches: storeBatches || [],
       ledger,
       validationAuthority: futureDesignStyleDraftAuthority,
       styles,
@@ -5069,6 +5240,11 @@ export default function DesignStudioView({
     const outcome = await executeFutureOrderV2Payment({
       prepared,
       existingAttempt,
+      validateBeforeAuthorization: () =>
+        validatePreparedFutureOrderV2PaymentEligibility({
+          prepared,
+          liveBatches: storeBatches || [],
+        }),
       authorize: authorizeFutureOrderV2Payment,
     });
     futureOrderV2PaymentInFlightRef.current = false;
@@ -6505,6 +6681,10 @@ export default function DesignStudioView({
       id="design-studio-nine-stage-journey"
       data-journey-mode="nine_stage"
       data-stage-id={futureStageId}
+      data-order-context-type={ctx.orderType}
+      data-order-context-batch-id={ctx.batchId || ""}
+      data-persisted-order-context-status={persistedOrderContextStatus}
+      data-future-draft-persistence-status={futureDraftPersistenceStatus}
       data-stage-complete={
         futureStageId === "garment_type"
           ? garmentTypeStageCompletion.isComplete

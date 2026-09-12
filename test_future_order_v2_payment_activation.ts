@@ -10,9 +10,11 @@ import {
 import {
   createFutureOrderV2PaymentAttempt,
   executeFutureOrderV2Payment,
+  validatePreparedFutureOrderV2PaymentEligibility,
 } from "./src/utils/futureOrderV2Payment";
 import { createFutureOrderV2PreparationAttempt } from "./src/utils/futureOrderV2Preparation";
 import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
+import type { Batch } from "./src/types";
 
 const preparedCandidate = createFutureOrderV2Fixture("payment-activation").cartItem
   .candidate;
@@ -54,6 +56,80 @@ assert.equal(authorized.attempt, paymentAttempt.attempt);
 assert.equal(authorized.providerTransactionReference, "provider-payment-1");
 assert.equal(authorized.attempt.masterOrder, prepared.masterOrder);
 
+// Payment-time eligibility is evaluated after a Community order was prepared.
+// Its retained batch-7 matters; an unrelated current homepage batch-8 does
+// not replace it.
+const retainedBatchCandidate = createFutureOrderV2Fixture(
+  "retained-batch-payment",
+  undefined,
+  { orderType: "Community", batchId: "batch-7" },
+).cartItem.candidate;
+const retainedBatchPreparedResult = createFutureOrderV2PreparationAttempt({
+  candidate: retainedBatchCandidate,
+  ids: {
+    cartItemId: "future-cart-retained-batch",
+    orderId: "future-order-retained-batch",
+  },
+});
+assert.equal(retainedBatchPreparedResult.status, "valid");
+if (retainedBatchPreparedResult.status !== "valid") {
+  throw new Error("Expected retained Community order to prepare.");
+}
+const retainedBatchPrepared = retainedBatchPreparedResult.attempt;
+const openBatch = (id: string): Batch => ({
+  id,
+  batchNumber: id === "batch-7" ? 7 : 8,
+  name: id === "batch-7" ? "Avatars" : "Pioneers",
+  startDate: "2020-01-01T00:00:00.000Z",
+  endDate: "2099-01-01T00:00:00.000Z",
+  duration: "Open",
+  targetGarments: 40,
+  currentGarments: 0,
+  currentOrders: 0,
+  currentCustomers: 0,
+  status: "OPEN",
+  allowOrders: true,
+  visibility: "PUBLIC",
+});
+let liveBatches: readonly Batch[] = [openBatch("batch-7"), openBatch("batch-8")];
+let retainedAuthorizations = 0;
+const retainedOpenOutcome = await executeFutureOrderV2Payment({
+  prepared: retainedBatchPrepared,
+  validateBeforeAuthorization: () =>
+    validatePreparedFutureOrderV2PaymentEligibility({
+      prepared: retainedBatchPrepared,
+      liveBatches,
+    }),
+  async authorize() {
+    retainedAuthorizations += 1;
+    return { status: "authorized", providerTransactionReference: "retained-open" };
+  },
+});
+assert.equal(retainedOpenOutcome.status, "authorized");
+assert.equal(retainedAuthorizations, 1);
+liveBatches = [
+  { ...openBatch("batch-7"), allowOrders: false, status: "CLOSED" },
+  openBatch("batch-8"),
+];
+const retainedClosedOutcome = await executeFutureOrderV2Payment({
+  prepared: retainedBatchPrepared,
+  validateBeforeAuthorization: () =>
+    validatePreparedFutureOrderV2PaymentEligibility({
+      prepared: retainedBatchPrepared,
+      liveBatches,
+    }),
+  async authorize() {
+    retainedAuthorizations += 1;
+    return { status: "authorized", providerTransactionReference: "must-not-run" };
+  },
+});
+assert.equal(retainedClosedOutcome.status, "invalid");
+assert.equal(retainedAuthorizations, 1, "Closed retained batch must prevent authorization.");
+assert.deepEqual(retainedBatchPrepared.cartItem.candidate.orderIdentity, {
+  orderType: "Community",
+  batchId: "batch-7",
+});
+
 const failed = await executeFutureOrderV2Payment({
   prepared,
   existingAttempt: authorized.attempt,
@@ -92,6 +168,8 @@ const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8")
 assert.match(studioSource, /handleExecuteFutureOrderV2Payment/);
 assert.match(studioSource, /futureOrderV2PaymentInFlightRef/);
 assert.match(studioSource, /executeFutureOrderV2Payment/);
+assert.match(studioSource, /validatePreparedFutureOrderV2PaymentEligibility/);
+assert.match(studioSource, /validateBeforeAuthorization/);
 for (const forbidden of [
   "StorageService.saveOrder",
   "createFutureOrderMasterOrderV2",
