@@ -1253,6 +1253,8 @@ export interface OrderContext {
   orderType: "Individual" | "Group Organizer" | "Group Member" | "Community";
   batchId?: string;
   batchName?: string;
+  /** Customer presentation only; authorization remains source-backed. */
+  batchVisibility?: "PRIVATE" | "PUBLIC";
   organizer?: string;
   deliveryWindow?: string;
   closingDate?: string;

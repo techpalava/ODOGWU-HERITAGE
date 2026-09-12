@@ -15,6 +15,8 @@ export const HomepageDraftReplacementDialog = ({
   isIndividualDraft,
   canContinueExisting,
   busy,
+  targetAction = "join",
+  unavailableMessage,
   onContinueExisting,
   onDiscardAndJoin,
   onCancel,
@@ -24,6 +26,8 @@ export const HomepageDraftReplacementDialog = ({
   isIndividualDraft: boolean;
   canContinueExisting: boolean;
   busy: boolean;
+  targetAction?: "join" | "create";
+  unavailableMessage?: string;
   onContinueExisting: () => void;
   onDiscardAndJoin: () => void;
   onCancel: () => void;
@@ -91,9 +95,10 @@ export const HomepageDraftReplacementDialog = ({
   const title = isIndividualDraft
     ? "You already have an unfinished Individual Order"
     : "You already have an unfinished order";
+  const action = targetAction === "create" ? "create" : "join";
   const body = isIndividualDraft
-    ? `To join ${clickedBatchName}, you'll need to discard your unfinished Individual Order.`
-    : `Your current draft is for ${existingOrderLabel}. To join ${clickedBatchName}, you'll need to discard the unfinished ${existingOrderLabel} order.`;
+    ? `To ${action} ${clickedBatchName}, you'll need to discard your unfinished Individual Order.`
+    : `Your current draft is for ${existingOrderLabel}. To ${action} ${clickedBatchName}, you'll need to discard the unfinished ${existingOrderLabel} order.`;
 
   const dialog = (
     <div
@@ -161,8 +166,8 @@ export const HomepageDraftReplacementDialog = ({
           </div>
           {!canContinueExisting && (
             <p className="mt-4 break-words text-sm leading-relaxed text-heritage-ink/70">
-              This saved Community batch is no longer accepting orders, so it
-              cannot be resumed.
+              {unavailableMessage ||
+                "This saved Community batch is no longer accepting orders, so it cannot be resumed."}
             </p>
           )}
         </div>
@@ -194,7 +199,9 @@ export const HomepageDraftReplacementDialog = ({
           >
             {busy
               ? "Working..."
-              : `Discard & Join ${clickedBatchName}`}
+              : targetAction === "create"
+                ? "Discard & Create Private Batch"
+                : `Discard & Join ${clickedBatchName}`}
           </button>
           <button
             ref={cancelRef}

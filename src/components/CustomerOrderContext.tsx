@@ -55,6 +55,22 @@ export const OrderContextDetails = ({
           </dd>
         </div>
       ) : null}
+      {context.kind === "private" && context.batchName ? (
+        <div className="grid min-w-0 gap-1 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+          <dt className="font-medium text-heritage-ink/65">Batch</dt>
+          <dd className="min-w-0 break-words font-semibold text-heritage-green">
+            {context.batchName}
+          </dd>
+        </div>
+      ) : null}
+      {context.kind === "private" && context.role ? (
+        <div className="grid min-w-0 gap-1 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+          <dt className="font-medium text-heritage-ink/65">Role</dt>
+          <dd className="min-w-0 break-words font-semibold text-heritage-green">
+            {context.role}
+          </dd>
+        </div>
+      ) : null}
     </dl>
   </section>
 );

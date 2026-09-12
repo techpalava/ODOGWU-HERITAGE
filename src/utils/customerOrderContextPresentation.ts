@@ -2,10 +2,11 @@ import type { Batch, OrderContext } from "../types";
 import { getCanonicalOrderIdentity } from "./orderContextIdentity";
 
 export interface CustomerOrderContextPresentation {
-  readonly kind: "community" | "individual";
-  readonly studioLabel: "Community Order" | "Individual Order";
-  readonly detailsOrderType: "Community Batch" | "Individual Order";
+  readonly kind: "community" | "individual" | "private";
+  readonly studioLabel: "Community Order" | "Individual Order" | "Private Batch";
+  readonly detailsOrderType: "Community Batch" | "Individual Order" | "Private Batch";
   readonly batchName: string | null;
+  readonly role: "Organizer" | "Member" | null;
 }
 
 const getDisplayText = (value: unknown): string | null => {
@@ -23,7 +24,7 @@ const getDisplayText = (value: unknown): string | null => {
  * which batch is currently open for registration.
  */
 export const resolveCustomerOrderContextPresentation = (
-  context: Pick<OrderContext, "orderType" | "batchId" | "batchName"> | null | undefined,
+  context: Pick<OrderContext, "orderType" | "batchId" | "batchName" | "batchVisibility"> | null | undefined,
   batches: readonly Pick<Batch, "id" | "name">[],
 ): CustomerOrderContextPresentation => {
   const identity = getCanonicalOrderIdentity(context);
@@ -33,6 +34,23 @@ export const resolveCustomerOrderContextPresentation = (
       studioLabel: "Individual Order",
       detailsOrderType: "Individual Order",
       batchName: null,
+      role: null,
+    };
+  }
+
+  const privateRole =
+    identity?.orderType === "Group Organizer"
+      ? "Organizer"
+      : identity?.orderType === "Group Member"
+        ? "Member"
+        : null;
+  if (context?.batchVisibility === "PRIVATE" && privateRole) {
+    return {
+      kind: "private",
+      studioLabel: "Private Batch",
+      detailsOrderType: "Private Batch",
+      batchName: getDisplayText(context.batchName),
+      role: privateRole,
     };
   }
 
@@ -46,5 +64,6 @@ export const resolveCustomerOrderContextPresentation = (
     studioLabel: "Community Order",
     detailsOrderType: "Community Batch",
     batchName: getDisplayText(retainedBatch?.name) ?? getDisplayText(context?.batchName),
+    role: null,
   };
 };
