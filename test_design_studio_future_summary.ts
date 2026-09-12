@@ -551,7 +551,7 @@ assert.deepEqual(
   exactConstructionBreakdown.rows,
   [{
     garmentKey: "base:shirt",
-    garmentLabel: "Shirt",
+    garmentLabel: "Standard Shirt",
     constructionLabel: "Standard Length Shirt, Short Sleeve",
     role: "main",
     priceCents: 6500,
@@ -579,14 +579,14 @@ const inactiveConstructionLabelBreakdown =
     constructionSubtotal:
       exactSummary.pricingSummary.garmentConstructionSubtotal,
   });
-assert.equal(inactiveConstructionLabelBreakdown.status, "complete");
+assert.equal(inactiveConstructionLabelBreakdown.status, "pending");
 assert.deepEqual(
   inactiveConstructionLabelBreakdown.rows.map((row) => [
     row.constructionLabel,
     row.priceCents,
   ]),
-  [[CONSTRUCTION_OPTION_FALLBACK_LABEL, 6500]],
-  "an inactive catalogue label falls back without hiding authoritative money",
+  [[CONSTRUCTION_OPTION_FALLBACK_LABEL, null]],
+  "a missing exact-garment construction default fails closed instead of substituting another option",
 );
 const activeShirtConstructionOption = inspection.activeOptions.find(
   (option) => option.id === "shirt_std_short",
@@ -605,19 +605,19 @@ const blankConstructionLabelBreakdown =
     constructionSubtotal:
       exactSummary.pricingSummary.garmentConstructionSubtotal,
   });
-assert.equal(blankConstructionLabelBreakdown.status, "complete");
+assert.equal(blankConstructionLabelBreakdown.status, "pending");
 assert.deepEqual(
   blankConstructionLabelBreakdown.rows.map((row) => [
     row.constructionLabel,
     row.priceCents,
   ]),
-  [[CONSTRUCTION_OPTION_FALLBACK_LABEL, 6500]],
-  "a blank catalogue label falls back without changing the Step 7 amount",
+  [[CONSTRUCTION_OPTION_FALLBACK_LABEL, null]],
+  "a malformed exact-garment construction default remains unresolved rather than borrowing another option",
 );
 assert.equal(
   blankConstructionLabelBreakdown.rows[0].priceCents,
-  Math.round(exactSummary.pricingSummary.garmentConstructionSubtotal! * 100),
-  "Step 6 and Step 7 remain monetarily consistent when labels are unavailable",
+  null,
+  "an unresolved exact-garment construction must not expose a stale subtotal row",
 );
 const unresolvedConstructionCatalog = inspection.activeOptions.map((option) =>
   option.selectionGroup === "shirt_construction"
@@ -780,12 +780,12 @@ if (selectedShirtAlternative.status === "selected") {
     alternativeConstructionBreakdown.rows,
     [{
       garmentKey: "base:shirt",
-      garmentLabel: "Shirt",
-      constructionLabel: "Standard Length Shirt, Mid-Long Sleeve",
+      garmentLabel: "Standard Shirt",
+      constructionLabel: "Standard Length Shirt, Short Sleeve",
       role: "main",
-      priceCents: 7000,
+      priceCents: 6500,
     }],
-    "a selected construction alternative replaces the existing Shirt occurrence row and price",
+    "summary projection restores the current exact-garment construction default",
   );
 }
 

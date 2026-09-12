@@ -839,6 +839,28 @@ assert.equal(
   "repeated option IDs remain occurrence-safe by garment",
 );
 
+const longDressCandidate = buildFutureOrderCandidate(
+  buildInput({ garmentTypes: ["full_length_gown"], demographic: "female" }),
+);
+assert.ok(longDressCandidate.candidate);
+assert.deepEqual(
+  longDressCandidate.candidate.garments.map((garment) => ({
+    garmentKey: garment.garmentKey,
+    garmentType: garment.garmentType,
+    label: garment.label,
+    construction: garment.construction.map((component) => component.optionId),
+    constructionTotalCents: garment.constructionTotalCents,
+  })),
+  [{
+    garmentKey: "base:full_length_gown",
+    garmentType: "full_length_gown",
+    label: "Long Dress",
+    construction: ["dress_long_short"],
+    constructionTotalCents: 7500,
+  }],
+  "Candidate projection must retain the exact Step 1 Long Dress title and its €75 short-sleeve construction.",
+);
+
 const distinctSkirtPairInput = buildInput({
   garmentTypes: ["skirt", "long_skirt"],
   demographic: "female",
@@ -854,7 +876,7 @@ assert.deepEqual(
     garment.constructionTotalCents,
   ]),
   [
-    ["base:skirt", "skirt", "Skirt", 7500],
+    ["base:skirt", "skirt", "Standard Skirt", 7500],
     ["base:long_skirt", "long_skirt", "Long Skirt", 8000],
   ],
   "Summary must preserve both skirt occurrence identities and canonical prices.",
@@ -881,7 +903,7 @@ assert.deepEqual(
     garment.constructionTotalCents,
   ]),
   [
-    ["base:skirt", "skirt", "Skirt", 7500],
+    ["base:skirt", "skirt", "Standard Skirt", 7500],
     ["base:long_skirt", "long_skirt", "Long Skirt", 8000],
   ],
   "Candidate generation must not collapse Long Skirt into Standard Skirt.",
@@ -898,7 +920,7 @@ assert.deepEqual(
     ({ garment }) => [garment.garmentKey, garment.label],
   ),
   [
-    ["base:skirt", "Skirt"],
+    ["base:skirt", "Standard Skirt"],
     ["base:long_skirt", "Long Skirt"],
   ],
   "Payment Review must receive Long Skirt as its own labelled garment.",

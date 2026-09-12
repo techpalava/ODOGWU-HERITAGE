@@ -54,10 +54,12 @@ assert.equal(Object.keys(initial.selection.constructionByGarment).length, 10);
 
 const shirt = initial.selection.constructionByGarment.shirt;
 const kaftan = initial.selection.constructionByGarment.kaftan;
+const longDress = initial.selection.constructionByGarment.full_length_gown;
 const standardSkirt = initial.selection.constructionByGarment.skirt;
 const longSkirt = initial.selection.constructionByGarment.long_skirt;
 assert.equal(shirt?.status, "resolved");
 assert.equal(kaftan?.status, "resolved");
+assert.equal(longDress?.status, "resolved");
 assert.equal(standardSkirt?.status, "resolved");
 assert.equal(longSkirt?.status, "resolved");
 if (shirt?.status === "resolved" && kaftan?.status === "resolved") {
@@ -66,6 +68,11 @@ if (shirt?.status === "resolved" && kaftan?.status === "resolved") {
   assert.notEqual(shirt.components[0].componentKey, kaftan.components[0].componentKey);
   assert.match(shirt.components[0].componentKey, /^shirt:/);
   assert.match(kaftan.components[0].componentKey, /^kaftan:/);
+}
+
+if (longDress?.status === "resolved") {
+  assert.equal(longDress.components[0].optionId, "dress_long_short");
+  assert.equal(longDress.totalPriceCents, 7500);
 }
 
 if (standardSkirt?.status === "resolved" && longSkirt?.status === "resolved") {
@@ -100,6 +107,40 @@ assert.deepEqual(
 );
 assert.deepEqual(hydrated.selection.constructionByGarment.skirt, standardSkirt);
 assert.deepEqual(hydrated.selection.constructionByGarment.long_skirt, longSkirt);
+assert.deepEqual(
+  hydrated.selection.constructionByGarment.full_length_gown,
+  longDress,
+  "Draft hydration must restore Long Dress through its stable garment ID and current canonical construction.",
+);
+
+const staleLongDressDraft = structuredClone(initial.selection);
+const staleLongDress = staleLongDressDraft.constructionByGarment.full_length_gown;
+if (staleLongDress?.status === "resolved") {
+  staleLongDress.components[0].optionId = "dress_long_midlong";
+  staleLongDress.components[0].componentKey =
+    "full_length_gown:dress_construction:dress_long_midlong";
+  staleLongDress.components[0].priceCents = 8000;
+  staleLongDress.components[0].price = 80;
+  staleLongDress.totalPriceCents = 8000;
+  staleLongDress.totalPrice = 80;
+}
+const repairedLongDressDraft = reconcileGarmentTypeStepSelection({
+  persistedSelection: staleLongDressDraft,
+  normalizedCustomDetailCatalog: catalog,
+}).selection.constructionByGarment.full_length_gown;
+assert.equal(
+  repairedLongDressDraft?.status === "resolved"
+    ? repairedLongDressDraft.components[0].optionId
+    : null,
+  "dress_long_short",
+);
+assert.equal(
+  repairedLongDressDraft?.status === "resolved"
+    ? repairedLongDressDraft.totalPriceCents
+    : null,
+  7500,
+  "Hydration must replace a stale €80 Long Dress construction with the canonical €75 option.",
+);
 
 const malformedSkirtPair = reconcileGarmentTypeStepSelection({
   selectedGarmentTypes: ["skirt", "long_skirt"],
@@ -179,13 +220,9 @@ const replacedDisabledOption = reconcileGarmentTypeStepSelection({
   normalizedCustomDetailCatalog: disabledCatalog,
 });
 assert.equal(
-  replacedDisabledOption.selection.constructionByGarment.shirt?.status ===
-    "resolved"
-    ? replacedDisabledOption.selection.constructionByGarment.shirt.components[0]
-        .optionId
-    : null,
-  "shirt_std_midlong",
-  "A disabled saved option must be replaced by the current authoritative default.",
+  replacedDisabledOption.selection.constructionByGarment.shirt?.status,
+  "unresolved",
+  "A missing exact-garment default must not fall back to another construction option.",
 );
 
 const validAlternateOption = structuredClone(deselected.selection);
@@ -197,25 +234,25 @@ if (alternateShirt?.status === "resolved") {
   alternateShirt.totalPriceCents = 1;
   alternateShirt.totalPrice = 0.01;
 }
-const preservedAlternate = reconcileGarmentTypeStepSelection({
+const restoredCanonicalDefault = reconcileGarmentTypeStepSelection({
   persistedSelection: validAlternateOption,
   normalizedCustomDetailCatalog: catalog,
 });
-const preservedAlternateShirt =
-  preservedAlternate.selection.constructionByGarment.shirt;
+const restoredCanonicalDefaultShirt =
+  restoredCanonicalDefault.selection.constructionByGarment.shirt;
 assert.equal(
-  preservedAlternateShirt?.status === "resolved"
-    ? preservedAlternateShirt.components[0].optionId
+  restoredCanonicalDefaultShirt?.status === "resolved"
+    ? restoredCanonicalDefaultShirt.components[0].optionId
     : null,
-  "shirt_std_midlong",
-  "A still-valid persisted canonical option ID must survive reconciliation.",
+  "shirt_std_short",
+  "A saved construction must restore the current exact-garment Step 1 default.",
 );
 assert.equal(
-  preservedAlternateShirt?.status === "resolved"
-    ? preservedAlternateShirt.totalPriceCents
+  restoredCanonicalDefaultShirt?.status === "resolved"
+    ? restoredCanonicalDefaultShirt.totalPriceCents
     : null,
-  7000,
-  "A preserved option must use its current Admin price, not its persisted price.",
+  6500,
+  "The restored default must use its current canonical price.",
 );
 
 const stalePrice = structuredClone(deselected.selection);

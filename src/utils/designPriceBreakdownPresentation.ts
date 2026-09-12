@@ -5,7 +5,8 @@ import type {
   GarmentTypeStepSelection,
 } from "../types";
 import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing";
+import { reconcileGarmentTypeStepSelection } from "./garmentTypeStepState";
 import type { CustomDetailCatalogInspection } from "./catalogHelpers";
 import type { AuthoritativeDesignPricing } from "./designPricing";
 import type { FutureCustomDetailPhysicalSubject } from "./garmentScopedCustomDetailsDomain";
@@ -107,9 +108,13 @@ export const projectCustomerGarmentConstructionBreakdown = ({
   catalogInspection: CustomDetailCatalogInspection;
   constructionSubtotal: number | null;
 }): CustomerGarmentConstructionBreakdownProjection => {
+  const reconciledGarmentTypeSelection = reconcileGarmentTypeStepSelection({
+    persistedSelection: garmentTypeSelection,
+    normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+  }).selection;
   const priceBreakdown = resolveCustomerDesignPriceBreakdown(pricing);
   const baseGarmentKeys = new Set(
-    garmentTypeSelection.garmentTypes.map(
+    reconciledGarmentTypeSelection.garmentTypes.map(
       (garmentType) => createStyleBaseGarmentSpec(garmentType).key,
     ),
   );
@@ -173,7 +178,7 @@ export const projectCustomerGarmentConstructionBreakdown = ({
         ? ("additional" as const)
         : null;
     const construction = role === "main"
-      ? garmentTypeSelection.constructionByGarment[occurrence.parentGarmentType]
+      ? reconciledGarmentTypeSelection.constructionByGarment[occurrence.parentGarmentType]
       : role === "additional"
         ? additionalGarmentConstructions.byGarmentKey[occurrence.parentGarmentKey]
         : undefined;
@@ -194,7 +199,7 @@ export const projectCustomerGarmentConstructionBreakdown = ({
       garmentKey: occurrence.parentGarmentKey,
       garmentLabel:
         authoritativeRow?.garmentLabel.trim() ||
-        getFabricGarmentLabel(occurrence.parentGarmentType),
+        getStep1GarmentDisplayLabel(occurrence.parentGarmentType),
       constructionLabel: constructionPresentation.label,
       role,
       priceCents: exactMatch ? authoritativeRow.priceCents : null,

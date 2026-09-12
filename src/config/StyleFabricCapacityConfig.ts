@@ -47,7 +47,7 @@ const DEFAULT_CUSTOM_DETAILS_BY_GARMENT_TYPE: Readonly<
     neck_design: "neck_no_round",
   },
   full_length_gown: {
-    dress_construction: "dress_long_midlong",
+    dress_construction: "dress_long_short",
     dress_pockets: "dress_pocket_0",
     neck_design: "neck_no_round",
   },

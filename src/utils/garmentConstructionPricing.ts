@@ -56,6 +56,32 @@ export const STEP_1_SELECTABLE_GARMENT_TYPES: readonly CanonicalPhysicalGarmentT
   "long_skirt",
 ];
 
+/**
+ * The Step 1 catalogue owns the customer-facing name of a physical garment.
+ * Stable garment IDs intentionally remain separate from this presentation data.
+ */
+export const STEP_1_GARMENT_DISPLAY_LABELS: Readonly<
+  Record<CanonicalPhysicalGarmentType, string>
+> = {
+  shirt: "Standard Shirt",
+  trouser: "Trouser",
+  skirt: "Standard Skirt",
+  long_skirt: "Long Skirt",
+  standard_shorts: "Standard Nikka Shorts",
+  bum_shorts: "Standard Bum Shorts",
+  dress: "Standard Dress",
+  kaftan: "Long shirt",
+  full_length_gown: "Long Dress",
+  agbada: "Long Shirt (Agbada)",
+};
+
+export const getStep1GarmentDisplayLabel = (
+  garmentType: FabricGarmentType,
+): string =>
+  garmentType === "other"
+    ? "Other Garment"
+    : STEP_1_GARMENT_DISPLAY_LABELS[garmentType];
+
 const CUSTOMER_SELECTABLE_GARMENT_TYPE_SET = new Set<CanonicalPhysicalGarmentType>(
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
 );
@@ -86,13 +112,6 @@ export const isCanonicalPhysicalGarmentType = (
   garmentType: FabricGarmentType,
 ): garmentType is CanonicalPhysicalGarmentType =>
   CANONICAL_PHYSICAL_GARMENT_TYPE_SET.has(garmentType);
-
-const DERIVED_CONSTRUCTION_GARMENT_TYPES = new Set<FabricGarmentType>([
-  "kaftan",
-  "full_length_gown",
-  "agbada",
-  "long_skirt",
-]);
 
 const isValidConstructionOption = (
   option: CustomDetailOption,
@@ -152,9 +171,10 @@ export const resolveGarmentConstructionPricing = (
         isValidConstructionOption(option, selectionGroup),
       ),
     );
-    const option = DERIVED_CONSTRUCTION_GARMENT_TYPES.has(canonicalGarmentType)
-      ? candidates.find((candidate) => candidate.id === configuredOptionId)
-      : candidates[0];
+    // Each Step 1 garment carries its own ordered construction defaults. The
+    // first configured value is authoritative; never substitute a generic
+    // selection-group default from a different garment profile.
+    const option = candidates.find((candidate) => candidate.id === configuredOptionId);
 
     if (!option) {
       return {
@@ -162,9 +182,7 @@ export const resolveGarmentConstructionPricing = (
         garmentType,
         code: "missing_catalog_option",
         selectionGroup,
-        ...(DERIVED_CONSTRUCTION_GARMENT_TYPES.has(canonicalGarmentType)
-          ? { expectedOptionId: configuredOptionId }
-          : {}),
+        expectedOptionId: configuredOptionId,
       };
     }
 

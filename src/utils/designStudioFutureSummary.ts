@@ -1,6 +1,7 @@
 import { CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE } from "../config/GarmentDetailsConfig";
 import { resolveCustomDetailPhysicalComponents } from "../config/CustomDetailPhysicalComponentConfig";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing";
+import { reconcileGarmentTypeStepSelection } from "./garmentTypeStepState";
 import type {
   AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
@@ -218,8 +219,8 @@ const getPhysicalSubjectLabel = (
   componentType: CanonicalPhysicalGarmentType,
 ): string =>
   parentType === componentType
-    ? getFabricGarmentLabel(componentType)
-    : `${getFabricGarmentLabel(parentType)} - ${getFabricGarmentLabel(componentType)}`;
+    ? getStep1GarmentDisplayLabel(componentType)
+    : `${getStep1GarmentDisplayLabel(parentType)} - ${getStep1GarmentDisplayLabel(componentType)}`;
 
 const getAiTryOnSummary = (
   workflow: AiTryOnWorkflowStateV1,
@@ -314,6 +315,13 @@ const mapGarments = ({
     designSourceKind === "uploaded"
       ? garmentTypeSelection
       : step1GarmentTypeSelection;
+  const reconciledBaseConstructionSelection =
+    designSourceKind === "catalogue"
+      ? reconcileGarmentTypeStepSelection({
+          persistedSelection: authoritativeBaseConstructionSelection,
+          normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+        }).selection
+      : authoritativeBaseConstructionSelection;
 
   return projectAuthoritativePhysicalOccurrences({
     sourceKind: designSourceKind,
@@ -330,7 +338,7 @@ const mapGarments = ({
       garmentKey,
       garmentType,
       sourceRole,
-      garmentTypeSelection: authoritativeBaseConstructionSelection,
+      garmentTypeSelection: reconciledBaseConstructionSelection,
       additionalGarmentConstructionState,
     });
     const physicalResolution = resolveCustomDetailPhysicalComponents({
@@ -341,7 +349,7 @@ const mapGarments = ({
       blockers.push({
         code: "GARMENT_CONSTRUCTION_INVALID",
         section: "garments",
-        message: `${getFabricGarmentLabel(garmentType)} construction needs review.`,
+        message: `${getStep1GarmentDisplayLabel(garmentType)} construction needs review.`,
         garmentKey,
       });
     }
@@ -349,7 +357,7 @@ const mapGarments = ({
       blockers.push({
         code: "GARMENT_COMPONENT_INVALID",
         section: "garments",
-        message: `${getFabricGarmentLabel(garmentType)} components could not be resolved.`,
+        message: `${getStep1GarmentDisplayLabel(garmentType)} components could not be resolved.`,
         garmentKey,
       });
     }
@@ -361,7 +369,7 @@ const mapGarments = ({
               blockers.push({
                 code: "GARMENT_CONSTRUCTION_PRICE_INVALID",
                 section: "garments",
-                message: `${getFabricGarmentLabel(garmentType)} construction pricing is unavailable.`,
+                message: `${getStep1GarmentDisplayLabel(garmentType)} construction pricing is unavailable.`,
                 garmentKey,
               });
             }
@@ -377,7 +385,7 @@ const mapGarments = ({
     return {
       garmentKey,
       garmentType,
-      label: getFabricGarmentLabel(garmentType),
+      label: getStep1GarmentDisplayLabel(garmentType),
       role: allocationAssignment?.sourceRole || sourceRole,
       demographic: garmentTypeSelection.demographic,
       fabricUnits:
@@ -449,7 +457,7 @@ const mapFabrics = ({
       garments: allocation.garmentAssignments.map((assignment) => ({
         garmentKey: assignment.garmentKey,
         garmentType: assignment.garmentType,
-        label: getFabricGarmentLabel(assignment.garmentType),
+        label: getStep1GarmentDisplayLabel(assignment.garmentType),
       })),
     };
   });
@@ -713,7 +721,7 @@ const mapMeasurements = ({
     shared: values.filter((value) => !value.garmentKey),
     byGarment: [...byGarment.entries()].map(([garmentKey, garmentValues]) => ({
       garmentKey,
-      garmentLabel: getFabricGarmentLabel(
+      garmentLabel: getStep1GarmentDisplayLabel(
         garmentTypeByKey.get(garmentKey) || "other",
       ),
       values: garmentValues,
