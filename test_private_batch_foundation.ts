@@ -201,10 +201,11 @@ assert.equal(writes[0]?.record.organizerId, "owner-a");
 assert.equal(writes[0]?.record.visibility, "PRIVATE");
 assert.equal(writes[0]?.record.currentMembers, 1);
 assert.deepEqual(created.orderContext, {
-  orderType: "Group Organizer",
-  batchId: GROUP_ID,
-  batchName: creationInput.batchName,
-  organizer: "Owner A",
+    orderType: "Group Organizer",
+    batchId: GROUP_ID,
+    batchName: creationInput.batchName,
+    batchVisibility: "PRIVATE",
+    organizer: "Owner A",
   closingDate: "2026-08-15",
   deliveryWindow: "Late August 2026",
   expectedParticipants: 10,
@@ -213,6 +214,21 @@ assert.deepEqual(created.orderContext, {
   batchStatus: "OPEN",
   allowOrders: true,
 });
+
+const optionalDescriptionWrites: Array<Record<string, unknown>> = [];
+await createPrivateBatch({
+  input: { ...creationInput, description: undefined },
+  limits: { minParticipantsRequired: 10, maxParticipantsAllowed: 300 },
+  dependencies: {
+    getAuthenticatedUid: () => "owner-a",
+    createCanonicalGroupId: () => "private_batch_optional_123456",
+    write: async (_id, record) => {
+      optionalDescriptionWrites.push(record);
+    },
+    serverTimestamp: () => "server-time",
+  },
+});
+assert.equal(optionalDescriptionWrites[0]?.description, "");
 
 await assert.rejects(
   () =>

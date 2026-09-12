@@ -60,7 +60,7 @@ export interface AppState {
     | "about"
     | "gallery"
     | "database"
-    | "custom-order" | "login";
+    | "custom-order" | "private-batch-setup" | "login";
   pendingRedirect: string | null;
   setPendingRedirect: (redirect: string | null) => void;
   setActiveTab: (
@@ -69,9 +69,9 @@ export interface AppState {
       | "design"
       | "dashboard"
       | "about"
-      | "gallery"
-      | "database"
-      | "custom-order" | "login",
+    | "gallery"
+    | "database"
+    | "custom-order" | "private-batch-setup" | "login",
   ) => void;
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (isOpen: boolean) => void;

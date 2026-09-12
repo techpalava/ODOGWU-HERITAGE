@@ -198,6 +198,7 @@ const toGroupOrderContext = (
   orderType: identity.orderType,
   batchId: identity.batchId,
   batchName: group.batchName,
+  batchVisibility: group.visibility,
   organizer: group.organizer,
   closingDate: group.closingDate,
   deliveryWindow: group.deliveryWindow,

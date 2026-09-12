@@ -86,6 +86,11 @@ import Footer from "./components/Footer";
 
 import { AdminAuthGuard } from "./components/AdminAuthGuard";
 import { HomepageDraftReplacementDialog } from "./components/HomepageDraftReplacementDialog";
+import PrivateBatchSetupView, {
+  type PrivateBatchSetupSubmission,
+  type PrivateBatchSetupValues,
+} from "./components/PrivateBatchSetupView";
+import { createPrivateBatch } from "./services/privateBatchService";
 
 type HomepageDraftReplacementRequest = Readonly<{
   decisionGeneration: number;
@@ -95,6 +100,13 @@ type HomepageDraftReplacementRequest = Readonly<{
   clickedBatchName: string;
   isIndividualDraft: boolean;
   canContinueExisting: boolean;
+}>;
+
+type PrivateBatchDraftReplacementRequest = Readonly<{
+  decisionGeneration: number;
+  existing: LoadedHomepageMutableDraft;
+  existingOrderContext: OrderContext | null;
+  values: PrivateBatchSetupValues;
 }>;
 
 export default function App() {
@@ -292,6 +304,9 @@ export default function App() {
   const [, setHomepageAuthEpoch] = useState(0);
   const [homepageDraftReplacement, setHomepageDraftReplacement] =
     useState<HomepageDraftReplacementRequest | null>(null);
+  const [privateBatchDraftReplacement, setPrivateBatchDraftReplacement] =
+    useState<PrivateBatchDraftReplacementRequest | null>(null);
+  const [privateBatchSetupError, setPrivateBatchSetupError] = useState<string | null>(null);
   const [isHomepageDraftOperationBusy, setIsHomepageDraftOperationBusy] =
     useState(false);
 
@@ -318,6 +333,7 @@ export default function App() {
     homepageDraftOperationInFlightRef.current = false;
     setIsHomepageDraftOperationBusy(false);
     setHomepageDraftReplacement(null);
+    setPrivateBatchDraftReplacement(null);
   };
 
   const getHomepageDraftReplacementService = () => {
@@ -384,6 +400,147 @@ export default function App() {
     setPresetFabricCode(null);
     setOrderContext(context);
     setActiveTab("design");
+  };
+
+  const createPrivateBatchFromSetup = async (
+    values: PrivateBatchSetupValues,
+  ): Promise<PrivateBatchSetupSubmission> => {
+    const firebaseUser = auth.currentUser;
+    if (!currentUser || !firebaseUser || firebaseUser.isAnonymous) {
+      store.setPendingRedirect("private-batch-setup");
+      setActiveTab("login");
+      return { status: "requires_sign_in" };
+    }
+
+    try {
+      const created = await createPrivateBatch({
+        input: {
+          ...values,
+          maxParticipants: businessSettings.batchSettings.maxGarmentsPerBatch,
+          organizerName: currentUser.name,
+          deliveryWindow: values.preferredDeliveryMonth,
+          status: "OPEN",
+        },
+        limits: {
+          minParticipantsRequired:
+            businessSettings.batchSettings.minParticipantsRequired,
+          maxParticipantsAllowed:
+            businessSettings.batchSettings.maxGarmentsPerBatch,
+        },
+      });
+      setPresetStyleId(null);
+      setPresetFabricCode(null);
+      setOrderContext(created.orderContext);
+      setActiveTab("design");
+      return { status: "created" };
+    } catch (error) {
+      console.error("Unable to create Private Batch.", error);
+      return {
+        status: "error",
+        message:
+          "We couldn't create your Private Batch. Your details have been kept so you can try again.",
+      };
+    }
+  };
+
+  const handlePrivateBatchSetupSubmit = async (
+    values: PrivateBatchSetupValues,
+  ): Promise<PrivateBatchSetupSubmission> => {
+    if (homepageDraftEntryRequestInFlight.current) {
+      return { status: "error", message: "Please wait while we check your unfinished order." };
+    }
+    setPrivateBatchSetupError(null);
+    const firebaseUser = auth.currentUser;
+    if (!currentUser || !firebaseUser || firebaseUser.isAnonymous) {
+      return createPrivateBatchFromSetup(values);
+    }
+
+    homepageDraftEntryRequestInFlight.current = true;
+    try {
+      const requestAuthEpoch = homepageAuthEpochRef.current;
+      const authority = getHomepageDraftReplacementService();
+      const inspected = await authority.inspect();
+      if (homepageAuthEpochRef.current !== requestAuthEpoch) {
+        return { status: "error", message: "Your sign-in state changed. Please try again." };
+      }
+      if (inspected.status === "invalid" || inspected.status === "unavailable") {
+        return {
+          status: "error",
+          message: "We could not safely check your unfinished order. Please try again.",
+        };
+      }
+      if (inspected.status === "empty") {
+        return createPrivateBatchFromSetup(values);
+      }
+
+      const existingOrderContext = resolvePersistedDraftOrderContext(
+        inspected.existing.draft,
+        homepageCurrentBatchesRef.current,
+        homepageDefaultPickupLocationRef.current,
+      );
+      setPrivateBatchDraftReplacement({
+        decisionGeneration: ++homepageDraftDecisionGenerationRef.current,
+        existing: inspected.existing,
+        existingOrderContext,
+        values,
+      });
+      return { status: "requires_draft_resolution" };
+    } catch (error) {
+      console.error("Unable to prepare Private Batch setup.", error);
+      return {
+        status: "error",
+        message: "We could not safely check your unfinished order. Please try again.",
+      };
+    } finally {
+      homepageDraftEntryRequestInFlight.current = false;
+    }
+  };
+
+  const handleDiscardAndCreatePrivateBatch = async () => {
+    const request = privateBatchDraftReplacement;
+    if (
+      !request ||
+      request.decisionGeneration !== homepageDraftDecisionGenerationRef.current ||
+      homepageDraftOperationInFlightRef.current
+    ) return;
+
+    const operationGeneration = ++homepageDraftOperationGenerationRef.current;
+    homepageDraftOperationInFlightRef.current = true;
+    setIsHomepageDraftOperationBusy(true);
+    const isOperationCurrent = () =>
+      request.decisionGeneration === homepageDraftDecisionGenerationRef.current &&
+      operationGeneration === homepageDraftOperationGenerationRef.current;
+    try {
+      const authority = getHomepageDraftReplacementService();
+      const discarded = await authority.discard(request.existing, () =>
+        isOperationCurrent() ? { status: "authorized" } : { status: "stale" },
+      );
+      if (!isOperationCurrent()) return;
+      if (discarded.status !== "discarded") {
+        setPrivateBatchDraftReplacement(null);
+        setPrivateBatchSetupError(
+          "We could not discard your unfinished order safely. It has not been replaced.",
+        );
+        return;
+      }
+      const creation = await createPrivateBatchFromSetup(request.values);
+      if (!isOperationCurrent()) return;
+      if (creation.status !== "created") {
+        setPrivateBatchDraftReplacement(null);
+        setPrivateBatchSetupError(
+          creation.status === "error"
+            ? creation.message
+            : "Sign in to create a Private Batch.",
+        );
+        return;
+      }
+      invalidateHomepageDraftDecision();
+    } finally {
+      if (homepageDraftOperationGenerationRef.current === operationGeneration) {
+        homepageDraftOperationInFlightRef.current = false;
+        setIsHomepageDraftOperationBusy(false);
+      }
+    }
   };
 
   const handleJoinCommunityBatch = async (selectedBatch: Batch) => {
@@ -1282,10 +1439,8 @@ export default function App() {
                   activeCommunityBatch ? registrationBatch ?? null : null
                 }
                 onCreatePrivateBatch={() => {
-                  triggerNotification(
-                    "Private Batch setup is being updated. Please check back soon.",
-                    "info",
-                  );
+                  setPrivateBatchSetupError(null);
+                  setActiveTab("private-batch-setup");
                 }}
                 onManageSourcingBatches={
                   AuthorizationEngine.canManageBatches(currentUser)
@@ -1322,6 +1477,18 @@ export default function App() {
                     "info",
                   );
                 }}
+              />
+            )}
+
+            {activeTab === "private-batch-setup" && (
+              <PrivateBatchSetupView
+                businessSettings={businessSettings}
+                externalError={privateBatchSetupError}
+                onBack={() => {
+                  setPrivateBatchSetupError(null);
+                  setActiveTab("home");
+                }}
+                onSubmit={handlePrivateBatchSetupSubmit}
               />
             )}
 
@@ -1525,6 +1692,31 @@ export default function App() {
           busy={isHomepageDraftOperationBusy}
           onContinueExisting={handleContinueHomepageDraft}
           onDiscardAndJoin={handleDiscardAndJoinHomepageBatch}
+          onCancel={() => {
+            if (!homepageDraftOperationInFlightRef.current) {
+              invalidateHomepageDraftDecision();
+            }
+          }}
+        />
+      )}
+
+      {privateBatchDraftReplacement && (
+        <HomepageDraftReplacementDialog
+          existingOrderLabel={
+            privateBatchDraftReplacement.existingOrderContext?.batchName ||
+            privateBatchDraftReplacement.existing.draft.batchName ||
+            "saved"
+          }
+          clickedBatchName="this new Private Batch"
+          isIndividualDraft={
+            privateBatchDraftReplacement.existing.orderIdentity.orderType === "Individual"
+          }
+          canContinueExisting={false}
+          busy={isHomepageDraftOperationBusy}
+          targetAction="create"
+          unavailableMessage="This saved order cannot be reopened from this screen. You can cancel to leave it unchanged."
+          onContinueExisting={() => undefined}
+          onDiscardAndJoin={handleDiscardAndCreatePrivateBatch}
           onCancel={() => {
             if (!homepageDraftOperationInFlightRef.current) {
               invalidateHomepageDraftDecision();
