@@ -20,6 +20,7 @@ import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
   STEP_1_SELECTABLE_GARMENT_TYPES,
+  getStep1GarmentDisplayLabel,
   getStep1SelectableGarmentTypes,
   type GarmentConstructionPricingResolution,
   resolveGarmentConstructionPricing,
@@ -48,25 +49,9 @@ const DEMOGRAPHIC_OPTIONS: ReadonlyArray<{
   },
 ];
 
-const GARMENT_TYPE_STEP_LABELS: Record<
-  Exclude<FabricGarmentType, "other">,
-  string
-> = {
-  shirt: "Standard Shirt",
-  trouser: "Trouser",
-  skirt: "Standard Skirt",
-  long_skirt: "Long Skirt",
-  standard_shorts: "Standard Nikka Shorts",
-  bum_shorts: "Standard Bum Shorts",
-  dress: "Standard Dress",
-  kaftan: "Long Shirt (Kaftan)",
-  full_length_gown: "Long Dress (Gown)",
-  agbada: "Long Shirt (Agbada)",
-};
-
 export const getGarmentTypeStepLabel = (
   garmentType: Exclude<FabricGarmentType, "other">,
-): string => GARMENT_TYPE_STEP_LABELS[garmentType];
+): string => getStep1GarmentDisplayLabel(garmentType);
 
 const FIRST_VISIBLE_REFERENCE_IMAGE_COUNT = 3;
 
