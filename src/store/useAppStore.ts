@@ -24,8 +24,11 @@ import {
 } from "../data/mockData";
 import { StorageService } from "../services/storageService";
 import { FabricService } from "../services/fabricService";
-import { auth } from "../services/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { auth, db } from "../services/firebase";
+import {
+  onAuthStateChanged,
+  onIdTokenChanged,
+} from "firebase/auth";
 import { processDynamicBatches } from "../utils/batchUtils";
 import { migrateLegacyCartShippingItems } from "../utils/shippingPricing";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
@@ -38,8 +41,16 @@ import {
   invalidateStylesCatalogueLoadGeneration,
   isCurrentStylesCatalogueLoadGeneration,
 } from "../utils/stylesCatalogueLoadState";
+import {
+  createFirestorePrivateBatchSubscriptionAdapter,
+  createPrivateBatchSubscriptionController,
+  type PrivateBatchSubscriptionAdapter,
+} from "../services/privateBatchGroupSubscriptions";
+import { createPrivateBatchAccessSession } from "../services/privateBatchAccessSession";
+import type { PrivateBatchAccessById } from "../utils/orderContextIdentity";
+import { createPrivateBatchAuthCoordinator } from "../services/privateBatchAuthCoordinator";
 
-interface AppState {
+export interface AppState {
 
   // Navigation & UI
   activeTab:
@@ -105,6 +116,13 @@ interface AppState {
     orders: MasterOrder[] | ((prev: MasterOrder[]) => MasterOrder[]),
   ) => void;
   customGroups: CustomGroup[];
+  /** Source-backed private-group authorization used by draft hydration only. */
+  customGroupAccessById: PrivateBatchAccessById;
+  customGroupPrivateAccessReady: boolean;
+  /** Exact source lifecycle for personalized authority classification. */
+  customGroupPrivateDiscoveryLifecycleId: number | null;
+  /** Monotonic authorization epoch for protected Private Batch continuations. */
+  customGroupPrivateAccessGeneration: number;
   setCustomGroups: (
     groups: CustomGroup[] | ((prev: CustomGroup[]) => CustomGroup[]),
   ) => void;
@@ -169,11 +187,61 @@ interface AppState {
 let storeUnsubs: (() => void)[] = [];
 let privateStoreUnsubs: (() => void)[] = [];
 let authBootstrapSequence = 0;
+// Separate from the Private Batch access generation: this authority answers
+// only whether an initializeData invocation is still the newest startup run.
+let initializationRequestId = 0;
+let privateBatchSubscriptionController: ReturnType<
+  typeof createPrivateBatchSubscriptionController
+> | null = null;
+// Store-lifetime, never controller-lifetime. Every auth/listener/reset path
+// passes this one authority to the controller and token coordinator.
+const privateBatchAccessSession = createPrivateBatchAccessSession();
+// Narrow observability seam for the initialization-race regression. It is
+// unset in production and does not alter subscription behavior.
+let privateBatchDiscoveryStartObserverForTests: (() => void) | null = null;
+export const setPrivateBatchDiscoveryStartObserverForTests = (
+  observer: (() => void) | null,
+): (() => void) => {
+  const previous = privateBatchDiscoveryStartObserverForTests;
+  privateBatchDiscoveryStartObserverForTests = observer;
+  return () => {
+    if (privateBatchDiscoveryStartObserverForTests === observer) {
+      privateBatchDiscoveryStartObserverForTests = previous;
+    }
+  };
+};
 
 const clearPrivateStoreSubscriptions = () => {
   privateStoreUnsubs.forEach((unsubscribe) => unsubscribe());
   privateStoreUnsubs = [];
 };
+
+// Token events, rather than only sign-in transitions, are the authoritative
+// boundary for Private Batch visibility. This exact coordinator is also used
+// by the lifecycle regression tests.
+const privateBatchAuthCoordinator = createPrivateBatchAuthCoordinator({
+  getTarget: () => privateBatchSubscriptionController,
+  getCurrentUser: () => auth.currentUser,
+  accessSession: privateBatchAccessSession,
+  onClaimError: (error) =>
+    console.error("Unable to verify Private Batch admin authority:", error),
+});
+
+const synchronizePrivateBatchIdentity = privateBatchAuthCoordinator.synchronize;
+
+/**
+ * Private persistence reaches the same store-lifetime discovery authority as
+ * the Firestore listeners. These exports intentionally expose no group data:
+ * callers can only await a token-scoped authorization result.
+ */
+export const getPrivateBatchDiscoveryAnchor = () =>
+  privateBatchAuthCoordinator.getDiscoveryAnchor();
+
+export const awaitPrivateBatchPostRefreshAccess =
+  privateBatchAccessSession.awaitPrivateBatchAccess;
+
+export const ensureFreshPrivateBatchDiscoveryForCurrentSession =
+  privateBatchAuthCoordinator.ensureFreshPrivateDiscoveryForCurrentSession;
 
 const initialGuestSession =
   typeof window !== "undefined"
@@ -246,6 +314,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentUser: null,
   setCurrentUser: (user) => {
     clearPrivateStoreSubscriptions();
+    // Clear UID-scoped group state synchronously before a new identity can
+    // subscribe. Public discovery remains intact; no private record survives
+    // a guest → A → B → logout transition in this store.
+    synchronizePrivateBatchIdentity(null);
     if (user) {
       const firebaseUser = auth.currentUser;
       if (!firebaseUser) {
@@ -271,6 +343,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         hasLoadedOrders: false,
       });
       ApiService.saveSession(canonicalUser);
+      if (!firebaseUser.isAnonymous) {
+        synchronizePrivateBatchIdentity(firebaseUser);
+      }
 
       if (AuthorizationEngine.canViewStaffDashboard(canonicalUser)) {
         privateStoreUnsubs.push(
@@ -359,6 +434,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   customGroups: [],
+  customGroupAccessById: {},
+  customGroupPrivateAccessReady: false,
+  customGroupPrivateDiscoveryLifecycleId: null,
+  customGroupPrivateAccessGeneration: 0,
   setCustomGroups: (groups) => {
     const previousGroups = get().customGroups;
     const newGroups =
@@ -492,13 +571,31 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Initialization
   initializeData: async () => {
+    const requestId = ++initializationRequestId;
+    const isCurrentInitialization = () =>
+      requestId === initializationRequestId;
+    // This is a synchronous security boundary, not normal listener cleanup.
+    // It must run before the first awaited data call so a stalled reload
+    // cannot retain an earlier user's owner/member/admin capability.
+    privateBatchAccessSession.invalidate();
+    authBootstrapSequence += 1;
+    storeUnsubs.forEach((unsub) => unsub && unsub());
+    storeUnsubs = [];
+    clearPrivateStoreSubscriptions();
+    privateBatchSubscriptionController?.dispose();
+    privateBatchSubscriptionController = null;
+    set({
+      customGroups: [],
+      customGroupAccessById: {},
+      customGroupPrivateAccessReady: false,
+      customGroupPrivateDiscoveryLifecycleId: null,
+      customGroupPrivateAccessGeneration:
+        privateBatchAccessSession.getGeneration(),
+    });
     // Invalidate + unsubscribe Style listeners BEFORE any await so a stale
     // first-snapshot callback cannot flip the new reload back to ready.
     const stylesSubscriptionGeneration =
       invalidateStylesCatalogueLoadGeneration();
-    storeUnsubs.forEach((unsub) => unsub && unsub());
-    storeUnsubs = [];
-    clearPrivateStoreSubscriptions();
     set({
       isLoadingData: true,
       stylesLoadState: "loading",
@@ -506,8 +603,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     try {
       const catalog = await StorageService.getCatalog();
+      if (!isCurrentInitialization()) return;
       set({ customDetailCatalog: catalog });
       const storedSettings = await StorageService.getBusinessSettings();
+      if (!isCurrentInitialization()) return;
 
       const isInitialized =
         storedSettings?.applicationSettings?.hasInitializedData;
@@ -532,6 +631,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         };
       }
 
+      // All listener installation and completion publishing belongs only to
+      // the latest invocation. An older catalog/settings request is inert.
+      if (!isCurrentInitialization()) return;
+
       storeUnsubs.push(
         StorageService.subscribeToDocument<BusinessSettings>("settings", "business", (settings) => {
           if (settings) {
@@ -540,9 +643,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         })
       );
 
-      // Listen for Firebase Auth state changes
+      // Private Batch authorization must react before the async customer
+      // bootstrap below. This also receives custom-claim refreshes.
+      storeUnsubs.push(
+        privateBatchAuthCoordinator.bindTokenChanges((listener) =>
+          onIdTokenChanged(auth, listener),
+        ),
+      );
+
+      // Customer/session bootstrap remains sign-in based, but is deliberately
+      // no longer the first point at which private state is cleared.
       storeUnsubs.push(
         onAuthStateChanged(auth, (firebaseUser) => {
+          if (!isCurrentInitialization()) return;
           const sequence = ++authBootstrapSequence;
           if (firebaseUser && !firebaseUser.isAnonymous) {
             void (async () => {
@@ -552,7 +665,10 @@ export const useAppStore = create<AppState>((set, get) => ({
                     firebaseUser,
                   );
                 if (continuity.status === "transfer_required") {
-                  if (sequence === authBootstrapSequence) {
+                  if (
+                    sequence === authBootstrapSequence &&
+                    isCurrentInitialization()
+                  ) {
                     ApiService.clearSession();
                     get().setCurrentUser(null);
                   }
@@ -560,7 +676,10 @@ export const useAppStore = create<AppState>((set, get) => ({
                 }
                 const customer =
                   await FirebaseCustomerAuth.bootstrap(firebaseUser);
-                if (sequence === authBootstrapSequence) {
+                if (
+                  sequence === authBootstrapSequence &&
+                  isCurrentInitialization()
+                ) {
                   get().setCurrentUser(customer);
                 }
               } catch (error) {
@@ -568,7 +687,10 @@ export const useAppStore = create<AppState>((set, get) => ({
                   "Failed to establish the secure Firebase customer session:",
                   error,
                 );
-                if (sequence === authBootstrapSequence) {
+                if (
+                  sequence === authBootstrapSequence &&
+                  isCurrentInitialization()
+                ) {
                   ApiService.clearSession();
                   get().setCurrentUser(null);
                 }
@@ -657,11 +779,37 @@ export const useAppStore = create<AppState>((set, get) => ({
         })
       );
 
-      storeUnsubs.push(
-        StorageService.subscribeToCollection<CustomGroup>("customGroups", (groupsList) => {
-          set({ customGroups: groupsList });
-        })
-      );
+      privateBatchSubscriptionController?.dispose();
+      if (!isCurrentInitialization()) return;
+      privateBatchDiscoveryStartObserverForTests?.();
+      privateBatchSubscriptionController = createPrivateBatchSubscriptionController({
+        adapter: createFirestorePrivateBatchSubscriptionAdapter(db),
+        accessSession: privateBatchAccessSession,
+        onSnapshot: ({
+          groups,
+          accessById,
+          privateAccessReady,
+          privateAccessGeneration,
+          discoveryLifecycleId,
+        }) => {
+          set({
+            customGroups: [...groups],
+            customGroupAccessById: accessById,
+            customGroupPrivateAccessReady: privateAccessReady,
+            customGroupPrivateAccessGeneration: privateAccessGeneration,
+            customGroupPrivateDiscoveryLifecycleId: discoveryLifecycleId,
+          });
+        },
+        onError: (error) => {
+          console.error("Error subscribing to authorized custom groups:", error);
+        },
+      });
+      privateBatchSubscriptionController.startPublic();
+      if (!isCurrentInitialization()) return;
+      const existingAuthenticatedUser = get().currentUser;
+      if (existingAuthenticatedUser && auth.currentUser && !auth.currentUser.isAnonymous) {
+        synchronizePrivateBatchIdentity(auth.currentUser);
+      }
 
       storeUnsubs.push(
         StorageService.subscribeToCollection<ReferenceDataGroup>("reference_data", (data) => {
@@ -669,6 +817,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         })
       );
 
+      if (!isCurrentInitialization()) return;
       set({
         // others are set via subscriptions
         businessSettings: savedBusinessSettings,
@@ -680,6 +829,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         isLoadingData: false,
       });
     } catch (error) {
+      if (!isCurrentInitialization()) return;
       console.error("Failed to initialize app data:", error);
       set({
         isLoadingData: false,
@@ -692,3 +842,44 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 }));
+
+/**
+ * Test-only source adapter seam. It installs the same store-lifetime access
+ * session, coordinator, controller, and snapshot publication used by
+ * production; only Firestore callbacks are controlled by the test.
+ */
+export const installPrivateBatchSubscriptionAdapterForTests = (
+  adapter: PrivateBatchSubscriptionAdapter,
+): (() => void) => {
+  privateBatchSubscriptionController?.dispose();
+  privateBatchSubscriptionController = createPrivateBatchSubscriptionController({
+    adapter,
+    accessSession: privateBatchAccessSession,
+    onSnapshot: ({
+      groups,
+      accessById,
+      privateAccessReady,
+      privateAccessGeneration,
+      discoveryLifecycleId,
+    }) => {
+      useAppStore.setState({
+        customGroups: [...groups],
+        customGroupAccessById: accessById,
+        customGroupPrivateAccessReady: privateAccessReady,
+        customGroupPrivateAccessGeneration: privateAccessGeneration,
+        customGroupPrivateDiscoveryLifecycleId: discoveryLifecycleId,
+      });
+    },
+  });
+  privateBatchSubscriptionController.startPublic();
+  const installedController = privateBatchSubscriptionController;
+  return () => {
+    if (privateBatchSubscriptionController !== installedController) return;
+    installedController.dispose();
+    privateBatchSubscriptionController = null;
+  };
+};
+
+/** Drives the production coordinator in controlled lifecycle tests. */
+export const synchronizePrivateBatchIdentityForTests = () =>
+  synchronizePrivateBatchIdentity(auth.currentUser);

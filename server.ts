@@ -14,6 +14,11 @@ import { handleUploadedDesignTransfer } from "./src/server/uploadedDesignTransfe
 import { handleCreateUploadedDesignOwnershipClaim } from "./src/server/uploadedDesignOwnershipClaimHttp";
 import { handleUploadedDesignDraftTransfer } from "./src/server/uploadedDesignDraftTransferHttp";
 import { handleFutureOrderV2Persistence } from "./src/server/futureOrderV2PersistenceHttp";
+import {
+  handleCreatePrivateBatchInvite,
+  handleRedeemPrivateBatchInvite,
+  handleRevokePrivateBatchInvite,
+} from "./src/server/privateBatchInviteHttp";
 
 dotenv.config();
 
@@ -57,6 +62,9 @@ app.post(
   "/api/orders/persist-future-order-v2",
   handleFutureOrderV2Persistence,
 );
+app.post("/api/private-batches/create-invite", handleCreatePrivateBatchInvite);
+app.post("/api/private-batches/redeem-invite", handleRedeemPrivateBatchInvite);
+app.post("/api/private-batches/revoke-invite", handleRevokePrivateBatchInvite);
 
 // API route for AI sizing estimation using Gemini 3.5 Flash
 app.post("/api/estimate-measurements", async (req, res) => {

@@ -40,7 +40,7 @@ const uploadedStyle = (garmentKey: string, token: string, label: string) => ({
 
 const createCandidate = (
   styleName = "Shirt Historical Style",
-  orderIdentity?: CanonicalOrderIdentity,
+  orderIdentity: CanonicalOrderIdentity = { orderType: "Individual" },
 ): FutureOrderCandidateV2 => {
   const styles = [
     catalogueStyle("base:shirt", "token-shirt-1", "Shirt"),
@@ -50,7 +50,7 @@ const createCandidate = (
   styles[0]!.catalogue!.name = styleName;
   return {
     schemaVersion: 2,
-    ...(orderIdentity ? { orderIdentity } : {}),
+    orderIdentity,
     journey: { mode: "future_nine_stage", schemaVersion: 1 },
     authorityVersions: {
       customDetailsSchemaVersion: 1,

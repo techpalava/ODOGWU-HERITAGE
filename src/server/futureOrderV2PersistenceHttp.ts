@@ -60,6 +60,8 @@ const statusByServerError: Record<FutureOrderV2ServerError["code"], number> = {
   ANONYMOUS_NOT_ALLOWED: 403,
   OWNER_MISMATCH: 403,
   ORDER_ID_UNAVAILABLE: 409,
+  PRIVATE_BATCH_UNAUTHORIZED: 403,
+  PRIVATE_BATCH_UNAVAILABLE: 409,
 };
 
 export const createFutureOrderV2PersistenceHandler = (

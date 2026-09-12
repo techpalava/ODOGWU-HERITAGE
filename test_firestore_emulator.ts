@@ -8,6 +8,7 @@ import {
 } from "@firebase/rules-unit-testing";
 import {
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -23,8 +24,12 @@ const PROJECT_ID = "demo-odogwu-future-drafts";
 const COLLECTION = "futureDesignStudioDrafts";
 const STAFF_PREVIEW_COLLECTION = "staffPreviewEntitlements";
 const STYLE_COLLECTION = "styles";
+const CUSTOM_GROUP_COLLECTION = "customGroups";
 const OWNER_UID = "future-draft-owner";
 const OTHER_UID = "different-future-draft-owner";
+const MEMBER_UID = "private-batch-member";
+const PRIVATE_GROUP_ID = "private_batch_123456";
+const PUBLIC_GROUP_ID = "public_batch_1234567";
 
 const testEnvironment = await initializeTestEnvironment({
   projectId: PROJECT_ID,
@@ -64,6 +69,123 @@ const styleReference = (
   context: RulesTestContext,
   styleId = "strict-style-1",
 ) => doc(context.firestore(), STYLE_COLLECTION, styleId);
+
+const customGroupReference = (
+  context: RulesTestContext,
+  groupId = PRIVATE_GROUP_ID,
+) => doc(context.firestore(), CUSTOM_GROUP_COLLECTION, groupId);
+
+const membershipReference = (
+  context: RulesTestContext,
+  groupId = PRIVATE_GROUP_ID,
+  memberUid = MEMBER_UID,
+) =>
+  doc(
+    context.firestore(),
+    CUSTOM_GROUP_COLLECTION,
+    groupId,
+    "privateBatchMembers",
+    memberUid,
+  );
+
+const orderReference = (context: RulesTestContext, orderId: string) =>
+  doc(context.firestore(), "orders", orderId);
+
+const directV2Order = (
+  ownerUid: string,
+  orderIdentity: Record<string, unknown>,
+) => ({
+  schemaVersion: 2,
+  recordType: "future_order_v2",
+  orderId: `v2-${ownerUid}`,
+  ownerUid,
+  customer: { ownerUid },
+  masterOrder: { cartItem: { candidate: { orderIdentity } } },
+  persistedAt: "2026-09-12T10:00:00.000Z",
+});
+
+const legacyOrder = (ownerUid: string) => ({
+  ownerUid,
+  customer: { ownerUid },
+  legacyOrder: true,
+});
+
+const validPrivateGroupRecord = (
+  groupId = PRIVATE_GROUP_ID,
+  overrides: Record<string, unknown> = {},
+) => {
+  const timestamp = Timestamp.fromDate(new Date("2026-09-12T10:00:00.000Z"));
+  return {
+    schemaVersion: 1,
+    batchId: groupId,
+    ownerUid: OWNER_UID,
+    organizerId: OWNER_UID,
+    organizer: "Private Batch Owner",
+    batchName: "Private Family Celebration",
+    occasion: "Family celebration",
+    description: "A private group order.",
+    country: "Netherlands",
+    city: "Eindhoven",
+    preferredDeliveryMonth: "October 2026",
+    expectedParticipants: 10,
+    maxParticipants: 20,
+    visibility: "PRIVATE",
+    currentMembers: 1,
+    closingDate: "2026-09-30",
+    deliveryWindow: "October 2026",
+    status: "OPEN",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    ...overrides,
+  };
+};
+
+const privateGroupCreate = (
+  groupId = PRIVATE_GROUP_ID,
+  overrides: Record<string, unknown> = {},
+) =>
+  validPrivateGroupRecord(groupId, {
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...overrides,
+  });
+
+const seedPrivateBatchSettings = async () => {
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "settings", "business"), {
+      batchSettings: {
+        minParticipantsRequired: 10,
+        maxGarmentsPerBatch: 300,
+      },
+    });
+  });
+};
+
+const seedPrivateGroup = async (
+  groupId = PRIVATE_GROUP_ID,
+  record: Record<string, unknown> = validPrivateGroupRecord(groupId),
+) => {
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(customGroupReference(context, groupId), record);
+  });
+};
+
+const seedPrivateMembership = async (
+  groupId = PRIVATE_GROUP_ID,
+  memberUid = MEMBER_UID,
+) => {
+  const timestamp = Timestamp.fromDate(new Date("2026-09-12T10:00:00.000Z"));
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(membershipReference(context, groupId, memberUid), {
+      schemaVersion: 1,
+      groupId,
+      memberUid,
+      role: "member",
+      addedByUid: OWNER_UID,
+      joinedAt: timestamp,
+    });
+  });
+};
 
 const validStyleRecord = (overrides: Record<string, unknown> = {}) => ({
   schemaVersion: 1,
@@ -686,6 +808,314 @@ try {
     assert.equal(snapshot.exists(), true);
   });
 
+  await runCase("Private Batch creation requires an authenticated canonical owner", async () => {
+    await seedPrivateBatchSettings();
+    await assertFails(
+      setDoc(
+        customGroupReference(testEnvironment.unauthenticatedContext()),
+        privateGroupCreate(),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        customGroupReference(signedIn(OWNER_UID), "short"),
+        privateGroupCreate("short"),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        customGroupReference(signedIn(OWNER_UID)),
+        privateGroupCreate(PRIVATE_GROUP_ID, { ownerUid: OTHER_UID }),
+      ),
+    );
+    await assertSucceeds(
+      setDoc(customGroupReference(signedIn(OWNER_UID)), privateGroupCreate()),
+    );
+  });
+
+  await runCase("Private Batch creation rejects blank required text at the rules boundary", async () => {
+    await seedPrivateBatchSettings();
+    for (const field of [
+      "batchName",
+      "organizer",
+      "occasion",
+      "description",
+      "country",
+      "city",
+      "preferredDeliveryMonth",
+      "closingDate",
+      "deliveryWindow",
+    ]) {
+      for (const blank of ["", " ", "    ", "\t", "\n", " \t \n "]) {
+        const groupId = `private_${field}_${Buffer.from(blank || "empty").toString("hex")}_123456`;
+        await assertFails(
+          setDoc(
+            customGroupReference(signedIn(OWNER_UID), groupId),
+            privateGroupCreate(groupId, { [field]: blank }),
+          ),
+        );
+      }
+    }
+  });
+
+  await runCase("Private Batch owner lifecycle never reopens terminal states", async () => {
+    await seedPrivateBatchSettings();
+    await seedPrivateGroup(PRIVATE_GROUP_ID, validPrivateGroupRecord(PRIVATE_GROUP_ID, {
+      status: "COMPLETED",
+    }));
+    await assertFails(
+      setDoc(
+        customGroupReference(signedIn(OWNER_UID)),
+        { status: "OPEN", updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+    await seedPrivateGroup(PRIVATE_GROUP_ID, validPrivateGroupRecord(PRIVATE_GROUP_ID, {
+      status: "LOCKED",
+    }));
+    await assertFails(
+      setDoc(
+        customGroupReference(signedIn(OWNER_UID)),
+        { status: "OPEN", updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+    await seedPrivateGroup(PRIVATE_GROUP_ID, validPrivateGroupRecord(PRIVATE_GROUP_ID, {
+      status: "DRAFT",
+    }));
+    await assertSucceeds(
+      setDoc(
+        customGroupReference(signedIn(OWNER_UID)),
+        { status: "OPEN", updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+  });
+
+  await runCase("new V2 orders are server-only while the legacy order path remains supported", async () => {
+    await assertFails(
+      setDoc(
+        orderReference(signedIn(OWNER_UID), "v2-organizer-client"),
+        directV2Order(OWNER_UID, {
+          orderType: "Group Organizer",
+          batchId: PRIVATE_GROUP_ID,
+        }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        orderReference(signedIn(MEMBER_UID), "v2-member-client"),
+        directV2Order(MEMBER_UID, {
+          orderType: "Group Member",
+          batchId: PRIVATE_GROUP_ID,
+        }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        orderReference(signedIn(OTHER_UID), "v2-unrelated-client"),
+        directV2Order(OTHER_UID, {
+          orderType: "Group Organizer",
+          batchId: PRIVATE_GROUP_ID,
+        }),
+      ),
+    );
+    const { recordType: _recordType, ...schemaOnlyV2 } = directV2Order(
+      OWNER_UID,
+      { orderType: "Individual" },
+    );
+    await assertFails(
+      setDoc(
+        orderReference(signedIn(OWNER_UID), "v2-schema-only-client"),
+        schemaOnlyV2,
+      ),
+    );
+    const { schemaVersion: _schemaVersion, ...recordTypeOnlyV2 } = directV2Order(
+      OWNER_UID,
+      { orderType: "Individual" },
+    );
+    await assertFails(
+      setDoc(
+        orderReference(signedIn(OWNER_UID), "v2-record-type-only-client"),
+        recordTypeOnlyV2,
+      ),
+    );
+    await assertSucceeds(
+      setDoc(orderReference(signedIn(OWNER_UID), "legacy-client"), legacyOrder(OWNER_UID)),
+    );
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        orderReference(context, "v2-trusted-server"),
+        directV2Order(OWNER_UID, {
+          orderType: "Group Organizer",
+          batchId: PRIVATE_GROUP_ID,
+        }),
+      );
+    });
+  });
+
+  await runCase("PUBLIC discovery query excludes Private Batches", async () => {
+    await seedPrivateGroup();
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(customGroupReference(context, PUBLIC_GROUP_ID), {
+        batchId: PUBLIC_GROUP_ID,
+        ownerUid: "public-owner",
+        visibility: "PUBLIC",
+      });
+    });
+    const publicSnapshot = await assertSucceeds(
+      getDocs(
+        query(
+          collection(
+            testEnvironment.unauthenticatedContext().firestore(),
+            CUSTOM_GROUP_COLLECTION,
+          ),
+          where("visibility", "==", "PUBLIC"),
+        ),
+      ),
+    );
+    assert.deepEqual(publicSnapshot.docs.map((item) => item.id), [PUBLIC_GROUP_ID]);
+    await assertFails(
+      getDocs(
+        collection(
+          testEnvironment.unauthenticatedContext().firestore(),
+          CUSTOM_GROUP_COLLECTION,
+        ),
+      ),
+    );
+  });
+
+  await runCase("Private Batches are unreadable and unjoinable when unauthenticated", async () => {
+    await seedPrivateGroup();
+    const unauthenticated = testEnvironment.unauthenticatedContext();
+    await assertFails(getDoc(customGroupReference(unauthenticated)));
+    await assertFails(
+      setDoc(membershipReference(unauthenticated), {
+        schemaVersion: 1,
+        groupId: PRIVATE_GROUP_ID,
+        memberUid: MEMBER_UID,
+        role: "member",
+      }),
+    );
+  });
+
+  await runCase("owner query and organizer metadata update remain scoped", async () => {
+    await seedPrivateBatchSettings();
+    await seedPrivateGroup();
+    const owner = signedIn(OWNER_UID);
+    const ownerSnapshot = await assertSucceeds(
+      getDocs(
+        query(
+          collection(owner.firestore(), CUSTOM_GROUP_COLLECTION),
+          where("ownerUid", "==", OWNER_UID),
+        ),
+      ),
+    );
+    assert.deepEqual(ownerSnapshot.docs.map((item) => item.id), [PRIVATE_GROUP_ID]);
+    await assertSucceeds(
+      setDoc(
+        customGroupReference(owner),
+        { batchName: "Renamed Private Celebration", updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+    await assertFails(
+      setDoc(
+        customGroupReference(owner),
+        { ownerUid: OTHER_UID, updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+  });
+
+  await runCase("unrelated users cannot discover, mutate, delete, or forge membership", async () => {
+    await seedPrivateGroup();
+    const unrelated = signedIn(OTHER_UID);
+    await assertFails(getDoc(customGroupReference(unrelated)));
+    await assertFails(
+      getDocs(collection(unrelated.firestore(), CUSTOM_GROUP_COLLECTION)),
+    );
+    await assertFails(
+      setDoc(
+        customGroupReference(unrelated),
+        { batchName: "Tampered", updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+    await assertFails(deleteDoc(customGroupReference(unrelated)));
+    await assertFails(
+      setDoc(membershipReference(unrelated, PRIVATE_GROUP_ID, OTHER_UID), {
+        schemaVersion: 1,
+        groupId: PRIVATE_GROUP_ID,
+        memberUid: OTHER_UID,
+        role: "member",
+      }),
+    );
+  });
+
+  await runCase("authorized members use their UID index and exact group read only", async () => {
+    await seedPrivateGroup();
+    await seedPrivateMembership();
+    const member = signedIn(MEMBER_UID);
+    const memberships = await assertSucceeds(
+      getDocs(
+        query(
+          collectionGroup(member.firestore(), "privateBatchMembers"),
+          where("memberUid", "==", MEMBER_UID),
+          where("role", "==", "member"),
+        ),
+      ),
+    );
+    assert.deepEqual(memberships.docs.map((item) => item.data().groupId), [PRIVATE_GROUP_ID]);
+    await assertSucceeds(getDoc(customGroupReference(member)));
+    await assertFails(
+      setDoc(
+        customGroupReference(member),
+        { ownerUid: MEMBER_UID, updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    );
+    await assertFails(
+      getDocs(
+        query(
+          collection(member.firestore(), CUSTOM_GROUP_COLLECTION),
+          where("ownerUid", "==", OWNER_UID),
+        ),
+      ),
+    );
+    await assertFails(
+      getDocs(
+        query(
+          collectionGroup(signedIn(OTHER_UID).firestore(), "privateBatchMembers"),
+          where("memberUid", "==", MEMBER_UID),
+          where("role", "==", "member"),
+        ),
+      ),
+    );
+  });
+
+  await runCase("historical Private Batches without membership remain owner-only", async () => {
+    await seedPrivateGroup(
+      PRIVATE_GROUP_ID,
+      {
+        batchId: PRIVATE_GROUP_ID,
+        ownerUid: OWNER_UID,
+        visibility: "PRIVATE",
+        batchName: "Historical private group",
+      },
+    );
+    await assertSucceeds(getDoc(customGroupReference(signedIn(OWNER_UID))));
+    await assertFails(getDoc(customGroupReference(signedIn(OTHER_UID))));
+  });
+
+  await runCase("admin retains legitimate Private Batch collection access", async () => {
+    await seedPrivateGroup();
+    await assertSucceeds(getDoc(customGroupReference(admin())));
+    await assertSucceeds(
+      getDocs(collection(admin().firestore(), CUSTOM_GROUP_COLLECTION)),
+    );
+  });
+
   await runCase("representative unrelated collection rules are unchanged", async () => {
     const publicFabric = doc(
       testEnvironment.unauthenticatedContext().firestore(),
@@ -701,8 +1131,8 @@ try {
     await assertFails(setDoc(publicFabric, { name: "Tampered fabric" }));
   });
 
-  assert.equal(passed, 37);
-  console.log(`Firestore emulator security matrix passed (${passed}/37).`);
+  assert.equal(passed, 48);
+  console.log(`Firestore emulator security matrix passed (${passed}/48).`);
 } finally {
   await testEnvironment.cleanup();
 }

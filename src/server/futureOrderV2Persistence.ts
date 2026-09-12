@@ -1,4 +1,5 @@
 import { Timestamp, type Firestore } from "firebase-admin/firestore";
+import type { CanonicalOrderIdentity } from "../utils/orderContextIdentity.js";
 import {
   FUTURE_ORDER_V2_COLLECTION,
   createPersistedFutureOrderV2,
@@ -14,7 +15,9 @@ export type FutureOrderV2ServerErrorCode =
   | "AUTH_REQUIRED"
   | "ANONYMOUS_NOT_ALLOWED"
   | "OWNER_MISMATCH"
-  | "ORDER_ID_UNAVAILABLE";
+  | "ORDER_ID_UNAVAILABLE"
+  | "PRIVATE_BATCH_UNAUTHORIZED"
+  | "PRIVATE_BATCH_UNAVAILABLE";
 
 export class FutureOrderV2ServerError extends Error {
   readonly code: FutureOrderV2ServerErrorCode;
@@ -40,6 +43,17 @@ const getExistingOwnerUid = (value: unknown): string | null => {
   return hasText(ownerUid) ? ownerUid : null;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const isGroupOrderIdentity = (
+  value: CanonicalOrderIdentity | undefined,
+): value is Extract<
+  CanonicalOrderIdentity,
+  { orderType: "Group Organizer" | "Group Member" }
+> =>
+  value?.orderType === "Group Organizer" || value?.orderType === "Group Member";
+
 export const createAdminFutureOrderV2PersistenceAdapter = (
   db: Firestore,
 ): FutureOrderV2PersistenceAdapter => ({
@@ -60,6 +74,65 @@ export const createAdminFutureOrderV2PersistenceAdapter = (
               persistedAt: Timestamp.fromDate(new Date(value.persistedAt)),
             },
           );
+        },
+        async assertGroupOrderIdentity(identity, uid) {
+          const groupReference = db.collection("customGroups").doc(identity.batchId);
+          const groupSnapshot = await adminTransaction.get(groupReference);
+          const group = groupSnapshot.exists ? groupSnapshot.data() : null;
+          if (
+            !isRecord(group) ||
+            (group.visibility !== "PRIVATE" && group.visibility !== "PUBLIC") ||
+            group.batchId !== identity.batchId
+          ) {
+            throw new FutureOrderV2ServerError(
+              "PRIVATE_BATCH_UNAVAILABLE",
+              "The retained Private Batch is unavailable.",
+            );
+          }
+          // Released PUBLIC personalized groups are deliberately discoverable
+          // and have no private membership authority. Members retain that
+          // established public route; an Organizer still honours a durable
+          // public owner UID where the record has one. Historical public
+          // records without a UID retain their previous compatibility path.
+          if (group.visibility === "PUBLIC") {
+            if (
+              identity.orderType === "Group Organizer" &&
+              hasText(group.ownerUid) &&
+              group.ownerUid !== uid
+            ) {
+              throw new FutureOrderV2ServerError(
+                "PRIVATE_BATCH_UNAUTHORIZED",
+                "The authenticated customer does not own this personalized group.",
+              );
+            }
+            return;
+          }
+          if (identity.orderType === "Group Organizer") {
+            if (group.ownerUid !== uid) {
+              throw new FutureOrderV2ServerError(
+                "PRIVATE_BATCH_UNAUTHORIZED",
+                "The authenticated customer no longer owns this Private Batch.",
+              );
+            }
+            return;
+          }
+          const membershipSnapshot = await adminTransaction.get(
+            groupReference.collection("privateBatchMembers").doc(uid),
+          );
+          const membership = membershipSnapshot.exists
+            ? membershipSnapshot.data()
+            : null;
+          if (
+            !isRecord(membership) ||
+            membership.memberUid !== uid ||
+            membership.groupId !== identity.batchId ||
+            membership.role !== "member"
+          ) {
+            throw new FutureOrderV2ServerError(
+              "PRIVATE_BATCH_UNAUTHORIZED",
+              "The authenticated customer is not an authorized Private Batch member.",
+            );
+          }
         },
       }),
     ),
@@ -104,6 +177,16 @@ export const persistFutureOrderV2ForVerifiedIdentity = async ({
   if (proposed.status !== "valid") return proposed;
 
   return adapter.runTransaction(async (transaction) => {
+    const orderIdentity = proposed.value.masterOrder.cartItem.candidate.orderIdentity;
+    if (isGroupOrderIdentity(orderIdentity)) {
+      if (!transaction.assertGroupOrderIdentity) {
+        throw new FutureOrderV2ServerError(
+          "PRIVATE_BATCH_UNAVAILABLE",
+          "Private Batch authorization is unavailable for this order.",
+        );
+      }
+      await transaction.assertGroupOrderIdentity(orderIdentity, identity.uid);
+    }
     const existingValue = await transaction.get(proposed.value.orderId);
     if (existingValue === null) {
       transaction.create(proposed.value.orderId, proposed.value);

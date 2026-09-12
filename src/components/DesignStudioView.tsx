@@ -39,7 +39,12 @@ import {
   FabricCapacityGarmentSpec,
   UploadedDesignSource,
 } from "../types";
-import { useAppStore } from "../store/useAppStore";
+import {
+  awaitPrivateBatchPostRefreshAccess,
+  ensureFreshPrivateBatchDiscoveryForCurrentSession,
+  getPrivateBatchDiscoveryAnchor,
+  useAppStore,
+} from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { CapacityService } from "../services/CapacityService";
 import { OrderRoutingEngine } from "../engine/OrderRoutingEngine";
@@ -79,7 +84,12 @@ import {
   canonicalOrderIdentitiesMatch,
   getCanonicalOrderIdentity,
   getPersistedDraftOrderIdentity,
+  isGroupRoleOrderIdentity,
+  isPrivateBatchOrderIdentityAuthorized,
+  resolvePersonalizedGroupAuthority,
   resolvePersistedDraftHydrationContext,
+  type GroupRoleOrderIdentity,
+  type PersonalizedGroupAuthority,
 } from "../utils/orderContextIdentity";
 import { resolveCustomerOrderContextPresentation } from "../utils/customerOrderContextPresentation";
 import {
@@ -95,6 +105,7 @@ import {
   resolveAuthenticatedFutureDraftIdentity,
   type AuthenticatedFutureDraftIntegrationStatus,
   type AuthenticatedFutureDraftIdentity,
+  type AuthenticatedFutureDraftRepository,
 } from "../services/authenticatedFutureDraftService";
 import {
   buildDesignStyleDraftValidationAuthority,
@@ -259,7 +270,11 @@ import {
   validatePreparedFutureOrderV2PaymentEligibility,
   type FutureOrderV2PaymentAttempt,
 } from "../utils/futureOrderV2Payment";
-import { persistFutureOrderV2 } from "../services/futureOrderV2Persistence";
+import {
+  persistFutureOrderV2,
+  type PrivateBatchPersistenceCapability,
+  type PrivateBatchPersistenceCapabilityFactory,
+} from "../services/futureOrderV2Persistence";
 import {
   buildAuthoritativePhysicalOccurrences,
   activateFutureCatalogStyleSelection,
@@ -347,7 +362,12 @@ import {
 export interface DesignStudioViewProps {
   onAddToCart: (item: Omit<CartItem, "id">) => void;
   openCartDrawer: () => void;
-  currentUser?: { email?: string; phone?: string; name: string } | null;
+  currentUser?: {
+    email?: string;
+    phone?: string;
+    name: string;
+    ownerUid?: string;
+  } | null;
   orderContext?: OrderContext | null;
   styles?: StyleCategory[];
   fabrics?: Fabric[];
@@ -356,6 +376,27 @@ export interface DesignStudioViewProps {
   initialStyleId?: string | null;
   initialFabricCode?: string | null;
   clearInitialPreset?: () => void;
+  /** Test-only dependency seam; production uses the Firebase-backed repository. */
+  futureDraftRepository?: AuthenticatedFutureDraftRepository;
+  /** Test-only deterministic replacement for the production autosave timer. */
+  futureDraftAutosaveScheduler?: {
+    schedule(callback: () => void, delayMs: number): unknown;
+    cancel(handle: unknown): void;
+  };
+  /**
+   * Narrow test seam for exercising the mounted V2 preparation/payment
+   * continuation guards. Production callers never provide this.
+   */
+  futureOrderV2TestHooks?: {
+    buildCurrentCandidate?: () => FutureOrderCandidateV2BuildResult;
+    persist?: typeof persistFutureOrderV2;
+    authorizePayment?: typeof authorizeFutureOrderV2Payment;
+    onActions?: (actions: {
+      seedPaymentReview: (handoff: FutureOrderV2PaymentReviewHandoff) => void;
+      prepare: () => Promise<void>;
+      executePayment: () => Promise<void>;
+    }) => void;
+  };
 }
 
 const getCustomerDesignUploadErrorMessage = (error: unknown): string => {
@@ -480,6 +521,14 @@ interface FutureDesignStyleRuntimeHydration {
   readonly fingerprint: string;
 }
 
+const browserFutureDraftAutosaveScheduler = {
+  schedule: (callback: () => void, delayMs: number): unknown =>
+    window.setTimeout(callback, delayMs),
+  cancel: (handle: unknown): void => {
+    window.clearTimeout(handle as number);
+  },
+};
+
 interface FutureDesignStyleMutationAuthority {
   readonly identityKey: string;
   readonly identityGeneration: number;
@@ -527,7 +576,12 @@ export default function DesignStudioView({
   initialStyleId,
   initialFabricCode,
   clearInitialPreset,
+  futureDraftRepository,
+  futureDraftAutosaveScheduler,
+  futureOrderV2TestHooks,
 }: DesignStudioViewProps) {
+  const activeFutureDraftAutosaveScheduler =
+    futureDraftAutosaveScheduler ?? browserFutureDraftAutosaveScheduler;
   const [guestDraftHydrated, setGuestDraftHydrated] = useState<boolean>(false);
   const [hydratedOrderContext, setHydratedOrderContext] =
     useState<OrderContext | null>(null);
@@ -548,6 +602,20 @@ export default function DesignStudioView({
   const futureDraftIdentityGenerationRef = useRef(0);
   const futureDraftHydrationRequestGenerationRef = useRef(0);
   const futureDraftAutosaveGenerationRef = useRef(0);
+  // Retain only stable identity and known visibility. This survives a private
+  // listener reset without retaining any protected display data.
+  const retainedGroupOrderIdentityRef = useRef<
+    | {
+        identity: GroupRoleOrderIdentity;
+        visibility: "PRIVATE" | "PUBLIC" | "unknown";
+      }
+    | null
+  >(null);
+  const privateAuthorizationRef = useRef({
+    generation: 0,
+    identityKey: null as string | null,
+    isPrivate: false,
+  });
   const authenticatedCloudDraftAuthorityEstablishedRef = useRef(false);
   const authenticatedCloudDraftUserMutationRef = useRef(false);
   const awaitingFreshAuthenticatedDraftMutationRef = useRef(false);
@@ -567,6 +635,17 @@ export default function DesignStudioView({
     useState<FutureOrderV2PaymentReviewHandoff | null>(null);
   const futureOrderV2PreparationRef =
     useRef<FutureOrderV2PreparationAttempt | null>(null);
+  // A successful PRIVATE preparation is bound to the exact post-refresh
+  // discovery capability, not to the authorization that happened to exist
+  // when the Prepare button was pressed.
+  const futureOrderV2PreparationPrivateCapabilityRef =
+    useRef<PrivateBatchPersistenceCapability | null>(null);
+  const futureOrderV2PreparationPersonalizedAuthorityRef = useRef<
+    Extract<
+      PersonalizedGroupAuthority,
+      { status: "FINAL_PUBLIC" | "FINAL_PRIVATE" }
+    > | null
+  >(null);
   const futureOrderV2PreparationInFlightRef = useRef(false);
   const futureOrderV2PaymentAttemptRef =
     useRef<FutureOrderV2PaymentAttempt | null>(null);
@@ -619,6 +698,16 @@ export default function DesignStudioView({
   const isLoadingData = useAppStore((state) => state.isLoadingData);
   const stylesLoadState = useAppStore((state) => state.stylesLoadState);
   const storeBatches = useAppStore((state) => state.batches);
+  const storeCustomGroups = useAppStore((state) => state.customGroups);
+  const customGroupAccessById = useAppStore(
+    (state) => state.customGroupAccessById,
+  );
+  const customGroupPrivateAccessReady = useAppStore(
+    (state) => state.customGroupPrivateAccessReady,
+  );
+  const customGroupPrivateAccessGeneration = useAppStore(
+    (state) => state.customGroupPrivateAccessGeneration,
+  );
   const setNotification = useAppStore((state) => state.setNotification);
   const customDetailCatalog = useAppStore(
     (state: any) => state.customDetailCatalog,
@@ -825,6 +914,209 @@ export default function DesignStudioView({
     !hydratedOrderContext &&
     (persistedOrderContextStatus === "invalid" ||
       persistedOrderContextStatus === "unavailable");
+  const activeOrderContext = orderContext || hydratedOrderContext;
+  const renderedOrderIdentity = getCanonicalOrderIdentity(activeOrderContext);
+  const renderedGroupOrderIdentity = isGroupRoleOrderIdentity(renderedOrderIdentity)
+    ? renderedOrderIdentity
+    : null;
+  const retainedGroupIdentity = retainedGroupOrderIdentityRef.current;
+  if (
+    renderedGroupOrderIdentity &&
+    (!retainedGroupIdentity ||
+      retainedGroupIdentity.identity.orderType !== renderedGroupOrderIdentity.orderType ||
+      retainedGroupIdentity.identity.batchId !== renderedGroupOrderIdentity.batchId)
+  ) {
+    retainedGroupOrderIdentityRef.current = {
+      identity: renderedGroupOrderIdentity,
+      visibility: "unknown",
+    };
+  }
+  const effectiveGroupOrderIdentity =
+    renderedGroupOrderIdentity || retainedGroupOrderIdentityRef.current?.identity || null;
+  const liveReferencedGroup = effectiveGroupOrderIdentity
+    ? storeCustomGroups.find(
+        (group) => group.batchId === effectiveGroupOrderIdentity.batchId,
+      ) || null
+    : null;
+  if (effectiveGroupOrderIdentity && liveReferencedGroup) {
+    retainedGroupOrderIdentityRef.current = {
+      identity: effectiveGroupOrderIdentity,
+      visibility: liveReferencedGroup.visibility,
+    };
+  }
+  const retainedPrivateIdentity =
+    retainedGroupOrderIdentityRef.current?.visibility === "PRIVATE" &&
+    retainedGroupOrderIdentityRef.current.identity.batchId ===
+      effectiveGroupOrderIdentity?.batchId &&
+    retainedGroupOrderIdentityRef.current.identity.orderType ===
+      effectiveGroupOrderIdentity?.orderType
+      ? retainedGroupOrderIdentityRef.current.identity
+      : null;
+  const privateOrderIdentity =
+    liveReferencedGroup?.visibility === "PRIVATE"
+      ? effectiveGroupOrderIdentity
+      : retainedPrivateIdentity;
+  const isActivePrivateOrder = Boolean(privateOrderIdentity);
+  const activePrivateOrderAuthorization = !privateOrderIdentity
+    ? "not_private"
+    : futureDraftIdentity.status === "resolving"
+      ? "resolving"
+      : futureDraftIdentity.status !== "authenticated"
+        ? "invalid"
+        : !customGroupPrivateAccessReady
+          ? "resolving"
+          : isPrivateBatchOrderIdentityAuthorized({
+                identity: privateOrderIdentity,
+                groups: storeCustomGroups,
+                viewerUid: futureDraftIdentity.ownerUid,
+                accessById: customGroupAccessById,
+              })
+            ? "authorized"
+            : "invalid";
+  const privateIdentityKey = privateOrderIdentity
+    ? `${privateOrderIdentity.orderType}:${privateOrderIdentity.batchId}`
+    : null;
+  privateAuthorizationRef.current = {
+    generation: customGroupPrivateAccessGeneration,
+    identityKey: privateIdentityKey,
+    isPrivate: isActivePrivateOrder,
+  };
+  // A private context is blocked for every state other than authorized. In
+  // particular, a listener reset is a revocation boundary, not a permission
+  // to continue until it happens to resolve again.
+  const isActivePrivateOrderBlocked =
+    isActivePrivateOrder && activePrivateOrderAuthorization !== "authorized";
+  // A fresh token/session discovery has no current authorization yet, but it
+  // is not terminal proof that the prior identity was revoked. Existing
+  // protected continuations must still obtain a new capability before they
+  // can publish; only an authoritative invalid result clears their state.
+  const isActivePrivateOrderTerminallyInvalid =
+    isActivePrivateOrder && activePrivateOrderAuthorization === "invalid";
+  const hasUnresolvedPrivateOrderAuthorization = isActivePrivateOrderBlocked;
+  const capturePrivateAuthorization = () => {
+    // This capture is made at scheduling/operation start, not when deferred
+    // work wakes up. Store state is read synchronously so the descriptor is a
+    // real capability, not a render-timing observation.
+    const currentStore = useAppStore.getState();
+    const firebaseUser = auth.currentUser;
+    return {
+      generation: currentStore.customGroupPrivateAccessGeneration,
+      uid:
+        firebaseUser && !firebaseUser.isAnonymous ? firebaseUser.uid : null,
+      orderType: privateOrderIdentity?.orderType || null,
+      batchId: privateOrderIdentity?.batchId || null,
+      identityKey: privateIdentityKey,
+      isPrivate: Boolean(privateOrderIdentity),
+    };
+  };
+  const isCurrentPrivateAuthorization = (
+    captured: ReturnType<typeof capturePrivateAuthorization>,
+  ): boolean => {
+    if (!captured.isPrivate) return true;
+    const currentStore = useAppStore.getState();
+    const firebaseUser = auth.currentUser;
+    if (
+      !captured.uid ||
+      !captured.orderType ||
+      !captured.batchId ||
+      firebaseUser?.isAnonymous ||
+      firebaseUser?.uid !== captured.uid ||
+      currentStore.customGroupPrivateAccessGeneration !== captured.generation ||
+      !currentStore.customGroupPrivateAccessReady
+    ) {
+      return false;
+    }
+    // The live store is the authority for generation, UID-scoped visibility,
+    // and membership. The render ref is only an additional context-change
+    // guard; it is never the sole authorization source.
+    const current = privateAuthorizationRef.current;
+    return (
+      current.isPrivate &&
+      current.identityKey === captured.identityKey &&
+      isPrivateBatchOrderIdentityAuthorized({
+        identity: {
+          orderType: captured.orderType,
+          batchId: captured.batchId,
+        },
+        groups: currentStore.customGroups,
+        viewerUid: captured.uid,
+        accessById: currentStore.customGroupAccessById,
+      })
+    );
+  };
+  const resolveLivePersonalizedGroupAuthority = (
+    identity: GroupRoleOrderIdentity,
+  ) => {
+    const currentStore = useAppStore.getState();
+    return resolvePersonalizedGroupAuthority({
+      identity,
+      groups: currentStore.customGroups,
+      privateAccessReady: currentStore.customGroupPrivateAccessReady,
+      discoveryLifecycleId:
+        currentStore.customGroupPrivateDiscoveryLifecycleId,
+    });
+  };
+  // After token establishment, ensure a real owner/member/admin discovery
+  // lifecycle. This covers both Firebase token-event and unchanged-token
+  // refreshes without guessing that a token generation advanced.
+  const createCurrentPrivateBatchPersistenceCapability:
+    PrivateBatchPersistenceCapabilityFactory = {
+    captureDiscoveryAnchor: getPrivateBatchDiscoveryAnchor,
+    ensurePostRefreshCapability: async ({
+      uid,
+      identity,
+      anchor,
+    }) => {
+      const lifecycle = ensureFreshPrivateBatchDiscoveryForCurrentSession({
+        uid,
+        anchor,
+      });
+      if (!lifecycle) return undefined;
+      const established = await awaitPrivateBatchPostRefreshAccess({
+        uid,
+        orderType: identity.orderType,
+        batchId: identity.batchId,
+        discoveryLifecycleId: lifecycle.discoveryLifecycleId,
+      });
+      if (established.status !== "AUTHORIZED") return undefined;
+      const captured = {
+        orderType: established.orderType,
+        batchId: established.batchId,
+      } as const;
+      return {
+        generation: established.accessGeneration,
+        discoveryLifecycleId: established.discoveryLifecycleId,
+        uid: established.uid,
+        orderType: established.orderType,
+        batchId: established.batchId,
+        // This capability is created directly from the just-settled store
+        // lifecycle. Do not require a React render ref to catch up before
+        // accepting it: a source callback may resolve the access waiter before
+        // the component rerenders. Store state and Firebase UID remain the
+        // continuation authority at this boundary.
+        isCurrent: () => {
+          const currentStore = useAppStore.getState();
+          const currentFirebaseUser = auth.currentUser;
+          return (
+            currentStore.customGroupPrivateAccessGeneration ===
+              established.accessGeneration &&
+            currentStore.customGroupPrivateAccessReady &&
+            currentFirebaseUser?.uid === established.uid &&
+            !currentFirebaseUser.isAnonymous &&
+            isPrivateBatchOrderIdentityAuthorized({
+              identity: {
+                orderType: captured.orderType,
+                batchId: captured.batchId,
+              },
+              groups: currentStore.customGroups,
+              viewerUid: established.uid,
+              accessById: currentStore.customGroupAccessById,
+            })
+          );
+        },
+      };
+    },
+  };
   // This intentionally lacks a batchId. It represents an inspected persisted
   // identity which cannot be used, and prevents defaultCtx from attaching the
   // current registration batch to invalid saved bytes.
@@ -834,10 +1126,25 @@ export default function DesignStudioView({
     allowOrders: false,
     batchStatus: "CLOSED",
   };
+  // Retain the fact that the protected route is a Private Batch; do not
+  // convert it to Community/Individual when its live authorization vanishes.
+  const blockedPrivateOrderContext: OrderContext = {
+    orderType:
+      privateOrderIdentity?.orderType === "Group Organizer"
+        ? "Group Organizer"
+        : "Group Member",
+    // Deliberately retain only canonical identity. Do not republish a saved
+    // batch name, organizer, city, or other protected group display data.
+    batchId: privateOrderIdentity?.batchId,
+    allowOrders: false,
+    batchStatus: "LOCKED",
+  };
   const ctx =
-    orderContext ||
-    hydratedOrderContext ||
-    (isPersistedOrderContextBlocked ? blockedPersistedOrderContext : defaultCtx);
+    isActivePrivateOrderBlocked
+      ? blockedPrivateOrderContext
+      : orderContext ||
+          hydratedOrderContext ||
+          (isPersistedOrderContextBlocked ? blockedPersistedOrderContext : defaultCtx);
   const customerOrderContextPresentation =
     resolveCustomerOrderContextPresentation(ctx, storeBatches || []);
 
@@ -847,20 +1154,21 @@ export default function DesignStudioView({
       setBatchType("community");
       return;
     }
+    if (isActivePrivateOrderBlocked) {
+      setBatchType("personalized");
+      setCustomGroupCode("");
+      return;
+    }
     const effectiveOrderContext = orderContext || hydratedOrderContext;
     if (effectiveOrderContext) {
       if (effectiveOrderContext.orderType === "Individual") {
         setBatchType("alone");
       } else if (effectiveOrderContext.orderType === "Group Organizer") {
         setBatchType("personalized");
-        setCustomGroupCode(
-          effectiveOrderContext.batchId || effectiveOrderContext.batchName || "",
-        );
+        setCustomGroupCode(effectiveOrderContext.batchId || "");
       } else if (effectiveOrderContext.orderType === "Group Member") {
         setBatchType("personalized");
-        setCustomGroupCode(
-          effectiveOrderContext.batchId || effectiveOrderContext.batchName || "",
-        );
+        setCustomGroupCode(effectiveOrderContext.batchId || "");
       } else {
         const eligibility = BatchBusinessRules.canAcceptOrders(
           effectiveOrderContext,
@@ -889,9 +1197,37 @@ export default function DesignStudioView({
     orderContext,
     hydratedOrderContext,
     isPersistedOrderContextBlocked,
+    isActivePrivateOrderBlocked,
     setNotification,
     storeBatches,
   ]);
+
+  // Hydration authorization is not a one-time check. An authoritative
+  // invalid result invalidates every protected continuation. A resolving
+  // replacement lifecycle is intentionally excluded: it is fenced by the
+  // fresh capability flow and must be allowed to settle before absence is
+  // treated as terminal.
+  useEffect(() => {
+    if (!isActivePrivateOrderTerminallyInvalid) return;
+    futureDraftAutosaveGenerationRef.current += 1;
+    futureOrderV2PreparationRef.current = null;
+    futureOrderV2PreparationPrivateCapabilityRef.current = null;
+    futureOrderV2PreparationPersonalizedAuthorityRef.current = null;
+    futureOrderV2PreparationInFlightRef.current = false;
+    futureOrderV2PaymentAttemptRef.current = null;
+    futureOrderV2PaymentInFlightRef.current = false;
+    setFuturePaymentReviewHandoff(null);
+    setFuturePaymentReviewTransitionBlockers([
+      {
+        code: "ORDER_CONTEXT_IDENTITY_INVALID",
+        stage: "summary",
+        message: "Private Batch authorization is no longer available.",
+      },
+    ]);
+    setFutureDraftPersistenceStatus("blocked");
+    setPersistedOrderContextStatus("invalid");
+    if (!orderContext) setHydratedOrderContext(null);
+  }, [isActivePrivateOrderTerminallyInvalid, orderContext]);
 
   // STEP 2: Fabric Selection, Filtering & Pagination States
   const [selectedFabric, setSelectedFabric] = useState<Fabric | null>(null);
@@ -2428,7 +2764,8 @@ export default function DesignStudioView({
     basePricing: futureFabricAuthoritativePricing,
   };
   const futureSummary = projectFutureDesignStudioSummary(futureSummaryInput);
-  const futureOrderIdentity = isPersistedOrderContextBlocked
+  const futureOrderIdentity =
+    isPersistedOrderContextBlocked || hasUnresolvedPrivateOrderAuthorization
     ? null
     : getCanonicalOrderIdentity({
         orderType:
@@ -2437,7 +2774,7 @@ export default function DesignStudioView({
             : batchType === "community"
               ? "Community"
               : ctx.orderType,
-        batchId: batchType === "community" ? ctx.batchId : undefined,
+        batchId: batchType === "alone" ? undefined : ctx.batchId,
       });
   const isFutureSummaryStageUnlocked =
     (futureSummary.status === "ready" ||
@@ -2753,6 +3090,8 @@ export default function DesignStudioView({
     setHydratedOrderContext(null);
     setPersistedOrderContextStatus("resolving");
     futureOrderV2PreparationRef.current = null;
+    futureOrderV2PreparationPrivateCapabilityRef.current = null;
+    futureOrderV2PreparationPersonalizedAuthorityRef.current = null;
     futureOrderV2PreparationInFlightRef.current = false;
     futureOrderV2PaymentAttemptRef.current = null;
     futureOrderV2PaymentInFlightRef.current = false;
@@ -2871,11 +3210,13 @@ export default function DesignStudioView({
           authenticatedCloudDraftUserMutationRef.current
             ? "authenticated_user_edit"
             : "pre_authenticated_cloud_authority";
-        const repository = createFirebaseAuthenticatedFutureDraftRepository({
-          customer: currentUser,
-          authResolved: firebaseDraftAuth.resolved,
-          firebaseUser: firebaseDraftAuth.user,
-        });
+        const repository =
+          futureDraftRepository ??
+          createFirebaseAuthenticatedFutureDraftRepository({
+            customer: currentUser,
+            authResolved: firebaseDraftAuth.resolved,
+            firebaseUser: firebaseDraftAuth.user,
+          });
         let synchronization;
         try {
           synchronization = await repository.synchronize(localDraft, {
@@ -2964,12 +3305,63 @@ export default function DesignStudioView({
       // Persisted identity must be valid before any selections hydrate. This
       // applies equally after a reload without an in-memory order context: a
       // missing Community batch ID may never fall back to the current batch.
+      const persistedIdentity = storedDraft
+        ? getPersistedDraftOrderIdentity(storedDraft)
+        : null;
+      const isPersistedPrivateBatch =
+        persistedIdentity?.orderType === "Group Organizer" ||
+        persistedIdentity?.orderType === "Group Member";
+      if (storedDraft && isPersistedPrivateBatch) {
+        // Group roles are shared by legacy PUBLIC personalized groups and
+        // hardened PRIVATE batches. Visibility comes from the referenced
+        // group, never from the role label.
+        const referencedGroup = storeCustomGroups.find(
+          (group) => group.batchId === persistedIdentity.batchId,
+        );
+        // Once this hydration has resolved the referenced group as PRIVATE,
+        // retain only its canonical identity and visibility before evaluating
+        // the caller's current authority. That way an authorization failure
+        // or a later listener reset cannot turn a persisted private route
+        // into the current Community batch. A role label alone never sets
+        // this marker, so released PUBLIC personalized drafts remain public.
+        if (referencedGroup?.visibility === "PRIVATE") {
+          retainedGroupOrderIdentityRef.current = {
+            identity: persistedIdentity,
+            visibility: "PRIVATE",
+          };
+        }
+        const requiresPrivateAuthority =
+          referencedGroup?.visibility === "PRIVATE" ||
+          (!referencedGroup &&
+            retainedGroupOrderIdentityRef.current?.identity.batchId ===
+              persistedIdentity.batchId &&
+            retainedGroupOrderIdentityRef.current.visibility === "PRIVATE");
+        if (
+          requiresPrivateAuthority &&
+          futureDraftIdentity.status !== "authenticated"
+        ) {
+          setFutureDraftPersistenceStatus("invalid");
+          setPersistedOrderContextStatus("invalid");
+          setGuestDraftHydrated(true);
+          return;
+        }
+        if (requiresPrivateAuthority && !customGroupPrivateAccessReady) {
+          // Do not convert a temporarily unresolved UID-scoped listener into
+          // either a Community batch or a local authorization decision.
+          return;
+        }
+      }
       const persistedHydration = storedDraft
         ? resolvePersistedDraftHydrationContext(
             storedDraft,
             storeBatches || [],
             businessSettings.productionSettings.defaultPickupLocation ||
               "Veldhoven Campus Lockers",
+            {
+              groups: storeCustomGroups,
+              viewerUid: firebaseDraftAuth.user?.uid || null,
+              accessById: customGroupAccessById,
+            },
           )
         : null;
       const resolvedPersistedHydration =
@@ -3001,6 +3393,16 @@ export default function DesignStudioView({
         normalizedCustomDetailCatalog: normalizedGarmentTypeCatalog,
       });
       if (!orderContext) {
+        const resolvedIdentity = resolvedPersistedHydration?.identity || null;
+        if (isGroupRoleOrderIdentity(resolvedIdentity)) {
+          const resolvedGroup = storeCustomGroups.find(
+            (group) => group.batchId === resolvedIdentity.batchId,
+          );
+          retainedGroupOrderIdentityRef.current = {
+            identity: resolvedIdentity,
+            visibility: resolvedGroup?.visibility || "unknown",
+          };
+        }
         setHydratedOrderContext(resolvedPersistedHydration?.context || null);
       }
       setPersistedOrderContextStatus(
@@ -3363,6 +3765,9 @@ export default function DesignStudioView({
     styles,
     orderContext,
     storeBatches,
+    storeCustomGroups,
+    customGroupAccessById,
+    customGroupPrivateAccessReady,
     businessSettings.productionSettings.defaultPickupLocation,
     publishFutureDesignStyleHydration,
   ]);
@@ -3932,7 +4337,8 @@ export default function DesignStudioView({
     if (
       !guestDraftHydrated ||
       isAdditionalGarmentCommitPending ||
-      blockedPersistedFabricHydrationRef.current !== null
+      blockedPersistedFabricHydrationRef.current !== null ||
+      hasUnresolvedPrivateOrderAuthorization
     ) {
       return;
     }
@@ -3944,7 +4350,17 @@ export default function DesignStudioView({
       return;
     }
 
-    const persistTimer = window.setTimeout(() => {
+    // Bind the queued autosave to the access capability that scheduled it.
+    // It must never wake up under a newer generation and adopt that user's
+    // authority or a different private batch.
+    const scheduledPrivateAuthorization = capturePrivateAuthorization();
+    const persistTimer = activeFutureDraftAutosaveScheduler.schedule(() => {
+      if (!isCurrentPrivateAuthorization(scheduledPrivateAuthorization)) {
+        // A queued timer never inherits authority from the render that created
+        // it. The current listener epoch must still authorize this exact
+        // private context immediately before persistence begins.
+        return;
+      }
       const autosaveAllocationResolution =
         resolveDraftAutosaveFabricAllocations({
           preservedInvalidHydratedFabricAllocations:
@@ -4001,6 +4417,11 @@ export default function DesignStudioView({
         customerEmail: futureShippingState.customerInformation?.email || "",
         customerPhone: futureShippingState.customerInformation?.phone || "",
         batchType,
+        ...(ctx.orderType === "Group Organizer"
+          ? { privateBatchRole: "organizer" as const }
+          : ctx.orderType === "Group Member"
+            ? { privateBatchRole: "member" as const }
+            : {}),
         batchId: ctx.batchId,
         batchName: ctx.batchName,
         customGroupCode,
@@ -4127,10 +4548,14 @@ export default function DesignStudioView({
       lastDesignStylePersistenceAcknowledgementRef.current = null;
       lastScheduledFutureDraftRef.current = canonicalGuestDraft;
       if (futureDraftIdentity.status === "guest") {
+        if (!isCurrentPrivateAuthorization(scheduledPrivateAuthorization)) {
+          return;
+        }
         const saved =
           GuestOrderSessionService.saveFutureDesignDraft(canonicalGuestDraft);
         if (
           saved?.status === "saved" &&
+          isCurrentPrivateAuthorization(scheduledPrivateAuthorization) &&
           shouldAcceptDesignStyleDraftSaveCompletion({
             saveGeneration,
             currentSaveGeneration: futureDraftAutosaveGenerationRef.current,
@@ -4164,18 +4589,21 @@ export default function DesignStudioView({
         }
       } else if (futureDraftIdentity.status === "authenticated") {
         const identityGeneration = futureDraftIdentityGenerationRef.current;
-        const repository = createFirebaseAuthenticatedFutureDraftRepository({
-          customer: currentUser,
-          authResolved: firebaseDraftAuth.resolved,
-          firebaseUser: firebaseDraftAuth.user,
-        });
+        const repository =
+          futureDraftRepository ??
+          createFirebaseAuthenticatedFutureDraftRepository({
+            customer: currentUser,
+            authResolved: firebaseDraftAuth.resolved,
+            firebaseUser: firebaseDraftAuth.user,
+          });
         cloudFutureDraftSaveQueueRef.current =
           cloudFutureDraftSaveQueueRef.current
             .then(async () => {
               if (
                 identityGeneration !==
                   futureDraftIdentityGenerationRef.current ||
-                futureDraftPersistenceStatus !== "ready"
+                futureDraftPersistenceStatus !== "ready" ||
+                !isCurrentPrivateAuthorization(scheduledPrivateAuthorization)
               ) {
                 return;
               }
@@ -4184,13 +4612,15 @@ export default function DesignStudioView({
                 cloudFutureDraftRevisionRef.current,
               );
               if (
-                identityGeneration !== futureDraftIdentityGenerationRef.current
+                identityGeneration !== futureDraftIdentityGenerationRef.current ||
+                !isCurrentPrivateAuthorization(scheduledPrivateAuthorization)
               ) {
                 return;
               }
               if (result.status === "saved") {
                 cloudFutureDraftRevisionRef.current = result.record.revision;
                 if (
+                  isCurrentPrivateAuthorization(scheduledPrivateAuthorization) &&
                   shouldAcceptDesignStyleDraftSaveCompletion({
                     saveGeneration,
                     currentSaveGeneration:
@@ -4233,7 +4663,8 @@ export default function DesignStudioView({
             })
             .catch((error) => {
               if (
-                identityGeneration === futureDraftIdentityGenerationRef.current
+                identityGeneration === futureDraftIdentityGenerationRef.current &&
+                isCurrentPrivateAuthorization(scheduledPrivateAuthorization)
               ) {
                 if (saveGeneration === futureDraftAutosaveGenerationRef.current) {
                   lastScheduledFutureDraftRef.current =
@@ -4246,11 +4677,13 @@ export default function DesignStudioView({
       }
     }, 250);
 
-    return () => window.clearTimeout(persistTimer);
+    return () => activeFutureDraftAutosaveScheduler.cancel(persistTimer);
   }, [
     currentUser,
+    activeFutureDraftAutosaveScheduler,
     firebaseDraftAuth,
     futureDraftIdentity,
+    hasUnresolvedPrivateOrderAuthorization,
     futureDraftPersistenceStatus,
     guestDraftHydrated,
     isAdditionalGarmentCommitPending,
@@ -5102,7 +5535,13 @@ export default function DesignStudioView({
     });
   };
   const handleOpenDormantPaymentReviewStage = () => {
+    const capturedPrivateAuthorization = capturePrivateAuthorization();
+    if (!isCurrentPrivateAuthorization(capturedPrivateAuthorization)) {
+      return;
+    }
     futureOrderV2PreparationRef.current = null;
+    futureOrderV2PreparationPrivateCapabilityRef.current = null;
+    futureOrderV2PreparationPersonalizedAuthorityRef.current = null;
     futureOrderV2PreparationInFlightRef.current = false;
     futureOrderV2PaymentAttemptRef.current = null;
     futureOrderV2PaymentInFlightRef.current = false;
@@ -5121,8 +5560,13 @@ export default function DesignStudioView({
   };
   const handlePrepareFutureOrderV2 = async () => {
     if (futureOrderV2PreparationInFlightRef.current) return;
+    const capturedPrivateAuthorization = capturePrivateAuthorization();
+    if (!isCurrentPrivateAuthorization(capturedPrivateAuthorization)) return;
     const reviewed = futurePaymentReviewHandoff?.candidate;
     if (!reviewed) return;
+    const reviewedGroupIdentity = isGroupRoleOrderIdentity(reviewed.orderIdentity)
+      ? reviewed.orderIdentity
+      : null;
     const firebaseUser = firebaseDraftAuth.user || auth.currentUser;
     if (
       !firebaseDraftAuth.resolved ||
@@ -5140,6 +5584,8 @@ export default function DesignStudioView({
     }
 
     futureOrderV2PreparationInFlightRef.current = true;
+    futureOrderV2PreparationPrivateCapabilityRef.current = null;
+    futureOrderV2PreparationPersonalizedAuthorityRef.current = null;
     setFuturePaymentReviewHandoff(
       createFutureOrderV2PaymentReviewHandoff(reviewed, {
         status: "preparing",
@@ -5147,14 +5593,76 @@ export default function DesignStudioView({
     );
     const outcome = await prepareFutureOrderV2Submission({
       reviewed,
-      fresh: buildCurrentFutureOrderCandidateV2(),
+      fresh:
+        futureOrderV2TestHooks?.buildCurrentCandidate?.() ??
+        buildCurrentFutureOrderCandidateV2(),
       identity: { uid: firebaseUser.uid, isAnonymous: firebaseUser.isAnonymous },
       existingAttempt: futureOrderV2PreparationRef.current,
-      persist: persistFutureOrderV2,
+      privateBatchCapabilityFactory:
+        createCurrentPrivateBatchPersistenceCapability,
+      resolvePersonalizedGroupAuthority: reviewedGroupIdentity
+        ? resolveLivePersonalizedGroupAuthority
+        : undefined,
+      persist: futureOrderV2TestHooks?.persist ?? persistFutureOrderV2,
     });
+    // A successful response is not a continuation capability. Private
+    // preparation may publish only with its new post-refresh capability;
+    // public/ordinary paths retain their existing current-context guard.
+    const establishedPrivateCapability =
+      outcome.status === "prepared" ? outcome.privateBatchCapability : undefined;
+    const preparedAuthority =
+      outcome.status === "prepared"
+        ? outcome.personalizedGroupAuthority
+        : undefined;
+    if (
+      outcome.status === "prepared" &&
+      reviewedGroupIdentity &&
+      (!preparedAuthority ||
+        resolveLivePersonalizedGroupAuthority(reviewedGroupIdentity).status !==
+          preparedAuthority.status ||
+        resolveLivePersonalizedGroupAuthority(reviewedGroupIdentity)
+          .discoveryLifecycleId !== preparedAuthority.discoveryLifecycleId)
+    ) {
+      futureOrderV2PreparationInFlightRef.current = false;
+      futureOrderV2PreparationRef.current = null;
+      futureOrderV2PreparationPrivateCapabilityRef.current = null;
+      futureOrderV2PreparationPersonalizedAuthorityRef.current = null;
+      setFuturePaymentReviewHandoff(
+        createFutureOrderV2PaymentReviewHandoff(reviewed, {
+          status: "error",
+          message: "The personalized group changed while this order was being prepared.",
+        }),
+      );
+      return;
+    }
+    if (
+      preparedAuthority?.status === "FINAL_PRIVATE" &&
+      (!establishedPrivateCapability || !establishedPrivateCapability.isCurrent())
+    ) {
+      futureOrderV2PreparationInFlightRef.current = false;
+      futureOrderV2PreparationRef.current = null;
+      futureOrderV2PreparationPrivateCapabilityRef.current = null;
+      futureOrderV2PreparationPersonalizedAuthorityRef.current = null;
+      setFuturePaymentReviewHandoff(
+        createFutureOrderV2PaymentReviewHandoff(reviewed, {
+          status: "error",
+          message: "Private Batch authorization changed while this order was being prepared.",
+        }),
+      );
+      return;
+    }
+    if (
+      !establishedPrivateCapability &&
+      !isCurrentPrivateAuthorization(capturedPrivateAuthorization)
+    ) {
+      futureOrderV2PreparationInFlightRef.current = false;
+      return;
+    }
     futureOrderV2PreparationInFlightRef.current = false;
     if (outcome.status === "invalid_current") {
       futureOrderV2PreparationRef.current = null;
+      futureOrderV2PreparationPrivateCapabilityRef.current = null;
+      futureOrderV2PreparationPersonalizedAuthorityRef.current = null;
       const nextStage =
         outcome.blockers.find((blocker) => blocker.stage !== "payment")?.stage ||
         "shipping";
@@ -5165,6 +5673,8 @@ export default function DesignStudioView({
     }
     if (outcome.status === "review_refresh_required") {
       futureOrderV2PreparationRef.current = null;
+      futureOrderV2PreparationPrivateCapabilityRef.current = null;
+      futureOrderV2PreparationPersonalizedAuthorityRef.current = null;
       setFuturePaymentReviewTransitionBlockers([]);
       setFuturePaymentReviewHandoff(
         createFutureOrderV2PaymentReviewHandoff(outcome.candidate, {
@@ -5194,6 +5704,10 @@ export default function DesignStudioView({
     }
     futureOrderV2PreparationRef.current = outcome.attempt;
     if (outcome.status === "prepared") {
+      futureOrderV2PreparationPrivateCapabilityRef.current =
+        outcome.privateBatchCapability ?? null;
+      futureOrderV2PreparationPersonalizedAuthorityRef.current =
+        outcome.personalizedGroupAuthority ?? null;
       setFuturePaymentReviewHandoff(
         createFutureOrderV2PaymentReviewHandoff(outcome.attempt.candidate, {
           status: "prepared",
@@ -5215,6 +5729,16 @@ export default function DesignStudioView({
   };
   const handleExecuteFutureOrderV2Payment = async () => {
     if (futureOrderV2PaymentInFlightRef.current) return;
+    const establishedPrivateCapability =
+      futureOrderV2PreparationPrivateCapabilityRef.current;
+    const capturedPrivateAuthorization = capturePrivateAuthorization();
+    if (
+      establishedPrivateCapability
+        ? !establishedPrivateCapability.isCurrent()
+        : !isCurrentPrivateAuthorization(capturedPrivateAuthorization)
+    ) {
+      return;
+    }
     const reviewed = futurePaymentReviewHandoff;
     const prepared = futureOrderV2PreparationRef.current;
     if (
@@ -5225,6 +5749,33 @@ export default function DesignStudioView({
       reviewed.preparation.cartItemId !== prepared.cartItemId ||
       reviewed.payment.status === "authorized"
     ) {
+      return;
+    }
+    const preparedGroupIdentity = isGroupRoleOrderIdentity(
+      reviewed.candidate.orderIdentity,
+    )
+      ? reviewed.candidate.orderIdentity
+      : null;
+    const preparedPersonalizedAuthority =
+      futureOrderV2PreparationPersonalizedAuthorityRef.current;
+    const hasCurrentPreparedPersonalizedClassification = () =>
+      !preparedGroupIdentity ||
+      (preparedPersonalizedAuthority !== null &&
+        resolveLivePersonalizedGroupAuthority(preparedGroupIdentity).status ===
+          preparedPersonalizedAuthority.status &&
+        resolveLivePersonalizedGroupAuthority(preparedGroupIdentity)
+          .discoveryLifecycleId ===
+          preparedPersonalizedAuthority.discoveryLifecycleId);
+    if (!hasCurrentPreparedPersonalizedClassification()) {
+      futureOrderV2PreparationRef.current = null;
+      futureOrderV2PreparationPrivateCapabilityRef.current = null;
+      futureOrderV2PreparationPersonalizedAuthorityRef.current = null;
+      setFuturePaymentReviewHandoff(
+        createFutureOrderV2PaymentReviewHandoff(reviewed.candidate, {
+          status: "error",
+          message: "The personalized group changed after preparation. Prepare the order again.",
+        }),
+      );
       return;
     }
 
@@ -5249,8 +5800,19 @@ export default function DesignStudioView({
           prepared,
           liveBatches: storeBatches || [],
         }),
-      authorize: authorizeFutureOrderV2Payment,
+      authorize:
+        futureOrderV2TestHooks?.authorizePayment ??
+        authorizeFutureOrderV2Payment,
     });
+    if (
+      (establishedPrivateCapability
+        ? !establishedPrivateCapability.isCurrent()
+        : !isCurrentPrivateAuthorization(capturedPrivateAuthorization)) ||
+      !hasCurrentPreparedPersonalizedClassification()
+    ) {
+      futureOrderV2PaymentInFlightRef.current = false;
+      return;
+    }
     futureOrderV2PaymentInFlightRef.current = false;
     if (outcome.status === "invalid") {
       setFuturePaymentReviewHandoff(
@@ -5281,6 +5843,25 @@ export default function DesignStudioView({
       ),
     );
   };
+  useEffect(() => {
+    futureOrderV2TestHooks?.onActions?.({
+      seedPaymentReview: (handoff) => {
+        futureOrderV2PreparationRef.current = null;
+        futureOrderV2PreparationPrivateCapabilityRef.current = null;
+        futureOrderV2PreparationPersonalizedAuthorityRef.current = null;
+        futureOrderV2PaymentAttemptRef.current = null;
+        setFuturePaymentReviewHandoff(handoff);
+        navigateToFutureStage("payment");
+      },
+      prepare: handlePrepareFutureOrderV2,
+      executePayment: handleExecuteFutureOrderV2Payment,
+    });
+  }, [
+    futureOrderV2TestHooks,
+    handlePrepareFutureOrderV2,
+    handleExecuteFutureOrderV2Payment,
+    navigateToFutureStage,
+  ]);
   const handleLiveOrderSummaryEdit = (
     stage: DesignStudioStageId,
     options?: { focusAdditionalGarmentKey?: string | null },
@@ -6687,6 +7268,10 @@ export default function DesignStudioView({
       data-stage-id={futureStageId}
       data-order-context-type={ctx.orderType}
       data-order-context-batch-id={ctx.batchId || ""}
+      data-private-batch-authorization={activePrivateOrderAuthorization}
+      data-private-batch-authorization-generation={
+        privateAuthorizationRef.current.generation
+      }
       data-persisted-order-context-status={persistedOrderContextStatus}
       data-future-draft-persistence-status={futureDraftPersistenceStatus}
       data-stage-complete={

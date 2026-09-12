@@ -4,14 +4,21 @@ import {
   createFutureOrderV2PersistenceClient,
   FutureOrderV2PersistenceClientError,
 } from "./src/services/futureOrderV2Persistence";
+import { createPrivateBatchAccessSession } from "./src/services/privateBatchAccessSession";
+import {
+  createPrivateBatchAuthCoordinator,
+  type PrivateBatchTokenUser,
+} from "./src/services/privateBatchAuthCoordinator";
 import {
   FutureOrderV2ServerError,
   persistFutureOrderV2ForVerifiedIdentity,
 } from "./src/server/futureOrderV2Persistence";
 import { createFutureOrderV2PersistenceHandler } from "./src/server/futureOrderV2PersistenceHttp";
 import type { HttpRequest, HttpResponse } from "./src/server/httpTypes";
+import type { CustomGroup } from "./src/types";
 import {
   createPersistedFutureOrderV2,
+  parsePersistedFutureOrderV2,
   type FutureOrderV2PersistenceAdapter,
   type FutureOrderV2PersistenceTransaction,
   type PersistedFutureOrderV2,
@@ -26,11 +33,17 @@ class MemoryAdapter implements FutureOrderV2PersistenceAdapter {
   readonly values = new Map<string, unknown>();
   readonly creates: string[] = [];
 
+  constructor(
+    private readonly privateBatchAuthorizer?: NonNullable<
+      FutureOrderV2PersistenceTransaction["assertGroupOrderIdentity"]
+    >,
+  ) {}
+
   async runTransaction<T>(
     operation: (transaction: FutureOrderV2PersistenceTransaction) => Promise<T>,
   ): Promise<T> {
     const pending = new Map<string, PersistedFutureOrderV2>();
-    const result = await operation({
+    const transaction: FutureOrderV2PersistenceTransaction = {
       get: async (orderId) => this.values.get(orderId) ?? null,
       create: (orderId, value) => {
         if (this.values.has(orderId) || pending.has(orderId)) {
@@ -38,7 +51,11 @@ class MemoryAdapter implements FutureOrderV2PersistenceAdapter {
         }
         pending.set(orderId, structuredClone(value));
       },
-    });
+    };
+    if (this.privateBatchAuthorizer) {
+      transaction.assertGroupOrderIdentity = this.privateBatchAuthorizer;
+    }
+    const result = await operation(transaction);
     pending.forEach((value, orderId) => {
       this.values.set(orderId, value);
       this.creates.push(orderId);
@@ -73,10 +90,133 @@ assert.equal(
 assert.equal(adapter.creates.length, 1);
 const original = structuredClone(adapter.values.get("server-order-1"));
 
+const identitylessNewOrder = structuredClone(
+  createFutureOrderV2Fixture("identityless-new-order"),
+);
+Reflect.deleteProperty(identitylessNewOrder.cartItem.candidate, "orderIdentity");
+const identitylessNewResult = await persistFutureOrderV2ForVerifiedIdentity({
+  identity: { uid: OWNER_UID, isAnonymous: false },
+  request: {
+    masterOrder: identitylessNewOrder,
+    customerOwnerUid: OWNER_UID,
+  },
+  adapter: new MemoryAdapter(),
+  now: () => NOW,
+});
+assert.deepEqual(identitylessNewResult, {
+  status: "invalid",
+  code: "ORDER_IDENTITY_REQUIRED",
+  message: "A canonical order identity is required for new V2 persistence.",
+});
+
+const historicalEnvelope = createPersistedFutureOrderV2({
+  masterOrder: createFutureOrderV2Fixture("historical-identityless-order"),
+  owner: { uid: OWNER_UID, isAnonymous: false },
+  customerOwnerUid: OWNER_UID,
+  persistedAt: NOW.toISOString(),
+});
+assert.equal(historicalEnvelope.status, "valid");
+if (historicalEnvelope.status !== "valid") throw new Error("Expected historical V2 fixture");
+const identitylessHistoricalEnvelope = structuredClone(historicalEnvelope.value);
+Reflect.deleteProperty(
+  identitylessHistoricalEnvelope.masterOrder.cartItem.candidate,
+  "orderIdentity",
+);
+assert.equal(
+  parsePersistedFutureOrderV2(
+    identitylessHistoricalEnvelope,
+    "historical-identityless-order",
+  ).status,
+  "valid",
+);
+
 const identical = await persist(adapter, "server-order-1");
 assert.equal(identical.status, "already_persisted");
 assert.equal(adapter.creates.length, 1);
 assert.deepEqual(adapter.values.get("server-order-1"), original);
+
+const privateMemberIdentity = {
+  orderType: "Group Member" as const,
+  batchId: "private_batch_123456",
+};
+const privateMemberOrder = createFutureOrderV2Fixture(
+  "private-member-order",
+  undefined,
+  privateMemberIdentity,
+);
+assert.deepEqual(
+  privateMemberOrder.cartItem.candidate.orderIdentity,
+  privateMemberIdentity,
+);
+await assert.rejects(
+  persistFutureOrderV2ForVerifiedIdentity({
+    identity: { uid: OWNER_UID, isAnonymous: false },
+    request: { masterOrder: privateMemberOrder, customerOwnerUid: OWNER_UID },
+    adapter: new MemoryAdapter(),
+    now: () => NOW,
+  }),
+  (error: unknown) =>
+    error instanceof FutureOrderV2ServerError &&
+    error.code === "PRIVATE_BATCH_UNAVAILABLE",
+);
+
+const privateAuthorizations: Array<{ orderType: string; batchId: string; uid: string }> = [];
+const authorizedPrivateAdapter = new MemoryAdapter(async (identity, uid) => {
+  privateAuthorizations.push({ ...identity, uid });
+});
+for (const [orderId, orderIdentity] of [
+  ["private-member-authorized", privateMemberIdentity],
+  [
+    "private-organizer-authorized",
+    { orderType: "Group Organizer" as const, batchId: "private_batch_123456" },
+  ],
+] as const) {
+  const result = await persistFutureOrderV2ForVerifiedIdentity({
+    identity: { uid: OWNER_UID, isAnonymous: false },
+    request: {
+      masterOrder: createFutureOrderV2Fixture(orderId, undefined, orderIdentity),
+      customerOwnerUid: OWNER_UID,
+    },
+    adapter: authorizedPrivateAdapter,
+    now: () => NOW,
+  });
+  assert.equal(result.status, "created");
+}
+assert.deepEqual(privateAuthorizations, [
+  { orderType: "Group Member", batchId: "private_batch_123456", uid: OWNER_UID },
+  { orderType: "Group Organizer", batchId: "private_batch_123456", uid: OWNER_UID },
+]);
+
+// PUBLIC personalized records retain the same Organizer/Member identity
+// shape. The server contract still resolves their canonical group ID, but it
+// must not require the PRIVATE membership model merely because of the role.
+const publicGroupAuthorizations: Array<{ orderType: string; batchId: string; uid: string }> = [];
+const publicGroupAdapter = new MemoryAdapter(async (identity, uid) => {
+  publicGroupAuthorizations.push({ ...identity, uid });
+});
+for (const orderIdentity of [
+  { orderType: "Group Organizer" as const, batchId: "public_batch_1234567" },
+  { orderType: "Group Member" as const, batchId: "public_batch_1234567" },
+]) {
+  const result = await persistFutureOrderV2ForVerifiedIdentity({
+    identity: { uid: OWNER_UID, isAnonymous: false },
+    request: {
+      masterOrder: createFutureOrderV2Fixture(
+        `public-${orderIdentity.orderType.replace(" ", "-")}`,
+        undefined,
+        orderIdentity,
+      ),
+      customerOwnerUid: OWNER_UID,
+    },
+    adapter: publicGroupAdapter,
+    now: () => NOW,
+  });
+  assert.equal(result.status, "created");
+}
+assert.deepEqual(publicGroupAuthorizations, [
+  { orderType: "Group Organizer", batchId: "public_batch_1234567", uid: OWNER_UID },
+  { orderType: "Group Member", batchId: "public_batch_1234567", uid: OWNER_UID },
+]);
 
 const conflict = await persist(
   adapter,
@@ -443,6 +583,369 @@ await assert.rejects(
     error instanceof FutureOrderV2PersistenceClientError &&
     error.code === "AUTH_REQUIRED",
 );
+
+// The client persistence boundary itself must reject a stale PRIVATE
+// capability after getIdToken resolves. No protected HTTP request is sent.
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+};
+const privateClientOrder = createFutureOrderV2Fixture(
+  "private-client-continuity",
+  undefined,
+  { orderType: "Group Organizer", batchId: "private_batch_123456" },
+);
+const privateClientEnvelope = createPersistedFutureOrderV2({
+  masterOrder: privateClientOrder,
+  owner: { uid: OWNER_UID, isAnonymous: false },
+  customerOwnerUid: OWNER_UID,
+  persistedAt: NOW.toISOString(),
+});
+assert.equal(privateClientEnvelope.status, "valid");
+if (privateClientEnvelope.status !== "valid") {
+  throw new Error("Expected private client fixture");
+}
+const discoveryGroup = (ownerUid: string): CustomGroup => ({
+  batchId: "private_batch_123456",
+  ownerUid,
+  organizerId: ownerUid,
+  organizer: ownerUid,
+  batchName: "Private continuity test",
+  occasion: "Test",
+  description: "Test",
+  country: "NL",
+  city: "Eindhoven",
+  preferredDeliveryMonth: "August",
+  expectedParticipants: 1,
+  maxParticipants: 2,
+  visibility: "PRIVATE",
+  currentMembers: 1,
+  closingDate: "2099-01-01",
+  deliveryWindow: "Later",
+  status: "OPEN",
+});
+
+// A forced refresh has two valid forms: Firebase can emit a token event, or
+// it can return the same token with no event. Both must await the exact new
+// discovery lifecycle; denial and auth supersession fail before HTTP.
+type RefreshScenario =
+  | "token-event"
+  | "unchanged-token"
+  | "denied"
+  | "logout"
+  | "uid-switch";
+for (const refreshScenario of [
+  "token-event",
+  "unchanged-token",
+  "denied",
+  "logout",
+  "uid-switch",
+] as const satisfies readonly RefreshScenario[]) {
+  const accessSession = createPrivateBatchAccessSession(80);
+  let currentClientIdentity: (PrivateBatchTokenUser & {
+    getIdToken(forceRefresh?: boolean): Promise<string>;
+  }) | null;
+  const coordinator = createPrivateBatchAuthCoordinator({
+    getTarget: () => ({ setIdentity: () => undefined }),
+    getCurrentUser: () => currentClientIdentity,
+    accessSession,
+  });
+  const ownerIdentity: PrivateBatchTokenUser & {
+    getIdToken(forceRefresh?: boolean): Promise<string>;
+  } = {
+    uid: OWNER_UID,
+    isAnonymous: false,
+    getIdTokenResult: async () => ({ claims: { admin: false } }),
+    getIdToken: async () => {
+      if (refreshScenario === "token-event") {
+        coordinator.synchronize(ownerIdentity);
+      }
+      return "post-refresh-token";
+    },
+  };
+  currentClientIdentity = ownerIdentity;
+  coordinator.synchronize(ownerIdentity);
+  const initialLifecycle = accessSession.getCurrentLifecycle();
+  assert.ok(initialLifecycle, "Initial coordinator synchronization starts discovery.");
+  let sourceDiscoveryLifecycleId = initialLifecycle.discoveryLifecycleId;
+  accessSession.publishDiscovery({
+    discoveryLifecycleId: initialLifecycle.discoveryLifecycleId,
+    uid: OWNER_UID,
+    groups: [discoveryGroup(OWNER_UID)],
+    accessById: { private_batch_123456: "owner" },
+    ready: true,
+  });
+  let requests = 0;
+  const refreshClient = createFutureOrderV2PersistenceClient({
+    getCurrentUser: () => currentClientIdentity,
+    fetch: async () => {
+      requests += 1;
+      return {
+        ok: true,
+        status: 201,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ status: "created", value: privateClientEnvelope.value }),
+      };
+    },
+  });
+  const pending = refreshClient.persist({
+    masterOrder: privateClientOrder,
+    customerOwnerUid: OWNER_UID,
+    resolvePersonalizedGroupAuthority: () => ({
+      status: "FINAL_PRIVATE" as const,
+      visibility: "PRIVATE" as const,
+      discoveryLifecycleId: sourceDiscoveryLifecycleId,
+    }),
+    privateBatchCapabilityFactory: {
+      captureDiscoveryAnchor: accessSession.getDiscoveryAnchor,
+      ensurePostRefreshCapability: async (request) => {
+        const lifecycle = coordinator.ensureFreshPrivateDiscoveryForCurrentSession({
+          uid: request.uid,
+          anchor: request.anchor,
+        });
+        if (!lifecycle) return undefined;
+        const established = await accessSession.awaitPrivateBatchAccess({
+          uid: request.uid,
+          orderType: request.identity.orderType,
+          batchId: request.identity.batchId,
+          discoveryLifecycleId: lifecycle.discoveryLifecycleId,
+        });
+        return established.status === "AUTHORIZED"
+          ? {
+              generation: established.accessGeneration,
+              discoveryLifecycleId: established.discoveryLifecycleId,
+              uid: established.uid,
+              orderType: established.orderType,
+              batchId: established.batchId,
+              isCurrent: () =>
+                accessSession.getCurrentLifecycle()?.discoveryLifecycleId ===
+                  established.discoveryLifecycleId &&
+                accessSession.getGeneration() === established.accessGeneration,
+            }
+          : undefined;
+      },
+    },
+  });
+  await Promise.resolve();
+  assert.equal(requests, 0, "No request may precede the renewed discovery result.");
+  if (refreshScenario === "token-event" || refreshScenario === "unchanged-token") {
+    const refreshedLifecycle = accessSession.getCurrentLifecycle();
+    assert.ok(refreshedLifecycle, "Refresh must own an active discovery lifecycle.");
+    assert.notEqual(
+      refreshedLifecycle.discoveryLifecycleId,
+      initialLifecycle.discoveryLifecycleId,
+      "A post-refresh request never reuses the prior discovery lifecycle.",
+    );
+    sourceDiscoveryLifecycleId = refreshedLifecycle.discoveryLifecycleId;
+    accessSession.publishDiscovery({
+      discoveryLifecycleId: refreshedLifecycle.discoveryLifecycleId,
+      uid: OWNER_UID,
+      groups: [discoveryGroup(OWNER_UID)],
+      accessById: { private_batch_123456: "owner" },
+      ready: true,
+    });
+    assert.equal((await pending).status, "created");
+    assert.equal(requests, 1);
+  } else {
+    if (refreshScenario === "denied") {
+      const refreshedLifecycle = accessSession.getCurrentLifecycle();
+      assert.ok(refreshedLifecycle, "Denied refresh still completes a fresh lifecycle.");
+      accessSession.publishDiscovery({
+        discoveryLifecycleId: refreshedLifecycle.discoveryLifecycleId,
+        uid: OWNER_UID,
+        groups: [discoveryGroup(OWNER_UID)],
+        accessById: {},
+        ready: true,
+      });
+    } else if (refreshScenario === "logout") {
+      currentClientIdentity = null;
+      coordinator.synchronize(null);
+    } else {
+      currentClientIdentity = {
+        uid: OTHER_UID,
+        isAnonymous: false,
+        getIdTokenResult: async () => ({ claims: { admin: false } }),
+        getIdToken: async () => "other-token",
+      };
+      coordinator.synchronize(currentClientIdentity);
+    }
+    await assert.rejects(
+      pending,
+      (error: unknown) =>
+        error instanceof FutureOrderV2PersistenceClientError &&
+        error.code ===
+          (refreshScenario === "logout" || refreshScenario === "uid-switch"
+            ? "AUTH_REQUIRED"
+            : "PRIVATE_BATCH_UNAUTHORIZED"),
+      refreshScenario,
+    );
+    assert.equal(requests, 0, `${refreshScenario} must fail before HTTP.`);
+  }
+}
+
+// Group Organizer/Member is not itself a privacy flag. A terminal PUBLIC
+// authority keeps normal persistence without a private capability, while a
+// terminal missing authority fails before a network request.
+const publicClientOrder = createFutureOrderV2Fixture(
+  "public-client-continuity",
+  undefined,
+  { orderType: "Group Member", batchId: "public_batch_1234567" },
+);
+const publicClientEnvelope = createPersistedFutureOrderV2({
+  masterOrder: publicClientOrder,
+  owner: { uid: OWNER_UID, isAnonymous: false },
+  customerOwnerUid: OWNER_UID,
+  persistedAt: NOW.toISOString(),
+});
+assert.equal(publicClientEnvelope.status, "valid");
+if (publicClientEnvelope.status !== "valid") throw new Error("Expected public client fixture");
+let publicClientRequests = 0;
+const visibilityClient = createFutureOrderV2PersistenceClient({
+  getCurrentUser: () => ({
+    uid: OWNER_UID,
+    isAnonymous: false,
+    getIdToken: async () => "public-token",
+  }),
+  fetch: async () => {
+    publicClientRequests += 1;
+    return {
+      ok: true,
+      status: 201,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({ status: "created", value: publicClientEnvelope.value }),
+    };
+  },
+});
+assert.equal(
+  (await visibilityClient.persist({
+    masterOrder: publicClientOrder,
+    customerOwnerUid: OWNER_UID,
+    privateBatchCapabilityFactory: {
+      captureDiscoveryAnchor: () => ({
+        authSessionId: 1,
+        discoveryLifecycleId: 1,
+        uid: OWNER_UID,
+      }),
+      ensurePostRefreshCapability: async () => undefined,
+    },
+    resolvePersonalizedGroupAuthority: () => ({
+      status: "FINAL_PUBLIC" as const,
+      visibility: "PUBLIC" as const,
+      discoveryLifecycleId: 2,
+    }),
+  })).status,
+  "created",
+);
+assert.equal(publicClientRequests, 1, "PUBLIC group persistence must not require private access.");
+await assert.rejects(
+  visibilityClient.persist({
+    masterOrder: publicClientOrder,
+    customerOwnerUid: OWNER_UID,
+    privateBatchCapabilityFactory: {
+      captureDiscoveryAnchor: () => ({
+        authSessionId: 1,
+        discoveryLifecycleId: 1,
+        uid: OWNER_UID,
+      }),
+      ensurePostRefreshCapability: async () => undefined,
+    },
+    resolvePersonalizedGroupAuthority: () => ({
+      status: "FINAL_MISSING" as const,
+      discoveryLifecycleId: 2,
+    }),
+  }),
+  (error: unknown) =>
+    error instanceof FutureOrderV2PersistenceClientError &&
+    error.code === "PRIVATE_BATCH_UNAUTHORIZED",
+);
+assert.equal(publicClientRequests, 1, "UNKNOWN group visibility must fail before HTTP.");
+
+// The post-refresh descriptor also remains a continuation guard after each
+// later network boundary: receiving a response or parsing its JSON cannot
+// publish a result from a revoked PRIVATE session.
+for (const boundary of ["response", "json"] as const) {
+  let capabilityCurrent = true;
+  const responseGate = deferred<{
+    ok: boolean;
+    status: number;
+    headers: Headers;
+    json(): Promise<unknown>;
+  }>();
+  const jsonGate = deferred<unknown>();
+  const jsonStarted = deferred<void>();
+  const fetchStarted = deferred<void>();
+  let requests = 0;
+  const boundaryClient = createFutureOrderV2PersistenceClient({
+    getCurrentUser: () => ({
+      uid: OWNER_UID,
+      isAnonymous: false,
+      getIdToken: async () => "post-refresh-token",
+    }),
+    fetch: async () => {
+      requests += 1;
+      fetchStarted.resolve();
+      if (boundary === "response") return responseGate.promise;
+      return {
+        ok: true,
+        status: 201,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => {
+          jsonStarted.resolve();
+          return jsonGate.promise;
+        },
+      };
+    },
+  });
+  const pending = boundaryClient.persist({
+    masterOrder: privateClientOrder,
+    customerOwnerUid: OWNER_UID,
+    resolvePersonalizedGroupAuthority: () => ({
+      status: "FINAL_PRIVATE" as const,
+      visibility: "PRIVATE" as const,
+      discoveryLifecycleId: 2,
+    }),
+    privateBatchCapabilityFactory: {
+      captureDiscoveryAnchor: () => ({
+        authSessionId: 1,
+        discoveryLifecycleId: 1,
+        uid: OWNER_UID,
+      }),
+      ensurePostRefreshCapability: async () => ({
+        generation: 200,
+        discoveryLifecycleId: 2,
+        uid: OWNER_UID,
+        orderType: "Group Organizer",
+        batchId: "private_batch_123456",
+        isCurrent: () => capabilityCurrent,
+      }),
+    },
+  });
+  if (boundary === "response") {
+    await fetchStarted.promise;
+    capabilityCurrent = false;
+    responseGate.resolve({
+      ok: true,
+      status: 201,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({ status: "created", value: privateClientEnvelope.value }),
+    });
+  } else {
+    await jsonStarted.promise;
+    capabilityCurrent = false;
+    jsonGate.resolve({ status: "created", value: privateClientEnvelope.value });
+  }
+  await assert.rejects(
+    pending,
+    (error: unknown) =>
+      error instanceof FutureOrderV2PersistenceClientError &&
+      error.code === "PRIVATE_BATCH_UNAUTHORIZED",
+    `${boundary} boundary`,
+  );
+  assert.equal(requests, 1, `${boundary} test must reach its later boundary.`);
+}
 
 const clientSource = readFileSync(
   "src/services/futureOrderV2Persistence.ts",

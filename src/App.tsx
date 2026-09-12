@@ -1282,25 +1282,10 @@ export default function App() {
                   activeCommunityBatch ? registrationBatch ?? null : null
                 }
                 onCreatePrivateBatch={() => {
-                  setOrderContext(null);
-                  setActiveTab("custom-order");
-                  let scrollAttempts = 0;
-                  const scrollToCreateGroup = () => {
-                    const createGroupSection =
-                      document.getElementById("option-create-group");
-                    if (createGroupSection) {
-                      createGroupSection.scrollIntoView({
-                        behavior: "smooth",
-                        block: "start",
-                      });
-                      return;
-                    }
-                    scrollAttempts += 1;
-                    if (scrollAttempts < 20) {
-                      window.setTimeout(scrollToCreateGroup, 50);
-                    }
-                  };
-                  window.setTimeout(scrollToCreateGroup, 0);
+                  triggerNotification(
+                    "Private Batch setup is being updated. Please check back soon.",
+                    "info",
+                  );
                 }}
                 onManageSourcingBatches={
                   AuthorizationEngine.canManageBatches(currentUser)
@@ -1365,6 +1350,16 @@ export default function App() {
                 batches={batches}
                 onCreateCustomGroup={(newGroup) => {
                   if (!currentUser) {
+                    return;
+                  }
+                  // Defense in depth for callers outside the disabled legacy
+                  // form. PRIVATE groups must only be created by the durable
+                  // Private Batch service, not this GRP-* compatibility path.
+                  if (newGroup.visibility === "PRIVATE") {
+                    triggerNotification(
+                      "Private Batch setup is being updated. Please check back soon.",
+                      "info",
+                    );
                     return;
                   }
                   const fullGroup: CustomGroup = {
