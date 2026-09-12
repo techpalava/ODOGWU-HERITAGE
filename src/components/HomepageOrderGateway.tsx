@@ -102,7 +102,7 @@ export default function HomepageOrderGateway({
 
 
           {joinBatch && (
-            <article className="flex min-h-[168px] flex-col bg-white p-5 sm:p-6">
+            <article className="flex min-h-[168px] min-w-0 flex-col bg-white p-5 sm:p-6">
               <div className="flex items-start gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-green text-heritage-gold">
                   <Users size={19} aria-hidden="true" />
@@ -140,7 +140,7 @@ export default function HomepageOrderGateway({
             </article>
           )}
 
-          <article className="flex min-h-[168px] flex-col bg-white p-5 sm:p-6">
+          <article className="flex min-h-[168px] min-w-0 flex-col bg-white p-5 sm:p-6">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-cream text-heritage-green">
                 <UserPlus size={19} aria-hidden="true" />
@@ -172,7 +172,7 @@ export default function HomepageOrderGateway({
             </button>
           </article>
 
-          <article className="flex min-h-[230px] flex-col bg-white p-5 sm:p-6">
+          <article className="flex min-h-[230px] min-w-0 flex-col bg-white p-5 sm:p-6">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-green text-heritage-gold">
                 <Shirt size={19} aria-hidden="true" />
@@ -203,7 +203,7 @@ export default function HomepageOrderGateway({
             </button>
           </article>
 
-          <article className="flex min-h-[230px] flex-col bg-white p-5 sm:p-6">
+          <article className="flex min-h-[230px] min-w-0 flex-col bg-white p-5 sm:p-6">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-heritage-cream text-heritage-green">
                 <ShoppingBag size={19} aria-hidden="true" />
