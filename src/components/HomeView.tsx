@@ -13,6 +13,9 @@ import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
 import HomepageOrderGateway, {
   getJoinCurrentBatchButtonLabel,
 } from "./HomepageOrderGateway";
+import HomepageCardRow, {
+  homepageCardRowItemClassName,
+} from "./HomepageCardRow";
 import type { HomepageOrderGatewayState } from "../utils/homepageOrderGateway";
 import { createJoinRenderedBatchAction } from "../utils/homepageCurrentBatchAction";
 import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
@@ -203,6 +206,14 @@ export default function HomeView({
 
   const featuredShowpieces = [...showpieces].filter((s) => s.image).slice(0, 8);
 
+  const participantCount =
+    batches?.reduce((acc, b) => acc + (b.currentCustomers || 0), 0) ||
+    (customers && customers.length > 0 ? customers.length : 24);
+  const socialProofHeadline =
+    participantCount >= 100
+      ? "Join Hundreds Celebrating Nigerian Culture"
+      : "Join Our Growing Community Celebrating Nigerian Culture";
+
   
 
   return (
@@ -350,7 +361,7 @@ export default function HomeView({
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {featuredShowpieces.map((showpiece) => (
               <div
                 key={showpiece.id}
@@ -570,12 +581,11 @@ export default function HomeView({
             </p>
           </div>
         ) : (
-          <div className="relative max-w-full overflow-hidden px-4 sm:px-8">
-            <div className="flex overflow-x-auto snap-x snap-mandatory gap-6 pb-8 pt-4 hide-scrollbar cursor-grab active:cursor-grabbing">
+          <HomepageCardRow label="premium fabrics">
               {activeFabrics.map((fabric) => (
                 <div
                   key={fabric.id || fabric.code}
-                  className="snap-start shrink-0 w-[75vw] sm:w-[calc(50%-12px)] lg:w-[calc(25%-18px)] group bg-white rounded-2xl overflow-hidden border border-heritage-gold/15 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full"
+                  className={`${homepageCardRowItemClassName} group bg-white rounded-2xl overflow-hidden border border-heritage-gold/15 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full`}
                 >
                   <div
                     className="relative aspect-square bg-heritage-cream/30 overflow-hidden cursor-pointer"
@@ -661,8 +671,7 @@ export default function HomeView({
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
+          </HomepageCardRow>
         )}
       </section>
 
@@ -704,12 +713,11 @@ export default function HomeView({
             </p>
           </div>
         ) : (
-          <div className="relative max-w-full overflow-hidden px-4 sm:px-8">
-            <div className="flex overflow-x-auto snap-x snap-mandatory gap-6 pb-8 pt-4 hide-scrollbar cursor-grab active:cursor-grabbing">
+          <HomepageCardRow label="design styles">
               {activeStyles.map((style) => (
                 <div
                   key={style.id}
-                  className="snap-start shrink-0 w-[75vw] sm:w-[calc(50%-12px)] lg:w-[calc(25%-18px)] group bg-white rounded-2xl overflow-hidden border border-heritage-gold/15 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full"
+                  className={`${homepageCardRowItemClassName} group bg-white rounded-2xl overflow-hidden border border-heritage-gold/15 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full`}
                 >
                   <div
                     className="relative aspect-square bg-heritage-cream/30 overflow-hidden cursor-pointer"
@@ -782,8 +790,7 @@ export default function HomeView({
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
+          </HomepageCardRow>
         )}
       </section>
 
@@ -997,7 +1004,7 @@ export default function HomeView({
         <div className="relative z-10 space-y-10">
           <div className="space-y-4 max-w-3xl mx-auto">
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif font-bold text-heritage-gold tracking-tight">
-              Join Hundreds Celebrating Nigerian Culture
+              {socialProofHeadline}
             </h2>
             <p className="text-base sm:text-lg text-white/80 font-sans leading-relaxed max-w-2xl mx-auto">
               Become part of a growing multicultural community in the
@@ -1006,17 +1013,11 @@ export default function HomeView({
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
+          <div className="grid min-w-0 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="min-w-0 bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
               <span className="text-4xl sm:text-5xl font-serif font-bold text-heritage-gold mb-2 block group-hover:scale-110 transition-transform duration-300">
                 <CountUpNumber
-                  value={
-                    batches?.reduce(
-                      (acc, b) => acc + (b.currentCustomers || 0),
-                      0,
-                    ) ||
-                    (customers && customers.length > 0 ? customers.length : 24)
-                  }
+                  value={participantCount}
                 />
               </span>
               <span className="text-xs uppercase tracking-widest text-white/70 font-semibold font-sans">
@@ -1024,7 +1025,7 @@ export default function HomeView({
               </span>
             </div>
 
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
+            <div className="min-w-0 bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
               <span className="text-4xl sm:text-5xl font-serif font-bold text-heritage-gold mb-2 block group-hover:scale-110 transition-transform duration-300">
                 <CountUpNumber
                   value={
@@ -1040,7 +1041,7 @@ export default function HomeView({
               </span>
             </div>
 
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
+            <div className="min-w-0 bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
               <span className="text-4xl sm:text-5xl font-serif font-bold text-heritage-gold mb-2 block group-hover:scale-110 transition-transform duration-300">
                 <CountUpNumber value={6} />
               </span>
@@ -1049,7 +1050,7 @@ export default function HomeView({
               </span>
             </div>
 
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
+            <div className="min-w-0 bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 hover:border-heritage-gold/50 transition-colors shadow-sm flex flex-col justify-center items-center group">
               <div className="h-12 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300">
                 <Sparkles className="text-heritage-gold" size={32} />
               </div>
