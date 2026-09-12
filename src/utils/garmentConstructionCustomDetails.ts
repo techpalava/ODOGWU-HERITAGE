@@ -8,7 +8,7 @@ import type {
   GarmentConstructionSelectionMode,
   GarmentTypeStepSelection,
 } from "../types";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing";
 import {
   getCustomDetailSelectionOptionIds,
   isClothingPriceSelectionGroup,
@@ -159,7 +159,7 @@ export const resolveLockedGarmentConstructionBridge = ({
       (total, component) => total + component.priceCents,
       0,
     );
-    const garmentLabel = getFabricGarmentLabel(resolution.garmentType);
+    const garmentLabel = getStep1GarmentDisplayLabel(resolution.garmentType);
     return [
       {
         garmentType: resolution.garmentType,

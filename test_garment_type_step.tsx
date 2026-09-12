@@ -28,9 +28,9 @@ import { resolveLockedGarmentConstructionBridge } from "./src/utils/garmentConst
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const expectedGarmentLabels = [
   "Standard Shirt",
-  "Long Shirt (Kaftan)",
+  "Long shirt",
   "Standard Dress",
-  "Long Dress (Gown)",
+  "Long Dress",
   "Standard Nikka Shorts",
   "Standard Bum Shorts",
   "Trouser",
@@ -42,7 +42,7 @@ const approvedGarmentIds = [
   "shirt", "kaftan", "dress", "full_length_gown",
   "standard_shorts", "bum_shorts", "trouser", "skirt", "long_skirt",
 ] as const;
-const approvedPrices = [65, 75, 70, 80, 70, 70, 75, 75, 80];
+const approvedPrices = [65, 75, 70, 75, 70, 70, 75, 75, 80];
 assert.deepEqual(STEP_1_SELECTABLE_GARMENT_TYPES, approvedGarmentIds);
 
 const renderStep = ({
@@ -488,10 +488,10 @@ assert.deepEqual(
   approvedPrices,
   "Downstream construction projection must receive every approved catalogue price",
 );
-assert.equal(approvedProjection.readOnlyConstructionRows.reduce((sum, row) => sum + row.priceCents, 0), 66000);
+assert.equal(approvedProjection.readOnlyConstructionRows.reduce((sum, row) => sum + row.priceCents, 0), 65500);
 for (const [garmentType, optionId] of [
   ["kaftan", "shirt_long_midlong"],
-  ["full_length_gown", "dress_long_midlong"],
+  ["full_length_gown", "dress_long_short"],
   ["dress", "dress_std_sleeveless"],
 ] as const) {
   assert.deepEqual(
