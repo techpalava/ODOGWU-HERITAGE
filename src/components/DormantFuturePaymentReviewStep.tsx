@@ -42,9 +42,12 @@ import {
 } from "../config/StyleFabricCapacityConfig";
 import type { FutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
+import { OrderContextDetails } from "./CustomerOrderContext";
+import type { CustomerOrderContextPresentation } from "../utils/customerOrderContextPresentation";
 
 interface DormantFuturePaymentReviewStepProps {
   result: FuturePaymentReviewResult;
+  orderContext?: CustomerOrderContextPresentation;
   onBack: () => void;
   onEditStage: (stage: Exclude<DesignStudioStageId, "payment">) => void;
   survivorSummary?: FutureDesignStudioSummary | null;
@@ -65,6 +68,13 @@ const PendingAmount = () => (
     Pending
   </span>
 );
+
+const defaultOrderContext: CustomerOrderContextPresentation = {
+  kind: "individual",
+  studioLabel: "Individual Order",
+  detailsOrderType: "Individual Order",
+  batchName: null,
+};
 
 const isV2PaymentReviewCandidate = (
   candidate: FuturePaymentReviewCandidate | null,
@@ -578,6 +588,7 @@ const RetainedGarmentReview = ({
 
 export const DormantFuturePaymentReviewStep = ({
   result,
+  orderContext = defaultOrderContext,
   onBack,
   onEditStage,
   survivorSummary = null,
@@ -658,6 +669,8 @@ export const DormantFuturePaymentReviewStep = ({
           Review your selections and totals before payment.
         </p>
       </header>
+
+      <OrderContextDetails context={orderContext} />
 
       <div
         role="status"

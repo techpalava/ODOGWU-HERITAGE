@@ -21,9 +21,12 @@ import {
   formatCustomerFacingFabricCapacityNoun,
 } from "../config/StyleFabricCapacityConfig";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
+import { OrderContextDetails } from "./CustomerOrderContext";
+import type { CustomerOrderContextPresentation } from "../utils/customerOrderContextPresentation";
 
 interface DormantFutureSummaryStepProps {
   summary: FutureDesignStudioSummary;
+  orderContext?: CustomerOrderContextPresentation;
   onBack: () => void;
   onEditGarments: () => void;
   onEditFabrics: () => void;
@@ -43,6 +46,13 @@ interface DormantFutureSummaryStepProps {
 
 const money = (value: number): string =>
   `${PRICING_CURRENCY_SYMBOL}${value.toFixed(2)}`;
+
+const defaultOrderContext: CustomerOrderContextPresentation = {
+  kind: "individual",
+  studioLabel: "Individual Order",
+  detailsOrderType: "Individual Order",
+  batchName: null,
+};
 
 const EditButton = ({
   label,
@@ -101,6 +111,7 @@ const Section = ({
 
 export const DormantFutureSummaryStep = ({
   summary,
+  orderContext = defaultOrderContext,
   onBack,
   onEditGarments,
   onEditFabrics,
@@ -174,6 +185,8 @@ export const DormantFutureSummaryStep = ({
           Shipping becomes available.
         </p>
       </header>
+
+      <OrderContextDetails context={orderContext} />
 
       <div
         role="status"
