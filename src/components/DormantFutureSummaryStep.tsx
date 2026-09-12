@@ -52,6 +52,7 @@ const defaultOrderContext: CustomerOrderContextPresentation = {
   studioLabel: "Individual Order",
   detailsOrderType: "Individual Order",
   batchName: null,
+  role: null,
 };
 
 const EditButton = ({

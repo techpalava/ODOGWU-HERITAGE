@@ -16,7 +16,7 @@ export interface PrivateBatchBusinessLimits {
 export interface PrivateBatchCreationInput {
   readonly batchName: string;
   readonly occasion: string;
-  readonly description: string;
+  readonly description?: string;
   readonly country: string;
   readonly city: string;
   readonly preferredDeliveryMonth: string;
@@ -74,7 +74,6 @@ const isPositiveInteger = (value: unknown): value is number =>
 const REQUIRED_TEXT_LIMITS = {
   batchName: 160,
   occasion: 160,
-  description: 2000,
   country: 160,
   city: 160,
   preferredDeliveryMonth: 160,
@@ -144,7 +143,7 @@ export const buildPrivateBatchCreationRecord = ({
     organizer: input.organizerName.trim(),
     batchName: input.batchName.trim(),
     occasion: input.occasion.trim(),
-    description: input.description.trim(),
+    description: input.description?.trim() || "",
     country: input.country.trim(),
     city: input.city.trim(),
     preferredDeliveryMonth: input.preferredDeliveryMonth.trim(),
@@ -220,6 +219,7 @@ export const createPrivateBatch = async ({
       orderType: "Group Organizer",
       batchId: groupId,
       batchName: record.batchName,
+      batchVisibility: "PRIVATE",
       organizer: record.organizer,
       closingDate: record.closingDate,
       deliveryWindow: record.deliveryWindow,
