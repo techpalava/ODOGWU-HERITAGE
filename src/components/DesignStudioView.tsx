@@ -65,6 +65,7 @@ import { DormantFutureSummaryStep } from "./DormantFutureSummaryStep";
 import { DormantFutureShippingStep } from "./DormantFutureShippingStep";
 import { DormantFuturePaymentReviewStep } from "./DormantFuturePaymentReviewStep";
 import { DesignStudioOrderSummary } from "./DesignStudioOrderSummary";
+import { StudioOrderContextIndicator } from "./CustomerOrderContext";
 import {
   createDesignStudioNavigationRequest,
   getMainStageNavigationTarget,
@@ -80,6 +81,7 @@ import {
   getPersistedDraftOrderIdentity,
   resolvePersistedDraftHydrationContext,
 } from "../utils/orderContextIdentity";
+import { resolveCustomerOrderContextPresentation } from "../utils/customerOrderContextPresentation";
 import {
 } from "../utils/shippingPricing";
 import { calculateDesignPricing } from "../utils/designPricing";
@@ -836,6 +838,8 @@ export default function DesignStudioView({
     orderContext ||
     hydratedOrderContext ||
     (isPersistedOrderContextBlocked ? blockedPersistedOrderContext : defaultCtx);
+  const customerOrderContextPresentation =
+    resolveCustomerOrderContextPresentation(ctx, storeBatches || []);
 
   // Automatically adapt batchType based on the custom orderContext passed down
   useEffect(() => {
@@ -6732,6 +6736,9 @@ export default function DesignStudioView({
           {futureGarmentRemovalAnnouncement.message}
         </div>
       )}
+      <div className="mb-3">
+        <StudioOrderContextIndicator context={customerOrderContextPresentation} />
+      </div>
       <DesignStudioJourneyStepper
         currentStageId={futureStageId}
         highestUnlockedStageIndex={highestUnlockedStageIndex}
@@ -6999,6 +7006,7 @@ export default function DesignStudioView({
       ) : futureStageId === "summary" ? (
         <DormantFutureSummaryStep
           summary={futureSummary}
+          orderContext={customerOrderContextPresentation}
           onBack={() => navigateToFutureStage("measurement")}
           onEditGarments={() => navigateToFutureStage("garment_type")}
           onEditFabrics={handleOpenDormantFabricStage}
@@ -7049,6 +7057,7 @@ export default function DesignStudioView({
         futurePaymentReviewHandoff ? (
           <DormantFuturePaymentReviewStep
             result={futurePaymentReviewHandoff}
+            orderContext={customerOrderContextPresentation}
             survivorSummary={futureSummary}
             removalTargets={futureGarmentRemovalTargets}
             onRequestGarmentRemoval={(target, trigger) =>
