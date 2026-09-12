@@ -2,6 +2,7 @@ import type {
   FutureOrderCandidateBlocker,
   FutureOrderCandidateV2,
 } from "./futureOrderCandidate";
+import { getCanonicalOrderIdentity } from "./orderContextIdentity";
 
 export interface FutureOrderCartItemV2 {
   readonly schemaVersion: 2;
@@ -142,7 +143,10 @@ const isOccurrenceStyleSnapshotShape = (value: unknown): boolean => {
 const isNonStyleEnvelopeShape = (value: Record<string, unknown>): boolean => {
   const authority = value.authorityVersions;
   const shipping = value.shipping;
-  return isRecord(authority) &&
+  return (
+    value.orderIdentity === undefined ||
+    getCanonicalOrderIdentity(value.orderIdentity) !== null
+  ) && isRecord(authority) &&
     Number.isSafeInteger(authority.customDetailsSchemaVersion) &&
     Number.isSafeInteger(authority.measurementSchemaVersion) &&
     hasText(authority.measurementBlueprintVersion) &&

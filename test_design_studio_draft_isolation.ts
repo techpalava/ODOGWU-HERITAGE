@@ -418,7 +418,8 @@ const studioSource = readFileSync(
   "src/components/DesignStudioView.tsx",
   "utf8",
 );
-assert.match(studioSource, /getFutureDesignDraft\(\)/);
+assert.match(studioSource, /inspectFutureDesignDraft\(\)/);
+assert.match(studioSource, /loadFutureDesignDraftForHydration\(\)/);
 assert.match(studioSource, /prepareDesignStyleDraftAutosave\(/);
 assert.match(studioSource, /const canonicalGuestDraft =/);
 assert.match(studioSource, /saveFutureDesignDraft\(canonicalGuestDraft\)/);

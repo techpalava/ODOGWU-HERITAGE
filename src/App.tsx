@@ -18,16 +18,29 @@ import {
   CustomGroup,
   OrderContext,
   Customer,
+  Batch,
   ImmutableUploadedOrderDesignReference,
 } from "./types";
 import { StorageService } from "./services/storageService";
 import { auth } from "./services/firebase";
-import { signOut } from "firebase/auth";
+import { GuestOrderSessionService } from "./services/guestOrderSessionService";
+import { BatchBusinessRules } from "./engine/BatchBusinessRules";
+import { createFirebaseAuthenticatedFutureDraftRepository } from "./services/authenticatedFutureDraftService";
+import {
+  classifyHomepageDraftEntry,
+  createHomepageDraftReplacementService,
+  executeHomepageDraftReplacementDiscard,
+  type LoadedHomepageMutableDraft,
+} from "./services/homepageDraftReplacement";
+import {
+  resolvePersistedDraftOrderContext,
+} from "./utils/orderContextIdentity";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { AuthorizationEngine } from "./engine/AuthorizationEngine";
 import { useAppStore } from "./store/useAppStore";
 import { CustomerJourneyEngine } from "./engine/CustomerJourneyEngine";
 import { getCurrentRegistrationBatch } from "./utils/batchUtils";
-import { CapacityService } from "./services/CapacityService";
+import { resolveHomepageCommunityBatchEntry } from "./utils/homepageOrderGateway";
 import {
   BATCH_MINIMUM_GARMENTS,
   calculateCartPaymentAllocations,
@@ -72,6 +85,17 @@ import Footer from "./components/Footer";
 
 
 import { AdminAuthGuard } from "./components/AdminAuthGuard";
+import { HomepageDraftReplacementDialog } from "./components/HomepageDraftReplacementDialog";
+
+type HomepageDraftReplacementRequest = Readonly<{
+  decisionGeneration: number;
+  existing: LoadedHomepageMutableDraft;
+  existingOrderContext: OrderContext | null;
+  clickedBatchId: string;
+  clickedBatchName: string;
+  isIndividualDraft: boolean;
+  canContinueExisting: boolean;
+}>;
 
 export default function App() {
   const store = useAppStore();
@@ -117,6 +141,12 @@ export default function App() {
     businessSettings,
     setBusinessSettings,
   } = store;
+
+  // Replacement confirmation can outlive a render. Keep the authoritative
+  // batch collection in a ref so no async continuation validates against the
+  // closure which happened to render the dialog.
+  const homepageCurrentBatchesRef = React.useRef(batches);
+  homepageCurrentBatchesRef.current = batches;
 
   // Initialize async data
   React.useEffect(() => {
@@ -198,20 +228,19 @@ export default function App() {
 
   
   const registrationBatch = getCurrentRegistrationBatch(batches);
-  
+  const defaultCommunityPickupLocation =
+    businessSettings.productionSettings.defaultPickupLocation ||
+    "Veldhoven Campus Lockers";
+  const homepageDefaultPickupLocationRef = React.useRef(
+    defaultCommunityPickupLocation,
+  );
+  homepageDefaultPickupLocationRef.current = defaultCommunityPickupLocation;
   const activeCommunityBatch: OrderContext | null = registrationBatch
-    ? {
-        orderType: "Community",
-        batchId: registrationBatch.id,
-        batchName: registrationBatch.name,
-        closingDate: registrationBatch.endDate,
-        deliveryWindow: registrationBatch.estimatedDelivery || "",
-        expectedParticipants: CapacityService.getTargetCapacity(registrationBatch),
-        currentMembers: CapacityService.getReservedCapacity(registrationBatch),
-        allowOrders: registrationBatch.allowOrders,
-        batchStatus: registrationBatch.status,
-        pickupLocation: registrationBatch.pickupLocation || businessSettings.productionSettings.defaultPickupLocation || "Veldhoven Campus Lockers",
-      }
+    ? resolveHomepageCommunityBatchEntry(
+        batches,
+        registrationBatch.id,
+        defaultCommunityPickupLocation,
+      )?.orderContext || null
     : null;
 
   const [adminPortalInitialTab, setAdminPortalInitialTab] = useState<
@@ -255,6 +284,16 @@ export default function App() {
   const [isPaymentProcessing, setIsPaymentProcessing] =
     useState<boolean>(false);
   const checkoutSubmissionInProgress = React.useRef(false);
+  const homepageDraftEntryRequestInFlight = React.useRef(false);
+  const homepageAuthEpochRef = React.useRef(0);
+  const homepageDraftDecisionGenerationRef = React.useRef(0);
+  const homepageDraftOperationGenerationRef = React.useRef(0);
+  const homepageDraftOperationInFlightRef = React.useRef(false);
+  const [, setHomepageAuthEpoch] = useState(0);
+  const [homepageDraftReplacement, setHomepageDraftReplacement] =
+    useState<HomepageDraftReplacementRequest | null>(null);
+  const [isHomepageDraftOperationBusy, setIsHomepageDraftOperationBusy] =
+    useState(false);
 
   const triggerNotification = (
     message: string,
@@ -265,6 +304,335 @@ export default function App() {
       setNotification(null);
     }, 4000);
   };
+
+  const resolveCurrentHomepageCommunityEntry = (batchId: string) =>
+    resolveHomepageCommunityBatchEntry(
+      homepageCurrentBatchesRef.current,
+      batchId,
+      homepageDefaultPickupLocationRef.current,
+    );
+
+  const invalidateHomepageDraftDecision = () => {
+    homepageDraftDecisionGenerationRef.current += 1;
+    homepageDraftOperationGenerationRef.current += 1;
+    homepageDraftOperationInFlightRef.current = false;
+    setIsHomepageDraftOperationBusy(false);
+    setHomepageDraftReplacement(null);
+  };
+
+  const getHomepageDraftReplacementService = () => {
+    const firebaseUser = auth.currentUser;
+    const capturedAuthEpoch = homepageAuthEpochRef.current;
+    const authenticatedAuthority =
+      currentUser && firebaseUser && !firebaseUser.isAnonymous
+        ? {
+            repository: createFirebaseAuthenticatedFutureDraftRepository({
+              customer: currentUser,
+              authResolved: true,
+              firebaseUser,
+            }),
+            ownerUid: firebaseUser.uid,
+            authEpoch: capturedAuthEpoch,
+            inspectionSession: {
+              authEpoch: capturedAuthEpoch,
+              storageKind: "authenticated" as const,
+              ownerKey: firebaseUser.uid,
+              isCurrent: () => {
+                const currentFirebaseUser = auth.currentUser;
+                return (
+                  homepageAuthEpochRef.current === capturedAuthEpoch &&
+                  Boolean(
+                    currentFirebaseUser &&
+                      !currentFirebaseUser.isAnonymous &&
+                      currentFirebaseUser.uid === firebaseUser.uid &&
+                      currentUser.ownerUid === firebaseUser.uid,
+                  )
+                );
+              },
+            },
+            isCurrent: () => {
+              const currentFirebaseUser = auth.currentUser;
+              return (
+                homepageAuthEpochRef.current === capturedAuthEpoch &&
+                Boolean(
+                  currentFirebaseUser &&
+                    !currentFirebaseUser.isAnonymous &&
+                    currentFirebaseUser.uid === firebaseUser.uid &&
+                    currentUser.ownerUid === firebaseUser.uid,
+                )
+              );
+            },
+          }
+        : null;
+    return createHomepageDraftReplacementService({
+      guest: {
+        inspect: GuestOrderSessionService.inspectFutureDesignDraft,
+        clear: GuestOrderSessionService.clearFutureDesignDraft,
+        inspectionSession: {
+          authEpoch: capturedAuthEpoch,
+          storageKind: "guest" as const,
+          ownerKey: "guest",
+          isCurrent: () => homepageAuthEpochRef.current === capturedAuthEpoch,
+        },
+      },
+      authenticated: authenticatedAuthority,
+    });
+  };
+
+  const openFreshCommunityStudio = (context: OrderContext) => {
+    setPresetStyleId(null);
+    setPresetFabricCode(null);
+    setOrderContext(context);
+    setActiveTab("design");
+  };
+
+  const handleJoinCommunityBatch = async (selectedBatch: Batch) => {
+    if (homepageDraftEntryRequestInFlight.current) return;
+    homepageDraftEntryRequestInFlight.current = true;
+    try {
+      const entry = resolveCurrentHomepageCommunityEntry(selectedBatch.id);
+      if (!entry) {
+        triggerNotification(
+          "This batch is no longer accepting orders. Please check back soon.",
+          "info",
+        );
+        return;
+      }
+
+      const requestAuthEpoch = homepageAuthEpochRef.current;
+      const draftAuthority = getHomepageDraftReplacementService();
+      const inspected = await draftAuthority.inspect();
+      if (homepageAuthEpochRef.current !== requestAuthEpoch) {
+        triggerNotification(
+          "Your sign-in state changed. Please choose the batch again.",
+          "info",
+        );
+        return;
+      }
+      if (inspected.status === "invalid" || inspected.status === "unavailable") {
+        triggerNotification(
+          "We could not safely check your unfinished order. Please try again.",
+          "info",
+        );
+        return;
+      }
+      if (inspected.status === "empty") {
+        const currentEntry = resolveCurrentHomepageCommunityEntry(selectedBatch.id);
+        if (!currentEntry) {
+          triggerNotification(
+            "This batch is no longer accepting orders. Please check back soon.",
+            "info",
+          );
+          return;
+        }
+        openFreshCommunityStudio(currentEntry.orderContext);
+        return;
+      }
+
+      const currentEntry = resolveCurrentHomepageCommunityEntry(selectedBatch.id);
+      if (!currentEntry) {
+        triggerNotification(
+          "This batch is no longer accepting orders. Please check back soon.",
+          "info",
+        );
+        return;
+      }
+
+      const existingOrderContext = resolvePersistedDraftOrderContext(
+        inspected.existing.draft,
+        homepageCurrentBatchesRef.current,
+        homepageDefaultPickupLocationRef.current,
+      );
+      const decision = classifyHomepageDraftEntry({
+        existing: inspected.existing,
+        clickedOrderContext: currentEntry.orderContext,
+      });
+      if (decision.kind === "resume_existing" && existingOrderContext) {
+        openFreshCommunityStudio(existingOrderContext);
+        return;
+      }
+
+      const existingIdentity = inspected.existing.orderIdentity;
+      const isIndividualDraft = existingIdentity?.orderType === "Individual";
+      const savedBatch =
+        existingIdentity?.orderType === "Community"
+          ? homepageCurrentBatchesRef.current.find(
+              (batch) => batch.id === existingIdentity.batchId,
+            ) || null
+          : null;
+      const decisionGeneration = ++homepageDraftDecisionGenerationRef.current;
+      setHomepageDraftReplacement({
+        decisionGeneration,
+        existing: inspected.existing,
+        existingOrderContext,
+        clickedBatchId: currentEntry.batch.id,
+        clickedBatchName: currentEntry.batch.name,
+        isIndividualDraft,
+        canContinueExisting:
+          isIndividualDraft ||
+          Boolean(
+            savedBatch &&
+              BatchBusinessRules.canAcceptOrders(savedBatch).canAcceptOrders,
+          ),
+      });
+    } catch (error) {
+      console.error("Unable to prepare homepage batch entry.", error);
+      triggerNotification(
+        "We could not safely check your unfinished order. Please try again.",
+        "info",
+      );
+    } finally {
+      homepageDraftEntryRequestInFlight.current = false;
+    }
+  };
+
+  const handleContinueHomepageDraft = async () => {
+    const request = homepageDraftReplacement;
+    if (
+      !request ||
+      !request.canContinueExisting ||
+      request.decisionGeneration !== homepageDraftDecisionGenerationRef.current ||
+      homepageDraftOperationInFlightRef.current
+    ) {
+      return;
+    }
+    const decisionGeneration = request.decisionGeneration;
+    const operationGeneration = ++homepageDraftOperationGenerationRef.current;
+    homepageDraftOperationInFlightRef.current = true;
+    setIsHomepageDraftOperationBusy(true);
+    const isOperationCurrent = () =>
+      homepageDraftDecisionGenerationRef.current === decisionGeneration &&
+      homepageDraftOperationGenerationRef.current === operationGeneration;
+    try {
+      const verification = await getHomepageDraftReplacementService().revalidate(
+        request.existing,
+      );
+      if (!isOperationCurrent()) return;
+      if (verification.status !== "valid") {
+        invalidateHomepageDraftDecision();
+        triggerNotification(
+          "Your unfinished order changed. Please choose the batch again.",
+          "info",
+        );
+        return;
+      }
+      const existingIdentity = request.existing.orderIdentity;
+      const savedBatch =
+        existingIdentity?.orderType === "Community"
+          ? homepageCurrentBatchesRef.current.find(
+              (batch) => batch.id === existingIdentity.batchId,
+            ) || null
+          : null;
+      if (
+        existingIdentity?.orderType === "Community" &&
+        (!savedBatch || !BatchBusinessRules.canAcceptOrders(savedBatch).canAcceptOrders)
+      ) {
+        if (isOperationCurrent()) {
+          setHomepageDraftReplacement({
+            ...request,
+            canContinueExisting: false,
+          });
+        }
+        return;
+      }
+      const existingOrderContext = resolvePersistedDraftOrderContext(
+        request.existing.draft,
+        homepageCurrentBatchesRef.current,
+        homepageDefaultPickupLocationRef.current,
+      );
+      if (!existingOrderContext || !isOperationCurrent()) return;
+      invalidateHomepageDraftDecision();
+      openFreshCommunityStudio(existingOrderContext);
+    } finally {
+      if (homepageDraftOperationGenerationRef.current === operationGeneration) {
+        homepageDraftOperationInFlightRef.current = false;
+        setIsHomepageDraftOperationBusy(false);
+      }
+    }
+  };
+
+  const handleDiscardAndJoinHomepageBatch = async () => {
+    const request = homepageDraftReplacement;
+    if (
+      !request ||
+      request.decisionGeneration !== homepageDraftDecisionGenerationRef.current ||
+      homepageDraftOperationInFlightRef.current
+    ) return;
+
+    // This synchronous state transition closes the cancellation window before
+    // the first await. The operation token is checked again by the production
+    // coordinator after every asynchronous boundary.
+    const operationGeneration = ++homepageDraftOperationGenerationRef.current;
+    homepageDraftOperationInFlightRef.current = true;
+    setIsHomepageDraftOperationBusy(true);
+    try {
+      const result = await executeHomepageDraftReplacementDiscard({
+        existing: request.existing,
+        authority: getHomepageDraftReplacementService(),
+        isOperationCurrent: () =>
+          homepageDraftDecisionGenerationRef.current ===
+            request.decisionGeneration &&
+          homepageDraftOperationGenerationRef.current === operationGeneration,
+        getCurrentTarget: () =>
+          resolveCurrentHomepageCommunityEntry(request.clickedBatchId),
+      });
+      const operationIsCurrent =
+        homepageDraftDecisionGenerationRef.current === request.decisionGeneration &&
+        homepageDraftOperationGenerationRef.current === operationGeneration;
+      if (!operationIsCurrent || result.status === "stale") return;
+      if (result.status === "discarded") {
+        invalidateHomepageDraftDecision();
+        openFreshCommunityStudio(result.orderContext);
+        return;
+      }
+      invalidateHomepageDraftDecision();
+      if (result.status === "target_unavailable_after_clear") {
+        triggerNotification(
+          "The batch changed after your draft was discarded. No new order was started.",
+          "info",
+        );
+      } else if (result.status === "target_unavailable") {
+        triggerNotification(
+          "This batch is no longer accepting orders. Your unfinished order is unchanged.",
+          "info",
+        );
+      } else if (result.status === "draft_unavailable") {
+        triggerNotification(
+          "Your unfinished order changed. Please choose the batch again.",
+          "info",
+        );
+      } else {
+        triggerNotification(
+          "We could not discard your unfinished order safely. It has not been replaced.",
+          "info",
+        );
+      }
+    } catch (error) {
+      console.error("Unable to discard homepage draft.", error);
+      triggerNotification(
+        "We could not discard your unfinished order safely. It has not been replaced.",
+        "info",
+      );
+    } finally {
+      if (homepageDraftOperationGenerationRef.current === operationGeneration) {
+        homepageDraftOperationInFlightRef.current = false;
+        setIsHomepageDraftOperationBusy(false);
+      }
+    }
+  };
+
+  React.useEffect(
+    () =>
+      onAuthStateChanged(auth, () => {
+        // Each auth observation is a new identity epoch, including a renewed
+        // session for the same UID. Pending destructive decisions cannot cross
+        // that boundary.
+        homepageAuthEpochRef.current += 1;
+        setHomepageAuthEpoch(homepageAuthEpochRef.current);
+        invalidateHomepageDraftDecision();
+      }),
+    [],
+  );
 
   // Keep track of batches joined by this user in localStorage
   const [joinedBatchIds, setJoinedBatchIds] = useState<string[]>(() => {
@@ -909,19 +1277,7 @@ export default function App() {
                   });
                   setActiveTab("design");
                 }}
-                onJoinCommunityBatch={() => {
-                  if (!activeCommunityBatch) {
-                    triggerNotification(
-                      "This batch is no longer accepting orders. Please check back soon.",
-                      "info",
-                    );
-                    return;
-                  }
-                  setPresetStyleId(null);
-                  setPresetFabricCode(null);
-                  setOrderContext(activeCommunityBatch);
-                  setActiveTab("design");
-                }}
+                onJoinCommunityBatch={handleJoinCommunityBatch}
                 joinBatch={
                   activeCommunityBatch ? registrationBatch ?? null : null
                 }
@@ -1160,6 +1516,27 @@ export default function App() {
 
       {/* SHOPPING CART SLIDE-OVER DRAWER */}
       <CartDrawer />
+
+      {homepageDraftReplacement && (
+        <HomepageDraftReplacementDialog
+          existingOrderLabel={
+            homepageDraftReplacement.existingOrderContext?.batchName ||
+            homepageDraftReplacement.existing.draft.batchName ||
+            "saved Community"
+          }
+          clickedBatchName={homepageDraftReplacement.clickedBatchName}
+          isIndividualDraft={homepageDraftReplacement.isIndividualDraft}
+          canContinueExisting={homepageDraftReplacement.canContinueExisting}
+          busy={isHomepageDraftOperationBusy}
+          onContinueExisting={handleContinueHomepageDraft}
+          onDiscardAndJoin={handleDiscardAndJoinHomepageBatch}
+          onCancel={() => {
+            if (!homepageDraftOperationInFlightRef.current) {
+              invalidateHomepageDraftDecision();
+            }
+          }}
+        />
+      )}
 
       {isCheckoutPaymentOpen && (
         <div className="fixed inset-0 bg-heritage-ink/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">

@@ -12,6 +12,7 @@ import type {
   GarmentScopedCustomDetailsStateV1,
   GarmentTypeStepSelection,
   StyleCategory,
+  Batch,
 } from "./src/types";
 import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
@@ -2721,8 +2722,27 @@ const baseShirtOnlyFabric: FabricAllocationState = {
     JSON.stringify({ blockers: v1.blockers, measurementState, measurementPlan }),
   );
   assert.ok(v1.candidate);
+  const liveCommunityBatches: readonly Batch[] = [
+    {
+      id: "batch-7",
+      batchNumber: 7,
+      name: "Avatars",
+      startDate: "2020-01-01T00:00:00.000Z",
+      endDate: "2099-01-01T00:00:00.000Z",
+      duration: "Open",
+      targetGarments: 40,
+      currentGarments: 0,
+      currentOrders: 0,
+      currentCustomers: 0,
+      status: "OPEN",
+      allowOrders: true,
+      visibility: "PUBLIC",
+    },
+  ];
   const v2 = buildFutureOrderCandidateV2({
     coreInput,
+    orderIdentity: { orderType: "Community", batchId: "batch-7" },
+    liveBatches: liveCommunityBatches,
     ledger: styleModel.hydration.ledger!,
     validationAuthority: styleModel.authority,
     styles: styleModel.styles,
@@ -2733,6 +2753,10 @@ const baseShirtOnlyFabric: FabricAllocationState = {
     throw new Error("Expected complete V1 and V2 Candidates");
   }
   assert.equal(v2.candidate.schemaVersion, 2);
+  assert.deepEqual(v2.candidate.orderIdentity, {
+    orderType: "Community",
+    batchId: "batch-7",
+  });
   assert.deepEqual(
     v2.candidate.occurrenceStyleSnapshots.map((row) => [
       row.occurrence.label,
@@ -2765,11 +2789,31 @@ const baseShirtOnlyFabric: FabricAllocationState = {
   assert.equal(JSON.stringify(v2.candidate).includes("selectedStyleId"), false);
   assert.deepEqual(v2.candidate.pricing, v1.candidate.pricing);
 
+  const individualV2 = buildFutureOrderCandidateV2({
+    coreInput,
+    orderIdentity: { orderType: "Individual" },
+    liveBatches: [],
+    ledger: styleModel.hydration.ledger!,
+    validationAuthority: styleModel.authority,
+    styles: styleModel.styles,
+    uploadedAuthorityBySourceRef,
+  });
+  assert.equal(individualV2.status, "valid");
+  if (individualV2.status !== "valid") {
+    throw new Error("Expected an Individual V2 Candidate");
+  }
+  assert.deepEqual(individualV2.candidate.orderIdentity, {
+    orderType: "Individual",
+  });
+  assert.equal("batchId" in individualV2.candidate.orderIdentity!, false);
+
   const invalidMeasurement = buildFutureOrderCandidateV2({
     coreInput: {
       ...coreInput,
       measurementState: createEmptyFutureMeasurementState("low_risk", "inch"),
     },
+    orderIdentity: { orderType: "Individual" },
+    liveBatches: [],
     ledger: styleModel.hydration.ledger!,
     validationAuthority: styleModel.authority,
     styles: styleModel.styles,
@@ -2793,6 +2837,8 @@ const baseShirtOnlyFabric: FabricAllocationState = {
   });
   const invalidStyle = buildFutureOrderCandidateV2({
     coreInput,
+    orderIdentity: { orderType: "Community", batchId: "batch-7" },
+    liveBatches: liveCommunityBatches,
     ledger: missingStyleModel.hydration.ledger!,
     validationAuthority: missingStyleModel.authority,
     styles: missingStyleModel.styles,
@@ -2802,6 +2848,55 @@ const baseShirtOnlyFabric: FabricAllocationState = {
   assert.ok(
     invalidStyle.blockers.some(
       (blocker) => blocker.code === "DESIGN_STYLE_ASSIGNMENT_INVALID",
+    ),
+  );
+
+  const missingIdentity = buildFutureOrderCandidateV2({
+    coreInput,
+    orderIdentity: null,
+    liveBatches: [],
+    ledger: styleModel.hydration.ledger!,
+    validationAuthority: styleModel.authority,
+    styles: styleModel.styles,
+    uploadedAuthorityBySourceRef,
+  });
+  assert.equal(missingIdentity.status, "blocked");
+  assert.ok(
+    missingIdentity.blockers.some(
+      (blocker) => blocker.code === "ORDER_CONTEXT_IDENTITY_INVALID",
+    ),
+    "V2 must fail closed when a Community or Individual identity cannot be represented.",
+  );
+
+  const closedRetainedBatch = buildFutureOrderCandidateV2({
+    coreInput,
+    orderIdentity: { orderType: "Community", batchId: "batch-7" },
+    liveBatches: [{ ...liveCommunityBatches[0], allowOrders: false, status: "CLOSED" }],
+    ledger: styleModel.hydration.ledger!,
+    validationAuthority: styleModel.authority,
+    styles: styleModel.styles,
+    uploadedAuthorityBySourceRef,
+  });
+  assert.equal(closedRetainedBatch.status, "blocked");
+  assert.ok(
+    closedRetainedBatch.blockers.some(
+      (blocker) => blocker.code === "RETAINED_COMMUNITY_BATCH_INELIGIBLE",
+    ),
+  );
+
+  const missingRetainedBatch = buildFutureOrderCandidateV2({
+    coreInput,
+    orderIdentity: { orderType: "Community", batchId: "batch-7" },
+    liveBatches: [],
+    ledger: styleModel.hydration.ledger!,
+    validationAuthority: styleModel.authority,
+    styles: styleModel.styles,
+    uploadedAuthorityBySourceRef,
+  });
+  assert.equal(missingRetainedBatch.status, "blocked");
+  assert.ok(
+    missingRetainedBatch.blockers.some(
+      (blocker) => blocker.code === "RETAINED_COMMUNITY_BATCH_MISSING",
     ),
   );
 

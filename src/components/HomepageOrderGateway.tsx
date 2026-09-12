@@ -7,23 +7,22 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-import type { HomepageOrderGatewayState } from "../utils/homepageOrderGateway";
+import type { Batch } from "../types";
+import {
+  getHomepageJoinBatchLabel,
+  type HomepageOrderGatewayState,
+} from "../utils/homepageOrderGateway";
 
 export const getJoinCurrentBatchButtonLabel = (
   batchName: string | null | undefined,
   isLoading = false,
-): string => {
-  const trimmedBatchName = typeof batchName === "string" ? batchName.trim() : "";
-  return !isLoading && trimmedBatchName
-    ? `Join ${trimmedBatchName}`
-    : "Join Current Batch";
-};
+): string => getHomepageJoinBatchLabel(batchName, isLoading);
 
 interface HomepageOrderGatewayProps {
   state: HomepageOrderGatewayState;
   isLoading?: boolean;
   onStartIndividualOrder: () => void;
-  onJoinBatch: () => void;
+  onJoinBatch: (batch: Batch) => void;
   onCreatePrivateBatch: () => void;
   onBrowseGallery: () => void;
   onManageSourcingBatches?: () => void;
@@ -127,7 +126,11 @@ export default function HomepageOrderGateway({
               <button
                 id="btn-quick-join-cohort"
                 type="button"
-                onClick={isLoading ? undefined : onJoinBatch}
+                onClick={
+                  isLoading || !joinBatch
+                    ? undefined
+                    : () => onJoinBatch(joinBatch)
+                }
                 disabled={isLoading}
                 className="mt-auto inline-flex min-h-11 w-full min-w-0 items-center justify-center gap-2 break-words rounded-lg bg-heritage-green px-4 py-2.5 text-center text-[11px] font-bold uppercase text-white transition-colors hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
               >
