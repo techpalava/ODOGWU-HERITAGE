@@ -3,6 +3,10 @@ import {
   parseFutureOrderMasterOrderV2,
   type FutureOrderMasterOrderV2,
 } from "./futureOrderV2Storage.js";
+import {
+  getCanonicalOrderIdentity,
+  type CanonicalOrderIdentity,
+} from "./orderContextIdentity.js";
 
 export const FUTURE_ORDER_V2_RECORD_TYPE = "future_order_v2" as const;
 export const FUTURE_ORDER_V2_COLLECTION = "orders" as const;
@@ -50,6 +54,19 @@ export type FutureOrderV2PersistenceRequestParseResult =
 export interface FutureOrderV2PersistenceTransaction {
   get(orderId: string): Promise<unknown | null>;
   create(orderId: string, value: PersistedFutureOrderV2): void;
+  /**
+   * Server-only, executed in the same transaction as a new V2 order. Group
+   * Organizer/Member are shared legacy roles; the implementation resolves the
+   * referenced custom group's authoritative visibility before deciding whether
+   * PRIVATE membership checks apply.
+   */
+  assertGroupOrderIdentity?: (
+    identity: Extract<
+      CanonicalOrderIdentity,
+      { orderType: "Group Organizer" | "Group Member" }
+    >,
+    uid: string,
+  ) => Promise<void>;
 }
 
 export interface FutureOrderV2PersistenceAdapter {
@@ -313,7 +330,22 @@ export const createPersistedFutureOrderV2 = ({
     return invalid(
       "MALFORMED_MASTER_ORDER_V2",
       parsedMasterOrder.blockers[0]?.message ||
-        "The MasterOrder V2 snapshot is malformed.",
+      "The MasterOrder V2 snapshot is malformed.",
+    );
+  }
+  // Reads retain narrow tolerance for historical V2 records that predate
+  // canonical identity. New persistence must not use that compatibility path
+  // to evade Private Batch authorization.
+  const incomingOrderIdentity =
+    parsedMasterOrder.value.cartItem.candidate.orderIdentity;
+  const canonicalOrderIdentity = getCanonicalOrderIdentity(incomingOrderIdentity);
+  if (
+    !canonicalOrderIdentity ||
+    stableSerialize(incomingOrderIdentity) !== stableSerialize(canonicalOrderIdentity)
+  ) {
+    return invalid(
+      "ORDER_IDENTITY_REQUIRED",
+      "A canonical order identity is required for new V2 persistence.",
     );
   }
   const customer =

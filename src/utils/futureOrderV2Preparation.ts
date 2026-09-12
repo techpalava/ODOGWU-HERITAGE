@@ -10,6 +10,13 @@ import {
   type FutureOrderMasterOrderV2,
 } from "./futureOrderV2Storage";
 import type { PersistFutureOrderV2Result } from "./futureOrderV2PersistenceContract";
+import type {
+  PersistFutureOrderV2ClientResult,
+  PrivateBatchPersistenceCapability,
+  PrivateBatchPersistenceCapabilityFactory,
+  PersonalizedGroupAuthorityResolver,
+} from "../services/futureOrderV2Persistence";
+import type { PersonalizedGroupAuthority } from "./orderContextIdentity";
 
 export interface FutureOrderV2PreparationIds {
   readonly cartItemId: string;
@@ -65,6 +72,12 @@ export type FutureOrderV2PreparationOutcome =
       readonly result: Extract<
         PersistFutureOrderV2Result,
         { readonly status: "created" | "already_persisted" }
+      >;
+      /** The exact post-refresh PRIVATE authority, if this was private. */
+      readonly privateBatchCapability?: PrivateBatchPersistenceCapability;
+      readonly personalizedGroupAuthority?: Extract<
+        PersonalizedGroupAuthority,
+        { status: "FINAL_PUBLIC" | "FINAL_PRIVATE" }
       >;
     }
   | {
@@ -171,16 +184,22 @@ export const prepareFutureOrderV2Submission = async ({
   fresh,
   identity,
   existingAttempt = null,
+  privateBatchCapabilityFactory,
+  resolvePersonalizedGroupAuthority,
   persist,
 }: {
   reviewed: FutureOrderCandidateV2;
   fresh: FutureOrderCandidateV2BuildResult;
   identity: Readonly<{ uid: string; isAnonymous: boolean }> | null;
   existingAttempt?: FutureOrderV2PreparationAttempt | null;
+  privateBatchCapabilityFactory?: PrivateBatchPersistenceCapabilityFactory;
+  resolvePersonalizedGroupAuthority?: PersonalizedGroupAuthorityResolver;
   persist(input: {
     masterOrder: FutureOrderMasterOrderV2;
     customerOwnerUid: string;
-  }): Promise<PersistFutureOrderV2Result>;
+    privateBatchCapabilityFactory?: PrivateBatchPersistenceCapabilityFactory;
+    resolvePersonalizedGroupAuthority?: PersonalizedGroupAuthorityResolver;
+  }): Promise<PersistFutureOrderV2ClientResult>;
 }): Promise<FutureOrderV2PreparationOutcome> => {
   if (!identity || identity.isAnonymous) {
     return { status: "authentication_required" };
@@ -211,9 +230,17 @@ export const prepareFutureOrderV2Submission = async ({
     const result = await persist({
       masterOrder: preparation.attempt.masterOrder,
       customerOwnerUid: identity.uid,
+      privateBatchCapabilityFactory,
+      resolvePersonalizedGroupAuthority,
     });
     return result.status === "created" || result.status === "already_persisted"
-      ? { status: "prepared", attempt: preparation.attempt, result }
+      ? {
+          status: "prepared",
+          attempt: preparation.attempt,
+          result,
+          privateBatchCapability: result.privateBatchCapability,
+          personalizedGroupAuthority: result.personalizedGroupAuthority,
+        }
       : { status: "persistence_failed", attempt: preparation.attempt, result };
   } catch {
     return {
