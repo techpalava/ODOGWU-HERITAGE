@@ -1,4 +1,7 @@
-import type { FutureOrderCandidateV2 } from "../src/utils/futureOrderCandidate.js";
+import type {
+  FutureOrderCandidateV2,
+} from "../src/utils/futureOrderCandidate.js";
+import type { CanonicalOrderIdentity } from "../src/utils/orderContextIdentity.js";
 import {
   createFutureOrderCartItemV2,
   createFutureOrderMasterOrderV2,
@@ -37,6 +40,7 @@ const uploadedStyle = (garmentKey: string, token: string, label: string) => ({
 
 const createCandidate = (
   styleName = "Shirt Historical Style",
+  orderIdentity?: CanonicalOrderIdentity,
 ): FutureOrderCandidateV2 => {
   const styles = [
     catalogueStyle("base:shirt", "token-shirt-1", "Shirt"),
@@ -46,6 +50,7 @@ const createCandidate = (
   styles[0]!.catalogue!.name = styleName;
   return {
     schemaVersion: 2,
+    ...(orderIdentity ? { orderIdentity } : {}),
     journey: { mode: "future_nine_stage", schemaVersion: 1 },
     authorityVersions: {
       customDetailsSchemaVersion: 1,
@@ -174,9 +179,10 @@ const createCandidate = (
 export const createFutureOrderV2Fixture = (
   orderId: string,
   styleName?: string,
+  orderIdentity?: CanonicalOrderIdentity,
 ): FutureOrderMasterOrderV2 => {
   const cart = createFutureOrderCartItemV2({
-    candidate: createCandidate(styleName),
+    candidate: createCandidate(styleName, orderIdentity),
     metadata: { cartItemId: `cart-${orderId}` },
   });
   if (cart.status !== "valid") throw new Error("Expected a valid Cart V2 fixture.");

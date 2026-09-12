@@ -1,6 +1,8 @@
 import type { FutureOrderMasterOrderV2 } from "./futureOrderV2Storage";
 import { parseFutureOrderMasterOrderV2 } from "./futureOrderV2Storage";
 import type { FutureOrderV2PreparationAttempt } from "./futureOrderV2Preparation";
+import type { Batch } from "../types";
+import { getRetainedCommunityBatchEligibilityBlocker } from "./futureOrderCandidate";
 
 export interface FutureOrderV2PaymentAttempt {
   readonly orderId: string;
@@ -17,6 +19,32 @@ export type FutureOrderV2PaymentPreparationResult =
 export type FutureOrderV2PaymentAuthorizationResult =
   | { readonly status: "authorized"; readonly providerTransactionReference: string }
   | { readonly status: "failed"; readonly message: string };
+
+export type FutureOrderV2PaymentEligibilityResult =
+  | { readonly status: "valid" }
+  | { readonly status: "invalid"; readonly message: string };
+
+/**
+ * This is deliberately evaluated at payment time. A prepared Community order
+ * remains bound to its retained batch ID, never the current homepage batch.
+ */
+export const validatePreparedFutureOrderV2PaymentEligibility = ({
+  prepared,
+  liveBatches,
+}: {
+  prepared: FutureOrderV2PreparationAttempt;
+  liveBatches: readonly Batch[];
+}): FutureOrderV2PaymentEligibilityResult => {
+  const identity = prepared.cartItem.candidate.orderIdentity;
+  if (!identity) return { status: "valid" };
+  const blocker = getRetainedCommunityBatchEligibilityBlocker(
+    identity,
+    liveBatches,
+  );
+  return blocker
+    ? { status: "invalid", message: blocker.message }
+    : { status: "valid" };
+};
 
 export type FutureOrderV2PaymentOutcome =
   | {
@@ -78,10 +106,12 @@ export const createFutureOrderV2PaymentAttempt = ({
 export const executeFutureOrderV2Payment = async ({
   prepared,
   existingAttempt = null,
+  validateBeforeAuthorization = () => ({ status: "valid" as const }),
   authorize,
 }: {
   prepared: FutureOrderV2PreparationAttempt;
   existingAttempt?: FutureOrderV2PaymentAttempt | null;
+  validateBeforeAuthorization?: () => FutureOrderV2PaymentEligibilityResult;
   authorize(input: FutureOrderV2PaymentAttempt): Promise<FutureOrderV2PaymentAuthorizationResult>;
 }): Promise<FutureOrderV2PaymentOutcome> => {
   const payment = createFutureOrderV2PaymentAttempt({
@@ -89,6 +119,8 @@ export const executeFutureOrderV2Payment = async ({
     existingAttempt,
   });
   if (payment.status !== "valid") return payment;
+  const eligibility = validateBeforeAuthorization();
+  if (eligibility.status !== "valid") return eligibility;
 
   try {
     const result = await authorize(payment.attempt);

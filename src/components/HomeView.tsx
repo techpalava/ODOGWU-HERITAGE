@@ -10,8 +10,11 @@ import { Batch, CommunityPhoto, Showpiece, Fabric } from "../types";
 import { useAppStore } from "../store/useAppStore";
 import { CapacityService } from "../services/CapacityService";
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
-import HomepageOrderGateway from "./HomepageOrderGateway";
+import HomepageOrderGateway, {
+  getJoinCurrentBatchButtonLabel,
+} from "./HomepageOrderGateway";
 import type { HomepageOrderGatewayState } from "../utils/homepageOrderGateway";
+import { createJoinRenderedBatchAction } from "../utils/homepageCurrentBatchAction";
 import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
 import ankaraLadyImage from "../assets/images/couture_gown_photo_1782308183701.jpg";
 import ankaraManImage from "../assets/images/grand_agbada_photo_1782308152763.jpg";
@@ -21,7 +24,7 @@ import ankaraFamilyImage from "../assets/images/regenerated_image_1784259611604.
 interface HomeViewProps {
   onNavigateToTab: (tabId: string) => void;
   onStartIndividualOrder: () => void;
-  onJoinCommunityBatch: () => void;
+  onJoinCommunityBatch: (batch: Batch) => void;
   joinBatch?: Batch | null;
   onCreatePrivateBatch: () => void;
   onManageSourcingBatches?: () => void;
@@ -72,14 +75,20 @@ export default function HomeView({
   };
   const isBatchGatewayLoading = !hasLoadedBatches;
   const canJoinActiveBatch = Boolean(orderGatewayState.joinBatch);
+  const currentBatchJoinLabel = getJoinCurrentBatchButtonLabel(
+    orderGatewayState.joinBatch?.name,
+    isBatchGatewayLoading,
+  );
   const heroPrimaryAction = isBatchGatewayLoading
     ? "Loading Order Options"
-    : "Explore Options";
+    : canJoinActiveBatch
+      ? currentBatchJoinLabel
+      : "Explore Options";
   const firstHeroPrimaryAction = heroPrimaryAction;
   const handleHeroPrimaryAction = isBatchGatewayLoading
     ? undefined
-    : canJoinActiveBatch
-      ? onJoinCommunityBatch
+    : joinBatch
+      ? createJoinRenderedBatchAction(joinBatch, onJoinCommunityBatch)
       : onCreatePrivateBatch;
 
   const [currentSlide, setCurrentSlide] = useState(0);

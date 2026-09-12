@@ -86,6 +86,11 @@ const garmentTypeSource = readFileSync(
   "utf8",
 );
 
+assert.match(
+  studioSource,
+  /useState<DesignStudioStageId>\("garment_type"\)/,
+  "A fresh current Studio entry must start at Garment Type (Step 1).",
+);
 assert.match(stepperSource, /getDesignStudioJourneyStepState/);
 assert.match(stepperSource, /data-step-state=\{state\}/);
 assert.match(stepperSource, /data-stage-clickable=/);

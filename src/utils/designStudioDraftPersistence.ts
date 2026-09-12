@@ -29,6 +29,11 @@ export interface DesignStudioDraftStorageAdapter {
 
 export interface LegacyDesignStudioDraftAdapter {
   load(): GuestDesignDraft | null;
+  /**
+   * A read-only legacy inspection is optional for older callers. It lets the
+   * homepage decide whether to offer replacement without migrating anything.
+   */
+  inspect?(): LegacyFutureDesignDraftInspectionResult;
 }
 
 export interface FutureDesignStudioDraftEnvelopeV1 {
@@ -66,6 +71,28 @@ export type FutureDesignStudioDraftLoadResult =
   | { status: "empty"; draft: null }
   | { status: "loaded"; draft: GuestDesignDraft }
   | { status: "invalid"; draft: null; reason: string };
+
+export type LegacyFutureDesignDraftInspectionResult =
+  | { status: "empty" }
+  | { status: "valid"; draft: GuestDesignDraft; fingerprint: string }
+  | { status: "invalid"; reason: string }
+  | { status: "unavailable"; reason: string };
+
+/**
+ * This is deliberately separate from the normal loader. `valid` says what is
+ * currently stored, while callers choose whether an intentional resume should
+ * subsequently migrate legacy storage.
+ */
+export type FutureDesignStudioDraftInspectionResult =
+  | { status: "empty" }
+  | {
+      status: "valid";
+      draft: GuestDesignDraft;
+      source: "future_v1" | "legacy";
+      fingerprint: string;
+    }
+  | { status: "invalid"; reason: string }
+  | { status: "unavailable"; reason: string };
 
 export type FutureDesignStudioDraftSaveResult =
   | { status: "saved"; draft: GuestDesignDraft }
@@ -116,6 +143,10 @@ const parseJson = (value: string): unknown => {
     return undefined;
   }
 };
+
+// The raw serialized value is kept only in the in-memory pending decision. It
+// gives a guest destructive action an exact, collision-free storage handle.
+const fingerprintRawStorageValue = (value: string): string => value;
 
 const normalizeJsonSafeFutureDraft = ({
   value,
@@ -170,6 +201,24 @@ export const createDesignStudioDraftRepository = ({
   now = () => new Date().toISOString(),
 }: FutureDesignStudioDraftRepositoryDependencies) => {
   const loadLegacyDraft = (): GuestDesignDraft | null => legacy.load();
+
+  const inspectLegacyDraft = (): LegacyFutureDesignDraftInspectionResult => {
+    if (legacy.inspect) return legacy.inspect();
+    try {
+      const draft = loadLegacyDraft();
+      if (draft === null) return { status: "empty" };
+      if (!isRecord(draft)) {
+        return { status: "invalid", reason: "invalid_legacy_future_draft" };
+      }
+      return {
+        status: "valid",
+        draft,
+        fingerprint: fingerprintRawStorageValue(JSON.stringify(draft)),
+      };
+    } catch {
+      return { status: "unavailable", reason: "legacy_draft_read_failed" };
+    }
+  };
 
   const readMigrationResult = (): FutureDraftMigrationJournalV1 | null => {
     const raw = storage.getItem(FUTURE_DESIGN_STUDIO_DRAFT_MIGRATION_NAMESPACE);
@@ -250,6 +299,12 @@ export const createDesignStudioDraftRepository = ({
   };
 
   const loadFutureDraftV1 = (): FutureDesignStudioDraftLoadResult => {
+    // A clear marker is a committed tombstone. It takes precedence over an
+    // orphaned payload when removal failed after the marker was persisted, so
+    // an old draft can never rehydrate after a completed clear transition.
+    if (readMigrationResult()?.resultCode === "cleared") {
+      return { status: "empty", draft: null };
+    }
     const raw = storage.getItem(FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE);
     if (raw === null) return { status: "empty", draft: null };
     const parsed = parseJson(raw);
@@ -277,6 +332,64 @@ export const createDesignStudioDraftRepository = ({
           reason: normalized.reason || "invalid_future_draft",
         };
   };
+
+  /**
+   * Reads enough state to classify a homepage entry, but never creates the
+   * V1 destination, records a migration journal, or deletes a legacy source.
+   */
+  const inspectFutureDraftForHomepage =
+    (): FutureDesignStudioDraftInspectionResult => {
+      try {
+        // Keep preflight aligned with Studio hydration: a committed clear
+        // marker wins even if physical removal of an old payload failed.
+        if (readMigrationResult()?.resultCode === "cleared") {
+          return { status: "empty" };
+        }
+        const raw = storage.getItem(FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE);
+        if (raw !== null) {
+          const loaded = loadFutureDraftV1();
+          if (loaded.status === "invalid") {
+            return { status: "invalid", reason: loaded.reason };
+          }
+          if (loaded.status === "loaded") {
+            return {
+              status: "valid",
+              draft: loaded.draft,
+              source: "future_v1",
+              fingerprint: fingerprintRawStorageValue(raw),
+            };
+          }
+          return { status: "invalid", reason: "future_draft_disappeared_during_read" };
+        }
+
+        // A migrated journal is authoritative when the destination is absent:
+        // do not re-enter an obsolete legacy snapshot.
+        const journal = readMigrationResult();
+        if (journal?.resultCode === "migrated") {
+          return { status: "empty" };
+        }
+
+        const legacyInspection = inspectLegacyDraft();
+        if (legacyInspection.status !== "valid") return legacyInspection;
+        const normalized = normalizeJsonSafeFutureDraft({
+          value: legacyInspection.draft,
+          normalizeDraft,
+        });
+        return normalized.draft
+          ? {
+              status: "valid",
+              draft: normalized.draft,
+              source: "legacy",
+              fingerprint: legacyInspection.fingerprint,
+            }
+          : {
+              status: "invalid",
+              reason: normalized.reason || "invalid_legacy_future_draft",
+            };
+      } catch {
+        return { status: "unavailable", reason: "future_draft_storage_read_failed" };
+      }
+    };
 
   const saveFutureDraftV1 = (
     draft: GuestDesignDraft,
@@ -319,12 +432,22 @@ export const createDesignStudioDraftRepository = ({
       FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE,
       JSON.stringify(envelope),
     );
+    // A new successful save supersedes a prior committed clear. Remove that
+    // tombstone only after its replacement payload is durable; removing it
+    // first could make an old payload visible again if this write failed.
+    if (readMigrationResult()?.resultCode === "cleared") {
+      storage.removeItem(FUTURE_DESIGN_STUDIO_DRAFT_MIGRATION_NAMESPACE);
+    }
     return { status: "saved", draft: normalized.draft };
   };
 
   const clearFutureDraftV1 = (): void => {
-    storage.removeItem(FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE);
+    // The marker is the durable destructive decision. Persist it before
+    // removing the only payload: if this write fails, the draft is still
+    // completely recoverable; if payload removal fails afterwards, readers
+    // deterministically honor the committed tombstone.
     writeMigrationResult("cleared");
+    storage.removeItem(FUTURE_DESIGN_STUDIO_DRAFT_V1_NAMESPACE);
   };
 
   const migrateHistoricalFutureDraft =
@@ -427,6 +550,7 @@ export const createDesignStudioDraftRepository = ({
 
   return {
     loadFutureDraftV1,
+    inspectFutureDraftForHomepage,
     loadFutureDraftWithMigration,
     saveFutureDraftV1,
     clearFutureDraftV1,
