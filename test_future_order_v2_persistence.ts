@@ -65,6 +65,7 @@ const candidate = (styleName = "Shirt Historical Style"): FutureOrderCandidateV2
   styles[0]!.catalogue!.name = styleName;
   return {
     schemaVersion: 2,
+    orderIdentity: { orderType: "Individual" },
     journey: { mode: "future_nine_stage", schemaVersion: 1 },
     authorityVersions: {
       customDetailsSchemaVersion: 1,

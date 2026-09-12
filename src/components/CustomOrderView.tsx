@@ -86,6 +86,16 @@ export default function CustomOrderView({
     e.preventDefault();
     setFormError("");
 
+    // This legacy form only remains an explicitly supported PUBLIC group
+    // path. Private Batch creation now requires the durable, authorized
+    // service and will receive its own setup flow; never fabricate a GRP-* ID
+    // or a success state here.
+    if (visibility === "PRIVATE") {
+      setFormSuccess(false);
+      setFormError("Private Batch setup is being updated. Please check back soon.");
+      return;
+    }
+
     if (!batchName.trim()) {
       setFormError("Please enter a Batch Name.");
       return;
@@ -455,10 +465,12 @@ export default function CustomOrderView({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setVisibility("PRIVATE")}
-                      className={`flex-1 py-1 px-2 border rounded-lg flex items-center justify-center gap-1 font-bold ${visibility === "PRIVATE" ? "bg-heritage-green text-white border-heritage-green" : "bg-heritage-cream/30 text-heritage-ink/60 border-heritage-gold/20"}`}
+                      disabled
+                      aria-disabled="true"
+                      title="Private Batch setup is being updated."
+                      className="flex-1 cursor-not-allowed py-1 px-2 border rounded-lg flex items-center justify-center gap-1 font-bold bg-heritage-cream/30 text-heritage-ink/40 border-heritage-gold/20"
                     >
-                      <Lock size={11} /> Private
+                      <Lock size={11} /> Private (updating)
                     </button>
                   </div>
                 </div>

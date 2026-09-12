@@ -1190,6 +1190,11 @@ export interface GuestDesignDraft {
   customerEmail: string;
   customerPhone: string;
   batchType: "community" | "alone" | "personalized" | "actual";
+  /**
+   * The persisted role for a canonical private-batch order.  A personalized
+   * draft without both this role and batchId is deliberately not routable.
+   */
+  privateBatchRole?: "organizer" | "member";
   batchId?: string;
   batchName?: string;
   customGroupCode: string;
@@ -1427,6 +1432,8 @@ export interface DiscountSettings {
 }
 
 export interface CustomGroup {
+  /** Present on the hardened Private Batch records. Historical records omit it. */
+  schemaVersion?: 1;
   ownerUid?: string;
   batchId: string;
   batchName: string;
@@ -1454,6 +1461,9 @@ export interface CustomGroup {
     | "COMPLETED";
   pickupLocation?: string;
   createdDate?: string;
+  /** Firestore server timestamps on hardened Private Batch records. */
+  createdAt?: unknown;
+  updatedAt?: unknown;
   inviteCode?: string;
 }
 

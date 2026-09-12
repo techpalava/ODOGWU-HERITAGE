@@ -5,7 +5,6 @@ import type {
   CartItem,
   CustomDetailOption,
   Fabric,
-  OrderContext,
   StyleCategory,
 } from "./src/types";
 import {
@@ -28,7 +27,6 @@ import {
   PRICING_CURRENCY,
   roundMoney,
 } from "./src/utils/money";
-import { resolvePersonalizedBatchShippingContext } from "./src/utils/personalizedBatchContext";
 import {
   calculateBatchShipping,
   calculateCartPricing,
@@ -179,40 +177,6 @@ const overrideStyle = makeStyle({
 });
 const overridePrice = calculateGarmentDetailsPrice({}, overrideStyle);
 assert.equal(overridePrice.monogramPrice, 27);
-
-const groupContext: OrderContext = {
-  orderType: "Group Organizer",
-  batchId: "PRIVATE-001",
-  batchName: "Private Group",
-  expectedParticipants: 12,
-};
-assert.deepEqual(
-  resolvePersonalizedBatchShippingContext(groupContext, "").context,
-  {
-    batchId: "PRIVATE-001",
-    batchName: "Private Group",
-    plannedGarmentCapacity: 12,
-  },
-);
-assert.equal(
-  resolvePersonalizedBatchShippingContext(
-    {
-      orderType: "Community",
-      batchId: "COMMUNITY-001",
-      batchName: "Community Batch",
-      expectedParticipants: 40,
-    },
-    "",
-  ).context,
-  null,
-);
-assert.equal(
-  resolvePersonalizedBatchShippingContext(
-    { orderType: "Group Member", batchId: "PRIVATE-002" },
-    "",
-  ).context,
-  null,
-);
 
 const liveOption: CustomDetailOption = {
   id: "test-live-option",

@@ -4,6 +4,10 @@ import {
   parsePersistFutureOrderV2Result,
   type PersistFutureOrderV2Result,
 } from "../utils/futureOrderV2PersistenceContract.js";
+import type {
+  GroupRoleOrderIdentity,
+  PersonalizedGroupAuthority,
+} from "../utils/orderContextIdentity.js";
 import { auth } from "./firebase";
 
 export * from "../utils/futureOrderV2PersistenceContract.js";
@@ -13,6 +17,7 @@ export const FUTURE_ORDER_V2_PERSISTENCE_ENDPOINT =
 
 export type FutureOrderV2PersistenceClientErrorCode =
   | "AUTH_REQUIRED"
+  | "PRIVATE_BATCH_UNAUTHORIZED"
   | "PERSISTENCE_UNAVAILABLE"
   | "INVALID_RESPONSE";
 
@@ -31,6 +36,59 @@ export interface FutureOrderV2ClientIdentity {
   readonly isAnonymous: boolean;
   getIdToken(forceRefresh?: boolean): Promise<string>;
 }
+
+/** Client-side continuation guard for a PRIVATE group route. */
+export interface PrivateBatchPersistenceCapability {
+  readonly generation: number;
+  /** Exact listener lifecycle that established this capability. */
+  readonly discoveryLifecycleId: number;
+  readonly uid: string;
+  readonly orderType: "Group Organizer" | "Group Member";
+  readonly batchId: string;
+  isCurrent(): boolean;
+}
+
+/**
+ * A PRIVATE capability is deliberately acquired after Firebase has refreshed
+ * its token. A forced refresh emits onIdTokenChanged, which invalidates the
+ * preceding access generation before private discovery is rebuilt.
+ */
+export interface PrivateBatchPersistenceCapabilityFactory {
+  /** Capture the lifecycle that existed before `getIdToken(true)`. */
+  captureDiscoveryAnchor(): Readonly<{
+    authSessionId: number;
+    discoveryLifecycleId: number | null;
+    uid: string | null;
+  }>;
+  /**
+   * Wait for the discovery cycle that follows exactly one forced token
+   * refresh. It must return undefined for denied, failed, or superseded
+   * discovery; callers fail closed instead of reusing old authority.
+   */
+  ensurePostRefreshCapability(request: {
+    readonly uid: string;
+    readonly identity: GroupRoleOrderIdentity;
+    readonly anchor: Readonly<{
+      authSessionId: number;
+      discoveryLifecycleId: number | null;
+      uid: string | null;
+    }>;
+  }): Promise<PrivateBatchPersistenceCapability | undefined>;
+}
+
+export type PersistFutureOrderV2ClientResult = PersistFutureOrderV2Result & {
+  /** Present only when a PRIVATE discovery capability established this call. */
+  readonly privateBatchCapability?: PrivateBatchPersistenceCapability;
+  /** Final source-complete authority used by a personalized request. */
+  readonly personalizedGroupAuthority?: Extract<
+    PersonalizedGroupAuthority,
+    { status: "FINAL_PUBLIC" | "FINAL_PRIVATE" }
+  >;
+};
+
+export type PersonalizedGroupAuthorityResolver = (
+  identity: GroupRoleOrderIdentity,
+) => PersonalizedGroupAuthority;
 
 interface FutureOrderV2HttpResponse {
   readonly ok: boolean;
@@ -93,10 +151,14 @@ export const createFutureOrderV2PersistenceClient = (
   async persist({
     masterOrder,
     customerOwnerUid,
+    privateBatchCapabilityFactory,
+    resolvePersonalizedGroupAuthority,
   }: {
     masterOrder: FutureOrderMasterOrderV2;
     customerOwnerUid: string;
-  }): Promise<PersistFutureOrderV2Result> {
+    privateBatchCapabilityFactory?: PrivateBatchPersistenceCapabilityFactory;
+    resolvePersonalizedGroupAuthority?: PersonalizedGroupAuthorityResolver;
+  }): Promise<PersistFutureOrderV2ClientResult> {
     const identity = dependencies.getCurrentUser();
     if (!identity || identity.isAnonymous) {
       throw new FutureOrderV2PersistenceClientError(
@@ -105,9 +167,126 @@ export const createFutureOrderV2PersistenceClient = (
       );
     }
 
+    const orderIdentity = masterOrder.cartItem.candidate.orderIdentity;
+    const groupOrderIdentity: GroupRoleOrderIdentity | undefined =
+      orderIdentity?.orderType === "Group Organizer" ||
+      orderIdentity?.orderType === "Group Member"
+        ? orderIdentity
+        : undefined;
+    const resolveCurrentGroupAuthority = () =>
+      groupOrderIdentity
+        ? (resolvePersonalizedGroupAuthority?.(groupOrderIdentity) ?? {
+            status: "FINAL_MISSING" as const,
+            discoveryLifecycleId: 0,
+          })
+        : null;
+    if (groupOrderIdentity && !privateBatchCapabilityFactory) {
+      throw new FutureOrderV2PersistenceClientError(
+        "PRIVATE_BATCH_UNAUTHORIZED",
+        "A fresh personalized group discovery is required for this order.",
+      );
+    }
+    let establishedGroupAuthority: Extract<
+      PersonalizedGroupAuthority,
+      { status: "FINAL_PUBLIC" | "FINAL_PRIVATE" }
+    > | null = null;
+    const assertCurrentAuthority = () => {
+      if (!groupOrderIdentity) return;
+      const currentAuthority = resolveCurrentGroupAuthority();
+      if (
+        !establishedGroupAuthority ||
+        currentAuthority?.status !== establishedGroupAuthority.status ||
+        currentAuthority.discoveryLifecycleId !==
+          establishedGroupAuthority.discoveryLifecycleId
+      ) {
+        throw new FutureOrderV2PersistenceClientError(
+          "PRIVATE_BATCH_UNAUTHORIZED",
+          "The personalized discovery authority changed while this order was being prepared.",
+        );
+      }
+    };
+
+    const assertSameAuthenticatedIdentity = () => {
+      const currentIdentity = dependencies.getCurrentUser();
+      if (
+        !currentIdentity ||
+        currentIdentity.isAnonymous ||
+        currentIdentity.uid !== identity.uid
+      ) {
+        throw new FutureOrderV2PersistenceClientError(
+          "AUTH_REQUIRED",
+          "The authenticated Firebase session changed while this order was being prepared.",
+        );
+      }
+    };
+
+    const assertPrivateBatchCapability = (
+      privateBatchCapability: PrivateBatchPersistenceCapability | undefined,
+    ) => {
+      assertCurrentAuthority();
+      assertSameAuthenticatedIdentity();
+      if (establishedGroupAuthority?.status !== "FINAL_PRIVATE") return;
+      const identityMatches =
+        privateBatchCapability &&
+        groupOrderIdentity?.orderType === privateBatchCapability.orderType &&
+        groupOrderIdentity.batchId === privateBatchCapability.batchId;
+      if (
+        !identityMatches ||
+        !privateBatchCapability ||
+        customerOwnerUid !== privateBatchCapability.uid ||
+        identity.uid !== privateBatchCapability.uid ||
+        !privateBatchCapability.isCurrent()
+      ) {
+        throw new FutureOrderV2PersistenceClientError(
+          "PRIVATE_BATCH_UNAUTHORIZED",
+          "Private Batch authorization is no longer available for this order.",
+        );
+      }
+    };
+
     let response: FutureOrderV2HttpResponse;
+    let privateBatchCapability: PrivateBatchPersistenceCapability | undefined;
     try {
+      const discoveryAnchor = groupOrderIdentity
+        ? privateBatchCapabilityFactory!.captureDiscoveryAnchor()
+        : null;
       const idToken = await identity.getIdToken(true);
+      assertSameAuthenticatedIdentity();
+      // Every personalized route, including one that currently appears
+      // PUBLIC, must await the exact post-refresh source lifecycle. A PUBLIC
+      // callback by itself is provisional while private discovery is pending.
+      privateBatchCapability = groupOrderIdentity
+        ? await privateBatchCapabilityFactory!.ensurePostRefreshCapability({
+            uid: identity.uid,
+            identity: groupOrderIdentity!,
+            anchor: discoveryAnchor!,
+          })
+        : undefined;
+      const currentAuthority = resolveCurrentGroupAuthority();
+      if (currentAuthority?.status === "PENDING_REDISCOVERY") {
+        throw new FutureOrderV2PersistenceClientError(
+          "PRIVATE_BATCH_UNAUTHORIZED",
+          "Personalized group discovery is still pending.",
+        );
+      }
+      if (currentAuthority?.status === "FINAL_MISSING") {
+        throw new FutureOrderV2PersistenceClientError(
+          "PRIVATE_BATCH_UNAUTHORIZED",
+          "The canonical personalized group is unavailable for this order.",
+        );
+      }
+      if (currentAuthority?.status === "FINAL_PUBLIC" || currentAuthority?.status === "FINAL_PRIVATE") {
+        establishedGroupAuthority = currentAuthority;
+      }
+      if (groupOrderIdentity && !establishedGroupAuthority) {
+        throw new FutureOrderV2PersistenceClientError(
+          "PRIVATE_BATCH_UNAUTHORIZED",
+          "The personalized group did not reach a terminal authority state.",
+        );
+      }
+      // Revalidate immediately before the HTTP request so a stale private
+      // session cannot send the protected payload.
+      assertPrivateBatchCapability(privateBatchCapability);
       response = await dependencies.fetch(
         FUTURE_ORDER_V2_PERSISTENCE_ENDPOINT,
         {
@@ -127,7 +306,13 @@ export const createFutureOrderV2PersistenceClient = (
       );
     }
 
+    // A server response from an earlier capability cannot publish success to
+    // a later session. Server authorization remains independently enforced.
+    assertPrivateBatchCapability(privateBatchCapability);
     const payload = await readJsonResponse(response);
+    // JSON parsing is another asynchronous boundary; do not let a revoked
+    // capability publish a parsed success after the response was received.
+    assertPrivateBatchCapability(privateBatchCapability);
     const parsed = parsePersistFutureOrderV2Result(
       payload,
       masterOrder.orderId,
@@ -161,7 +346,15 @@ export const createFutureOrderV2PersistenceClient = (
     ) {
       throw invalidResponse();
     }
-    return parsed;
+    return {
+      ...parsed,
+      ...(privateBatchCapability ? { privateBatchCapability } : {}),
+      ...(establishedGroupAuthority
+        ? {
+            personalizedGroupAuthority: establishedGroupAuthority,
+          }
+        : {}),
+    };
   },
 });
 

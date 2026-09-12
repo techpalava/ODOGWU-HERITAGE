@@ -22,6 +22,17 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == ownerUid;
     }
 
+    function isFutureOrderV2(data) {
+      return (
+          data.keys().hasAll(["schemaVersion"])
+          && data.schemaVersion == 2
+        )
+        || (
+          data.keys().hasAll(["recordType"])
+          && data.recordType == "future_order_v2"
+        );
+    }
+
     function hasValidFutureDraftLifecycle(data) {
       return data.lifecycleStatus == "active"
         || data.lifecycleStatus == "cleared";
@@ -439,20 +450,272 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    match /customGroups/{groupId} {
-      allow read: if true;
-      allow create: if isAdmin() || ownsIncomingDocument();
-      allow update: if isAdmin()
+    // Private Batch records use an immutable document ID plus stable Firebase
+    // UIDs. A display name, inviteCode field from historical records, and
+    // currentMembers are never authorization authorities.
+    function isPublicCustomGroup(data) {
+      return data.visibility == "PUBLIC";
+    }
+
+    function isPrivateCustomGroup(data) {
+      return data.visibility == "PRIVATE";
+    }
+
+    function isCustomGroupOwner(data) {
+      return isSignedIn() && data.ownerUid == request.auth.uid;
+    }
+
+    function privateBatchMembership(groupId) {
+      return get(/databases/$(database)/documents/customGroups/$(groupId)/privateBatchMembers/$(request.auth.uid));
+    }
+
+    function isPrivateCustomGroupMember(groupId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/customGroups/$(groupId)/privateBatchMembers/$(request.auth.uid))
+        && privateBatchMembership(groupId).data.memberUid == request.auth.uid
+        && privateBatchMembership(groupId).data.groupId == groupId
+        && privateBatchMembership(groupId).data.role == "member";
+    }
+
+    function hasPrivateBatchLimits(data) {
+      let limits = get(/databases/$(database)/documents/settings/business).data.batchSettings;
+      return limits.minParticipantsRequired is int
+        && limits.maxGarmentsPerBatch is int
+        && data.expectedParticipants >= limits.minParticipantsRequired
+        && data.expectedParticipants <= data.maxParticipants
+        && data.maxParticipants <= limits.maxGarmentsPerBatch;
+    }
+
+    // These fields describe the durable Private Batch itself. They must carry
+    // meaningful values at the rules boundary because the creation UI is not
+    // an authorization boundary.
+    function hasMeaningfulPrivateBatchText(value, maximumLength) {
+      return value is string
+        && value.size() > 0
+        // Firestore Rules uses RE2 syntax. Require one non-whitespace code
+        // point so direct writes cannot bypass the service's trim boundary.
+        && !value.matches("^\\s*$")
+        && value.size() <= maximumLength;
+    }
+
+    // Owner lifecycle edits are intentionally one-way once registration has
+    // closed. Server/admin work retains its existing privileged authority.
+    function hasAllowedPrivateBatchOwnerStatusTransition(previous, next) {
+      return previous == next
         || (
-          ownsExistingDocument()
-          && request.resource.data.ownerUid == resource.data.ownerUid
+          previous == "DRAFT"
+          && next in ["OPEN", "CLOSED", "LOCKED"]
         )
         || (
-          isSignedIn()
-          && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(["currentMembers"])
+          previous in ["OPEN", "ALMOST_FULL"]
+          && next in ["ALMOST_FULL", "FULL", "CLOSED", "LOCKED", "COMPLETED"]
+        )
+        || (
+          previous == "FULL"
+          && next in ["CLOSED", "LOCKED", "COMPLETED"]
+        )
+        || (
+          previous == "CLOSED"
+          && next in ["LOCKED", "COMPLETED"]
         );
-      allow delete: if isAdmin() || ownsExistingDocument();
+    }
+
+    function hasPrivateBatchShape(data, groupId) {
+      return groupId.matches("^[A-Za-z0-9_-]{16,128}$")
+        && data.keys().hasAll([
+          "schemaVersion",
+          "batchId",
+          "ownerUid",
+          "organizerId",
+          "organizer",
+          "batchName",
+          "occasion",
+          "description",
+          "country",
+          "city",
+          "preferredDeliveryMonth",
+          "expectedParticipants",
+          "maxParticipants",
+          "visibility",
+          "currentMembers",
+          "closingDate",
+          "deliveryWindow",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ])
+        && data.keys().hasOnly([
+          "schemaVersion",
+          "batchId",
+          "ownerUid",
+          "organizerId",
+          "organizer",
+          "batchName",
+          "occasion",
+          "description",
+          "country",
+          "city",
+          "preferredDeliveryMonth",
+          "expectedParticipants",
+          "maxParticipants",
+          "visibility",
+          "currentMembers",
+          "closingDate",
+          "deliveryWindow",
+          "status",
+          "pickupLocation",
+          "notes",
+          "createdAt",
+          "updatedAt"
+        ])
+        && data.schemaVersion == 1
+        && data.batchId is string
+        && data.batchId == groupId
+        && data.ownerUid is string
+        && data.organizerId is string
+        && hasMeaningfulPrivateBatchText(data.organizer, 160)
+        && hasMeaningfulPrivateBatchText(data.batchName, 160)
+        && hasMeaningfulPrivateBatchText(data.occasion, 160)
+        && hasMeaningfulPrivateBatchText(data.description, 2000)
+        && hasMeaningfulPrivateBatchText(data.country, 160)
+        && hasMeaningfulPrivateBatchText(data.city, 160)
+        && hasMeaningfulPrivateBatchText(data.preferredDeliveryMonth, 160)
+        && data.expectedParticipants is int
+        && data.maxParticipants is int
+        && data.currentMembers is int
+        && data.currentMembers >= 1
+        && data.currentMembers <= data.maxParticipants
+        && data.visibility == "PRIVATE"
+        && hasMeaningfulPrivateBatchText(data.closingDate, 160)
+        && hasMeaningfulPrivateBatchText(data.deliveryWindow, 160)
+        && data.status in ["DRAFT", "OPEN", "ALMOST_FULL", "FULL", "CLOSED", "LOCKED", "COMPLETED"]
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function hasValidPrivateBatchCreate(groupId) {
+      return isSignedIn()
+        && hasPrivateBatchShape(request.resource.data, groupId)
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.organizerId == request.auth.uid
+        && request.resource.data.currentMembers == 1
+        && request.resource.data.status in ["DRAFT", "OPEN"]
+        && hasPrivateBatchLimits(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function hasValidPrivateBatchOwnerUpdate(groupId) {
+      return isCustomGroupOwner(resource.data)
+        // The incoming complete document is validated below. Re-running the
+        // full shape (including every text regex) against the immutable
+        // stored document exceeds the Rules evaluator budget on a merge
+        // update without adding authorization authority.
+        && hasPrivateBatchShape(request.resource.data, groupId)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.organizerId == resource.data.organizerId
+        && request.resource.data.batchId == resource.data.batchId
+        && request.resource.data.visibility == resource.data.visibility
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.currentMembers == resource.data.currentMembers
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && hasPrivateBatchLimits(request.resource.data)
+        && hasAllowedPrivateBatchOwnerStatusTransition(
+          resource.data.status,
+          request.resource.data.status
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "batchName",
+          "occasion",
+          "description",
+          "country",
+          "city",
+          "preferredDeliveryMonth",
+          "expectedParticipants",
+          "maxParticipants",
+          "closingDate",
+          "deliveryWindow",
+          "status",
+          "pickupLocation",
+          "notes",
+          "updatedAt"
+        ]);
+    }
+
+    match /customGroups/{groupId} {
+      allow get: if isAdmin()
+        || isPublicCustomGroup(resource.data)
+        || isCustomGroupOwner(resource.data)
+        || isPrivateCustomGroupMember(groupId);
+      // Public discovery must query visibility == PUBLIC. Owner discovery must
+      // query ownerUid == request.auth.uid. Members discover their own
+      // UID-keyed member documents and then get exact group documents.
+      allow list: if isAdmin()
+        || isPublicCustomGroup(resource.data)
+        || isCustomGroupOwner(resource.data);
+      allow create: if isAdmin()
+        || hasValidPrivateBatchCreate(groupId)
+        || (
+          isSignedIn()
+          && isPublicCustomGroup(request.resource.data)
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.batchId == groupId
+        );
+      allow update: if isAdmin()
+        || (
+          isPublicCustomGroup(resource.data)
+          && (
+            (
+              isCustomGroupOwner(resource.data)
+              && isPublicCustomGroup(request.resource.data)
+              && request.resource.data.ownerUid == resource.data.ownerUid
+              && request.resource.data.batchId == resource.data.batchId
+            )
+            || (
+              isSignedIn()
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(["currentMembers"])
+            )
+          )
+        )
+        || (
+          isPrivateCustomGroup(resource.data)
+          && hasValidPrivateBatchOwnerUpdate(groupId)
+        );
+      // Private Batch deletion needs a server-side cleanup transaction once
+      // member documents exist. This foundation therefore fails closed for
+      // organizers instead of leaving orphaned authorization records.
+      allow delete: if isAdmin()
+        || (isPublicCustomGroup(resource.data) && isCustomGroupOwner(resource.data));
+    }
+
+    // The recursive match is required for the collection-group membership
+    // query. The dedicated name avoids granting access to other domains'
+    // generic "members" subcollections.
+    match /{path=**}/privateBatchMembers/{memberUid} {
+      allow get: if isAdmin()
+        || (
+          isSignedIn()
+          && request.auth.uid == memberUid
+          && resource.data.memberUid == memberUid
+          && resource.data.role == "member"
+        );
+      allow list: if isAdmin()
+        || (
+          isSignedIn()
+          && resource.data.memberUid == request.auth.uid
+          && resource.data.role == "member"
+        );
+      // Only the authenticated server transaction may grant, revoke, or alter
+      // membership. Client writes cannot forge a Private Batch role.
+      allow create, update, delete: if false;
+    }
+
+    // Tokens are high-entropy server secrets. They are never queryable or
+    // readable from the client; the server transaction resolves their hash.
+    match /privateBatchInvites/{inviteId} {
+      allow read, write: if false;
     }
 
     match /customers/{customerId} {
@@ -479,19 +742,30 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow read: if isAdmin() || ownsExistingDocument();
-      allow create: if isAdmin()
-        || (
+      // New canonical V2 orders are only persisted through the authenticated
+      // server/Admin SDK boundary, which checks private-batch membership in
+      // the same transaction. Retain only the legacy client path here.
+      allow create: if !isFutureOrderV2(request.resource.data)
+        && (
+          isAdmin()
+          || (
           ownsIncomingDocument()
           && request.resource.data.customer.ownerUid == request.auth.uid
+          )
         );
-      allow update: if isAdmin()
-        || (
+      allow update: if !isFutureOrderV2(resource.data)
+        && !isFutureOrderV2(request.resource.data)
+        && (
+          isAdmin()
+          || (
           ownsExistingDocument()
           && request.resource.data.ownerUid == resource.data.ownerUid
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly([])
+          )
         );
-      allow delete: if isAdmin();
+      allow delete: if !isFutureOrderV2(resource.data)
+        && isAdmin();
     }
 
     match /businessSettings/{document=**} {
