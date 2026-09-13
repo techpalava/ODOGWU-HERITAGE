@@ -655,7 +655,7 @@ assert.equal(remountedMeasurementStep.props.state.calculationStatus, "complete",
 await act(async () => { remountedMeasurementStep.props.onContinue(); await flush(); });
 const skirtSummary = renderer.root.findByType(DormantFutureSummaryStep);
 const expectedSkirtRows = [
-  ["base:skirt", "skirt", "Skirt", "skirt_std", 7500],
+  ["base:skirt", "skirt", "Standard Skirt", "skirt_std", 7500],
   ["base:long_skirt", "long_skirt", "Long Skirt", "skirt_long", 8000],
 ];
 const summarizeSkirtRow = (garment: {
