@@ -1440,28 +1440,79 @@ const authorizedKeysFromLedger = (
 
 // G4 duplicate corruption survives autosave and reload until explicit repair.
 {
-  const step1 = selection(["shirt"]);
-  const authoritativeOccurrenceKeys = new Set(["base:shirt"]);
-  const rawState = fabricStateWithAssignments([
-    {
-      garmentKey: "base:shirt",
-      code: "BASE_SHIRT_A",
-      garmentType: "shirt",
-      fabricUnits: 1,
-      sourceRole: "main",
-    },
-    {
-      garmentKey: "base:shirt",
-      code: "BASE_SHIRT_B",
-      garmentType: "shirt",
-      fabricUnits: 1,
-      sourceRole: "main",
-    },
-  ]);
+  const step1 = selection(["shirt", "trouser"]);
+  const additionalGarments = additionalConstruction(
+    "additional:shirt:1",
+    "shirt",
+    7000,
+  );
+  const requiredPhysicalOccurrences = buildAuthoritativePhysicalOccurrences({
+    sourceKind: "catalogue",
+    step1GarmentTypeSelection: step1,
+    effectiveGarmentTypeSelection: step1,
+    additionalGarmentConstructionState: additionalGarments,
+  });
+  const authoritativeOccurrenceKeys = new Set(
+    requiredPhysicalOccurrences.map((occurrence) => occurrence.garmentKey),
+  );
+  const rawState: FabricAllocationState = {
+    fabricAllocations: [
+      {
+        allocationId: "duplicate-allocation",
+        fabricCode: "FAB-A",
+        garmentAssignments: [
+          {
+            garmentKey: "base:shirt",
+            code: "BASE_SHIRT_A",
+            garmentType: "shirt",
+            fabricUnits: 1,
+            sourceRole: "main",
+          },
+          {
+            garmentKey: "base:shirt",
+            code: "BASE_SHIRT_B",
+            garmentType: "shirt",
+            fabricUnits: 1,
+            sourceRole: "main",
+          },
+        ],
+      },
+      {
+        allocationId: "unrelated-base-allocation",
+        fabricCode: "FAB-A",
+        garmentAssignments: [
+          {
+            garmentKey: "base:trouser",
+            code: "STYLE_BASE_TROUSER",
+            garmentType: "trouser",
+            fabricUnits: 1,
+            sourceRole: "main",
+          },
+        ],
+      },
+      {
+        allocationId: "additional-allocation",
+        fabricCode: "FAB-B",
+        garmentAssignments: [
+          {
+            garmentKey: "additional:shirt:1",
+            code: "ADDITIONAL_SHIRT",
+            garmentType: "shirt",
+            fabricUnits: 1,
+            sourceRole: "additional",
+          },
+        ],
+      },
+    ],
+    activeAllocationId: "duplicate-allocation",
+    pendingFabricGarment: null,
+    awaitingFabricForPendingGarment: false,
+  };
   const hydration = prepareHydratedFabricAllocationState({
     rawState,
     garmentTypeSelection: step1,
     authoritativeOccurrenceKeys,
+    requiredPhysicalOccurrences,
   });
   assert.equal(hydration.integrity.diagnostics[0]?.code, "duplicate_assignment_key");
   assert.equal(hydration.preservedRawFabricAllocations?.[0].garmentAssignments.length, 2);
@@ -1481,6 +1532,7 @@ const authorizedKeysFromLedger = (
     ),
     garmentTypeSelection: step1,
     authoritativeOccurrenceKeys,
+    requiredPhysicalOccurrences,
   });
   assert.equal(reload.integrity.diagnostics[0]?.code, "duplicate_assignment_key");
 
@@ -1490,6 +1542,7 @@ const authorizedKeysFromLedger = (
     garmentKey: "base:shirt",
     fabricCode: "FAB-B",
     fabrics: testFabrics,
+    requiredPhysicalOccurrences,
   });
   assert.equal(reassignment.status, "assigned");
   const repair = revalidateHydratedFabricIntegrityAfterExplicitRepair({
@@ -1510,17 +1563,44 @@ const authorizedKeysFromLedger = (
       repair.integrity.hasBlockingDiagnostics,
     generatedFabricAllocations: reassignment.state.fabricAllocations,
   });
+  assert.equal(autosaveAfterRepair.blockedByInvalidGeneratedAllocations, false);
+  assert.deepEqual(
+    autosaveAfterRepair.fabricAllocations
+      ?.flatMap((allocation) => allocation.garmentAssignments)
+      .map((assignment) => assignment.garmentKey)
+      .sort(),
+    ["additional:shirt:1", "base:shirt", "base:trouser"],
+  );
   const repairedReload = prepareHydratedFabricAllocationState({
     rawState: stateFromPersistedFabricAllocations(
       autosaveAfterRepair.fabricAllocations,
     ),
     garmentTypeSelection: step1,
     authoritativeOccurrenceKeys,
+    requiredPhysicalOccurrences,
   });
   assert.equal(repairedReload.integrity.hasBlockingDiagnostics, false);
-  assert.deepEqual(assignedGarmentKeys(repairedReload.reconciledState), [
-    "base:shirt",
-  ]);
+  assert.deepEqual(
+    assignedGarmentKeys(repairedReload.reconciledState).sort(),
+    ["additional:shirt:1", "base:shirt", "base:trouser"],
+  );
+  assert.equal(
+    assignedGarmentKeys(repairedReload.reconciledState).filter(
+      (garmentKey) => garmentKey === "base:shirt",
+    ).length,
+    1,
+  );
+  const secondReload = prepareHydratedFabricAllocationState({
+    rawState: repairedReload.reconciledState,
+    garmentTypeSelection: step1,
+    authoritativeOccurrenceKeys,
+    requiredPhysicalOccurrences,
+  });
+  assert.deepEqual(
+    secondReload.reconciledState,
+    repairedReload.reconciledState,
+    "repair reload is idempotent for base and additional canonical occurrences",
+  );
 }
 
 // G4 orphan corruption survives unrelated autosave, then explicit removal clears it.
