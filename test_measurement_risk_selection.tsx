@@ -208,6 +208,8 @@ assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "require
 assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "optional" }).length, 1);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" }).length, 0);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "medium_risk" }).length, 0);
+assert.match(collectText(renderer.root), /Borst/);
+assert.equal(collectText(renderer.root).includes("Chest/Bust Circumference"), false);
 
 const lowFilled = fillDirectRequirements("low_risk");
 assert.equal(isFutureMeasurementSelectedPathInputComplete(lowFilled.state), true);
