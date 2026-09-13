@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type {
   CanonicalPhysicalGarmentType,
+  CustomDetailSelectionGroup,
   FutureMeasurementStateV1,
   GarmentTypeStepSelection,
   MeasurementRiskRoute,
@@ -8,6 +9,7 @@ import type {
 import type { MeasurementProfileId } from "./src/config/MeasurementBlueprintConfig";
 import { getMeasurementProfileField } from "./src/config/MeasurementBlueprintConfig";
 import {
+  centimetresToInches,
   createEmptyFutureMeasurementState,
   isFutureMeasurementSelectedPathInputComplete,
   isFutureMeasurementStageComplete,
@@ -23,7 +25,7 @@ import { calculateMeasurementFromAverageFactor } from "./src/utils/measurementFa
 const construction = (
   garmentType: keyof GarmentTypeStepSelection["constructionByGarment"],
   optionId: string,
-  selectionGroup: string,
+  selectionGroup: CustomDetailSelectionGroup,
 ) => ({
   status: "resolved" as const,
   garmentType,
@@ -44,7 +46,7 @@ const PROFILE_FIXTURES: Record<
     garmentType: CanonicalPhysicalGarmentType;
     garmentKey: string;
     optionId?: string;
-    selectionGroup?: string;
+    selectionGroup?: CustomDetailSelectionGroup;
     demographic: "male" | "female";
   }
 > = {
@@ -344,5 +346,142 @@ assert.equal(
   undefined,
 );
 assert.equal(isFutureSummaryUnlockedByMeasurements(optionalBlank.state), true);
+
+// Fred's supplied High-Risk report: a standard mid/long-sleeve shirt (B) and
+// Bum Shorts (K), with 66.9 in as the only customer measurement input.
+const fredSelection: GarmentTypeStepSelection = {
+  garmentTypes: ["shirt", "bum_shorts"],
+  demographic: "female",
+  constructionByGarment: {
+    shirt: construction("shirt", "shirt_std_midlong", "shirt_construction"),
+    bum_shorts: construction("bum_shorts", "bum_rope", "bum_shorts_fastening"),
+  },
+};
+const fredPlan = planMeasurementRequirements({
+  route: "high_risk",
+  garmentTypeSelection: fredSelection,
+  physicalGarments: [
+    { garmentKey: "fred:shirt:1", garmentType: "shirt" },
+    { garmentKey: "fred:bum-shorts:1", garmentType: "bum_shorts" },
+  ],
+});
+assert.deepEqual(
+  fredPlan.profiles.map((profile) =>
+    profile.status === "resolved" ? profile.profile.id : profile.status,
+  ),
+  ["K", "B"],
+);
+assert.deepEqual(
+  [...new Set(
+    fredPlan.requirements
+      .filter((requirement) => requirement.directInput)
+      .map((requirement) => requirement.measurementId),
+  )],
+  ["total_height"],
+  "High Risk accepts Total Height as its only measurement input.",
+);
+
+let fredState = createEmptyFutureMeasurementState("high_risk", "inch");
+const fredHeightRequirement = fredPlan.requirements.find(
+  (requirement) => requirement.directInput && requirement.measurementId === "total_height",
+)!;
+fredState = setFutureMeasurementInput({
+  state: fredState,
+  requirement: fredHeightRequirement,
+  displayValue: 66.9,
+});
+fredState = reconcileFutureMeasurementState({ state: fredState, plan: fredPlan });
+assert.equal(fredState.calculationStatus, "complete");
+assert.deepEqual(Object.keys(fredState.entered.shared), ["total_height"]);
+
+const fredAutomaticRows = [
+  ["fred:shirt:1", "head_circumference", 22.97],
+  ["fred:shirt:1", "neck_circumference", 15.89],
+  ["fred:shirt:1", "shoulder_length", 17.19],
+  ["fred:shirt:1", "shirt_length_standard", 29.96],
+  ["fred:shirt:1", "sleeve_length_long", 23.2],
+  ["fred:shirt:1", "chest_bust_circumference", 38.24],
+  ["fred:shirt:1", "belly_circumference", 34.01],
+  ["fred:shirt:1", "bicep_circumference", 13.37],
+  ["fred:shirt:1", "elbow_circumference", 11.52],
+  ["fred:shirt:1", "armhole_circumference", 19.76],
+  ["fred:shirt:1", "height_head_to_lower_neck", 10.15],
+  ["fred:shirt:1", "height_lower_neck_to_waist", 19.24],
+  ["fred:shirt:1", "height_waist_to_feet", 37.68],
+  ["fred:bum-shorts:1", "waist_circumference", 34.29],
+  ["fred:bum-shorts:1", "hip_circumference", 39.11],
+  ["fred:bum-shorts:1", "thigh_circumference", 23.02],
+  ["fred:bum-shorts:1", "knee_circumference", 16.19],
+  ["fred:bum-shorts:1", "waist_to_hip_length", 6],
+  ["fred:bum-shorts:1", "waist_to_crotch_depth_length", 8.82],
+  ["fred:bum-shorts:1", "height_head_to_lower_neck", 10.15],
+  ["fred:bum-shorts:1", "height_lower_neck_to_waist", 19.24],
+  ["fred:bum-shorts:1", "height_waist_to_feet", 37.68],
+] as const;
+
+for (const [garmentKey, measurementId, expectedDisplayInches] of fredAutomaticRows) {
+  const requirement = fredPlan.requirements.find(
+    (candidate) =>
+      candidate.garmentKey === garmentKey &&
+      candidate.measurementId === measurementId,
+  );
+  assert.ok(requirement, `${garmentKey} ${measurementId} is planned.`);
+  assert.equal(requirement.inputSource, "calculated_average_factor");
+  const derived = fredState.derived.byGarmentKey[garmentKey]?.[measurementId];
+  assert.ok(derived, `${garmentKey} ${measurementId} is derived from height.`);
+  const actualInches = centimetresToInches(derived.valueCm);
+  nearlyEqual(actualInches, 66.9 * requirement.averageFactor!);
+  assert.equal(Math.round(actualInches * 100) / 100, expectedDisplayInches);
+}
+
+for (const garmentKey of ["fred:shirt:1", "fred:bum-shorts:1"]) {
+  const genericWaistToFeet = fredState.derived.byGarmentKey[garmentKey]?.height_waist_to_feet;
+  assert.ok(genericWaistToFeet);
+  assert.equal(
+    Math.round(centimetresToInches(genericWaistToFeet.valueCm) * 10) / 10,
+    37.7,
+    "The generic Height 4 / Waist-to-Floor-under-feet reference rounds from 37.68 to 37.7.",
+  );
+}
+
+for (const [garmentKey, measurementId] of [
+  ["fred:shirt:1", "sleeve_length_mid"],
+  ["fred:bum-shorts:1", "waist_to_lap_length"],
+] as const) {
+  const requirement = fredPlan.requirements.find(
+    (candidate) => candidate.garmentKey === garmentKey && candidate.measurementId === measurementId,
+  );
+  assert.equal(requirement?.inputSource, "optional_manual");
+  assert.equal(fredState.derived.byGarmentKey[garmentKey]?.[measurementId], undefined);
+}
+
+const fredReloaded = reconcileFutureMeasurementState({
+  state: JSON.parse(JSON.stringify(fredState)),
+  plan: fredPlan,
+});
+nearlyEqual(
+  centimetresToInches(
+    fredReloaded.derived.byGarmentKey["fred:shirt:1"]!.chest_bust_circumference!.valueCm,
+  ),
+  66.9 * fredPlan.requirements.find(
+    (requirement) =>
+      requirement.garmentKey === "fred:shirt:1" &&
+      requirement.measurementId === "chest_bust_circumference",
+  )!.averageFactor!,
+);
+let fredAfterHeightChange = setFutureMeasurementInput({
+  state: fredReloaded,
+  requirement: fredHeightRequirement,
+  displayValue: 67.9,
+});
+fredAfterHeightChange = reconcileFutureMeasurementState({
+  state: fredAfterHeightChange,
+  plan: fredPlan,
+});
+assert.notEqual(
+  fredAfterHeightChange.derived.byGarmentKey["fred:shirt:1"]!.chest_bust_circumference!.valueCm,
+  fredReloaded.derived.byGarmentKey["fred:shirt:1"]!.chest_bust_circumference!.valueCm,
+  "A height change must replace, rather than retain, a High-Risk derived value.",
+);
 
 console.log("PASS: measurement factor routes, height change, isolation, and summary readiness");

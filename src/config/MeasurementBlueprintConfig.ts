@@ -146,7 +146,7 @@ export const MEASUREMENT_DEFINITIONS: readonly MeasurementDefinition[] = [
   definition("sleeve_length_mid", "MID Sleeve Length, Or", "Mid Sleeve Length", "vertical_length", "garment"),
   definition("sleeve_length_long", "LONG Sleeve Length", "Long Sleeve Length", "vertical_length", "garment"),
   definition("wrist_circumference", "WRIST Circumference", "Wrist Circumference", "circumference"),
-  definition("chest_bust_circumference", "Chest (Borst) Circumference", "Chest/Bust Circumference", "circumference"),
+  definition("chest_bust_circumference", "Chest (Borst) Circumference", "Borst", "circumference"),
   definition("belly_circumference", "Tommy (Belly Area) Circumference", "Belly Circumference", "circumference"),
   definition("bicep_circumference", "Bicep Circumference (Center Between Shoulder and Elbow)", "Bicep Circumference", "circumference"),
   definition("elbow_circumference", "Elbow Circumference", "Elbow Circumference", "circumference"),
@@ -577,5 +577,9 @@ export const getRequiredMeasurementIdsForRoute = (
   route: MeasurementRiskRoute,
 ): CanonicalMeasurementId[] =>
   (MEASUREMENT_PROFILES.find((profile) => profile.id === profileId)?.fields || [])
-    .filter((field) => field.directRoutes.includes(route))
+    .filter((field) =>
+      route === "high_risk"
+        ? field.measurementId === "total_height"
+        : field.directRoutes.includes(route),
+    )
     .map((field) => field.measurementId);
