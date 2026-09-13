@@ -40,6 +40,7 @@ const sampleView: LiveOrderSummaryView = {
               detail: "Standard Length Shirt, Short Sleeve",
               supportingDetail: "Fabric: Needs fabric",
               amountLabel: "€65.00",
+              focusGarmentKey: "additional:shirt:1",
             },
           ],
         },
@@ -198,10 +199,10 @@ assert.equal(
 );
 assert.equal(
   renderer.root.findAllByProps({
-    "data-testid": "live-order-summary-edit-additional_garments",
+    "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
   }).length,
-  1,
-  "authoritative Additional Garment presence renders its Edit independently of transient stage state",
+  0,
+  "Additional Garment Edit stays locked until the existing Step 4 progress authority permits it",
 );
 assert.ok(textOf(renderer.root).includes("Additional Garments"));
 assert.ok(textOf(renderer.root).includes("Fabric: Needs fabric"));
@@ -285,11 +286,23 @@ assert.equal(
   }).props["data-subtotal-cents"],
   7000,
 );
-assert.doesNotMatch(
+assert.match(
   renderer.root.findByProps({
     "data-testid": "live-order-summary-sidebar",
   }).props.className,
-  /overflow-y-auto|max-h-\[/,
+  /lg:max-h-\[calc\(100dvh-7rem\)\]/,
+);
+assert.match(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-content",
+  }).props.className,
+  /lg:overflow-y-auto/,
+);
+assert.match(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-content",
+  }).props.className,
+  /lg:overflow-x-hidden/,
 );
 assert.match(
   renderer.root.findByProps({
@@ -325,9 +338,6 @@ const constructionEdit = renderer.root.findByProps({
 const constructionHeader = renderer.root.findByProps({
   "data-testid": "live-order-summary-section-header-construction",
 });
-const additionalGarmentsEdit = renderer.root.findByProps({
-  "data-testid": "live-order-summary-edit-additional_garments",
-});
 const additionalGarmentsHeader = renderer.root.findByProps({
   "data-testid": "live-order-summary-subsection-header-additional_garments",
 });
@@ -352,18 +362,12 @@ assert.equal(
 );
 assert.equal(
   additionalGarmentsHeading.parent,
-  additionalGarmentsEdit.parent,
-  "Additional Garments and Edit share one compact header row",
-);
-assert.equal(
-  additionalGarmentsHeading.parent,
   additionalGarmentsHeader,
   "the Additional Garments header row is the shared subsection header container",
 );
 assert.match(constructionHeader.props.className, /items-center/);
 assert.match(additionalGarmentsHeader.props.className, /items-center/);
 assert.doesNotMatch(constructionEdit.props.className, /min-h-11|min-w-11/);
-assert.doesNotMatch(additionalGarmentsEdit.props.className, /min-h-11|min-w-11/);
 assert.match(fabricsHeading.props.className, /text-\[15px\]/);
 assert.match(fabricsHeading.props.className, /font-bold/);
 assert.match(fabricsHeading.props.className, /text-heritage-green/);
@@ -398,10 +402,10 @@ assert.equal(
 );
 assert.equal(
   renderer.root.findAllByProps({
-    "data-testid": "live-order-summary-edit-additional_garments",
+    "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
   }).length,
-  1,
-  "Additional Garments Edit remains visible while a different summary stage is current",
+  0,
+  "Additional Garments Edit cannot jump ahead before Step 4 has been reached",
 );
 
 let editedStage: DesignStudioStageId | null = null;
@@ -445,7 +449,7 @@ assert.equal(editedStage, "garment_type");
 act(() => {
   renderer.root
     .findByProps({
-      "data-testid": "live-order-summary-edit-additional_garments",
+      "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
     })
     .props.onClick();
 });
@@ -458,7 +462,7 @@ assert.equal(
 act(() => {
   renderer.root
     .findByProps({
-      "data-testid": "live-order-summary-edit-additional_garments",
+      "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
     })
     .props.onClick();
 });
@@ -466,6 +470,62 @@ assert.deepEqual(
   additionalEditRequests,
   ["additional:shirt:1", "additional:shirt:1"],
   "repeated Additional Garments Edit clicks issue repeatable exact-occurrence requests",
+);
+const multipleAdditionalView: LiveOrderSummaryView = {
+  ...sampleView,
+  sections: sampleView.sections.map((section) =>
+    section.id === "construction"
+      ? {
+          ...section,
+          subsections: section.subsections?.map((subsection) =>
+            subsection.id === "additional_garments"
+              ? {
+                  ...subsection,
+                  lines: [
+                    ...subsection.lines,
+                    {
+                      id: "construction-additional:shirt:2",
+                      label: "Shirt 3",
+                      detail: "Standard Length Shirt, Long Sleeve",
+                      amountLabel: "€65.00",
+                      focusGarmentKey: "additional:shirt:2",
+                    },
+                  ],
+                }
+              : subsection,
+          ),
+        }
+      : section,
+  ),
+};
+act(() => {
+  renderer.update(
+    createElement(DesignStudioOrderSummary, {
+      view: multipleAdditionalView,
+      unlockedStages: new Set<DesignStudioStageId>([
+        "garment_type",
+        "custom_details",
+      ]),
+      currentStageId: "shipping",
+      onEditStage: (stage, options) => {
+        editedStage = stage;
+        additionalFocusKey = options?.focusAdditionalGarmentKey || null;
+      },
+    }),
+  );
+});
+act(() => {
+  renderer.root
+    .findByProps({
+      "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:2",
+    })
+    .props.onClick();
+});
+assert.equal(editedStage, "custom_details");
+assert.equal(
+  additionalFocusKey,
+  "additional:shirt:2",
+  "each Additional Garment Edit retains its own exact occurrence identity",
 );
 assert.equal(
   renderer.root
@@ -487,10 +547,10 @@ act(() => {
 });
 assert.equal(
   renderer.root.findAllByProps({
-    "data-testid": "live-order-summary-edit-additional_garments",
+    "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
   }).length,
-  1,
-  "Additional Garments Edit remains visible when Step 4 is the current stage",
+  0,
+  "Additional Garments Edit remains hidden while Step 4 is already current",
 );
 
 const completeAdditionalView: LiveOrderSummaryView = {
@@ -501,7 +561,14 @@ const completeAdditionalView: LiveOrderSummaryView = {
           ...section,
           subsections: section.subsections?.map((subsection) =>
             subsection.id === "additional_garments"
-              ? { ...subsection, focusGarmentKey: null }
+              ? {
+                  ...subsection,
+                  focusGarmentKey: null,
+                  lines: subsection.lines.map((line) => ({
+                    ...line,
+                    focusGarmentKey: null,
+                  })),
+                }
               : subsection,
           ),
         }
@@ -515,7 +582,7 @@ act(() => {
     createElement(DesignStudioOrderSummary, {
       view: completeAdditionalView,
       unlockedStages: new Set<DesignStudioStageId>(["custom_details"]),
-      currentStageId: "custom_details",
+      currentStageId: "shipping",
       onEditStage: (stage, options) => {
         sectionLevelEditStage = stage;
         sectionLevelFocusKey = options?.focusAdditionalGarmentKey;
@@ -598,8 +665,9 @@ assert.match(summarySource, /lg:top-24/);
 assert.match(summarySource, /lg:self-start/);
 assert.match(summarySource, /text-\[15px\] font-bold leading-snug text-heritage-green/);
 assert.doesNotMatch(summarySource, /text-2xl/);
-assert.doesNotMatch(summarySource, /overflow-y-auto/);
-assert.doesNotMatch(summarySource, /max-h-\[calc/);
+assert.match(summarySource, /lg:max-h-\[calc\(100dvh-7rem\)\]/);
+assert.match(summarySource, /lg:overflow-y-auto/);
+assert.match(summarySource, /lg:overflow-x-hidden/);
 assert.doesNotMatch(summarySource, /(?:^|\s)fixed(?:\s|$)/m);
 assert.doesNotMatch(summarySource, /live-order-summary-drawer/);
 assert.doesNotMatch(summarySource, /View Order/);
@@ -782,11 +850,17 @@ assert.ok(manyMarkup.includes("€325.00"));
 assert.ok(!manyMarkup.includes("Not selected yet"));
 assert.ok(!manyMarkup.includes("Not completed yet"));
 assert.ok(!manyMarkup.includes("Lagos → Eindhoven Standard Shipping"));
-assert.doesNotMatch(
+assert.match(
   renderer.root.findByProps({
     "data-testid": "live-order-summary-sidebar",
   }).props.className,
-  /overflow-y-auto|max-h-\[/,
+  /lg:max-h-\[/,
+);
+assert.match(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-content",
+  }).props.className,
+  /lg:overflow-y-auto/,
 );
 
 const shortsLines = [

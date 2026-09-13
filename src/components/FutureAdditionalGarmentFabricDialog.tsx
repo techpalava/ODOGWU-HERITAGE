@@ -293,6 +293,10 @@ export const FutureAdditionalGarmentFabricDialog = ({
                       stockPresentation={getOrderAwareFabricStockPresentation(
                         fabric,
                         fabricAllocationState,
+                        {
+                          hasCompatibleReusableHalfCapacity:
+                            Boolean(reusableAllocationOptions?.length),
+                        },
                       )}
                       stockConstraintMessage={stockConstraintMessage}
                       describedBy={helpId}

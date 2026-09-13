@@ -73,6 +73,8 @@ export interface DesignStyleStepOccurrencePresentation {
   readonly status: DesignStyleStepOccurrenceStatus;
   readonly assignment: GarmentDesignStyleAssignmentV2 | null;
   readonly assignmentLabel: string | null;
+  /** Catalogue preview only; uploaded previews remain private UI state. */
+  readonly assignmentImage?: string | null;
 }
 
 export interface DesignStyleStepProjection {
@@ -313,6 +315,10 @@ export const projectDesignStyleStep = ({
         ),
         assignment,
         assignmentLabel: assignmentLabelFor(assignment, stylesById),
+        assignmentImage:
+          assignment?.sourceKind === "catalog"
+            ? stylesById.get(assignment.catalogStyleId)?.image?.trim() || null
+            : null,
       },
     ];
   });

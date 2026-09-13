@@ -134,7 +134,7 @@ const SummarySubsection = ({
       <h4 className="min-w-0 flex-1 break-words text-[13px] font-bold tracking-wide text-heritage-green">
         {subsection.title}
       </h4>
-      {canEdit && onEdit ? (
+      {canEdit && onEdit && !subsection.lines.some((line) => line.focusGarmentKey) ? (
         <button
           type="button"
           onClick={() => onEdit(subsection.focusGarmentKey)}
@@ -169,11 +169,25 @@ const SummarySubsection = ({
               </p>
             ) : null}
           </div>
-          {line.amountLabel ? (
-            <span className="shrink-0 text-right font-mono text-[13px] font-semibold text-heritage-green">
-              {line.amountLabel}
-            </span>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {line.amountLabel ? (
+              <span className="text-right font-mono text-[13px] font-semibold text-heritage-green">
+                {line.amountLabel}
+              </span>
+            ) : null}
+            {canEdit && onEdit && line.focusGarmentKey ? (
+              <button
+                type="button"
+                onClick={() => onEdit(line.focusGarmentKey)}
+                aria-label={`Edit ${line.label}`}
+                data-testid={`live-order-summary-edit-${subsection.id}-${line.focusGarmentKey}`}
+                className="inline-flex min-h-8 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              >
+                <Pencil aria-hidden="true" size={11} />
+                Edit
+              </button>
+            ) : null}
+          </div>
         </li>
       ))}
     </ul>
@@ -208,7 +222,7 @@ export const DesignStudioOrderSummary = ({
       section={section}
       canEdit={canEditStage(section.editStage)}
       canEditAdditionalGarments={Boolean(
-        onEditStage &&
+        canEditStage("custom_details") &&
           section.subsections?.some(
             (subsection) => subsection.id === "additional_garments",
           ),
@@ -231,7 +245,7 @@ export const DesignStudioOrderSummary = ({
     <aside
       aria-labelledby={headingId}
       data-testid="live-order-summary-sidebar"
-      className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-3 shadow-sm [overflow-wrap:anywhere] sm:p-3.5 lg:sticky lg:top-24 lg:self-start"
+      className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-3 shadow-sm [overflow-wrap:anywhere] sm:p-3.5 lg:sticky lg:top-24 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:flex-col"
     >
       <div className="flex min-w-0 items-center gap-2 border-b border-gray-100 pb-2">
         <UsersRound
@@ -247,7 +261,10 @@ export const DesignStudioOrderSummary = ({
         </h2>
       </div>
       {view.sections.length > 0 ? (
-        <div className="mt-2.5 divide-y divide-heritage-gold/15">
+        <div
+          data-testid="live-order-summary-content"
+          className="mt-2.5 divide-y divide-heritage-gold/15 lg:min-h-0 lg:flex-1 lg:overflow-x-hidden lg:overflow-y-auto lg:overscroll-contain lg:pr-1"
+        >
           {view.sections.map((section) => (
             <div key={section.id} className="py-2.5 first:pt-0 last:pb-0">
               {renderSection(section)}
@@ -257,7 +274,7 @@ export const DesignStudioOrderSummary = ({
       ) : null}
       {view.totalStatus === "hidden" ? null : (
         <div
-          className="mt-2.5 border-t border-heritage-gold/30 pt-2.5"
+          className="mt-2.5 shrink-0 border-t border-heritage-gold/30 pt-2.5"
           data-testid="live-order-summary-total"
           data-total-status={view.totalStatus}
         >

@@ -122,30 +122,26 @@ export const resolveFabricFromCatalogue = (
 export const getOrderAwareFabricStockPresentation = (
   fabric: Pick<Fabric, "code" | "stock" | "stockStatus">,
   state: FabricAllocationState,
+  options: { hasCompatibleReusableHalfCapacity?: boolean } = {},
 ): FabricStockPresentation => {
   if (fabric.stockStatus === "HIDDEN") {
     return { visible: false, status: "HIDDEN" };
   }
-  if (fabric.stockStatus === "OUT_OF_STOCK") {
-    return {
-      visible: true,
-      status: "OUT_OF_STOCK",
-      label: "Out of Stock",
-      tone: "out_of_stock",
-    };
-  }
   if (!isAuthoritativeNumericFabricStock(fabric.stock)) {
     return getFabricStockPresentation(fabric);
   }
-  if (fabric.stock === 0) {
+  const remaining = getFabricRemainingPhysicalStock(fabric, state)!;
+  // Stock counts and already-allocated capacity are distinct authorities. A
+  // target-aware capacity check is supplied by the existing allocator; never
+  // infer it from the stock count or change allocation arithmetic here.
+  if (remaining === 0 && options.hasCompatibleReusableHalfCapacity) {
     return {
       visible: true,
-      status: "OUT_OF_STOCK",
-      label: "Out of Stock",
-      tone: "out_of_stock",
+      status: "REUSABLE_CAPACITY",
+      label: "1/2 Capacity Left",
+      tone: "in_stock",
     };
   }
-  const remaining = getFabricRemainingPhysicalStock(fabric, state)!;
   if (remaining === 0) {
     return {
       visible: true,

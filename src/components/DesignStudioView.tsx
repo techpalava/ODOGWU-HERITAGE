@@ -1732,6 +1732,34 @@ export default function DesignStudioView({
             ? { previewUrl: retainedUploadedDesignPreviewUrl }
             : {}),
         };
+  const futureDesignStylePreviewByOccurrenceToken = useMemo(
+    () =>
+      Object.fromEntries(
+        futureDesignStyleStepProjection.occurrences.flatMap((occurrence) => {
+          if (occurrence.assignment?.sourceKind !== "uploaded") return [];
+          const uploadUi =
+            futureDesignStyleUploadUiByGarmentKey[occurrence.target.garmentKey];
+          const previewUrl =
+            uploadUi?.occurrenceToken === occurrence.target.occurrenceToken
+              ? uploadUi.previewUrl
+              : designStyleStepTargetsEqual(
+                    occurrence.target,
+                    resolvedFutureActiveDesignStyleOccurrence,
+                  )
+                ? retainedUploadedDesignPreviewUrl
+                : null;
+          return previewUrl
+            ? [[occurrence.target.occurrenceToken, previewUrl] as const]
+            : [];
+        }),
+      ),
+    [
+      futureDesignStyleStepProjection.occurrences,
+      futureDesignStyleUploadUiByGarmentKey,
+      resolvedFutureActiveDesignStyleOccurrence,
+      retainedUploadedDesignPreviewUrl,
+    ],
+  );
   const isFutureDesignSourceReadyForCustomDetails =
     futureDesignStyleStepProjection.isComplete;
   futureDesignStyleMutationAuthorityRef.current =
@@ -7447,6 +7475,9 @@ export default function DesignStudioView({
               futureDraftPersistenceStatus === "invalid")
           }
           uploadState={futureDesignStyleUploadStateForActiveOccurrence}
+          selectedDesignPreviewByOccurrenceToken={
+            futureDesignStylePreviewByOccurrenceToken
+          }
           stagePrice={
             futureFabricAuthoritativePricing?.garmentConstructionSubtotal ??
             null

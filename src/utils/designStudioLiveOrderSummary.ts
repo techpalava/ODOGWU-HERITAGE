@@ -56,6 +56,11 @@ export interface LiveOrderSummaryLine {
   /** A second customer-facing status line, used when the primary detail is construction. */
   readonly supportingDetail?: string | null;
   readonly amountLabel: string | null;
+  /**
+   * Present only for an editable Additional Garment construction occurrence.
+   * This preserves the stable occurrence identity through the Summary UI.
+   */
+  readonly focusGarmentKey?: string | null;
 }
 
 export interface LiveOrderSummarySectionFooter {
@@ -423,6 +428,9 @@ export const projectDesignStudioLiveOrderSummary = ({
         garment.constructionTotalCents === null
           ? null
           : moneyFromCents(garment.constructionTotalCents),
+      ...(includeFabricStatus
+        ? { focusGarmentKey: garment.garmentKey }
+        : {}),
     };
   };
   const baseConstructionLines = committedLines(
