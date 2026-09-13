@@ -37,7 +37,7 @@ const approvedImageFiles = {
   shirt: "ankara-standard-shirt.webp",
   kaftan: "ankara-kaftan.webp",
   dress: "ankara-standard-dress.webp",
-  full_length_gown: "ankara-long-dress-gown.webp",
+  full_length_gown: "ankara-long-dress-gown-short-sleeve.webp",
   standard_shorts: "ankara-standard-shorts.webp",
   bum_shorts: "ankara-bum-shorts.webp",
   trouser: "ankara-trouser.webp",
@@ -48,7 +48,7 @@ const approvedImageDimensions = {
   shirt: [720, 1080],
   kaftan: [720, 1080],
   dress: [720, 1080],
-  full_length_gown: [720, 1080],
+  full_length_gown: [1024, 1536],
   standard_shorts: [720, 1080],
   bum_shorts: [720, 1080],
   trouser: [720, 1080],
@@ -59,13 +59,13 @@ const approvedSecondaryImageFiles = {
   shirt: "ankara-standard-shirt-long-sleeve.webp",
   kaftan: "ankara-kaftan-short-sleeve.webp",
   dress: "ankara-standard-dress-long-sleeve.webp",
-  full_length_gown: "ankara-long-dress-gown-short-sleeve.webp",
+  full_length_gown: "ankara-long-dress-gown.webp",
 } as const;
 const approvedSecondaryImageDimensions = {
   shirt: [1024, 1536],
   kaftan: [1024, 1536],
   dress: [1024, 1536],
-  full_length_gown: [1024, 1536],
+  full_length_gown: [720, 1080],
 } as const;
 
 const webpDimensions = (data: Buffer): number[] => {
@@ -367,6 +367,32 @@ assert.equal(shirtGalleryImages[0]?.props.src, STEP1_GARMENT_REFERENCE_IMAGES.sh
 assert.equal(
   shirtGalleryImages[1]?.props.src,
   STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES.shirt?.src,
+);
+
+const longDressGallery = selectableRenderer.root
+  .findByProps({ "data-testid": "step1-garment-card-full_length_gown" })
+  .findByProps({ "data-testid": "step1-garment-reference-gallery" });
+const longDressGalleryImages = longDressGallery.findAllByProps({
+  "data-testid": "step1-garment-reference-image",
+});
+assert.equal(longDressGalleryImages.length, 2);
+assert.equal(
+  longDressGalleryImages[0]?.props.src,
+  STEP1_GARMENT_REFERENCE_IMAGES.full_length_gown.src,
+  "Long Dress gallery image[0] (left/primary) must be the short-sleeve asset",
+);
+assert.equal(
+  longDressGalleryImages[0]?.props.src,
+  "/images/garments/ankara-long-dress-gown-short-sleeve.webp",
+);
+assert.equal(
+  longDressGalleryImages[1]?.props.src,
+  STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES.full_length_gown?.src,
+  "Long Dress gallery image[1] (right/secondary) must be the long/mid-long sleeve asset",
+);
+assert.equal(
+  longDressGalleryImages[1]?.props.src,
+  "/images/garments/ankara-long-dress-gown.webp",
 );
 assert.equal(
   selectableRenderer.root.findAllByProps({
