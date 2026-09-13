@@ -526,7 +526,13 @@ export const planMeasurementRequirements = ({
         selectedOptionIds,
       });
       if (applicability === "exclude") return;
-      const requiredOnRoute = field.directRoutes.includes(route);
+      // High Risk has one customer calculation basis: Total Height.  The source
+      // route markers remain provenance for the workbook, but factor-backed
+      // High-Risk rows are predictions, not additional customer inputs.
+      // Factorless rows retain their existing optional-manual treatment below.
+      const requiredOnRoute = route === "high_risk"
+        ? field.measurementId === "total_height"
+        : field.directRoutes.includes(route);
       if (applicability === "unresolved") {
         if (requiredOnRoute || route === "low_risk") {
           diagnostics.push({

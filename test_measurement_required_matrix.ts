@@ -149,49 +149,19 @@ const MID_REQUIRED: Record<MeasurementProfileId, CanonicalMeasurementId[]> = {
 };
 
 const HIGH_REQUIRED: Record<MeasurementProfileId, CanonicalMeasurementId[]> = {
-  A: ["chest_bust_circumference", "belly_circumference", "total_height"],
-  B: ["chest_bust_circumference", "belly_circumference", "total_height"],
-  C: [
-    "wrist_circumference",
-    "chest_bust_circumference",
-    "belly_circumference",
-    "total_height",
-  ],
-  D: [
-    "wrist_circumference",
-    "chest_bust_circumference",
-    "belly_circumference",
-    "total_height",
-  ],
-  E: ["chest_bust_circumference", "belly_circumference", "total_height"],
-  F: ["chest_bust_circumference", "belly_circumference", "total_height"],
-  G: ["chest_bust_circumference", "belly_circumference", "total_height"],
-  H: ["chest_bust_circumference", "belly_circumference", "total_height"],
-  I: [
-    "waist_circumference",
-    "thigh_circumference",
-    "waist_to_crotch_depth_length",
-    "total_height",
-  ],
-  J: [
-    "waist_circumference",
-    "thigh_circumference",
-    "waist_to_knee_length",
-    "total_height",
-  ],
-  K: [
-    "waist_circumference",
-    "thigh_circumference",
-    "waist_to_lap_length",
-    "total_height",
-  ],
-  L: [
-    "waist_circumference",
-    "waist_to_lap_length",
-    "waist_to_knee_length",
-    "total_height",
-  ],
-  M: ["waist_circumference", "waist_to_ankle_length", "total_height"],
+  A: ["total_height"],
+  B: ["total_height"],
+  C: ["total_height"],
+  D: ["total_height"],
+  E: ["total_height"],
+  F: ["total_height"],
+  G: ["total_height"],
+  H: ["total_height"],
+  I: ["total_height"],
+  J: ["total_height"],
+  K: ["total_height"],
+  L: ["total_height"],
+  M: ["total_height"],
 };
 
 const sorted = (ids: readonly string[]): string[] => [...ids].sort();
