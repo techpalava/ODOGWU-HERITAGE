@@ -2466,16 +2466,6 @@ export const reconcileFutureFabricAllocationState = ({
   const requiredByKey = new Map(
     requiredAssignments.map((assignment) => [assignment.garmentKey, assignment]),
   );
-  state.fabricAllocations.forEach((allocation) =>
-    allocation.garmentAssignments.forEach((assignment) => {
-      if (
-        requiredByKey.has(assignment.garmentKey) &&
-        assignment.dependencyStatus !== "orphaned"
-      ) {
-        requiredByKey.set(assignment.garmentKey, assignment);
-      }
-    }),
-  );
   const retainedKeys = new Set<string>();
   const fabricAllocations = state.fabricAllocations.flatMap((allocation) => {
     const garmentAssignments = allocation.garmentAssignments.flatMap(
