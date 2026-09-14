@@ -60,6 +60,12 @@ interface DormantFutureDesignStyleStepProps {
     readonly garmentKey: string;
     readonly styleId: string;
   } | null;
+  /** Set only by a completed intentional Design Style assignment. */
+  assignmentFeedback?: {
+    readonly target: DesignStyleStepOccurrencePresentation["target"];
+    readonly eventId: number;
+  } | null;
+  onAssignmentFeedbackHandled?: (eventId: number) => void;
   onSelectOccurrence: (
     target: DesignStyleStepOccurrencePresentation["target"],
   ) => void;
@@ -123,6 +129,8 @@ export const DormantFutureDesignStyleStep = ({
   additionalGarmentOptions = [],
   reuseFabricPending = false,
   reuseAddedOccurrence = null,
+  assignmentFeedback = null,
+  onAssignmentFeedbackHandled,
   onSelectOccurrence,
   onAssignCatalogueStyle,
   onClearAssignment,
@@ -142,6 +150,12 @@ export const DormantFutureDesignStyleStep = ({
   const detailsCloseRef = useRef<HTMLButtonElement | null>(null);
   const detailsTriggerRef = useRef<HTMLElement | null>(null);
   const allDesignsRef = useRef<HTMLDivElement | null>(null);
+  const garmentCardRefs = useRef(new Map<string, HTMLElement>());
+  const assignmentFeedbackFrameRef = useRef<number | null>(null);
+  const assignmentFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const handledAssignmentFeedbackIdRef = useRef<number | null>(null);
   const mappingScrollTopRef = useRef(0);
   const hasSeenReuseFabricRef = useRef(false);
   const handledReuseAddedOccurrenceRef = useRef<string | null>(null);
@@ -155,6 +169,11 @@ export const DormantFutureDesignStyleStep = ({
   const [dialogView, setDialogView] = useState<"mapping" | "add_garment">(
     "mapping",
   );
+  const [highlightedOccurrenceToken, setHighlightedOccurrenceToken] = useState<
+    string | null
+  >(null);
+  const [highlightPrefersReducedMotion, setHighlightPrefersReducedMotion] =
+    useState(false);
   const dialogTitleId = useId();
   const dialogDescriptionId = useId();
   const uploadInputId = useId();
@@ -173,6 +192,80 @@ export const DormantFutureDesignStyleStep = ({
     runtimeStatus !== "blocked" &&
     runtimeStatus !== "hydrating" &&
     catalogueReady;
+  const highlightedOccurrence =
+    occurrences.find(
+      (occurrence) =>
+        occurrence.target.occurrenceToken === highlightedOccurrenceToken,
+    ) || null;
+
+  useEffect(() => {
+    if (
+      !assignmentFeedback ||
+      handledAssignmentFeedbackIdRef.current === assignmentFeedback.eventId
+    ) {
+      return;
+    }
+    const token = assignmentFeedback.target.occurrenceToken;
+    const card = garmentCardRefs.current.get(token);
+    if (!card) return;
+
+    if (assignmentFeedbackFrameRef.current !== null) {
+      if (typeof window !== "undefined") {
+        window.cancelAnimationFrame?.(assignmentFeedbackFrameRef.current);
+      }
+      assignmentFeedbackFrameRef.current = null;
+    }
+    if (assignmentFeedbackTimerRef.current !== null) {
+      clearTimeout(assignmentFeedbackTimerRef.current);
+      assignmentFeedbackTimerRef.current = null;
+    }
+
+    handledAssignmentFeedbackIdRef.current = assignmentFeedback.eventId;
+    setHighlightedOccurrenceToken(token);
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setHighlightPrefersReducedMotion(prefersReducedMotion);
+    const revealCard = () => {
+      card.scrollIntoView({
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+        block: "center",
+      });
+      card.focus({ preventScroll: true });
+      assignmentFeedbackFrameRef.current = null;
+    };
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      assignmentFeedbackFrameRef.current = window.requestAnimationFrame(revealCard);
+    } else {
+      revealCard();
+    }
+    assignmentFeedbackTimerRef.current = setTimeout(() => {
+      assignmentFeedbackTimerRef.current = null;
+      setHighlightedOccurrenceToken((current) =>
+        current === token ? null : current,
+      );
+    }, 800);
+    onAssignmentFeedbackHandled?.(assignmentFeedback.eventId);
+  }, [assignmentFeedback, onAssignmentFeedbackHandled]);
+
+  useEffect(
+    () => () => {
+      if (
+        assignmentFeedbackFrameRef.current !== null &&
+        typeof window !== "undefined"
+      ) {
+        window.cancelAnimationFrame?.(assignmentFeedbackFrameRef.current);
+      }
+      if (assignmentFeedbackTimerRef.current !== null) {
+        clearTimeout(assignmentFeedbackTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const selectedOccurrences = useMemo(
     () =>
@@ -593,6 +686,11 @@ export const DormantFutureDesignStyleStep = ({
   return (
     <>
       <section aria-labelledby="future-design-style-title" data-stage-id="design_style" data-stage-complete={exactSetComplete} className={`min-w-0 space-y-6 font-sans [overflow-wrap:anywhere] ${exactSetComplete ? "pb-28 sm:pb-32" : ""}`}>
+        <p className="sr-only" aria-live="polite">
+          {highlightedOccurrence
+            ? `Design assigned to ${highlightedOccurrence.label}.`
+            : ""}
+        </p>
         <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
           <DesignStudioBackButton destination="Fabric" onClick={onBack} className="mb-5" />
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">Step 3 of 9</p>
@@ -615,6 +713,9 @@ export const DormantFutureDesignStyleStep = ({
               </div>
               <div role="list" className="mt-2 divide-y divide-heritage-green/10 overflow-hidden rounded-xl border border-heritage-green/15 bg-white">
                 {occurrences.map((occurrence) => {
+                  const isAssignmentFeedbackTarget =
+                    highlightedOccurrenceToken ===
+                    occurrence.target.occurrenceToken;
                   const occurrenceClearRequest = clearRequests.find((request) => designStyleStepTargetsEqual(request.target, occurrence.target)) || (designStyleStepTargetsEqual(occurrence.target, activeOccurrenceTarget) ? clearRequest : null);
                   const selectedDesignImage =
                     occurrence.assignmentImage ||
@@ -623,7 +724,30 @@ export const DormantFutureDesignStyleStep = ({
                     ] ||
                     null;
                   return (
-                    <article key={occurrence.target.occurrenceToken} role="listitem" data-occurrence-label={occurrence.label} data-occurrence-token={occurrence.target.occurrenceToken} className="flex min-w-0 flex-col gap-2 border-l-2 border-transparent bg-white px-3 py-2.5 sm:flex-row sm:items-center sm:gap-4">
+                    <article
+                      key={occurrence.target.occurrenceToken}
+                      ref={(element) => {
+                        const token = occurrence.target.occurrenceToken;
+                        if (element) garmentCardRefs.current.set(token, element);
+                        else garmentCardRefs.current.delete(token);
+                      }}
+                      role="listitem"
+                      tabIndex={isAssignmentFeedbackTarget ? -1 : undefined}
+                      data-occurrence-label={occurrence.label}
+                      data-occurrence-token={occurrence.target.occurrenceToken}
+                      data-design-assignment-feedback={
+                        isAssignmentFeedbackTarget ? "true" : undefined
+                      }
+                      className={`flex min-w-0 flex-col gap-2 border-l-2 px-3 py-2.5 ${
+                        highlightPrefersReducedMotion
+                          ? ""
+                          : "transition-[background-color,border-color,box-shadow] duration-200"
+                      } sm:flex-row sm:items-center sm:gap-4 ${
+                        isAssignmentFeedbackTarget
+                          ? "border-l-heritage-gold bg-heritage-cream/30 ring-2 ring-inset ring-heritage-gold/70"
+                          : "border-transparent bg-white"
+                      }`}
+                    >
                       {occurrence.assignment && selectedDesignImage ? <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/20 bg-heritage-cream/35 sm:h-20 sm:w-20" data-selected-design-preview="true"><img src={selectedDesignImage} alt={`${occurrence.assignmentLabel || "Selected"} design for ${occurrence.label}`} className="h-full w-full object-contain" referrerPolicy="no-referrer" /></div> : null}
                       <div className="grid min-w-0 flex-1 gap-0.5 sm:grid-cols-[minmax(6rem,0.35fr)_minmax(0,1fr)] sm:items-baseline sm:gap-x-4">
                         <p className="font-serif text-sm font-bold text-heritage-green">{occurrence.label}</p>
