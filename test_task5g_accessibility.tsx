@@ -122,9 +122,9 @@ const summary: FutureDesignStudioSummary = {
   status: "incomplete", blockers: [], garmentSummary: [], fabricSummary: [],
   designStyleSummary: null,
   designStyleOccurrences: [
-    { occurrenceLabel: "Shirt", sourceKind: "catalogue", status: "selected", name: longName, image: "https://example.test/style.jpg", detail: "Catalogue design" },
-    { occurrenceLabel: "Shirt 2", sourceKind: "uploaded", status: "selected", name: "Uploaded design", image: null, detail: "Confirmed uploaded design" },
-    { occurrenceLabel: "Shirt 3", sourceKind: "unassigned", status: "needs_review", name: "Not selected", image: null, detail: null },
+    { garmentKey: "base:shirt", occurrenceLabel: "Shirt", sourceKind: "catalogue", status: "selected", name: longName, image: "https://example.test/style.jpg", detail: "Catalogue design" },
+    { garmentKey: "additional:shirt:1", occurrenceLabel: "Shirt 2", sourceKind: "uploaded", status: "selected", name: "Uploaded design", image: null, detail: "Confirmed uploaded design" },
+    { garmentKey: "additional:shirt:2", occurrenceLabel: "Shirt 3", sourceKind: "unassigned", status: "needs_review", name: "Not selected", image: null, detail: null },
   ],
   customDetailsSummary: [], aiTryOnSummary: { status: "skipped", label: "Skipped" },
   measurementSummary: { route: "low_risk", routeLabel: "Low risk", unit: "inch", shared: [], byGarment: [] },

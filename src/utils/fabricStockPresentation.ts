@@ -6,7 +6,7 @@ export type FabricStockPresentation =
   | { visible: false; status: "HIDDEN" }
   | {
       visible: true;
-      status: Exclude<Fabric["stockStatus"], "HIDDEN">;
+      status: Exclude<Fabric["stockStatus"], "HIDDEN"> | "REUSABLE_CAPACITY";
       label: string;
       tone: FabricStockBadgeTone;
     };

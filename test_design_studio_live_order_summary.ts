@@ -282,15 +282,8 @@ const constructionLine = (
 const additionalGarmentsSubsection = (
   view: ReturnType<typeof projectDesignStudioLiveOrderSummary>,
 ) =>
-  section(view, "construction").subsections?.find(
+  view.sections.find((candidate) => candidate.id === "construction")?.subsections?.find(
     (subsection) => subsection.id === "additional_garments",
-  );
-
-const additionalGarmentFabricsSubsection = (
-  view: ReturnType<typeof projectDesignStudioLiveOrderSummary>,
-) =>
-  section(view, "fabrics").subsections?.find(
-    (subsection) => subsection.id === "additional_garment_fabrics",
   );
 
 const buildAuthority = ({
@@ -570,7 +563,7 @@ assert.equal(
 hiddenSection(early.view, "fabrics");
 assert.deepEqual(
   section(early.view, "design_style").lines.map((line) => `${line.label} — ${line.detail}`),
-  ["Shirt — Not selected"],
+  ["Standard Shirt — Not selected"],
   "authoritative unassigned occurrences remain visible without inheriting a sibling style",
 );
 hiddenSection(early.view, "measurements");
@@ -742,7 +735,7 @@ assert.deepEqual(
   section(afterFabric.view, "fabrics").lines.map(
     (line) => `${line.label} — ${line.detail}`,
   ),
-  ["Shirt — Royal Forest Mosaic", "Trouser — Royal Forest Mosaic"],
+  ["Standard Shirt — Royal Forest Mosaic", "Trouser — Royal Forest Mosaic"],
 );
 const shirtRemoval = cancelFutureFabricCatalogueAssignment({
   state: afterFabric.allocation,
@@ -816,6 +809,110 @@ assert.equal(
   1,
 );
 
+const presentationGarment = preDelivery.summary.garmentSummary[0]!;
+const baseConstruction = presentationGarment.construction[0]!;
+const presentationView = projectDesignStudioLiveOrderSummary({
+  summary: {
+    ...preDelivery.summary,
+    designStyleOccurrences: [
+      {
+        garmentKey: presentationGarment.garmentKey,
+        occurrenceLabel: presentationGarment.label,
+        sourceKind: "catalogue",
+        status: "selected",
+        name: "Casual Native",
+        image: "https://example.invalid/casual-native.jpg",
+        detail: "Kaftan + Shirt + Nikka / Standard Shorts + Trouser",
+      },
+    ],
+    customDetailsSummary: [
+      {
+        garmentKey: presentationGarment.garmentKey,
+        garmentLabel: presentationGarment.label,
+        occurrences: [
+          {
+            occurrenceKey: "base:shirt:duplicate-base",
+            garmentKey: presentationGarment.garmentKey,
+            garmentLabel: presentationGarment.label,
+            selectionGroup: baseConstruction.selectionGroup,
+            selectionGroupTitle: "Base construction",
+            optionId: baseConstruction.optionId,
+            optionLabel: baseConstruction.label,
+            priceStatus: "exact",
+            priceCents: baseConstruction.priceCents,
+            personalizedText: null,
+          },
+          {
+            occurrenceKey: "base:shirt:included-option",
+            garmentKey: presentationGarment.garmentKey,
+            garmentLabel: presentationGarment.label,
+            selectionGroup: "pockets",
+            selectionGroupTitle: "Pockets",
+            optionId: "no-pockets",
+            optionLabel: "No Pockets",
+            priceStatus: "exact",
+            priceCents: 0,
+            personalizedText: null,
+          },
+          {
+            occurrenceKey: "base:shirt:priced-option",
+            garmentKey: presentationGarment.garmentKey,
+            garmentLabel: presentationGarment.label,
+            selectionGroup: "sleeve",
+            selectionGroupTitle: "Sleeve",
+            optionId: "detailed-sleeve",
+            optionLabel: "Detailed Sleeve",
+            priceStatus: "exact",
+            priceCents: 1250,
+            personalizedText: null,
+          },
+        ],
+      },
+    ],
+  },
+  shippingResolution: preDelivery.shippingResolution,
+  candidatePricing: null,
+  fabricAllocationState: preDelivery.allocation,
+  measurementState: preDelivery.measurementState,
+  designSource: { kind: "catalog", sourceKey: "casual-native", styleId: "casual-native" },
+});
+const presentationLine = section(presentationView, "design_style").lines[0]!;
+const presentationOptionsLine = section(
+  presentationView,
+  "custom_details",
+).lines[0]!;
+assert.equal(
+  presentationLine.label,
+  "Standard Shirt",
+  "the live projection uses the authoritative Step 1 garment label, not the Fabric label",
+);
+assert.equal(presentationLine.detail, "Casual Native");
+assert.equal(presentationLine.imageUrl, "https://example.invalid/casual-native.jpg");
+assert.ok(!presentationLine.detail?.includes("Kaftan + Shirt"));
+assert.deepEqual(
+  presentationOptionsLine.constructionOptions?.map(
+    (option) => `${option.label} — ${option.amountLabel}`,
+  ),
+  [
+    ...presentationGarment.construction.map((option) => `${option.label} — Included`),
+    "No Pockets — Included",
+    "Detailed Sleeve — €12.50",
+  ],
+  "the live projection retains selected options only, with base rows deduped by group and option id",
+);
+assert.equal(
+  presentationOptionsLine.constructionOptions?.filter(
+    (option) => option.label === baseConstruction.label,
+  ).length,
+  1,
+);
+assert.equal(
+  section(presentationView, "construction").footer?.amountCents,
+  preDeliveryConstructionCents,
+  "separating construction prices from selected options must not alter subtotal authority",
+);
+assert.equal(presentationView.totalAmountCents, preDelivery.view.totalAmountCents);
+
 const multiFabric = buildAuthority({
   garmentTypes: ["shirt", "trouser", "dress"],
   demographic: "unisex",
@@ -828,9 +925,9 @@ const multiFabric = buildAuthority({
 assert.deepEqual(
   section(multiFabric.view, "fabrics").lines.map((line) => `${line.label} — ${line.detail}`),
   [
-    "Shirt — Royal Forest Mosaic",
+    "Standard Shirt — Royal Forest Mosaic",
     "Trouser — Royal Forest Mosaic",
-    "Dress — Imperial Sapphire Link",
+    "Standard Dress — Imperial Sapphire Link",
   ],
 );
 assert.equal(
@@ -892,26 +989,16 @@ assert.deepEqual(
     "fabric-base:shirt",
     "fabric-base:trouser",
     "fabric-base:dress",
+    `fabric-${extraKeys[0]}`,
   ],
-  "base Fabric entries stay first and exclude authoritative additions",
-);
-assert.deepEqual(
-  additionalGarmentFabricsSubsection(extraCommitted.view)?.lines.map(
-    (line) => `${line.id} — ${line.detail}`,
-  ),
-  [`fabric-${extraKeys[0]} — Imperial Sapphire Link`],
-  "an assigned additional garment uses the authoritative additional-Fabric subsection",
+  "Fabric entries follow one physical occurrence order, including additions",
 );
 const extraLine = constructionLine(extraCommitted.view, extraKeys[0]);
 assert.ok(extraLine, "committed extra garment must appear in construction rows");
 assert.equal(extraLine.id, `construction-${extraKeys[0]}`);
 assert.match(extraLine.label, /Shirt/);
-assert.match(extraLine.detail || "", /Standard|Shirt|Construction/i);
-assert.equal(
-  extraLine.supportingDetail,
-  "Fabric: Imperial Sapphire Link",
-  "an assigned Additional garment exposes its current Fabric in its ownership subsection",
-);
+assert.equal(extraLine.detail, null);
+assert.equal(extraLine.supportingDetail, undefined);
 assert.equal(
   additionalGarmentsSubsection(extraCommitted.view)?.focusGarmentKey,
   null,
@@ -970,16 +1057,11 @@ assert.deepEqual(
     "construction-base:shirt",
     "construction-base:trouser",
     "construction-base:dress",
-  ], "base construction rows remain first and never intermingle with additions");
+  ], "Garments Ordered keeps only base occurrences in its primary list");
 assert.deepEqual(
   missingAdditionalSection?.lines.map((line) => line.id),
   [`construction-${extraKeys[0]}`],
-  "the Additional Garments subsection preserves the exact additional occurrence",
-);
-assert.equal(
-  missingAdditionalSection?.lines[0]?.supportingDetail,
-  "Fabric: Needs fabric",
-  "an Additional garment without Fabric is visibly incomplete in its owner subsection",
+  "the Additional Garments subsection preserves the exact additional occurrence once",
 );
 assert.equal(
   missingAdditionalSection?.focusGarmentKey,
@@ -996,13 +1078,6 @@ assert.deepEqual(
     "fabric-base:dress",
   ],
   "a missing additional Fabric never displaces base Fabric entries",
-);
-assert.deepEqual(
-  additionalGarmentFabricsSubsection(
-    missingAdditionalFabricAuthority.view,
-  )?.lines.map((line) => ({ id: line.id, detail: line.detail })),
-  [{ id: `fabric-${extraKeys[0]}`, detail: "Needs fabric" }],
-  "the additional-Fabric subsection retains a persisted additional occurrence without fabric",
 );
 assert.equal(
   section(missingAdditionalFabricAuthority.view, "construction").footer?.amountCents,
@@ -1078,8 +1153,53 @@ assert.equal(
   twoExtraLines[1]?.amountLabel,
   `€${(secondExtraConstruction.totalPriceCents / 100).toFixed(2)}`,
 );
-assert.match(twoExtraLines[0]?.detail || "", /Standard|Shirt|Construction/i);
-assert.match(twoExtraLines[1]?.detail || "", /Standard|Shirt|Construction/i);
+assert.equal(twoExtraLines[0]?.detail, null);
+assert.equal(twoExtraLines[1]?.detail, null);
+
+const selectedTwoExtrasView = projectDesignStudioLiveOrderSummary({
+  summary: {
+    ...twoExtras.summary,
+    designStyleOccurrences: twoExtras.summary.garmentSummary.map((garment) => ({
+      garmentKey: garment.garmentKey,
+      occurrenceLabel: garment.label,
+      sourceKind: "catalogue" as const,
+      status: "selected" as const,
+      name: "Selected fixture design",
+      image: null,
+      detail: null,
+    })),
+  },
+  shippingResolution: twoExtras.shippingResolution,
+  candidatePricing: twoExtras.candidateResult.candidate?.pricing ?? null,
+  fabricAllocationState: twoExtras.allocation,
+  measurementState: twoExtras.measurementState,
+  designSource: { kind: "catalog", sourceKey: "fixture-style", styleId: "fixture-style" },
+  additionalConstructionState: twoExtras.additionalConstruction.state,
+  catalogInspection: inspection,
+  showAdditionalClothesCosts: false,
+});
+const selectedTwoExtrasSubsection = additionalGarmentsSubsection(
+  selectedTwoExtrasView,
+);
+assert.deepEqual(
+  selectedTwoExtrasSubsection?.lines.map((line) => ({
+    id: line.id,
+    focusGarmentKey: line.focusGarmentKey,
+    detail: line.detail,
+    amountLabel: line.amountLabel,
+  })),
+  twoExtraKeys.map((garmentKey) => ({
+    id: `construction-${garmentKey}`,
+    focusGarmentKey: garmentKey,
+    detail: null,
+    amountLabel: `€${(
+      (twoExtras.additionalConstruction.state.byGarmentKey[garmentKey]?.status === "resolved"
+        ? twoExtras.additionalConstruction.state.byGarmentKey[garmentKey].totalPriceCents
+        : 0) / 100
+    ).toFixed(2)}`,
+  })),
+  "every Additional Garment retains its exact Step 4 Edit target and price in its sole garment-order row",
+);
 
 const extraRemoved = buildAuthority({
   garmentTypes: ["shirt", "trouser", "dress"],
@@ -1149,8 +1269,11 @@ const dressOccurrence = dressCost.summary.customDetailsSummary
   .flatMap((group) => group.occurrences)
   .find((occurrence) => occurrence.optionId === "dress_additional_net");
 assert.ok(dressOccurrence);
-const dressLine = section(dressCost.view, "additional_clothes").lines.find(
-  (line) => line.id === dressOccurrence.occurrenceKey,
+const dressOptionsLine = section(dressCost.view, "custom_details").lines.find(
+  (line) => line.id === "construction-options-base:dress",
+);
+const dressLine = dressOptionsLine?.constructionOptions?.find(
+  (option) => option.id === `custom-detail-option:${dressOccurrence.occurrenceKey}`,
 );
 assert.ok(dressLine);
 assert.equal(dressLine.label, dressOccurrence.optionLabel);
@@ -1161,8 +1284,10 @@ assert.equal(
     : `€${(dressOccurrence.priceCents / 100).toFixed(2)}`,
 );
 assert.equal(
-  section(dressCost.view, "additional_clothes").lines.some((line) =>
-    /shirt additional|trouser additional/i.test(`${line.label} ${line.detail || ""}`),
+  section(dressCost.view, "custom_details").lines.some((line) =>
+    /shirt additional|trouser additional/i.test(
+      line.constructionOptions?.map((option) => option.label).join(" ") || "",
+    ),
   ),
   false,
 );
@@ -1375,6 +1500,7 @@ const uploaded = projectDesignStudioLiveOrderSummary({
   summary: {
     ...early.summary,
     designStyleOccurrences: [{
+      garmentKey: early.summary.garmentSummary[0]!.garmentKey,
       occurrenceLabel: "Shirt",
       sourceKind: "uploaded",
       status: "selected",
@@ -1391,11 +1517,11 @@ const uploaded = projectDesignStudioLiveOrderSummary({
 });
 assert.equal(
   section(uploaded, "design_style").lines[0]?.label,
-  "Shirt",
+  "Standard Shirt",
 );
 assert.equal(
   section(uploaded, "design_style").lines[0]?.detail,
-  "Uploaded design — Uploaded design selected",
+  "Uploaded design",
 );
 assert.notEqual(uploaded.totalLabel, LIVE_ORDER_SUMMARY_TOTAL_LABEL);
 
@@ -1501,8 +1627,10 @@ assert.notEqual(
   "optional extra row amount must not be added again into Total",
 );
 assert.ok(
-  section(full.view, "additional_clothes").lines.some(
-    (line) => line.id === dressOccurrence.occurrenceKey,
+  section(full.view, "custom_details").lines.some((line) =>
+    line.constructionOptions?.some(
+      (option) => option.id === `custom-detail-option:${dressOccurrence.occurrenceKey}`,
+    ),
   ),
 );
 assert.ok(
@@ -1555,15 +1683,16 @@ assert.deepEqual(
       "additional_clothes",
       "fabrics",
       "design_style",
+      "custom_details",
       "measurements",
       "delivery",
     ].includes(id),
   ),
   [
     "construction",
-    "additional_clothes",
     "fabrics",
     "design_style",
+    "custom_details",
     "measurements",
     "delivery",
   ],
@@ -1572,28 +1701,16 @@ assert.equal(section(manyItems.view, "construction").lines.length, 3);
 assert.deepEqual(
   additionalGarmentsSubsection(manyItems.view)?.lines.map((line) => line.id),
   ["construction-additional:shirt:1", "construction-additional:shirt:2"],
-  "multiple additions remain grouped after all base occurrences",
+  "multiple additions appear once in the Additional Garments subsection",
 );
 assert.equal(
   manyItems.view.sections.some((sectionItem) => sectionItem.id === "optional_extras"),
   false,
 );
-assert.ok(
-  section(manyItems.view, "additional_clothes").lines.some(
-    (line) => line.id === dressOccurrence.occurrenceKey,
-  ),
-);
 assert.equal(
   section(manyItems.view, "fabrics").lines.length,
-  3,
-  "the Fabrics section retains only the three base-garment entries",
-);
-assert.deepEqual(
-  additionalGarmentFabricsSubsection(manyItems.view)?.lines.map((line) =>
-    line.id,
-  ),
-  ["fabric-additional:shirt:1", "fabric-additional:shirt:2"],
-  "multiple additional fabrics remain grouped after the base-fabric entries",
+  5,
+  "the Fabrics section follows the full physical occurrence order",
 );
 assert.ok(
   manyItems.view.sections.every(
