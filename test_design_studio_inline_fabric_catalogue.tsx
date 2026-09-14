@@ -6361,7 +6361,7 @@ try {
       "data-remove-invalid-fabric-assignment": "true",
     });
     const repairButtonLabel =
-      "Remove invalid Fabric assignment for Long Dress (Gown)";
+      "Remove invalid Fabric assignment for Long Dress";
     const repairButtonFocus = focusMocks.get(repairButtonLabel);
     assert.ok(repairButtonFocus);
     activeFocusMock = repairButtonFocus;
@@ -6553,12 +6553,12 @@ try {
       2,
     );
     const gownRepairButton = multipleRepairRenderer.root.findByProps({
-      "aria-label": "Remove invalid Fabric assignment for Long Dress (Gown)",
+      "aria-label": "Remove invalid Fabric assignment for Long Dress",
     });
     await act(async () =>
       gownRepairButton.props.onClick({
         currentTarget: focusMocks.get(
-          "Remove invalid Fabric assignment for Long Dress (Gown)",
+          "Remove invalid Fabric assignment for Long Dress",
         ),
       }),
     );

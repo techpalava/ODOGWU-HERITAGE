@@ -255,7 +255,7 @@ assert.equal(
     hasEligibleHalfCapacityAdditionalGarment: true,
   }).length,
   0,
-  "a full-capacity Long Dress (Gown) must not create a half-capacity offer",
+  "a full-capacity Long Dress must not create a half-capacity offer",
 );
 
 // Deliberately separate half Fabrics complete the stage and are charged once each.
@@ -1315,7 +1315,11 @@ const remainingOfferGate = studioSource.slice(
 assert.match(remainingOfferGate, /futureFabricStageCompletion\.isComplete/);
 assert.match(remainingOfferGate, /additionalGarmentFabricTransaction\.phase === "committed"/,
   "A terminal Fabric commit must not suppress the shared offer while Design Style is unfinished.");
-assert.match(remainingOfferGate, /futureStageId === "fabric" \|\| futureStageId === "custom_details"/);
+assert.match(
+  remainingOfferGate,
+  /futureStageId === "fabric" \|\|\s*futureStageId === "custom_details" \|\|\s*futureStageId === "personalized_additions"/,
+  "the shared remaining-capacity offer remains available through its current Step 2, Step 4, and Step 5 presentation stages.",
+);
 const capacityAdditionHandler = studioSource.slice(
   studioSource.indexOf("const handleAddFutureAdditionalGarment ="),
   studioSource.indexOf("const handleCompleteAdditionalGarmentCustomDetails ="),

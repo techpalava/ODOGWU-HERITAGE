@@ -25,11 +25,13 @@ export const AssignedFabricPreview = ({
   garmentKey,
   garmentLabel,
   fabricCode,
+  className = ASSIGNED_FABRIC_PREVIEW_CLASSNAME,
 }: {
   fabric: Fabric | null | undefined;
   garmentKey: string;
   garmentLabel: string;
   fabricCode: string;
+  className?: string;
 }) => {
   const previewCode = fabric?.code || fabricCode;
   const imageUrl = hasUsableFabricImage(fabric) ? fabric!.image!.trim() : null;
@@ -46,7 +48,7 @@ export const AssignedFabricPreview = ({
     "data-assigned-fabric-preview": "true",
     "data-garment-key": garmentKey,
     "data-fabric-code": previewCode,
-    className: ASSIGNED_FABRIC_PREVIEW_CLASSNAME,
+    className,
   } as const;
 
   if (imageUrl && !imageFailed) {

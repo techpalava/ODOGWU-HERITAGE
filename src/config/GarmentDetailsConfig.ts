@@ -507,13 +507,13 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
   ),
   createAdditionalPhysicalGarmentOption(
     "kaftan",
-    "Kaftan",
-    "Add one kaftan using two fabric units.",
+    "Long shirt",
+    "Add one Long shirt using two fabric units.",
   ),
   createAdditionalPhysicalGarmentOption(
     "full_length_gown",
-    "Full-length Gown",
-    "Add one full-length gown using two fabric units.",
+    "Long Dress",
+    "Add one Long Dress using two fabric units.",
   ),
 
   // SHIRT LENGTH AND SLEEVE LENGTH

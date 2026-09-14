@@ -142,7 +142,7 @@ const OTHER_ADDITIONAL_GARMENT_PENDING_MESSAGE =
   "Finish assigning fabric to the pending additional garment before removing fabric from another additional garment.";
 
 const STEP2_FABRIC_CAPACITY_INTRO =
-  "One Fabric can make up to two standard garments. A Long Dress (Gown) uses one full Fabric. You may reuse available capacity or choose different Fabrics for your garments.";
+  "One Fabric can make up to two standard garments. A Long Dress uses one full Fabric. You may reuse available capacity or choose different Fabrics for your garments.";
 
 const UNASSIGNED_FABRIC_NO_CAPACITY_MESSAGE =
   "No selected Fabric has capacity for this garment. Change a Fabric assignment or remove a Fabric selection.";

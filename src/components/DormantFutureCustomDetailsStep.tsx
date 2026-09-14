@@ -26,6 +26,11 @@ import type {
   StyleCategory,
 } from "../types";
 import { AssignedFabricPreview } from "./AssignedFabricPreview";
+import {
+  getStep1GarmentReferenceAlt,
+  getStep1GarmentReferenceImage,
+  isStep1GarmentReferenceType,
+} from "../utils/step1GarmentReferenceImages";
 import type { TraditionalAccessory } from "../utils/decorativePricing";
 import {
   DECORATIVE_FEATURE_DESCRIPTIONS,
@@ -535,6 +540,25 @@ export const DormantFutureCustomDetailsStep = ({
       selectionIndex: selectionIndex > 0 ? selectionIndex : null,
     };
   };
+  const step4GarmentContexts = isCustomDetailsStage
+    ? Array.from(
+        reconciliation.subjects.reduce(
+          (contexts, subject) => {
+            if (!contexts.has(subject.parentGarmentKey)) {
+              contexts.set(subject.parentGarmentKey, {
+                garmentKey: subject.parentGarmentKey,
+                garmentType: subject.parentGarmentType,
+              });
+            }
+            return contexts;
+          },
+          new Map<string, {
+            garmentKey: string;
+            garmentType: CanonicalPhysicalGarmentType;
+          }>(),
+        ).values(),
+      )
+    : [];
 
   const closeAdditionalGarmentChoice = ({
     restoreFocus = true,
@@ -998,6 +1022,72 @@ export const DormantFutureCustomDetailsStep = ({
           <p className="text-sm font-bold text-heritage-green">{stageTitle} need attention</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-heritage-ink/70">{Array.from(new Set(completion.blockers.map((blocker) => blocker.message))).map((message) => <li key={message}>{message}</li>)}</ul>
         </div>
+      )}
+      {isCustomDetailsStage && step4GarmentContexts.length > 0 && (
+        <section
+          aria-label="Garment and Fabric context"
+          data-step4-garment-context-list="true"
+          className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2"
+        >
+          {step4GarmentContexts.map((context) => {
+            const garmentLabel = getCustomDetailsGarmentLabel(context.garmentType);
+            const referenceImage = isStep1GarmentReferenceType(context.garmentType)
+              ? getStep1GarmentReferenceImage(context.garmentType)
+              : null;
+            const assigned = getAssignedFabricForGarment(context.garmentKey);
+            return (
+              <article
+                key={context.garmentKey}
+                data-step4-garment-context={context.garmentKey}
+                className="flex min-w-0 items-center gap-3 rounded-xl border border-heritage-gold/20 bg-heritage-cream/25 p-2.5"
+              >
+                {referenceImage ? (
+                  <img
+                    src={referenceImage.src}
+                    alt={getStep1GarmentReferenceAlt(garmentLabel)}
+                    data-step4-garment-reference={context.garmentKey}
+                    className="size-11 shrink-0 rounded-lg object-cover"
+                  />
+                ) : (
+                  <div
+                    role="img"
+                    aria-label={`Garment preview unavailable for ${garmentLabel}`}
+                    data-step4-garment-reference={context.garmentKey}
+                    className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-heritage-gold/10 px-1 text-center text-[9px] font-semibold leading-tight text-heritage-ink/55"
+                  >
+                    Garment preview unavailable
+                  </div>
+                )}
+                {assigned ? (
+                  <AssignedFabricPreview
+                    fabric={assigned.fabric}
+                    garmentKey={context.garmentKey}
+                    garmentLabel={garmentLabel}
+                    fabricCode={assigned.fabricCode}
+                    className="size-11 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/25 bg-heritage-cream/40"
+                  />
+                ) : (
+                  <div
+                    role="img"
+                    aria-label={`No Fabric assigned to ${garmentLabel}`}
+                    data-step4-assigned-fabric={context.garmentKey}
+                    className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-dashed border-heritage-gold/35 px-1 text-center text-[9px] font-semibold leading-tight text-heritage-ink/55"
+                  >
+                    No Fabric
+                  </div>
+                )}
+                <div className="min-w-0 text-xs leading-snug">
+                  <p className="text-heritage-ink/60">Garment</p>
+                  <p className="break-words font-bold text-heritage-green">{garmentLabel}</p>
+                  <p className="mt-1 text-heritage-ink/60">Assigned Fabric</p>
+                  <p className="break-words font-semibold text-heritage-ink">
+                    {assigned?.fabric?.name || assigned?.fabricCode || "Not assigned"}
+                  </p>
+                </div>
+              </article>
+            );
+          })}
+        </section>
       )}
       {isPersonalizedAdditionsStage && fabricAnnouncement ? (
         <div
