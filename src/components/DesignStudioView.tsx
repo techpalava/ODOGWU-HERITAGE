@@ -1355,8 +1355,7 @@ export default function DesignStudioView({
             authoritativeAdditionalGarmentConstructionState,
         });
   const provisionalAdditionalGarmentKey =
-    additionalGarmentFabricTransaction?.origin === "new_addition" &&
-    additionalGarmentFabricTransaction.phase !== "committed"
+    additionalGarmentFabricTransaction?.origin === "new_addition"
       ? additionalGarmentFabricTransaction.garmentKey
       : null;
   const fabricTransactionPhysicalOccurrences = useMemo(
@@ -1455,11 +1454,15 @@ export default function DesignStudioView({
     garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
     fabricAllocationState,
     fabrics,
-    requiredPhysicalOccurrences: authoritativePhysicalOccurrencesForDomain,
+    // A newly assigned Additional Garment remains an exact required occurrence
+    // while its committed transaction settles into the construction ledger.
+    // Validating against the older ledger during that render classifies its
+    // real assignment as malformed and incorrectly blocks Fabric completion.
+    requiredPhysicalOccurrences: fabricTransactionPhysicalOccurrences,
     rawFabricIntegrityDiagnostics: futureDraftFabricIntegrityBlockers,
   });
   const authoritativePhysicalOccurrenceKeys = new Set(
-    authoritativePhysicalOccurrencesForDomain.map(
+    fabricTransactionPhysicalOccurrences.map(
       (occurrence) => occurrence.garmentKey,
     ),
   );
@@ -1472,7 +1475,7 @@ export default function DesignStudioView({
   const futureGarmentFabricPlanning = getFutureGarmentFabricPlanning({
     garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
     fabricAllocationState,
-    requiredPhysicalOccurrences: authoritativePhysicalOccurrencesForDomain,
+    requiredPhysicalOccurrences: fabricTransactionPhysicalOccurrences,
   });
   const fabricStepGarmentTypeSelection = resolveFabricStepGarmentTypeSelection({
     step1GarmentTypeSelection: garmentTypeSelection,
@@ -7547,7 +7550,7 @@ export default function DesignStudioView({
           garmentTypeSelection={fabricStepGarmentTypeSelection}
           fabricAllocationState={fabricAllocationState}
           completion={futureFabricStageCompletion}
-          requiredPhysicalOccurrences={authoritativePhysicalOccurrencesForDomain}
+          requiredPhysicalOccurrences={fabricTransactionPhysicalOccurrences}
           orphanRepairTargets={futureFabricOrphanRepairTargets}
           requiredFabricQuantity={
             futureGarmentFabricPlanning.requiredFabricQuantity
