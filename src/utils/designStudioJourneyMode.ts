@@ -8,7 +8,7 @@ import type {
   GarmentTypeStepSelection,
   GuestDesignDraft,
 } from "../types";
-import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./designSourceJourney";
+import { DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION } from "./designSourceJourney";
 import { reconcileGarmentTypeStepSelection } from "./garmentTypeStepState";
 import { normalizeAiTryOnWorkflowState } from "./aiTryOnWorkflow";
 import { isFutureMeasurementStageUnlocked } from "./measurementBlueprint";
@@ -29,7 +29,12 @@ export interface DormantGarmentTypeStageCompletion {
 
 export interface DormantDesignStudioJourneyState {
   currentStageId: DesignStudioStageId;
-  nextStageId: "fabric" | "design_style" | "custom_details" | null;
+  nextStageId:
+    | "fabric"
+    | "design_style"
+    | "custom_details"
+    | "personalized_additions"
+    | null;
   canAdvance: boolean;
   constructionSelectionMode: GarmentConstructionSelectionMode;
   garmentTypeSelection: GarmentTypeStepSelection;
@@ -65,6 +70,7 @@ export const createDormantDesignStudioJourneyState = ({
   normalizedCustomDetailCatalog,
   isFabricStageComplete = false,
   isCustomDetailsStageReady = false,
+  isPersonalizedAdditionsStageReady = isCustomDetailsStageReady,
 }: {
   persistedDraft?: Pick<
     GuestDesignDraft,
@@ -73,6 +79,7 @@ export const createDormantDesignStudioJourneyState = ({
   normalizedCustomDetailCatalog: readonly CustomDetailOption[];
   isFabricStageComplete?: boolean;
   isCustomDetailsStageReady?: boolean;
+  isPersonalizedAdditionsStageReady?: boolean;
 }): DormantDesignStudioJourneyState => {
   const garmentTypeSelection = reconcileGarmentTypeStepSelection({
     persistedSelection: persistedDraft?.garmentTypeSelection,
@@ -92,18 +99,30 @@ export const createDormantDesignStudioJourneyState = ({
     completion.isComplete &&
     isFabricStageComplete &&
     isCustomDetailsStageReady &&
+    isPersonalizedAdditionsStageReady &&
     canEnterMeasurement
       ? "measurement"
       : requestedStageId === "try_on" &&
           completion.isComplete &&
           isFabricStageComplete &&
-          isCustomDetailsStageReady
+          isCustomDetailsStageReady &&
+          isPersonalizedAdditionsStageReady
         ? "try_on"
         : requestedStageId === "try_on" &&
             completion.isComplete &&
-            isFabricStageComplete
-          ? "custom_details"
-          : requestedStageId === "custom_details" &&
+            isFabricStageComplete &&
+            isCustomDetailsStageReady
+          ? "personalized_additions"
+          : requestedStageId === "try_on" &&
+              completion.isComplete &&
+              isFabricStageComplete
+            ? "custom_details"
+          : requestedStageId === "personalized_additions" &&
+              completion.isComplete &&
+              isFabricStageComplete &&
+              isCustomDetailsStageReady
+            ? "personalized_additions"
+            : requestedStageId === "custom_details" &&
               completion.isComplete &&
               isFabricStageComplete
             ? "custom_details"
@@ -187,7 +206,7 @@ export const persistDormantGarmentTypeStage = <T extends GuestDesignDraft>({
 }): T => {
   return {
     ...draft,
-    journeySchemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+    journeySchemaVersion: DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION,
     currentStageId,
     garmentTypeSelection,
   };

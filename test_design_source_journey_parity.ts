@@ -8,7 +8,7 @@ import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateE
 import { getCustomerFacingFabricQuantityForAllocations } from "./src/engine/FabricCapacityEngine";
 import { createCustomerDesignUploadReference } from "./src/services/customerDesignUploadReference";
 import type { StyleCategory } from "./src/types";
-import { DESIGN_STUDIO_NINE_STAGE_FOUNDATION } from "./src/utils/designSourceJourney";
+import { DESIGN_STUDIO_TEN_STAGE_FOUNDATION } from "./src/utils/designSourceJourney";
 import {
   createCatalogDesignSource,
   createUploadedDesignSource,
@@ -50,7 +50,7 @@ assert.equal(hasValidActiveDesignSource(catalogSource, null), false);
 assert.equal(hasValidActiveDesignSource(uploadedSource, null), true);
 
 assert.deepEqual(
-  DESIGN_STUDIO_NINE_STAGE_FOUNDATION.map(({ id, position, title }) => ({
+  DESIGN_STUDIO_TEN_STAGE_FOUNDATION.map(({ id, position, title }) => ({
     id,
     position,
     title,
@@ -60,11 +60,12 @@ assert.deepEqual(
     { id: "fabric", position: 2, title: "Fabric" },
     { id: "design_style", position: 3, title: "Design Style" },
     { id: "custom_details", position: 4, title: "Custom Details" },
-    { id: "try_on", position: 5, title: "AI Try-on" },
-    { id: "measurement", position: 6, title: "Measurement" },
-    { id: "summary", position: 7, title: "Summary" },
-    { id: "shipping", position: 8, title: "Delivery & Pickup" },
-    { id: "payment", position: 9, title: "Order Review & Payment" },
+    { id: "personalized_additions", position: 5, title: "Personalized Additions" },
+    { id: "try_on", position: 6, title: "AI Try-on" },
+    { id: "measurement", position: 7, title: "Measurement" },
+    { id: "summary", position: 8, title: "Summary" },
+    { id: "shipping", position: 9, title: "Delivery & Pickup" },
+    { id: "payment", position: 10, title: "Order Review & Payment" },
   ],
 );
 
@@ -130,5 +131,5 @@ assert.equal(studioSource.includes("legacy_five_stage"), false);
 assert.doesNotMatch(appSource, /useStaffPreviewClientGate|journeyMode=/);
 
 console.log(
-  "PASS: catalog and uploaded sources preserve nine-stage domain parity",
+  "PASS: catalog and uploaded sources preserve ten-stage domain parity",
 );

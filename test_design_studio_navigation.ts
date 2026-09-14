@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  DESIGN_STUDIO_NINE_STAGE_FOUNDATION,
+  DESIGN_STUDIO_TEN_STAGE_FOUNDATION,
 } from "./src/utils/designSourceJourney";
 import {
   createDesignStudioNavigationRequest,
@@ -10,7 +10,7 @@ import {
   getValidationNavigationTarget,
 } from "./src/utils/designStudioNavigation";
 
-const stages = DESIGN_STUDIO_NINE_STAGE_FOUNDATION.map((stage) => stage.id);
+const stages = DESIGN_STUDIO_TEN_STAGE_FOUNDATION.map((stage) => stage.id);
 
 // Every successful Next and Back transition carries a new, explicit
 // destination-top request. A new id keeps repeat clicks observable even when
@@ -71,7 +71,7 @@ assert.match(
 );
 assert.match(
   studioSource,
-  /currentlyEnterable\.add\("fabric"\)[\s\S]*currentlyEnterable\.add\("design_style"\)[\s\S]*currentlyEnterable\.add\("custom_details"\)[\s\S]*currentlyEnterable\.add\("measurement"\)/,
+  /currentlyEnterable\.add\("fabric"\)[\s\S]*currentlyEnterable\.add\("design_style"\)[\s\S]*currentlyEnterable\.add\("custom_details"\)[\s\S]*currentlyEnterable\.add\("personalized_additions"\)[\s\S]*currentlyEnterable\.add\("measurement"\)/,
   "the mounted Summary keeps every existing correction stage eligible when its existing entry gate allows it",
 );
 assert.match(
@@ -100,7 +100,7 @@ assert.match(summarySource, /id: "additional_garments",[\s\S]{0,180}focusGarment
 // Intentional modal/sub-flow returns keep their established direct state
 // updates and therefore never receive the shared main-stage top request.
 assert.match(studioSource, /transaction\.designStyleReuse[\s\S]{0,400}setFutureStageId\("design_style"\)/);
-assert.match(studioSource, /setFutureCustomDetailsFocusGarmentKey\(commitResult\.garmentKey\);[\s\S]{0,120}setFutureStageId\("custom_details"\)/);
+assert.match(studioSource, /setFutureCustomDetailsFocusGarmentKey\(commitResult\.garmentKey\);[\s\S]{0,120}setFutureStageId\("personalized_additions"\)/);
 
 // The existing exact-occurrence request remains the sole Additional Garments
 // scroller. Its scroll is deferred until the originating Summary click settles,

@@ -213,6 +213,7 @@ let neckLayoutPricing = calculateGarmentScopedCustomDetailsPricing({
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let neckRenderer!: ReturnType<typeof create>;
+let personalizedLayoutRenderer: ReturnType<typeof create> | null = null;
 const refreshNeckLayout = (
   nextState: typeof neckLayoutReconciliation.state,
   nextInputs = neckLayoutInputs.state,
@@ -244,17 +245,23 @@ const refreshNeckLayout = (
     catalogInspection,
   });
   neckRenderer.update(createNeckStep());
+  personalizedLayoutRenderer?.update(
+    createNeckStep({ stage: "personalized_additions" }),
+  );
 };
 const createNeckStep = ({
+  stage = "custom_details",
   constructionBreakdown = { status: "complete" as const, rows: [] },
   constructionSubtotal = 0,
   orderLevelCustomDetailsPrice = 0,
 }: {
+  stage?: "custom_details" | "personalized_additions";
   constructionBreakdown?: Parameters<typeof DormantFutureCustomDetailsStep>[0]["constructionBreakdown"];
   constructionSubtotal?: number | null;
   orderLevelCustomDetailsPrice?: number;
 } = {}) =>
   createElement(DormantFutureCustomDetailsStep, {
+    stage,
     reconciliation: neckLayoutReconciliation,
     catalogue: neckLayoutCatalogue,
     personalizedInputs: neckLayoutInputs.state,
@@ -341,7 +348,19 @@ assert.match(
   /(?:^|\s)lg:col-span-2(?:\s|$)/,
   "Rendered Neck fieldset must span the full Custom Details section width",
 );
-const personalizedLayoutFieldset = neckRenderer.root.findByProps({
+act(() => {
+  personalizedLayoutRenderer = create(
+    createNeckStep({ stage: "personalized_additions" }),
+  );
+});
+assert.equal(
+  neckRenderer.root.findAllByProps({
+    "data-custom-detail-group": PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
+  }).length,
+  0,
+  "Step 4 must not render Personalized Additional",
+);
+const personalizedLayoutFieldset = personalizedLayoutRenderer.root.findByProps({
   "data-custom-detail-group": PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
 });
 assert.match(
@@ -351,7 +370,7 @@ assert.match(
 );
 const ordinaryFieldsets = neckRenderer.root
   .findAllByType("fieldset")
-  .filter((fieldset) => fieldset !== neckFieldset && fieldset !== personalizedLayoutFieldset);
+  .filter((fieldset) => fieldset !== neckFieldset);
 assert.ok(
   ordinaryFieldsets.length > 0,
   "Rendered tree must contain at least one ordinary non-spanning fieldset",
@@ -501,10 +520,10 @@ if (neckLayoutPricing.status === "exact") {
   );
 }
 
-const personalizedFieldset = () => neckRenderer.root.findByProps({
+const personalizedFieldset = () => personalizedLayoutRenderer!.root.findByProps({
   "data-custom-detail-group": PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
 });
-const personalizedOptionGrid = () => neckRenderer.root.findByProps({
+const personalizedOptionGrid = () => personalizedLayoutRenderer!.root.findByProps({
   "data-custom-detail-option-grid": PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
 });
 const personalizedOptionLabel = () => personalizedFieldset()
@@ -581,7 +600,7 @@ assert.ok(
   "None and ordinary choices must share the same normal option-card geometry",
 );
 assert.equal(
-  neckRenderer.root.findAllByProps({
+  personalizedLayoutRenderer!.root.findAllByProps({
     "data-custom-detail-conditional-row": PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
   }).length,
   0,
@@ -591,7 +610,7 @@ assert.equal(
 act(() => {
   personalizedOptionLabel()?.findByType("input").props.onChange();
 });
-const personalizedDetail = neckRenderer.root.findByProps({
+const personalizedDetail = personalizedLayoutRenderer!.root.findByProps({
   "data-custom-detail-conditional-row": PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
 });
 assert.equal(
@@ -624,7 +643,7 @@ act(() => {
   personalizedTextarea.props.onChange({ target: { value: "Add a family crest on the left chest." } });
 });
 assert.equal(
-  neckRenderer.root
+  personalizedLayoutRenderer!.root
     .findByProps({
       "data-custom-detail-conditional-row": PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
     })
@@ -644,7 +663,7 @@ act(() => {
 });
 assert.equal(personalizedNoneLabel()?.findByType("input").props.checked, true);
 assert.equal(
-  neckRenderer.root.findAllByProps({
+  personalizedLayoutRenderer!.root.findAllByProps({
     "data-custom-detail-conditional-row": PERSONALIZED_ADDITIONAL_REQUIREMENT_OPTION_ID,
   }).length,
   0,
@@ -827,6 +846,7 @@ const additionalPricing = calculateGarmentScopedCustomDetailsPricing({
 let additionalRenderer!: ReturnType<typeof create>;
 let additionalFabricRepairKey: string | null = null;
 const additionalStepProps = {
+  stage: "personalized_additions" as const,
   reconciliation: additionalReconciliation,
   catalogue: additionalCatalogue,
   personalizedInputs: additionalInputs.state,
@@ -868,33 +888,31 @@ act(() => {
     createElement(DormantFutureCustomDetailsStep, additionalStepProps),
   );
 });
-const mainDetails = additionalRenderer.root.findByProps({
-  "data-custom-detail-section": "main-garment-details",
-});
 const addSection = additionalRenderer.root.findByProps({
   "data-custom-detail-section": "add-additional-garment",
 });
 assert.equal(
-  /STANDARD LEG SHORTS|Nikka/i.test(textContent(mainDetails)),
-  false,
-  "Main Custom Details must not render inactive Nikka sections",
+  additionalRenderer.root.findAllByProps({
+    "data-custom-detail-section": "main-garment-details",
+  }).length,
+  0,
+  "Step 5 must not duplicate Step 4 main-garment Custom Details",
 );
 assert.equal(
-  textContent(mainDetails).includes("Added garment"),
+  /STANDARD LEG SHORTS|Nikka/i.test(textContent(addSection)),
   false,
-  "Main Custom Details must not mix Additional Garment options into the Step 1 garments",
+  "Additional Garment details must not render inactive Nikka sections",
 );
-assert.match(textContent(mainDetails), /Base garment/);
+assert.equal(
+  textContent(addSection).includes("Base garment"),
+  false,
+  "Step 5 Additional Garment details must not duplicate the base garment",
+);
 assert.match(textContent(addSection), /Added garment/);
-assert.equal(
-  mainDetails.findAllByProps({ "data-custom-detail-group": "shirt_construction" }).length,
-  1,
-  "the Main Shirt construction group remains in the main area",
-);
 assert.equal(
   addSection.findAllByProps({ "data-custom-detail-group": "shirt_construction" }).length,
   1,
-  "the Additional Shirt construction group renders inside Add Additional Garment",
+  "the Additional Shirt construction group renders inside Step 5 Add Additional Garment",
 );
 assert.ok(
   addSection.findByProps({ "data-added-garment-heading": "true" }),
@@ -928,7 +946,7 @@ act(() => {
 assert.equal(
   additionalFabricRepairKey,
   additionalAssignment.garmentKey,
-  "a ledger-authorized Additional garment without Fabric exposes its Step 4 repair control",
+  "a ledger-authorized Additional garment without Fabric exposes its Step 5 repair control",
 );
 
 const originalWindow = globalThis.window;
@@ -936,6 +954,11 @@ Object.assign(globalThis, {
   window: {
     setTimeout: globalThis.setTimeout.bind(globalThis),
     clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    requestAnimationFrame: (callback: (timestamp: number) => void) => {
+      callback(0);
+      return 0;
+    },
+    cancelAnimationFrame: () => undefined,
   },
 });
 const navigationEvents: string[] = [];
@@ -1012,22 +1035,22 @@ try {
   assert.deepEqual(
     handledNavigationRequests,
     [1, 2, 3],
-    "each Order Summary request is consumed independently, including repeated Step 4 clicks",
+    "each Order Summary request is consumed independently, including repeated Step 5 clicks",
   );
   assert.deepEqual(
     navigationEvents,
     [
-      "exact-focus",
       "exact-scroll",
       "exact-focus",
       "exact-scroll",
-      "section-focus",
+      "exact-focus",
       "section-scroll",
+      "section-focus",
     ],
     "missing Fabric targets its exact control while complete additions target the management section",
   );
 
-  // Exercise the persistent Summary callback and its Step 4 consumer in one
+  // Exercise the persistent Summary callback and its Step 5 consumer in one
   // production-component tree. This catches a request that is emitted by the
   // Summary but never reaches the rendered exact Additional occurrence.
   const persistentSummaryView: LiveOrderSummaryView = {
@@ -1041,7 +1064,7 @@ try {
           {
             id: "additional_garments",
             title: "Additional Garments",
-            editStage: "custom_details",
+            editStage: "personalized_additions",
             focusGarmentKey: additionalAssignment.garmentKey,
             lines: [
               {
@@ -1064,7 +1087,7 @@ try {
   };
   const persistentSummaryNavigationEvents: string[] = [];
   const persistentSummaryFabricRequests: string[] = [];
-  const PersistentSummaryStep4Harness = () => {
+  const PersistentSummaryStep5Harness = () => {
     const nextRequestIdRef = useRef(0);
     const [focusGarmentKey, setFocusGarmentKey] = useState<string | null>(null);
     const [requestId, setRequestId] = useState<number | null>(null);
@@ -1073,10 +1096,10 @@ try {
       null,
       createElement(DesignStudioOrderSummary, {
         view: persistentSummaryView,
-        unlockedStages: new Set<DesignStudioStageId>(["custom_details"]),
-        currentStageId: "custom_details",
+        unlockedStages: new Set<DesignStudioStageId>(["personalized_additions"]),
+        currentStageId: "personalized_additions",
         onEditStage: (stage, options) => {
-          assert.equal(stage, "custom_details");
+          assert.equal(stage, "personalized_additions");
           setFocusGarmentKey(options?.focusAdditionalGarmentKey || null);
           nextRequestIdRef.current += 1;
           setRequestId(nextRequestIdRef.current);
@@ -1101,7 +1124,7 @@ try {
   let persistentSummaryRenderer!: ReturnType<typeof create>;
   act(() => {
     persistentSummaryRenderer = create(
-      createElement(PersistentSummaryStep4Harness),
+      createElement(PersistentSummaryStep5Harness),
       {
         createNodeMock: (element) => {
           const props = element.props as { className?: unknown };
@@ -1130,8 +1153,8 @@ try {
   );
   assert.deepEqual(
     navigationEvents.slice(-4),
-    ["exact-focus", "exact-scroll", "exact-focus", "exact-scroll"],
-    "persistent Summary edits visibly focus and scroll the exact Step 4 repair control",
+    ["exact-scroll", "exact-focus", "exact-scroll", "exact-focus"],
+    "persistent Summary edits visibly focus and scroll the exact Step 5 repair control",
   );
   act(() => {
     persistentSummaryRenderer.root
@@ -1143,7 +1166,7 @@ try {
   assert.deepEqual(
     persistentSummaryFabricRequests,
     [additionalAssignment.garmentKey],
-    "the rendered Step 4 Add Fabric action retains the exact Additional occurrence key",
+    "the rendered Step 5 Add Fabric action retains the exact Additional occurrence key",
   );
   act(() => persistentSummaryRenderer.unmount());
 } finally {
@@ -1166,7 +1189,8 @@ const styleSource = readFileSync(
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const appSource = readFileSync("src/App.tsx", "utf8");
 
-assert.match(componentSource, /Step 4 of 9/);
+assert.match(componentSource, /stage = "custom_details"/);
+assert.match(componentSource, /Personalized Additions/);
 assert.match(
   componentSource,
   /Base garment construction was selected in Garment Type and is already included in your price/,

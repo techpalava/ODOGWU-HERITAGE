@@ -55,9 +55,9 @@ export type AdditionalGarmentFabricTransaction = {
     remainingUnits: number;
     assignedGarmentKeys: readonly string[];
     offerSignature: string;
-    returnStage: "fabric" | "custom_details";
+    returnStage: "fabric" | "personalized_additions";
   };
-  /** True when the Step 4 fabric dialog was opened for this transaction. */
+  /** True when the Step 5 fabric dialog was opened for this transaction. */
   openedModal?: boolean;
 };
 

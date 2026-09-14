@@ -720,7 +720,8 @@ assert.equal(exactResult.status, "reviewable");
 assert.ok(exactResult.candidate);
 const candidate = exactResult.candidate;
 assert.equal(candidate.schemaVersion, 1);
-assert.equal(candidate.journey.mode, "future_nine_stage");
+assert.equal(candidate.journey.mode, "future_ten_stage");
+assert.equal(candidate.journey.schemaVersion, 2);
 assert.equal(
   candidate.source.styleId,
   "style-shirt-trouser-standard_shorts-bum_shorts",
