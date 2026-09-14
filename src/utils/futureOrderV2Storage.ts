@@ -3,6 +3,7 @@ import type {
   FutureOrderCandidateV2,
 } from "./futureOrderCandidate";
 import { getCanonicalOrderIdentity } from "./orderContextIdentity";
+import { isSupportedDesignStudioJourneySchemaVersion } from "./designSourceJourney";
 
 export interface FutureOrderCartItemV2 {
   readonly schemaVersion: 2;
@@ -210,8 +211,10 @@ export const parseFutureOrderCandidateV2 = (
   }
   if (
     "source" in parsed || "design" in parsed ||
-    !isRecord(parsed.journey) || parsed.journey.mode !== "future_nine_stage" ||
-    !Number.isSafeInteger(parsed.journey.schemaVersion) ||
+    !isRecord(parsed.journey) ||
+    (parsed.journey.mode !== "future_nine_stage" &&
+      parsed.journey.mode !== "future_ten_stage") ||
+    !isSupportedDesignStudioJourneySchemaVersion(parsed.journey.schemaVersion) ||
     !isNonStyleEnvelopeShape(parsed) || !isPricingShape(parsed.pricing) ||
     !["reviewable", "blocked", "invalid"].includes(String(parsed.contentStatus)) ||
     parsed.paymentStatus !== "payment_provider_unavailable" ||

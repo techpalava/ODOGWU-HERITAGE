@@ -268,7 +268,7 @@ export const DesignStudioOrderSummary = ({
       section={section}
       canEdit={canEditStage(section.editStage)}
       canEditAdditionalGarments={Boolean(
-        canEditStage("custom_details") &&
+        canEditStage("personalized_additions") &&
           section.subsections?.some(
             (subsection) => subsection.id === "additional_garments",
           ),
@@ -281,7 +281,7 @@ export const DesignStudioOrderSummary = ({
       onEditAdditionalGarments={
         onEditStage
           ? (focusAdditionalGarmentKey) =>
-              onEditStage("custom_details", { focusAdditionalGarmentKey })
+              onEditStage("personalized_additions", { focusAdditionalGarmentKey })
           : undefined
       }
     />

@@ -11,7 +11,7 @@ export type InlineAdditionalGarmentFabricTransactionLike = {
  * Returns null when the current stage should stay mounted.
  *
  * While an inline Optional Extra Garment Fabric transaction is active
- * (including the terminal "committed" stabilization phase), Step 4 stays
+ * (including the terminal "committed" stabilization phase), Step 5 stays
  * mounted even if Fabric/Design Source readiness briefly flickers.
  */
 export const resolveFutureStageCorrection = ({
@@ -20,6 +20,7 @@ export const resolveFutureStageCorrection = ({
   fabricComplete,
   designSourceReady,
   customDetailsReady,
+  personalizedAdditionsReady = customDetailsReady,
   measurementUnlocked,
   summaryUnlocked,
   inlineAdditionalGarmentFabricTransaction,
@@ -30,6 +31,7 @@ export const resolveFutureStageCorrection = ({
   fabricComplete: boolean;
   designSourceReady: boolean;
   customDetailsReady: boolean;
+  personalizedAdditionsReady?: boolean;
   measurementUnlocked: boolean;
   summaryUnlocked: boolean;
   inlineAdditionalGarmentFabricTransaction: InlineAdditionalGarmentFabricTransactionLike;
@@ -39,6 +41,7 @@ export const resolveFutureStageCorrection = ({
   if (
     currentStageId !== "design_style" &&
     currentStageId !== "custom_details" &&
+    currentStageId !== "personalized_additions" &&
     currentStageId !== "try_on" &&
     currentStageId !== "measurement" &&
     currentStageId !== "summary"
@@ -51,24 +54,31 @@ export const resolveFutureStageCorrection = ({
     currentStageId === "design_style" &&
     Boolean(inlineAdditionalGarmentFabricTransaction?.designStyleReuse);
   const suppressFabricIncompleteRedirect =
-    (currentStageId === "custom_details" &&
+    (currentStageId === "personalized_additions" &&
       (inlineActive || additionalGarmentFabricRepairTargeted)) ||
     reuseInDesignStyle;
   const suppressDesignSourceRedirect =
-    (currentStageId === "custom_details" && inlineActive) || reuseInDesignStyle;
+    (currentStageId === "personalized_additions" && inlineActive) || reuseInDesignStyle;
 
   const fabricCompleteForCorrection =
     fabricComplete || suppressFabricIncompleteRedirect;
   const designSourceReadyForCorrection =
     designSourceReady || suppressDesignSourceRedirect;
 
+  const requiresStep4Completion =
+    currentStageId === "personalized_additions" ||
+    currentStageId === "try_on" ||
+    currentStageId === "measurement" ||
+    currentStageId === "summary";
+  const requiresStep5Completion =
+    currentStageId === "try_on" ||
+    currentStageId === "measurement" ||
+    currentStageId === "summary";
   const canRemainOnCurrentStage =
     fabricCompleteForCorrection &&
     designSourceReadyForCorrection &&
-    ((currentStageId !== "try_on" &&
-      currentStageId !== "measurement" &&
-      currentStageId !== "summary") ||
-      customDetailsReady) &&
+    (!requiresStep4Completion || customDetailsReady) &&
+    (!requiresStep5Completion || personalizedAdditionsReady) &&
     ((currentStageId !== "measurement" && currentStageId !== "summary") ||
       measurementUnlocked) &&
     (currentStageId !== "summary" || summaryUnlocked);
@@ -81,6 +91,7 @@ export const resolveFutureStageCorrection = ({
   if (!fabricCompleteForCorrection) return "fabric";
   if (!designSourceReadyForCorrection) return "design_style";
   if (!customDetailsReady) return "custom_details";
+  if (!personalizedAdditionsReady) return "personalized_additions";
   if (!measurementUnlocked) return "try_on";
   return "measurement";
 };

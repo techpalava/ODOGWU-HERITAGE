@@ -9,7 +9,10 @@ import type {
   FutureShippingStateV1,
 } from "../types";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
-import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./designSourceJourney";
+import {
+  DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION,
+  isSupportedDesignStudioJourneySchemaVersion,
+} from "./designSourceJourney";
 import {
   reconcileFutureShippingState,
   type FutureShippingStageResolution,
@@ -159,7 +162,7 @@ export interface FutureOrderCandidatePricingV1 {
 export interface FutureOrderCandidateV1 {
   readonly schemaVersion: 1;
   readonly journey: Readonly<{
-    mode: "future_nine_stage";
+    mode: "future_nine_stage" | "future_ten_stage";
     schemaVersion: number;
   }>;
   readonly authorityVersions: Readonly<{
@@ -362,6 +365,7 @@ const STAGE_ORDER: readonly DesignStudioStageId[] = [
   "fabric",
   "design_style",
   "custom_details",
+  "personalized_additions",
   "try_on",
   "measurement",
   "summary",
@@ -981,8 +985,8 @@ const buildFutureOrderCandidateCore = ({
   const quoteReference = input.shippingResolution.state.quoteReference;
   const core: FutureOrderCandidateNonStyleEnvelope = {
     journey: {
-      mode: "future_nine_stage",
-      schemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+      mode: "future_ten_stage",
+      schemaVersion: DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION,
     },
     authorityVersions: {
       customDetailsSchemaVersion:
@@ -1626,8 +1630,9 @@ export const normalizeFutureOrderCandidate = (
   }
   if (
     !isRecord(parsed.journey) ||
-    parsed.journey.mode !== "future_nine_stage" ||
-    parsed.journey.schemaVersion !== DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION ||
+    (parsed.journey.mode !== "future_nine_stage" &&
+      parsed.journey.mode !== "future_ten_stage") ||
+    !isSupportedDesignStudioJourneySchemaVersion(parsed.journey.schemaVersion) ||
     !isRecord(parsed.source) ||
     parsed.source.kind !== "catalog" ||
     !isStableIdentifier(parsed.source.sourceKey) ||

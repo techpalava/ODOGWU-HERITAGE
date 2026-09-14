@@ -6,7 +6,7 @@ import type {
 } from "./src/types";
 import { normalizeCustomDetailCatalog } from "./src/utils/catalogHelpers";
 import {
-  DESIGN_STUDIO_NINE_STAGE_FOUNDATION,
+  DESIGN_STUDIO_TEN_STAGE_FOUNDATION,
   DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
 } from "./src/utils/designSourceJourney";
 import {
@@ -516,19 +516,20 @@ assert.equal(
 );
 
 assert.deepEqual(
-  DESIGN_STUDIO_NINE_STAGE_FOUNDATION.map((step) => step.title),
+  DESIGN_STUDIO_TEN_STAGE_FOUNDATION.map((step) => step.title),
   [
     "Garment Type",
     "Fabric",
     "Design Style",
     "Custom Details",
+    "Personalized Additions",
     "AI Try-on",
     "Measurement",
     "Summary",
     "Delivery & Pickup",
     "Order Review & Payment",
   ],
-  "The active Design Studio must expose the approved nine-stage journey.",
+  "The active Design Studio must expose the approved ten-stage journey.",
 );
 
 console.log("PASS: authoritative Garment Type Step state and draft persistence");

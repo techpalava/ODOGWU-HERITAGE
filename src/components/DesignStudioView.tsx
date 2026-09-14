@@ -189,6 +189,7 @@ import {
   reconcileGarmentScopedPersonalizedInputs,
   validateGarmentScopedCustomDetailsCompletion,
 } from "../utils/garmentScopedCustomDetailsDomain";
+import { getCustomDetailsStageCompletion } from "../utils/customDetailsStageOwnership";
 import { resolveShowAdditionalClothesCosts } from "../config/GarmentDetailsConfig";
 import { projectActiveCustomerDesignSelections } from "../utils/customerAvailableDesignSelections";
 import {
@@ -428,6 +429,7 @@ const getCustomerDesignUploadErrorMessage = (error: unknown): string => {
 
 type FutureGarmentRemovalOriginStage =
   | "custom_details"
+  | "personalized_additions"
   | "summary"
   | "payment";
 
@@ -2552,7 +2554,9 @@ export default function DesignStudioView({
           futureFabricStageCompletion.isComplete &&
           (!additionalGarmentFabricTransaction ||
             additionalGarmentFabricTransaction.phase === "committed") &&
-          (futureStageId === "fabric" || futureStageId === "custom_details"),
+          (futureStageId === "fabric" ||
+            futureStageId === "custom_details" ||
+            futureStageId === "personalized_additions"),
         hasEligibleHalfCapacityAdditionalGarment:
           remainingFabricCapacityOfferGarmentTypes.length > 0,
       }),
@@ -2614,6 +2618,29 @@ export default function DesignStudioView({
         showAdditionalClothesCosts,
       })
     : null;
+  const futureStep4CustomDetailsCompletion =
+    futureCustomDetailsCompletion && futureScopedCustomDetailsReconciliation
+      ? getCustomDetailsStageCompletion({
+          stage: "custom_details",
+          completion: futureCustomDetailsCompletion,
+          reconciliation: futureScopedCustomDetailsReconciliation,
+        })
+      : null;
+  const futureStep5PersonalizedAdditionsCompletion =
+    futureCustomDetailsCompletion && futureScopedCustomDetailsReconciliation
+      ? getCustomDetailsStageCompletion({
+          stage: "personalized_additions",
+          completion: futureCustomDetailsCompletion,
+          reconciliation: futureScopedCustomDetailsReconciliation,
+        })
+      : null;
+  const isFutureStep4CustomDetailsReady = isFutureCustomDetailsContentReady(
+    futureStep4CustomDetailsCompletion,
+  );
+  const isFutureStep5PersonalizedAdditionsReady =
+    isFutureCustomDetailsContentReady(
+      futureStep5PersonalizedAdditionsCompletion,
+    );
   const futureCustomDetailsPricing = futureScopedCustomDetailsReconciliation
     ? calculateGarmentScopedCustomDetailsPricing({
         reconciliation: futureScopedCustomDetailsReconciliation,
@@ -2876,6 +2903,9 @@ export default function DesignStudioView({
     if (isFutureDesignSourceReadyForCustomDetails) {
       currentlyEnterable.add("custom_details");
     }
+    if (isFutureStep4CustomDetailsReady) {
+      currentlyEnterable.add("personalized_additions");
+    }
     if (isFutureCustomDetailsStageReady) {
       currentlyEnterable.add("try_on");
     }
@@ -2902,6 +2932,7 @@ export default function DesignStudioView({
     garmentTypeStageCompletion.isComplete,
     futureFabricStageCompletion.isComplete,
     isFutureDesignSourceReadyForCustomDetails,
+    isFutureStep4CustomDetailsReady,
     isFutureCustomDetailsStageReady,
     futureAiTryOnWorkflow,
     isFutureSummaryStageUnlocked,
@@ -3035,8 +3066,10 @@ export default function DesignStudioView({
       (typeof document !== "undefined"
         ? document.getElementById(
             request.originStage === "custom_details"
-              ? "future-custom-details-title"
-              : request.originStage === "summary"
+              ? "future-custom_details-title"
+              : request.originStage === "personalized_additions"
+                ? "future-personalized_additions-title"
+                : request.originStage === "summary"
                 ? "future-summary-title"
                 : "future-payment-review-title",
           )
@@ -3681,6 +3714,12 @@ export default function DesignStudioView({
           personalizedInputs: restoredPersonalizedInputs,
           showAdditionalClothesCosts,
         });
+      const restoredStep4CustomDetailsCompletion =
+        getCustomDetailsStageCompletion({
+          stage: "custom_details",
+          completion: restoredCustomDetailsCompletion,
+          reconciliation: restoredCustomDetails,
+        });
       const restoredMeasurementPhysicalGarments =
         resolveHydratedMeasurementPhysicalGarments({
           garmentTypeSelection: restoredGarmentTypeSelection,
@@ -3732,8 +3771,16 @@ export default function DesignStudioView({
               ? "measurement"
               : storedDraft?.currentStageId === "try_on" &&
                   restoredFabricCompletion.isComplete &&
-                  restoredSourceReady
+                  restoredSourceReady &&
+                  isFutureCustomDetailsContentReady(restoredCustomDetailsCompletion)
                 ? "try_on"
+                : storedDraft?.currentStageId === "personalized_additions" &&
+                    restoredFabricCompletion.isComplete &&
+                    restoredSourceReady &&
+                    isFutureCustomDetailsContentReady(
+                      restoredStep4CustomDetailsCompletion,
+                    )
+                  ? "personalized_additions"
                 : storedDraft?.currentStageId === "custom_details" &&
                     restoredFabricCompletion.isComplete &&
                     restoredSourceReady
@@ -4238,7 +4285,7 @@ export default function DesignStudioView({
       return;
     }
     setFutureCustomDetailsFocusGarmentKey(commitResult.garmentKey);
-    setFutureStageId("custom_details");
+    setFutureStageId("personalized_additions");
   }, [
     additionalGarmentFabricTransaction,
     fabricAllocationState,
@@ -4297,7 +4344,8 @@ export default function DesignStudioView({
       garmentTypeComplete: garmentTypeStageCompletion.isComplete,
       fabricComplete: futureFabricStageCompletion.isComplete,
       designSourceReady: isFutureDesignSourceReadyForCustomDetails,
-      customDetailsReady: isFutureCustomDetailsStageReady,
+      customDetailsReady: isFutureStep4CustomDetailsReady,
+      personalizedAdditionsReady: isFutureCustomDetailsStageReady,
       measurementUnlocked: isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow),
       summaryUnlocked: isFutureSummaryUnlockedByMeasurements(
         reconciledFutureMeasurementState,
@@ -4315,6 +4363,7 @@ export default function DesignStudioView({
     futureFabricStageCompletion.isComplete,
     garmentTypeStageCompletion.isComplete,
     isFutureDesignSourceReadyForCustomDetails,
+    isFutureStep4CustomDetailsReady,
     isFutureCustomDetailsStageReady,
     futureAiTryOnWorkflow,
     reconciledFutureMeasurementState.route,
@@ -5533,12 +5582,29 @@ export default function DesignStudioView({
     }
     navigateToFutureStage("custom_details", target);
   };
+  const handleOpenDormantPersonalizedAdditionsStage = (
+    target: DesignStudioNavigationTarget = getMainStageNavigationTarget(),
+  ) => {
+    if (
+      !isFutureStep4CustomDetailsReady &&
+      !isStageHistoricallyUnlocked("personalized_additions")
+    ) {
+      navigateToFutureStage("custom_details", getValidationNavigationTarget());
+      return;
+    }
+    navigateToFutureStage("personalized_additions", target);
+  };
   const handleOpenDormantAiTryOnStage = () => {
     if (
       !isFutureCustomDetailsStageReady &&
       !isStageHistoricallyUnlocked("try_on")
     ) {
-      navigateToFutureStage("custom_details", getValidationNavigationTarget());
+      navigateToFutureStage(
+        isFutureStep4CustomDetailsReady
+          ? "personalized_additions"
+          : "custom_details",
+        getValidationNavigationTarget(),
+      );
       return;
     }
     navigateToFutureStage("try_on");
@@ -5935,7 +6001,8 @@ export default function DesignStudioView({
     stage: DesignStudioStageId,
     options?: { focusAdditionalGarmentKey?: string | null },
   ) => {
-    // The persistent Summary remains visible while Step 4 is mounted. During
+    // The persistent Summary remains visible while the Custom Details steps
+    // are mounted. During
     // hydration, its Edit can fire before the historical-unlock effect catches
     // up; the already mounted stage is safe to target in that case.
     if (!liveOrderSummaryUnlockedStages.has(stage)) return;
@@ -5952,6 +6019,14 @@ export default function DesignStudioView({
       return;
     }
     if (stage === "custom_details") {
+      handleOpenDormantCustomDetailsStage(
+        getOrderSummaryNavigationTarget({
+          focusAdditionalGarmentKey: options?.focusAdditionalGarmentKey,
+        }),
+      );
+      return;
+    }
+    if (stage === "personalized_additions") {
       if (options) {
         setFutureCustomDetailsFocusGarmentKey(
           options.focusAdditionalGarmentKey || null,
@@ -5961,7 +6036,7 @@ export default function DesignStudioView({
           futureAdditionalGarmentNavigationRequestIdRef.current,
         );
       }
-      handleOpenDormantCustomDetailsStage(
+      handleOpenDormantPersonalizedAdditionsStage(
         getOrderSummaryNavigationTarget({
           focusAdditionalGarmentKey: options?.focusAdditionalGarmentKey,
         }),
@@ -6459,9 +6534,9 @@ export default function DesignStudioView({
               remainingUnits: selectedCapacityOffer.remainingUnits,
               assignedGarmentKeys: selectedCapacityOffer.assignedGarmentKeys,
               offerSignature: selectedCapacityOfferSignature!,
-              returnStage: (futureStageId === "custom_details"
-                ? "custom_details"
-                : "fabric") as "fabric" | "custom_details",
+              returnStage: (futureStageId === "personalized_additions"
+                ? "personalized_additions"
+                : "fabric") as "fabric" | "personalized_additions",
             },
           }
         : {}),
@@ -7326,14 +7401,15 @@ export default function DesignStudioView({
     showPersistentLiveOrderSummary &&
     (futureStageId === "garment_type" ||
       futureStageId === "fabric" ||
-      futureStageId === "custom_details");
+      futureStageId === "custom_details" ||
+      futureStageId === "personalized_additions");
   const showShellLiveOrderSummary =
     showPersistentLiveOrderSummary && !embedPersistentLiveOrderSummary;
 
   return (
     <div
-      id="design-studio-nine-stage-journey"
-      data-journey-mode="nine_stage"
+      id="design-studio-ten-stage-journey"
+      data-journey-mode="ten_stage"
       data-stage-id={futureStageId}
       data-order-context-type={ctx.orderType}
       data-order-context-batch-id={ctx.batchId || ""}
@@ -7351,8 +7427,10 @@ export default function DesignStudioView({
             : futureStageId === "design_style"
               ? isFutureDesignSourceReadyForCustomDetails
               : futureStageId === "custom_details"
-                ? isFutureCustomDetailsStageReady
-                : futureStageId === "try_on"
+                ? isFutureStep4CustomDetailsReady
+                : futureStageId === "personalized_additions"
+                  ? isFutureStep5PersonalizedAdditionsReady
+                  : futureStageId === "try_on"
                   ? futureAiTryOnWorkflow.status === "completed" ||
                     futureAiTryOnWorkflow.status === "skipped"
                   : futureStageId === "measurement"
@@ -7399,6 +7477,7 @@ export default function DesignStudioView({
         canEnterFabric={garmentTypeStageCompletion.isComplete}
         canEnterDesignStyle={futureFabricStageCompletion.isComplete}
         canEnterCustomDetails={isFutureDesignSourceReadyForCustomDetails}
+        canEnterPersonalizedAdditions={isFutureStep4CustomDetailsReady}
         canEnterTryOn={isFutureCustomDetailsStageReady}
         canEnterMeasurement={isFutureMeasurementStageUnlocked(
           futureAiTryOnWorkflow,
@@ -7410,6 +7489,7 @@ export default function DesignStudioView({
         onSelectFabric={handleOpenDormantFabricStage}
         onSelectDesignStyle={handleOpenDormantDesignStyleStage}
         onSelectCustomDetails={handleOpenDormantCustomDetailsStage}
+        onSelectPersonalizedAdditions={handleOpenDormantPersonalizedAdditionsStage}
         onSelectTryOn={handleOpenDormantAiTryOnStage}
         onSelectMeasurement={handleOpenDormantMeasurementStage}
         onSelectSummary={handleOpenDormantSummaryStage}
@@ -7545,18 +7625,25 @@ export default function DesignStudioView({
           onReturnToGarmentType={() => navigateToFutureStage("garment_type")}
           onContinue={handleOpenDormantCustomDetailsStage}
         />
-      ) : futureStageId === "custom_details" &&
+      ) : (futureStageId === "custom_details" ||
+          futureStageId === "personalized_additions") &&
         futureScopedCustomDetailsReconciliation &&
         futureScopedPersonalizedInputsReconciliation &&
-        futureCustomDetailsCompletion &&
+        futureStep4CustomDetailsCompletion &&
+        futureStep5PersonalizedAdditionsCompletion &&
         futureCustomDetailsPricing ? (
         <DormantFutureCustomDetailsStep
+          stage={futureStageId}
           reconciliation={futureScopedCustomDetailsReconciliation}
           catalogue={futureCustomDetailsCatalogue}
           personalizedInputs={
             futureScopedPersonalizedInputsReconciliation.state
           }
-          completion={futureCustomDetailsCompletion}
+          completion={
+            futureStageId === "custom_details"
+              ? futureStep4CustomDetailsCompletion
+              : futureStep5PersonalizedAdditionsCompletion
+          }
           pricing={futureCustomDetailsPricing}
           orderLevelCustomDetailsPrice={
             futureFabricAuthoritativePricing?.customDetailsPrice || 0
@@ -7606,7 +7693,7 @@ export default function DesignStudioView({
           onRequestGarmentRemoval={(target, trigger) =>
             openFutureGarmentRemovalDialog({
               target,
-              originStage: "custom_details",
+              originStage: futureStageId,
               opener: trigger,
             })
           }
@@ -7636,8 +7723,18 @@ export default function DesignStudioView({
                 ?.scrollIntoView({ behavior: "smooth", block: "start" });
             });
           }}
-          onBack={() => navigateToFutureStage("design_style")}
-          onContinue={handleOpenDormantAiTryOnStage}
+          onBack={() =>
+            navigateToFutureStage(
+              futureStageId === "custom_details"
+                ? "design_style"
+                : "custom_details",
+            )
+          }
+          onContinue={
+            futureStageId === "custom_details"
+              ? handleOpenDormantPersonalizedAdditionsStage
+              : handleOpenDormantAiTryOnStage
+          }
           orderSummary={
             embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
           }
@@ -7646,7 +7743,7 @@ export default function DesignStudioView({
         <DormantFutureAiTryOnStep
           workflow={futureAiTryOnWorkflow}
           skipAllowed
-          onBack={() => navigateToFutureStage("custom_details")}
+          onBack={() => navigateToFutureStage("personalized_additions")}
           onRetry={handleRetryDormantAiTryOn}
           onSkip={handleSkipDormantAiTryOn}
           onContinue={handleOpenDormantMeasurementStage}

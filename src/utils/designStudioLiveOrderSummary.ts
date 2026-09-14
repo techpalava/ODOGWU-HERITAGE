@@ -82,9 +82,9 @@ export interface LiveOrderSummarySubsection {
   readonly id: "additional_garments" | "additional_garment_fabrics";
   readonly title: string;
   /** Only the additional-garments subsection is an edit destination. */
-  readonly editStage?: "custom_details";
+  readonly editStage?: "custom_details" | "personalized_additions";
   /**
-   * The exact Step 4 occurrence to bring into view when Fabric is missing.
+   * The exact Step 5 occurrence to bring into view when Fabric is missing.
    * A null target means focus the Additional Garment management section.
    */
   readonly focusGarmentKey?: string | null;
@@ -557,7 +557,7 @@ export const projectDesignStudioLiveOrderSummary = ({
       : {
           id: "additional_garments",
           title: "Additional Garments",
-          editStage: "custom_details",
+          editStage: "personalized_additions",
           focusGarmentKey: firstAdditionalMissingFabric?.garmentKey || null,
           // Additional occurrences appear once in Garments Ordered, with the
           // existing exact-occurrence Step 4 correction route retained.
