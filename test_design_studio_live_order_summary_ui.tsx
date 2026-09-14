@@ -31,7 +31,7 @@ const sampleView: LiveOrderSummaryView = {
         {
           id: "additional_garments",
           title: "Additional Garments",
-          editStage: "custom_details",
+          editStage: "personalized_additions",
           focusGarmentKey: "additional:shirt:1",
           lines: [
             {
@@ -180,7 +180,11 @@ act(() => {
   renderer = create(
     createElement(DesignStudioOrderSummary, {
       view: sampleView,
-      unlockedStages: new Set<DesignStudioStageId>(["garment_type", "fabric"]),
+      unlockedStages: new Set<DesignStudioStageId>([
+        "garment_type",
+        "fabric",
+        "custom_details",
+      ]),
       currentStageId: "design_style",
       onEditStage: () => undefined,
     }),
@@ -214,7 +218,7 @@ const architectureView: LiveOrderSummaryView = {
       subsections: [{
         id: "additional_garments",
         title: "Additional Garments",
-        editStage: "custom_details",
+        editStage: "personalized_additions",
         focusGarmentKey: "additional:shirt:1",
         lines: [{ id: "construction-additional:shirt:1", label: "Standard Shirt 2", detail: null, amountLabel: "€70.00", focusGarmentKey: "additional:shirt:1" }],
       }],
@@ -419,7 +423,7 @@ assert.equal(
     "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
   }).length,
   0,
-  "Additional Garment Edit stays locked until the existing Step 4 progress authority permits it",
+  "Additional Garment Edit stays locked until Step 5 Personalized Additions is enterable",
 );
 assert.ok(textOf(renderer.root).includes("Additional Garments"));
 assert.ok(textOf(renderer.root).includes("Fabric: Needs fabric"));
@@ -622,7 +626,7 @@ assert.equal(
     "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
   }).length,
   0,
-  "Additional Garments Edit cannot jump ahead before Step 4 has been reached",
+  "Additional Garments Edit cannot jump ahead before Step 5 Personalized Additions has been reached",
 );
 
 let editedStage: DesignStudioStageId | null = null;
@@ -637,6 +641,7 @@ act(() => {
         "fabric",
         "design_style",
         "custom_details",
+        "personalized_additions",
         "measurement",
         "shipping",
       ]),
@@ -644,7 +649,7 @@ act(() => {
       onEditStage: (stage, options) => {
         editedStage = stage;
         additionalFocusKey = options?.focusAdditionalGarmentKey || null;
-        if (stage === "custom_details") {
+        if (stage === "personalized_additions") {
           additionalEditRequests.push(
             options?.focusAdditionalGarmentKey || null,
           );
@@ -690,11 +695,11 @@ act(() => {
     })
     .props.onClick();
 });
-assert.equal(editedStage, "custom_details");
+assert.equal(editedStage, "personalized_additions");
 assert.equal(
   additionalFocusKey,
   "additional:shirt:1",
-  "Additional Garments Edit passes its exact repair occurrence to Step 4",
+  "Additional Garments Edit passes its exact repair occurrence to Step 5",
 );
 act(() => {
   renderer.root
@@ -742,6 +747,7 @@ act(() => {
       unlockedStages: new Set<DesignStudioStageId>([
         "garment_type",
         "custom_details",
+        "personalized_additions",
       ]),
       currentStageId: "shipping",
       onEditStage: (stage, options) => {
@@ -758,7 +764,7 @@ act(() => {
     })
     .props.onClick();
 });
-assert.equal(editedStage, "custom_details");
+assert.equal(editedStage, "personalized_additions");
 assert.equal(
   additionalFocusKey,
   "additional:shirt:2",
@@ -776,8 +782,8 @@ act(() => {
   renderer.update(
     createElement(DesignStudioOrderSummary, {
       view: sampleView,
-      unlockedStages: new Set<DesignStudioStageId>(["custom_details"]),
-      currentStageId: "custom_details",
+      unlockedStages: new Set<DesignStudioStageId>(["personalized_additions"]),
+      currentStageId: "personalized_additions",
       onEditStage: (stage, options) => {
         editedStage = stage;
         additionalFocusKey = options?.focusAdditionalGarmentKey || null;
@@ -790,7 +796,7 @@ assert.equal(
     "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
   }).length,
   1,
-  "Additional Garments Edit remains available while the authorized Step 4 is current",
+  "Additional Garments Edit remains available while the authorized Step 5 is current",
 );
 act(() => {
   renderer.root
@@ -799,11 +805,11 @@ act(() => {
     })
     .props.onClick();
 });
-assert.equal(editedStage, "custom_details");
+assert.equal(editedStage, "personalized_additions");
 assert.equal(
   additionalFocusKey,
   "additional:shirt:1",
-  "the current Step 4 Additional Garment Edit retains its exact occurrence key",
+  "the current Step 5 Additional Garment Edit retains its exact occurrence key",
 );
 
 const completeAdditionalView: LiveOrderSummaryView = {
@@ -834,7 +840,7 @@ act(() => {
   renderer.update(
     createElement(DesignStudioOrderSummary, {
       view: completeAdditionalView,
-      unlockedStages: new Set<DesignStudioStageId>(["custom_details"]),
+      unlockedStages: new Set<DesignStudioStageId>(["personalized_additions"]),
       currentStageId: "shipping",
       onEditStage: (stage, options) => {
         sectionLevelEditStage = stage;
@@ -850,11 +856,11 @@ act(() => {
     })
     .props.onClick();
 });
-assert.equal(sectionLevelEditStage, "custom_details");
+assert.equal(sectionLevelEditStage, "personalized_additions");
 assert.equal(
   sectionLevelFocusKey,
   null,
-  "complete additions use the Step 4 Additional Garment management section target",
+  "complete additions use the Step 5 Additional Garment management section target",
 );
 
 const baseOnlyView: LiveOrderSummaryView = {
@@ -892,12 +898,12 @@ assert.match(viewSource, /embedPersistentLiveOrderSummary/);
 assert.match(
   viewSource,
   /futureAdditionalGarmentNavigationRequestIdRef\.current \+= 1/,
-  "Additional Edit creates a new navigation request even when Step 4 is already active",
+  "Additional Edit creates a new navigation request even when Step 5 is already active",
 );
 assert.match(
   viewSource,
   /setFutureAdditionalGarmentNavigationRequestId/,
-  "Additional Edit forwards the distinct navigation request to Step 4",
+  "Additional Edit forwards the distinct navigation request to Step 5",
 );
 assert.doesNotMatch(viewSource, /lg:max-h-\[calc\(100vh-2rem\)\]/);
 assert.doesNotMatch(viewSource, /lg:overflow-y-auto/);
