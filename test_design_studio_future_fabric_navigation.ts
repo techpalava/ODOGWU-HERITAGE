@@ -36,10 +36,10 @@ assert.equal(restored.canAdvance, true);
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const appSource = readFileSync("src/App.tsx", "utf8");
-assert.match(studioSource, /onSelectGarmentType=\{\(\) => setFutureStageId\("garment_type"\)\}/);
+assert.match(studioSource, /onSelectGarmentType=\{\(\) => navigateToFutureStage\("garment_type"\)\}/);
 assert.match(studioSource, /onSelectFabric=\{handleOpenDormantFabricStage\}/);
-assert.match(studioSource, /setFutureStageId\("fabric"\)/);
-assert.match(studioSource, /setFutureStageId\("design_style"\)/);
+assert.match(studioSource, /navigateToFutureStage\("fabric"\)/);
+assert.match(studioSource, /navigateToFutureStage\("design_style"\)/);
 assert.match(studioSource, /onContinue=\{handleOpenDormantDesignStyleStage\}/);
 assert.match(studioSource, />\s*Continue to Fabric\s*</);
 assert.equal(

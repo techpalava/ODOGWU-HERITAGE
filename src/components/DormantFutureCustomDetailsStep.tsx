@@ -1,4 +1,4 @@
-import { ArrowRight, Plus, Trash2, X } from "lucide-react";
+import { ArrowRight, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION,
@@ -262,8 +262,6 @@ export const DormantFutureCustomDetailsStep = ({
   additionalGarmentCustomDetailsRequest,
   onCompleteAdditionalGarmentCustomDetails,
   onCancelAdditionalGarmentCustomDetails,
-  removalTargets = [],
-  onRequestGarmentRemoval,
   onChangeAdditionalGarmentFabric,
   fabrics = [],
   fabricAllocationState = null,
@@ -540,25 +538,32 @@ export const DormantFutureCustomDetailsStep = ({
       selectionIndex: selectionIndex > 0 ? selectionIndex : null,
     };
   };
-  const step4GarmentContexts = isCustomDetailsStage
-    ? Array.from(
-        reconciliation.subjects.reduce(
-          (contexts, subject) => {
-            if (!contexts.has(subject.parentGarmentKey)) {
-              contexts.set(subject.parentGarmentKey, {
-                garmentKey: subject.parentGarmentKey,
-                garmentType: subject.parentGarmentType,
-              });
-            }
-            return contexts;
-          },
-          new Map<string, {
-            garmentKey: string;
-            garmentType: CanonicalPhysicalGarmentType;
-          }>(),
-        ).values(),
-      )
-    : [];
+  const additionalGarmentKeys = new Set(
+    additionalGarments
+      .filter((garment) => garment.sourceRole === "additional")
+      .map((garment) => garment.garmentKey),
+  );
+  const garmentFabricContexts = Array.from(
+    reconciliation.subjects.reduce(
+      (contexts, subject) => {
+        if (!contexts.has(subject.parentGarmentKey)) {
+          contexts.set(subject.parentGarmentKey, {
+            garmentKey: subject.parentGarmentKey,
+            garmentType: subject.parentGarmentType,
+            sourceRole: additionalGarmentKeys.has(subject.parentGarmentKey)
+              ? "additional"
+              : "main",
+          });
+        }
+        return contexts;
+      },
+      new Map<string, {
+        garmentKey: string;
+        garmentType: CanonicalPhysicalGarmentType;
+        sourceRole: "main" | "additional";
+      }>(),
+    ).values(),
+  );
 
   const closeAdditionalGarmentChoice = ({
     restoreFocus = true,
@@ -1023,13 +1028,16 @@ export const DormantFutureCustomDetailsStep = ({
           <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-heritage-ink/70">{Array.from(new Set(completion.blockers.map((blocker) => blocker.message))).map((message) => <li key={message}>{message}</li>)}</ul>
         </div>
       )}
-      {isCustomDetailsStage && step4GarmentContexts.length > 0 && (
+      {garmentFabricContexts.length > 0 && (
         <section
           aria-label="Garment and Fabric context"
-          data-step4-garment-context-list="true"
+          data-step4-garment-context-list={isCustomDetailsStage || undefined}
+          data-step5-garment-context-list={
+            isPersonalizedAdditionsStage || undefined
+          }
           className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2"
         >
-          {step4GarmentContexts.map((context) => {
+          {garmentFabricContexts.map((context) => {
             const garmentLabel = getCustomDetailsGarmentLabel(context.garmentType);
             const referenceImage = isStep1GarmentReferenceType(context.garmentType)
               ? getStep1GarmentReferenceImage(context.garmentType)
@@ -1038,7 +1046,12 @@ export const DormantFutureCustomDetailsStep = ({
             return (
               <article
                 key={context.garmentKey}
-                data-step4-garment-context={context.garmentKey}
+                data-step4-garment-context={
+                  isCustomDetailsStage ? context.garmentKey : undefined
+                }
+                data-step5-garment-context={
+                  isPersonalizedAdditionsStage ? context.garmentKey : undefined
+                }
                 className="flex min-w-0 items-center gap-3 rounded-xl border border-heritage-gold/20 bg-heritage-cream/25 p-2.5"
               >
                 {referenceImage ? (
@@ -1077,7 +1090,14 @@ export const DormantFutureCustomDetailsStep = ({
                   </div>
                 )}
                 <div className="min-w-0 text-xs leading-snug">
-                  <p className="text-heritage-ink/60">Garment</p>
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <p className="text-heritage-ink/60">Garment</p>
+                    {context.sourceRole === "additional" ? (
+                      <span className="rounded-full border border-heritage-gold/35 bg-heritage-gold/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-heritage-gold">
+                        Additional
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="break-words font-bold text-heritage-green">{garmentLabel}</p>
                   <p className="mt-1 text-heritage-ink/60">Assigned Fabric</p>
                   <p className="break-words font-semibold text-heritage-ink">
@@ -1109,74 +1129,6 @@ export const DormantFutureCustomDetailsStep = ({
           ) : null}
         </div>
       ) : null}
-
-      {isPersonalizedAdditionsStage && removalTargets.length > 0 && (
-        <section
-          aria-labelledby="future-custom-details-garments-in-order"
-          className="min-w-0 rounded-2xl border border-heritage-gold/25 bg-white p-3 shadow-sm sm:p-4"
-          data-garment-removal-list={stage}
-        >
-          <h3
-            id={`future-${stage}-garments-in-order`}
-            tabIndex={-1}
-            data-garment-removal-list-heading={stage}
-            className="break-words font-serif text-lg font-bold uppercase tracking-wide text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-          >
-            Garments in this order
-          </h3>
-          <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
-            Remove one exact garment without changing the saved choices for the others.
-          </p>
-          <ul className="mt-2.5 grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-2.5">
-            {removalTargets.map((target, index) => {
-              const reasonId = `custom-details-removal-reason-${index}`;
-              return (
-                <li
-                  key={target.garmentKey}
-                  className="flex min-w-0 flex-col gap-2 rounded-xl border border-heritage-green/15 bg-heritage-cream/20 p-2.5 sm:flex-row sm:items-center sm:justify-between"
-                  data-garment-removal-row={target.garmentKey}
-                >
-                  <div className="min-w-0">
-                    <h4
-                      tabIndex={-1}
-                      data-garment-removal-row-heading={target.garmentKey}
-                      className="break-words text-sm font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-                    >
-                      {formatCustomDetailsGarmentLabel(target.occurrenceLabel)}
-                    </h4>
-                    <p className="mt-1 break-words text-[10px] font-bold uppercase tracking-wide text-heritage-gold">
-                      {target.roleLabel}
-                    </p>
-                    {target.disabledReason && (
-                      <p
-                        id={reasonId}
-                        className="mt-2 break-words text-xs leading-relaxed text-heritage-ink/65"
-                      >
-                        {target.disabledReason}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!target.canRequestRemoval}
-                    aria-label={`Remove ${formatCustomDetailsGarmentLabel(target.occurrenceLabel)}, ${target.roleLabel}`}
-                    aria-describedby={target.disabledReason ? reasonId : undefined}
-                    data-garment-removal-button={target.garmentKey}
-                    data-garment-removal-origin-stage={stage}
-                    onClick={(event) =>
-                      onRequestGarmentRemoval?.(target, event.currentTarget)
-                    }
-                    className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
-                  >
-                    <Trash2 aria-hidden="true" size={15} />
-                    Remove
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6">
         <div ref={contentRef} className="min-w-0 space-y-4">
@@ -1334,7 +1286,7 @@ export const DormantFutureCustomDetailsStep = ({
                                   Assign fabric for this added garment here.
                                 </p>
                               </div>
-                              {onChangeAdditionalGarmentFabric ? (
+                              {isCustomDetailsStage && onChangeAdditionalGarmentFabric ? (
                                 <button
                                   type="button"
                                   data-change-additional-garment-fabric={garment.garmentKey}
@@ -1379,7 +1331,7 @@ export const DormantFutureCustomDetailsStep = ({
                                 )}
                               </div>
                             </div>
-                            {onChangeAdditionalGarmentFabric && (
+                            {isCustomDetailsStage && onChangeAdditionalGarmentFabric && (
                               <button
                                 type="button"
                                 data-change-additional-garment-fabric={garment.garmentKey}

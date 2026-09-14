@@ -844,7 +844,6 @@ const additionalPricing = calculateGarmentScopedCustomDetailsPricing({
   catalogInspection,
 });
 let additionalRenderer!: ReturnType<typeof create>;
-let additionalFabricRepairKey: string | null = null;
 const additionalStepProps = {
   stage: "personalized_additions" as const,
   reconciliation: additionalReconciliation,
@@ -871,9 +870,6 @@ const additionalStepProps = {
   onClearAccessories: () => undefined,
   onAddAdditionalGarment: () => undefined,
   onRemoveAdditionalGarment: () => undefined,
-  onChangeAdditionalGarmentFabric: (garmentKey: string) => {
-    additionalFabricRepairKey = garmentKey;
-  },
   fabricAllocationState: {
     fabricAllocations: [],
     activeAllocationId: null,
@@ -985,6 +981,87 @@ assert.equal(
   "Step 4 keeps garment removal owned by the existing correction flow",
 );
 act(() => additionalContextRenderer.unmount());
+
+let personalizedContextRenderer!: ReturnType<typeof create>;
+act(() => {
+  personalizedContextRenderer = create(
+    createElement(DormantFutureCustomDetailsStep, {
+      ...additionalStepProps,
+      stage: "personalized_additions",
+      fabrics: [
+        { code: "FAB-BASE", name: "Base Fabric", image: "https://example.test/base.jpg" },
+        { code: "FAB-ADDED", name: "Added Fabric", image: "https://example.test/added.jpg" },
+      ] as unknown as Parameters<typeof DormantFutureCustomDetailsStep>[0]["fabrics"],
+      fabricAllocationState: {
+        fabricAllocations: [
+          {
+            allocationId: "allocation-base-shirt",
+            fabricCode: "FAB-BASE",
+            garmentAssignments: [{
+              garmentKey: "base:shirt",
+              code: "BASE_SHIRT",
+              garmentType: "shirt",
+              fabricUnits: 1,
+              garmentSpec: { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+              sourceRole: "main",
+              dependencyStatus: "valid",
+            }],
+          },
+          {
+            allocationId: "allocation-added-shirt",
+            fabricCode: "FAB-ADDED",
+            garmentAssignments: [{
+              ...additionalAssignment,
+              dependencyStatus: "valid",
+            }],
+          },
+        ],
+        activeAllocationId: null,
+        pendingFabricGarment: null,
+        awaitingFabricForPendingGarment: false,
+      } as Parameters<typeof DormantFutureCustomDetailsStep>[0]["fabricAllocationState"],
+    }),
+  );
+});
+const step5BaseContext = personalizedContextRenderer.root.findByProps({
+  "data-step5-garment-context": "base:shirt",
+});
+const step5AddedContext = personalizedContextRenderer.root.findByProps({
+  "data-step5-garment-context": additionalAssignment.garmentKey,
+});
+assert.match(textContent(step5BaseContext), /Shirt/);
+assert.match(textContent(step5BaseContext), /Base Fabric/);
+assert.match(textContent(step5AddedContext), /Added Fabric/);
+assert.match(textContent(step5AddedContext), /Additional/);
+assert.equal(
+  personalizedContextRenderer.root.findAllByProps({
+    "data-change-additional-garment-fabric": additionalAssignment.garmentKey,
+  }).length,
+  0,
+  "Step 5 context remains read-only; Fabric changes stay in Step 2 authority",
+);
+assert.equal(
+  personalizedContextRenderer.root.findAllByProps({
+    "data-garment-removal-list": "personalized_additions",
+  }).length,
+  0,
+  "Step 5 uses compact garment context cards instead of the redundant garments-in-order list",
+);
+assert.equal(
+  personalizedContextRenderer.root.findAllByProps({
+    "data-garment-removal-button": "base:shirt",
+  }).length,
+  0,
+  "base garment context is read-only and has no removal control in Step 5",
+);
+assert.equal(
+  personalizedContextRenderer.root.findAllByProps({
+    "data-step4-garment-context": "base:shirt",
+  }).length,
+  0,
+  "Step 4 context hooks remain scoped to Step 4",
+);
+act(() => personalizedContextRenderer.unmount());
 assert.equal(
   addSection.props["data-additional-garment-management"],
   "true",
@@ -1002,18 +1079,12 @@ assert.ok(
     "data-additional-garment-details": additionalAssignment.garmentKey,
   }),
 );
-const addFabricButton = addSection.findByProps({
-  "data-change-additional-garment-fabric": additionalAssignment.garmentKey,
-});
-assert.equal(addFabricButton.props["data-additional-garment-fabric-action"], "add");
-assert.match(textContent(addFabricButton), /Add Fabric/);
-act(() => {
-  addFabricButton.props.onClick({ currentTarget: null });
-});
 assert.equal(
-  additionalFabricRepairKey,
-  additionalAssignment.garmentKey,
-  "a ledger-authorized Additional garment without Fabric exposes its Step 5 repair control",
+  addSection.findAllByProps({
+    "data-change-additional-garment-fabric": additionalAssignment.garmentKey,
+  }).length,
+  0,
+  "Step 5 keeps Fabric reassignment in Step 2 rather than exposing a repair control",
 );
 
 const originalWindow = globalThis.window;
@@ -1036,7 +1107,7 @@ const exactRepairControl = {
 const exactGarmentTarget = {
   dataset: { parentGarmentKey: additionalAssignment.garmentKey },
   querySelector: (selector: string) =>
-    selector === "[data-additional-garment-fabric-action]"
+    selector === "[data-added-garment-heading]"
       ? exactRepairControl
       : null,
   setAttribute: () => undefined,
@@ -1114,7 +1185,7 @@ try {
       "section-scroll",
       "section-focus",
     ],
-    "missing Fabric targets its exact control while complete additions target the management section",
+    "Step 5 navigation focuses the exact Additional occurrence, then its management section",
   );
 
   // Exercise the persistent Summary callback and its Step 5 consumer in one
@@ -1221,19 +1292,12 @@ try {
   assert.deepEqual(
     navigationEvents.slice(-4),
     ["exact-scroll", "exact-focus", "exact-scroll", "exact-focus"],
-    "persistent Summary edits visibly focus and scroll the exact Step 5 repair control",
+    "persistent Summary edits visibly focus and scroll the exact Step 5 occurrence",
   );
-  act(() => {
-    persistentSummaryRenderer.root
-      .findByProps({
-        "data-change-additional-garment-fabric": additionalAssignment.garmentKey,
-      })
-      .props.onClick({ currentTarget: null });
-  });
-  assert.deepEqual(
-    persistentSummaryFabricRequests,
-    [additionalAssignment.garmentKey],
-    "the rendered Step 5 Add Fabric action retains the exact Additional occurrence key",
+  assert.equal(
+    persistentSummaryFabricRequests.length,
+    0,
+    "Step 5 does not expose a Fabric-change action",
   );
   act(() => persistentSummaryRenderer.unmount());
 } finally {
@@ -1284,7 +1348,8 @@ assert.match(componentSource, /onConstructionSelect/);
 assert.match(componentSource, /onClearSelection/);
 assert.match(componentSource, /data-step4-garment-context/);
 assert.match(componentSource, /getAssignedFabricForGarment\(context\.garmentKey\)/);
-assert.match(componentSource, /isPersonalizedAdditionsStage && removalTargets\.length > 0/);
+assert.doesNotMatch(componentSource, /Garments in this order/);
+assert.doesNotMatch(componentSource, /data-garment-removal-list/);
 assert.match(stepperSource, /canEnterCustomDetails/);
 assert.match(styleSource, /onContinue/);
 assert.match(studioSource, /handleOpenDormantCustomDetailsStage/);
