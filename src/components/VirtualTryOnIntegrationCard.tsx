@@ -229,7 +229,7 @@ export default function VirtualTryOnIntegrationCard({
               </div>
               <p className="text-[11px] text-heritage-beige/80 leading-relaxed sm:pl-7">
                 Choose from timeless traditional styles including the Royal
-                Senator, Grand Agbada, and executive kaftans.
+                Senator, Grand Agbada, and executive Long shirts.
               </p>
             </div>
 

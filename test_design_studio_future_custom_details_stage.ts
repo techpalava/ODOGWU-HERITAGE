@@ -918,6 +918,73 @@ assert.ok(
   addSection.findByProps({ "data-added-garment-heading": "true" }),
   "a newly added garment must expose a stable focus target inside Add Additional Garment",
 );
+
+let additionalContextRenderer!: ReturnType<typeof create>;
+act(() => {
+  additionalContextRenderer = create(
+    createElement(DormantFutureCustomDetailsStep, {
+      ...additionalStepProps,
+      stage: "custom_details",
+      fabrics: [
+        { code: "FAB-BASE", name: "Base Fabric", image: "https://example.test/base.jpg" },
+        { code: "FAB-ADDED", name: "Added Fabric", image: "https://example.test/added.jpg" },
+      ] as unknown as Parameters<typeof DormantFutureCustomDetailsStep>[0]["fabrics"],
+      fabricAllocationState: {
+        fabricAllocations: [
+          {
+            allocationId: "allocation-base-shirt",
+            fabricCode: "FAB-BASE",
+            garmentAssignments: [{
+              garmentKey: "base:shirt",
+              code: "BASE_SHIRT",
+              garmentType: "shirt",
+              fabricUnits: 1,
+              garmentSpec: { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+              sourceRole: "main",
+              dependencyStatus: "valid",
+            }],
+          },
+          {
+            allocationId: "allocation-added-shirt",
+            fabricCode: "FAB-ADDED",
+            garmentAssignments: [{
+              ...additionalAssignment,
+              dependencyStatus: "valid",
+            }],
+          },
+        ],
+        activeAllocationId: null,
+        pendingFabricGarment: null,
+        awaitingFabricForPendingGarment: false,
+      } as Parameters<typeof DormantFutureCustomDetailsStep>[0]["fabricAllocationState"],
+      removalTargets: [{
+        garmentKey: "base:shirt",
+        occurrenceLabel: "Standard Shirt",
+        roleLabel: "Base garment",
+        canRequestRemoval: true,
+      }] as unknown as Parameters<typeof DormantFutureCustomDetailsStep>[0]["removalTargets"],
+    }),
+  );
+});
+const baseContext = additionalContextRenderer.root.findByProps({
+  "data-step4-garment-context": "base:shirt",
+});
+const addedContext = additionalContextRenderer.root.findByProps({
+  "data-step4-garment-context": additionalAssignment.garmentKey,
+});
+assert.match(textContent(baseContext), /Base Fabric/);
+assert.match(textContent(addedContext), /Added Fabric/);
+assert.equal(
+  additionalContextRenderer.root.findAllByProps({ "data-garment-removal-list": "custom_details" }).length,
+  0,
+  "Step 4 must not mount a direct garment-removal control",
+);
+assert.equal(
+  additionalContextRenderer.root.findAllByProps({ "data-garment-removal-button": "base:shirt" }).length,
+  0,
+  "Step 4 keeps garment removal owned by the existing correction flow",
+);
+act(() => additionalContextRenderer.unmount());
 assert.equal(
   addSection.props["data-additional-garment-management"],
   "true",
@@ -1215,6 +1282,9 @@ assert.match(componentSource, /Add Additional Garment/);
 assert.match(componentSource, /additionalGarmentConstructionOptions/);
 assert.match(componentSource, /onConstructionSelect/);
 assert.match(componentSource, /onClearSelection/);
+assert.match(componentSource, /data-step4-garment-context/);
+assert.match(componentSource, /getAssignedFabricForGarment\(context\.garmentKey\)/);
+assert.match(componentSource, /isPersonalizedAdditionsStage && removalTargets\.length > 0/);
 assert.match(stepperSource, /canEnterCustomDetails/);
 assert.match(styleSource, /onContinue/);
 assert.match(studioSource, /handleOpenDormantCustomDetailsStage/);

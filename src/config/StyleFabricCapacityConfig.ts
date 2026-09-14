@@ -62,8 +62,8 @@ const DEFAULT_CUSTOM_DETAILS_BY_GARMENT_TYPE: Readonly<
 
 /**
  * Internal fabricUnits are half-fabric integers:
- * - 1 = 1/2 customer-facing fabric capacity unit = 1 standard garment, including Kaftan
- * - 2 = 1 customer-facing fabric capacity unit = 1 fabric / Long Dress (Gown)
+ * - 1 = 1/2 customer-facing fabric capacity unit = 1 standard garment, including Long shirt
+ * - 2 = 1 customer-facing fabric capacity unit = 1 fabric / Long Dress
  * One fabric holds at most two half-capacity garments (MAX_UNITS_PER_ALLOCATION = 2).
  */
 export const FABRIC_GARMENT_CAPACITY_UNITS: Readonly<

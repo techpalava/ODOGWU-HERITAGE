@@ -375,7 +375,7 @@ await runUploadExtraCase({
 await runUploadExtraCase({
   extra: "full_length_gown",
   expectedTrouserOrExtraKey: "base:full_length_gown",
-  expectedLabel: "Long Dress (Gown)",
+  expectedLabel: "Long Dress",
   assignmentMode: "add_fabric",
 });
 
@@ -406,7 +406,7 @@ await runUploadExtraCase({
 await runUploadExtraCase({
   extra: "kaftan",
   expectedTrouserOrExtraKey: "base:kaftan",
-  expectedLabel: "Long Shirt (Kaftan)",
+  expectedLabel: "Long shirt",
   assignmentMode: "assign_to_existing",
 });
 

@@ -104,7 +104,7 @@ const candidate: FutureOrderCandidateV1 = {
     name: "Heritage Complete Look",
     image: null,
     demographic: "family",
-    compositionLabel: "Shirt, Kaftan and Agbada",
+    compositionLabel: "Shirt, Long shirt and Agbada",
     resolutionStatus: "selected",
     compatibilityStatus: "compatible",
     compatibilityCode: "STYLE_COMPATIBLE",
@@ -135,19 +135,19 @@ const candidate: FutureOrderCandidateV1 = {
     {
       garmentKey: "base:kaftan",
       garmentType: "kaftan",
-      label: "Kaftan",
+      label: "Long shirt",
       role: "main",
       demographic: "male",
       fabricUnits: 1,
       physicalComponents: [
-        { garmentKey: "base:kaftan", garmentType: "kaftan", label: "Kaftan" },
+        { garmentKey: "base:kaftan", garmentType: "kaftan", label: "Long shirt" },
       ],
       construction: [
         {
           componentKey: "kaftan_construction",
           selectionGroup: "kaftan_construction",
           optionId: "kaftan-standard",
-          label: "Standard Kaftan",
+          label: "Standard Long shirt",
           priceCents: 10000,
         },
       ],
@@ -241,7 +241,7 @@ const candidate: FutureOrderCandidateV1 = {
     {
       occurrenceKey: "base:kaftan:name_monogram:name-monogram",
       garmentKey: "base:kaftan",
-      garmentLabel: "Kaftan",
+      garmentLabel: "Long shirt",
       selectionGroup: "name_monogram",
       selectionGroupTitle: "Name Monogram",
       optionId: "name-monogram",
@@ -344,7 +344,7 @@ for (const expected of [
   "1 Design",
   "Heritage Complete Look",
   "Shirt",
-  "Kaftan",
+  "Long shirt",
   "Agbada",
   "Inner Top",
   "Trouser",
@@ -369,7 +369,7 @@ for (const expected of [
 assert.equal((reviewMarkup.match(/Fabric Selection/g) || []).length, 2);
 assert.ok(reviewMarkup.includes("HiTarget Royal Heritage Pattern With A Long Name"));
 assert.ok(reviewMarkup.includes("Ceremonial Lace"));
-assert.ok(reviewMarkup.includes("Assigned to: Shirt, Kaftan"));
+assert.ok(reviewMarkup.includes("Assigned to: Shirt, Long shirt"));
 assert.ok(reviewMarkup.includes("Assigned to: Agbada"));
 assert.equal((reviewMarkup.match(/>Included</g) || []).length, 2);
 assert.equal(reviewMarkup.includes("Material price"), false);
