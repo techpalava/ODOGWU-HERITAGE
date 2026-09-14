@@ -5,6 +5,7 @@ import type {
   AiTryOnWorkflowStateV1,
   AdditionalGarmentConstructionStateV1,
   BusinessSettings,
+  DesignSelections,
   Fabric,
   FabricAllocationState,
   FutureShippingStateV1,
@@ -298,6 +299,8 @@ const buildAuthority = ({
   shippingState = null as FutureShippingStateV1 | null,
   additionalPending = false,
   additionalConstructionState = null as AdditionalGarmentConstructionStateV1 | null,
+  designSelections = {} as DesignSelections,
+  styleOverrides = {} as Partial<StyleCategory>,
 }: {
   garmentTypes?: GarmentTypeStepSelection["garmentTypes"];
   demographic?: NonNullable<GarmentTypeStepSelection["demographic"]>;
@@ -310,6 +313,8 @@ const buildAuthority = ({
   shippingState?: FutureShippingStateV1 | null;
   additionalPending?: boolean;
   additionalConstructionState?: AdditionalGarmentConstructionStateV1 | null;
+  designSelections?: DesignSelections;
+  styleOverrides?: Partial<StyleCategory>;
 }) => {
   const garmentTypeSelection = buildSelection(garmentTypes, demographic);
   let allocation =
@@ -336,7 +341,7 @@ const buildAuthority = ({
           fabrics,
         )
       : null;
-  const style = makeStyle(garmentTypes, demographic);
+  const style = { ...makeStyle(garmentTypes, demographic), ...styleOverrides };
   const designStyleSelection = includeStyle
     ? reconcileFutureDesignStyleSelection({
         selectedStyleId: style.id,
@@ -428,6 +433,7 @@ const buildAuthority = ({
       ? calculateDesignPricing({
           route: "alone",
           design: {
+            ...designSelections,
             additionalGarmentConstructions: additionalConstruction.state,
           },
           materialPricing: resolvedMaterialPricing,
@@ -1739,6 +1745,84 @@ assert.notEqual(manyItems.view.totalValueLabel, "Pending");
 assert.equal(
   manyItems.view.totalAmountCents,
   manyItems.candidateResult.candidate?.pricing.exactTotalCents,
+);
+
+const noPersonalizedAdditions = buildAuthority({
+  fabricByGarment: { shirt: fabricA },
+  styleOverrides: {
+    customDetailConfig: {
+      representedGenders: ["male"],
+      featuresMaleAndFemale: false,
+      supportedGarmentGroups: ["shirt"],
+      requiredSelectionGroups: [],
+      enabled: true,
+    },
+  },
+});
+hiddenSection(noPersonalizedAdditions.view, "personalized_additions");
+
+const personalizedAdditions = buildAuthority({
+  fabricByGarment: { shirt: fabricA },
+  measurementRoute: "low_risk",
+  designSelections: {
+    decorativeFeatures: ["Name Monogram", "Embroidery", "Monogram Trimming"],
+    accessories: ["Traditional Hat"],
+  },
+  styleOverrides: {
+    customDetailConfig: {
+      representedGenders: ["male"],
+      featuresMaleAndFemale: false,
+      supportedGarmentGroups: ["shirt"],
+      requiredSelectionGroups: [],
+      enabled: true,
+    },
+  },
+});
+const personalizedSection = section(
+  personalizedAdditions.view,
+  "personalized_additions",
+);
+assert.deepEqual(
+  personalizedAdditions.view.sections.map((item) => item.id),
+  [
+    "construction",
+    "fabrics",
+    "design_style",
+    "custom_details",
+    "personalized_additions",
+    "measurements",
+  ],
+  "Personalized Additions is omitted when empty and otherwise follows the existing Summary sections",
+);
+assert.deepEqual(
+  personalizedSection.lines.map(({ label, detail, amountLabel }) => ({
+    label,
+    detail,
+    amountLabel,
+  })),
+  [
+    { label: "Monogram", detail: "Name Monogram", amountLabel: "€12.00" },
+    { label: "Monogram", detail: "Monogram Trimming", amountLabel: "€12.00" },
+    { label: "Embroidery Design", detail: "Embroidery", amountLabel: "€12.00" },
+    { label: "Accessories", detail: "Traditional Hat", amountLabel: "€12.00" },
+  ],
+  "the existing order-level pricing projection supplies selected Step 5 values without new arithmetic",
+);
+assert.equal(personalizedSection.editStage, "personalized_additions");
+assert.equal(
+  personalizedAdditions.view.totalAmountCents,
+  Math.round(
+    (personalizedAdditions.summary.pricingSummary.selectedDesignPrice
+      ?.selectedDesignPrice || 0) * 100,
+  ),
+  "Summary presentation cannot alter the authoritative total",
+);
+assert.equal(
+  personalizedAdditions.view.sections
+    .find((item) => item.id === "custom_details")
+    ?.lines.some((line) => line.label === "Order Details"),
+  false,
+  "order-level personalized additions no longer duplicate Construction Options",
 );
 
 const viewSource = readFileSync(

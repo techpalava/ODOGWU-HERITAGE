@@ -98,6 +98,7 @@ export interface LiveOrderSummarySection {
     | "design_style"
     | "construction"
     | "custom_details"
+    | "personalized_additions"
     | "optional_extras"
     | "additional_clothes"
     | "measurements"
@@ -108,6 +109,7 @@ export interface LiveOrderSummarySection {
     | "fabric"
     | "design_style"
     | "custom_details"
+    | "personalized_additions"
     | "measurement"
     | "shipping"
     | null;
@@ -240,6 +242,7 @@ const constructionOptionsForOrder = (
   summary.customDetailsSummary
     .find((group) => group.garmentKey === "order")
     ?.occurrences.filter((occurrence) =>
+      occurrence.selectionGroup !== "order_optional_detail" &&
       isCustomerAvailableCustomDetailSelectionGroup(
         occurrence.selectionGroup,
         { showAdditionalClothesCosts },
@@ -253,6 +256,60 @@ const constructionOptionsForOrder = (
         occurrence.priceStatus,
       ),
     })) || [];
+
+type PersonalizedAdditionCategory =
+  | "Monogram"
+  | "Embroidery Design"
+  | "Accessories";
+
+const PERSONALIZED_ADDITION_CATEGORY_ORDER: readonly PersonalizedAdditionCategory[] = [
+  "Monogram",
+  "Embroidery Design",
+  "Accessories",
+];
+
+const getPersonalizedAdditionCategory = (
+  optionId: string,
+): PersonalizedAdditionCategory => {
+  if (optionId === "Name Monogram" || optionId === "Monogram Trimming") {
+    return "Monogram";
+  }
+  if (optionId === "Embroidery") return "Embroidery Design";
+  return "Accessories";
+};
+
+/**
+ * Step 5 decorative selections are intentionally order-level. The Future
+ * Summary already projects their authoritative pricing rows under the `order`
+ * owner; this only gives those rows their own customer-facing section.
+ */
+const personalizedAdditionLines = (
+  summary: FutureDesignStudioSummary,
+): LiveOrderSummaryLine[] => {
+  const orderLevelSelections =
+    summary.customDetailsSummary
+      .find((group) => group.garmentKey === "order")
+      ?.occurrences.filter(
+        (occurrence) => occurrence.selectionGroup === "order_optional_detail",
+      ) || [];
+
+  return PERSONALIZED_ADDITION_CATEGORY_ORDER.flatMap((category) =>
+    orderLevelSelections
+      .filter(
+        (occurrence) =>
+          getPersonalizedAdditionCategory(occurrence.optionId) === category,
+      )
+      .map((occurrence) => ({
+        id: `personalized-addition:${occurrence.occurrenceKey}`,
+        label: category,
+        detail: occurrence.optionLabel,
+        amountLabel: amountLabelForCustomDetail(
+          occurrence.priceCents,
+          occurrence.priceStatus,
+        ),
+      })),
+  );
+};
 
 const measurementStatusLine = (
   summary: FutureDesignStudioSummary,
@@ -534,6 +591,7 @@ export const projectDesignStudioLiveOrderSummary = ({
     : [];
 
   const measurementLine = measurementStatusLine(summary, measurementState);
+  const selectedPersonalizedAdditions = personalizedAdditionLines(summary);
   const constructionSubtotalCents =
     authoritativeConstructionSubtotalCents(summary);
   const constructionFooter: LiveOrderSummarySectionFooter | null =
@@ -600,6 +658,14 @@ export const projectDesignStudioLiveOrderSummary = ({
       editStage: "custom_details",
       lines: constructionOptionLines,
     },
+    ...(selectedPersonalizedAdditions.length > 0
+      ? [{
+          id: "personalized_additions" as const,
+          title: "Personalized Additions",
+          editStage: "personalized_additions" as const,
+          lines: selectedPersonalizedAdditions,
+        }]
+      : []),
     {
       id: "measurements",
       title: "Measurements",
