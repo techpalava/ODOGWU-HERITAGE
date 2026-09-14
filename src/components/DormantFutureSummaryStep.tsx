@@ -158,6 +158,30 @@ export const DormantFutureSummaryStep = ({
       ? null
       : summary.pricingSummary.garmentConstructionSubtotal +
         summary.pricingSummary.customDetailsExactSubtotal;
+  const garmentKeys = new Set(
+    summary.garmentSummary.map((garment) => garment.garmentKey),
+  );
+  // Construction defaults and scoped Custom Details are separate authorities.
+  // Present both beneath their owner without rendering a duplicate when a
+  // legacy Custom Details record names the same authoritative base component.
+  const customDetailsForGarment = (garment: (typeof summary.garmentSummary)[number]) => {
+    const baseComponents = new Set(
+      garment.construction.map(
+        (component) => `${component.selectionGroup}:${component.optionId}`,
+      ),
+    );
+    return (
+      summary.customDetailsSummary.find(
+        (group) => group.garmentKey === garment.garmentKey,
+      )?.occurrences.filter(
+        (occurrence) =>
+          !baseComponents.has(`${occurrence.selectionGroup}:${occurrence.optionId}`),
+      ) || []
+    );
+  };
+  const unmatchedCustomDetails = summary.customDetailsSummary.filter(
+    (group) => !garmentKeys.has(group.garmentKey),
+  );
 
   return (
     <section
@@ -244,6 +268,7 @@ export const DormantFutureSummaryStep = ({
               (target) => target.garmentKey === garment.garmentKey,
             );
             const reasonId = `summary-removal-reason-${index}`;
+            const selectedCustomDetails = customDetailsForGarment(garment);
             return (
               <article
                 key={garment.garmentKey}
@@ -305,19 +330,44 @@ export const DormantFutureSummaryStep = ({
                   Components: {garment.physicalComponents.map((component) => component.label).join(", ")}
                 </p>
               )}
-              <ul className="mt-3 space-y-1 text-sm text-heritage-ink/75">
-                {garment.construction.map((component) => (
-                  <li
-                    key={component.componentKey}
-                    className="flex min-w-0 flex-wrap justify-between gap-2"
-                  >
-                    <span className="min-w-0 break-words">{component.label}</span>
-                    <span className="shrink-0 font-mono font-bold text-heritage-green">
-                      {money(component.priceCents / 100)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              {(garment.construction.length > 0 || selectedCustomDetails.length > 0) && (
+                <section className="mt-3" data-summary-garment-construction={garment.garmentKey}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+                    Garment Construction
+                  </p>
+                  <ul className="mt-2 space-y-1.5 text-sm text-heritage-ink/75">
+                    {garment.construction.map((component) => (
+                      <li
+                        key={component.componentKey}
+                        className="flex min-w-0 flex-wrap justify-between gap-2"
+                      >
+                        <span className="min-w-0 break-words">{component.label}</span>
+                        <span className="shrink-0 font-mono font-bold text-heritage-green">
+                          {component.priceCents === 0
+                            ? "Included"
+                            : money(component.priceCents / 100)}
+                        </span>
+                      </li>
+                    ))}
+                    {selectedCustomDetails.map((occurrence) => (
+                      <li
+                        key={occurrence.occurrenceKey}
+                        data-summary-selected-customization={occurrence.occurrenceKey}
+                        className="flex min-w-0 flex-wrap justify-between gap-2"
+                      >
+                        <span className="min-w-0 break-words">{occurrence.optionLabel}</span>
+                        <span className="shrink-0 font-mono font-bold text-heritage-green">
+                          {occurrence.priceStatus === "evaluation_required"
+                            ? "Price requires evaluation"
+                            : occurrence.priceCents === null || occurrence.priceCents === 0
+                              ? "Included"
+                              : money(occurrence.priceCents / 100)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
               </article>
             );
           })}
@@ -428,17 +478,15 @@ export const DormantFutureSummaryStep = ({
         )}
       </Section>
 
+      {unmatchedCustomDetails.length > 0 && (
       <Section
         title="Custom Details"
         description="Selections remain grouped with the garment they apply to."
         editLabel="Edit Custom Details"
         onEdit={onEditCustomDetails}
       >
-        {summary.customDetailsSummary.length === 0 ? (
-          <p className="text-sm text-heritage-ink/65">No optional Custom Details selected.</p>
-        ) : (
           <div className="space-y-4">
-            {summary.customDetailsSummary.map((garment) => (
+            {unmatchedCustomDetails.map((garment) => (
               <article key={garment.garmentKey} className="min-w-0">
                 <h4 className="font-bold text-heritage-green">{garment.garmentLabel}</h4>
                 <ul className="mt-2 divide-y divide-heritage-green/10 rounded-xl border border-heritage-green/12">
@@ -474,8 +522,8 @@ export const DormantFutureSummaryStep = ({
               </article>
             ))}
           </div>
-        )}
       </Section>
+      )}
 
       <div className="grid min-w-0 gap-5 lg:grid-cols-2">
         <Section

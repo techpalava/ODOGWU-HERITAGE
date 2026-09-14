@@ -1957,6 +1957,7 @@ export const DormantFutureFabricStep = ({
         stockPresentation={getOrderAwareFabricStockPresentation(
           fabric,
           fabricAllocationState,
+          { hasCompatibleReusableHalfCapacity: allowExistingPartialReuse },
         )}
         stockConstraintMessage={stockConstraintMessage}
         describedBy="future-fabric-catalogue-help future-fabric-assignment-status"

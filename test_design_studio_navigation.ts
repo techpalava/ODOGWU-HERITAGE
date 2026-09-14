@@ -64,16 +64,29 @@ assert.match(studioSource, /focus\(\{ preventScroll: true \}\)/);
 assert.match(studioSource, /\[aria-invalid="true"\], \[data-validation-target="true"\]/);
 assert.match(studioSource, /getOrderSummaryNavigationTarget\(/);
 assert.match(studioSource, /futureAdditionalGarmentNavigationRequestIdRef\.current \+= 1/);
+assert.match(
+  studioSource,
+  /const liveOrderSummaryUnlockedStages = useMemo\(\(\) => \{[\s\S]*const currentlyEnterable = new Set<DesignStudioStageId>\(\["garment_type"\]\)/,
+  "the mounted Summary mirrors existing currently-enterable stage authority after hydration",
+);
+assert.match(
+  studioSource,
+  /currentlyEnterable\.add\("fabric"\)[\s\S]*currentlyEnterable\.add\("design_style"\)[\s\S]*currentlyEnterable\.add\("custom_details"\)[\s\S]*currentlyEnterable\.add\("measurement"\)/,
+  "the mounted Summary keeps every existing correction stage eligible when its existing entry gate allows it",
+);
+assert.match(
+  studioSource,
+  /if \(!liveOrderSummaryUnlockedStages\.has\(stage\)\) return;/,
+  "the mounted Summary callback uses the same eligibility set as its rendered controls",
+);
 
 // Audit the actual persistent Order Summary ownership map without adding or
 // inventing any visible controls.
 for (const [section, stage] of [
-  ["Garment Construction", "garment_type"],
-  ["Optional Extra Garments", "custom_details"],
-  ["Additional Clothes Costs", "custom_details"],
-  ["Garments", "garment_type"],
+  ["Garments Ordered", "garment_type"],
   ["Fabrics", "fabric"],
   ["Design Style", "design_style"],
+  ["Construction Options", "custom_details"],
   ["Measurements", "measurement"],
   ["Delivery & Pickup", "shipping"],
 ] as const) {

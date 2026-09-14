@@ -46,6 +46,8 @@ interface DormantFutureDesignStyleStepProps {
     readonly message?: string;
     readonly previewUrl?: string | null;
   };
+  /** Private uploaded-image previews keyed by exact physical occurrence token. */
+  selectedDesignPreviewByOccurrenceToken?: Readonly<Record<string, string>>;
   stagePrice: number | null;
   isCatalogueLoading?: boolean;
   stylesLoadState?: "loading" | "ready" | "error";
@@ -114,6 +116,7 @@ export const DormantFutureDesignStyleStep = ({
   mutationError,
   draftHydrationFailed = false,
   uploadState = { status: "idle" },
+  selectedDesignPreviewByOccurrenceToken = {},
   stagePrice,
   isCatalogueLoading = false,
   stylesLoadState = "ready",
@@ -613,8 +616,15 @@ export const DormantFutureDesignStyleStep = ({
               <div role="list" className="mt-2 divide-y divide-heritage-green/10 overflow-hidden rounded-xl border border-heritage-green/15 bg-white">
                 {occurrences.map((occurrence) => {
                   const occurrenceClearRequest = clearRequests.find((request) => designStyleStepTargetsEqual(request.target, occurrence.target)) || (designStyleStepTargetsEqual(occurrence.target, activeOccurrenceTarget) ? clearRequest : null);
+                  const selectedDesignImage =
+                    occurrence.assignmentImage ||
+                    selectedDesignPreviewByOccurrenceToken[
+                      occurrence.target.occurrenceToken
+                    ] ||
+                    null;
                   return (
-                    <article key={occurrence.target.occurrenceToken} role="listitem" data-occurrence-label={occurrence.label} className="flex min-w-0 flex-col gap-2 border-l-2 border-transparent bg-white px-3 py-2.5 sm:flex-row sm:items-center sm:gap-4">
+                    <article key={occurrence.target.occurrenceToken} role="listitem" data-occurrence-label={occurrence.label} data-occurrence-token={occurrence.target.occurrenceToken} className="flex min-w-0 flex-col gap-2 border-l-2 border-transparent bg-white px-3 py-2.5 sm:flex-row sm:items-center sm:gap-4">
+                      {occurrence.assignment && selectedDesignImage ? <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/20 bg-heritage-cream/35 sm:h-20 sm:w-20" data-selected-design-preview="true"><img src={selectedDesignImage} alt={`${occurrence.assignmentLabel || "Selected"} design for ${occurrence.label}`} className="h-full w-full object-contain" referrerPolicy="no-referrer" /></div> : null}
                       <div className="grid min-w-0 flex-1 gap-0.5 sm:grid-cols-[minmax(6rem,0.35fr)_minmax(0,1fr)] sm:items-baseline sm:gap-x-4">
                         <p className="font-serif text-sm font-bold text-heritage-green">{occurrence.label}</p>
                         <p className="break-words text-xs leading-relaxed text-heritage-ink/70"><span className="font-semibold text-heritage-green">{occurrence.assignmentLabel || "No design selected"}</span></p>

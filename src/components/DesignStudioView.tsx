@@ -1732,6 +1732,34 @@ export default function DesignStudioView({
             ? { previewUrl: retainedUploadedDesignPreviewUrl }
             : {}),
         };
+  const futureDesignStylePreviewByOccurrenceToken = useMemo(
+    () =>
+      Object.fromEntries(
+        futureDesignStyleStepProjection.occurrences.flatMap((occurrence) => {
+          if (occurrence.assignment?.sourceKind !== "uploaded") return [];
+          const uploadUi =
+            futureDesignStyleUploadUiByGarmentKey[occurrence.target.garmentKey];
+          const previewUrl =
+            uploadUi?.occurrenceToken === occurrence.target.occurrenceToken
+              ? uploadUi.previewUrl
+              : designStyleStepTargetsEqual(
+                    occurrence.target,
+                    resolvedFutureActiveDesignStyleOccurrence,
+                  )
+                ? retainedUploadedDesignPreviewUrl
+                : null;
+          return previewUrl
+            ? [[occurrence.target.occurrenceToken, previewUrl] as const]
+            : [];
+        }),
+      ),
+    [
+      futureDesignStyleStepProjection.occurrences,
+      futureDesignStyleUploadUiByGarmentKey,
+      resolvedFutureActiveDesignStyleOccurrence,
+      retainedUploadedDesignPreviewUrl,
+    ],
+  );
   const isFutureDesignSourceReadyForCustomDetails =
     futureDesignStyleStepProjection.isComplete;
   futureDesignStyleMutationAuthorityRef.current =
@@ -2834,11 +2862,52 @@ export default function DesignStudioView({
   );
   const liveOrderSummaryUnlockedStages = useMemo(() => {
     const unlocked = new Set<DesignStudioStageId>();
+    // The Summary uses the same currently-enterable authority as the Journey
+    // Stepper, in addition to its in-session historical progress. The latter
+    // resets while an authenticated draft is hydrated, so it cannot be the
+    // Summary's only eligibility source.
+    const currentlyEnterable = new Set<DesignStudioStageId>(["garment_type"]);
+    if (garmentTypeStageCompletion.isComplete) {
+      currentlyEnterable.add("fabric");
+    }
+    if (futureFabricStageCompletion.isComplete) {
+      currentlyEnterable.add("design_style");
+    }
+    if (isFutureDesignSourceReadyForCustomDetails) {
+      currentlyEnterable.add("custom_details");
+    }
+    if (isFutureCustomDetailsStageReady) {
+      currentlyEnterable.add("try_on");
+    }
+    if (isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow)) {
+      currentlyEnterable.add("measurement");
+    }
+    if (isFutureSummaryStageUnlocked) {
+      currentlyEnterable.add("summary");
+    }
+    if (isFutureShippingUnlocked) {
+      currentlyEnterable.add("shipping");
+    }
+    if (isFuturePaymentReviewUnlocked) {
+      currentlyEnterable.add("payment");
+    }
     DESIGN_STUDIO_STEPS.forEach((step, index) => {
-      if (index <= highestUnlockedStageIndex) unlocked.add(step.id);
+      if (index <= highestUnlockedStageIndex || currentlyEnterable.has(step.id)) {
+        unlocked.add(step.id);
+      }
     });
     return unlocked;
-  }, [highestUnlockedStageIndex]);
+  }, [
+    highestUnlockedStageIndex,
+    garmentTypeStageCompletion.isComplete,
+    futureFabricStageCompletion.isComplete,
+    isFutureDesignSourceReadyForCustomDetails,
+    isFutureCustomDetailsStageReady,
+    futureAiTryOnWorkflow,
+    isFutureSummaryStageUnlocked,
+    isFutureShippingUnlocked,
+    isFuturePaymentReviewUnlocked,
+  ]);
 
   useEffect(() => {
     if (
@@ -5869,7 +5938,7 @@ export default function DesignStudioView({
     // The persistent Summary remains visible while Step 4 is mounted. During
     // hydration, its Edit can fire before the historical-unlock effect catches
     // up; the already mounted stage is safe to target in that case.
-    if (!isStageHistoricallyUnlocked(stage) && futureStageId !== stage) return;
+    if (!liveOrderSummaryUnlockedStages.has(stage)) return;
     if (stage === "garment_type") {
       navigateToFutureStage("garment_type");
       return;
@@ -7447,6 +7516,9 @@ export default function DesignStudioView({
               futureDraftPersistenceStatus === "invalid")
           }
           uploadState={futureDesignStyleUploadStateForActiveOccurrence}
+          selectedDesignPreviewByOccurrenceToken={
+            futureDesignStylePreviewByOccurrenceToken
+          }
           stagePrice={
             futureFabricAuthoritativePricing?.garmentConstructionSubtotal ??
             null
