@@ -14,8 +14,26 @@ assert.equal(
       garmentKey: "additional:shirt:1",
     },
   }),
+  "fabric",
+  "the legacy Step 4 surface still corrects to Fabric when it is incomplete",
+);
+
+assert.equal(
+  resolveFutureStageCorrection({
+    currentStageId: "personalized_additions",
+    garmentTypeComplete: true,
+    fabricComplete: false,
+    designSourceReady: true,
+    customDetailsReady: true,
+    personalizedAdditionsReady: true,
+    measurementUnlocked: false,
+    summaryUnlocked: false,
+    inlineAdditionalGarmentFabricTransaction: {
+      garmentKey: "additional:shirt:1",
+    },
+  }),
   null,
-  "inline transaction keeps Custom Details even when fabric is incomplete",
+  "an inline Additional Garment Fabric return keeps Step 5 mounted while it settles",
 );
 
 assert.equal(
@@ -45,8 +63,8 @@ assert.equal(
     inlineAdditionalGarmentFabricTransaction: null,
     additionalGarmentFabricRepairTargeted: true,
   }),
-  null,
-  "a Summary-targeted additional Fabric repair remains in its Step 4 owner instead of redirecting to Fabric",
+  "fabric",
+  "the legacy Step 4 surface corrects incomplete Fabric through Step 2 authority",
 );
 
 assert.equal(
@@ -128,8 +146,8 @@ assert.equal(
       phase: "committed",
     },
   }),
-  null,
-  "committed inline transaction suppresses design_style bounce",
+  "design_style",
+  "the legacy Step 4 surface still redirects when Design Style is genuinely unavailable",
 );
 
 assert.equal(
