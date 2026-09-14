@@ -134,6 +134,7 @@ import {
   type DesignStyleStepClearMutationRequest,
   type UploadedDesignStyleDetachLifecycleOutcome,
 } from "../utils/designStyleStepRuntime";
+import { resolveLatestSuccessfulDesignStyleFeedbackTarget } from "../utils/designStyleAssignmentFeedback";
 import { removeExactGarmentDesignStyleAssignment } from "../utils/garmentScopedDesignStyleAssignment";
 import {
   createDesignStyleUploadOperationState,
@@ -628,6 +629,12 @@ export default function DesignStudioView({
     useState<FutureDesignStyleRuntimeHydration | null>(null);
   const [futureActiveDesignStyleOccurrence, setFutureActiveDesignStyleOccurrence] =
     useState<DesignStyleStepClearMutationRequest["target"] | null>(null);
+  const futureDesignStyleAssignmentFeedbackIdRef = useRef(0);
+  const [futureDesignStyleAssignmentFeedback, setFutureDesignStyleAssignmentFeedback] =
+    useState<{
+      readonly target: DesignStyleStepClearMutationRequest["target"];
+      readonly eventId: number;
+    } | null>(null);
   const previousFutureDesignStyleOccurrenceOrderRef = useRef<
     readonly DesignStyleStepClearMutationRequest["target"][]
   >([]);
@@ -876,6 +883,7 @@ export default function DesignStudioView({
     futureDesignStyleMutationAuthorityRef.current = null;
     setFutureDesignStyleDraftHydration(null);
     setFutureActiveDesignStyleOccurrence(null);
+    setFutureDesignStyleAssignmentFeedback(null);
     previousFutureDesignStyleOccurrenceOrderRef.current = [];
     setFutureDesignStyleMutationError(null);
   }, []);
@@ -4930,7 +4938,7 @@ export default function DesignStudioView({
   const applyFutureDesignStyleMutationLedger = (
     current: FutureDesignStyleMutationAuthority,
     ledger: NonNullable<DesignStyleDraftHydrationResult["ledger"]>,
-  ) => {
+  ): boolean => {
     const latest = futureDesignStyleMutationAuthorityRef.current;
     if (
       !latest ||
@@ -4940,7 +4948,7 @@ export default function DesignStudioView({
       !designStyleStepTargetsEqual(latest.activeTarget, current.activeTarget)
     ) {
       rejectFutureDesignStyleMutation("STALE_RUNTIME_GENERATION");
-      return;
+      return false;
     }
     const nextHydration = applyDesignStyleStepLedgerToHydration({
       hydration: current.hydration,
@@ -4954,6 +4962,17 @@ export default function DesignStudioView({
       result: nextHydration,
     });
     setFutureDesignStyleMutationError(null);
+    return true;
+  };
+
+  const requestFutureDesignStyleAssignmentFeedback = (
+    target: DesignStyleStepClearMutationRequest["target"],
+  ) => {
+    futureDesignStyleAssignmentFeedbackIdRef.current += 1;
+    setFutureDesignStyleAssignmentFeedback({
+      target,
+      eventId: futureDesignStyleAssignmentFeedbackIdRef.current,
+    });
   };
 
   const handleSelectFutureDesignStyleOccurrence = (
@@ -4995,7 +5014,15 @@ export default function DesignStudioView({
       rejectFutureDesignStyleMutation(result.reason);
       return;
     }
-    applyFutureDesignStyleMutationLedger(current, result.ledger);
+    if (!applyFutureDesignStyleMutationLedger(current, result.ledger)) return;
+    const feedbackTarget = resolveLatestSuccessfulDesignStyleFeedbackTarget({
+      result,
+      requests,
+      previousLedger: ledger,
+    });
+    if (feedbackTarget) {
+      requestFutureDesignStyleAssignmentFeedback(feedbackTarget);
+    }
   };
 
   const queueUploadedSourceCleanupCandidate = ({
@@ -5447,7 +5474,12 @@ export default function DesignStudioView({
           status: "success",
           previewUrl,
         });
-        applyFutureDesignStyleMutationLedger(latest, result.ledger);
+        if (
+          applyFutureDesignStyleMutationLedger(latest, result.ledger) &&
+          result.assignmentResult.status === "applied"
+        ) {
+          requestFutureDesignStyleAssignmentFeedback(latest.activeTarget);
+        }
         const canonicalHandoff =
           designStylePrecanonicalUploadCleanupCoordinator.acceptCanonical(
             precanonicalCleanupOperation,
@@ -7613,6 +7645,12 @@ export default function DesignStudioView({
             additionalGarmentFabricTransaction?.designStyleReuse,
           )}
           reuseAddedOccurrence={designStyleReuseAddedOccurrence}
+          assignmentFeedback={futureDesignStyleAssignmentFeedback}
+          onAssignmentFeedbackHandled={(eventId) => {
+            setFutureDesignStyleAssignmentFeedback((current) =>
+              current?.eventId === eventId ? null : current,
+            );
+          }}
           onSelectOccurrence={handleSelectFutureDesignStyleOccurrence}
           onAssignCatalogueStyle={handleAssignFutureCatalogueStyle}
           onClearAssignment={handleClearFutureDesignStyleAssignment}
