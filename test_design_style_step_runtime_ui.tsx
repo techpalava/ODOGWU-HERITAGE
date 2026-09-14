@@ -15,6 +15,7 @@ import {
   type DesignStyleStepCatalogMutationRequest,
   type DesignStyleStepClearMutationRequest,
 } from "./src/utils/designStyleStepRuntime";
+import { resolveLatestSuccessfulDesignStyleFeedbackTarget } from "./src/utils/designStyleAssignmentFeedback";
 import {
   createDesignStyleStepRenderProps,
   createDesignStyleStepTestModel,
@@ -997,6 +998,250 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     false,
     "a mismatch warning must not block Apply Design",
   );
+}
+
+// Assignment confirmation feedback is presentation-only: it consumes an
+// already-applied exact occurrence result, never a hydration or rejected
+// mutation. Repeated shirt occurrences must retain distinct feedback targets.
+{
+  const exactOccurrences: PhysicalGarmentOccurrence[] = [
+    {
+      garmentKey: "base:shirt:1",
+      garmentType: "shirt",
+      sourceRole: "main",
+      fabricUnits: 1,
+      occurrenceGeneration: 1,
+    },
+    {
+      garmentKey: "additional:shirt:2",
+      garmentType: "shirt",
+      sourceRole: "additional",
+      fabricUnits: 1,
+      occurrenceGeneration: 2,
+    },
+  ];
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt"]),
+    occurrences: exactOccurrences,
+  });
+  const requests = model.projection.occurrences.map(
+    (occurrence) =>
+      model.catalogueEntries[0]!.requestsByOccurrenceToken[
+        occurrence.target.occurrenceToken
+      ]!,
+  );
+  const assignment = assignCatalogueStyleToOccurrencesThroughStepRuntime({
+    ledger: model.hydration.ledger!,
+    activeOccurrences: model.occurrences,
+    authority: model.authority,
+    requests,
+    currentRuntimeGeneration: 1,
+    stepIsActive: true,
+    hydrationMutable: true,
+  });
+  assert.equal(assignment.status, "applied");
+  assert.deepEqual(
+    resolveLatestSuccessfulDesignStyleFeedbackTarget({
+      result: assignment,
+      requests,
+      previousLedger: model.hydration.ledger!,
+    }),
+    model.projection.occurrences[1]!.target,
+    "the latest changed same-type occurrence is the exact feedback target",
+  );
+  assert.equal(
+    resolveLatestSuccessfulDesignStyleFeedbackTarget({
+      result: {
+        status: "rejected",
+        reason: "STALE_LEDGER_REVISION",
+        ledger: model.hydration.ledger!,
+      },
+      requests,
+      previousLedger: model.hydration.ledger!,
+    }),
+    null,
+    "a rejected mutation cannot create a success-feedback target",
+  );
+  assert.equal(
+    resolveLatestSuccessfulDesignStyleFeedbackTarget({
+      result: { status: "unchanged", ledger: assignment.ledger },
+      requests,
+      previousLedger: assignment.ledger,
+    }),
+    null,
+    "a restored or unchanged assignment cannot create success feedback",
+  );
+}
+
+// The rendered top card is the scroll destination. An explicit feedback event
+// highlights one exact card, replaces the prior timer safely, and respects
+// reduced motion. Rendering or remounting without that event remains quiet.
+{
+  const exactOccurrences: PhysicalGarmentOccurrence[] = [
+    {
+      garmentKey: "base:shirt:1",
+      garmentType: "shirt",
+      sourceRole: "main",
+      fabricUnits: 1,
+      occurrenceGeneration: 1,
+    },
+    {
+      garmentKey: "additional:shirt:2",
+      garmentType: "shirt",
+      sourceRole: "additional",
+      fabricUnits: 1,
+      occurrenceGeneration: 2,
+    },
+  ];
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt"]),
+    occurrences: exactOccurrences,
+  });
+  const baseTarget = model.projection.occurrences[0]!.target;
+  const additionalTarget = model.projection.occurrences[1]!.target;
+  const cards = new Map<
+    string,
+    {
+      scrolls: ScrollIntoViewOptions[];
+      focusCalls: FocusOptions[];
+    }
+  >();
+  const handledEventIds: number[] = [];
+  const scheduledTimers = new Map<number, () => void>();
+  const runtime = globalThis as typeof globalThis & { window?: Window };
+  const originalWindow = runtime.window;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  let nextTimerId = 0;
+  let prefersReducedMotion = false;
+  runtime.window = {
+    cancelAnimationFrame: () => undefined,
+    matchMedia: () => ({ matches: prefersReducedMotion }),
+    requestAnimationFrame: (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    },
+  } as unknown as Window;
+  globalThis.setTimeout = ((callback: TimerHandler) => {
+    const timerId = ++nextTimerId;
+    scheduledTimers.set(timerId, () => {
+      if (typeof callback === "function") callback();
+    });
+    return timerId as unknown as ReturnType<typeof setTimeout>;
+  }) as typeof setTimeout;
+  globalThis.clearTimeout = ((timer: ReturnType<typeof setTimeout>) => {
+    scheduledTimers.delete(timer as unknown as number);
+  }) as typeof clearTimeout;
+
+  try {
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(
+        <DormantFutureDesignStyleStep
+          {...createDesignStyleStepRenderProps(model)}
+          assignmentFeedback={{ target: baseTarget, eventId: 1 }}
+          onAssignmentFeedbackHandled={(eventId) => handledEventIds.push(eventId)}
+        />,
+        {
+          createNodeMock: (element) => {
+            if (
+              element.type === "article" &&
+              typeof element.props["data-occurrence-token"] === "string"
+            ) {
+              const token = element.props["data-occurrence-token"];
+              const existingCard = cards.get(token);
+              if (existingCard) return existingCard;
+              const card = {
+                scrolls: [] as ScrollIntoViewOptions[],
+                focusCalls: [] as FocusOptions[],
+                scrollIntoView(options: ScrollIntoViewOptions) {
+                  this.scrolls.push(options);
+                },
+                focus(options: FocusOptions) {
+                  this.focusCalls.push(options);
+                },
+              };
+              cards.set(token, card);
+              return card;
+            }
+            return { focus: () => undefined };
+          },
+        },
+      );
+    });
+    assert.equal(cards.get(baseTarget.occurrenceToken)?.scrolls[0]?.behavior, "smooth");
+    assert.equal(cards.get(baseTarget.occurrenceToken)?.scrolls[0]?.block, "center");
+    assert.deepEqual(cards.get(baseTarget.occurrenceToken)?.focusCalls[0], {
+      preventScroll: true,
+    });
+    assert.deepEqual(handledEventIds, [1]);
+    assert.deepEqual(
+      renderer.root
+        .findAll((node) => node.props?.["data-design-assignment-feedback"] === "true")
+        .map((node) => node.props["data-occurrence-token"]),
+      [baseTarget.occurrenceToken],
+      "only the exact base occurrence receives feedback",
+    );
+
+    prefersReducedMotion = true;
+    await act(async () => {
+      renderer.update(
+        <DormantFutureDesignStyleStep
+          {...createDesignStyleStepRenderProps(model)}
+          assignmentFeedback={{ target: additionalTarget, eventId: 2 }}
+          onAssignmentFeedbackHandled={(eventId) => handledEventIds.push(eventId)}
+        />,
+      );
+    });
+    assert.equal(scheduledTimers.size, 1, "the prior highlight timer is cleared");
+    assert.equal(
+      cards.get(additionalTarget.occurrenceToken)?.scrolls[0]?.behavior,
+      "auto",
+      "reduced motion avoids smooth scrolling",
+    );
+    assert.deepEqual(
+      renderer.root
+        .findAll((node) => node.props?.["data-design-assignment-feedback"] === "true")
+        .map((node) => node.props["data-occurrence-token"]),
+      [additionalTarget.occurrenceToken],
+      "the later successful assignment replaces the earlier highlight",
+    );
+    for (const callback of [...scheduledTimers.values()]) {
+      await act(async () => callback());
+    }
+    assert.equal(
+      renderer.root.findAll(
+        (node) => node.props?.["data-design-assignment-feedback"] === "true",
+      ).length,
+      0,
+      "the temporary highlight clears automatically",
+    );
+
+    const quietScrollCount = [...cards.values()].reduce(
+      (total, card) => total + card.scrolls.length,
+      0,
+    );
+    await act(async () => {
+      renderer.update(
+        <DormantFutureDesignStyleStep
+          {...createDesignStyleStepRenderProps(model)}
+          assignmentFeedback={null}
+        />,
+      );
+    });
+    assert.equal(
+      [...cards.values()].reduce((total, card) => total + card.scrolls.length, 0),
+      quietScrollCount,
+      "hydration/remount data without a success event does not scroll",
+    );
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    if (originalWindow === undefined) delete runtime.window;
+    else runtime.window = originalWindow;
+  }
 }
 
 console.log("PASS: garment-scoped Design Style Step 3 rendered runtime");
