@@ -179,6 +179,19 @@ try {
   });
 
   await openHistoricalStyle();
+  const includedDecorativeFeatureLabels = renderer.root
+    .findAllByType("label")
+    .map((candidate) => textContent(candidate).trim());
+  assert.ok(
+    includedDecorativeFeatureLabels.some((label) =>
+      label.includes("Name Monogram"),
+    ),
+    "The existing Included Decorative Features Name Monogram control remains mounted.",
+  );
+  assert.ok(
+    includedDecorativeFeatureLabels.some((label) => label.includes("Embroidery")),
+    "The existing Included Decorative Features Embroidery control remains mounted.",
+  );
   const firstMonogramInput = renderer.root.findByProps({
     "aria-label": "Custom price for Name Monogram",
   });

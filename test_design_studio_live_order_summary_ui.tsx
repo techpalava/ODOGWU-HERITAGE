@@ -262,6 +262,16 @@ const architectureView: LiveOrderSummaryView = {
         ] },
       ],
     },
+    {
+      id: "personalized_additions",
+      title: "Personalized Additions",
+      editStage: "personalized_additions",
+      lines: [
+        { id: "personalized-addition:order-detail:1:Name Monogram", label: "Monogram", detail: "Name Monogram", amountLabel: "€12.00" },
+        { id: "personalized-addition:order-detail:2:Embroidery", label: "Embroidery Design", detail: "Embroidery", amountLabel: "€12.00" },
+        { id: "personalized-addition:order-detail:3:Traditional Hat", label: "Accessories", detail: "Traditional Hat", amountLabel: "€12.00" },
+      ],
+    },
     { id: "measurements", title: "Measurements", editStage: "measurement", lines: [{ id: "measurements-complete", label: "Low Risk — Complete", detail: null, amountLabel: null }] },
     { id: "delivery", title: "Delivery & Pickup", editStage: "shipping", lines: [{ id: "delivery-method", label: "Delivery Method", detail: "Pick Up in Eindhoven", amountLabel: null }] },
   ],
@@ -272,7 +282,7 @@ const architectureEditedStages: DesignStudioStageId[] = [];
 act(() => {
   architectureRenderer = create(createElement(DesignStudioOrderSummary, {
     view: architectureView,
-    unlockedStages: new Set<DesignStudioStageId>(["garment_type", "fabric", "design_style", "custom_details", "measurement", "shipping"]),
+    unlockedStages: new Set<DesignStudioStageId>(["garment_type", "fabric", "design_style", "custom_details", "personalized_additions", "measurement", "shipping"]),
     currentStageId: "custom_details",
     onEditStage: (stage) => architectureEditedStages.push(stage),
   }));
@@ -281,7 +291,7 @@ const architectureSectionIds = architectureRenderer.root.findAll((node) =>
   typeof node.props["data-testid"] === "string" &&
   /^live-order-summary-section-(?!header-)/.test(node.props["data-testid"]),
 ).map((node) => node.props["data-testid"].replace("live-order-summary-section-", ""));
-assert.deepEqual(architectureSectionIds, ["construction", "fabrics", "design_style", "custom_details", "measurements", "delivery"]);
+assert.deepEqual(architectureSectionIds, ["construction", "fabrics", "design_style", "custom_details", "personalized_additions", "measurements", "delivery"]);
 assert.match(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })), /Standard Shirt.*€65\.00.*Trouser.*€75\.00/);
 assert.equal(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })).includes("Garments Ordered"), true);
 assert.equal(architectureRenderer.root.findAllByProps({ "data-line-id": "construction-additional:shirt:1" }).length, 1, "an Additional Garment is shown once in Garments Ordered");
@@ -289,6 +299,7 @@ assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-ord
 assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-fabrics" }).length, 1);
 assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-design_style" }).length, 1);
 assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-custom_details" }).length, 1);
+assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-personalized_additions" }).length, 1);
 assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-measurements" }).length, 1);
 assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-delivery" }).length, 1);
 assert.ok(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })).includes("Garment Subtotal"));
@@ -298,6 +309,7 @@ for (const [sectionId, stage] of [
   ["fabrics", "fabric"],
   ["design_style", "design_style"],
   ["custom_details", "custom_details"],
+  ["personalized_additions", "personalized_additions"],
   ["measurements", "measurement"],
   ["delivery", "shipping"],
 ] as const) {
@@ -315,6 +327,14 @@ const optionRow = architectureRenderer.root.findByProps({ "data-testid": "live-o
 assert.match(optionRow.props.className, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
 assert.ok(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-custom_details" })).includes("Included"));
 assert.ok(!textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-custom_details" })).includes("€65.00"), "option rows never repeat the garment base price");
+assert.match(
+  textOf(
+    architectureRenderer.root.findByProps({
+      "data-testid": "live-order-summary-section-personalized_additions",
+    }),
+  ),
+  /Monogram.*Name Monogram.*Embroidery Design.*Embroidery.*Accessories.*Traditional Hat/,
+);
 assert.equal(
   textOf(
     renderer.root.findByProps({

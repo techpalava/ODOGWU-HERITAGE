@@ -337,6 +337,36 @@ const genderOnlyStyle = makeStyle({
 });
 assert.equal(isNameMonogramApplicable(genderOnlyStyle), false);
 
+const legacyIncludedFeaturesOff = makeGarmentAwareStyle(["shirt", "neck"], {
+  includedDesignFeatures: {
+    hasMonogram: false,
+    hasEmbroidery: false,
+  },
+});
+const validDecorativeSelectionsWithLegacyFlagsOff: DesignSelections = {
+  decorativeFeatures: ["Name Monogram", "Embroidery"],
+};
+assert.deepEqual(
+  getApplicableDecorativeFeatures(
+    legacyIncludedFeaturesOff,
+    { code: "G1", type: "Shirt Only" },
+  ),
+  getApplicableDecorativeFeatures(
+    shirtStyle,
+    { code: "G1", type: "Shirt Only" },
+  ),
+  "Included Decorative Features state does not control valid customer availability",
+);
+assert.deepEqual(
+  filterDesignSelectionsForDecorativeFeatures(
+    validDecorativeSelectionsWithLegacyFlagsOff,
+    legacyIncludedFeaturesOff,
+    { code: "G1", type: "Shirt Only" },
+  ).decorativeFeatures,
+  ["Name Monogram", "Embroidery"],
+  "valid Monogram and Embroidery selections remain selectable when legacy inclusion flags are off",
+);
+
 const sleevedShirtSelection: DesignSelections = {
   customDetails: { shirt_construction: "shirt_std_midlong" },
   decorativeFeatures: ["Name Monogram"],
@@ -779,6 +809,11 @@ assert.deepEqual(
 assert.equal(
   restoredDraft?.designSelections.monogramPlacement,
   "upper_back",
+);
+assert.deepEqual(
+  restoredDraft?.designSelections.accessories,
+  ["Traditional Hat"],
+  "order-level optional Accessories survive draft restoration",
 );
 const validRestoredSelections = filterDesignSelectionsForDecorativeFeatures(
   restoredDraft?.designSelections || {},
