@@ -418,7 +418,7 @@ const catalogStyleIdFor = (
     /isCustomDetailsStage && onChangeAdditionalGarmentFabric/,
     "Fabric reassignment must remain unavailable in Step 5",
   );
-  assert.doesNotMatch(detailsSource, /GARMENTS IN THIS ORDER/);
+  assert.doesNotMatch(detailsSource, /Garments in this order/);
 }
 
 console.log("PASS: critical Design Studio journey regression firewall");
