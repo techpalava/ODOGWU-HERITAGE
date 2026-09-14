@@ -57,6 +57,7 @@ import {
   type FutureCustomDetailsCatalogueOccurrence,
   type FutureCustomDetailsCatalogueProjection,
 } from "../utils/futureCustomDetailsCatalogue";
+import type { CustomDetailsPresentationStageId } from "../utils/customDetailsStageOwnership";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import { isFutureCustomDetailsContentReady } from "../utils/aiTryOnWorkflow";
 import type { CustomerGarmentConstructionBreakdownProjection } from "../utils/designPriceBreakdownPresentation";
@@ -71,6 +72,8 @@ import {
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 
 interface DormantFutureCustomDetailsStepProps {
+  /** Defaults to the retained Step 4 surface for existing consumers. */
+  stage?: CustomDetailsPresentationStageId;
   reconciliation: GarmentScopedCustomDetailsReconciliationResult;
   catalogue: FutureCustomDetailsCatalogueProjection;
   personalizedInputs: GarmentScopedCustomDetailInputsV1;
@@ -226,6 +229,7 @@ const getSelectedConstructionId = (
     : null;
 
 export const DormantFutureCustomDetailsStep = ({
+  stage = "custom_details",
   reconciliation,
   catalogue,
   personalizedInputs,
@@ -269,6 +273,17 @@ export const DormantFutureCustomDetailsStep = ({
   onContinue,
   orderSummary = null,
 }: DormantFutureCustomDetailsStepProps) => {
+  const isPersonalizedAdditionsStage = stage === "personalized_additions";
+  const isCustomDetailsStage = !isPersonalizedAdditionsStage;
+  const stageTitle = isPersonalizedAdditionsStage
+    ? "Personalized Additions"
+    : "Custom Details";
+  const previousStageLabel = isPersonalizedAdditionsStage
+    ? "Custom Details"
+    : "Design Style";
+  const nextStageLabel = isPersonalizedAdditionsStage
+    ? "AI Try-on"
+    : "Personalized Additions";
   const includeAdditionalClothesCosts = resolveShowAdditionalClothesCosts(
     showAdditionalClothesCosts,
   );
@@ -958,7 +973,7 @@ export const DormantFutureCustomDetailsStep = ({
   };
 
   return (
-    <section aria-labelledby="future-custom-details-title" data-stage-id="custom_details" data-stage-complete={canContinue} className="relative space-y-4 font-sans">
+    <section aria-labelledby={`future-${stage}-title`} data-stage-id={stage} data-stage-complete={canContinue} className="relative space-y-4 font-sans">
       <div ref={setTopSentinelRef} data-custom-details-top-sentinel="true" aria-hidden="true" className="h-px w-full" />
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioBackButton
@@ -966,25 +981,25 @@ export const DormantFutureCustomDetailsStep = ({
           onClick={onBack}
           className="mb-3"
         />
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">Step 4 of 9</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">Step {isPersonalizedAdditionsStage ? 5 : 4} of 10</p>
         <h2
-          id="future-custom-details-title"
+          id={`future-${stage}-title`}
           ref={titleRef}
           tabIndex={-1}
           className="mt-1 scroll-mt-24 font-serif text-2xl font-bold text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:text-3xl"
         >
-          Custom Details
+          {stageTitle}
         </h2>
-        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">Review the construction and Custom Details relevant to your selected garments and design. Base garment construction was selected in Garment Type and is already included in your price.</p>
+        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">{isPersonalizedAdditionsStage ? "Add personalized requirements, embroidery, accessories, and any additional garment details. These choices stay in the same garment-scoped Custom Details record." : "Review the construction and Custom Details relevant to your selected garments and design. Base garment construction was selected in Garment Type and is already included in your price."}</p>
       </div>
 
       {completion.blockers.length > 0 && (
         <div role="alert" className="rounded-2xl border border-heritage-gold/30 bg-heritage-cream/35 p-4">
-          <p className="text-sm font-bold text-heritage-green">Custom Details need attention</p>
+          <p className="text-sm font-bold text-heritage-green">{stageTitle} need attention</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-heritage-ink/70">{Array.from(new Set(completion.blockers.map((blocker) => blocker.message))).map((message) => <li key={message}>{message}</li>)}</ul>
         </div>
       )}
-      {fabricAnnouncement ? (
+      {isPersonalizedAdditionsStage && fabricAnnouncement ? (
         <div
           role="status"
           aria-live="polite"
@@ -1005,16 +1020,16 @@ export const DormantFutureCustomDetailsStep = ({
         </div>
       ) : null}
 
-      {removalTargets.length > 0 && (
+      {isPersonalizedAdditionsStage && removalTargets.length > 0 && (
         <section
           aria-labelledby="future-custom-details-garments-in-order"
           className="min-w-0 rounded-2xl border border-heritage-gold/25 bg-white p-3 shadow-sm sm:p-4"
-          data-garment-removal-list="custom_details"
+          data-garment-removal-list={stage}
         >
           <h3
-            id="future-custom-details-garments-in-order"
+            id={`future-${stage}-garments-in-order`}
             tabIndex={-1}
-            data-garment-removal-list-heading="custom_details"
+            data-garment-removal-list-heading={stage}
             className="break-words font-serif text-lg font-bold uppercase tracking-wide text-heritage-green outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
           >
             Garments in this order
@@ -1057,7 +1072,7 @@ export const DormantFutureCustomDetailsStep = ({
                     aria-label={`Remove ${formatCustomDetailsGarmentLabel(target.occurrenceLabel)}, ${target.roleLabel}`}
                     aria-describedby={target.disabledReason ? reasonId : undefined}
                     data-garment-removal-button={target.garmentKey}
-                    data-garment-removal-origin-stage="custom_details"
+                    data-garment-removal-origin-stage={stage}
                     onClick={(event) =>
                       onRequestGarmentRemoval?.(target, event.currentTarget)
                     }
@@ -1075,6 +1090,7 @@ export const DormantFutureCustomDetailsStep = ({
 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6">
         <div ref={contentRef} className="min-w-0 space-y-4">
+          {isCustomDetailsStage && (
           <div data-custom-detail-section="main-garment-details" className="min-w-0 space-y-4">
             {mainCoreSections.map((section) =>
               renderCatalogueSection({
@@ -1109,12 +1125,15 @@ export const DormantFutureCustomDetailsStep = ({
               </section>
             )}
 
-            {mainPersonalizedGroups.length > 0 && renderCatalogueSection({
+          </div>
+          )}
+
+          {isPersonalizedAdditionsStage && mainPersonalizedGroups.length > 0 && renderCatalogueSection({
               title: "Miscellaneous - Personalized Additional",
               groups: mainPersonalizedGroups,
             })}
-          </div>
 
+          {isPersonalizedAdditionsStage && (
           <section data-custom-detail-section="monogram-embroidery" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
             <h3 className="border-b border-heritage-gold/35 pb-3 font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Monogram and Embroidery Design</h3>
             <p className="mt-1 text-xs text-heritage-ink/60">Optional. Select None to remove all monogram and embroidery choices.</p>
@@ -1129,7 +1148,9 @@ export const DormantFutureCustomDetailsStep = ({
               <fieldset className="mt-4"><legend className="text-xs font-bold text-heritage-green">Monogram placement</legend><div className="mt-2 flex flex-wrap gap-2">{availableMonogramPlacements.map((placement) => <label key={placement.value} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-heritage-green/15 px-3 text-xs text-heritage-green focus-within:ring-2 focus-within:ring-heritage-gold"><input type="radio" name="future-monogram-placement" checked={designSelections.monogramPlacement === placement.value} onChange={() => onMonogramPlacementChange(placement.value)} className="size-4 accent-heritage-green" />{placement.label}</label>)}</div></fieldset>
             )}
           </section>
+          )}
 
+          {isPersonalizedAdditionsStage && (
           <section data-custom-detail-section="accessories" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
             <h3 className="border-b border-heritage-gold/35 pb-3 font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Select Accessories - Optional</h3>
             <p className="mt-1 text-xs text-heritage-ink/60">Optional accessories remain separate from garment construction.</p>
@@ -1138,7 +1159,9 @@ export const DormantFutureCustomDetailsStep = ({
               {TRADITIONAL_ACCESSORY_OPTIONS.map((accessory) => <label key={accessory} className={`flex min-h-12 min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${selectedAccessories.has(accessory) ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}><input type="checkbox" checked={selectedAccessories.has(accessory)} onChange={() => onAccessoryToggle(accessory)} className="mt-0.5 size-5 shrink-0 accent-heritage-green" /><span className="min-w-0 flex-1"><span className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1"><span className="min-w-0 break-words text-sm font-bold text-heritage-green">{accessory}</span><span className="shrink-0 font-mono text-xs font-bold text-heritage-gold">+{money(getTraditionalAccessoryPrice(selectedStyle, accessory))}</span></span><span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">{TRADITIONAL_ACCESSORY_DESCRIPTIONS[accessory]}</span></span></label>)}
             </div>
           </section>
+          )}
 
+          {isPersonalizedAdditionsStage && (
           <section data-custom-detail-section="add-additional-garment" data-additional-garment-management="true" className="min-w-0 rounded-2xl border border-heritage-gold/25 bg-heritage-cream/25 p-4 shadow-sm sm:p-5">
             <h3 data-additional-garment-management-heading="true" tabIndex={-1} className="border-b border-heritage-gold/35 pb-3 font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Add Additional Garment</h3>
             <p className="mt-1 text-xs leading-relaxed text-heritage-ink/65">Add a physical garment occurrence. Its default construction and fabric requirements will be resolved through the same order workflow.</p>
@@ -1322,6 +1345,7 @@ export const DormantFutureCustomDetailsStep = ({
               </div>
             )}
           </section>
+          )}
         </div>
 
         {orderSummary ? (
@@ -1349,8 +1373,8 @@ export const DormantFutureCustomDetailsStep = ({
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <DesignStudioBackButton destination="Design Style" onClick={onBack} />
-        <button type="button" onClick={onContinue} disabled={!canContinue} aria-label={canContinue ? "Continue to AI Try-on" : "Continue to AI Try-on is locked until Custom Details are complete"} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Continue to AI Try-on <ArrowRight aria-hidden="true" size={14} /></button>
+        <DesignStudioBackButton destination={previousStageLabel} onClick={onBack} />
+        <button type="button" onClick={onContinue} disabled={!canContinue} aria-label={canContinue ? `Continue to ${nextStageLabel}` : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Continue to {nextStageLabel} <ArrowRight aria-hidden="true" size={14} /></button>
       </div>
 
       {shouldShowCustomDetailsGoToTop({
@@ -1361,7 +1385,7 @@ export const DormantFutureCustomDetailsStep = ({
         <CustomDetailsGoToTopButton onClick={handleGoToTop} />
       ) : null}
 
-      {additionalGarmentChoice && (
+      {isPersonalizedAdditionsStage && additionalGarmentChoice && (
           <div
             data-additional-garment-custom-details-dialog="true"
             className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/55 p-4"

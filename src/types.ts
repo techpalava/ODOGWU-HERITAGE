@@ -1045,6 +1045,7 @@ export type DesignStudioStageId =
   | "fabric"
   | "design_style"
   | "custom_details"
+  | "personalized_additions"
   | "try_on"
   | "measurement"
   | "summary"

@@ -1,6 +1,6 @@
-import { DESIGN_STUDIO_NINE_STAGE_FOUNDATION } from "../utils/designSourceJourney";
+import { DESIGN_STUDIO_TEN_STAGE_FOUNDATION } from "../utils/designSourceJourney";
 
-export const DESIGN_STUDIO_STEPS = DESIGN_STUDIO_NINE_STAGE_FOUNDATION.map(
+export const DESIGN_STUDIO_STEPS = DESIGN_STUDIO_TEN_STAGE_FOUNDATION.map(
   ({ id, title }) => ({ id, label: title }),
 );
 
@@ -36,6 +36,7 @@ interface DesignStudioJourneyStepperProps {
   canEnterFabric: boolean;
   canEnterDesignStyle: boolean;
   canEnterCustomDetails: boolean;
+  canEnterPersonalizedAdditions?: boolean;
   canEnterTryOn: boolean;
   canEnterMeasurement: boolean;
   canEnterSummary: boolean;
@@ -45,6 +46,7 @@ interface DesignStudioJourneyStepperProps {
   onSelectFabric: () => void;
   onSelectDesignStyle: () => void;
   onSelectCustomDetails: () => void;
+  onSelectPersonalizedAdditions?: () => void;
   onSelectTryOn: () => void;
   onSelectMeasurement: () => void;
   onSelectSummary: () => void;
@@ -58,6 +60,7 @@ export const DesignStudioJourneyStepper = ({
   canEnterFabric,
   canEnterDesignStyle,
   canEnterCustomDetails,
+  canEnterPersonalizedAdditions = false,
   canEnterTryOn,
   canEnterMeasurement,
   canEnterSummary,
@@ -67,6 +70,7 @@ export const DesignStudioJourneyStepper = ({
   onSelectFabric,
   onSelectDesignStyle,
   onSelectCustomDetails,
+  onSelectPersonalizedAdditions = () => {},
   onSelectTryOn,
   onSelectMeasurement,
   onSelectSummary,
@@ -77,7 +81,7 @@ export const DesignStudioJourneyStepper = ({
     aria-label="Design Studio steps"
     className="rounded-2xl border border-heritage-gold/20 bg-white p-3 shadow-sm sm:p-4"
   >
-    <ol className="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-5 lg:grid-cols-9">
+    <ol className="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-5 lg:grid-cols-10">
       {DESIGN_STUDIO_STEPS.map((step, index) => {
         const isCurrent = currentStageId === step.id;
         const currentStageIndex = DESIGN_STUDIO_STEPS.findIndex(
@@ -89,6 +93,7 @@ export const DesignStudioJourneyStepper = ({
           (step.id === "fabric" && canEnterFabric) ||
           (step.id === "design_style" && canEnterDesignStyle) ||
           (step.id === "custom_details" && canEnterCustomDetails) ||
+          (step.id === "personalized_additions" && canEnterPersonalizedAdditions) ||
           (step.id === "try_on" && canEnterTryOn) ||
           (step.id === "measurement" && canEnterMeasurement) ||
           (step.id === "summary" && canEnterSummary) ||
@@ -106,15 +111,17 @@ export const DesignStudioJourneyStepper = ({
                 ? onSelectDesignStyle
                 : step.id === "custom_details"
                   ? onSelectCustomDetails
-                  : step.id === "try_on"
-                    ? onSelectTryOn
-                    : step.id === "measurement"
-                      ? onSelectMeasurement
-                      : step.id === "summary"
-                        ? onSelectSummary
-                        : step.id === "shipping"
-                          ? onSelectShipping
-                          : onSelectPayment;
+                  : step.id === "personalized_additions"
+                    ? onSelectPersonalizedAdditions
+                    : step.id === "try_on"
+                      ? onSelectTryOn
+                      : step.id === "measurement"
+                        ? onSelectMeasurement
+                        : step.id === "summary"
+                          ? onSelectSummary
+                          : step.id === "shipping"
+                            ? onSelectShipping
+                            : onSelectPayment;
         const state = getDesignStudioJourneyStepState({
           stepIndex: index,
           currentStageIndex,

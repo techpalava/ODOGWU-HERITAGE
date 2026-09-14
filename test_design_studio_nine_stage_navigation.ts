@@ -5,7 +5,7 @@ import {
   getDesignStudioJourneyStepState,
 } from "./src/components/DesignStudioJourneyStepper";
 
-assert.equal(DESIGN_STUDIO_STEPS.length, 9);
+assert.equal(DESIGN_STUDIO_STEPS.length, 10);
 assert.deepEqual(
   DESIGN_STUDIO_STEPS.map((step) => step.id),
   [
@@ -13,6 +13,7 @@ assert.deepEqual(
     "fabric",
     "design_style",
     "custom_details",
+    "personalized_additions",
     "try_on",
     "measurement",
     "summary",
@@ -120,8 +121,15 @@ for (const file of [
 }
 
 assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("garment_type"\)\}/);
-assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("design_style"\)\}/);
+assert.match(
+  studioSource,
+  /futureStageId === "custom_details"\s*\? "design_style"\s*:\s*"custom_details"/,
+);
+assert.match(
+  studioSource,
+  /onBack=\{\(\) => navigateToFutureStage\("personalized_additions"\)\}/,
+);
 assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("shipping"\)\}/);
 assert.equal(studioSource.includes("legacy_five_stage"), false);
 
-console.log("PASS: nine-stage navigation states and back controls");
+console.log("PASS: ten-stage navigation states and back controls");

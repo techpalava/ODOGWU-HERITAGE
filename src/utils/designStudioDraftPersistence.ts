@@ -1,7 +1,7 @@
 import type { DesignStudioStageId, GuestDesignDraft } from "../types";
 import {
-  DESIGN_STUDIO_NINE_STAGE_FOUNDATION,
-  DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+  DESIGN_STUDIO_TEN_STAGE_FOUNDATION,
+  isSupportedDesignStudioJourneySchemaVersion,
 } from "./designSourceJourney";
 import { validateDesignStyleDraftFieldForStorage } from "./designStyleDraftPersistence";
 
@@ -18,7 +18,7 @@ export const FUTURE_DESIGN_STUDIO_DRAFT_STORAGE_VERSION = 1 as const;
 export const FUTURE_DESIGN_STUDIO_DRAFT_MIGRATION_VERSION = 1 as const;
 
 const FUTURE_STAGE_IDS = new Set<DesignStudioStageId>(
-  DESIGN_STUDIO_NINE_STAGE_FOUNDATION.map((stage) => stage.id),
+  DESIGN_STUDIO_TEN_STAGE_FOUNDATION.map((stage) => stage.id),
 );
 
 export interface DesignStudioDraftStorageAdapter {
@@ -38,7 +38,7 @@ export interface LegacyDesignStudioDraftAdapter {
 
 export interface FutureDesignStudioDraftEnvelopeV1 {
   storageVersion: 1;
-  journeyMode: "future_nine_stage";
+  journeyMode: "future_nine_stage" | "future_ten_stage";
   draft: GuestDesignDraft;
 }
 
@@ -132,7 +132,7 @@ export const hasAuthoritativeFutureDraftMarker = (
   currentStageId: DesignStudioStageId;
 } =>
   isRecord(value) &&
-  value.journeySchemaVersion === DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION &&
+  isSupportedDesignStudioJourneySchemaVersion(value.journeySchemaVersion) &&
   typeof value.currentStageId === "string" &&
   FUTURE_STAGE_IDS.has(value.currentStageId as DesignStudioStageId);
 
@@ -311,7 +311,8 @@ export const createDesignStudioDraftRepository = ({
     if (
       !isRecord(parsed) ||
       parsed.storageVersion !== FUTURE_DESIGN_STUDIO_DRAFT_STORAGE_VERSION ||
-      parsed.journeyMode !== "future_nine_stage" ||
+      (parsed.journeyMode !== "future_nine_stage" &&
+        parsed.journeyMode !== "future_ten_stage") ||
       !("draft" in parsed)
     ) {
       return {
@@ -425,7 +426,7 @@ export const createDesignStudioDraftRepository = ({
     }
     const envelope: FutureDesignStudioDraftEnvelopeV1 = {
       storageVersion: FUTURE_DESIGN_STUDIO_DRAFT_STORAGE_VERSION,
-      journeyMode: "future_nine_stage",
+      journeyMode: "future_ten_stage",
       draft: normalized.draft,
     };
     storage.setItem(

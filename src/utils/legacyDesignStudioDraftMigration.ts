@@ -1,5 +1,5 @@
 import type { DesignStudioStageId } from "../types";
-import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./designSourceJourney";
+import { DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION } from "./designSourceJourney";
 
 const LEGACY_NUMERIC_STAGE_IDS: Readonly<Record<number, DesignStudioStageId>> =
   {
@@ -52,6 +52,6 @@ export const prepareLegacyDraftForNineStageJourney = <T extends object>(
   currentStageId: DesignStudioStageId;
 } => ({
   ...draft,
-  journeySchemaVersion: DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION,
+  journeySchemaVersion: DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION,
   currentStageId: migrateLegacyDesignStudioStage(legacyStage),
 });
