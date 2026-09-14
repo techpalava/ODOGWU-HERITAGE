@@ -21,11 +21,27 @@ import {
 } from "./src/utils/optionalShortsPresentation";
 import { getRequiredCustomDetailGroups } from "./src/utils/catalogHelpers";
 import { resolveShippingGarmentPieceCount } from "./src/utils/shippingPricing";
+import { getStep1GarmentDisplayLabel } from "./src/utils/garmentConstructionPricing";
 
 const composition = [
   { key: "shirt", garmentType: "shirt" as const, fabricUnits: 1 as const },
   { key: "trouser", garmentType: "trouser" as const, fabricUnits: 1 as const },
 ];
+
+assert.equal(getStep1GarmentDisplayLabel("kaftan"), "Long shirt");
+assert.equal(getStep1GarmentDisplayLabel("full_length_gown"), "Long Dress");
+assert.equal(getCustomDetailsGarmentLabel("kaftan"), "Long shirt");
+assert.equal(getCustomDetailsGarmentLabel("full_length_gown"), "Long Dress");
+assert.equal(
+  SEED_CUSTOM_DETAIL_CATALOG.find((option) => option.id === "additional_garment_kaftan")?.label,
+  "Long shirt",
+  "Additional Garment must use the authoritative Long shirt customer label",
+);
+assert.equal(
+  SEED_CUSTOM_DETAIL_CATALOG.find((option) => option.id === "additional_garment_full_length_gown")?.label,
+  "Long Dress",
+  "Additional Garment must use the authoritative Long Dress customer label",
+);
 
 const allowed = resolveAllowedAdditionalGarments(composition);
 assert.deepEqual(
@@ -427,10 +443,15 @@ assert.doesNotMatch(
   /onClick=\{\(\) => onRemoveAdditionalGarment\(garment\.garmentKey\)\}/,
   "committed additional garments must no longer bypass the shared confirmation flow",
 );
+assert.doesNotMatch(
+  customDetailsSource,
+  /data-garment-removal-list="custom_details"/,
+  "Step 4 Custom Details must not expose the shared garment-removal list",
+);
 assert.match(
   customDetailsSource,
-  /data-garment-removal-list="custom_details"[\s\S]*onRequestGarmentRemoval\?\.\(target, event\.currentTarget\)/,
-  "the shared Custom Details removal list must request confirmation with the exact projected occurrence target",
+  /isPersonalizedAdditionsStage && removalTargets\.length > 0[\s\S]*onRequestGarmentRemoval\?\.\(target, event\.currentTarget\)/,
+  "the retained Step 5 correction flow must continue to request confirmation with the exact projected occurrence target",
 );
 
 console.log("Optional additional garment UI regression checks passed.");

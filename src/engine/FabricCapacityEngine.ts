@@ -11,6 +11,7 @@ import type {
   AdditionalGarmentEligibilityRule,
 } from "../types";
 import { FABRIC_GARMENT_CAPACITY_UNITS } from "../config/StyleFabricCapacityConfig";
+import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 
 type LowerGarmentType = "trousers" | "skirt";
 
@@ -25,25 +26,11 @@ export interface FabricAppendGarmentChoice {
   selection: FabricGarmentInputAssignment;
 }
 
-export const FABRIC_GARMENT_LABELS: Record<FabricGarmentType, string> = {
-  shirt: "Shirt",
-  trouser: "Trouser",
-  skirt: "Skirt",
-  long_skirt: "Long Skirt",
-  standard_shorts: "Nikka / Standard Shorts",
-  bum_shorts: "Bum Shorts",
-  dress: "Dress",
-  kaftan: "Kaftan",
-  full_length_gown: "Full-length Gown",
-  agbada: "Agbada",
-  other: "Other Garment",
-};
-
 const createAppendGarmentChoice = (
   garmentType: AppendableFabricGarmentType,
 ): FabricAppendGarmentChoice => ({
   id: garmentType,
-  label: FABRIC_GARMENT_LABELS[garmentType],
+  label: getFabricGarmentLabel(garmentType),
   selection: {
     code: `APPEND_${garmentType.toUpperCase()}`,
     garmentSpec: {
@@ -65,9 +52,27 @@ export const FABRIC_APPEND_GARMENT_CHOICES: readonly FabricAppendGarmentChoice[]
   createAppendGarmentChoice("full_length_gown"),
 ];
 
-export const getFabricGarmentLabel = (
+export function getFabricGarmentLabel(
   garmentType: FabricGarmentType,
-): string => FABRIC_GARMENT_LABELS[garmentType];
+): string {
+  // These two stable IDs were renamed for customers in Step 1. Delegate their
+  // display text to that authority while preserving the established labels for
+  // every other Fabric-domain garment type.
+  if (garmentType === "kaftan" || garmentType === "full_length_gown") {
+    return getStep1GarmentDisplayLabel(garmentType);
+  }
+  switch (garmentType) {
+    case "shirt": return "Shirt";
+    case "trouser": return "Trouser";
+    case "skirt": return "Skirt";
+    case "long_skirt": return "Long Skirt";
+    case "standard_shorts": return "Nikka / Standard Shorts";
+    case "bum_shorts": return "Bum Shorts";
+    case "dress": return "Dress";
+    case "agbada": return "Agbada";
+    case "other": return "Other Garment";
+  }
+}
 
 /**
  * Customer-facing fabric quantities describe complete fabric allocations, while

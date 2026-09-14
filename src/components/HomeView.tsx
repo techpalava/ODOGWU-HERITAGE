@@ -813,13 +813,13 @@ export default function HomeView({
               icon: "👔",
               title: "Men",
               description:
-                "Traditional attire including Senator wear, Agbada, Isiagu, Kaftans, Shirts, and more.",
+                "Traditional attire including Senator wear, Agbada, Isiagu, Long shirts, Shirts, and more.",
             },
             {
               icon: "👗",
               title: "Women",
               description:
-                "Elegant gowns, skirts, blouses, wrappers, dresses, and beautifully tailored traditional outfits.",
+                "Elegant Long Dresses, skirts, blouses, wrappers, dresses, and beautifully tailored traditional outfits.",
             },
             {
               icon: "👨‍👩‍👧‍👦",
