@@ -97,20 +97,20 @@ export const FutureRemainingFabricCapacityOfferCard = ({
       <ul className="mt-3 space-y-3 text-sm text-heritage-green">
         {offers.map((offer) => (
           <li key={offer.allocationId} className="rounded-xl border border-heritage-gold/20 p-3" data-fabric-capacity-offer-allocation-id={offer.allocationId}>
-            <p className="break-words font-bold">
-              {fabrics.find((fabric) => fabric.code === offer.fabricCode)?.name || offer.fabricCode}
-            </p>
-            <p className="mt-1 text-xs text-heritage-ink/65">
-              Fabric Selection {offer.selectionOrdinal}
-            </p>
-            <p className="mt-1 text-xs text-heritage-ink/65">{offer.remainingUnits}/2 capacity available</p>
             <button
               type="button"
               onClick={() => setSelectedAllocationId(offer.allocationId)}
-              data-testid={`remaining-fabric-capacity-offer-accept-${offer.allocationId}`}
-              className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              data-testid={`remaining-fabric-capacity-offer-allocation-${offer.allocationId}`}
+              aria-label={`Choose ${fabrics.find((fabric) => fabric.code === offer.fabricCode)?.name || offer.fabricCode}, Fabric Selection ${offer.selectionOrdinal}`}
+              className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
             >
-              Add Garment Using This Fabric
+              <p className="break-words font-bold">
+                {fabrics.find((fabric) => fabric.code === offer.fabricCode)?.name || offer.fabricCode}
+              </p>
+              <p className="mt-1 text-xs text-heritage-ink/65">
+                Fabric Selection {offer.selectionOrdinal}
+              </p>
+              <p className="mt-1 text-xs text-heritage-ink/65">{offer.remainingUnits}/2 capacity available</p>
             </button>
           </li>
         ))}

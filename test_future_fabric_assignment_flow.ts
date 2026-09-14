@@ -332,7 +332,7 @@ assert.equal(capacityOfferContinues, 1);
 act(() => {
   capacityOfferRenderer.root
     .findByProps({
-      "data-testid": `remaining-fabric-capacity-offer-accept-${combinedCapacityOffers[0].allocationId}`,
+      "data-testid": `remaining-fabric-capacity-offer-allocation-${combinedCapacityOffers[0].allocationId}`,
     })
     .props.onClick();
 });
@@ -355,6 +355,40 @@ assert.equal(
   selectedCapacityOfferAllocationId,
   combinedCapacityOffers[0].allocationId,
   "the selected garment must retain the specific physical Fabric allocation",
+);
+assert.doesNotMatch(
+  JSON.stringify(capacityOfferRenderer.toJSON()),
+  /Add Garment Using This Fabric/,
+  "The redundant generic capacity CTA must not render.",
+);
+act(() => {
+  capacityOfferRenderer.root.findByProps({ children: "Back" }).props.onClick();
+});
+assert.equal(
+  capacityOfferRenderer.root.findAllByProps({
+    "data-testid": "remaining-fabric-capacity-offer-selector",
+  }).length,
+  0,
+  "Back must return to the capacity-offer list.",
+);
+act(() => {
+  capacityOfferRenderer.root
+    .findByProps({
+      "data-testid": `remaining-fabric-capacity-offer-allocation-${combinedCapacityOffers[1].allocationId}`,
+    })
+    .props.onClick();
+});
+act(() => {
+  capacityOfferRenderer.root
+    .findByProps({
+      "data-testid": "remaining-fabric-capacity-offer-select-trouser",
+    })
+    .props.onClick();
+});
+assert.equal(
+  selectedCapacityOfferAllocationId,
+  combinedCapacityOffers[1].allocationId,
+  "Selecting another Fabric card must retain that exact physical allocation.",
 );
 act(() => {
   capacityOfferRenderer.root
@@ -421,7 +455,7 @@ assert.deepEqual(
 act(() => {
   ordinalOfferRenderer.root
     .findByProps({
-      "data-testid": `remaining-fabric-capacity-offer-accept-${ordinalOffers[1].allocationId}`,
+      "data-testid": `remaining-fabric-capacity-offer-allocation-${ordinalOffers[1].allocationId}`,
     })
     .props.onClick();
 });
@@ -1342,7 +1376,7 @@ const capacityOfferSource = readFileSync(
   "src/components/FutureRemainingFabricCapacityOffer.tsx",
   "utf8",
 );
-assert.match(capacityOfferSource, /Add Garment Using This Fabric/);
+assert.doesNotMatch(capacityOfferSource, /Add Garment Using This Fabric/);
 assert.match(capacityOfferSource, /Fabric Selection \{offer\.selectionOrdinal\}/,
   "Offer labels must retain their physical allocation ordinal after filtering.");
 assert.doesNotMatch(capacityOfferSource, /Add Another Garment/,
