@@ -47,7 +47,7 @@ const sampleView: LiveOrderSummaryView = {
       ],
       footer: {
         id: "construction-subtotal",
-        label: "Garment Construction Subtotal",
+        label: "Garment Subtotal",
         amountLabel: "€70.00",
         amountCents: 7000,
         note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.",
@@ -90,6 +90,46 @@ const sampleView: LiveOrderSummaryView = {
               amountLabel: null,
             },
           ],
+        },
+      ],
+    },
+    {
+      id: "design_style",
+      title: "Design Style",
+      editStage: "design_style",
+      lines: [
+        {
+          id: "design-style-base:shirt",
+          label: "Standard Shirt",
+          detail: "Casual Native",
+          imageUrl: "https://example.invalid/casual-native.jpg",
+          constructionOptions: [
+            { id: "base-shirt-length", label: "Standard Length Shirt", amountLabel: "Included" },
+            { id: "base-shirt-sleeve", label: "Short Sleeve", amountLabel: "Included" },
+            { id: "base-shirt-pocket", label: "No Pockets", amountLabel: "Included" },
+            { id: "base-shirt-cuff", label: "Detailed Cuff", amountLabel: "€12.50" },
+          ],
+          amountLabel: null,
+        },
+        {
+          id: "design-style-base:trouser",
+          label: "Trouser",
+          detail: "Casual Native",
+          imageUrl: "https://example.invalid/casual-native-trouser.jpg",
+          constructionOptions: [
+            { id: "base-trouser-fit", label: "Straight Trouser Fit", amountLabel: "Included" },
+          ],
+          amountLabel: null,
+        },
+        {
+          id: "design-style-additional:shirt:1",
+          label: "Standard Shirt 2",
+          detail: "Geometric Print Shirt Set",
+          imageUrl: "https://example.invalid/geometric-shirt.jpg",
+          constructionOptions: [
+            { id: "additional-shirt-length", label: "Standard Length Shirt", amountLabel: "Included" },
+          ],
+          amountLabel: null,
         },
       ],
     },
@@ -160,6 +200,117 @@ assert.equal(
 assert.ok(textOf(renderer.root).includes(LIVE_ORDER_SUMMARY_HEADING));
 assert.ok(!textOf(renderer.root).includes("Your Order Summary"));
 assert.ok(!textOf(renderer.root).includes("Live Price Summary"));
+
+const architectureView: LiveOrderSummaryView = {
+  sections: [
+    {
+      id: "construction",
+      title: "Garments Ordered",
+      editStage: "garment_type",
+      lines: [
+        { id: "construction-base:shirt", label: "Standard Shirt", detail: null, amountLabel: "€65.00" },
+        { id: "construction-base:trouser", label: "Trouser", detail: null, amountLabel: "€75.00" },
+      ],
+      subsections: [{
+        id: "additional_garments",
+        title: "Additional Garments",
+        editStage: "custom_details",
+        focusGarmentKey: "additional:shirt:1",
+        lines: [{ id: "construction-additional:shirt:1", label: "Standard Shirt 2", detail: null, amountLabel: "€70.00", focusGarmentKey: "additional:shirt:1" }],
+      }],
+      footer: { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€210.00", amountCents: 21000, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
+    },
+    {
+      id: "fabrics",
+      title: "Fabrics",
+      editStage: "fabric",
+      lines: [
+        { id: "fabric-base:shirt", label: "Standard Shirt", detail: "Ivory Imperial Leaf", amountLabel: null },
+        { id: "fabric-base:trouser", label: "Trouser", detail: "Heritage Ivory Lattice", amountLabel: null },
+        { id: "fabric-additional:shirt:1", label: "Standard Shirt 2", detail: "Royal Forest Mosaic", amountLabel: null },
+      ],
+    },
+    {
+      id: "design_style",
+      title: "Design Style",
+      editStage: "design_style",
+      lines: [
+        { id: "design-style-base:shirt", label: "Standard Shirt", detail: "Casual Native", imageUrl: "https://example.invalid/casual-native.jpg", amountLabel: null },
+        { id: "design-style-base:trouser", label: "Trouser", detail: "Casual Native", imageUrl: "https://example.invalid/casual-native-trouser.jpg", amountLabel: null },
+        { id: "design-style-additional:shirt:1", label: "Standard Shirt 2", detail: "Geometric Print Shirt Set", imageUrl: "https://example.invalid/geometric-shirt.jpg", amountLabel: null },
+      ],
+    },
+    {
+      id: "custom_details",
+      title: "Construction Options",
+      editStage: "custom_details",
+      lines: [
+        { id: "construction-options-base:shirt", label: "Standard Shirt", detail: null, amountLabel: null, constructionOptions: [
+          { id: "shirt-length", label: "Standard Length Shirt", amountLabel: "Included" },
+          { id: "shirt-pocket", label: "No Pockets", amountLabel: "Included" },
+          { id: "shirt-cuff", label: "Detailed Cuff", amountLabel: "€12.50" },
+        ] },
+        { id: "construction-options-base:trouser", label: "Trouser", detail: null, amountLabel: null, constructionOptions: [
+          { id: "trouser-rope", label: "With Rope", amountLabel: "Included" },
+        ] },
+        { id: "construction-options-additional:shirt:1", label: "Standard Shirt 2", detail: null, amountLabel: null, constructionOptions: [
+          { id: "additional-shirt-length", label: "Standard Length Shirt", amountLabel: "Included" },
+        ] },
+      ],
+    },
+    { id: "measurements", title: "Measurements", editStage: "measurement", lines: [{ id: "measurements-complete", label: "Low Risk — Complete", detail: null, amountLabel: null }] },
+    { id: "delivery", title: "Delivery & Pickup", editStage: "shipping", lines: [{ id: "delivery-method", label: "Delivery Method", detail: "Pick Up in Eindhoven", amountLabel: null }] },
+  ],
+  totalStatus: "exact", totalLabel: "Current Total", totalValueLabel: "€222.50", totalAmountCents: 22250, quoteRequired: false,
+};
+let architectureRenderer: ReturnType<typeof create>;
+const architectureEditedStages: DesignStudioStageId[] = [];
+act(() => {
+  architectureRenderer = create(createElement(DesignStudioOrderSummary, {
+    view: architectureView,
+    unlockedStages: new Set<DesignStudioStageId>(["garment_type", "fabric", "design_style", "custom_details", "measurement", "shipping"]),
+    currentStageId: "custom_details",
+    onEditStage: (stage) => architectureEditedStages.push(stage),
+  }));
+});
+const architectureSectionIds = architectureRenderer.root.findAll((node) =>
+  typeof node.props["data-testid"] === "string" &&
+  /^live-order-summary-section-(?!header-)/.test(node.props["data-testid"]),
+).map((node) => node.props["data-testid"].replace("live-order-summary-section-", ""));
+assert.deepEqual(architectureSectionIds, ["construction", "fabrics", "design_style", "custom_details", "measurements", "delivery"]);
+assert.match(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })), /Standard Shirt.*€65\.00.*Trouser.*€75\.00/);
+assert.equal(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })).includes("Garments Ordered"), true);
+assert.equal(architectureRenderer.root.findAllByProps({ "data-line-id": "construction-additional:shirt:1" }).length, 1, "an Additional Garment is shown once in Garments Ordered");
+assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-construction" }).length, 1);
+assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-fabrics" }).length, 1);
+assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-design_style" }).length, 1);
+assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-custom_details" }).length, 1);
+assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-measurements" }).length, 1);
+assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-delivery" }).length, 1);
+assert.ok(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })).includes("Garment Subtotal"));
+assert.ok(!textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })).includes("Garment Construction Subtotal"));
+for (const [sectionId, stage] of [
+  ["construction", "garment_type"],
+  ["fabrics", "fabric"],
+  ["design_style", "design_style"],
+  ["custom_details", "custom_details"],
+  ["measurements", "measurement"],
+  ["delivery", "shipping"],
+] as const) {
+  act(() => {
+    architectureRenderer.root
+      .findByProps({ "data-testid": `live-order-summary-edit-${sectionId}` })
+      .props.onClick();
+  });
+  assert.equal(architectureEditedStages.at(-1), stage);
+}
+assert.match(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-fabrics" })), /Standard Shirt.*Ivory Imperial Leaf.*Trouser.*Heritage Ivory Lattice.*Standard Shirt 2.*Royal Forest Mosaic/);
+assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-construction-options-design-style-base:shirt" }).length, 0, "Design Style contains identity and Design only");
+assert.match(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-design-image-design-style-base:shirt" }).props.className, /h-9 w-9/);
+const optionRow = architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-construction-option-construction-options-base:shirt-shirt-cuff" });
+assert.match(optionRow.props.className, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
+assert.ok(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-custom_details" })).includes("Included"));
+assert.ok(!textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-custom_details" })).includes("€65.00"), "option rows never repeat the garment base price");
 assert.equal(
   textOf(
     renderer.root.findByProps({
@@ -184,8 +335,74 @@ assert.ok(textOf(renderer.root).includes("Total"));
 assert.ok(textOf(renderer.root).includes("Shirt"));
 assert.ok(textOf(renderer.root).includes("Royal Forest Mosaic"));
 assert.ok(textOf(renderer.root).includes("€70.00"));
+const selectedDesignRow = renderer.root.findByProps({
+  "data-line-id": "design-style-base:shirt",
+});
+assert.equal(
+  textOf(selectedDesignRow).includes("Standard Shirt"),
+  true,
+  "the mounted Summary renders the base garment with its Step 1 customer label",
+);
+assert.ok(textOf(selectedDesignRow).includes("Casual Native"));
+assert.ok(!textOf(selectedDesignRow).includes("Kaftan + Shirt"));
+assert.match(textOf(selectedDesignRow), /Standard Length Shirt.*Included.*Short Sleeve.*Included.*No Pockets.*Included.*Detailed Cuff.*€12\.50/);
+assert.equal(
+  (textOf(selectedDesignRow).match(/Standard Length Shirt/g) || []).length,
+  1,
+  "the mounted Summary renders each selected base construction option once",
+);
+assert.equal(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-design-image-design-style-base:shirt",
+  }).props.src,
+  "https://example.invalid/casual-native.jpg",
+);
+  assert.equal(
+    renderer.root.findByProps({
+      "data-testid": "live-order-summary-design-image-design-style-additional:shirt:1",
+  }).props.src,
+  "https://example.invalid/geometric-shirt.jpg",
+    "repeated garment occurrences keep their own selected Design thumbnail",
+  );
+  const selectedDesignImage = renderer.root.findByProps({
+    "data-testid": "live-order-summary-design-image-design-style-base:shirt",
+  });
+  assert.match(selectedDesignImage.props.className, /h-9 w-9/);
+
+  const constructionOption = renderer.root.findByProps({
+    "data-testid":
+      "live-order-summary-construction-option-design-style-base:shirt-base-shirt-pocket",
+  });
+  assert.match(
+    constructionOption.props.className,
+    /grid-cols-\[minmax\(0,1fr\)_auto\]/,
+  );
+  const constructionOptionSpans = constructionOption.findAllByType("span");
+  assert.match(constructionOptionSpans[0].props.className, /break-words/);
+assert.match(constructionOptionSpans[1].props.className, /whitespace-nowrap/);
 assert.equal(
   renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-garment-group-design-style-base:shirt",
+  }).length,
+  1,
+  "the base garment identity, selected Design, and construction options share one group",
+);
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-garment-group-design-style-additional:shirt:1",
+  }).length,
+  1,
+  "the repeated Additional Garment uses the same exact-occurrence group structure",
+);
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-garment-group-design-style-base:trouser",
+  }).length,
+  1,
+  "another base garment uses the same compact group structure",
+);
+  assert.equal(
+    renderer.root.findAllByProps({
     "data-testid": "live-order-summary-edit-fabrics",
   }).length,
   1,
@@ -240,7 +457,7 @@ assert.equal(
 
 const markup = textOf(renderer.root);
 const constructionIndex = markup.indexOf("Garment Construction");
-const constructionSubtotalIndex = markup.indexOf("Garment Construction Subtotal");
+const constructionSubtotalIndex = markup.indexOf("Garment Subtotal");
 const inclusionIndex = markup.indexOf(
   "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.",
 );
@@ -249,11 +466,11 @@ const fabricsIndex = markup.indexOf("Fabrics");
 assert.ok(constructionIndex >= 0 && totalIndex > constructionIndex);
 assert.ok(
   constructionSubtotalIndex > constructionIndex,
-  "Garment Construction Subtotal must sit inside Garment Construction",
+  "Garment Subtotal must sit inside Garment Construction",
 );
 assert.ok(
   inclusionIndex > constructionSubtotalIndex,
-  "inclusion note must sit beneath Garment Construction Subtotal",
+  "inclusion note must sit beneath Garment Subtotal",
 );
 assert.equal(
   (
@@ -397,8 +614,8 @@ assert.equal(
   renderer.root.findAllByProps({
     "data-testid": "live-order-summary-edit-fabrics",
   }).length,
-  0,
-  "Edit for the current stage stays hidden",
+  1,
+  "Edit for the current reached stage remains available",
 );
 assert.equal(
   renderer.root.findAllByProps({
@@ -418,8 +635,10 @@ act(() => {
       unlockedStages: new Set<DesignStudioStageId>([
         "garment_type",
         "fabric",
+        "design_style",
         "custom_details",
         "measurement",
+        "shipping",
       ]),
       currentStageId: "shipping",
       onEditStage: (stage, options) => {
@@ -446,6 +665,24 @@ act(() => {
     .props.onClick();
 });
 assert.equal(editedStage, "garment_type");
+act(() => {
+  renderer.root
+    .findByProps({ "data-testid": "live-order-summary-edit-design_style" })
+    .props.onClick();
+});
+assert.equal(editedStage, "design_style");
+act(() => {
+  renderer.root
+    .findByProps({ "data-testid": "live-order-summary-edit-measurements" })
+    .props.onClick();
+});
+assert.equal(editedStage, "measurement");
+act(() => {
+  renderer.root
+    .findByProps({ "data-testid": "live-order-summary-edit-delivery" })
+    .props.onClick();
+});
+assert.equal(editedStage, "shipping");
 act(() => {
   renderer.root
     .findByProps({
@@ -541,7 +778,10 @@ act(() => {
       view: sampleView,
       unlockedStages: new Set<DesignStudioStageId>(["custom_details"]),
       currentStageId: "custom_details",
-      onEditStage: () => undefined,
+      onEditStage: (stage, options) => {
+        editedStage = stage;
+        additionalFocusKey = options?.focusAdditionalGarmentKey || null;
+      },
     }),
   );
 });
@@ -549,8 +789,21 @@ assert.equal(
   renderer.root.findAllByProps({
     "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
   }).length,
-  0,
-  "Additional Garments Edit remains hidden while Step 4 is already current",
+  1,
+  "Additional Garments Edit remains available while the authorized Step 4 is current",
+);
+act(() => {
+  renderer.root
+    .findByProps({
+      "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
+    })
+    .props.onClick();
+});
+assert.equal(editedStage, "custom_details");
+assert.equal(
+  additionalFocusKey,
+  "additional:shirt:1",
+  "the current Step 4 Additional Garment Edit retains its exact occurrence key",
 );
 
 const completeAdditionalView: LiveOrderSummaryView = {
@@ -725,6 +978,15 @@ const garmentTypeSource = readFileSync(
   new URL("./src/components/GarmentTypeStep.tsx", import.meta.url),
   "utf8",
 );
+const mountedSummarySource = readFileSync(
+  new URL("./src/components/DesignStudioOrderSummary.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  mountedSummarySource,
+  /useEffect\(\(\) => \{[\s\S]*scrollTop = 0/,
+  "entering Summary returns its own internal scroll region to the first garment",
+);
 assert.doesNotMatch(
   garmentTypeSource,
   /aria-label="Order Summary"[\s\S]{0,80}\{orderSummary/,
@@ -751,7 +1013,7 @@ const manyItemsView: LiveOrderSummaryView = {
       ],
       footer: {
         id: "construction-subtotal",
-        label: "Garment Construction Subtotal",
+        label: "Garment Subtotal",
         amountLabel: "€230.00",
         amountCents: 23000,
         note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.",

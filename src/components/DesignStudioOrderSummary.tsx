@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { UsersRound, Pencil } from "lucide-react";
 import type { DesignStudioStageId } from "../types";
 import type {
@@ -51,22 +52,63 @@ const SummarySection = ({
           <li
             key={line.id}
             data-line-id={line.id}
-            className="flex min-w-0 flex-wrap items-start justify-between gap-2"
+            data-testid={
+              line.constructionOptions
+                ? `live-order-summary-garment-group-${line.id}`
+                : undefined
+            }
+            className={`flex min-w-0 flex-wrap items-start justify-between gap-2${
+              line.constructionOptions
+                ? " border-t border-heritage-gold/15 pt-2 first:border-t-0 first:pt-0"
+                : ""
+            }`}
           >
-            <div className="min-w-0">
-              <p className="break-words text-[13px] font-semibold leading-snug text-heritage-ink">
-                {formatCustomDetailsGarmentLabel(line.label)}
-              </p>
-              {line.detail ? (
-                <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
-                  {line.detail}
-                </p>
+            <div className="flex min-w-0 flex-1 gap-2">
+              {line.imageUrl ? (
+                <img
+                  src={line.imageUrl}
+                  alt={`Selected design for ${formatCustomDetailsGarmentLabel(line.label)}`}
+                  data-testid={`live-order-summary-design-image-${line.id}`}
+                  className="h-9 w-9 shrink-0 rounded-md border border-heritage-gold/20 bg-heritage-cream/35 object-contain"
+                  referrerPolicy="no-referrer"
+                />
               ) : null}
-              {line.supportingDetail ? (
-                <p className="mt-0.5 break-words text-[11px] font-semibold leading-snug text-heritage-ink/65">
-                  {line.supportingDetail}
+              <div className="min-w-0 flex-1">
+                <p className="break-words text-[13px] font-semibold leading-snug text-heritage-ink">
+                  {formatCustomDetailsGarmentLabel(line.label)}
                 </p>
-              ) : null}
+                {line.detail ? (
+                  <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
+                    {line.detail}
+                  </p>
+                ) : null}
+                {line.supportingDetail ? (
+                  <p className="mt-0.5 break-words text-[11px] font-semibold leading-snug text-heritage-ink/65">
+                    {line.supportingDetail}
+                  </p>
+                ) : null}
+                {line.constructionOptions?.length ? (
+                  <section
+                    data-testid={`live-order-summary-construction-options-${line.id}`}
+                    className="mt-1.5 border-l-2 border-heritage-gold/25 pl-2"
+                  >
+                    <ul className="space-y-1">
+                      {line.constructionOptions.map((option) => (
+                        <li
+                          key={option.id}
+                          data-testid={`live-order-summary-construction-option-${line.id}-${option.id}`}
+                          className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-0.5 text-[11px] leading-snug text-heritage-ink/75"
+                        >
+                          <span className="min-w-0 break-words">{option.label}</span>
+                          <span className="self-start whitespace-nowrap text-right font-mono font-semibold text-heritage-green">
+                            {option.amountLabel}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+              </div>
             </div>
             {line.amountLabel ? (
               <span className="shrink-0 text-right font-mono text-[13px] font-semibold text-heritage-green">
@@ -170,11 +212,6 @@ const SummarySubsection = ({
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            {line.amountLabel ? (
-              <span className="text-right font-mono text-[13px] font-semibold text-heritage-green">
-                {line.amountLabel}
-              </span>
-            ) : null}
             {canEdit && onEdit && line.focusGarmentKey ? (
               <button
                 type="button"
@@ -187,6 +224,11 @@ const SummarySubsection = ({
                 Edit
               </button>
             ) : null}
+            {line.amountLabel ? (
+              <span className="text-right font-mono text-[13px] font-semibold text-heritage-green">
+                {line.amountLabel}
+              </span>
+            ) : null}
           </div>
         </li>
       ))}
@@ -197,7 +239,6 @@ const SummarySubsection = ({
 export const DesignStudioOrderSummary = ({
   view,
   unlockedStages,
-  currentStageId = null,
   onEditStage,
 }: {
   view: LiveOrderSummaryView;
@@ -209,11 +250,16 @@ export const DesignStudioOrderSummary = ({
   ) => void;
 }) => {
   const headingId = "live-order-summary-heading";
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (contentRef.current) {
+      contentRef.current.scrollTop = 0;
+    }
+  }, []);
   const canEditStage = (stage: DesignStudioStageId | null): boolean =>
     Boolean(
       stage &&
         unlockedStages.has(stage) &&
-        stage !== currentStageId &&
         onEditStage,
     );
   const renderSection = (section: LiveOrderSummarySection) => (
@@ -262,6 +308,7 @@ export const DesignStudioOrderSummary = ({
       </div>
       {view.sections.length > 0 ? (
         <div
+          ref={contentRef}
           data-testid="live-order-summary-content"
           className="mt-2.5 divide-y divide-heritage-gold/15 lg:min-h-0 lg:flex-1 lg:overflow-x-hidden lg:overflow-y-auto lg:overscroll-contain lg:pr-1"
         >

@@ -113,6 +113,8 @@ export interface FutureSummaryDesignStyle {
 }
 
 export interface FutureSummaryDesignStyleOccurrence {
+  /** Stable physical-garment owner for this selected Design Style. */
+  garmentKey: string;
   occurrenceLabel: string;
   sourceKind: "catalogue" | "uploaded" | "unassigned";
   status: "selected" | "unassigned" | "needs_review" | "unavailable" | "awaiting_validation" | "upload_pending";
@@ -478,6 +480,7 @@ const mapOccurrenceStyles = ({
     if (assignment?.sourceKind === "catalog") {
       const style = stylesById.get(assignment.catalogStyleId);
       if (style) return {
+        garmentKey: occurrence.target.garmentKey,
         occurrenceLabel: occurrence.label,
         sourceKind: "catalogue" as const,
         status: "selected" as const,
@@ -487,6 +490,7 @@ const mapOccurrenceStyles = ({
       };
     }
     if (assignment?.sourceKind === "uploaded") return {
+      garmentKey: occurrence.target.garmentKey,
       occurrenceLabel: occurrence.label,
       sourceKind: "uploaded" as const,
       status: "selected" as const,
@@ -499,6 +503,7 @@ const mapOccurrenceStyles = ({
       ? occurrence.status
       : "unassigned";
     return {
+      garmentKey: occurrence.target.garmentKey,
       occurrenceLabel: occurrence.label,
       sourceKind: "unassigned" as const,
       status,

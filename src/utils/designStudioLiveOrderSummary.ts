@@ -1,7 +1,4 @@
-import {
-  isCustomerAvailableCustomDetailSelectionGroup,
-  isCustomerFacingAdditionalClothesCostGroup,
-} from "../config/GarmentDetailsConfig";
+import { isCustomerAvailableCustomDetailSelectionGroup } from "../config/GarmentDetailsConfig";
 import type {
   AdditionalGarmentConstructionStateV1,
   DesignSource,
@@ -33,7 +30,7 @@ export const LIVE_ORDER_SUMMARY_OWN_DESIGN_DETAIL = "Uploaded design selected";
 export const LIVE_ORDER_SUMMARY_STANDARD_SHIPPING_LABEL =
   "Lagos → Eindhoven Standard Shipping";
 export const LIVE_ORDER_SUMMARY_CONSTRUCTION_SUBTOTAL_LABEL =
-  "Garment Construction Subtotal";
+  "Garment Subtotal";
 export const LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE =
   SELECTED_DESIGN_PRICE_SUPPORTING_TEXT;
 
@@ -49,6 +46,12 @@ export type LiveOrderSummaryTotalStatus =
   | "pending"
   | "hidden";
 
+export interface LiveOrderSummaryConstructionOption {
+  readonly id: string;
+  readonly label: string;
+  readonly amountLabel: string;
+}
+
 export interface LiveOrderSummaryLine {
   readonly id: string;
   readonly label: string;
@@ -56,6 +59,10 @@ export interface LiveOrderSummaryLine {
   /** A second customer-facing status line, used when the primary detail is construction. */
   readonly supportingDetail?: string | null;
   readonly amountLabel: string | null;
+  /** Canonical selected Design thumbnail, scoped to this exact occurrence. */
+  readonly imageUrl?: string | null;
+  /** Selected construction/customization rows owned by this exact garment. */
+  readonly constructionOptions?: readonly LiveOrderSummaryConstructionOption[];
   /**
    * Present only for an editable Additional Garment construction occurrence.
    * This preserves the stable occurrence identity through the Summary UI.
@@ -90,6 +97,7 @@ export interface LiveOrderSummarySection {
     | "fabrics"
     | "design_style"
     | "construction"
+    | "custom_details"
     | "optional_extras"
     | "additional_clothes"
     | "measurements"
@@ -176,17 +184,75 @@ const fabricByGarmentKey = (
   return assigned;
 };
 
-const constructionLabel = (
-  summary: FutureDesignStudioSummary,
-  garmentKey: string,
-): string | null => {
-  const garment = summary.garmentSummary.find(
-    (candidate) => candidate.garmentKey === garmentKey,
-  );
-  if (!garment) return null;
-  if (garment.construction.length === 0) return null;
-  return garment.construction.map((component) => component.label).join(", ");
+const amountLabelForCustomDetail = (
+  priceCents: number | null,
+  priceStatus: "exact" | "evaluation_required" | "invalid",
+): string => {
+  if (priceStatus !== "exact") return "Price requires evaluation";
+  return priceCents && priceCents > 0 ? moneyFromCents(priceCents) : "Included";
 };
+
+const constructionOptionsForGarment = (
+  summary: FutureDesignStudioSummary,
+  garment: FutureDesignStudioSummary["garmentSummary"][number],
+  showAdditionalClothesCosts: boolean | undefined,
+): LiveOrderSummaryConstructionOption[] => {
+  const baseSelectionKeys = new Set<string>();
+  const baseOptions = garment.construction.map((component) => {
+    const selectionKey = `${component.selectionGroup}:${component.optionId}`;
+    baseSelectionKeys.add(selectionKey);
+    return {
+      id: `construction-option:${garment.garmentKey}:${component.componentKey}`,
+      label: component.label,
+      // Base construction belongs in Garment Construction. These selected
+      // base options add no second charge in Construction Options.
+      amountLabel: "Included",
+    };
+  });
+  const selectedCustomDetails =
+    summary.customDetailsSummary
+      .find((group) => group.garmentKey === garment.garmentKey)
+      ?.occurrences.filter(
+        (occurrence) =>
+          !baseSelectionKeys.has(
+            `${occurrence.selectionGroup}:${occurrence.optionId}`,
+          ) &&
+          isCustomerAvailableCustomDetailSelectionGroup(
+            occurrence.selectionGroup,
+            { showAdditionalClothesCosts },
+          ),
+      )
+      .map((occurrence) => ({
+        id: `custom-detail-option:${occurrence.occurrenceKey}`,
+        label: occurrence.optionLabel,
+        amountLabel: amountLabelForCustomDetail(
+          occurrence.priceCents,
+          occurrence.priceStatus,
+        ),
+      })) || [];
+  return [...baseOptions, ...selectedCustomDetails];
+};
+
+const constructionOptionsForOrder = (
+  summary: FutureDesignStudioSummary,
+  showAdditionalClothesCosts: boolean | undefined,
+): LiveOrderSummaryConstructionOption[] =>
+  summary.customDetailsSummary
+    .find((group) => group.garmentKey === "order")
+    ?.occurrences.filter((occurrence) =>
+      isCustomerAvailableCustomDetailSelectionGroup(
+        occurrence.selectionGroup,
+        { showAdditionalClothesCosts },
+      ),
+    )
+    .map((occurrence) => ({
+      id: `custom-detail-option:${occurrence.occurrenceKey}`,
+      label: occurrence.optionLabel,
+      amountLabel: amountLabelForCustomDetail(
+        occurrence.priceCents,
+        occurrence.priceStatus,
+      ),
+    })) || [];
 
 const measurementStatusLine = (
   summary: FutureDesignStudioSummary,
@@ -362,15 +428,6 @@ export const projectDesignStudioLiveOrderSummary = ({
   }));
   const garmentLabels = occurrenceLabels(garmentItems);
 
-  const garmentLines = committedLines(
-    summary.garmentSummary.map((garment) => ({
-      id: garment.garmentKey,
-      label: garmentLabels.get(garment.garmentKey) || garment.label,
-      detail: null,
-      amountLabel: null,
-    })),
-  );
-
   const fabricLineFor = (
     garment: (typeof summary.garmentSummary)[number],
     includeMissingFabric: boolean,
@@ -384,95 +441,87 @@ export const projectDesignStudioLiveOrderSummary = ({
       amountLabel: null,
     };
   };
-  const baseFabricLines = committedLines(
-    summary.garmentSummary.flatMap((garment) =>
-      garment.role === "additional"
-        ? []
-        : [fabricLineFor(garment, false)].filter(
-            (line): line is LiveOrderSummaryLine => line !== null,
-          ),
-    ),
-  );
-  const additionalFabricLines = committedLines(
-    summary.garmentSummary.flatMap((garment) =>
-      garment.role === "additional"
-        ? [fabricLineFor(garment, true)].filter(
-            (line): line is LiveOrderSummaryLine => line !== null,
-          )
-        : [],
-    ),
+  const fabricLines = committedLines(
+    summary.garmentSummary
+      .map((garment) => fabricLineFor(garment, false))
+      .filter((line): line is LiveOrderSummaryLine => line !== null),
   );
 
+  const designStyleByGarmentKey = new Map(
+    (summary.designStyleOccurrences || []).map((occurrence) => [
+      occurrence.garmentKey,
+      occurrence,
+    ] as const),
+  );
   const designStyleLines = committedLines(
-    (summary.designStyleOccurrences || []).map((occurrence, index) => ({
-      id: `design-style-${index}`,
-      label: occurrence.occurrenceLabel,
-      detail: `${occurrence.name}${occurrence.detail ? ` — ${occurrence.detail}` : ""}`,
-      amountLabel: null,
-    })),
+    summary.garmentSummary.map((garment) => {
+      const occurrence = designStyleByGarmentKey.get(garment.garmentKey);
+      return {
+        id: `design-style-${garment.garmentKey}`,
+        // The garment roster owns customer labels; Design Style runtime labels
+        // use Fabric terminology and cannot substitute for Step 1 labels here.
+        label: garmentLabels.get(garment.garmentKey) || garment.label,
+        // Composition/applicability is catalogue metadata, not the selected Design name.
+        detail: occurrence?.name || "Not selected",
+        amountLabel: null,
+        imageUrl: occurrence?.image || null,
+      };
+    }),
   );
 
   const constructionLineFor = (
     garment: (typeof summary.garmentSummary)[number],
-    includeFabricStatus: boolean,
   ): LiveOrderSummaryLine => {
-    const fabric = assignedFabric.get(garment.garmentKey);
     return {
       id: `construction-${garment.garmentKey}`,
       label: garmentLabels.get(garment.garmentKey) || garment.label,
-      detail: constructionLabel(summary, garment.garmentKey),
-      supportingDetail: includeFabricStatus
-        ? `Fabric: ${fabric?.name || "Needs fabric"}`
-        : null,
+      detail: null,
       amountLabel:
         garment.constructionTotalCents === null
           ? null
           : moneyFromCents(garment.constructionTotalCents),
-      ...(includeFabricStatus
-        ? { focusGarmentKey: garment.garmentKey }
-        : {}),
     };
   };
   const baseConstructionLines = committedLines(
     summary.garmentSummary
       .filter((garment) => garment.role !== "additional")
-      .map((garment) => constructionLineFor(garment, false)),
+      .map(constructionLineFor),
   );
   const additionalConstructionLines = committedLines(
     summary.garmentSummary
       .filter((garment) => garment.role === "additional")
-      .map((garment) => constructionLineFor(garment, true)),
+      .map((garment) => ({
+        ...constructionLineFor(garment),
+        focusGarmentKey: garment.garmentKey,
+      })),
   );
+  const constructionOptionLines = committedLines([
+    ...summary.garmentSummary.map((garment) => ({
+      id: `construction-options-${garment.garmentKey}`,
+      label: garmentLabels.get(garment.garmentKey) || garment.label,
+      detail: null,
+      amountLabel: null,
+      constructionOptions: constructionOptionsForGarment(
+        summary,
+        garment,
+        showAdditionalClothesCosts,
+      ),
+    })),
+    ...(constructionOptionsForOrder(summary, showAdditionalClothesCosts).length > 0
+      ? [{
+          id: "construction-options-order",
+          label: "Order Details",
+          detail: null,
+          amountLabel: null,
+          constructionOptions: constructionOptionsForOrder(
+            summary,
+            showAdditionalClothesCosts,
+          ),
+        }]
+      : []),
+  ]).filter((line) => (line.constructionOptions?.length || 0) > 0);
   const additionalGarments = summary.garmentSummary.filter(
     (garment) => garment.role === "additional",
-  );
-
-  const extraLines: LiveOrderSummaryLine[] = [];
-
-  const additionalClothesLines: LiveOrderSummaryLine[] = summary.customDetailsSummary.flatMap((group) =>
-    group.occurrences
-      .filter((occurrence) =>
-        isCustomerFacingAdditionalClothesCostGroup(occurrence.selectionGroup),
-      )
-      .filter((occurrence) =>
-        isCustomerAvailableCustomDetailSelectionGroup(
-          occurrence.selectionGroup,
-          { showAdditionalClothesCosts },
-        ),
-      )
-      .map((occurrence) => ({
-        id: occurrence.occurrenceKey,
-        label: occurrence.optionLabel,
-        detail: occurrence.garmentLabel,
-        amountLabel:
-          occurrence.priceStatus === "evaluation_required"
-            ? "Price requires evaluation"
-            : occurrence.priceCents === null
-              ? null
-              : occurrence.priceCents === 0
-                ? "Included"
-                : moneyFromCents(occurrence.priceCents),
-      })),
   );
 
   const deliveryLines = shippingResolution?.state.fulfilmentMethod
@@ -497,12 +546,6 @@ export const projectDesignStudioLiveOrderSummary = ({
           amountCents: constructionSubtotalCents,
           note: LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
         };
-  const visibleBaseConstructionLines = baseConstructionLines.filter(
-    (line) => line.amountLabel || line.detail,
-  );
-  const visibleAdditionalConstructionLines = additionalConstructionLines.filter(
-    (line) => line.amountLabel || line.detail || line.supportingDetail,
-  );
   const firstAdditionalMissingFabric = summary.garmentSummary.find(
     (garment) =>
       garment.role === "additional" &&
@@ -516,15 +559,9 @@ export const projectDesignStudioLiveOrderSummary = ({
           title: "Additional Garments",
           editStage: "custom_details",
           focusGarmentKey: firstAdditionalMissingFabric?.garmentKey || null,
-          lines: visibleAdditionalConstructionLines,
-        };
-  const additionalGarmentFabricSubsection: LiveOrderSummarySubsection | null =
-    additionalGarments.length === 0
-      ? null
-      : {
-          id: "additional_garment_fabrics",
-          title: "Additional Garment Fabrics",
-          lines: additionalFabricLines,
+          // Additional occurrences appear once in Garments Ordered, with the
+          // existing exact-occurrence Step 4 correction route retained.
+          lines: additionalConstructionLines,
         };
 
   const total = resolveTotal({
@@ -536,50 +573,32 @@ export const projectDesignStudioLiveOrderSummary = ({
   const allSections: LiveOrderSummarySection[] = [
     {
       id: "construction",
-      title: "Garment Construction",
+      title: "Garments Ordered",
       editStage: "garment_type",
       editLabel: "Edit base garments",
-      lines: visibleBaseConstructionLines,
+      lines: baseConstructionLines,
+      footer: constructionFooter,
       ...(additionalGarmentSubsection
         ? { subsections: [additionalGarmentSubsection] }
         : {}),
-      footer: constructionFooter,
-    },
-    {
-      id: "optional_extras",
-      title: "Optional Extra Garments",
-      editStage: "custom_details",
-      lines: extraLines,
-    },
-    {
-      id: "additional_clothes",
-      title: "Additional Clothes Costs",
-      editStage: "custom_details",
-      lines: additionalClothesLines,
-    },
-    {
-      id: "garments",
-      title: "Garments",
-      editStage: "garment_type",
-      lines:
-        baseConstructionLines.length + additionalConstructionLines.length > 0
-          ? []
-          : garmentLines,
     },
     {
       id: "fabrics",
       title: "Fabrics",
       editStage: "fabric",
-      lines: baseFabricLines,
-      ...(additionalGarmentFabricSubsection
-        ? { subsections: [additionalGarmentFabricSubsection] }
-        : {}),
+      lines: fabricLines,
     },
     {
       id: "design_style",
       title: "Design Style",
       editStage: "design_style",
       lines: designStyleLines,
+    },
+    {
+      id: "custom_details",
+      title: "Construction Options",
+      editStage: "custom_details",
+      lines: constructionOptionLines,
     },
     {
       id: "measurements",
