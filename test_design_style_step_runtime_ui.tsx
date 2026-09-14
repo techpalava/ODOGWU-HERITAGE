@@ -1110,7 +1110,14 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   >();
   const handledEventIds: number[] = [];
   const scheduledTimers = new Map<number, () => void>();
-  const runtime = globalThis as typeof globalThis & { window?: Window };
+  type FeedbackWindowHarness = {
+    cancelAnimationFrame(handle: number): void;
+    matchMedia(query: string): Pick<MediaQueryList, "matches">;
+    requestAnimationFrame(callback: FrameRequestCallback): number;
+  };
+  const runtime = globalThis as Omit<typeof globalThis, "window"> & {
+    window?: FeedbackWindowHarness;
+  };
   const originalWindow = runtime.window;
   const originalSetTimeout = globalThis.setTimeout;
   const originalClearTimeout = globalThis.clearTimeout;
@@ -1123,7 +1130,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
       callback(0);
       return 1;
     },
-  } as unknown as Window;
+  };
   globalThis.setTimeout = ((callback: TimerHandler) => {
     const timerId = ++nextTimerId;
     scheduledTimers.set(timerId, () => {
