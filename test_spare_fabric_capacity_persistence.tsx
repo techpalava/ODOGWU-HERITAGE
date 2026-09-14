@@ -142,8 +142,13 @@ assert.deepEqual(
 assert.equal(renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props["data-stage-id"], "fabric");
 const allocationId = baseFabricState.fabricAllocations[0].allocationId;
 assert.equal(renderer.root.findAllByProps({ "data-testid": "remaining-fabric-capacity-offer" }).length, 1);
+assert.doesNotMatch(
+  JSON.stringify(renderer.toJSON()),
+  /Add Garment Using This Fabric/,
+  "The redundant generic capacity CTA must not render.",
+);
 await act(async () => {
-  renderer.root.findByProps({ "data-testid": `remaining-fabric-capacity-offer-accept-${allocationId}` }).props.onClick();
+  renderer.root.findByProps({ "data-testid": `remaining-fabric-capacity-offer-allocation-${allocationId}` }).props.onClick();
   await flush();
 });
 assert.equal(renderer.root.findAllByProps({
