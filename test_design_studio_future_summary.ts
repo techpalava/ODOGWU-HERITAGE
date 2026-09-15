@@ -1258,6 +1258,34 @@ assert.equal(
   decorativeSummary.pricingSummary.selectedDesignPrice?.selectedDesignPrice,
   exactSummary.pricingSummary.selectedDesignPrice!.selectedDesignPrice! + 12,
 );
+const formerlyInapplicableDecorativeStyle = makeStyle(["trouser"]);
+const formerlyInapplicableDecorativePricing = calculateFutureDecorativePricing(
+  { decorativeFeatures: ["Name Monogram"] },
+  formerlyInapplicableDecorativeStyle,
+);
+assert.equal(
+  formerlyInapplicableDecorativePricing.monogramPrice,
+  12,
+  "a selected Name Monogram retains its configured surcharge when old Design Style applicability excludes it",
+);
+const formerlyInapplicableDecorativeSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  basePricing: formerlyInapplicableDecorativePricing,
+});
+const formerlyInapplicableMonogramOccurrence =
+  formerlyInapplicableDecorativeSummary.customDetailsSummary
+    .flatMap((group) => group.occurrences)
+    .find((occurrence) => occurrence.optionLabel === "Name Monogram");
+assert.equal(
+  formerlyInapplicableMonogramOccurrence?.priceCents,
+  1200,
+  "Summary projects the formerly inapplicable customer selection through the existing authority",
+);
+assert.equal(
+  formerlyInapplicableDecorativeSummary.pricingSummary.customDetailsExactSubtotal,
+  exactSummary.pricingSummary.customDetailsExactSubtotal + 12,
+  "Summary applies the existing surcharge exactly once",
+);
 const noDecorativeSelectionPricing =
   calculateFutureDecorativePricing({});
 assert.equal(noDecorativeSelectionPricing.monogramPrice, 0);

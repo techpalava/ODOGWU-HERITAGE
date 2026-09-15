@@ -21,6 +21,7 @@ import {
   filterDesignSelectionsForDecorativeFeatures,
   getApplicableDecorativeFeatures,
   getAvailableMonogramPlacements,
+  getCustomerSelectableDecorativeFeatures,
   getDecorativeFeaturePrice,
   getMonogramPlacementLabel,
   hasHeavyEmbroideryMetadata,
@@ -117,6 +118,11 @@ assert.deepEqual(DECORATIVE_FEATURE_OPTIONS, [
   "Embroidery",
   "Monogram Trimming",
 ]);
+assert.deepEqual(
+  getCustomerSelectableDecorativeFeatures(),
+  DECORATIVE_FEATURE_OPTIONS,
+  "every current decorative option is customer-selectable independent of style metadata",
+);
 
 for (const feature of DECORATIVE_FEATURE_OPTIONS) {
   assert.equal(DECORATIVE_FEATURE_PRICE_CENTS[feature], 1200);
@@ -336,6 +342,11 @@ const genderOnlyStyle = makeStyle({
   outfitType: undefined,
 });
 assert.equal(isNameMonogramApplicable(genderOnlyStyle), false);
+assert.deepEqual(
+  getCustomerSelectableDecorativeFeatures(),
+  DECORATIVE_FEATURE_OPTIONS,
+  "missing Design Style applicability metadata does not narrow Step 5 customer choices",
+);
 
 const legacyIncludedFeaturesOff = makeGarmentAwareStyle(["shirt", "neck"], {
   includedDesignFeatures: {
@@ -553,15 +564,31 @@ const staleIneligibleMonogram: DesignSelections = {
   decorativeFeatures: ["Name Monogram"],
   monogramPlacement: "cuff",
 };
-const cleanedIneligibleMonogram =
+const preservedFormerlyIneligibleMonogram =
   filterDesignSelectionsForDecorativeFeatures(
     staleIneligibleMonogram,
     trouserStyle,
     { code: "G4", type: "Trouser Only" },
   );
-assert.deepEqual(cleanedIneligibleMonogram.decorativeFeatures, []);
-assert.equal(cleanedIneligibleMonogram.monogramPlacement, undefined);
-const ineligibleMonogramPricing = calculateDesignPricing({
+assert.deepEqual(
+  preservedFormerlyIneligibleMonogram.decorativeFeatures,
+  ["Name Monogram"],
+  "a customer-selected Name Monogram is not normalized away by Design Style applicability",
+);
+assert.equal(
+  preservedFormerlyIneligibleMonogram.monogramPlacement,
+  DEFAULT_MONOGRAM_PLACEMENT,
+);
+assert.deepEqual(
+  filterDesignSelectionsForDecorativeFeatures(
+    { decorativeFeatures: [...DECORATIVE_FEATURE_OPTIONS] },
+    trouserStyle,
+    { code: "G4", type: "Trouser Only" },
+  ).decorativeFeatures,
+  DECORATIVE_FEATURE_OPTIONS,
+  "all current Name Monogram, Embroidery, and Monogram Trimming selections persist through normalization",
+);
+const formerlyIneligibleMonogramPricing = calculateDesignPricing({
   route: "alone",
   design: staleIneligibleMonogram,
   fabric,
@@ -570,8 +597,38 @@ const ineligibleMonogramPricing = calculateDesignPricing({
   catalog: SEED_CUSTOM_DETAIL_CATALOG,
   businessSettings,
 });
-assert.ok(ineligibleMonogramPricing);
-assert.equal(ineligibleMonogramPricing.monogramPrice, 0);
+assert.ok(formerlyIneligibleMonogramPricing);
+assert.equal(
+  formerlyIneligibleMonogramPricing.monogramPrice,
+  12,
+  "a formerly inapplicable customer selection uses the existing Name Monogram surcharge",
+);
+assert.equal(
+  calculateGarmentDetailsPrice(
+    { decorativeFeatures: [...DECORATIVE_FEATURE_OPTIONS] },
+    trouserStyle,
+    SEED_CUSTOM_DETAIL_CATALOG,
+    { code: "G4", type: "Trouser Only" },
+  ).monogramPrice,
+  36,
+  "all selectable decorative options retain their existing configured surcharge arithmetic",
+);
+
+const formerlyIneligibleOverrideStyle = makeGarmentAwareStyle(["trousers"], {
+  constructionDetails: [
+    { type: "embroideryDesign", code: "Name Monogram", price: 14.5 },
+  ],
+});
+assert.equal(
+  calculateGarmentDetailsPrice(
+    { decorativeFeatures: ["Name Monogram"] },
+    formerlyIneligibleOverrideStyle,
+    SEED_CUSTOM_DETAIL_CATALOG,
+    { code: "G4", type: "Trouser Only" },
+  ).monogramPrice,
+  14.5,
+  "the existing configured override remains the only customer-selected price authority",
+);
 
 const includedButIneligibleStyle = makeGarmentAwareStyle(["trousers"], {
   includedDesignFeatures: { hasMonogram: true },
@@ -739,7 +796,11 @@ const authoritativeStaleCheckoutPricing =
     businessSettings,
   );
 assert.ok(authoritativeStaleCheckoutPricing);
-assert.equal(authoritativeStaleCheckoutPricing.monogramPrice, 0);
+assert.equal(
+  authoritativeStaleCheckoutPricing.monogramPrice,
+  12,
+  "checkout preserves the existing configured surcharge for a formerly inapplicable customer selection",
+);
 
 const memoryStorage = new MemoryStorage();
 Object.defineProperty(globalThis, "localStorage", {
@@ -821,6 +882,32 @@ const validRestoredSelections = filterDesignSelectionsForDecorativeFeatures(
   draft.selectedGarment,
 );
 assert.equal(validRestoredSelections.monogramPlacement, "upper_back");
+
+const formerlyIneligibleDraft: GuestDesignDraft = {
+  ...draft,
+  selectedGarment: {
+    type: "Trouser Only",
+    fee: 0,
+    code: "G4",
+  },
+  designSelections: staleIneligibleMonogram,
+};
+GuestOrderSessionService.saveFutureDesignDraft(formerlyIneligibleDraft);
+const restoredFormerlyIneligibleDraft = GuestOrderSessionService.getFutureDesignDraft();
+assert.deepEqual(
+  restoredFormerlyIneligibleDraft?.designSelections.decorativeFeatures,
+  ["Name Monogram"],
+  "a formerly inapplicable customer selection persists through the existing draft representation",
+);
+assert.deepEqual(
+  filterDesignSelectionsForDecorativeFeatures(
+    restoredFormerlyIneligibleDraft?.designSelections || {},
+    trouserStyle,
+    formerlyIneligibleDraft.selectedGarment,
+  ).decorativeFeatures,
+  ["Name Monogram"],
+  "hydration does not remove a formerly inapplicable customer selection",
+);
 
 const stalePlacementDraft: GuestDesignDraft = {
   ...draft,
