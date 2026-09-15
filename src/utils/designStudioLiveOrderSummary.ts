@@ -120,6 +120,18 @@ export interface LiveOrderSummarySection {
   readonly footer?: LiveOrderSummarySectionFooter | null;
 }
 
+export interface LiveOrderSummaryCostBreakdownLine {
+  readonly label: string;
+  readonly valueLabel: string;
+  readonly amountCents: number | null;
+}
+
+export interface LiveOrderSummaryCostBreakdown {
+  readonly subtotal: LiveOrderSummaryCostBreakdownLine;
+  /** Omitted for a confirmed no-shipping collection method. */
+  readonly shipping: LiveOrderSummaryCostBreakdownLine | null;
+}
+
 export interface LiveOrderSummaryView {
   readonly sections: readonly LiveOrderSummarySection[];
   readonly totalStatus: LiveOrderSummaryTotalStatus;
@@ -127,6 +139,8 @@ export interface LiveOrderSummaryView {
   readonly totalValueLabel: string;
   readonly totalAmountCents: number | null;
   readonly quoteRequired: boolean;
+  /** Derived from the released candidate and Step 8 resolution; never recalculated here. */
+  readonly costBreakdown?: LiveOrderSummaryCostBreakdown | null;
 }
 
 const moneyFromCents = (cents: number): string =>
@@ -457,6 +471,51 @@ const resolveTotal = ({
   };
 };
 
+const resolveCostBreakdown = ({
+  summary,
+  candidatePricing,
+  shippingResolution,
+}: {
+  summary: FutureDesignStudioSummary;
+  candidatePricing: FutureOrderCandidatePricingV1 | null;
+  shippingResolution: FutureShippingStageResolution | null;
+}): LiveOrderSummaryCostBreakdown | null => {
+  const method = shippingResolution?.state.fulfilmentMethod;
+  if (!method) return null;
+
+  const subtotalCents =
+    candidatePricing?.selectedDesignTotalCents ??
+    knownSubtotalCents({ summary, candidatePricing });
+  if (subtotalCents === null) return null;
+
+  const shippingCents =
+    candidatePricing?.postEindhovenAdjustmentCents ??
+    shippingResolution?.postEindhovenAdjustmentCents ??
+    null;
+  const isPickup = method === "eindhoven_pickup";
+  const shipping =
+    isPickup || shippingCents === 0
+      ? null
+      : {
+          label: "Shipping",
+          valueLabel: shippingResolution?.quoteRequired
+            ? "Custom shipping quote required"
+            : shippingCents === null
+              ? "Pending"
+              : moneyFromCents(shippingCents),
+          amountCents: shippingCents,
+        };
+
+  return {
+    subtotal: {
+      label: "Order Subtotal",
+      valueLabel: moneyFromCents(subtotalCents),
+      amountCents: subtotalCents,
+    },
+    shipping,
+  };
+};
+
 export const projectDesignStudioLiveOrderSummary = ({
   summary,
   shippingResolution,
@@ -627,6 +686,11 @@ export const projectDesignStudioLiveOrderSummary = ({
     candidatePricing,
     shippingResolution,
   });
+  const costBreakdown = resolveCostBreakdown({
+    summary,
+    candidatePricing,
+    shippingResolution,
+  });
 
   const allSections: LiveOrderSummarySection[] = [
     {
@@ -689,5 +753,6 @@ export const projectDesignStudioLiveOrderSummary = ({
   return {
     ...total,
     sections,
+    costBreakdown,
   };
 };

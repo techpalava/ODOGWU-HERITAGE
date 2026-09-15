@@ -1000,10 +1000,10 @@ export const DormantFuturePaymentReviewStep = ({
             </p>
             <p className="mt-2 text-xs leading-relaxed text-heritage-ink/60">
               {candidate.shipping.quoteRequired
-                ? "Custom shipping quote required. Additional Delivery is not a final charge yet."
+                ? "Custom shipping quote required. Shipping is not a final charge yet."
                 : candidate.pricing.postEindhovenAdjustmentCents === null
-                  ? "Additional Delivery is still pending."
-                  : "Additional Delivery is itemized once in the price breakdown below."}
+                  ? "Shipping is still pending."
+                  : "Shipping is itemized once in the price breakdown below."}
             </p>
           </ReviewSection>
 
