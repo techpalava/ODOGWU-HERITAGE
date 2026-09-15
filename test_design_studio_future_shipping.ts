@@ -226,7 +226,7 @@ assert.deepEqual(
     "Delivery Method",
     "Destination",
     "Estimated Shipment Weight",
-    "Additional Delivery",
+    "Shipping",
   ],
 );
 assert.equal(
@@ -242,17 +242,21 @@ assert.equal(
   "3.0 kg",
 );
 assert.equal(
-  europeSummaryRows.find((row) => row.label === "Additional Delivery")?.value,
+  europeSummaryRows.find((row) => row.label === "Shipping")?.value,
   "€26.60",
 );
 
 const pickupSummaryRows = getStep8OrderSummaryRows(pickup);
 assert.deepEqual(
   pickupSummaryRows.map((row) => row.label),
-  ["Delivery Method", "Additional Delivery"],
+  ["Delivery Method"],
 );
 assert.equal(pickupSummaryRows[0].value, "Pick Up in Eindhoven");
-assert.equal(pickupSummaryRows[1].value, "€0.00");
+assert.equal(
+  pickupSummaryRows.some((row) => row.label === "Shipping"),
+  false,
+  "collection must not render a misleading €0 shipping row",
+);
 
 const quoteRequired = reconcileFutureShippingState({
   state: withDelivery(createEmptyFutureShippingState(), "AU", "Sydney"),
@@ -272,7 +276,7 @@ assert.match(quoteRequired.state.otherDestinationCountry, /Australia/);
 assert.equal(isFutureShippingStepComplete(quoteRequired), false);
 const quoteSummaryRows = getStep8OrderSummaryRows(quoteRequired);
 assert.equal(
-  quoteSummaryRows.find((row) => row.label === "Additional Delivery")?.value,
+  quoteSummaryRows.find((row) => row.label === "Shipping")?.value,
   "Custom shipping quote required",
 );
 assert.match(
@@ -308,7 +312,7 @@ assert.equal(
   "1.5 kg",
 );
 assert.equal(
-  otherDestinationSummary.find((row) => row.label === "Additional Delivery")?.value,
+  otherDestinationSummary.find((row) => row.label === "Shipping")?.value,
   "Custom shipping quote required",
 );
 assert.equal(
@@ -464,6 +468,23 @@ assert.equal(
 assert.equal(JSON.stringify(roundTrip.futureShippingState).includes("amountCents"), false);
 assert.equal(JSON.stringify(roundTrip.futureShippingState).includes("131.25"), false);
 assert.equal(JSON.stringify(roundTrip.futureShippingState).includes("15.09"), false);
+const remountedShipping = reconcileFutureShippingState({
+  state: normalizeFutureShippingState(roundTrip.futureShippingState).state,
+  garmentCount: 2,
+  selectedDesignPrice: 500,
+});
+assert.equal(remountedShipping.state.fulfilmentMethod, "destination_delivery");
+assert.equal(
+  remountedShipping.postEindhovenAdjustmentCents,
+  europe.postEindhovenAdjustmentCents,
+);
+assert.equal(remountedShipping.projectedTotalCents, europe.projectedTotalCents);
+assert.equal(
+  getStep8OrderSummaryRows(remountedShipping).find((row) => row.label === "Shipping")
+    ?.value,
+  getStep8OrderSummaryRows(europe).find((row) => row.label === "Shipping")?.value,
+  "remount preserves the selected shipping amount without serializing a derived rate",
+);
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const summarySource = readFileSync("src/components/DormantFutureSummaryStep.tsx", "utf8");
@@ -479,12 +500,12 @@ assert.match(studioSource, /prefillFutureShippingContact/);
 assert.match(studioSource, /const canRestoreShipping = canRestoreSummary;/);
 assert.match(summarySource, /canContinueToShipping/);
 assert.match(summarySource, /onContinueToShipping/);
-assert.match(summarySource, /Additional Delivery/);
+assert.match(summarySource, /Cost Breakdown/);
 assert.match(stepperSource, /canEnterShipping/);
 assert.match(shippingSource, /Delivery &amp; Pickup/);
 assert.match(shippingSource, /Pick Up in Eindhoven/);
 assert.match(shippingSource, /Deliver to an Address/);
-assert.match(shippingSource, /Additional Delivery/);
+assert.match(shippingSource, /Cost Breakdown/);
 assert.match(shippingSource, /Free · €0\.00/);
 assert.match(shippingSource, /Typical 2–5 kg rate/);
 assert.match(shippingSource, /Review Order/);

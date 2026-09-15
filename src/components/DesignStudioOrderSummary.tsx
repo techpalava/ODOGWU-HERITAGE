@@ -325,17 +325,55 @@ export const DesignStudioOrderSummary = ({
           data-testid="live-order-summary-total"
           data-total-status={view.totalStatus}
         >
-          <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
-            <p className="min-w-0 break-words text-[13px] font-semibold text-heritage-ink">
-              {view.totalLabel}
-            </p>
-            <p
-              className="shrink-0 text-right font-serif text-base font-bold leading-tight text-heritage-green"
-              data-testid="live-order-summary-total-value"
-            >
-              {view.totalValueLabel}
-            </p>
-          </div>
+          {view.costBreakdown ? (
+            <dl data-testid="live-order-summary-cost-breakdown" className="space-y-2 text-xs">
+              <div
+                data-testid="live-order-summary-order-subtotal"
+                data-subtotal-cents={view.costBreakdown.subtotal.amountCents ?? undefined}
+                className="flex min-w-0 flex-wrap justify-between gap-2 text-heritage-ink/75"
+              >
+                <dt className="min-w-0 break-words">{view.costBreakdown.subtotal.label}</dt>
+                <dd className="shrink-0 text-right font-mono font-medium text-heritage-ink">
+                  {view.costBreakdown.subtotal.valueLabel}
+                </dd>
+              </div>
+              {view.costBreakdown.shipping ? (
+                <div
+                  data-testid="live-order-summary-shipping"
+                  data-shipping-cents={view.costBreakdown.shipping.amountCents ?? undefined}
+                  className="flex min-w-0 flex-wrap justify-between gap-2 text-heritage-ink/75"
+                >
+                  <dt className="min-w-0 break-words">{view.costBreakdown.shipping.label}</dt>
+                  <dd className="min-w-0 max-w-full break-words text-right font-mono font-medium text-heritage-ink">
+                    {view.costBreakdown.shipping.valueLabel}
+                  </dd>
+                </div>
+              ) : null}
+              <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2 border-t-2 border-heritage-green/25 pt-2.5">
+                <dt className="min-w-0 break-words text-sm font-bold uppercase tracking-wide text-heritage-green">
+                  {view.totalLabel}
+                </dt>
+                <dd
+                  className="shrink-0 text-right font-serif text-xl font-bold leading-tight text-heritage-green"
+                  data-testid="live-order-summary-total-value"
+                >
+                  {view.totalValueLabel}
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
+              <p className="min-w-0 break-words text-[13px] font-semibold text-heritage-ink">
+                {view.totalLabel}
+              </p>
+              <p
+                className="shrink-0 text-right font-serif text-base font-bold leading-tight text-heritage-green"
+                data-testid="live-order-summary-total-value"
+              >
+                {view.totalValueLabel}
+              </p>
+            </div>
+          )}
           {view.quoteRequired ? (
             <p className="mt-1.5 text-[10px] leading-snug text-heritage-ink/65">
               A custom shipping quote is required before the final payable total

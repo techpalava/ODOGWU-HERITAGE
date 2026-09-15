@@ -312,12 +312,14 @@ export const getFuturePaymentReviewPricingRows = (
       amountCents: pricing.customDetailsCents,
       presentation: "amount",
     },
-    {
+  ];
+  if (pricing.postEindhovenAdjustmentCents !== 0) {
+    rows.push({
       id: "post_eindhoven",
-      label: "Additional Delivery",
+      label: "Shipping",
       amountCents: pricing.postEindhovenAdjustmentCents,
       presentation: "amount",
-    },
-  ];
+    });
+  }
   return rows;
 };
