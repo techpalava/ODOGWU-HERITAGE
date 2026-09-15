@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import type {
   AiTryOnWorkflowStateV1,
   AdditionalGarmentConstructionStateV1,
@@ -67,6 +69,7 @@ import {
   createEmptyFutureShippingState,
   reconcileFutureShippingState,
 } from "./src/utils/designStudioFutureShipping";
+import { DormantFutureSummaryStep } from "./src/components/DormantFutureSummaryStep";
 
 const inspection = inspectCustomDetailCatalog([]);
 const fabric: Fabric = {
@@ -1506,7 +1509,89 @@ assert.match(
   summarySource,
   /One or more personalised requirements must be evaluated before an exact total can be confirmed\./,
 );
-assert.match(summarySource, /getStep8OrderSummaryRows/);
+const renderSummaryMarkup = (
+  shippingResolution: ReturnType<typeof reconcileFutureShippingState>,
+) =>
+  renderToStaticMarkup(
+    createElement(DormantFutureSummaryStep, {
+      summary: exactSummary,
+      onBack: () => {},
+      onEditGarments: () => {},
+      onEditFabrics: () => {},
+      onEditDesignStyle: () => {},
+      onEditCustomDetails: () => {},
+      onEditAiTryOn: () => {},
+      onEditMeasurements: () => {},
+      canContinueToShipping: true,
+      onContinueToShipping: () => {},
+      shippingResolution,
+    }),
+  );
+
+const selectedDesignPrice =
+  exactSummary.pricingSummary.selectedDesignPrice?.selectedDesignPrice ?? null;
+const destinationDeliveryResolution = reconcileFutureShippingState({
+  state: {
+    ...createEmptyFutureShippingState(),
+    fulfilmentMethod: "destination_delivery",
+    customerInformation: {
+      fullName: "Ada Heritage",
+      phone: "+31 6 1234 5678",
+      email: "ada@example.com",
+      deliveryAddress: {
+        addressLine1: "1 Heritage Way",
+        addressLine2: "",
+        city: "Paris",
+        stateRegion: "",
+        postalCode: "75001",
+        countryCode: "FR",
+      },
+      comment: "",
+    },
+  },
+  garmentCount: exactSummary.garmentSummary.length,
+  selectedDesignPrice,
+});
+assert.equal(destinationDeliveryResolution.status, "quote_ready");
+if (destinationDeliveryResolution.projectedTotalCents === null) {
+  throw new Error("destination delivery must supply an authoritative payable projection");
+}
+const destinationDeliveryMarkup = renderSummaryMarkup(destinationDeliveryResolution);
+assert.match(destinationDeliveryMarkup, /data-summary-cost-breakdown/);
+assert.match(destinationDeliveryMarkup, />Cost Breakdown</);
+assert.match(destinationDeliveryMarkup, />Order Subtotal</);
+assert.match(destinationDeliveryMarkup, /<dt[^>]*>Shipping<\/dt>/);
+const projectedTotalText = `€${(
+  destinationDeliveryResolution.projectedTotalCents / 100
+).toFixed(2)}`;
+assert.match(
+  destinationDeliveryMarkup,
+  new RegExp(`>Total</dt>[\\s\\S]*?>${projectedTotalText}</dd>`),
+  "Summary Total must render the shipping authority's projectedTotalCents",
+);
+
+const pickupResolution = reconcileFutureShippingState({
+  state: {
+    ...createEmptyFutureShippingState(),
+    fulfilmentMethod: "eindhoven_pickup",
+    customerInformation: {
+      fullName: "Ada Heritage",
+      phone: "+31 6 1234 5678",
+      email: "ada@example.com",
+      deliveryAddress: createEmptyFutureShippingState().customerInformation.deliveryAddress,
+      comment: "",
+    },
+  },
+  garmentCount: exactSummary.garmentSummary.length,
+  selectedDesignPrice,
+});
+assert.equal(pickupResolution.status, "quote_ready");
+assert.equal(pickupResolution.postEindhovenAdjustmentCents, 0);
+assert.doesNotMatch(
+  renderSummaryMarkup(pickupResolution),
+  /<dt[^>]*>Shipping<\/dt>/,
+  "pickup must omit a misleading monetary Shipping row",
+);
 assert.match(summarySource, /canContinueToShipping/);
 assert.match(summarySource, /onContinueToShipping/);
 assert.match(summarySource, /Your Summary is ready\./);
