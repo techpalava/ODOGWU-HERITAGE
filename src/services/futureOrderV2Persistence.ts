@@ -4,6 +4,7 @@ import {
   parsePersistFutureOrderV2Result,
   type PersistFutureOrderV2Result,
 } from "../utils/futureOrderV2PersistenceContract.js";
+import type { FutureOrderV2PricingAuthorityInputV1 } from "../utils/futureOrderV2PricingAuthority.js";
 import type {
   GroupRoleOrderIdentity,
   PersonalizedGroupAuthority,
@@ -151,11 +152,13 @@ export const createFutureOrderV2PersistenceClient = (
   async persist({
     masterOrder,
     customerOwnerUid,
+    pricingAuthorityInput,
     privateBatchCapabilityFactory,
     resolvePersonalizedGroupAuthority,
   }: {
     masterOrder: FutureOrderMasterOrderV2;
     customerOwnerUid: string;
+    pricingAuthorityInput?: FutureOrderV2PricingAuthorityInputV1;
     privateBatchCapabilityFactory?: PrivateBatchPersistenceCapabilityFactory;
     resolvePersonalizedGroupAuthority?: PersonalizedGroupAuthorityResolver;
   }): Promise<PersistFutureOrderV2ClientResult> {
@@ -295,7 +298,11 @@ export const createFutureOrderV2PersistenceClient = (
             "Content-Type": "application/json",
             Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify({ masterOrder, customerOwnerUid }),
+          body: JSON.stringify({
+            masterOrder,
+            customerOwnerUid,
+            pricingAuthorityInput,
+          }),
         },
       );
     } catch (error) {

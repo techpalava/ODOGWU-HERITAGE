@@ -257,6 +257,7 @@ import {
   type FutureOrderCandidateUploadedStyleAuthorityV2,
   type FutureOrderCandidateV2BuildResult,
 } from "../utils/futureOrderCandidate";
+import { createFutureOrderV2PricingAuthorityInput } from "../utils/futureOrderV2PricingAuthority";
 import {
   createFutureOrderV2PaymentReviewHandoff,
   isFuturePaymentReviewStageUnlocked,
@@ -5761,12 +5762,28 @@ export default function DesignStudioView({
         status: "preparing",
       }),
     );
+    const pricingAuthorityInput = createFutureOrderV2PricingAuthorityInput({
+      candidate: reviewed,
+      selectedStyleId: futureDesignStyleSelection.selectedStyleId,
+      designSelections,
+    });
+    if (!pricingAuthorityInput) {
+      futureOrderV2PreparationInFlightRef.current = false;
+      setFuturePaymentReviewHandoff(
+        createFutureOrderV2PaymentReviewHandoff(reviewed, {
+          status: "error",
+          message: "Order-level pricing details changed. Review the order before preparing it.",
+        }),
+      );
+      return;
+    }
     const outcome = await prepareFutureOrderV2Submission({
       reviewed,
       fresh:
         futureOrderV2TestHooks?.buildCurrentCandidate?.() ??
         buildCurrentFutureOrderCandidateV2(),
       identity: { uid: firebaseUser.uid, isAnonymous: firebaseUser.isAnonymous },
+      pricingAuthorityInput,
       existingAttempt: futureOrderV2PreparationRef.current,
       privateBatchCapabilityFactory:
         createCurrentPrivateBatchPersistenceCapability,

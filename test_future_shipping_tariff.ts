@@ -99,18 +99,18 @@ assert.equal(unknownDestination.amountCents, null);
 const pickup = resolveFutureFinalMileBaseline({
   fulfilmentMethod: "eindhoven_pickup",
 });
-assert.equal(pickup.status, "pickup_fee_pending");
+assert.equal(pickup.status, "resolved_baseline");
 assert.equal(pickup.rule?.shippingLeg, "eindhoven_collection");
-assert.equal(pickup.amountCents, null);
+assert.equal(pickup.amountCents, 0);
 
 const pickupViaGarmentCount = resolveFutureFinalMileFromGarmentCount({
   fulfilmentMethod: "eindhoven_pickup",
   destinationZoneId: "NORTH_AMERICA",
   garmentCount: 5,
 });
-assert.equal(pickupViaGarmentCount.status, "pickup_fee_pending");
+assert.equal(pickupViaGarmentCount.status, "resolved_baseline");
 assert.equal(pickupViaGarmentCount.rule?.shippingLeg, "eindhoven_collection");
-assert.equal(pickupViaGarmentCount.amountCents, null);
+assert.equal(pickupViaGarmentCount.amountCents, 0);
 
 const exactTwoKgDelivery = resolveFutureFinalMileFromGarmentCount({
   fulfilmentMethod: "destination_delivery",
@@ -148,7 +148,6 @@ const everyUnresolvedResult = [
   unresolvedGarmentCount,
   missingWeight,
   unknownDestination,
-  pickup,
   exactFiveKgDelivery,
   ...pendingRuleExpectations.map(([ruleId]) =>
     resolveFuturePendingTariffRule(ruleId),

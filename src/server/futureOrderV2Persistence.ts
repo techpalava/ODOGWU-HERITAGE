@@ -10,6 +10,12 @@ import {
   type PersistFutureOrderV2Result,
   type PersistedFutureOrderV2,
 } from "../utils/futureOrderV2PersistenceContract.js";
+import {
+  createServerVerifiedFutureOrderV2PricingAuthority,
+  hasPricingAuthorityForExactFutureOrderV2,
+  parsePersistedFutureOrderV2PricingAuthority,
+  type FutureOrderV2PricingAuthoritySource,
+} from "./futureOrderV2PricingAuthority.js";
 
 export type FutureOrderV2ServerErrorCode =
   | "AUTH_REQUIRED"
@@ -17,7 +23,8 @@ export type FutureOrderV2ServerErrorCode =
   | "OWNER_MISMATCH"
   | "ORDER_ID_UNAVAILABLE"
   | "PRIVATE_BATCH_UNAUTHORIZED"
-  | "PRIVATE_BATCH_UNAVAILABLE";
+  | "PRIVATE_BATCH_UNAVAILABLE"
+  | "PRICING_AUTHORITY_UNAVAILABLE";
 
 export class FutureOrderV2ServerError extends Error {
   readonly code: FutureOrderV2ServerErrorCode;
@@ -72,6 +79,32 @@ export const createAdminFutureOrderV2PersistenceAdapter = (
             {
               ...value,
               persistedAt: Timestamp.fromDate(new Date(value.persistedAt)),
+            },
+          );
+        },
+        async getPricingAuthority(orderId) {
+          const snapshot = await adminTransaction.get(
+            db
+              .collection(FUTURE_ORDER_V2_COLLECTION)
+              .doc(orderId)
+              .collection("pricingAuthority")
+              .doc("current"),
+          );
+          return snapshot.exists ? snapshot.data() : null;
+        },
+        createPricingAuthority(orderId, value) {
+          const authority = value as { createdAt?: string };
+          adminTransaction.create(
+            db
+              .collection(FUTURE_ORDER_V2_COLLECTION)
+              .doc(orderId)
+              .collection("pricingAuthority")
+              .doc("current"),
+            {
+              ...authority,
+              ...(authority.createdAt
+                ? { createdAt: Timestamp.fromDate(new Date(authority.createdAt)) }
+                : {}),
             },
           );
         },
@@ -138,15 +171,26 @@ export const createAdminFutureOrderV2PersistenceAdapter = (
     ),
 });
 
+export const createAdminFutureOrderV2PricingAuthoritySource = (
+  db: Firestore,
+): FutureOrderV2PricingAuthoritySource => ({
+  async getStyle(styleId) {
+    const snapshot = await db.collection("styles").doc(styleId).get();
+    return snapshot.exists ? snapshot.data() : null;
+  },
+});
+
 export const persistFutureOrderV2ForVerifiedIdentity = async ({
   identity,
   request,
   adapter,
+  pricingAuthoritySource,
   now = () => new Date(),
 }: {
   identity: VerifiedFutureOrderV2Identity;
   request: FutureOrderV2PersistenceRequest;
   adapter: FutureOrderV2PersistenceAdapter;
+  pricingAuthoritySource?: FutureOrderV2PricingAuthoritySource;
   now?: () => Date;
 }): Promise<PersistFutureOrderV2Result> => {
   if (!hasText(identity.uid)) {
@@ -175,6 +219,15 @@ export const persistFutureOrderV2ForVerifiedIdentity = async ({
     persistedAt: now().toISOString(),
   });
   if (proposed.status !== "valid") return proposed;
+  const proposedPricingAuthority = request.pricingAuthorityInput
+    ? await createServerVerifiedFutureOrderV2PricingAuthority({
+        masterOrder: proposed.value.masterOrder,
+        ownerUid: identity.uid,
+        input: request.pricingAuthorityInput,
+        source: pricingAuthoritySource,
+        now,
+      })
+    : null;
 
   return adapter.runTransaction(async (transaction) => {
     const orderIdentity = proposed.value.masterOrder.cartItem.candidate.orderIdentity;
@@ -189,6 +242,18 @@ export const persistFutureOrderV2ForVerifiedIdentity = async ({
     }
     const existingValue = await transaction.get(proposed.value.orderId);
     if (existingValue === null) {
+      if (proposedPricingAuthority) {
+        if (!transaction.createPricingAuthority) {
+          throw new FutureOrderV2ServerError(
+            "PRICING_AUTHORITY_UNAVAILABLE",
+            "Pricing-authority persistence is unavailable for this order.",
+          );
+        }
+        transaction.createPricingAuthority(
+          proposed.value.orderId,
+          proposedPricingAuthority,
+        );
+      }
       transaction.create(proposed.value.orderId, proposed.value);
       return { status: "created" as const, value: proposed.value };
     }
@@ -217,6 +282,60 @@ export const persistFutureOrderV2ForVerifiedIdentity = async ({
         proposed.value,
       )
     ) {
+      if (proposedPricingAuthority) {
+        if (!transaction.getPricingAuthority || !transaction.createPricingAuthority) {
+          throw new FutureOrderV2ServerError(
+            "PRICING_AUTHORITY_UNAVAILABLE",
+            "Pricing-authority persistence is unavailable for this order.",
+          );
+        }
+        const existingAuthorityValue = await transaction.getPricingAuthority(
+          proposed.value.orderId,
+        );
+        if (existingAuthorityValue === null) {
+          const historicalOrderHasMissingOrderLevelContext =
+            existing.value.masterOrder.cartItem.candidate.customDetails.some(
+              (detail) =>
+                detail.garmentKey === "order" &&
+                detail.selectionGroup === "order_optional_detail",
+            );
+          if (
+            historicalOrderHasMissingOrderLevelContext ||
+            proposedPricingAuthority.orderLevelPricing !== null
+          ) {
+            return {
+              status: "invalid" as const,
+              code: "PRICING_AUTHORITY_MISSING",
+              message:
+                "This historical order is missing server-verifiable order-level pricing context.",
+            };
+          }
+          transaction.createPricingAuthority(
+            proposed.value.orderId,
+            proposedPricingAuthority,
+          );
+        } else {
+          const existingAuthority = parsePersistedFutureOrderV2PricingAuthority(
+            existingAuthorityValue,
+            proposed.value.orderId,
+          );
+          if (
+            existingAuthority.status !== "valid" ||
+            !hasPricingAuthorityForExactFutureOrderV2({
+              authority: existingAuthority.value,
+              masterOrder: proposed.value.masterOrder,
+              ownerUid: identity.uid,
+            })
+          ) {
+            return {
+              status: "invalid" as const,
+              code: "PRICING_AUTHORITY_CONFLICT",
+              message:
+                "The pricing authority does not match this immutable order.",
+            };
+          }
+        }
+      }
       return {
         status: "already_persisted" as const,
         value: existing.value,

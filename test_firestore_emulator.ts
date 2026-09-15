@@ -91,6 +91,11 @@ const membershipReference = (
 const orderReference = (context: RulesTestContext, orderId: string) =>
   doc(context.firestore(), "orders", orderId);
 
+const pricingAuthorityReference = (
+  context: RulesTestContext,
+  orderId: string,
+) => doc(context.firestore(), "orders", orderId, "pricingAuthority", "current");
+
 const directV2Order = (
   ownerUid: string,
   orderIdentity: Record<string, unknown>,
@@ -954,6 +959,28 @@ try {
     });
   });
 
+  await runCase("pricing-authority sidecars are server-only subdocuments", async () => {
+    const orderId = "v2-sidecar-server-only";
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        orderReference(context, orderId),
+        directV2Order(OWNER_UID, { orderType: "Individual" }),
+      );
+    });
+    const sidecar = {
+      schemaVersion: 1,
+      recordType: "future_order_v2_pricing_authority",
+      orderId,
+      ownerUid: OWNER_UID,
+    };
+    await assertFails(
+      setDoc(pricingAuthorityReference(signedIn(OWNER_UID), orderId), sidecar),
+    );
+    await assertFails(
+      setDoc(pricingAuthorityReference(admin(), orderId), sidecar),
+    );
+  });
+
   await runCase("PUBLIC discovery query excludes Private Batches", async () => {
     await seedPrivateGroup();
     await testEnvironment.withSecurityRulesDisabled(async (context) => {
@@ -1131,8 +1158,8 @@ try {
     await assertFails(setDoc(publicFabric, { name: "Tampered fabric" }));
   });
 
-  assert.equal(passed, 48);
-  console.log(`Firestore emulator security matrix passed (${passed}/48).`);
+  assert.equal(passed, 49);
+  console.log(`Firestore emulator security matrix passed (${passed}/49).`);
 } finally {
   await testEnvironment.cleanup();
 }

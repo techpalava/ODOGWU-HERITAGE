@@ -3,9 +3,14 @@ import { getAdminServices } from "./firebaseAdmin.js";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import {
   createAdminFutureOrderV2PersistenceAdapter,
+  createAdminFutureOrderV2PricingAuthoritySource,
   FutureOrderV2ServerError,
   persistFutureOrderV2ForVerifiedIdentity,
 } from "./futureOrderV2Persistence.js";
+import {
+  FutureOrderV2PricingAuthorityError,
+  type FutureOrderV2PricingAuthoritySource,
+} from "./futureOrderV2PricingAuthority.js";
 import {
   parseFutureOrderV2PersistenceRequest,
   type FutureOrderV2PersistenceAdapter,
@@ -28,6 +33,9 @@ type FutureOrderV2AdminServices = {
 export interface FutureOrderV2PersistenceHttpDependencies {
   getServices?: () => FutureOrderV2AdminServices;
   createAdapter?: (db: unknown) => FutureOrderV2PersistenceAdapter;
+  createPricingAuthoritySource?: (
+    db: unknown,
+  ) => FutureOrderV2PricingAuthoritySource;
   now?: () => Date;
   log?: (message: string) => void;
 }
@@ -62,6 +70,7 @@ const statusByServerError: Record<FutureOrderV2ServerError["code"], number> = {
   ORDER_ID_UNAVAILABLE: 409,
   PRIVATE_BATCH_UNAUTHORIZED: 403,
   PRIVATE_BATCH_UNAVAILABLE: 409,
+  PRICING_AUTHORITY_UNAVAILABLE: 503,
 };
 
 export const createFutureOrderV2PersistenceHandler = (
@@ -74,6 +83,10 @@ export const createFutureOrderV2PersistenceHandler = (
     dependencies.createAdapter ||
     ((db: unknown) =>
       createAdminFutureOrderV2PersistenceAdapter(db as Firestore));
+  const createPricingAuthoritySource =
+    dependencies.createPricingAuthoritySource ||
+    ((db: unknown) =>
+      createAdminFutureOrderV2PricingAuthoritySource(db as Firestore));
   const log = dependencies.log || ((message: string) => console.info(message));
 
   return async (req: HttpRequest, res: HttpResponse) => {
@@ -124,6 +137,7 @@ export const createFutureOrderV2PersistenceHandler = (
         },
         request: request.value,
         adapter: createAdapter(services.db),
+        pricingAuthoritySource: createPricingAuthoritySource(services.db),
         now: dependencies.now,
       });
       const status =
@@ -137,6 +151,12 @@ export const createFutureOrderV2PersistenceHandler = (
       log(`future-order-v2-persistence status=${result.status}`);
       return setNoStore(res).status(status).json(result);
     } catch (error) {
+      if (error instanceof FutureOrderV2PricingAuthorityError) {
+        log(`future-order-v2-persistence pricing-authority=${error.code}`);
+        const status =
+          error.code === "PRICING_AUTHORITY_SOURCE_UNAVAILABLE" ? 503 : 400;
+        return sendError(res, status, error.code, error.message);
+      }
       if (error instanceof FutureOrderV2ServerError) {
         log(`future-order-v2-persistence error=${error.code}`);
         if (error.code === "ORDER_ID_UNAVAILABLE") {

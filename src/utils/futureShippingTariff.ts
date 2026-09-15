@@ -170,15 +170,11 @@ export const resolveFutureFinalMileBaseline = ({
       "future_eindhoven_collection_fee",
     );
     return {
-      status: "pickup_fee_pending",
+      status: "resolved_baseline",
       rule: pickupRule,
-      amountCents: null,
+      amountCents: 0,
       currency: pickupRule?.currency || "EUR",
-      diagnostic: {
-        code: "PICKUP_FEE_PENDING",
-        message:
-          "Final-destination delivery is not applicable to Eindhoven collection, and no collection fee has been confirmed.",
-      },
+      diagnostic: null,
     };
   }
 

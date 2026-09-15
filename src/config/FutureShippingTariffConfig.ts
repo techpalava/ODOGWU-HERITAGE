@@ -209,16 +209,15 @@ export const FUTURE_SHIPPING_TARIFF_RULES: readonly FutureShippingTariffRuleV1[]
       fulfilmentMethod: "eindhoven_pickup",
       destinationZoneId: "EINDHOVEN",
       currency: "EUR",
-      amountCents: null,
-      pricingUnit: "unconfirmed",
+      amountCents: 0,
+      pricingUnit: "per_parcel",
       supportedGarmentCountBoundary: null,
       supportedWeightBoundary: null,
       minimumBatchSize: null,
-      status: "rate_unavailable",
+      status: "active",
       provenanceNote:
-        "The supplied instruction says customers may collect clothes at an arranged Eindhoven location.",
-      confirmationReason:
-        "No collection or handling fee is supplied, so pickup must not be represented as a zero-priced service.",
+        "Approved first-launch policy: Eindhoven pickup has no post-Eindhoven shipping charge.",
+      confirmationReason: null,
     }),
     finalMileRule(
       "future_final_mile_eindhoven_below_5kg",

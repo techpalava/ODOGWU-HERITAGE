@@ -17,6 +17,7 @@ import type {
   PersonalizedGroupAuthorityResolver,
 } from "../services/futureOrderV2Persistence";
 import type { PersonalizedGroupAuthority } from "./orderContextIdentity";
+import type { FutureOrderV2PricingAuthorityInputV1 } from "./futureOrderV2PricingAuthority";
 
 export interface FutureOrderV2PreparationIds {
   readonly cartItemId: string;
@@ -184,6 +185,7 @@ export const prepareFutureOrderV2Submission = async ({
   fresh,
   identity,
   existingAttempt = null,
+  pricingAuthorityInput,
   privateBatchCapabilityFactory,
   resolvePersonalizedGroupAuthority,
   persist,
@@ -192,11 +194,13 @@ export const prepareFutureOrderV2Submission = async ({
   fresh: FutureOrderCandidateV2BuildResult;
   identity: Readonly<{ uid: string; isAnonymous: boolean }> | null;
   existingAttempt?: FutureOrderV2PreparationAttempt | null;
+  pricingAuthorityInput?: FutureOrderV2PricingAuthorityInputV1;
   privateBatchCapabilityFactory?: PrivateBatchPersistenceCapabilityFactory;
   resolvePersonalizedGroupAuthority?: PersonalizedGroupAuthorityResolver;
   persist(input: {
     masterOrder: FutureOrderMasterOrderV2;
     customerOwnerUid: string;
+    pricingAuthorityInput?: FutureOrderV2PricingAuthorityInputV1;
     privateBatchCapabilityFactory?: PrivateBatchPersistenceCapabilityFactory;
     resolvePersonalizedGroupAuthority?: PersonalizedGroupAuthorityResolver;
   }): Promise<PersistFutureOrderV2ClientResult>;
@@ -230,6 +234,7 @@ export const prepareFutureOrderV2Submission = async ({
     const result = await persist({
       masterOrder: preparation.attempt.masterOrder,
       customerOwnerUid: identity.uid,
+      pricingAuthorityInput,
       privateBatchCapabilityFactory,
       resolvePersonalizedGroupAuthority,
     });

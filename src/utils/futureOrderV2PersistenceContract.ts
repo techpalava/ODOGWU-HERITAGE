@@ -7,6 +7,10 @@ import {
   getCanonicalOrderIdentity,
   type CanonicalOrderIdentity,
 } from "./orderContextIdentity.js";
+import {
+  parseFutureOrderV2PricingAuthorityInput,
+  type FutureOrderV2PricingAuthorityInputV1,
+} from "./futureOrderV2PricingAuthority.js";
 
 export const FUTURE_ORDER_V2_RECORD_TYPE = "future_order_v2" as const;
 export const FUTURE_ORDER_V2_COLLECTION = "orders" as const;
@@ -45,6 +49,8 @@ export type PersistFutureOrderV2Result =
 export interface FutureOrderV2PersistenceRequest {
   readonly masterOrder: FutureOrderMasterOrderV2;
   readonly customerOwnerUid: string;
+  /** Required at the public server boundary; legacy internal callers omit it. */
+  readonly pricingAuthorityInput?: FutureOrderV2PricingAuthorityInputV1;
 }
 
 export type FutureOrderV2PersistenceRequestParseResult =
@@ -54,6 +60,9 @@ export type FutureOrderV2PersistenceRequestParseResult =
 export interface FutureOrderV2PersistenceTransaction {
   get(orderId: string): Promise<unknown | null>;
   create(orderId: string, value: PersistedFutureOrderV2): void;
+  /** Server-owned pricing authority; client Firestore rules deny this path. */
+  getPricingAuthority?(orderId: string): Promise<unknown | null>;
+  createPricingAuthority?(orderId: string, value: unknown): void;
   /**
    * Server-only, executed in the same transaction as a new V2 order. Group
    * Organizer/Member are shared legacy roles; the implementation resolves the
@@ -383,7 +392,13 @@ export const hasSameFutureOrderV2ImmutableBusinessValue = (
 export const parseFutureOrderV2PersistenceRequest = (
   value: unknown,
 ): FutureOrderV2PersistenceRequestParseResult => {
-  if (!isRecord(value) || !exactKeys(value, ["masterOrder", "customerOwnerUid"])) {
+  if (
+    !isRecord(value) ||
+    !(
+      exactKeys(value, ["masterOrder", "customerOwnerUid"]) ||
+      exactKeys(value, ["masterOrder", "customerOwnerUid", "pricingAuthorityInput"])
+    )
+  ) {
     return {
       status: "invalid",
       code: "MALFORMED_FUTURE_ORDER_V2_REQUEST",
@@ -414,11 +429,28 @@ export const parseFutureOrderV2PersistenceRequest = (
       message: "The MasterOrder V2 snapshot contains unsupported fields.",
     };
   }
+  const pricingAuthorityInput = parseFutureOrderV2PricingAuthorityInput(
+    Object.prototype.hasOwnProperty.call(value, "pricingAuthorityInput")
+      ? value.pricingAuthorityInput
+      : {
+          schemaVersion: 1,
+          orderLevelPricing: null,
+        },
+    masterOrder.value.cartItem.candidate,
+  );
+  if (pricingAuthorityInput.status !== "valid") {
+    return {
+      status: "invalid",
+      code: pricingAuthorityInput.code,
+      message: pricingAuthorityInput.message,
+    };
+  }
   return {
     status: "valid",
     value: {
       masterOrder: cloneJsonValue(masterOrder.value),
       customerOwnerUid: value.customerOwnerUid,
+      pricingAuthorityInput: pricingAuthorityInput.value,
     },
   };
 };

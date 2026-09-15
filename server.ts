@@ -14,6 +14,7 @@ import { handleUploadedDesignTransfer } from "./src/server/uploadedDesignTransfe
 import { handleCreateUploadedDesignOwnershipClaim } from "./src/server/uploadedDesignOwnershipClaimHttp";
 import { handleUploadedDesignDraftTransfer } from "./src/server/uploadedDesignDraftTransferHttp";
 import { handleFutureOrderV2Persistence } from "./src/server/futureOrderV2PersistenceHttp";
+import { handleFutureOrderV2PaymentQuote } from "./src/server/futureOrderV2PaymentQuoteHttp";
 import {
   handleCreatePrivateBatchInvite,
   handleRedeemPrivateBatchInvite,
@@ -61,6 +62,10 @@ app.post(
 app.post(
   "/api/orders/persist-future-order-v2",
   handleFutureOrderV2Persistence,
+);
+app.post(
+  "/api/orders/create-future-order-v2-payment-quote",
+  handleFutureOrderV2PaymentQuote,
 );
 app.post("/api/private-batches/create-invite", handleCreatePrivateBatchInvite);
 app.post("/api/private-batches/redeem-invite", handleRedeemPrivateBatchInvite);

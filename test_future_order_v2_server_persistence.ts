@@ -31,6 +31,7 @@ const NOW = new Date("2026-09-05T10:00:00.000Z");
 
 class MemoryAdapter implements FutureOrderV2PersistenceAdapter {
   readonly values = new Map<string, unknown>();
+  readonly pricingAuthorities = new Map<string, unknown>();
   readonly creates: string[] = [];
 
   constructor(
@@ -43,6 +44,7 @@ class MemoryAdapter implements FutureOrderV2PersistenceAdapter {
     operation: (transaction: FutureOrderV2PersistenceTransaction) => Promise<T>,
   ): Promise<T> {
     const pending = new Map<string, PersistedFutureOrderV2>();
+    const pendingPricingAuthorities = new Map<string, unknown>();
     const transaction: FutureOrderV2PersistenceTransaction = {
       get: async (orderId) => this.values.get(orderId) ?? null,
       create: (orderId, value) => {
@@ -50,6 +52,14 @@ class MemoryAdapter implements FutureOrderV2PersistenceAdapter {
           throw new Error("create-only collision");
         }
         pending.set(orderId, structuredClone(value));
+      },
+      getPricingAuthority: async (orderId) =>
+        this.pricingAuthorities.get(orderId) ?? null,
+      createPricingAuthority: (orderId, value) => {
+        if (this.pricingAuthorities.has(orderId) || pendingPricingAuthorities.has(orderId)) {
+          throw new Error("pricing-authority collision");
+        }
+        pendingPricingAuthorities.set(orderId, structuredClone(value));
       },
     };
     if (this.privateBatchAuthorizer) {
@@ -59,6 +69,9 @@ class MemoryAdapter implements FutureOrderV2PersistenceAdapter {
     pending.forEach((value, orderId) => {
       this.values.set(orderId, value);
       this.creates.push(orderId);
+    });
+    pendingPricingAuthorities.forEach((value, orderId) => {
+      this.pricingAuthorities.set(orderId, value);
     });
     return result;
   }
@@ -89,6 +102,49 @@ assert.equal(
 );
 assert.equal(adapter.creates.length, 1);
 const original = structuredClone(adapter.values.get("server-order-1"));
+
+const sidecarAdapter = new MemoryAdapter();
+const sidecarOrder = createFutureOrderV2Fixture("server-order-with-sidecar");
+const sidecarCreated = await persistFutureOrderV2ForVerifiedIdentity({
+  identity: { uid: OWNER_UID, isAnonymous: false },
+  request: {
+    masterOrder: sidecarOrder,
+    customerOwnerUid: OWNER_UID,
+    pricingAuthorityInput: { schemaVersion: 1, orderLevelPricing: null },
+  },
+  adapter: sidecarAdapter,
+  now: () => NOW,
+});
+assert.equal(sidecarCreated.status, "created");
+assert.equal(sidecarAdapter.values.has(sidecarOrder.orderId), true);
+assert.equal(sidecarAdapter.pricingAuthorities.has(sidecarOrder.orderId), true);
+
+let incompleteAdapterCreates = 0;
+const incompleteAdapter: FutureOrderV2PersistenceAdapter = {
+  runTransaction: async (operation) =>
+    operation({
+      get: async () => null,
+      create: () => {
+        incompleteAdapterCreates += 1;
+      },
+    }),
+};
+await assert.rejects(
+  persistFutureOrderV2ForVerifiedIdentity({
+    identity: { uid: OWNER_UID, isAnonymous: false },
+    request: {
+      masterOrder: createFutureOrderV2Fixture("server-order-sidecar-unavailable"),
+      customerOwnerUid: OWNER_UID,
+      pricingAuthorityInput: { schemaVersion: 1, orderLevelPricing: null },
+    },
+    adapter: incompleteAdapter,
+    now: () => NOW,
+  }),
+  (error: unknown) =>
+    error instanceof FutureOrderV2ServerError &&
+    error.code === "PRICING_AUTHORITY_UNAVAILABLE",
+);
+assert.equal(incompleteAdapterCreates, 0, "order creation cannot proceed without its sidecar");
 
 const identitylessNewOrder = structuredClone(
   createFutureOrderV2Fixture("identityless-new-order"),
