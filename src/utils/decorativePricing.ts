@@ -144,6 +144,14 @@ export const getApplicableDecorativeFeatures = (
       isNameMonogramApplicable(style, garment),
   );
 
+/**
+ * Step 5 customer choices are intentionally independent of a Design Style's
+ * decorative applicability metadata. That metadata still governs existing
+ * style-included behavior and monogram-placement eligibility elsewhere.
+ */
+export const getCustomerSelectableDecorativeFeatures = (): DecorativeFeature[] =>
+  [...DECORATIVE_FEATURE_OPTIONS];
+
 export const isMonogramCuffEligible = (
   selections: DesignSelections,
   style?: StyleCategory | null,
@@ -262,6 +270,9 @@ export const filterDesignSelectionsForDecorativeFeatures = (
   style?: StyleCategory | null,
   garment?: CustomDetailGarmentContext | null,
 ): DesignSelections => {
+  const customerSelectableFeatures = new Set(
+    getCustomerSelectableDecorativeFeatures(),
+  );
   const applicableFeatures = new Set(
     getApplicableDecorativeFeatures(style, garment),
   );
@@ -269,7 +280,7 @@ export const filterDesignSelectionsForDecorativeFeatures = (
     [
       ...(selections.decorativeFeatures || []),
       ...(selections.hasMonogram === true ? ["Name Monogram" as const] : []),
-    ].filter((feature) => applicableFeatures.has(feature)),
+    ].filter((feature) => customerSelectableFeatures.has(feature)),
   );
   const legacyFeature = DECORATIVE_FEATURE_OPTIONS.includes(
     selections.embroideryDesign as DecorativeFeature,
@@ -277,15 +288,15 @@ export const filterDesignSelectionsForDecorativeFeatures = (
     ? (selections.embroideryDesign as DecorativeFeature)
     : null;
   const validLegacyFeature =
-    legacyFeature && applicableFeatures.has(legacyFeature)
+    legacyFeature && customerSelectableFeatures.has(legacyFeature)
       ? legacyFeature
       : null;
   const nameMonogramSelected =
-    applicableFeatures.has("Name Monogram") &&
-    (nextFeatures.includes("Name Monogram") ||
+    nextFeatures.includes("Name Monogram") ||
       validLegacyFeature === "Name Monogram" ||
       selections.hasMonogram === true ||
-      getIncludedDecorativeFeatures(style).includes("Name Monogram"));
+      (applicableFeatures.has("Name Monogram") &&
+        getIncludedDecorativeFeatures(style).includes("Name Monogram"));
   const availablePlacements = getAvailableMonogramPlacements(
     selections,
     style,
@@ -302,7 +313,7 @@ export const filterDesignSelectionsForDecorativeFeatures = (
       legacyFeature && !validLegacyFeature
         ? undefined
         : selections.embroideryDesign,
-    hasMonogram: applicableFeatures.has("Name Monogram")
+    hasMonogram: customerSelectableFeatures.has("Name Monogram")
       ? selections.hasMonogram
       : undefined,
     monogramPlacement: nameMonogramSelected

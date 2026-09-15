@@ -33,7 +33,11 @@ import {
 import {
   reconcileAdditionalGarmentConstructionState,
 } from "./src/utils/additionalGarmentConstructionState";
-import type { DesignStudioStageId, FabricGarmentAssignment } from "./src/types";
+import type {
+  DecorativeFeature,
+  DesignStudioStageId,
+  FabricGarmentAssignment,
+} from "./src/types";
 import { createDormantDesignStudioJourneyState } from "./src/utils/designStudioJourneyMode";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import { resolveGarmentConstructionPricing } from "./src/utils/garmentConstructionPricing";
@@ -254,11 +258,13 @@ const createNeckStep = ({
   constructionBreakdown = { status: "complete" as const, rows: [] },
   constructionSubtotal = 0,
   orderLevelCustomDetailsPrice = 0,
+  onDecorativeFeatureToggle = () => undefined,
 }: {
   stage?: "custom_details" | "personalized_additions";
   constructionBreakdown?: Parameters<typeof DormantFutureCustomDetailsStep>[0]["constructionBreakdown"];
   constructionSubtotal?: number | null;
   orderLevelCustomDetailsPrice?: number;
+  onDecorativeFeatureToggle?: (feature: DecorativeFeature) => void;
 } = {}) =>
   createElement(DormantFutureCustomDetailsStep, {
     stage,
@@ -316,7 +322,7 @@ const createNeckStep = ({
         }).state,
       );
     },
-    onDecorativeFeatureToggle: () => undefined,
+    onDecorativeFeatureToggle,
     onClearDecorativeFeatures: () => undefined,
     onMonogramPlacementChange: () => undefined,
     onAccessoryToggle: () => undefined,
@@ -368,6 +374,54 @@ assert.match(
   /(?:^|\s)lg:col-span-2(?:\s|$)/,
   "Personalized Additional must span the available Custom Details width",
 );
+
+const selectableDecorativeEvents: DecorativeFeature[] = [];
+let selectableDecorativeRenderer!: ReturnType<typeof create>;
+act(() => {
+  selectableDecorativeRenderer = create(
+    createNeckStep({
+      stage: "personalized_additions",
+      onDecorativeFeatureToggle: (feature) => {
+        selectableDecorativeEvents.push(feature);
+      },
+    }),
+  );
+});
+for (const feature of [
+  "Name Monogram",
+  "Embroidery",
+  "Monogram Trimming",
+] as const) {
+  const card = selectableDecorativeRenderer.root
+    .findAllByType("label")
+    .find((label) =>
+      textContent(label).includes(feature) &&
+      label.findAllByType("input").some(
+        (input) => input.props.type === "checkbox",
+      ),
+    );
+  assert.ok(card, `${feature} renders as a Step 5 customer option`);
+  const checkbox = card.findByType("input");
+  assert.equal(
+    checkbox.props.disabled,
+    undefined,
+    `${feature} remains selectable when selected Design Style metadata is absent`,
+  );
+  assert.doesNotMatch(
+    textContent(card),
+    /Not available for the current design\./,
+  );
+  act(() => {
+    checkbox.props.onChange();
+  });
+}
+assert.deepEqual(
+  selectableDecorativeEvents,
+  ["Name Monogram", "Embroidery", "Monogram Trimming"],
+  "Step 5 forwards every customer decorative selection without a Design Style availability gate",
+);
+act(() => selectableDecorativeRenderer.unmount());
+
 const ordinaryFieldsets = neckRenderer.root
   .findAllByType("fieldset")
   .filter((fieldset) => fieldset !== neckFieldset);

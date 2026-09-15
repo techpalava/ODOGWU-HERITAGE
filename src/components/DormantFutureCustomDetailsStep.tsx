@@ -34,11 +34,10 @@ import {
 import type { TraditionalAccessory } from "../utils/decorativePricing";
 import {
   DECORATIVE_FEATURE_DESCRIPTIONS,
-  DECORATIVE_FEATURE_OPTIONS,
   TRADITIONAL_ACCESSORY_DESCRIPTIONS,
   TRADITIONAL_ACCESSORY_OPTIONS,
-  getApplicableDecorativeFeatures,
   getAvailableMonogramPlacements,
+  getCustomerSelectableDecorativeFeatures,
   getDecorativeFeaturePrice,
   getTraditionalAccessoryPrice,
 } from "../utils/decorativePricing";
@@ -373,7 +372,8 @@ export const DormantFutureCustomDetailsStep = ({
   );
   const canContinue = isFutureCustomDetailsContentReady(completion);
   const selectedDecorativeFeatures = new Set(designSelections.decorativeFeatures || []);
-  const applicableDecorativeFeatures = new Set(getApplicableDecorativeFeatures(selectedStyle));
+  const customerSelectableDecorativeFeatures =
+    getCustomerSelectableDecorativeFeatures();
   const availableMonogramPlacements = getAvailableMonogramPlacements(designSelections, selectedStyle);
   const selectedAccessories = new Set(designSelections.accessories || []);
   const compatibleCopySources = useMemo(() => {
@@ -1181,10 +1181,7 @@ export const DormantFutureCustomDetailsStep = ({
             <p className="mt-1 text-xs text-heritage-ink/60">Optional. Select None to remove all monogram and embroidery choices.</p>
             <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
               <label className={`flex min-h-12 min-w-0 items-center gap-3 rounded-xl border-2 p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${selectedDecorativeFeatures.size === 0 ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}><input type="radio" name="future-decorative-none" checked={selectedDecorativeFeatures.size === 0} onChange={onClearDecorativeFeatures} className="size-5 shrink-0 accent-heritage-green" /><span className="min-w-0"><span className="block text-sm font-bold text-heritage-green">None</span><span className="mt-1 block text-xs text-heritage-ink/65">No selection for this category</span></span></label>
-              {DECORATIVE_FEATURE_OPTIONS.map((feature) => {
-                const available = applicableDecorativeFeatures.has(feature);
-                return <label key={feature} className={`flex min-h-12 min-w-0 items-start gap-3 rounded-xl border-2 p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${selectedDecorativeFeatures.has(feature) ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"} ${available ? "cursor-pointer hover:border-heritage-gold" : "cursor-not-allowed opacity-60"}`}><input type="checkbox" checked={selectedDecorativeFeatures.has(feature)} disabled={!available} onChange={() => onDecorativeFeatureToggle(feature)} className="mt-0.5 size-5 shrink-0 accent-heritage-green" /><span className="min-w-0 flex-1"><span className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1"><span className="min-w-0 break-words text-sm font-bold text-heritage-green">{feature}</span><span className="shrink-0 font-mono text-xs font-bold text-heritage-gold">+{money(getDecorativeFeaturePrice(selectedStyle, feature))}</span></span><span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">{available ? DECORATIVE_FEATURE_DESCRIPTIONS[feature] : "Not available for the current design."}</span></span></label>;
-              })}
+              {customerSelectableDecorativeFeatures.map((feature) => <label key={feature} className={`flex min-h-12 min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${selectedDecorativeFeatures.has(feature) ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}><input type="checkbox" checked={selectedDecorativeFeatures.has(feature)} onChange={() => onDecorativeFeatureToggle(feature)} className="mt-0.5 size-5 shrink-0 accent-heritage-green" /><span className="min-w-0 flex-1"><span className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1"><span className="min-w-0 break-words text-sm font-bold text-heritage-green">{feature}</span><span className="shrink-0 font-mono text-xs font-bold text-heritage-gold">+{money(getDecorativeFeaturePrice(selectedStyle, feature))}</span></span><span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">{DECORATIVE_FEATURE_DESCRIPTIONS[feature]}</span></span></label>)}
             </div>
             {selectedDecorativeFeatures.has("Name Monogram") && availableMonogramPlacements.length > 0 && (
               <fieldset className="mt-4"><legend className="text-xs font-bold text-heritage-green">Monogram placement</legend><div className="mt-2 flex flex-wrap gap-2">{availableMonogramPlacements.map((placement) => <label key={placement.value} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-heritage-green/15 px-3 text-xs text-heritage-green focus-within:ring-2 focus-within:ring-heritage-gold"><input type="radio" name="future-monogram-placement" checked={designSelections.monogramPlacement === placement.value} onChange={() => onMonogramPlacementChange(placement.value)} className="size-4 accent-heritage-green" />{placement.label}</label>)}</div></fieldset>
