@@ -44,7 +44,10 @@ import {
   serializeFutureOrderCandidate,
   type FutureOrderCandidateBuildInput,
 } from "./src/utils/futureOrderCandidate";
-import { getFuturePaymentReviewGarments } from "./src/utils/designStudioFuturePaymentReview";
+import {
+  getFuturePaymentReviewGarments,
+  getFuturePaymentReviewPricingRows,
+} from "./src/utils/designStudioFuturePaymentReview";
 import {
   calculateGarmentScopedCustomDetailsPricing,
   reconcileGarmentScopedCustomDetails,
@@ -721,6 +724,87 @@ assert.ok(exactResult.candidate);
 const candidate = exactResult.candidate;
 assert.equal(candidate.schemaVersion, 1);
 assert.equal(candidate.journey.mode, "future_ten_stage");
+
+const formerlyInapplicableDecorativeBaseInput = buildInput();
+const formerlyInapplicableDecorativeStyle: StyleCategory = {
+  ...formerlyInapplicableDecorativeBaseInput.designStyleSelection.selectedStyle!,
+  customDetailConfig: {
+    representedGenders: ["male"],
+    featuresMaleAndFemale: false,
+    supportedGarmentGroups: [],
+    requiredSelectionGroups: [],
+    enabled: false,
+  },
+};
+const formerlyInapplicableDecorativeMaterialPricing =
+  formerlyInapplicableDecorativeBaseInput.materialPricing;
+if (formerlyInapplicableDecorativeMaterialPricing.status !== "resolved") {
+  throw new Error("Formerly inapplicable decorative fixture requires resolved material pricing");
+}
+const formerlyInapplicableDecorativeBasePricing = calculateDesignPricing({
+  route: "alone",
+  design: { decorativeFeatures: ["Name Monogram"] },
+  materialPricing: formerlyInapplicableDecorativeMaterialPricing,
+  decorativeFeatureApplicabilityStyle: formerlyInapplicableDecorativeStyle,
+  baseGarmentComposition: getFutureFabricCapacityComposition(
+    formerlyInapplicableDecorativeBaseInput.garmentTypeSelection,
+  ),
+  catalog: inspection.activeOptions,
+  businessSettings,
+  garmentConstructionSelectionMode: "garment_type_locked",
+  garmentTypeSelection:
+    formerlyInapplicableDecorativeBaseInput.garmentTypeSelection,
+});
+assert.ok(formerlyInapplicableDecorativeBasePricing);
+const formerlyInapplicableDecorativeInput: FutureOrderCandidateBuildInput = {
+  ...formerlyInapplicableDecorativeBaseInput,
+  styles: [formerlyInapplicableDecorativeStyle],
+  designStyleSelection: {
+    ...formerlyInapplicableDecorativeBaseInput.designStyleSelection,
+    selectedStyle: formerlyInapplicableDecorativeStyle,
+  },
+  basePricing: formerlyInapplicableDecorativeBasePricing,
+};
+const formerlyInapplicableDecorativeSummary = projectFutureDesignStudioSummary(
+  formerlyInapplicableDecorativeInput,
+);
+const formerlyInapplicableDecorativeInputWithCurrentShipping: FutureOrderCandidateBuildInput = {
+  ...formerlyInapplicableDecorativeInput,
+  shippingResolution: reconcileFutureShippingState({
+    state: formerlyInapplicableDecorativeInput.shippingResolution.state,
+    garmentCount: formerlyInapplicableDecorativeSummary.garmentSummary.length,
+    selectedDesignPrice:
+      formerlyInapplicableDecorativeSummary.pricingSummary.selectedDesignPrice
+        ?.selectedDesignPrice ?? null,
+  }),
+};
+const formerlyInapplicableDecorativeCandidate = buildFutureOrderCandidate(
+  formerlyInapplicableDecorativeInputWithCurrentShipping,
+);
+assert.ok(formerlyInapplicableDecorativeCandidate.candidate);
+assert.equal(
+  formerlyInapplicableDecorativeCandidate.candidate.pricing.customDetailsCents,
+  1200,
+  "order handoff retains the Summary's existing Name Monogram surcharge",
+);
+assert.ok(
+  formerlyInapplicableDecorativeCandidate.candidate.customDetails.some(
+    (detail) => detail.optionLabel === "Name Monogram" && detail.priceCents === 1200,
+  ),
+  "order handoff retains the formerly inapplicable selected Name Monogram",
+);
+assert.deepEqual(
+  getFuturePaymentReviewPricingRows(
+    formerlyInapplicableDecorativeCandidate.candidate.pricing,
+  ).find((row) => row.id === "custom_details"),
+  {
+    id: "custom_details",
+    label: "Custom Details Subtotal",
+    amountCents: 1200,
+    presentation: "amount",
+  },
+  "Payment receives the same decorative subtotal projected by Summary",
+);
 assert.equal(candidate.journey.schemaVersion, 2);
 assert.equal(
   candidate.source.styleId,
