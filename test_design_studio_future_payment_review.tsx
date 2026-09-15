@@ -327,9 +327,32 @@ assert.deepEqual(
     ["garment_construction", "Garment Construction Subtotal", 30000, "amount"],
     ["included_components", FUTURE_PAYMENT_REVIEW_INCLUDED_NOTE, null, "supporting_note"],
     ["custom_details", "Custom Details Subtotal", 2400, "amount"],
-    ["post_eindhoven", "Additional Delivery", 2660, "amount"],
+    ["post_eindhoven", "Shipping", 2660, "amount"],
   ],
   "the presentation helper preserves every authoritative monetary value",
+);
+const pickupPricingRows = getFuturePaymentReviewPricingRows({
+  ...candidate.pricing,
+  postEindhovenAdjustmentCents: 0,
+});
+assert.equal(
+  pickupPricingRows.some((row) => row.id === "post_eindhoven"),
+  false,
+  "pickup does not render a misleading €0 shipping row",
+);
+const pendingShippingRows = getFuturePaymentReviewPricingRows({
+  ...candidate.pricing,
+  postEindhovenAdjustmentCents: null,
+});
+assert.deepEqual(
+  pendingShippingRows.find((row) => row.id === "post_eindhoven"),
+  {
+    id: "post_eindhoven",
+    label: "Shipping",
+    amountCents: null,
+    presentation: "amount",
+  },
+  "pending shipping remains pending rather than becoming €0",
 );
 
 const reviewMarkup = renderToStaticMarkup(
@@ -395,6 +418,7 @@ assert.equal((priceBreakdownMarkup.match(/€26\.60/g) || []).length, 1);
 assert.equal((priceBreakdownMarkup.match(/€350\.60/g) || []).length, 1);
 assert.equal((priceBreakdownMarkup.match(/data-pricing-final-total/g) || []).length, 1);
 assert.equal((priceBreakdownMarkup.match(/>Total</g) || []).length, 1);
+assert.ok(priceBreakdownMarkup.indexOf("Shipping") < priceBreakdownMarkup.indexOf(">Total"));
 assert.ok(reviewMarkup.includes("disabled=\"\""));
 assert.ok(
   reviewMarkup.includes(

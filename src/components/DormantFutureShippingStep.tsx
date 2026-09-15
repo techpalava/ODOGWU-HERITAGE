@@ -131,8 +131,8 @@ export const DormantFutureShippingStep = ({
   const statusMessage =
     resolution.status === "quote_ready"
       ? isPickup
-        ? "Pickup contact details are complete. Additional Delivery is €0.00."
-        : `Additional Delivery is ready for ${resolution.destinationLabel}.`
+        ? "Pickup contact details are complete. No additional shipping charge applies."
+        : `Shipping is ready for ${resolution.destinationLabel}.`
       : resolution.status === "quote_pending" || resolution.quoteRequired
         ? isOtherDestination
           ? "Shipping to this destination requires a custom quote."
@@ -546,9 +546,10 @@ export const DormantFutureShippingStep = ({
                 </div>
               </>
             )}
+            {isDelivery && (
             <div className="min-w-0 sm:col-span-2">
               <dt className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
-                Additional Delivery
+                Shipping
               </dt>
               <dd className="mt-1 font-mono font-bold text-heritage-green">
                 {resolution.quoteRequired
@@ -558,6 +559,7 @@ export const DormantFutureShippingStep = ({
                     : moneyFromCents(resolution.postEindhovenAdjustmentCents)}
               </dd>
             </div>
+            )}
           </dl>
           {isDelivery &&
             resolution.destinationLabel &&
@@ -594,11 +596,11 @@ export const DormantFutureShippingStep = ({
       </section>
 
       <section className="min-w-0 rounded-2xl border border-heritage-gold/30 bg-heritage-green p-5 text-white shadow-sm sm:p-6">
-        <h3 className="font-serif text-xl font-bold">Price overview</h3>
+        <h3 className="font-serif text-xl font-bold">Cost Breakdown</h3>
         <dl className="mt-4 space-y-3 text-sm">
-          <div className="flex min-w-0 flex-wrap justify-between gap-2">
-            <dt className="min-w-0 break-words">Selected Design Price</dt>
-            <dd className="shrink-0 font-mono font-bold">
+          <div className="flex min-w-0 flex-wrap justify-between gap-2 text-white/80">
+            <dt className="min-w-0 break-words">Order Subtotal</dt>
+            <dd className="shrink-0 font-mono font-medium text-white">
               {selectedDesignPrice === null ? "Pending" : money(selectedDesignPrice)}
             </dd>
           </div>
@@ -606,10 +608,11 @@ export const DormantFutureShippingStep = ({
             Garment construction already includes fabric, tax, Standard Shipping
             to Eindhoven, and sewing.
           </p>
+          {isDelivery && (
           <div className="border-t border-white/15 pt-3">
             <div className="flex min-w-0 flex-wrap justify-between gap-2">
-              <dt className="min-w-0 break-words">Additional Delivery</dt>
-              <dd className="shrink-0 font-mono font-bold">
+              <dt className="min-w-0 break-words text-white/80">Shipping</dt>
+              <dd className="shrink-0 font-mono font-medium text-white">
                 {resolution.quoteRequired
                   ? "Quote required"
                   : resolution.postEindhovenAdjustmentCents === null
@@ -618,9 +621,12 @@ export const DormantFutureShippingStep = ({
               </dd>
             </div>
           </div>
-          <div className="flex min-w-0 flex-wrap justify-between gap-2 border-t border-white/15 pt-3 text-base">
-            <dt className="font-bold">Projected total</dt>
-            <dd className="shrink-0 font-mono font-bold">
+          )}
+          <div className="flex min-w-0 flex-wrap justify-between gap-2 border-t-2 border-white/35 pt-3 text-base">
+            <dt className="font-bold uppercase tracking-wide">
+              {resolution.projectedTotalCents === null ? "Current Subtotal" : "Total"}
+            </dt>
+            <dd className="shrink-0 font-serif text-2xl font-bold sm:text-3xl">
               {resolution.projectedTotalCents === null
                 ? "Available after delivery is resolved"
                 : moneyFromCents(resolution.projectedTotalCents)}

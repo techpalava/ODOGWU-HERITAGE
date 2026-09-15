@@ -1340,9 +1340,11 @@ assert.equal(
   "Pick Up in Eindhoven",
 );
 assert.equal(
-  pickupDelivery.find((line) => line.label === "Additional Delivery")?.detail,
-  "€0.00",
+  pickupDelivery.some((line) => line.label === "Shipping"),
+  false,
+  "pickup must not display a shipping charge",
 );
+assert.equal(pickup.view.costBreakdown?.shipping, null);
 assert.equal(pickup.view.totalLabel, LIVE_ORDER_SUMMARY_TOTAL_LABEL);
 assert.equal(pickup.view.totalStatus, "exact");
 assert.equal(
@@ -1370,11 +1372,26 @@ assert.match(
   /kg/,
 );
 assert.ok(
-  courierDelivery.find((line) => line.label === "Additional Delivery")?.detail,
+  courierDelivery.find((line) => line.label === "Shipping")?.detail,
 );
 assert.notEqual(
-  courierDelivery.find((line) => line.label === "Additional Delivery")?.detail,
+  courierDelivery.find((line) => line.label === "Shipping")?.detail,
   "Custom shipping quote required",
+);
+assert.equal(
+  courier.view.costBreakdown?.shipping?.amountCents,
+  courier.candidateResult.candidate?.pricing.postEindhovenAdjustmentCents,
+  "the mounted Summary reuses the authoritative shipping projection",
+);
+assert.equal(
+  courier.view.costBreakdown?.subtotal.amountCents,
+  courier.candidateResult.candidate?.pricing.selectedDesignTotalCents,
+);
+assert.equal(
+  (courier.view.costBreakdown?.subtotal.amountCents || 0) +
+    (courier.view.costBreakdown?.shipping?.amountCents || 0),
+  courier.view.totalAmountCents,
+  "the mounted Summary only projects the released payable total once",
 );
 assert.equal(courier.view.totalLabel, LIVE_ORDER_SUMMARY_TOTAL_LABEL);
 assert.equal(courier.view.totalStatus, "exact");
@@ -1424,6 +1441,11 @@ assert.notEqual(
   LIVE_ORDER_SUMMARY_TOTAL_LABEL,
 );
 assert.notEqual(candidateUnavailableProjected.totalAmountCents, 6500);
+assert.equal(candidateUnavailableProjected.costBreakdown?.subtotal.amountCents, 6500);
+assert.equal(
+  candidateUnavailableProjected.costBreakdown?.shipping?.amountCents,
+  courier.shippingResolution.postEindhovenAdjustmentCents,
+);
 
 const otherDestination = buildAuthority({
   fabricByGarment: { shirt: fabricA },
@@ -1436,7 +1458,7 @@ assert.match(
   /Sydney|Australia|Other Destination/,
 );
 assert.equal(
-  otherDelivery.find((line) => line.label === "Additional Delivery")?.detail,
+  otherDelivery.find((line) => line.label === "Shipping")?.detail,
   "Custom shipping quote required",
 );
 assert.equal(
@@ -1455,6 +1477,12 @@ assert.notEqual(
 );
 assert.ok(otherDestination.view.totalAmountCents);
 assert.notEqual(otherDestination.view.totalValueLabel, "€0.00");
+assert.equal(otherDestination.view.costBreakdown?.shipping?.amountCents, null);
+assert.equal(
+  otherDestination.view.costBreakdown?.shipping?.valueLabel,
+  "Custom shipping quote required",
+  "unknown shipping remains unknown rather than becoming €0",
+);
 
 const over20kg = projectDesignStudioLiveOrderSummary({
   summary: courier.summary,
@@ -1482,7 +1510,7 @@ assert.equal(over20kg.totalLabel, LIVE_ORDER_SUMMARY_CURRENT_SUBTOTAL_LABEL);
 assert.notEqual(over20kg.totalLabel, LIVE_ORDER_SUMMARY_TOTAL_LABEL);
 assert.equal(
   section(over20kg, "delivery").lines.find(
-    (line) => line.label === "Additional Delivery",
+      (line) => line.label === "Shipping",
   )?.detail,
   "Custom shipping quote required",
 );
@@ -1544,12 +1572,12 @@ const uploadedWithDelivery = projectDesignStudioLiveOrderSummary({
 });
 assert.ok(
   section(uploadedWithDelivery, "delivery").lines.find(
-    (line) => line.label === "Additional Delivery",
+    (line) => line.label === "Shipping",
   )?.detail,
 );
 assert.notEqual(
   section(uploadedWithDelivery, "delivery").lines.find(
-    (line) => line.label === "Additional Delivery",
+    (line) => line.label === "Shipping",
   )?.detail,
   LIVE_ORDER_SUMMARY_PENDING_LABEL,
 );
@@ -1576,7 +1604,7 @@ const uploadedQuote = projectDesignStudioLiveOrderSummary({
 });
 assert.equal(
   section(uploadedQuote, "delivery").lines.find(
-    (line) => line.label === "Additional Delivery",
+    (line) => line.label === "Shipping",
   )?.detail,
   "Custom shipping quote required",
 );

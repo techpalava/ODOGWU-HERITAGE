@@ -8,13 +8,9 @@ import {
 } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type React from "react";
-import { Fragment } from "react";
 import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "../utils/designPriceBreakdownPresentation";
 import type { FutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
-import {
-  getStep8OrderSummaryRows,
-  type FutureShippingStageResolution,
-} from "../utils/designStudioFutureShipping";
+import type { FutureShippingStageResolution } from "../utils/designStudioFutureShipping";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
   formatCustomerFacingFabricCapacityAmount,
@@ -158,6 +154,28 @@ export const DormantFutureSummaryStep = ({
       ? null
       : summary.pricingSummary.garmentConstructionSubtotal +
         summary.pricingSummary.customDetailsExactSubtotal;
+  const orderSubtotal =
+    summary.pricingSummary.status === "exact" &&
+    summary.pricingSummary.selectedDesignPrice
+      ? summary.pricingSummary.selectedDesignPrice.selectedDesignPrice
+      : knownConfirmedPrice;
+  const deliveryMethod = shippingResolution?.state.fulfilmentMethod || null;
+  const isDestinationDelivery = deliveryMethod === "destination_delivery";
+  const shippingAmountCents =
+    shippingResolution?.postEindhovenAdjustmentCents ?? null;
+  const shippingValue = shippingResolution?.quoteRequired
+    ? "Custom shipping quote required"
+    : shippingAmountCents === null
+      ? "Pending"
+      : money(shippingAmountCents / 100);
+  const projectedTotalCents = shippingResolution?.projectedTotalCents ?? null;
+  const totalLabel = projectedTotalCents === null ? "Current Subtotal" : "Total";
+  const totalValue =
+    projectedTotalCents === null
+      ? orderSubtotal === null
+        ? "Pending"
+        : money(orderSubtotal)
+      : money(projectedTotalCents / 100);
   const garmentKeys = new Set(
     summary.garmentSummary.map((garment) => garment.garmentKey),
   );
@@ -581,57 +599,55 @@ export const DormantFutureSummaryStep = ({
         </Section>
       </div>
 
-      <section className="rounded-2xl border border-heritage-gold/30 bg-heritage-green p-5 text-white shadow-sm sm:p-6">
+      <section
+        data-summary-cost-breakdown
+        className="rounded-2xl border border-heritage-gold/30 bg-heritage-green p-5 text-white shadow-sm sm:p-6"
+      >
         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-heritage-gold">
-          Garment Construction Subtotal
+          Cost Breakdown
         </p>
-        <div className="mt-2 flex min-w-0 flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="font-serif text-xl font-bold sm:text-2xl">
-              {summary.pricingSummary.garmentConstructionSubtotal === null
-                ? "Price unavailable"
-                : money(summary.pricingSummary.garmentConstructionSubtotal)}
-            </p>
-            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-white/75">
-              {SELECTED_DESIGN_PRICE_SUPPORTING_TEXT}
-            </p>
-            {summary.pricingSummary.status === "pending" && knownConfirmedPrice !== null && (
-              <p className="mt-3 text-xs leading-relaxed text-white/75">
-                Known priced selections: {money(knownConfirmedPrice)}. This is not a final total.
-              </p>
-            )}
+        <p className="mt-2 max-w-2xl text-xs leading-relaxed text-white/75">
+          {SELECTED_DESIGN_PRICE_SUPPORTING_TEXT}
+        </p>
+        <dl className="mt-4 space-y-2 text-sm">
+          <div className="flex min-w-0 flex-wrap justify-between gap-3 text-white/80">
+            <dt className="min-w-0">Order Subtotal</dt>
+            <dd className="shrink-0 text-right font-mono font-medium text-white">
+              {orderSubtotal === null ? "Pending" : money(orderSubtotal)}
+            </dd>
           </div>
-          <dl className="grid min-w-0 w-full grid-cols-2 gap-x-4 gap-y-1 text-xs sm:w-auto">
-            <dt className="text-white/65">Custom Details</dt>
-            <dd className="text-right font-mono">
-              {summary.pricingSummary.status === "pending"
-                ? "Evaluation required"
-                : money(summary.pricingSummary.customDetailsExactSubtotal)}
+          {deliveryMethod ? (
+            <div className="flex min-w-0 flex-wrap justify-between gap-3 text-white/80">
+              <dt className="min-w-0">Delivery</dt>
+              <dd className="min-w-0 max-w-full break-words text-right">
+                {isDestinationDelivery
+                  ? "Ship to final destination"
+                  : "Pick Up in Eindhoven"}
+              </dd>
+            </div>
+          ) : null}
+          {isDestinationDelivery ? (
+            <div className="flex min-w-0 flex-wrap justify-between gap-3 text-white/80">
+              <dt className="min-w-0">Shipping</dt>
+              <dd className="min-w-0 max-w-full break-words text-right font-mono font-medium text-white">
+                {shippingValue}
+              </dd>
+            </div>
+          ) : null}
+          <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-3 border-t-2 border-white/35 pt-3">
+            <dt className="min-w-0 text-base font-bold uppercase tracking-wide text-white">
+              {totalLabel}
+            </dt>
+            <dd className="shrink-0 text-right font-serif text-2xl font-bold text-white sm:text-3xl">
+              {totalValue}
             </dd>
-            <dt className="text-white/65">Selected Design Total</dt>
-            <dd className="text-right font-mono font-bold">
-              {summary.pricingSummary.status === "exact" &&
-              summary.pricingSummary.selectedDesignPrice
-                ? money(summary.pricingSummary.selectedDesignPrice.selectedDesignPrice)
-                : "Pending"}
-            </dd>
-            {shippingResolution?.state.fulfilmentMethod &&
-              getStep8OrderSummaryRows(shippingResolution).map((row) => (
-                <Fragment key={row.label}>
-                  <dt className="text-white/65">{row.label}</dt>
-                  <dd
-                    className={
-                      row.label === "Additional Delivery"
-                        ? "text-right font-mono font-bold"
-                        : "text-right"
-                    }
-                  >
-                    {row.value}
-                  </dd>
-                </Fragment>
-              ))}
-          </dl>
-        </div>
+          </div>
+        </dl>
+        {summary.pricingSummary.status === "pending" && knownConfirmedPrice !== null && (
+          <p className="mt-3 text-xs leading-relaxed text-white/75">
+            Known priced selections: {money(knownConfirmedPrice)}. This is not a final total.
+          </p>
+        )}
       </section>
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">

@@ -872,9 +872,11 @@ export const getStep8OrderSummaryRows = (
           : `${resolution.parcelWeightKg.toFixed(1)} kg`,
     });
   }
-  rows.push({
-    label: "Additional Delivery",
-    value: formatAdditionalDeliverySummaryValue(resolution),
-  });
+  if (!isPickup) {
+    rows.push({
+      label: "Shipping",
+      value: formatAdditionalDeliverySummaryValue(resolution),
+    });
+  }
   return rows;
 };

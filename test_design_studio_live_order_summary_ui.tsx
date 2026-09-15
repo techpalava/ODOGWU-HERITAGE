@@ -165,6 +165,18 @@ const sampleView: LiveOrderSummaryView = {
   totalValueLabel: "€245.00",
   totalAmountCents: 24500,
   quoteRequired: false,
+  costBreakdown: {
+    subtotal: {
+      label: "Order Subtotal",
+      valueLabel: "€220.00",
+      amountCents: 22000,
+    },
+    shipping: {
+      label: "Shipping",
+      valueLabel: "€25.00",
+      amountCents: 2500,
+    },
+  },
 };
 
 const textOf = (node: { children?: unknown[] } | string | null): string => {
@@ -347,13 +359,37 @@ assert.match(
   renderer.root.findByProps({
     "data-testid": "live-order-summary-total-value",
   }).props.className,
-  /\btext-base\b/,
+  /\btext-xl\b/,
 );
 assert.doesNotMatch(
   renderer.root.findByProps({
     "data-testid": "live-order-summary-total-value",
   }).props.className,
-  /\btext-2xl\b/,
+  /\btext-base\b/,
+);
+assert.equal(
+  textOf(renderer.root.findByProps({
+    "data-testid": "live-order-summary-order-subtotal",
+  })),
+  "Order Subtotal€220.00",
+);
+assert.equal(
+  textOf(renderer.root.findByProps({
+    "data-testid": "live-order-summary-shipping",
+  })),
+  "Shipping€25.00",
+);
+assert.match(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-shipping",
+  }).findByType("dd").props.className,
+  /font-medium/,
+);
+assert.match(
+  renderer.root.findByProps({
+    "data-testid": "live-order-summary-total-value",
+  }).props.className,
+  /font-bold/,
 );
 assert.ok(textOf(renderer.root).includes("Total"));
 assert.ok(textOf(renderer.root).includes("Shirt"));
