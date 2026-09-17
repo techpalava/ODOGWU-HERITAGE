@@ -33,7 +33,7 @@ export const STEP1_GARMENT_REFERENCE_IMAGES: {
   standard_shorts: garmentReferenceImage("ankara-standard-shorts.webp"),
   bum_shorts: garmentReferenceImage("ankara-bum-shorts.webp"),
   dress: garmentReferenceImage("ankara-standard-dress.webp"),
-  kaftan: garmentReferenceImage("ankara-kaftan.webp"),
+    kaftan: garmentReferenceImage("ankara-kaftan-short-sleeve.webp"),
   full_length_gown: garmentReferenceImage("ankara-long-dress-gown-short-sleeve.webp"),
 };
 
@@ -57,7 +57,7 @@ export const STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES: Readonly<
   Partial<Record<Step1DualImageGarmentType, Step1GarmentReferenceImageConfig>>
 > = {
   shirt: garmentReferenceImage("ankara-standard-shirt-long-sleeve.webp"),
-  kaftan: garmentReferenceImage("ankara-kaftan-short-sleeve.webp"),
+  kaftan: garmentReferenceImage("ankara-kaftan.webp"),
   dress: garmentReferenceImage("ankara-standard-dress-long-sleeve.webp"),
   full_length_gown: garmentReferenceImage("ankara-long-dress-gown.webp"),
 };

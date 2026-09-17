@@ -35,7 +35,7 @@ const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const repoRoot = dirname(fileURLToPath(import.meta.url));
 const approvedImageFiles = {
   shirt: "ankara-standard-shirt.webp",
-  kaftan: "ankara-kaftan.webp",
+  kaftan: "ankara-kaftan-short-sleeve.webp",
   dress: "ankara-standard-dress.webp",
   full_length_gown: "ankara-long-dress-gown-short-sleeve.webp",
   standard_shorts: "ankara-standard-shorts.webp",
@@ -46,7 +46,7 @@ const approvedImageFiles = {
 };
 const approvedImageDimensions = {
   shirt: [720, 1080],
-  kaftan: [720, 1080],
+  kaftan: [1024, 1536],
   dress: [720, 1080],
   full_length_gown: [1024, 1536],
   standard_shorts: [720, 1080],
@@ -57,13 +57,13 @@ const approvedImageDimensions = {
 };
 const approvedSecondaryImageFiles = {
   shirt: "ankara-standard-shirt-long-sleeve.webp",
-  kaftan: "ankara-kaftan-short-sleeve.webp",
+  kaftan: "ankara-kaftan.webp",
   dress: "ankara-standard-dress-long-sleeve.webp",
   full_length_gown: "ankara-long-dress-gown.webp",
 } as const;
 const approvedSecondaryImageDimensions = {
   shirt: [1024, 1536],
-  kaftan: [1024, 1536],
+  kaftan: [720, 1080],
   dress: [1024, 1536],
   full_length_gown: [720, 1080],
 } as const;
@@ -206,7 +206,7 @@ assert.equal(isStep1DualImageGarmentType("long_skirt"), false);
 assert.equal(getStep1GarmentSecondaryReferenceImage("shirt")?.filename, "ankara-standard-shirt-long-sleeve.webp");
 assert.equal(
   getStep1GarmentSecondaryReferenceImage("kaftan")?.filename,
-  "ankara-kaftan-short-sleeve.webp",
+  "ankara-kaftan.webp",
 );
 assert.equal(
   emptyMarkup.includes("Skirt length is From Waist Up to Ankle"),
@@ -367,6 +367,32 @@ assert.equal(shirtGalleryImages[0]?.props.src, STEP1_GARMENT_REFERENCE_IMAGES.sh
 assert.equal(
   shirtGalleryImages[1]?.props.src,
   STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES.shirt?.src,
+);
+
+const longShirtGallery = selectableRenderer.root
+  .findByProps({ "data-testid": "step1-garment-card-kaftan" })
+  .findByProps({ "data-testid": "step1-garment-reference-gallery" });
+const longShirtGalleryImages = longShirtGallery.findAllByProps({
+  "data-testid": "step1-garment-reference-image",
+});
+assert.equal(longShirtGalleryImages.length, 2);
+assert.equal(
+  longShirtGalleryImages[0]?.props.src,
+  STEP1_GARMENT_REFERENCE_IMAGES.kaftan.src,
+  "Long Shirt gallery image[0] (left/primary) must be the short-sleeve asset",
+);
+assert.equal(
+  longShirtGalleryImages[0]?.props.src,
+  "/images/garments/ankara-kaftan-short-sleeve.webp",
+);
+assert.equal(
+  longShirtGalleryImages[1]?.props.src,
+  STEP1_GARMENT_SECONDARY_REFERENCE_IMAGES.kaftan?.src,
+  "Long Shirt gallery image[1] (right/secondary) must be the long-sleeve asset",
+);
+assert.equal(
+  longShirtGalleryImages[1]?.props.src,
+  "/images/garments/ankara-kaftan.webp",
 );
 
 const longDressGallery = selectableRenderer.root
