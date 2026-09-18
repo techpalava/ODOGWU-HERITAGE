@@ -43,6 +43,7 @@ import {
   getFutureFabricAllocationGroupChangePresentation,
   getFutureFabricAllocationAssignmentSignature,
   getFutureFabricCatalogueCancelTargets,
+  hasFutureReusableHalfCapacityForFabric,
   isPhysicalFabricQuantityOverAllocated,
   resolveFutureFabricCatalogueCardPresentation,
   type FutureFabricAssignmentResult,
@@ -62,6 +63,7 @@ import {
   createStep1FabricAssignmentDisplaySnapshot,
   evaluateStep1FabricAssignmentSelection,
   getUnassignedStep1FabricAssignmentCandidates,
+  projectPendingStep1FabricStockPresentation,
   resolveStep1AssignmentDialogFabric,
   resolveStep1FabricCatalogueCardPresentation,
   shouldOpenStep1FabricGroupingDialog,
@@ -669,6 +671,20 @@ export const DormantFutureFabricStep = ({
         fabrics,
       })
     : null;
+  const pendingStep1StockPresentation =
+    pendingStep1FabricAssignment && step1AssignmentDialogFabric
+      ? projectPendingStep1FabricStockPresentation({
+          fabric: step1AssignmentDialogFabric.currentFabric || {
+            code: pendingStep1FabricAssignment.displayFabric.fabricCode,
+            stockStatus: pendingStep1FabricAssignment.displayFabric.stockStatus,
+            stock: pendingStep1FabricAssignment.displayFabric.stock,
+          },
+          fabricAllocationState,
+          selectedGarmentKeys: pendingStep1FabricAssignment.selectedGarmentKeys,
+          garmentTypeSelection,
+          fabrics,
+        })
+      : null;
   useEffect(() => {
     const pendingRemoval = pendingRemovalAnnouncementRef.current;
     if (!pendingRemoval) {
@@ -1954,11 +1970,24 @@ export const DormantFutureFabricStep = ({
         targetGarmentLabel={targetGarmentLabel}
         removeTargetGarmentLabel={singleCancelLabel || undefined}
         stockBadgeIdPrefix="future-fabric-stock"
-        stockPresentation={getOrderAwareFabricStockPresentation(
-          fabric,
-          fabricAllocationState,
-          { hasCompatibleReusableHalfCapacity: allowExistingPartialReuse },
-        )}
+        stockPresentation={
+          pendingStep1FabricAssignment?.fabricCode === fabric.code
+            ? projectPendingStep1FabricStockPresentation({
+                fabric,
+                fabricAllocationState,
+                selectedGarmentKeys:
+                  pendingStep1FabricAssignment.selectedGarmentKeys,
+                garmentTypeSelection,
+                fabrics,
+              })
+            : getOrderAwareFabricStockPresentation(fabric, fabricAllocationState, {
+                hasCompatibleReusableHalfCapacity:
+                  hasFutureReusableHalfCapacityForFabric({
+                    fabricAllocationState,
+                    fabricCode: fabric.code,
+                  }) || allowExistingPartialReuse,
+              })
+        }
         stockConstraintMessage={stockConstraintMessage}
         describedBy="future-fabric-catalogue-help future-fabric-assignment-status"
         onAction={(event) => {
@@ -2620,6 +2649,7 @@ export const DormantFutureFabricStep = ({
           candidateMessages={step1AssignmentEvaluation.candidateMessages}
           selectedFailure={step1AssignmentEvaluation.selectedFailure}
           remainingFailure={step1AssignmentEvaluation.remainingFailure}
+          stockPresentation={pendingStep1StockPresentation}
           errorMessage={
             step1AssignmentDialogFabric.unavailableError || step1AssignmentError
           }

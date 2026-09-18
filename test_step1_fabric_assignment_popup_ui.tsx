@@ -1247,4 +1247,74 @@ assert.equal(
   "A disabled candidate must not create a Fabric-level error.",
 );
 
+{
+  const leftoverFabrics: Fabric[] = [
+    {
+      ...fabrics[0]!,
+      stock: 1,
+    },
+    fabrics[1]!,
+  ];
+  let leftoverUiState = FabricAllocationStateEngine.initialize();
+  const leftoverAssign = (fabricCode: string, garmentKeys: string[]) => {
+    const result = assignSameFabricProductToGarments({
+      state: leftoverUiState,
+      garmentTypeSelection: twoSelection,
+      fabricCode,
+      garmentKeys,
+    });
+    if (result.status === "assigned") leftoverUiState = result.state;
+    return result;
+  };
+  let leftoverUiRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    leftoverUiRenderer = create(
+      renderTwoStep(leftoverUiState, leftoverAssign, leftoverFabrics),
+    );
+  });
+  const leftoverSelectCard = leftoverUiRenderer.root
+    .findAllByProps({ "data-fabric-card": "true" })
+    .find((card) => card.props["data-fabric-code"] === "FAB-A");
+  assert.ok(leftoverSelectCard);
+  await act(async () => leftoverSelectCard?.props.onClick({ currentTarget: {} }));
+  await act(async () =>
+    leftoverUiRenderer.update(
+      renderTwoStep(leftoverUiState, leftoverAssign, leftoverFabrics),
+    ),
+  );
+  const leftoverDialog = leftoverUiRenderer.root.findByProps({
+    "data-testid": "step1-fabric-assignment-dialog",
+  });
+  const stockLabel = () =>
+    leftoverUiRenderer.root.findByProps({
+      "data-testid": "step1-fabric-assignment-stock-label",
+    }).props["data-fabric-stock-label"];
+  const originalStockLabel = stockLabel();
+  assert.match(originalStockLabel, /Stock: 1/);
+  await act(async () =>
+    leftoverDialog
+      .findByProps({ "data-step1-fabric-assignment-checkbox": "base:shirt" })
+      .props.onChange({ currentTarget: { checked: true } }),
+  );
+  await act(async () =>
+    leftoverUiRenderer.update(
+      renderTwoStep(leftoverUiState, leftoverAssign, leftoverFabrics),
+    ),
+  );
+  assert.equal(leftoverUiState.fabricAllocations.length, 0);
+  assert.equal(stockLabel(), "1/2 Capacity Left");
+  await act(async () =>
+    leftoverUiRenderer.root
+      .findByProps({ "data-step1-fabric-assignment-checkbox": "base:shirt" })
+      .props.onChange({ currentTarget: { checked: false } }),
+  );
+  await act(async () =>
+    leftoverUiRenderer.update(
+      renderTwoStep(leftoverUiState, leftoverAssign, leftoverFabrics),
+    ),
+  );
+  assert.equal(stockLabel(), originalStockLabel);
+  await act(async () => leftoverUiRenderer.unmount());
+}
+
 console.log("test_step1_fabric_assignment_popup_ui.tsx: all assertions passed");

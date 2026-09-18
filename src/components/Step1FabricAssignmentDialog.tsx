@@ -5,7 +5,10 @@ import type { Fabric } from "../types";
 import { getGarmentTypeStepLabel } from "./GarmentTypeStep";
 import { AssignedFabricPreview } from "./AssignedFabricPreview";
 import { getFabricAvailabilityMessage } from "../utils/fabricCatalogueAvailability";
-import { getFabricStockPresentation } from "../utils/fabricStockPresentation";
+import {
+  getFabricStockPresentation,
+  type FabricStockPresentation,
+} from "../utils/fabricStockPresentation";
 import {
   STEP1_FABRIC_ASSIGNMENT_DESCRIPTION,
   STEP1_FABRIC_ASSIGNMENT_TITLE,
@@ -90,6 +93,7 @@ export const Step1FabricAssignmentDialog = ({
   candidateMessages = {},
   selectedFailure = null,
   remainingFailure = null,
+  stockPresentation: stockPresentationOverride,
   errorMessage,
   onToggleGarmentKey,
   onAssignSelected,
@@ -113,6 +117,7 @@ export const Step1FabricAssignmentDialog = ({
   candidateMessages?: Record<string, string | null>;
   selectedFailure?: Step1FabricAssignmentFailure | null;
   remainingFailure?: Step1FabricAssignmentFailure | null;
+  stockPresentation?: FabricStockPresentation | null;
   errorMessage: string | null;
   onToggleGarmentKey: (garmentKey: string, checked: boolean) => void;
   onAssignSelected: () => void;
@@ -134,9 +139,9 @@ export const Step1FabricAssignmentDialog = ({
   const availabilityMessage = currentFabric
     ? getFabricAvailabilityMessage(currentFabric)
     : null;
-  const stockPresentation = currentFabric
-    ? getFabricStockPresentation(currentFabric)
-    : null;
+  const stockPresentation =
+    stockPresentationOverride ??
+    (currentFabric ? getFabricStockPresentation(currentFabric) : null);
   const isFabricStockError =
     errorMessage === formatFabricStockExhaustedCopy();
   const headerError = fabricLevelError || (isFabricStockError ? errorMessage : null);
@@ -306,7 +311,11 @@ export const Step1FabricAssignmentDialog = ({
                 {fabric.code}
               </p>
               {stockPresentation?.visible && (
-                <p className="mt-1 text-xs font-semibold text-heritage-green">
+                <p
+                  className="mt-1 text-xs font-semibold text-heritage-green"
+                  data-testid="step1-fabric-assignment-stock-label"
+                  data-fabric-stock-label={stockPresentation.label}
+                >
                   {stockPresentation.label}
                 </p>
               )}
