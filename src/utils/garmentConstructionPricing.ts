@@ -70,7 +70,7 @@ export const STEP_1_GARMENT_DISPLAY_LABELS: Readonly<
   standard_shorts: "Standard Nikka Shorts",
   bum_shorts: "Standard Bum Shorts",
   dress: "Standard Dress",
-  kaftan: "Long shirt",
+  kaftan: "Long Shirt",
   full_length_gown: "Long Dress",
   agbada: "Long Shirt (Agbada)",
 };

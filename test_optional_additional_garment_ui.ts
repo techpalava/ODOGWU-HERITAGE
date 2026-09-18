@@ -28,9 +28,9 @@ const composition = [
   { key: "trouser", garmentType: "trouser" as const, fabricUnits: 1 as const },
 ];
 
-assert.equal(getStep1GarmentDisplayLabel("kaftan"), "Long shirt");
+assert.equal(getStep1GarmentDisplayLabel("kaftan"), "Long Shirt");
 assert.equal(getStep1GarmentDisplayLabel("full_length_gown"), "Long Dress");
-assert.equal(getCustomDetailsGarmentLabel("kaftan"), "Long shirt");
+assert.equal(getCustomDetailsGarmentLabel("kaftan"), "Long Shirt");
 assert.equal(getCustomDetailsGarmentLabel("full_length_gown"), "Long Dress");
 assert.equal(
   SEED_CUSTOM_DETAIL_CATALOG.find((option) => option.id === "additional_garment_kaftan")?.label,

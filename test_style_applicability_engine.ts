@@ -113,7 +113,7 @@ const adaptedPresentation = getFutureDesignStyleMatchPresentation({
 assert.equal(adaptedPresentation.tier, "adaptable");
 assert.equal(adaptedPresentation.selectable, true);
 assert.equal(adaptedPresentation.requiresAdaptationConfirmation, true);
-assert.equal(adaptedPresentation.originalCompositionLabel, "Long shirt");
+assert.equal(adaptedPresentation.originalCompositionLabel, "Long Shirt");
 assert.deepEqual(adaptedPresentation.selectedGarmentLabels, [
   "Standard Shirt",
   "Trouser",
@@ -124,7 +124,7 @@ const adaptationCopy = getFutureDesignStyleAdaptationConfirmationCopy({
   style: adaptableKaftan,
 });
 assert.equal(adaptationCopy.title, "Adapt this design to your garments?");
-assert.match(adaptationCopy.body, /Long shirt/);
+assert.match(adaptationCopy.body, /Long Shirt/);
 assert.match(adaptationCopy.body, /Standard Shirt and Trouser/);
 assert.match(
   adaptationCopy.body,
@@ -140,7 +140,7 @@ assert.equal(exactPresentation.selectable, true);
 assert.equal(exactPresentation.requiresAdaptationConfirmation, false);
 assert.equal(
   exactPresentation.originalCompositionLabel,
-  "Long shirt",
+  "Long Shirt",
 );
 
 // E. adaptable style supports only some selected garments → blocked

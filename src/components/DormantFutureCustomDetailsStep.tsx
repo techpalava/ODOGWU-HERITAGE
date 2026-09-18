@@ -237,7 +237,7 @@ const getGarmentFirstLabel = (
 ): string => {
   const parentLabel = getStep1GarmentDisplayLabel(
     occurrence.subject.parentGarmentType,
-  ).replace("Long shirt", "Long Shirt");
+  );
   return occurrence.subject.parentGarmentType === occurrence.subject.garmentType
     ? parentLabel
     : `${parentLabel} - ${getStep1GarmentDisplayLabel(occurrence.subject.garmentType)}`;

@@ -28,7 +28,7 @@ import { resolveLockedGarmentConstructionBridge } from "./src/utils/garmentConst
 const catalog = normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG);
 const expectedGarmentLabels = [
   "Standard Shirt",
-  "Long shirt",
+  "Long Shirt",
   "Standard Dress",
   "Long Dress",
   "Standard Nikka Shorts",
