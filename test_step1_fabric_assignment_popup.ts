@@ -29,6 +29,7 @@ import {
   dryRunAssignFabricProductToStep1GarmentKeys,
   evaluateStep1FabricAssignmentSelection,
   getUnassignedStep1FabricAssignmentCandidates,
+  projectPendingStep1FabricStockPresentation,
   resolveStep1AssignmentDialogFabric,
   resolveStep1FabricCatalogueCardPresentation,
   shouldPromptStep1FabricAssignmentSelection,
@@ -1032,5 +1033,84 @@ assert.deepEqual(assignedKeys(gownUseAllCommit.state).sort(), [
   "base:shirt",
   "base:trouser",
 ]);
+
+{
+  const stockOne = createFabric("FAB-LEFT", "Leftover Preview", 10, { stock: 1 });
+  const pairSelection = createSelection(["shirt", "trouser"]);
+  const original = projectPendingStep1FabricStockPresentation({
+    fabric: stockOne,
+    fabricAllocationState: empty,
+    selectedGarmentKeys: [],
+    garmentTypeSelection: pairSelection,
+    fabrics: [stockOne],
+  });
+  assert.equal(original.visible, true);
+  assert.equal(
+    original.visible ? original.label : null,
+    "Low Stock: 1",
+    "A stock count of 1 still shows remaining inventory before any pending selection.",
+  );
+  const halfSelected = projectPendingStep1FabricStockPresentation({
+    fabric: stockOne,
+    fabricAllocationState: empty,
+    selectedGarmentKeys: ["base:shirt"],
+    garmentTypeSelection: pairSelection,
+    fabrics: [stockOne],
+  });
+  assert.deepEqual(halfSelected, {
+    visible: true,
+    status: "REUSABLE_CAPACITY",
+    label: "1/2 Capacity Left",
+    tone: "in_stock",
+  });
+  assert.equal(empty.fabricAllocations.length, 0, "Pending preview must not persist allocation.");
+  const deselected = projectPendingStep1FabricStockPresentation({
+    fabric: stockOne,
+    fabricAllocationState: empty,
+    selectedGarmentKeys: [],
+    garmentTypeSelection: pairSelection,
+    fabrics: [stockOne],
+  });
+  assert.equal(deselected.visible ? deselected.label : null, original.visible ? original.label : null);
+  const twoHalves = projectPendingStep1FabricStockPresentation({
+    fabric: stockOne,
+    fabricAllocationState: empty,
+    selectedGarmentKeys: ["base:shirt", "base:trouser"],
+    garmentTypeSelection: pairSelection,
+    fabrics: [stockOne],
+  });
+  assert.equal(twoHalves.visible ? twoHalves.label : null, "Out of Stock");
+  const gownSelection = createSelection(["full_length_gown"]);
+  const fullCapacity = projectPendingStep1FabricStockPresentation({
+    fabric: stockOne,
+    fabricAllocationState: empty,
+    selectedGarmentKeys: ["base:full_length_gown"],
+    garmentTypeSelection: gownSelection,
+    fabrics: [stockOne],
+  });
+  assert.equal(fullCapacity.visible ? fullCapacity.label : null, "Out of Stock");
+  const confirmed = commitStep1FabricAssignment({
+    state: empty,
+    garmentTypeSelection: pairSelection,
+    fabrics: [stockOne],
+    fabricCode: stockOne.code,
+    selectedGarmentKeys: ["base:shirt"],
+    mode: "selected",
+  });
+  assert.equal(confirmed.status, "assigned");
+  const afterConfirm = projectPendingStep1FabricStockPresentation({
+    fabric: stockOne,
+    fabricAllocationState: confirmed.state,
+    selectedGarmentKeys: [],
+    garmentTypeSelection: pairSelection,
+    fabrics: [stockOne],
+  });
+  assert.deepEqual(afterConfirm, {
+    visible: true,
+    status: "REUSABLE_CAPACITY",
+    label: "1/2 Capacity Left",
+    tone: "in_stock",
+  });
+}
 
 console.log("test_step1_fabric_assignment_popup.ts: all assertions passed");
