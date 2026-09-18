@@ -406,7 +406,7 @@ await runUploadExtraCase({
 await runUploadExtraCase({
   extra: "kaftan",
   expectedTrouserOrExtraKey: "base:kaftan",
-  expectedLabel: "Long shirt",
+  expectedLabel: "Long Shirt",
   assignmentMode: "assign_to_existing",
 });
 
