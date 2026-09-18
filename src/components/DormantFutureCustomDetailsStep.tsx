@@ -6,7 +6,6 @@ import {
   NECK_DESIGN_SUBCATEGORY_BY_OPTION_ID,
   NECK_DESIGN_SUBCATEGORY_ORDER,
   isCompanionCustomerAdditionalClothesCostGroup,
-  resolveShowAdditionalClothesCosts,
 } from "../config/GarmentDetailsConfig";
 import { formatCustomDetailsGarmentLabel, getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
@@ -31,6 +30,7 @@ import {
   getStep1GarmentReferenceImage,
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
+import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 import type { TraditionalAccessory } from "../utils/decorativePricing";
 import {
   DECORATIVE_FEATURE_DESCRIPTIONS,
@@ -232,6 +232,135 @@ const getSelectedConstructionId = (
       )?.optionId || null
     : null;
 
+const getGarmentFirstLabel = (
+  occurrence: FutureCustomDetailsCatalogueOccurrence,
+): string => {
+  const parentLabel = getStep1GarmentDisplayLabel(
+    occurrence.subject.parentGarmentType,
+  ).replace("Long shirt", "Long Shirt");
+  return occurrence.subject.parentGarmentType === occurrence.subject.garmentType
+    ? parentLabel
+    : `${parentLabel} - ${getStep1GarmentDisplayLabel(occurrence.subject.garmentType)}`;
+};
+
+const getNeckDesignOccurrenceHeading = (
+  occurrence: FutureCustomDetailsCatalogueOccurrence,
+): string => `Neck Design for ${getGarmentFirstLabel(occurrence)}`;
+
+const CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS =
+  "break-words text-sm font-extrabold uppercase tracking-wide";
+
+const CUSTOM_DETAIL_SUBSECTION_HEADING_ROW_CLASS =
+  "flex w-full min-w-0 flex-wrap items-start gap-x-2 gap-y-1.5";
+
+const CUSTOM_DETAIL_SUBSECTION_HEADING_TEXT_CLASS =
+  `max-w-full min-w-[min(100%,max-content)] grow ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS}`;
+
+const CUSTOM_DETAIL_STATUS_BADGE_CLASS =
+  "mt-0.5 shrink-0 rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold";
+
+/** Neck collar columns use 20rem auto-fit. Garment Main/Pocket pairs use the same idea with a slightly smaller floor so two readable columns appear when the container is wide enough, then stack instead of squeezing. */
+const CUSTOM_DETAIL_BALANCED_PAIR_GRID_CLASS =
+  "grid min-w-0 w-full items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr))]";
+
+const CUSTOM_DETAIL_COMPANION_PAIR_GRID_CLASS =
+  "mt-4 grid min-w-0 max-w-full w-full items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr))]";
+
+const CUSTOM_DETAIL_FIELDSET_CLASS =
+  "min-w-0 w-full max-w-full [min-inline-size:0]";
+
+const customDetailOptionCardClassName = (checked: boolean) =>
+  `flex min-h-20 w-full min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${checked ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`;
+
+const getConstructionPresentationPrefix = (
+  occurrence: FutureCustomDetailsCatalogueOccurrence,
+  selectionGroup: CustomDetailSelectionGroup,
+): string | null => {
+  switch (selectionGroup) {
+    case "shirt_construction":
+      return occurrence.subject.parentGarmentType === "kaftan"
+        ? "shirt_long_"
+        : "shirt_std_";
+    case "dress_construction":
+      return occurrence.subject.parentGarmentType === "full_length_gown"
+        ? "dress_long_"
+        : "dress_std_";
+    case "skirt_length":
+      return occurrence.subject.parentGarmentType === "long_skirt"
+        ? "skirt_long"
+        : "skirt_std";
+    default:
+      return null;
+  }
+};
+
+const getGarmentFirstDetailLabel = (
+  selectionGroup: CustomDetailSelectionGroup,
+): string => {
+  switch (selectionGroup) {
+    case "shirt_construction":
+    case "dress_construction":
+    case "standard_shorts_fastening":
+    case "bum_shorts_fastening":
+    case "trouser_fastening":
+    case "skirt_length":
+      return "Main Garment";
+    case "neck_design":
+      return "Neck Design";
+    case "shirt_pockets":
+    case "dress_pockets":
+    case "standard_shorts_pockets":
+    case "bum_shorts_pockets":
+    case "trouser_pockets":
+    case "skirt_pockets":
+      return "Pockets";
+    default:
+      return getParentSectionTitle(selectionGroup, selectionGroup);
+  }
+};
+
+const getMainGarmentFamily = (
+  occurrence: FutureCustomDetailsCatalogueOccurrence,
+  selectionGroup: CustomDetailSelectionGroup,
+): { id: string; title: string } => {
+  if (selectionGroup === "neck_design") {
+    return { id: "neck", title: "NECK DESIGN" };
+  }
+  switch (occurrence.subject.parentGarmentType) {
+    case "shirt":
+    case "kaftan":
+      return { id: "shirts", title: "SHIRTS" };
+    case "dress":
+    case "full_length_gown":
+      return { id: "dresses", title: "DRESSES" };
+    case "skirt":
+    case "long_skirt":
+      return { id: "skirts", title: "SKIRTS" };
+    case "standard_shorts":
+    case "bum_shorts":
+      return { id: "shorts", title: "SHORTS" };
+    case "trouser":
+      return { id: "trouser", title: "TROUSER" };
+    default:
+      return {
+        id: occurrence.subject.parentGarmentKey,
+        title: getGarmentFirstLabel(occurrence).toUpperCase(),
+      };
+  }
+};
+
+const MAIN_GARMENT_FAMILY_PRESENTATION_ORDER: Readonly<Record<string, number>> = {
+  shirts: 10,
+  dresses: 20,
+  neck: 30,
+  trouser: 40,
+  skirts: 50,
+  shorts: 60,
+};
+
+const getMainGarmentFamilyPresentationOrder = (familyId: string): number =>
+  MAIN_GARMENT_FAMILY_PRESENTATION_ORDER[familyId] ?? 100;
+
 export const DormantFutureCustomDetailsStep = ({
   stage = "custom_details",
   reconciliation,
@@ -262,6 +391,8 @@ export const DormantFutureCustomDetailsStep = ({
   onCompleteAdditionalGarmentCustomDetails,
   onCancelAdditionalGarmentCustomDetails,
   onChangeAdditionalGarmentFabric,
+  removalTargets = [],
+  onRequestGarmentRemoval,
   fabrics = [],
   fabricAllocationState = null,
   fabricAnnouncement = "",
@@ -286,10 +417,8 @@ export const DormantFutureCustomDetailsStep = ({
   const nextStageLabel = isPersonalizedAdditionsStage
     ? "AI Try-on"
     : "Personalized Additions";
-  const includeAdditionalClothesCosts = resolveShowAdditionalClothesCosts(
-    showAdditionalClothesCosts,
-  );
   const [overLimitText, setOverLimitText] = useState<Record<string, string>>({});
+  void showAdditionalClothesCosts;
   const [additionalGarmentChoice, setAdditionalGarmentChoice] = useState<
     AdditionalGarmentCustomDetailsRequest & {
     sourceParentGarmentKey: string | null;
@@ -640,13 +769,21 @@ export const DormantFutureCustomDetailsStep = ({
     const selectedConstructionId = group.isConstruction
       ? getSelectedConstructionId(occurrence, group.selectionGroup)
       : null;
+    const constructionPresentationPrefix = getConstructionPresentationPrefix(
+      occurrence,
+      group.selectionGroup,
+    );
+    const presentationOptions = constructionPresentationPrefix
+      ? group.options.filter((option) =>
+          option.id.startsWith(constructionPresentationPrefix),
+        )
+      : group.options;
     const noneSelected = !group.isConstruction && !hasSelection(
       reconciliation.state,
       occurrence.subject.garmentKey,
       group.selectionGroup,
     );
-    const optionCardClassName = (checked: boolean) =>
-      `flex min-h-20 min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-3 text-left transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${checked ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`;
+    const optionCardClassName = customDetailOptionCardClassName;
     const renderOptionCard = (option: CustomDetailOption) => {
       const optionId = `${groupId}-${option.id}`;
       const isPersonalizedRequirement =
@@ -656,7 +793,7 @@ export const DormantFutureCustomDetailsStep = ({
         ? selectedConstructionId === option.id
         : isSelected(reconciliation.state, occurrence.subject.garmentKey, group.selectionGroup, option.id);
       return (
-        <div key={option.id} className="min-w-0">
+        <div key={option.id} className="min-w-0 w-full">
           <label
             htmlFor={optionId}
             className={optionCardClassName(checked)}
@@ -777,7 +914,7 @@ export const DormantFutureCustomDetailsStep = ({
     const renderOptionGrid = (options: readonly CustomDetailOption[]) => (
       <div
         data-custom-detail-option-grid={group.selectionGroup}
-        className={`grid min-w-0 grid-cols-1 items-start gap-2.5${
+        className={`grid min-w-0 w-full grid-cols-1 items-start gap-2.5${
           group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP
             ? " sm:grid-cols-2"
             : ""
@@ -795,7 +932,7 @@ export const DormantFutureCustomDetailsStep = ({
             {!group.isConstruction && renderNoneOption()}
             <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,20rem),1fr))] gap-4">
               {NECK_DESIGN_SUBCATEGORY_ORDER.map((subcategory) => {
-                const options = group.options.filter(
+                const options = presentationOptions.filter(
                   (option) => NECK_DESIGN_SUBCATEGORY_BY_OPTION_ID[option.id] === subcategory,
                 );
                 if (options.length === 0) return null;
@@ -808,37 +945,71 @@ export const DormantFutureCustomDetailsStep = ({
               })}
             </div>
           </>
-        ) : renderOptionGrid(group.options)}
-        {group.options.map(renderPersonalizedRequirementDetail)}
-        {group.options.length === 0 && <p className="text-xs text-heritage-ink/60">No current catalogue options are available.</p>}
+        ) : renderOptionGrid(presentationOptions)}
+        {presentationOptions.map(renderPersonalizedRequirementDetail)}
+        {presentationOptions.length === 0 && <p className="text-xs text-heritage-ink/60">No current catalogue options are available.</p>}
         {groupBlocker && <p className="text-xs text-red-700">{groupBlocker.message}</p>}
       </div>
     );
   };
 
-  const groupCatalogueSections = (
-    groups: readonly FutureCustomDetailsCatalogueGroup[],
-  ) => {
-    const sections = new Map<string, FutureCustomDetailsCatalogueGroup[]>();
-    groups.forEach((group) => {
-      if (group.occurrences.length === 0) return;
-      const title = getParentSectionTitle(group.selectionGroup, group.title);
-      sections.set(title, [...(sections.get(title) || []), group]);
-    });
-    return [...sections.entries()].map(([title, grouped]) => ({ title, groups: grouped }));
-  };
   const mainCoreGroups = useMemo(
     () => partitionCatalogueGroupsByRole(catalogue.coreGroups, "main"),
     [catalogue.coreGroups],
-  );
-  const mainCoreSections = useMemo(
-    () => groupCatalogueSections(mainCoreGroups),
-    [mainCoreGroups],
   );
   const mainAdditionalCostGroups = useMemo(
     () => partitionCatalogueGroupsByRole(catalogue.additionalCostGroups, "main"),
     [catalogue.additionalCostGroups],
   );
+  const collectMainGarmentFamilySections = (
+    groups: readonly FutureCustomDetailsCatalogueGroup[],
+  ) => {
+    const sections = new Map<string, {
+      id: string;
+      title: string;
+      order: number;
+      groups: FutureCustomDetailsCatalogueGroup[];
+    }>();
+    groups.forEach((group) => {
+      group.occurrences.forEach((occurrence) => {
+        const family = getMainGarmentFamily(occurrence, group.selectionGroup);
+        const section = sections.get(family.id) || {
+          ...family,
+          order: getMainGarmentFamilyPresentationOrder(family.id),
+          groups: [],
+        };
+        const existingGroupIndex = section.groups.findIndex(
+          (candidate) => candidate.selectionGroup === group.selectionGroup,
+        );
+        if (existingGroupIndex >= 0) {
+          const existingGroup = section.groups[existingGroupIndex];
+          section.groups[existingGroupIndex] = {
+            ...existingGroup,
+            occurrences: [...existingGroup.occurrences, occurrence],
+          };
+        } else {
+          section.groups.push({ ...group, occurrences: [occurrence] });
+        }
+        sections.set(family.id, section);
+      });
+    });
+    return [...sections.values()].sort(
+      (left, right) =>
+        left.order - right.order || left.id.localeCompare(right.id),
+    );
+  };
+  const mainGarmentSections = useMemo(() => {
+    return collectMainGarmentFamilySections([
+      ...mainCoreGroups,
+      ...mainAdditionalCostGroups,
+    ].map((group) => ({
+      ...group,
+      occurrences: group.occurrences.filter((occurrence) => occurrence.role === "main"),
+    })).filter((group) => group.occurrences.length > 0));
+  }, [
+    mainAdditionalCostGroups,
+    mainCoreGroups,
+  ]);
   const mainPersonalizedGroups = useMemo(
     () => partitionCatalogueGroupsByRole([catalogue.personalizedGroup], "main"),
     [catalogue.personalizedGroup],
@@ -856,42 +1027,31 @@ export const DormantFutureCustomDetailsStep = ({
         : group.isConstruction
           ? "Complete"
           : "Optional";
-  const isDressCatalogueSection = (
-    groups: readonly FutureCustomDetailsCatalogueGroup[],
-  ) =>
-    groups.some(
-      (group) =>
-        group.selectionGroup === "dress_construction" ||
-        group.selectionGroup === "dress_pockets",
-    );
-  const partitionAdditionalCostGroups = (
-    groups: readonly FutureCustomDetailsCatalogueGroup[],
-  ) => {
-    const companionGroups: FutureCustomDetailsCatalogueGroup[] = [];
-    const stackedGroups: FutureCustomDetailsCatalogueGroup[] = [];
-    groups.forEach((group) => {
-      if (isCompanionCustomerAdditionalClothesCostGroup(group.selectionGroup)) {
-        companionGroups.push(group);
-      } else {
-        stackedGroups.push(group);
-      }
-    });
-    return { companionGroups, stackedGroups };
-  };
   const renderGroupFieldset = (
     group: FutureCustomDetailsCatalogueGroup,
     headingMode: "base" | "added",
     layout: "grid" | "stack" = "grid",
+    {
+      legendTitle = group.title,
+      showOccurrenceHeading = true,
+      occurrenceHeading,
+    }: {
+      legendTitle?: string;
+      showOccurrenceHeading?: boolean;
+      occurrenceHeading?: (
+        occurrence: FutureCustomDetailsCatalogueOccurrence,
+      ) => string;
+    } = {},
   ) => (
     <fieldset
-      key={group.selectionGroup}
+      key={`${group.selectionGroup}-${group.occurrences.map((occurrence) => occurrence.subject.garmentKey).join("-")}`}
       data-custom-detail-group={group.selectionGroup}
       data-active-occurrences={group.occurrences.length}
-      className={`min-w-0 ${layout === "grid" && (group.selectionGroup === "neck_design" || group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP) ? "lg:col-span-2" : ""}`}
+      className={`${CUSTOM_DETAIL_FIELDSET_CLASS} ${layout === "grid" && (group.selectionGroup === "neck_design" || group.selectionGroup === PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP) ? "lg:col-span-2" : ""}`}
     >
-      <legend className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wide text-heritage-green">
-        <span className="min-w-0 break-words">{group.title}</span>
-        <span className="rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold">{getGroupStatus(group)}</span>
+      <legend className={`${CUSTOM_DETAIL_SUBSECTION_HEADING_ROW_CLASS} text-heritage-green`}>
+        <span className={CUSTOM_DETAIL_SUBSECTION_HEADING_TEXT_CLASS}>{legendTitle}</span>
+        <span className={CUSTOM_DETAIL_STATUS_BADGE_CLASS}>{getGroupStatus(group)}</span>
       </legend>
       <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">{group.isConstruction ? "Select the all-inclusive construction that applies to this garment." : "Select an option or keep None for this category."}</p>
       <div className="mt-2.5 space-y-4">
@@ -900,11 +1060,16 @@ export const DormantFutureCustomDetailsStep = ({
             key={occurrence.subject.garmentKey}
             className="min-w-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
           >
-            <h4
-              className={`mb-1.5 break-words text-xs font-bold uppercase tracking-wide outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${headingMode === "added" ? "text-heritage-gold" : "text-heritage-green"}`}
-            >
-              {getSubjectLabel(occurrence.subject)} - {headingMode === "added" ? "Added garment" : "Base garment"}
-            </h4>
+            {showOccurrenceHeading ? (
+              <h4
+                data-custom-detail-occurrence={occurrence.subject.garmentKey}
+                className={`mb-1.5 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${headingMode === "added" ? "text-heritage-gold" : "text-heritage-green"}`}
+              >
+                {occurrenceHeading
+                  ? occurrenceHeading(occurrence)
+                  : `${getSubjectLabel(occurrence.subject)} - ${headingMode === "added" ? "Added garment" : "Base garment"}`}
+              </h4>
+            ) : null}
             {renderOptions(group, occurrence)}
           </div>
         ))}
@@ -919,6 +1084,208 @@ export const DormantFutureCustomDetailsStep = ({
       {groups.map((group) => renderGroupFieldset(group, headingMode))}
     </div>
   );
+  const renderMainGarmentSection = ({
+    id,
+    title,
+    groups,
+    headingMode = "base",
+    showFamilyHeader = true,
+  }: {
+    id: string;
+    title: string;
+    groups: readonly FutureCustomDetailsCatalogueGroup[];
+    headingMode?: "base" | "added";
+    showFamilyHeader?: boolean;
+  }) => {
+    const useGarmentOwnedBlocks =
+      id === "shirts" ||
+      id === "dresses" ||
+      id === "skirts" ||
+      id === "trouser" ||
+      id === "shorts";
+    const constructionGroups = groups.filter((group) => group.isConstruction);
+    const pocketsGroups = groups.filter(
+      (group) => getGarmentFirstDetailLabel(group.selectionGroup) === "Pockets",
+    );
+    const companionGroups = groups.filter((group) =>
+      isCompanionCustomerAdditionalClothesCostGroup(group.selectionGroup),
+    );
+    const sharedGroups = groups.filter(
+      (group) =>
+        !group.isConstruction &&
+        getGarmentFirstDetailLabel(group.selectionGroup) !== "Pockets" &&
+        !isCompanionCustomerAdditionalClothesCostGroup(group.selectionGroup),
+    );
+    const garmentBlockOccurrences: FutureCustomDetailsCatalogueOccurrence[] = [];
+    const seenGarmentKeys = new Set<string>();
+    constructionGroups.forEach((group) => {
+      group.occurrences.forEach((occurrence) => {
+        if (seenGarmentKeys.has(occurrence.subject.garmentKey)) return;
+        seenGarmentKeys.add(occurrence.subject.garmentKey);
+        garmentBlockOccurrences.push(occurrence);
+      });
+    });
+    const groupForOccurrence = (
+      candidates: readonly FutureCustomDetailsCatalogueGroup[],
+      garmentKey: string,
+    ) =>
+      candidates.find((group) =>
+        group.occurrences.some(
+          (occurrence) => occurrence.subject.garmentKey === garmentKey,
+        ),
+      );
+    const renderOccurrenceGroup = (
+      group: FutureCustomDetailsCatalogueGroup,
+      occurrence: FutureCustomDetailsCatalogueOccurrence,
+      legendTitle: string,
+      headingMode: "base" | "added" = "base",
+    ) =>
+      renderGroupFieldset(
+        { ...group, occurrences: [occurrence] },
+        headingMode,
+        "grid",
+        {
+          legendTitle,
+          showOccurrenceHeading: false,
+        },
+      );
+    const getGarmentBlockDataProps = (garmentKey: string) => {
+      switch (id) {
+        case "shirts":
+          return { "data-shirt-garment-block": garmentKey };
+        case "dresses":
+          return { "data-dress-garment-block": garmentKey };
+        case "skirts":
+          return { "data-skirt-garment-block": garmentKey };
+        case "trouser":
+          return { "data-trouser-garment-block": garmentKey };
+        case "shorts":
+          return { "data-shorts-garment-block": garmentKey };
+        default:
+          return {};
+      }
+    };
+    const hideDuplicateOccurrenceTitle =
+      garmentBlockOccurrences.length === 1 &&
+      getGarmentFirstLabel(garmentBlockOccurrences[0]).toUpperCase() === title;
+    const ownedBlocks = garmentBlockOccurrences.map((occurrence) => {
+      const constructionGroup = groupForOccurrence(
+        constructionGroups,
+        occurrence.subject.garmentKey,
+      );
+      const pocketsGroup = groupForOccurrence(
+        pocketsGroups,
+        occurrence.subject.garmentKey,
+      );
+      if (!constructionGroup) return null;
+      const showOccurrenceTitle =
+        headingMode === "added" || !hideDuplicateOccurrenceTitle;
+      return (
+        <section
+          key={occurrence.subject.garmentKey}
+          {...getGarmentBlockDataProps(occurrence.subject.garmentKey)}
+          data-custom-detail-occurrence={
+            showOccurrenceTitle ? undefined : occurrence.subject.garmentKey
+          }
+          className="min-w-0 w-full rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 p-3 sm:p-4"
+        >
+          {showOccurrenceTitle ? (
+            <h4
+              data-custom-detail-occurrence={occurrence.subject.garmentKey}
+              className={`border-b border-heritage-gold/20 pb-2 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} ${headingMode === "added" ? "text-heritage-gold" : "text-heritage-green"}`}
+            >
+              {getGarmentFirstLabel(occurrence)}
+            </h4>
+          ) : null}
+          <div
+            className={`${showOccurrenceTitle ? "mt-3 " : ""}${CUSTOM_DETAIL_BALANCED_PAIR_GRID_CLASS}`}
+          >
+            {renderOccurrenceGroup(
+              constructionGroup,
+              occurrence,
+              "Main Garment",
+              headingMode,
+            )}
+            {pocketsGroup
+              ? renderOccurrenceGroup(
+                  pocketsGroup,
+                  occurrence,
+                  `Pocket for ${getGarmentFirstLabel(occurrence)}`,
+                  headingMode,
+                )
+              : null}
+          </div>
+        </section>
+      );
+    });
+
+    const ownedContent =
+      useGarmentOwnedBlocks && constructionGroups.length > 0 ? (
+        <div>
+            {companionGroups.length > 0 ? (
+              <div className="overflow-x-hidden">
+                <div
+                  data-dress-additional-layout="companion"
+                  className={CUSTOM_DETAIL_COMPANION_PAIR_GRID_CLASS}
+                >
+                  <div className="min-w-0 space-y-4">{ownedBlocks}</div>
+                  {renderDressCompanion(companionGroups, headingMode)}
+                </div>
+              </div>
+            ) : (
+            <div className="mt-4 space-y-4">{ownedBlocks}</div>
+          )}
+          {sharedGroups.length > 0 && (
+            <div className="mt-4 grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-2">
+              {sharedGroups.map((group) =>
+                renderGroupFieldset(group, headingMode, "grid", {
+                  legendTitle: getGarmentFirstDetailLabel(group.selectionGroup),
+                  occurrenceHeading:
+                    group.selectionGroup === "neck_design"
+                      ? getNeckDesignOccurrenceHeading
+                      : getGarmentFirstLabel,
+                }),
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="mt-4 grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-2">
+          {groups.map((group) =>
+            renderGroupFieldset(group, headingMode, "grid", {
+            legendTitle: getGarmentFirstDetailLabel(group.selectionGroup),
+            occurrenceHeading:
+              group.selectionGroup === "neck_design"
+                ? getNeckDesignOccurrenceHeading
+                : getGarmentFirstLabel,
+            }),
+          )}
+        </div>
+      );
+
+    if (!showFamilyHeader) {
+      return (
+        <div key={id} className="min-w-0">
+          {ownedContent}
+        </div>
+      );
+    }
+
+    return (
+      <section
+        key={id}
+        data-custom-detail-family-section={id}
+        className={`min-w-0 max-w-full rounded-2xl border border-heritage-gold/35 bg-white p-3 shadow-sm sm:p-4${companionGroups.length > 0 ? " overflow-x-hidden" : ""}`}
+      >
+        <header className="border-b border-heritage-gold/35 pb-2.5">
+          <h3 className="break-words font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">
+            {title}
+          </h3>
+        </header>
+        {ownedContent}
+      </section>
+    );
+  };
   const renderDressCompanion = (
     groups: readonly FutureCustomDetailsCatalogueGroup[],
     headingMode: "base" | "added",
@@ -931,7 +1298,7 @@ export const DormantFutureCustomDetailsStep = ({
         aria-label="Dress additional clothes costs"
         className="min-w-0 max-w-full rounded-xl border border-heritage-gold/25 bg-heritage-cream/30 p-3 sm:p-4"
       >
-        <h4 className="min-w-0 break-words text-sm font-bold uppercase tracking-wide text-heritage-green">
+        <h4 className={`min-w-0 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} text-heritage-green`}>
           Additional Clothes Costs
         </h4>
         <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
@@ -987,7 +1354,7 @@ export const DormantFutureCustomDetailsStep = ({
         {useCompanionLayout ? (
           <div
             data-dress-additional-layout="companion"
-            className="mt-4 grid min-w-0 max-w-full grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start"
+            className={CUSTOM_DETAIL_COMPANION_PAIR_GRID_CLASS}
           >
             <div className="min-w-0 space-y-4">
               {visibleGroups.map((group) => renderGroupFieldset(group, headingMode, "stack"))}
@@ -1134,38 +1501,7 @@ export const DormantFutureCustomDetailsStep = ({
         <div ref={contentRef} className="min-w-0 space-y-4">
           {isCustomDetailsStage && (
           <div data-custom-detail-section="main-garment-details" className="min-w-0 space-y-4">
-            {mainCoreSections.map((section) =>
-              renderCatalogueSection({
-                ...section,
-                companionGroups: isDressCatalogueSection(section.groups)
-                  ? partitionAdditionalCostGroups(mainAdditionalCostGroups).companionGroups
-                  : [],
-              }),
-            )}
-
-            {includeAdditionalClothesCosts && partitionAdditionalCostGroups(mainAdditionalCostGroups).stackedGroups.length > 0 && (
-              <section data-custom-detail-section="additional-clothes-costs" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
-                <header className="border-b border-heritage-gold/35 pb-3"><h3 className="font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Additional Clothes Costs</h3>
-                <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">Optional enhancements apply only to included garment occurrences.</p>
-                </header>
-                <div className="mt-5 space-y-6">
-                  {partitionAdditionalCostGroups(mainAdditionalCostGroups).stackedGroups.map((group) => (
-                    <fieldset key={group.selectionGroup} className="min-w-0 border-t border-heritage-gold/15 pt-4 first:border-0 first:pt-0">
-                      <legend className="flex min-w-0 flex-wrap items-center gap-2 font-serif text-base font-bold text-heritage-green"><span className="min-w-0 break-words">{group.title}</span><span className="rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold">Optional</span></legend>
-                      <p className="mt-1 text-xs text-heritage-ink/60">Available for your included garments.</p>
-                      <div className="mt-3 space-y-4">
-                        {group.occurrences.map((occurrence) => (
-                          <div key={occurrence.subject.garmentKey} className="min-w-0">
-                            <p className="mb-2 break-words text-xs font-bold text-heritage-green">{getSubjectLabel(occurrence.subject)}</p>
-                            {renderOptions(group, occurrence)}
-                          </div>
-                        ))}
-                      </div>
-                    </fieldset>
-                  ))}
-                </div>
-              </section>
-            )}
+            {mainGarmentSections.map(renderMainGarmentSection)}
 
           </div>
           )}
@@ -1237,8 +1573,10 @@ export const DormantFutureCustomDetailsStep = ({
                     "additional",
                     garment.garmentKey,
                   );
-                  const additionalSections = groupCatalogueSections(additionalCoreGroups);
-                  const additionalCostPresentation = partitionAdditionalCostGroups(additionalCostGroups);
+                  const additionalOwnedSections = collectMainGarmentFamilySections([
+                    ...additionalCoreGroups,
+                    ...additionalCostGroups,
+                  ]);
                   return (
                     <div
                       key={garment.garmentKey}
@@ -1266,6 +1604,25 @@ export const DormantFutureCustomDetailsStep = ({
                         >
                           {getCustomDetailsGarmentLabel(garment.garmentType)} - Added garment
                         </h4>
+                        {isPersonalizedAdditionsStage && removalTargets.length > 0
+                          ? removalTargets
+                              .filter((target) => target.garmentKey === garment.garmentKey)
+                              .map((target) => (
+                                <button
+                                  key={target.garmentKey}
+                                  type="button"
+                                  disabled={!target.canRequestRemoval}
+                                  aria-label={target.accessibleName}
+                                  data-garment-removal-button={target.garmentKey}
+                                  onClick={(event) => {
+                                    onRequestGarmentRemoval?.(target, event.currentTarget);
+                                  }}
+                                  className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+                                >
+                                  Remove
+                                </button>
+                              ))
+                          : null}
                       </div>
                       {(() => {
                         const assigned = getAssignedFabricForGarment(garment.garmentKey);
@@ -1347,31 +1704,12 @@ export const DormantFutureCustomDetailsStep = ({
                           </div>
                         );
                       })()}
-                      {additionalSections.map((section) => renderCatalogueSection({
-                        ...section,
-                        headingMode: "added",
-                        companionGroups: isDressCatalogueSection(section.groups)
-                          ? additionalCostPresentation.companionGroups
-                          : [],
-                      }))}
-                      {includeAdditionalClothesCosts && additionalCostPresentation.stackedGroups.length > 0 && (
-                        <div className="space-y-4">
-                          {additionalCostPresentation.stackedGroups.map((group) => (
-                            <fieldset key={group.selectionGroup} className="min-w-0">
-                              <legend className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wide text-heritage-green">
-                                <span className="min-w-0 break-words">{group.title}</span>
-                                <span className="rounded-full border border-heritage-gold/30 bg-heritage-cream/55 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-heritage-gold">Optional</span>
-                              </legend>
-                              <div className="mt-3 space-y-4">
-                                {group.occurrences.map((occurrence) => (
-                                  <div key={occurrence.subject.garmentKey} className="min-w-0">
-                                    {renderOptions(group, occurrence)}
-                                  </div>
-                                ))}
-                              </div>
-                            </fieldset>
-                          ))}
-                        </div>
+                      {additionalOwnedSections.map((section) =>
+                        renderMainGarmentSection({
+                          ...section,
+                          headingMode: "added",
+                          showFamilyHeader: false,
+                        }),
                       )}
                       {additionalPersonalizedGroups.length > 0 && renderCatalogueSection({
                         title: "Miscellaneous - Personalized Additional",

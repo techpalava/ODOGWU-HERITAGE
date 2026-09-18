@@ -785,8 +785,11 @@ const companion = dressRenderer.root.findByProps({
 const companionLayout = dressRenderer.root.findByProps({
   "data-dress-additional-layout": "companion",
 });
-assert.match(String(companionLayout.props.className), /grid-cols-1/);
-assert.match(String(companionLayout.props.className), /lg:grid-cols-2/);
+assert.match(String(companionLayout.props.className), /auto-fit/);
+assert.match(
+  String(companionLayout.props.className),
+  /minmax\(min\(100%,24rem\),1fr\)/,
+);
 assert.match(String(companionLayout.props.className), /min-w-0/);
 assert.match(
   String(companionLayout.parent?.props.className || ""),

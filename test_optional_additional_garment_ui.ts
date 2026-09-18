@@ -383,7 +383,7 @@ assert.match(
 );
 assert.match(
   customDetailsSource,
-  /includeAdditionalClothesCosts && partitionAdditionalCostGroups\(mainAdditionalCostGroups\)\.stackedGroups\.length > 0/,
+  /visibleGroups\.length === 0\) return null/,
   "an empty relevance projection must not render an Additional Clothes Costs placeholder",
 );
 assert.match(

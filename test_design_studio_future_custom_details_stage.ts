@@ -574,6 +574,1398 @@ if (neckLayoutPricing.status === "exact") {
   );
 }
 
+const garmentFirstCatalogue = projectFutureCustomDetailsCatalogue({
+  garmentTypeSelection,
+  reconciliation: selected,
+  activeOptions: catalogInspection.activeOptions,
+  additionalGarments: [],
+});
+const garmentFirstInputs = reconcileGarmentScopedPersonalizedInputs({
+  reconciliation: selected,
+  catalogInspection,
+  existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
+});
+const garmentFirstCompletion = validateGarmentScopedCustomDetailsCompletion({
+  earlierStagesComplete: true,
+  reconciliation: selected,
+  personalizedInputs: garmentFirstInputs,
+});
+const garmentFirstPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: selected,
+  catalogInspection,
+});
+const garmentFirstConstructionEvents: Array<[
+  string,
+  string,
+  string,
+  string,
+]> = [];
+const garmentFirstSelectionEvents: Array<[string, string, string]> = [];
+let garmentFirstRenderer!: ReturnType<typeof create>;
+act(() => {
+  garmentFirstRenderer = create(
+    createElement(DormantFutureCustomDetailsStep, {
+      stage: "custom_details",
+      reconciliation: selected,
+      catalogue: garmentFirstCatalogue,
+      personalizedInputs: garmentFirstInputs.state,
+      completion: garmentFirstCompletion,
+      pricing: garmentFirstPricing,
+      orderLevelCustomDetailsPrice: 0,
+      constructionBreakdown: { status: "complete", rows: [] },
+      constructionSubtotal: 140,
+      designSelections: {},
+      selectedStyle: null,
+      additionalGarments: [],
+      additionalGarmentConstructionOptions: [],
+      onSingleSelect: (garmentKey, selectionGroup, optionId) => {
+        garmentFirstSelectionEvents.push([garmentKey, selectionGroup, optionId]);
+      },
+      onClearSelection: () => undefined,
+      onConstructionSelect: (
+        parentGarmentKey,
+        garmentType,
+        selectionGroup,
+        optionId,
+      ) => {
+        garmentFirstConstructionEvents.push([
+          parentGarmentKey,
+          garmentType,
+          selectionGroup,
+          optionId,
+        ]);
+      },
+      onToggleMultiSelect: () => undefined,
+      onPersonalizedTextChange: () => undefined,
+      onDecorativeFeatureToggle: () => undefined,
+      onClearDecorativeFeatures: () => undefined,
+      onMonogramPlacementChange: () => undefined,
+      onAccessoryToggle: () => undefined,
+      onClearAccessories: () => undefined,
+      onAddAdditionalGarment: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    }),
+  );
+});
+const shirtsSection = garmentFirstRenderer.root.findByProps({
+  "data-custom-detail-family-section": "shirts",
+});
+const groupInGarmentSection = (
+  section: ReactTestInstance,
+  selectionGroup: string,
+) => section.findByProps({ "data-custom-detail-group": selectionGroup });
+const optionInOccurrenceGroup = (
+  occurrence: ReactTestInstance,
+  label: string,
+) => occurrence
+  .findAllByType("label")
+  .find((candidate) => textContent(candidate).includes(label));
+
+assert.match(textContent(shirtsSection), /SHIRTS/);
+assert.equal(
+  garmentFirstRenderer.root.findAllByProps({
+    "data-custom-detail-family-section": "shirts",
+  }).length,
+  1,
+  "Step 4 renders exactly one Shirts family card",
+);
+assert.equal(
+  garmentFirstRenderer.root.findAllByProps({
+    "data-custom-detail-garment-section": "base:shirt",
+  }).length,
+  0,
+  "Standard Shirt is not a separate customer-facing card",
+);
+assert.equal(
+  garmentFirstRenderer.root.findAllByProps({
+    "data-custom-detail-garment-section": "base:kaftan",
+  }).length,
+  0,
+  "Long Shirt is not a separate customer-facing card",
+);
+const standardShirtBlock = shirtsSection.findByProps({
+  "data-shirt-garment-block": "base:shirt",
+});
+const longShirtBlock = shirtsSection.findByProps({
+  "data-shirt-garment-block": "base:kaftan",
+});
+assert.equal(
+  shirtsSection.findAllByProps({ "data-shirt-garment-block": "base:shirt" }).length,
+  1,
+  "the Shirts card contains one Standard Shirt garment block",
+);
+assert.equal(
+  shirtsSection.findAllByProps({ "data-shirt-garment-block": "base:kaftan" }).length,
+  1,
+  "the Shirts card contains one Long Shirt garment block",
+);
+const standardConstruction = groupInGarmentSection(
+  standardShirtBlock,
+  "shirt_construction",
+);
+const longConstruction = groupInGarmentSection(
+  longShirtBlock,
+  "shirt_construction",
+);
+assert.match(textContent(standardShirtBlock), /Standard Shirt/);
+assert.match(textContent(standardConstruction), /Main Garment/);
+assert.match(textContent(standardConstruction), /Standard Length Shirt, Short Sleeve/);
+assert.match(textContent(standardConstruction), /Standard Length Shirt, Mid-Long Sleeve/);
+assert.doesNotMatch(textContent(standardConstruction), /Long Length Shirt/);
+assert.match(textContent(longShirtBlock), /Long Shirt/);
+assert.match(textContent(longConstruction), /Main Garment/);
+assert.match(textContent(longConstruction), /Long Length Shirt, Short Sleeve/);
+assert.match(textContent(longConstruction), /Long Length Shirt, Mid-Long Sleeve/);
+assert.doesNotMatch(textContent(longConstruction), /Standard Length Shirt/);
+assert.equal(
+  optionInOccurrenceGroup(
+    standardConstruction,
+    "Standard Length Shirt, Short Sleeve",
+  )?.findByType("input").props.checked,
+  true,
+  "the authoritative Standard Shirt default remains selected",
+);
+assert.equal(
+  optionInOccurrenceGroup(
+    longConstruction,
+    "Long Length Shirt, Mid-Long Sleeve",
+  )?.findByType("input").props.checked,
+  true,
+  "the authoritative Long Shirt default remains selected",
+);
+const standardAlternative = optionInOccurrenceGroup(
+  standardConstruction,
+  "Standard Length Shirt, Mid-Long Sleeve",
+);
+assert.ok(standardAlternative);
+assert.equal(standardAlternative.findByType("input").props.disabled, undefined);
+assert.match(
+  String(standardAlternative.findByType("input").props.id),
+  /^future-custom-detail-base:shirt-shirt_construction-/,
+  "the Standard Shirt construction control retains its exact occurrence identity",
+);
+act(() => {
+  standardAlternative.findByType("input").props.onChange();
+});
+assert.deepEqual(garmentFirstConstructionEvents, [[
+  "base:shirt",
+  "shirt",
+  "shirt_construction",
+  "shirt_std_midlong",
+]]);
+
+const neckSection = garmentFirstRenderer.root.findByProps({
+  "data-custom-detail-family-section": "neck",
+});
+const shirtNeckGroup = groupInGarmentSection(neckSection, "neck_design");
+assert.equal(
+  neckSection.findAllByProps({ "data-custom-detail-group": "neck_design" }).length,
+  1,
+  "Neck Design renders exactly once in its shared section after Shirts",
+);
+assert.match(textContent(shirtNeckGroup), /Neck Design/);
+const standardNeckHeading = shirtNeckGroup.findByProps({
+  "data-custom-detail-occurrence": "base:shirt",
+});
+const longNeckHeading = shirtNeckGroup.findByProps({
+  "data-custom-detail-occurrence": "base:kaftan",
+});
+assert.equal(
+  textContent(standardNeckHeading).trim(),
+  "Neck Design for Standard Shirt",
+  "Standard Shirt Neck Design heading derives from its Main Garment label",
+);
+assert.equal(
+  textContent(longNeckHeading).trim(),
+  "Neck Design for Long Shirt",
+  "Long Shirt Neck Design heading derives from its Main Garment label",
+);
+assert.doesNotMatch(textContent(shirtNeckGroup), /^Standard Shirt$/m);
+assert.doesNotMatch(textContent(shirtNeckGroup), /^Long Shirt$/m);
+const longNeck = shirtNeckGroup.findByProps({
+  "data-custom-detail-occurrence": "base:kaftan",
+}).parent!;
+const longNeckOption = optionInOccurrenceGroup(
+  longNeck,
+  "Vertical Collar, Round Neck",
+);
+assert.ok(longNeckOption);
+act(() => {
+  longNeckOption.findByType("input").props.onChange();
+});
+assert.deepEqual(garmentFirstSelectionEvents, [[
+  "base:kaftan",
+  "neck_design",
+  longNeckOption.findByType("input").props.id.replace(
+    "future-custom-detail-base:kaftan-neck_design-",
+    "",
+  ),
+]]);
+
+assert.equal(
+  standardShirtBlock.findAllByProps({ "data-custom-detail-group": "shirt_pockets" }).length,
+  1,
+  "Standard Shirt pockets render inside the Standard Shirt garment block",
+);
+assert.equal(
+  longShirtBlock.findAllByProps({ "data-custom-detail-group": "shirt_pockets" }).length,
+  1,
+  "Long Shirt pockets render inside the Long Shirt garment block",
+);
+assert.equal(
+  shirtsSection.findAllByProps({ "data-custom-detail-group": "shirt_pockets" }).length,
+  2,
+  "no shared top-level Pockets fieldset renders outside the garment blocks",
+);
+const standardPockets = groupInGarmentSection(
+  standardShirtBlock,
+  "shirt_pockets",
+);
+const longPockets = groupInGarmentSection(longShirtBlock, "shirt_pockets");
+assert.match(textContent(standardPockets), /Pocket for Standard Shirt/);
+assert.match(textContent(longPockets), /Pocket for Long Shirt/);
+assert.match(textContent(standardPockets), /With 1 Chest Pocket/);
+assert.match(textContent(longPockets), /With 1 Chest Pocket/);
+assert.doesNotMatch(textContent(standardPockets), /Long Shirt/);
+assert.doesNotMatch(textContent(longPockets), /Standard Shirt/);
+const standardPocketOption = optionInOccurrenceGroup(
+  standardPockets,
+  "With 1 Chest Pocket",
+);
+assert.ok(standardPocketOption, "Standard Shirt pocket choices remain visible");
+assert.match(
+  String(standardPocketOption.findByType("input").props.id),
+  /^future-custom-detail-base:shirt-shirt_pockets-/,
+  "the Standard Shirt pocket control retains its exact occurrence identity",
+);
+const longPocketOption = optionInOccurrenceGroup(
+  longPockets,
+  "With 1 Chest Pocket",
+);
+assert.ok(longPocketOption, "Long Shirt pocket choices remain visible");
+assert.equal(longPocketOption.findByType("input").props.disabled, undefined);
+assert.match(
+  String(longPocketOption.findByType("input").props.id),
+  /^future-custom-detail-base:kaftan-shirt_pockets-/,
+  "the Long Shirt pocket control retains its exact occurrence identity",
+);
+act(() => {
+  longPocketOption.findByType("input").props.onChange();
+});
+assert.deepEqual(garmentFirstSelectionEvents[1], [
+  "base:kaftan",
+  "shirt_pockets",
+  "shirt_pocket_1",
+]);
+assert.equal(garmentFirstPricing.status, "exact");
+if (garmentFirstPricing.status === "exact") {
+  assert.equal(garmentFirstPricing.subtotalCents, 0);
+  assert.deepEqual(
+    garmentFirstPricing.lines.map((line) => line.garmentKey).sort(),
+    ["base:kaftan", "base:shirt"],
+    "garment-first presentation leaves authoritative price occurrences unchanged",
+  );
+}
+act(() => garmentFirstRenderer.unmount());
+
+const renderFutureCustomDetailsStage = ({
+  reconciliation,
+  catalogue,
+  personalizedInputs,
+  completion,
+  pricing,
+  constructionEvents,
+  selectionEvents,
+}: {
+  reconciliation: typeof selected;
+  catalogue: ReturnType<typeof projectFutureCustomDetailsCatalogue>;
+  personalizedInputs: ReturnType<typeof reconcileGarmentScopedPersonalizedInputs>["state"];
+  completion: ReturnType<typeof validateGarmentScopedCustomDetailsCompletion>;
+  pricing: ReturnType<typeof calculateGarmentScopedCustomDetailsPricing>;
+  constructionEvents: Array<[string, string, string, string]>;
+  selectionEvents: Array<[string, string, string]>;
+}) =>
+  create(
+    createElement(DormantFutureCustomDetailsStep, {
+      stage: "custom_details",
+      reconciliation,
+      catalogue,
+      personalizedInputs,
+      completion,
+      pricing,
+      orderLevelCustomDetailsPrice: 0,
+      constructionBreakdown: { status: "complete", rows: [] },
+      constructionSubtotal: 0,
+      designSelections: {},
+      selectedStyle: null,
+      additionalGarments: [],
+      additionalGarmentConstructionOptions: [],
+      onSingleSelect: (garmentKey, selectionGroup, optionId) => {
+        selectionEvents.push([garmentKey, selectionGroup, optionId]);
+      },
+      onClearSelection: () => undefined,
+      onConstructionSelect: (
+        parentGarmentKey,
+        garmentType,
+        selectionGroup,
+        optionId,
+      ) => {
+        constructionEvents.push([
+          parentGarmentKey,
+          garmentType,
+          selectionGroup,
+          optionId,
+        ]);
+      },
+      onToggleMultiSelect: () => undefined,
+      onPersonalizedTextChange: () => undefined,
+      onDecorativeFeatureToggle: () => undefined,
+      onClearDecorativeFeatures: () => undefined,
+      onMonogramPlacementChange: () => undefined,
+      onAccessoryToggle: () => undefined,
+      onClearAccessories: () => undefined,
+      onAddAdditionalGarment: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    }),
+  );
+
+const dressOwnedGarmentTypeSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["dress", "full_length_gown"],
+  selectedDemographic: "female",
+  normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+}).selection;
+const dressOwnedReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: dressOwnedGarmentTypeSelection,
+  catalogInspection,
+  existingState: createEmptyGarmentScopedCustomDetailsState(),
+});
+assert.deepEqual(
+  dressOwnedReconciliation.subjects.map((subject) => [
+    subject.garmentKey,
+    subject.parentGarmentKey,
+    subject.parentGarmentType,
+  ]),
+  [
+    ["base:dress", "base:dress", "dress"],
+    ["base:full_length_gown", "base:full_length_gown", "full_length_gown"],
+  ],
+  "Dress presentation keeps Standard and Long Dress as independent occurrences",
+);
+const dressOwnedInputs = reconcileGarmentScopedPersonalizedInputs({
+  reconciliation: dressOwnedReconciliation,
+  catalogInspection,
+  existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
+});
+const dressOwnedCatalogue = projectFutureCustomDetailsCatalogue({
+  garmentTypeSelection: dressOwnedGarmentTypeSelection,
+  reconciliation: dressOwnedReconciliation,
+  activeOptions: catalogInspection.activeOptions,
+  additionalGarments: [],
+});
+assert.deepEqual(
+  dressOwnedCatalogue.coreGroups
+    .find((group) => group.selectionGroup === "dress_construction")
+    ?.options.map((option) => option.id),
+  [
+    "dress_std_sleeveless",
+    "dress_std_short",
+    "dress_std_midlong",
+    "dress_long_sleeveless",
+    "dress_long_short",
+    "dress_long_midlong",
+  ],
+  "Dress construction eligibility remains the full authoritative option set",
+);
+assert.deepEqual(
+  dressOwnedCatalogue.coreGroups
+    .find((group) => group.selectionGroup === "dress_pockets")
+    ?.options.map((option) => option.id),
+  ["dress_pocket_1", "dress_pocket_multi", "dress_pocket_0"],
+  "Dress pocket eligibility remains the full authoritative option set",
+);
+const dressOwnedCompletion = validateGarmentScopedCustomDetailsCompletion({
+  earlierStagesComplete: true,
+  reconciliation: dressOwnedReconciliation,
+  personalizedInputs: dressOwnedInputs,
+});
+const dressOwnedPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: dressOwnedReconciliation,
+  catalogInspection,
+});
+const dressOwnedConstructionEvents: Array<[string, string, string, string]> = [];
+const dressOwnedSelectionEvents: Array<[string, string, string]> = [];
+let dressOwnedRenderer!: ReturnType<typeof create>;
+act(() => {
+  dressOwnedRenderer = renderFutureCustomDetailsStage({
+    reconciliation: dressOwnedReconciliation,
+    catalogue: dressOwnedCatalogue,
+    personalizedInputs: dressOwnedInputs.state,
+    completion: dressOwnedCompletion,
+    pricing: dressOwnedPricing,
+    constructionEvents: dressOwnedConstructionEvents,
+    selectionEvents: dressOwnedSelectionEvents,
+  });
+});
+const dressesOwnedSection = dressOwnedRenderer.root.findByProps({
+  "data-custom-detail-family-section": "dresses",
+});
+assert.equal(
+  dressOwnedRenderer.root.findAllByProps({
+    "data-custom-detail-family-section": "dresses",
+  }).length,
+  1,
+  "Step 4 renders exactly one Dresses family section for a Dress-only order",
+);
+const standardDressOwnedBlock = dressesOwnedSection.findByProps({
+  "data-dress-garment-block": "base:dress",
+});
+const longDressOwnedBlock = dressesOwnedSection.findByProps({
+  "data-dress-garment-block": "base:full_length_gown",
+});
+assert.equal(
+  dressesOwnedSection.findAllByProps({
+    "data-dress-garment-block": "base:dress",
+  }).length,
+  1,
+  "the Dresses card contains one Standard Dress garment block",
+);
+assert.equal(
+  dressesOwnedSection.findAllByProps({
+    "data-dress-garment-block": "base:full_length_gown",
+  }).length,
+  1,
+  "the Dresses card contains one Long Dress garment block",
+);
+const standardDressOwnedConstruction = groupInGarmentSection(
+  standardDressOwnedBlock,
+  "dress_construction",
+);
+const longDressOwnedConstruction = groupInGarmentSection(
+  longDressOwnedBlock,
+  "dress_construction",
+);
+assert.match(textContent(standardDressOwnedBlock), /Standard Dress/);
+assert.match(textContent(standardDressOwnedConstruction), /Main Garment/);
+assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Sleeveless \/ Over Shoulder/);
+assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Short Sleeve/);
+assert.match(textContent(standardDressOwnedConstruction), /Standard Length, Mid \(3-Quarter\) \/ Long Sleeve/);
+assert.doesNotMatch(textContent(standardDressOwnedConstruction), /Long Length/);
+assert.match(textContent(longDressOwnedBlock), /Long Dress/);
+assert.match(textContent(longDressOwnedConstruction), /Main Garment/);
+assert.match(textContent(longDressOwnedConstruction), /Long Length, Sleeveless \/ Over Shoulder/);
+assert.match(textContent(longDressOwnedConstruction), /Long Length, Short Sleeve/);
+assert.match(textContent(longDressOwnedConstruction), /Long Length, Mid \(3-Quarter\) \/ Long Sleeve/);
+assert.doesNotMatch(textContent(longDressOwnedConstruction), /Standard Length/);
+assert.equal(
+  optionInOccurrenceGroup(
+    standardDressOwnedConstruction,
+    "Standard Length, Sleeveless / Over Shoulder",
+  )?.findByType("input").props.checked,
+  true,
+  "the authoritative Standard Dress default remains selected",
+);
+assert.equal(
+  optionInOccurrenceGroup(
+    longDressOwnedConstruction,
+    "Long Length, Short Sleeve",
+  )?.findByType("input").props.checked,
+  true,
+  "the authoritative Long Dress default remains selected",
+);
+const standardDressAlternative = optionInOccurrenceGroup(
+  standardDressOwnedConstruction,
+  "Standard Length, Short Sleeve",
+);
+assert.ok(standardDressAlternative);
+assert.equal(standardDressAlternative.findByType("input").props.disabled, undefined);
+assert.match(
+  String(standardDressAlternative.findByType("input").props.id),
+  /^future-custom-detail-base:dress-dress_construction-dress_std_/,
+  "the Standard Dress construction control retains its exact occurrence identity",
+);
+act(() => {
+  standardDressAlternative.findByType("input").props.onChange();
+});
+assert.deepEqual(dressOwnedConstructionEvents, [[
+  "base:dress",
+  "dress",
+  "dress_construction",
+  "dress_std_short",
+]]);
+assert.equal(
+  standardDressOwnedBlock.findAllByProps({ "data-custom-detail-group": "dress_pockets" }).length,
+  1,
+  "Standard Dress pockets render inside the Standard Dress garment block",
+);
+assert.equal(
+  longDressOwnedBlock.findAllByProps({ "data-custom-detail-group": "dress_pockets" }).length,
+  1,
+  "Long Dress pockets render inside the Long Dress garment block",
+);
+assert.equal(
+  dressesOwnedSection.findAllByProps({ "data-custom-detail-group": "dress_pockets" }).length,
+  2,
+  "no shared Dress pocket fieldset renders outside the garment blocks",
+);
+const standardDressOwnedPockets = groupInGarmentSection(
+  standardDressOwnedBlock,
+  "dress_pockets",
+);
+const longDressOwnedPockets = groupInGarmentSection(
+  longDressOwnedBlock,
+  "dress_pockets",
+);
+assert.match(textContent(standardDressOwnedPockets), /Pocket for Standard Dress/);
+assert.match(textContent(longDressOwnedPockets), /Pocket for Long Dress/);
+assert.match(textContent(standardDressOwnedPockets), /With 1 Side Pocket/);
+assert.match(textContent(longDressOwnedPockets), /With 1 Side Pocket/);
+assert.doesNotMatch(textContent(standardDressOwnedPockets), /Long Dress/);
+assert.doesNotMatch(textContent(longDressOwnedPockets), /Standard Dress/);
+const longDressPocketOption = optionInOccurrenceGroup(
+  longDressOwnedPockets,
+  "With 1 Side Pocket",
+);
+assert.ok(longDressPocketOption, "Long Dress pocket choices remain visible");
+assert.equal(longDressPocketOption.findByType("input").props.disabled, undefined);
+assert.match(
+  String(longDressPocketOption.findByType("input").props.id),
+  /^future-custom-detail-base:full_length_gown-dress_pockets-/,
+  "the Long Dress pocket control retains its exact occurrence identity",
+);
+act(() => {
+  longDressPocketOption.findByType("input").props.onChange();
+});
+assert.deepEqual(dressOwnedSelectionEvents, [[
+  "base:full_length_gown",
+  "dress_pockets",
+  "dress_pocket_1",
+]]);
+assert.equal(dressOwnedPricing.status, "exact");
+if (dressOwnedPricing.status === "exact") {
+  assert.equal(dressOwnedPricing.subtotalCents, 0);
+  assert.deepEqual(
+    dressOwnedReconciliation.subjects.map((subject) => subject.garmentKey),
+    ["base:dress", "base:full_length_gown"],
+    "Dress presentation leaves authoritative occurrence identity unchanged",
+  );
+}
+act(() => dressOwnedRenderer.unmount());
+
+const skirtOwnedGarmentTypeSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["skirt", "long_skirt"],
+  selectedDemographic: "female",
+  normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+}).selection;
+const skirtOwnedReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: skirtOwnedGarmentTypeSelection,
+  catalogInspection,
+  existingState: createEmptyGarmentScopedCustomDetailsState(),
+});
+assert.deepEqual(
+  skirtOwnedReconciliation.subjects.map((subject) => [
+    subject.garmentKey,
+    subject.parentGarmentKey,
+    subject.parentGarmentType,
+  ]),
+  [
+    ["base:skirt", "base:skirt", "skirt"],
+    ["base:long_skirt", "base:long_skirt", "long_skirt"],
+  ],
+  "Skirt presentation keeps Standard and Long Skirt as independent occurrences",
+);
+const skirtOwnedInputs = reconcileGarmentScopedPersonalizedInputs({
+  reconciliation: skirtOwnedReconciliation,
+  catalogInspection,
+  existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
+});
+const skirtOwnedCatalogue = projectFutureCustomDetailsCatalogue({
+  garmentTypeSelection: skirtOwnedGarmentTypeSelection,
+  reconciliation: skirtOwnedReconciliation,
+  activeOptions: catalogInspection.activeOptions,
+  additionalGarments: [],
+});
+assert.deepEqual(
+  skirtOwnedCatalogue.coreGroups
+    .find((group) => group.selectionGroup === "skirt_length")
+    ?.options.map((option) => option.id),
+  ["skirt_std", "skirt_long"],
+  "Skirt length eligibility remains the full authoritative option set",
+);
+assert.deepEqual(
+  skirtOwnedCatalogue.coreGroups
+    .find((group) => group.selectionGroup === "skirt_pockets")
+    ?.options.map((option) => option.id),
+  ["skirt_pocket_1", "skirt_pocket_2", "skirt_pocket_none"],
+  "Skirt pocket eligibility remains the full authoritative option set",
+);
+const skirtOwnedCompletion = validateGarmentScopedCustomDetailsCompletion({
+  earlierStagesComplete: true,
+  reconciliation: skirtOwnedReconciliation,
+  personalizedInputs: skirtOwnedInputs,
+});
+const skirtOwnedPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: skirtOwnedReconciliation,
+  catalogInspection,
+});
+const skirtOwnedConstructionEvents: Array<[string, string, string, string]> = [];
+const skirtOwnedSelectionEvents: Array<[string, string, string]> = [];
+let skirtOwnedRenderer!: ReturnType<typeof create>;
+act(() => {
+  skirtOwnedRenderer = renderFutureCustomDetailsStage({
+    reconciliation: skirtOwnedReconciliation,
+    catalogue: skirtOwnedCatalogue,
+    personalizedInputs: skirtOwnedInputs.state,
+    completion: skirtOwnedCompletion,
+    pricing: skirtOwnedPricing,
+    constructionEvents: skirtOwnedConstructionEvents,
+    selectionEvents: skirtOwnedSelectionEvents,
+  });
+});
+const skirtsOwnedSection = skirtOwnedRenderer.root.findByProps({
+  "data-custom-detail-family-section": "skirts",
+});
+assert.equal(
+  skirtOwnedRenderer.root.findAllByProps({
+    "data-custom-detail-family-section": "skirts",
+  }).length,
+  1,
+  "Step 4 renders exactly one Skirts family section for a Skirt-only order",
+);
+const standardSkirtOwnedBlock = skirtsOwnedSection.findByProps({
+  "data-skirt-garment-block": "base:skirt",
+});
+const longSkirtOwnedBlock = skirtsOwnedSection.findByProps({
+  "data-skirt-garment-block": "base:long_skirt",
+});
+assert.equal(
+  skirtsOwnedSection.findAllByProps({
+    "data-skirt-garment-block": "base:skirt",
+  }).length,
+  1,
+  "the Skirts card contains one Standard Skirt garment block",
+);
+assert.equal(
+  skirtsOwnedSection.findAllByProps({
+    "data-skirt-garment-block": "base:long_skirt",
+  }).length,
+  1,
+  "the Skirts card contains one Long Skirt garment block",
+);
+const standardSkirtOwnedConstruction = groupInGarmentSection(
+  standardSkirtOwnedBlock,
+  "skirt_length",
+);
+const longSkirtOwnedConstruction = groupInGarmentSection(
+  longSkirtOwnedBlock,
+  "skirt_length",
+);
+assert.match(textContent(standardSkirtOwnedBlock), /Standard Skirt/);
+assert.match(textContent(standardSkirtOwnedConstruction), /Main Garment/);
+assert.match(textContent(standardSkirtOwnedConstruction), /Standard Length, Above Knee/);
+assert.doesNotMatch(textContent(standardSkirtOwnedConstruction), /Long Length/);
+assert.match(textContent(longSkirtOwnedBlock), /Long Skirt/);
+assert.match(textContent(longSkirtOwnedConstruction), /Main Garment/);
+assert.match(textContent(longSkirtOwnedConstruction), /Long Length/);
+assert.doesNotMatch(textContent(longSkirtOwnedConstruction), /Standard Length/);
+assert.equal(
+  optionInOccurrenceGroup(
+    standardSkirtOwnedConstruction,
+    "Standard Length, Above Knee",
+  )?.findByType("input").props.checked,
+  true,
+  "the authoritative Standard Skirt default remains selected",
+);
+assert.equal(
+  optionInOccurrenceGroup(
+    longSkirtOwnedConstruction,
+    "Long Length",
+  )?.findByType("input").props.checked,
+  true,
+  "the authoritative Long Skirt default remains selected",
+);
+const standardSkirtConstructionControl = optionInOccurrenceGroup(
+  standardSkirtOwnedConstruction,
+  "Standard Length, Above Knee",
+);
+assert.ok(standardSkirtConstructionControl);
+assert.equal(standardSkirtConstructionControl.findByType("input").props.disabled, undefined);
+assert.match(
+  String(standardSkirtConstructionControl.findByType("input").props.id),
+  /^future-custom-detail-base:skirt-skirt_length-skirt_std/,
+  "the Standard Skirt construction control retains its exact occurrence identity",
+);
+act(() => {
+  standardSkirtConstructionControl.findByType("input").props.onChange();
+});
+assert.deepEqual(skirtOwnedConstructionEvents, [[
+  "base:skirt",
+  "skirt",
+  "skirt_length",
+  "skirt_std",
+]]);
+assert.equal(
+  standardSkirtOwnedBlock.findAllByProps({ "data-custom-detail-group": "skirt_pockets" }).length,
+  1,
+  "Standard Skirt pockets render inside the Standard Skirt garment block",
+);
+assert.equal(
+  longSkirtOwnedBlock.findAllByProps({ "data-custom-detail-group": "skirt_pockets" }).length,
+  1,
+  "Long Skirt pockets render inside the Long Skirt garment block",
+);
+assert.equal(
+  skirtsOwnedSection.findAllByProps({ "data-custom-detail-group": "skirt_pockets" }).length,
+  2,
+  "no shared Skirt pocket fieldset renders outside the garment blocks",
+);
+const standardSkirtOwnedPockets = groupInGarmentSection(
+  standardSkirtOwnedBlock,
+  "skirt_pockets",
+);
+const longSkirtOwnedPockets = groupInGarmentSection(
+  longSkirtOwnedBlock,
+  "skirt_pockets",
+);
+assert.match(textContent(standardSkirtOwnedPockets), /Pocket for Standard Skirt/);
+assert.match(textContent(longSkirtOwnedPockets), /Pocket for Long Skirt/);
+assert.match(textContent(standardSkirtOwnedPockets), /With 1 Side Pocket/);
+assert.match(textContent(longSkirtOwnedPockets), /With 2 Side Pockets/);
+assert.doesNotMatch(textContent(standardSkirtOwnedPockets), /Long Skirt/);
+assert.doesNotMatch(textContent(longSkirtOwnedPockets), /Standard Skirt/);
+const longSkirtPocketOption = optionInOccurrenceGroup(
+  longSkirtOwnedPockets,
+  "With 1 Side Pocket",
+);
+assert.ok(longSkirtPocketOption, "Long Skirt pocket choices remain visible");
+assert.equal(longSkirtPocketOption.findByType("input").props.disabled, undefined);
+assert.match(
+  String(longSkirtPocketOption.findByType("input").props.id),
+  /^future-custom-detail-base:long_skirt-skirt_pockets-/,
+  "the Long Skirt pocket control retains its exact occurrence identity",
+);
+act(() => {
+  longSkirtPocketOption.findByType("input").props.onChange();
+});
+assert.deepEqual(skirtOwnedSelectionEvents, [[
+  "base:long_skirt",
+  "skirt_pockets",
+  "skirt_pocket_1",
+]]);
+assert.equal(skirtOwnedPricing.status, "exact");
+if (skirtOwnedPricing.status === "exact") {
+  assert.equal(skirtOwnedPricing.subtotalCents, 0);
+  assert.deepEqual(
+    skirtOwnedReconciliation.subjects.map((subject) => subject.garmentKey),
+    ["base:skirt", "base:long_skirt"],
+    "Skirt presentation leaves authoritative occurrence identity unchanged",
+  );
+}
+act(() => skirtOwnedRenderer.unmount());
+
+const trouserOwnedGarmentTypeSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["trouser"],
+  selectedDemographic: "male",
+  normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+}).selection;
+const trouserOwnedReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: trouserOwnedGarmentTypeSelection,
+  catalogInspection,
+  existingState: createEmptyGarmentScopedCustomDetailsState(),
+});
+const trouserOwnedInputs = reconcileGarmentScopedPersonalizedInputs({
+  reconciliation: trouserOwnedReconciliation,
+  catalogInspection,
+  existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
+});
+const trouserOwnedCatalogue = projectFutureCustomDetailsCatalogue({
+  garmentTypeSelection: trouserOwnedGarmentTypeSelection,
+  reconciliation: trouserOwnedReconciliation,
+  activeOptions: catalogInspection.activeOptions,
+  additionalGarments: [],
+});
+const trouserOwnedCompletion = validateGarmentScopedCustomDetailsCompletion({
+  earlierStagesComplete: true,
+  reconciliation: trouserOwnedReconciliation,
+  personalizedInputs: trouserOwnedInputs,
+});
+const trouserOwnedPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: trouserOwnedReconciliation,
+  catalogInspection,
+});
+const trouserOwnedConstructionEvents: Array<[string, string, string, string]> = [];
+const trouserOwnedSelectionEvents: Array<[string, string, string]> = [];
+let trouserOwnedRenderer!: ReturnType<typeof create>;
+act(() => {
+  trouserOwnedRenderer = renderFutureCustomDetailsStage({
+    reconciliation: trouserOwnedReconciliation,
+    catalogue: trouserOwnedCatalogue,
+    personalizedInputs: trouserOwnedInputs.state,
+    completion: trouserOwnedCompletion,
+    pricing: trouserOwnedPricing,
+    constructionEvents: trouserOwnedConstructionEvents,
+    selectionEvents: trouserOwnedSelectionEvents,
+  });
+});
+const trouserOwnedSection = trouserOwnedRenderer.root.findByProps({
+  "data-custom-detail-family-section": "trouser",
+});
+assert.equal(
+  trouserOwnedRenderer.root.findAllByProps({
+    "data-custom-detail-family-section": "trouser",
+  }).length,
+  1,
+  "Step 4 renders exactly one Trouser family section for a Trouser-only order",
+);
+const trouserOwnedBlock = trouserOwnedSection.findByProps({
+  "data-trouser-garment-block": "base:trouser",
+});
+assert.equal(
+  trouserOwnedSection.findAllByProps({
+    "data-trouser-garment-block": "base:trouser",
+  }).length,
+  1,
+  "Trouser Main Garment and Pocket controls share one garment presentation unit",
+);
+const trouserOwnedConstruction = groupInGarmentSection(
+  trouserOwnedBlock,
+  "trouser_fastening",
+);
+const trouserOwnedPockets = groupInGarmentSection(
+  trouserOwnedBlock,
+  "trouser_pockets",
+);
+assert.match(textContent(trouserOwnedConstruction), /Main Garment/);
+assert.match(textContent(trouserOwnedPockets), /Pocket for Trouser/);
+assert.equal(
+  trouserOwnedSection.findAllByProps({ "data-custom-detail-group": "trouser_pockets" }).length,
+  1,
+  "Trouser pockets stay inside the Trouser garment unit",
+);
+const trouserBelt = optionInOccurrenceGroup(trouserOwnedConstruction, "With Belt Holder");
+assert.ok(trouserBelt);
+assert.match(
+  String(trouserBelt.findByType("input").props.id),
+  /^future-custom-detail-base:trouser-trouser_fastening-trouser_belt$/,
+  "the Trouser construction control retains its exact occurrence identity",
+);
+act(() => {
+  trouserBelt.findByType("input").props.onChange();
+});
+assert.deepEqual(trouserOwnedConstructionEvents, [[
+  "base:trouser",
+  "trouser",
+  "trouser_fastening",
+  "trouser_belt",
+]]);
+assert.deepEqual(
+  trouserOwnedReconciliation.subjects.map((subject) => [
+    subject.garmentKey,
+    subject.parentGarmentKey,
+  ]),
+  [["base:trouser", "base:trouser"]],
+);
+assert.equal(trouserOwnedPricing.status, "exact");
+assert.equal(trouserOwnedPricing.subtotal, 0);
+act(() => trouserOwnedRenderer.unmount());
+
+const shortsOwnedGarmentTypeSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["standard_shorts", "bum_shorts"],
+  selectedDemographic: "unisex",
+  normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+}).selection;
+const shortsOwnedReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: shortsOwnedGarmentTypeSelection,
+  catalogInspection,
+  existingState: createEmptyGarmentScopedCustomDetailsState(),
+});
+const shortsOwnedInputs = reconcileGarmentScopedPersonalizedInputs({
+  reconciliation: shortsOwnedReconciliation,
+  catalogInspection,
+  existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
+});
+const shortsOwnedCatalogue = projectFutureCustomDetailsCatalogue({
+  garmentTypeSelection: shortsOwnedGarmentTypeSelection,
+  reconciliation: shortsOwnedReconciliation,
+  activeOptions: catalogInspection.activeOptions,
+  additionalGarments: [],
+});
+const shortsOwnedCompletion = validateGarmentScopedCustomDetailsCompletion({
+  earlierStagesComplete: true,
+  reconciliation: shortsOwnedReconciliation,
+  personalizedInputs: shortsOwnedInputs,
+});
+const shortsOwnedPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: shortsOwnedReconciliation,
+  catalogInspection,
+});
+const shortsOwnedConstructionEvents: Array<[string, string, string, string]> = [];
+const shortsOwnedSelectionEvents: Array<[string, string, string]> = [];
+let shortsOwnedRenderer!: ReturnType<typeof create>;
+act(() => {
+  shortsOwnedRenderer = renderFutureCustomDetailsStage({
+    reconciliation: shortsOwnedReconciliation,
+    catalogue: shortsOwnedCatalogue,
+    personalizedInputs: shortsOwnedInputs.state,
+    completion: shortsOwnedCompletion,
+    pricing: shortsOwnedPricing,
+    constructionEvents: shortsOwnedConstructionEvents,
+    selectionEvents: shortsOwnedSelectionEvents,
+  });
+});
+const shortsOwnedSection = shortsOwnedRenderer.root.findByProps({
+  "data-custom-detail-family-section": "shorts",
+});
+assert.equal(
+  shortsOwnedRenderer.root.findAllByProps({
+    "data-custom-detail-family-section": "shorts",
+  }).length,
+  1,
+  "Step 4 renders exactly one Shorts family section for a Shorts-only order",
+);
+const nikkaOwnedBlock = shortsOwnedSection.findByProps({
+  "data-shorts-garment-block": "base:standard_shorts",
+});
+const bumOwnedBlock = shortsOwnedSection.findByProps({
+  "data-shorts-garment-block": "base:bum_shorts",
+});
+assert.equal(
+  shortsOwnedSection.findAllByProps({
+    "data-shorts-garment-block": "base:standard_shorts",
+  }).length,
+  1,
+  "Standard Nikka Shorts has its own garment block",
+);
+assert.equal(
+  shortsOwnedSection.findAllByProps({
+    "data-shorts-garment-block": "base:bum_shorts",
+  }).length,
+  1,
+  "Standard Bum Shorts has its own garment block",
+);
+const nikkaOwnedConstruction = groupInGarmentSection(
+  nikkaOwnedBlock,
+  "standard_shorts_fastening",
+);
+const bumOwnedConstruction = groupInGarmentSection(
+  bumOwnedBlock,
+  "bum_shorts_fastening",
+);
+assert.equal(
+  nikkaOwnedBlock.findAllByProps({ "data-custom-detail-group": "bum_shorts_fastening" }).length,
+  0,
+  "Nikka construction options do not leak into the Bum Shorts block",
+);
+assert.equal(
+  bumOwnedBlock.findAllByProps({ "data-custom-detail-group": "standard_shorts_fastening" }).length,
+  0,
+  "Bum Shorts construction options do not leak into the Nikka block",
+);
+assert.match(textContent(nikkaOwnedBlock), /Standard Nikka Shorts/);
+assert.match(textContent(nikkaOwnedConstruction), /Main Garment/);
+assert.match(textContent(nikkaOwnedConstruction), /ending just above the knee/);
+assert.doesNotMatch(textContent(nikkaOwnedConstruction), /below the crotch/);
+assert.match(textContent(bumOwnedBlock), /Standard Bum Shorts/);
+assert.match(textContent(bumOwnedConstruction), /Main Garment/);
+assert.match(textContent(bumOwnedConstruction), /below the crotch/);
+assert.doesNotMatch(textContent(bumOwnedConstruction), /above the knee/);
+const nikkaOwnedPockets = groupInGarmentSection(
+  nikkaOwnedBlock,
+  "standard_shorts_pockets",
+);
+const bumOwnedPockets = groupInGarmentSection(
+  bumOwnedBlock,
+  "bum_shorts_pockets",
+);
+assert.match(textContent(nikkaOwnedPockets), /Pocket for Standard Nikka Shorts/);
+assert.match(textContent(bumOwnedPockets), /Pocket for Standard Bum Shorts/);
+assert.equal(
+  nikkaOwnedBlock.findAllByProps({ "data-custom-detail-group": "bum_shorts_pockets" }).length,
+  0,
+);
+assert.equal(
+  bumOwnedBlock.findAllByProps({ "data-custom-detail-group": "standard_shorts_pockets" }).length,
+  0,
+);
+const nikkaBelt = optionInOccurrenceGroup(nikkaOwnedConstruction, "With Belt Holder");
+assert.ok(nikkaBelt);
+assert.match(
+  String(nikkaBelt.findByType("input").props.id),
+  /^future-custom-detail-base:standard_shorts-standard_shorts_fastening-shorts_std_belt$/,
+);
+act(() => {
+  nikkaBelt.findByType("input").props.onChange();
+});
+assert.deepEqual(shortsOwnedConstructionEvents, [[
+  "base:standard_shorts",
+  "standard_shorts",
+  "standard_shorts_fastening",
+  "shorts_std_belt",
+]]);
+assert.deepEqual(
+  shortsOwnedReconciliation.subjects.map((subject) => subject.garmentKey),
+  ["base:standard_shorts", "base:bum_shorts"],
+);
+assert.equal(shortsOwnedPricing.status, "exact");
+assert.equal(shortsOwnedPricing.subtotal, 0);
+act(() => shortsOwnedRenderer.unmount());
+
+const dressNeckGarmentTypeSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["dress", "full_length_gown"],
+  selectedDemographic: "female",
+  normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+}).selection;
+const dressNeckReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: dressNeckGarmentTypeSelection,
+  catalogInspection,
+  existingState: createEmptyGarmentScopedCustomDetailsState(),
+});
+const dressNeckInputs = reconcileGarmentScopedPersonalizedInputs({
+  reconciliation: dressNeckReconciliation,
+  catalogInspection,
+  existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
+});
+const dressNeckCatalogue = projectFutureCustomDetailsCatalogue({
+  garmentTypeSelection: dressNeckGarmentTypeSelection,
+  reconciliation: dressNeckReconciliation,
+  activeOptions: catalogInspection.activeOptions,
+  additionalGarments: [],
+});
+const dressNeckCompletion = validateGarmentScopedCustomDetailsCompletion({
+  earlierStagesComplete: true,
+  reconciliation: dressNeckReconciliation,
+  personalizedInputs: dressNeckInputs,
+});
+const dressNeckPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: dressNeckReconciliation,
+  catalogInspection,
+});
+let dressNeckRenderer!: ReturnType<typeof create>;
+act(() => {
+  dressNeckRenderer = create(
+    createElement(DormantFutureCustomDetailsStep, {
+      stage: "custom_details",
+      reconciliation: dressNeckReconciliation,
+      catalogue: dressNeckCatalogue,
+      personalizedInputs: dressNeckInputs.state,
+      completion: dressNeckCompletion,
+      pricing: dressNeckPricing,
+      orderLevelCustomDetailsPrice: 0,
+      constructionBreakdown: { status: "complete", rows: [] },
+      constructionSubtotal: 0,
+      designSelections: {},
+      selectedStyle: null,
+      additionalGarments: [],
+      additionalGarmentConstructionOptions: [],
+      onSingleSelect: () => undefined,
+      onClearSelection: () => undefined,
+      onConstructionSelect: () => undefined,
+      onToggleMultiSelect: () => undefined,
+      onPersonalizedTextChange: () => undefined,
+      onDecorativeFeatureToggle: () => undefined,
+      onClearDecorativeFeatures: () => undefined,
+      onMonogramPlacementChange: () => undefined,
+      onAccessoryToggle: () => undefined,
+      onClearAccessories: () => undefined,
+      onAddAdditionalGarment: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    }),
+  );
+});
+const dressNeckGroup = dressNeckRenderer.root.findByProps({
+  "data-custom-detail-group": "neck_design",
+});
+assert.equal(
+  textContent(dressNeckGroup.findByProps({
+    "data-custom-detail-occurrence": "base:dress",
+  })).trim(),
+  "Neck Design for Standard Dress",
+  "Standard Dress Neck Design heading derives from its Main Garment label",
+);
+assert.equal(
+  textContent(dressNeckGroup.findByProps({
+    "data-custom-detail-occurrence": "base:full_length_gown",
+  })).trim(),
+  "Neck Design for Long Dress",
+  "Long Dress Neck Design heading derives from its Main Garment label",
+);
+assert.match(textContent(dressNeckGroup), /No Collar/);
+assert.match(textContent(dressNeckGroup), /Vertical Collar/);
+assert.match(textContent(dressNeckGroup), /Flat Collar/);
+act(() => dressNeckRenderer.unmount());
+
+const fullFamilyOrderSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: [
+    "shirt",
+    "kaftan",
+    "dress",
+    "full_length_gown",
+    "trouser",
+    "skirt",
+    "long_skirt",
+    "standard_shorts",
+    "bum_shorts",
+  ],
+  selectedDemographic: "unisex",
+  normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+}).selection;
+const fullFamilyOrderReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: fullFamilyOrderSelection,
+  catalogInspection,
+  existingState: createEmptyGarmentScopedCustomDetailsState(),
+});
+const fullFamilyOrderInputs = reconcileGarmentScopedPersonalizedInputs({
+  reconciliation: fullFamilyOrderReconciliation,
+  catalogInspection,
+  existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
+});
+const fullFamilyOrderCatalogue = projectFutureCustomDetailsCatalogue({
+  garmentTypeSelection: fullFamilyOrderSelection,
+  reconciliation: fullFamilyOrderReconciliation,
+  activeOptions: catalogInspection.activeOptions,
+  additionalGarments: [],
+});
+const fullFamilyOrderCompletion = validateGarmentScopedCustomDetailsCompletion({
+  earlierStagesComplete: true,
+  reconciliation: fullFamilyOrderReconciliation,
+  personalizedInputs: fullFamilyOrderInputs,
+});
+const fullFamilyOrderPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: fullFamilyOrderReconciliation,
+  catalogInspection,
+});
+let fullFamilyOrderRenderer!: ReturnType<typeof create>;
+act(() => {
+  fullFamilyOrderRenderer = create(
+    createElement(DormantFutureCustomDetailsStep, {
+      stage: "custom_details",
+      reconciliation: fullFamilyOrderReconciliation,
+      catalogue: fullFamilyOrderCatalogue,
+      personalizedInputs: fullFamilyOrderInputs.state,
+      completion: fullFamilyOrderCompletion,
+      pricing: fullFamilyOrderPricing,
+      orderLevelCustomDetailsPrice: 0,
+      constructionBreakdown: { status: "complete", rows: [] },
+      constructionSubtotal: 0,
+      designSelections: {},
+      selectedStyle: null,
+      additionalGarments: [],
+      additionalGarmentConstructionOptions: [],
+      onSingleSelect: () => undefined,
+      onClearSelection: () => undefined,
+      onConstructionSelect: () => undefined,
+      onToggleMultiSelect: () => undefined,
+      onPersonalizedTextChange: () => undefined,
+      onDecorativeFeatureToggle: () => undefined,
+      onClearDecorativeFeatures: () => undefined,
+      onMonogramPlacementChange: () => undefined,
+      onAccessoryToggle: () => undefined,
+      onClearAccessories: () => undefined,
+      onAddAdditionalGarment: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    }),
+  );
+});
+assert.deepEqual(
+  fullFamilyOrderRenderer.root
+    .findAll((node) => Boolean(node.props["data-custom-detail-family-section"]))
+    .map((section) => section.props["data-custom-detail-family-section"]),
+  ["shirts", "dresses", "neck", "trouser", "skirts", "shorts"],
+  "Step 4 renders upper-body garment families before shared Neck Design and lower-body families after it",
+);
+assert.equal(
+  fullFamilyOrderRenderer.root.findByProps({
+    "data-custom-detail-family-section": "neck",
+  }).findAllByProps({ "data-custom-detail-group": "neck_design" }).length,
+  1,
+  "shared Neck Design renders once after all upper-body garment families",
+);
+const getOccurrenceControlIds = (group: ReactTestInstance): string[] =>
+  group
+    .findAllByType("input")
+    .map((input) => input.props.id)
+    .filter((id): id is string => typeof id === "string");
+const assertOccurrenceOwnedGroup = ({
+  block,
+  selectionGroup,
+  controlIdPrefix,
+}: {
+  block: ReactTestInstance;
+  selectionGroup: string;
+  controlIdPrefix: string;
+}) => {
+  const group = groupInGarmentSection(block, selectionGroup);
+  const controlIds = getOccurrenceControlIds(group);
+  assert.ok(controlIds.length > 0, `${selectionGroup} retains its selectable controls`);
+  assert.ok(
+    controlIds.every((controlId) => controlId.startsWith(controlIdPrefix)),
+    `${selectionGroup} controls retain their exact garment occurrence identity`,
+  );
+  return group;
+};
+
+const dressesSection = fullFamilyOrderRenderer.root.findByProps({
+  "data-custom-detail-family-section": "dresses",
+});
+const standardDressBlock = dressesSection.findByProps({
+  "data-dress-garment-block": "base:dress",
+});
+const longDressBlock = dressesSection.findByProps({
+  "data-dress-garment-block": "base:full_length_gown",
+});
+assert.equal(
+  fullFamilyOrderRenderer.root.findAllByProps({
+    "data-custom-detail-family-section": "dresses",
+  }).length,
+  1,
+  "Step 4 renders exactly one Dresses family section",
+);
+assert.match(textContent(standardDressBlock), /Standard Dress/);
+assert.match(textContent(longDressBlock), /Long Dress/);
+assert.match(
+  String(standardDressBlock.findByType("div").props.className),
+  /auto-fit/,
+  "Dress blocks use a container-driven pair grid that stacks when columns would be too narrow",
+);
+assert.match(
+  String(standardDressBlock.findByType("div").props.className),
+  /minmax\(min\(100%,18rem\),1fr\)/,
+  "Dress Main Garment and Pocket columns share equal minmax tracks",
+);
+const standardDressConstruction = assertOccurrenceOwnedGroup({
+  block: standardDressBlock,
+  selectionGroup: "dress_construction",
+  controlIdPrefix: "future-custom-detail-base:dress-dress_construction-dress_std_",
+});
+const longDressConstruction = assertOccurrenceOwnedGroup({
+  block: longDressBlock,
+  selectionGroup: "dress_construction",
+  controlIdPrefix: "future-custom-detail-base:full_length_gown-dress_construction-dress_long_",
+});
+const standardDressPockets = assertOccurrenceOwnedGroup({
+  block: standardDressBlock,
+  selectionGroup: "dress_pockets",
+  controlIdPrefix: "future-custom-detail-base:dress-dress_pockets-",
+});
+const longDressPockets = assertOccurrenceOwnedGroup({
+  block: longDressBlock,
+  selectionGroup: "dress_pockets",
+  controlIdPrefix: "future-custom-detail-base:full_length_gown-dress_pockets-",
+});
+assert.match(textContent(standardDressConstruction), /Main Garment/);
+assert.match(textContent(longDressConstruction), /Main Garment/);
+assert.match(textContent(standardDressConstruction), /Standard Length, Sleeveless \/ Over Shoulder/);
+assert.doesNotMatch(textContent(standardDressConstruction), /Long Length/);
+assert.match(textContent(longDressConstruction), /Long Length, Short Sleeve/);
+assert.doesNotMatch(textContent(longDressConstruction), /Standard Length/);
+assert.match(textContent(standardDressPockets), /Pocket for Standard Dress/);
+assert.match(textContent(longDressPockets), /Pocket for Long Dress/);
+assert.doesNotMatch(textContent(standardDressPockets), /Long Dress/);
+assert.doesNotMatch(textContent(longDressPockets), /Standard Dress/);
+assert.equal(
+  dressesSection.findAllByProps({ "data-custom-detail-group": "dress_pockets" }).length,
+  2,
+  "No shared Dress pocket group renders outside the two garment blocks",
+);
+
+const skirtsSection = fullFamilyOrderRenderer.root.findByProps({
+  "data-custom-detail-family-section": "skirts",
+});
+const standardSkirtBlock = skirtsSection.findByProps({
+  "data-skirt-garment-block": "base:skirt",
+});
+const longSkirtBlock = skirtsSection.findByProps({
+  "data-skirt-garment-block": "base:long_skirt",
+});
+assert.equal(
+  fullFamilyOrderRenderer.root.findAllByProps({
+    "data-custom-detail-family-section": "skirts",
+  }).length,
+  1,
+  "Step 4 renders exactly one Skirts family section",
+);
+assert.match(textContent(standardSkirtBlock), /Standard Skirt/);
+assert.match(textContent(longSkirtBlock), /Long Skirt/);
+assert.match(
+  String(standardSkirtBlock.findByType("div").props.className),
+  /auto-fit/,
+  "Skirt blocks use a container-driven pair grid that stacks when columns would be too narrow",
+);
+assert.match(
+  String(standardSkirtBlock.findByType("div").props.className),
+  /minmax\(min\(100%,18rem\),1fr\)/,
+  "Skirt Main Garment and Pocket columns share equal minmax tracks",
+);
+const standardSkirtConstruction = assertOccurrenceOwnedGroup({
+  block: standardSkirtBlock,
+  selectionGroup: "skirt_length",
+  controlIdPrefix: "future-custom-detail-base:skirt-skirt_length-skirt_std",
+});
+const longSkirtConstruction = assertOccurrenceOwnedGroup({
+  block: longSkirtBlock,
+  selectionGroup: "skirt_length",
+  controlIdPrefix: "future-custom-detail-base:long_skirt-skirt_length-skirt_long",
+});
+const standardSkirtPockets = assertOccurrenceOwnedGroup({
+  block: standardSkirtBlock,
+  selectionGroup: "skirt_pockets",
+  controlIdPrefix: "future-custom-detail-base:skirt-skirt_pockets-",
+});
+const longSkirtPockets = assertOccurrenceOwnedGroup({
+  block: longSkirtBlock,
+  selectionGroup: "skirt_pockets",
+  controlIdPrefix: "future-custom-detail-base:long_skirt-skirt_pockets-",
+});
+assert.match(textContent(standardSkirtConstruction), /Main Garment/);
+assert.match(textContent(longSkirtConstruction), /Main Garment/);
+assert.match(textContent(standardSkirtConstruction), /Standard Length, Above Knee/);
+assert.doesNotMatch(textContent(standardSkirtConstruction), /Long Length/);
+assert.match(textContent(longSkirtConstruction), /Long Length/);
+assert.doesNotMatch(textContent(longSkirtConstruction), /Standard Length/);
+assert.match(textContent(standardSkirtPockets), /Pocket for Standard Skirt/);
+assert.match(textContent(longSkirtPockets), /Pocket for Long Skirt/);
+assert.doesNotMatch(textContent(standardSkirtPockets), /Long Skirt/);
+assert.doesNotMatch(textContent(longSkirtPockets), /Standard Skirt/);
+assert.equal(
+  skirtsSection.findAllByProps({ "data-custom-detail-group": "skirt_pockets" }).length,
+  2,
+  "No shared Skirt pocket group renders outside the two garment blocks",
+);
+const trouserFamilySection = fullFamilyOrderRenderer.root.findByProps({
+  "data-custom-detail-family-section": "trouser",
+});
+assert.equal(
+  trouserFamilySection.findAllByProps({
+    "data-trouser-garment-block": "base:trouser",
+  }).length,
+  1,
+);
+assert.match(
+  textContent(trouserFamilySection.findByProps({
+    "data-trouser-garment-block": "base:trouser",
+  })),
+  /Pocket for Trouser/,
+);
+const shortsFamilySection = fullFamilyOrderRenderer.root.findByProps({
+  "data-custom-detail-family-section": "shorts",
+});
+assert.equal(
+  shortsFamilySection.findAllByProps({
+    "data-shorts-garment-block": "base:standard_shorts",
+  }).length,
+  1,
+);
+assert.equal(
+  shortsFamilySection.findAllByProps({
+    "data-shorts-garment-block": "base:bum_shorts",
+  }).length,
+  1,
+);
+act(() => fullFamilyOrderRenderer.unmount());
+
 const personalizedFieldset = () => personalizedLayoutRenderer!.root.findByProps({
   "data-custom-detail-group": PERSONALIZED_ADDITIONAL_REQUIREMENT_SELECTION_GROUP,
 });
@@ -963,6 +2355,26 @@ assert.equal(
   addSection.findAllByProps({ "data-custom-detail-group": "shirt_construction" }).length,
   1,
   "the Additional Shirt construction group renders inside Step 5 Add Additional Garment",
+);
+assert.equal(
+  addSection.findAllByProps({
+    "data-shirt-garment-block": additionalAssignment.garmentKey,
+  }).length,
+  1,
+  "an additional Shirt keeps its own garment-owned block and occurrence identity",
+);
+assert.equal(
+  addSection.findAllByProps({
+    "data-shirt-garment-block": "base:shirt",
+  }).length,
+  0,
+  "rendering an additional Shirt does not collapse into the base Shirt occurrence",
+);
+assert.match(
+  textContent(addSection.findByProps({
+    "data-shirt-garment-block": additionalAssignment.garmentKey,
+  })),
+  /Pocket for Standard Shirt/,
 );
 assert.ok(
   addSection.findByProps({ "data-added-garment-heading": "true" }),
