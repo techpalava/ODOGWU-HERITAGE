@@ -3,7 +3,15 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { DormantFutureFabricStep } from "./src/components/DormantFutureFabricStep";
-import { FutureRemainingFabricCapacityOfferCard } from "./src/components/FutureRemainingFabricCapacityOffer";
+import {
+  FutureRemainingFabricCapacityOfferCard,
+  FutureRemainingFabricCapacityOfferPrompt,
+  REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT,
+  REMAINING_FABRIC_CAPACITY_OFFER_BODY,
+  REMAINING_FABRIC_CAPACITY_OFFER_TITLE,
+  resolveRemainingFabricCapacityOfferPresentation,
+  resolveRemainingFabricCapacityReturnStage,
+} from "./src/components/FutureRemainingFabricCapacityOffer";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import type { Fabric, FabricGarmentType } from "./src/types";
@@ -323,6 +331,32 @@ assert.equal(capacityOfferRenderer.root.findAllByProps({ role: "dialog" }).lengt
 assert.equal(capacityOfferRenderer.root.findAllByType("li").length, 2);
 assert.match(JSON.stringify(capacityOfferRenderer.toJSON()), /Fabric A/);
 assert.match(JSON.stringify(capacityOfferRenderer.toJSON()), /Fabric B/);
+assert.equal(
+  capacityOfferRenderer.root.findAllByProps({
+    "data-testid": "remaining-fabric-capacity-offer-selector",
+  }).length,
+  0,
+  "Garment buttons must not appear until a Fabric-specific Add Garment action.",
+);
+assert.equal(
+  capacityOfferRenderer.root.findAllByProps({
+    "data-testid": `remaining-fabric-capacity-offer-add-${combinedCapacityOffers[0].allocationId}`,
+  }).length,
+  1,
+);
+assert.equal(
+  capacityOfferRenderer.root.findAllByProps({
+    "data-testid": `remaining-fabric-capacity-offer-add-${combinedCapacityOffers[1].allocationId}`,
+  }).length,
+  1,
+);
+assert.equal(
+  capacityOfferRenderer.root.findAllByProps({
+    "data-testid": "remaining-fabric-capacity-offer-select-trouser",
+  }).length,
+  0,
+  "The root leftover-capacity modal must not show a global garment chooser.",
+);
 act(() => {
   capacityOfferRenderer.root
     .findByProps({ "data-testid": "remaining-fabric-capacity-offer-decline" })
@@ -332,7 +366,7 @@ assert.equal(capacityOfferContinues, 1);
 act(() => {
   capacityOfferRenderer.root
     .findByProps({
-      "data-testid": `remaining-fabric-capacity-offer-allocation-${combinedCapacityOffers[0].allocationId}`,
+      "data-testid": `remaining-fabric-capacity-offer-add-${combinedCapacityOffers[0].allocationId}`,
     })
     .props.onClick();
 });
@@ -341,7 +375,39 @@ assert.equal(
     "data-testid": "remaining-fabric-capacity-offer-selector",
   }).length,
   1,
-  "accepting the Step 2 offer must reveal the Additional Garment selection",
+  "Add Garment must open the garment chooser for that exact Fabric.",
+);
+assert.equal(
+  capacityOfferRenderer.root.findByProps({
+    "data-testid": "remaining-fabric-capacity-offer-chooser-fabric",
+  }).children.join(""),
+  "Fabric A",
+  "The chooser must name the locked Fabric.",
+);
+assert.equal(
+  capacityOfferRenderer.root.findByProps({
+    "data-testid": "remaining-fabric-capacity-offer-chooser-heading",
+  }).children.join(""),
+  "Adding garment to Fabric A",
+);
+assert.equal(
+  capacityOfferRenderer.root.findByProps({
+    "data-testid": "remaining-fabric-capacity-offer-chooser-instruction",
+  }).children.join(""),
+  "Choose a garment to use with Fabric A.",
+);
+assert.equal(
+  capacityOfferRenderer.root.findByProps({
+    "data-testid": "remaining-fabric-capacity-offer-selector",
+  }).props["data-fabric-capacity-offer-allocation-id"],
+  combinedCapacityOffers[0].allocationId,
+);
+assert.equal(
+  capacityOfferRenderer.root.findAllByProps({
+    "data-testid": `remaining-fabric-capacity-offer-add-${combinedCapacityOffers[1].allocationId}`,
+  }).length,
+  0,
+  "The chooser must hide the other Fabric Add Garment actions.",
 );
 act(() => {
   capacityOfferRenderer.root
@@ -362,7 +428,9 @@ assert.doesNotMatch(
   "The redundant generic capacity CTA must not render.",
 );
 act(() => {
-  capacityOfferRenderer.root.findByProps({ children: "Back" }).props.onClick();
+  capacityOfferRenderer.root
+    .findByProps({ "data-testid": "remaining-fabric-capacity-offer-back" })
+    .props.onClick();
 });
 assert.equal(
   capacityOfferRenderer.root.findAllByProps({
@@ -371,13 +439,54 @@ assert.equal(
   0,
   "Back must return to the capacity-offer list.",
 );
+assert.equal(
+  capacityOfferRenderer.root.findAllByType("li").length,
+  2,
+  "Back must keep every leftover Fabric offer.",
+);
+assert.equal(
+  selectedCapacityOfferGarment,
+  "trouser",
+  "Back must not create another garment occurrence.",
+);
+assert.equal(
+  capacityOfferRenderer.root.findAllByProps({
+    "data-testid": `remaining-fabric-capacity-offer-add-${combinedCapacityOffers[0].allocationId}`,
+  }).length,
+  1,
+);
+assert.equal(
+  capacityOfferRenderer.root.findAllByProps({
+    "data-testid": `remaining-fabric-capacity-offer-add-${combinedCapacityOffers[1].allocationId}`,
+  }).length,
+  1,
+);
 act(() => {
   capacityOfferRenderer.root
     .findByProps({
-      "data-testid": `remaining-fabric-capacity-offer-allocation-${combinedCapacityOffers[1].allocationId}`,
+      "data-testid": `remaining-fabric-capacity-offer-add-${combinedCapacityOffers[1].allocationId}`,
     })
     .props.onClick();
 });
+assert.equal(
+  capacityOfferRenderer.root.findByProps({
+    "data-testid": "remaining-fabric-capacity-offer-chooser-fabric",
+  }).children.join(""),
+  "Fabric B",
+  "Add Garment on the second Fabric must lock that Fabric, not the first offer.",
+);
+assert.equal(
+  capacityOfferRenderer.root.findByProps({
+    "data-testid": "remaining-fabric-capacity-offer-chooser-instruction",
+  }).children.join(""),
+  "Choose a garment to use with Fabric B.",
+);
+assert.equal(
+  capacityOfferRenderer.root.findByProps({
+    "data-testid": "remaining-fabric-capacity-offer-selector",
+  }).props["data-fabric-capacity-offer-allocation-id"],
+  combinedCapacityOffers[1].allocationId,
+);
 act(() => {
   capacityOfferRenderer.root
     .findByProps({
@@ -388,7 +497,7 @@ act(() => {
 assert.equal(
   selectedCapacityOfferAllocationId,
   combinedCapacityOffers[1].allocationId,
-  "Selecting another Fabric card must retain that exact physical allocation.",
+  "Selecting another Fabric Add Garment must retain that exact physical allocation.",
 );
 act(() => {
   capacityOfferRenderer.root
@@ -397,6 +506,251 @@ act(() => {
 });
 assert.equal(capacityOfferDismissals, 1);
 act(() => capacityOfferRenderer.unmount());
+
+assert.deepEqual(
+  resolveRemainingFabricCapacityOfferPresentation({
+    stageId: "fabric",
+    offerExists: true,
+    offerDismissed: false,
+    requested: false,
+  }),
+  { showPrompt: false, showModal: true },
+  "Fabric still auto-opens the leftover-capacity modal.",
+);
+assert.deepEqual(
+  resolveRemainingFabricCapacityOfferPresentation({
+    stageId: "fabric",
+    offerExists: true,
+    offerDismissed: true,
+    requested: true,
+  }),
+  { showPrompt: false, showModal: false },
+  "A dismissed Fabric offer must not auto-open again in the same session.",
+);
+for (const laterStage of ["design_style", "custom_details", "personalized_additions"] as const) {
+  assert.deepEqual(
+    resolveRemainingFabricCapacityOfferPresentation({
+      stageId: laterStage,
+      offerExists: true,
+      offerDismissed: false,
+      requested: false,
+    }),
+    { showPrompt: true, showModal: false },
+    `${laterStage} must show a non-blocking prompt instead of auto-opening the modal.`,
+  );
+  assert.deepEqual(
+    resolveRemainingFabricCapacityOfferPresentation({
+      stageId: laterStage,
+      offerExists: true,
+      offerDismissed: true,
+      requested: false,
+    }),
+    { showPrompt: true, showModal: false },
+    `${laterStage} must keep leftover capacity discoverable after modal dismissal.`,
+  );
+  assert.deepEqual(
+    resolveRemainingFabricCapacityOfferPresentation({
+      stageId: laterStage,
+      offerExists: true,
+      offerDismissed: true,
+      requested: true,
+    }),
+    { showPrompt: true, showModal: true },
+    `${laterStage} may open the existing leftover-capacity flow only after an explicit request.`,
+  );
+  assert.deepEqual(
+    resolveRemainingFabricCapacityOfferPresentation({
+      stageId: laterStage,
+      offerExists: false,
+      offerDismissed: false,
+      requested: true,
+    }),
+    { showPrompt: false, showModal: false },
+    `${laterStage} must not keep a stale leftover-capacity prompt once capacity is gone.`,
+  );
+  assert.equal(
+    resolveRemainingFabricCapacityReturnStage(laterStage),
+    laterStage,
+    `${laterStage} leftover-capacity acceptance must stay on that stage.`,
+  );
+}
+assert.equal(resolveRemainingFabricCapacityReturnStage("fabric"), "fabric");
+assert.deepEqual(
+  resolveRemainingFabricCapacityOfferPresentation({
+    stageId: "try_on",
+    offerExists: true,
+    offerDismissed: false,
+    requested: true,
+  }),
+  { showPrompt: false, showModal: false },
+  "Try-On is not a leftover-capacity presentation surface.",
+);
+
+const stockOneHalfOffers = getFutureRemainingFabricCapacityOffers({
+  fabricAllocationState: completedHalfCapacityState,
+  fabricStageComplete: true,
+  hasEligibleHalfCapacityAdditionalGarment: true,
+});
+assert.equal(stockOneHalfOffers.length, 1);
+assert.equal(
+  getFutureRemainingFabricCapacityOffers({
+    fabricAllocationState: {
+      ...completedHalfCapacityState,
+      fabricAllocations: completedHalfCapacityState.fabricAllocations.map(
+        (allocation) => ({ ...allocation, fabricCode: "STOCK-ONE" }),
+      ),
+    },
+    fabricStageComplete: true,
+    hasEligibleHalfCapacityAdditionalGarment: true,
+  }).length,
+  1,
+  "A stock count of 1 must not suppress leftover capacity that still exists on the assigned Fabric unit.",
+);
+
+let laterStagePromptOpens: string[] = [];
+let laterStagePromptRenderer!: ReturnType<typeof create>;
+act(() => {
+  laterStagePromptRenderer = create(
+    createElement(FutureRemainingFabricCapacityOfferPrompt, {
+      offers: combinedCapacityOffers,
+      fabrics,
+      onAddGarment: (allocationId) => {
+        laterStagePromptOpens.push(allocationId);
+      },
+    }),
+  );
+});
+assert.equal(
+  laterStagePromptRenderer.root.findAllByProps({ role: "dialog" }).length,
+  0,
+  "The later-stage leftover-capacity affordance must not be a blocking dialog.",
+);
+assert.match(
+  JSON.stringify(laterStagePromptRenderer.toJSON()),
+  new RegExp(REMAINING_FABRIC_CAPACITY_OFFER_TITLE),
+);
+assert.match(
+  JSON.stringify(laterStagePromptRenderer.toJSON()),
+  new RegExp(REMAINING_FABRIC_CAPACITY_OFFER_BODY),
+);
+assert.equal(
+  laterStagePromptRenderer.root.findAllByType("li").length,
+  2,
+  "Later-stage leftover capacity must list each remaining Fabric separately.",
+);
+act(() => {
+  laterStagePromptRenderer.root
+    .findByProps({
+      "data-testid": `remaining-fabric-capacity-offer-add-${combinedCapacityOffers[1].allocationId}`,
+    })
+    .props.onClick();
+});
+assert.deepEqual(laterStagePromptOpens, [combinedCapacityOffers[1].allocationId]);
+assert.match(
+  JSON.stringify(laterStagePromptRenderer.toJSON()),
+  new RegExp(REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT),
+);
+assert.doesNotMatch(
+  JSON.stringify(laterStagePromptRenderer.toJSON()),
+  /Use unused Fabric capacity/,
+  "Later stages must not use a generic leftover-capacity CTA.",
+);
+act(() => laterStagePromptRenderer.unmount());
+
+let lockedCapacityOfferGarment: FabricGarmentType | null = null;
+let lockedCapacityOfferAllocationId: string | null = null;
+let lockedCapacityOfferRenderer!: ReturnType<typeof create>;
+act(() => {
+  lockedCapacityOfferRenderer = create(
+    createElement(FutureRemainingFabricCapacityOfferCard, {
+      offers: combinedCapacityOffers,
+      fabrics,
+      eligibleGarmentTypes: ["trouser"],
+      lockedAllocationId: combinedCapacityOffers[1].allocationId,
+      showContinueToDesignStyle: false,
+      onAddAdditionalGarment: (garmentType, allocationId) => {
+        lockedCapacityOfferGarment = garmentType;
+        lockedCapacityOfferAllocationId = allocationId;
+      },
+      onContinue: () => undefined,
+      onDismiss: () => undefined,
+    }),
+  );
+});
+assert.equal(
+  lockedCapacityOfferRenderer.root.findAllByProps({
+    "data-testid": "remaining-fabric-capacity-offer-selector",
+  }).length,
+  1,
+  "A later-stage Add Garment action must open the garment chooser for that Fabric immediately.",
+);
+assert.equal(
+  lockedCapacityOfferRenderer.root.findAllByProps({
+    "data-testid": "remaining-fabric-capacity-offer-decline",
+  }).length,
+  0,
+  "Later-stage leftover capacity must not use Continue to Design Style.",
+);
+assert.equal(
+  lockedCapacityOfferRenderer.root.findByProps({
+    "data-testid": "remaining-fabric-capacity-offer-chooser-fabric",
+  }).children.join(""),
+  "Fabric B",
+);
+assert.equal(
+  lockedCapacityOfferRenderer.root.findByProps({
+    "data-testid": "remaining-fabric-capacity-offer-chooser-instruction",
+  }).children.join(""),
+  "Choose a garment to use with Fabric B.",
+);
+assert.equal(
+  lockedCapacityOfferRenderer.root.findByProps({
+    "data-testid": "remaining-fabric-capacity-offer-selector",
+  }).props["data-fabric-capacity-offer-allocation-id"],
+  combinedCapacityOffers[1].allocationId,
+);
+act(() => {
+  lockedCapacityOfferRenderer.root
+    .findByProps({ "data-testid": "remaining-fabric-capacity-offer-back" })
+    .props.onClick();
+});
+assert.equal(
+  lockedCapacityOfferRenderer.root.findAllByProps({
+    "data-testid": "remaining-fabric-capacity-offer-selector",
+  }).length,
+  0,
+  "Back from a later-stage chooser must return to the Fabric-offer list without closing the modal.",
+);
+assert.equal(lockedCapacityOfferRenderer.root.findAllByType("li").length, 2);
+assert.equal(lockedCapacityOfferGarment, null);
+act(() => {
+  lockedCapacityOfferRenderer.root
+    .findByProps({
+      "data-testid": `remaining-fabric-capacity-offer-add-${combinedCapacityOffers[0].allocationId}`,
+    })
+    .props.onClick();
+});
+assert.equal(
+  lockedCapacityOfferRenderer.root.findByProps({
+    "data-testid": "remaining-fabric-capacity-offer-chooser-fabric",
+  }).children.join(""),
+  "Fabric A",
+  "After Back, Add Garment must lock the clicked Fabric rather than the original later-stage Fabric.",
+);
+act(() => {
+  lockedCapacityOfferRenderer.root
+    .findByProps({
+      "data-testid": "remaining-fabric-capacity-offer-select-trouser",
+    })
+    .props.onClick();
+});
+assert.equal(lockedCapacityOfferGarment, "trouser");
+assert.equal(
+  lockedCapacityOfferAllocationId,
+  combinedCapacityOffers[0].allocationId,
+  "The locked later-stage chooser must keep the exact Fabric allocation identity.",
+);
+act(() => lockedCapacityOfferRenderer.unmount());
 
 // Physical allocation ordinals must be calculated before partial allocations
 // are filtered. Here Selection 1 is full while Selections 2 and 3 still have
@@ -455,7 +809,7 @@ assert.deepEqual(
 act(() => {
   ordinalOfferRenderer.root
     .findByProps({
-      "data-testid": `remaining-fabric-capacity-offer-allocation-${ordinalOffers[1].allocationId}`,
+      "data-testid": `remaining-fabric-capacity-offer-add-${ordinalOffers[1].allocationId}`,
     })
     .props.onClick();
 });
@@ -1349,10 +1703,50 @@ const remainingOfferGate = studioSource.slice(
 assert.match(remainingOfferGate, /futureFabricStageCompletion\.isComplete/);
 assert.match(remainingOfferGate, /additionalGarmentFabricTransaction\.phase === "committed"/,
   "A terminal Fabric commit must not suppress the shared offer while Design Style is unfinished.");
+assert.doesNotMatch(
+  remainingOfferGate,
+  /futureStageId === "fabric" \|\|/,
+  "Offer existence must come from Fabric capacity authority, not the current stage.",
+);
 assert.match(
   remainingOfferGate,
-  /futureStageId === "fabric" \|\|\s*futureStageId === "custom_details" \|\|\s*futureStageId === "personalized_additions"/,
-  "the shared remaining-capacity offer remains available through its current Step 2, Step 4, and Step 5 presentation stages.",
+  /resolveRemainingFabricCapacityOfferPresentation/,
+  "later-stage leftover-capacity presentation must reuse the shared lifecycle helper.",
+);
+assert.match(
+  remainingOfferGate,
+  /showModal/,
+  "Fabric still uses the existing leftover-capacity modal when the helper says to show it.",
+);
+assert.match(
+  remainingOfferGate,
+  /showPrompt/,
+  "Design Style, Custom Details, and Personalized Additions must use the non-blocking leftover-capacity prompt.",
+);
+assert.match(
+  remainingOfferGate,
+  /setRemainingFabricCapacityOfferRequested\(false\)/,
+  "Stage changes must close a later-stage leftover-capacity modal without consuming Fabric.",
+);
+assert.match(
+  studioSource,
+  /FutureRemainingFabricCapacityOfferPrompt/,
+  "later stages must render the non-blocking leftover-capacity affordance.",
+);
+assert.match(
+  studioSource,
+  /setRemainingFabricCapacityOfferRequested\(true\)/,
+  "the later-stage CTA must open the existing leftover-capacity flow.",
+);
+assert.match(
+  studioSource,
+  /setRemainingFabricCapacityOfferRequestedAllocationId\(allocationId\)/,
+  "the later-stage Add Garment action must lock to the exact Fabric allocation.",
+);
+assert.match(
+  studioSource,
+  /onAddAdditionalGarment=\{\(garmentType, allocationId\) => \{[\s\S]*origin: "remaining_fabric_capacity_offer"/,
+  "accepting from the later-stage leftover-capacity flow must still use existing Fabric authority.",
 );
 const capacityAdditionHandler = studioSource.slice(
   studioSource.indexOf("const handleAddFutureAdditionalGarment ="),
@@ -1371,7 +1765,9 @@ assert.match(studioSource, /transaction\.phase === "catalogue" &&\s*transaction\
 assert.match(studioSource, /assignFutureGarmentToExistingFabricAllocation\(/,
   "Spare capacity must reuse an existing allocation through Fabric authority.");
 assert.match(studioSource, /setFutureStageId\(transaction\.capacityReuse\.returnStage\)/,
-  "The transaction must return to Step 2 or Step 4 without a Custom Details copy detour.");
+  "The transaction must return to the originating leftover-capacity stage.");
+assert.match(studioSource, /resolveRemainingFabricCapacityReturnStage\(futureStageId\)/,
+  "Leftover-capacity acceptance must keep the exact originating stage instead of forcing Fabric.");
 const capacityOfferSource = readFileSync(
   "src/components/FutureRemainingFabricCapacityOffer.tsx",
   "utf8",
@@ -1432,6 +1828,8 @@ assert.doesNotMatch(
 assert.match(stepSource, /Step1FabricAssignmentDialog/);
 assert.match(stepSource, /RemoveFabricAssignmentDialog/);
 assert.match(stepSource, /pendingStep1FabricAssignment/);
+assert.match(stepSource, /projectPendingStep1FabricStockPresentation/);
+assert.match(stepSource, /hasFutureReusableHalfCapacityForFabric/);
 assert.match(stepSource, /commitStep1FabricAssignment/);
 assert.match(stepSource, /onAssignSameFabricProduct/);
 assert.match(stepSource, /aria-modal="true"/);

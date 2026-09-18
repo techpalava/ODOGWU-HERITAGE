@@ -14,10 +14,15 @@ import {
   getFutureFabricBulkChoiceCandidates,
   getFutureFabricStep1AssignmentTargets,
   getFutureGarmentFabricPlanning,
+  hasFutureReusableHalfCapacityForFabric,
   type FutureFabricAssignmentTarget,
   type FutureFabricBulkAssignmentResult,
 } from "./designStudioFutureFabricStage";
-import { formatFabricStockExhaustedCopy } from "./fabricStockAvailability";
+import {
+  formatFabricStockExhaustedCopy,
+  getOrderAwareFabricStockPresentation,
+} from "./fabricStockAvailability";
+import type { FabricStockPresentation } from "./fabricStockPresentation";
 
 export const STEP1_FABRIC_ASSIGNMENT_TITLE = "Assign Fabric to Garments";
 export const STEP1_FABRIC_ASSIGNMENT_DESCRIPTION =
@@ -356,6 +361,46 @@ const dryRunAssignGarmentKeys = ({
 };
 
 export const dryRunAssignFabricProductToStep1GarmentKeys = dryRunAssignGarmentKeys;
+
+/**
+ * Pending Assign Fabric checkboxes may preview remaining capacity without
+ * mutating allocation authority. Deselecting drops the dry-run projection.
+ */
+export const projectPendingStep1FabricStockPresentation = ({
+  fabric,
+  fabricAllocationState,
+  selectedGarmentKeys,
+  garmentTypeSelection,
+  fabrics,
+}: {
+  fabric: Pick<Fabric, "code" | "stock" | "stockStatus">;
+  fabricAllocationState: FabricAllocationState;
+  selectedGarmentKeys: readonly string[];
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabrics?: readonly Fabric[];
+}): FabricStockPresentation => {
+  const projectedState =
+    selectedGarmentKeys.length === 0
+      ? fabricAllocationState
+      : (() => {
+          const result = dryRunAssignGarmentKeys({
+            state: fabricAllocationState,
+            garmentTypeSelection,
+            fabricCode: fabric.code,
+            garmentKeys: selectedGarmentKeys,
+            fabrics,
+          });
+          return result.status === "assigned"
+            ? result.state
+            : fabricAllocationState;
+        })();
+  return getOrderAwareFabricStockPresentation(fabric, projectedState, {
+    hasCompatibleReusableHalfCapacity: hasFutureReusableHalfCapacityForFabric({
+      fabricAllocationState: projectedState,
+      fabricCode: fabric.code,
+    }),
+  });
+};
 
 export const canAssignFabricProductToStep1Garment = ({
   garmentTypeSelection,

@@ -891,6 +891,19 @@ export const getFuturePartialFabricAllocationSummaries = ({
     return summary ? [summary] : [];
   });
 
+/** Presentation query over existing remaining-capacity summaries. Not new arithmetic. */
+export const hasFutureReusableHalfCapacityForFabric = ({
+  fabricAllocationState,
+  fabricCode,
+}: {
+  fabricAllocationState: FabricAllocationState;
+  fabricCode: string;
+}): boolean =>
+  getFuturePartialFabricAllocationSummaries({ fabricAllocationState }).some(
+    (summary) =>
+      summary.fabricCode === fabricCode && summary.remainingUnits === 1,
+  );
+
 /**
  * Finds the existing physical Fabric allocations that can take exactly one
  * additional standard garment after the current Fabric stage is complete.
