@@ -6162,6 +6162,9 @@ export default function DesignStudioView({
     navigateToFutureStage("measurement");
   };
   const handleFutureMeasurementRouteChange = (route: MeasurementRiskRoute) => {
+    if (route === "critical_risk" && !futureMeasurementPlan.criticalRiskSupported) {
+      return;
+    }
     setFutureMeasurementState((current) =>
       setFutureMeasurementRoute(current, route),
     );

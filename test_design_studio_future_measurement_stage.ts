@@ -29,6 +29,7 @@ assert.match(measurementSource, /Current route status/);
 assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_LABELS\.low_risk/);
 assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_LABELS\.medium_risk/);
 assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_LABELS\.high_risk/);
+assert.match(measurementSource, /MEASUREMENT_RISK_ROUTE_LABELS\.critical_risk/);
 assert.match(measurementSource, /data-measurement-risk-selector/);
 assert.match(measurementSource, /data-measurement-form=\{selectedRoute\}/);
 assert.match(measurementSource, /data-measurement-section/);

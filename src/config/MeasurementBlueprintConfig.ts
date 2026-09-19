@@ -2,6 +2,7 @@ import type {
   CustomDetailDemographic,
   FabricGarmentType,
   MeasurementRiskRoute,
+  MeasurementWorkbookRiskRoute,
 } from "../types";
 
 export const MEASUREMENT_BLUEPRINT_VERSION =
@@ -533,7 +534,7 @@ export const MEASUREMENT_PROFILES: readonly MeasurementProfile[] = [
 ] as const;
 
 export const EXPECTED_MEASUREMENT_SOURCE_MARKER_COUNTS: Readonly<
-  Record<MeasurementProfileId, Readonly<Record<MeasurementRiskRoute, number>>>
+  Record<MeasurementProfileId, Readonly<Record<MeasurementWorkbookRiskRoute, number>>>
 > = {
   A: { low_risk: 14, medium_risk: 8, high_risk: 3 },
   B: { low_risk: 15, medium_risk: 8, high_risk: 3 },
@@ -575,7 +576,14 @@ export const getMeasurementProfileField = (
 export const getRequiredMeasurementIdsForRoute = (
   profileId: MeasurementProfileId,
   route: MeasurementRiskRoute,
-): CanonicalMeasurementId[] =>
-  (MEASUREMENT_PROFILES.find((profile) => profile.id === profileId)?.fields || [])
+): CanonicalMeasurementId[] => {
+  const fields = MEASUREMENT_PROFILES.find((profile) => profile.id === profileId)?.fields || [];
+  if (route === "critical_risk") {
+    return fields
+      .filter((field) => field.measurementId === "total_height")
+      .map((field) => field.measurementId);
+  }
+  return fields
     .filter((field) => field.directRoutes.includes(route))
     .map((field) => field.measurementId);
+};

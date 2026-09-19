@@ -184,6 +184,7 @@ const makeMeasurementState = (
     low_risk: makeEnteredBag(targetGarmentKey, survivorGarmentKey),
     medium_risk: makeEnteredBag(targetGarmentKey, survivorGarmentKey),
     high_risk: makeEnteredBag(targetGarmentKey, survivorGarmentKey),
+    critical_risk: makeEnteredBag(targetGarmentKey, survivorGarmentKey),
   };
   return {
     ...empty,
@@ -236,6 +237,9 @@ const makeMeasurementState = (
       ],
       high_risk: [
         `high_risk:${targetGarmentKey}:A:waist_circumference`,
+      ],
+      critical_risk: [
+        `critical_risk:${targetGarmentKey}:A:waist_circumference`,
       ],
     },
   };
@@ -1433,5 +1437,164 @@ const uploadedEffective =
       })
     : null;
 assert.deepEqual(uploadedEffective?.garmentTypes, ["shirt", "skirt"]);
+
+const makeOldThreeRouteMeasurementState = (
+  targetGarmentKey: string,
+  survivorGarmentKey: string,
+): FutureMeasurementStateV1 => {
+  const routeBag = (
+    targetWaistCm: number,
+    survivorChestCm: number,
+  ): FutureMeasurementEnteredBagV1 => ({
+    shared: { total_height: measurementValue(172) },
+    byGarmentKey: {
+      [targetGarmentKey]: {
+        waist_circumference: measurementValue(targetWaistCm),
+      },
+      [survivorGarmentKey]: {
+        chest_bust_circumference: measurementValue(survivorChestCm),
+      },
+    },
+  });
+  const enteredByRoute = {
+    low_risk: routeBag(90, 96),
+    medium_risk: routeBag(91, 97),
+    high_risk: routeBag(92, 98),
+  };
+  const invalidInputKeysByRoute = {
+    low_risk: [`low_risk:${targetGarmentKey}:A:waist_circumference`],
+    medium_risk: [`medium_risk:${targetGarmentKey}:A:waist_circumference`],
+    high_risk: [`high_risk:${targetGarmentKey}:A:waist_circumference`],
+  };
+  assert.equal("critical_risk" in enteredByRoute, false);
+  assert.equal("critical_risk" in invalidInputKeysByRoute, false);
+  return {
+    schemaVersion: 1,
+    route: "low_risk",
+    unit: "cm",
+    entered: routeBag(90, 96),
+    enteredByRoute,
+    unassignedEntered: routeBag(90, 96),
+    derived: {
+      shared: {},
+      byGarmentKey: {
+        [targetGarmentKey]: {
+          waist_circumference: {
+            valueCm: 88,
+            provenance: "calculated_average_factor",
+            calculation: {
+              route: "low_risk",
+              profileId: "A",
+              garmentKey: targetGarmentKey,
+              measurementId: "waist_circumference",
+              averageFactor: 0.5,
+            },
+          },
+        },
+        [survivorGarmentKey]: {
+          chest_bust_circumference: measurementValue(96),
+        },
+      },
+    },
+    blueprintVersion: "measurements-steps-website-v1@8b59ab07",
+    formulaVersion: "height-average-factor-v1",
+    inputFingerprint: "three-route-removal",
+    calculationStatus: "incomplete",
+    diagnostics: [
+      {
+        code: "required_measurement_missing",
+        garmentKey: targetGarmentKey,
+        garmentType: "bum_shorts",
+      },
+      {
+        code: "measurement_range_recheck",
+        garmentKey: survivorGarmentKey,
+        garmentType: "shirt",
+      },
+    ],
+    invalidInputKeys: [
+      `low_risk:${targetGarmentKey}:A:waist_circumference`,
+      `low_risk:${survivorGarmentKey}:A:chest_bust_circumference`,
+    ],
+    invalidInputKeysByRoute,
+  } as unknown as FutureMeasurementStateV1;
+};
+
+const threeRouteRemovalInput = authorizeRemoval({
+  ...makeBaseInput({
+    garmentTypes: ["shirt", "bum_shorts", "skirt"],
+    targetGarmentKey: "base:bum_shorts",
+    fabricAllocationState: makeAllocationState([
+      sharedAllocation,
+      skirtAllocation,
+    ]),
+    designSource: baseSource,
+    selectedStyle: baseStyle,
+  }),
+  measurementState: makeOldThreeRouteMeasurementState(
+    "base:bum_shorts",
+    "base:shirt",
+  ),
+});
+const threeRouteShirtGenerationBefore =
+  resolveFuturePhysicalGarmentRemovalAuthority(threeRouteRemovalInput);
+assert.equal(threeRouteShirtGenerationBefore.status, "resolved");
+const survivingThreeRouteShirtGeneration =
+  threeRouteShirtGenerationBefore.status === "resolved"
+    ? threeRouteShirtGenerationBefore.physicalOccurrences.find(
+        (occurrence) => occurrence.garmentKey === "base:shirt",
+      )?.occurrenceGeneration
+    : null;
+assert.ok(survivingThreeRouteShirtGeneration);
+const threeRouteRemoval = removeFuturePhysicalGarmentOccurrence(
+  threeRouteRemovalInput,
+);
+assert.equal(threeRouteRemoval.status, "removed");
+if (threeRouteRemoval.status !== "removed") {
+  throw new Error("Three-route mid-process removal failed.");
+}
+assertTargetRemovedFromMeasurements(
+  threeRouteRemoval.state.measurementState,
+  "base:bum_shorts",
+);
+assert.equal(
+  threeRouteRemoval.state.measurementState.enteredByRoute?.low_risk.byGarmentKey[
+    "base:shirt"
+  ]?.chest_bust_circumference?.valueCm,
+  96,
+);
+assert.equal(
+  threeRouteRemoval.state.measurementState.enteredByRoute?.medium_risk
+    .byGarmentKey["base:shirt"]?.chest_bust_circumference?.valueCm,
+  97,
+);
+assert.equal(
+  threeRouteRemoval.state.measurementState.enteredByRoute?.high_risk.byGarmentKey[
+    "base:shirt"
+  ]?.chest_bust_circumference?.valueCm,
+  98,
+);
+assert.deepEqual(
+  threeRouteRemoval.state.measurementState.enteredByRoute?.critical_risk,
+  { shared: {}, byGarmentKey: {} },
+);
+assert.deepEqual(
+  threeRouteRemoval.state.measurementState.invalidInputKeysByRoute?.critical_risk,
+  [],
+);
+const threeRouteIdentityAfterRemoval =
+  threeRouteRemoval.state.garmentTypeSelection.physicalOccurrenceIdentityState;
+assert.ok(threeRouteIdentityAfterRemoval);
+assert.equal(
+  getPhysicalGarmentOccurrenceGeneration(
+    threeRouteIdentityAfterRemoval,
+    "base:shirt",
+  ),
+  survivingThreeRouteShirtGeneration,
+);
+assert.deepEqual(
+  threeRouteRemoval.survivorOccurrences.map((occurrence) => occurrence.garmentKey),
+  ["base:shirt", "base:skirt"],
+);
 
 console.log("Mid-process garment removal domain tests passed");

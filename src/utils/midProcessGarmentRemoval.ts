@@ -59,6 +59,7 @@ const MEASUREMENT_ROUTES: readonly MeasurementRiskRoute[] = [
   "low_risk",
   "medium_risk",
   "high_risk",
+  "critical_risk",
 ];
 
 export interface FutureGarmentRemovalPendingOperations {
@@ -387,6 +388,21 @@ const invalidMeasurementKeyBelongsToGarment = (
     invalidKey.startsWith(`${route}:${garmentKey}:`),
   );
 
+const emptyEnteredBag = (): FutureMeasurementEnteredBagV1 => ({
+  shared: {},
+  byGarmentKey: {},
+});
+
+const enteredBagForRoute = (
+  byRoute: NonNullable<FutureMeasurementStateV1["enteredByRoute"]>,
+  route: MeasurementRiskRoute,
+): FutureMeasurementEnteredBagV1 => byRoute[route] ?? emptyEnteredBag();
+
+const invalidKeysForRoute = (
+  byRoute: NonNullable<FutureMeasurementStateV1["invalidInputKeysByRoute"]>,
+  route: MeasurementRiskRoute,
+): string[] => byRoute[route] ?? [];
+
 const removeGarmentFromMeasurementState = ({
   state,
   garmentKey,
@@ -398,7 +414,10 @@ const removeGarmentFromMeasurementState = ({
     ? Object.fromEntries(
         MEASUREMENT_ROUTES.map((route) => [
           route,
-          removeGarmentFromEnteredBag(state.enteredByRoute![route], garmentKey),
+          removeGarmentFromEnteredBag(
+            enteredBagForRoute(state.enteredByRoute!, route),
+            garmentKey,
+          ),
         ]),
       ) as FutureMeasurementStateV1["enteredByRoute"]
     : undefined;
@@ -406,7 +425,7 @@ const removeGarmentFromMeasurementState = ({
     ? Object.fromEntries(
         MEASUREMENT_ROUTES.map((route) => [
           route,
-          state.invalidInputKeysByRoute![route].filter(
+          invalidKeysForRoute(state.invalidInputKeysByRoute!, route).filter(
             (invalidKey) =>
               !invalidMeasurementKeyBelongsToGarment(
                 invalidKey,

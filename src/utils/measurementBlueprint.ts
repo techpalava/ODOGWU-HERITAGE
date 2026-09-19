@@ -56,19 +56,27 @@ const VALID_ROUTES = new Set<MeasurementRiskRoute>([
   "low_risk",
   "medium_risk",
   "high_risk",
+  "critical_risk",
 ]);
 
 export const MEASUREMENT_RISK_ROUTE_ORDER = [
   "low_risk",
   "medium_risk",
   "high_risk",
+  "critical_risk",
 ] as const satisfies ReadonlyArray<MeasurementRiskRoute>;
 
 export const MEASUREMENT_RISK_ROUTE_LABELS: Record<MeasurementRiskRoute, string> = {
   low_risk: "Low Risk",
   medium_risk: "Mid Risk",
   high_risk: "High Risk",
+  critical_risk: "Critical Risk",
 };
+
+export const CRITICAL_RISK_AVAILABLE_COPY =
+  "Provide only your Total Height. All required measurements are calculated automatically.";
+export const CRITICAL_RISK_UNAVAILABLE_COPY =
+  "Critical Risk is unavailable for this garment selection because one or more required measurements cannot yet be calculated from height.";
 
 export const MEASUREMENT_RISK_SELECTION_NOTICE =
   "Choose one measurement risk level and complete only the measurements shown for your selected option.";
@@ -90,7 +98,7 @@ const NON_BLOCKING_DIAGNOSTIC_CODES = new Set<FutureMeasurementDiagnostic["code"
 export const isSelectedMeasurementRiskRoute = (
   route: SelectedMeasurementRiskRoute | undefined,
 ): route is MeasurementRiskRoute =>
-  route === "low_risk" || route === "medium_risk" || route === "high_risk";
+  typeof route === "string" && VALID_ROUTES.has(route);
 const VALID_UNITS = new Set<MeasurementUnit>(["inch", "cm"]);
 const SQUARE_NECK_OPTION_ID_SET = new Set<string>(SQUARE_NECK_OPTION_IDS);
 
@@ -381,6 +389,7 @@ export interface MeasurementRequirementPlan {
   diagnostics: FutureMeasurementDiagnostic[];
   inputFingerprint: string;
   canCalculate: boolean;
+  criticalRiskSupported: boolean;
 }
 
 const presentationBand = (requirement: PlannedMeasurementRequirement): number => {
@@ -485,6 +494,86 @@ const resolveFieldApplicability = ({
   return "include";
 };
 
+const isCompleteSetField = (field: MeasurementProfileField): boolean =>
+  field.directRoutes.includes("low_risk");
+
+export const isCriticalRiskCompleteSetCalculable = ({
+  profile,
+  constructionOptionId,
+  selectedOptionIds = [],
+}: {
+  profile: MeasurementProfile;
+  constructionOptionId: string | null;
+  selectedOptionIds?: readonly string[];
+}): boolean => {
+  let hasHeight = false;
+  for (const field of profile.fields) {
+    if (!isCompleteSetField(field)) continue;
+    const applicability = resolveFieldApplicability({
+      field,
+      profile,
+      constructionOptionId,
+      selectedOptionIds,
+    });
+    if (applicability === "exclude") continue;
+    if (applicability === "unresolved") return false;
+    if (field.measurementId === "total_height") {
+      hasHeight = true;
+      continue;
+    }
+    if (field.averageFactor === null) return false;
+  }
+  return hasHeight;
+};
+
+export const isCriticalRiskSupportedForOccurrence = ({
+  garment,
+  garmentTypeSelection,
+  additionalGarmentConstructions,
+  garmentScopedCustomDetails,
+}: {
+  garment: MeasurementPhysicalGarment;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+  garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1;
+}): boolean => {
+  const resolution = resolveMeasurementProfile({
+    garment,
+    garmentTypeSelection,
+    additionalGarmentConstructions,
+  });
+  if (resolution.status !== "resolved") return false;
+  return isCriticalRiskCompleteSetCalculable({
+    profile: resolution.profile,
+    constructionOptionId: resolution.constructionOptionId,
+    selectedOptionIds: getSelectedOptionIds(
+      garmentScopedCustomDetails,
+      resolution.garmentKey,
+    ),
+  });
+};
+
+export const isCriticalRiskSupportedForSelection = ({
+  garmentTypeSelection,
+  physicalGarments,
+  additionalGarmentConstructions,
+  garmentScopedCustomDetails,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  physicalGarments: readonly MeasurementPhysicalGarment[];
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+  garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1;
+}): boolean =>
+  physicalGarments.length > 0 &&
+  physicalGarments.every((garment) =>
+    isCriticalRiskSupportedForOccurrence({
+      garment,
+      garmentTypeSelection,
+      additionalGarmentConstructions,
+      garmentScopedCustomDetails,
+    }),
+  );
+
 export const planMeasurementRequirements = ({
   route,
   garmentTypeSelection,
@@ -498,6 +587,12 @@ export const planMeasurementRequirements = ({
   garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1;
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
 }): MeasurementRequirementPlan => {
+  const criticalRiskSupported = isCriticalRiskSupportedForSelection({
+    garmentTypeSelection,
+    physicalGarments,
+    additionalGarmentConstructions,
+    garmentScopedCustomDetails,
+  });
   if (!isSelectedMeasurementRiskRoute(route)) {
     return {
       blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
@@ -507,6 +602,7 @@ export const planMeasurementRequirements = ({
       diagnostics: [],
       inputFingerprint: `measurement_unresolved_${MEASUREMENT_BLUEPRINT_VERSION}`,
       canCalculate: false,
+      criticalRiskSupported,
     };
   }
   const profiles = physicalGarments
@@ -520,8 +616,14 @@ export const planMeasurementRequirements = ({
     .sort((left, right) => left.garmentKey.localeCompare(right.garmentKey));
   const diagnostics: FutureMeasurementDiagnostic[] = [];
   const requirements: PlannedMeasurementRequirement[] = [];
+  if (route === "critical_risk" && !criticalRiskSupported) {
+    diagnostics.push({
+      code: "calculation_configuration_pending",
+    });
+  }
 
   profiles.forEach((resolution) => {
+    if (route === "critical_risk" && !criticalRiskSupported) return;
     if (resolution.status !== "resolved") {
       diagnostics.push({
         code: resolution.status === "unmapped"
@@ -544,6 +646,51 @@ export const planMeasurementRequirements = ({
         selectedOptionIds,
       });
       if (applicability === "exclude") return;
+      if (route === "critical_risk") {
+        if (!isCompleteSetField(field)) return;
+        if (applicability === "unresolved" || (
+          field.measurementId !== "total_height" && field.averageFactor === null
+        )) {
+          diagnostics.push({
+            code: "calculation_configuration_pending",
+            garmentKey: resolution.garmentKey,
+            garmentType: resolution.garmentType,
+            measurementId: field.measurementId,
+            profileId: resolution.profile.id,
+          });
+          return;
+        }
+        const definition = DEFINITION_BY_ID.get(field.measurementId);
+        if (!definition) return;
+        const isHeight = field.measurementId === "total_height";
+        const scope = definition.scope === "shared_body" ? "shared" : "garment";
+        requirements.push({
+          key: [
+            route,
+            resolution.garmentKey,
+            resolution.profile.id,
+            field.measurementId,
+          ].join(":"),
+          manualValueKey: scope === "shared"
+            ? `shared:${field.measurementId}`
+            : `${resolution.garmentKey}:${field.measurementId}`,
+          measurementId: field.measurementId,
+          definition,
+          scope,
+          garmentKey: resolution.garmentKey,
+          garmentType: resolution.garmentType,
+          profileId: resolution.profile.id,
+          sourceRow: field.sourceRow,
+          directInput: isHeight,
+          section: isHeight ? "required" : "optional",
+          inputSource: isHeight ? "route_marker" : "calculated_average_factor",
+          averageFactor: field.averageFactor,
+          minFactor: field.minFactor,
+          maxFactor: field.maxFactor,
+          stdFactor: field.stdFactor,
+        });
+        return;
+      }
       const provenRequiredOnRoute = field.directRoutes.includes(route);
       // Unproven IF APPLICABLE rows stay optional. Unresolved alternative
       // groups (mid/long sleeve when construction cannot discriminate) stay
@@ -595,6 +742,7 @@ export const planMeasurementRequirements = ({
     });
     const requiresFutureCalculation =
       route !== "low_risk" &&
+      route !== "critical_risk" &&
       resolution.profile.fields.some(
         (field) =>
           field.directRoutes.includes("low_risk") &&
@@ -660,7 +808,11 @@ export const planMeasurementRequirements = ({
     requirements: orderedRequirements,
     diagnostics,
     inputFingerprint: `measurement_${stableHash(fingerprintInput)}`,
-    canCalculate: route === "medium_risk" || route === "high_risk",
+    canCalculate:
+      route === "medium_risk" ||
+      route === "high_risk" ||
+      (route === "critical_risk" && criticalRiskSupported),
+    criticalRiskSupported,
   };
 };
 
@@ -686,12 +838,14 @@ const createEmptyEnteredByRoute = (): FutureMeasurementEnteredByRouteV1 => ({
   low_risk: createEmptyEnteredBag(),
   medium_risk: createEmptyEnteredBag(),
   high_risk: createEmptyEnteredBag(),
+  critical_risk: createEmptyEnteredBag(),
 });
 
 const createEmptyInvalidKeysByRoute = (): Record<MeasurementRiskRoute, string[]> => ({
   low_risk: [],
   medium_risk: [],
   high_risk: [],
+  critical_risk: [],
 });
 
 export const cloneFutureMeasurementEnteredBag = (
@@ -709,6 +863,7 @@ const cloneEnteredByRoute = (
   low_risk: cloneFutureMeasurementEnteredBag(byRoute?.low_risk),
   medium_risk: cloneFutureMeasurementEnteredBag(byRoute?.medium_risk),
   high_risk: cloneFutureMeasurementEnteredBag(byRoute?.high_risk),
+  critical_risk: cloneFutureMeasurementEnteredBag(byRoute?.critical_risk),
 });
 
 export const isFutureMeasurementEnteredBagEmpty = (
@@ -834,6 +989,7 @@ export const normalizeFutureMeasurementState = (
         low_risk: normalizeEnteredBag(enteredByRouteSource.low_risk),
         medium_risk: normalizeEnteredBag(enteredByRouteSource.medium_risk),
         high_risk: normalizeEnteredBag(enteredByRouteSource.high_risk),
+        critical_risk: normalizeEnteredBag(enteredByRouteSource.critical_risk),
       }
     : createEmptyEnteredByRoute();
   if (!hasEnteredByRouteField && route) {

@@ -10,6 +10,8 @@ import {
   countRemainingCustomerRequiredMeasurementUnits,
   countRequiredMeasurementUnits,
   countSatisfiedRequiredMeasurementUnits,
+  CRITICAL_RISK_AVAILABLE_COPY,
+  CRITICAL_RISK_UNAVAILABLE_COPY,
   fromCanonicalCentimetres,
   getRequiredAlternativeGroupId,
   getResolvedMeasurementValue,
@@ -55,6 +57,11 @@ const ROUTES: ReadonlyArray<{
     title: MEASUREMENT_RISK_ROUTE_LABELS.high_risk,
     description: "Enter the required measurements. Optional values are calculated from height where available.",
   },
+  {
+    id: "critical_risk",
+    title: MEASUREMENT_RISK_ROUTE_LABELS.critical_risk,
+    description: CRITICAL_RISK_AVAILABLE_COPY,
+  },
 ];
 
 const CALCULATED_PENDING_MESSAGE =
@@ -84,6 +91,8 @@ const getBlockerMessage = (
       return "A measurement choice still needs confirmation from the selected construction details.";
     case "calculation_basis_unresolved":
       return "The required height basis is not yet available for one selected garment.";
+    case "calculation_configuration_pending":
+      return CRITICAL_RISK_UNAVAILABLE_COPY;
     case "required_measurement_missing":
       return "Complete every required measurement shown below.";
     case "invalid_measurement_value":
@@ -439,6 +448,8 @@ export const DormantFutureMeasurementStep = ({
     plan,
     state: resolvedState,
   });
+  const criticalRiskSupported = plan.criticalRiskSupported;
+  const criticalRiskUnavailable = selectedRoute === "critical_risk" && !criticalRiskSupported;
   const unsupportedGarments = selectedRoute
     ? resolvedState.diagnostics.filter(
         (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
@@ -449,14 +460,16 @@ export const DormantFutureMeasurementStep = ({
         resolvedState.diagnostics
           .filter((diagnostic) =>
             diagnostic.code !== "measurement_profile_unmapped" &&
-            diagnostic.code !== "calculation_configuration_pending" &&
-            diagnostic.code !== "measurement_range_recheck"
+            diagnostic.code !== "measurement_range_recheck" &&
+            (diagnostic.code !== "calculation_configuration_pending" || criticalRiskUnavailable)
           )
           .map(getBlockerMessage),
       )]
     : [];
   const routeSaveMessage = !selectedRoute
     ? MEASUREMENT_RISK_SELECTION_NOTICE
+    : criticalRiskUnavailable
+      ? CRITICAL_RISK_UNAVAILABLE_COPY
     : resolvedState.calculationStatus === "complete"
       ? "All required measurements are saved."
       : `${remainingManualInputCount} required measurement${remainingManualInputCount === 1 ? " remains" : "s remain"}.`;
@@ -475,6 +488,7 @@ export const DormantFutureMeasurementStep = ({
       data-stage-id="measurement"
       data-measurement-status={resolvedState.calculationStatus}
       data-measurement-risk-selected={selectedRoute || "none"}
+      data-critical-risk-supported={criticalRiskSupported ? "true" : "false"}
       className="space-y-5 font-sans"
     >
       <header className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
@@ -506,6 +520,7 @@ export const DormantFutureMeasurementStep = ({
           <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
             {ROUTES.map((route) => {
               const selected = selectedRoute === route.id;
+              const unavailable = route.id === "critical_risk" && !criticalRiskSupported;
               const status = getStatusLabel(
                 route.id,
                 selectedRoute,
@@ -516,7 +531,10 @@ export const DormantFutureMeasurementStep = ({
                   key={route.id}
                   data-measurement-risk-option={route.id}
                   data-measurement-risk-selected={selected ? "true" : "false"}
-                  className={`flex min-w-0 cursor-pointer gap-3 rounded-xl border p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                  data-measurement-risk-disabled={unavailable ? "true" : "false"}
+                  className={`flex min-w-0 gap-3 rounded-xl border p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                    unavailable ? "cursor-not-allowed opacity-70" : "cursor-pointer"
+                  } ${
                     selected
                       ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
                       : "border-heritage-green/15 hover:border-heritage-gold/45"
@@ -527,8 +545,12 @@ export const DormantFutureMeasurementStep = ({
                     name="future-measurement-route"
                     value={route.id}
                     checked={selected}
-                    onChange={() => onRouteChange(route.id)}
-                    className="mt-1 size-4 shrink-0 accent-heritage-green"
+                    disabled={unavailable && !selected}
+                    onChange={() => {
+                      if (unavailable) return;
+                      onRouteChange(route.id);
+                    }}
+                    className="mt-1 size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed"
                   />
                   <span className="min-w-0">
                     <span className="flex min-w-0 flex-wrap items-center gap-2">
@@ -542,7 +564,7 @@ export const DormantFutureMeasurementStep = ({
                       )}
                     </span>
                     <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">
-                      {route.description}
+                      {unavailable ? CRITICAL_RISK_UNAVAILABLE_COPY : route.description}
                     </span>
                   </span>
                 </label>

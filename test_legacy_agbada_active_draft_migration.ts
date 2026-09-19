@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import type {
   CanonicalPhysicalGarmentType,
   FabricAllocation,
+  FutureMeasurementStateV1,
   GarmentConstructionPricingResolution,
   GuestDesignDraft,
 } from "./src/types";
 import { normalizeGuestDesignDraft } from "./src/services/guestOrderSessionService";
+import { normalizeFutureMeasurementState } from "./src/utils/measurementBlueprint";
 import {
   buildAuthoritativePhysicalOccurrences,
   isValidUploadedDesignDraftSource,
@@ -173,6 +175,10 @@ const makeDraft = (
           },
         },
       },
+      critical_risk: {
+        shared: {},
+        byGarmentKey: {},
+      },
     },
     unassignedEntered: {
       shared: {},
@@ -233,6 +239,7 @@ const makeDraft = (
       ],
       medium_risk: ["medium_risk:base:agbada:chest_bust_circumference"],
       high_risk: ["high_risk:base:agbada:chest_bust_circumference"],
+      critical_risk: [],
     },
   },
   futureShippingState: {
@@ -366,6 +373,213 @@ const makeDraft = (
   fabricAllocations: [clone(shirtAllocation), clone(agbadaAllocation)],
   updatedAt: "2026-09-02T12:00:00.000Z",
 });
+
+const threeRouteEnteredBag = (shirtCm: number, agbadaCm: number) => ({
+  shared: {
+    total_height: { valueCm: 180, provenance: "customer_entered" as const },
+  },
+  byGarmentKey: {
+    "base:shirt": {
+      chest_bust_circumference: {
+        valueCm: shirtCm,
+        provenance: "customer_entered" as const,
+      },
+    },
+    "base:agbada": {
+      chest_bust_circumference: {
+        valueCm: agbadaCm,
+        provenance: "customer_entered" as const,
+      },
+    },
+  },
+});
+
+const makeOldThreeRouteMeasurementState = (): FutureMeasurementStateV1 => {
+  const enteredByRoute = {
+    low_risk: threeRouteEnteredBag(101.6, 106.68),
+    medium_risk: threeRouteEnteredBag(102.6, 107),
+    high_risk: threeRouteEnteredBag(103.6, 108),
+  };
+  const invalidInputKeysByRoute = {
+    low_risk: [
+      "low_risk:base:agbada:chest_bust_circumference",
+      "low_risk:base:shirt:chest_bust_circumference",
+    ],
+    medium_risk: [
+      "medium_risk:base:agbada:chest_bust_circumference",
+      "medium_risk:base:shirt:chest_bust_circumference",
+    ],
+    high_risk: [
+      "high_risk:base:agbada:chest_bust_circumference",
+      "high_risk:base:shirt:chest_bust_circumference",
+    ],
+  };
+  assert.equal("critical_risk" in enteredByRoute, false);
+  assert.equal("critical_risk" in invalidInputKeysByRoute, false);
+  return {
+    schemaVersion: 1,
+    route: "low_risk",
+    unit: "inch",
+    entered: threeRouteEnteredBag(101.6, 106.68),
+    enteredByRoute,
+    derived: {
+      shared: {},
+      byGarmentKey: {
+        "base:shirt": {
+          sleeve_length: { valueCm: 63, provenance: "system_derived" },
+        },
+        "base:agbada": {
+          sleeve_length: { valueCm: 65, provenance: "system_derived" },
+        },
+      },
+    },
+    blueprintVersion: "measurement-blueprint-v1",
+    formulaVersion: null,
+    inputFingerprint: "legacy-three-route-fingerprint",
+    calculationStatus: "complete",
+    diagnostics: [
+      { code: "measurement_range_recheck", garmentKey: "base:agbada" },
+      { code: "measurement_range_recheck", garmentKey: "base:shirt" },
+    ],
+    invalidInputKeys: [
+      "low_risk:base:agbada:chest_bust_circumference",
+      "low_risk:base:shirt:chest_bust_circumference",
+    ],
+    invalidInputKeysByRoute,
+  } as unknown as FutureMeasurementStateV1;
+};
+
+const threeRouteDraft = clone(makeDraft());
+threeRouteDraft.futureMeasurementState = makeOldThreeRouteMeasurementState();
+delete threeRouteDraft.fabricAllocations;
+const threeRouteMigration = migrateLegacyAgbadaActiveDraft(clone(threeRouteDraft));
+assert.equal(threeRouteMigration.changed, true);
+assert.deepEqual(threeRouteMigration.removedGarmentKeys.sort(), [
+  "base:agbada",
+]);
+assert.deepEqual(threeRouteMigration.draft.garmentTypeSelection?.garmentTypes, [
+  "shirt",
+]);
+const migratedThreeRoute = threeRouteMigration.draft.futureMeasurementState;
+assert.ok(migratedThreeRoute);
+assert.equal(
+  migratedThreeRoute.entered.byGarmentKey["base:agbada"],
+  undefined,
+);
+assert.equal(
+  migratedThreeRoute.entered.byGarmentKey["base:shirt"]
+    ?.chest_bust_circumference?.valueCm,
+  101.6,
+);
+assert.equal(
+  migratedThreeRoute.enteredByRoute?.low_risk.byGarmentKey["base:shirt"]
+    ?.chest_bust_circumference?.valueCm,
+  101.6,
+);
+assert.equal(
+  migratedThreeRoute.enteredByRoute?.medium_risk.byGarmentKey["base:shirt"]
+    ?.chest_bust_circumference?.valueCm,
+  102.6,
+);
+assert.equal(
+  migratedThreeRoute.enteredByRoute?.high_risk.byGarmentKey["base:shirt"]
+    ?.chest_bust_circumference?.valueCm,
+  103.6,
+);
+(["low_risk", "medium_risk", "high_risk"] as const).forEach((route) => {
+  assert.equal(
+    migratedThreeRoute.enteredByRoute?.[route].byGarmentKey["base:agbada"],
+    undefined,
+  );
+  assert.equal(
+    migratedThreeRoute.enteredByRoute?.[route].shared.total_height?.valueCm,
+    180,
+  );
+});
+assert.deepEqual(migratedThreeRoute.enteredByRoute?.critical_risk, {
+  shared: {},
+  byGarmentKey: {},
+});
+assert.deepEqual(migratedThreeRoute.invalidInputKeysByRoute?.low_risk, [
+  "low_risk:base:shirt:chest_bust_circumference",
+]);
+assert.deepEqual(migratedThreeRoute.invalidInputKeysByRoute?.medium_risk, [
+  "medium_risk:base:shirt:chest_bust_circumference",
+]);
+assert.deepEqual(migratedThreeRoute.invalidInputKeysByRoute?.high_risk, [
+  "high_risk:base:shirt:chest_bust_circumference",
+]);
+assert.deepEqual(migratedThreeRoute.invalidInputKeysByRoute?.critical_risk, []);
+assert.equal(
+  migratedThreeRoute.derived.byGarmentKey["base:agbada"],
+  undefined,
+);
+assert.ok(migratedThreeRoute.derived.byGarmentKey["base:shirt"]);
+
+const normalizedThreeRoute = normalizeFutureMeasurementState(migratedThreeRoute);
+assert.ok(normalizedThreeRoute);
+assert.equal(normalizedThreeRoute.schemaVersion, 1);
+assert.equal(normalizedThreeRoute.route, "low_risk");
+assert.equal(
+  normalizedThreeRoute.entered.byGarmentKey["base:shirt"]
+    ?.chest_bust_circumference?.valueCm,
+  101.6,
+);
+assert.equal(
+  normalizedThreeRoute.enteredByRoute.low_risk.byGarmentKey["base:shirt"]
+    ?.chest_bust_circumference?.valueCm,
+  101.6,
+);
+assert.equal(
+  normalizedThreeRoute.enteredByRoute.medium_risk.byGarmentKey["base:shirt"]
+    ?.chest_bust_circumference?.valueCm,
+  102.6,
+);
+assert.equal(
+  normalizedThreeRoute.enteredByRoute.high_risk.byGarmentKey["base:shirt"]
+    ?.chest_bust_circumference?.valueCm,
+  103.6,
+);
+assert.deepEqual(normalizedThreeRoute.enteredByRoute.critical_risk, {
+  shared: {},
+  byGarmentKey: {},
+});
+
+const guestLoadedThreeRoute = normalizeGuestDesignDraft(clone(threeRouteDraft));
+assert.deepEqual(guestLoadedThreeRoute.garmentTypeSelection?.garmentTypes, [
+  "shirt",
+]);
+assert.equal(guestLoadedThreeRoute.futureMeasurementState?.schemaVersion, 1);
+assert.equal(guestLoadedThreeRoute.futureMeasurementState?.route, "low_risk");
+assert.equal(
+  guestLoadedThreeRoute.futureMeasurementState?.entered.byGarmentKey["base:shirt"]
+    ?.chest_bust_circumference?.valueCm,
+  101.6,
+);
+assert.equal(
+  guestLoadedThreeRoute.futureMeasurementState?.enteredByRoute?.low_risk
+    .byGarmentKey["base:shirt"]?.chest_bust_circumference?.valueCm,
+  101.6,
+);
+assert.equal(
+  guestLoadedThreeRoute.futureMeasurementState?.enteredByRoute?.medium_risk
+    .byGarmentKey["base:shirt"]?.chest_bust_circumference?.valueCm,
+  102.6,
+);
+assert.equal(
+  guestLoadedThreeRoute.futureMeasurementState?.enteredByRoute?.high_risk
+    .byGarmentKey["base:shirt"]?.chest_bust_circumference?.valueCm,
+  103.6,
+);
+assert.deepEqual(
+  guestLoadedThreeRoute.futureMeasurementState?.enteredByRoute?.critical_risk,
+  { shared: {}, byGarmentKey: {} },
+);
+assert.equal(
+  guestLoadedThreeRoute.futureMeasurementState?.entered.byGarmentKey["base:agbada"],
+  undefined,
+);
+console.log("PASS: old three-route V1 Agbada measurement restore and guest load");
 
 const freshDraft = makeDraft(["shirt"]);
 freshDraft.aiTryOnWorkflow = {
