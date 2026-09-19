@@ -1292,17 +1292,42 @@ export const DormantFutureCustomDetailsStep = ({
   ) => {
     const visibleGroups = groups.filter((group) => group.occurrences.length > 0);
     if (visibleGroups.length === 0) return null;
+    const selectionGroups = new Set(
+      visibleGroups.map((group) => group.selectionGroup),
+    );
+    const companionPresentation =
+      selectionGroups.size === 1 && selectionGroups.has("dress_additional")
+        ? {
+            section: "dress-additional-clothes-costs",
+            ariaLabel: "Dress additional clothes costs",
+            helper:
+              "Optional extras for this dress. Keep None if you do not want lining, net, or wraps.",
+          }
+        : selectionGroups.size === 1 &&
+            selectionGroups.has("standard_shorts_additional")
+          ? {
+              section: "standard-shorts-additional-clothes-costs",
+              ariaLabel: "Standard Nikka Shorts additional clothes costs",
+              helper:
+                "Optional extras for these shorts. Keep None if you do not want extra pockets.",
+            }
+          : {
+              section: "additional-clothes-costs",
+              ariaLabel: "Additional clothes costs",
+              helper:
+                "Optional extras for this garment. Keep None if you do not want additions.",
+            };
     return (
       <aside
-        data-custom-detail-section="dress-additional-clothes-costs"
-        aria-label="Dress additional clothes costs"
+        data-custom-detail-section={companionPresentation.section}
+        aria-label={companionPresentation.ariaLabel}
         className="min-w-0 max-w-full rounded-xl border border-heritage-gold/25 bg-heritage-cream/30 p-3 sm:p-4"
       >
         <h4 className={`min-w-0 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} text-heritage-green`}>
           Additional Clothes Costs
         </h4>
         <p className="mt-1 text-xs leading-relaxed text-heritage-ink/60">
-          Optional extras for this dress. Keep None if you do not want lining, net, or wraps.
+          {companionPresentation.helper}
         </p>
         <div className="mt-3 min-w-0 space-y-4">
           {visibleGroups.map((group) => renderGroupFieldset(group, headingMode, "stack"))}

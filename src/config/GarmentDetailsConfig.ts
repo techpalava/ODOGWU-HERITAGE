@@ -264,9 +264,9 @@ export type AdditionalClothesCostSection =
 /**
  * Customer-facing “Additional Clothes Costs” full restore.
  * Flip to `true` to restore every additional-cost group, its completion rules,
- * and active pricing. Dress additional costs remain customer-visible even while
- * this flag is false. Does not delete catalogue options, Admin support, or
- * draft/historical data.
+ * and active pricing. Dress and Standard Nikka Shorts additional costs remain
+ * customer-visible even while this flag is false. Does not delete catalogue
+ * options, Admin support, or draft/historical data.
  */
 export const SHOW_ADDITIONAL_CLOTHES_COSTS = false;
 
@@ -285,6 +285,7 @@ export type CustomerFacingAdditionalClothesCostGroup =
  */
 export const CUSTOMER_VISIBLE_ADDITIONAL_CLOTHES_COST_GROUPS = [
   "dress_additional",
+  "standard_shorts_additional",
 ] as const satisfies readonly CustomerFacingAdditionalClothesCostGroup[];
 
 /** Groups rendered as a compact companion beside their parent garment section. */
@@ -292,9 +293,12 @@ export const CUSTOMER_COMPANION_ADDITIONAL_CLOTHES_COST_GROUPS =
   CUSTOMER_VISIBLE_ADDITIONAL_CLOTHES_COST_GROUPS;
 
 export const ADDITIONAL_CLOTHES_COST_CUSTOMER_VISIBLE_PARENT: Readonly<
-  Partial<Record<CustomerFacingAdditionalClothesCostGroup, FabricGarmentType>>
+  Partial<
+    Record<CustomerFacingAdditionalClothesCostGroup, readonly FabricGarmentType[]>
+  >
 > = {
-  dress_additional: "dress",
+  dress_additional: ["dress", "full_length_gown"],
+  standard_shorts_additional: ["standard_shorts"],
 };
 
 export const resolveShowAdditionalClothesCosts = (
@@ -344,11 +348,11 @@ export const isCustomerVisibleAdditionalClothesCostForGarment = (
   if (resolveShowAdditionalClothesCosts(options?.showAdditionalClothesCosts)) {
     return true;
   }
-  const requiredParent = ADDITIONAL_CLOTHES_COST_CUSTOMER_VISIBLE_PARENT[group];
-  if (!requiredParent || !parentGarmentType) {
+  const requiredParents = ADDITIONAL_CLOTHES_COST_CUSTOMER_VISIBLE_PARENT[group];
+  if (!requiredParents || requiredParents.length === 0 || !parentGarmentType) {
     return true;
   }
-  return parentGarmentType === requiredParent;
+  return (requiredParents as readonly string[]).includes(parentGarmentType);
 };
 
 export const ALL_CUSTOM_DETAIL_SELECTION_GROUPS: readonly CustomDetailSelectionGroup[] = [
@@ -1305,7 +1309,7 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
   },
   {
     id: "dress_additional_head_wrap",
-    label: "Head Wrap / Gear / Scarf",
+    label: "Head Wrap / Gear / Skarf",
     description: "Head-Tie (traditional look)",
     priceCents: 1000,
     garmentGroup: "dress",
@@ -1320,7 +1324,7 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
   },
   {
     id: "dress_additional_shoulder_waist_wrap",
-    label: "Shoulder or Waist Wrap / Scarf",
+    label: "Shoulder or Waist Wrap / Skarf",
     description:
       "Over the Shoulder or around both shoulders or around the Waist",
     priceCents: 1500,

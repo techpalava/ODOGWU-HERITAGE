@@ -223,7 +223,12 @@ assert.equal(
 );
 assert.deepEqual([...CUSTOMER_VISIBLE_ADDITIONAL_CLOTHES_COST_GROUPS], [
   "dress_additional",
+  "standard_shorts_additional",
 ]);
+assert.equal(
+  isCustomerAvailableCustomDetailSelectionGroup("standard_shorts_additional"),
+  true,
+);
 assert.equal(isCustomerAvailableCustomDetailSelectionGroup("neck_design"), true);
 assert.equal(
   isCustomerAvailableCustomDetailSelectionGroup("personalized_additional"),
@@ -529,8 +534,12 @@ const enabledLegacyPricing = calculateDesignPricing({
   garmentConstructionSelectionMode: "garment_type_locked",
   garmentTypeSelection,
 });
-assert.equal(disabledLegacyPricing.customDetailsPrice, 35);
-assert.equal(enabledLegacyPricing.customDetailsPrice, 35);
+assert.equal(
+  disabledLegacyPricing.customDetailsPrice,
+  47,
+  "neck €25 + Dress lining €10 + Name Monogram €12",
+);
+assert.equal(enabledLegacyPricing.customDetailsPrice, 47);
 const aiTryOnWorkflow: AiTryOnWorkflowStateV1 = {
   schemaVersion: 1,
   status: "skipped",
@@ -713,7 +722,7 @@ assert.doesNotMatch(rendered, /Shirts - Additional/);
 assert.doesNotMatch(rendered, /Neck Design - Additional/);
 assert.match(rendered, /Dress - Additional/);
 assert.match(rendered, /Lining in Dress - to keep dress firm \(in shape\)/);
-assert.match(rendered, /Add Additional Garment/);
+assert.doesNotMatch(rendered, /Add Additional Garment/);
 assert.match(rendered, /Neck Design/i);
 assert.ok(
   renderer.root.findAllByProps({ "data-custom-detail-group": "neck_design" })
@@ -721,6 +730,23 @@ assert.ok(
 );
 assert.equal(
   renderer.root.findAllByProps({
+    "data-custom-detail-section": "add-additional-garment",
+  }).length,
+  0,
+);
+
+let personalizedRenderer!: ReturnType<typeof create>;
+act(() => {
+  personalizedRenderer = create(
+    createElement(DormantFutureCustomDetailsStep, {
+      ...disabledStep.props,
+      stage: "personalized_additions",
+    }),
+  );
+});
+assert.match(textContent(personalizedRenderer.root), /Add Additional Garment/);
+assert.equal(
+  personalizedRenderer.root.findAllByProps({
     "data-custom-detail-section": "add-additional-garment",
   }).length,
   1,
@@ -803,18 +829,18 @@ act(() => {
   );
 });
 const enabledRendered = textContent(enabledRenderer.root);
-const enabledAdditionalSection = enabledRenderer.root.findByProps({
-  "data-custom-detail-section": "additional-clothes-costs",
-});
 assert.match(enabledRendered, /Additional Clothes Costs/);
-assert.doesNotMatch(textContent(enabledAdditionalSection), /Dress - Additional/);
-assert.match(textContent(enabledAdditionalSection), /Shirts - Additional|Neck Design - Additional/);
+assert.ok(
+  enabledRenderer.root.findAllByProps({
+    "data-custom-detail-group": "shirt_additional",
+  }).length > 0,
+  "full restore must re-enable Shirt additional costs",
+);
 assert.ok(
   enabledRenderer.root.findAllByProps({
     "data-custom-detail-section": "dress-additional-clothes-costs",
   }).length > 0,
 );
-assert.ok(enabledAdditionalSection.findAllByType("input").length > 0);
 assert.equal(
   enabledPricing.lines.find(
     (line) =>
@@ -823,8 +849,23 @@ assert.equal(
   )?.lineTotalCents,
   1000,
 );
+let enabledPersonalizedRenderer!: ReturnType<typeof create>;
+act(() => {
+  enabledPersonalizedRenderer = create(
+    createElement(DormantFutureCustomDetailsStep, {
+      ...disabledStep.props,
+      stage: "personalized_additions",
+      catalogue: enabledCatalogue,
+      completion: enabledCompletion,
+      pricing: enabledPricing,
+      orderLevelCustomDetailsPrice: enabledLegacyPricing.customDetailsPrice,
+      designSelections: rawLegacyDesignSelections,
+      showAdditionalClothesCosts: true,
+    }),
+  );
+});
 assert.equal(
-  enabledRenderer.root.findAllByProps({
+  enabledPersonalizedRenderer.root.findAllByProps({
     "data-custom-detail-group": "personalized_additional",
   }).length > 0,
   true,

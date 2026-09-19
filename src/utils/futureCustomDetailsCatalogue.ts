@@ -382,7 +382,9 @@ export const projectFutureCustomDetailsCatalogue = ({
             "additional_garment"
           >,
         ),
-    ).map(makeGroup),
+    )
+      .map(makeGroup)
+      .filter((group) => group.occurrences.length > 0),
     personalizedGroup: makeGroup("personalized_additional"),
     activeParentGarmentOrder,
   };
