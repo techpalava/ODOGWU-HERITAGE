@@ -63,6 +63,7 @@ const makeLegacyDraft = (): GuestDesignDraft => ({
       low_risk: { shared: {}, byGarmentKey: {} },
       medium_risk: { shared: {}, byGarmentKey: {} },
       high_risk: { shared: {}, byGarmentKey: {} },
+      critical_risk: { shared: {}, byGarmentKey: {} },
     },
     derived: { shared: {}, byGarmentKey: {} },
     blueprintVersion: "measurement-blueprint-v1",

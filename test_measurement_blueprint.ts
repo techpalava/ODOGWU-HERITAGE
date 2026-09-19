@@ -687,6 +687,7 @@ assert.deepEqual(MEASUREMENT_RISK_ROUTE_LABELS, {
   low_risk: "Low Risk",
   medium_risk: "Mid Risk",
   high_risk: "High Risk",
+  critical_risk: "Critical Risk",
 });
 assert.equal(
   MEASUREMENT_RISK_SELECTION_NOTICE,
