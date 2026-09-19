@@ -1760,6 +1760,7 @@ const uploadedLiveSummary = projectDesignStudioLiveOrderSummary({
   candidatePricing: null,
   fabricAllocationState: uploadedShirtTrouserInput.fabricAllocationState,
   measurementState: uploadedShirtTrouserInput.measurementState,
+  measurementPlan: uploadedShirtTrouserInput.measurementPlan,
   designSource: {
     kind: "uploaded",
     sourceKey: "uploaded:h5-shirt-trouser",

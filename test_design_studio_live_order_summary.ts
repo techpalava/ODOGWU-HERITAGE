@@ -519,6 +519,7 @@ const buildAuthority = ({
     candidatePricing: candidateResult.candidate?.pricing ?? null,
     fabricAllocationState: allocation,
     measurementState,
+    measurementPlan,
     designSource: includeStyle
       ? {
           kind: "catalog",
@@ -538,6 +539,7 @@ const buildAuthority = ({
     allocation,
     measurementState,
     additionalConstruction,
+    measurementPlan,
   };
 };
 
@@ -880,6 +882,7 @@ const presentationView = projectDesignStudioLiveOrderSummary({
   candidatePricing: null,
   fabricAllocationState: preDelivery.allocation,
   measurementState: preDelivery.measurementState,
+  measurementPlan: preDelivery.measurementPlan,
   designSource: { kind: "catalog", sourceKey: "casual-native", styleId: "casual-native" },
 });
 const presentationLine = section(presentationView, "design_style").lines[0]!;
@@ -1179,6 +1182,7 @@ const selectedTwoExtrasView = projectDesignStudioLiveOrderSummary({
   candidatePricing: twoExtras.candidateResult.candidate?.pricing ?? null,
   fabricAllocationState: twoExtras.allocation,
   measurementState: twoExtras.measurementState,
+  measurementPlan: twoExtras.measurementPlan,
   designSource: { kind: "catalog", sourceKey: "fixture-style", styleId: "fixture-style" },
   additionalConstructionState: twoExtras.additionalConstruction.state,
   catalogInspection: inspection,
@@ -1317,6 +1321,31 @@ assert.equal(
   false,
 );
 
+const highShirtTrouserIncomplete = buildAuthority({
+  garmentTypes: ["shirt", "trouser"],
+  measurementRoute: "high_risk",
+  completeMeasurements: false,
+});
+assert.equal(
+  section(highShirtTrouserIncomplete.view, "measurements").lines[0]?.label,
+  "High Risk — 6 required measurements remaining",
+);
+assert.equal(
+  highShirtTrouserIncomplete.measurementState.diagnostics.filter(
+    (diagnostic) => diagnostic.code === "required_measurement_missing",
+  ).length,
+  7,
+);
+const highShirtTrouserComplete = buildAuthority({
+  garmentTypes: ["shirt", "trouser"],
+  measurementRoute: "high_risk",
+  completeMeasurements: true,
+});
+assert.equal(
+  section(highShirtTrouserComplete.view, "measurements").lines[0]?.label,
+  "High Risk — Complete",
+);
+
 const midComplete = buildAuthority({
   measurementRoute: "medium_risk",
   completeMeasurements: true,
@@ -1421,6 +1450,7 @@ const candidateUnavailableProjected = projectDesignStudioLiveOrderSummary({
   candidatePricing: null,
   fabricAllocationState: courier.allocation,
   measurementState: courier.measurementState,
+  measurementPlan: courier.measurementPlan,
   designSource: {
     kind: "catalog",
     sourceKey: "style-shirt",
@@ -1495,6 +1525,7 @@ const over20kg = projectDesignStudioLiveOrderSummary({
   candidatePricing: null,
   fabricAllocationState: courier.allocation,
   measurementState: courier.measurementState,
+  measurementPlan: courier.measurementPlan,
   designSource: {
     kind: "catalog",
     sourceKey: "style-shirt",
@@ -1547,6 +1578,7 @@ const uploaded = projectDesignStudioLiveOrderSummary({
   candidatePricing: null,
   fabricAllocationState: early.allocation,
   measurementState: early.measurementState,
+  measurementPlan: early.measurementPlan,
   designSource: uploadedDesignSource,
 });
 assert.equal(
@@ -1565,6 +1597,7 @@ const uploadedWithDelivery = projectDesignStudioLiveOrderSummary({
   candidatePricing: null,
   fabricAllocationState: courier.allocation,
   measurementState: courier.measurementState,
+  measurementPlan: courier.measurementPlan,
   designSource: uploadedDesignSource,
   additionalConstructionState: courier.additionalConstruction.state,
   catalogInspection: inspection,
@@ -1597,6 +1630,7 @@ const uploadedQuote = projectDesignStudioLiveOrderSummary({
   candidatePricing: null,
   fabricAllocationState: otherDestination.allocation,
   measurementState: otherDestination.measurementState,
+  measurementPlan: otherDestination.measurementPlan,
   designSource: uploadedDesignSource,
   additionalConstructionState: otherDestination.additionalConstruction.state,
   catalogInspection: inspection,

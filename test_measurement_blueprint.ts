@@ -37,6 +37,9 @@ import {
   resolveMeasurementProfile,
   setFutureMeasurementInput,
   setFutureMeasurementRoute,
+  countRemainingCustomerRequiredMeasurementUnits,
+  countRequiredMeasurementUnits,
+  getEnteredMeasurementValue,
 } from "./src/utils/measurementBlueprint";
 import { createDormantDesignStudioJourneyState } from "./src/utils/designStudioJourneyMode";
 import { reconcileGuestDesignDraftGarmentTypeSelection } from "./src/utils/garmentTypeStepState";
@@ -362,6 +365,19 @@ assert.equal(
   "Compatible shared manual Height instances render as one customer input.",
 );
 assert.equal(
+  projectMeasurementRequirementsForPresentation({
+    requirements: lowPlan.requirements,
+  })[0]?.measurementId,
+  "total_height",
+  "Total Height is the first presented measurement on Low Risk.",
+);
+assert.equal(
+  lowPlan.requirements.some((requirement) =>
+    requirement.measurementId === "total_height" && requirement.directInput,
+  ),
+  true,
+);
+assert.equal(
   lowPlan.requirements.filter(({ measurementId }) =>
     ["shirt_length_standard", "waist_to_ankle_length"].includes(measurementId),
   ).every(({ scope, garmentKey }) => scope === "garment" && Boolean(garmentKey)),
@@ -388,6 +404,13 @@ for (const route of ["medium_risk", "high_risk"] as MeasurementRiskRoute[]) {
     plan.requirements.some((requirement) => requirement.measurementId === "total_height" && requirement.directInput),
     true,
     "Height remains an explicit calculation basis.",
+  );
+  assert.equal(
+    projectMeasurementRequirementsForPresentation({
+      requirements: plan.requirements,
+    })[0]?.measurementId,
+    "total_height",
+    `Total Height is the first presented measurement on ${route}.`,
   );
 }
 
@@ -1009,6 +1032,214 @@ assert.equal(
   assert.deepEqual(
     orphanSafeMembership.map((garment) => garment.garmentKey),
     ["base:shirt"],
+  );
+}
+
+{
+  const shirtTrouserSelection: GarmentTypeStepSelection = {
+    garmentTypes: ["shirt", "trouser"],
+    demographic: "male",
+    constructionByGarment: {
+      shirt: construction("shirt", "shirt_std_short", "shirt_construction"),
+      trouser: construction("trouser", "trouser_rope", "trouser_fastening"),
+    },
+  };
+  const shirtTrouserHighPlan = planMeasurementRequirements({
+    route: "high_risk",
+    garmentTypeSelection: shirtTrouserSelection,
+    physicalGarments: [
+      { garmentKey: "base:shirt", garmentType: "shirt" },
+      { garmentKey: "base:trouser", garmentType: "trouser" },
+    ],
+  });
+  const heightRequirements = shirtTrouserHighPlan.requirements.filter(
+    (requirement) => requirement.measurementId === "total_height" && requirement.directInput,
+  );
+  assert.equal(heightRequirements.length, 2);
+  assert.deepEqual(
+    [...new Set(heightRequirements.map((requirement) => requirement.manualValueKey))],
+    ["shared:total_height"],
+  );
+  let highState = reconcileFutureMeasurementState({
+    state: createEmptyFutureMeasurementState("high_risk", "inch"),
+    plan: shirtTrouserHighPlan,
+  });
+  assert.equal(
+    countRemainingCustomerRequiredMeasurementUnits({
+      plan: shirtTrouserHighPlan,
+      state: highState,
+    }),
+    6,
+  );
+  assert.equal(
+    highState.diagnostics.filter(
+      (diagnostic) => diagnostic.code === "required_measurement_missing",
+    ).length,
+    7,
+    "occurrence plans still emit one missing diagnostic each",
+  );
+  const heightRequirement = heightRequirements[0]!;
+  highState = reconcileFutureMeasurementState({
+    state: setFutureMeasurementInput({
+      state: highState,
+      requirement: heightRequirement,
+      displayValue: 66.9,
+    }),
+    plan: shirtTrouserHighPlan,
+  });
+  assert.equal(highState.calculationStatus, "incomplete");
+  assert.equal(
+    countRemainingCustomerRequiredMeasurementUnits({
+      plan: shirtTrouserHighPlan,
+      state: highState,
+    }),
+    5,
+  );
+  heightRequirements.forEach((requirement) => {
+    assert.equal(
+      Boolean(getEnteredMeasurementValue(highState.entered, requirement)),
+      true,
+      `${requirement.garmentKey} must still independently read shared Height`,
+    );
+  });
+  const remainingSharedManuals = [
+    "chest_bust_circumference",
+    "belly_circumference",
+    "waist_circumference",
+    "thigh_circumference",
+    "waist_to_crotch_depth_length",
+  ];
+  remainingSharedManuals.forEach((measurementId) => {
+    const requirement = shirtTrouserHighPlan.requirements.find(
+      (candidate) => candidate.measurementId === measurementId && candidate.directInput,
+    )!;
+    assert.equal(requirement.manualValueKey, `shared:${measurementId}`);
+    highState = setFutureMeasurementInput({
+      state: highState,
+      requirement,
+      displayValue: 20,
+    });
+  });
+  highState = reconcileFutureMeasurementState({
+    state: highState,
+    plan: shirtTrouserHighPlan,
+  });
+  assert.equal(highState.calculationStatus, "complete");
+  assert.equal(
+    countRemainingCustomerRequiredMeasurementUnits({
+      plan: shirtTrouserHighPlan,
+      state: highState,
+    }),
+    0,
+  );
+  assert.equal(isFutureMeasurementStageComplete(highState), true);
+  assert.equal(isFutureSummaryUnlockedByMeasurements(highState), true);
+  highState = reconcileFutureMeasurementState({
+    state: setFutureMeasurementInput({
+      state: highState,
+      requirement: heightRequirement,
+      displayValue: null,
+    }),
+    plan: shirtTrouserHighPlan,
+  });
+  assert.equal(highState.calculationStatus, "incomplete");
+  assert.equal(isFutureMeasurementStageComplete(highState), false);
+  assert.equal(isFutureSummaryUnlockedByMeasurements(highState), false);
+  assert.equal(
+    countRemainingCustomerRequiredMeasurementUnits({
+      plan: shirtTrouserHighPlan,
+      state: highState,
+    }),
+    1,
+  );
+}
+
+{
+  const twoShirtSelection: GarmentTypeStepSelection = {
+    garmentTypes: ["shirt"],
+    demographic: "male",
+    constructionByGarment: {
+      shirt: construction("shirt", "shirt_std_short", "shirt_construction"),
+    },
+  };
+  const twoShirtConstructions: AdditionalGarmentConstructionStateV1 = {
+    schemaVersion: 1,
+    byGarmentKey: {
+      "additional:shirt:1": construction("shirt", "shirt_std_short", "shirt_construction"),
+    },
+  };
+  const twoShirtLowPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: twoShirtSelection,
+    physicalGarments: [
+      { garmentKey: "base:shirt", garmentType: "shirt" },
+      { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+    ],
+    additionalGarmentConstructions: twoShirtConstructions,
+  });
+  const shirtLengthKeys = twoShirtLowPlan.requirements
+    .filter((requirement) => requirement.measurementId === "shirt_length_standard")
+    .map((requirement) => requirement.manualValueKey)
+    .sort();
+  assert.deepEqual(shirtLengthKeys, [
+    "additional:shirt:1:shirt_length_standard",
+    "base:shirt:shirt_length_standard",
+  ]);
+  const emptyTwoShirt = reconcileFutureMeasurementState({
+    state: createEmptyFutureMeasurementState("low_risk", "inch"),
+    plan: twoShirtLowPlan,
+  });
+  const presentedRequired = projectMeasurementRequirementsForPresentation({
+    requirements: twoShirtLowPlan.requirements,
+    state: emptyTwoShirt,
+  }).filter((requirement) => requirement.section === "required");
+  assert.equal(
+    countRequiredMeasurementUnits(presentedRequired),
+    countRemainingCustomerRequiredMeasurementUnits({
+      plan: twoShirtLowPlan,
+      state: emptyTwoShirt,
+    }),
+  );
+  assert.equal(
+    presentedRequired.filter(
+      (requirement) => requirement.measurementId === "shirt_length_standard",
+    ).length,
+    2,
+    "occurrence-specific shirt length must not collapse across garments",
+  );
+}
+
+{
+  const midLongShirtSelection: GarmentTypeStepSelection = {
+    garmentTypes: ["shirt"],
+    demographic: "male",
+    constructionByGarment: {
+      shirt: construction("shirt", "shirt_std_midlong", "shirt_construction"),
+    },
+  };
+  const midLongPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: midLongShirtSelection,
+    physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+  });
+  const emptyMidLong = reconcileFutureMeasurementState({
+    state: createEmptyFutureMeasurementState("low_risk", "inch"),
+    plan: midLongPlan,
+  });
+  const presentedRequired = projectMeasurementRequirementsForPresentation({
+    requirements: midLongPlan.requirements,
+    state: emptyMidLong,
+  }).filter((requirement) => requirement.section === "required");
+  const sleeveAlternatives = midLongPlan.requirements.filter(
+    (requirement) =>
+      requirement.measurementId === "sleeve_length_mid" ||
+      requirement.measurementId === "sleeve_length_long",
+  );
+  assert.equal(sleeveAlternatives.length, 2);
+  assert.equal(
+    presentedRequired.filter((requirement) => requirement.directInput).length + 1,
+    countRequiredMeasurementUnits(presentedRequired),
+    "mid/long one-of counts as one required customer unit",
   );
 }
 

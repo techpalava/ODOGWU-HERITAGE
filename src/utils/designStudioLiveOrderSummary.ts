@@ -12,7 +12,11 @@ import type { FutureShippingStageResolution } from "./designStudioFutureShipping
 import { getStep8OrderSummaryRows } from "./designStudioFutureShipping";
 import type { FutureDesignStudioSummary } from "./designStudioFutureSummary";
 import type { FutureOrderCandidatePricingV1 } from "./futureOrderCandidate";
-import { isSelectedMeasurementRiskRoute } from "./measurementBlueprint";
+import {
+  countRemainingCustomerRequiredMeasurementUnits,
+  isSelectedMeasurementRiskRoute,
+  type MeasurementRequirementPlan,
+} from "./measurementBlueprint";
 import { PRICING_CURRENCY_SYMBOL } from "./money";
 
 export const LIVE_ORDER_SUMMARY_HIDDEN_STAGES = ["summary", "payment"] as const;
@@ -328,6 +332,7 @@ const personalizedAdditionLines = (
 const measurementStatusLine = (
   summary: FutureDesignStudioSummary,
   measurementState: FutureMeasurementStateV1,
+  measurementPlan: MeasurementRequirementPlan,
 ): LiveOrderSummaryLine => {
   const route = measurementState.route;
   if (!isSelectedMeasurementRiskRoute(route)) {
@@ -347,9 +352,10 @@ const measurementStatusLine = (
       amountLabel: null,
     };
   }
-  const remaining = measurementState.diagnostics.filter(
-    (diagnostic) => diagnostic.code === "required_measurement_missing",
-  ).length;
+  const remaining = countRemainingCustomerRequiredMeasurementUnits({
+    plan: measurementPlan,
+    state: measurementState,
+  });
   return {
     id: "measurements-pending",
     label:
@@ -522,6 +528,7 @@ export const projectDesignStudioLiveOrderSummary = ({
   candidatePricing,
   fabricAllocationState: _fabricAllocationState,
   measurementState,
+  measurementPlan,
   designSource: _designSource,
   additionalConstructionState: _additionalConstructionState = null,
   catalogInspection: _catalogInspection = null,
@@ -532,6 +539,7 @@ export const projectDesignStudioLiveOrderSummary = ({
   candidatePricing: FutureOrderCandidatePricingV1 | null;
   fabricAllocationState: FabricAllocationState;
   measurementState: FutureMeasurementStateV1;
+  measurementPlan: MeasurementRequirementPlan;
   designSource: DesignSource | null;
   additionalConstructionState?: AdditionalGarmentConstructionStateV1 | null;
   catalogInspection?: CustomDetailCatalogInspection | null;
@@ -649,7 +657,11 @@ export const projectDesignStudioLiveOrderSummary = ({
       }))
     : [];
 
-  const measurementLine = measurementStatusLine(summary, measurementState);
+  const measurementLine = measurementStatusLine(
+    summary,
+    measurementState,
+    measurementPlan,
+  );
   const selectedPersonalizedAdditions = personalizedAdditionLines(summary);
   const constructionSubtotalCents =
     authoritativeConstructionSubtotalCents(summary);

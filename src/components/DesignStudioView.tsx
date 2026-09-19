@@ -2911,6 +2911,7 @@ export default function DesignStudioView({
         candidatePricing: null,
         fabricAllocationState,
         measurementState: reconciledFutureMeasurementState,
+        measurementPlan: futureMeasurementPlan,
         designSource: activeFutureDesignSource,
         additionalConstructionState:
           futureAdditionalConstructionReconciliation.state,
@@ -2922,6 +2923,7 @@ export default function DesignStudioView({
       futureShippingResolution,
       fabricAllocationState,
       reconciledFutureMeasurementState,
+      futureMeasurementPlan,
       activeFutureDesignSource,
       futureAdditionalConstructionReconciliation.state,
       futureCatalogInspection,

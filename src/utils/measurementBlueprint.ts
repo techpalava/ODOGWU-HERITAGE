@@ -370,6 +370,7 @@ export interface PlannedMeasurementRequirement {
   minFactor: number | null;
   maxFactor: number | null;
   stdFactor: number | null;
+  alternativeGroup?: string;
 }
 
 export interface MeasurementRequirementPlan {
@@ -381,6 +382,23 @@ export interface MeasurementRequirementPlan {
   inputFingerprint: string;
   canCalculate: boolean;
 }
+
+const presentationBand = (requirement: PlannedMeasurementRequirement): number => {
+  if (requirement.measurementId === "total_height") return 0;
+  if (requirement.section === "required") return 1;
+  if (requirement.inputSource === "calculated_average_factor") return 2;
+  return 3;
+};
+
+const compareMeasurementRequirementsForPresentation = (
+  left: PlannedMeasurementRequirement,
+  right: PlannedMeasurementRequirement,
+): number => {
+  const band = presentationBand(left) - presentationBand(right);
+  if (band !== 0) return band;
+  const sourceRow = left.sourceRow - right.sourceRow;
+  return sourceRow !== 0 ? sourceRow : left.key.localeCompare(right.key);
+};
 
 export const projectMeasurementRequirementsForPresentation = ({
   requirements,
@@ -422,8 +440,8 @@ export const projectMeasurementRequirementsForPresentation = ({
     projected.push(requirement);
   });
 
-  return [...sharedManual.values(), ...projected].sort((left, right) =>
-    left.key.localeCompare(right.key),
+  return [...sharedManual.values(), ...projected].sort(
+    compareMeasurementRequirementsForPresentation,
   );
 };
 
@@ -526,28 +544,20 @@ export const planMeasurementRequirements = ({
         selectedOptionIds,
       });
       if (applicability === "exclude") return;
-      // High Risk has one customer calculation basis: Total Height.  The source
-      // route markers remain provenance for the workbook, but factor-backed
-      // High-Risk rows are predictions, not additional customer inputs.
-      // Factorless rows retain their existing optional-manual treatment below.
-      const requiredOnRoute = route === "high_risk"
-        ? field.measurementId === "total_height"
-        : field.directRoutes.includes(route);
-      if (applicability === "unresolved") {
-        if (requiredOnRoute || route === "low_risk") {
-          diagnostics.push({
-            code: "applicability_unresolved",
-            garmentKey: resolution.garmentKey,
-            garmentType: resolution.garmentType,
-            measurementId: field.measurementId,
-            profileId: resolution.profile.id,
-          });
-          return;
-        }
-      }
+      const provenRequiredOnRoute = field.directRoutes.includes(route);
+      // Unproven IF APPLICABLE rows stay optional. Unresolved alternative
+      // groups (mid/long sleeve when construction cannot discriminate) stay
+      // enterable as a one-of requirement: at least one member, never both
+      // independently required, never both omissible.
+      const requiredOnRoute = applicability === "unresolved"
+        ? false
+        : provenRequiredOnRoute;
+      const alternativeOneOf = applicability === "unresolved"
+        && Boolean(field.alternativeGroup)
+        && provenRequiredOnRoute;
       const definition = DEFINITION_BY_ID.get(field.measurementId);
       if (!definition) return;
-      const inputSource: MeasurementInputSource = requiredOnRoute
+      const inputSource: MeasurementInputSource = requiredOnRoute || alternativeOneOf
         ? "route_marker"
         : field.averageFactor === null
           ? "optional_manual"
@@ -573,12 +583,13 @@ export const planMeasurementRequirements = ({
         profileId: resolution.profile.id,
         sourceRow: field.sourceRow,
         directInput,
-        section: directInput ? "required" : "optional",
+        section: requiredOnRoute || alternativeOneOf ? "required" : "optional",
         inputSource,
         averageFactor: field.averageFactor,
         minFactor: field.minFactor,
         maxFactor: field.maxFactor,
         stdFactor: field.stdFactor,
+        ...(alternativeOneOf ? { alternativeGroup: field.alternativeGroup } : {}),
       };
       requirements.push(nextRequirement);
     });
@@ -630,6 +641,7 @@ export const planMeasurementRequirements = ({
       requirement.directInput,
       requirement.section,
       requirement.inputSource,
+      requirement.alternativeGroup || "",
       requirement.averageFactor,
       requirement.minFactor,
       requirement.maxFactor,
@@ -1000,6 +1012,130 @@ const isPositiveMeasurementValue = (
 ): value is FutureMeasurementValueV1 =>
   Boolean(value && Number.isFinite(value.valueCm) && value.valueCm > 0);
 
+export const getRequiredAlternativeGroupId = (
+  requirement: PlannedMeasurementRequirement,
+): string | null =>
+  requirement.alternativeGroup &&
+  requirement.section === "required" &&
+  !requirement.directInput
+    ? `${requirement.garmentKey}:${requirement.alternativeGroup}`
+    : null;
+
+export const collectRequiredAlternativeGroups = (
+  requirements: readonly PlannedMeasurementRequirement[],
+): Map<string, PlannedMeasurementRequirement[]> => {
+  const groups = new Map<string, PlannedMeasurementRequirement[]>();
+  requirements.forEach((requirement) => {
+    const groupId = getRequiredAlternativeGroupId(requirement);
+    if (!groupId) return;
+    const current = groups.get(groupId) || [];
+    current.push(requirement);
+    groups.set(groupId, current);
+  });
+  return groups;
+};
+
+export const isRequiredAlternativeGroupSatisfied = ({
+  members,
+  entered,
+  invalidInputKeys,
+}: {
+  members: readonly PlannedMeasurementRequirement[];
+  entered: FutureMeasurementEnteredBagV1;
+  invalidInputKeys: readonly string[];
+}): boolean =>
+  members.some((requirement) =>
+    !invalidInputKeys.includes(requirement.key) &&
+    isPositiveMeasurementValue(getEnteredMeasurementValue(entered, requirement)),
+  );
+
+const uniqueDirectInputRequirements = (
+  requirements: readonly PlannedMeasurementRequirement[],
+): PlannedMeasurementRequirement[] => {
+  const byManualValueKey = new Map<string, PlannedMeasurementRequirement>();
+  requirements.forEach((requirement) => {
+    if (!requirement.directInput) return;
+    if (!byManualValueKey.has(requirement.manualValueKey)) {
+      byManualValueKey.set(requirement.manualValueKey, requirement);
+    }
+  });
+  return [...byManualValueKey.values()];
+};
+
+export const countRequiredMeasurementUnits = (
+  requirements: readonly PlannedMeasurementRequirement[],
+): number =>
+  uniqueDirectInputRequirements(requirements).length +
+  collectRequiredAlternativeGroups(requirements).size;
+
+export const countSatisfiedRequiredMeasurementUnits = ({
+  requirements,
+  entered,
+  invalidInputKeys,
+}: {
+  requirements: readonly PlannedMeasurementRequirement[];
+  entered: FutureMeasurementEnteredBagV1;
+  invalidInputKeys: readonly string[];
+}): number => {
+  const individualSatisfied = uniqueDirectInputRequirements(requirements).filter(
+    (requirement) =>
+      !invalidInputKeys.includes(requirement.key) &&
+      isPositiveMeasurementValue(getEnteredMeasurementValue(entered, requirement)),
+  ).length;
+  const satisfiedGroups = [...collectRequiredAlternativeGroups(requirements).values()]
+    .filter((members) => isRequiredAlternativeGroupSatisfied({
+      members,
+      entered,
+      invalidInputKeys,
+    }))
+    .length;
+  return individualSatisfied + satisfiedGroups;
+};
+
+export const countRemainingRequiredMeasurementUnits = ({
+  requirements,
+  entered,
+  invalidInputKeys,
+}: {
+  requirements: readonly PlannedMeasurementRequirement[];
+  entered: FutureMeasurementEnteredBagV1;
+  invalidInputKeys: readonly string[];
+}): number =>
+  Math.max(
+    0,
+    countRequiredMeasurementUnits(requirements) -
+      countSatisfiedRequiredMeasurementUnits({
+        requirements,
+        entered,
+        invalidInputKeys,
+      }),
+  );
+
+export const collectPresentedRequiredMeasurementRequirements = ({
+  plan,
+  state,
+}: {
+  plan: MeasurementRequirementPlan;
+  state: FutureMeasurementStateV1;
+}): PlannedMeasurementRequirement[] =>
+  projectMeasurementRequirementsForPresentation({
+    requirements: plan.requirements,
+    state,
+  }).filter((requirement) => requirement.section === "required");
+
+export const countRemainingCustomerRequiredMeasurementUnits = ({
+  plan,
+  state,
+}: {
+  plan: MeasurementRequirementPlan;
+  state: FutureMeasurementStateV1;
+}): number =>
+  countRemainingRequiredMeasurementUnits({
+    requirements: collectPresentedRequiredMeasurementRequirements({ plan, state }),
+    entered: state.entered,
+    invalidInputKeys: state.invalidInputKeys,
+  });
+
 const getRequirementFactors = (
   requirement: PlannedMeasurementRequirement,
 ) =>
@@ -1143,6 +1279,21 @@ export const reconcileFutureMeasurementState = ({
         profileId: requirement.profileId,
       });
     }
+  });
+  collectRequiredAlternativeGroups(plan.requirements).forEach((members) => {
+    if (isRequiredAlternativeGroupSatisfied({
+      members,
+      entered,
+      invalidInputKeys,
+    })) return;
+    const representative = members[0];
+    if (!representative) return;
+    diagnostics.push({
+      code: "required_measurement_missing",
+      garmentKey: representative.garmentKey,
+      garmentType: representative.garmentType,
+      profileId: representative.profileId,
+    });
   });
   plan.requirements
     .filter((requirement) => requirement.inputSource === "calculated_average_factor")
