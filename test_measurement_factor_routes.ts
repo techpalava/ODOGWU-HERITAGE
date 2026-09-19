@@ -152,8 +152,54 @@ assert.equal(
 const dressLowPlan = planFor("E", "low_risk");
 assert.equal(
   dressLowPlan.diagnostics.some((diagnostic) => diagnostic.code === "applicability_unresolved"),
+  false,
+  "Unproven IF APPLICABLE rows must not hide-and-block Dress Low Risk completion.",
+);
+assert.equal(
+  dressLowPlan.requirements.some(
+    (requirement) =>
+      requirement.measurementId === "under_bust_circumference" &&
+      !requirement.directInput &&
+      requirement.section === "optional",
+  ),
   true,
-  "Dress Low still follows existing unresolved applicability for IF APPLICABLE fields.",
+  "Unproven Dress IF APPLICABLE rows remain optional and enterable.",
+);
+const dressLowFilled = fillRequired("E", "low_risk");
+assert.equal(isFutureMeasurementStageComplete(dressLowFilled.state), true);
+assert.equal(isFutureSummaryUnlockedByMeasurements(dressLowFilled.state), true);
+
+const midLongShirtLowFilled = fillRequired("B", "low_risk");
+assert.equal(isFutureMeasurementStageComplete(midLongShirtLowFilled.state), false);
+assert.equal(isFutureSummaryUnlockedByMeasurements(midLongShirtLowFilled.state), false);
+const midSleeve = midLongShirtLowFilled.plan.requirements.find(
+  (requirement) => requirement.measurementId === "sleeve_length_mid",
+);
+assert.ok(midSleeve);
+assert.equal(midSleeve.directInput, false);
+assert.equal(midSleeve.section, "required");
+assert.equal(midSleeve.alternativeGroup, "B_sleeve_length");
+assert.equal(midSleeve.inputSource, "route_marker");
+const midLongShirtOneSleeve = reconcileFutureMeasurementState({
+  state: setFutureMeasurementInput({
+    state: midLongShirtLowFilled.state,
+    requirement: midSleeve,
+    displayValue: 40,
+  }),
+  plan: midLongShirtLowFilled.plan,
+});
+assert.equal(isFutureMeasurementStageComplete(midLongShirtOneSleeve), true);
+assert.equal(isFutureSummaryUnlockedByMeasurements(midLongShirtOneSleeve), true);
+assert.equal(
+  midLongShirtLowFilled.plan.requirements.some(
+    (requirement) =>
+      requirement.measurementId === "sleeve_length_long" &&
+      !requirement.directInput &&
+      requirement.section === "required" &&
+      requirement.alternativeGroup === "B_sleeve_length",
+  ),
+  true,
+  "Unresolved sleeve alternatives stay a required one-of group, not two independent required rows.",
 );
 
 for (const profileId of ["A", "E", "I", "L"] as const) {

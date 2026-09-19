@@ -5,7 +5,12 @@ import type {
   MeasurementRiskRoute,
 } from "../types";
 import {
+  collectRequiredAlternativeGroups,
+  countRemainingRequiredMeasurementUnits,
+  countRequiredMeasurementUnits,
+  countSatisfiedRequiredMeasurementUnits,
   fromCanonicalCentimetres,
+  getRequiredAlternativeGroupId,
   getResolvedMeasurementValue,
   isFutureSummaryUnlockedByMeasurements,
   isSelectedMeasurementRiskRoute,
@@ -138,13 +143,16 @@ const MeasurementField = ({
   const errorId = `${inputId}-error`;
   const calculated = requirement.inputSource === "calculated_average_factor";
   const optionalManual = requirement.inputSource === "optional_manual";
+  const oneOfAlternative = Boolean(getRequiredAlternativeGroupId(requirement));
   const badge = stored?.provenance === "customer_entered"
     ? "Customer measurement"
     : calculated
     ? CALCULATED_FROM_HEIGHT_LABEL
     : optionalManual
       ? "Optional"
-      : "Required";
+      : oneOfAlternative
+        ? "One required"
+        : "Required";
 
   return (
     <label
@@ -264,12 +272,28 @@ const MeasurementSection = ({
         requirement.inputSource === "calculated_average_factor",
     ),
   );
-  const completedCount = requirements.filter((requirement) => {
-    if (requirement.inputSource === "calculated_average_factor") return false;
-    const value = getResolvedMeasurementValue(state, requirement);
-    return Boolean(value && Number.isFinite(value.valueCm) && value.valueCm > 0);
-  }).length;
-  const requiredCount = requirements.filter((requirement) => requirement.directInput).length;
+  const completedCount = countSatisfiedRequiredMeasurementUnits({
+    requirements,
+    entered: state.entered,
+    invalidInputKeys: state.invalidInputKeys,
+  });
+  const requiredCount = countRequiredMeasurementUnits(requirements);
+
+  const renderFields = (fields: PlannedMeasurementRequirement[]) =>
+    fields.map((requirement) => (
+      <MeasurementField
+        key={requirement.key}
+        requirement={requirement}
+        state={state}
+        onChange={onChange}
+        rangeRecheck={state.diagnostics.some(
+          (diagnostic) =>
+            diagnostic.code === "measurement_range_recheck" &&
+            diagnostic.measurementId === requirement.measurementId &&
+            (requirement.scope === "shared" || diagnostic.garmentKey === requirement.garmentKey),
+        )}
+      />
+    ));
 
   return (
     <section
@@ -308,23 +332,16 @@ const MeasurementSection = ({
             Shared body measurements are entered once and used for all applicable garments.
           </p>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {sharedRequirements.map((requirement) => (
-              <MeasurementField
-                key={requirement.key}
-                requirement={requirement}
-                state={state}
-                onChange={onChange}
-                rangeRecheck={state.diagnostics.some(
-                  (diagnostic) =>
-                    diagnostic.code === "measurement_range_recheck" &&
-                    diagnostic.measurementId === requirement.measurementId,
-                )}
-              />
-            ))}
+            {renderFields(sharedRequirements)}
           </div>
         </div>
       )}
-      {garmentRequirementSections.map(([garmentKey, garmentRequirements]) => (
+      {garmentRequirementSections.map(([garmentKey, garmentRequirements]) => {
+        const individualRequirements = garmentRequirements.filter(
+          (requirement) => !getRequiredAlternativeGroupId(requirement),
+        );
+        const alternativeGroups = collectRequiredAlternativeGroups(garmentRequirements);
+        return (
         <div key={garmentKey} className="mt-5">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <h4 className="font-serif text-base font-bold text-heritage-green">
@@ -334,24 +351,31 @@ const MeasurementSection = ({
               Garment specific
             </span>
           </div>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {garmentRequirements.map((requirement) => (
-              <MeasurementField
-                key={requirement.key}
-                requirement={requirement}
-                state={state}
-                onChange={onChange}
-                rangeRecheck={state.diagnostics.some(
-                  (diagnostic) =>
-                    diagnostic.code === "measurement_range_recheck" &&
-                    diagnostic.measurementId === requirement.measurementId &&
-                    diagnostic.garmentKey === requirement.garmentKey,
-                )}
-              />
-            ))}
-          </div>
+          {individualRequirements.length > 0 && (
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              {renderFields(individualRequirements)}
+            </div>
+          )}
+          {[...alternativeGroups.entries()].map(([groupId, members]) => (
+            <div
+              key={groupId}
+              data-measurement-alternative-group={members[0]?.alternativeGroup}
+              className="mt-4 rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 p-4"
+            >
+              <h5 className="text-xs font-bold uppercase tracking-wider text-heritage-green">
+                Sleeve Length
+              </h5>
+              <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">
+                Enter the length that matches the sleeve.
+              </p>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {renderFields(members)}
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
+        );
+      })}
     </section>
   );
 };
@@ -378,14 +402,17 @@ export const DormantFutureMeasurementStep = ({
   const optionalRequirements = selectedRoute
     ? presentationRequirements.filter((requirement) => requirement.section === "optional")
     : [];
-  const completedManualInputCount = requiredRequirements.filter((requirement) => {
-    const value = getResolvedMeasurementValue(resolvedState, requirement);
-    return Boolean(value && Number.isFinite(value.valueCm) && value.valueCm > 0);
-  }).length;
-  const remainingManualInputCount = Math.max(
-    0,
-    requiredRequirements.length - completedManualInputCount,
-  );
+  const requiredUnitCount = countRequiredMeasurementUnits(requiredRequirements);
+  const completedManualInputCount = countSatisfiedRequiredMeasurementUnits({
+    requirements: requiredRequirements,
+    entered: resolvedState.entered,
+    invalidInputKeys: resolvedState.invalidInputKeys,
+  });
+  const remainingManualInputCount = countRemainingRequiredMeasurementUnits({
+    requirements: requiredRequirements,
+    entered: resolvedState.entered,
+    invalidInputKeys: resolvedState.invalidInputKeys,
+  });
   const unsupportedGarments = selectedRoute
     ? resolvedState.diagnostics.filter(
         (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
@@ -519,7 +546,7 @@ export const DormantFutureMeasurementStep = ({
             </p>
           </div>
           <div className="shrink-0 rounded-xl border border-heritage-green/15 bg-white px-3 py-2 text-xs font-semibold text-heritage-green">
-            {completedManualInputCount} / {requiredRequirements.length} saved
+            {completedManualInputCount} / {requiredUnitCount} saved
           </div>
         </div>
       </section>
