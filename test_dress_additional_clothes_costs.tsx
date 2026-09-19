@@ -6,7 +6,9 @@ import {
   DRESS_LINING_OPTION_ID,
   SEED_CUSTOM_DETAIL_CATALOG,
   isCustomerAvailableCustomDetailSelectionGroup,
+  isCustomerVisibleAdditionalClothesCostForGarment,
 } from "./src/config/GarmentDetailsConfig";
+import { CUSTOM_DETAIL_PHYSICAL_COMPONENTS_BY_GARMENT } from "./src/config/CustomDetailPhysicalComponentConfig";
 import type {
   AiTryOnWorkflowStateV1,
   BusinessSettings,
@@ -105,13 +107,13 @@ const DRESS_ADDITIONAL_OPTIONS = [
   },
   {
     id: "dress_additional_head_wrap",
-    label: "Head Wrap / Gear / Scarf",
+    label: "Head Wrap / Gear / Skarf",
     description: "Head-Tie (traditional look)",
     priceCents: 1000,
   },
   {
     id: "dress_additional_shoulder_waist_wrap",
-    label: "Shoulder or Waist Wrap / Scarf",
+    label: "Shoulder or Waist Wrap / Skarf",
     description:
       "Over the Shoulder or around both shoulders or around the Waist",
     priceCents: 1500,
@@ -150,13 +152,14 @@ const makeAllocationState = (
 
 const makeStyle = (
   garmentTypes: GarmentTypeStepSelection["garmentTypes"],
+  gender: StyleCategory["gender"] = "female",
 ): StyleCategory =>
   ({
     id: `style-${garmentTypes.join("-")}-dress-acc`,
     name: "Dress additional costs style",
     description: "Regression style",
-    gender: "female",
-    targetDemographic: "female",
+    gender,
+    targetDemographic: gender === "male" ? "male" : "female",
     options: [],
     image: "https://example.invalid/dress-acc.jpg",
     fabricCapacityComposition: garmentTypes.map((garmentType) => ({
@@ -237,6 +240,10 @@ assert.equal(
   true,
 );
 assert.equal(
+  isCustomerAvailableCustomDetailSelectionGroup("standard_shorts_additional"),
+  true,
+);
+assert.equal(
   isCustomerAvailableCustomDetailSelectionGroup("shirt_additional"),
   false,
 );
@@ -247,6 +254,51 @@ assert.equal(
 assert.equal(
   isCustomerAvailableCustomDetailSelectionGroup("skirt_additional"),
   false,
+);
+assert.equal(
+  isCustomerAvailableCustomDetailSelectionGroup("bum_shorts_additional"),
+  false,
+);
+assert.equal(
+  isCustomerVisibleAdditionalClothesCostForGarment("dress_additional", "dress"),
+  true,
+);
+assert.equal(
+  isCustomerVisibleAdditionalClothesCostForGarment(
+    "dress_additional",
+    "full_length_gown",
+  ),
+  true,
+);
+assert.equal(
+  isCustomerVisibleAdditionalClothesCostForGarment(
+    "standard_shorts_additional",
+    "standard_shorts",
+  ),
+  true,
+);
+assert.equal(
+  isCustomerVisibleAdditionalClothesCostForGarment(
+    "standard_shorts_additional",
+    "bum_shorts",
+  ),
+  false,
+);
+assert.deepEqual(
+  CUSTOM_DETAIL_PHYSICAL_COMPONENTS_BY_GARMENT.dress[0]?.garmentGroups,
+  ["dress", "neck"],
+);
+assert.deepEqual(
+  CUSTOM_DETAIL_PHYSICAL_COMPONENTS_BY_GARMENT.full_length_gown[0]?.garmentGroups,
+  ["dress", "neck"],
+);
+assert.deepEqual(
+  CUSTOM_DETAIL_PHYSICAL_COMPONENTS_BY_GARMENT.standard_shorts[0]?.garmentGroups,
+  ["standard_shorts"],
+);
+assert.deepEqual(
+  CUSTOM_DETAIL_PHYSICAL_COMPONENTS_BY_GARMENT.bum_shorts[0]?.garmentGroups,
+  ["bum_shorts"],
 );
 
 const dressShirtTypes = ["dress", "shirt"] as const;
@@ -421,7 +473,7 @@ const gownSelection = reconcileGarmentTypeStepSelection({
   normalizedCustomDetailCatalog: catalogInspection.activeOptions,
 }).selection;
 const gownStyle = makeStyle(["full_length_gown"]);
-const gownReconciliation = completeRequiredSelections({
+let gownReconciliation = completeRequiredSelections({
   garmentTypeSelection: gownSelection,
   style: gownStyle,
   existingState: createEmptyGarmentScopedCustomDetailsState(),
@@ -430,7 +482,13 @@ const gownKey = gownReconciliation.subjects.find(
   (subject) => subject.parentGarmentType === "full_length_gown",
 )?.garmentKey;
 assert.ok(gownKey);
-const gownWithStaleDressCost = reconcileGarmentScopedCustomDetails({
+assert.ok(
+  gownReconciliation.subjects
+    .find((subject) => subject.garmentKey === gownKey)
+    ?.garmentGroups.includes("dress"),
+  "Long Dress participates in the Dress-owned physical grouping",
+);
+gownReconciliation = reconcileGarmentScopedCustomDetails({
   garmentTypeSelection: gownSelection,
   style: gownStyle,
   catalogInspection,
@@ -438,33 +496,56 @@ const gownWithStaleDressCost = reconcileGarmentScopedCustomDetails({
     gownReconciliation.state,
     gownKey,
     "dress_additional",
-    [DRESS_LINING_OPTION_ID],
+    DRESS_ADDITIONAL_OPTIONS.map((option) => option.id),
   ),
 });
 const gownCatalogue = projectFutureCustomDetailsCatalogue({
   garmentTypeSelection: gownSelection,
   style: gownStyle,
-  reconciliation: gownWithStaleDressCost,
+  reconciliation: gownReconciliation,
   activeOptions: catalogInspection.activeOptions,
   additionalGarments: [],
 });
-assert.equal(
-  gownCatalogue.additionalCostGroups.some(
-    (group) =>
-      group.selectionGroup === "dress_additional" &&
-      group.occurrences.length > 0,
+const gownDressGroup = gownCatalogue.additionalCostGroups.find(
+  (group) => group.selectionGroup === "dress_additional",
+);
+assert.ok(gownDressGroup);
+assert.ok(
+  gownDressGroup.occurrences.some(
+    (occurrence) => occurrence.subject.parentGarmentType === "full_length_gown",
   ),
-  false,
-  "Gown must not receive Dress additional clothes costs",
+  "Long Dress must receive Dress additional clothes costs",
+);
+assert.deepEqual(
+  gownDressGroup.options.map((option) => ({
+    id: option.id,
+    label: option.label,
+    description: option.description,
+    priceCents: option.priceCents,
+  })),
+  DRESS_ADDITIONAL_OPTIONS.map((option) => ({ ...option })),
 );
 const gownPricing = calculateGarmentScopedCustomDetailsPricing({
-  reconciliation: gownWithStaleDressCost,
+  reconciliation: gownReconciliation,
   catalogInspection,
 });
+assert.equal(gownPricing.status, "exact");
+if (gownPricing.status !== "exact") {
+  throw new Error("expected exact Long Dress additional-cost pricing");
+}
+assert.deepEqual(
+  new Map(
+    gownPricing.lines
+      .filter((line) => line.selectionGroup === "dress_additional")
+      .map((line) => [line.optionId, line.lineTotalCents]),
+  ),
+  new Map(DRESS_ADDITIONAL_OPTIONS.map((option) => [option.id, option.priceCents])),
+);
 assert.equal(
-  gownPricing.lines.some((line) => line.selectionGroup === "dress_additional"),
-  false,
-  "stale Gown dress-additional selections must not add a charge",
+  gownPricing.lines
+    .filter((line) => line.selectionGroup === "dress_additional")
+    .reduce((total, line) => total + (line.lineTotalCents || 0), 0),
+  4500,
 );
 
 const uploadedDressSelection = reconcileGarmentTypeStepSelection({
@@ -558,6 +639,280 @@ assert.ok(
       ),
   ),
   "an added Dress garment must receive Dress additional clothes costs",
+);
+
+const dressOnlySelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["dress"],
+  selectedDemographic: "female",
+  normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+}).selection;
+const dressOnlyStyle = makeStyle(["dress"]);
+const secondDressAddition = createCatalogueAdditionalGarmentSelection({
+  garmentType: "dress",
+  authoritativePhysicalOccurrences: projectCatalogueStep1PhysicalOccurrences(["dress"]),
+});
+assert.equal(secondDressAddition.status, "resolved");
+if (secondDressAddition.status !== "resolved") {
+  throw new Error("expected a second Dress occurrence");
+}
+const secondDress: FabricGarmentAssignment = {
+  garmentKey: secondDressAddition.selection.garmentSpec!.key,
+  code: secondDressAddition.selection.code,
+  garmentType: "dress",
+  fabricUnits: 1,
+  sourceRole: "additional",
+  eligibilityRule: "catalog_all",
+  dependencyStatus: "valid",
+  mainGarmentKey: secondDressAddition.selection.mainGarmentKey,
+  mainGarmentType: secondDressAddition.selection.mainGarmentType,
+};
+const secondDressConstructions = reconcileAdditionalGarmentConstructionState({
+  existingState: {
+    schemaVersion: 1,
+    byGarmentKey: {
+      [secondDress.garmentKey]:
+        cloneGarmentConstructionPricingResolution(dressConstruction),
+    },
+  },
+  assignments: [secondDress],
+  normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+});
+let twoDressReconciliation = completeRequiredSelections({
+  garmentTypeSelection: dressOnlySelection,
+  style: dressOnlyStyle,
+  additionalGarments: [secondDress],
+  additionalGarmentConstructions: secondDressConstructions.state,
+  existingState: createEmptyGarmentScopedCustomDetailsState(),
+});
+const baseDressKey = twoDressReconciliation.subjects.find(
+  (subject) =>
+    subject.parentGarmentType === "dress" &&
+    subject.parentGarmentKey !== secondDress.garmentKey,
+)?.garmentKey;
+assert.ok(baseDressKey);
+assert.notEqual(baseDressKey, secondDress.garmentKey);
+twoDressReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: dressOnlySelection,
+  style: dressOnlyStyle,
+  additionalGarments: [secondDress],
+  additionalGarmentConstructions: secondDressConstructions.state,
+  catalogInspection,
+  existingState: setGarmentScopedCustomDetailSelection(
+    twoDressReconciliation.state,
+    baseDressKey,
+    "dress_additional",
+    [DRESS_LINING_OPTION_ID],
+  ),
+});
+const oneLiningPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: twoDressReconciliation,
+  catalogInspection,
+});
+assert.equal(
+  oneLiningPricing.lines.filter(
+    (line) =>
+      line.selectionGroup === "dress_additional" &&
+      line.optionId === DRESS_LINING_OPTION_ID,
+  ).length,
+  1,
+);
+assert.equal(
+  oneLiningPricing.lines
+    .filter(
+      (line) =>
+        line.selectionGroup === "dress_additional" &&
+        line.optionId === DRESS_LINING_OPTION_ID,
+    )
+    .reduce((total, line) => total + (line.lineTotalCents || 0), 0),
+  1000,
+);
+assert.equal(
+  enumerateGarmentScopedCustomDetails(twoDressReconciliation.state).some(
+    (occurrence) =>
+      occurrence.garmentKey === secondDress.garmentKey &&
+      occurrence.optionId === DRESS_LINING_OPTION_ID,
+  ),
+  false,
+  "selecting Lining on one Dress must not select it on the other",
+);
+twoDressReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: dressOnlySelection,
+  style: dressOnlyStyle,
+  additionalGarments: [secondDress],
+  additionalGarmentConstructions: secondDressConstructions.state,
+  catalogInspection,
+  existingState: setGarmentScopedCustomDetailSelection(
+    twoDressReconciliation.state,
+    secondDress.garmentKey,
+    "dress_additional",
+    [DRESS_LINING_OPTION_ID],
+  ),
+});
+const twoLiningPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: twoDressReconciliation,
+  catalogInspection,
+});
+assert.equal(
+  twoLiningPricing.lines
+    .filter(
+      (line) =>
+        line.selectionGroup === "dress_additional" &&
+        line.optionId === DRESS_LINING_OPTION_ID,
+    )
+    .reduce((total, line) => total + (line.lineTotalCents || 0), 0),
+  2000,
+);
+twoDressReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: dressOnlySelection,
+  style: dressOnlyStyle,
+  additionalGarments: [secondDress],
+  additionalGarmentConstructions: secondDressConstructions.state,
+  catalogInspection,
+  existingState: setGarmentScopedCustomDetailSelection(
+    twoDressReconciliation.state,
+    secondDress.garmentKey,
+    "dress_additional",
+    [],
+  ),
+});
+const deselectedLiningPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: twoDressReconciliation,
+  catalogInspection,
+});
+assert.equal(
+  deselectedLiningPricing.lines
+    .filter(
+      (line) =>
+        line.selectionGroup === "dress_additional" &&
+        line.optionId === DRESS_LINING_OPTION_ID,
+    )
+    .reduce((total, line) => total + (line.lineTotalCents || 0), 0),
+  1000,
+);
+
+const nikkaSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["standard_shorts"],
+  selectedDemographic: "male",
+  normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+}).selection;
+const nikkaStyle = makeStyle(["standard_shorts"], "male");
+let nikkaReconciliation = completeRequiredSelections({
+  garmentTypeSelection: nikkaSelection,
+  style: nikkaStyle,
+  existingState: createEmptyGarmentScopedCustomDetailsState(),
+});
+const nikkaKey = nikkaReconciliation.subjects.find(
+  (subject) => subject.parentGarmentType === "standard_shorts",
+)?.garmentKey;
+assert.ok(nikkaKey);
+nikkaReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: nikkaSelection,
+  style: nikkaStyle,
+  catalogInspection,
+  existingState: setGarmentScopedCustomDetailSelection(
+    nikkaReconciliation.state,
+    nikkaKey,
+    "standard_shorts_additional",
+    ["standard_shorts_additional_combat_pockets"],
+  ),
+});
+const nikkaCatalogue = projectFutureCustomDetailsCatalogue({
+  garmentTypeSelection: nikkaSelection,
+  style: nikkaStyle,
+  reconciliation: nikkaReconciliation,
+  activeOptions: catalogInspection.activeOptions,
+  additionalGarments: [],
+});
+const nikkaGroup = nikkaCatalogue.additionalCostGroups.find(
+  (group) => group.selectionGroup === "standard_shorts_additional",
+);
+assert.ok(nikkaGroup);
+assert.deepEqual(
+  nikkaGroup.options.map((option) => ({
+    id: option.id,
+    label: option.label,
+    description: option.description,
+    priceCents: option.priceCents,
+  })),
+  [
+    {
+      id: "standard_shorts_additional_combat_pockets",
+      label: "Combat (Extra side hip-pockets)",
+      description: "Additional combat-style pockets at the sides of the hips.",
+      priceCents: 500,
+    },
+  ],
+);
+const nikkaPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: nikkaReconciliation,
+  catalogInspection,
+});
+assert.equal(
+  nikkaPricing.lines
+    .filter(
+      (line) =>
+        line.optionId === "standard_shorts_additional_combat_pockets",
+    )
+    .reduce((total, line) => total + (line.lineTotalCents || 0), 0),
+  500,
+);
+nikkaReconciliation = reconcileGarmentScopedCustomDetails({
+  garmentTypeSelection: nikkaSelection,
+  style: nikkaStyle,
+  catalogInspection,
+  existingState: setGarmentScopedCustomDetailSelection(
+    nikkaReconciliation.state,
+    nikkaKey,
+    "standard_shorts_additional",
+    [],
+  ),
+});
+const nikkaDeselectedPricing = calculateGarmentScopedCustomDetailsPricing({
+  reconciliation: nikkaReconciliation,
+  catalogInspection,
+});
+assert.equal(
+  nikkaDeselectedPricing.lines.some(
+    (line) => line.optionId === "standard_shorts_additional_combat_pockets",
+  ),
+  false,
+);
+
+const bumSelection = reconcileGarmentTypeStepSelection({
+  selectedGarmentTypes: ["bum_shorts"],
+  selectedDemographic: "female",
+  normalizedCustomDetailCatalog: catalogInspection.activeOptions,
+}).selection;
+const bumStyle = makeStyle(["bum_shorts"]);
+const bumReconciliation = completeRequiredSelections({
+  garmentTypeSelection: bumSelection,
+  style: bumStyle,
+  existingState: createEmptyGarmentScopedCustomDetailsState(),
+});
+const bumCatalogue = projectFutureCustomDetailsCatalogue({
+  garmentTypeSelection: bumSelection,
+  style: bumStyle,
+  reconciliation: bumReconciliation,
+  activeOptions: catalogInspection.activeOptions,
+  additionalGarments: [],
+});
+assert.equal(
+  bumCatalogue.additionalCostGroups.some(
+    (group) =>
+      group.selectionGroup === "standard_shorts_additional" &&
+      group.occurrences.length > 0,
+  ),
+  false,
+  "Bum Shorts must not receive Nikka Combat",
+);
+assert.equal(
+  bumCatalogue.additionalCostGroups.some(
+    (group) =>
+      group.selectionGroup === "dress_additional" &&
+      group.occurrences.length > 0,
+  ),
+  false,
+  "Bum Shorts must not receive Dress additions",
 );
 
 const fabricAllocationState = makeAllocationState([...dressShirtTypes]);
@@ -797,9 +1152,9 @@ assert.match(
 );
 assert.match(dressRendered, /Lining in Dress - to keep dress firm \(in shape\)/);
 assert.match(dressRendered, /Net - to keep dress firm \(in shape\)/);
-assert.match(dressRendered, /Head Wrap \/ Gear \/ Scarf/);
+assert.match(dressRendered, /Head Wrap \/ Gear \/ Skarf/);
 assert.match(dressRendered, /Head-Tie \(traditional look\)/);
-assert.match(dressRendered, /Shoulder or Waist Wrap \/ Scarf/);
+assert.match(dressRendered, /Shoulder or Waist Wrap \/ Skarf/);
 assert.match(dressRendered, /\+€10\.00/);
 assert.match(dressRendered, /\+€15\.00/);
 assert.doesNotMatch(dressRendered, /Shirts - Additional/);
@@ -844,5 +1199,102 @@ assert.equal(
   0,
 );
 assert.doesNotMatch(textContent(shirtRenderer.root), /Shirts - Additional/);
+
+const renderStep = ({
+  reconciliation,
+  catalogue,
+  style,
+  additionalGarments = [],
+}: {
+  reconciliation: typeof gownReconciliation;
+  catalogue: ReturnType<typeof projectFutureCustomDetailsCatalogue>;
+  style: StyleCategory;
+  additionalGarments?: readonly FabricGarmentAssignment[];
+}) => {
+  const inputs = reconcileGarmentScopedPersonalizedInputs({
+    reconciliation,
+    catalogInspection,
+    existingInputs: createEmptyGarmentScopedCustomDetailInputs(),
+  });
+  const stepCompletion = validateGarmentScopedCustomDetailsCompletion({
+    earlierStagesComplete: true,
+    reconciliation,
+    personalizedInputs: inputs,
+  });
+  const stepPricing = calculateGarmentScopedCustomDetailsPricing({
+    reconciliation,
+    catalogInspection,
+  });
+  let renderer!: ReturnType<typeof create>;
+  act(() => {
+    renderer = create(
+      createElement(DormantFutureCustomDetailsStep, {
+        reconciliation,
+        catalogue,
+        personalizedInputs: inputs.state,
+        completion: stepCompletion,
+        pricing: stepPricing,
+        orderLevelCustomDetailsPrice: 0,
+        constructionBreakdown: { status: "complete", rows: [] },
+        constructionSubtotal: 0,
+        designSelections: { accessories: [] },
+        showAdditionalClothesCosts: false,
+        selectedStyle: style,
+        additionalGarments: [...additionalGarments],
+        additionalGarmentConstructionOptions: [],
+        ...stepHandlers,
+      }),
+    );
+  });
+  return renderer;
+};
+
+const gownRenderer = renderStep({
+  reconciliation: gownReconciliation,
+  catalogue: gownCatalogue,
+  style: gownStyle,
+});
+const gownRendered = textContent(gownRenderer.root);
+assert.ok(
+  gownRenderer.root.findAllByProps({
+    "data-custom-detail-section": "dress-additional-clothes-costs",
+  }).length > 0,
+);
+assert.match(gownRendered, /Lining in Dress - to keep dress firm \(in shape\)/);
+assert.match(gownRendered, /Net - to keep dress firm \(in shape\)/);
+assert.match(gownRendered, /Head Wrap \/ Gear \/ Skarf/);
+assert.match(gownRendered, /Shoulder or Waist Wrap \/ Skarf/);
+assert.match(gownRendered, /\+€10\.00/);
+assert.match(gownRendered, /\+€15\.00/);
+
+const nikkaRenderer = renderStep({
+  reconciliation: nikkaReconciliation,
+  catalogue: nikkaCatalogue,
+  style: nikkaStyle,
+});
+const nikkaRendered = textContent(nikkaRenderer.root);
+assert.ok(
+  nikkaRenderer.root.findAllByProps({
+    "data-custom-detail-section": "standard-shorts-additional-clothes-costs",
+  }).length > 0,
+);
+assert.match(nikkaRendered, /Combat \(Extra side hip-pockets\)/);
+assert.match(nikkaRendered, /\+€5\.00/);
+assert.doesNotMatch(nikkaRendered, /Lining in Dress/);
+
+const bumRenderer = renderStep({
+  reconciliation: bumReconciliation,
+  catalogue: bumCatalogue,
+  style: bumStyle,
+});
+const bumRendered = textContent(bumRenderer.root);
+assert.equal(
+  bumRenderer.root.findAllByProps({
+    "data-custom-detail-section": "standard-shorts-additional-clothes-costs",
+  }).length,
+  0,
+);
+assert.doesNotMatch(bumRendered, /Combat \(Extra side hip-pockets\)/);
+assert.doesNotMatch(bumRendered, /Lining in Dress/);
 
 console.log("PASS: Dress Additional Clothes Costs are customer-visible with companion layout");
