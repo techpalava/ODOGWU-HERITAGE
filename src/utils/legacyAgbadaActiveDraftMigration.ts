@@ -30,6 +30,7 @@ const MEASUREMENT_ROUTES: readonly MeasurementRiskRoute[] = [
   "low_risk",
   "medium_risk",
   "high_risk",
+  "critical_risk",
 ];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -98,6 +99,21 @@ const invalidMeasurementKeyBelongsToRemovedGarment = (
       ),
   );
 
+const emptyEnteredBag = (): FutureMeasurementEnteredBagV1 => ({
+  shared: {},
+  byGarmentKey: {},
+});
+
+const enteredBagForRoute = (
+  byRoute: NonNullable<FutureMeasurementStateV1["enteredByRoute"]>,
+  route: MeasurementRiskRoute,
+): FutureMeasurementEnteredBagV1 => byRoute[route] ?? emptyEnteredBag();
+
+const invalidKeysForRoute = (
+  byRoute: NonNullable<FutureMeasurementStateV1["invalidInputKeysByRoute"]>,
+  route: MeasurementRiskRoute,
+): string[] => byRoute[route] ?? [];
+
 const removeGarmentsFromMeasurementState = (
   state: FutureMeasurementStateV1,
   removedKeys: ReadonlySet<string>,
@@ -107,7 +123,7 @@ const removeGarmentsFromMeasurementState = (
         MEASUREMENT_ROUTES.map((route) => [
           route,
           removeGarmentsFromEnteredBag(
-            state.enteredByRoute![route],
+            enteredBagForRoute(state.enteredByRoute!, route),
             removedKeys,
           ),
         ]),
@@ -117,7 +133,7 @@ const removeGarmentsFromMeasurementState = (
     ? Object.fromEntries(
         MEASUREMENT_ROUTES.map((route) => [
           route,
-          state.invalidInputKeysByRoute![route].filter(
+          invalidKeysForRoute(state.invalidInputKeysByRoute!, route).filter(
             (invalidKey) =>
               !invalidMeasurementKeyBelongsToRemovedGarment(
                 invalidKey,

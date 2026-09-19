@@ -132,27 +132,28 @@ const radios = renderer.root.findAllByProps({
   type: "radio",
   name: "future-measurement-route",
 });
-assert.equal(radios.length, 3);
+assert.equal(radios.length, 4);
 assert.deepEqual(
   radios.map((radio) => radio.props.value),
-  ["low_risk", "medium_risk", "high_risk"],
+  ["low_risk", "medium_risk", "high_risk", "critical_risk"],
 );
 const optionLabels = renderer.root.findAll(
   (node) => node.props && node.props["data-measurement-risk-option"],
 );
-assert.equal(optionLabels.length, 3);
+assert.equal(optionLabels.length, 4);
 assert.deepEqual(
   optionLabels.map((node) => node.props["data-measurement-risk-option"]),
-  ["low_risk", "medium_risk", "high_risk"],
+  ["low_risk", "medium_risk", "high_risk", "critical_risk"],
 );
 assert.deepEqual(
   optionLabels.map((node) => MEASUREMENT_RISK_ROUTE_LABELS[node.props["data-measurement-risk-option"] as MeasurementRiskRoute]),
-  ["Low Risk", "Mid Risk", "High Risk"],
+  ["Low Risk", "Mid Risk", "High Risk", "Critical Risk"],
 );
 const pageText = collectText(renderer.root);
 assert.match(pageText, /Low Risk/);
 assert.match(pageText, /Mid Risk/);
 assert.match(pageText, /High Risk/);
+assert.match(pageText, /Critical Risk/);
 assert.equal(radios.filter((radio) => radio.props.checked).length, 0);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" }).length, 0);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "medium_risk" }).length, 0);

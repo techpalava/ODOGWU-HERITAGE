@@ -294,7 +294,7 @@ const buildAuthority = ({
   fabricAllocationState,
   includeStyle = true,
   customState = createEmptyGarmentScopedCustomDetailsState(),
-  measurementRoute = null as "low_risk" | "medium_risk" | "high_risk" | null,
+  measurementRoute = null as "low_risk" | "medium_risk" | "high_risk" | "critical_risk" | null,
   completeMeasurements = true,
   shippingState = null as FutureShippingStateV1 | null,
   additionalPending = false,
@@ -308,7 +308,7 @@ const buildAuthority = ({
   fabricAllocationState?: FabricAllocationState;
   includeStyle?: boolean;
   customState?: ReturnType<typeof createEmptyGarmentScopedCustomDetailsState>;
-  measurementRoute?: "low_risk" | "medium_risk" | "high_risk" | null;
+  measurementRoute?: "low_risk" | "medium_risk" | "high_risk" | "critical_risk" | null;
   completeMeasurements?: boolean;
   shippingState?: FutureShippingStateV1 | null;
   additionalPending?: boolean;

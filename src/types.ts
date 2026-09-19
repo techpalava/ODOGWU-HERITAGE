@@ -1052,12 +1052,16 @@ export type DesignStudioStageId =
   | "shipping"
   | "payment";
 
-export type MeasurementRiskRoute =
+export type MeasurementWorkbookRiskRoute =
   | "low_risk"
   | "medium_risk"
   | "high_risk";
 
-/** Persisted IDs stay `low_risk` / `medium_risk` / `high_risk`. `null` means no risk level is selected yet. */
+export type MeasurementRiskRoute =
+  | MeasurementWorkbookRiskRoute
+  | "critical_risk";
+
+/** Persisted IDs are `low_risk` / `medium_risk` / `high_risk` / `critical_risk`. `null` means no risk level is selected yet. */
 export type SelectedMeasurementRiskRoute = MeasurementRiskRoute | null;
 
 export type MeasurementUnit = "inch" | "cm";
