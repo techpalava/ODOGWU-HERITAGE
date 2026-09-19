@@ -1,11 +1,17 @@
 import { LockKeyhole, Ruler, ShieldAlert } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { DRESS_CONDITIONAL_MEASUREMENT_IDS } from "../config/MeasurementBlueprintConfig";
 import type {
   FutureMeasurementStateV1,
   MeasurementRiskRoute,
 } from "../types";
 import {
+  collectRequiredAlternativeGroups,
+  countRemainingCustomerRequiredMeasurementUnits,
+  countRequiredMeasurementUnits,
+  countSatisfiedRequiredMeasurementUnits,
   fromCanonicalCentimetres,
+  getRequiredAlternativeGroupId,
   getResolvedMeasurementValue,
   isFutureSummaryUnlockedByMeasurements,
   isSelectedMeasurementRiskRoute,
@@ -54,7 +60,13 @@ const ROUTES: ReadonlyArray<{
 const CALCULATED_PENDING_MESSAGE =
   "Complete the required measurements to calculate this value.";
 const CALCULATED_FROM_HEIGHT_LABEL = "Calculated from height";
+const IF_APPLICABLE_LABEL = "If applicable";
 const RANGE_RECHECK_MESSAGE = "Please recheck this measurement.";
+const DRESS_CONDITIONAL_MEASUREMENT_ID_SET = new Set<string>(
+  DRESS_CONDITIONAL_MEASUREMENT_IDS,
+);
+
+type MeasurementSectionKind = "required" | "calculated" | "optional";
 
 const formatGarmentLabel = (garmentType?: string, garmentKey?: string): string => {
   const base = (garmentType || "Garment")
@@ -138,13 +150,21 @@ const MeasurementField = ({
   const errorId = `${inputId}-error`;
   const calculated = requirement.inputSource === "calculated_average_factor";
   const optionalManual = requirement.inputSource === "optional_manual";
+  const oneOfAlternative = Boolean(getRequiredAlternativeGroupId(requirement));
+  const ifApplicable = DRESS_CONDITIONAL_MEASUREMENT_ID_SET.has(
+    requirement.measurementId,
+  );
   const badge = stored?.provenance === "customer_entered"
     ? "Customer measurement"
     : calculated
     ? CALCULATED_FROM_HEIGHT_LABEL
     : optionalManual
-      ? "Optional"
-      : "Required";
+      ? ifApplicable
+        ? IF_APPLICABLE_LABEL
+        : "Optional"
+      : oneOfAlternative
+        ? "One required"
+        : "Required";
 
   return (
     <label
@@ -166,7 +186,10 @@ const MeasurementField = ({
         <span className="min-w-0 break-words text-sm font-bold text-heritage-green">
           {requirement.definition.customerLabel}
         </span>
-        <span className="rounded-full border border-heritage-gold/25 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+        <span
+          data-measurement-badge={badge}
+          className="rounded-full border border-heritage-gold/25 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold"
+        >
           {badge}
         </span>
       </span>
@@ -250,7 +273,7 @@ const MeasurementSection = ({
   requirements: PlannedMeasurementRequirement[];
   state: FutureMeasurementStateV1;
   onChange: (state: FutureMeasurementStateV1) => void;
-  section: "required" | "optional";
+  section: MeasurementSectionKind;
 }) => {
   const sharedRequirements = requirements.filter(
     (requirement) =>
@@ -264,20 +287,36 @@ const MeasurementSection = ({
         requirement.inputSource === "calculated_average_factor",
     ),
   );
-  const completedCount = requirements.filter((requirement) => {
-    if (requirement.inputSource === "calculated_average_factor") return false;
-    const value = getResolvedMeasurementValue(state, requirement);
-    return Boolean(value && Number.isFinite(value.valueCm) && value.valueCm > 0);
-  }).length;
-  const requiredCount = requirements.filter((requirement) => requirement.directInput).length;
+  const completedCount = countSatisfiedRequiredMeasurementUnits({
+    requirements,
+    entered: state.entered,
+    invalidInputKeys: state.invalidInputKeys,
+  });
+  const requiredCount = countRequiredMeasurementUnits(requirements);
+
+  const renderFields = (fields: PlannedMeasurementRequirement[]) =>
+    fields.map((requirement) => (
+      <MeasurementField
+        key={requirement.key}
+        requirement={requirement}
+        state={state}
+        onChange={onChange}
+        rangeRecheck={state.diagnostics.some(
+          (diagnostic) =>
+            diagnostic.code === "measurement_range_recheck" &&
+            diagnostic.measurementId === requirement.measurementId &&
+            (requirement.scope === "shared" || diagnostic.garmentKey === requirement.garmentKey),
+        )}
+      />
+    ));
 
   return (
     <section
       data-measurement-section={section}
       className={`rounded-2xl border p-5 shadow-sm sm:p-6 ${
-        section === "optional"
-          ? "border-heritage-green/15 bg-heritage-cream/25"
-          : "border-heritage-gold/20 bg-white"
+        section === "required"
+          ? "border-heritage-gold/20 bg-white"
+          : "border-heritage-green/15 bg-heritage-cream/25"
       }`}
     >
       <div className="flex min-w-0 items-start gap-3">
@@ -288,6 +327,11 @@ const MeasurementSection = ({
             {section === "required" && requiredCount > 0 && (
               <span className="rounded-full border border-heritage-gold/25 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
                 {completedCount} of {requiredCount} complete
+              </span>
+            )}
+            {section === "calculated" && (
+              <span className="rounded-full border border-heritage-green/20 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-ink/60">
+                {CALCULATED_FROM_HEIGHT_LABEL}
               </span>
             )}
             {section === "optional" && (
@@ -308,23 +352,16 @@ const MeasurementSection = ({
             Shared body measurements are entered once and used for all applicable garments.
           </p>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {sharedRequirements.map((requirement) => (
-              <MeasurementField
-                key={requirement.key}
-                requirement={requirement}
-                state={state}
-                onChange={onChange}
-                rangeRecheck={state.diagnostics.some(
-                  (diagnostic) =>
-                    diagnostic.code === "measurement_range_recheck" &&
-                    diagnostic.measurementId === requirement.measurementId,
-                )}
-              />
-            ))}
+            {renderFields(sharedRequirements)}
           </div>
         </div>
       )}
-      {garmentRequirementSections.map(([garmentKey, garmentRequirements]) => (
+      {garmentRequirementSections.map(([garmentKey, garmentRequirements]) => {
+        const individualRequirements = garmentRequirements.filter(
+          (requirement) => !getRequiredAlternativeGroupId(requirement),
+        );
+        const alternativeGroups = collectRequiredAlternativeGroups(garmentRequirements);
+        return (
         <div key={garmentKey} className="mt-5">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <h4 className="font-serif text-base font-bold text-heritage-green">
@@ -334,24 +371,31 @@ const MeasurementSection = ({
               Garment specific
             </span>
           </div>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {garmentRequirements.map((requirement) => (
-              <MeasurementField
-                key={requirement.key}
-                requirement={requirement}
-                state={state}
-                onChange={onChange}
-                rangeRecheck={state.diagnostics.some(
-                  (diagnostic) =>
-                    diagnostic.code === "measurement_range_recheck" &&
-                    diagnostic.measurementId === requirement.measurementId &&
-                    diagnostic.garmentKey === requirement.garmentKey,
-                )}
-              />
-            ))}
-          </div>
+          {individualRequirements.length > 0 && (
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              {renderFields(individualRequirements)}
+            </div>
+          )}
+          {[...alternativeGroups.entries()].map(([groupId, members]) => (
+            <div
+              key={groupId}
+              data-measurement-alternative-group={members[0]?.alternativeGroup}
+              className="mt-4 rounded-xl border border-heritage-gold/20 bg-heritage-cream/20 p-4"
+            >
+              <h5 className="text-xs font-bold uppercase tracking-wider text-heritage-green">
+                Sleeve Length
+              </h5>
+              <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">
+                Enter the length that matches the sleeve.
+              </p>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {renderFields(members)}
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
+        );
+      })}
     </section>
   );
 };
@@ -375,17 +419,26 @@ export const DormantFutureMeasurementStep = ({
   const requiredRequirements = selectedRoute
     ? presentationRequirements.filter((requirement) => requirement.section === "required")
     : [];
-  const optionalRequirements = selectedRoute
-    ? presentationRequirements.filter((requirement) => requirement.section === "optional")
+  const calculatedRequirements = selectedRoute
+    ? presentationRequirements.filter(
+        (requirement) => requirement.inputSource === "calculated_average_factor",
+      )
     : [];
-  const completedManualInputCount = requiredRequirements.filter((requirement) => {
-    const value = getResolvedMeasurementValue(resolvedState, requirement);
-    return Boolean(value && Number.isFinite(value.valueCm) && value.valueCm > 0);
-  }).length;
-  const remainingManualInputCount = Math.max(
-    0,
-    requiredRequirements.length - completedManualInputCount,
-  );
+  const optionalRequirements = selectedRoute
+    ? presentationRequirements.filter(
+        (requirement) => requirement.inputSource === "optional_manual",
+      )
+    : [];
+  const requiredUnitCount = countRequiredMeasurementUnits(requiredRequirements);
+  const completedManualInputCount = countSatisfiedRequiredMeasurementUnits({
+    requirements: requiredRequirements,
+    entered: resolvedState.entered,
+    invalidInputKeys: resolvedState.invalidInputKeys,
+  });
+  const remainingManualInputCount = countRemainingCustomerRequiredMeasurementUnits({
+    plan,
+    state: resolvedState,
+  });
   const unsupportedGarments = selectedRoute
     ? resolvedState.diagnostics.filter(
         (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
@@ -519,7 +572,7 @@ export const DormantFutureMeasurementStep = ({
             </p>
           </div>
           <div className="shrink-0 rounded-xl border border-heritage-green/15 bg-white px-3 py-2 text-xs font-semibold text-heritage-green">
-            {completedManualInputCount} / {requiredRequirements.length} saved
+            {completedManualInputCount} / {requiredUnitCount} saved
           </div>
         </div>
       </section>
@@ -602,10 +655,21 @@ export const DormantFutureMeasurementStep = ({
         section="required"
       />
 
+      {calculatedRequirements.length > 0 && (
+        <MeasurementSection
+          title={CALCULATED_FROM_HEIGHT_LABEL}
+          description="These values are calculated from Total Height after the required measurements are complete."
+          requirements={calculatedRequirements}
+          state={resolvedState}
+          onChange={onChange}
+          section="calculated"
+        />
+      )}
+
       {optionalRequirements.length > 0 && (
         <MeasurementSection
           title="Optional Measurements"
-          description="Calculated from height after the required measurements are complete. Fields without a factor stay optional and can be entered manually."
+          description="Fields without an approved height factor stay optional and can be entered manually."
           requirements={optionalRequirements}
           state={resolvedState}
           onChange={onChange}

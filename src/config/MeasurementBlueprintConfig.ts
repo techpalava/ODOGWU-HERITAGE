@@ -577,9 +577,5 @@ export const getRequiredMeasurementIdsForRoute = (
   route: MeasurementRiskRoute,
 ): CanonicalMeasurementId[] =>
   (MEASUREMENT_PROFILES.find((profile) => profile.id === profileId)?.fields || [])
-    .filter((field) =>
-      route === "high_risk"
-        ? field.measurementId === "total_height"
-        : field.directRoutes.includes(route),
-    )
+    .filter((field) => field.directRoutes.includes(route))
     .map((field) => field.measurementId);
