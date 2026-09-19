@@ -7,6 +7,7 @@ import type {
   MeasurementRiskRoute,
 } from "./src/types";
 import {
+  countRemainingCustomerRequiredMeasurementUnits,
   createEmptyFutureMeasurementState,
   isFutureMeasurementStageComplete,
   isFutureSummaryUnlockedByMeasurements,
@@ -317,6 +318,14 @@ const midLongBothEmpty = fillVisibleRequired(midLongDressPlan);
 assert.equal(isFutureMeasurementStageComplete(midLongBothEmpty), false);
 assert.equal(isFutureSummaryUnlockedByMeasurements(midLongBothEmpty), false);
 assert.equal(
+  countRemainingCustomerRequiredMeasurementUnits({
+    plan: midLongDressPlan,
+    state: midLongBothEmpty,
+  }),
+  1,
+  "empty mid/long one-of counts as one remaining customer unit",
+);
+assert.equal(
   midLongBothEmpty.diagnostics.some((diagnostic) => diagnostic.code === "required_measurement_missing"),
   true,
 );
@@ -324,6 +333,13 @@ assert.equal(
 const midOnly = fillAlternative(midLongDressPlan, midLongBothEmpty, "sleeve_length_mid", 42);
 assert.equal(isFutureMeasurementStageComplete(midOnly), true);
 assert.equal(isFutureSummaryUnlockedByMeasurements(midOnly), true);
+assert.equal(
+  countRemainingCustomerRequiredMeasurementUnits({
+    plan: midLongDressPlan,
+    state: midOnly,
+  }),
+  0,
+);
 assert.equal(
   Boolean(midOnly.entered.byGarmentKey["base:dress"]?.sleeve_length_long),
   false,
@@ -403,11 +419,9 @@ const midLongHighPlan = planMeasurementRequirements({
 assert.equal(alternativeMembers(midLongHighPlan).length, 0);
 const midLongHighComplete = fillVisibleRequired(midLongHighPlan);
 assert.equal(isFutureMeasurementStageComplete(midLongHighComplete), true);
-assert.equal(
-  visibleRequired(midLongHighPlan).every(
-    (requirement) => requirement.measurementId === "total_height",
-  ),
-  true,
+assert.deepEqual(
+  visibleRequired(midLongHighPlan).map((requirement) => requirement.measurementId),
+  ["total_height", "chest_bust_circumference", "belly_circumference"],
 );
 
 const additionalMidLongConstructions: AdditionalGarmentConstructionStateV1 = {
@@ -438,6 +452,14 @@ assert.deepEqual(
 );
 let repeatedMidLongState = fillVisibleRequired(repeatedMidLongPlan);
 assert.equal(isFutureMeasurementStageComplete(repeatedMidLongState), false);
+assert.equal(
+  countRemainingCustomerRequiredMeasurementUnits({
+    plan: repeatedMidLongPlan,
+    state: repeatedMidLongState,
+  }),
+  2,
+  "repeated occurrences keep separate one-of remaining units",
+);
 const baseMid = alternativeMembers(repeatedMidLongPlan).find(
   (requirement) =>
     requirement.garmentKey === "base:shirt" &&
@@ -457,6 +479,13 @@ repeatedMidLongState = reconcileFutureMeasurementState({
   plan: repeatedMidLongPlan,
 });
 assert.equal(isFutureMeasurementStageComplete(repeatedMidLongState), false);
+assert.equal(
+  countRemainingCustomerRequiredMeasurementUnits({
+    plan: repeatedMidLongPlan,
+    state: repeatedMidLongState,
+  }),
+  1,
+);
 repeatedMidLongState = reconcileFutureMeasurementState({
   state: setFutureMeasurementInput({
     state: repeatedMidLongState,
@@ -466,6 +495,13 @@ repeatedMidLongState = reconcileFutureMeasurementState({
   plan: repeatedMidLongPlan,
 });
 assert.equal(isFutureMeasurementStageComplete(repeatedMidLongState), true);
+assert.equal(
+  countRemainingCustomerRequiredMeasurementUnits({
+    plan: repeatedMidLongPlan,
+    state: repeatedMidLongState,
+  }),
+  0,
+);
 const clearedAdditionalSleeve = reconcileFutureMeasurementState({
   state: setFutureMeasurementInput({
     state: repeatedMidLongState,

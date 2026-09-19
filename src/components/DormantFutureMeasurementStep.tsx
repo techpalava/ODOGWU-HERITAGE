@@ -1,12 +1,13 @@
 import { LockKeyhole, Ruler, ShieldAlert } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { DRESS_CONDITIONAL_MEASUREMENT_IDS } from "../config/MeasurementBlueprintConfig";
 import type {
   FutureMeasurementStateV1,
   MeasurementRiskRoute,
 } from "../types";
 import {
   collectRequiredAlternativeGroups,
-  countRemainingRequiredMeasurementUnits,
+  countRemainingCustomerRequiredMeasurementUnits,
   countRequiredMeasurementUnits,
   countSatisfiedRequiredMeasurementUnits,
   fromCanonicalCentimetres,
@@ -59,7 +60,13 @@ const ROUTES: ReadonlyArray<{
 const CALCULATED_PENDING_MESSAGE =
   "Complete the required measurements to calculate this value.";
 const CALCULATED_FROM_HEIGHT_LABEL = "Calculated from height";
+const IF_APPLICABLE_LABEL = "If applicable";
 const RANGE_RECHECK_MESSAGE = "Please recheck this measurement.";
+const DRESS_CONDITIONAL_MEASUREMENT_ID_SET = new Set<string>(
+  DRESS_CONDITIONAL_MEASUREMENT_IDS,
+);
+
+type MeasurementSectionKind = "required" | "calculated" | "optional";
 
 const formatGarmentLabel = (garmentType?: string, garmentKey?: string): string => {
   const base = (garmentType || "Garment")
@@ -144,12 +151,17 @@ const MeasurementField = ({
   const calculated = requirement.inputSource === "calculated_average_factor";
   const optionalManual = requirement.inputSource === "optional_manual";
   const oneOfAlternative = Boolean(getRequiredAlternativeGroupId(requirement));
+  const ifApplicable = DRESS_CONDITIONAL_MEASUREMENT_ID_SET.has(
+    requirement.measurementId,
+  );
   const badge = stored?.provenance === "customer_entered"
     ? "Customer measurement"
     : calculated
     ? CALCULATED_FROM_HEIGHT_LABEL
     : optionalManual
-      ? "Optional"
+      ? ifApplicable
+        ? IF_APPLICABLE_LABEL
+        : "Optional"
       : oneOfAlternative
         ? "One required"
         : "Required";
@@ -174,7 +186,10 @@ const MeasurementField = ({
         <span className="min-w-0 break-words text-sm font-bold text-heritage-green">
           {requirement.definition.customerLabel}
         </span>
-        <span className="rounded-full border border-heritage-gold/25 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+        <span
+          data-measurement-badge={badge}
+          className="rounded-full border border-heritage-gold/25 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold"
+        >
           {badge}
         </span>
       </span>
@@ -258,7 +273,7 @@ const MeasurementSection = ({
   requirements: PlannedMeasurementRequirement[];
   state: FutureMeasurementStateV1;
   onChange: (state: FutureMeasurementStateV1) => void;
-  section: "required" | "optional";
+  section: MeasurementSectionKind;
 }) => {
   const sharedRequirements = requirements.filter(
     (requirement) =>
@@ -299,9 +314,9 @@ const MeasurementSection = ({
     <section
       data-measurement-section={section}
       className={`rounded-2xl border p-5 shadow-sm sm:p-6 ${
-        section === "optional"
-          ? "border-heritage-green/15 bg-heritage-cream/25"
-          : "border-heritage-gold/20 bg-white"
+        section === "required"
+          ? "border-heritage-gold/20 bg-white"
+          : "border-heritage-green/15 bg-heritage-cream/25"
       }`}
     >
       <div className="flex min-w-0 items-start gap-3">
@@ -312,6 +327,11 @@ const MeasurementSection = ({
             {section === "required" && requiredCount > 0 && (
               <span className="rounded-full border border-heritage-gold/25 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
                 {completedCount} of {requiredCount} complete
+              </span>
+            )}
+            {section === "calculated" && (
+              <span className="rounded-full border border-heritage-green/20 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-ink/60">
+                {CALCULATED_FROM_HEIGHT_LABEL}
               </span>
             )}
             {section === "optional" && (
@@ -399,8 +419,15 @@ export const DormantFutureMeasurementStep = ({
   const requiredRequirements = selectedRoute
     ? presentationRequirements.filter((requirement) => requirement.section === "required")
     : [];
+  const calculatedRequirements = selectedRoute
+    ? presentationRequirements.filter(
+        (requirement) => requirement.inputSource === "calculated_average_factor",
+      )
+    : [];
   const optionalRequirements = selectedRoute
-    ? presentationRequirements.filter((requirement) => requirement.section === "optional")
+    ? presentationRequirements.filter(
+        (requirement) => requirement.inputSource === "optional_manual",
+      )
     : [];
   const requiredUnitCount = countRequiredMeasurementUnits(requiredRequirements);
   const completedManualInputCount = countSatisfiedRequiredMeasurementUnits({
@@ -408,10 +435,9 @@ export const DormantFutureMeasurementStep = ({
     entered: resolvedState.entered,
     invalidInputKeys: resolvedState.invalidInputKeys,
   });
-  const remainingManualInputCount = countRemainingRequiredMeasurementUnits({
-    requirements: requiredRequirements,
-    entered: resolvedState.entered,
-    invalidInputKeys: resolvedState.invalidInputKeys,
+  const remainingManualInputCount = countRemainingCustomerRequiredMeasurementUnits({
+    plan,
+    state: resolvedState,
   });
   const unsupportedGarments = selectedRoute
     ? resolvedState.diagnostics.filter(
@@ -629,10 +655,21 @@ export const DormantFutureMeasurementStep = ({
         section="required"
       />
 
+      {calculatedRequirements.length > 0 && (
+        <MeasurementSection
+          title={CALCULATED_FROM_HEIGHT_LABEL}
+          description="These values are calculated from Total Height after the required measurements are complete."
+          requirements={calculatedRequirements}
+          state={resolvedState}
+          onChange={onChange}
+          section="calculated"
+        />
+      )}
+
       {optionalRequirements.length > 0 && (
         <MeasurementSection
           title="Optional Measurements"
-          description="Calculated from height after the required measurements are complete. Fields without a factor stay optional and can be entered manually."
+          description="Fields without an approved height factor stay optional and can be entered manually."
           requirements={optionalRequirements}
           state={resolvedState}
           onChange={onChange}

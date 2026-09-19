@@ -383,6 +383,23 @@ export interface MeasurementRequirementPlan {
   canCalculate: boolean;
 }
 
+const presentationBand = (requirement: PlannedMeasurementRequirement): number => {
+  if (requirement.measurementId === "total_height") return 0;
+  if (requirement.section === "required") return 1;
+  if (requirement.inputSource === "calculated_average_factor") return 2;
+  return 3;
+};
+
+const compareMeasurementRequirementsForPresentation = (
+  left: PlannedMeasurementRequirement,
+  right: PlannedMeasurementRequirement,
+): number => {
+  const band = presentationBand(left) - presentationBand(right);
+  if (band !== 0) return band;
+  const sourceRow = left.sourceRow - right.sourceRow;
+  return sourceRow !== 0 ? sourceRow : left.key.localeCompare(right.key);
+};
+
 export const projectMeasurementRequirementsForPresentation = ({
   requirements,
   state,
@@ -423,8 +440,8 @@ export const projectMeasurementRequirementsForPresentation = ({
     projected.push(requirement);
   });
 
-  return [...sharedManual.values(), ...projected].sort((left, right) =>
-    left.key.localeCompare(right.key),
+  return [...sharedManual.values(), ...projected].sort(
+    compareMeasurementRequirementsForPresentation,
   );
 };
 
@@ -527,13 +544,7 @@ export const planMeasurementRequirements = ({
         selectedOptionIds,
       });
       if (applicability === "exclude") return;
-      // High Risk has one customer calculation basis: Total Height.  The source
-      // route markers remain provenance for the workbook, but factor-backed
-      // High-Risk rows are predictions, not additional customer inputs.
-      // Factorless rows retain their existing optional-manual treatment below.
-      const provenRequiredOnRoute = route === "high_risk"
-        ? field.measurementId === "total_height"
-        : field.directRoutes.includes(route);
+      const provenRequiredOnRoute = field.directRoutes.includes(route);
       // Unproven IF APPLICABLE rows stay optional. Unresolved alternative
       // groups (mid/long sleeve when construction cannot discriminate) stay
       // enterable as a one-of requirement: at least one member, never both
@@ -1038,10 +1049,23 @@ export const isRequiredAlternativeGroupSatisfied = ({
     isPositiveMeasurementValue(getEnteredMeasurementValue(entered, requirement)),
   );
 
+const uniqueDirectInputRequirements = (
+  requirements: readonly PlannedMeasurementRequirement[],
+): PlannedMeasurementRequirement[] => {
+  const byManualValueKey = new Map<string, PlannedMeasurementRequirement>();
+  requirements.forEach((requirement) => {
+    if (!requirement.directInput) return;
+    if (!byManualValueKey.has(requirement.manualValueKey)) {
+      byManualValueKey.set(requirement.manualValueKey, requirement);
+    }
+  });
+  return [...byManualValueKey.values()];
+};
+
 export const countRequiredMeasurementUnits = (
   requirements: readonly PlannedMeasurementRequirement[],
 ): number =>
-  requirements.filter((requirement) => requirement.directInput).length +
+  uniqueDirectInputRequirements(requirements).length +
   collectRequiredAlternativeGroups(requirements).size;
 
 export const countSatisfiedRequiredMeasurementUnits = ({
@@ -1053,10 +1077,10 @@ export const countSatisfiedRequiredMeasurementUnits = ({
   entered: FutureMeasurementEnteredBagV1;
   invalidInputKeys: readonly string[];
 }): number => {
-  const individualSatisfied = requirements.filter((requirement) =>
-    requirement.directInput &&
-    !invalidInputKeys.includes(requirement.key) &&
-    isPositiveMeasurementValue(getEnteredMeasurementValue(entered, requirement)),
+  const individualSatisfied = uniqueDirectInputRequirements(requirements).filter(
+    (requirement) =>
+      !invalidInputKeys.includes(requirement.key) &&
+      isPositiveMeasurementValue(getEnteredMeasurementValue(entered, requirement)),
   ).length;
   const satisfiedGroups = [...collectRequiredAlternativeGroups(requirements).values()]
     .filter((members) => isRequiredAlternativeGroupSatisfied({
@@ -1086,6 +1110,31 @@ export const countRemainingRequiredMeasurementUnits = ({
         invalidInputKeys,
       }),
   );
+
+export const collectPresentedRequiredMeasurementRequirements = ({
+  plan,
+  state,
+}: {
+  plan: MeasurementRequirementPlan;
+  state: FutureMeasurementStateV1;
+}): PlannedMeasurementRequirement[] =>
+  projectMeasurementRequirementsForPresentation({
+    requirements: plan.requirements,
+    state,
+  }).filter((requirement) => requirement.section === "required");
+
+export const countRemainingCustomerRequiredMeasurementUnits = ({
+  plan,
+  state,
+}: {
+  plan: MeasurementRequirementPlan;
+  state: FutureMeasurementStateV1;
+}): number =>
+  countRemainingRequiredMeasurementUnits({
+    requirements: collectPresentedRequiredMeasurementRequirements({ plan, state }),
+    entered: state.entered,
+    invalidInputKeys: state.invalidInputKeys,
+  });
 
 const getRequirementFactors = (
   requirement: PlannedMeasurementRequirement,

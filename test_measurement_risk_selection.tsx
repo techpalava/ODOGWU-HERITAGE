@@ -177,7 +177,14 @@ assert.equal(
 );
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" }).length, 1);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "required" }).length, 1);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "calculated" }).length, 0);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "optional" }).length, 0);
+assert.equal(
+  renderer.root.findByProps({ "data-measurement-section": "required" })
+    .findAll((node) => Boolean(node.props?.["data-measurement-field"]))[0]
+    ?.props["data-measurement-field"],
+  "total_height",
+);
 
 selectRoute(renderer, "medium_risk");
 assert.equal(
@@ -190,7 +197,14 @@ assert.equal(
 );
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "medium_risk" }).length, 1);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "required" }).length, 1);
-assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "optional" }).length, 1);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "calculated" }).length, 1);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "optional" }).length, 0);
+assert.equal(
+  renderer.root.findByProps({ "data-measurement-section": "required" })
+    .findAll((node) => Boolean(node.props?.["data-measurement-field"]))[0]
+    ?.props["data-measurement-field"],
+  "total_height",
+);
 assert.match(collectText(renderer.root), /Complete the required measurements to calculate this value/);
 assert.match(collectText(renderer.root), /Calculated from height/);
 
@@ -205,7 +219,14 @@ assert.equal(
 );
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "high_risk" }).length, 1);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "required" }).length, 1);
-assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "optional" }).length, 1);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "calculated" }).length, 1);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "optional" }).length, 0);
+assert.equal(
+  renderer.root.findByProps({ "data-measurement-section": "required" })
+    .findAll((node) => Boolean(node.props?.["data-measurement-field"]))[0]
+    ?.props["data-measurement-field"],
+  "total_height",
+);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "low_risk" }).length, 0);
 assert.equal(renderer.root.findAllByProps({ "data-measurement-form": "medium_risk" }).length, 0);
 assert.match(collectText(renderer.root), /Borst/);

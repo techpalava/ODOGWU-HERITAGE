@@ -127,6 +127,12 @@ assert.ok(continueLocked);
 assert.equal(continueLocked.props.disabled, true);
 
 assert.ok(requiredInputs(renderer).length > 0);
+assert.equal(
+  renderer.root.findByProps({ "data-measurement-section": "required" })
+    .findAll((node) => Boolean(node.props?.["data-measurement-field"]))[0]
+    ?.props["data-measurement-field"],
+  "total_height",
+);
 const fillRequiredExceptLast = () => {
   const inputs = requiredInputs(renderer);
   for (let index = 0; index < inputs.length - 1; index += 1) {
@@ -162,6 +168,13 @@ act(() => {
   }).props.onChange({ target: { value: "high_risk" } });
 });
 assert.equal(continueButton(highRenderer)?.props.disabled, true);
+assert.equal(
+  highRenderer.root.findByProps({ "data-measurement-section": "required" })
+    .findAll((node) => Boolean(node.props?.["data-measurement-field"]))[0]
+    ?.props["data-measurement-field"],
+  "total_height",
+);
+assert.equal(highRenderer.root.findAllByProps({ "data-measurement-section": "calculated" }).length, 1);
 const highCount = requiredInputs(highRenderer).length;
 assert.ok(highCount > 0);
 for (let index = 0; index < highCount; index += 1) {
@@ -182,6 +195,23 @@ const presentedOptional = projectMeasurementRequirementsForPresentation({
 assert.ok(
   presentedOptional.some((requirement) => requirement.measurementId === "under_bust_circumference"),
 );
+assert.equal(
+  renderer.root.findByProps({ "data-measurement-field": "under_bust_circumference" })
+    .findByProps({ "data-measurement-badge": "If applicable" }).props["data-measurement-badge"],
+  "If applicable",
+);
+assert.equal(
+  renderer.root.findByProps({ "data-measurement-field": "hip_circumference" })
+    .findByProps({ "data-measurement-badge": "If applicable" }).props["data-measurement-badge"],
+  "If applicable",
+);
+assert.equal(
+  renderer.root.findByProps({ "data-measurement-field": "shoulder_to_under_bust_length" })
+    .findByProps({ "data-measurement-badge": "If applicable" }).props["data-measurement-badge"],
+  "If applicable",
+);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "optional" }).length, 1);
+assert.equal(renderer.root.findAllByProps({ "data-measurement-section": "calculated" }).length, 0);
 assert.equal(
   isFutureSummaryUnlockedByMeasurements(
     reconcileFutureMeasurementState({
@@ -206,6 +236,16 @@ const alternativeGroup = midLongRenderer.root.findByProps({
 assert.ok(alternativeGroup);
 assert.equal(collectText(alternativeGroup).includes("Optional"), false);
 assert.equal(collectText(alternativeGroup).includes("Sleeve Length"), true);
+assert.equal(
+  midLongRenderer.root.findByProps({ "data-measurement-field": "sleeve_length_mid" })
+    .findByProps({ "data-measurement-badge": "One required" }).props["data-measurement-badge"],
+  "One required",
+);
+assert.equal(
+  midLongRenderer.root.findByProps({ "data-measurement-field": "sleeve_length_long" })
+    .findByProps({ "data-measurement-badge": "One required" }).props["data-measurement-badge"],
+  "One required",
+);
 assert.equal(continueButton(midLongRenderer)?.props.disabled, true);
 
 const fieldInput = (fieldId: string) =>
