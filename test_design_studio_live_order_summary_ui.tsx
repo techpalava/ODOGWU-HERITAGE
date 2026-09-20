@@ -237,6 +237,16 @@ const architectureView: LiveOrderSummaryView = {
       footer: { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€210.00", amountCents: 21000, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
     },
     {
+      id: "personalized_additions",
+      title: "Personalized Additions",
+      editStage: "personalized_additions",
+      lines: [
+        { id: "personalized-addition:order-detail:1:Name Monogram", label: "Monogram", detail: "Name Monogram", amountLabel: "€12.00" },
+        { id: "personalized-addition:order-detail:2:Embroidery", label: "Embroidery Design", detail: "Embroidery", amountLabel: "€12.00" },
+        { id: "personalized-addition:order-detail:3:Traditional Hat", label: "Accessories", detail: "Traditional Hat", amountLabel: "€12.00" },
+      ],
+    },
+    {
       id: "fabrics",
       title: "Fabrics",
       editStage: "fabric",
@@ -274,16 +284,6 @@ const architectureView: LiveOrderSummaryView = {
         ] },
       ],
     },
-    {
-      id: "personalized_additions",
-      title: "Personalized Additions",
-      editStage: "personalized_additions",
-      lines: [
-        { id: "personalized-addition:order-detail:1:Name Monogram", label: "Monogram", detail: "Name Monogram", amountLabel: "€12.00" },
-        { id: "personalized-addition:order-detail:2:Embroidery", label: "Embroidery Design", detail: "Embroidery", amountLabel: "€12.00" },
-        { id: "personalized-addition:order-detail:3:Traditional Hat", label: "Accessories", detail: "Traditional Hat", amountLabel: "€12.00" },
-      ],
-    },
     { id: "measurements", title: "Measurements", editStage: "measurement", lines: [{ id: "measurements-complete", label: "Low Risk — Complete", detail: null, amountLabel: null }] },
     { id: "delivery", title: "Delivery & Pickup", editStage: "shipping", lines: [{ id: "delivery-method", label: "Delivery Method", detail: "Pick Up in Eindhoven", amountLabel: null }] },
   ],
@@ -303,7 +303,24 @@ const architectureSectionIds = architectureRenderer.root.findAll((node) =>
   typeof node.props["data-testid"] === "string" &&
   /^live-order-summary-section-(?!header-)/.test(node.props["data-testid"]),
 ).map((node) => node.props["data-testid"].replace("live-order-summary-section-", ""));
-assert.deepEqual(architectureSectionIds, ["construction", "fabrics", "design_style", "custom_details", "personalized_additions", "measurements", "delivery"]);
+assert.deepEqual(architectureSectionIds, ["construction", "personalized_additions", "fabrics", "design_style", "custom_details", "measurements", "delivery"]);
+assert.equal(
+  architectureSectionIds.indexOf("personalized_additions"),
+  architectureSectionIds.indexOf("construction") + 1,
+  "Personalized Additions renders immediately after Garments Ordered",
+);
+assert.equal(
+  architectureSectionIds.filter((id) => id === "personalized_additions").length,
+  1,
+  "Personalized Additions is not duplicated later in the Summary card",
+);
+assert.deepEqual(
+  architectureSectionIds.slice(
+    architectureSectionIds.indexOf("personalized_additions") + 1,
+  ),
+  ["fabrics", "design_style", "custom_details", "measurements", "delivery"],
+  "unrelated Summary sections keep their existing relative order after Personalized Additions",
+);
 assert.match(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })), /Standard Shirt.*€65\.00.*Trouser.*€75\.00/);
 assert.equal(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })).includes("Garments Ordered"), true);
 assert.equal(architectureRenderer.root.findAllByProps({ "data-line-id": "construction-additional:shirt:1" }).length, 1, "an Additional Garment is shown once in Garments Ordered");
@@ -345,7 +362,45 @@ assert.match(
       "data-testid": "live-order-summary-section-personalized_additions",
     }),
   ),
-  /Monogram.*Name Monogram.*Embroidery Design.*Embroidery.*Accessories.*Traditional Hat/,
+  /Monogram.*Name Monogram.*€12\.00.*Embroidery Design.*Embroidery.*€12\.00.*Accessories.*Traditional Hat.*€12\.00/,
+);
+const emptyPersonalizedAdditionsView: LiveOrderSummaryView = {
+  ...architectureView,
+  sections: architectureView.sections.filter(
+    (section) => section.id !== "personalized_additions",
+  ),
+};
+let emptyPersonalizedAdditionsRenderer: ReturnType<typeof create>;
+act(() => {
+  emptyPersonalizedAdditionsRenderer = create(
+    createElement(DesignStudioOrderSummary, {
+      view: emptyPersonalizedAdditionsView,
+      unlockedStages: new Set<DesignStudioStageId>([
+        "garment_type",
+        "fabric",
+        "design_style",
+        "custom_details",
+        "personalized_additions",
+        "measurement",
+        "shipping",
+      ]),
+      currentStageId: "personalized_additions",
+    }),
+  );
+});
+assert.equal(
+  emptyPersonalizedAdditionsRenderer!.root.findAllByProps({
+    "data-testid": "live-order-summary-section-personalized_additions",
+  }).length,
+  0,
+  "empty Personalized Additions does not create a misleading price section",
+);
+assert.deepEqual(
+  emptyPersonalizedAdditionsRenderer!.root.findAll((node) =>
+    typeof node.props["data-testid"] === "string" &&
+    /^live-order-summary-section-(?!header-)/.test(node.props["data-testid"]),
+  ).map((node) => node.props["data-testid"].replace("live-order-summary-section-", "")),
+  ["construction", "fabrics", "design_style", "custom_details", "measurements", "delivery"],
 );
 assert.equal(
   textOf(
