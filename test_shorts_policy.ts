@@ -134,7 +134,10 @@ assert.equal(
 
 const normalizedCatalog = normalizeCustomDetailCatalog(
   SEED_CUSTOM_DETAIL_CATALOG.map((option) =>
-    option.id === "shorts_std_rope" || option.id === "bum_elastic"
+    option.id === "shorts_std_rope" ||
+    option.id === "bum_elastic" ||
+    option.id === "shorts_std_rope_elastic" ||
+    option.id === "bum_rope_elastic"
       ? { ...option, priceCents: 999999 }
       : option,
   ),
@@ -149,6 +152,18 @@ assert.equal(
   normalizedCatalog.find((option) => option.id === "bum_elastic")?.priceCents,
   7500,
   "Saved catalog data cannot override canonical Bum Shorts Elastic pricing",
+);
+assert.equal(
+  normalizedCatalog.find((option) => option.id === "shorts_std_rope_elastic")
+    ?.priceCents,
+  8500,
+  "Saved catalog data cannot override canonical Nikka Rope Plus Elastic pricing",
+);
+assert.equal(
+  normalizedCatalog.find((option) => option.id === "bum_rope_elastic")
+    ?.priceCents,
+  8500,
+  "Saved catalog data cannot override canonical Bum Shorts Rope Plus Elastic pricing",
 );
 for (const optionId of [
   "shorts_std_pocket_regular",
@@ -274,6 +289,13 @@ assert.equal(
   }).additionalGarmentPriceRows[0]?.price,
   75,
 );
+assert.equal(
+  priceAdditional(maleShirt, nikka, {
+    standard_shorts_fastening: "shorts_std_rope_elastic",
+  }).additionalGarmentPriceRows[0]?.price,
+  85,
+  "Nikka With Rope Plus Elastic Band is a €85 construction total",
+);
 
 const bum = makeAdditionalAssignment("bum_shorts", 1);
 assert.equal(
@@ -293,6 +315,13 @@ assert.equal(
     bum_shorts_fastening: "bum_belt",
   }).additionalGarmentPriceRows[0]?.price,
   75,
+);
+assert.equal(
+  priceAdditional(femaleDress, bum, {
+    bum_shorts_fastening: "bum_rope_elastic",
+  }).additionalGarmentPriceRows[0]?.price,
+  85,
+  "Bum Shorts With Rope Plus Elastic Band is a €85 construction total",
 );
 
 const ropePricing = priceAdditional(maleShirt, nikka, {
@@ -327,6 +356,13 @@ const elasticPricing = priceAdditional(maleShirt, nikka, {
   standard_shorts_pockets: "shorts_std_pocket_back",
 });
 assert.equal(elasticPricing.clothingPrice - ropePricing.clothingPrice, 5);
+assert.equal(
+  priceAdditional(maleShirt, nikka, {
+    standard_shorts_fastening: "shorts_std_rope_elastic",
+  }).clothingPrice - ropePricing.clothingPrice,
+  15,
+  "Switching Nikka Rope to Rope Plus Elastic replaces the construction total once",
+);
 assert.equal(
   priceAdditional(maleShirt, nikka, {
     standard_shorts_fastening: "shorts_std_rope",

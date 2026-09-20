@@ -333,19 +333,20 @@ const expectedOptionIdsByGroup: Record<string, string[]> = {
     "shorts_std_rope",
     "shorts_std_elastic",
     "shorts_std_belt",
+    "shorts_std_rope_elastic",
   ],
   standard_shorts_pockets: [
     "shorts_std_pocket_regular",
     "shorts_std_pocket_back",
     "shorts_std_pocket_none",
   ],
-  bum_shorts_fastening: ["bum_rope", "bum_elastic", "bum_belt"],
+  bum_shorts_fastening: ["bum_rope", "bum_elastic", "bum_belt", "bum_rope_elastic"],
   bum_shorts_pockets: [
     "bum_pocket_regular",
     "bum_pocket_back",
     "bum_pocket_none",
   ],
-  trouser_fastening: ["trouser_rope", "trouser_elastic", "trouser_belt"],
+  trouser_fastening: ["trouser_rope", "trouser_elastic", "trouser_belt", "trouser_rope_elastic"],
   trouser_pockets: [
     "trouser_pocket_regular",
     "trouser_pocket_back",
@@ -362,6 +363,37 @@ assert.deepEqual(
   ),
   expectedOptionIdsByGroup,
   "every selection group follows its centralized option order",
+);
+
+const seedOptionIds = SEED_CUSTOM_DETAIL_CATALOG.map((option) => option.id);
+assert.equal(
+  seedOptionIds.length,
+  new Set(seedOptionIds).size,
+  "no duplicate Custom Detail option ID is introduced",
+);
+assert.equal(
+  expectedOptionIdsByGroup.skirt_length.includes("shorts_std_rope_elastic") ||
+    expectedOptionIdsByGroup.skirt_length.includes("bum_rope_elastic") ||
+    expectedOptionIdsByGroup.skirt_length.includes("trouser_rope_elastic"),
+  false,
+  "Skirt length must not gain With Rope Plus Elastic Band",
+);
+assert.equal(
+  expectedOptionIdsByGroup.shirt_construction.some((optionId) =>
+    optionId.endsWith("rope_elastic"),
+  ) ||
+    expectedOptionIdsByGroup.dress_construction.some((optionId) =>
+      optionId.endsWith("rope_elastic"),
+    ),
+  false,
+  "Shirt and Dress construction must not gain With Rope Plus Elastic Band",
+);
+assert.equal(
+  SEED_CUSTOM_DETAIL_CATALOG.filter(
+    (option) => option.label === "With Rope Plus Elastic Band",
+  ).map((option) => option.priceCents).every((priceCents) => priceCents === 8500),
+  true,
+  "With Rope Plus Elastic Band is an 8500-cent construction total, not a surcharge",
 );
 
 const neckOptionIds = expectedOptionIdsByGroup.neck_design;

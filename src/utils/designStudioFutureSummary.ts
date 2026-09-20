@@ -1,7 +1,6 @@
 import { CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE } from "../config/GarmentDetailsConfig";
 import { resolveCustomDetailPhysicalComponents } from "../config/CustomDetailPhysicalComponentConfig";
 import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing";
-import { reconcileGarmentTypeStepSelection } from "./garmentTypeStepState";
 import type {
   AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
@@ -313,18 +312,6 @@ const mapGarments = ({
   | "catalogInspection"
   | "fabricAllocationState"
 > & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureSummaryGarment[] => {
-  const authoritativeBaseConstructionSelection =
-    designSourceKind === "uploaded"
-      ? garmentTypeSelection
-      : step1GarmentTypeSelection;
-  const reconciledBaseConstructionSelection =
-    designSourceKind === "catalogue"
-      ? reconcileGarmentTypeStepSelection({
-          persistedSelection: authoritativeBaseConstructionSelection,
-          normalizedCustomDetailCatalog: catalogInspection.activeOptions,
-        }).selection
-      : authoritativeBaseConstructionSelection;
-
   return projectAuthoritativePhysicalOccurrences({
     sourceKind: designSourceKind,
     step1GarmentTypeSelection,
@@ -340,7 +327,7 @@ const mapGarments = ({
       garmentKey,
       garmentType,
       sourceRole,
-      garmentTypeSelection: reconciledBaseConstructionSelection,
+      garmentTypeSelection,
       additionalGarmentConstructionState,
     });
     const physicalResolution = resolveCustomDetailPhysicalComponents({
