@@ -1844,17 +1844,37 @@ const personalizedSection = section(
   personalizedAdditions.view,
   "personalized_additions",
 );
+const personalizedSectionIds = personalizedAdditions.view.sections.map(
+  (item) => item.id,
+);
 assert.deepEqual(
-  personalizedAdditions.view.sections.map((item) => item.id),
+  personalizedSectionIds,
   [
     "construction",
+    "personalized_additions",
     "fabrics",
     "design_style",
     "custom_details",
-    "personalized_additions",
     "measurements",
   ],
-  "Personalized Additions is omitted when empty and otherwise follows the existing Summary sections",
+  "Personalized Additions renders immediately after Garments Ordered and is omitted when empty",
+);
+assert.equal(
+  personalizedSectionIds.indexOf("personalized_additions"),
+  personalizedSectionIds.indexOf("construction") + 1,
+  "Personalized Additions is the next section after Garments Ordered",
+);
+assert.deepEqual(
+  personalizedSectionIds.slice(
+    personalizedSectionIds.indexOf("personalized_additions") + 1,
+  ),
+  ["fabrics", "design_style", "custom_details", "measurements"],
+  "unrelated Summary sections keep their existing relative order after Personalized Additions",
+);
+assert.equal(
+  personalizedSectionIds.filter((id) => id === "personalized_additions").length,
+  1,
+  "Personalized Additions is not duplicated later in the Summary card",
 );
 assert.deepEqual(
   personalizedSection.lines.map(({ label, detail, amountLabel }) => ({

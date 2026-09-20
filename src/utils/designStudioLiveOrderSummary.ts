@@ -716,6 +716,14 @@ export const projectDesignStudioLiveOrderSummary = ({
         ? { subsections: [additionalGarmentSubsection] }
         : {}),
     },
+    ...(selectedPersonalizedAdditions.length > 0
+      ? [{
+          id: "personalized_additions" as const,
+          title: "Personalized Additions",
+          editStage: "personalized_additions" as const,
+          lines: selectedPersonalizedAdditions,
+        }]
+      : []),
     {
       id: "fabrics",
       title: "Fabrics",
@@ -734,14 +742,6 @@ export const projectDesignStudioLiveOrderSummary = ({
       editStage: "custom_details",
       lines: constructionOptionLines,
     },
-    ...(selectedPersonalizedAdditions.length > 0
-      ? [{
-          id: "personalized_additions" as const,
-          title: "Personalized Additions",
-          editStage: "personalized_additions" as const,
-          lines: selectedPersonalizedAdditions,
-        }]
-      : []),
     {
       id: "measurements",
       title: "Measurements",
