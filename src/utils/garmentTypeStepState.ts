@@ -339,13 +339,15 @@ export const reconcileGarmentTypeStepSelection = ({
       normalizedCustomDetailCatalog,
     );
     const saved = previous.constructionByGarment[garmentType];
-    // Step 1 has no customer construction selector. Rehydrate the current
-    // exact-garment default instead of preserving a stale generic/profile
-    // construction from an older draft.
-    const current = canonicalDefault;
-
-    // Saved option identities survive only while the current catalog still
-    // accepts them. Current catalog prices always replace persisted prices.
+    // Valid saved construction option IDs outrank the canonical Rope/default.
+    // Missing, malformed, or inactive saved options still fail closed to the
+    // canonical default. Current catalog prices always replace persisted cents.
+    const current =
+      reconcileGarmentConstructionResolution(
+        saved,
+        canonicalDefault,
+        normalizedCustomDetailCatalog,
+      ) || canonicalDefault;
     constructionByGarment[garmentType] = current;
 
     if (current.status === "unresolved") {

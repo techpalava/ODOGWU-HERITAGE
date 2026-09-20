@@ -119,10 +119,10 @@ if (staleLongDress?.status === "resolved") {
   staleLongDress.components[0].optionId = "dress_long_midlong";
   staleLongDress.components[0].componentKey =
     "full_length_gown:dress_construction:dress_long_midlong";
-  staleLongDress.components[0].priceCents = 8000;
-  staleLongDress.components[0].price = 80;
-  staleLongDress.totalPriceCents = 8000;
-  staleLongDress.totalPrice = 80;
+  staleLongDress.components[0].priceCents = 1;
+  staleLongDress.components[0].price = 0.01;
+  staleLongDress.totalPriceCents = 1;
+  staleLongDress.totalPrice = 0.01;
 }
 const repairedLongDressDraft = reconcileGarmentTypeStepSelection({
   persistedSelection: staleLongDressDraft,
@@ -132,14 +132,15 @@ assert.equal(
   repairedLongDressDraft?.status === "resolved"
     ? repairedLongDressDraft.components[0].optionId
     : null,
-  "dress_long_short",
+  "dress_long_midlong",
+  "A valid saved Long Dress construction outranks the canonical Short Sleeve default.",
 );
 assert.equal(
   repairedLongDressDraft?.status === "resolved"
     ? repairedLongDressDraft.totalPriceCents
     : null,
-  7500,
-  "Hydration must replace a stale €80 Long Dress construction with the canonical €75 option.",
+  8000,
+  "Hydration keeps the saved Long Dress option and replaces persisted cents with the current catalog price.",
 );
 
 const malformedSkirtPair = reconcileGarmentTypeStepSelection({
@@ -244,15 +245,15 @@ assert.equal(
   restoredCanonicalDefaultShirt?.status === "resolved"
     ? restoredCanonicalDefaultShirt.components[0].optionId
     : null,
-  "shirt_std_short",
-  "A saved construction must restore the current exact-garment Step 1 default.",
+  "shirt_std_midlong",
+  "A valid saved construction option ID outranks the canonical Step 1 default.",
 );
 assert.equal(
   restoredCanonicalDefaultShirt?.status === "resolved"
     ? restoredCanonicalDefaultShirt.totalPriceCents
     : null,
-  6500,
-  "The restored default must use its current canonical price.",
+  7000,
+  "The restored saved construction must use its current catalog price, not persisted cents.",
 );
 
 const stalePrice = structuredClone(deselected.selection);
