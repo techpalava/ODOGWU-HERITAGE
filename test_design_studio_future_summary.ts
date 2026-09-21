@@ -738,6 +738,177 @@ assert.equal(
   "multiple garment construction rows remain a once-only explanation of the subtotal",
 );
 
+const selectedTrouserRopeElastic = selectGarmentConstructionOption({
+  resolution: shirtTrouserInput.garmentTypeSelection.constructionByGarment.trouser!,
+  selectionGroup: "trouser_fastening",
+  optionId: "trouser_rope_elastic",
+  normalizedCustomDetailCatalog: inspection.activeOptions,
+});
+assert.equal(selectedTrouserRopeElastic.status, "selected");
+if (selectedTrouserRopeElastic.status === "selected") {
+  assert.equal(selectedTrouserRopeElastic.resolution.status, "resolved");
+  if (selectedTrouserRopeElastic.resolution.status === "resolved") {
+    assert.equal(
+      selectedTrouserRopeElastic.resolution.totalPriceCents,
+      8500,
+      "With Rope Plus Elastic Band is an €85 Trouser construction total, not a surcharge",
+    );
+    assert.equal(
+      selectedTrouserRopeElastic.resolution.components.length,
+      1,
+      "Rope Plus Elastic replaces Rope/Elastic/Belt instead of stacking",
+    );
+  }
+  const ropeElasticGarmentTypeSelection = {
+    ...shirtTrouserInput.garmentTypeSelection,
+    constructionByGarment: {
+      ...shirtTrouserInput.garmentTypeSelection.constructionByGarment,
+      trouser: selectedTrouserRopeElastic.resolution,
+    },
+  };
+  const ropeElasticPricing = calculateDesignPricing({
+    route: "alone",
+    design: {},
+    materialPricing: shirtTrouserInput.materialPricing,
+    baseGarmentComposition: getFutureFabricCapacityComposition(
+      ropeElasticGarmentTypeSelection,
+    ),
+    catalog: inspection.activeOptions,
+    businessSettings,
+    garmentConstructionSelectionMode: "garment_type_locked",
+    garmentTypeSelection: ropeElasticGarmentTypeSelection,
+  });
+  const ropeElasticSummary = projectFutureDesignStudioSummary({
+    ...shirtTrouserInput,
+    garmentTypeSelection: ropeElasticGarmentTypeSelection,
+    basePricing: ropeElasticPricing,
+  });
+  const ropeElasticConstructionBreakdown = projectCustomerGarmentConstructionBreakdown({
+    pricing: ropeElasticPricing,
+    subjects: shirtTrouserInput.customDetailsReconciliation.subjects,
+    garmentTypeSelection: ropeElasticGarmentTypeSelection,
+    additionalGarments: [],
+    additionalGarmentConstructions: emptyAdditionalConstructionState(),
+    catalogInspection: inspection,
+    constructionSubtotal:
+      ropeElasticSummary.pricingSummary.garmentConstructionSubtotal,
+  });
+  assert.equal(ropeElasticConstructionBreakdown.status, "complete");
+  assert.deepEqual(
+    ropeElasticConstructionBreakdown.rows.map((row) => [
+      row.garmentKey,
+      row.constructionLabel,
+      row.priceCents,
+    ]),
+    [
+      ["base:shirt", "Standard Length Shirt, Short Sleeve", 6500],
+      ["base:trouser", "With Rope Plus Elastic Band", 8500],
+    ],
+    "selecting Rope Plus Elastic on garmentTypeSelection projects that Trouser construction total",
+  );
+  assert.equal(
+    ropeElasticSummary.garmentSummary.find(
+      (row) => row.garmentKey === "base:trouser",
+    )?.constructionTotalCents,
+    8500,
+    "Garments Ordered keeps the Trouser occurrence at €85",
+  );
+  assert.equal(
+    ropeElasticSummary.garmentSummary.find(
+      (row) => row.garmentKey === "base:shirt",
+    )?.constructionTotalCents,
+    6500,
+    "one Trouser occurrence at €85 must not change Shirt construction",
+  );
+  const defaultConstructionSubtotalCents = Math.round(
+    shirtTrouserSummary.pricingSummary.garmentConstructionSubtotal! * 100,
+  );
+  const ropeElasticConstructionSubtotalCents = Math.round(
+    ropeElasticSummary.pricingSummary.garmentConstructionSubtotal! * 100,
+  );
+  assert.equal(defaultConstructionSubtotalCents, 14000);
+  assert.equal(ropeElasticConstructionSubtotalCents, 15000);
+  assert.equal(
+    ropeElasticConstructionSubtotalCents - defaultConstructionSubtotalCents,
+    1000,
+    "75→85 is +10 once; Rope Plus Elastic replaces Rope instead of stacking",
+  );
+  const ropeElasticLiveSummary = projectDesignStudioLiveOrderSummary({
+    summary: ropeElasticSummary,
+    shippingResolution: reconcileFutureShippingState({
+      state: createEmptyFutureShippingState(),
+      garmentCount: ropeElasticSummary.garmentSummary.length,
+      selectedDesignPrice:
+        ropeElasticSummary.pricingSummary.selectedDesignPrice
+          ?.selectedDesignPrice ?? null,
+    }),
+    candidatePricing: null,
+    fabricAllocationState: shirtTrouserInput.fabricAllocationState,
+    measurementState: shirtTrouserInput.measurementState,
+    measurementPlan: shirtTrouserInput.measurementPlan,
+    designSource: null,
+  });
+  const garmentsOrdered = ropeElasticLiveSummary.sections.find(
+    (section) => section.id === "construction",
+  );
+  assert.equal(
+    garmentsOrdered?.lines.find((line) => line.id === "construction-base:trouser")
+      ?.amountLabel,
+    "€85.00",
+    "Garments Ordered line for the Trouser occurrence is €85.00",
+  );
+  assert.equal(
+    garmentsOrdered?.lines.find((line) => line.id === "construction-base:shirt")
+      ?.amountLabel,
+    "€65.00",
+  );
+  assert.equal(garmentsOrdered?.footer?.amountLabel, "€150.00");
+  const switchedBackToRope = selectGarmentConstructionOption({
+    resolution: selectedTrouserRopeElastic.resolution,
+    selectionGroup: "trouser_fastening",
+    optionId: "trouser_rope",
+    normalizedCustomDetailCatalog: inspection.activeOptions,
+  });
+  assert.equal(switchedBackToRope.status, "selected");
+  if (switchedBackToRope.status === "selected") {
+    const restoredGarmentTypeSelection = {
+      ...ropeElasticGarmentTypeSelection,
+      constructionByGarment: {
+        ...ropeElasticGarmentTypeSelection.constructionByGarment,
+        trouser: switchedBackToRope.resolution,
+      },
+    };
+    const restoredPricing = calculateDesignPricing({
+      route: "alone",
+      design: {},
+      materialPricing: shirtTrouserInput.materialPricing,
+      baseGarmentComposition: getFutureFabricCapacityComposition(
+        restoredGarmentTypeSelection,
+      ),
+      catalog: inspection.activeOptions,
+      businessSettings,
+      garmentConstructionSelectionMode: "garment_type_locked",
+      garmentTypeSelection: restoredGarmentTypeSelection,
+    });
+    const restoredSummary = projectFutureDesignStudioSummary({
+      ...shirtTrouserInput,
+      garmentTypeSelection: restoredGarmentTypeSelection,
+      basePricing: restoredPricing,
+    });
+    assert.equal(
+      restoredSummary.garmentSummary.find(
+        (row) => row.garmentKey === "base:trouser",
+      )?.constructionTotalCents,
+      7500,
+      "switching back to Rope removes the €85 construction total",
+    );
+    assert.equal(
+      Math.round(restoredSummary.pricingSummary.garmentConstructionSubtotal! * 100),
+      14000,
+    );
+  }
+}
+
 const selectedShirtAlternative = selectGarmentConstructionOption({
   resolution: exactInput.garmentTypeSelection.constructionByGarment.shirt!,
   selectionGroup: "shirt_construction",
@@ -784,11 +955,73 @@ if (selectedShirtAlternative.status === "selected") {
     [{
       garmentKey: "base:shirt",
       garmentLabel: "Standard Shirt",
-      constructionLabel: "Standard Length Shirt, Short Sleeve",
+      constructionLabel: "Standard Length Shirt, Mid-Long Sleeve",
       role: "main",
-      priceCents: 6500,
+      priceCents: 7000,
     }],
-    "summary projection restores the current exact-garment construction default",
+    "selecting shirt_std_midlong on garmentTypeSelection projects that construction total, not the Step 1 short default",
+  );
+}
+
+for (const [garmentType, selectionGroup, optionId, garmentKey, defaultCents] of [
+  ["standard_shorts", "standard_shorts_fastening", "shorts_std_rope_elastic", "base:standard_shorts", 7000],
+  ["bum_shorts", "bum_shorts_fastening", "bum_rope_elastic", "base:bum_shorts", 7000],
+] as const) {
+  const shortsInput = buildSummaryInput({ garmentTypes: [garmentType] });
+  const defaultShortsSummary = projectFutureDesignStudioSummary(shortsInput);
+  assert.equal(
+    defaultShortsSummary.garmentSummary.find((row) => row.garmentKey === garmentKey)
+      ?.constructionTotalCents,
+    defaultCents,
+  );
+  const selectedShorts = selectGarmentConstructionOption({
+    resolution: shortsInput.garmentTypeSelection.constructionByGarment[garmentType]!,
+    selectionGroup,
+    optionId,
+    normalizedCustomDetailCatalog: inspection.activeOptions,
+  });
+  assert.equal(selectedShorts.status, "selected", `${garmentType} must accept Rope Plus Elastic`);
+  if (selectedShorts.status !== "selected") continue;
+  const shortsSelection = {
+    ...shortsInput.garmentTypeSelection,
+    constructionByGarment: {
+      ...shortsInput.garmentTypeSelection.constructionByGarment,
+      [garmentType]: selectedShorts.resolution,
+    },
+  };
+  const shortsPricing = calculateDesignPricing({
+    route: "alone",
+    design: {},
+    materialPricing: shortsInput.materialPricing,
+    baseGarmentComposition: getFutureFabricCapacityComposition(shortsSelection),
+    catalog: inspection.activeOptions,
+    businessSettings,
+    garmentConstructionSelectionMode: "garment_type_locked",
+    garmentTypeSelection: shortsSelection,
+  });
+  const shortsSummary = projectFutureDesignStudioSummary({
+    ...shortsInput,
+    garmentTypeSelection: shortsSelection,
+    basePricing: shortsPricing,
+  });
+  assert.equal(
+    shortsSummary.garmentSummary.find((row) => row.garmentKey === garmentKey)
+      ?.constructionTotalCents,
+    8500,
+    `Garments Ordered keeps the ${garmentType} occurrence at €85`,
+  );
+  const defaultSubtotalCents = Math.round(
+    defaultShortsSummary.pricingSummary.garmentConstructionSubtotal! * 100,
+  );
+  const selectedSubtotalCents = Math.round(
+    shortsSummary.pricingSummary.garmentConstructionSubtotal! * 100,
+  );
+  assert.equal(defaultSubtotalCents, defaultCents);
+  assert.equal(selectedSubtotalCents, 8500);
+  assert.equal(
+    selectedSubtotalCents - defaultSubtotalCents,
+    1500,
+    `70→85 is +15 once; ${garmentType} Rope Plus Elastic replaces Rope`,
   );
 }
 

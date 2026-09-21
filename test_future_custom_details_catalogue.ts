@@ -288,6 +288,23 @@ assert.deepEqual(
   ],
   "Agbada keeps its configured upper and Trouser physical components without duplicate sections",
 );
+const trouserOnly = project({ garmentTypes: ["trouser"], demographic: "male" });
+const agbadaFasteningIds = agbada.catalogue.coreGroups
+  .find((group) => group.selectionGroup === "trouser_fastening")
+  ?.options.map((option) => option.id);
+const trouserFasteningIds = trouserOnly.catalogue.coreGroups
+  .find((group) => group.selectionGroup === "trouser_fastening")
+  ?.options.map((option) => option.id);
+assert.deepEqual(
+  agbadaFasteningIds,
+  trouserFasteningIds,
+  "Agbada trousers list the same trouser_fastening IDs as Trouser",
+);
+assert.equal(
+  agbadaFasteningIds?.includes("trouser_rope_elastic"),
+  true,
+  "Agbada still includes trouser_rope_elastic in trouser_fastening",
+);
 
 const defaultShirt = shirt.garmentTypeSelection.constructionByGarment.shirt;
 assert.equal(defaultShirt?.status, "resolved");

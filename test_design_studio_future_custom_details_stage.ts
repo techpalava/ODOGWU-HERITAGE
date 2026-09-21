@@ -713,6 +713,11 @@ assert.match(textContent(standardConstruction), /Main Garment/);
 assert.match(textContent(standardConstruction), /Standard Length Shirt, Short Sleeve/);
 assert.match(textContent(standardConstruction), /Standard Length Shirt, Mid-Long Sleeve/);
 assert.doesNotMatch(textContent(standardConstruction), /Long Length Shirt/);
+assert.doesNotMatch(
+  textContent(shirtsSection),
+  /With Rope Plus Elastic Band/,
+  "Shirt construction must not gain With Rope Plus Elastic Band",
+);
 assert.match(textContent(longShirtBlock), /Long Shirt/);
 assert.match(textContent(longConstruction), /Main Garment/);
 assert.match(textContent(longConstruction), /Long Length Shirt, Short Sleeve/);
@@ -1038,6 +1043,11 @@ assert.equal(
   1,
   "the Dresses card contains one Long Dress garment block",
 );
+assert.doesNotMatch(
+  textContent(dressesOwnedSection),
+  /With Rope Plus Elastic Band/,
+  "Dress construction must not gain With Rope Plus Elastic Band",
+);
 const standardDressOwnedConstruction = groupInGarmentSection(
   standardDressOwnedBlock,
   "dress_construction",
@@ -1269,6 +1279,11 @@ assert.match(textContent(longSkirtOwnedBlock), /Long Skirt/);
 assert.match(textContent(longSkirtOwnedConstruction), /Main Garment/);
 assert.match(textContent(longSkirtOwnedConstruction), /Long Length/);
 assert.doesNotMatch(textContent(longSkirtOwnedConstruction), /Standard Length/);
+assert.doesNotMatch(
+  textContent(skirtsOwnedSection),
+  /With Rope Plus Elastic Band/,
+  "Skirt construction must not gain With Rope Plus Elastic Band",
+);
 assert.equal(
   optionInOccurrenceGroup(
     standardSkirtOwnedConstruction,
@@ -1450,6 +1465,21 @@ assert.match(
   /^future-custom-detail-base:trouser-trouser_fastening-trouser_belt$/,
   "the Trouser construction control retains its exact occurrence identity",
 );
+const trouserRopeElastic = optionInOccurrenceGroup(
+  trouserOwnedConstruction,
+  "With Rope Plus Elastic Band",
+);
+assert.ok(trouserRopeElastic, "Trouser exposes With Rope Plus Elastic Band");
+assert.match(
+  String(trouserRopeElastic.findByType("input").props.id),
+  /^future-custom-detail-base:trouser-trouser_fastening-trouser_rope_elastic$/,
+  "the Trouser Rope Plus Elastic control retains its exact occurrence identity",
+);
+assert.match(
+  textContent(trouserRopeElastic),
+  /€85\.00/,
+  "unselected Trouser Rope Plus Elastic shows the €85 construction total",
+);
 act(() => {
   trouserBelt.findByType("input").props.onChange();
 });
@@ -1594,15 +1624,52 @@ assert.match(
   String(nikkaBelt.findByType("input").props.id),
   /^future-custom-detail-base:standard_shorts-standard_shorts_fastening-shorts_std_belt$/,
 );
+const nikkaRopeElastic = optionInOccurrenceGroup(
+  nikkaOwnedConstruction,
+  "With Rope Plus Elastic Band",
+);
+const bumRopeElastic = optionInOccurrenceGroup(
+  bumOwnedConstruction,
+  "With Rope Plus Elastic Band",
+);
+assert.ok(nikkaRopeElastic, "Nikka exposes With Rope Plus Elastic Band");
+assert.ok(bumRopeElastic, "Bum Shorts exposes With Rope Plus Elastic Band");
+assert.match(
+  String(nikkaRopeElastic.findByType("input").props.id),
+  /^future-custom-detail-base:standard_shorts-standard_shorts_fastening-shorts_std_rope_elastic$/,
+);
+assert.match(
+  String(bumRopeElastic.findByType("input").props.id),
+  /^future-custom-detail-base:bum_shorts-bum_shorts_fastening-bum_rope_elastic$/,
+);
+assert.match(textContent(nikkaRopeElastic), /€85\.00/);
+assert.match(textContent(bumRopeElastic), /€85\.00/);
 act(() => {
-  nikkaBelt.findByType("input").props.onChange();
+  nikkaRopeElastic.findByType("input").props.onChange();
 });
 assert.deepEqual(shortsOwnedConstructionEvents, [[
   "base:standard_shorts",
   "standard_shorts",
   "standard_shorts_fastening",
-  "shorts_std_belt",
-]]);
+  "shorts_std_rope_elastic",
+]], "selecting Rope Plus Elastic on Nikka must not select it on Bum Shorts");
+act(() => {
+  nikkaBelt.findByType("input").props.onChange();
+});
+assert.deepEqual(shortsOwnedConstructionEvents, [
+  [
+    "base:standard_shorts",
+    "standard_shorts",
+    "standard_shorts_fastening",
+    "shorts_std_rope_elastic",
+  ],
+  [
+    "base:standard_shorts",
+    "standard_shorts",
+    "standard_shorts_fastening",
+    "shorts_std_belt",
+  ],
+]);
 assert.deepEqual(
   shortsOwnedReconciliation.subjects.map((subject) => subject.garmentKey),
   ["base:standard_shorts", "base:bum_shorts"],
