@@ -691,7 +691,7 @@ assert.deepEqual(MEASUREMENT_RISK_ROUTE_LABELS, {
 });
 assert.equal(
   MEASUREMENT_RISK_SELECTION_NOTICE,
-  "Choose one measurement risk level and complete only the measurements shown for your selected option.",
+  "Choose one measurement option and complete only the measurements shown for your selected method.",
 );
 
 const unresolvedEmpty = createEmptyFutureMeasurementState();

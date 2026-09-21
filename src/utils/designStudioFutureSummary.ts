@@ -37,7 +37,7 @@ import {
   type GarmentScopedCustomDetailsReconciliationResult,
 } from "./garmentScopedCustomDetailsDomain";
 import { enumerateGarmentScopedCustomDetailInputs } from "./garmentScopedCustomDetailInputsState";
-import { fromCanonicalCentimetres, getResolvedMeasurementValue, isSelectedMeasurementRiskRoute, MEASUREMENT_RISK_ROUTE_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint";
+import { fromCanonicalCentimetres, getResolvedMeasurementValue, getSampleClothCustomerLabel, getSampleClothProductionEquivalentCm, isSampleClothMeasurementMethod, isSelectedMeasurementMethod, MEASUREMENT_METHOD_LABELS, projectMeasurementRequirementsForPresentation, roundMeasurementDisplayValue, type MeasurementRequirementPlan, type PlannedMeasurementRequirement } from "./measurementBlueprint";
 
 export type FutureDesignStudioSummaryStatus =
   | "ready"
@@ -146,6 +146,8 @@ export interface FutureSummaryMeasurementValue {
   garmentKey: string | null;
   label: string;
   formattedValue: string;
+  convertedFormattedValue: string | null;
+  convertedLabel: string | null;
   value: number;
   unit: FutureMeasurementStateV1["unit"];
   provenance: FutureMeasurementValueV1["provenance"];
@@ -249,8 +251,8 @@ const getMeasurementValue = (
 const getMeasurementRouteLabel = (
   route: FutureMeasurementStateV1["route"],
 ): string =>
-  isSelectedMeasurementRiskRoute(route)
-    ? MEASUREMENT_RISK_ROUTE_LABELS[route]
+  isSelectedMeasurementMethod(route)
+    ? MEASUREMENT_METHOD_LABELS[route]
     : "Not selected";
 
 const getSummaryStatus = ({
@@ -651,11 +653,11 @@ const mapMeasurements = ({
   FutureDesignStudioSummaryInput,
   "measurementPlan" | "measurementState"
 > & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureSummaryMeasurements => {
-  if (!isSelectedMeasurementRiskRoute(measurementState.route)) {
+  if (!isSelectedMeasurementMethod(measurementState.route)) {
     blockers.push({
       code: "MEASUREMENT_INCOMPLETE",
       section: "measurements",
-      message: "Choose one measurement risk level and complete the measurements for that option.",
+      message: "Choose one measurement option and complete the measurements for that method.",
     });
   } else if (measurementState.calculationStatus !== "complete") {
     blockers.push({
@@ -675,9 +677,24 @@ const mapMeasurements = ({
     if (!stored || !Number.isFinite(stored.valueCm) || stored.valueCm <= 0) {
       return [];
     }
+    const sampleMode = isSampleClothMeasurementMethod(measurementState.route);
+    const unitLabel = measurementState.unit === "inch" ? "in" : "cm";
     const value = roundMeasurementDisplayValue(
       fromCanonicalCentimetres(stored.valueCm, measurementState.unit),
     );
+    const derivedValue = requirement.scope === "shared"
+      ? measurementState.derived.shared[requirement.measurementId]
+      : measurementState.derived.byGarmentKey[requirement.garmentKey]?.[
+        requirement.measurementId
+      ];
+    const convertedCm = requirement.sampleGeometry === "laid_flat_half_width"
+      ? derivedValue?.valueCm ?? getSampleClothProductionEquivalentCm(stored.valueCm)
+      : null;
+    const convertedValue = convertedCm != null && Number.isFinite(convertedCm)
+      ? roundMeasurementDisplayValue(
+          fromCanonicalCentimetres(convertedCm, measurementState.unit),
+        )
+      : null;
     const occurrenceOwned =
       requirement.scope === "garment" ||
       stored.provenance === "calculated_average_factor";
@@ -685,8 +702,19 @@ const mapMeasurements = ({
       requirementKey: requirement.key,
       measurementId: requirement.measurementId,
       garmentKey: occurrenceOwned ? requirement.garmentKey : null,
-      label: requirement.definition.customerLabel,
-      formattedValue: `${value} ${measurementState.unit === "inch" ? "in" : "cm"}`,
+      label: sampleMode
+        ? getSampleClothCustomerLabel(
+            requirement.measurementId,
+            requirement.definition.customerLabel,
+          )
+        : requirement.definition.customerLabel,
+      formattedValue: `${value} ${unitLabel}`,
+      convertedFormattedValue: convertedValue != null
+        ? `${convertedValue} ${unitLabel}`
+        : null,
+      convertedLabel: convertedValue != null
+        ? "Converted from sample cloth"
+        : null,
       value,
       unit: measurementState.unit,
       provenance: stored.provenance,

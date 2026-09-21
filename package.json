@@ -58,6 +58,7 @@
     "test:firebase-client-configuration": "tsx test_firebase_client_configuration.ts",
     "test:measurement-blueprint": "tsx test_measurement_blueprint.ts",
     "test:measurement-risk-selection": "tsx test_measurement_risk_selection.tsx",
+    "test:measurement-sample-cloth": "tsx test_measurement_sample_cloth.ts && tsx test_measurement_sample_cloth_selection.tsx && node scripts/tsxWithViteProductionFirebase.mjs test_measurement_invalid_draft_hydration.tsx",
     "test:future-measurement-stage": "tsx test_design_studio_future_measurement_stage.ts",
     "test:future-custom-details-stage": "tsx test_design_studio_future_custom_details_stage.ts",
     "test:future-summary-stage": "tsx test_design_studio_future_summary.ts",
