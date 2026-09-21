@@ -6,7 +6,7 @@ import type {
   FutureMeasurementStateV1,
   FutureMeasurementValueV1,
   GuestDesignDraft,
-  MeasurementRiskRoute,
+  MeasurementMethodId,
 } from "../types";
 import { normalizeAiTryOnWorkflowState } from "./aiTryOnWorkflow";
 import {
@@ -26,11 +26,12 @@ export interface LegacyAgbadaActiveDraftMigrationResult {
   draft: GuestDesignDraft;
 }
 
-const MEASUREMENT_ROUTES: readonly MeasurementRiskRoute[] = [
+const MEASUREMENT_ROUTES: readonly MeasurementMethodId[] = [
   "low_risk",
   "medium_risk",
   "high_risk",
   "critical_risk",
+  "sample_cloth",
 ];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -106,12 +107,12 @@ const emptyEnteredBag = (): FutureMeasurementEnteredBagV1 => ({
 
 const enteredBagForRoute = (
   byRoute: NonNullable<FutureMeasurementStateV1["enteredByRoute"]>,
-  route: MeasurementRiskRoute,
+  route: MeasurementMethodId,
 ): FutureMeasurementEnteredBagV1 => byRoute[route] ?? emptyEnteredBag();
 
 const invalidKeysForRoute = (
   byRoute: NonNullable<FutureMeasurementStateV1["invalidInputKeysByRoute"]>,
-  route: MeasurementRiskRoute,
+  route: MeasurementMethodId,
 ): string[] => byRoute[route] ?? [];
 
 const removeGarmentsFromMeasurementState = (

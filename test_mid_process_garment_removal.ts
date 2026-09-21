@@ -185,6 +185,7 @@ const makeMeasurementState = (
     medium_risk: makeEnteredBag(targetGarmentKey, survivorGarmentKey),
     high_risk: makeEnteredBag(targetGarmentKey, survivorGarmentKey),
     critical_risk: makeEnteredBag(targetGarmentKey, survivorGarmentKey),
+    sample_cloth: makeEnteredBag(targetGarmentKey, survivorGarmentKey),
   };
   return {
     ...empty,
@@ -240,6 +241,9 @@ const makeMeasurementState = (
       ],
       critical_risk: [
         `critical_risk:${targetGarmentKey}:A:waist_circumference`,
+      ],
+      sample_cloth: [
+        `sample_cloth:${targetGarmentKey}:A:waist_circumference`,
       ],
     },
   };
@@ -446,7 +450,7 @@ const assertTargetRemovedFromMeasurements = (
     state.unassignedEntered?.byGarmentKey[targetGarmentKey],
     undefined,
   );
-  for (const route of ["low_risk", "medium_risk", "high_risk"] as const) {
+  for (const route of ["low_risk", "medium_risk", "high_risk", "critical_risk", "sample_cloth"] as const) {
     assert.equal(
       state.enteredByRoute?.[route].byGarmentKey[targetGarmentKey],
       undefined,

@@ -3,6 +3,7 @@ import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import { DRESS_CONDITIONAL_MEASUREMENT_IDS } from "../config/MeasurementBlueprintConfig";
 import type {
   FutureMeasurementStateV1,
+  MeasurementMethodId,
   MeasurementRiskRoute,
 } from "../types";
 import {
@@ -12,13 +13,24 @@ import {
   countSatisfiedRequiredMeasurementUnits,
   CRITICAL_RISK_AVAILABLE_COPY,
   CRITICAL_RISK_UNAVAILABLE_COPY,
+  FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE,
   fromCanonicalCentimetres,
   getRequiredAlternativeGroupId,
   getResolvedMeasurementValue,
+  getSampleClothCustomerLabel,
+  getSampleClothFieldInstruction,
+  getSampleClothProductionEquivalentCm,
   isFutureSummaryUnlockedByMeasurements,
+  isSampleClothMeasurementMethod,
+  isSelectedMeasurementMethod,
   isSelectedMeasurementRiskRoute,
   MEASUREMENT_RISK_ROUTE_LABELS,
   MEASUREMENT_RISK_SELECTION_NOTICE,
+  MEASUREMENT_SAMPLE_CLOTH_DESCRIPTION,
+  MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE,
+  MEASUREMENT_SAMPLE_CLOTH_LABEL,
+  MEASUREMENT_SAMPLE_CLOTH_METHOD,
+  MEASUREMENT_SAMPLE_CLOTH_REQUIRED_DESCRIPTION,
   projectMeasurementRequirementsForPresentation,
   reconcileFutureMeasurementState,
   roundMeasurementDisplayValue,
@@ -31,8 +43,9 @@ import {
 interface DormantFutureMeasurementStepProps {
   plan: MeasurementRequirementPlan;
   state: FutureMeasurementStateV1;
+  hydrationInvalid?: boolean;
   onChange: (state: FutureMeasurementStateV1) => void;
-  onRouteChange: (route: MeasurementRiskRoute) => void;
+  onRouteChange: (route: MeasurementMethodId) => void;
   onBack: () => void;
   onContinue: () => void;
 }
@@ -103,7 +116,7 @@ const getBlockerMessage = (
 };
 
 const getStatusLabel = (
-  route: MeasurementRiskRoute,
+  route: MeasurementMethodId,
   selectedRoute: FutureMeasurementStateV1["route"],
   status: FutureMeasurementStateV1["calculationStatus"],
 ): string | null => {
@@ -174,6 +187,24 @@ const MeasurementField = ({
       : oneOfAlternative
         ? "One required"
         : "Required";
+  const sampleGeometry = requirement.sampleGeometry;
+  const fieldLabel = sampleGeometry
+    ? getSampleClothCustomerLabel(
+        requirement.measurementId,
+        requirement.definition.customerLabel,
+      )
+    : requirement.definition.customerLabel;
+  const fieldInstruction = sampleGeometry
+    ? getSampleClothFieldInstruction(sampleGeometry)
+    : requirement.definition.instructions;
+  const convertedDisplay = sampleGeometry === "laid_flat_half_width" && stored
+    ? roundMeasurementDisplayValue(
+        fromCanonicalCentimetres(
+          getSampleClothProductionEquivalentCm(stored.valueCm),
+          state.unit,
+        ),
+      )
+    : null;
 
   return (
     <label
@@ -181,6 +212,7 @@ const MeasurementField = ({
       data-measurement-field={requirement.measurementId}
       data-measurement-source={requirement.inputSource}
       data-measurement-calculated={calculated ? "true" : "false"}
+      data-sample-geometry={sampleGeometry || undefined}
       className={`block min-w-0 rounded-xl border p-4 transition ${
         hasInvalidValue
           ? "border-red-400/70 bg-red-50/40"
@@ -193,7 +225,7 @@ const MeasurementField = ({
     >
       <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="min-w-0 break-words text-sm font-bold text-heritage-green">
-          {requirement.definition.customerLabel}
+          {fieldLabel}
         </span>
         <span
           data-measurement-badge={badge}
@@ -202,12 +234,12 @@ const MeasurementField = ({
           {badge}
         </span>
       </span>
-      {requirement.definition.instructions && (
+      {fieldInstruction && (
         <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/60">
-          {requirement.definition.instructions}
+          {fieldInstruction}
         </span>
       )}
-      {requirement.averageFactor === null && requirement.section === "required" && (
+      {requirement.averageFactor === null && requirement.section === "required" && !sampleGeometry && (
         <span className="mt-2 block text-xs font-semibold text-heritage-ink/65">
           Enter this measurement directly.
         </span>
@@ -250,6 +282,15 @@ const MeasurementField = ({
           </span>
         </span>
       )}
+      {convertedDisplay != null && !hasInvalidValue && (
+        <span
+          data-sample-converted="true"
+          data-sample-converted-value={String(convertedDisplay)}
+          className="mt-2 block text-xs font-semibold text-heritage-green/80"
+        >
+          Production equivalent {convertedDisplay} {state.unit === "inch" ? "in" : "cm"}
+        </span>
+      )}
       {hasInvalidValue && (
         <span id={errorId} className="mt-2 block text-xs font-semibold text-red-700">
           Enter a positive measurement value.
@@ -276,6 +317,7 @@ const MeasurementSection = ({
   state,
   onChange,
   section,
+  sampleMode,
 }: {
   title: string;
   description: string;
@@ -283,6 +325,7 @@ const MeasurementSection = ({
   state: FutureMeasurementStateV1;
   onChange: (state: FutureMeasurementStateV1) => void;
   section: MeasurementSectionKind;
+  sampleMode: boolean;
 }) => {
   const sharedRequirements = requirements.filter(
     (requirement) =>
@@ -355,10 +398,12 @@ const MeasurementSection = ({
       {sharedRequirements.length > 0 && (
         <div className="mt-5">
           <h4 className="text-xs font-bold uppercase tracking-wider text-heritage-green">
-            Shared Body Measurements
+            {sampleMode ? "Shared sample measurements" : "Shared Body Measurements"}
           </h4>
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">
-            Shared body measurements are entered once and used for all applicable garments.
+            {sampleMode
+              ? "Shared sample measurements are entered once and used for all applicable garments."
+              : "Shared body measurements are entered once and used for all applicable garments."}
           </p>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {renderFields(sharedRequirements)}
@@ -412,28 +457,33 @@ const MeasurementSection = ({
 export const DormantFutureMeasurementStep = ({
   plan,
   state,
+  hydrationInvalid = false,
   onChange,
   onRouteChange,
   onBack,
   onContinue,
 }: DormantFutureMeasurementStepProps) => {
   const resolvedState = reconcileFutureMeasurementState({ state, plan });
+  const selectedMethod = isSelectedMeasurementMethod(resolvedState.route)
+    ? resolvedState.route
+    : null;
   const selectedRoute = isSelectedMeasurementRiskRoute(resolvedState.route)
     ? resolvedState.route
     : null;
+  const sampleSelected = isSampleClothMeasurementMethod(selectedMethod);
   const presentationRequirements = projectMeasurementRequirementsForPresentation({
     requirements: plan.requirements,
     state: resolvedState,
   });
-  const requiredRequirements = selectedRoute
+  const requiredRequirements = selectedMethod
     ? presentationRequirements.filter((requirement) => requirement.section === "required")
     : [];
-  const calculatedRequirements = selectedRoute
+  const calculatedRequirements = selectedMethod
     ? presentationRequirements.filter(
         (requirement) => requirement.inputSource === "calculated_average_factor",
       )
     : [];
-  const optionalRequirements = selectedRoute
+  const optionalRequirements = selectedMethod
     ? presentationRequirements.filter(
         (requirement) => requirement.inputSource === "optional_manual",
       )
@@ -450,12 +500,12 @@ export const DormantFutureMeasurementStep = ({
   });
   const criticalRiskSupported = plan.criticalRiskSupported;
   const criticalRiskUnavailable = selectedRoute === "critical_risk" && !criticalRiskSupported;
-  const unsupportedGarments = selectedRoute
+  const unsupportedGarments = selectedMethod
     ? resolvedState.diagnostics.filter(
         (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
       )
     : [];
-  const blockerMessages = selectedRoute
+  const blockerMessages = selectedMethod
     ? [...new Set(
         resolvedState.diagnostics
           .filter((diagnostic) =>
@@ -466,28 +516,38 @@ export const DormantFutureMeasurementStep = ({
           .map(getBlockerMessage),
       )]
     : [];
-  const routeSaveMessage = !selectedRoute
+  const routeSaveMessage = !selectedMethod
     ? MEASUREMENT_RISK_SELECTION_NOTICE
     : criticalRiskUnavailable
       ? CRITICAL_RISK_UNAVAILABLE_COPY
     : resolvedState.calculationStatus === "complete"
       ? "All required measurements are saved."
       : `${remainingManualInputCount} required measurement${remainingManualInputCount === 1 ? " remains" : "s remain"}.`;
-  const routeStatusLabel = selectedRoute
-    ? getStatusLabel(
-        selectedRoute,
-        selectedRoute,
-        resolvedState.calculationStatus,
-      )
-    : null;
-  const canContinueToSummary = isFutureSummaryUnlockedByMeasurements(resolvedState);
+  const routeStatusLabel = sampleSelected
+    ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE
+    : selectedMethod
+      ? getStatusLabel(
+          selectedMethod,
+          selectedMethod,
+          resolvedState.calculationStatus,
+        )
+      : null;
+  const sampleStatus = getStatusLabel(
+    MEASUREMENT_SAMPLE_CLOTH_METHOD,
+    selectedMethod,
+    resolvedState.calculationStatus,
+  );
+  const canContinueToSummary =
+    !hydrationInvalid && isFutureSummaryUnlockedByMeasurements(resolvedState);
 
   return (
     <section
       aria-labelledby="future-measurement-title"
       data-stage-id="measurement"
-      data-measurement-status={resolvedState.calculationStatus}
+      data-measurement-status={hydrationInvalid ? "invalid" : resolvedState.calculationStatus}
+      data-measurement-hydration={hydrationInvalid ? "invalid" : "ok"}
       data-measurement-risk-selected={selectedRoute || "none"}
+      data-measurement-method-selected={selectedMethod || "none"}
       data-critical-risk-supported={criticalRiskSupported ? "true" : "false"}
       className="space-y-5 font-sans"
     >
@@ -512,12 +572,27 @@ export const DormantFutureMeasurementStep = ({
         </p>
       </header>
 
-      <section className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
-        <fieldset data-measurement-risk-selector="true">
-          <legend className="font-serif text-lg font-bold text-heritage-green">
-            Choose one measurement risk level
-          </legend>
-          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <section
+        className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6"
+        data-measurement-option-section="risk"
+      >
+        <header data-measurement-risk-heading="true">
+          <h3
+            data-measurement-option-heading="body"
+            className="font-serif text-lg font-bold text-heritage-green"
+          >
+            Body Measurements
+          </h3>
+          <p
+            data-measurement-option-subtitle="risk"
+            className="mt-1 text-sm leading-relaxed text-heritage-ink/65"
+          >
+            Measurement by Risk Level
+          </p>
+        </header>
+        <fieldset data-measurement-risk-selector="true" className="mt-4">
+          <legend className="sr-only">Body Measurements</legend>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
             {ROUTES.map((route) => {
               const selected = selectedRoute === route.id;
               const unavailable = route.id === "critical_risk" && !criticalRiskSupported;
@@ -545,9 +620,9 @@ export const DormantFutureMeasurementStep = ({
                     name="future-measurement-route"
                     value={route.id}
                     checked={selected}
-                    disabled={unavailable && !selected}
+                    disabled={hydrationInvalid || (unavailable && !selected)}
                     onChange={() => {
-                      if (unavailable) return;
+                      if (hydrationInvalid || unavailable) return;
                       onRouteChange(route.id);
                     }}
                     className="mt-1 size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed"
@@ -574,17 +649,85 @@ export const DormantFutureMeasurementStep = ({
         </fieldset>
       </section>
 
-      {selectedRoute && (
+      <section
+        className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6"
+        data-measurement-option-section="sample_cloth"
+      >
+        <fieldset data-measurement-sample-selector="true">
+          <legend className="font-serif text-lg font-bold text-heritage-green">
+            {MEASUREMENT_SAMPLE_CLOTH_LABEL}
+          </legend>
+          <p className="mt-2 text-sm leading-relaxed text-heritage-ink/70">
+            {MEASUREMENT_SAMPLE_CLOTH_DESCRIPTION}
+          </p>
+          <div className="mt-4">
+            <label
+              data-measurement-sample-option={MEASUREMENT_SAMPLE_CLOTH_METHOD}
+              data-measurement-sample-selected={sampleSelected ? "true" : "false"}
+              className={`flex min-w-0 cursor-pointer gap-3 rounded-xl border p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                sampleSelected
+                  ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
+                  : "border-heritage-green/15 hover:border-heritage-gold/45"
+              }`}
+            >
+              <input
+                type="radio"
+                name="future-measurement-route"
+                value={MEASUREMENT_SAMPLE_CLOTH_METHOD}
+                checked={sampleSelected}
+                disabled={hydrationInvalid}
+                onChange={() => {
+                  if (hydrationInvalid) return;
+                  onRouteChange(MEASUREMENT_SAMPLE_CLOTH_METHOD);
+                }}
+                className="mt-1 size-4 shrink-0 accent-heritage-green"
+              />
+              <span className="min-w-0">
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="break-words text-sm font-semibold text-heritage-green">
+                    {MEASUREMENT_SAMPLE_CLOTH_LABEL}
+                  </span>
+                  {sampleStatus && (
+                    <span className="rounded-full border border-heritage-gold/30 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-wide text-heritage-ink/70">
+                      {sampleStatus}
+                    </span>
+                  )}
+                </span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+      </section>
+
+      {hydrationInvalid && (
+        <section
+          role="alert"
+          data-measurement-hydration-error="true"
+          className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4"
+        >
+          <div className="flex min-w-0 items-start gap-3">
+            <ShieldAlert aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-heritage-gold" />
+            <div className="min-w-0">
+              <h3 className="font-serif font-bold text-heritage-green">Measurement review needed</h3>
+              <p className="mt-2 text-sm text-heritage-ink/70">
+                {FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {selectedMethod && !hydrationInvalid && (
         <>
       <section
         aria-live="polite"
-        data-measurement-form={selectedRoute}
+        data-measurement-form={selectedMethod}
         className="rounded-2xl border border-heritage-gold/25 bg-heritage-cream/35 p-4 sm:p-5"
       >
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-heritage-gold">
-              Current route status
+              {sampleSelected ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE : "Current route status"}
             </p>
             <h3 className="mt-1 font-serif text-lg font-bold text-heritage-green">
               {routeStatusLabel}
@@ -667,7 +810,9 @@ export const DormantFutureMeasurementStep = ({
       <MeasurementSection
         title="Required Measurements"
         description={
-          selectedRoute === "low_risk"
+          sampleSelected
+            ? MEASUREMENT_SAMPLE_CLOTH_REQUIRED_DESCRIPTION
+            : selectedRoute === "low_risk"
             ? "All applicable measurements for this garment are entered manually."
             : "Enter only the required measurements for this option."
         }
@@ -675,9 +820,10 @@ export const DormantFutureMeasurementStep = ({
         state={resolvedState}
         onChange={onChange}
         section="required"
+        sampleMode={sampleSelected}
       />
 
-      {calculatedRequirements.length > 0 && (
+      {calculatedRequirements.length > 0 && !sampleSelected && (
         <MeasurementSection
           title={CALCULATED_FROM_HEIGHT_LABEL}
           description="These values are calculated from Total Height after the required measurements are complete."
@@ -685,6 +831,7 @@ export const DormantFutureMeasurementStep = ({
           state={resolvedState}
           onChange={onChange}
           section="calculated"
+          sampleMode={false}
         />
       )}
 
@@ -696,6 +843,7 @@ export const DormantFutureMeasurementStep = ({
           state={resolvedState}
           onChange={onChange}
           section="optional"
+          sampleMode={sampleSelected}
         />
       )}
         </>

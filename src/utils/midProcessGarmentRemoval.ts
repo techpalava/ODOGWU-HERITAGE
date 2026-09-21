@@ -16,7 +16,7 @@ import type {
   GarmentScopedCustomDetailInputsV1,
   GarmentScopedCustomDetailsStateV1,
   GarmentTypeStepSelection,
-  MeasurementRiskRoute,
+  MeasurementMethodId,
   StyleCategory,
   UploadedDesignSource,
 } from "../types";
@@ -55,11 +55,12 @@ import {
   reconcilePhysicalGarmentOccurrenceIdentityState,
 } from "./physicalGarmentOccurrenceIdentity";
 
-const MEASUREMENT_ROUTES: readonly MeasurementRiskRoute[] = [
+const MEASUREMENT_ROUTES: readonly MeasurementMethodId[] = [
   "low_risk",
   "medium_risk",
   "high_risk",
   "critical_risk",
+  "sample_cloth",
 ];
 
 export interface FutureGarmentRemovalPendingOperations {
@@ -395,12 +396,12 @@ const emptyEnteredBag = (): FutureMeasurementEnteredBagV1 => ({
 
 const enteredBagForRoute = (
   byRoute: NonNullable<FutureMeasurementStateV1["enteredByRoute"]>,
-  route: MeasurementRiskRoute,
+  route: MeasurementMethodId,
 ): FutureMeasurementEnteredBagV1 => byRoute[route] ?? emptyEnteredBag();
 
 const invalidKeysForRoute = (
   byRoute: NonNullable<FutureMeasurementStateV1["invalidInputKeysByRoute"]>,
-  route: MeasurementRiskRoute,
+  route: MeasurementMethodId,
 ): string[] => byRoute[route] ?? [];
 
 const removeGarmentFromMeasurementState = ({
