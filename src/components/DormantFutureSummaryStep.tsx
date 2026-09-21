@@ -10,6 +10,7 @@ import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type React from "react";
 import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "../utils/designPriceBreakdownPresentation";
 import type { FutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
+import { isSampleClothMeasurementMethod } from "../utils/measurementBlueprint";
 import type { FutureShippingStageResolution } from "../utils/designStudioFutureShipping";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import {
@@ -569,13 +570,25 @@ export const DormantFutureSummaryStep = ({
           {summary.measurementSummary.shared.length > 0 && (
             <div className="mt-3">
               <h4 className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
-                Shared body measurements
+                {isSampleClothMeasurementMethod(summary.measurementSummary.route)
+                  ? "Shared sample measurements"
+                  : "Shared body measurements"}
               </h4>
               <ul className="mt-2 space-y-1 text-sm text-heritage-ink/75">
                 {summary.measurementSummary.shared.map((measurement) => (
                   <li key={measurement.requirementKey} className="flex min-w-0 justify-between gap-3">
                     <span className="min-w-0 break-words">{measurement.label}</span>
-                    <span className="shrink-0 font-mono">{measurement.formattedValue}</span>
+                    <span className="shrink-0 text-right font-mono">
+                      <span>{measurement.formattedValue}</span>
+                      {measurement.convertedFormattedValue && (
+                        <span
+                          data-sample-converted="true"
+                          className="mt-0.5 block text-[11px] font-sans text-heritage-ink/60"
+                        >
+                          Production equivalent {measurement.convertedFormattedValue}
+                        </span>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -590,7 +603,17 @@ export const DormantFutureSummaryStep = ({
                 {garment.values.map((measurement) => (
                   <li key={measurement.requirementKey} className="flex min-w-0 justify-between gap-3">
                     <span className="min-w-0 break-words">{measurement.label}</span>
-                    <span className="shrink-0 font-mono">{measurement.formattedValue}</span>
+                    <span className="shrink-0 text-right font-mono">
+                      <span>{measurement.formattedValue}</span>
+                      {measurement.convertedFormattedValue && (
+                        <span
+                          data-sample-converted="true"
+                          className="mt-0.5 block text-[11px] font-sans text-heritage-ink/60"
+                        >
+                          Production equivalent {measurement.convertedFormattedValue}
+                        </span>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ul>

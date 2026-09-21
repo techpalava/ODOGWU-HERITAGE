@@ -29,7 +29,7 @@ import {
   AiTryOnWorkflowStateV1,
   FutureMeasurementStateV1,
   FutureShippingStateV1,
-  MeasurementRiskRoute,
+  MeasurementMethodId,
   DesignStudioStageId,
   CanonicalPhysicalGarmentType,
   DecorativeFeature,
@@ -232,14 +232,15 @@ import {
 } from "../utils/aiTryOnWorkflow";
 import {
   createEmptyFutureMeasurementState,
+  classifyFutureMeasurementHydration,
   getMeasurementPhysicalGarments,
   resolveHydratedMeasurementPhysicalGarments,
   isFutureMeasurementStageUnlocked,
   isFutureSummaryUnlockedByMeasurements,
-  normalizeFutureMeasurementState,
   planMeasurementRequirements,
   reconcileFutureMeasurementState,
   setFutureMeasurementRoute,
+  type FutureMeasurementHydrationResult,
 } from "../utils/measurementBlueprint";
 import { projectFutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
 import {
@@ -704,6 +705,11 @@ export default function DesignStudioView({
   const preservedInvalidHydratedDraftFabricAllocationsRef = useRef<
     FabricAllocation[] | null
   >(null);
+  const preservedInvalidHydratedMeasurementsRef = useRef<
+    Extract<FutureMeasurementHydrationResult, { status: "invalid" }> | null
+  >(null);
+  const [futureMeasurementHydrationInvalid, setFutureMeasurementHydrationInvalid] =
+    useState(false);
   const blockedPersistedFabricHydrationRef = useRef<{
     rawFabricAllocations: unknown;
     diagnostic: InvalidPersistedFabricAllocationDiagnostic;
@@ -2875,6 +2881,7 @@ export default function DesignStudioView({
   const isFutureSummaryStageUnlocked =
     (futureSummary.status === "ready" ||
       futureSummary.status === "pricing_pending") &&
+    !futureMeasurementHydrationInvalid &&
     isFutureSummaryUnlockedByMeasurements(reconciledFutureMeasurementState);
   const isFutureShippingUnlocked = isFutureShippingStageUnlocked(
     futureSummary.status,
@@ -3243,6 +3250,8 @@ export default function DesignStudioView({
     setFuturePaymentReviewHandoff(null);
     setGuestDraftHydrated(false);
     preservedInvalidHydratedDraftFabricAllocationsRef.current = null;
+    preservedInvalidHydratedMeasurementsRef.current = null;
+    setFutureMeasurementHydrationInvalid(false);
     blockedPersistedFabricHydrationRef.current = null;
     setFutureDraftFabricIntegrityBlockers([]);
 
@@ -3713,9 +3722,20 @@ export default function DesignStudioView({
       const restoredAiTryOnWorkflow =
         normalizeAiTryOnWorkflowState(storedDraft?.aiTryOnWorkflow) ||
         createEmptyAiTryOnWorkflowState();
+      const measurementHydration = classifyFutureMeasurementHydration(
+        storedDraft?.futureMeasurementState,
+      );
+      if (measurementHydration.status === "invalid") {
+        preservedInvalidHydratedMeasurementsRef.current = measurementHydration;
+        setFutureMeasurementHydrationInvalid(true);
+      } else {
+        preservedInvalidHydratedMeasurementsRef.current = null;
+        setFutureMeasurementHydrationInvalid(false);
+      }
       const restoredMeasurementState =
-        normalizeFutureMeasurementState(storedDraft?.futureMeasurementState) ||
-        createEmptyFutureMeasurementState();
+        measurementHydration.status === "valid"
+          ? measurementHydration.state
+          : createEmptyFutureMeasurementState();
       const restoredShippingState = normalizeFutureShippingState(
         storedDraft?.futureShippingState,
       ).state;
@@ -4390,9 +4410,11 @@ export default function DesignStudioView({
       customDetailsReady: isFutureStep4CustomDetailsReady,
       personalizedAdditionsReady: isFutureCustomDetailsStageReady,
       measurementUnlocked: isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow),
-      summaryUnlocked: isFutureSummaryUnlockedByMeasurements(
-        reconciledFutureMeasurementState,
-      ),
+      summaryUnlocked:
+        !futureMeasurementHydrationInvalid &&
+        isFutureSummaryUnlockedByMeasurements(
+          reconciledFutureMeasurementState,
+        ),
       inlineAdditionalGarmentFabricTransaction:
         additionalGarmentFabricTransaction,
       additionalGarmentFabricRepairTargeted:
@@ -4409,6 +4431,7 @@ export default function DesignStudioView({
     isFutureStep4CustomDetailsReady,
     isFutureCustomDetailsStageReady,
     futureAiTryOnWorkflow,
+    futureMeasurementHydrationInvalid,
     reconciledFutureMeasurementState.route,
     reconciledFutureMeasurementState.calculationStatus,
     additionalGarmentFabricTransaction,
@@ -4547,7 +4570,9 @@ export default function DesignStudioView({
         futureSummary.pricingSummary.selectedDesignPrice;
       const baseDraft = {
         aiTryOnWorkflow: futureAiTryOnWorkflow,
-        futureMeasurementState: reconciledFutureMeasurementState,
+        futureMeasurementState: (preservedInvalidHydratedMeasurementsRef.current
+          ? preservedInvalidHydratedMeasurementsRef.current.preservedRaw
+          : reconciledFutureMeasurementState) as FutureMeasurementStateV1,
         selectedFabricCode: selectedFabric?.code || null,
         selectedStyleId: activeCatalogStyleId,
         designSource: activeDesignSource,
@@ -6161,7 +6186,8 @@ export default function DesignStudioView({
     setFutureAiTryOnWorkflow(transition.state);
     navigateToFutureStage("measurement");
   };
-  const handleFutureMeasurementRouteChange = (route: MeasurementRiskRoute) => {
+  const handleFutureMeasurementRouteChange = (route: MeasurementMethodId) => {
+    if (futureMeasurementHydrationInvalid) return;
     if (route === "critical_risk" && !futureMeasurementPlan.criticalRiskSupported) {
       return;
     }
@@ -7502,7 +7528,8 @@ export default function DesignStudioView({
                   ? futureAiTryOnWorkflow.status === "completed" ||
                     futureAiTryOnWorkflow.status === "skipped"
                   : futureStageId === "measurement"
-                    ? reconciledFutureMeasurementState.calculationStatus ===
+                    ? !futureMeasurementHydrationInvalid &&
+                      reconciledFutureMeasurementState.calculationStatus ===
                       "complete"
                     : futureStageId === "summary"
                       ? futureSummary.status === "ready"
@@ -7850,7 +7877,11 @@ export default function DesignStudioView({
         <DormantFutureMeasurementStep
           plan={futureMeasurementPlan}
           state={reconciledFutureMeasurementState}
-          onChange={setFutureMeasurementState}
+          hydrationInvalid={futureMeasurementHydrationInvalid}
+          onChange={(state) => {
+            if (futureMeasurementHydrationInvalid) return;
+            setFutureMeasurementState(state);
+          }}
           onRouteChange={handleFutureMeasurementRouteChange}
           onBack={() => navigateToFutureStage("try_on")}
           onContinue={handleOpenDormantSummaryStage}

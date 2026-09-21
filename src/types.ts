@@ -1061,8 +1061,13 @@ export type MeasurementRiskRoute =
   | MeasurementWorkbookRiskRoute
   | "critical_risk";
 
-/** Persisted IDs are `low_risk` / `medium_risk` / `high_risk` / `critical_risk`. `null` means no risk level is selected yet. */
+export type MeasurementMethodId = MeasurementRiskRoute | "sample_cloth";
+
+/** Persisted risk IDs are `low_risk` / `medium_risk` / `high_risk` / `critical_risk`. `null` means no risk level is selected yet. */
 export type SelectedMeasurementRiskRoute = MeasurementRiskRoute | null;
+
+/** Persisted method IDs include the four risk routes plus `sample_cloth`. `null` means no method is selected yet. */
+export type SelectedMeasurementMethod = MeasurementMethodId | null;
 
 export type MeasurementUnit = "inch" | "cm";
 
@@ -1113,19 +1118,19 @@ export interface FutureMeasurementEnteredBagV1 {
 }
 
 export type FutureMeasurementEnteredByRouteV1 = Record<
-  MeasurementRiskRoute,
+  MeasurementMethodId,
   FutureMeasurementEnteredBagV1
 >;
 
 export interface FutureMeasurementStateV1 {
   schemaVersion: 1;
-  route: SelectedMeasurementRiskRoute;
+  route: SelectedMeasurementMethod;
   unit: MeasurementUnit;
-  /** Active selected-route values only. Never a shared bag across risk routes. */
+  /** Active selected-method values only. Never a shared bag across methods. */
   entered: FutureMeasurementEnteredBagV1;
   /**
-   * Authoritative per-route snapshots. Optional on legacy drafts; normalize always
-   * materializes it. Inactive routes stay preserved here and must not satisfy the
+   * Authoritative per-method snapshots. Optional on legacy drafts; normalize always
+   * materializes it. Inactive methods stay preserved here and must not satisfy the
    * active path.
    */
   enteredByRoute?: FutureMeasurementEnteredByRouteV1;
@@ -1151,7 +1156,7 @@ export interface FutureMeasurementStateV1 {
     | "invalid";
   diagnostics: FutureMeasurementDiagnostic[];
   invalidInputKeys: string[];
-  invalidInputKeysByRoute?: Record<MeasurementRiskRoute, string[]>;
+  invalidInputKeysByRoute?: Record<MeasurementMethodId, string[]>;
 }
 
 export interface GuestDesignDraft {

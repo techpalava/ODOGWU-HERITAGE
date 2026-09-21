@@ -550,6 +550,7 @@ const staleCritical = normalizeFutureMeasurementState({
       },
       byGarmentKey: {},
     },
+    sample_cloth: { shared: {}, byGarmentKey: {} },
   },
   derived: { shared: {}, byGarmentKey: {} },
   blueprintVersion: "x",

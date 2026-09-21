@@ -116,7 +116,7 @@ const renderHarness = (initialState?: FutureMeasurementStateV1): ReactTestRender
   return renderer;
 };
 
-const selectRoute = (renderer: ReactTestRenderer, route: MeasurementRiskRoute) => {
+const selectRoute = (renderer: ReactTestRenderer, route: MeasurementRiskRoute | "sample_cloth") => {
   const radio = renderer.root.findByProps({
     type: "radio",
     name: "future-measurement-route",
@@ -132,9 +132,15 @@ const radios = renderer.root.findAllByProps({
   type: "radio",
   name: "future-measurement-route",
 });
-assert.equal(radios.length, 4);
+assert.equal(radios.length, 5);
 assert.deepEqual(
   radios.map((radio) => radio.props.value),
+  ["low_risk", "medium_risk", "high_risk", "critical_risk", "sample_cloth"],
+);
+const riskRadios = radios.filter((radio) => radio.props.value !== "sample_cloth");
+assert.equal(riskRadios.length, 4);
+assert.deepEqual(
+  riskRadios.map((radio) => radio.props.value),
   ["low_risk", "medium_risk", "high_risk", "critical_risk"],
 );
 const optionLabels = renderer.root.findAll(

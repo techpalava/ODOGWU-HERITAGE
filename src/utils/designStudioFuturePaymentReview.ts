@@ -11,6 +11,8 @@ import {
 } from "./futureOrderCandidate";
 import {
   fromCanonicalCentimetres,
+  isSampleClothHalfWidthMeasurement,
+  isSampleClothMeasurementMethod,
   roundMeasurementDisplayValue,
 } from "./measurementBlueprint";
 
@@ -100,7 +102,11 @@ export interface FuturePaymentReviewMeasurementItem {
   readonly label: string;
   readonly displayValue: number;
   readonly unitLabel: "in" | "cm";
-  readonly provenanceLabel: "Customer entered" | "System derived" | "Calculated from height";
+  readonly provenanceLabel:
+    | "Customer entered"
+    | "System derived"
+    | "Calculated from height"
+    | "Converted from sample cloth";
 }
 
 export interface FuturePaymentReviewMeasurementGroup {
@@ -192,11 +198,13 @@ const toMeasurementItem = ({
   valueCm,
   provenance,
   unit,
+  convertedFromSample,
 }: {
   measurementId: string;
   valueCm: number;
   provenance: "customer_entered" | "system_derived" | "calculated_average_factor";
   unit: MeasurementUnit;
+  convertedFromSample: boolean;
 }): FuturePaymentReviewMeasurementItem => ({
   measurementId,
   label: humanizeIdentifier(measurementId),
@@ -205,28 +213,46 @@ const toMeasurementItem = ({
   ),
   unitLabel: unit === "inch" ? "in" : "cm",
   provenanceLabel:
-    provenance === "customer_entered"
-      ? "Customer entered"
-      : provenance === "calculated_average_factor"
-        ? "Calculated from height"
-        : "System derived",
+    convertedFromSample
+      ? "Converted from sample cloth"
+      : provenance === "customer_entered"
+        ? "Customer entered"
+        : provenance === "calculated_average_factor"
+          ? "Calculated from height"
+          : "System derived",
 });
 
 const mergeMeasurements = ({
   entered,
   derived,
   unit,
+  route,
 }: {
   entered: FutureOrderCandidateV1["measurements"]["entered"]["shared"];
   derived: FutureOrderCandidateV1["measurements"]["derived"]["shared"];
   unit: MeasurementUnit;
+  route: FutureOrderCandidateV1["measurements"]["route"];
 }): readonly FuturePaymentReviewMeasurementItem[] => {
-  const merged = new Map([...Object.entries(derived), ...Object.entries(entered)]);
-  return [...merged.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([measurementId, value]) =>
-      toMeasurementItem({ measurementId, ...value, unit }),
-    );
+  const sampleRoute = isSampleClothMeasurementMethod(route);
+  const measurementIds = [
+    ...new Set([...Object.keys(derived), ...Object.keys(entered)]),
+  ].sort((left, right) => left.localeCompare(right));
+  return measurementIds.flatMap((measurementId) => {
+    const enteredValue = entered[measurementId];
+    const derivedValue = derived[measurementId];
+    const preferDerived =
+      sampleRoute &&
+      isSampleClothHalfWidthMeasurement(measurementId) &&
+      Boolean(derivedValue);
+    const value = preferDerived ? derivedValue : enteredValue || derivedValue;
+    if (!value) return [];
+    return [toMeasurementItem({
+      measurementId,
+      ...value,
+      unit,
+      convertedFromSample: preferDerived,
+    })];
+  });
 };
 
 export const getFuturePaymentReviewMeasurementGroups = (
@@ -245,6 +271,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
     entered: state.entered.shared,
     derived: state.derived.shared,
     unit: state.unit,
+    route: state.route,
   });
   if (shared.length > 0) {
     groups.push({ garmentKey: null, title: "Shared measurements", items: shared });
@@ -255,6 +282,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
         entered: state.entered.byGarmentKey[garmentKey] || {},
         derived: state.derived.byGarmentKey[garmentKey] || {},
         unit: state.unit,
+        route: state.route,
       });
       if (items.length > 0) {
         groups.push({

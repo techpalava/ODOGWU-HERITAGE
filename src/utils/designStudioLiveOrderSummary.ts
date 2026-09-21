@@ -14,7 +14,7 @@ import type { FutureDesignStudioSummary } from "./designStudioFutureSummary";
 import type { FutureOrderCandidatePricingV1 } from "./futureOrderCandidate";
 import {
   countRemainingCustomerRequiredMeasurementUnits,
-  isSelectedMeasurementRiskRoute,
+  isSelectedMeasurementMethod,
   type MeasurementRequirementPlan,
 } from "./measurementBlueprint";
 import { PRICING_CURRENCY_SYMBOL } from "./money";
@@ -335,7 +335,7 @@ const measurementStatusLine = (
   measurementPlan: MeasurementRequirementPlan,
 ): LiveOrderSummaryLine => {
   const route = measurementState.route;
-  if (!isSelectedMeasurementRiskRoute(route)) {
+  if (!isSelectedMeasurementMethod(route)) {
     return {
       id: "measurements",
       label: LIVE_ORDER_SUMMARY_NOT_COMPLETED_LABEL,
