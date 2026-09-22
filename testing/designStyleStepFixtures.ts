@@ -282,6 +282,10 @@ export const createDesignStyleStepRenderProps = (
   ) => undefined,
   onClearAssignment: (_request: DesignStyleStepClearMutationRequest) =>
     undefined,
+  onSelectUploadFile: (
+    _target: DesignStyleStepClearMutationRequest["target"],
+    _file: File,
+  ) => undefined,
   onBack: () => undefined,
   onReturnToGarmentType: () => undefined,
   onContinue: () => undefined,

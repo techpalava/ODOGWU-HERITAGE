@@ -63,6 +63,13 @@ const textContent = (node: ReactTestInstance | string | null): string =>
           .join("")
       : "";
 
+const combinedUploadSubtitlePattern =
+  /Choose a catalogue design or upload a JPEG, PNG, or WebP image\./;
+
+const combinedUploadSubtitleMatchCount = (text: string) =>
+  text.match(/Choose a catalogue design or upload a JPEG, PNG, or WebP image\./g)
+    ?.length ?? 0;
+
 const render = (
   model: ReturnType<typeof createDesignStyleStepTestModel>,
   overrides: Record<string, unknown> = {},
@@ -78,6 +85,11 @@ const render = (
   });
   return renderer;
 };
+
+const fileInputLabeled = (root: ReactTestInstance, pattern: RegExp) =>
+  root
+    .findAllByProps({ type: "file" })
+    .find((input) => pattern.test(String(input.props["aria-label"] || "")));
 
 const uploadedInput = {
   sourceKey: "uploaded:upload-ui-source",
@@ -97,9 +109,16 @@ const uploadedInput = {
     onSelectUploadFile: (target: typeof model.activeTarget, file: File) =>
       selected.push({ target, file }),
   });
-  const input = renderer.root.findByProps({ type: "file" });
+  const input = fileInputLabeled(renderer.root, /Upload a design for Shirt/i);
+  assert.ok(input);
   assert.equal(input.props.accept, "image/jpeg,image/png,image/webp");
+  assert.match(input.props["aria-describedby"] || "", /design-style-upload-guidance/);
   assert.match(textContent(renderer.root), /Upload a design for Shirt/i);
+  assert.equal(combinedUploadSubtitleMatchCount(textContent(renderer.root)), 1);
+  const idleShirt = renderer.root.findByProps({ "data-occurrence-label": "Shirt" });
+  const idleSkirt = renderer.root.findByProps({ "data-occurrence-label": "Skirt" });
+  assert.doesNotMatch(textContent(idleShirt), combinedUploadSubtitlePattern);
+  assert.doesNotMatch(textContent(idleSkirt), combinedUploadSubtitlePattern);
   const file = { name: "shirt.png", type: "image/png" } as File;
   act(() => {
     input.props.onChange({
@@ -109,6 +128,12 @@ const uploadedInput = {
   assert.equal(selected.length, 1);
   assert.deepEqual(selected[0].target, model.activeTarget);
   assert.equal(selected[0].file, file);
+  act(() => {
+    input.props.onChange({
+      currentTarget: { files: [file], value: "C:\\fakepath\\shirt.png" },
+    });
+  });
+  assert.equal(selected.length, 2, "the same file remains selectable after reset");
 
   const ledger = model.hydration.ledger;
   assert.ok(ledger);
@@ -145,6 +170,42 @@ const uploadedInput = {
   act(() => renderer.unmount());
 }
 
+// A2. Upload on a non-active card sends that exact occurrence target.
+{
+  const model = createDesignStyleStepTestModel({
+    styles: [catalogueStyle],
+    garmentTypeSelection: selection,
+    occurrences: repeatedTestOccurrences,
+    activeTarget: {
+      garmentKey: repeatedTestOccurrences[1].garmentKey,
+      occurrenceToken: createPhysicalGarmentOccurrenceIdentityToken({
+        garmentKey: repeatedTestOccurrences[1].garmentKey,
+        generation: repeatedTestOccurrences[1].occurrenceGeneration!,
+      }),
+    },
+  });
+  const selected: Array<{ target: typeof model.activeTarget; file: File }> = [];
+  const renderer = render(model, {
+    onSelectUploadFile: (target: typeof model.activeTarget, file: File) =>
+      selected.push({ target, file }),
+  });
+  const shirtInput = fileInputLabeled(
+    renderer.root,
+    /Upload a design for Shirt/i,
+  );
+  assert.ok(shirtInput);
+  const file = { name: "shirt-from-inactive.png", type: "image/png" } as File;
+  act(() => {
+    shirtInput.props.onChange({
+      currentTarget: { files: [file], value: "x" },
+    });
+  });
+  assert.equal(selected.length, 1);
+  assert.deepEqual(selected[0].target, shirtTarget);
+  assert.notDeepEqual(selected[0].target, model.activeTarget);
+  act(() => renderer.unmount());
+}
+
 // B. A catalogue assignment remains visible during pending work and is
 // replaced only after the matching occurrence operation succeeds.
 {
@@ -167,8 +228,16 @@ const uploadedInput = {
     uploadState: { status: "pending" },
   });
   assert.match(textContent(renderer.root), /Catalogue Shirt/);
-  assert.match(textContent(renderer.root), /current design and preview stay in place/i);
+  assert.equal(combinedUploadSubtitleMatchCount(textContent(renderer.root)), 1);
   assert.match(textContent(renderer.root), /Preparing your uploaded design for Shirt/i);
+  const pendingShirt = renderer.root.findByProps({ "data-occurrence-label": "Shirt" });
+  const pendingSkirt = renderer.root.findByProps({ "data-occurrence-label": "Skirt" });
+  assert.match(textContent(pendingShirt), /Preparing your uploaded design for Shirt/i);
+  assert.doesNotMatch(textContent(pendingShirt), combinedUploadSubtitlePattern);
+  assert.doesNotMatch(textContent(pendingSkirt), combinedUploadSubtitlePattern);
+  assert.doesNotMatch(textContent(pendingSkirt), /Preparing your uploaded design/i);
+  assert.equal(fileInputLabeled(pendingShirt, /Upload a design for Shirt/i), undefined);
+  assert.ok(fileInputLabeled(pendingSkirt, /Upload a design for Skirt/i));
 
   const started = beginDesignStyleUploadForActiveOccurrence({
     state: createDesignStyleUploadOperationState(),
@@ -359,11 +428,11 @@ const uploadedInput = {
       previewUrl: "blob:upload-ui-read-only",
     },
   });
-  assert.equal(renderer.root.findAllByProps({ type: "file" }).length, 1);
-  assert.match(
-    String(renderer.root.findByProps({ type: "file" }).props["aria-label"]),
+  const replaceInput = fileInputLabeled(
+    renderer.root,
     /Replace uploaded design for Shirt/i,
   );
+  assert.ok(replaceInput);
   assert.equal(renderer.root.findAllByType("img").some((image) =>
     String(image.props.alt).includes("Uploaded design preview for Shirt")), true);
   const text = textContent(renderer.root);
@@ -384,7 +453,7 @@ const uploadedInput = {
   const handler = source.match(
     /const handleFutureDesignStyleUploadFile[\s\S]*?\n  const isStageHistoricallyUnlocked/,
   )?.[0];
-  assert.ok(handler, "Expected active-occurrence upload handler wiring.");
+  assert.ok(handler, "Expected target-bound upload handler wiring.");
   assert.match(handler, /beginDesignStyleUploadForActiveOccurrence/);
   assert.match(handler, /runUploadedDesignOperation/);
   assert.match(handler, /validateCustomerDesignFile/);
@@ -392,11 +461,60 @@ const uploadedInput = {
   assert.match(handler, /createUploadedDesignSourceWhenReady/);
   assert.match(handler, /applyDesignStyleUploadForActiveOccurrence/);
   assert.match(handler, /applyFutureDesignStyleMutationLedger/);
+  assert.match(handler, /ticketTarget/);
+  assert.match(handler, /occurrenceTargets\.some/);
+  assert.doesNotMatch(
+    handler,
+    /designStyleStepTargetsEqual\(captured\.activeTarget, target\)/,
+  );
+  assert.match(handler, /activeTarget: ticketTarget/);
   assert.doesNotMatch(handler, /setFutureSelectedStyleId/);
   assert.doesNotMatch(handler, /setFutureDesignSource/);
   assert.doesNotMatch(handler, /setFutureConfirmedDesignSourceKey/);
   assert.doesNotMatch(handler, /setFuturePriceActivatedFabricCode/);
   assert.doesNotMatch(handler, /replaceCustomerDesignDraft|deleteCustomerDesignDraft/);
+  assert.match(handler, /hasActiveOperation/);
+  assert.match(handler, /isStaleUploadedDesignOperationResult/);
+}
+
+{
+  const model = createDesignStyleStepTestModel({
+    styles: [catalogueStyle],
+    garmentTypeSelection: selection,
+    occurrences: repeatedTestOccurrences,
+    activeTarget: shirtTarget,
+  });
+  const renderer = render(model, {
+    uploadOperationBusy: true,
+    uploadStateByOccurrenceToken: {
+      [shirtTarget.occurrenceToken]: { status: "pending" },
+    },
+    onSelectUploadFile: () => undefined,
+  });
+  const shirt = renderer.root.findByProps({ "data-occurrence-label": "Shirt" });
+  const skirt = renderer.root.findByProps({ "data-occurrence-label": "Skirt" });
+  const shirtUpload = shirt.findAll(
+    (node) =>
+      node.type === "button" &&
+      /Upload a design for Shirt/i.test(String(node.props["aria-label"] || "")),
+  )[0];
+  const skirtUpload = skirt.findAll(
+    (node) =>
+      node.type === "button" &&
+      /Upload a design for Skirt/i.test(String(node.props["aria-label"] || "")),
+  )[0];
+  assert.equal(shirtUpload.props.disabled, true);
+  assert.equal(skirtUpload.props.disabled, true);
+  assert.equal(fileInputLabeled(shirt, /Upload a design for Shirt/i), undefined);
+  assert.equal(fileInputLabeled(skirt, /Upload a design for Skirt/i), undefined);
+  assert.match(textContent(shirt), /Choose Design/);
+  assert.match(textContent(skirt), /Choose Design/);
+  const chooseSkirt = skirt.findAll(
+    (node) =>
+      node.type === "button" && textContent(node).includes("Choose Design"),
+  )[0];
+  assert.equal(chooseSkirt.props.disabled, undefined);
+  act(() => renderer.unmount());
 }
 
 console.log(

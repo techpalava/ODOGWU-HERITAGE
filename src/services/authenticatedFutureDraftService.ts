@@ -17,6 +17,7 @@ import {
   inspectPersistedDesignStyleDraft,
   validateDesignStyleDraftFieldForStorage,
 } from "../utils/designStyleDraftPersistence";
+import { inspectUploadedDesignSourceRegistry } from "../utils/uploadedDesignSourceRegistry";
 
 export const AUTHENTICATED_FUTURE_DRAFT_COLLECTION =
   "futureDesignStudioDrafts";
@@ -407,10 +408,23 @@ export const getAuthenticatedDraftUploadedDesignOwnershipIssue = (
   if (draft.uploadedDesignOwnershipTransition?.status === "transfer_required") {
     return "uploaded_design_ownership_transfer_required";
   }
-  return isValidUploadedDesignDraftSource(draft.designSource) &&
+  if (
+    isValidUploadedDesignDraftSource(draft.designSource) &&
     draft.designSource.uploadReference.ownerUid !== ownerUid
-    ? "uploaded_design_owner_mismatch"
-    : null;
+  ) {
+    return "uploaded_design_owner_mismatch";
+  }
+  const registry = inspectUploadedDesignSourceRegistry(draft);
+  if (registry.status === "valid") {
+    for (const source of Object.values(
+      registry.registry.sourcesByUploadedSourceRef,
+    )) {
+      if (source.uploadReference.ownerUid !== ownerUid) {
+        return "uploaded_design_owner_mismatch";
+      }
+    }
+  }
+  return null;
 };
 
 const normalizeLoadedValue = (
