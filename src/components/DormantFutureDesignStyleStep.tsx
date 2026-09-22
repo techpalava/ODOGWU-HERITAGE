@@ -698,7 +698,13 @@ export const DormantFutureDesignStyleStep = ({
                 <h3 id="current-design-mappings-title" className="font-serif text-lg font-bold text-heritage-green">Your Garments</h3>
                 {occurrences.some((occurrence) => occurrence.assignment) && onClearAllAssignments && <button type="button" onClick={onClearAllAssignments} disabled={!mutationsEnabled} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Clear All</button>}
               </div>
-              <div role="list" className="mt-2 divide-y divide-heritage-green/10 overflow-hidden rounded-xl border border-heritage-green/15 bg-white">
+              <div
+                role="list"
+                data-testid="step3-garment-assignment-list"
+                className={`mt-2 overflow-hidden rounded-xl border border-heritage-green/15 bg-white${
+                  occurrences.length > 2 ? " divide-y divide-heritage-green/15" : ""
+                }`}
+              >
                 {occurrences.map((occurrence) => {
                   const isAssignmentFeedbackTarget =
                     highlightedOccurrenceToken ===
@@ -747,17 +753,17 @@ export const DormantFutureDesignStyleStep = ({
                       data-design-assignment-feedback={
                         isAssignmentFeedbackTarget ? "true" : undefined
                       }
-                      className={`flex min-w-0 flex-col gap-2 border-l-2 px-3 py-2.5 ${
+                      className={`flex min-w-0 flex-col gap-1.5 border-l-2 px-3 py-2 ${
                         highlightPrefersReducedMotion
                           ? ""
                           : "transition-[background-color,border-color,box-shadow] duration-200"
-                      } lg:flex-row lg:flex-wrap lg:items-center lg:gap-4 ${
+                      } lg:flex-row lg:flex-wrap lg:items-center lg:gap-3 ${
                         isAssignmentFeedbackTarget
                           ? "border-l-heritage-gold bg-heritage-cream/30 ring-2 ring-inset ring-heritage-gold/70"
                           : "border-transparent bg-white"
                       }`}
                     >
-                      {occurrence.assignment && selectedDesignImage ? <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/20 bg-heritage-cream/35 sm:h-20 sm:w-20" data-selected-design-preview="true" data-preview-source-kind={occurrence.assignment.sourceKind} data-preview-source-key={occurrence.assignment.sourceKey} data-preview-uploaded-source-ref={occurrence.assignment.sourceKind === "uploaded" ? occurrence.assignment.uploadedSourceRef : undefined}><img src={selectedDesignImage} alt={previewAlt} className="h-full w-full object-contain" referrerPolicy="no-referrer" /></div> : null}
+                      {occurrence.assignment && selectedDesignImage ? <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/20 bg-heritage-cream/35 sm:h-16 sm:w-16" data-selected-design-preview="true" data-preview-source-kind={occurrence.assignment.sourceKind} data-preview-source-key={occurrence.assignment.sourceKey} data-preview-uploaded-source-ref={occurrence.assignment.sourceKind === "uploaded" ? occurrence.assignment.uploadedSourceRef : undefined}><img src={selectedDesignImage} alt={previewAlt} className="h-full w-full object-contain" referrerPolicy="no-referrer" /></div> : null}
                       <div className="grid min-w-[11rem] flex-1 gap-0.5 lg:grid-cols-[auto_minmax(8rem,1fr)] lg:items-baseline lg:gap-x-4">
                         <p className="font-serif text-sm font-bold text-heritage-green">{occurrence.label}</p>
                         <p className="break-words text-xs leading-relaxed text-heritage-ink/70"><span className="font-semibold text-heritage-green">{occurrence.assignmentLabel || "No design selected"}</span></p>

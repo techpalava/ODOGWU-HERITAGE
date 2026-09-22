@@ -432,6 +432,11 @@ const leftoverUploadA = {
   });
   const card = shirtCard(renderer.root);
   const preview = card.findByProps({ "data-selected-design-preview": "true" });
+  assert.match(preview.props.className, /h-14/);
+  assert.match(preview.props.className, /w-14/);
+  assert.match(preview.props.className, /sm:h-16/);
+  assert.match(preview.props.className, /sm:w-16/);
+  assert.equal(preview.findByType("img").props.className.includes("object-contain"), true);
   assert.equal(preview.props["data-preview-source-kind"], "catalog");
   assert.equal(
     preview.props["data-preview-source-key"],

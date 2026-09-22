@@ -137,6 +137,40 @@ const withReferenceGarmentTypes = (
   );
   assert.equal(visibleText.includes("Your Garments"), true);
   assert.equal(visibleText.includes("Choose Design"), true);
+  const oneGarmentList = renderer.root.findByProps({
+    "data-testid": "step3-garment-assignment-list",
+  });
+  assert.equal(oneGarmentList.props.className.includes("divide-y"), false);
+}
+
+// Dividers appear only for more than two garment rows. 1–2 stay undivided.
+{
+  const twoModel = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt", "skirt"]),
+  });
+  const twoRenderer = await renderModel(twoModel);
+  const twoList = twoRenderer.root.findByProps({
+    "data-testid": "step3-garment-assignment-list",
+  });
+  assert.equal(twoList.props.className.includes("divide-y"), false);
+
+  const threeModel = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt", "skirt", "bum_shorts"]),
+  });
+  const threeRenderer = await renderModel(threeModel);
+  const threeList = threeRenderer.root.findByProps({
+    "data-testid": "step3-garment-assignment-list",
+  });
+  assert.match(threeList.props.className, /divide-y/);
+  assert.match(threeList.props.className, /divide-heritage-green\/15/);
+  assert.deepEqual(
+    threeRenderer.root
+      .findAll((node) => node.props?.["data-occurrence-label"])
+      .map((row) => row.props["data-occurrence-label"]),
+    ["Shirt", "Skirt", "Bum Shorts"],
+  );
 }
 
 // Upload lives on each garment-assignment card. Catalogue browsing stays
