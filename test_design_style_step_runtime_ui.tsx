@@ -139,9 +139,9 @@ const withReferenceGarmentTypes = (
   assert.equal(visibleText.includes("Choose Design"), true);
 }
 
-// Upload and catalogue are equivalent pathways, but upload is presented first.
-// Catalogue cards keep the full description for an accessible details dialog
-// while their visible preview stays compact.
+// Upload lives on each garment-assignment card. Catalogue browsing stays
+// without Option numbering. Catalogue cards keep the full description for an
+// accessible details dialog while their visible preview stays compact.
 {
   const longDescription =
     "An intentionally long Design Style description that remains intact in the details dialog while the catalogue card only previews two compact lines for a stable grid.";
@@ -153,22 +153,34 @@ const withReferenceGarmentTypes = (
   const renderer = await renderModel(model, {
     catalogueEntries: withReferenceGarmentTypes(model, ["trouser"]),
   });
-  const upload = renderer.root.findByProps({
-    "data-testid": "step3-upload-own-design",
-  });
+  assert.equal(
+    renderer.root.findAll(
+      (node) => node.props?.["data-testid"] === "step3-upload-own-design",
+    ).length,
+    0,
+  );
+  const visibleText = textContent(renderer.root);
+  assert.equal(visibleText.includes("Option 1"), false);
+  assert.equal(visibleText.includes("Option 2"), false);
+  assert.equal(visibleText.includes("Upload your own design"), false);
+  const shirtRow = renderer.root.findByProps({ "data-occurrence-label": "Shirt" });
+  const shirtButtons = shirtRow.findAllByType("button").map((button) => textContent(button));
+  assert.equal(shirtButtons.includes("Choose Design"), true);
+  assert.equal(shirtButtons.includes("Upload Design"), true);
   const catalogue = renderer.root.findByProps({
     "data-testid": "step3-all-designs",
   });
-  const orderedSections = renderer.root
-    .findAll(
-      (node) =>
-        node.props?.["data-testid"] === "step3-upload-own-design" ||
-        node.props?.["data-testid"] === "step3-all-designs",
-    )
-    .map((node) => node.props["data-testid"]);
-  assert.deepEqual(orderedSections, ["step3-upload-own-design", "step3-all-designs"]);
-  assert.match(textContent(upload), /Option 1.*Upload your own design/i);
-  assert.match(textContent(catalogue), /Option 2.*Choose design styles you like/i);
+  assert.match(textContent(catalogue), /Choose design styles you like/);
+  assert.equal(
+    renderer.root
+      .findAll((node) => node.props?.["data-style-card"] === "true")
+      .every(
+        (card) =>
+          card.findAllByProps({ type: "file" }).length === 0 &&
+          !textContent(card).includes("Upload Design"),
+      ),
+    true,
+  );
 
   const card = renderer.root.findByProps({ "data-style-name": detailedStyle.name });
   const preview = card.findByProps({
@@ -449,11 +461,27 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     (node) => node.props?.["data-occurrence-label"],
   );
   assert.equal(
+    rows[0]!.findAllByType("button").some((button) => textContent(button) === "Change Design"),
+    true,
+  );
+  assert.equal(
+    rows[0]!.findAllByType("button").some((button) => textContent(button) === "Upload Design"),
+    true,
+  );
+  assert.equal(
     rows[0]!.findAllByType("button").some((button) => textContent(button) === "Clear"),
     true,
   );
   assert.equal(
     rows[1]!.findAllByType("button").some((button) => textContent(button) === "Clear"),
+    true,
+  );
+  assert.equal(
+    rows[2]!.findAllByType("button").some((button) => textContent(button) === "Choose Design"),
+    true,
+  );
+  assert.equal(
+    rows[2]!.findAllByType("button").some((button) => textContent(button) === "Upload Design"),
     true,
   );
   const clearAll = renderer.root
@@ -514,6 +542,11 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     0,
   );
   assert.equal(continueButton(renderer.root).props.disabled, true);
+  const blockedUpload = renderer.root
+    .findAllByType("button")
+    .find((button) => textContent(button) === "Upload Design");
+  assert.ok(blockedUpload);
+  assert.equal(blockedUpload.props.disabled, true);
 }
 
 // Loading/error preserve selected evidence, disable mutations, and do not show
@@ -544,6 +577,11 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
       0,
     );
     assert.equal(continueButton(renderer.root).props.disabled, true);
+    const loadingUpload = renderer.root
+      .findAllByType("button")
+      .find((button) => textContent(button) === "Upload Design");
+    assert.ok(loadingUpload);
+    assert.equal(loadingUpload.props.disabled, true);
   }
 }
 

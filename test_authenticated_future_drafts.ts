@@ -825,15 +825,177 @@ assert.equal(
 );
 assert.equal(ownershipAdapter.writes.length, 0);
 
+const makeOwnedUploadedSource = (
+  ownerUid: string,
+  designReferenceId: string,
+) =>
+  createUploadedDesignSource({
+    uploadReference: {
+      ownerUid,
+      designReferenceId,
+      storagePath: `customer-design-drafts/${ownerUid}/${designReferenceId}/original.png`,
+      mimeType: "image/png",
+      createdAt: "2026-09-21T00:00:00.000Z",
+    },
+    fabricCapacityComposition: [
+      { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+    ],
+    demographic: "male",
+  });
+
+const attachRegistry = (
+  draft: GuestDesignDraft,
+  sources: ReturnType<typeof makeOwnedUploadedSource>[],
+): GuestDesignDraft => ({
+  ...draft,
+  uploadedDesignSourceRegistry: {
+    schemaVersion: 1,
+    sourcesByUploadedSourceRef: Object.fromEntries(
+      sources.map((source) => [
+        source.uploadReference.designReferenceId,
+        source,
+      ]),
+    ),
+  },
+});
+
+const AUTH_OWNER_A = "account-draft-owner";
+const AUTH_OWNER_B = "authenticated-session-b";
+const GUEST_OWNER_A = "anonymous-upload-owner";
+
+const sessionBAdapter = new MemoryAdapter();
+const sessionBRepository = createAuthenticatedFutureDraftRepository({
+  adapter: sessionBAdapter,
+  getIdentity: () => ({
+    status: "authenticated" as const,
+    ownerUid: AUTH_OWNER_B,
+  }),
+});
+
+const sameOwnerRegistryDraft = attachRegistry(
+  {
+    ...makeDraft("design_style"),
+    selectedStyleId: null,
+    designSource: null,
+  },
+  [makeOwnedUploadedSource(AUTH_OWNER_A, "registry-same-owner")],
+);
+const sameOwnerRegistrySave = await ownershipRepository.save(
+  sameOwnerRegistryDraft,
+  null,
+);
+assert.equal(sameOwnerRegistrySave.status, "saved");
+
+const foreignRegistryOnlyDraft = attachRegistry(
+  {
+    ...makeDraft("design_style"),
+    selectedStyleId: null,
+    designSource: createCatalogDesignSource("STYLE-A"),
+  },
+  [makeOwnedUploadedSource(GUEST_OWNER_A, "registry-guest-a")],
+);
+const foreignRegistrySave = await sessionBRepository.save(
+  foreignRegistryOnlyDraft,
+  null,
+);
+assert.equal(foreignRegistrySave.status, "blocked");
+assert.equal(
+  foreignRegistrySave.status === "blocked" && foreignRegistrySave.reason,
+  "uploaded_design_owner_mismatch",
+);
+
+const guestToAuthSync = await sessionBRepository.synchronize(
+  foreignRegistryOnlyDraft,
+);
+assert.equal(guestToAuthSync.status, "blocked");
+assert.equal(
+  guestToAuthSync.status === "blocked" && guestToAuthSync.reason,
+  "uploaded_design_owner_mismatch",
+);
+assert.equal(sessionBAdapter.writes.length, 0);
+
+const mixedRegistryDraft = attachRegistry(
+  {
+    ...makeDraft("design_style"),
+    selectedStyleId: null,
+    designSource: null,
+  },
+  [
+    makeOwnedUploadedSource(AUTH_OWNER_B, "registry-session-b"),
+    makeOwnedUploadedSource(GUEST_OWNER_A, "registry-guest-a-mixed"),
+  ],
+);
+const mixedRegistrySave = await sessionBRepository.save(
+  mixedRegistryDraft,
+  null,
+);
+assert.equal(mixedRegistrySave.status, "blocked");
+assert.equal(
+  mixedRegistrySave.status === "blocked" && mixedRegistrySave.reason,
+  "uploaded_design_owner_mismatch",
+);
+assert.equal(sessionBAdapter.writes.length, 0);
+
+const sameOwnerScalarNoRegistry = makeDraft("design_style");
+sameOwnerScalarNoRegistry.selectedStyleId = null;
+sameOwnerScalarNoRegistry.designSource = makeOwnedUploadedSource(
+  AUTH_OWNER_A,
+  "scalar-same-owner-no-registry",
+);
+assert.equal(
+  (await ownershipRepository.save(sameOwnerScalarNoRegistry, 1)).status,
+  "saved",
+);
+
+const matchingScalarForeignRegistryDraft = attachRegistry(
+  {
+    ...makeDraft("design_style"),
+    selectedStyleId: null,
+    designSource: makeOwnedUploadedSource(
+      AUTH_OWNER_B,
+      "scalar-session-b",
+    ),
+  },
+  [makeOwnedUploadedSource(GUEST_OWNER_A, "registry-guest-a-vs-scalar")],
+);
+const matchingScalarForeignRegistrySave = await sessionBRepository.save(
+  matchingScalarForeignRegistryDraft,
+  null,
+);
+assert.equal(matchingScalarForeignRegistrySave.status, "blocked");
+assert.equal(
+  matchingScalarForeignRegistrySave.status === "blocked" &&
+    matchingScalarForeignRegistrySave.reason,
+  "uploaded_design_owner_mismatch",
+);
+assert.equal(sessionBAdapter.writes.length, 0);
+
+const sameOwnerScalarAndRegistryDraft = attachRegistry(
+  {
+    ...makeDraft("design_style"),
+    selectedStyleId: null,
+    designSource: makeOwnedUploadedSource(
+      AUTH_OWNER_A,
+      "scalar-and-registry-a",
+    ),
+  },
+  [makeOwnedUploadedSource(AUTH_OWNER_A, "registry-same-as-scalar")],
+);
+assert.equal(
+  (await ownershipRepository.save(sameOwnerScalarAndRegistryDraft, 2)).status,
+  "saved",
+);
+
 const tokenBearingDraft = makeDraft("design_style") as GuestDesignDraft & {
   ownershipClaimToken?: string;
 };
 tokenBearingDraft.ownershipClaimToken = "must-never-reach-cloud-storage";
+const writesBeforeTokenDraft = ownershipAdapter.writes.length;
 assert.equal(
   (await ownershipRepository.save(tokenBearingDraft, null)).status,
   "invalid",
 );
-assert.equal(ownershipAdapter.writes.length, 0);
+assert.equal(ownershipAdapter.writes.length, writesBeforeTokenDraft);
 
 const stages: DesignStudioStageId[] = [
   "garment_type",

@@ -3,6 +3,7 @@ import type {
   GarmentTypeStepSelection,
   GuestDesignDraft,
   StyleCategory,
+  UploadedDesignSource,
 } from "../types";
 import {
   getDesignStyleAuthorityMetadata,
@@ -13,7 +14,6 @@ import {
   createPhysicalGarmentOccurrenceIdentityToken,
 } from "./physicalGarmentOccurrenceIdentity";
 import {
-  isValidUploadedDesignDraftSource,
   type PhysicalGarmentOccurrence,
 } from "./designSourceState";
 import {
@@ -29,6 +29,13 @@ import {
   type GarmentScopedDesignStyleValidationResult,
   type UploadedDesignStyleAuthorityFacts,
 } from "./garmentScopedDesignStyleAssignment";
+import {
+  collectReferencedUploadedSourceRefsFromLedger,
+  inspectUploadedDesignSourceRegistry,
+  isExactPersistedUploadedDesignSourceShape,
+  serializeUploadedDesignSourcesForDraft,
+  UPLOADED_DESIGN_SOURCE_REGISTRY_FIELD,
+} from "./uploadedDesignSourceRegistry";
 
 export const DESIGN_STYLE_DRAFT_FIELD = "designStyleAssignmentDraft" as const;
 export const DESIGN_STYLE_DRAFT_SCHEMA_VERSION = 2 as const;
@@ -501,10 +508,15 @@ export const normalizeDesignStyleDraftFieldForGuestDraft = (
   draft: GuestDesignDraft,
 ): GuestDesignDraft => {
   const parsed = inspectPersistedDesignStyleDraft(draft);
-  if (parsed.status !== "valid") return draft;
+  const registry = inspectUploadedDesignSourceRegistry(draft);
   return {
     ...draft,
-    [DESIGN_STYLE_DRAFT_FIELD]: parsed.envelope,
+    ...(parsed.status === "valid"
+      ? { [DESIGN_STYLE_DRAFT_FIELD]: parsed.envelope }
+      : {}),
+    ...(registry.status === "valid"
+      ? { [UPLOADED_DESIGN_SOURCE_REGISTRY_FIELD]: registry.registry }
+      : {}),
   };
 };
 
@@ -512,16 +524,23 @@ export const validateDesignStyleDraftFieldForStorage = (
   draft: unknown,
 ): { readonly status: "valid" } | { readonly status: "invalid"; readonly reason: string } => {
   const parsed = inspectPersistedDesignStyleDraft(draft);
-  if (parsed.status === "absent" || parsed.status === "valid") {
-    return { status: "valid" };
+  if (parsed.status !== "absent" && parsed.status !== "valid") {
+    return {
+      status: "invalid",
+      reason:
+        parsed.status === "unsupported"
+          ? "unsupported_design_style_draft_version"
+          : `malformed_design_style_draft:${parsed.reason}`,
+    };
   }
-  return {
-    status: "invalid",
-    reason:
-      parsed.status === "unsupported"
-        ? "unsupported_design_style_draft_version"
-        : `malformed_design_style_draft:${parsed.reason}`,
-  };
+  const registry = inspectUploadedDesignSourceRegistry(draft);
+  if (registry.status === "malformed") {
+    return {
+      status: "invalid",
+      reason: `malformed_uploaded_design_source_registry:${registry.reason}`,
+    };
+  }
+  return { status: "valid" };
 };
 
 const isNullableSafeIdentifier = (value: unknown): boolean =>
@@ -539,33 +558,8 @@ const hasExactCatalogSourceShape = (value: unknown): boolean =>
 
 const hasExactUploadedSourceShape = (
   value: unknown,
-): value is Extract<DesignSource, { kind: "uploaded" }> => {
-  if (!isRecord(value) || !isValidUploadedDesignDraftSource(value)) return false;
-  if (
-    !hasExactKeys(value, [
-      "kind",
-      "sourceKey",
-      "uploadReference",
-      "fabricCapacityComposition",
-      "demographic",
-      "displayLabel",
-    ]) ||
-    !isRecord(value.uploadReference) ||
-    !hasExactKeys(
-      value.uploadReference,
-      ["designReferenceId", "ownerUid", "storagePath", "mimeType", "createdAt"],
-      ["originalFileName"],
-    ) ||
-    !Array.isArray(value.fabricCapacityComposition)
-  ) {
-    return false;
-  }
-  return value.fabricCapacityComposition.every(
-    (spec) =>
-      isRecord(spec) &&
-      hasExactKeys(spec, ["key", "garmentType", "fabricUnits"], ["lowerGarmentType"]),
-  );
-};
+): value is Extract<DesignSource, { kind: "uploaded" }> =>
+  isExactPersistedUploadedDesignSourceShape(value);
 
 const invalidScalar = (reason: string): LegacyDesignStyleScalarDecodeResult => ({
   status: "invalid",
@@ -858,6 +852,77 @@ export const buildUploadedDesignStyleAuthority = ({
   };
 };
 
+const isAccessProvedSourceKey = (
+  accessProvedSourceKeys: ReadonlySet<string> | Readonly<Record<string, boolean>> | undefined,
+  sourceKey: string,
+): boolean => {
+  if (!accessProvedSourceKeys) return false;
+  if (accessProvedSourceKeys instanceof Set) {
+    return accessProvedSourceKeys.has(sourceKey);
+  }
+  return Boolean(accessProvedSourceKeys[sourceKey]);
+};
+
+export const buildUploadedDesignStyleAuthorityFromSources = ({
+  sources,
+  accessProvedSourceKeys,
+  failedSourceKeys,
+  confirmedDesignSourceKey,
+  expectedOwnerUid,
+  ownershipTransferPending,
+  sourceOperationStable,
+  activeOccurrences,
+}: {
+  sources: readonly UploadedDesignSource[];
+  accessProvedSourceKeys?: ReadonlySet<string> | Readonly<Record<string, boolean>>;
+  failedSourceKeys?: ReadonlySet<string> | Readonly<Record<string, boolean>>;
+  confirmedDesignSourceKey?: unknown;
+  expectedOwnerUid: string | null;
+  ownershipTransferPending: boolean;
+  sourceOperationStable: boolean;
+  activeOccurrences: readonly PhysicalGarmentOccurrence[];
+}): Readonly<Record<string, UploadedDesignStyleAuthorityFacts>> =>
+  sources.reduce<Readonly<Record<string, UploadedDesignStyleAuthorityFacts>>>(
+    (combined, source) => {
+      if (isAccessProvedSourceKey(failedSourceKeys, source.sourceKey)) {
+        return combined;
+      }
+      const proved =
+        isAccessProvedSourceKey(accessProvedSourceKeys, source.sourceKey) ||
+        confirmedDesignSourceKey === source.sourceKey;
+      return {
+        ...combined,
+        ...buildUploadedDesignStyleAuthority({
+          source,
+          confirmedDesignSourceKey: proved ? source.sourceKey : null,
+          expectedOwnerUid,
+          ownershipTransferPending,
+          sourceOperationStable,
+          activeOccurrences,
+        }),
+      };
+    },
+    {},
+  );
+
+const applyUploadedDesignSourceRegistryHydrationGuard = (
+  rawDraft: unknown,
+  result: DesignStyleDraftHydrationResult,
+): DesignStyleDraftHydrationResult => {
+  const registry = inspectUploadedDesignSourceRegistry(rawDraft);
+  if (registry.status !== "malformed") return result;
+  return {
+    ...result,
+    canAutosave: false,
+    destructiveNormalizationProhibited: true,
+    reviewRequired: true,
+    diagnostics: [
+      ...result.diagnostics,
+      diagnostic(registry.reason),
+    ],
+  };
+};
+
 const evidenceWithReason = (
   evidence: LegacyScalarEvidence,
   reason: DesignStyleMigrationReason,
@@ -1115,6 +1180,23 @@ export const hydrateDesignStyleDraftPersistence = ({
   activeOccurrences: readonly PhysicalGarmentOccurrence[];
   authority: GarmentScopedDesignStyleValidationAuthority;
 }): DesignStyleDraftHydrationResult => {
+  const result = hydrateDesignStyleDraftPersistenceWithoutRegistryGuard({
+    rawDraft,
+    activeOccurrences,
+    authority,
+  });
+  return applyUploadedDesignSourceRegistryHydrationGuard(rawDraft, result);
+};
+
+const hydrateDesignStyleDraftPersistenceWithoutRegistryGuard = ({
+  rawDraft,
+  activeOccurrences,
+  authority,
+}: {
+  rawDraft: unknown;
+  activeOccurrences: readonly PhysicalGarmentOccurrence[];
+  authority: GarmentScopedDesignStyleValidationAuthority;
+}): DesignStyleDraftHydrationResult => {
   const scalar = decodeLegacyDesignStyleScalarEvidence(rawDraft);
   const parsed = inspectPersistedDesignStyleDraft(rawDraft);
   if (parsed.status === "malformed") {
@@ -1344,6 +1426,44 @@ export const proveUploadedSourceAbsentFromPersistedDesignStyle = ({
     : { status: "proven-absent" };
 };
 
+const attachPersistedDesignStyleAutosaveFields = ({
+  draft,
+  envelope,
+  uploadedDesignSources,
+}: {
+  draft: GuestDesignDraft;
+  envelope: PersistedDesignStyleDraftV2 | null;
+  uploadedDesignSources: readonly UploadedDesignSource[];
+}):
+  | { readonly status: "ready"; readonly draft: GuestDesignDraft }
+  | { readonly status: "blocked"; readonly reason: "DESTRUCTIVE_AUTOSAVE_PROHIBITED" } => {
+  const {
+    [DESIGN_STYLE_DRAFT_FIELD]: _ignoredLedger,
+    [UPLOADED_DESIGN_SOURCE_REGISTRY_FIELD]: existingRegistryField,
+    ...rest
+  } = draft;
+  const registryResult = serializeUploadedDesignSourcesForDraft({
+    existingRegistryField,
+    uploadedDesignSources,
+    referencedUploadedSourceRefs: collectReferencedUploadedSourceRefsFromLedger(
+      envelope?.ledger || null,
+    ),
+  });
+  if (registryResult.status === "blocked") {
+    return { status: "blocked", reason: "DESTRUCTIVE_AUTOSAVE_PROHIBITED" };
+  }
+  return {
+    status: "ready",
+    draft: {
+      ...(rest as GuestDesignDraft),
+      ...(envelope ? { [DESIGN_STYLE_DRAFT_FIELD]: envelope } : {}),
+      ...(registryResult.status === "ready"
+        ? { [UPLOADED_DESIGN_SOURCE_REGISTRY_FIELD]: registryResult.registry }
+        : {}),
+    },
+  };
+};
+
 export const prepareDesignStyleDraftAutosave = ({
   draft,
   hydrated,
@@ -1351,6 +1471,7 @@ export const prepareDesignStyleDraftAutosave = ({
   authority,
   hydrationGeneration,
   currentHydrationGeneration,
+  uploadedDesignSources = [],
 }: {
   draft: GuestDesignDraft;
   hydrated: DesignStyleDraftHydrationResult;
@@ -1358,6 +1479,7 @@ export const prepareDesignStyleDraftAutosave = ({
   authority: GarmentScopedDesignStyleValidationAuthority;
   hydrationGeneration: number;
   currentHydrationGeneration: number;
+  uploadedDesignSources?: readonly UploadedDesignSource[];
 }): DesignStyleDraftAutosaveResult => {
   if (hydrationGeneration !== currentHydrationGeneration) {
     return { status: "blocked", reason: "STALE_HYDRATION_GENERATION" };
@@ -1384,19 +1506,27 @@ export const prepareDesignStyleDraftAutosave = ({
       if (!serialized) {
         return { status: "blocked", reason: "V2_REVALIDATION_FAILED" };
       }
+      const attached = attachPersistedDesignStyleAutosaveFields({
+        draft,
+        envelope: serialized,
+        uploadedDesignSources,
+      });
+      if (attached.status === "blocked") return attached;
       return {
         status: "ready",
-        draft: {
-          ...draft,
-          [DESIGN_STYLE_DRAFT_FIELD]: serialized,
-        },
+        draft: attached.draft,
         hydration: refreshed,
       };
     }
-    const { [DESIGN_STYLE_DRAFT_FIELD]: _ignored, ...withoutDormantV2 } = draft;
+    const attached = attachPersistedDesignStyleAutosaveFields({
+      draft,
+      envelope: null,
+      uploadedDesignSources,
+    });
+    if (attached.status === "blocked") return attached;
     return {
       status: "ready",
-      draft: withoutDormantV2 as GuestDesignDraft,
+      draft: attached.draft,
       hydration: refreshed,
     };
   }
@@ -1428,12 +1558,15 @@ export const prepareDesignStyleDraftAutosave = ({
   if (!serialized) {
     return { status: "blocked", reason: "V2_REVALIDATION_FAILED" };
   }
+  const attached = attachPersistedDesignStyleAutosaveFields({
+    draft,
+    envelope: serialized,
+    uploadedDesignSources,
+  });
+  if (attached.status === "blocked") return attached;
   return {
     status: "ready",
-    draft: {
-      ...draft,
-      [DESIGN_STYLE_DRAFT_FIELD]: serialized,
-    },
+    draft: attached.draft,
     hydration: refreshed,
   };
 };
