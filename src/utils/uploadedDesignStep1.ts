@@ -491,6 +491,8 @@ export interface UploadedDesignOperationCoordinator {
   invalidate: () => void;
   isCurrent: (operation: UploadedDesignOperationIdentity) => boolean;
   finish: (operation: UploadedDesignOperationIdentity) => boolean;
+  /** Read-only: true while a begun operation has not finished or been invalidated. */
+  hasActiveOperation: () => boolean;
 }
 
 /**
@@ -522,6 +524,7 @@ export const createUploadedDesignOperationCoordinator =
         activeGeneration = null;
         return true;
       },
+      hasActiveOperation: () => activeGeneration !== null,
     };
   };
 

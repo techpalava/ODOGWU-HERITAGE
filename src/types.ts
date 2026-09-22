@@ -1166,6 +1166,11 @@ export interface GuestDesignDraft {
   garmentTypeSelection?: GarmentTypeStepSelection;
   /** Raw persisted Task 5C boundary. Parse before using as V2 authority. */
   designStyleAssignmentDraft?: unknown;
+  /**
+   * Additive sibling of the V2 assignment ledger. Parse before use.
+   * Keyed by existing opaque uploadedSourceRef; never stored inside the V2 envelope.
+   */
+  uploadedDesignSourceRegistry?: unknown;
   aiTryOnWorkflow?: AiTryOnWorkflowStateV1;
   futureMeasurementState?: FutureMeasurementStateV1;
   futureShippingState?: FutureShippingStateV1;

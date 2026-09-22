@@ -55,6 +55,13 @@ const style: StyleCategory = {
   ],
 };
 
+const catalogueStyleWithImage: StyleCategory = {
+  ...style,
+  id: "replacement-catalogue-c",
+  name: "Catalogue C",
+  image: "https://catalogue.example/c.png",
+};
+
 const occurrences = createDesignStyleOccurrences(["shirt", "skirt"]);
 const targetFor = (
   occurrence: PhysicalGarmentOccurrence,
@@ -132,6 +139,11 @@ const textContent = (node: ReactTestInstance | string | null): string =>
           .join("")
       : "";
 
+const fileInputLabeled = (root: ReactTestInstance, pattern: RegExp) =>
+  root
+    .findAllByProps({ type: "file" })
+    .find((input) => pattern.test(String(input.props["aria-label"] || "")));
+
 const beginReplacement = (
   ledger: GarmentScopedDesignStyleAssignmentLedgerV2,
   state: DesignStyleUploadOperationState = createDesignStyleUploadOperationState(),
@@ -158,8 +170,8 @@ const beginReplacement = (
     onSelectUploadFile: (target: GarmentDesignStyleAssignmentTarget, file: File) =>
       selected.push({ target, file }),
   });
-  assert.equal(renderer.root.findAllByProps({ type: "file" }).length, 1);
-  const input = renderer.root.findByProps({ type: "file" });
+  assert.ok(fileInputLabeled(renderer.root, /Replace uploaded design for Shirt/i));
+  const input = fileInputLabeled(renderer.root, /Replace uploaded design for Shirt/i)!;
   assert.match(String(input.props["aria-label"]), /Replace uploaded design for Shirt/i);
   assert.equal(
     renderer.root.findAllByType("img").some(
@@ -192,7 +204,11 @@ const beginReplacement = (
     uploadState: { status: "pending", previewUrl: "blob:source-a" },
     onSelectUploadFile: () => undefined,
   });
-  assert.equal(renderer.root.findAllByProps({ type: "file" }).length, 0);
+  assert.equal(
+    fileInputLabeled(renderer.root, /Replace uploaded design for Shirt/i),
+    undefined,
+  );
+  assert.ok(fileInputLabeled(renderer.root, /Upload a design for /i));
   assert.equal(renderer.root.findByType("img").props.src, "blob:source-a");
   assert.match(textContent(renderer.root), /Preparing a replacement design for Shirt/i);
   assert.equal(ledger.assignmentsByGarmentKey[shirtTarget.garmentKey], previousTarget);
@@ -387,6 +403,181 @@ const beginReplacement = (
   );
 }
 
+const shirtCard = (root: ReactTestInstance) =>
+  root.findByProps({ "data-occurrence-label": "Shirt" });
+
+const catalogueModel = () =>
+  createDesignStyleStepTestModel({
+    styles: [catalogueStyleWithImage],
+    garmentTypeSelection: selection,
+    occurrences,
+    activeTarget: shirtTarget,
+    selectedStyleIdByGarmentKey: {
+      [occurrences[0].garmentKey]: catalogueStyleWithImage.id,
+    },
+  });
+
+const leftoverUploadA = {
+  status: "success" as const,
+  previewUrl: "blob:source-a",
+  uploadedSourceRef: sourceA.uploadReference.designReferenceId,
+  sourceKey: sourceA.sourceKey,
+};
+
+{
+  const model = catalogueModel();
+  const renderer = render(model, {
+    uploadState: leftoverUploadA,
+    onSelectUploadFile: () => undefined,
+  });
+  const card = shirtCard(renderer.root);
+  const preview = card.findByProps({ "data-selected-design-preview": "true" });
+  assert.match(preview.props.className, /h-14/);
+  assert.match(preview.props.className, /w-14/);
+  assert.match(preview.props.className, /sm:h-16/);
+  assert.match(preview.props.className, /sm:w-16/);
+  assert.equal(preview.findByType("img").props.className.includes("object-contain"), true);
+  assert.equal(preview.props["data-preview-source-kind"], "catalog");
+  assert.equal(
+    preview.props["data-preview-source-key"],
+    model.projection.occurrences[0].assignment?.sourceKey,
+  );
+  assert.equal(
+    preview.findByType("img").props.src,
+    "https://catalogue.example/c.png",
+  );
+  assert.match(
+    String(preview.findByType("img").props.alt),
+    /Catalogue C design for Shirt/,
+  );
+  assert.match(textContent(card), /Catalogue C/);
+  assert.match(textContent(card), /Change Design/);
+  assert.ok(fileInputLabeled(card, /Upload a design for Shirt/i));
+  assert.match(textContent(card), /Clear/);
+  act(() => renderer.unmount());
+}
+
+{
+  const emptyModel = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection,
+    occurrences,
+    activeTarget: shirtTarget,
+  });
+  const emptyRenderer = render(emptyModel, {
+    uploadState: leftoverUploadA,
+    onSelectUploadFile: () => undefined,
+  });
+  assert.equal(
+    shirtCard(emptyRenderer.root).findAllByProps({
+      "data-selected-design-preview": "true",
+    }).length,
+    0,
+  );
+  act(() => emptyRenderer.unmount());
+
+  const model = catalogueModel();
+  const renderer = render(model, {
+    uploadState: leftoverUploadA,
+    onSelectUploadFile: () => undefined,
+  });
+  const preview = shirtCard(renderer.root).findByProps({
+    "data-selected-design-preview": "true",
+  });
+  assert.equal(
+    preview.findByType("img").props.src,
+    "https://catalogue.example/c.png",
+  );
+  assert.equal(preview.props["data-preview-source-kind"], "catalog");
+  act(() => renderer.unmount());
+}
+
+{
+  const model = catalogueModel();
+  const renderer = render(model, {
+    uploadState: {
+      status: "error",
+      previewUrl: "blob:source-a",
+      uploadedSourceRef: sourceA.uploadReference.designReferenceId,
+      sourceKey: sourceA.sourceKey,
+      message: "Replacement failed. Your previous design is unchanged. Try again.",
+    },
+    onSelectUploadFile: () => undefined,
+  });
+  const card = shirtCard(renderer.root);
+  assert.equal(
+    card.findByProps({ "data-selected-design-preview": "true" }).findByType("img")
+      .props.src,
+    "https://catalogue.example/c.png",
+  );
+  assert.match(textContent(card), /Change Design/);
+  act(() => renderer.unmount());
+}
+
+{
+  const model = uploadedModel();
+  const renderer = render(model, {
+    uploadState: {
+      status: "pending",
+      previewUrl: "blob:source-a",
+      uploadedSourceRef: sourceA.uploadReference.designReferenceId,
+      sourceKey: sourceA.sourceKey,
+    },
+    onSelectUploadFile: () => undefined,
+  });
+  const preview = shirtCard(renderer.root).findByProps({
+    "data-selected-design-preview": "true",
+  });
+  assert.equal(preview.findByType("img").props.src, "blob:source-a");
+  assert.equal(preview.props["data-preview-source-kind"], "uploaded");
+  assert.equal(
+    preview.props["data-preview-uploaded-source-ref"],
+    sourceA.uploadReference.designReferenceId,
+  );
+  assert.match(
+    textContent(renderer.root),
+    /Preparing a replacement design for Shirt/i,
+  );
+  act(() => renderer.unmount());
+}
+
+{
+  const sourceB = source("replacement-source-b");
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection,
+    occurrences,
+    activeTarget: shirtTarget,
+    selectedStyleIdByGarmentKey: {
+      [occurrences[1].garmentKey]: style.id,
+    },
+    uploadedSource: sourceB,
+    uploadedAssignmentGarmentKeys: [occurrences[0].garmentKey],
+    confirmedUploadedSourceKey: sourceB.sourceKey,
+    expectedUploadOwnerUid: sourceB.uploadReference.ownerUid,
+  });
+  const renderer = render(model, {
+    uploadState: {
+      status: "success",
+      previewUrl: "blob:source-b",
+      uploadedSourceRef: sourceBInput.uploadedSourceRef,
+      sourceKey: sourceBInput.sourceKey,
+    },
+    onSelectUploadFile: () => undefined,
+  });
+  const preview = shirtCard(renderer.root).findByProps({
+    "data-selected-design-preview": "true",
+  });
+  assert.equal(preview.findByType("img").props.src, "blob:source-b");
+  assert.equal(preview.props["data-preview-source-kind"], "uploaded");
+  assert.equal(
+    preview.props["data-preview-uploaded-source-ref"],
+    sourceBInput.uploadedSourceRef,
+  );
+  assert.match(textContent(shirtCard(renderer.root)), /Replace Upload/);
+  act(() => renderer.unmount());
+}
+
 // H. The production replacement path uploads a distinct canonical source and
 // retains source A: it calls neither replacement-with-cleanup nor deletion.
 {
@@ -404,7 +595,15 @@ const beginReplacement = (
     handler,
     /replaceCustomerDesignDraft|deleteCustomerDesignDraft|deleteUploadedDesignBeforeSourceChange/,
   );
-  assert.match(handler, /setFutureDesignStyleUploadedSourceByGarmentKey/);
+  assert.match(handler, /replaceFutureUploadedDesignSources/);
+  assert.match(handler, /uploadedSourceRef\]: source/);
+  assert.match(handler, /hasActiveOperation/);
+  assert.match(handler, /beginDesignStyleUploadForActiveOccurrence/);
+  assert.ok(
+    handler.indexOf("hasActiveOperation") <
+      handler.indexOf("beginDesignStyleUploadForActiveOccurrence"),
+  );
+  assert.match(handler, /outcome.status === "stale"|isStaleUploadedDesignOperationResult/);
 }
 
 console.log(
