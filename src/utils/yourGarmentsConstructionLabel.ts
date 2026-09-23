@@ -11,6 +11,7 @@ import {
   type PhysicalGarmentOccurrence,
 } from "./designSourceState";
 import { CUSTOM_DETAILS_CONSTRUCTION_GROUPS } from "./futureCustomDetailsCatalogue";
+import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing";
 
 export interface YourGarmentsConstructionLabelOccurrence {
   readonly garmentKey: string;
@@ -71,11 +72,11 @@ const readActiveConstructionOptionLabel = (
 };
 
 /**
- * Read-only garmentKey -> Your Garments construction label.
+ * Read-only garmentKey -> Your Garments concise variant name.
+ * The name is the Step 1 display label of the physical garment type.
  * Missing or inactive construction data is omitted so the caller keeps the
- * existing broad occurrence label. Repeated base occurrences of one garment
- * type share that type's authoritative construction and stay distinguishable
- * through the ordinal already present on the broad label.
+ * existing broad occurrence label. Repeated occurrences of one variant stay
+ * distinguishable through the ordinal already present on the broad label.
  */
 export const projectYourGarmentsConstructionDisplayLabels = ({
   presentationOccurrences,
@@ -126,15 +127,13 @@ export const projectYourGarmentsConstructionDisplayLabels = ({
     ) {
       return [];
     }
-    const exactLabel = readActiveConstructionOptionLabel(
-      resolution,
-      catalogInspection,
-    );
-    if (!exactLabel) return [];
+    if (!readActiveConstructionOptionLabel(resolution, catalogInspection)) {
+      return [];
+    }
     return [
       {
         garmentKey: occurrence.garmentKey,
-        exactLabel,
+        conciseLabel: getStep1GarmentDisplayLabel(physical.garmentType),
         suffix: readFamilyOrdinalSuffix(
           occurrence.broadLabel,
           occurrence.garmentType,
@@ -145,20 +144,20 @@ export const projectYourGarmentsConstructionDisplayLabels = ({
 
   const groups = new Map<string, typeof candidates>();
   candidates.forEach((candidate) => {
-    const group = groups.get(candidate.exactLabel) || [];
+    const group = groups.get(candidate.conciseLabel) || [];
     group.push(candidate);
-    groups.set(candidate.exactLabel, group);
+    groups.set(candidate.conciseLabel, group);
   });
 
   const labels: Record<string, string> = {};
-  groups.forEach((group, exactLabel) => {
+  groups.forEach((group, conciseLabel) => {
     if (group.length === 1) {
       const only = group[0];
-      if (only) labels[only.garmentKey] = exactLabel;
+      if (only) labels[only.garmentKey] = conciseLabel;
       return;
     }
     const displayLabels = group.map((candidate) =>
-      candidate.suffix === null ? null : `${exactLabel}${candidate.suffix}`,
+      candidate.suffix === null ? null : `${conciseLabel}${candidate.suffix}`,
     );
     if (
       displayLabels.some((label) => !label) ||
