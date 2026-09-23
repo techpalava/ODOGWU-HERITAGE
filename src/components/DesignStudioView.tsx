@@ -150,6 +150,7 @@ import {
   type DesignStyleStepClearMutationRequest,
   type UploadedDesignStyleDetachLifecycleOutcome,
 } from "../utils/designStyleStepRuntime";
+import { projectYourGarmentsConstructionDisplayLabels } from "../utils/yourGarmentsConstructionLabel";
 import { resolveLatestSuccessfulDesignStyleFeedbackTarget } from "../utils/designStyleAssignmentFeedback";
 import { removeExactGarmentDesignStyleAssignment } from "../utils/garmentScopedDesignStyleAssignment";
 import {
@@ -2946,6 +2947,30 @@ export default function DesignStudioView({
   }, [futureStageId]);
   const futureCatalogInspection =
     inspectCustomDetailCatalog(customDetailCatalog);
+  const yourGarmentsConstructionDisplayLabelByGarmentKey = useMemo(
+    () =>
+      projectYourGarmentsConstructionDisplayLabels({
+        presentationOccurrences: futureDesignStyleStepProjection.occurrences.map(
+          (occurrence) => ({
+            garmentKey: occurrence.target.garmentKey,
+            garmentType: occurrence.garmentType,
+            broadLabel: occurrence.label,
+          }),
+        ),
+        physicalOccurrences: authoritativePhysicalOccurrencesForDomain,
+        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+        additionalGarmentConstructionState:
+          authoritativeAdditionalGarmentConstructionState,
+        catalogInspection: futureCatalogInspection,
+      }),
+    [
+      futureDesignStyleStepProjection.occurrences,
+      authoritativePhysicalOccurrencesForDomain,
+      effectiveJourneyGarmentTypeSelection,
+      authoritativeAdditionalGarmentConstructionState,
+      futureCatalogInspection,
+    ],
+  );
   const futureScopedCustomDetailsReconciliation =
     reconcileGarmentScopedCustomDetails({
       garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
@@ -8233,6 +8258,9 @@ export default function DesignStudioView({
           ) : null}
         <DormantFutureDesignStyleStep
           occurrences={futureDesignStyleStepProjection.occurrences}
+          constructionDisplayLabelByGarmentKey={
+            yourGarmentsConstructionDisplayLabelByGarmentKey
+          }
           activeOccurrenceTarget={resolvedFutureActiveDesignStyleOccurrence}
           catalogueEntries={futureDesignStyleCatalogueEntries}
           clearRequest={futureDesignStyleClearRequest}
