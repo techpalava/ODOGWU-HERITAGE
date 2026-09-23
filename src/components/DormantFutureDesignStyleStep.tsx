@@ -30,6 +30,11 @@ import { resolveDesignStyleOccurrenceCardPreview } from "../utils/designStyleOcc
 
 interface DormantFutureDesignStyleStepProps {
   occurrences: readonly DesignStyleStepOccurrencePresentation[];
+  /**
+   * Optional Your Garments display names keyed by exact garmentKey.
+   * Absent keys keep the existing broad occurrence label.
+   */
+  constructionDisplayLabelByGarmentKey?: Readonly<Record<string, string>>;
   activeOccurrenceTarget: DesignStyleStepOccurrencePresentation["target"] | null;
   catalogueEntries: readonly DesignStyleStepCatalogueEntry[];
   clearRequest: DesignStyleStepClearMutationRequest | null;
@@ -126,8 +131,20 @@ const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
       element.getAttribute("aria-hidden") !== "true",
   );
 
+const yourGarmentsDisplayLabel = (
+  occurrence: DesignStyleStepOccurrencePresentation,
+  constructionDisplayLabelByGarmentKey: Readonly<Record<string, string>> | undefined,
+): string => {
+  const projected =
+    constructionDisplayLabelByGarmentKey?.[occurrence.target.garmentKey];
+  return typeof projected === "string" && projected.trim().length > 0
+    ? projected
+    : occurrence.label;
+};
+
 export const DormantFutureDesignStyleStep = ({
   occurrences,
+  constructionDisplayLabelByGarmentKey,
   activeOccurrenceTarget,
   catalogueEntries,
   clearRequest,
@@ -668,7 +685,7 @@ export const DormantFutureDesignStyleStep = ({
       <section aria-labelledby="future-design-style-title" data-stage-id="design_style" data-stage-complete={exactSetComplete} className={`min-w-0 space-y-6 font-sans [overflow-wrap:anywhere] ${exactSetComplete ? "pb-28 sm:pb-32" : ""}`}>
         <p className="sr-only" aria-live="polite">
           {highlightedOccurrence
-            ? `Design assigned to ${highlightedOccurrence.label}.`
+            ? `Design assigned to ${yourGarmentsDisplayLabel(highlightedOccurrence, constructionDisplayLabelByGarmentKey)}.`
             : ""}
         </p>
         <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
@@ -717,9 +734,13 @@ export const DormantFutureDesignStyleStep = ({
                     occurrence.assignment?.sourceKind === "catalog"
                       ? "Change Design"
                       : "Choose Design";
+                  const garmentDisplayLabel = yourGarmentsDisplayLabel(
+                    occurrence,
+                    constructionDisplayLabelByGarmentKey,
+                  );
                   const uploadActionLabel = isUploadedAssignment
-                    ? `Replace uploaded design for ${occurrence.label}`
-                    : `Upload a design for ${occurrence.label}`;
+                    ? `Replace uploaded design for ${garmentDisplayLabel}`
+                    : `Upload a design for ${garmentDisplayLabel}`;
                   const uploadInputId = `${uploadInputIdPrefix}-${occurrence.target.occurrenceToken}`;
                   const uploadControlsBusy =
                     uploadOperationBusy ||
@@ -765,7 +786,7 @@ export const DormantFutureDesignStyleStep = ({
                     >
                       {occurrence.assignment && selectedDesignImage ? <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/20 bg-heritage-cream/35 sm:h-16 sm:w-16" data-selected-design-preview="true" data-preview-source-kind={occurrence.assignment.sourceKind} data-preview-source-key={occurrence.assignment.sourceKey} data-preview-uploaded-source-ref={occurrence.assignment.sourceKind === "uploaded" ? occurrence.assignment.uploadedSourceRef : undefined}><img src={selectedDesignImage} alt={previewAlt} className="h-full w-full object-contain" referrerPolicy="no-referrer" /></div> : null}
                       <div className="grid min-w-[11rem] flex-1 gap-0.5 lg:grid-cols-[auto_minmax(8rem,1fr)] lg:items-baseline lg:gap-x-4">
-                        <p className="font-serif text-sm font-bold text-heritage-green">{occurrence.label}</p>
+                        <p className="font-serif text-sm font-bold text-heritage-green">{garmentDisplayLabel}</p>
                         <p className="break-words text-xs leading-relaxed text-heritage-ink/70"><span className="font-semibold text-heritage-green">{occurrence.assignmentLabel || "No design selected"}</span></p>
                         {isUploadedAssignment ? <p className="text-[11px] leading-relaxed text-heritage-ink/55 lg:col-span-2">Removing this assignment keeps the uploaded source available for any other garment that uses it.</p> : null}
                       </div>
@@ -825,10 +846,10 @@ export const DormantFutureDesignStyleStep = ({
                                 event?.stopPropagation?.();
                                 onClearAssignment(occurrenceClearRequest);
                               }}
-                              aria-label={isUploadedAssignment ? `Remove uploaded design from ${occurrence.label}` : `Clear design for ${occurrence.label}`}
+                              aria-label={isUploadedAssignment ? `Remove uploaded design from ${garmentDisplayLabel}` : `Clear design for ${garmentDisplayLabel}`}
                               className="inline-flex min-h-9 items-center justify-center rounded-lg border border-red-200 px-2.5 text-[11px] font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
                             >
-                              {isUploadedAssignment ? `Remove uploaded design from ${occurrence.label}` : "Clear"}
+                              {isUploadedAssignment ? `Remove uploaded design from ${garmentDisplayLabel}` : "Clear"}
                             </button>
                           ) : null}
                         </div>
@@ -837,8 +858,8 @@ export const DormantFutureDesignStyleStep = ({
                           {occurrenceUploadState.status === "pending" ? (
                             <p role="status" className="text-[11px] font-semibold text-heritage-green">
                               {isUploadedAssignment
-                                ? `Preparing a replacement design for ${occurrence.label}...`
-                                : `Preparing your uploaded design for ${occurrence.label}...`}
+                                ? `Preparing a replacement design for ${garmentDisplayLabel}...`
+                                : `Preparing your uploaded design for ${garmentDisplayLabel}...`}
                             </p>
                           ) : null}
                           {occurrenceUploadState.status === "error" ? (
