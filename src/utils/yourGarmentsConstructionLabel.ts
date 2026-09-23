@@ -70,16 +70,12 @@ const readActiveConstructionOptionLabel = (
   return label.length > 0 ? label : null;
 };
 
-const isAdditionalOccurrence = (
-  occurrence: Pick<PhysicalGarmentOccurrence, "garmentKey" | "sourceRole">,
-): boolean =>
-  occurrence.sourceRole === "additional" ||
-  occurrence.garmentKey.startsWith("additional:");
-
 /**
  * Read-only garmentKey -> Your Garments construction label.
- * Missing, ambiguous, or inactive construction data is omitted so the caller
- * keeps the existing broad occurrence label.
+ * Missing or inactive construction data is omitted so the caller keeps the
+ * existing broad occurrence label. Repeated base occurrences of one garment
+ * type share that type's authoritative construction and stay distinguishable
+ * through the ordinal already present on the broad label.
  */
 export const projectYourGarmentsConstructionDisplayLabels = ({
   presentationOccurrences,
@@ -102,20 +98,6 @@ export const projectYourGarmentsConstructionDisplayLabels = ({
     physicalByKey.set(occurrence.garmentKey, occurrence);
   });
 
-  const baseCountByType = new Map<CanonicalPhysicalGarmentType, number>();
-  physicalOccurrences.forEach((occurrence) => {
-    if (
-      duplicatePhysicalKeys.has(occurrence.garmentKey) ||
-      isAdditionalOccurrence(occurrence)
-    ) {
-      return;
-    }
-    baseCountByType.set(
-      occurrence.garmentType,
-      (baseCountByType.get(occurrence.garmentType) || 0) + 1,
-    );
-  });
-
   const presentationCountByKey = new Map<string, number>();
   presentationOccurrences.forEach((occurrence) => {
     presentationCountByKey.set(
@@ -131,12 +113,6 @@ export const projectYourGarmentsConstructionDisplayLabels = ({
     if (duplicatePhysicalKeys.has(occurrence.garmentKey)) return [];
     const physical = physicalByKey.get(occurrence.garmentKey);
     if (!physical || physical.garmentType !== occurrence.garmentType) return [];
-    if (
-      !isAdditionalOccurrence(physical) &&
-      (baseCountByType.get(physical.garmentType) || 0) !== 1
-    ) {
-      return [];
-    }
     const resolution = resolveOccurrenceConstruction({
       garmentKey: physical.garmentKey,
       garmentType: physical.garmentType,

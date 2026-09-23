@@ -161,19 +161,40 @@ assert.equal(MIDLONG_LABEL, "Standard Length Shirt, Mid-Long Sleeve");
     presentationOccurrences: [
       { garmentKey: "base:shirt:1", garmentType: "shirt", broadLabel: "Shirt" },
       { garmentKey: "base:shirt:2", garmentType: "shirt", broadLabel: "Shirt 2" },
-      { garmentKey: "base:skirt", garmentType: "skirt", broadLabel: "Skirt" },
     ],
     physicalOccurrences: [
       { garmentKey: "base:shirt:1", garmentType: "shirt", sourceRole: "main" },
       { garmentKey: "base:shirt:2", garmentType: "shirt", sourceRole: "main" },
-      { garmentKey: "base:skirt", garmentType: "skirt", sourceRole: "main" },
     ],
     garmentTypeSelection: {
-      garmentTypes: ["shirt", "skirt"],
+      garmentTypes: ["shirt"],
       demographic: "male",
       audienceSelection: { schemaVersion: 1, demographics: ["male"] },
       constructionByGarment: {
         shirt: resolution("shirt", "shirt_std_short", "shirt_construction"),
+      },
+    },
+    catalogInspection,
+  });
+  assert.deepEqual(labels, {
+    "base:shirt:1": SHORT_LABEL,
+    "base:shirt:2": `${SHORT_LABEL} 2`,
+  });
+}
+
+{
+  const labels = projectYourGarmentsConstructionDisplayLabels({
+    presentationOccurrences: [
+      { garmentKey: "base:skirt", garmentType: "skirt", broadLabel: "Skirt" },
+    ],
+    physicalOccurrences: [
+      { garmentKey: "base:skirt", garmentType: "skirt", sourceRole: "main" },
+    ],
+    garmentTypeSelection: {
+      garmentTypes: ["skirt"],
+      demographic: "male",
+      audienceSelection: { schemaVersion: 1, demographics: ["male"] },
+      constructionByGarment: {
         skirt: { status: "unresolved", garmentType: "skirt", code: "missing_catalog_option" },
       },
     },
@@ -498,5 +519,130 @@ assert.equal(textContent(dialog).includes("Shirt 2"), true);
 const warning = dialog.findByProps({ "data-testid": "reference-composition-warning" });
 assert.equal(textContent(warning).includes("Shirt 2"), true);
 assert.equal(textContent(warning).includes(MIDLONG_LABEL), false);
+
+const firstBaseTarget = {
+  garmentKey: "base:shirt:1",
+  occurrenceToken: "physical-occurrence-v1:1:base:shirt:1",
+};
+const secondBaseTarget = {
+  garmentKey: "base:shirt:2",
+  occurrenceToken: "physical-occurrence-v1:2:base:shirt:2",
+};
+const twoBaseLabels = projectYourGarmentsConstructionDisplayLabels({
+  presentationOccurrences: [
+    { garmentKey: firstBaseTarget.garmentKey, garmentType: "shirt", broadLabel: "Shirt" },
+    { garmentKey: secondBaseTarget.garmentKey, garmentType: "shirt", broadLabel: "Shirt 2" },
+  ],
+  physicalOccurrences: [
+    { garmentKey: firstBaseTarget.garmentKey, garmentType: "shirt", sourceRole: "main" },
+    { garmentKey: secondBaseTarget.garmentKey, garmentType: "shirt", sourceRole: "main" },
+  ],
+  garmentTypeSelection: {
+    garmentTypes: ["shirt"],
+    demographic: "male",
+    audienceSelection: { schemaVersion: 1, demographics: ["male"] },
+    constructionByGarment: {
+      shirt: resolution("shirt", "shirt_std_short", "shirt_construction"),
+    },
+  },
+  catalogInspection,
+});
+const twoBaseOccurrences: DesignStyleStepOccurrencePresentation[] = [
+  {
+    target: firstBaseTarget,
+    garmentType: "shirt",
+    label: "Shirt",
+    status: "incomplete",
+    assignment: null,
+    assignmentLabel: null,
+  },
+  {
+    target: secondBaseTarget,
+    garmentType: "shirt",
+    label: "Shirt 2",
+    status: "incomplete",
+    assignment: null,
+    assignmentLabel: null,
+  },
+];
+const secondBaseActions: { garmentKey: string; occurrenceToken: string }[] = [];
+let twoBaseRenderer!: ReturnType<typeof create>;
+await act(async () => {
+  twoBaseRenderer = create(
+    <DormantFutureDesignStyleStep
+      occurrences={twoBaseOccurrences}
+      constructionDisplayLabelByGarmentKey={twoBaseLabels}
+      activeOccurrenceTarget={firstBaseTarget}
+      catalogueEntries={[]}
+      clearRequest={null}
+      clearRequests={[]}
+      runtimeStatus="ready"
+      completedCount={0}
+      totalCount={2}
+      exactSetComplete={false}
+      reviewMessage={null}
+      mutationError={null}
+      stagePrice={null}
+      stylesLoadState="ready"
+      onSelectOccurrence={(target) => {
+        secondBaseActions.push(target);
+      }}
+      onAssignCatalogueStyle={() => undefined}
+      onClearAssignment={() => undefined}
+      onSelectUploadFile={(target) => {
+        secondBaseActions.push(target);
+      }}
+      onBack={() => undefined}
+      onReturnToGarmentType={() => undefined}
+      onContinue={() => undefined}
+    />,
+  );
+});
+const twoBaseRoot = twoBaseRenderer.root;
+assert.deepEqual(
+  twoBaseRoot
+    .findAll((node) => node.props?.["data-occurrence-label"])
+    .map((row) => row.props["data-occurrence-label"]),
+  ["Shirt", "Shirt 2"],
+);
+assert.deepEqual(
+  twoBaseRoot
+    .findAll((node) => node.props?.["data-occurrence-token"])
+    .map((row) => row.props["data-occurrence-token"]),
+  [firstBaseTarget.occurrenceToken, secondBaseTarget.occurrenceToken],
+);
+const twoBaseName = (label: string) =>
+  textContent(
+    twoBaseRoot.findByProps({ "data-occurrence-label": label }).findByProps({
+      className: "font-serif text-sm font-bold text-heritage-green",
+    }),
+  );
+assert.equal(twoBaseName("Shirt"), SHORT_LABEL);
+assert.equal(twoBaseName("Shirt 2"), `${SHORT_LABEL} 2`);
+assert.equal(twoBaseName("Shirt 2").includes("Shirt 2"), false);
+const secondBaseRow = twoBaseRoot.findByProps({ "data-occurrence-label": "Shirt 2" });
+await click(
+  secondBaseRow
+    .findAllByType("button")
+    .find((button) => textContent(button) === "Choose Design")!,
+);
+await act(async () => {
+  secondBaseRow.findByType("input").props.onChange({
+    currentTarget: {
+      files: [new File(["design"], "second.png", { type: "image/png" })],
+      value: "second.png",
+    },
+  });
+});
+assert.deepEqual(secondBaseActions, [secondBaseTarget, secondBaseTarget]);
+assert.equal(
+  secondBaseActions.every(
+    (target) =>
+      target.garmentKey === secondBaseTarget.garmentKey &&
+      target.occurrenceToken === secondBaseTarget.occurrenceToken &&
+      target.occurrenceToken !== `${SHORT_LABEL} 2`,
+  ),
+  true,
+);
 
 console.log("step3 your garments construction labels: PASS");
