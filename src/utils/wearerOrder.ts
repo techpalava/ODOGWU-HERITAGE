@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import {
   classifyFutureMeasurementHydration,
+  countRemainingCustomerRequiredMeasurementUnits,
   createEmptyFutureMeasurementState,
   isFutureMeasurementStageComplete,
   isGarmentMeasurementEligibleForDemographic,
@@ -695,6 +696,37 @@ export const isWearerOrderMeasurementComplete = ({
     isFutureMeasurementStageComplete(runtime.measurement),
   );
 };
+
+export interface WearerOrderMeasurementCompletion {
+  complete: boolean;
+  remainingRequiredCount: number;
+}
+
+/** Order-wide measurement gate. The selected wearer is not an input. */
+export const summarizeWearerOrderMeasurementCompletion = ({
+  order,
+  runtimes,
+  physicalGarmentKeys,
+}: {
+  order: WearerOrderStateV2;
+  runtimes: readonly WearerMeasurementRuntime[];
+  physicalGarmentKeys: readonly string[];
+}): WearerOrderMeasurementCompletion => ({
+  complete: isWearerOrderMeasurementComplete({
+    order,
+    runtimes,
+    physicalGarmentKeys,
+  }),
+  remainingRequiredCount: runtimes.reduce(
+    (total, runtime) =>
+      total +
+      countRemainingCustomerRequiredMeasurementUnits({
+        plan: runtime.plan,
+        state: runtime.measurement,
+      }),
+    0,
+  ),
+});
 
 export const projectActiveWearerMeasurements = (
   runtimes: readonly WearerMeasurementRuntime[],

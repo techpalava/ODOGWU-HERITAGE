@@ -273,6 +273,7 @@ import {
   deleteWearer,
   isWearerOrderMeasurementComplete,
   planWearerOrderMeasurements,
+  summarizeWearerOrderMeasurementCompletion,
   reconcileWearerOrder,
   removeGarmentFromWearerOrder,
   renameWearer,
@@ -3157,13 +3158,14 @@ export default function DesignStudioView({
   };
   const reconciledFutureMeasurementState =
     activeWearerRuntime?.measurement || futureMeasurementState;
-  const wearerMeasurementsComplete = isWearerOrderMeasurementComplete({
+  const wearerOrderMeasurementCompletion = summarizeWearerOrderMeasurementCompletion({
     order: wearerOrderForPlan,
     runtimes: wearerMeasurementRuntimes,
     physicalGarmentKeys: futureMeasurementPhysicalGarments.map(
       (garment) => garment.garmentKey,
     ),
   });
+  const wearerMeasurementsComplete = wearerOrderMeasurementCompletion.complete;
 
   // Batch / Group Options (Site-wide adaptive ordering options)
   const [batchType, setBatchType] = useState<
@@ -3337,6 +3339,10 @@ export default function DesignStudioView({
         fabricAllocationState,
         measurementState: reconciledFutureMeasurementState,
         measurementPlan: futureMeasurementPlan,
+        orderMeasurementCompletion:
+          wearerMeasurementRuntimes.length > 0
+            ? wearerOrderMeasurementCompletion
+            : null,
         designSource: activeFutureDesignSource,
         additionalConstructionState:
           futureAdditionalConstructionReconciliation.state,
@@ -3349,6 +3355,8 @@ export default function DesignStudioView({
       fabricAllocationState,
       reconciledFutureMeasurementState,
       futureMeasurementPlan,
+      wearerMeasurementRuntimes.length,
+      wearerOrderMeasurementCompletion,
       activeFutureDesignSource,
       futureAdditionalConstructionReconciliation.state,
       futureCatalogInspection,
@@ -8656,6 +8664,11 @@ export default function DesignStudioView({
         <DormantFutureMeasurementStep
           plan={futureMeasurementPlan}
           state={reconciledFutureMeasurementState}
+          orderMeasurementsComplete={
+            wearerMeasurementRuntimes.length > 0
+              ? wearerMeasurementsComplete
+              : undefined
+          }
           physicalGarments={futureMeasurementPhysicalGarments}
           hydrationInvalid={futureMeasurementHydrationInvalid}
           onChange={(state) => {

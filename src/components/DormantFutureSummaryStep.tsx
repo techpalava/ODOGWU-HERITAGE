@@ -576,9 +576,13 @@ export const DormantFutureSummaryStep = ({
                     Method: {wearer.routeLabel}. Status: {wearer.status}.
                   </p>
                   <ul className="mt-2 space-y-1 text-sm text-heritage-ink/75">
-                    {wearer.garmentKeys.map((garmentKey) => (
-                      <li key={garmentKey}>{garmentKey}</li>
-                    ))}
+                    {wearer.garmentKeys.map((garmentKey) => {
+                      const garmentLabel = summary.garmentSummary.find(
+                        (garment) => garment.garmentKey === garmentKey,
+                      )?.label;
+                      if (!garmentLabel) return null;
+                      return <li key={garmentKey}>{garmentLabel}</li>;
+                    })}
                     {wearer.shared.map((measurement) => (
                       <li key={measurement.requirementKey}>
                         {measurement.label}: {measurement.formattedValue}
@@ -612,18 +616,19 @@ export const DormantFutureSummaryStep = ({
               ? summary.measurementSummary.wearerGroups[0].garmentKeys.map(
                   (garmentKey) => {
                     const garmentLabel =
+                      summary.garmentSummary.find(
+                        (garment) => garment.garmentKey === garmentKey,
+                      )?.label ||
                       summary.measurementSummary.wearerGroups?.[0].byGarment.find(
                         (garment) => garment.garmentKey === garmentKey,
-                      )?.garmentLabel || garmentKey;
+                      )?.garmentLabel;
+                    if (!garmentLabel) return null;
                     return (
                       <p
                         key={garmentKey}
                         className="text-sm text-heritage-ink/75"
                       >
                         {garmentLabel}
-                        <span className="ml-2 font-mono text-[10px] text-heritage-ink/45">
-                          {garmentKey}
-                        </span>
                       </p>
                     );
                   },

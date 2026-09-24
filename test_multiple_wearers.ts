@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { MAX_CONFIGURED_ACTIVE_WEARERS, resolveActiveWearerCap } from "./src/config/WearerPolicy";
 import type { CustomDetailSelectionGroup, FutureMeasurementStateV1, GarmentTypeStepSelection } from "./src/types";
-import { createEmptyFutureMeasurementState, setFutureMeasurementRoute } from "./src/utils/measurementBlueprint";
+import {
+  createEmptyFutureMeasurementState,
+  reconcileFutureMeasurementState,
+  setFutureMeasurementInput,
+  setFutureMeasurementRoute,
+} from "./src/utils/measurementBlueprint";
+import { projectDesignStudioLiveOrderSummary } from "./src/utils/designStudioLiveOrderSummary";
 import {
   addWearer,
   applyWearerMeasurementUpdate,
@@ -18,7 +24,12 @@ import {
   removeGarmentFromWearerOrder,
   renameWearer,
   reorderWearers,
+  summarizeWearerOrderMeasurementCompletion,
+  updateWearerMeasurement,
 } from "./src/utils/wearerOrder";
+import { createElement } from "react";
+import { act, create } from "react-test-renderer";
+import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
 
 const construction = (
   garmentType: keyof GarmentTypeStepSelection["constructionByGarment"],
@@ -360,5 +371,211 @@ const committedFromEmpty = applyWearerMeasurementUpdate(
 );
 assert.equal(committedFromEmpty.wearers[0]?.wearerId, stableId);
 assert.equal(committedFromEmpty.assignmentByGarmentKey["base:shirt"], stableId);
+
+const shirtPhysical = [
+  { garmentKey: "base:shirt", garmentType: "shirt" as const },
+  { garmentKey: "additional:shirt:1", garmentType: "shirt" as const },
+];
+const shirtKeys = shirtPhysical.map((garment) => garment.garmentKey);
+const shirtSelection: GarmentTypeStepSelection = {
+  garmentTypes: ["shirt"],
+  demographic: "male",
+  constructionByGarment: {
+    shirt: construction("shirt", "shirt_std_short", "shirt_construction"),
+  },
+};
+const additionalShirtConstructions = {
+  schemaVersion: 1 as const,
+  byGarmentKey: {
+    "additional:shirt:1": construction("shirt", "shirt_std_short", "shirt_construction"),
+  },
+};
+const fillRuntime = (
+  runtime: ReturnType<typeof planWearerOrderMeasurements>[number],
+) => {
+  let next = runtime.measurement;
+  for (const requirement of runtime.plan.requirements.filter((item) => item.directInput)) {
+    next = setFutureMeasurementInput({
+      state: next,
+      requirement,
+      displayValue: 40,
+    });
+  }
+  return reconcileFutureMeasurementState({ state: next, plan: runtime.plan });
+};
+const chiefAdaBase = reconcileWearerOrder({
+  order: {
+    schemaVersion: 2,
+    wearers: [
+      createWearerProfile({
+        wearerId: "wearer-chief",
+        displayName: "Chief",
+        fitContext: "male",
+        presentationOrder: 0,
+        measurement: createEmptyFutureMeasurementState("low_risk"),
+      }),
+      createWearerProfile({
+        wearerId: "wearer-ada",
+        displayName: "Ada",
+        fitContext: "male",
+        presentationOrder: 1,
+        measurement: createEmptyFutureMeasurementState("low_risk"),
+      }),
+    ],
+    assignmentByGarmentKey: {
+      "base:shirt": "wearer-chief",
+      "additional:shirt:1": "wearer-ada",
+    },
+  },
+  garmentKeys: shirtKeys,
+  compatibilityDemographic: "male",
+  garments: shirtPhysical,
+  garmentTypeSelection: shirtSelection,
+});
+const completionFor = (
+  source: typeof chiefAdaBase,
+  activeWearerId: string,
+  activeMeasurement: FutureMeasurementStateV1,
+) => {
+  const overlaid = updateWearerMeasurement(source, activeWearerId, activeMeasurement);
+  const runtimes = planWearerOrderMeasurements({
+    order: overlaid,
+    garmentTypeSelection: shirtSelection,
+    physicalGarments: shirtPhysical,
+    additionalGarmentConstructions: additionalShirtConstructions,
+  });
+  return {
+    overlaid,
+    runtimes,
+    completion: summarizeWearerOrderMeasurementCompletion({
+      order: overlaid,
+      runtimes,
+      physicalGarmentKeys: shirtKeys,
+    }),
+  };
+};
+const seeded = planWearerOrderMeasurements({
+  order: chiefAdaBase,
+  garmentTypeSelection: shirtSelection,
+  physicalGarments: shirtPhysical,
+  additionalGarmentConstructions: additionalShirtConstructions,
+});
+const chiefSeed = seeded.find((runtime) => runtime.wearerId === "wearer-chief");
+const adaSeed = seeded.find((runtime) => runtime.wearerId === "wearer-ada");
+if (!chiefSeed || !adaSeed) throw new Error("chief and ada runtimes");
+const chiefComplete = fillRuntime(chiefSeed);
+const adaIncomplete = adaSeed.measurement;
+const partialOrder = updateWearerMeasurement(chiefAdaBase, "wearer-chief", chiefComplete);
+const partial = completionFor(partialOrder, "wearer-chief", chiefComplete);
+assert.equal(partial.completion.complete, false);
+assert.equal(
+  partial.runtimes.find((runtime) => runtime.wearerId === "wearer-ada")?.measurement.calculationStatus,
+  "incomplete",
+);
+const selectChief = completionFor(partialOrder, "wearer-chief", chiefComplete);
+const selectAda = completionFor(partialOrder, "wearer-ada", adaIncomplete);
+assert.equal(selectChief.completion.complete, false);
+assert.equal(selectAda.completion.complete, false);
+assert.equal(selectChief.completion.complete, selectAda.completion.complete);
+const adaFilled = fillRuntime(
+  selectAda.runtimes.find((runtime) => runtime.wearerId === "wearer-ada")!,
+);
+const bothCompleteOrder = updateWearerMeasurement(partialOrder, "wearer-ada", adaFilled);
+const bothComplete = completionFor(bothCompleteOrder, "wearer-ada", adaFilled);
+assert.equal(bothComplete.completion.complete, true);
+const switchChief = completionFor(bothCompleteOrder, "wearer-chief", chiefComplete);
+const switchAda = completionFor(bothCompleteOrder, "wearer-ada", adaFilled);
+const switchChiefAgain = completionFor(bothCompleteOrder, "wearer-chief", chiefComplete);
+assert.equal(switchChief.completion.complete, true);
+assert.equal(switchAda.completion.complete, true);
+assert.equal(switchChiefAgain.completion.complete, true);
+const adaAgain = {
+  ...adaFilled,
+  entered: { shared: {}, byGarmentKey: {} },
+  enteredByRoute: {
+    ...adaFilled.enteredByRoute,
+    low_risk: { shared: {}, byGarmentKey: {} },
+  },
+};
+const incompleteAgainFromChief = completionFor(bothCompleteOrder, "wearer-chief", chiefComplete);
+const droppedAda = updateWearerMeasurement(bothCompleteOrder, "wearer-ada", adaAgain);
+assert.equal(completionFor(droppedAda, "wearer-chief", chiefComplete).completion.complete, false);
+assert.equal(completionFor(droppedAda, "wearer-ada", adaAgain).completion.complete, false);
+assert.equal(incompleteAgainFromChief.completion.complete, true);
+const unassigned = {
+  ...bothCompleteOrder,
+  assignmentByGarmentKey: { "base:shirt": "wearer-chief" },
+};
+assert.equal(completionFor(unassigned, "wearer-chief", chiefComplete).completion.complete, false);
+assert.equal(completionFor(unassigned, "wearer-ada", adaFilled).completion.complete, false);
+
+const measurementLine = (complete: boolean) => {
+  const summary = {
+    garmentSummary: [],
+    fabricSummary: [],
+    designStyleSummary: null,
+    designStyleOccurrences: [],
+    customDetailsSummary: [],
+    aiTryOnSummary: { status: "skipped", label: "Skipped" },
+    measurementSummary: {
+      route: null,
+      routeLabel: "2 people",
+      unit: "cm" as const,
+      shared: [],
+      byGarment: [],
+      wearerGroups: [],
+    },
+    pricingSummary: {
+      status: "pending" as const,
+      garmentConstructionSubtotal: null,
+      customDetailsExactSubtotal: null,
+      selectedDesignPrice: null,
+    },
+    status: "incomplete" as const,
+    blockers: [],
+  };
+  const view = projectDesignStudioLiveOrderSummary({
+    summary: summary as never,
+    shippingResolution: null,
+    candidatePricing: null,
+    fabricAllocationState: { schemaVersion: 1, fabricAllocations: [], pendingFabricGarment: null } as never,
+    measurementState: chiefComplete,
+    measurementPlan: chiefSeed.plan,
+    orderMeasurementCompletion: selectChief.completion.complete === complete
+      ? selectChief.completion
+      : { complete, remainingRequiredCount: selectChief.completion.remainingRequiredCount },
+    designSource: null,
+  });
+  return view.sections.find((section) => section.id === "measurements")?.lines[0]?.label || "";
+};
+assert.equal(measurementLine(false).includes("Complete"), false);
+assert.match(measurementLine(false), /required measurements remaining|Incomplete/);
+assert.match(measurementLine(true), /2 people — Complete/);
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+let continueRenderer!: ReturnType<typeof create>;
+act(() => {
+  continueRenderer = create(createElement(DormantFutureMeasurementStep, {
+    plan: chiefSeed.plan,
+    state: chiefComplete,
+    orderMeasurementsComplete: selectChief.completion.complete,
+    onChange: () => undefined,
+    onRouteChange: () => undefined,
+    onBack: () => undefined,
+    onContinue: () => undefined,
+  }));
+});
+const buttonText = (node: { props?: { children?: unknown } }): string => {
+  const children = node.props?.children;
+  if (typeof children === "string") return children;
+  if (Array.isArray(children)) {
+    return children.map((child) => typeof child === "string" ? child : "").join("");
+  }
+  return "";
+};
+const continueButton = continueRenderer.root.findAllByType("button").find((node) =>
+  buttonText(node).includes("Continue to Summary"),
+);
+assert.equal(continueButton?.props.disabled, !selectChief.completion.complete);
+assert.equal(selectChief.completion.complete, false);
 
 console.log("multiple wearers domain tests passed");

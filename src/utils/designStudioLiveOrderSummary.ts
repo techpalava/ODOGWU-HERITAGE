@@ -12,6 +12,7 @@ import type { FutureShippingStageResolution } from "./designStudioFutureShipping
 import { getStep8OrderSummaryRows } from "./designStudioFutureShipping";
 import type { FutureDesignStudioSummary } from "./designStudioFutureSummary";
 import type { FutureOrderCandidatePricingV1 } from "./futureOrderCandidate";
+import type { WearerOrderMeasurementCompletion } from "./wearerOrder";
 import {
   countRemainingCustomerRequiredMeasurementUnits,
   isSelectedMeasurementMethod,
@@ -333,7 +334,29 @@ const measurementStatusLine = (
   summary: FutureDesignStudioSummary,
   measurementState: FutureMeasurementStateV1,
   measurementPlan: MeasurementRequirementPlan,
+  orderMeasurementCompletion?: WearerOrderMeasurementCompletion | null,
 ): LiveOrderSummaryLine => {
+  const routeLabel = summary.measurementSummary.routeLabel;
+  if (orderMeasurementCompletion) {
+    if (orderMeasurementCompletion.complete) {
+      return {
+        id: "measurements-complete",
+        label: `${routeLabel} — Complete`,
+        detail: null,
+        amountLabel: null,
+      };
+    }
+    const remaining = orderMeasurementCompletion.remainingRequiredCount;
+    return {
+      id: "measurements-pending",
+      label:
+        remaining > 0
+          ? `${routeLabel} — ${remaining} required measurements remaining`
+          : `${routeLabel} — Incomplete`,
+      detail: null,
+      amountLabel: null,
+    };
+  }
   const route = measurementState.route;
   if (!isSelectedMeasurementMethod(route)) {
     return {
@@ -343,7 +366,6 @@ const measurementStatusLine = (
       amountLabel: null,
     };
   }
-  const routeLabel = summary.measurementSummary.routeLabel;
   if (measurementState.calculationStatus === "complete") {
     return {
       id: "measurements-complete",
@@ -529,6 +551,7 @@ export const projectDesignStudioLiveOrderSummary = ({
   fabricAllocationState: _fabricAllocationState,
   measurementState,
   measurementPlan,
+  orderMeasurementCompletion = null,
   designSource: _designSource,
   additionalConstructionState: _additionalConstructionState = null,
   catalogInspection: _catalogInspection = null,
@@ -540,6 +563,7 @@ export const projectDesignStudioLiveOrderSummary = ({
   fabricAllocationState: FabricAllocationState;
   measurementState: FutureMeasurementStateV1;
   measurementPlan: MeasurementRequirementPlan;
+  orderMeasurementCompletion?: WearerOrderMeasurementCompletion | null;
   designSource: DesignSource | null;
   additionalConstructionState?: AdditionalGarmentConstructionStateV1 | null;
   catalogInspection?: CustomDetailCatalogInspection | null;
@@ -661,6 +685,7 @@ export const projectDesignStudioLiveOrderSummary = ({
     summary,
     measurementState,
     measurementPlan,
+    orderMeasurementCompletion,
   );
   const selectedPersonalizedAdditions = personalizedAdditionLines(summary);
   const constructionSubtotalCents =

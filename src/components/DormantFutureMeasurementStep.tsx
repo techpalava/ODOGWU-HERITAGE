@@ -49,6 +49,7 @@ interface DormantFutureMeasurementStepProps {
   state: FutureMeasurementStateV1;
   physicalGarments?: readonly MeasurementPhysicalGarment[];
   hydrationInvalid?: boolean;
+  orderMeasurementsComplete?: boolean;
   onChange: (state: FutureMeasurementStateV1) => void;
   onRouteChange: (route: MeasurementMethodId) => void;
   onBack: () => void;
@@ -477,6 +478,7 @@ export const DormantFutureMeasurementStep = ({
   state,
   physicalGarments = [],
   hydrationInvalid = false,
+  orderMeasurementsComplete,
   onChange,
   onRouteChange,
   onBack,
@@ -558,7 +560,10 @@ export const DormantFutureMeasurementStep = ({
     resolvedState.calculationStatus,
   );
   const canContinueToSummary =
-    !hydrationInvalid && isFutureSummaryUnlockedByMeasurements(resolvedState);
+    !hydrationInvalid &&
+    (orderMeasurementsComplete !== undefined
+      ? orderMeasurementsComplete
+      : isFutureSummaryUnlockedByMeasurements(resolvedState));
 
   return (
     <section

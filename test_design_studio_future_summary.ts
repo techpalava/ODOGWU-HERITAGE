@@ -32,6 +32,8 @@ import {
 } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileFutureDesignStyleSelection } from "./src/utils/designStudioFutureDesignStyle";
 import { projectDesignStudioLiveOrderSummary } from "./src/utils/designStudioLiveOrderSummary";
+import { projectAuthoritativeOrderMeasurements } from "./src/utils/futureOrderCandidate";
+import { isWearerOrderStateV2 } from "./src/utils/wearerOrder";
 import {
   formatCompactWearerRouteLabel,
   projectFutureDesignStudioSummary,
@@ -1104,6 +1106,104 @@ assert.ok(repeatedSummaryMarkup.includes(">Standard Shirt</h4>"));
 assert.ok(repeatedSummaryMarkup.includes(">Standard Shirt 2</h4>"));
 assert.equal(repeatedSummaryMarkup.includes(">Standard Shirt 1</h4>"), false);
 assert.ok(repeatedSummaryMarkup.includes("Standard Shirt, Standard Shirt 2"));
+const chiefAdaRuntimes = [
+  {
+    wearerId: "wearer-chief",
+    displayName: "Chief",
+    fitContext: "male" as const,
+    garmentKeys: ["base:shirt"],
+    plan: exactInput.measurementPlan,
+    measurement: exactInput.measurementState,
+  },
+  {
+    wearerId: "wearer-ada",
+    displayName: "Ada",
+    fitContext: "female" as const,
+    garmentKeys: ["additional:shirt:1"],
+    plan: exactInput.measurementPlan,
+    measurement: exactInput.measurementState,
+  },
+];
+const chiefAdaSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  fabricAllocationState: repeatedShirtFabricState,
+  additionalGarmentConstructionState: repeatedShirtConstruction.state,
+  wearerRuntimes: chiefAdaRuntimes,
+});
+const chiefAdaAgain = projectFutureDesignStudioSummary({
+  ...exactInput,
+  fabricAllocationState: repeatedShirtFabricState,
+  additionalGarmentConstructionState: repeatedShirtConstruction.state,
+  wearerRuntimes: chiefAdaRuntimes,
+});
+assert.equal(
+  chiefAdaSummary.garmentSummary.find((row) => row.garmentKey === "base:shirt")?.demographic,
+  "male",
+);
+assert.equal(
+  chiefAdaSummary.garmentSummary.find((row) => row.garmentKey === "additional:shirt:1")?.demographic,
+  "female",
+);
+assert.deepEqual(
+  chiefAdaAgain.garmentSummary.map((row) => [row.garmentKey, row.demographic, row.label]),
+  chiefAdaSummary.garmentSummary.map((row) => [row.garmentKey, row.demographic, row.label]),
+);
+assert.deepEqual(
+  chiefAdaSummary.garmentSummary.map((row) => row.garmentKey),
+  ["base:shirt", "additional:shirt:1"],
+);
+assert.equal(chiefAdaRuntimes[0].fitContext, "male");
+assert.equal(chiefAdaRuntimes[1].fitContext, "female");
+const projectedWearers = projectAuthoritativeOrderMeasurements({
+  wearerRuntimes: chiefAdaRuntimes,
+  measurementState: exactInput.measurementState,
+  measurementPlan: exactInput.measurementPlan,
+});
+assert.equal(isWearerOrderStateV2(projectedWearers), true);
+if (isWearerOrderStateV2(projectedWearers)) {
+  assert.equal(
+    projectedWearers.wearers.find((wearer) => wearer.wearerId === "wearer-ada")?.fitContext,
+    "female",
+  );
+  assert.equal(projectedWearers.assignmentByGarmentKey["additional:shirt:1"], "wearer-ada");
+  assert.equal(projectedWearers.assignmentByGarmentKey["base:shirt"], "wearer-chief");
+}
+const chiefAdaMarkup = renderToStaticMarkup(
+  createElement(DormantFutureSummaryStep, {
+    summary: chiefAdaSummary,
+    onBack: () => {},
+    onEditGarments: () => {},
+    onEditFabrics: () => {},
+    onEditDesignStyle: () => {},
+    onEditCustomDetails: () => {},
+    onEditAiTryOn: () => {},
+    onEditMeasurements: () => {},
+    canContinueToShipping: false,
+    onContinueToShipping: () => {},
+  }),
+);
+const standardShirtCard = chiefAdaMarkup.split(">Standard Shirt 2</h4>")[0] || "";
+const standardShirt2Card = chiefAdaMarkup.split(">Standard Shirt 2</h4>")[1] || "";
+assert.match(standardShirtCard, />male \|/);
+assert.match(standardShirt2Card, />female \|/);
+assert.equal(chiefAdaMarkup.includes(">base:shirt<"), false);
+assert.equal(chiefAdaMarkup.includes(">additional:shirt:1<"), false);
+assert.ok(chiefAdaMarkup.includes("Standard Shirt"));
+assert.ok(chiefAdaMarkup.includes("Standard Shirt 2"));
+const aggregateSidebar = projectDesignStudioLiveOrderSummary({
+  summary: chiefAdaSummary,
+  shippingResolution: null,
+  candidatePricing: null,
+  fabricAllocationState: repeatedShirtFabricState,
+  measurementState: exactInput.measurementState,
+  measurementPlan: exactInput.measurementPlan,
+  orderMeasurementCompletion: { complete: false, remainingRequiredCount: 14 },
+  designSource: null,
+});
+const aggregateLine = aggregateSidebar.sections.find((section) => section.id === "measurements")
+  ?.lines[0]?.label || "";
+assert.equal(aggregateLine.includes("Complete"), false);
+assert.match(aggregateLine, /14 required measurements remaining/);
 assert.deepEqual(repeatedShirtConstruction.unresolvedGarmentKeys, []);
 const repeatedShirtReconciliation = reconcileGarmentScopedCustomDetails({
   garmentTypeSelection: exactInput.garmentTypeSelection,
@@ -2105,7 +2205,8 @@ const amakaMarkup = renderToStaticMarkup(
   }),
 );
 assert.match(amakaMarkup, /Amaka/);
-assert.match(amakaMarkup, /base:dress/);
+assert.equal(amakaMarkup.includes(">base:dress<"), false);
+assert.match(amakaMarkup, /Standard Dress/);
 const youSummary = projectFutureDesignStudioSummary({
   ...exactInput,
   wearerRuntimes: [

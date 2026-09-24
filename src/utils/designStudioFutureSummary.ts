@@ -339,6 +339,7 @@ const mapGarments = ({
   additionalGarmentConstructionState,
   catalogInspection,
   fabricAllocationState,
+  wearerRuntimes,
   blockers,
 }: Pick<
   FutureDesignStudioSummaryInput,
@@ -349,6 +350,7 @@ const mapGarments = ({
   | "additionalGarmentConstructionState"
   | "catalogInspection"
   | "fabricAllocationState"
+  | "wearerRuntimes"
 > & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureSummaryGarment[] => {
   const occurrences = projectAuthoritativePhysicalOccurrences({
     sourceKind: designSourceKind,
@@ -418,7 +420,12 @@ const mapGarments = ({
         occurrenceLabels.get(garmentKey)?.conciseLabel ||
         getStep1GarmentDisplayLabel(garmentType),
       role: allocationAssignment?.sourceRole || sourceRole,
-      demographic: garmentTypeSelection.demographic,
+      demographic:
+        wearerRuntimes && wearerRuntimes.length > 0
+          ? wearerRuntimes.find((runtime) =>
+              runtime.garmentKeys.includes(garmentKey),
+            )?.fitContext ?? null
+          : garmentTypeSelection.demographic,
       fabricUnits:
         allocationAssignment?.fabricUnits || fabricUnits,
       physicalComponents:
@@ -979,6 +986,7 @@ export const projectFutureDesignStudioSummary = (
     additionalGarmentConstructionState: input.additionalGarmentConstructionState,
     catalogInspection: input.catalogInspection,
     fabricAllocationState: input.fabricAllocationState,
+    wearerRuntimes: input.wearerRuntimes,
     blockers,
   });
   const fabricSummary = mapFabrics({
