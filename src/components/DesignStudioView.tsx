@@ -8656,6 +8656,7 @@ export default function DesignStudioView({
         <DormantFutureMeasurementStep
           plan={futureMeasurementPlan}
           state={reconciledFutureMeasurementState}
+          physicalGarments={futureMeasurementPhysicalGarments}
           hydrationInvalid={futureMeasurementHydrationInvalid}
           onChange={(state) => {
             if (futureMeasurementHydrationInvalid) return;

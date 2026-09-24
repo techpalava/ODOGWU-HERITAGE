@@ -2207,6 +2207,34 @@ assert.equal(
   ),
   13500,
 );
+assert.equal(
+  candidateGarments.find((garment) => garment.garmentKey === "base:shirt")?.label,
+  "Standard Shirt",
+);
+assert.equal(
+  candidateGarments.find((garment) => garment.garmentKey === "additional:shirt:1")
+    ?.label,
+  "Standard Shirt 2",
+);
+assert.equal(
+  repeatedShirtFabricState.fabricAllocations[0]?.garmentAssignments
+    .map(
+      (assignment) =>
+        candidateGarments.find((garment) => garment.garmentKey === assignment.garmentKey)
+          ?.label,
+    )
+    .join(", "),
+  "Standard Shirt, Standard Shirt 2",
+);
+assert.equal(
+  candidateGarments.find((garment) => garment.garmentKey === "base:shirt")?.garmentKey,
+  "base:shirt",
+);
+assert.equal(
+  candidateGarments.find((garment) => garment.garmentKey === "additional:shirt:1")
+    ?.garmentKey,
+  "additional:shirt:1",
+);
 
 const baseShirtOnlyFabric: FabricAllocationState = {
   fabricAllocations: [

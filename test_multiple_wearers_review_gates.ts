@@ -636,6 +636,15 @@ assert.equal(historicalHeader.kind, "single");
 if (historicalHeader.kind === "single") assert.equal(historicalHeader.wearerLabel, null);
 const historicalTailoring = projectTailoringMeasurementReadout(completeShirt);
 assert.equal(historicalTailoring?.[0]?.displayName, "You");
+assert.equal(
+  historicalTailoring?.[0]?.garments.find((garment) => garment.garmentKey === "base:shirt")
+    ?.label,
+  "Standard Shirt",
+);
+assert.equal(
+  historicalTailoring?.[0]?.garments.some((garment) => garment.label === "Standard Shirt 1"),
+  false,
+);
 assert.equal(isFutureMeasurementStateV1(completeShirt), true);
 
 const header = getFuturePaymentReviewMeasurementHeader(projected);
@@ -671,6 +680,50 @@ assert.deepEqual(
 assert.equal(tailoring?.[1]?.displayName, "Friend");
 assert.equal(tailoring?.[1]?.garments[0]?.garmentKey, "base:dress");
 assert.equal(tailoring?.[1]?.garments[0]?.label, "Standard Dress");
+assert.equal(
+  tailoring?.[0]?.garments.find((garment) => garment.garmentKey === "base:shirt")?.label,
+  "Standard Shirt",
+);
+assert.equal(
+  tailoring?.[0]?.garments.find((garment) => garment.garmentKey === "base:trouser")?.label,
+  "Trouser",
+);
+
+const chief = createWearerProfile({
+  wearerId: "wearer-chief",
+  displayName: "Chief",
+  fitContext: "male",
+  presentationOrder: 0,
+});
+const ada = createWearerProfile({
+  wearerId: "wearer-ada",
+  displayName: "Ada",
+  fitContext: "female",
+  presentationOrder: 1,
+});
+const chiefAdaOrder = {
+  schemaVersion: 2 as const,
+  wearers: [chief, ada],
+  assignmentByGarmentKey: {
+    "base:shirt": chief.wearerId,
+    "additional:shirt:1": ada.wearerId,
+  },
+};
+const chiefAdaTailoring = projectTailoringMeasurementReadout(chiefAdaOrder);
+assert.equal(chiefAdaTailoring?.[0]?.displayName, "Chief");
+assert.equal(chiefAdaTailoring?.[0]?.wearerId, chief.wearerId);
+assert.deepEqual(chiefAdaTailoring?.[0]?.garments.map((garment) => garment.garmentKey), [
+  "base:shirt",
+]);
+assert.equal(chiefAdaTailoring?.[0]?.garments[0]?.label, "Standard Shirt");
+assert.equal(chiefAdaTailoring?.[1]?.displayName, "Ada");
+assert.equal(chiefAdaTailoring?.[1]?.wearerId, ada.wearerId);
+assert.deepEqual(chiefAdaTailoring?.[1]?.garments.map((garment) => garment.garmentKey), [
+  "additional:shirt:1",
+]);
+assert.equal(chiefAdaTailoring?.[1]?.garments[0]?.label, "Standard Shirt 2");
+assert.equal(chiefAdaOrder.assignmentByGarmentKey["base:shirt"], chief.wearerId);
+assert.equal(chiefAdaOrder.assignmentByGarmentKey["additional:shirt:1"], ada.wearerId);
 
 assert.equal(
   shouldReplacePersistedMeasurement({

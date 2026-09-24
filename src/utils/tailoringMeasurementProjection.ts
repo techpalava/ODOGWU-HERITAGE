@@ -1,5 +1,5 @@
 import type { FabricGarmentType, FutureMeasurementStateV1 } from "../types";
-import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing";
+import { projectOccurrenceDisplayLabels } from "./occurrenceDisplayLabel";
 import {
   isFutureMeasurementStateV1,
   MEASUREMENT_METHOD_LABELS,
@@ -33,9 +33,31 @@ const garmentTypeFromKey = (garmentKey: string): FabricGarmentType | null => {
   return token as FabricGarmentType;
 };
 
-const labelForGarment = (garmentKey: string): string => {
-  const garmentType = garmentTypeFromKey(garmentKey);
-  return garmentType ? getStep1GarmentDisplayLabel(garmentType) : garmentKey;
+const orderKeysForOccurrenceLabels = (garmentKeys: readonly string[]): string[] =>
+  [...new Set(garmentKeys)].sort((left, right) => {
+    const leftAdditional = left.startsWith("additional:");
+    const rightAdditional = right.startsWith("additional:");
+    if (leftAdditional !== rightAdditional) return leftAdditional ? 1 : -1;
+    return left.localeCompare(right);
+  });
+
+/** Concise labels for the full physical key set. Ownership subsets reuse this map. */
+const conciseLabelsForGarmentKeys = (
+  garmentKeys: readonly string[],
+): ReadonlyMap<string, string> => {
+  const ordered = orderKeysForOccurrenceLabels(garmentKeys);
+  const labels = projectOccurrenceDisplayLabels(
+    ordered.flatMap((garmentKey) => {
+      const garmentType = garmentTypeFromKey(garmentKey);
+      return garmentType ? [{ garmentKey, garmentType }] : [];
+    }),
+  );
+  return new Map(
+    garmentKeys.map((garmentKey) => [
+      garmentKey,
+      labels.get(garmentKey)?.conciseLabel || garmentKey,
+    ]),
+  );
 };
 
 const valuesFromBag = (
@@ -56,11 +78,13 @@ const readoutFromBag = ({
   displayName,
   measurement,
   garmentKeys,
+  conciseLabels,
 }: {
   wearerId: string;
   displayName: string;
   measurement: FutureMeasurementStateV1;
   garmentKeys: readonly string[];
+  conciseLabels: ReadonlyMap<string, string>;
 }): TailoringWearerReadout => ({
   wearerId,
   displayName,
@@ -68,7 +92,7 @@ const readoutFromBag = ({
   shared: valuesFromBag(measurement.entered.shared),
   garments: garmentKeys.map((garmentKey) => ({
     garmentKey,
-    label: labelForGarment(garmentKey),
+    label: conciseLabels.get(garmentKey) || garmentKey,
     values: valuesFromBag(measurement.entered.byGarmentKey[garmentKey] || {}),
   })),
 });
@@ -78,6 +102,9 @@ export const projectTailoringMeasurementReadout = (
   measurements: unknown,
 ): readonly TailoringWearerReadout[] | null => {
   if (isWearerOrderStateV2(measurements)) {
+    const conciseLabels = conciseLabelsForGarmentKeys(
+      Object.keys(measurements.assignmentByGarmentKey),
+    );
     return [...measurements.wearers]
       .sort((left, right) => left.presentationOrder - right.presentationOrder)
       .map((wearer) =>
@@ -89,6 +116,7 @@ export const projectTailoringMeasurementReadout = (
             .filter(([, wearerId]) => wearerId === wearer.wearerId)
             .map(([garmentKey]) => garmentKey)
             .sort((left, right) => left.localeCompare(right)),
+          conciseLabels,
         }),
       );
   }
@@ -105,6 +133,7 @@ export const projectTailoringMeasurementReadout = (
       displayName: "You",
       measurement: measurements,
       garmentKeys,
+      conciseLabels: conciseLabelsForGarmentKeys(garmentKeys),
     }),
   ];
 };

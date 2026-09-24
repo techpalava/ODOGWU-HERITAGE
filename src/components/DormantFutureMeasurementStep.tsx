@@ -2,10 +2,13 @@ import { LockKeyhole, Ruler, ShieldAlert } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import { DRESS_CONDITIONAL_MEASUREMENT_IDS } from "../config/MeasurementBlueprintConfig";
 import type {
+  FabricGarmentType,
   FutureMeasurementStateV1,
   MeasurementMethodId,
   MeasurementRiskRoute,
 } from "../types";
+import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
+import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
 import {
   collectRequiredAlternativeGroups,
   countRemainingCustomerRequiredMeasurementUnits,
@@ -36,6 +39,7 @@ import {
   roundMeasurementDisplayValue,
   setFutureMeasurementInput,
   setFutureMeasurementUnit,
+  type MeasurementPhysicalGarment,
   type MeasurementRequirementPlan,
   type PlannedMeasurementRequirement,
 } from "../utils/measurementBlueprint";
@@ -43,6 +47,7 @@ import {
 interface DormantFutureMeasurementStepProps {
   plan: MeasurementRequirementPlan;
   state: FutureMeasurementStateV1;
+  physicalGarments?: readonly MeasurementPhysicalGarment[];
   hydrationInvalid?: boolean;
   onChange: (state: FutureMeasurementStateV1) => void;
   onRouteChange: (route: MeasurementMethodId) => void;
@@ -88,12 +93,23 @@ const DRESS_CONDITIONAL_MEASUREMENT_ID_SET = new Set<string>(
 
 type MeasurementSectionKind = "required" | "calculated" | "optional";
 
-const formatGarmentLabel = (garmentType?: string, garmentKey?: string): string => {
-  const base = (garmentType || "Garment")
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-  const occurrence = garmentKey?.match(/:(\d+)$/)?.[1];
-  return occurrence ? `${base} ${occurrence}` : base;
+const fallbackGarmentLabel = (garmentType?: string): string => {
+  if (!garmentType) return "Garment";
+  if (garmentType === "other") return getStep1GarmentDisplayLabel(garmentType);
+  const known = garmentType as FabricGarmentType;
+  return getStep1GarmentDisplayLabel(known) || garmentType;
+};
+
+const formatGarmentLabel = (
+  labels: ReadonlyMap<string, { conciseLabel: string }>,
+  garmentType?: string,
+  garmentKey?: string,
+): string => {
+  if (garmentKey) {
+    const concise = labels.get(garmentKey)?.conciseLabel;
+    if (concise) return concise;
+  }
+  return fallbackGarmentLabel(garmentType);
 };
 
 const getBlockerMessage = (
@@ -318,6 +334,7 @@ const MeasurementSection = ({
   onChange,
   section,
   sampleMode,
+  occurrenceLabels,
 }: {
   title: string;
   description: string;
@@ -326,6 +343,7 @@ const MeasurementSection = ({
   onChange: (state: FutureMeasurementStateV1) => void;
   section: MeasurementSectionKind;
   sampleMode: boolean;
+  occurrenceLabels: ReadonlyMap<string, { conciseLabel: string }>;
 }) => {
   const sharedRequirements = requirements.filter(
     (requirement) =>
@@ -419,7 +437,7 @@ const MeasurementSection = ({
         <div key={garmentKey} className="mt-5">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <h4 className="font-serif text-base font-bold text-heritage-green">
-              {formatGarmentLabel(garmentRequirements[0]?.garmentType, garmentKey)} Measurements
+              {formatGarmentLabel(occurrenceLabels, garmentRequirements[0]?.garmentType, garmentKey)} Measurements
             </h4>
             <span className="rounded-full border border-heritage-gold/25 bg-heritage-cream/35 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
               Garment specific
@@ -457,12 +475,14 @@ const MeasurementSection = ({
 export const DormantFutureMeasurementStep = ({
   plan,
   state,
+  physicalGarments = [],
   hydrationInvalid = false,
   onChange,
   onRouteChange,
   onBack,
   onContinue,
 }: DormantFutureMeasurementStepProps) => {
+  const occurrenceLabels = projectOccurrenceDisplayLabels(physicalGarments);
   const resolvedState = reconcileFutureMeasurementState({ state, plan });
   const selectedMethod = isSelectedMeasurementMethod(resolvedState.route)
     ? resolvedState.route
@@ -784,7 +804,7 @@ export const DormantFutureMeasurementStep = ({
                     key={diagnostic.garmentKey}
                     className="rounded-full border border-heritage-gold/25 bg-white px-2.5 py-1 text-xs font-semibold text-heritage-green"
                   >
-                    {formatGarmentLabel(diagnostic.garmentType, diagnostic.garmentKey)}
+                    {formatGarmentLabel(occurrenceLabels, diagnostic.garmentType, diagnostic.garmentKey)}
                   </li>
                 ))}
               </ul>
@@ -821,6 +841,7 @@ export const DormantFutureMeasurementStep = ({
         onChange={onChange}
         section="required"
         sampleMode={sampleSelected}
+        occurrenceLabels={occurrenceLabels}
       />
 
       {calculatedRequirements.length > 0 && !sampleSelected && (
@@ -832,6 +853,7 @@ export const DormantFutureMeasurementStep = ({
           onChange={onChange}
           section="calculated"
           sampleMode={false}
+          occurrenceLabels={occurrenceLabels}
         />
       )}
 
@@ -844,6 +866,7 @@ export const DormantFutureMeasurementStep = ({
           onChange={onChange}
           section="optional"
           sampleMode={sampleSelected}
+          occurrenceLabels={occurrenceLabels}
         />
       )}
         </>

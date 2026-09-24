@@ -510,6 +510,8 @@ assert.deepEqual(
   "projection must be deterministic",
 );
 assert.deepEqual(exactSummary.garmentSummary.map((row) => row.garmentType), ["shirt"]);
+assert.equal(exactSummary.garmentSummary[0]?.label, "Standard Shirt");
+assert.equal(exactSummary.garmentSummary[0]?.label.includes(" 1"), false);
 assert.equal(exactSummary.designStyleSummary, null);
 assert.deepEqual(exactSummary.designStyleOccurrences?.map((row) => row.name), ["Heritage Complete Look"]);
 assert.equal(exactSummary.customDetailsSummary[0].occurrences[0].priceCents, 0);
@@ -1068,6 +1070,40 @@ assert.deepEqual(
   ["additional:shirt:1", "base:shirt"],
   "summary must project every fabric assignment occurrence once",
 );
+assert.deepEqual(
+  repeatedShirtSummary.garmentSummary.map((row) => [row.garmentKey, row.label]),
+  [
+    ["base:shirt", "Standard Shirt"],
+    ["additional:shirt:1", "Standard Shirt 2"],
+  ],
+);
+assert.equal(
+  repeatedShirtSummary.garmentSummary.filter((row) => row.label === "Standard Shirt")
+    .length,
+  1,
+);
+const repeatedAssignedLabels = repeatedShirtSummary.fabricSummary.flatMap(
+  (allocation) => allocation.garments.map((garment) => garment.label),
+);
+assert.equal(repeatedAssignedLabels.join(", "), "Standard Shirt, Standard Shirt 2");
+const repeatedSummaryMarkup = renderToStaticMarkup(
+  createElement(DormantFutureSummaryStep, {
+    summary: repeatedShirtSummary,
+    onBack: () => {},
+    onEditGarments: () => {},
+    onEditFabrics: () => {},
+    onEditDesignStyle: () => {},
+    onEditCustomDetails: () => {},
+    onEditAiTryOn: () => {},
+    onEditMeasurements: () => {},
+    canContinueToShipping: false,
+    onContinueToShipping: () => {},
+  }),
+);
+assert.ok(repeatedSummaryMarkup.includes(">Standard Shirt</h4>"));
+assert.ok(repeatedSummaryMarkup.includes(">Standard Shirt 2</h4>"));
+assert.equal(repeatedSummaryMarkup.includes(">Standard Shirt 1</h4>"), false);
+assert.ok(repeatedSummaryMarkup.includes("Standard Shirt, Standard Shirt 2"));
 assert.deepEqual(repeatedShirtConstruction.unresolvedGarmentKeys, []);
 const repeatedShirtReconciliation = reconcileGarmentScopedCustomDetails({
   garmentTypeSelection: exactInput.garmentTypeSelection,
@@ -1652,6 +1688,10 @@ assert.deepEqual(
   "garments use canonical Step 1 ordering",
 );
 assert.equal(shirtKaftanSummary.garmentSummary.length, 2);
+assert.deepEqual(
+  shirtKaftanSummary.garmentSummary.map((row) => row.label),
+  ["Standard Shirt", "Long Shirt"],
+);
 assert.equal(shirtKaftanSummary.fabricSummary.length, 2);
 assert.deepEqual(
   shirtKaftanSummary.fabricSummary.map((row) => row.fabricCode),

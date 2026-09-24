@@ -7,10 +7,12 @@ import {
   NECK_DESIGN_SUBCATEGORY_ORDER,
   isCompanionCustomerAdditionalClothesCostGroup,
 } from "../config/GarmentDetailsConfig";
-import { formatCustomDetailsGarmentLabel, getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
+import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
 import type {
   CanonicalPhysicalGarmentType,
+  FabricGarmentType,
   CustomDetailOption,
   CustomDetailSelectionGroup,
   DecorativeFeature,
@@ -155,13 +157,31 @@ export type AdditionalGarmentCustomDetailsRequest = {
 
 const money = (amount: number): string => `${PRICING_CURRENCY_SYMBOL}${amount.toFixed(2)}`;
 
+const parentTypeFromKey = (garmentKey: string): FabricGarmentType | null => {
+  const additional = garmentKey.match(/^additional:([^:]+):\d+$/);
+  const repeatedBase = garmentKey.match(/^base:([^:]+):\d+$/);
+  const base = garmentKey.match(/^base:([^:]+)$/);
+  const token = additional?.[1] || repeatedBase?.[1] || base?.[1];
+  return token ? (token as FabricGarmentType) : null;
+};
+
+const exactParentLabel = (
+  labels: ReadonlyMap<string, { conciseLabel: string }>,
+  parentGarmentKey: string,
+  parentGarmentType: FabricGarmentType,
+): string =>
+  labels.get(parentGarmentKey)?.conciseLabel ||
+  getStep1GarmentDisplayLabel(parentGarmentType);
+
 const getSubjectLabel = (
   subject: GarmentScopedCustomDetailsReconciliationResult["subjects"][number],
+  labels: ReadonlyMap<string, { conciseLabel: string }>,
 ): string => {
+  if (subject.parentGarmentType === subject.garmentType) {
+    return exactParentLabel(labels, subject.parentGarmentKey, subject.parentGarmentType);
+  }
   const garmentLabel = getCustomDetailsGarmentLabel(subject.garmentType);
-  return subject.parentGarmentType === subject.garmentType
-    ? garmentLabel
-    : `${getCustomDetailsGarmentLabel(subject.parentGarmentType)} ${garmentLabel}`;
+  return `${getCustomDetailsGarmentLabel(subject.parentGarmentType)} ${garmentLabel}`;
 };
 
 const getSelection = (
@@ -234,18 +254,23 @@ const getSelectedConstructionId = (
 
 const getGarmentFirstLabel = (
   occurrence: FutureCustomDetailsCatalogueOccurrence,
+  labels: ReadonlyMap<string, { conciseLabel: string }>,
 ): string => {
-  const parentLabel = getStep1GarmentDisplayLabel(
-    occurrence.subject.parentGarmentType,
-  );
-  return occurrence.subject.parentGarmentType === occurrence.subject.garmentType
-    ? parentLabel
-    : `${parentLabel} - ${getStep1GarmentDisplayLabel(occurrence.subject.garmentType)}`;
+  if (occurrence.subject.parentGarmentType === occurrence.subject.garmentType) {
+    return exactParentLabel(
+      labels,
+      occurrence.subject.parentGarmentKey,
+      occurrence.subject.parentGarmentType,
+    );
+  }
+  const parentLabel = getStep1GarmentDisplayLabel(occurrence.subject.parentGarmentType);
+  return `${parentLabel} - ${getStep1GarmentDisplayLabel(occurrence.subject.garmentType)}`;
 };
 
 const getNeckDesignOccurrenceHeading = (
   occurrence: FutureCustomDetailsCatalogueOccurrence,
-): string => `Neck Design for ${getGarmentFirstLabel(occurrence)}`;
+  labels: ReadonlyMap<string, { conciseLabel: string }>,
+): string => `Neck Design for ${getGarmentFirstLabel(occurrence, labels)}`;
 
 const CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS =
   "break-words text-sm font-extrabold uppercase tracking-wide";
@@ -322,6 +347,7 @@ const getGarmentFirstDetailLabel = (
 const getMainGarmentFamily = (
   occurrence: FutureCustomDetailsCatalogueOccurrence,
   selectionGroup: CustomDetailSelectionGroup,
+  labels: ReadonlyMap<string, { conciseLabel: string }>,
 ): { id: string; title: string } => {
   if (selectionGroup === "neck_design") {
     return { id: "neck", title: "NECK DESIGN" };
@@ -344,7 +370,7 @@ const getMainGarmentFamily = (
     default:
       return {
         id: occurrence.subject.parentGarmentKey,
-        title: getGarmentFirstLabel(occurrence).toUpperCase(),
+        title: getGarmentFirstLabel(occurrence, labels).toUpperCase(),
       };
   }
 };
@@ -481,23 +507,50 @@ export const DormantFutureCustomDetailsStep = ({
     constructionSubtotal !== null
       ? constructionSubtotal + customDetailsSubtotal
       : null;
-  const constructionOccurrenceLabels = new Map<string, number>();
-  const constructionBreakdownRows = constructionBreakdown.rows.map((row) => {
-    const priorOccurrences = constructionOccurrenceLabels.get(row.garmentLabel) || 0;
-    constructionOccurrenceLabels.set(row.garmentLabel, priorOccurrences + 1);
-    const sameGarmentCount = constructionBreakdown.rows.filter(
-      (candidate) => candidate.garmentLabel === row.garmentLabel,
-    ).length;
-    return {
-      ...row,
-      occurrenceLabel:
-        sameGarmentCount > 1
-          ? `${formatCustomDetailsGarmentLabel(row.garmentLabel)} ${priorOccurrences + 1}`
-          : formatCustomDetailsGarmentLabel(row.garmentLabel),
-    };
-  });
+  const parentOccurrenceLabels = useMemo(() => {
+    const seen = new Set<string>();
+    const parents: { garmentKey: string; garmentType: FabricGarmentType }[] = [];
+    reconciliation.subjects.forEach((subject) => {
+      if (seen.has(subject.parentGarmentKey)) return;
+      seen.add(subject.parentGarmentKey);
+      parents.push({
+        garmentKey: subject.parentGarmentKey,
+        garmentType: subject.parentGarmentType,
+      });
+    });
+    const extras = constructionBreakdown.rows.flatMap((row) => {
+      if (seen.has(row.garmentKey)) return [];
+      const garmentType = parentTypeFromKey(row.garmentKey);
+      if (!garmentType) return [];
+      seen.add(row.garmentKey);
+      return [{ garmentKey: row.garmentKey, garmentType }];
+    });
+    const isAdditional = (garmentKey: string) => garmentKey.startsWith("additional:");
+    const ordered = [
+      ...parents.filter((parent) => !isAdditional(parent.garmentKey)),
+      ...extras.filter((parent) => !isAdditional(parent.garmentKey)).sort((left, right) =>
+        left.garmentKey.localeCompare(right.garmentKey),
+      ),
+      ...parents.filter((parent) => isAdditional(parent.garmentKey)),
+      ...extras.filter((parent) => isAdditional(parent.garmentKey)).sort((left, right) =>
+        left.garmentKey.localeCompare(right.garmentKey),
+      ),
+    ];
+    return projectOccurrenceDisplayLabels(ordered);
+  }, [reconciliation.subjects, constructionBreakdown.rows]);
+  const constructionBreakdownRows = constructionBreakdown.rows.map((row) => ({
+    ...row,
+    occurrenceLabel:
+      parentOccurrenceLabels.get(row.garmentKey)?.conciseLabel ||
+      getStep1GarmentDisplayLabel(
+        parentTypeFromKey(row.garmentKey) || "other",
+      ),
+  }));
   const subjectLabelByGarmentKey = new Map(
-    reconciliation.subjects.map((subject) => [subject.garmentKey, getSubjectLabel(subject)]),
+    reconciliation.subjects.map((subject) => [
+      subject.garmentKey,
+      getSubjectLabel(subject, parentOccurrenceLabels),
+    ]),
   );
   const canContinue = isFutureCustomDetailsContentReady(completion);
   const selectedDecorativeFeatures = new Set(designSelections.decorativeFeatures || []);
@@ -972,7 +1025,7 @@ export const DormantFutureCustomDetailsStep = ({
     }>();
     groups.forEach((group) => {
       group.occurrences.forEach((occurrence) => {
-        const family = getMainGarmentFamily(occurrence, group.selectionGroup);
+        const family = getMainGarmentFamily(occurrence, group.selectionGroup, parentOccurrenceLabels);
         const section = sections.get(family.id) || {
           ...family,
           order: getMainGarmentFamilyPresentationOrder(family.id),
@@ -1067,7 +1120,7 @@ export const DormantFutureCustomDetailsStep = ({
               >
                 {occurrenceHeading
                   ? occurrenceHeading(occurrence)
-                  : `${getSubjectLabel(occurrence.subject)} - ${headingMode === "added" ? "Added garment" : "Base garment"}`}
+                  : `${getSubjectLabel(occurrence.subject, parentOccurrenceLabels)} - ${headingMode === "added" ? "Added garment" : "Base garment"}`}
               </h4>
             ) : null}
             {renderOptions(group, occurrence)}
@@ -1167,7 +1220,7 @@ export const DormantFutureCustomDetailsStep = ({
     };
     const hideDuplicateOccurrenceTitle =
       garmentBlockOccurrences.length === 1 &&
-      getGarmentFirstLabel(garmentBlockOccurrences[0]).toUpperCase() === title;
+      getGarmentFirstLabel(garmentBlockOccurrences[0], parentOccurrenceLabels).toUpperCase() === title;
     const ownedBlocks = garmentBlockOccurrences.map((occurrence) => {
       const constructionGroup = groupForOccurrence(
         constructionGroups,
@@ -1194,7 +1247,7 @@ export const DormantFutureCustomDetailsStep = ({
               data-custom-detail-occurrence={occurrence.subject.garmentKey}
               className={`border-b border-heritage-gold/20 pb-2 ${CUSTOM_DETAIL_SUBSECTION_HEADING_CLASS} ${headingMode === "added" ? "text-heritage-gold" : "text-heritage-green"}`}
             >
-              {getGarmentFirstLabel(occurrence)}
+              {getGarmentFirstLabel(occurrence, parentOccurrenceLabels)}
             </h4>
           ) : null}
           <div
@@ -1210,7 +1263,7 @@ export const DormantFutureCustomDetailsStep = ({
               ? renderOccurrenceGroup(
                   pocketsGroup,
                   occurrence,
-                  `Pocket for ${getGarmentFirstLabel(occurrence)}`,
+                  `Pocket for ${getGarmentFirstLabel(occurrence, parentOccurrenceLabels)}`,
                   headingMode,
                 )
               : null}
@@ -1242,8 +1295,8 @@ export const DormantFutureCustomDetailsStep = ({
                   legendTitle: getGarmentFirstDetailLabel(group.selectionGroup),
                   occurrenceHeading:
                     group.selectionGroup === "neck_design"
-                      ? getNeckDesignOccurrenceHeading
-                      : getGarmentFirstLabel,
+                      ? (occurrence) => getNeckDesignOccurrenceHeading(occurrence, parentOccurrenceLabels)
+                      : (occurrence) => getGarmentFirstLabel(occurrence, parentOccurrenceLabels),
                 }),
               )}
             </div>
@@ -1256,8 +1309,8 @@ export const DormantFutureCustomDetailsStep = ({
             legendTitle: getGarmentFirstDetailLabel(group.selectionGroup),
             occurrenceHeading:
               group.selectionGroup === "neck_design"
-                ? getNeckDesignOccurrenceHeading
-                : getGarmentFirstLabel,
+                ? (occurrence) => getNeckDesignOccurrenceHeading(occurrence, parentOccurrenceLabels)
+                : (occurrence) => getGarmentFirstLabel(occurrence, parentOccurrenceLabels),
             }),
           )}
         </div>
@@ -1627,7 +1680,7 @@ export const DormantFutureCustomDetailsStep = ({
                           tabIndex={-1}
                           className="min-w-0 break-words text-sm font-bold uppercase tracking-wide text-heritage-gold outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
                         >
-                          {getCustomDetailsGarmentLabel(garment.garmentType)} - Added garment
+                          {exactParentLabel(parentOccurrenceLabels, garment.garmentKey, garment.garmentType)} - Added garment
                         </h4>
                         {isPersonalizedAdditionsStage && removalTargets.length > 0
                           ? removalTargets
@@ -1693,7 +1746,7 @@ export const DormantFutureCustomDetailsStep = ({
                               <AssignedFabricPreview
                                 fabric={assigned.fabric}
                                 garmentKey={garment.garmentKey}
-                                garmentLabel={getCustomDetailsGarmentLabel(garment.garmentType)}
+                                garmentLabel={exactParentLabel(parentOccurrenceLabels, garment.garmentKey, garment.garmentType)}
                                 fabricCode={assigned.fabricCode}
                               />
                               <div className="min-w-0">

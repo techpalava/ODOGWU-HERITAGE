@@ -30,6 +30,7 @@ import {
   type AuthoritativeDesignPricing,
 } from "./designPricing";
 import { projectAuthoritativePhysicalOccurrences, resolveOccurrenceConstruction } from "./designSourceState";
+import { projectOccurrenceDisplayLabels } from "./occurrenceDisplayLabel";
 import type { DesignStyleStepOccurrencePresentation } from "./designStyleStepRuntime";
 import {
   type GarmentScopedCustomDetailsCompletionResult,
@@ -349,13 +350,15 @@ const mapGarments = ({
   | "catalogInspection"
   | "fabricAllocationState"
 > & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureSummaryGarment[] => {
-  return projectAuthoritativePhysicalOccurrences({
+  const occurrences = projectAuthoritativePhysicalOccurrences({
     sourceKind: designSourceKind,
     step1GarmentTypeSelection,
     effectiveGarmentTypeSelection: garmentTypeSelection,
     uploadedCompositionSpecs,
     additionalGarmentConstructionState,
-  }).map((occurrence) => {
+  });
+  const occurrenceLabels = projectOccurrenceDisplayLabels(occurrences);
+  return occurrences.map((occurrence) => {
     const { garmentKey, garmentType, sourceRole, fabricUnits } = occurrence;
     const allocationAssignment = fabricAllocationState.fabricAllocations
       .flatMap((allocation) => allocation.garmentAssignments)
@@ -411,7 +414,9 @@ const mapGarments = ({
     return {
       garmentKey,
       garmentType,
-      label: getStep1GarmentDisplayLabel(garmentType),
+      label:
+        occurrenceLabels.get(garmentKey)?.conciseLabel ||
+        getStep1GarmentDisplayLabel(garmentType),
       role: allocationAssignment?.sourceRole || sourceRole,
       demographic: garmentTypeSelection.demographic,
       fabricUnits:
@@ -435,11 +440,15 @@ const mapFabrics = ({
   fabricAllocationState,
   fabricCompletion,
   materialPricing,
+  garmentLabels,
   blockers,
 }: Pick<
   FutureDesignStudioSummaryInput,
   "fabricAllocationState" | "fabricCompletion" | "materialPricing"
-> & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureSummaryFabricAllocation[] => {
+> & {
+  garmentLabels: ReadonlyMap<string, string>;
+  blockers: FutureDesignStudioSummaryBlocker[];
+}): FutureSummaryFabricAllocation[] => {
   fabricCompletion.blockers.forEach((blocker) => {
     blockers.push({
       code: `FABRIC_${blocker.code}`,
@@ -483,7 +492,9 @@ const mapFabrics = ({
       garments: allocation.garmentAssignments.map((assignment) => ({
         garmentKey: assignment.garmentKey,
         garmentType: assignment.garmentType,
-        label: getStep1GarmentDisplayLabel(assignment.garmentType),
+        label:
+          garmentLabels.get(assignment.garmentKey) ||
+          getStep1GarmentDisplayLabel(assignment.garmentType),
       })),
     };
   });
@@ -683,11 +694,15 @@ const mapCustomDetails = ({
 const mapMeasurements = ({
   measurementPlan,
   measurementState,
+  garmentLabels,
   blockers,
 }: Pick<
   FutureDesignStudioSummaryInput,
   "measurementPlan" | "measurementState"
-> & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureSummaryMeasurements => {
+> & {
+  garmentLabels: ReadonlyMap<string, string>;
+  blockers: FutureDesignStudioSummaryBlocker[];
+}): FutureSummaryMeasurements => {
   if (!isSelectedMeasurementMethod(measurementState.route)) {
     blockers.push({
       code: "MEASUREMENT_INCOMPLETE",
@@ -776,9 +791,9 @@ const mapMeasurements = ({
     shared: values.filter((value) => !value.garmentKey),
     byGarment: [...byGarment.entries()].map(([garmentKey, garmentValues]) => ({
       garmentKey,
-      garmentLabel: getStep1GarmentDisplayLabel(
-        garmentTypeByKey.get(garmentKey) || "other",
-      ),
+      garmentLabel:
+        garmentLabels.get(garmentKey) ||
+        getStep1GarmentDisplayLabel(garmentTypeByKey.get(garmentKey) || "other"),
       values: garmentValues,
     })),
   };
@@ -868,21 +883,24 @@ const summarizeOrderMeasurements = ({
   measurementPlan,
   measurementState,
   wearerRuntimes,
+  garmentLabels,
   blockers,
 }: {
   measurementPlan: MeasurementRequirementPlan;
   measurementState: FutureMeasurementStateV1;
   wearerRuntimes?: FutureDesignStudioSummaryInput["wearerRuntimes"];
+  garmentLabels: ReadonlyMap<string, string>;
   blockers: FutureDesignStudioSummaryBlocker[];
 }): FutureSummaryMeasurements => {
   if (!wearerRuntimes || wearerRuntimes.length === 0) {
-    return mapMeasurements({ measurementPlan, measurementState, blockers });
+    return mapMeasurements({ measurementPlan, measurementState, garmentLabels, blockers });
   }
   if (wearerRuntimes.length === 1) {
     const wearer = wearerRuntimes[0];
     const summary = mapMeasurements({
       measurementPlan: wearer.plan,
       measurementState: wearer.measurement,
+      garmentLabels,
       blockers,
     });
     return {
@@ -906,6 +924,7 @@ const summarizeOrderMeasurements = ({
     const summary = mapMeasurements({
       measurementPlan: wearer.plan,
       measurementState: wearer.measurement,
+      garmentLabels,
       blockers: [],
     });
     return {
@@ -966,6 +985,9 @@ export const projectFutureDesignStudioSummary = (
     fabricAllocationState: input.fabricAllocationState,
     fabricCompletion: input.fabricCompletion,
     materialPricing: input.materialPricing,
+    garmentLabels: new Map(
+      garmentSummary.map((garment) => [garment.garmentKey, garment.label]),
+    ),
     blockers,
   });
   // Do not carry a representative scalar forward: Candidate remains fail closed
@@ -997,6 +1019,9 @@ export const projectFutureDesignStudioSummary = (
     measurementPlan: input.measurementPlan,
     measurementState: input.measurementState,
     wearerRuntimes: input.wearerRuntimes,
+    garmentLabels: new Map(
+      garmentSummary.map((garment) => [garment.garmentKey, garment.label]),
+    ),
     blockers,
   });
   const pricingSummary = mapPricing({
