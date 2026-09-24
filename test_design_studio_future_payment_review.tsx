@@ -14,10 +14,13 @@ import {
   getFuturePaymentReviewContentStatusLabel,
   getFuturePaymentReviewEditStage,
   getFuturePaymentReviewGarments,
+  getFuturePaymentReviewMeasurementGroups,
   getFuturePaymentReviewPricingRows,
   isFuturePaymentReviewStageUnlocked,
 } from "./src/utils/designStudioFuturePaymentReview";
-import { createEmptyFutureMeasurementState } from "./src/utils/measurementBlueprint";
+import { createEmptyFutureMeasurementState, MEASUREMENT_METHOD_LABELS } from "./src/utils/measurementBlueprint";
+import { projectOccurrenceDisplayLabels } from "./src/utils/occurrenceDisplayLabel";
+import { createWearerProfile } from "./src/utils/wearerOrder";
 import { createEmptyFutureShippingState } from "./src/utils/designStudioFutureShipping";
 
 const measurementState = {
@@ -555,6 +558,100 @@ assert.ok(
     "onEditStage={(stage) => navigateToFutureStage(stage)}",
   ),
 );
+const adaSampleGroups = getFuturePaymentReviewMeasurementGroups({
+  measurements: {
+    schemaVersion: 2,
+    wearers: [
+      createWearerProfile({
+        wearerId: "wearer-you",
+        displayName: "You",
+        fitContext: "male",
+        presentationOrder: 0,
+        measurement: createEmptyFutureMeasurementState("low_risk", "inch"),
+      }),
+      createWearerProfile({
+        wearerId: "wearer-ada",
+        displayName: "Ada",
+        fitContext: "female",
+        presentationOrder: 1,
+        measurement: {
+          ...createEmptyFutureMeasurementState("sample_cloth", "inch"),
+          entered: {
+            shared: {
+              height: { valueCm: 160, provenance: "customer_entered" },
+            },
+            byGarmentKey: {},
+          },
+        },
+      }),
+    ],
+    assignmentByGarmentKey: {},
+  },
+  garments: [],
+});
+const adaSampleTitle = adaSampleGroups.find((group) => group.title.startsWith("Ada"))?.title;
+assert.equal(adaSampleTitle, `Ada — ${MEASUREMENT_METHOD_LABELS.sample_cloth}`);
+assert.equal(adaSampleGroups.some((group) => group.title.includes("sample_cloth")), false);
+
+const repeatedOccurrenceLabels = projectOccurrenceDisplayLabels([
+  { garmentKey: "base:shirt", garmentType: "shirt" },
+  { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+]);
+const repeatedPaymentCandidate: FutureOrderCandidateV1 = {
+  ...candidate,
+  garments: [
+    {
+      ...candidate.garments[0],
+      garmentKey: "base:shirt",
+      garmentType: "shirt",
+      label: repeatedOccurrenceLabels.get("base:shirt")?.conciseLabel || "",
+    },
+    {
+      ...candidate.garments[0],
+      garmentKey: "additional:shirt:1",
+      garmentType: "shirt",
+      label: repeatedOccurrenceLabels.get("additional:shirt:1")?.conciseLabel || "",
+    },
+  ],
+  fabricAllocations: [
+    {
+      ...candidate.fabricAllocations[0],
+      garmentAssignments: [
+        {
+          garmentKey: "base:shirt",
+          code: "BASE_SHIRT",
+          garmentType: "shirt",
+          fabricUnits: 1,
+          sourceRole: "main",
+        },
+        {
+          garmentKey: "additional:shirt:1",
+          code: "ADDITIONAL_SHIRT",
+          garmentType: "shirt",
+          fabricUnits: 1,
+          sourceRole: "additional",
+        },
+      ],
+    },
+  ],
+};
+const repeatedPaymentMarkup = renderToStaticMarkup(
+  <DormantFuturePaymentReviewStep
+    result={{
+      ...reviewableResult,
+      candidate: repeatedPaymentCandidate,
+    }}
+    onBack={() => undefined}
+    onEditStage={() => undefined}
+  />,
+);
+assert.ok(repeatedPaymentMarkup.includes("Standard Shirt"));
+assert.ok(repeatedPaymentMarkup.includes("Standard Shirt 2"));
+assert.ok(repeatedPaymentMarkup.includes("Assigned to: Standard Shirt, Standard Shirt 2"));
+assert.equal(repeatedPaymentMarkup.includes("Standard Shirt 1"), false);
+assert.ok(reviewMarkup.includes("Shirt"));
+assert.ok(reviewMarkup.includes("Long shirt"));
+
 assert.ok(stepperSource.includes("canEnterPayment"));
 assert.ok(stepperSource.includes("onSelectPayment"));
 assert.ok(shippingSource.includes("canContinueToReview"));

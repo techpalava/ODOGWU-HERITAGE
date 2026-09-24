@@ -2204,7 +2204,7 @@ const constructionBreakdown = constructionBreakdownRenderer.root.findByProps({
 });
 assert.equal(
   textContent(constructionBreakdown.findByProps({ "data-construction-price-row": "base:shirt" })),
-  "ShirtStandard Length Shirt, Short Sleeve€65.00",
+  "Standard ShirtStandard Length Shirt, Short Sleeve€65.00",
   "the read-only breakdown renders the garment occurrence, selected construction, and authoritative price together",
 );
 assert.equal(
@@ -2269,16 +2269,15 @@ act(() => {
     orderLevelCustomDetailsPrice: 12,
   }));
 });
-assert.equal(
-  textContent(repeatedConstructionRenderer.root.findByProps({
-    "data-construction-price-row": "base:shirt",
-  })).startsWith("Shirt 1"),
-  true,
-);
+const repeatedBasePriceText = textContent(repeatedConstructionRenderer.root.findByProps({
+  "data-construction-price-row": "base:shirt",
+}));
+assert.equal(repeatedBasePriceText.startsWith("Standard Shirt"), true);
+assert.equal(repeatedBasePriceText.startsWith("Standard Shirt 2"), false);
 assert.equal(
   textContent(repeatedConstructionRenderer.root.findByProps({
     "data-construction-price-row": "additional:shirt:1",
-  })).startsWith("Shirt 2"),
+  })).startsWith("Standard Shirt 2"),
   true,
 );
 assert.match(textContent(repeatedConstructionRenderer.root), /Custom Details subtotal€12\.00/);

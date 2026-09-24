@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { DesignStudioStageId, GuestDesignDraft } from "./src/types";
+import { requireFutureMeasurementStateV1 } from "./src/utils/measurementBlueprint";
 import {
   createDesignStudioDraftRepository,
   FUTURE_DESIGN_STUDIO_DRAFT_CLOUD_SYNC_NAMESPACE,
@@ -515,17 +516,17 @@ assert.equal(
 );
 const reloadedMeasurement = measurementIsolation.repository.loadFutureDraftV1();
 assert.equal(reloadedMeasurement.status, "loaded");
-assert.equal(reloadedMeasurement.draft?.futureMeasurementState?.route, "medium_risk");
+assert.equal(requireFutureMeasurementStateV1(reloadedMeasurement.draft?.futureMeasurementState).route, "medium_risk");
 assert.equal(
-  reloadedMeasurement.draft?.futureMeasurementState?.entered.shared.chest_bust_circumference?.valueCm,
+  requireFutureMeasurementStateV1(reloadedMeasurement.draft?.futureMeasurementState).entered.shared.chest_bust_circumference?.valueCm,
   99,
 );
 assert.equal(
-  reloadedMeasurement.draft?.futureMeasurementState?.enteredByRoute?.low_risk.shared.chest_bust_circumference?.valueCm,
+  requireFutureMeasurementStateV1(reloadedMeasurement.draft?.futureMeasurementState).enteredByRoute?.low_risk.shared.chest_bust_circumference?.valueCm,
   80,
 );
 assert.equal(
-  reloadedMeasurement.draft?.futureMeasurementState?.enteredByRoute?.high_risk.shared.chest_bust_circumference,
+  requireFutureMeasurementStateV1(reloadedMeasurement.draft?.futureMeasurementState).enteredByRoute?.high_risk.shared.chest_bust_circumference,
   undefined,
 );
 

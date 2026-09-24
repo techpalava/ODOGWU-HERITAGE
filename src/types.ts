@@ -1159,6 +1159,28 @@ export interface FutureMeasurementStateV1 {
   invalidInputKeysByRoute?: Record<MeasurementMethodId, string[]>;
 }
 
+/** New wearers choose male or female. `unisex` is only a legacy single-wearer lift. */
+export type WearerFitContext = "male" | "female" | "unisex";
+
+export interface WearerProfileV1 {
+  wearerId: string;
+  displayName: string;
+  /** Null until a new wearer explicitly chooses male or female. */
+  fitContext: WearerFitContext | null;
+  presentationOrder: number;
+  measurement: FutureMeasurementStateV1;
+}
+
+/**
+ * Order-level measurement authority. Inner bags stay FutureMeasurementStateV1
+ * so formulas, Sample conversion, and required-field rules stay unchanged.
+ */
+export interface WearerOrderStateV2 {
+  schemaVersion: 2;
+  wearers: WearerProfileV1[];
+  assignmentByGarmentKey: Record<string, string>;
+}
+
 export interface GuestDesignDraft {
   journeySchemaVersion?: number;
   currentStageId?: DesignStudioStageId;
@@ -1172,7 +1194,7 @@ export interface GuestDesignDraft {
    */
   uploadedDesignSourceRegistry?: unknown;
   aiTryOnWorkflow?: AiTryOnWorkflowStateV1;
-  futureMeasurementState?: FutureMeasurementStateV1;
+  futureMeasurementState?: FutureMeasurementStateV1 | WearerOrderStateV2;
   futureShippingState?: FutureShippingStateV1;
   selectedFabricCode: string | null;
   selectedStyleId: string | null;

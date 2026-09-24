@@ -32,7 +32,12 @@ import {
 } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileFutureDesignStyleSelection } from "./src/utils/designStudioFutureDesignStyle";
 import { projectDesignStudioLiveOrderSummary } from "./src/utils/designStudioLiveOrderSummary";
-import { projectFutureDesignStudioSummary } from "./src/utils/designStudioFutureSummary";
+import { projectAuthoritativeOrderMeasurements } from "./src/utils/futureOrderCandidate";
+import { isWearerOrderStateV2 } from "./src/utils/wearerOrder";
+import {
+  formatCompactWearerRouteLabel,
+  projectFutureDesignStudioSummary,
+} from "./src/utils/designStudioFutureSummary";
 import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAllocationPricing";
 import { appendCustomerFabricGarment } from "./src/utils/fabricGarmentAppendFlow";
 import {
@@ -507,6 +512,8 @@ assert.deepEqual(
   "projection must be deterministic",
 );
 assert.deepEqual(exactSummary.garmentSummary.map((row) => row.garmentType), ["shirt"]);
+assert.equal(exactSummary.garmentSummary[0]?.label, "Standard Shirt");
+assert.equal(exactSummary.garmentSummary[0]?.label.includes(" 1"), false);
 assert.equal(exactSummary.designStyleSummary, null);
 assert.deepEqual(exactSummary.designStyleOccurrences?.map((row) => row.name), ["Heritage Complete Look"]);
 assert.equal(exactSummary.customDetailsSummary[0].occurrences[0].priceCents, 0);
@@ -1065,6 +1072,138 @@ assert.deepEqual(
   ["additional:shirt:1", "base:shirt"],
   "summary must project every fabric assignment occurrence once",
 );
+assert.deepEqual(
+  repeatedShirtSummary.garmentSummary.map((row) => [row.garmentKey, row.label]),
+  [
+    ["base:shirt", "Standard Shirt"],
+    ["additional:shirt:1", "Standard Shirt 2"],
+  ],
+);
+assert.equal(
+  repeatedShirtSummary.garmentSummary.filter((row) => row.label === "Standard Shirt")
+    .length,
+  1,
+);
+const repeatedAssignedLabels = repeatedShirtSummary.fabricSummary.flatMap(
+  (allocation) => allocation.garments.map((garment) => garment.label),
+);
+assert.equal(repeatedAssignedLabels.join(", "), "Standard Shirt, Standard Shirt 2");
+const repeatedSummaryMarkup = renderToStaticMarkup(
+  createElement(DormantFutureSummaryStep, {
+    summary: repeatedShirtSummary,
+    onBack: () => {},
+    onEditGarments: () => {},
+    onEditFabrics: () => {},
+    onEditDesignStyle: () => {},
+    onEditCustomDetails: () => {},
+    onEditAiTryOn: () => {},
+    onEditMeasurements: () => {},
+    canContinueToShipping: false,
+    onContinueToShipping: () => {},
+  }),
+);
+assert.ok(repeatedSummaryMarkup.includes(">Standard Shirt</h4>"));
+assert.ok(repeatedSummaryMarkup.includes(">Standard Shirt 2</h4>"));
+assert.equal(repeatedSummaryMarkup.includes(">Standard Shirt 1</h4>"), false);
+assert.ok(repeatedSummaryMarkup.includes("Standard Shirt, Standard Shirt 2"));
+const chiefAdaRuntimes = [
+  {
+    wearerId: "wearer-chief",
+    displayName: "Chief",
+    fitContext: "male" as const,
+    garmentKeys: ["base:shirt"],
+    plan: exactInput.measurementPlan,
+    measurement: exactInput.measurementState,
+  },
+  {
+    wearerId: "wearer-ada",
+    displayName: "Ada",
+    fitContext: "female" as const,
+    garmentKeys: ["additional:shirt:1"],
+    plan: exactInput.measurementPlan,
+    measurement: exactInput.measurementState,
+  },
+];
+const chiefAdaSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  fabricAllocationState: repeatedShirtFabricState,
+  additionalGarmentConstructionState: repeatedShirtConstruction.state,
+  wearerRuntimes: chiefAdaRuntimes,
+});
+const chiefAdaAgain = projectFutureDesignStudioSummary({
+  ...exactInput,
+  fabricAllocationState: repeatedShirtFabricState,
+  additionalGarmentConstructionState: repeatedShirtConstruction.state,
+  wearerRuntimes: chiefAdaRuntimes,
+});
+assert.equal(
+  chiefAdaSummary.garmentSummary.find((row) => row.garmentKey === "base:shirt")?.demographic,
+  "male",
+);
+assert.equal(
+  chiefAdaSummary.garmentSummary.find((row) => row.garmentKey === "additional:shirt:1")?.demographic,
+  "female",
+);
+assert.deepEqual(
+  chiefAdaAgain.garmentSummary.map((row) => [row.garmentKey, row.demographic, row.label]),
+  chiefAdaSummary.garmentSummary.map((row) => [row.garmentKey, row.demographic, row.label]),
+);
+assert.deepEqual(
+  chiefAdaSummary.garmentSummary.map((row) => row.garmentKey),
+  ["base:shirt", "additional:shirt:1"],
+);
+assert.equal(chiefAdaRuntimes[0].fitContext, "male");
+assert.equal(chiefAdaRuntimes[1].fitContext, "female");
+const projectedWearers = projectAuthoritativeOrderMeasurements({
+  wearerRuntimes: chiefAdaRuntimes,
+  measurementState: exactInput.measurementState,
+  measurementPlan: exactInput.measurementPlan,
+});
+assert.equal(isWearerOrderStateV2(projectedWearers), true);
+if (isWearerOrderStateV2(projectedWearers)) {
+  assert.equal(
+    projectedWearers.wearers.find((wearer) => wearer.wearerId === "wearer-ada")?.fitContext,
+    "female",
+  );
+  assert.equal(projectedWearers.assignmentByGarmentKey["additional:shirt:1"], "wearer-ada");
+  assert.equal(projectedWearers.assignmentByGarmentKey["base:shirt"], "wearer-chief");
+}
+const chiefAdaMarkup = renderToStaticMarkup(
+  createElement(DormantFutureSummaryStep, {
+    summary: chiefAdaSummary,
+    onBack: () => {},
+    onEditGarments: () => {},
+    onEditFabrics: () => {},
+    onEditDesignStyle: () => {},
+    onEditCustomDetails: () => {},
+    onEditAiTryOn: () => {},
+    onEditMeasurements: () => {},
+    canContinueToShipping: false,
+    onContinueToShipping: () => {},
+  }),
+);
+const standardShirtCard = chiefAdaMarkup.split(">Standard Shirt 2</h4>")[0] || "";
+const standardShirt2Card = chiefAdaMarkup.split(">Standard Shirt 2</h4>")[1] || "";
+assert.match(standardShirtCard, />male \|/);
+assert.match(standardShirt2Card, />female \|/);
+assert.equal(chiefAdaMarkup.includes(">base:shirt<"), false);
+assert.equal(chiefAdaMarkup.includes(">additional:shirt:1<"), false);
+assert.ok(chiefAdaMarkup.includes("Standard Shirt"));
+assert.ok(chiefAdaMarkup.includes("Standard Shirt 2"));
+const aggregateSidebar = projectDesignStudioLiveOrderSummary({
+  summary: chiefAdaSummary,
+  shippingResolution: null,
+  candidatePricing: null,
+  fabricAllocationState: repeatedShirtFabricState,
+  measurementState: exactInput.measurementState,
+  measurementPlan: exactInput.measurementPlan,
+  orderMeasurementCompletion: { complete: false, remainingRequiredCount: 14 },
+  designSource: null,
+});
+const aggregateLine = aggregateSidebar.sections.find((section) => section.id === "measurements")
+  ?.lines[0]?.label || "";
+assert.equal(aggregateLine.includes("Complete"), false);
+assert.match(aggregateLine, /14 required measurements remaining/);
 assert.deepEqual(repeatedShirtConstruction.unresolvedGarmentKeys, []);
 const repeatedShirtReconciliation = reconcileGarmentScopedCustomDetails({
   garmentTypeSelection: exactInput.garmentTypeSelection,
@@ -1649,6 +1788,10 @@ assert.deepEqual(
   "garments use canonical Step 1 ordering",
 );
 assert.equal(shirtKaftanSummary.garmentSummary.length, 2);
+assert.deepEqual(
+  shirtKaftanSummary.garmentSummary.map((row) => row.label),
+  ["Standard Shirt", "Long Shirt"],
+);
 assert.equal(shirtKaftanSummary.fabricSummary.length, 2);
 assert.deepEqual(
   shirtKaftanSummary.fabricSummary.map((row) => row.fabricCode),
@@ -2022,5 +2165,95 @@ assert.deepEqual(
   ["base:shirt", "base:trouser"],
   "Live Summary must show both uploaded base rows without duplication",
 );
+
+const amakaSummaryInput = buildSummaryInput({ garmentTypes: ["dress"] });
+const amakaSummary = projectFutureDesignStudioSummary({
+  ...amakaSummaryInput,
+  wearerRuntimes: [
+    {
+      wearerId: "wearer-amaka",
+      displayName: "Amaka",
+      fitContext: "female",
+      garmentKeys: ["base:dress"],
+      plan: amakaSummaryInput.measurementPlan,
+      measurement: amakaSummaryInput.measurementState,
+    },
+  ],
+});
+const amakaGroup = amakaSummary.measurementSummary.wearerGroups?.[0];
+assert.equal(amakaGroup?.displayName, "Amaka");
+assert.deepEqual(amakaGroup?.garmentKeys, ["base:dress"]);
+assert.match(
+  formatCompactWearerRouteLabel(
+    amakaGroup?.displayName || "",
+    amakaGroup?.routeLabel || "",
+  ),
+  /Amaka/,
+);
+const amakaMarkup = renderToStaticMarkup(
+  createElement(DormantFutureSummaryStep, {
+    summary: amakaSummary,
+    onBack: () => {},
+    onEditGarments: () => {},
+    onEditFabrics: () => {},
+    onEditDesignStyle: () => {},
+    onEditCustomDetails: () => {},
+    onEditAiTryOn: () => {},
+    onEditMeasurements: () => {},
+    canContinueToShipping: false,
+    onContinueToShipping: () => {},
+  }),
+);
+assert.match(amakaMarkup, /Amaka/);
+assert.equal(amakaMarkup.includes(">base:dress<"), false);
+assert.match(amakaMarkup, /Standard Dress/);
+const youSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  wearerRuntimes: [
+    {
+      wearerId: "wearer-you",
+      displayName: "You",
+      fitContext: "male",
+      garmentKeys: ["base:shirt"],
+      plan: exactInput.measurementPlan,
+      measurement: exactInput.measurementState,
+    },
+  ],
+});
+assert.equal(
+  formatCompactWearerRouteLabel(
+    "You",
+    youSummary.measurementSummary.wearerGroups?.[0]?.routeLabel || "",
+  ),
+  youSummary.measurementSummary.wearerGroups?.[0]?.routeLabel,
+);
+const twoWearerSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  wearerRuntimes: [
+    {
+      wearerId: "wearer-you",
+      displayName: "You",
+      fitContext: "male",
+      garmentKeys: ["base:shirt"],
+      plan: exactInput.measurementPlan,
+      measurement: exactInput.measurementState,
+    },
+    {
+      wearerId: "wearer-amaka",
+      displayName: "Amaka",
+      fitContext: "female",
+      garmentKeys: ["base:dress"],
+      plan: amakaSummaryInput.measurementPlan,
+      measurement: amakaSummaryInput.measurementState,
+    },
+  ],
+});
+assert.equal(twoWearerSummary.measurementSummary.routeLabel, "2 people");
+assert.deepEqual(
+  twoWearerSummary.measurementSummary.wearerGroups?.map((wearer) => wearer.displayName),
+  ["You", "Amaka"],
+);
+assert.equal(exactSummary.measurementSummary.wearerGroups, undefined);
+assert.equal(exactSummary.measurementSummary.routeLabel.includes("Amaka"), false);
 
 console.log("PASS: dormant future Summary projection and Step 7 integration");

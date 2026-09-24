@@ -30,6 +30,7 @@ import {
   type PersistedDesignStyleDraftV2,
 } from "./designStyleDraftPersistence";
 import type { PhysicalGarmentOccurrence } from "./designSourceState";
+import { nextOccurrenceFamilyLabels } from "./occurrenceDisplayLabel";
 import { createPhysicalGarmentOccurrenceIdentityToken } from "./physicalGarmentOccurrenceIdentity";
 import {
   applyDesignStyleUploadOperation,
@@ -289,7 +290,7 @@ export const projectDesignStyleStep = ({
       .filter(isAuthoritativeDesignStyleProjection)
       .map((style) => [style.id, style] as const),
   );
-  const seenByType = new Map<CanonicalPhysicalGarmentType, number>();
+  const seenByType = new Map<string, number>();
   let occurrenceAuthorityInvalid = false;
   const occurrences = activeOccurrences.flatMap((occurrence) => {
     const target = targetForOccurrence(occurrence);
@@ -297,8 +298,6 @@ export const projectDesignStyleStep = ({
       occurrenceAuthorityInvalid = true;
       return [];
     }
-    const count = (seenByType.get(occurrence.garmentType) || 0) + 1;
-    seenByType.set(occurrence.garmentType, count);
     const assignment =
       validation?.occurrencesByGarmentKey[occurrence.garmentKey]?.assignment ||
       null;
@@ -306,9 +305,8 @@ export const projectDesignStyleStep = ({
       {
         target,
         garmentType: occurrence.garmentType,
-        label: `${getFabricGarmentLabel(occurrence.garmentType)}${
-          count === 1 ? "" : ` ${count}`
-        }`,
+        label: nextOccurrenceFamilyLabels(seenByType, occurrence.garmentType)
+          .broadLabel,
         status: statusFor(
           validation?.occurrencesByGarmentKey[occurrence.garmentKey]?.status,
           assignment,
