@@ -69,6 +69,7 @@ import {
   isFutureMeasurementEnteredBagEmpty,
   planMeasurementRequirements,
   reconcileFutureMeasurementState,
+  requireFutureMeasurementStateV1,
   setFutureMeasurementInput,
   setFutureMeasurementRoute,
 } from "./src/utils/measurementBlueprint";
@@ -1076,12 +1077,12 @@ assert.equal(
   "verified-asset",
 );
 
-assert.ok(candidate.measurements.entered.shared);
-assert.ok(Object.keys(candidate.measurements.entered.byGarmentKey).length > 0);
-assert.equal(candidate.measurements.unit, "inch");
-assert.equal(candidate.measurements.blueprintVersion.length > 0, true);
+assert.ok(requireFutureMeasurementStateV1(candidate.measurements).entered.shared);
+assert.ok(Object.keys(requireFutureMeasurementStateV1(candidate.measurements).entered.byGarmentKey).length > 0);
+assert.equal(requireFutureMeasurementStateV1(candidate.measurements).unit, "inch");
+assert.equal(requireFutureMeasurementStateV1(candidate.measurements).blueprintVersion.length > 0, true);
 assert.equal(
-  Object.values(candidate.measurements.entered.shared).every(
+  Object.values(requireFutureMeasurementStateV1(candidate.measurements).entered.shared).every(
     (value) => value.provenance === "customer_entered",
   ),
   true,
@@ -1139,14 +1140,14 @@ const untouchedMidCandidate = buildFutureOrderCandidate({
   measurementPlan: midPlan,
   measurementState: switchedMidState,
 });
-assert.equal(untouchedMidCandidate.candidate.measurements.route, "medium_risk");
+assert.equal(requireFutureMeasurementStateV1(untouchedMidCandidate.candidate.measurements).route, "medium_risk");
 assert.equal(
-  untouchedMidCandidate.candidate.measurements.entered.shared[overlappingMeasurementId],
+  requireFutureMeasurementStateV1(untouchedMidCandidate.candidate.measurements).entered.shared[overlappingMeasurementId],
   undefined,
 );
 assert.equal(
   isFutureMeasurementEnteredBagEmpty(
-    untouchedMidCandidate.candidate.measurements.enteredByRoute?.low_risk,
+    requireFutureMeasurementStateV1(untouchedMidCandidate.candidate.measurements).enteredByRoute?.low_risk,
   ),
   true,
 );
@@ -1167,14 +1168,14 @@ const midEnteredCandidate = buildFutureOrderCandidate({
   measurementPlan: midPlan,
   measurementState: midEnteredState,
 });
-assert.equal(midEnteredCandidate.candidate.measurements.route, "medium_risk");
-assert.ok(midEnteredCandidate.candidate.measurements.entered.shared[overlappingMeasurementId]);
+assert.equal(requireFutureMeasurementStateV1(midEnteredCandidate.candidate.measurements).route, "medium_risk");
+assert.ok(requireFutureMeasurementStateV1(midEnteredCandidate.candidate.measurements).entered.shared[overlappingMeasurementId]);
 assert.notEqual(
-  midEnteredCandidate.candidate.measurements.entered.shared[overlappingMeasurementId]?.valueCm,
+  requireFutureMeasurementStateV1(midEnteredCandidate.candidate.measurements).entered.shared[overlappingMeasurementId]?.valueCm,
   lowChestValue,
 );
 assert.equal(
-  midEnteredCandidate.candidate.measurements.enteredByRoute?.low_risk.shared[overlappingMeasurementId],
+  requireFutureMeasurementStateV1(midEnteredCandidate.candidate.measurements).enteredByRoute?.low_risk.shared[overlappingMeasurementId],
   undefined,
 );
 const restoredLowPlan = planMeasurementRequirements({
@@ -1193,13 +1194,13 @@ const restoredLowCandidate = buildFutureOrderCandidate({
     plan: restoredLowPlan,
   }),
 });
-assert.equal(restoredLowCandidate.candidate.measurements.route, "low_risk");
+assert.equal(requireFutureMeasurementStateV1(restoredLowCandidate.candidate.measurements).route, "low_risk");
 assert.equal(
-  restoredLowCandidate.candidate.measurements.entered.shared[overlappingMeasurementId]?.valueCm,
+  requireFutureMeasurementStateV1(restoredLowCandidate.candidate.measurements).entered.shared[overlappingMeasurementId]?.valueCm,
   lowChestValue,
 );
 assert.equal(
-  restoredLowCandidate.candidate.measurements.enteredByRoute?.medium_risk.shared[overlappingMeasurementId],
+  requireFutureMeasurementStateV1(restoredLowCandidate.candidate.measurements).enteredByRoute?.medium_risk.shared[overlappingMeasurementId],
   undefined,
 );
 
@@ -1872,13 +1873,13 @@ const midCompleteCandidate = buildFutureOrderCandidate({
   measurementPlan: midCandidatePlan,
   measurementState: midCompleteState,
 });
-assert.equal(midCompleteCandidate.candidate.measurements.route, "medium_risk");
+assert.equal(requireFutureMeasurementStateV1(midCompleteCandidate.candidate.measurements).route, "medium_risk");
 assert.equal(
-  midCompleteCandidate.candidate.measurements.entered.shared.chest_bust_circumference?.provenance,
+  requireFutureMeasurementStateV1(midCompleteCandidate.candidate.measurements).entered.shared.chest_bust_circumference?.provenance,
   "customer_entered",
 );
 assert.equal(
-  midCompleteCandidate.candidate.measurements.derived.byGarmentKey[
+  requireFutureMeasurementStateV1(midCompleteCandidate.candidate.measurements).derived.byGarmentKey[
     midCandidatePlan.requirements.find(
       (requirement) => requirement.measurementId === "head_circumference",
     )!.garmentKey
@@ -1886,7 +1887,7 @@ assert.equal(
   "calculated_average_factor",
 );
 assert.equal(
-  midCompleteCandidate.candidate.measurements.derived.byGarmentKey[
+  requireFutureMeasurementStateV1(midCompleteCandidate.candidate.measurements).derived.byGarmentKey[
     midCandidatePlan.requirements.find(
       (requirement) => requirement.measurementId === "head_circumference",
     )!.garmentKey
@@ -1894,7 +1895,7 @@ assert.equal(
   "A",
 );
 assert.equal(
-  midCompleteCandidate.candidate.measurements.entered.shared.head_circumference,
+  requireFutureMeasurementStateV1(midCompleteCandidate.candidate.measurements).entered.shared.head_circumference,
   undefined,
 );
 assert.equal(
@@ -1954,12 +1955,12 @@ assert.deepEqual(
   "FutureOrderCandidate measurement semantics must not depend on Dress/Trouser order.",
 );
 assert.equal(
-  dressFirstCandidate.candidate.measurements.derived.byGarmentKey["base:dress"]
+  requireFutureMeasurementStateV1(dressFirstCandidate.candidate.measurements).derived.byGarmentKey["base:dress"]
     ?.hip_circumference,
   undefined,
 );
 assert.equal(
-  dressFirstCandidate.candidate.measurements.derived.byGarmentKey[
+  requireFutureMeasurementStateV1(dressFirstCandidate.candidate.measurements).derived.byGarmentKey[
     "base:trouser"
   ]?.hip_circumference?.calculation?.averageFactor,
   0.584591437335114,
@@ -2205,6 +2206,34 @@ assert.equal(
     0,
   ),
   13500,
+);
+assert.equal(
+  candidateGarments.find((garment) => garment.garmentKey === "base:shirt")?.label,
+  "Standard Shirt",
+);
+assert.equal(
+  candidateGarments.find((garment) => garment.garmentKey === "additional:shirt:1")
+    ?.label,
+  "Standard Shirt 2",
+);
+assert.equal(
+  repeatedShirtFabricState.fabricAllocations[0]?.garmentAssignments
+    .map(
+      (assignment) =>
+        candidateGarments.find((garment) => garment.garmentKey === assignment.garmentKey)
+          ?.label,
+    )
+    .join(", "),
+  "Standard Shirt, Standard Shirt 2",
+);
+assert.equal(
+  candidateGarments.find((garment) => garment.garmentKey === "base:shirt")?.garmentKey,
+  "base:shirt",
+);
+assert.equal(
+  candidateGarments.find((garment) => garment.garmentKey === "additional:shirt:1")
+    ?.garmentKey,
+  "additional:shirt:1",
 );
 
 const baseShirtOnlyFabric: FabricAllocationState = {

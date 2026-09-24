@@ -2,6 +2,10 @@ import {
   parsePersistedFutureOrderV2,
   type PersistedFutureOrderV2,
 } from "./futureOrderV2PersistenceContract.js";
+import {
+  projectTailoringMeasurementReadout,
+  type TailoringWearerReadout,
+} from "./tailoringMeasurementProjection.js";
 
 export type FutureOrderV2HistoricalStylePresentation =
   | {
@@ -39,6 +43,7 @@ export interface FutureOrderV2HistoryPresentation {
   readonly paymentStatus: string;
   readonly exactTotalCents: number | null;
   readonly occurrences: readonly FutureOrderV2HistoricalOccurrencePresentation[];
+  readonly tailoringMeasurements: readonly TailoringWearerReadout[] | null;
 }
 
 export type FutureOrderV2HistoryPresentationResult =
@@ -79,6 +84,9 @@ export const presentFutureOrderV2History = (
       shippingStatus: candidate.shipping.status,
       paymentStatus: candidate.paymentStatus,
       exactTotalCents: candidate.pricing.exactTotalCents,
+      tailoringMeasurements: projectTailoringMeasurementReadout(
+        candidate.measurements,
+      ),
       occurrences: candidate.occurrenceStyleSnapshots.map((snapshot) => ({
         orderId: parsed.value.orderId,
         garmentKey: snapshot.occurrence.garmentKey,

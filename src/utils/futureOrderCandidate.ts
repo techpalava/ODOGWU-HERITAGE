@@ -7,6 +7,7 @@ import type {
   FabricGarmentAssignment,
   FutureMeasurementStateV1,
   FutureShippingStateV1,
+  WearerOrderStateV2,
 } from "../types";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import {
@@ -28,6 +29,7 @@ import {
   validateRawFabricAssignments,
 } from "./designSourceState";
 import { projectActiveFutureMeasurementState } from "./measurementBlueprint";
+import { isWearerOrderStateV2 } from "./wearerOrder";
 import {
   getCanonicalOrderIdentity,
   type CanonicalOrderIdentity,
@@ -203,7 +205,13 @@ export interface FutureOrderCandidateV1 {
       ownerBindingId: string;
     }> | null;
   }>;
-  readonly measurements: FutureMeasurementStateV1;
+  /**
+   * The only measurement document on the order.
+   * A new build that has wearer runtimes stores WearerOrderStateV2,
+   * including a one-wearer order. Schema 1 remains only for historical
+   * orders and for builders that have no wearer runtime.
+   */
+  readonly measurements: FutureMeasurementStateV1 | WearerOrderStateV2;
   readonly shipping: Readonly<{
     state: FutureShippingStateV1;
     status: FutureShippingStageResolution["status"];
@@ -843,6 +851,71 @@ interface FutureOrderCandidateCoreBuildResult {
   readonly contentBlockers: readonly FutureOrderCandidateBlocker[];
 }
 
+const sharedWearerMeasurementVersion = (
+  wearers: WearerOrderStateV2["wearers"],
+  fallback: FutureMeasurementStateV1,
+): Pick<FutureMeasurementStateV1, "blueprintVersion" | "formulaVersion"> => {
+  const versions = wearers.map((wearer) => wearer.measurement);
+  const blueprintVersion = versions[0]?.blueprintVersion;
+  const formulaVersion = versions[0]?.formulaVersion ?? null;
+  const uniform =
+    blueprintVersion !== undefined &&
+    versions.every(
+      (measurement) =>
+        measurement.blueprintVersion === blueprintVersion &&
+        measurement.formulaVersion === formulaVersion,
+    );
+  return uniform
+    ? { blueprintVersion, formulaVersion }
+    : {
+        blueprintVersion: fallback.blueprintVersion,
+        formulaVersion: fallback.formulaVersion,
+      };
+};
+
+type AuthoritativeMeasurementProjectionInput = Pick<
+  FutureDesignStudioSummaryInput,
+  "wearerRuntimes" | "measurementState" | "measurementPlan"
+>;
+
+const projectWearerMeasurementsForCandidate = (
+  input: AuthoritativeMeasurementProjectionInput,
+): WearerOrderStateV2 => {
+  const runtimes = input.wearerRuntimes || [];
+  const assignmentByGarmentKey: Record<string, string> = {};
+  runtimes.forEach((runtime) => {
+    runtime.garmentKeys.forEach((garmentKey) => {
+      assignmentByGarmentKey[garmentKey] = runtime.wearerId;
+    });
+  });
+  return {
+    schemaVersion: 2,
+    assignmentByGarmentKey,
+    wearers: runtimes.map((runtime, index) => ({
+      wearerId: runtime.wearerId,
+      displayName: runtime.displayName,
+      fitContext: runtime.fitContext,
+      presentationOrder: index,
+      measurement: projectActiveFutureMeasurementState({
+        state: runtime.measurement,
+        plan: runtime.plan,
+      }),
+    })),
+  };
+};
+
+export const projectAuthoritativeOrderMeasurements = (
+  input: AuthoritativeMeasurementProjectionInput,
+): FutureMeasurementStateV1 | WearerOrderStateV2 => {
+  if (input.wearerRuntimes && input.wearerRuntimes.length > 0) {
+    return projectWearerMeasurementsForCandidate(input);
+  }
+  return projectActiveFutureMeasurementState({
+    state: input.measurementState,
+    plan: input.measurementPlan,
+  });
+};
+
 const buildFutureOrderCandidateCore = ({
   input,
   summary,
@@ -983,6 +1056,10 @@ const buildFutureOrderCandidateCore = ({
       ? "reviewable"
       : "blocked";
   const quoteReference = input.shippingResolution.state.quoteReference;
+  const authoritativeMeasurements = projectAuthoritativeOrderMeasurements(input);
+  const measurementAuthority = isWearerOrderStateV2(authoritativeMeasurements)
+    ? sharedWearerMeasurementVersion(authoritativeMeasurements.wearers, input.measurementState)
+    : authoritativeMeasurements;
   const core: FutureOrderCandidateNonStyleEnvelope = {
     journey: {
       mode: "future_ten_stage",
@@ -991,9 +1068,9 @@ const buildFutureOrderCandidateCore = ({
     authorityVersions: {
       customDetailsSchemaVersion:
         input.customDetailsReconciliation?.state.schemaVersion || 1,
-      measurementSchemaVersion: input.measurementState.schemaVersion,
-      measurementBlueprintVersion: input.measurementState.blueprintVersion,
-      measurementFormulaVersion: input.measurementState.formulaVersion,
+      measurementSchemaVersion: authoritativeMeasurements.schemaVersion,
+      measurementBlueprintVersion: measurementAuthority.blueprintVersion,
+      measurementFormulaVersion: measurementAuthority.formulaVersion,
       shippingSchemaVersion: input.shippingResolution.state.schemaVersion,
       shippingTariffVersion: quoteReference?.tariffVersion || null,
       shippingRuleFingerprint: quoteReference?.ruleFingerprint || null,
@@ -1007,12 +1084,7 @@ const buildFutureOrderCandidateCore = ({
       reviewStatus: summary.aiTryOnSummary.status,
       verifiedPrivateResultReference,
     },
-    measurements: cloneJsonValue(
-      projectActiveFutureMeasurementState({
-        state: input.measurementState,
-        plan: input.measurementPlan,
-      }),
-    ),
+    measurements: cloneJsonValue(authoritativeMeasurements),
     shipping: {
       state: cloneJsonValue(input.shippingResolution.state),
       status: input.shippingResolution.status,

@@ -7,7 +7,10 @@ import type {
   GuestDesignDraft,
 } from "./src/types";
 import { normalizeGuestDesignDraft } from "./src/services/guestOrderSessionService";
-import { normalizeFutureMeasurementState } from "./src/utils/measurementBlueprint";
+import {
+  normalizeFutureMeasurementState,
+  requireFutureMeasurementStateV1,
+} from "./src/utils/measurementBlueprint";
 import {
   buildAuthoritativePhysicalOccurrences,
   isValidUploadedDesignDraftSource,
@@ -465,7 +468,9 @@ assert.deepEqual(threeRouteMigration.removedGarmentKeys.sort(), [
 assert.deepEqual(threeRouteMigration.draft.garmentTypeSelection?.garmentTypes, [
   "shirt",
 ]);
-const migratedThreeRoute = threeRouteMigration.draft.futureMeasurementState;
+const migratedThreeRoute = requireFutureMeasurementStateV1(
+  threeRouteMigration.draft.futureMeasurementState,
+);
 assert.ok(migratedThreeRoute);
 assert.equal(
   migratedThreeRoute.entered.byGarmentKey["base:agbada"],
@@ -554,34 +559,34 @@ const guestLoadedThreeRoute = normalizeGuestDesignDraft(clone(threeRouteDraft));
 assert.deepEqual(guestLoadedThreeRoute.garmentTypeSelection?.garmentTypes, [
   "shirt",
 ]);
-assert.equal(guestLoadedThreeRoute.futureMeasurementState?.schemaVersion, 1);
-assert.equal(guestLoadedThreeRoute.futureMeasurementState?.route, "low_risk");
+assert.equal(requireFutureMeasurementStateV1(guestLoadedThreeRoute.futureMeasurementState).schemaVersion, 1);
+assert.equal(requireFutureMeasurementStateV1(guestLoadedThreeRoute.futureMeasurementState).route, "low_risk");
 assert.equal(
-  guestLoadedThreeRoute.futureMeasurementState?.entered.byGarmentKey["base:shirt"]
+  requireFutureMeasurementStateV1(guestLoadedThreeRoute.futureMeasurementState).entered.byGarmentKey["base:shirt"]
     ?.chest_bust_circumference?.valueCm,
   101.6,
 );
 assert.equal(
-  guestLoadedThreeRoute.futureMeasurementState?.enteredByRoute?.low_risk
+  requireFutureMeasurementStateV1(guestLoadedThreeRoute.futureMeasurementState).enteredByRoute?.low_risk
     .byGarmentKey["base:shirt"]?.chest_bust_circumference?.valueCm,
   101.6,
 );
 assert.equal(
-  guestLoadedThreeRoute.futureMeasurementState?.enteredByRoute?.medium_risk
+  requireFutureMeasurementStateV1(guestLoadedThreeRoute.futureMeasurementState).enteredByRoute?.medium_risk
     .byGarmentKey["base:shirt"]?.chest_bust_circumference?.valueCm,
   102.6,
 );
 assert.equal(
-  guestLoadedThreeRoute.futureMeasurementState?.enteredByRoute?.high_risk
+  requireFutureMeasurementStateV1(guestLoadedThreeRoute.futureMeasurementState).enteredByRoute?.high_risk
     .byGarmentKey["base:shirt"]?.chest_bust_circumference?.valueCm,
   103.6,
 );
 assert.deepEqual(
-  guestLoadedThreeRoute.futureMeasurementState?.enteredByRoute?.critical_risk,
+  requireFutureMeasurementStateV1(guestLoadedThreeRoute.futureMeasurementState).enteredByRoute?.critical_risk,
   { shared: {}, byGarmentKey: {} },
 );
 assert.equal(
-  guestLoadedThreeRoute.futureMeasurementState?.entered.byGarmentKey["base:agbada"],
+  requireFutureMeasurementStateV1(guestLoadedThreeRoute.futureMeasurementState).entered.byGarmentKey["base:agbada"],
   undefined,
 );
 console.log("PASS: old three-route V1 Agbada measurement restore and guest load");
@@ -646,60 +651,60 @@ assert.deepEqual(catalogueResult.draft.designSelections.accessories, [
   "traditional_hat",
 ]);
 assert.equal(
-  catalogueResult.draft.futureMeasurementState?.entered.byGarmentKey[
+  requireFutureMeasurementStateV1(catalogueResult.draft.futureMeasurementState).entered.byGarmentKey[
     "base:agbada"
   ],
   undefined,
 );
 assert.ok(
-  catalogueResult.draft.futureMeasurementState?.entered.byGarmentKey[
+  requireFutureMeasurementStateV1(catalogueResult.draft.futureMeasurementState).entered.byGarmentKey[
     "base:shirt"
   ],
 );
 (["low_risk", "medium_risk", "high_risk"] as const).forEach((route) => {
   assert.equal(
-    catalogueResult.draft.futureMeasurementState?.enteredByRoute?.[route]
+    requireFutureMeasurementStateV1(catalogueResult.draft.futureMeasurementState).enteredByRoute?.[route]
       .byGarmentKey["base:agbada"],
     undefined,
   );
 });
 assert.equal(
-  catalogueResult.draft.futureMeasurementState?.unassignedEntered
+  requireFutureMeasurementStateV1(catalogueResult.draft.futureMeasurementState).unassignedEntered
     ?.byGarmentKey["base:agbada"],
   undefined,
 );
 assert.equal(
-  catalogueResult.draft.futureMeasurementState?.derived.byGarmentKey[
+  requireFutureMeasurementStateV1(catalogueResult.draft.futureMeasurementState).derived.byGarmentKey[
     "base:agbada"
   ],
   undefined,
 );
 assert.ok(
-  catalogueResult.draft.futureMeasurementState?.derived.byGarmentKey[
+  requireFutureMeasurementStateV1(catalogueResult.draft.futureMeasurementState).derived.byGarmentKey[
     "base:shirt"
   ],
 );
 assert.equal(
-  catalogueResult.draft.futureMeasurementState?.derived.shared
+  requireFutureMeasurementStateV1(catalogueResult.draft.futureMeasurementState).derived.shared
     .hip_circumference,
   undefined,
 );
 assert.deepEqual(
-  catalogueResult.draft.futureMeasurementState?.diagnostics.map(
+  requireFutureMeasurementStateV1(catalogueResult.draft.futureMeasurementState).diagnostics.map(
     (diagnostic) => diagnostic.garmentKey,
   ),
   ["base:shirt"],
 );
 assert.deepEqual(
-  catalogueResult.draft.futureMeasurementState?.invalidInputKeys,
+  requireFutureMeasurementStateV1(catalogueResult.draft.futureMeasurementState).invalidInputKeys,
   ["low_risk:base:shirt:chest_bust_circumference"],
 );
 assert.equal(
-  catalogueResult.draft.futureMeasurementState?.inputFingerprint,
+  requireFutureMeasurementStateV1(catalogueResult.draft.futureMeasurementState).inputFingerprint,
   "",
 );
 assert.equal(
-  catalogueResult.draft.futureMeasurementState?.calculationStatus,
+  requireFutureMeasurementStateV1(catalogueResult.draft.futureMeasurementState).calculationStatus,
   "incomplete",
 );
 assert.deepEqual(catalogueResult.draft.aiTryOnWorkflow, {

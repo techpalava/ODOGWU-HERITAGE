@@ -30,7 +30,7 @@ import { inspectPersistedDesignStyleDraft } from "./src/utils/designStyleDraftPe
 import { createDesignStyleStepTestModel } from "./testing/designStyleStepFixtures";
 import { createRevision342FabricHydrationFixture } from "./testing/revision342FabricHydrationFixture";
 import { reconcileGarmentTypeSelectionOccurrenceIdentities } from "./src/utils/physicalGarmentOccurrenceIdentity";
-import { createEmptyFutureMeasurementState, reconcileFutureMeasurementState, setFutureMeasurementInput } from "./src/utils/measurementBlueprint";
+import { createEmptyFutureMeasurementState, reconcileFutureMeasurementState, requireFutureMeasurementStateV1, setFutureMeasurementInput } from "./src/utils/measurementBlueprint";
 import { createEmptyFutureShippingState } from "./src/utils/designStudioFutureShipping";
 import { getFuturePaymentReviewGarments } from "./src/utils/designStudioFuturePaymentReview";
 import { STEP_1_SELECTABLE_GARMENT_TYPES } from "./src/utils/garmentConstructionPricing";
@@ -489,7 +489,7 @@ const summarizeRevision342Draft = (draft: GuestDesignDraft | null) => ({
   customDetails:
     draft?.designSelections.garmentScopedCustomDetails?.selectionsByGarmentKey,
   chestBust:
-    draft?.futureMeasurementState?.entered.shared.chest_bust_circumference
+    requireFutureMeasurementStateV1(draft?.futureMeasurementState).entered.shared.chest_bust_circumference
       ?.valueCm,
 });
 const expectedRevision342Summary = {
@@ -630,7 +630,7 @@ await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350))
 const skirtAutosaved = GuestOrderSessionService.getFutureDesignDraft();
 assert.ok(skirtAutosaved);
 assert.notEqual(skirtAutosaved.updatedAt, skirtDraft.updatedAt, "The production autosave must actually run.");
-assert.deepEqual(skirtAutosaved.futureMeasurementState?.entered, skirtMeasurements.entered,
+assert.deepEqual(requireFutureMeasurementStateV1(skirtAutosaved.futureMeasurementState).entered, skirtMeasurements.entered,
   "Persist customer measurements; derived measurement status is rebuilt on hydration.");
 act(() => renderer.unmount());
 await mount(null, skirtMountOptions);

@@ -1,5 +1,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { act, create } from "react-test-renderer";
+import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
+import type { GarmentTypeStepSelection } from "./src/types";
+import {
+  createEmptyFutureMeasurementState,
+  planMeasurementRequirements,
+  setFutureMeasurementInput,
+  setFutureMeasurementRoute,
+} from "./src/utils/measurementBlueprint";
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const measurementSource = readFileSync("src/components/DormantFutureMeasurementStep.tsx", "utf8");
@@ -63,3 +73,97 @@ assert.equal(appSource.includes("future_nine_stage"), false);
 assert.equal(studioSource.includes("legacy_five_stage"), false);
 
 console.log("PASS: dormant future Measurement stage integration and production lock");
+
+const shirtConstruction = {
+  status: "resolved" as const,
+  garmentType: "shirt" as const,
+  components: [{
+    componentKey: "shirt:shirt_construction:shirt_std_short",
+    optionId: "shirt_std_short",
+    selectionGroup: "shirt_construction" as const,
+    priceCents: 1,
+    price: 0.01,
+  }],
+  totalPriceCents: 1,
+  totalPrice: 0.01,
+};
+const shirtSelection: GarmentTypeStepSelection = {
+  garmentTypes: ["shirt"],
+  demographic: "male",
+  constructionByGarment: { shirt: shirtConstruction },
+};
+const physicalShirts = [
+  { garmentKey: "base:shirt", garmentType: "shirt" as const },
+  { garmentKey: "additional:shirt:1", garmentType: "shirt" as const },
+];
+const headingText = (markup: { children?: unknown } | string | null | undefined): string => {
+  if (markup == null || typeof markup === "boolean") return "";
+  if (typeof markup === "string" || typeof markup === "number") return String(markup);
+  if (typeof markup !== "object") return "";
+  const children = Array.isArray(markup.children) ? markup.children : markup.children != null ? [markup.children] : [];
+  return children.map((child) => headingText(child as never)).join("");
+};
+const renderMeasurement = (
+  garmentKeys: readonly string[],
+) => {
+  const state = setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk");
+  const plan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: shirtSelection,
+    physicalGarments: physicalShirts.filter((garment) => garmentKeys.includes(garment.garmentKey)),
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: { "additional:shirt:1": shirtConstruction },
+    },
+  });
+  let renderer!: ReturnType<typeof create>;
+  act(() => {
+    renderer = create(createElement(DormantFutureMeasurementStep, {
+      plan,
+      state,
+      physicalGarments: physicalShirts,
+      onChange: () => undefined,
+      onRouteChange: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    }));
+  });
+  return headingText(renderer.root);
+};
+
+const oneShirtText = renderMeasurement(["base:shirt"]);
+assert.ok(oneShirtText.includes("Standard Shirt Measurements"));
+assert.equal(oneShirtText.includes("Standard Shirt 1"), false);
+assert.equal(oneShirtText.includes("Standard Shirt 2"), false);
+
+const bothShirtsText = renderMeasurement(["base:shirt", "additional:shirt:1"]);
+assert.ok(bothShirtsText.includes("Standard Shirt Measurements"));
+assert.ok(bothShirtsText.includes("Standard Shirt 2 Measurements"));
+assert.equal(bothShirtsText.includes("Standard Shirt 1"), false);
+
+const adaOnlyText = renderMeasurement(["additional:shirt:1"]);
+assert.ok(adaOnlyText.includes("Standard Shirt 2 Measurements"));
+assert.equal(adaOnlyText.includes("Standard Shirt Measurements"), false);
+
+const storedPlan = planMeasurementRequirements({
+  route: "low_risk",
+  garmentTypeSelection: shirtSelection,
+  physicalGarments: physicalShirts,
+  additionalGarmentConstructions: {
+    schemaVersion: 1,
+    byGarmentKey: { "additional:shirt:1": shirtConstruction },
+  },
+});
+const lengthRequirement = storedPlan.requirements.find(
+  (requirement) =>
+    requirement.garmentKey === "additional:shirt:1" && requirement.scope === "garment",
+);
+assert.ok(lengthRequirement);
+const stored = setFutureMeasurementInput({
+  state: setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk"),
+  requirement: lengthRequirement!,
+  displayValue: 28,
+});
+assert.ok(stored.entered.byGarmentKey["additional:shirt:1"]);
+assert.equal(stored.entered.byGarmentKey["base:shirt"], undefined);
+assert.equal("Standard Shirt 2" in stored.entered.byGarmentKey, false);

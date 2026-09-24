@@ -20,6 +20,7 @@ import {
 } from "./src/utils/designSourceState";
 import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
 import { DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION } from "./src/utils/designSourceJourney";
+import { requireFutureMeasurementStateV1 } from "./src/utils/measurementBlueprint";
 import { resolveDraftHydrationAllocations } from "./src/utils/fabricAllocationPersistence";
 import { createDesignStyleStepTestModel } from "./testing/designStyleStepFixtures";
 import { createRevision342FabricHydrationFixture } from "./testing/revision342FabricHydrationFixture";
@@ -435,7 +436,7 @@ const revision342Draft: GuestDesignDraft = {
     },
   },
   futureMeasurementState: {
-    ...makeDraft("measurement").futureMeasurementState!,
+    ...requireFutureMeasurementStateV1(makeDraft("measurement").futureMeasurementState),
     entered: {
       shared: {
         chest_bust_circumference: {
@@ -512,7 +513,7 @@ assert.deepEqual(
     ?.selectionsByGarmentKey,
 );
 assert.equal(
-  revision342Hydrated.draft?.futureMeasurementState?.entered.shared
+  requireFutureMeasurementStateV1(revision342Hydrated.draft?.futureMeasurementState).entered.shared
     .chest_bust_circumference
     ?.valueCm,
   102,
@@ -575,7 +576,7 @@ assert.deepEqual(
     ?.selectionsByGarmentKey,
 );
 assert.equal(
-  revision343Hydrated.draft?.futureMeasurementState?.entered.shared
+  requireFutureMeasurementStateV1(revision343Hydrated.draft?.futureMeasurementState).entered.shared
     .chest_bust_circumference
     ?.valueCm,
   102,

@@ -27,6 +27,7 @@ import {
   getFuturePaymentReviewEditStage,
   getFuturePaymentReviewGarments,
   getFuturePaymentReviewMeasurementGroups,
+  getFuturePaymentReviewMeasurementHeader,
   getFuturePaymentReviewPricingRows,
   getFuturePaymentReviewShippingStatusLabel,
   isFuturePaymentReviewStageUnlocked,
@@ -884,12 +885,45 @@ export const DormantFuturePaymentReviewStep = ({
             <div className="flex min-w-0 items-start gap-3 rounded-xl bg-heritage-cream/20 p-4">
               <Ruler aria-hidden="true" className="mt-0.5 shrink-0 text-heritage-gold" size={19} />
               <div className="min-w-0">
-                <p className="font-bold capitalize text-heritage-green">
-                  {candidate.measurements.route.replace("_", " ")} route
-                </p>
-                <p className="mt-1 text-xs text-heritage-ink/60">
-                  Status: {candidate.measurements.calculationStatus.replaceAll("_", " ")}
-                </p>
+                {(() => {
+                  const measurementHeader = getFuturePaymentReviewMeasurementHeader(
+                    candidate.measurements,
+                  );
+                  if (measurementHeader.kind === "single") {
+                    return (
+                      <>
+                        {measurementHeader.wearerLabel ? (
+                          <p className="font-bold text-heritage-green">
+                            {measurementHeader.wearerLabel}
+                          </p>
+                        ) : null}
+                        <p className="font-bold capitalize text-heritage-green">
+                          {measurementHeader.routeLabel} route
+                        </p>
+                        <p className="mt-1 text-xs text-heritage-ink/60">
+                          Status: {measurementHeader.statusLabel}
+                        </p>
+                      </>
+                    );
+                  }
+                  return (
+                    <div className="space-y-2">
+                      {measurementHeader.wearers.map((wearer) => (
+                        <div key={wearer.wearerId}>
+                          <p className="font-bold text-heritage-green">
+                            {wearer.displayName}
+                          </p>
+                          <p className="text-xs capitalize text-heritage-ink/70">
+                            {wearer.routeLabel} route
+                          </p>
+                          <p className="text-xs text-heritage-ink/60">
+                            Status: {wearer.statusLabel}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
             {measurementGroups.length === 0 ? (

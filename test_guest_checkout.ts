@@ -8,6 +8,7 @@ import type {
   Fabric,
 } from "./src/types";
 import { AuthorizationEngine } from "./src/engine/AuthorizationEngine";
+import { requireFutureMeasurementStateV1 } from "./src/utils/measurementBlueprint";
 import {
   findCustomerByEmail,
   resolveGoogleCustomer,
@@ -309,9 +310,9 @@ assert.equal(restoredGuestDraft.selectedStyleId, guestDraft.selectedStyleId);
 assert.deepEqual(restoredGuestDraft.designSelections, guestDraft.designSelections);
 assert.deepEqual(restoredGuestDraft.measurements, guestDraft.measurements);
 assert.equal(restoredGuestDraft.specialInstructions, guestDraft.specialInstructions);
-assert.equal(restoredGuestDraft.futureMeasurementState?.route, "low_risk");
+assert.equal(requireFutureMeasurementStateV1(restoredGuestDraft.futureMeasurementState).route, "low_risk");
 assert.equal(
-  restoredGuestDraft.futureMeasurementState?.entered.shared
+  requireFutureMeasurementStateV1(restoredGuestDraft.futureMeasurementState).entered.shared
     .chest_bust_circumference?.valueCm,
   106.68,
   "legacy measurement values are normalized into the authoritative Step 6 state",
