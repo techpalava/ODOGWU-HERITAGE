@@ -8574,7 +8574,7 @@ export default function DesignStudioView({
           order={wearerOrderForPlan}
           activeWearerId={activeWearer?.wearerId || null}
           garments={futureMeasurementPhysicalGarments}
-          garmentLabels={{}}
+          garmentLabels={yourGarmentsConstructionDisplayLabelByGarmentKey}
           onSelectWearer={(wearerId) => {
             const next = wearerOrderForPlan.wearers.find(
               (wearer) => wearer.wearerId === wearerId,
@@ -8627,17 +8627,31 @@ export default function DesignStudioView({
             const garment = futureMeasurementPhysicalGarments.find(
               (candidate) => candidate.garmentKey === garmentKey,
             );
-            if (!garment || !wearerId) return;
-            const result = assignGarmentToWearer({
-              order: wearerOrderForPlan,
-              garmentKey,
-              wearerId,
-              garment,
-              garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
-              additionalGarmentConstructions:
-                designSelections.additionalGarmentConstructions,
+            if (!garment || !wearerId) {
+              return {
+                status: "blocked",
+                code: "WEARER_NOT_FOUND",
+                order: wearerOrder,
+              };
+            }
+            let result: ReturnType<typeof assignGarmentToWearer> = {
+              status: "blocked",
+              code: "WEARER_NOT_FOUND",
+              order: wearerOrder,
+            };
+            setWearerOrder((current) => {
+              result = assignGarmentToWearer({
+                order: current,
+                garmentKey,
+                wearerId,
+                garment,
+                garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+                additionalGarmentConstructions:
+                  designSelections.additionalGarmentConstructions,
+              });
+              return result.status === "updated" ? result.order : current;
             });
-            if (result.status === "updated") setWearerOrder(result.order);
+            return result;
           }}
         />
         <DormantFutureMeasurementStep

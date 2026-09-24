@@ -182,7 +182,7 @@ export const addWearer = ({
   order: WearerOrderStateV2;
   physicalGarmentCount: number;
   displayName: string;
-  fitContext: "male" | "female";
+  fitContext: "male" | "female" | null;
 }): WearerMutationResult => {
   const cap = resolveActiveWearerCap(physicalGarmentCount);
   if (order.wearers.length >= cap) {
@@ -291,6 +291,7 @@ export const assignGarmentToWearer = ({
 }): WearerMutationResult => {
   const wearer = order.wearers.find((candidate) => candidate.wearerId === wearerId);
   if (!wearer) return blocked(order, "WEARER_NOT_FOUND");
+  if (wearer.fitContext === null) return blocked(order, "WEARER_FIT_REQUIRED");
   if (
     !isGarmentEligibleForWearer({
       garment,
@@ -652,6 +653,18 @@ export const planWearerOrderMeasurements = ({
     };
   });
 
+export const hasUnassignedPhysicalGarments = ({
+  order,
+  physicalGarmentKeys,
+}: {
+  order: WearerOrderStateV2;
+  physicalGarmentKeys: readonly string[];
+}): boolean => {
+  if (physicalGarmentKeys.length === 0) return false;
+  const assigned = new Set(Object.keys(order.assignmentByGarmentKey));
+  return physicalGarmentKeys.some((garmentKey) => !assigned.has(garmentKey));
+};
+
 export const isWearerOrderMeasurementComplete = ({
   order,
   runtimes,
@@ -663,8 +676,7 @@ export const isWearerOrderMeasurementComplete = ({
 }): boolean => {
   if (physicalGarmentKeys.length === 0) return false;
   if (runtimes.length === 0) return false;
-  const assigned = new Set(Object.keys(order.assignmentByGarmentKey));
-  if (physicalGarmentKeys.some((garmentKey) => !assigned.has(garmentKey))) return false;
+  if (hasUnassignedPhysicalGarments({ order, physicalGarmentKeys })) return false;
   if (runtimes.some((runtime) => runtime.garmentKeys.length === 0)) return false;
   return runtimes.every((runtime) =>
     isFutureMeasurementStageComplete(runtime.measurement),
