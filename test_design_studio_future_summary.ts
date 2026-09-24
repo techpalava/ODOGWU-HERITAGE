@@ -32,7 +32,10 @@ import {
 } from "./src/utils/designStudioFutureFabricStage";
 import { reconcileFutureDesignStyleSelection } from "./src/utils/designStudioFutureDesignStyle";
 import { projectDesignStudioLiveOrderSummary } from "./src/utils/designStudioLiveOrderSummary";
-import { projectFutureDesignStudioSummary } from "./src/utils/designStudioFutureSummary";
+import {
+  formatCompactWearerRouteLabel,
+  projectFutureDesignStudioSummary,
+} from "./src/utils/designStudioFutureSummary";
 import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAllocationPricing";
 import { appendCustomerFabricGarment } from "./src/utils/fabricGarmentAppendFlow";
 import {
@@ -2022,5 +2025,94 @@ assert.deepEqual(
   ["base:shirt", "base:trouser"],
   "Live Summary must show both uploaded base rows without duplication",
 );
+
+const amakaSummaryInput = buildSummaryInput({ garmentTypes: ["dress"] });
+const amakaSummary = projectFutureDesignStudioSummary({
+  ...amakaSummaryInput,
+  wearerRuntimes: [
+    {
+      wearerId: "wearer-amaka",
+      displayName: "Amaka",
+      fitContext: "female",
+      garmentKeys: ["base:dress"],
+      plan: amakaSummaryInput.measurementPlan,
+      measurement: amakaSummaryInput.measurementState,
+    },
+  ],
+});
+const amakaGroup = amakaSummary.measurementSummary.wearerGroups?.[0];
+assert.equal(amakaGroup?.displayName, "Amaka");
+assert.deepEqual(amakaGroup?.garmentKeys, ["base:dress"]);
+assert.match(
+  formatCompactWearerRouteLabel(
+    amakaGroup?.displayName || "",
+    amakaGroup?.routeLabel || "",
+  ),
+  /Amaka/,
+);
+const amakaMarkup = renderToStaticMarkup(
+  createElement(DormantFutureSummaryStep, {
+    summary: amakaSummary,
+    onBack: () => {},
+    onEditGarments: () => {},
+    onEditFabrics: () => {},
+    onEditDesignStyle: () => {},
+    onEditCustomDetails: () => {},
+    onEditAiTryOn: () => {},
+    onEditMeasurements: () => {},
+    canContinueToShipping: false,
+    onContinueToShipping: () => {},
+  }),
+);
+assert.match(amakaMarkup, /Amaka/);
+assert.match(amakaMarkup, /base:dress/);
+const youSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  wearerRuntimes: [
+    {
+      wearerId: "wearer-you",
+      displayName: "You",
+      fitContext: "male",
+      garmentKeys: ["base:shirt"],
+      plan: exactInput.measurementPlan,
+      measurement: exactInput.measurementState,
+    },
+  ],
+});
+assert.equal(
+  formatCompactWearerRouteLabel(
+    "You",
+    youSummary.measurementSummary.wearerGroups?.[0]?.routeLabel || "",
+  ),
+  youSummary.measurementSummary.wearerGroups?.[0]?.routeLabel,
+);
+const twoWearerSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  wearerRuntimes: [
+    {
+      wearerId: "wearer-you",
+      displayName: "You",
+      fitContext: "male",
+      garmentKeys: ["base:shirt"],
+      plan: exactInput.measurementPlan,
+      measurement: exactInput.measurementState,
+    },
+    {
+      wearerId: "wearer-amaka",
+      displayName: "Amaka",
+      fitContext: "female",
+      garmentKeys: ["base:dress"],
+      plan: amakaSummaryInput.measurementPlan,
+      measurement: amakaSummaryInput.measurementState,
+    },
+  ],
+});
+assert.equal(twoWearerSummary.measurementSummary.routeLabel, "2 people");
+assert.deepEqual(
+  twoWearerSummary.measurementSummary.wearerGroups?.map((wearer) => wearer.displayName),
+  ["You", "Amaka"],
+);
+assert.equal(exactSummary.measurementSummary.wearerGroups, undefined);
+assert.equal(exactSummary.measurementSummary.routeLabel.includes("Amaka"), false);
 
 console.log("PASS: dormant future Summary projection and Step 7 integration");

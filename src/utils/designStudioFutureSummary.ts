@@ -155,6 +155,22 @@ export interface FutureSummaryMeasurementValue {
   averageFactor: number | null;
 }
 
+export interface FutureSummaryWearerMeasurements {
+  wearerId: string;
+  displayName: string;
+  garmentKeys: string[];
+  route: FutureMeasurementStateV1["route"];
+  routeLabel: string;
+  unit: FutureMeasurementStateV1["unit"];
+  status: FutureMeasurementStateV1["calculationStatus"];
+  shared: FutureSummaryMeasurementValue[];
+  byGarment: Array<{
+    garmentKey: string;
+    garmentLabel: string;
+    values: FutureSummaryMeasurementValue[];
+  }>;
+}
+
 export interface FutureSummaryMeasurements {
   route: FutureMeasurementStateV1["route"];
   routeLabel: string;
@@ -165,6 +181,7 @@ export interface FutureSummaryMeasurements {
     garmentLabel: string;
     values: FutureSummaryMeasurementValue[];
   }>;
+  wearerGroups?: FutureSummaryWearerMeasurements[];
 }
 
 export interface FutureSummaryPricing {
@@ -214,6 +231,14 @@ export interface FutureDesignStudioSummaryInput {
   aiTryOnWorkflow: AiTryOnWorkflowStateV1;
   measurementPlan: MeasurementRequirementPlan;
   measurementState: FutureMeasurementStateV1;
+  wearerRuntimes?: readonly {
+    wearerId: string;
+    displayName: string;
+    fitContext: "male" | "female" | "unisex" | null;
+    garmentKeys: string[];
+    plan: MeasurementRequirementPlan;
+    measurement: FutureMeasurementStateV1;
+  }[];
   basePricing: AuthoritativeDesignPricing | null;
 }
 
@@ -247,6 +272,16 @@ const getMeasurementValue = (
   state: FutureMeasurementStateV1,
   requirement: PlannedMeasurementRequirement,
 ) => getResolvedMeasurementValue(state, requirement);
+
+/** One named wearer stays on the method line. "You" stays the method label alone. */
+export const formatCompactWearerRouteLabel = (
+  displayName: string,
+  routeLabel: string,
+): string => {
+  const name = displayName.trim();
+  if (name.toLowerCase() === "you") return routeLabel;
+  return `${name} — ${routeLabel}`;
+};
 
 const getMeasurementRouteLabel = (
   route: FutureMeasurementStateV1["route"],
@@ -829,6 +864,83 @@ const mapPricing = ({
   };
 };
 
+const summarizeOrderMeasurements = ({
+  measurementPlan,
+  measurementState,
+  wearerRuntimes,
+  blockers,
+}: {
+  measurementPlan: MeasurementRequirementPlan;
+  measurementState: FutureMeasurementStateV1;
+  wearerRuntimes?: FutureDesignStudioSummaryInput["wearerRuntimes"];
+  blockers: FutureDesignStudioSummaryBlocker[];
+}): FutureSummaryMeasurements => {
+  if (!wearerRuntimes || wearerRuntimes.length === 0) {
+    return mapMeasurements({ measurementPlan, measurementState, blockers });
+  }
+  if (wearerRuntimes.length === 1) {
+    const wearer = wearerRuntimes[0];
+    const summary = mapMeasurements({
+      measurementPlan: wearer.plan,
+      measurementState: wearer.measurement,
+      blockers,
+    });
+    return {
+      ...summary,
+      wearerGroups: [
+        {
+          wearerId: wearer.wearerId,
+          displayName: wearer.displayName,
+          garmentKeys: [...wearer.garmentKeys],
+          route: summary.route,
+          routeLabel: summary.routeLabel,
+          unit: summary.unit,
+          status: wearer.measurement.calculationStatus,
+          shared: summary.shared,
+          byGarment: summary.byGarment,
+        },
+      ],
+    };
+  }
+  const wearerGroups = wearerRuntimes.map((wearer) => {
+    const summary = mapMeasurements({
+      measurementPlan: wearer.plan,
+      measurementState: wearer.measurement,
+      blockers: [],
+    });
+    return {
+      wearerId: wearer.wearerId,
+      displayName: wearer.displayName,
+      garmentKeys: [...wearer.garmentKeys],
+      route: summary.route,
+      routeLabel: summary.routeLabel,
+      unit: summary.unit,
+      status: wearer.measurement.calculationStatus,
+      shared: summary.shared,
+      byGarment: summary.byGarment,
+    };
+  });
+  if (
+    wearerGroups.some(
+      (wearer) => wearer.route === null || wearer.status !== "complete",
+    )
+  ) {
+    blockers.push({
+      code: "MEASUREMENT_INCOMPLETE",
+      section: "measurements",
+      message: "Complete measurements for every person in this order.",
+    });
+  }
+  return {
+    route: null,
+    routeLabel: `${wearerGroups.length} people`,
+    unit: wearerGroups[0]?.unit || measurementState.unit,
+    shared: [],
+    byGarment: [],
+    wearerGroups,
+  };
+};
+
 export const projectFutureDesignStudioSummary = (
   input: FutureDesignStudioSummaryInput,
 ): FutureDesignStudioSummary => {
@@ -881,9 +993,10 @@ export const projectFutureDesignStudioSummary = (
       message: "Complete or skip AI Try-on before reviewing Summary.",
     });
   }
-  const measurementSummary = mapMeasurements({
+  const measurementSummary = summarizeOrderMeasurements({
     measurementPlan: input.measurementPlan,
     measurementState: input.measurementState,
+    wearerRuntimes: input.wearerRuntimes,
     blockers,
   });
   const pricingSummary = mapPricing({

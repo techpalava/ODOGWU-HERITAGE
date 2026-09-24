@@ -476,6 +476,29 @@ export const resolveMeasurementProfile = ({
     : { status: "unresolved", garmentKey, garmentType, code: "construction_unresolved" };
 };
 
+/** Profile eligibility for one wearer. Does not invent a second measurement engine. */
+export const isGarmentMeasurementEligibleForDemographic = ({
+  garment,
+  garmentTypeSelection,
+  demographic,
+  additionalGarmentConstructions,
+}: {
+  garment: MeasurementPhysicalGarment;
+  garmentTypeSelection: GarmentTypeStepSelection;
+  demographic: GarmentTypeStepSelection["demographic"];
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+}): boolean => {
+  const resolution = resolveMeasurementProfile({
+    garment,
+    garmentTypeSelection: { ...garmentTypeSelection, demographic },
+    additionalGarmentConstructions,
+  });
+  return !(
+    resolution.status === "unresolved" &&
+    resolution.code === "demographic_ineligible"
+  );
+};
+
 export type MeasurementInputSource =
   | "route_marker"
   | "calculated_average_factor"
@@ -1194,6 +1217,26 @@ export type FutureMeasurementHydrationResult =
   | { readonly status: "absent" }
   | { readonly status: "valid"; readonly state: FutureMeasurementStateV1 }
   | { readonly status: "invalid"; readonly preservedRaw: unknown };
+
+export const isFutureMeasurementStateV1 = (
+  value: unknown,
+): value is FutureMeasurementStateV1 =>
+  Boolean(value) &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  (value as { schemaVersion?: unknown }).schemaVersion === 1 &&
+  "route" in value &&
+  "entered" in value &&
+  "derived" in value;
+
+export const requireFutureMeasurementStateV1 = (
+  value: unknown,
+): FutureMeasurementStateV1 => {
+  if (!isFutureMeasurementStateV1(value)) {
+    throw new Error("Expected a single-wearer measurement document.");
+  }
+  return value;
+};
 
 export const FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE =
   "Your saved measurements could not be loaded. Your saved draft has been kept unchanged.";

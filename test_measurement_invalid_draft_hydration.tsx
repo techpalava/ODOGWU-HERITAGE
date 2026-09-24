@@ -25,6 +25,7 @@ import {
 import {
   classifyFutureMeasurementHydration,
   createEmptyFutureMeasurementState,
+  requireFutureMeasurementStateV1,
   FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE,
 } from "./src/utils/measurementBlueprint";
 
@@ -405,9 +406,9 @@ try {
       makeDraft({ futureMeasurementState: validSampleMeasurements }),
     );
     const afterSave = GuestOrderSessionService.getFutureDesignDraft();
-    assert.equal(afterSave?.futureMeasurementState?.route, "sample_cloth");
+    assert.equal(requireFutureMeasurementStateV1(afterSave?.futureMeasurementState).route, "sample_cloth");
     assert.equal(
-      afterSave?.futureMeasurementState?.entered.shared.chest_bust_circumference?.valueCm,
+      requireFutureMeasurementStateV1(afterSave?.futureMeasurementState).entered.shared.chest_bust_circumference?.valueCm,
       50.8,
     );
     recordPass(1, "absent measurement state initializes and later valid save works");
@@ -425,7 +426,7 @@ try {
     });
     const loaded = GuestOrderSessionService.getFutureDesignDraft();
     assert.equal(classifyFutureMeasurementHydration(loaded?.futureMeasurementState).status, "valid");
-    assert.equal(loaded?.futureMeasurementState?.route, null);
+    assert.equal(requireFutureMeasurementStateV1(loaded?.futureMeasurementState).route, null);
     assert.equal(renderer.root.findAllByType(DormantFutureMeasurementStep).length, 0);
     await unmountStudio(renderer);
     recordPass(2, "valid empty measurement state is accepted");
@@ -438,9 +439,9 @@ try {
     const guestNormalized = normalizeGuestDesignDraft(
       makeDraft({ futureMeasurementState: oldThreeRouteMeasurements }),
     );
-    assert.equal(guestNormalized.futureMeasurementState?.route, "low_risk");
+    assert.equal(requireFutureMeasurementStateV1(guestNormalized.futureMeasurementState).route, "low_risk");
     assert.equal(
-      guestNormalized.futureMeasurementState?.entered.shared.total_height?.valueCm,
+      requireFutureMeasurementStateV1(guestNormalized.futureMeasurementState).entered.shared.total_height?.valueCm,
       180,
     );
     const renderer = await mountStudio(scheduler);
@@ -449,9 +450,9 @@ try {
       await flush();
     });
     const loaded = GuestOrderSessionService.getFutureDesignDraft();
-    assert.equal(loaded?.futureMeasurementState?.route, "low_risk");
-    assert.equal(loaded?.futureMeasurementState?.entered.shared.total_height?.valueCm, 180);
-    assert.ok(loaded?.futureMeasurementState?.enteredByRoute?.sample_cloth);
+    assert.equal(requireFutureMeasurementStateV1(loaded?.futureMeasurementState).route, "low_risk");
+    assert.equal(requireFutureMeasurementStateV1(loaded?.futureMeasurementState).entered.shared.total_height?.valueCm, 180);
+    assert.ok(requireFutureMeasurementStateV1(loaded?.futureMeasurementState).enteredByRoute?.sample_cloth);
     await unmountStudio(renderer);
     recordPass(3, "old three-route draft survives guest load and Studio autosave");
   }
@@ -466,10 +467,10 @@ try {
       await flush();
     });
     const loaded = GuestOrderSessionService.getFutureDesignDraft();
-    assert.equal(loaded?.futureMeasurementState?.route, "medium_risk");
-    assert.equal(loaded?.futureMeasurementState?.entered.shared.total_height?.valueCm, 180);
-    assert.ok(loaded?.futureMeasurementState?.enteredByRoute?.sample_cloth);
-    assert.deepEqual(loaded?.futureMeasurementState?.enteredByRoute?.sample_cloth, emptyBag);
+    assert.equal(requireFutureMeasurementStateV1(loaded?.futureMeasurementState).route, "medium_risk");
+    assert.equal(requireFutureMeasurementStateV1(loaded?.futureMeasurementState).entered.shared.total_height?.valueCm, 180);
+    assert.ok(requireFutureMeasurementStateV1(loaded?.futureMeasurementState).enteredByRoute?.sample_cloth);
+    assert.deepEqual(requireFutureMeasurementStateV1(loaded?.futureMeasurementState).enteredByRoute?.sample_cloth, emptyBag);
     await unmountStudio(renderer);
     recordPass(4, "old four-route draft survives; Sample bag initializes empty");
   }
@@ -484,9 +485,9 @@ try {
       await flush();
     });
     const loaded = GuestOrderSessionService.getFutureDesignDraft();
-    assert.equal(loaded?.futureMeasurementState?.route, "sample_cloth");
+    assert.equal(requireFutureMeasurementStateV1(loaded?.futureMeasurementState).route, "sample_cloth");
     assert.equal(
-      loaded?.futureMeasurementState?.entered.shared.chest_bust_circumference?.valueCm,
+      requireFutureMeasurementStateV1(loaded?.futureMeasurementState).entered.shared.chest_bust_circumference?.valueCm,
       50.8,
     );
     await unmountStudio(renderer);
@@ -497,9 +498,9 @@ try {
       await flush();
     });
     const restored = GuestOrderSessionService.getFutureDesignDraft();
-    assert.equal(restored?.futureMeasurementState?.route, "sample_cloth");
+    assert.equal(requireFutureMeasurementStateV1(restored?.futureMeasurementState).route, "sample_cloth");
     assert.equal(
-      restored?.futureMeasurementState?.entered.shared.chest_bust_circumference?.valueCm,
+      requireFutureMeasurementStateV1(restored?.futureMeasurementState).entered.shared.chest_bust_circumference?.valueCm,
       50.8,
     );
     await unmountStudio(remounted);
@@ -610,9 +611,9 @@ try {
       await flush();
     });
     const afterValid = GuestOrderSessionService.getFutureDesignDraft();
-    assert.equal(afterValid?.futureMeasurementState?.route, "sample_cloth");
+    assert.equal(requireFutureMeasurementStateV1(afterValid?.futureMeasurementState).route, "sample_cloth");
     assert.equal(
-      afterValid?.futureMeasurementState?.entered.shared.chest_bust_circumference?.valueCm,
+      requireFutureMeasurementStateV1(afterValid?.futureMeasurementState).entered.shared.chest_bust_circumference?.valueCm,
       50.8,
     );
     assert.notEqual(routeBag(afterValid?.futureMeasurementState, "sample_cloth"), "malformed");
@@ -677,9 +678,9 @@ try {
       await flush();
     });
     const loaded = GuestOrderSessionService.getFutureDesignDraft();
-    assert.equal(loaded?.futureMeasurementState?.route, "sample_cloth");
+    assert.equal(requireFutureMeasurementStateV1(loaded?.futureMeasurementState).route, "sample_cloth");
     assert.equal(
-      loaded?.futureMeasurementState?.entered.shared.chest_bust_circumference?.valueCm,
+      requireFutureMeasurementStateV1(loaded?.futureMeasurementState).entered.shared.chest_bust_circumference?.valueCm,
       50.8,
     );
     GuestOrderSessionService.saveFutureDesignDraft({
@@ -688,7 +689,7 @@ try {
     });
     const rewritten = GuestOrderSessionService.getFutureDesignDraft();
     assert.equal(rewritten?.specialInstructions, "written-after-invalid-guard");
-    assert.equal(rewritten?.futureMeasurementState?.route, "sample_cloth");
+    assert.equal(requireFutureMeasurementStateV1(rewritten?.futureMeasurementState).route, "sample_cloth");
     await unmountStudio(renderer);
     recordPass(11, "subsequent valid draft remains writable");
   }

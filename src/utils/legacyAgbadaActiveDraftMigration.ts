@@ -16,6 +16,11 @@ import {
 import { inspectDraftFabricAllocations } from "./fabricAllocationPersistence";
 import { removeGarmentScopedCustomDetailInputs } from "./garmentScopedCustomDetailInputsState";
 import { removeGarmentScopedCustomDetails } from "./garmentScopedCustomDetailsState";
+import { isFutureMeasurementStateV1 } from "./measurementBlueprint";
+import {
+  isWearerOrderStateV2,
+  removeGarmentFromWearerOrder,
+} from "./wearerOrder";
 
 export const LEGACY_AGBADA_ACTIVE_DRAFT_MIGRATION_VERSION = 1 as const;
 
@@ -427,14 +432,26 @@ export const migrateLegacyAgbadaActiveDraft = (
         ? null
         : draft.selectedGarment,
     designSelections: nextDesignSelections,
-    ...(draft.futureMeasurementState
-      ? {
+    ...(() => {
+      const persisted = draft.futureMeasurementState;
+      if (!persisted) return {};
+      if (isWearerOrderStateV2(persisted)) {
+        const futureMeasurementState = [...removedKeys].reduce(
+          (order, garmentKey) => removeGarmentFromWearerOrder(order, garmentKey),
+          persisted,
+        );
+        return { futureMeasurementState };
+      }
+      if (isFutureMeasurementStateV1(persisted)) {
+        return {
           futureMeasurementState: removeGarmentsFromMeasurementState(
-            draft.futureMeasurementState,
+            persisted,
             removedKeys,
           ),
-        }
-      : {}),
+        };
+      }
+      return { futureMeasurementState: persisted };
+    })(),
     ...(draft.futureShippingState
       ? {
           futureShippingState: {

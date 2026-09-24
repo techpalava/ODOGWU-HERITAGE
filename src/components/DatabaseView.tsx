@@ -5,6 +5,7 @@ import { AuthorizationEngine } from "../engine/AuthorizationEngine";
  */
 
 import React, { useState, useEffect } from "react";
+import { projectTailoringMeasurementReadout } from "../utils/tailoringMeasurementProjection";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Database,
@@ -3135,6 +3136,55 @@ export default function DatabaseView({
                         placeholder="e.g. Please sew traditional custom matching cap or returning scraps."
                       />
                     </div>
+                    {(() => {
+                      const tailoringReadout = projectTailoringMeasurementReadout(
+                        editingItem.measurements,
+                      );
+                      if (!tailoringReadout) return null;
+                      return (
+                        <div className="sm:col-span-2 space-y-3 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-4">
+                          <p className="font-bold text-heritage-green">
+                            Tailoring measurements
+                          </p>
+                          {tailoringReadout.map((wearer) => (
+                            <section key={wearer.wearerId} className="space-y-1">
+                              <h4 className="font-bold uppercase tracking-wide text-heritage-green">
+                                {wearer.displayName}
+                              </h4>
+                              <p>Method: {wearer.methodLabel}</p>
+                              {wearer.garments.map((garment) => (
+                                <div key={garment.garmentKey}>
+                                  <p className="font-semibold">
+                                    {garment.label}
+                                    <span className="ml-2 font-mono text-[10px] text-heritage-ink/60">
+                                      {garment.garmentKey}
+                                    </span>
+                                  </p>
+                                  {garment.values.map((value) => (
+                                    <p key={value.measurementId} className="pl-3">
+                                      {value.measurementId}: {value.valueCm} cm
+                                    </p>
+                                  ))}
+                                </div>
+                              ))}
+                              {wearer.shared.map((value) => (
+                                <p key={value.measurementId}>
+                                  Shared {value.measurementId}: {value.valueCm} cm
+                                </p>
+                              ))}
+                            </section>
+                          ))}
+                          <details>
+                            <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-heritage-ink/50">
+                              measurements JSON
+                            </summary>
+                            <pre className="mt-2 overflow-auto text-[10px]">
+                              {JSON.stringify(editingItem.measurements, null, 2)}
+                            </pre>
+                          </details>
+                        </div>
+                      );
+                    })()}
                     <div className="sm:col-span-2 pt-4 flex gap-2 justify-end">
                       <button
                         type="button"
@@ -5184,6 +5234,22 @@ export default function DatabaseView({
                                   </td>
                                   <td className="px-4 py-3" colSpan={3}>
                                     <div className="space-y-1.5" data-future-order-v2-occurrences>
+                                      {history.tailoringMeasurements?.map((wearer) => (
+                                        <div key={wearer.wearerId} data-tailoring-wearer={wearer.wearerId}>
+                                          <p className="font-bold uppercase text-heritage-green">
+                                            {wearer.displayName}
+                                          </p>
+                                          <p>Method: {wearer.methodLabel}</p>
+                                          {wearer.garments.map((garment) => (
+                                            <p key={garment.garmentKey}>
+                                              {garment.label}
+                                              <span className="ml-1 font-mono text-gray-400">
+                                                {garment.garmentKey}
+                                              </span>
+                                            </p>
+                                          ))}
+                                        </div>
+                                      ))}
                                       {history.occurrences.map((occurrence) => (
                                         <div
                                           key={`${occurrence.garmentKey}:${occurrence.occurrenceToken}`}

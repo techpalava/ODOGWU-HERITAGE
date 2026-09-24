@@ -9,7 +9,10 @@ import {
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import type React from "react";
 import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "../utils/designPriceBreakdownPresentation";
-import type { FutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
+import {
+  formatCompactWearerRouteLabel,
+  type FutureDesignStudioSummary,
+} from "../utils/designStudioFutureSummary";
 import { isSampleClothMeasurementMethod } from "../utils/measurementBlueprint";
 import type { FutureShippingStageResolution } from "../utils/designStudioFutureShipping";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
@@ -561,9 +564,73 @@ export const DormantFutureSummaryStep = ({
           editLabel="Edit Measurements"
           onEdit={onEditMeasurements}
         >
-          <p className="text-sm font-semibold text-heritage-green">
-            {summary.measurementSummary.routeLabel}
-          </p>
+          {summary.measurementSummary.wearerGroups &&
+          summary.measurementSummary.wearerGroups.length > 1 ? (
+            <div className="space-y-4">
+              {summary.measurementSummary.wearerGroups.map((wearer) => (
+                <div key={wearer.wearerId}>
+                  <p className="text-sm font-semibold text-heritage-green">
+                    {wearer.displayName}
+                  </p>
+                  <p className="text-xs text-heritage-ink/60">
+                    Method: {wearer.routeLabel}. Status: {wearer.status}.
+                  </p>
+                  <ul className="mt-2 space-y-1 text-sm text-heritage-ink/75">
+                    {wearer.garmentKeys.map((garmentKey) => (
+                      <li key={garmentKey}>{garmentKey}</li>
+                    ))}
+                    {wearer.shared.map((measurement) => (
+                      <li key={measurement.requirementKey}>
+                        {measurement.label}: {measurement.formattedValue}
+                        {measurement.convertedFormattedValue
+                          ? ` (${measurement.convertedFormattedValue})`
+                          : ""}
+                      </li>
+                    ))}
+                    {wearer.byGarment.flatMap((garment) =>
+                      garment.values.map((measurement) => (
+                        <li key={measurement.requirementKey}>
+                          {garment.garmentLabel} — {measurement.label}: {measurement.formattedValue}
+                        </li>
+                      )),
+                    )}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          ) : (
+          <div>
+            <p className="text-sm font-semibold text-heritage-green">
+              {summary.measurementSummary.wearerGroups?.length === 1
+                ? formatCompactWearerRouteLabel(
+                    summary.measurementSummary.wearerGroups[0].displayName,
+                    summary.measurementSummary.wearerGroups[0].routeLabel,
+                  )
+                : summary.measurementSummary.routeLabel}
+            </p>
+            {summary.measurementSummary.wearerGroups?.length === 1
+              ? summary.measurementSummary.wearerGroups[0].garmentKeys.map(
+                  (garmentKey) => {
+                    const garmentLabel =
+                      summary.measurementSummary.wearerGroups?.[0].byGarment.find(
+                        (garment) => garment.garmentKey === garmentKey,
+                      )?.garmentLabel || garmentKey;
+                    return (
+                      <p
+                        key={garmentKey}
+                        className="text-sm text-heritage-ink/75"
+                      >
+                        {garmentLabel}
+                        <span className="ml-2 font-mono text-[10px] text-heritage-ink/45">
+                          {garmentKey}
+                        </span>
+                      </p>
+                    );
+                  },
+                )
+              : null}
+          </div>
+          )}
           <p className="mt-1 text-xs text-heritage-ink/60">
             Display unit: {summary.measurementSummary.unit === "inch" ? "Inches" : "Centimetres"}
           </p>

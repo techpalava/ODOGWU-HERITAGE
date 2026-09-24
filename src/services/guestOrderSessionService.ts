@@ -23,6 +23,7 @@ import {
   classifyFutureMeasurementHydration,
   migrateLegacyManualMeasurements,
 } from "../utils/measurementBlueprint";
+import { normalizeWearerOrderState } from "../utils/wearerOrder";
 import {
   createDesignStudioDraftRepository,
   GUEST_ORDER_SESSION_STORAGE_NAMESPACE,
@@ -93,11 +94,16 @@ export const normalizeGuestDesignDraft = (
   const normalizedAiTryOnWorkflow = normalizeAiTryOnWorkflowState(
     garmentTypeReconciledDraft.aiTryOnWorkflow,
   );
-  const measurementHydration = classifyFutureMeasurementHydration(
+  const normalizedWearerOrder = normalizeWearerOrderState(
     garmentTypeReconciledDraft.futureMeasurementState,
   );
+  const measurementHydration = normalizedWearerOrder
+    ? null
+    : classifyFutureMeasurementHydration(
+        garmentTypeReconciledDraft.futureMeasurementState,
+      );
   const migratedMeasurementState =
-    measurementHydration.status === "absent" &&
+    measurementHydration?.status === "absent" &&
     garmentTypeReconciledDraft.journeySchemaVersion ===
       DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION
       ? migrateLegacyManualMeasurements(
@@ -115,16 +121,18 @@ export const normalizeGuestDesignDraft = (
     ...(normalizedAiTryOnWorkflow
       ? { aiTryOnWorkflow: normalizedAiTryOnWorkflow }
       : {}),
-    ...(measurementHydration.status === "invalid"
-      ? {
-          futureMeasurementState:
-            measurementHydration.preservedRaw as GuestDesignDraft["futureMeasurementState"],
-        }
-      : measurementHydration.status === "valid"
-        ? { futureMeasurementState: measurementHydration.state }
-        : migratedMeasurementState
-          ? { futureMeasurementState: migratedMeasurementState }
-          : {}),
+    ...(normalizedWearerOrder
+      ? { futureMeasurementState: normalizedWearerOrder }
+      : measurementHydration?.status === "invalid"
+        ? {
+            futureMeasurementState:
+              measurementHydration.preservedRaw as GuestDesignDraft["futureMeasurementState"],
+          }
+        : measurementHydration?.status === "valid"
+          ? { futureMeasurementState: measurementHydration.state }
+          : migratedMeasurementState
+            ? { futureMeasurementState: migratedMeasurementState }
+            : {}),
   };
   const scopedCustomDetails =
     workflowReconciledDraft.designSelections.garmentScopedCustomDetails;

@@ -1,4 +1,12 @@
-import type { DesignStudioStageId, MeasurementUnit } from "../types";
+import type {
+  DesignStudioStageId,
+  FutureMeasurementStateV1,
+  MeasurementUnit,
+  SelectedMeasurementMethod,
+  WearerOrderStateV2,
+} from "../types";
+import { isFutureMeasurementStateV1 } from "./measurementBlueprint";
+import { isWearerOrderStateV2 } from "./wearerOrder";
 import {
   type FutureOrderCandidateBlocker,
   type FutureOrderCandidateBuildResult,
@@ -222,16 +230,76 @@ const toMeasurementItem = ({
           : "System derived",
 });
 
+const formatMeasurementRoute = (route: SelectedMeasurementMethod): string =>
+  route ? route.replaceAll("_", " ") : "method not selected";
+
+const formatMeasurementStatus = (
+  status: FutureMeasurementStateV1["calculationStatus"],
+): string => status.replaceAll("_", " ");
+
+export type FuturePaymentReviewMeasurementHeader =
+  | {
+      readonly kind: "single";
+      readonly wearerLabel: string | null;
+      readonly routeLabel: string;
+      readonly statusLabel: string;
+    }
+  | {
+      readonly kind: "wearers";
+      readonly wearers: readonly {
+        readonly wearerId: string;
+        readonly displayName: string;
+        readonly routeLabel: string;
+        readonly statusLabel: string;
+      }[];
+    };
+
+export const getFuturePaymentReviewMeasurementHeader = (
+  measurements: FutureMeasurementStateV1 | WearerOrderStateV2,
+): FuturePaymentReviewMeasurementHeader => {
+  if (isWearerOrderStateV2(measurements)) {
+    const wearers = [...measurements.wearers].sort(
+      (left, right) => left.presentationOrder - right.presentationOrder,
+    );
+    if (wearers.length === 1) {
+      const wearer = wearers[0];
+      const name = wearer.displayName.trim();
+      const routeLabel = formatMeasurementRoute(wearer.measurement.route);
+      return {
+        kind: "single",
+        wearerLabel: name.toLowerCase() === "you" ? null : name,
+        routeLabel,
+        statusLabel: formatMeasurementStatus(wearer.measurement.calculationStatus),
+      };
+    }
+    return {
+      kind: "wearers",
+      wearers: wearers.map((wearer) => ({
+        wearerId: wearer.wearerId,
+        displayName: wearer.displayName,
+        routeLabel: formatMeasurementRoute(wearer.measurement.route),
+        statusLabel: formatMeasurementStatus(wearer.measurement.calculationStatus),
+      })),
+    };
+  }
+  return {
+    kind: "single",
+    wearerLabel: null,
+    routeLabel: formatMeasurementRoute(measurements.route),
+    statusLabel: formatMeasurementStatus(measurements.calculationStatus),
+  };
+};
+
 const mergeMeasurements = ({
   entered,
   derived,
   unit,
   route,
 }: {
-  entered: FutureOrderCandidateV1["measurements"]["entered"]["shared"];
-  derived: FutureOrderCandidateV1["measurements"]["derived"]["shared"];
+  entered: FutureMeasurementStateV1["entered"]["shared"];
+  derived: FutureMeasurementStateV1["derived"]["shared"];
   unit: MeasurementUnit;
-  route: FutureOrderCandidateV1["measurements"]["route"];
+  route: SelectedMeasurementMethod;
 }): readonly FuturePaymentReviewMeasurementItem[] => {
   const sampleRoute = isSampleClothMeasurementMethod(route);
   const measurementIds = [
@@ -255,12 +323,12 @@ const mergeMeasurements = ({
   });
 };
 
-export const getFuturePaymentReviewMeasurementGroups = (
-  candidate: FuturePaymentReviewCandidate,
+const groupsFromMeasurementBag = (
+  state: FutureMeasurementStateV1,
+  garments: readonly { garmentKey: string; label: string }[],
 ): readonly FuturePaymentReviewMeasurementGroup[] => {
-  const state = candidate.measurements;
   const garmentLabels = new Map(
-    candidate.garments.map((garment) => [garment.garmentKey, garment.label]),
+    garments.map((garment) => [garment.garmentKey, garment.label]),
   );
   const garmentKeys = new Set([
     ...Object.keys(state.derived.byGarmentKey),
@@ -287,13 +355,71 @@ export const getFuturePaymentReviewMeasurementGroups = (
       if (items.length > 0) {
         groups.push({
           garmentKey,
-          title: garmentLabels.get(garmentKey) || "Garment measurements",
+          title: garmentLabels.get(garmentKey) || garmentKey,
           items,
         });
       }
     },
   );
   return groups;
+};
+
+export const getFuturePaymentReviewMeasurementGroups = (
+  candidate: {
+    readonly measurements: FutureMeasurementStateV1 | WearerOrderStateV2;
+    readonly garments: readonly { readonly garmentKey: string; readonly label: string }[];
+  },
+): readonly FuturePaymentReviewMeasurementGroup[] => {
+  const measurements = candidate.measurements;
+  if (isWearerOrderStateV2(measurements)) {
+    if (measurements.wearers.length === 1) {
+      return groupsFromMeasurementBag(measurements.wearers[0].measurement, candidate.garments);
+    }
+    if (measurements.wearers.length === 0) return [];
+    const wearerOrder = measurements;
+    const garmentLabels = new Map(
+      candidate.garments.map((garment) => [garment.garmentKey, garment.label]),
+    );
+    const groups: FuturePaymentReviewMeasurementGroup[] = [];
+    [...wearerOrder.wearers]
+      .sort((left, right) => left.presentationOrder - right.presentationOrder)
+      .forEach((wearer) => {
+        const ownedKeys = Object.entries(wearerOrder.assignmentByGarmentKey)
+          .filter(([, wearerId]) => wearerId === wearer.wearerId)
+          .map(([garmentKey]) => garmentKey)
+          .sort((left, right) => left.localeCompare(right));
+        const shared = mergeMeasurements({
+          entered: wearer.measurement.entered.shared,
+          derived: wearer.measurement.derived.shared,
+          unit: wearer.measurement.unit,
+          route: wearer.measurement.route,
+        });
+        if (shared.length > 0) {
+          groups.push({
+            garmentKey: null,
+            title: `${wearer.displayName} — ${wearer.measurement.route || "method not selected"}`,
+            items: shared,
+          });
+        }
+        ownedKeys.forEach((garmentKey) => {
+          const items = mergeMeasurements({
+            entered: wearer.measurement.entered.byGarmentKey[garmentKey] || {},
+            derived: wearer.measurement.derived.byGarmentKey[garmentKey] || {},
+            unit: wearer.measurement.unit,
+            route: wearer.measurement.route,
+          });
+          if (items.length === 0) return;
+          groups.push({
+            garmentKey,
+            title: `${wearer.displayName} — ${garmentLabels.get(garmentKey) || garmentKey}`,
+            items,
+          });
+        });
+      });
+    return groups;
+  }
+  if (!isFutureMeasurementStateV1(measurements)) return [];
+  return groupsFromMeasurementBag(measurements, candidate.garments);
 };
 
 export const getFuturePaymentReviewAiStatusLabel = (
