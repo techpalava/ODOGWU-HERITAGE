@@ -13,6 +13,11 @@ const blockedWearerRemovalMessage = (displayName: string): string => {
   return `Cannot remove ${name} yet. Reassign their garments to another person first.`;
 };
 
+type AssignmentRejection = {
+  code: string;
+  wearerId: string;
+};
+
 const assignmentRejectionMessage = (
   code: string,
   displayName: string,
@@ -54,7 +59,7 @@ export const WearerAssignmentPanel = ({
 }) => {
   const [deleteRejection, setDeleteRejection] = useState<string | null>(null);
   const [assignmentRejectionByGarmentKey, setAssignmentRejectionByGarmentKey] =
-    useState<Readonly<Record<string, string>>>({});
+    useState<Readonly<Record<string, AssignmentRejection>>>({});
   const nameInputByWearerId = useRef(new Map<string, HTMLInputElement>());
   const knownWearerIds = useRef<string[] | null>(null);
   const wearers = [...order.wearers].sort(
@@ -68,6 +73,16 @@ export const WearerAssignmentPanel = ({
     order,
     physicalGarmentKeys: garments.map((garment) => garment.garmentKey),
   });
+
+  useEffect(() => {
+    const liveKeys = new Set(garments.map((garment) => garment.garmentKey));
+    setAssignmentRejectionByGarmentKey((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([garmentKey]) => liveKeys.has(garmentKey)),
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [garments]);
 
   useEffect(() => {
     const ids = wearers.map((wearer) => wearer.wearerId);
@@ -233,17 +248,18 @@ export const WearerAssignmentPanel = ({
                       });
                       return;
                     }
-                    const wearer = order.wearers.find(
-                      (candidate) => candidate.wearerId === wearerId,
-                    );
-                    const message = assignmentRejectionMessage(
-                      result.code,
-                      wearer?.displayName || "",
-                    );
-                    if (!message) return;
+                    if (
+                      result.code !== "WEARER_FIT_REQUIRED" &&
+                      result.code !== "GARMENT_INELIGIBLE_FOR_WEARER"
+                    ) {
+                      return;
+                    }
                     setAssignmentRejectionByGarmentKey((current) => ({
                       ...current,
-                      [garment.garmentKey]: message,
+                      [garment.garmentKey]: {
+                        code: result.code,
+                        wearerId,
+                      },
                     }));
                   }}
                 >
@@ -257,7 +273,11 @@ export const WearerAssignmentPanel = ({
               </label>
               {rejection ? (
                 <p role="alert" className="mt-1 text-sm font-semibold text-red-700">
-                  {rejection}
+                  {assignmentRejectionMessage(
+                    rejection.code,
+                    wearers.find((candidate) => candidate.wearerId === rejection.wearerId)
+                      ?.displayName || "",
+                  )}
                 </p>
               ) : null}
             </li>

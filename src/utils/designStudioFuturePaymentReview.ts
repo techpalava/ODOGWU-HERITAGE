@@ -21,6 +21,8 @@ import {
   fromCanonicalCentimetres,
   isSampleClothHalfWidthMeasurement,
   isSampleClothMeasurementMethod,
+  isSelectedMeasurementMethod,
+  MEASUREMENT_METHOD_LABELS,
   roundMeasurementDisplayValue,
 } from "./measurementBlueprint";
 
@@ -397,7 +399,11 @@ export const getFuturePaymentReviewMeasurementGroups = (
         if (shared.length > 0) {
           groups.push({
             garmentKey: null,
-            title: `${wearer.displayName} — ${wearer.measurement.route || "method not selected"}`,
+            title: `${wearer.displayName} — ${
+              isSelectedMeasurementMethod(wearer.measurement.route)
+                ? MEASUREMENT_METHOD_LABELS[wearer.measurement.route]
+                : "method not selected"
+            }`,
             items: shared,
           });
         }

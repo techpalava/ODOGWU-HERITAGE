@@ -469,7 +469,10 @@ const alerts = (root: ReactTestInstance) =>
         }}
         onSelectWearer={() => {}}
         onAddWearer={() => {}}
-        onRenameWearer={() => {}}
+        onRenameWearer={(wearerId, displayName) => {
+          const result = renameWearer(order, wearerId, displayName);
+          if (result.status === "updated") setOrder(result.order);
+        }}
         onReorderWearers={() => {}}
         onSetFitContext={() => {}}
         onDeleteWearer={(wearerId) => deleteWearer(order, wearerId)}
@@ -513,6 +516,34 @@ const alerts = (root: ReactTestInstance) =>
     alerts(rejectionRenderer.root).join(" "),
     /This garment is not available for Chike's selected fit/,
   );
+  await act(async () => {
+    selectFor(rejectionRenderer.root, "Standard Dress").props.onChange({
+      currentTarget: { value: ownedDress },
+    });
+  });
+  assert.equal(selectFor(rejectionRenderer.root, "Standard Dress").props.value, ownedDress);
+  assert.equal(
+    alerts(rejectionRenderer.root).some((alert) => alert.includes("not available")),
+    false,
+  );
+  await act(async () => {
+    selectFor(rejectionRenderer.root, "Standard Dress").props.onChange({
+      currentTarget: { value: chike.wearerId },
+    });
+  });
+  assert.match(
+    alerts(rejectionRenderer.root).join(" "),
+    /This garment is not available for Chike's selected fit/,
+  );
+  const chikeName = rejectionRenderer.root.findByProps({
+    "aria-label": "Name or nickname for Chike",
+  });
+  await act(async () => {
+    chikeName.props.onChange({ currentTarget: { value: "Chief" } });
+  });
+  const rejectionText = alerts(rejectionRenderer.root).join(" ");
+  assert.match(rejectionText, /This garment is not available for Chief's selected fit/);
+  assert.equal(rejectionText.includes("Chike"), false);
 
   let missingFitRenderer!: ReturnType<typeof create>;
   await act(async () => {

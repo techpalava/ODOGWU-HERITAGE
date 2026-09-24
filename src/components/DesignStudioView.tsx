@@ -266,6 +266,7 @@ import {
 } from "../utils/measurementBlueprint";
 import {
   addWearer,
+  applyWearerMeasurementUpdate,
   assignGarmentToWearer,
   classifyPersistedMeasurement,
   createEmptyWearerOrder,
@@ -6874,7 +6875,12 @@ export default function DesignStudioView({
       const next = setFutureMeasurementRoute(current, route);
       if (activeWearer) {
         setWearerOrder((order) =>
-          updateWearerMeasurement(order, activeWearer.wearerId, next),
+          applyWearerMeasurementUpdate(
+            order,
+            reconciledWearerOrder,
+            activeWearer.wearerId,
+            next,
+          ),
         );
       }
       return next;
@@ -8631,26 +8637,19 @@ export default function DesignStudioView({
               return {
                 status: "blocked",
                 code: "WEARER_NOT_FOUND",
-                order: wearerOrder,
+                order: wearerOrderForPlan,
               };
             }
-            let result: ReturnType<typeof assignGarmentToWearer> = {
-              status: "blocked",
-              code: "WEARER_NOT_FOUND",
-              order: wearerOrder,
-            };
-            setWearerOrder((current) => {
-              result = assignGarmentToWearer({
-                order: current,
-                garmentKey,
-                wearerId,
-                garment,
-                garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
-                additionalGarmentConstructions:
-                  designSelections.additionalGarmentConstructions,
-              });
-              return result.status === "updated" ? result.order : current;
+            const result = assignGarmentToWearer({
+              order: wearerOrderForPlan,
+              garmentKey,
+              wearerId,
+              garment,
+              garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+              additionalGarmentConstructions:
+                designSelections.additionalGarmentConstructions,
             });
+            if (result.status === "updated") setWearerOrder(result.order);
             return result;
           }}
         />
@@ -8663,7 +8662,12 @@ export default function DesignStudioView({
             setFutureMeasurementState(state);
             if (activeWearer) {
               setWearerOrder((order) =>
-                updateWearerMeasurement(order, activeWearer.wearerId, state),
+                applyWearerMeasurementUpdate(
+                  order,
+                  reconciledWearerOrder,
+                  activeWearer.wearerId,
+                  state,
+                ),
               );
             }
           }}

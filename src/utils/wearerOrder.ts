@@ -366,6 +366,19 @@ export const updateWearerMeasurement = (
   ),
 });
 
+/** Commit a measurement onto the wearer already on screen. Does not mint an id. */
+export const applyWearerMeasurementUpdate = (
+  stored: WearerOrderStateV2,
+  displayed: WearerOrderStateV2,
+  wearerId: string,
+  measurement: FutureMeasurementStateV1,
+): WearerOrderStateV2 => {
+  const storedHasWearer = stored.wearers.some((wearer) => wearer.wearerId === wearerId);
+  const base = storedHasWearer ? stored : displayed;
+  if (!base.wearers.some((wearer) => wearer.wearerId === wearerId)) return stored;
+  return updateWearerMeasurement(base, wearerId, measurement);
+};
+
 export const setWearerMeasurementRoute = (
   order: WearerOrderStateV2,
   wearerId: string,

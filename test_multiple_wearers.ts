@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { MAX_CONFIGURED_ACTIVE_WEARERS, resolveActiveWearerCap } from "./src/config/WearerPolicy";
 import type { CustomDetailSelectionGroup, FutureMeasurementStateV1, GarmentTypeStepSelection } from "./src/types";
-import { createEmptyFutureMeasurementState } from "./src/utils/measurementBlueprint";
+import { createEmptyFutureMeasurementState, setFutureMeasurementRoute } from "./src/utils/measurementBlueprint";
 import {
   addWearer,
+  applyWearerMeasurementUpdate,
   assignGarmentToWearer,
   classifyPersistedMeasurement,
   createEmptyWearerOrder,
@@ -273,5 +274,91 @@ assert.notEqual(
   (you.measurement as FutureMeasurementStateV1).entered.shared.chest_bust_circumference?.valueCm,
   other.measurement.entered.shared.chest_bust_circumference?.valueCm,
 );
+
+const displayedYou = reconcileWearerOrder({
+  order: createEmptyWearerOrder(),
+  garmentKeys: ["base:shirt"],
+  compatibilityDemographic: "male",
+  garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+  garmentTypeSelection: selection("male"),
+});
+const stableId = displayedYou.wearers[0]?.wearerId || "";
+assert.equal(displayedYou.wearers[0]?.displayName, "You");
+assert.ok(stableId);
+const withRoute = (
+  base: typeof displayedYou,
+  route: "low_risk" | "medium_risk" | "high_risk" | "sample_cloth",
+  stored = createEmptyWearerOrder(),
+) => {
+  const current = base.wearers.find((wearer) => wearer.wearerId === stableId);
+  if (!current) throw new Error("stable wearer missing");
+  return applyWearerMeasurementUpdate(
+    stored,
+    base,
+    stableId,
+    setFutureMeasurementRoute(current.measurement, route),
+  );
+};
+let stable = withRoute(displayedYou, "low_risk");
+assert.equal(stable.wearers[0]?.wearerId, stableId);
+assert.equal(stable.assignmentByGarmentKey["base:shirt"], stableId);
+stable = withRoute(stable, "medium_risk", stable);
+stable = withRoute(stable, "high_risk", stable);
+stable = withRoute(stable, "sample_cloth", stable);
+assert.equal(stable.wearers[0]?.wearerId, stableId);
+assert.equal(stable.wearers[0]?.measurement.route, "sample_cloth");
+const renamedChief = renameWearer(stable, stableId, "Chief");
+assert.equal(renamedChief.status, "updated");
+if (renamedChief.status !== "updated") throw new Error("rename");
+assert.equal(renamedChief.order.wearers[0]?.wearerId, stableId);
+const addedFriend = addWearer({
+  order: renamedChief.order,
+  physicalGarmentCount: 2,
+  displayName: "Ada",
+  fitContext: "female",
+});
+assert.equal(addedFriend.status, "updated");
+if (addedFriend.status !== "updated") throw new Error("add");
+const adaId = addedFriend.order.wearers.find((wearer) => wearer.displayName === "Ada")?.wearerId;
+if (!adaId) throw new Error("ada");
+const reorderedStable = reorderWearers(addedFriend.order, [adaId, stableId]);
+assert.equal(reorderedStable.status, "updated");
+if (reorderedStable.status !== "updated") throw new Error("reorder");
+assert.equal(
+  reorderedStable.order.wearers.find((wearer) => wearer.wearerId === stableId)?.wearerId,
+  stableId,
+);
+const reconciledStable = reconcileWearerOrder({
+  order: reorderedStable.order,
+  garmentKeys: ["base:shirt"],
+  compatibilityDemographic: "male",
+  garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+  garmentTypeSelection: selection("male"),
+});
+assert.equal(
+  reconciledStable.wearers.find((wearer) => wearer.displayName === "Chief")?.wearerId,
+  stableId,
+);
+assert.equal(reconciledStable.assignmentByGarmentKey["base:shirt"], stableId);
+const restored = classifyPersistedMeasurement({
+  value: reconciledStable,
+  garmentKeys: ["base:shirt"],
+  compatibilityDemographic: "male",
+});
+assert.equal(restored.status, "valid");
+if (restored.status !== "valid") throw new Error("restore");
+assert.equal(
+  restored.order.wearers.find((wearer) => wearer.displayName === "Chief")?.wearerId,
+  stableId,
+);
+assert.equal(restored.order.assignmentByGarmentKey["base:shirt"], stableId);
+const committedFromEmpty = applyWearerMeasurementUpdate(
+  createEmptyWearerOrder(),
+  displayedYou,
+  stableId,
+  setFutureMeasurementRoute(displayedYou.wearers[0]!.measurement, "low_risk"),
+);
+assert.equal(committedFromEmpty.wearers[0]?.wearerId, stableId);
+assert.equal(committedFromEmpty.assignmentByGarmentKey["base:shirt"], stableId);
 
 console.log("multiple wearers domain tests passed");
