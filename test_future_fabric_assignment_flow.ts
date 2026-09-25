@@ -22,17 +22,21 @@ import {
   assignSameFabricProductToGarments,
   cancelFutureFabricCatalogueAssignment,
   getFutureFabricAssignmentTargets,
+  getFutureFabricAssignmentTargetsFromAuthority,
+  getFutureFabricAllocationGroupChangePresentation,
   getFutureFabricCapacityOffer,
   getFutureRemainingFabricCapacityOffers,
   getRemainingFabricCapacityOfferSignature,
   getFutureFabricStageCompletion,
   getFutureGarmentFabricPlanning,
+  getFutureReusableHalfCapacityGarmentKeys,
   reconcileFutureFabricAllocationState,
   removeFutureFabricAssignment,
   resolveFutureFabricCatalogueCardPresentation,
   getFutureFabricCatalogueCancelTargets,
 } from "./src/utils/designStudioFutureFabricStage";
 import { resolveFabricAllocationMaterialPricing } from "./src/utils/fabricAllocationPricing";
+import { projectOccurrenceDisplayLabels } from "./src/utils/occurrenceDisplayLabel";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
 import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
 import { cloneFabricAllocations } from "./src/utils/fabricAllocationPersistence";
@@ -1960,5 +1964,192 @@ assert.match(stepSource, /prefers-reduced-motion/);
 assert.match(stepSource, /motion-reduce:animate-none/);
 assert.match(stepSource, /getFocusable\(\)\[0\]\?\.focus\(\)/);
 assert.match(stepSource, /result\.assignedGarmentKeys/);
+
+// Leftover half capacity is reusable only by garments that actually fit it.
+// The card must derive USE AGAIN eligibility from every relevant remaining
+// garment, not just the first unassigned target, and must explain a full-Fabric
+// garment (Long Dress) instead of claiming there is no stock.
+{
+  const mixedSelection = createSelection(["shirt", "trouser", "full_length_gown"]);
+  const halfUsedState = commitSameFabric({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: mixedSelection,
+    fabricCode: "FAB-A",
+    garmentKeys: ["base:shirt"],
+    fabrics,
+  });
+  const reusableKeys = (garmentKeys: string[], fabricCode = "FAB-A") =>
+    getFutureReusableHalfCapacityGarmentKeys({
+      garmentTypeSelection: mixedSelection,
+      fabricAllocationState: halfUsedState,
+      fabricCode,
+      garmentKeys,
+    });
+  assert.deepEqual(
+    reusableKeys(["base:full_length_gown"]),
+    [],
+    "A full-Fabric garment cannot reuse a leftover half.",
+  );
+  assert.deepEqual(
+    reusableKeys(["base:trouser"]),
+    ["base:trouser"],
+    "A standard garment can reuse the leftover half.",
+  );
+  assert.deepEqual(
+    reusableKeys(["base:full_length_gown", "base:trouser"]),
+    ["base:trouser"],
+    "Mixed remaining garments keep only the fitting garment, regardless of order.",
+  );
+  assert.deepEqual(
+    reusableKeys(["base:shirt"]),
+    [],
+    "An already assigned garment is never a reuse target.",
+  );
+  assert.deepEqual(
+    reusableKeys(["base:trouser"], "FAB-B"),
+    [],
+    "Reuse is scoped to the Fabric product that owns the leftover half.",
+  );
+  assert.equal(
+    halfUsedState.fabricAllocations.length,
+    1,
+    "The reuse query must not mutate or add allocations.",
+  );
+}
+assert.match(stepSource, /getFutureReusableHalfCapacityGarmentKeys/);
+assert.match(stepSource, /halfCapacityBlockedGarmentLabels/);
+
+// The "Change Fabric for this group?" dialog must name garments with the same
+// order-wide occurrence labels the Order Summary uses ("Standard Shirt",
+// "Standard Shirt 2"), not Fabric-domain family names ("Shirt", "Shirt").
+{
+  const assignOrThrow = (
+    args: Parameters<typeof assignFutureFabricToGarment>[0],
+  ) => {
+    const result = assignFutureFabricToGarment(args);
+    assert.equal(
+      result.status,
+      "assigned",
+      result.status === "blocked" ? result.reason : "",
+    );
+    return result.state;
+  };
+  const conciseLabelsFor = (state: ReturnType<typeof assignOrThrow>) =>
+    new Map(
+      [
+        ...projectOccurrenceDisplayLabels(
+          getFutureFabricAssignmentTargetsFromAuthority({
+            garmentTypeSelection: additionalFlowSelection,
+            fabricAllocationState: state,
+            requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+          }).map(({ assignment }) => assignment),
+        ),
+      ].map(([garmentKey, labels]) => [garmentKey, labels.conciseLabel]),
+    );
+  const allocationIdFor = (
+    state: ReturnType<typeof assignOrThrow>,
+    garmentKey: string,
+  ) => {
+    const allocation = state.fabricAllocations.find((candidate) =>
+      candidate.garmentAssignments.some(
+        (assignment) => assignment.garmentKey === garmentKey,
+      ),
+    );
+    assert.ok(allocation, `expected an allocation holding ${garmentKey}`);
+    return allocation!.allocationId;
+  };
+
+  // Base shirt and the additional shirt share FAB-A; the trouser uses FAB-B.
+  let sharedShirtState = assignOrThrow({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: additionalFlowSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "FAB-A",
+    fabrics,
+    requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+  });
+  sharedShirtState = assignOrThrow({
+    state: sharedShirtState,
+    garmentTypeSelection: additionalFlowSelection,
+    garmentKey: "additional:shirt:1",
+    fabricCode: "FAB-A",
+    fabrics,
+    requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+  });
+  sharedShirtState = assignOrThrow({
+    state: sharedShirtState,
+    garmentTypeSelection: additionalFlowSelection,
+    garmentKey: "base:trouser",
+    fabricCode: "FAB-B",
+    fabrics,
+    requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+  });
+  const sharedShirtAllocationId = allocationIdFor(sharedShirtState, "base:shirt");
+  assert.equal(
+    allocationIdFor(sharedShirtState, "additional:shirt:1"),
+    sharedShirtAllocationId,
+    "Both shirts must share one physical Fabric for the group dialog case.",
+  );
+  const labelled = getFutureFabricAllocationGroupChangePresentation({
+    state: sharedShirtState,
+    allocationId: sharedShirtAllocationId,
+    garmentTypeSelection: additionalFlowSelection,
+    fabrics,
+    garmentLabelByKey: conciseLabelsFor(sharedShirtState),
+  });
+  assert.ok(labelled);
+  assert.equal(labelled!.isSharedGroup, true);
+  assert.deepEqual(
+    labelled!.garmentLabels,
+    ["Standard Shirt", "Standard Shirt 2"],
+    "Group dialog labels must match the Order Summary occurrence labels.",
+  );
+  const unlabelled = getFutureFabricAllocationGroupChangePresentation({
+    state: sharedShirtState,
+    allocationId: sharedShirtAllocationId,
+    garmentTypeSelection: additionalFlowSelection,
+    fabrics,
+  });
+  assert.deepEqual(
+    unlabelled!.garmentLabels,
+    ["Shirt", "Shirt"],
+    "Callers without occurrence labels keep the existing Fabric-domain fallback.",
+  );
+
+  // Only the additional shirt on FAB-A: the ordinal is order-wide, so it must
+  // still read "Standard Shirt 2" even though it is alone in its group.
+  let loneAdditionalState = assignOrThrow({
+    state: FabricAllocationStateEngine.initialize(),
+    garmentTypeSelection: additionalFlowSelection,
+    garmentKey: "base:shirt",
+    fabricCode: "FAB-B",
+    fabrics,
+    requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+  });
+  loneAdditionalState = assignOrThrow({
+    state: loneAdditionalState,
+    garmentTypeSelection: additionalFlowSelection,
+    garmentKey: "additional:shirt:1",
+    fabricCode: "FAB-A",
+    fabrics,
+    requiredPhysicalOccurrences: additionalAuthorizedOccurrences,
+  });
+  const loneAdditional = getFutureFabricAllocationGroupChangePresentation({
+    state: loneAdditionalState,
+    allocationId: allocationIdFor(loneAdditionalState, "additional:shirt:1"),
+    garmentTypeSelection: additionalFlowSelection,
+    fabrics,
+    garmentLabelByKey: conciseLabelsFor(loneAdditionalState),
+  });
+  assert.deepEqual(loneAdditional!.garmentLabels, ["Standard Shirt 2"]);
+  assert.equal(loneAdditional!.isSharedGroup, false);
+}
+assert.match(stepSource, /projectOccurrenceDisplayLabels/);
+assert.match(stepSource, /garmentLabelByKey: occurrenceConciseLabels/);
+assert.doesNotMatch(
+  stepSource,
+  /const allowExistingPartialReuse = currentTarget\n\s+\? getFutureCompatiblePartialFabricAllocations/,
+  "Reuse eligibility must not be derived from the first unassigned target alone.",
+);
 
 console.log("PASS: targeted future Fabric assignment flow");

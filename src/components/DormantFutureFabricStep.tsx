@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import type {
   Fabric,
   FabricAllocationState,
+  FabricGarmentAssignment,
   FabricGarmentType,
   GarmentTypeStepSelection,
 } from "../types";
@@ -43,6 +44,7 @@ import {
   getFutureFabricAllocationGroupChangePresentation,
   getFutureFabricAllocationAssignmentSignature,
   getFutureFabricCatalogueCancelTargets,
+  getFutureReusableHalfCapacityGarmentKeys,
   hasFutureReusableHalfCapacityForFabric,
   isPhysicalFabricQuantityOverAllocated,
   resolveFutureFabricCatalogueCardPresentation,
@@ -57,6 +59,7 @@ import {
   type HydratedOrphanFabricAssignmentRepairTarget,
 } from "../utils/designStudioFutureFabricStage";
 import { resolveStep2PostAssignmentDestination } from "../utils/step2PostAssignmentDestination";
+import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
 import {
   buildStep1FabricAssignmentCandidates,
   commitStep1FabricAssignment,
@@ -180,20 +183,29 @@ const formatGarmentAssignmentProgress = (
 const labelOwnedFabricCancelTargets = (
   garmentKeys: readonly string[],
   getGarmentType: (garmentKey: string) => FabricGarmentType | null,
+  occurrenceLabelByKey?: ReadonlyMap<string, string>,
 ): RemoveFabricAssignmentTarget[] => {
+  // Prefer the order-wide occurrence label ("Standard Shirt 2") shared with the
+  // Order Summary; fall back to within-list numbering for unknown keys.
   const items = garmentKeys.map((garmentKey) => {
+    const occurrenceLabel = occurrenceLabelByKey?.get(garmentKey) ?? null;
     const garmentType = getGarmentType(garmentKey);
     return {
       garmentKey,
+      occurrenceLabel,
       baseLabel: garmentType ? getFutureGarmentLabel(garmentType) : garmentKey,
     };
   });
   const counts = new Map<string, number>();
   items.forEach((item) => {
+    if (item.occurrenceLabel) return;
     counts.set(item.baseLabel, (counts.get(item.baseLabel) || 0) + 1);
   });
   const seen = new Map<string, number>();
   return items.map((item) => {
+    if (item.occurrenceLabel) {
+      return { garmentKey: item.garmentKey, label: item.occurrenceLabel };
+    }
     const prior = seen.get(item.baseLabel) || 0;
     seen.set(item.baseLabel, prior + 1);
     return {
@@ -447,6 +459,27 @@ export const DormantFutureFabricStep = ({
     fabricAllocationState,
     requiredPhysicalOccurrences,
   });
+  // Order-wide customer labels ("Standard Shirt", "Standard Shirt 2") from the
+  // same shared authority the Order Summary uses, walked in roster order.
+  const occurrenceRoster = targets.map(({ assignment }) => ({
+    garmentKey: assignment.garmentKey,
+    garmentType: assignment.garmentType,
+  }));
+  const occurrenceRosterSignature = occurrenceRoster
+    .map((entry) => `${entry.garmentKey}:${entry.garmentType}`)
+    .join("|");
+  const occurrenceConciseLabels = useMemo<ReadonlyMap<string, string>>(
+    () =>
+      new Map(
+        [...projectOccurrenceDisplayLabels(occurrenceRoster)].map(
+          ([garmentKey, labels]) => [garmentKey, labels.conciseLabel],
+        ),
+      ),
+    // The roster signature is the stable identity; `occurrenceRoster` itself is
+    // rebuilt every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [occurrenceRosterSignature],
+  );
   const activeCatalogueTarget = catalogueTargetGarmentKey
     ? targets.find(
         ({ assignment }) =>
@@ -523,12 +556,14 @@ export const DormantFutureFabricStep = ({
       allocationId: changeFabricAssignmentTarget.allocation.allocationId,
       garmentTypeSelection,
       fabrics,
+      garmentLabelByKey: occurrenceConciseLabels,
     });
   }, [
     changeFabricAssignmentTarget,
     fabricAllocationState,
     fabrics,
     garmentTypeSelection,
+    occurrenceConciseLabels,
   ]);
   const pendingChangeFabricPresentation = useMemo(() => {
     if (!pendingChangeFabricAllocation) {
@@ -539,12 +574,14 @@ export const DormantFutureFabricStep = ({
       allocationId: pendingChangeFabricAllocation.allocationId,
       garmentTypeSelection,
       fabrics,
+      garmentLabelByKey: occurrenceConciseLabels,
     });
   }, [
     pendingChangeFabricAllocation,
     fabricAllocationState,
     garmentTypeSelection,
     fabrics,
+    occurrenceConciseLabels,
   ]);
   const unassignedStep1Targets = getUnassignedStep1FabricAssignmentCandidates({
     garmentTypeSelection,
@@ -1616,6 +1653,7 @@ export const DormantFutureFabricStep = ({
       allocationId,
       garmentTypeSelection,
       fabrics,
+      garmentLabelByKey: occurrenceConciseLabels,
     });
     setAssignmentAnnouncement(
       presentation
@@ -1647,6 +1685,7 @@ export const DormantFutureFabricStep = ({
           allocationId,
           garmentTypeSelection,
           fabrics,
+          garmentLabelByKey: occurrenceConciseLabels,
         });
       if (presentation?.isSharedGroup) {
         changeFabricOpenerRef.current = catalogueTriggerRef.current;
@@ -1876,14 +1915,33 @@ export const DormantFutureFabricStep = ({
             fabrics,
             requiredPhysicalOccurrences,
           });
-    const allowExistingPartialReuse = currentTarget
-      ? getFutureCompatiblePartialFabricAllocations({
-          garmentTypeSelection,
-          fabricAllocationState,
-          garmentKey: currentTarget.assignment.garmentKey,
-          requiredPhysicalOccurrences,
-        }).some((entry) => entry.fabricCode === fabric.code)
-      : false;
+    // The garments this card may serve: every remaining Step 1 garment in the
+    // untargeted catalogue, otherwise the single focused/pending target. Reuse
+    // of leftover half capacity is allowed when ANY of them fits, matching the
+    // allocator that already appends to a partial allocation before opening a
+    // new one. This never changes allocation arithmetic.
+    const relevantReuseTargets: ReadonlyArray<{
+      assignment: Pick<FabricGarmentAssignment, "garmentKey" | "garmentType">;
+    }> =
+      step1Presentation && useStep1CardPresentation && !activeCatalogueTarget
+        ? unassignedStep1Targets
+        : currentTarget
+          ? [currentTarget]
+          : [];
+    const reusableHalfCapacityGarmentKeys = getFutureReusableHalfCapacityGarmentKeys({
+      garmentTypeSelection,
+      fabricAllocationState,
+      fabricCode: fabric.code,
+      garmentKeys: relevantReuseTargets.map(
+        (target) => target.assignment.garmentKey,
+      ),
+      requiredPhysicalOccurrences,
+    });
+    const allowExistingPartialReuse = reusableHalfCapacityGarmentKeys.length > 0;
+    const hasReusableHalfCapacity = hasFutureReusableHalfCapacityForFabric({
+      fabricAllocationState,
+      fabricCode: fabric.code,
+    });
     const changeAllocationId =
       isChangeFabricTarget && changeFabricAssignmentTarget
         ? changeFabricAssignmentTarget.allocation.allocationId
@@ -1914,6 +1972,14 @@ export const DormantFutureFabricStep = ({
           fabric,
           fabricAllocationState,
           allowExistingPartialReuse,
+          {
+            halfCapacityBlockedGarmentLabels:
+              hasReusableHalfCapacity && relevantReuseTargets.length > 0
+                ? relevantReuseTargets.map((target) =>
+                    getFutureGarmentLabel(target.assignment.garmentType),
+                  )
+                : undefined,
+          },
         );
     const cancelGarmentKeys =
       cardPresentation.cancelGarmentKeys ??
@@ -1930,6 +1996,7 @@ export const DormantFutureFabricStep = ({
         targets.find((target) => target.assignment.garmentKey === garmentKey)
           ?.assignment.garmentType ||
         null,
+      occurrenceConciseLabels,
     );
     const singleCancelLabel =
       labeledCancelTargets.length === 1 ? labeledCancelTargets[0]!.label : "";
@@ -1982,10 +2049,7 @@ export const DormantFutureFabricStep = ({
               })
             : getOrderAwareFabricStockPresentation(fabric, fabricAllocationState, {
                 hasCompatibleReusableHalfCapacity:
-                  hasFutureReusableHalfCapacityForFabric({
-                    fabricAllocationState,
-                    fabricCode: fabric.code,
-                  }) || allowExistingPartialReuse,
+                  hasReusableHalfCapacity || allowExistingPartialReuse,
               })
         }
         stockConstraintMessage={stockConstraintMessage}
@@ -2450,15 +2514,9 @@ export const DormantFutureFabricStep = ({
                 : showAllocationLimitCopy
                   ? formatFabricQuantityLimitReachedCopy(requiredFabricQuantity)
                   : changeFabricPresentation?.isSharedGroup
-                    ? `This Fabric is shared by ${formatGarmentList(
-                        changeFabricPresentation.garmentKeys.map((garmentKey) => {
-                          const assignment =
-                            assignmentByGarmentKey.get(garmentKey)?.assignment;
-                          return assignment
-                            ? getFutureGarmentLabel(assignment.garmentType)
-                            : garmentKey;
-                        }),
-                      )}. Changing it will update both garments.`
+                    ? `This Fabric is shared by ${formatGarmentList([
+                        ...changeFabricPresentation.garmentLabels,
+                      ])}. Changing it will update both garments.`
                     : changeFabricPresentation
                       ? `Select a replacement Fabric for Fabric Selection ${changeFabricPresentation.fabricSelectionNumber}.`
                       : activeCatalogueTarget

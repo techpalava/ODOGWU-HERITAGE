@@ -10,7 +10,12 @@ import type {
 } from "./src/types";
 import type { FutureDesignStudioSummary } from "./src/utils/designStudioFutureSummary";
 import type { DesignStyleStepOccurrencePresentation } from "./src/utils/designStyleStepRuntime";
-import { getOrderAwareFabricStockPresentation } from "./src/utils/fabricStockAvailability";
+import {
+  formatFabricHalfCapacityCannotFitCopy,
+  formatFabricStockExhaustedCopy,
+  getFabricNewAllocationStockConstraintMessage,
+  getOrderAwareFabricStockPresentation,
+} from "./src/utils/fabricStockAvailability";
 import {
   createDesignStyleStepRenderProps,
   createDesignStyleStepTestModel,
@@ -84,6 +89,50 @@ assert.equal(
     ),
   ),
   "Low Stock: 2",
+);
+
+// Target-aware stock constraint copy: a leftover half that the waiting garment
+// cannot fit must be explained, not reported as generic missing stock.
+assert.equal(
+  formatFabricHalfCapacityCannotFitCopy(["Long Dress"]),
+  "1/2 Fabric capacity is left, but Long Dress needs a full Fabric. No additional stock is available for this Fabric.",
+);
+assert.equal(
+  formatFabricHalfCapacityCannotFitCopy(["Long Dress", "Long Dress"]),
+  "1/2 Fabric capacity is left, but the remaining garments need a full Fabric. No additional stock is available for this Fabric.",
+);
+assert.equal(
+  getFabricNewAllocationStockConstraintMessage(fabric, halfUsed, false, {
+    halfCapacityBlockedGarmentLabels: ["Long Dress"],
+  }),
+  formatFabricHalfCapacityCannotFitCopy(["Long Dress"]),
+  "Exhausted stock with an unusable leftover half explains the target.",
+);
+assert.equal(
+  getFabricNewAllocationStockConstraintMessage(fabric, halfUsed, true, {
+    halfCapacityBlockedGarmentLabels: ["Long Dress"],
+  }),
+  null,
+  "Allocator-confirmed reuse clears the constraint so USE AGAIN stays enabled.",
+);
+assert.equal(
+  getFabricNewAllocationStockConstraintMessage(fabric, halfUsed, false),
+  formatFabricStockExhaustedCopy(),
+  "Without leftover-half context the generic exhausted copy is unchanged.",
+);
+assert.equal(
+  getFabricNewAllocationStockConstraintMessage({ ...fabric, stock: 3 }, halfUsed, false, {
+    halfCapacityBlockedGarmentLabels: ["Long Dress"],
+  }),
+  null,
+  "Remaining stock never produces a constraint message.",
+);
+assert.equal(
+  getFabricNewAllocationStockConstraintMessage({ ...fabric, stock: 0 }, halfUsed, false, {
+    halfCapacityBlockedGarmentLabels: ["Long Dress"],
+  }),
+  "Currently out of stock.",
+  "Zero stock keeps its existing copy.",
 );
 
 const selection = {

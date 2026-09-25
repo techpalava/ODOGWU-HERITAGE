@@ -273,10 +273,14 @@ export const FutureAdditionalGarmentFabricDialog = ({
                     fabrics,
                     requiredPhysicalOccurrences,
                   });
+                  // A Fabric already offering "In Your Order" reuse options can
+                  // still serve this garment, so it must not also claim that
+                  // no stock is available.
                   const stockConstraintMessage =
                     getFabricNewAllocationStockConstraintMessage(
                       fabric,
                       fabricAllocationState,
+                      Boolean(reusableAllocationOptions?.length),
                     );
                   return (
                     <FutureFabricCatalogueCard
