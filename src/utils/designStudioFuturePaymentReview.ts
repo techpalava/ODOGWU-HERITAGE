@@ -6,7 +6,7 @@ import type {
   WearerOrderStateV2,
 } from "../types";
 import { isFutureMeasurementStateV1 } from "./measurementBlueprint";
-import { isWearerOrderStateV2 } from "./wearerOrder";
+import { isWearerOrderStateV2, wearerPublicLabel } from "./wearerOrder";
 import {
   type FutureOrderCandidateBlocker,
   type FutureOrderCandidateBuildResult,
@@ -269,7 +269,7 @@ export const getFuturePaymentReviewMeasurementHeader = (
       const routeLabel = formatMeasurementRoute(wearer.measurement.route);
       return {
         kind: "single",
-        wearerLabel: name.toLowerCase() === "you" ? null : name,
+        wearerLabel: !name || name.toLowerCase() === "you" ? null : name,
         routeLabel,
         statusLabel: formatMeasurementStatus(wearer.measurement.calculationStatus),
       };
@@ -278,7 +278,7 @@ export const getFuturePaymentReviewMeasurementHeader = (
       kind: "wearers",
       wearers: wearers.map((wearer) => ({
         wearerId: wearer.wearerId,
-        displayName: wearer.displayName,
+        displayName: wearerPublicLabel(wearer.displayName, wearer.presentationOrder),
         routeLabel: formatMeasurementRoute(wearer.measurement.route),
         statusLabel: formatMeasurementStatus(wearer.measurement.calculationStatus),
       })),
@@ -399,7 +399,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
         if (shared.length > 0) {
           groups.push({
             garmentKey: null,
-            title: `${wearer.displayName} — ${
+            title: `${wearerPublicLabel(wearer.displayName, wearer.presentationOrder)} — ${
               isSelectedMeasurementMethod(wearer.measurement.route)
                 ? MEASUREMENT_METHOD_LABELS[wearer.measurement.route]
                 : "method not selected"
@@ -417,7 +417,7 @@ export const getFuturePaymentReviewMeasurementGroups = (
           if (items.length === 0) return;
           groups.push({
             garmentKey,
-            title: `${wearer.displayName} — ${garmentLabels.get(garmentKey) || garmentKey}`,
+            title: `${wearerPublicLabel(wearer.displayName, wearer.presentationOrder)} — ${garmentLabels.get(garmentKey) || garmentKey}`,
             items,
           });
         });

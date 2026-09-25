@@ -3133,6 +3133,8 @@ export default function DesignStudioView({
         : reconciledWearerOrder,
     [activeWearer, reconciledWearerOrder, futureMeasurementState],
   );
+  const wearerOrderForPlanRef = useRef(wearerOrderForPlan);
+  wearerOrderForPlanRef.current = wearerOrderForPlan;
   const wearerMeasurementRuntimes = useMemo(
     () =>
       planWearerOrderMeasurements({
@@ -8707,6 +8709,14 @@ export default function DesignStudioView({
         <>
         <WearerAssignmentPanel
           order={wearerOrderForPlan}
+          presentation={
+            wearerOrderForPlan.wearers.length > 1
+              ? "people"
+              : wearerOrderForPlan.wearers[0]?.fitContext === "male" ||
+                  wearerOrderForPlan.wearers[0]?.fitContext === "female"
+                ? "solo"
+                : "fit"
+          }
           activeWearerId={activeWearer?.wearerId || null}
           garments={futureMeasurementPhysicalGarments}
           garmentLabels={yourGarmentsConstructionDisplayLabelByGarmentKey}
@@ -8745,8 +8755,9 @@ export default function DesignStudioView({
             if (result.status === "updated") setWearerOrder(result.order);
           }}
           onDeleteWearer={(wearerId) => {
-            const result = deleteWearer(wearerOrderForPlan, wearerId);
+            const result = deleteWearer(wearerOrderForPlanRef.current, wearerId);
             if (result.status === "updated") {
+              wearerOrderForPlanRef.current = result.order;
               setWearerOrder(result.order);
               if (activeWearer?.wearerId === wearerId) {
                 setActiveWearerId(result.order.wearers[0]?.wearerId || null);

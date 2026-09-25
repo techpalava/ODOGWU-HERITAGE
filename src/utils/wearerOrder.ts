@@ -23,8 +23,17 @@ import {
 } from "./measurementBlueprint";
 
 export const WEARER_ORDER_SCHEMA_VERSION = 2 as const;
-export const DEFAULT_WEARER_DISPLAY_NAME = "You";
 const DISPLAY_NAME_MAX = 40;
+
+/** Customer-facing name. A blank stored name stays blank in the field and reads as Person 1, Person 2, and so on. */
+export const wearerPublicLabel = (
+  displayName: string,
+  presentationOrder: number,
+): string => {
+  const name = displayName.trim();
+  if (name) return name;
+  return `Person ${presentationOrder + 1}`;
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -103,7 +112,7 @@ const stripGarmentFromMeasurement = (
 };
 
 export const createWearerProfile = ({
-  displayName = DEFAULT_WEARER_DISPLAY_NAME,
+  displayName = "",
   fitContext = null,
   presentationOrder,
   measurement = createEmptyFutureMeasurementState(),
@@ -116,7 +125,7 @@ export const createWearerProfile = ({
   wearerId?: string;
 }): WearerProfileV1 => ({
   wearerId,
-  displayName: displayName.trim().slice(0, DISPLAY_NAME_MAX) || DEFAULT_WEARER_DISPLAY_NAME,
+  displayName: displayName.trim().slice(0, DISPLAY_NAME_MAX),
   fitContext,
   presentationOrder,
   measurement: cloneMeasurement(measurement),
@@ -212,7 +221,6 @@ export const renameWearer = (
     return blocked(order, "WEARER_NOT_FOUND");
   }
   const trimmed = displayName.trim().slice(0, DISPLAY_NAME_MAX);
-  if (!trimmed) return blocked(order, "DISPLAY_NAME_REQUIRED");
   return updated({
     ...order,
     wearers: order.wearers.map((wearer) =>
@@ -477,7 +485,7 @@ const normalizeWearer = (
   if (!isRecord(value) || typeof value.wearerId !== "string" || !value.wearerId.trim()) {
     return null;
   }
-  if (typeof value.displayName !== "string" || !value.displayName.trim()) return null;
+  if (typeof value.displayName !== "string") return null;
   const fitContext = isFitContext(value.fitContext) ? value.fitContext : null;
   if (value.fitContext !== null && fitContext === null) return null;
   if (!Number.isInteger(value.presentationOrder)) return null;
