@@ -4,7 +4,7 @@ import {
   isFutureMeasurementStateV1,
   MEASUREMENT_METHOD_LABELS,
 } from "./measurementBlueprint";
-import { isWearerOrderStateV2 } from "./wearerOrder";
+import { isWearerOrderStateV2, wearerPublicLabel } from "./wearerOrder";
 
 export interface TailoringMeasurementValue {
   readonly measurementId: string;
@@ -110,7 +110,7 @@ export const projectTailoringMeasurementReadout = (
       .map((wearer) =>
         readoutFromBag({
           wearerId: wearer.wearerId,
-          displayName: wearer.displayName,
+          displayName: wearerPublicLabel(wearer.displayName, wearer.presentationOrder),
           measurement: wearer.measurement,
           garmentKeys: Object.entries(measurements.assignmentByGarmentKey)
             .filter(([, wearerId]) => wearerId === wearer.wearerId)

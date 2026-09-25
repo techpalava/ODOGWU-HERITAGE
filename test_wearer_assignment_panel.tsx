@@ -222,7 +222,7 @@ const alerts = (root: ReactTestInstance) =>
     fitContext: "female",
   });
   if (withAmaka.status !== "updated") throw new Error("expected Amaka");
-  const you = withAmaka.order.wearers.find((wearer) => wearer.displayName === "You");
+  const you = withAmaka.order.wearers.find((wearer) => wearer.displayName === "");
   const amakaWearer = withAmaka.order.wearers.find((wearer) => wearer.displayName === "Amaka");
   if (!you || !amakaWearer) throw new Error("expected You and Amaka");
   const openingAssignment = { ...withAmaka.order.assignmentByGarmentKey };
@@ -555,7 +555,7 @@ const alerts = (root: ReactTestInstance) =>
       />,
     );
   });
-  assert.match(textContent(missingFitRenderer.root), /Select a fit for You before assigning garments/);
+  assert.match(textContent(missingFitRenderer.root), /Select a fit for Person 1 before assigning garments/);
   assert.match(textContent(missingFitRenderer.root), /Assign all garments to continue/);
   await act(async () => {
     selectFor(missingFitRenderer.root, "Standard Shirt").props.onChange({
@@ -565,7 +565,7 @@ const alerts = (root: ReactTestInstance) =>
   assert.equal(selectFor(missingFitRenderer.root, "Standard Shirt").props.value, "");
   assert.match(
     alerts(missingFitRenderer.root).join(" "),
-    /Select a fit for You before assigning this garment/,
+    /Select a fit for Person 1 before assigning this garment/,
   );
 
   const reconciled = reconcileWearerOrder({
@@ -585,7 +585,7 @@ const alerts = (root: ReactTestInstance) =>
   });
   assert.deepEqual(authority.assignmentByGarmentKey, assignmentsBeforeAdd);
   assert.equal(
-    authority.wearers.some((wearer) => wearer.displayName === "Friend" && wearer.fitContext === null),
+    authority.wearers.some((wearer) => wearer.displayName === "" && wearer.fitContext === null),
     true,
   );
   assert.equal(alerts(assignmentRenderer.root).some((message) => message.includes("Standard Shirt")), false);
