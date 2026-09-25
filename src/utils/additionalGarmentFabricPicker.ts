@@ -1,4 +1,5 @@
 import type {
+  AdditionalGarmentConstructionStateV1,
   CanonicalPhysicalGarmentType,
   DesignSelections,
   Fabric,
@@ -7,6 +8,7 @@ import type {
   GarmentConstructionPricingResolution,
   GarmentScopedCustomDetailsStateV1,
 } from "../types";
+import { cloneGarmentConstructionPricingResolution } from "./additionalGarmentConstructionState";
 import { FabricCapacityEngine } from "../engine/FabricCapacityEngine";
 import type { CustomDetailCatalogInspection } from "./catalogHelpers";
 import { copyGarmentScopedCustomDetailsToAdditionalOccurrence } from "./garmentScopedCustomDetailsDomain";
@@ -580,5 +582,83 @@ export const getActiveFabricForAdditionalGarmentPicker = ({
     fabricCode: activeAllocation.fabricCode,
     selectionIndex: selectionIndex > 0 ? selectionIndex : null,
     resolution,
+  };
+};
+
+export type DeferredAdditionalGarmentCustomDetailsPrompt = {
+  transactionId: number;
+  garmentKey: string;
+  garmentType: CanonicalPhysicalGarmentType;
+  occurrenceGeneration: number;
+};
+
+export const queueDeferredAdditionalGarmentCustomDetailsPrompt = (
+  current: readonly DeferredAdditionalGarmentCustomDetailsPrompt[],
+  prompt: DeferredAdditionalGarmentCustomDetailsPrompt,
+): readonly DeferredAdditionalGarmentCustomDetailsPrompt[] => {
+  if (current.some((entry) => entry.garmentKey === prompt.garmentKey)) {
+    return current.map((entry) =>
+      entry.garmentKey === prompt.garmentKey ? prompt : entry,
+    );
+  }
+  return [...current, prompt];
+};
+
+export const dismissDeferredAdditionalGarmentCustomDetailsPrompt = (
+  current: readonly DeferredAdditionalGarmentCustomDetailsPrompt[],
+  garmentKey: string,
+): readonly DeferredAdditionalGarmentCustomDetailsPrompt[] =>
+  current.filter((entry) => entry.garmentKey !== garmentKey);
+
+export const resolveDeferredAdditionalGarmentCustomDetailsRequest = ({
+  prompts,
+  occurrences,
+}: {
+  prompts: readonly DeferredAdditionalGarmentCustomDetailsPrompt[];
+  occurrences: readonly {
+    readonly target: { readonly garmentKey: string };
+    readonly assignment: unknown;
+  }[];
+}): DeferredAdditionalGarmentCustomDetailsPrompt | null =>
+  prompts.find((prompt) =>
+    occurrences.some(
+      (occurrence) =>
+        occurrence.target.garmentKey === prompt.garmentKey &&
+        occurrence.assignment != null,
+    ),
+  ) ?? null;
+
+/**
+ * Live Order Summary preview only. A Step 5 pill already holds resolved
+ * construction on the fabric transaction, but the ledger is written later,
+ * after fabric. This overlay lets the card list that garment immediately
+ * without persisting it.
+ */
+export const mergeProvisionalAdditionalConstructionForLiveSummary = (
+  baseState: AdditionalGarmentConstructionStateV1 | null | undefined,
+  transaction:
+    | Pick<
+        AdditionalGarmentFabricTransaction,
+        "origin" | "garmentKey" | "construction"
+      >
+    | null
+    | undefined,
+): AdditionalGarmentConstructionStateV1 | null | undefined => {
+  if (
+    !transaction ||
+    transaction.origin !== "new_addition" ||
+    transaction.construction?.status !== "resolved" ||
+    baseState?.byGarmentKey[transaction.garmentKey]
+  ) {
+    return baseState;
+  }
+  return {
+    schemaVersion: 1,
+    byGarmentKey: {
+      ...(baseState?.byGarmentKey || {}),
+      [transaction.garmentKey]: cloneGarmentConstructionPricingResolution(
+        transaction.construction,
+      ),
+    },
   };
 };

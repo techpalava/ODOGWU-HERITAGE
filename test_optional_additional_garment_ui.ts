@@ -316,6 +316,16 @@ assert.match(
   /FabricAllocationStateEngine\.beginPendingAdditionalGarmentSelection\(/,
   "the UI-facing handler must park the exact garment in the centralized pending flow",
 );
+assert.match(
+  addGarmentHandlerSource,
+  /reconcileGarmentTypeSelectionOccurrenceIdentities\(/,
+  "adding a garment must reserve an exact occurrence generation for Step 3",
+);
+assert.match(
+  addGarmentHandlerSource,
+  /getPhysicalGarmentOccurrenceGeneration\(/,
+  "the parked additional garment must carry occurrenceGeneration into Fabric commit",
+);
 assert.doesNotMatch(
   addGarmentHandlerSource,
   /FabricAllocationStateEngine\.attemptAppendGarment\(/,
@@ -402,6 +412,11 @@ assert.match(
   "the existing choice dialog must remain usable when its mobile content exceeds the viewport",
 );
 assert.match(customDetailsSource, /resolveCompatibleGarmentScopedCopySources/);
+assert.match(
+  customDetailsSource,
+  /source\.parentGarmentKey !== additionalGarmentChoice\.garmentKey/,
+  "an extra garment cannot copy details from itself when no same-type parent exists",
+);
 assert.match(customDetailsSource, /compatibleCopySources\.length === 1/);
 assert.match(customDetailsSource, /Select the garment whose Custom Details you want to copy/);
 assert.match(
@@ -423,10 +438,49 @@ assert.match(
   /setAdditionalGarmentFabricTransaction\(null\);[\s\S]*FabricAllocationStateEngine\.cancelPendingGarment/,
   "cancelling the Fabric transaction must discard pending construction and copy state",
 );
+const beginAssignedFabricCommitSource = source.slice(
+  source.indexOf("const beginAssignedFabricCommit"),
+  source.indexOf("const handleAdditionalGarmentSelectExistingAllocation"),
+);
+assert.match(
+  beginAssignedFabricCommitSource,
+  /applyAdditionalGarmentConstructionAndCopy/,
+  "Fabric assignment must write the additional garment construction ledger immediately",
+);
+assert.match(
+  beginAssignedFabricCommitSource,
+  /queueDeferredAdditionalGarmentCustomDetailsPrompt/,
+  "Fabric assignment must remember the later Custom Details prompt",
+);
+assert.match(
+  beginAssignedFabricCommitSource,
+  /phase: shouldDeferCustomDetails \? "awaiting_commit"/,
+  "a new additional garment must commit after Fabric instead of opening Custom Details",
+);
+assert.doesNotMatch(
+  beginAssignedFabricCommitSource,
+  /custom_details_choice/,
+  "Fabric assignment must not park the new garment on the Custom Details dialog",
+);
 assert.match(
   completeCustomDetailsHandlerSource,
-  /phase !== "custom_details_choice"[\s\S]*applyAdditionalGarmentConstructionAndCopy\([\s\S]*phase: "awaiting_commit"/,
-  "construction and copy must apply only after the Fabric-first transaction reaches Custom Details",
+  /deferredAdditionalGarmentCustomDetailsPrompts\.find\([\s\S]*applyAdditionalGarmentConstructionAndCopy/,
+  "Use Same / Choose Custom Details must apply only after the deferred post-design prompt",
+);
+assert.match(
+  completeCustomDetailsHandlerSource,
+  /dismissDeferredAdditionalGarmentCustomDetailsPrompt/,
+  "completing or dismissing the deferred prompt must not roll back the committed garment",
+);
+assert.doesNotMatch(
+  completeCustomDetailsHandlerSource,
+  /cancelAdditionalGarmentFabricTransaction/,
+  "the delayed Custom Details dialog must keep the already-committed additional garment",
+);
+assert.match(
+  source,
+  /resolveDeferredAdditionalGarmentCustomDetailsRequest\(\{[\s\S]*futureDesignStyleStepProjection\.occurrences/,
+  "the Custom Details dialog must wait for a Step 3 design assignment",
 );
 assert.doesNotMatch(
   addGarmentHandlerSource,
@@ -452,6 +506,26 @@ assert.match(
   customDetailsSource,
   /isPersonalizedAdditionsStage && removalTargets\.length > 0[\s\S]*onRequestGarmentRemoval\?\.\(target, event\.currentTarget\)/,
   "the retained Step 5 correction flow must continue to request confirmation with the exact projected occurrence target",
+);
+assert.match(
+  customDetailsSource,
+  /isCustomDetailsStage && additionalGarmentCustomDetailsRequest[\s\S]*sourceParentGarmentKey: null/,
+  "Step 4 must initialize the extra-garment construction dialog from the deferred request on first paint",
+);
+assert.match(
+  customDetailsSource,
+  /showAdditionalGarmentChoiceDialog[\s\S]*compatibleCopySources\.length > 0/,
+  "the extra-garment construction dialog renders on Custom Details only when a same-type copy source exists",
+);
+assert.match(
+  customDetailsSource,
+  /compatibleCopySources\.length > 0[\s\S]*submitAdditionalGarmentChoice\(\{ mode: "choose" \}\)/,
+  "an extra garment with no same-type copy source applies Choose Custom Details without the dialog",
+);
+assert.doesNotMatch(
+  customDetailsSource,
+  /\{isPersonalizedAdditionsStage && additionalGarmentChoice && \(/,
+  "the extra-garment construction dialog must not render on Personalized Additions",
 );
 
 console.log("Optional additional garment UI regression checks passed.");

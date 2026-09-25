@@ -142,6 +142,15 @@ const yourGarmentsDisplayLabel = (
     : occurrence.label;
 };
 
+const isAdditionalDesignStyleOccurrence = (
+  occurrence: DesignStyleStepOccurrencePresentation,
+): boolean => occurrence.target.garmentKey.startsWith("additional:");
+
+const assignmentListClassName = (count: number): string =>
+  `mt-2 overflow-hidden rounded-xl border border-heritage-green/15 bg-white${
+    count > 2 ? " divide-y divide-heritage-green/15" : ""
+  }`;
+
 export const DormantFutureDesignStyleStep = ({
   occurrences,
   constructionDisplayLabelByGarmentKey,
@@ -219,6 +228,17 @@ export const DormantFutureDesignStyleStep = ({
     catalogueReady && (runtimeStatus === "ready" || runtimeStatus === "review");
   const firstIncompleteOccurrence = occurrences.find(
     (occurrence) => occurrence.status !== "complete",
+  );
+  const baseOccurrences = useMemo(
+    () =>
+      occurrences.filter(
+        (occurrence) => !isAdditionalDesignStyleOccurrence(occurrence),
+      ),
+    [occurrences],
+  );
+  const additionalOccurrences = useMemo(
+    () => occurrences.filter(isAdditionalDesignStyleOccurrence),
+    [occurrences],
   );
   const showCatalogue =
     occurrences.length > 0 &&
@@ -591,6 +611,210 @@ export const DormantFutureDesignStyleStep = ({
       ? uploadState
       : { status: "idle" as const });
 
+  const renderOccurrenceRow = (
+    occurrence: DesignStyleStepOccurrencePresentation,
+  ) => {
+    const isAssignmentFeedbackTarget =
+      highlightedOccurrenceToken === occurrence.target.occurrenceToken;
+    const occurrenceClearRequest =
+      clearRequests.find((request) =>
+        designStyleStepTargetsEqual(request.target, occurrence.target),
+      ) ||
+      (designStyleStepTargetsEqual(occurrence.target, activeOccurrenceTarget)
+        ? clearRequest
+        : null);
+    const occurrenceUploadState = uploadStateForOccurrence(occurrence);
+    const isUploadedAssignment = occurrence.assignment?.sourceKind === "uploaded";
+    const catalogueChooseLabel =
+      occurrence.assignment?.sourceKind === "catalog"
+        ? "Change Design"
+        : "Choose Design";
+    const garmentDisplayLabel = yourGarmentsDisplayLabel(
+      occurrence,
+      constructionDisplayLabelByGarmentKey,
+    );
+    const uploadActionLabel = isUploadedAssignment
+      ? `Replace uploaded design for ${garmentDisplayLabel}`
+      : `Upload a design for ${garmentDisplayLabel}`;
+    const uploadInputId = `${uploadInputIdPrefix}-${occurrence.target.occurrenceToken}`;
+    const uploadControlsBusy =
+      uploadOperationBusy || occurrenceUploadState.status === "pending";
+    const selectedDesignPreview = resolveDesignStyleOccurrenceCardPreview({
+      occurrence,
+      uploadState: occurrenceUploadState,
+      selectedDesignPreviewByOccurrenceToken,
+    });
+    const selectedDesignImage = selectedDesignPreview.image;
+    const previewAlt = selectedDesignPreview.alt;
+    const showOccurrenceUploadStatus =
+      occurrenceUploadState.status === "pending" ||
+      occurrenceUploadState.status === "error";
+    const uploadDescribedBy = showOccurrenceUploadStatus
+      ? `design-style-upload-guidance ${uploadInputId}-status`
+      : "design-style-upload-guidance";
+    return (
+      <article
+        key={occurrence.target.occurrenceToken}
+        ref={(element) => {
+          const token = occurrence.target.occurrenceToken;
+          if (element) garmentCardRefs.current.set(token, element);
+          else garmentCardRefs.current.delete(token);
+        }}
+        role="listitem"
+        tabIndex={isAssignmentFeedbackTarget ? -1 : undefined}
+        data-occurrence-label={occurrence.label}
+        data-occurrence-token={occurrence.target.occurrenceToken}
+        data-occurrence-garment-key={occurrence.target.garmentKey}
+        data-design-assignment-feedback={
+          isAssignmentFeedbackTarget ? "true" : undefined
+        }
+        className={`flex min-w-0 flex-col gap-1.5 border-l-2 px-3 py-2 ${
+          highlightPrefersReducedMotion
+            ? ""
+            : "transition-[background-color,border-color,box-shadow] duration-200"
+        } lg:flex-row lg:flex-wrap lg:items-center lg:gap-3 ${
+          isAssignmentFeedbackTarget
+            ? "border-l-heritage-gold bg-heritage-cream/30 ring-2 ring-inset ring-heritage-gold/70"
+            : "border-transparent bg-white"
+        }`}
+      >
+        {occurrence.assignment && selectedDesignImage ? (
+          <div
+            className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/20 bg-heritage-cream/35 sm:h-16 sm:w-16"
+            data-selected-design-preview="true"
+            data-preview-source-kind={occurrence.assignment.sourceKind}
+            data-preview-source-key={occurrence.assignment.sourceKey}
+            data-preview-uploaded-source-ref={
+              occurrence.assignment.sourceKind === "uploaded"
+                ? occurrence.assignment.uploadedSourceRef
+                : undefined
+            }
+          >
+            <img
+              src={selectedDesignImage}
+              alt={previewAlt}
+              className="h-full w-full object-contain"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        ) : null}
+        <div className="grid min-w-[11rem] flex-1 gap-0.5 lg:grid-cols-[auto_minmax(8rem,1fr)] lg:items-baseline lg:gap-x-4">
+          <p className="font-serif text-sm font-bold text-heritage-green">
+            {garmentDisplayLabel}
+          </p>
+          <p className="break-words text-xs leading-relaxed text-heritage-ink/70">
+            <span className="font-semibold text-heritage-green">
+              {occurrence.assignmentLabel || "No design selected"}
+            </span>
+          </p>
+          {isUploadedAssignment ? (
+            <p className="text-[11px] leading-relaxed text-heritage-ink/55 lg:col-span-2">
+              Removing this assignment keeps the uploaded source available for any
+              other garment that uses it.
+            </p>
+          ) : null}
+        </div>
+        <div className="flex min-w-0 flex-col items-stretch gap-1.5 lg:ml-auto lg:items-end lg:self-center">
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={(event) => {
+                event?.stopPropagation?.();
+                onSelectOccurrence(occurrence.target);
+                allDesignsRef.current?.scrollIntoView?.({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }}
+              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-xs font-bold text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              {catalogueChooseLabel}
+            </button>
+            {onSelectUploadFile ? (
+              <>
+                <label htmlFor={uploadInputId} className="sr-only">
+                  {uploadActionLabel}
+                </label>
+                <button
+                  type="button"
+                  disabled={!mutationsEnabled || uploadControlsBusy}
+                  onClick={(event) => {
+                    event?.stopPropagation?.();
+                    const input = document.getElementById(uploadInputId);
+                    if (input instanceof HTMLInputElement) input.click();
+                  }}
+                  aria-label={uploadActionLabel}
+                  className="inline-flex min-h-10 items-center justify-center rounded-lg border border-heritage-green/25 bg-heritage-green px-3 text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {isUploadedAssignment ? "Replace Upload" : "Upload Design"}
+                </button>
+                {!uploadControlsBusy ? (
+                  <input
+                    id={uploadInputId}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    aria-label={uploadActionLabel}
+                    aria-describedby={uploadDescribedBy}
+                    disabled={!mutationsEnabled}
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0] || null;
+                      event.currentTarget.value = "";
+                      if (file) onSelectUploadFile(occurrence.target, file);
+                    }}
+                    className="sr-only"
+                  />
+                ) : null}
+              </>
+            ) : null}
+            {occurrence.assignment &&
+            occurrenceClearRequest &&
+            mutationsEnabled &&
+            occurrenceUploadState.status !== "pending" ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event?.stopPropagation?.();
+                  onClearAssignment(occurrenceClearRequest);
+                }}
+                aria-label={
+                  isUploadedAssignment
+                    ? `Remove uploaded design from ${garmentDisplayLabel}`
+                    : `Clear design for ${garmentDisplayLabel}`
+                }
+                className="inline-flex min-h-9 items-center justify-center rounded-lg border border-red-200 px-2.5 text-[11px] font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+              >
+                {isUploadedAssignment
+                  ? `Remove uploaded design from ${garmentDisplayLabel}`
+                  : "Clear"}
+              </button>
+            ) : null}
+          </div>
+          {showOccurrenceUploadStatus ? (
+            <div
+              id={`${uploadInputId}-status`}
+              className="max-w-[20rem] text-left lg:text-right"
+              aria-live="polite"
+            >
+              {occurrenceUploadState.status === "pending" ? (
+                <p role="status" className="text-[11px] font-semibold text-heritage-green">
+                  {isUploadedAssignment
+                    ? `Preparing a replacement design for ${garmentDisplayLabel}...`
+                    : `Preparing your uploaded design for ${garmentDisplayLabel}...`}
+                </p>
+              ) : null}
+              {occurrenceUploadState.status === "error" ? (
+                <p role="alert" className="text-[11px] font-semibold text-red-700">
+                  {occurrenceUploadState.message ||
+                    "The design could not be prepared. Your previous selection is unchanged. Try again."}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </article>
+    );
+  };
+
   const pendingDisplayStyleName = pendingEntry
     ? formatDisplayStyleLabel(pendingEntry.style)
     : null;
@@ -709,7 +933,7 @@ export const DormantFutureDesignStyleStep = ({
           {(isCatalogueLoading || runtimeStatus === "loading") && <div role="status" className="mt-5 rounded-2xl border border-dashed border-heritage-gold/30 p-5 text-sm text-heritage-ink/70">Loading catalogue designs. Your saved assignments are preserved.</div>}
           {runtimeStatus === "error" && <div role="alert" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">The Design Style catalogue is temporarily unavailable. Your saved assignments are preserved.</div>}
 
-          {occurrences.length > 0 && (
+          {baseOccurrences.length > 0 && (
             <section aria-labelledby="current-design-mappings-title" className="mt-5">
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                 <h3 id="current-design-mappings-title" className="font-serif text-lg font-bold text-heritage-green">Your Garments</h3>
@@ -718,162 +942,30 @@ export const DormantFutureDesignStyleStep = ({
               <div
                 role="list"
                 data-testid="step3-garment-assignment-list"
-                className={`mt-2 overflow-hidden rounded-xl border border-heritage-green/15 bg-white${
-                  occurrences.length > 2 ? " divide-y divide-heritage-green/15" : ""
-                }`}
+                className={assignmentListClassName(baseOccurrences.length)}
               >
-                {occurrences.map((occurrence) => {
-                  const isAssignmentFeedbackTarget =
-                    highlightedOccurrenceToken ===
-                    occurrence.target.occurrenceToken;
-                  const occurrenceClearRequest = clearRequests.find((request) => designStyleStepTargetsEqual(request.target, occurrence.target)) || (designStyleStepTargetsEqual(occurrence.target, activeOccurrenceTarget) ? clearRequest : null);
-                  const occurrenceUploadState = uploadStateForOccurrence(occurrence);
-                  const isUploadedAssignment =
-                    occurrence.assignment?.sourceKind === "uploaded";
-                  const catalogueChooseLabel =
-                    occurrence.assignment?.sourceKind === "catalog"
-                      ? "Change Design"
-                      : "Choose Design";
-                  const garmentDisplayLabel = yourGarmentsDisplayLabel(
-                    occurrence,
-                    constructionDisplayLabelByGarmentKey,
-                  );
-                  const uploadActionLabel = isUploadedAssignment
-                    ? `Replace uploaded design for ${garmentDisplayLabel}`
-                    : `Upload a design for ${garmentDisplayLabel}`;
-                  const uploadInputId = `${uploadInputIdPrefix}-${occurrence.target.occurrenceToken}`;
-                  const uploadControlsBusy =
-                    uploadOperationBusy ||
-                    occurrenceUploadState.status === "pending";
-                  const selectedDesignPreview =
-                    resolveDesignStyleOccurrenceCardPreview({
-                      occurrence,
-                      uploadState: occurrenceUploadState,
-                      selectedDesignPreviewByOccurrenceToken,
-                    });
-                  const selectedDesignImage = selectedDesignPreview.image;
-                  const previewAlt = selectedDesignPreview.alt;
-                  const showOccurrenceUploadStatus =
-                    occurrenceUploadState.status === "pending" ||
-                    occurrenceUploadState.status === "error";
-                  const uploadDescribedBy = showOccurrenceUploadStatus
-                    ? `design-style-upload-guidance ${uploadInputId}-status`
-                    : "design-style-upload-guidance";
-                  return (
-                    <article
-                      key={occurrence.target.occurrenceToken}
-                      ref={(element) => {
-                        const token = occurrence.target.occurrenceToken;
-                        if (element) garmentCardRefs.current.set(token, element);
-                        else garmentCardRefs.current.delete(token);
-                      }}
-                      role="listitem"
-                      tabIndex={isAssignmentFeedbackTarget ? -1 : undefined}
-                      data-occurrence-label={occurrence.label}
-                      data-occurrence-token={occurrence.target.occurrenceToken}
-                      data-design-assignment-feedback={
-                        isAssignmentFeedbackTarget ? "true" : undefined
-                      }
-                      className={`flex min-w-0 flex-col gap-1.5 border-l-2 px-3 py-2 ${
-                        highlightPrefersReducedMotion
-                          ? ""
-                          : "transition-[background-color,border-color,box-shadow] duration-200"
-                      } lg:flex-row lg:flex-wrap lg:items-center lg:gap-3 ${
-                        isAssignmentFeedbackTarget
-                          ? "border-l-heritage-gold bg-heritage-cream/30 ring-2 ring-inset ring-heritage-gold/70"
-                          : "border-transparent bg-white"
-                      }`}
-                    >
-                      {occurrence.assignment && selectedDesignImage ? <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-heritage-gold/20 bg-heritage-cream/35 sm:h-16 sm:w-16" data-selected-design-preview="true" data-preview-source-kind={occurrence.assignment.sourceKind} data-preview-source-key={occurrence.assignment.sourceKey} data-preview-uploaded-source-ref={occurrence.assignment.sourceKind === "uploaded" ? occurrence.assignment.uploadedSourceRef : undefined}><img src={selectedDesignImage} alt={previewAlt} className="h-full w-full object-contain" referrerPolicy="no-referrer" /></div> : null}
-                      <div className="grid min-w-[11rem] flex-1 gap-0.5 lg:grid-cols-[auto_minmax(8rem,1fr)] lg:items-baseline lg:gap-x-4">
-                        <p className="font-serif text-sm font-bold text-heritage-green">{garmentDisplayLabel}</p>
-                        <p className="break-words text-xs leading-relaxed text-heritage-ink/70"><span className="font-semibold text-heritage-green">{occurrence.assignmentLabel || "No design selected"}</span></p>
-                        {isUploadedAssignment ? <p className="text-[11px] leading-relaxed text-heritage-ink/55 lg:col-span-2">Removing this assignment keeps the uploaded source available for any other garment that uses it.</p> : null}
-                      </div>
-                      <div className="flex min-w-0 flex-col items-stretch gap-1.5 lg:ml-auto lg:items-end lg:self-center">
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event?.stopPropagation?.();
-                              onSelectOccurrence(occurrence.target);
-                              allDesignsRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-                            }}
-                            className="inline-flex min-h-10 items-center justify-center rounded-lg border border-heritage-green/25 px-3 text-xs font-bold text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-                          >
-                            {catalogueChooseLabel}
-                          </button>
-                          {onSelectUploadFile ? (
-                            <>
-                              <label htmlFor={uploadInputId} className="sr-only">
-                                {uploadActionLabel}
-                              </label>
-                              <button
-                                type="button"
-                                disabled={!mutationsEnabled || uploadControlsBusy}
-                                onClick={(event) => {
-                                  event?.stopPropagation?.();
-                                  const input = document.getElementById(uploadInputId);
-                                  if (input instanceof HTMLInputElement) input.click();
-                                }}
-                                aria-label={uploadActionLabel}
-                                className="inline-flex min-h-10 items-center justify-center rounded-lg border border-heritage-green/25 bg-heritage-green px-3 text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
-                              >
-                                {isUploadedAssignment ? "Replace Upload" : "Upload Design"}
-                              </button>
-                              {!uploadControlsBusy ? (
-                                <input
-                                  id={uploadInputId}
-                                  type="file"
-                                  accept="image/jpeg,image/png,image/webp"
-                                  aria-label={uploadActionLabel}
-                                  aria-describedby={uploadDescribedBy}
-                                  disabled={!mutationsEnabled}
-                                  onChange={(event) => {
-                                    const file = event.currentTarget.files?.[0] || null;
-                                    event.currentTarget.value = "";
-                                    if (file) onSelectUploadFile(occurrence.target, file);
-                                  }}
-                                  className="sr-only"
-                                />
-                              ) : null}
-                            </>
-                          ) : null}
-                          {occurrence.assignment && occurrenceClearRequest && mutationsEnabled && occurrenceUploadState.status !== "pending" ? (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event?.stopPropagation?.();
-                                onClearAssignment(occurrenceClearRequest);
-                              }}
-                              aria-label={isUploadedAssignment ? `Remove uploaded design from ${garmentDisplayLabel}` : `Clear design for ${garmentDisplayLabel}`}
-                              className="inline-flex min-h-9 items-center justify-center rounded-lg border border-red-200 px-2.5 text-[11px] font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
-                            >
-                              {isUploadedAssignment ? `Remove uploaded design from ${garmentDisplayLabel}` : "Clear"}
-                            </button>
-                          ) : null}
-                        </div>
-                        {showOccurrenceUploadStatus ? (
-                        <div id={`${uploadInputId}-status`} className="max-w-[20rem] text-left lg:text-right" aria-live="polite">
-                          {occurrenceUploadState.status === "pending" ? (
-                            <p role="status" className="text-[11px] font-semibold text-heritage-green">
-                              {isUploadedAssignment
-                                ? `Preparing a replacement design for ${garmentDisplayLabel}...`
-                                : `Preparing your uploaded design for ${garmentDisplayLabel}...`}
-                            </p>
-                          ) : null}
-                          {occurrenceUploadState.status === "error" ? (
-                            <p role="alert" className="text-[11px] font-semibold text-red-700">
-                              {occurrenceUploadState.message ||
-                                "The design could not be prepared. Your previous selection is unchanged. Try again."}
-                            </p>
-                          ) : null}
-                        </div>
-                        ) : null}
-                      </div>
-                    </article>
-                  );
-                })}
+                {baseOccurrences.map(renderOccurrenceRow)}
+              </div>
+            </section>
+          )}
+
+          {additionalOccurrences.length > 0 && (
+            <section
+              aria-labelledby="additional-design-mappings-title"
+              data-testid="step3-additional-garments"
+              className="mt-5"
+            >
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <h3 id="additional-design-mappings-title" className="font-serif text-lg font-bold text-heritage-green">Additional Garments</h3>
+                {baseOccurrences.length === 0 && occurrences.some((occurrence) => occurrence.assignment) && onClearAllAssignments && <button type="button" onClick={onClearAllAssignments} disabled={!mutationsEnabled} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-red-200 px-3 text-xs font-bold text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Clear All</button>}
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-heritage-ink/65">Choose or upload a design for garments added in Personalized Additions.</p>
+              <div
+                role="list"
+                data-testid="step3-additional-garment-assignment-list"
+                className={assignmentListClassName(additionalOccurrences.length)}
+              >
+                {additionalOccurrences.map(renderOccurrenceRow)}
               </div>
             </section>
           )}
