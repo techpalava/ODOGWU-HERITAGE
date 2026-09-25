@@ -3166,6 +3166,7 @@ export default function DesignStudioView({
     inputFingerprint: "",
     canCalculate: false,
     criticalRiskSupported: false,
+    criticalRiskBlockingGarmentKeys: [],
   };
   const reconciledFutureMeasurementState =
     activeWearerRuntime?.measurement || futureMeasurementState;
@@ -8707,6 +8708,16 @@ export default function DesignStudioView({
         />
       ) : futureStageId === "measurement" ? (
         <>
+        {showLaterStageRemainingFabricCapacityPrompt ? (
+          <FutureRemainingFabricCapacityOfferPrompt
+            offers={remainingFabricCapacityOffers}
+            fabrics={fabrics}
+            onAddGarment={(allocationId) => {
+              setRemainingFabricCapacityOfferRequestedAllocationId(allocationId);
+              setRemainingFabricCapacityOfferRequested(true);
+            }}
+          />
+        ) : null}
         <WearerAssignmentPanel
           order={wearerOrderForPlan}
           presentation={
@@ -8823,6 +8834,17 @@ export default function DesignStudioView({
         />
         </>
       ) : futureStageId === "summary" ? (
+        <>
+        {showLaterStageRemainingFabricCapacityPrompt ? (
+          <FutureRemainingFabricCapacityOfferPrompt
+            offers={remainingFabricCapacityOffers}
+            fabrics={fabrics}
+            onAddGarment={(allocationId) => {
+              setRemainingFabricCapacityOfferRequestedAllocationId(allocationId);
+              setRemainingFabricCapacityOfferRequested(true);
+            }}
+          />
+        ) : null}
         <DormantFutureSummaryStep
           summary={futureSummary}
           orderContext={customerOrderContextPresentation}
@@ -8845,6 +8867,7 @@ export default function DesignStudioView({
             })
           }
         />
+        </>
       ) : futureStageId === "shipping" ? (
         <>
           {futurePaymentReviewTransitionBlockers[0] && (
