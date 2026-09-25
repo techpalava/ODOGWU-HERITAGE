@@ -1020,6 +1020,33 @@ export const getFutureCompatiblePartialFabricAllocations = ({
   });
 };
 
+/**
+ * Presentation query: which of the supplied unassigned garmentKeys could
+ * reuse leftover capacity on an existing allocation of this Fabric product.
+ * Delegates fit checks to the existing allocator authority; not new arithmetic.
+ */
+export const getFutureReusableHalfCapacityGarmentKeys = ({
+  garmentTypeSelection,
+  fabricAllocationState,
+  fabricCode,
+  garmentKeys,
+  requiredPhysicalOccurrences,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+  fabricCode: string;
+  garmentKeys: readonly string[];
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+}): string[] =>
+  garmentKeys.filter((garmentKey) =>
+    getFutureCompatiblePartialFabricAllocations({
+      garmentTypeSelection,
+      fabricAllocationState,
+      garmentKey,
+      requiredPhysicalOccurrences,
+    }).some((entry) => entry.fabricCode === fabricCode),
+  );
+
 export const getFuturePartialFabricAllocationCompatibleTargets = ({
   garmentTypeSelection,
   fabricAllocationState,
@@ -1662,11 +1689,18 @@ export const getFutureFabricAllocationGroupChangePresentation = ({
   allocationId,
   garmentTypeSelection,
   fabrics,
+  garmentLabelByKey,
 }: {
   state: FabricAllocationState;
   allocationId: string;
   garmentTypeSelection: GarmentTypeStepSelection;
   fabrics?: readonly Fabric[];
+  /**
+   * Optional customer-facing occurrence labels (e.g. "Standard Shirt 2")
+   * keyed by garmentKey, so the group presentation matches the Order Summary.
+   * Falls back to Fabric-domain labels when a key is absent.
+   */
+  garmentLabelByKey?: ReadonlyMap<string, string>;
 }): FutureFabricAllocationGroupChangePresentation | null => {
   const allocationIndex = state.fabricAllocations.findIndex(
     (candidate) => candidate.allocationId === allocationId,
@@ -1683,6 +1717,10 @@ export const getFutureFabricAllocationGroupChangePresentation = ({
     (assignment) => assignment.garmentKey,
   );
   const garmentLabels = garmentKeys.map((garmentKey) => {
+    const occurrenceLabel = garmentLabelByKey?.get(garmentKey);
+    if (occurrenceLabel) {
+      return occurrenceLabel;
+    }
     const assignment = allocation.garmentAssignments.find(
       (candidate) => candidate.garmentKey === garmentKey,
     );

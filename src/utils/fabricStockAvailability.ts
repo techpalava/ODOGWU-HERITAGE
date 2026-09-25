@@ -79,6 +79,21 @@ export const validateProjectedFabricStock = ({
 export const formatFabricStockExhaustedCopy = (): string =>
   "No additional stock is available for this Fabric.";
 
+/**
+ * Target-aware copy for a Fabric whose only remaining capacity is a leftover
+ * half on an existing allocation that the waiting garment(s) cannot fit into.
+ * Presentation only; the allocator decides fit.
+ */
+export const formatFabricHalfCapacityCannotFitCopy = (
+  garmentLabels: readonly string[],
+): string => {
+  const subject =
+    garmentLabels.length === 1
+      ? `${garmentLabels[0]} needs a full Fabric`
+      : "the remaining garments need a full Fabric";
+  return `1/2 Fabric capacity is left, but ${subject}. ${formatFabricStockExhaustedCopy()}`;
+};
+
 export const formatFabricStockFullyUsedCopy = (): string =>
   "This Fabric is already fully used and no additional stock is available.";
 
@@ -170,6 +185,14 @@ export const getFabricNewAllocationStockConstraintMessage = (
   fabric: Fabric,
   state: FabricAllocationState,
   allowExistingPartialReuse = false,
+  options: {
+    /**
+     * Labels of the waiting garment(s) when this Fabric has a leftover half
+     * capacity that none of them can fit into. When supplied, the exhausted
+     * copy explains the mismatch instead of the generic stock message.
+     */
+    halfCapacityBlockedGarmentLabels?: readonly string[];
+  } = {},
 ): string | null => {
   if (fabric.stockStatus === "HIDDEN" || fabric.stockStatus === "OUT_OF_STOCK") {
     return null;
@@ -185,6 +208,11 @@ export const getFabricNewAllocationStockConstraintMessage = (
   }
   if (allowExistingPartialReuse) {
     return null;
+  }
+  if (options.halfCapacityBlockedGarmentLabels) {
+    return formatFabricHalfCapacityCannotFitCopy(
+      options.halfCapacityBlockedGarmentLabels,
+    );
   }
   return formatFabricStockExhaustedCopy();
 };
