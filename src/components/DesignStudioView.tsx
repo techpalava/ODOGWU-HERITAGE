@@ -223,11 +223,16 @@ import {
   canCancelPendingForAdditionalGarmentTransaction,
   confirmAdditionalGarmentFabricAssignment,
   confirmAdditionalGarmentTransactionCommitted,
+  dismissDeferredAdditionalGarmentCustomDetailsPrompt,
   isAdditionalGarmentFabricTransactionTargetValid,
+  mergeProvisionalAdditionalConstructionForLiveSummary,
+  queueDeferredAdditionalGarmentCustomDetailsPrompt,
   resolveAuthoritativePrimaryFabricCode,
   resolveCurrentCatalogueFabricForAssignment,
+  resolveDeferredAdditionalGarmentCustomDetailsRequest,
   STALE_ADDITIONAL_GARMENT_FABRIC_MESSAGE,
   type AdditionalGarmentFabricTransaction,
+  type DeferredAdditionalGarmentCustomDetailsPrompt,
 } from "../utils/additionalGarmentFabricPicker";
 import { resolveFutureStageCorrection } from "../utils/resolveFutureStageCorrection";
 import { FutureAdditionalGarmentFabricDialog } from "./FutureAdditionalGarmentFabricDialog";
@@ -1340,6 +1345,10 @@ export default function DesignStudioView({
   const additionalGarmentFabricTransactionIdRef = useRef(0);
   const [additionalGarmentFabricTransaction, setAdditionalGarmentFabricTransaction] =
     useState<AdditionalGarmentFabricTransaction | null>(null);
+  const [
+    deferredAdditionalGarmentCustomDetailsPrompts,
+    setDeferredAdditionalGarmentCustomDetailsPrompts,
+  ] = useState<readonly DeferredAdditionalGarmentCustomDetailsPrompt[]>([]);
   const [designStyleReuseAddedOccurrence, setDesignStyleReuseAddedOccurrence] =
     useState<{ garmentKey: string; styleId: string } | null>(null);
   const additionalGarmentFabricTransactionRef =
@@ -3330,39 +3339,88 @@ export default function DesignStudioView({
   );
   const showPersistentLiveOrderSummary =
     shouldShowPersistentLiveOrderSummary(futureStageId);
-  const liveOrderSummary = useMemo(
-    () =>
-      projectDesignStudioLiveOrderSummary({
-        summary: futureSummary,
-        shippingResolution: futureShippingResolution,
-        candidatePricing: null,
-        fabricAllocationState,
-        measurementState: reconciledFutureMeasurementState,
-        measurementPlan: futureMeasurementPlan,
-        orderMeasurementCompletion:
-          wearerMeasurementRuntimes.length > 0
-            ? wearerOrderMeasurementCompletion
-            : null,
-        designSource: activeFutureDesignSource,
-        additionalConstructionState:
-          futureAdditionalConstructionReconciliation.state,
-        catalogInspection: futureCatalogInspection,
-        showAdditionalClothesCosts,
-      }),
-    [
-      futureSummary,
-      futureShippingResolution,
-      fabricAllocationState,
-      reconciledFutureMeasurementState,
-      futureMeasurementPlan,
-      wearerMeasurementRuntimes.length,
-      wearerOrderMeasurementCompletion,
-      activeFutureDesignSource,
+  const liveOrderSummary = useMemo(() => {
+    const overlayState = mergeProvisionalAdditionalConstructionForLiveSummary(
       futureAdditionalConstructionReconciliation.state,
-      futureCatalogInspection,
+      additionalGarmentFabricTransaction,
+    );
+    const summaryForLiveOrder =
+      overlayState === futureAdditionalConstructionReconciliation.state
+        ? futureSummary
+        : projectFutureDesignStudioSummary({
+            ...futureSummaryInput,
+            additionalGarmentConstructionState: overlayState,
+          });
+    const provisionalConstructionPrice =
+      overlayState !== futureAdditionalConstructionReconciliation.state &&
+      additionalGarmentFabricTransaction?.construction?.status === "resolved"
+        ? additionalGarmentFabricTransaction.construction.totalPrice
+        : 0;
+    const baseConstructionSubtotal =
+      summaryForLiveOrder.pricingSummary.garmentConstructionSubtotal;
+    const previewConstructionSubtotal =
+      provisionalConstructionPrice > 0 && baseConstructionSubtotal !== null
+        ? Math.round(
+            (baseConstructionSubtotal + provisionalConstructionPrice) * 100,
+          ) / 100
+        : baseConstructionSubtotal;
+    const baseSelectedDesignPrice =
+      summaryForLiveOrder.pricingSummary.selectedDesignPrice;
+    const pricedSummaryForLiveOrder =
+      previewConstructionSubtotal === baseConstructionSubtotal
+        ? summaryForLiveOrder
+        : {
+            ...summaryForLiveOrder,
+            pricingSummary: {
+              ...summaryForLiveOrder.pricingSummary,
+              garmentConstructionSubtotal: previewConstructionSubtotal,
+              selectedDesignPrice:
+                baseSelectedDesignPrice?.selectedDesignPrice == null ||
+                previewConstructionSubtotal === null
+                  ? baseSelectedDesignPrice
+                  : {
+                      ...baseSelectedDesignPrice,
+                      garmentConstructionSubtotal: previewConstructionSubtotal,
+                      selectedDesignPrice:
+                        Math.round(
+                          (baseSelectedDesignPrice.selectedDesignPrice +
+                            provisionalConstructionPrice) *
+                            100,
+                        ) / 100,
+                    },
+            },
+          };
+    return projectDesignStudioLiveOrderSummary({
+      summary: pricedSummaryForLiveOrder,
+      shippingResolution: futureShippingResolution,
+      candidatePricing: null,
+      fabricAllocationState,
+      measurementState: reconciledFutureMeasurementState,
+      measurementPlan: futureMeasurementPlan,
+      orderMeasurementCompletion:
+        wearerMeasurementRuntimes.length > 0
+          ? wearerOrderMeasurementCompletion
+          : null,
+      designSource: activeFutureDesignSource,
+      additionalConstructionState: overlayState,
+      catalogInspection: futureCatalogInspection,
       showAdditionalClothesCosts,
-    ],
-  );
+    });
+  }, [
+    futureSummary,
+    futureSummaryInput,
+    futureShippingResolution,
+    fabricAllocationState,
+    reconciledFutureMeasurementState,
+    futureMeasurementPlan,
+    wearerMeasurementRuntimes.length,
+    wearerOrderMeasurementCompletion,
+    activeFutureDesignSource,
+    futureAdditionalConstructionReconciliation.state,
+    additionalGarmentFabricTransaction,
+    futureCatalogInspection,
+    showAdditionalClothesCosts,
+  ]);
   const liveOrderSummaryUnlockedStages = useMemo(() => {
     const unlocked = new Set<DesignStudioStageId>();
     // The Summary uses the same currently-enterable authority as the Journey
@@ -7370,16 +7428,13 @@ export default function DesignStudioView({
     request: AdditionalGarmentCustomDetailsRequest,
     choice: AdditionalGarmentCustomDetailsChoice,
   ): boolean => {
-    const transaction = getCurrentAdditionalGarmentFabricOperation({
-      transactionId: request.transactionId,
-      garmentKey: request.garmentKey,
-      occurrenceGeneration: request.occurrenceGeneration,
-    });
-    if (
-      !transaction ||
-      transaction.origin !== "new_addition" ||
-      transaction.phase !== "custom_details_choice"
-    ) {
+    const deferredPrompt = deferredAdditionalGarmentCustomDetailsPrompts.find(
+      (prompt) =>
+        prompt.transactionId === request.transactionId &&
+        prompt.garmentKey === request.garmentKey &&
+        prompt.occurrenceGeneration === request.occurrenceGeneration,
+    );
+    if (!deferredPrompt) {
       return false;
     }
 
@@ -7388,12 +7443,12 @@ export default function DesignStudioView({
         ? futureScopedCustomDetailsReconciliation.subjects.find(
             (subject) =>
               subject.parentGarmentKey === choice.sourceParentGarmentKey &&
-              subject.parentGarmentType === transaction.garmentType,
+              subject.parentGarmentType === deferredPrompt.garmentType,
           )
         : null;
     const sourceConstruction = sourceSubject
       ? sourceSubject.parentGarmentKey.startsWith("base:")
-        ? garmentTypeSelection.constructionByGarment[transaction.garmentType]
+        ? garmentTypeSelection.constructionByGarment[deferredPrompt.garmentType]
         : futureAdditionalConstructionReconciliation.state.byGarmentKey[
             sourceSubject.parentGarmentKey
           ]
@@ -7417,7 +7472,7 @@ export default function DesignStudioView({
       choice.mode === "copy"
         ? sourceConstruction!
         : resolveGarmentConstructionPricing(
-            transaction.garmentType,
+            deferredPrompt.garmentType,
             normalizedGarmentTypeCatalog,
           );
     if (construction.status !== "resolved") {
@@ -7429,7 +7484,12 @@ export default function DesignStudioView({
     }
 
     const transactionWithCustomDetails: AdditionalGarmentFabricTransaction = {
-      ...transaction,
+      transactionId: deferredPrompt.transactionId,
+      phase: "awaiting_commit",
+      origin: "new_addition",
+      garmentKey: deferredPrompt.garmentKey,
+      garmentType: deferredPrompt.garmentType,
+      occurrenceGeneration: deferredPrompt.occurrenceGeneration,
       construction: cloneGarmentConstructionPricingResolution(construction),
       copyFromParentGarmentKey:
         choice.mode === "copy" ? choice.sourceParentGarmentKey : undefined,
@@ -7449,25 +7509,35 @@ export default function DesignStudioView({
       return false;
     }
 
-    const finishingTransaction: AdditionalGarmentFabricTransaction = {
-      ...transactionWithCustomDetails,
-      phase: "awaiting_commit",
-      openedModal: false,
-      constructionAppliedForTransactionId: transaction.transactionId,
-    };
-    additionalGarmentFabricTransactionRef.current = finishingTransaction;
     setDesignSelections(authorization.next);
-    setAdditionalGarmentFabricTransaction(finishingTransaction);
+    setDeferredAdditionalGarmentCustomDetailsPrompts((current) =>
+      dismissDeferredAdditionalGarmentCustomDetailsPrompt(
+        current,
+        deferredPrompt.garmentKey,
+      ),
+    );
     return true;
   };
   const handleCancelAdditionalGarmentCustomDetails = (
     request: AdditionalGarmentCustomDetailsRequest,
-  ): boolean =>
-    cancelAdditionalGarmentFabricTransaction({
-      transactionId: request.transactionId,
-      garmentKey: request.garmentKey,
-      occurrenceGeneration: request.occurrenceGeneration,
-    });
+  ): boolean => {
+    const deferredPrompt = deferredAdditionalGarmentCustomDetailsPrompts.find(
+      (prompt) =>
+        prompt.transactionId === request.transactionId &&
+        prompt.garmentKey === request.garmentKey &&
+        prompt.occurrenceGeneration === request.occurrenceGeneration,
+    );
+    if (!deferredPrompt) {
+      return false;
+    }
+    setDeferredAdditionalGarmentCustomDetailsPrompts((current) =>
+      dismissDeferredAdditionalGarmentCustomDetailsPrompt(
+        current,
+        deferredPrompt.garmentKey,
+      ),
+    );
+    return true;
+  };
   const handleRemoveFuturePhysicalGarmentOccurrence = ({
     garmentKey,
     expectedAuthoritySignature,
@@ -7598,6 +7668,9 @@ export default function DesignStudioView({
       ]);
     }
 
+    setDeferredAdditionalGarmentCustomDetailsPrompts((current) =>
+      dismissDeferredAdditionalGarmentCustomDetailsPrompt(current, garmentKey),
+    );
     applyFuturePhysicalGarmentRemovalCommit(prepared.commit, {
       setGarmentTypeSelection,
       setDesignSource: setFutureDesignSource,
@@ -7936,6 +8009,59 @@ export default function DesignStudioView({
     ) {
       return;
     }
+    const shouldDeferCustomDetails =
+      transaction.origin === "new_addition" &&
+      !transaction.designStyleReuse &&
+      !transaction.capacityReuse;
+    let constructionAppliedTransaction = transaction;
+    if (shouldDeferCustomDetails) {
+      const construction =
+        transaction.construction?.status === "resolved"
+          ? transaction.construction
+          : resolveGarmentConstructionPricing(
+              transaction.garmentType,
+              normalizedGarmentTypeCatalog,
+            );
+      if (
+        construction.status !== "resolved" ||
+        !transaction.occurrenceGeneration
+      ) {
+        setNotification({
+          message: "This garment construction price is not ready yet.",
+          type: "info",
+        });
+        return;
+      }
+      constructionAppliedTransaction = {
+        ...transaction,
+        construction: cloneGarmentConstructionPricingResolution(construction),
+        requestedFabricCode: fabricCode,
+        openedModal: false,
+      };
+      const authorization = applyAdditionalGarmentConstructionAndCopy({
+        current: designSelections,
+        transaction: constructionAppliedTransaction,
+        catalogInspection: futureCatalogInspection,
+      });
+      if (!authorization.applied) {
+        setNotification({
+          message:
+            authorization.reason ||
+            "This garment could not be added. Your existing order was not changed.",
+          type: "info",
+        });
+        return;
+      }
+      setDesignSelections(authorization.next);
+      setDeferredAdditionalGarmentCustomDetailsPrompts((current) =>
+        queueDeferredAdditionalGarmentCustomDetailsPrompt(current, {
+          transactionId: transaction.transactionId,
+          garmentKey: transaction.garmentKey,
+          garmentType: transaction.garmentType,
+          occurrenceGeneration: transaction.occurrenceGeneration,
+        }),
+      );
+    }
     revalidatePreservedFabricIntegrityAfterMutation({
       previousState: fabricAllocationState,
       nextState,
@@ -7944,15 +8070,17 @@ export default function DesignStudioView({
     setFabricAllocationState(nextState);
     setAdditionalGarmentFabricError(null);
     const nextTransaction = {
-      ...transaction,
-      phase:
-        transaction.origin === "new_addition" &&
-        !transaction.designStyleReuse &&
-        !transaction.capacityReuse
-          ? "custom_details_choice"
-          : "assigning",
-      openedModal: transaction.origin !== "new_addition",
+      ...constructionAppliedTransaction,
+      phase: shouldDeferCustomDetails ? "awaiting_commit" : "assigning",
+      openedModal: shouldDeferCustomDetails
+        ? false
+        : transaction.origin !== "new_addition",
       requestedFabricCode: fabricCode,
+      ...(shouldDeferCustomDetails
+        ? {
+            constructionAppliedForTransactionId: transaction.transactionId,
+          }
+        : {}),
     } as AdditionalGarmentFabricTransaction;
     additionalGarmentFabricTransactionRef.current = nextTransaction;
     setAdditionalGarmentFabricTransaction(nextTransaction);
@@ -8171,17 +8299,10 @@ export default function DesignStudioView({
         additionalGarmentFabricTransaction.phase === "awaiting_commit"),
   );
   const additionalGarmentCustomDetailsRequest: AdditionalGarmentCustomDetailsRequest | null =
-    additionalGarmentFabricTransaction?.origin === "new_addition" &&
-    additionalGarmentFabricTransaction.phase === "custom_details_choice" &&
-    additionalGarmentFabricTransaction.occurrenceGeneration
-      ? {
-          transactionId: additionalGarmentFabricTransaction.transactionId,
-          garmentKey: additionalGarmentFabricTransaction.garmentKey,
-          garmentType: additionalGarmentFabricTransaction.garmentType,
-          occurrenceGeneration:
-            additionalGarmentFabricTransaction.occurrenceGeneration,
-        }
-      : null;
+    resolveDeferredAdditionalGarmentCustomDetailsRequest({
+      prompts: deferredAdditionalGarmentCustomDetailsPrompts,
+      occurrences: futureDesignStyleStepProjection.occurrences,
+    });
   const garmentTypeBlockerMessage = !garmentTypeStageCompletion.isComplete
     ? "Select at least one garment, choose who the order is for, and resolve every construction price to continue to Fabric."
     : null;
