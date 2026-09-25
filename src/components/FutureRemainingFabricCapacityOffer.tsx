@@ -19,13 +19,26 @@ export const isRemainingFabricCapacityOfferPromptStage = (
 ): boolean =>
   stageId === "design_style" ||
   stageId === "custom_details" ||
-  stageId === "personalized_additions";
+  stageId === "personalized_additions" ||
+  stageId === "measurement" ||
+  stageId === "summary";
 
 export const resolveRemainingFabricCapacityReturnStage = (
   stageId: DesignStudioStageId | string,
-): "fabric" | "design_style" | "custom_details" | "personalized_additions" =>
+):
+  | "fabric"
+  | "design_style"
+  | "custom_details"
+  | "personalized_additions"
+  | "measurement"
+  | "summary" =>
   isRemainingFabricCapacityOfferPromptStage(stageId)
-    ? (stageId as "design_style" | "custom_details" | "personalized_additions")
+    ? (stageId as
+        | "design_style"
+        | "custom_details"
+        | "personalized_additions"
+        | "measurement"
+        | "summary")
     : "fabric";
 
 /** Presentation lifecycle only. Does not decide whether leftover capacity exists. */
@@ -68,6 +81,51 @@ const remainingCapacityOfferFabricName = (
   fabrics.find((fabric) => fabric.code === offer.fabricCode)?.name ||
   offer.fabricCode;
 
+const RemainingFabricCapacityGrid = ({
+  offers,
+  fabrics,
+  onAddGarment,
+}: {
+  offers: readonly FutureRemainingFabricCapacityOffer[];
+  fabrics: readonly Fabric[];
+  onAddGarment: (allocationId: string) => void;
+}) => (
+  <div className="@container">
+  <ul className="mt-3 grid grid-cols-1 gap-2 @[740px]:grid-cols-2">
+    {offers.map((offer) => {
+      const fabricName = remainingCapacityOfferFabricName(offer, fabrics);
+      return (
+        <li
+          key={offer.allocationId}
+          className="flex min-w-0 items-center gap-2 rounded-xl border border-heritage-gold/20 bg-white/70 px-2.5 py-2"
+          data-fabric-capacity-offer-allocation-id={offer.allocationId}
+          data-testid={`remaining-fabric-capacity-offer-allocation-${offer.allocationId}`}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm font-bold text-heritage-green">
+              <span className="break-words">{fabricName}</span>
+              <span className="shrink-0 font-normal text-heritage-ink/65">
+                {offer.remainingUnits}/2 left
+              </span>
+            </p>
+            <p className="sr-only">Fabric Selection {offer.selectionOrdinal}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onAddGarment(offer.allocationId)}
+            data-testid={`remaining-fabric-capacity-offer-add-${offer.allocationId}`}
+            aria-label={`${REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT} using ${fabricName}`}
+            className="inline-flex h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-lg bg-heritage-green px-2.5 text-[11px] font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+          >
+            {REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT}
+          </button>
+        </li>
+      );
+    })}
+  </ul>
+  </div>
+);
+
 export const FutureRemainingFabricCapacityOfferPrompt = ({
   offers,
   fabrics,
@@ -79,7 +137,7 @@ export const FutureRemainingFabricCapacityOfferPrompt = ({
 }) => (
   <aside
     data-testid="remaining-fabric-capacity-offer-prompt"
-    className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4"
+    className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-3"
   >
     <h2 className="font-serif text-base font-bold text-heritage-green">
       {REMAINING_FABRIC_CAPACITY_OFFER_TITLE}
@@ -87,37 +145,11 @@ export const FutureRemainingFabricCapacityOfferPrompt = ({
     <p className="mt-1 text-xs leading-relaxed text-heritage-ink/65">
       {REMAINING_FABRIC_CAPACITY_OFFER_BODY}
     </p>
-    <ul className="mt-3 space-y-3">
-      {offers.map((offer) => {
-        const fabricName = remainingCapacityOfferFabricName(offer, fabrics);
-        return (
-          <li
-            key={offer.allocationId}
-            className="rounded-xl border border-heritage-gold/20 bg-white/70 p-3"
-            data-fabric-capacity-offer-allocation-id={offer.allocationId}
-          >
-            <p className="break-words font-bold text-heritage-green">
-              {fabricName}
-            </p>
-            <p className="mt-1 break-words font-mono text-[10px] text-heritage-ink/55">
-              {offer.fabricCode}
-            </p>
-            <p className="mt-1 text-xs text-heritage-ink/65">
-              {offer.remainingUnits}/2 capacity available
-            </p>
-            <button
-              type="button"
-              onClick={() => onAddGarment(offer.allocationId)}
-              data-testid={`remaining-fabric-capacity-offer-add-${offer.allocationId}`}
-              aria-label={`${REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT} using ${fabricName}`}
-              className="mt-3 inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-            >
-              {REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT}
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+    <RemainingFabricCapacityGrid
+      offers={offers}
+      fabrics={fabrics}
+      onAddGarment={onAddGarment}
+    />
   </aside>
 );
 
@@ -284,38 +316,11 @@ export const FutureRemainingFabricCapacityOfferCard = ({
         </div>
       ) : (
         <>
-          <ul className="mt-3 space-y-3 text-sm text-heritage-green">
-            {offers.map((offer) => {
-              const fabricName = remainingCapacityOfferFabricName(offer, fabrics);
-              return (
-                <li
-                  key={offer.allocationId}
-                  className="flex min-w-0 flex-col gap-3 rounded-xl border border-heritage-gold/20 p-3 sm:flex-row sm:items-start sm:justify-between"
-                  data-fabric-capacity-offer-allocation-id={offer.allocationId}
-                  data-testid={`remaining-fabric-capacity-offer-allocation-${offer.allocationId}`}
-                >
-                  <div className="min-w-0">
-                    <p className="break-words font-bold">{fabricName}</p>
-                    <p className="mt-1 text-xs text-heritage-ink/65">
-                      Fabric Selection {offer.selectionOrdinal}
-                    </p>
-                    <p className="mt-1 text-xs text-heritage-ink/65">
-                      {offer.remainingUnits}/2 capacity available
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setChooserAllocationId(offer.allocationId)}
-                    data-testid={`remaining-fabric-capacity-offer-add-${offer.allocationId}`}
-                    aria-label={`${REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT} using ${fabricName}`}
-                    className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-xl bg-heritage-green px-4 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
-                  >
-                    {REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+          <RemainingFabricCapacityGrid
+            offers={offers}
+            fabrics={fabrics}
+            onAddGarment={setChooserAllocationId}
+          />
           {showContinueToDesignStyle ? (
             <div className="mt-3 flex flex-col gap-2">
               <button

@@ -183,6 +183,20 @@ export const CRITICAL_RISK_AVAILABLE_COPY =
 export const CRITICAL_RISK_UNAVAILABLE_COPY =
   "Critical Risk is unavailable for this garment selection because one or more required measurements cannot yet be calculated from height.";
 
+export const criticalRiskUnavailableCopy = (
+  garmentLabels: readonly string[],
+): string => {
+  if (garmentLabels.length === 0) return CRITICAL_RISK_UNAVAILABLE_COPY;
+  const list =
+    garmentLabels.length === 1
+      ? garmentLabels[0]
+      : garmentLabels.length === 2
+        ? `${garmentLabels[0]} and ${garmentLabels[1]}`
+        : `${garmentLabels.slice(0, -1).join(", ")}, and ${garmentLabels[garmentLabels.length - 1]}`;
+  const verb = garmentLabels.length === 1 ? "needs" : "need";
+  return `Critical Risk is unavailable because ${list} still ${verb} measurements that cannot be calculated from height.`;
+};
+
 export const MEASUREMENT_RISK_SELECTION_NOTICE =
   "Choose one measurement option and complete only the measurements shown for your selected method.";
 
@@ -534,6 +548,7 @@ export interface MeasurementRequirementPlan {
   inputFingerprint: string;
   canCalculate: boolean;
   criticalRiskSupported: boolean;
+  criticalRiskBlockingGarmentKeys: readonly string[];
 }
 
 const presentationBand = (requirement: PlannedMeasurementRequirement): number => {
@@ -731,12 +746,19 @@ export const planMeasurementRequirements = ({
   garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1;
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
 }): MeasurementRequirementPlan => {
-  const criticalRiskSupported = isCriticalRiskSupportedForSelection({
-    garmentTypeSelection,
-    physicalGarments,
-    additionalGarmentConstructions,
-    garmentScopedCustomDetails,
-  });
+  const criticalRiskBlockingGarmentKeys = physicalGarments
+    .filter(
+      (garment) =>
+        !isCriticalRiskSupportedForOccurrence({
+          garment,
+          garmentTypeSelection,
+          additionalGarmentConstructions,
+          garmentScopedCustomDetails,
+        }),
+    )
+    .map((garment) => garment.garmentKey);
+  const criticalRiskSupported =
+    physicalGarments.length > 0 && criticalRiskBlockingGarmentKeys.length === 0;
   if (!isSelectedMeasurementMethod(route)) {
     return {
       blueprintVersion: MEASUREMENT_BLUEPRINT_VERSION,
@@ -747,6 +769,7 @@ export const planMeasurementRequirements = ({
       inputFingerprint: `measurement_unresolved_${MEASUREMENT_BLUEPRINT_VERSION}`,
       canCalculate: false,
       criticalRiskSupported,
+      criticalRiskBlockingGarmentKeys,
     };
   }
   const planningRoute = getMeasurementPlanningRiskRoute(route);
@@ -966,6 +989,7 @@ export const planMeasurementRequirements = ({
       route === "high_risk" ||
       (route === "critical_risk" && criticalRiskSupported),
     criticalRiskSupported,
+    criticalRiskBlockingGarmentKeys,
   };
 };
 

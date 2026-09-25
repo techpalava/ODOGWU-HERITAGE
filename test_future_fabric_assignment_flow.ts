@@ -531,7 +531,7 @@ assert.deepEqual(
   { showPrompt: false, showModal: false },
   "A dismissed Fabric offer must not auto-open again in the same session.",
 );
-for (const laterStage of ["design_style", "custom_details", "personalized_additions"] as const) {
+for (const laterStage of ["design_style", "custom_details", "personalized_additions", "measurement", "summary"] as const) {
   assert.deepEqual(
     resolveRemainingFabricCapacityOfferPresentation({
       stageId: laterStage,

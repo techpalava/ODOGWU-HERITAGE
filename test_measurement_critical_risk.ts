@@ -518,6 +518,8 @@ assert.deepEqual(
 
 const unsupportedPlan = planCritical(trouserI, [garment("base:trouser", "trouser")]);
 assert.equal(unsupportedPlan.criticalRiskSupported, false);
+assert.deepEqual(unsupportedPlan.criticalRiskBlockingGarmentKeys, ["base:trouser"]);
+assert.deepEqual(supportedPlan.criticalRiskBlockingGarmentKeys, []);
 assert.equal(unsupportedPlan.canCalculate, false);
 assert.equal(unsupportedPlan.requirements.length, 0);
 assert.ok(
