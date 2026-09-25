@@ -464,9 +464,9 @@ assert.deepEqual(
 );
 assert.equal(sameFabricState.pendingFabricGarment, null);
 assert.equal(
-  afterUseSame.props.additionalGarmentCustomDetailsRequest?.garmentKey,
-  pendingTrouserKey,
-  "the exact Fabric-assigned occurrence must be handed to its own Custom Details choice",
+  afterUseSame.props.additionalGarmentCustomDetailsRequest,
+  null,
+  "Custom Details choices must wait until the additional garment has a Step 3 design",
 );
 assert.equal(
   Object.prototype.hasOwnProperty.call(
@@ -474,43 +474,24 @@ assert.equal(
       ?.byGarmentKey || {},
     pendingTrouserKey,
   ),
+  true,
+  "Fabric success must commit the additional garment so Step 3 and the summary can list it",
+);
+assert.match(
+  textContent(renderer.root),
+  /Additional Garments/,
+  "the live summary must list the fabric-committed additional garment",
+);
+assert.equal(
+  renderer.root
+    .findAllByType("button")
+    .some((button) =>
+      ["Use Same Custom Details", "Choose Custom Details"].some((label) =>
+        textContent(button).trim().startsWith(label),
+      ),
+    ),
   false,
-  "Fabric success alone must not expose a half-committed construction occurrence",
-);
-const completedTrouserRequest =
-  afterUseSame.props.additionalGarmentCustomDetailsRequest;
-const completeTrouserCustomDetails =
-  afterUseSame.props.onCompleteAdditionalGarmentCustomDetails;
-
-await act(async () => {
-  findButton("Choose Custom Details").props.onClick();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-});
-const finalizedTrouser = renderer.root.findByType(
-  DormantFutureCustomDetailsStep,
-);
-assert.equal(
-  finalizedTrouser.props.constructionSubtotal,
-  140,
-);
-assert.equal(
-  finalizedTrouser.props.additionalGarmentCustomDetailsRequest,
-  null,
-);
-let duplicateCompletionResult = true;
-act(() => {
-  duplicateCompletionResult = completeTrouserCustomDetails(
-    completedTrouserRequest,
-    { mode: "choose" },
-  );
-});
-assert.equal(
-  duplicateCompletionResult,
-  false,
-  "the same Custom Details completion callback must not finalize twice",
+  "the Add Trouser dialog must not open before a design is assigned",
 );
 assert.equal(
   renderer.root.findAllByProps({
@@ -538,6 +519,13 @@ assert.equal(
 );
 const additionalDesignStyleStep = renderer.root.findByType(
   DormantFutureDesignStyleStep,
+);
+assert.ok(
+  additionalDesignStyleStep.props.occurrences.some(
+    (occurrence: { target: { garmentKey: string } }) =>
+      occurrence.target.garmentKey === pendingTrouserKey,
+  ),
+  "Step 3 must list the fabric-committed additional Trouser",
 );
 const trouserCatalogueEntry = additionalDesignStyleStep.props.catalogueEntries.find(
   (entry: {
@@ -580,9 +568,63 @@ assert.equal(
   ],
   "custom_details",
 );
+const customDetailsAfterDesign = renderer.root.findByType(
+  DormantFutureCustomDetailsStep,
+);
+assert.equal(
+  customDetailsAfterDesign.props.additionalGarmentCustomDetailsRequest,
+  null,
+  "an extra trouser with no same-type garment applies its own construction without the dialog",
+);
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-additional-garment-custom-details-dialog": "true",
+  }).length,
+  0,
+  "Step 4 does not show the Add garment dialog when Use Same is unavailable",
+);
+const completeTrouserCustomDetails =
+  customDetailsAfterDesign.props.onCompleteAdditionalGarmentCustomDetails;
+const finalizedTrouser = customDetailsAfterDesign;
+await act(async () => {
+  finalizedTrouser.props.onContinue();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+});
+assert.equal(
+  renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props[
+    "data-stage-id"
+  ],
+  "personalized_additions",
+);
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-additional-garment-custom-details-dialog": "true",
+  }).length,
+  0,
+  "Step 5 does not show the extra-garment construction dialog",
+);
+let duplicateCompletionResult = true;
+act(() => {
+  duplicateCompletionResult = completeTrouserCustomDetails(
+    {
+      transactionId: 0,
+      garmentKey: pendingTrouserKey,
+      garmentType: "trouser",
+      occurrenceGeneration: 0,
+    },
+    { mode: "choose" },
+  );
+});
+assert.equal(
+  duplicateCompletionResult,
+  false,
+  "the same Custom Details completion callback must not finalize twice",
+);
 
 // Once Fabric, Custom Details, and the required scoped Design Style have all
-// committed, the ordinary Step 4 action must be available for a distinct
+// committed, the ordinary Step 5 action must be available for a distinct
 // second occurrence.
 assert.equal(
   renderer.root.findAllByProps({

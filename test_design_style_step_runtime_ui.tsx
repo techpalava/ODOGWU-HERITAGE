@@ -136,6 +136,7 @@ const withReferenceGarmentTypes = (
     ["Emerald Reference", "Gold Reference", "Ivory Reference"],
   );
   assert.equal(visibleText.includes("Your Garments"), true);
+  assert.equal(visibleText.includes("Additional Garments"), false);
   assert.equal(visibleText.includes("Choose Design"), true);
   const oneGarmentList = renderer.root.findByProps({
     "data-testid": "step3-garment-assignment-list",
@@ -1321,6 +1322,125 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     if (originalWindow === undefined) delete runtime.window;
     else runtime.window = originalWindow;
   }
+}
+
+// Step 5 additional garments appear after Your Garments with the same
+// choose/upload actions. A missing generation never becomes a Step 3 row.
+{
+  const addedOccurrence: PhysicalGarmentOccurrence = {
+    garmentKey: "additional:shirt:1",
+    garmentType: "shirt",
+    sourceRole: "additional",
+    fabricUnits: 1,
+    occurrenceGeneration: 2,
+  };
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt"]),
+    occurrences: [
+      {
+        garmentKey: "base:shirt:1",
+        garmentType: "shirt",
+        sourceRole: "main",
+        fabricUnits: 1,
+        occurrenceGeneration: 1,
+      },
+      addedOccurrence,
+    ],
+  });
+  assert.deepEqual(
+    model.projection.occurrences.map((occurrence) => occurrence.target.garmentKey),
+    ["base:shirt:1", "additional:shirt:1"],
+    "a committed additional occurrence with generation reaches the Step 3 projection",
+  );
+  const dropped = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt"]),
+    occurrences: [
+      {
+        garmentKey: "base:shirt:1",
+        garmentType: "shirt",
+        sourceRole: "main",
+        fabricUnits: 1,
+        occurrenceGeneration: 1,
+      },
+      {
+        garmentKey: "additional:shirt:1",
+        garmentType: "shirt",
+        sourceRole: "additional",
+        fabricUnits: 1,
+      },
+    ],
+  });
+  assert.deepEqual(
+    dropped.projection.occurrences.map((occurrence) => occurrence.target.garmentKey),
+    ["base:shirt:1"],
+    "an additional occurrence without generation is omitted from Step 3 rows",
+  );
+  assert.equal(dropped.projection.runtimeStatus, "blocked");
+
+  const selectedTargets: string[] = [];
+  const uploadedTargets: string[] = [];
+  const renderer = await renderModel(model, {
+    onSelectOccurrence: (target) => selectedTargets.push(target.garmentKey),
+    onSelectUploadFile: (target) => uploadedTargets.push(target.garmentKey),
+  });
+  const visibleText = textContent(renderer.root);
+  assert.match(visibleText, /Your Garments/);
+  assert.match(visibleText, /Additional Garments/);
+  const yourGarments = renderer.root.findByProps({
+    "data-testid": "step3-garment-assignment-list",
+  });
+  const additionalList = renderer.root.findByProps({
+    "data-testid": "step3-additional-garment-assignment-list",
+  });
+  assert.deepEqual(
+    yourGarments
+      .findAll((node) => node.props?.["data-occurrence-garment-key"])
+      .map((row) => row.props["data-occurrence-garment-key"]),
+    ["base:shirt:1"],
+  );
+  assert.deepEqual(
+    additionalList
+      .findAll((node) => node.props?.["data-occurrence-garment-key"])
+      .map((row) => row.props["data-occurrence-garment-key"]),
+    ["additional:shirt:1"],
+  );
+  const additionalToken = model.projection.occurrences[1]!.target.occurrenceToken;
+  const additionalRow = additionalList.findByProps({
+    "data-occurrence-token": additionalToken,
+  });
+  const chooseDesign = additionalRow
+    .findAllByType("button")
+    .find((button) => textContent(button) === "Choose Design");
+  assert.ok(chooseDesign);
+  await act(async () => chooseDesign!.props.onClick({ stopPropagation() {} }));
+  assert.deepEqual(selectedTargets, ["additional:shirt:1"]);
+  const uploadButton = additionalRow
+    .findAllByType("button")
+    .find(
+      (button) =>
+        button.props["aria-label"] ===
+        `Upload a design for ${model.projection.occurrences[1]!.label}`,
+    );
+  assert.ok(uploadButton);
+  const fileInput = additionalRow
+    .findAllByType("input")
+    .find((input) => input.props.type === "file");
+  assert.ok(fileInput);
+  await act(async () =>
+    fileInput!.props.onChange({
+      currentTarget: {
+        files: [{ name: "shirt.png" } as File],
+        value: "shirt.png",
+      },
+    }),
+  );
+  assert.deepEqual(uploadedTargets, ["additional:shirt:1"]);
+  assert.match(
+    textContent(renderer.root.findByProps({ "data-testid": "step3-assignment-progress" })),
+    /0 of 2 garments assigned/,
+  );
 }
 
 console.log("PASS: garment-scoped Design Style Step 3 rendered runtime");

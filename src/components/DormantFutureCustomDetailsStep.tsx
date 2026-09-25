@@ -449,8 +449,16 @@ export const DormantFutureCustomDetailsStep = ({
     AdditionalGarmentCustomDetailsRequest & {
     sourceParentGarmentKey: string | null;
     }
-  | null>(null);
+  | null>(() =>
+    isCustomDetailsStage && additionalGarmentCustomDetailsRequest
+      ? {
+          ...additionalGarmentCustomDetailsRequest,
+          sourceParentGarmentKey: null,
+        }
+      : null,
+  );
   const choiceDialogRef = useRef<HTMLDivElement>(null);
+  const autoChosenRequestIdentityRef = useRef<string | null>(null);
   const choiceTriggerRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const additionalGarmentTargetRefs = useRef(
@@ -564,7 +572,12 @@ export const DormantFutureCustomDetailsStep = ({
     return resolveCompatibleGarmentScopedCopySources(
       reconciliation.subjects,
       additionalGarmentChoice.garmentType,
-    ).map((source) => ({
+    )
+      .filter(
+        (source) =>
+          source.parentGarmentKey !== additionalGarmentChoice.garmentKey,
+      )
+      .map((source) => ({
       ...source,
       role: source.role === "main"
         ? "Base garment"
@@ -809,6 +822,23 @@ export const DormantFutureCustomDetailsStep = ({
       closeAdditionalGarmentChoice({ restoreFocus: false });
     }
   };
+  const showAdditionalGarmentChoiceDialog =
+    isCustomDetailsStage &&
+    additionalGarmentChoice !== null &&
+    compatibleCopySources.length > 0;
+
+  useEffect(() => {
+    if (!isCustomDetailsStage || !additionalGarmentChoice) return;
+    if (compatibleCopySources.length > 0) return;
+    const identity = `${additionalGarmentChoice.transactionId}:${additionalGarmentChoice.garmentKey}:${additionalGarmentChoice.occurrenceGeneration}`;
+    if (autoChosenRequestIdentityRef.current === identity) return;
+    autoChosenRequestIdentityRef.current = identity;
+    submitAdditionalGarmentChoice({ mode: "choose" });
+  }, [
+    additionalGarmentChoice,
+    compatibleCopySources.length,
+    isCustomDetailsStage,
+  ]);
 
   const renderOptions = (
     group: FutureCustomDetailsCatalogueGroup,
@@ -1835,12 +1865,12 @@ export const DormantFutureCustomDetailsStep = ({
       {shouldShowCustomDetailsGoToTop({
         sentinelOutOfView: showGoToTop,
         fabricModalOpen,
-        choiceDialogOpen: Boolean(additionalGarmentChoice),
+        choiceDialogOpen: showAdditionalGarmentChoiceDialog,
       }) ? (
         <CustomDetailsGoToTopButton onClick={handleGoToTop} />
       ) : null}
 
-      {isPersonalizedAdditionsStage && additionalGarmentChoice && (
+      {showAdditionalGarmentChoiceDialog && (
           <div
             data-additional-garment-custom-details-dialog="true"
             className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/55 p-4"
@@ -1892,7 +1922,6 @@ export const DormantFutureCustomDetailsStep = ({
                 <p id="additional-garment-choose-description" className="mt-2 break-words text-xs leading-relaxed text-heritage-ink/65">Add this garment and choose its construction and details separately.</p>
               </div>
             </div>
-            {!selectedCopySource && compatibleCopySources.length === 0 && <p className="mt-3 text-xs leading-relaxed text-heritage-ink/60">Use Same Custom Details is unavailable because no active garment of this type exists.</p>}
             {compatibleCopySources.length > 1 && !selectedCopySource && <p className="mt-3 text-xs leading-relaxed text-heritage-ink/60">Select the garment whose Custom Details you want to copy.</p>}
             <button type="button" onClick={cancelAdditionalGarmentChoice} className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl text-sm font-bold text-heritage-ink underline decoration-heritage-gold underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2">Cancel</button>
           </div>

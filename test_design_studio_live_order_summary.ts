@@ -13,6 +13,7 @@ import type {
   StyleCategory,
 } from "./src/types";
 import { createAdditionalGarmentSelection } from "./src/utils/additionalGarmentDomain";
+import { mergeProvisionalAdditionalConstructionForLiveSummary } from "./src/utils/additionalGarmentFabricPicker";
 import {
   inspectCustomDetailCatalog,
   normalizeCustomDetailCatalog,
@@ -1257,6 +1258,48 @@ assert.equal(
     candidate.lines.some((line) => line.amountLabel === "€0.00"),
   ),
   false,
+);
+const pendingExtraKey = extraSelection.selection.garmentSpec?.key;
+assert.equal(pendingExtraKey, "additional:shirt:1");
+const pendingShirtConstruction = resolveGarmentConstructionPricing(
+  "shirt",
+  normalizeCustomDetailCatalog(SEED_CUSTOM_DETAIL_CATALOG),
+);
+assert.equal(pendingShirtConstruction.status, "resolved");
+const pendingOverlay = mergeProvisionalAdditionalConstructionForLiveSummary(
+  null,
+  {
+    origin: "new_addition",
+    garmentKey: pendingExtraKey || "",
+    construction: pendingShirtConstruction,
+  },
+);
+const pendingExtraPreview = buildAuthority({
+  garmentTypes: ["shirt", "trouser", "dress"],
+  demographic: "unisex",
+  fabricAllocationState: pendingExtraState,
+  additionalConstructionState: pendingOverlay || null,
+});
+const pendingPreviewSubsection = additionalGarmentsSubsection(
+  pendingExtraPreview.view,
+);
+assert.equal(
+  pendingPreviewSubsection?.lines.length,
+  1,
+  "overlaying in-flight construction lists the extra garment before fabric",
+);
+assert.equal(
+  pendingPreviewSubsection?.lines[0]?.id,
+  `construction-${pendingExtraKey}`,
+);
+assert.match(pendingPreviewSubsection?.lines[0]?.label || "", /Shirt/);
+assert.ok(pendingPreviewSubsection?.lines[0]?.amountLabel);
+assert.equal(
+  section(pendingExtraPreview.view, "fabrics").lines.some(
+    (line) => line.id === `fabric-${pendingExtraKey}`,
+  ),
+  false,
+  "the preview omits a fabric row until a fabric is chosen",
 );
 
 const dressState = setGarmentScopedCustomDetailSelection(
