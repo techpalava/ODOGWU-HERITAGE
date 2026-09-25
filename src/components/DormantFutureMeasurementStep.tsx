@@ -16,6 +16,7 @@ import {
   countSatisfiedRequiredMeasurementUnits,
   CRITICAL_RISK_AVAILABLE_COPY,
   CRITICAL_RISK_UNAVAILABLE_COPY,
+  criticalRiskUnavailableCopy,
   FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE,
   fromCanonicalCentimetres,
   getRequiredAlternativeGroupId,
@@ -522,6 +523,15 @@ export const DormantFutureMeasurementStep = ({
   });
   const criticalRiskSupported = plan.criticalRiskSupported;
   const criticalRiskUnavailable = selectedRoute === "critical_risk" && !criticalRiskSupported;
+  const criticalRiskBlockingLabels = (plan.criticalRiskBlockingGarmentKeys || []).map(
+    (garmentKey) => {
+      const garmentType = physicalGarments.find(
+        (garment) => garment.garmentKey === garmentKey,
+      )?.garmentType;
+      return formatGarmentLabel(occurrenceLabels, garmentType, garmentKey);
+    },
+  );
+  const criticalRiskBlockMessage = criticalRiskUnavailableCopy(criticalRiskBlockingLabels);
   const unsupportedGarments = selectedMethod
     ? resolvedState.diagnostics.filter(
         (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
@@ -541,7 +551,7 @@ export const DormantFutureMeasurementStep = ({
   const routeSaveMessage = !selectedMethod
     ? MEASUREMENT_RISK_SELECTION_NOTICE
     : criticalRiskUnavailable
-      ? CRITICAL_RISK_UNAVAILABLE_COPY
+      ? criticalRiskBlockMessage
     : resolvedState.calculationStatus === "complete"
       ? "All required measurements are saved."
       : `${remainingManualInputCount} required measurement${remainingManualInputCount === 1 ? " remains" : "s remain"}.`;
@@ -633,7 +643,7 @@ export const DormantFutureMeasurementStep = ({
                   data-measurement-risk-selected={selected ? "true" : "false"}
                   data-measurement-risk-disabled={unavailable ? "true" : "false"}
                   className={`flex min-w-0 gap-3 rounded-xl border p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
-                    unavailable ? "cursor-not-allowed opacity-70" : "cursor-pointer"
+                    unavailable ? "cursor-not-allowed lg:col-span-3" : "cursor-pointer"
                   } ${
                     selected
                       ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
@@ -663,8 +673,24 @@ export const DormantFutureMeasurementStep = ({
                         </span>
                       )}
                     </span>
-                    <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">
-                      {unavailable ? CRITICAL_RISK_UNAVAILABLE_COPY : route.description}
+                    <span className={`mt-1 block break-words leading-relaxed ${unavailable ? "text-sm text-heritage-ink" : "text-xs text-heritage-ink/65"}`}>
+                      {unavailable && criticalRiskBlockingLabels.length > 0 ? (
+                        <>
+                          Critical Risk is unavailable because{" "}
+                          <strong className="font-semibold text-heritage-green">
+                            {criticalRiskBlockingLabels.length === 1
+                              ? criticalRiskBlockingLabels[0]
+                              : criticalRiskBlockingLabels.length === 2
+                                ? `${criticalRiskBlockingLabels[0]} and ${criticalRiskBlockingLabels[1]}`
+                                : `${criticalRiskBlockingLabels.slice(0, -1).join(", ")}, and ${criticalRiskBlockingLabels[criticalRiskBlockingLabels.length - 1]}`}
+                          </strong>{" "}
+                          still {criticalRiskBlockingLabels.length === 1 ? "needs" : "need"} measurements that cannot be calculated from height.
+                        </>
+                      ) : unavailable ? (
+                        criticalRiskBlockMessage
+                      ) : (
+                        route.description
+                      )}
                     </span>
                   </span>
                 </label>
