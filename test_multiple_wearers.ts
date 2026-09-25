@@ -82,7 +82,7 @@ const maleOrder = reconcileWearerOrder({
   garmentTypeSelection: selection("male"),
 });
 assert.equal(maleOrder.wearers.length, 1);
-assert.equal(maleOrder.wearers[0].displayName, "You");
+assert.equal(maleOrder.wearers[0].displayName, "");
 assert.equal(maleOrder.wearers[0].fitContext, "male");
 assert.equal(maleOrder.assignmentByGarmentKey["base:shirt"], maleOrder.wearers[0].wearerId);
 assert.equal(maleOrder.assignmentByGarmentKey["base:dress"], undefined);
@@ -244,7 +244,7 @@ const runtimes = planWearerOrderMeasurements({
   garmentTypeSelection: selection("unisex"),
   physicalGarments: garments,
 });
-const youRuntime = runtimes.find((runtime) => runtime.displayName === "You");
+const youRuntime = runtimes.find((runtime) => runtime.displayName === "");
 const friendRuntime = runtimes.find((runtime) => runtime.displayName === "Friend");
 assert.ok(youRuntime && friendRuntime);
 assert.deepEqual(friendRuntime!.garmentKeys, ["base:dress"]);
@@ -294,7 +294,7 @@ const displayedYou = reconcileWearerOrder({
   garmentTypeSelection: selection("male"),
 });
 const stableId = displayedYou.wearers[0]?.wearerId || "";
-assert.equal(displayedYou.wearers[0]?.displayName, "You");
+assert.equal(displayedYou.wearers[0]?.displayName, "");
 assert.ok(stableId);
 const withRoute = (
   base: typeof displayedYou,
