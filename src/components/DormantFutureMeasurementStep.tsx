@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { LockKeyhole, Ruler, ShieldAlert } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import { DRESS_CONDITIONAL_MEASUREMENT_IDS } from "../config/MeasurementBlueprintConfig";
@@ -84,9 +85,9 @@ const ROUTES: ReadonlyArray<{
   },
 ];
 
-const CALCULATED_PENDING_MESSAGE =
-  "Complete the required measurements to calculate this value.";
 const CALCULATED_FROM_HEIGHT_LABEL = "Calculated from height";
+const CALCULATED_FROM_HEIGHT_DESCRIPTION =
+  "These values fill in from Total Height once the required measurements are complete.";
 const IF_APPLICABLE_LABEL = "If applicable";
 const RANGE_RECHECK_MESSAGE = "Please recheck this measurement.";
 const DRESS_CONDITIONAL_MEASUREMENT_ID_SET = new Set<string>(
@@ -257,18 +258,13 @@ const MeasurementField = ({
           {fieldInstruction}
         </span>
       )}
-      {requirement.averageFactor === null && requirement.section === "required" && !sampleGeometry && (
-        <span className="mt-2 block text-xs font-semibold text-heritage-ink/65">
-          Enter this measurement directly.
-        </span>
-      )}
       {calculated ? (
         <span className="relative mt-3 block">
           <span
             className="flex min-h-11 w-full min-w-0 items-center rounded-xl border border-heritage-green/15 bg-heritage-cream/50 px-3 pr-14 text-sm text-heritage-ink"
             data-measurement-calculated-value={stored ? String(displayValue) : "pending"}
           >
-            {stored ? displayValue : CALCULATED_PENDING_MESSAGE}
+            {stored ? displayValue : null}
           </span>
           <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-bold text-heritage-ink/50">
             {state.unit === "inch" ? "in" : "cm"}
@@ -486,6 +482,7 @@ export const DormantFutureMeasurementStep = ({
   onContinue,
 }: DormantFutureMeasurementStepProps) => {
   const occurrenceLabels = projectOccurrenceDisplayLabels(physicalGarments);
+  const [pickedGarmentKey, setPickedGarmentKey] = useState<string | null>(null);
   const resolvedState = reconcileFutureMeasurementState({ state, plan });
   const selectedMethod = isSelectedMeasurementMethod(resolvedState.route)
     ? resolvedState.route
@@ -537,6 +534,51 @@ export const DormantFutureMeasurementStep = ({
         (diagnostic) => diagnostic.code === "measurement_profile_unmapped",
       )
     : [];
+  const measurableGarmentKeys = new Set(
+    presentationRequirements.map((requirement) => requirement.garmentKey),
+  );
+  const plannedGarmentKeys = new Set(
+    [
+      ...measurableGarmentKeys,
+      ...resolvedState.diagnostics.map((diagnostic) => diagnostic.garmentKey),
+    ].filter((garmentKey): garmentKey is string => Boolean(garmentKey)),
+  );
+  const measurementGarments = physicalGarments.filter((garment) =>
+    plannedGarmentKeys.has(garment.garmentKey),
+  );
+  const firstMeasurableGarmentKey =
+    measurementGarments.find((garment) => measurableGarmentKeys.has(garment.garmentKey))
+      ?.garmentKey ??
+    measurementGarments[0]?.garmentKey ??
+    null;
+  const selectedGarmentKey = measurementGarments.some(
+    (garment) => garment.garmentKey === pickedGarmentKey,
+  )
+    ? pickedGarmentKey
+    : firstMeasurableGarmentKey;
+  const selectedGarmentPending = Boolean(selectedGarmentKey) && (
+    unsupportedGarments.some((diagnostic) => diagnostic.garmentKey === selectedGarmentKey) ||
+    !measurableGarmentKeys.has(selectedGarmentKey)
+  );
+  const visibleRequirements = selectedGarmentKey
+    ? presentationRequirements.filter(
+        (requirement) => requirement.garmentKey === selectedGarmentKey,
+      )
+    : presentationRequirements;
+  const visibleRequiredRequirements = visibleRequirements.filter(
+    (requirement) => requirement.section === "required",
+  );
+  const visibleCalculatedRequirements = visibleRequirements.filter(
+    (requirement) => requirement.inputSource === "calculated_average_factor",
+  );
+  const visibleOptionalRequirements = visibleRequirements.filter(
+    (requirement) => requirement.inputSource === "optional_manual",
+  );
+  const selectedGarmentLabel = formatGarmentLabel(
+    occurrenceLabels,
+    physicalGarments.find((garment) => garment.garmentKey === selectedGarmentKey)?.garmentType,
+    selectedGarmentKey || undefined,
+  );
   const blockerMessages = selectedMethod
     ? [...new Set(
         resolvedState.diagnostics
@@ -818,7 +860,53 @@ export const DormantFutureMeasurementStep = ({
         </fieldset>
       </section>
 
-      {unsupportedGarments.length > 0 && (
+      {measurementGarments.length > 1 && (
+        <section className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
+          <h3 className="font-serif text-lg font-bold text-heritage-green">
+            Choose a garment
+          </h3>
+          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">
+            Add the measurements for one garment at a time. Shared body measurements stay saved when you switch.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Choose a garment to measure">
+            {measurementGarments.map((garment) => {
+              const label = formatGarmentLabel(
+                occurrenceLabels,
+                garment.garmentType,
+                garment.garmentKey,
+              );
+              const pending = !measurableGarmentKeys.has(garment.garmentKey);
+              const selected = garment.garmentKey === selectedGarmentKey;
+              return (
+                <button
+                  key={garment.garmentKey}
+                  type="button"
+                  aria-pressed={selected}
+                  data-measurement-garment={garment.garmentKey}
+                  data-measurement-garment-pending={pending ? "true" : "false"}
+                  onClick={() => setPickedGarmentKey(garment.garmentKey)}
+                  className={`inline-flex min-h-11 min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+                    selected
+                      ? "border-heritage-green bg-heritage-green text-white"
+                      : "border-heritage-green/20 bg-white text-heritage-green hover:border-heritage-gold/45"
+                  }`}
+                >
+                  <span className="break-words">{label}</span>
+                  {pending && (
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                      selected ? "bg-white/15 text-white" : "bg-heritage-gold/15 text-heritage-gold"
+                    }`}>
+                      Setup pending
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {selectedGarmentPending && (
         <section className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4 sm:p-5">
           <div className="flex min-w-0 items-start gap-3">
             <ShieldAlert aria-hidden="true" size={19} className="mt-0.5 shrink-0 text-heritage-gold" />
@@ -829,22 +917,15 @@ export const DormantFutureMeasurementStep = ({
               <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
                 The measurement setup for this garment is awaiting confirmation. You can continue reviewing measurements for your other garments.
               </p>
-              <ul className="mt-2 flex flex-wrap gap-2" aria-label="Garments awaiting measurement setup">
-                {unsupportedGarments.map((diagnostic) => (
-                  <li
-                    key={diagnostic.garmentKey}
-                    className="rounded-full border border-heritage-gold/25 bg-white px-2.5 py-1 text-xs font-semibold text-heritage-green"
-                  >
-                    {formatGarmentLabel(occurrenceLabels, diagnostic.garmentType, diagnostic.garmentKey)}
-                  </li>
-                ))}
-              </ul>
+              <p className="mt-2 inline-flex rounded-full border border-heritage-gold/25 bg-white px-2.5 py-1 text-xs font-semibold text-heritage-green">
+                {selectedGarmentLabel}
+              </p>
             </div>
           </div>
         </section>
       )}
 
-      {blockerMessages.length > 0 && (
+      {blockerMessages.length > 0 && !selectedGarmentPending && (
         <section className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4">
           <div className="flex min-w-0 items-start gap-3">
             <ShieldAlert aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-heritage-gold" />
@@ -858,28 +939,30 @@ export const DormantFutureMeasurementStep = ({
         </section>
       )}
 
+      {!selectedGarmentPending && visibleRequiredRequirements.length > 0 && (
       <MeasurementSection
         title="Required Measurements"
         description={
           sampleSelected
             ? MEASUREMENT_SAMPLE_CLOTH_REQUIRED_DESCRIPTION
             : selectedRoute === "low_risk"
-            ? "All applicable measurements for this garment are entered manually."
-            : "Enter only the required measurements for this option."
+            ? "Enter each of these measurements. They are not calculated from height."
+            : "Enter these measurements. The remaining values for this garment are calculated from Total Height."
         }
-        requirements={requiredRequirements}
+        requirements={visibleRequiredRequirements}
         state={resolvedState}
         onChange={onChange}
         section="required"
         sampleMode={sampleSelected}
         occurrenceLabels={occurrenceLabels}
       />
+      )}
 
-      {calculatedRequirements.length > 0 && !sampleSelected && (
+      {!selectedGarmentPending && visibleCalculatedRequirements.length > 0 && !sampleSelected && (
         <MeasurementSection
           title={CALCULATED_FROM_HEIGHT_LABEL}
-          description="These values are calculated from Total Height after the required measurements are complete."
-          requirements={calculatedRequirements}
+          description={CALCULATED_FROM_HEIGHT_DESCRIPTION}
+          requirements={visibleCalculatedRequirements}
           state={resolvedState}
           onChange={onChange}
           section="calculated"
@@ -888,11 +971,11 @@ export const DormantFutureMeasurementStep = ({
         />
       )}
 
-      {optionalRequirements.length > 0 && (
+      {!selectedGarmentPending && visibleOptionalRequirements.length > 0 && (
         <MeasurementSection
           title="Optional Measurements"
-          description="Fields without an approved height factor stay optional and can be entered manually."
-          requirements={optionalRequirements}
+          description="Add any of these if you want. They are not required."
+          requirements={visibleOptionalRequirements}
           state={resolvedState}
           onChange={onChange}
           section="optional"

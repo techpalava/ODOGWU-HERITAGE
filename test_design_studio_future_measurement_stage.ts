@@ -26,7 +26,7 @@ assert.match(measurementSource, /Enter the required measurements\. Optional valu
 assert.match(measurementSource, /Required Measurements/);
 assert.match(measurementSource, /Optional Measurements/);
 assert.match(measurementSource, /Calculated from height/);
-assert.match(measurementSource, /Complete the required measurements to calculate this value\./);
+assert.match(measurementSource, /These values fill in from Total Height once the required measurements are complete\./);
 assert.match(measurementSource, /Please recheck this measurement\./);
 assert.match(measurementSource, /saved/);
 assert.match(measurementSource, /Shared Body Measurements/);
@@ -137,9 +137,39 @@ assert.equal(oneShirtText.includes("Standard Shirt 1"), false);
 assert.equal(oneShirtText.includes("Standard Shirt 2"), false);
 
 const bothShirtsText = renderMeasurement(["base:shirt", "additional:shirt:1"]);
+assert.ok(bothShirtsText.includes("Standard Shirt"));
+assert.ok(bothShirtsText.includes("Standard Shirt 2"));
 assert.ok(bothShirtsText.includes("Standard Shirt Measurements"));
-assert.ok(bothShirtsText.includes("Standard Shirt 2 Measurements"));
+assert.equal(bothShirtsText.includes("Standard Shirt 2 Measurements"), false);
 assert.equal(bothShirtsText.includes("Standard Shirt 1"), false);
+const bothState = setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk");
+const bothPlan = planMeasurementRequirements({
+  route: "low_risk",
+  garmentTypeSelection: shirtSelection,
+  physicalGarments: physicalShirts,
+  additionalGarmentConstructions: {
+    schemaVersion: 1,
+    byGarmentKey: { "additional:shirt:1": shirtConstruction },
+  },
+});
+let bothRenderer!: ReturnType<typeof create>;
+act(() => {
+  bothRenderer = create(createElement(DormantFutureMeasurementStep, {
+    plan: bothPlan,
+    state: bothState,
+    physicalGarments: physicalShirts,
+    onChange: () => undefined,
+    onRouteChange: () => undefined,
+    onBack: () => undefined,
+    onContinue: () => undefined,
+  }));
+});
+act(() => {
+  bothRenderer.root.findByProps({ "data-measurement-garment": "additional:shirt:1" }).props.onClick();
+});
+const secondShirtText = headingText(bothRenderer.root);
+assert.ok(secondShirtText.includes("Standard Shirt 2 Measurements"));
+assert.equal(secondShirtText.includes("Standard Shirt Measurements"), false);
 
 const adaOnlyText = renderMeasurement(["additional:shirt:1"]);
 assert.ok(adaOnlyText.includes("Standard Shirt 2 Measurements"));
