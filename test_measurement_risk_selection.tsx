@@ -212,7 +212,8 @@ assert.equal(
     ?.props["data-measurement-field"],
   "total_height",
 );
-assert.match(collectText(renderer.root), /Complete the required measurements to calculate this value/);
+assert.match(collectText(renderer.root), /These values fill in from Total Height once the required measurements are complete/);
+assert.equal(collectText(renderer.root).includes("Complete the required measurements to calculate this value"), false);
 assert.match(collectText(renderer.root), /Calculated from height/);
 
 selectRoute(renderer, "high_risk");
