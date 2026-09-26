@@ -241,6 +241,7 @@ const ALLOWED_MEASUREMENT_PROFILE_IDS_BY_PHYSICAL_GARMENT: Partial<
 > = {
   kaftan: ["C", "D"],
   long_skirt: ["M"],
+  full_length_gown: ["G", "H"],
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -428,7 +429,7 @@ export const resolveMeasurementProfile = ({
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
 }): MeasurementProfileResolution => {
   const { garmentKey, garmentType } = garment;
-  if (["full_length_gown", "agbada", "other"].includes(garmentType)) {
+  if (["agbada", "other"].includes(garmentType)) {
     return { status: "unmapped", garmentKey, garmentType, code: "measurement_profile_unmapped" };
   }
   const demographic = garmentTypeSelection.demographic;
@@ -440,7 +441,9 @@ export const resolveMeasurementProfile = ({
       ? "shirt"
       : garmentType === "long_skirt"
         ? "skirt"
-        : garmentType;
+        : garmentType === "full_length_gown"
+          ? "dress"
+          : garmentType;
   const allowedProfileIds =
     ALLOWED_MEASUREMENT_PROFILE_IDS_BY_PHYSICAL_GARMENT[garmentType];
   const candidates = MEASUREMENT_PROFILES.filter(
