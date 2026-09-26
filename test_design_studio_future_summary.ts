@@ -1901,7 +1901,7 @@ assert.match(stepperSource, /onSelectPayment/);
 assert.match(summarySource, /Continue to Delivery/);
 assert.match(summarySource, /disabled/);
 assert.match(summarySource, /DesignStudioBackButton/);
-assert.match(summarySource, /destination="Measurement"/);
+assert.match(summarySource, /backDestination="Measurement"/);
 assert.match(summarySource, /SELECTED_DESIGN_PRICE_SUPPORTING_TEXT/);
 assert.match(summarySource, /Your design summary is ready/);
 assert.match(

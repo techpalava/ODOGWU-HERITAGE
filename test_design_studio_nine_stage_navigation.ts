@@ -104,7 +104,7 @@ assert.match(backButtonSource, /aria-label=\{label\}/);
 assert.match(backButtonSource, /min-h-12/);
 assert.match(backButtonSource, /text-heritage-ink/);
 assert.match(backButtonSource, /Back one step/);
-assert.match(garmentTypeSource, /<DesignStudioBackButton disabled/);
+assert.match(garmentTypeSource, /backDisabled/);
 
 for (const file of [
   "DormantFutureFabricStep.tsx",

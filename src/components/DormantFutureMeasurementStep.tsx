@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { LockKeyhole, Ruler, ShieldAlert } from "lucide-react";
-import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { Ruler, ShieldAlert } from "lucide-react";
+import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
 import { DRESS_CONDITIONAL_MEASUREMENT_IDS } from "../config/MeasurementBlueprintConfig";
 import type {
   FabricGarmentType,
@@ -629,10 +629,17 @@ export const DormantFutureMeasurementStep = ({
       className="space-y-5 font-sans"
     >
       <header className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
-        <DesignStudioBackButton
-          destination="AI Try-on"
-          onClick={onBack}
+        <DesignStudioStepActions
+          backDestination="AI Try-on"
+          onBack={onBack}
           className="mb-5"
+          forward={{
+            destination: "Summary",
+            onClick: onContinue,
+            disabled: !canContinueToSummary,
+            locked: !canContinueToSummary,
+            ariaLabel: "Continue to Summary",
+          }}
         />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
           Step 6 of 9
@@ -987,32 +994,30 @@ export const DormantFutureMeasurementStep = ({
       )}
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <DesignStudioBackButton
-            destination="AI Try-on"
-            onClick={onBack}
-            className="w-full sm:w-auto"
-          />
-          <div className="min-w-0 sm:text-right">
-            <p
-              id="measurement-risk-selection-notice"
-              data-measurement-risk-notice="true"
-              className="mb-2 text-xs leading-relaxed text-heritage-ink/60"
-            >
-              {MEASUREMENT_RISK_SELECTION_NOTICE}
-            </p>
-            <button
-              type="button"
-              onClick={onContinue}
-              disabled={!canContinueToSummary}
-              aria-describedby="measurement-risk-selection-notice"
-              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 sm:w-auto"
-            >
-              {!canContinueToSummary && <LockKeyhole aria-hidden="true" size={14} />}
-              Continue to Summary
-            </button>
-          </div>
-        </div>
+        <DesignStudioStepActions
+          backDestination="AI Try-on"
+          onBack={onBack}
+          note={(
+            <>
+              <p
+                id="measurement-risk-selection-notice"
+                data-measurement-risk-notice="true"
+                className="text-xs leading-relaxed text-heritage-ink/60 lg:text-right"
+              >
+                {MEASUREMENT_RISK_SELECTION_NOTICE}
+              </p>
+              <DesignStudioForwardButton
+                destination="Summary"
+                onClick={onContinue}
+                disabled={!canContinueToSummary}
+                locked={!canContinueToSummary}
+                ariaLabel="Continue to Summary"
+                aria-describedby="measurement-risk-selection-notice"
+                className="w-full lg:w-auto"
+              />
+            </>
+          )}
+        />
       </footer>
     </section>
   );

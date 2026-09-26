@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, LockKeyhole, Plus, X } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
 import {
   designStyleStepTargetsEqual,
@@ -25,7 +25,7 @@ import {
   getStep1GarmentReferenceImage,
   isStep1GarmentReferenceType,
 } from "../utils/step1GarmentReferenceImages";
-import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
 import { resolveDesignStyleOccurrenceCardPreview } from "../utils/designStyleOccurrencePreview";
 
 interface DormantFutureDesignStyleStepProps {
@@ -913,7 +913,18 @@ export const DormantFutureDesignStyleStep = ({
             : ""}
         </p>
         <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
-          <DesignStudioBackButton destination="Fabric" onClick={onBack} className="mb-5" />
+          <DesignStudioStepActions
+            backDestination="Fabric"
+            onBack={onBack}
+            className="mb-5"
+            forward={{
+              destination: "Custom Details",
+              onClick: onContinue,
+              disabled: !exactSetComplete,
+              locked: !exactSetComplete,
+              ariaLabel: "Continue to Custom Details",
+            }}
+          />
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">Step 3 of 9</p>
           <h2 id="future-design-style-title" className="mt-2 font-serif text-2xl font-bold text-heritage-green sm:text-3xl">Design Style</h2>
           <p
@@ -1009,12 +1020,37 @@ export const DormantFutureDesignStyleStep = ({
         </div>
 
         <aside className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm"><div className="flex min-w-0 flex-wrap items-start justify-between gap-3 text-sm"><span className="min-w-0 text-heritage-ink/70">Garment Construction Subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{stagePrice === null ? "Pending" : `${PRICING_CURRENCY_SYMBOL}${stagePrice.toFixed(2)}`}</span></div><p className="mt-2 text-[11px] leading-relaxed text-heritage-ink/55">Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing. Design Style does not add another charge.</p></aside>
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
-          <DesignStudioBackButton destination="Fabric" onClick={onBack} />
-          <div className="min-w-0">
-            {!exactSetComplete && firstIncompleteOccurrence && <p role="status" className="mb-2 max-w-sm text-xs font-semibold text-amber-800">Choose a design reference for {firstIncompleteOccurrence.label} to continue.</p>}
-            <div data-testid="future-design-style-continue-action" data-docked={exactSetComplete} className={exactSetComplete ? "fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3" : ""}><div className={exactSetComplete ? "mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm" : ""}><button type="button" onClick={onContinue} disabled={!exactSetComplete} aria-label="Continue to Custom Details" className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 ${exactSetComplete ? "w-full sm:w-auto" : ""}`}><LockKeyhole aria-hidden="true" size={14} />Continue to Custom Details</button></div></div>
-          </div>
+        <DesignStudioStepActions
+          backDestination="Fabric"
+          onBack={onBack}
+          note={!exactSetComplete && firstIncompleteOccurrence ? (
+            <p role="status" className="max-w-sm text-xs font-semibold text-amber-800 lg:text-right">
+              Choose a design reference for {firstIncompleteOccurrence.label} to continue.
+            </p>
+          ) : null}
+          forward={exactSetComplete ? undefined : {
+            destination: "Custom Details",
+            onClick: onContinue,
+            disabled: true,
+            locked: true,
+            ariaLabel: "Continue to Custom Details",
+          }}
+        />
+        <div
+          data-testid="future-design-style-continue-action"
+          data-docked={exactSetComplete}
+          className={exactSetComplete ? "fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3" : ""}
+        >
+          {exactSetComplete && (
+            <div className="mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm">
+              <DesignStudioForwardButton
+                destination="Custom Details"
+                onClick={onContinue}
+                ariaLabel="Continue to Custom Details"
+                className="w-full sm:w-auto"
+              />
+            </div>
+          )}
         </div>
       </section>
       {mappingDialog ? (typeof document !== "undefined" && document.body ? createPortal(mappingDialog, document.body) : mappingDialog) : null}

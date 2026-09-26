@@ -109,12 +109,12 @@ const renderStep3 = async ({
       }),
     );
   });
-  const continueButton = renderer.root.findByProps({
+  const continueButtons = renderer.root.findAllByProps({
     "aria-label": "Continue to Custom Details",
   });
   return {
     text: textContent(renderer.root),
-    continueDisabled: Boolean(continueButton.props.disabled),
+    continueDisabled: continueButtons.length > 0 && continueButtons.every((button) => Boolean(button.props.disabled)),
     stageComplete: renderer.root.findByProps({
       "data-stage-id": "design_style",
     }).props["data-stage-complete"],
