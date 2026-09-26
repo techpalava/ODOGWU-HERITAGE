@@ -4,7 +4,7 @@ import { AuthorizationEngine } from "../engine/AuthorizationEngine";
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { projectTailoringMeasurementReadout } from "../utils/tailoringMeasurementProjection";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -232,6 +232,7 @@ export default function DatabaseView({
   const [catalogSearch, setCatalogSearch] = useState("");
   const [editingCatalogOption, setEditingCatalogOption] = useState<any>(null);
   const [isNewCatalogOption, setIsNewCatalogOption] = useState(false);
+  const catalogEditorRef = useRef<HTMLDivElement>(null);
   const [fabricSearch, setFabricSearch] = useState("");
   const [batchSearch, setBatchSearch] = useState("");
   const [orderSearch, setOrderSearch] = useState("");
@@ -283,6 +284,10 @@ export default function DatabaseView({
   >(null);
   const [editingItem, setEditingItem] = useState<any>(null); // holds the item being edited or new template
   const [isNewRecord, setIsNewRecord] = useState(false);
+  useEffect(() => {
+    if (editingType !== "catalog_option") return;
+    catalogEditorRef.current?.scrollIntoView?.({ block: "start" });
+  }, [editingType, isNewCatalogOption, editingCatalogOption?.id]);
   const [fabricNameSuggestions, setFabricNameSuggestions] = useState<string[]>([]);
   const [suggestionHistory, setSuggestionHistory] = useState<string[]>([]);
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
@@ -1439,8 +1444,11 @@ export default function DatabaseView({
         <div className="flex-1 min-w-0">
           <div className="bg-white border border-heritage-gold/15 rounded-3xl p-6 sm:p-8 shadow-sm h-full">
             {/* EDITING FORMS OVERLAYS */}
-            {editingType && editingItem && (
-              <div className="mb-8 p-6 bg-heritage-forest/5 border-2 border-heritage-gold/20 rounded-2xl text-left space-y-4">
+            {editingType && (editingItem || editingType === "catalog_option") && (
+              <div
+                ref={catalogEditorRef}
+                className="mb-8 p-6 bg-heritage-forest/5 border-2 border-heritage-gold/20 rounded-2xl text-left space-y-4"
+              >
                 <div className="flex items-center justify-between border-b border-heritage-gold/10 pb-3">
                   <h3 className="text-sm font-bold font-serif text-heritage-green uppercase tracking-wider">
                     {(() => {
@@ -1452,9 +1460,14 @@ export default function DatabaseView({
                         order: "Master Order",
                         showpiece: "Gallery Showpiece",
                         photo: "Community Photo",
+                        catalog_option: "Custom Detail Option",
                       };
                       const name = entityNames[editingType] || "Record";
-                      return isNewRecord
+                      const creating =
+                        editingType === "catalog_option"
+                          ? isNewCatalogOption
+                          : isNewRecord;
+                      return creating
                         ? `➕ Add New ${name}`
                         : `✏️ Modify Selected ${name}`;
                     })()}
@@ -2013,7 +2026,7 @@ export default function DatabaseView({
                           pricing.
                         </p>
                       </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                         {(
                           [
                             {
@@ -2028,13 +2041,28 @@ export default function DatabaseView({
                               key: "hasMonogramTrimming",
                               label: "Monogram Trimming",
                             },
+                            {
+                              key: "hasLining",
+                              label: "Lining",
+                            },
+                            {
+                              key: "hasNet",
+                              label: "Net",
+                            },
                           ] as const
                         ).map(({ key, label }) => {
-                          const checked =
-                            editingItem.includedDesignFeatures?.[key] ??
-                            editingItem[key] ??
-                            editingItem.defaultGarmentDetails?.[key] ??
-                            false;
+                          const usesStyleFlagOnly =
+                            key === "hasLining" || key === "hasNet";
+                          const checked = usesStyleFlagOnly
+                            ? Boolean(
+                                editingItem.includedDesignFeatures?.[key] ??
+                                  editingItem[key],
+                              )
+                            : Boolean(
+                                editingItem.includedDesignFeatures?.[key] ??
+                                  editingItem[key] ??
+                                  editingItem.defaultGarmentDetails?.[key],
+                              );
 
                           return (
                             <label
@@ -2067,6 +2095,14 @@ export default function DatabaseView({
                                         editingItem.hasMonogramTrimming ??
                                         editingItem.defaultGarmentDetails
                                           ?.hasMonogramTrimming ??
+                                        false,
+                                      hasLining:
+                                        current.hasLining ??
+                                        editingItem.hasLining ??
+                                        false,
+                                      hasNet:
+                                        current.hasNet ??
+                                        editingItem.hasNet ??
                                         false,
                                       [key]: event.target.checked,
                                     },
