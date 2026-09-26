@@ -188,7 +188,7 @@ const kaftanShortSelection: GarmentTypeStepSelection = {
   },
 };
 const assertResolvedProfile = (
-  garment: { garmentKey: string; garmentType: "shirt" | "dress" | "kaftan" },
+  garment: { garmentKey: string; garmentType: "shirt" | "dress" | "kaftan" | "full_length_gown" },
   garmentTypeSelection: GarmentTypeStepSelection,
   expectedProfileId: string,
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1,
@@ -316,13 +316,45 @@ assertResolvedProfile(
   "C",
   additionalKaftanConstructions,
 );
-for (const garmentType of ["full_length_gown", "agbada"] as const) {
-  const result = resolveMeasurementProfile({
-    garment: { garmentKey: `${garmentType}:1`, garmentType },
+const fullLengthGownSelection = (optionId: string): GarmentTypeStepSelection => ({
+  garmentTypes: ["full_length_gown"],
+  demographic: "female",
+  constructionByGarment: {
+    full_length_gown: construction(
+      "full_length_gown",
+      optionId,
+      "dress_construction",
+    ),
+  },
+});
+assertResolvedProfile(
+  { garmentKey: "base:full_length_gown", garmentType: "full_length_gown" },
+  fullLengthGownSelection("dress_long_short"),
+  "G",
+);
+assertResolvedProfile(
+  { garmentKey: "base:full_length_gown", garmentType: "full_length_gown" },
+  fullLengthGownSelection("dress_long_midlong"),
+  "H",
+);
+assert.equal(
+  resolveMeasurementProfile({
+    garment: { garmentKey: "base:full_length_gown", garmentType: "full_length_gown" },
+    garmentTypeSelection: {
+      garmentTypes: ["full_length_gown"],
+      demographic: "female",
+      constructionByGarment: {},
+    },
+  }).status,
+  "unresolved",
+);
+assert.equal(
+  resolveMeasurementProfile({
+    garment: { garmentKey: "agbada:1", garmentType: "agbada" },
     garmentTypeSelection: selection,
-  });
-  assert.equal(result.status, "unmapped");
-}
+  }).status,
+  "unmapped",
+);
 
 const maleBumSelection: GarmentTypeStepSelection = {
   garmentTypes: ["bum_shorts"],
