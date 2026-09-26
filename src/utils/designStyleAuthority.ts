@@ -66,6 +66,8 @@ export interface DesignStylePresentationV1 {
     readonly hasMonogram: boolean;
     readonly hasEmbroidery: boolean;
     readonly hasMonogramTrimming: boolean;
+    readonly hasLining: boolean;
+    readonly hasNet: boolean;
   };
   readonly monogramCuffEligible: boolean;
   readonly embroideryProminence: "standard" | "heavy";
@@ -205,6 +207,39 @@ const PRESENTATION_KEYS = [
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const REQUIRED_INCLUDED_FEATURE_KEYS = [
+  "hasMonogram",
+  "hasEmbroidery",
+  "hasMonogramTrimming",
+] as const;
+
+const OPTIONAL_INCLUDED_FEATURE_KEYS = ["hasLining", "hasNet"] as const;
+
+const parseIncludedDesignFeatures = (
+  value: unknown,
+): DesignStylePresentationV1["includedDesignFeatures"] | null => {
+  if (!isRecord(value)) return null;
+  const keys = Object.keys(value);
+  const allowed = new Set<string>([
+    ...REQUIRED_INCLUDED_FEATURE_KEYS,
+    ...OPTIONAL_INCLUDED_FEATURE_KEYS,
+  ]);
+  if (
+    !REQUIRED_INCLUDED_FEATURE_KEYS.every((key) => keys.includes(key)) ||
+    keys.some((key) => !allowed.has(key)) ||
+    !keys.every((key) => typeof value[key] === "boolean")
+  ) {
+    return null;
+  }
+  return {
+    hasMonogram: value.hasMonogram === true,
+    hasEmbroidery: value.hasEmbroidery === true,
+    hasMonogramTrimming: value.hasMonogramTrimming === true,
+    hasLining: value.hasLining === true,
+    hasNet: value.hasNet === true,
+  };
+};
 
 const hasExactKeys = (
   value: Record<string, unknown>,
@@ -457,10 +492,14 @@ const parsePresentation = (value: unknown): DesignStylePresentationV1 | null => 
   const options = parseStringArray(value.options);
   const designCategories = parseStringArray(value.designCategories);
   const constructionDetails = parseConstructionDetails(value.constructionDetails);
+  const includedDesignFeatures = parseIncludedDesignFeatures(
+    value.includedDesignFeatures,
+  );
   if (
     !options ||
     !designCategories ||
     !constructionDetails ||
+    !includedDesignFeatures ||
     !isRecord(value.detectedColors) ||
     !hasExactKeys(value.detectedColors, ["main", "secondary"]) ||
     !isBoundedString(value.detectedColors.main, 64) ||
@@ -472,15 +511,6 @@ const parsePresentation = (value: unknown): DesignStylePresentationV1 | null => 
       "enabled",
     ]) ||
     typeof value.customDetailConfiguration.enabled !== "boolean" ||
-    !isRecord(value.includedDesignFeatures) ||
-    !hasExactKeys(value.includedDesignFeatures, [
-      "hasMonogram",
-      "hasEmbroidery",
-      "hasMonogramTrimming",
-    ]) ||
-    !Object.values(value.includedDesignFeatures).every(
-      (item) => typeof item === "boolean",
-    ) ||
     typeof value.monogramCuffEligible !== "boolean" ||
     (value.embroideryProminence !== "standard" &&
       value.embroideryProminence !== "heavy") ||
@@ -518,12 +548,7 @@ const parsePresentation = (value: unknown): DesignStylePresentationV1 | null => 
       requiredSelectionGroups,
       enabled: value.customDetailConfiguration.enabled,
     },
-    includedDesignFeatures: {
-      hasMonogram: value.includedDesignFeatures.hasMonogram as boolean,
-      hasEmbroidery: value.includedDesignFeatures.hasEmbroidery as boolean,
-      hasMonogramTrimming: value.includedDesignFeatures
-        .hasMonogramTrimming as boolean,
-    },
+    includedDesignFeatures,
     monogramCuffEligible: value.monogramCuffEligible,
     embroideryProminence: value.embroideryProminence,
     defaultGarmentDetails: toJsonMap(value.defaultGarmentDetails),
@@ -717,6 +742,8 @@ const presentationFromStyle = (
       hasMonogramTrimming: Boolean(
         features.hasMonogramTrimming ?? style.hasMonogramTrimming,
       ),
+      hasLining: Boolean(features.hasLining ?? style.hasLining),
+      hasNet: Boolean(features.hasNet ?? style.hasNet),
     },
     monogramCuffEligible: style.monogramCuffEligible === true,
     embroideryProminence:
@@ -848,6 +875,8 @@ export const projectDesignStyleRecordForAdmin = (
     hasEmbroidery: record.presentation.includedDesignFeatures.hasEmbroidery,
     hasMonogramTrimming:
       record.presentation.includedDesignFeatures.hasMonogramTrimming,
+    hasLining: record.presentation.includedDesignFeatures.hasLining,
+    hasNet: record.presentation.includedDesignFeatures.hasNet,
     monogramCuffEligible: record.presentation.monogramCuffEligible,
     embroideryProminence: record.presentation.embroideryProminence,
     defaultGarmentDetails: toJsonMap(

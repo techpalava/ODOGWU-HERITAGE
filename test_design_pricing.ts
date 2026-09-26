@@ -12,8 +12,10 @@ import {
   inspectCustomDetailCatalog,
   isLiningEligibleForStyle,
 } from "./src/utils/catalogHelpers";
+import { DRESS_LINING_OPTION_ID, SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import {
   calculateGarmentDetailsPrice,
+  getCustomerSelectableDecorativeFeatures,
   getIncludedDecorativeFeatures,
 } from "./src/utils/decorativePricing";
 import {
@@ -782,5 +784,77 @@ assert.equal(fullDeposit.remainingDue, 0);
 const zeroDeposit = calculateCartPricing([cartItem], -1);
 assert.equal(zeroDeposit.depositDueNow, 131.25);
 assert.equal(zeroDeposit.remainingDue, 10.01);
+
+assert.deepEqual(
+  getIncludedDecorativeFeatures(
+    makeStyle({ defaultGarmentDetails: { hasLining: true } }),
+  ),
+  [],
+);
+const liningStyle = makeStyle({
+  includedDesignFeatures: {
+    hasMonogram: false,
+    hasEmbroidery: false,
+    hasMonogramTrimming: false,
+    hasLining: true,
+    hasNet: false,
+  },
+});
+assert.deepEqual(getIncludedDecorativeFeatures(liningStyle), ["Lining"]);
+assert.deepEqual(getCustomerSelectableDecorativeFeatures(), [
+  "Name Monogram",
+  "Embroidery",
+  "Monogram Trimming",
+]);
+const includedLiningPrice = calculateGarmentDetailsPrice({}, liningStyle);
+assert.equal(includedLiningPrice.monogramPrice, 10);
+assert.equal(
+  includedLiningPrice.decorativeFeatures.some((feature) => feature.label === "Net"),
+  false,
+);
+const liningPlusDressOption = calculateGarmentDetailsPrice(
+  { customDetails: { dress_additional: [DRESS_LINING_OPTION_ID] } },
+  liningStyle,
+  SEED_CUSTOM_DETAIL_CATALOG,
+);
+assert.equal(liningPlusDressOption.monogramPrice, 10);
+assert.equal(liningPlusDressOption.total, 10);
+const futureIncludedLining = calculateDesignPricing({
+  route: "alone",
+  design: {},
+  fabric: hiTarget,
+  style: liningStyle,
+  decorativeFeatureApplicabilityStyle: liningStyle,
+  catalog: SEED_CUSTOM_DETAIL_CATALOG,
+  businessSettings: pricingSettings,
+});
+assert.equal(futureIncludedLining?.monogramPrice, 10);
+assert.equal(futureIncludedLining?.customDetailsPrice, 10);
+const futureLiningWithDressOption = calculateDesignPricing({
+  route: "alone",
+  design: { customDetails: { dress_additional: [DRESS_LINING_OPTION_ID] } },
+  fabric: hiTarget,
+  style: liningStyle,
+  decorativeFeatureApplicabilityStyle: liningStyle,
+  catalog: SEED_CUSTOM_DETAIL_CATALOG,
+  businessSettings: pricingSettings,
+});
+assert.equal(futureLiningWithDressOption?.monogramPrice, 10);
+assert.equal(futureLiningWithDressOption?.constructionUpgradesPrice, 0);
+assert.equal(futureLiningWithDressOption?.customDetailsPrice, 10);
+const netStyle = makeStyle({
+  includedDesignFeatures: { hasNet: true },
+});
+const netPlusSkirtOption = calculateGarmentDetailsPrice(
+  { customDetails: { skirt_additional: ["skirt_additional_net"] } },
+  netStyle,
+  SEED_CUSTOM_DETAIL_CATALOG,
+);
+assert.equal(netPlusSkirtOption.monogramPrice, 10);
+assert.equal(netPlusSkirtOption.total, 10);
+assert.equal(
+  netPlusSkirtOption.decorativeFeatures.some((feature) => feature.label === "Lining"),
+  false,
+);
 
 console.log("PASS: pricing fixes 1-7 regression suite");

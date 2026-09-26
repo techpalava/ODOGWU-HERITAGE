@@ -1,11 +1,17 @@
 import type { ConstructionDetail } from "../types";
 import {
   DECORATIVE_FEATURE_OPTIONS,
+  STYLE_REQUIRED_DECORATIVE_FEATURES,
   TRADITIONAL_ACCESSORY_OPTIONS,
 } from "../utils/decorativePricing";
 
 export const ACTIVE_DECORATIVE_PRICE_OVERRIDE_OPTIONS = [
   ...DECORATIVE_FEATURE_OPTIONS.map((code) => ({
+    type: "embroideryDesign" as const,
+    code,
+    label: code,
+  })),
+  ...STYLE_REQUIRED_DECORATIVE_FEATURES.map((code) => ({
     type: "embroideryDesign" as const,
     code,
     label: code,

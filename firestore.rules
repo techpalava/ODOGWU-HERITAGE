@@ -179,7 +179,9 @@ service cloud.firestore {
         && data.includedDesignFeatures.keys().hasOnly([
           "hasMonogram",
           "hasEmbroidery",
-          "hasMonogramTrimming"
+          "hasMonogramTrimming",
+          "hasLining",
+          "hasNet"
         ])
         && data.includedDesignFeatures.keys().hasAll([
           "hasMonogram",
@@ -189,6 +191,14 @@ service cloud.firestore {
         && data.includedDesignFeatures.hasMonogram is bool
         && data.includedDesignFeatures.hasEmbroidery is bool
         && data.includedDesignFeatures.hasMonogramTrimming is bool
+        && (
+          !data.includedDesignFeatures.keys().hasAny(["hasLining"])
+          || data.includedDesignFeatures.hasLining is bool
+        )
+        && (
+          !data.includedDesignFeatures.keys().hasAny(["hasNet"])
+          || data.includedDesignFeatures.hasNet is bool
+        )
         && data.monogramCuffEligible is bool
         && data.embroideryProminence in ["standard", "heavy"]
         && data.defaultGarmentDetails is map;

@@ -192,6 +192,13 @@ try {
     includedDecorativeFeatureLabels.some((label) => label.includes("Embroidery")),
     "The existing Included Decorative Features Embroidery control remains mounted.",
   );
+  for (const featureName of ["Lining", "Net"]) {
+    const featureLabel = renderer.root
+      .findAllByType("label")
+      .find((candidate) => textContent(candidate).trim() === featureName);
+    assert.ok(featureLabel, `${featureName} is on the Included Decorative Features form.`);
+    assert.equal(featureLabel.findByType("input").props.checked, false);
+  }
   const firstMonogramInput = renderer.root.findByProps({
     "aria-label": "Custom price for Name Monogram",
   });

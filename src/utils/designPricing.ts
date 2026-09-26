@@ -22,6 +22,7 @@ import {
 import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig";
 import {
   calculateGarmentDetailsPrice,
+  getStyleIncludedCatalogOverlapPrice,
 } from "./decorativePricing";
 import type { PricedSelection } from "./decorativePricing";
 import { roundMoney } from "./money";
@@ -544,15 +545,32 @@ if (!hasResolvedMaterialPricing && !allowUnresolvedMaterialPricing) {
     constructionUpgradesPrice +=
       businessSettings.pricingSettings.standardAccessoryCharge;
   }
+  const includedLiningOrNet = detailPricing.decorativeFeatures
+    .filter(
+      (feature) =>
+        feature.includedByStyle &&
+        (feature.label === "Lining" || feature.label === "Net"),
+    )
+    .map((feature) => feature.label as "Lining" | "Net");
   if (
     applicableDesign.hasLining &&
     !hasSelectedCustomDetailOption(
       applicableDesign,
       DRESS_LINING_OPTION_ID,
-    )
+    ) &&
+    !includedLiningOrNet.includes("Lining")
   ) {
     constructionUpgradesPrice += 10;
   }
+  constructionUpgradesPrice = Math.max(
+    0,
+    constructionUpgradesPrice -
+      getStyleIncludedCatalogOverlapPrice(
+        applicableDesign,
+        catalog,
+        includedLiningOrNet,
+      ),
+  );
 
   const candidateBaseGarmentPriceRows = isLockedConstructionMode
     ? constructionBridge.readOnlyConstructionRows.map((row) => ({

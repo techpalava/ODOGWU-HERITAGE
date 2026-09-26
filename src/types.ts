@@ -152,12 +152,16 @@ export interface StyleCategory {
   hasMonogram?: boolean;
   hasEmbroidery?: boolean;
   hasMonogramTrimming?: boolean;
+  hasLining?: boolean;
+  hasNet?: boolean;
   monogramCuffEligible?: boolean;
   embroideryProminence?: "standard" | "heavy";
   includedDesignFeatures?: {
     hasMonogram?: boolean;
     hasEmbroidery?: boolean;
     hasMonogramTrimming?: boolean;
+    hasLining?: boolean;
+    hasNet?: boolean;
   };
   
   defaultGarmentDetails?: DesignSelections;
@@ -407,7 +411,9 @@ export interface DesignSelections {
 export type DecorativeFeature =
   | "Name Monogram"
   | "Embroidery"
-  | "Monogram Trimming";
+  | "Monogram Trimming"
+  | "Lining"
+  | "Net";
 
 export type MonogramPlacement =
   | "left_chest"

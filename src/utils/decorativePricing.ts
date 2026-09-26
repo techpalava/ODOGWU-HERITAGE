@@ -6,8 +6,10 @@ import type {
   MonogramPlacement,
   StyleCategory,
 } from "../types";
+import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig";
 import {
   calculateCustomDetailsPrice,
+  getCustomDetailsBreakdown,
   getSelectedCustomDetailOptionIds,
   getSupportedCustomDetailGroupResolution,
 } from "./catalogHelpers";
@@ -16,6 +18,16 @@ export const DECORATIVE_FEATURE_OPTIONS: readonly DecorativeFeature[] = [
   "Name Monogram",
   "Embroidery",
   "Monogram Trimming",
+];
+
+export const STYLE_REQUIRED_DECORATIVE_FEATURES: readonly DecorativeFeature[] = [
+  "Lining",
+  "Net",
+];
+
+const PRICED_DECORATIVE_FEATURES: readonly DecorativeFeature[] = [
+  ...DECORATIVE_FEATURE_OPTIONS,
+  ...STYLE_REQUIRED_DECORATIVE_FEATURES,
 ];
 
 export const DECORATIVE_FEATURE_DESCRIPTIONS: Readonly<
@@ -27,6 +39,10 @@ export const DECORATIVE_FEATURE_DESCRIPTIONS: Readonly<
     "Additional decorative patterns on your clothing, depending on the selected design.",
   "Monogram Trimming":
     "Additional decorative trimming or patterned finishing, depending on the selected design.",
+  Lining:
+    "Lining is included with this design. It keeps the garment firm and prevents sheerness.",
+  Net:
+    "Net is included with this design. It adds structure and shape.",
 };
 
 export const DECORATIVE_FEATURE_PRICE_CENTS: Readonly<
@@ -35,6 +51,8 @@ export const DECORATIVE_FEATURE_PRICE_CENTS: Readonly<
   "Name Monogram": 1200,
   Embroidery: 1200,
   "Monogram Trimming": 1200,
+  Lining: 1000,
+  Net: 1000,
 };
 
 export interface MonogramPlacementOption {
@@ -98,7 +116,7 @@ export const sortDecorativeFeatures = (
   features: readonly DecorativeFeature[],
 ): DecorativeFeature[] => {
   const selected = new Set(features);
-  return DECORATIVE_FEATURE_OPTIONS.filter((feature) =>
+  return PRICED_DECORATIVE_FEATURES.filter((feature) =>
     selected.has(feature),
   );
 };
@@ -199,7 +217,14 @@ const DEFAULT_ACCESSORY_PRICE = 12;
 type DecorativeFeatureFlag =
   | "hasMonogram"
   | "hasEmbroidery"
-  | "hasMonogramTrimming";
+  | "hasMonogramTrimming"
+  | "hasLining"
+  | "hasNet";
+
+const STYLE_FLAG_WITHOUT_DEFAULT_DETAILS = new Set<DecorativeFeatureFlag>([
+  "hasLining",
+  "hasNet",
+]);
 
 const getExplicitFeatureValue = (
   style: StyleCategory,
@@ -210,6 +235,11 @@ const getExplicitFeatureValue = (
     Object.prototype.hasOwnProperty.call(style.includedDesignFeatures, key)
   ) {
     return style.includedDesignFeatures[key] === true;
+  }
+  if (STYLE_FLAG_WITHOUT_DEFAULT_DETAILS.has(key)) {
+    return Object.prototype.hasOwnProperty.call(style, key)
+      ? style[key] === true
+      : undefined;
   }
   if (Object.prototype.hasOwnProperty.call(style, key)) {
     return style[key] === true;
@@ -230,6 +260,8 @@ const featureFlagByLabel: Record<
   "Name Monogram": "hasMonogram",
   Embroidery: "hasEmbroidery",
   "Monogram Trimming": "hasMonogramTrimming",
+  Lining: "hasLining",
+  Net: "hasNet",
 };
 
 export const getIncludedDecorativeFeatures = (
@@ -261,8 +293,42 @@ export const getIncludedDecorativeFeatures = (
   if (getExplicitFeatureValue(style, "hasMonogramTrimming") === true) {
     features.add("Monogram Trimming");
   }
+  if (getExplicitFeatureValue(style, "hasLining") === true) {
+    features.add("Lining");
+  }
+  if (getExplicitFeatureValue(style, "hasNet") === true) {
+    features.add("Net");
+  }
 
   return sortDecorativeFeatures([...features]);
+};
+
+const LINING_CATALOG_OPTION_IDS = new Set<string>([
+  DRESS_LINING_OPTION_ID,
+  "skirt_additional_lining",
+]);
+
+const NET_CATALOG_OPTION_IDS = new Set<string>([
+  "dress_additional_net",
+  "skirt_additional_net",
+]);
+
+export const getStyleIncludedCatalogOverlapPrice = (
+  selections: DesignSelections,
+  catalog: readonly CustomDetailOption[],
+  included: readonly DecorativeFeature[],
+): number => {
+  const suppressed = new Set<string>();
+  if (included.includes("Lining")) {
+    for (const optionId of LINING_CATALOG_OPTION_IDS) suppressed.add(optionId);
+  }
+  if (included.includes("Net")) {
+    for (const optionId of NET_CATALOG_OPTION_IDS) suppressed.add(optionId);
+  }
+  if (suppressed.size === 0) return 0;
+  return getCustomDetailsBreakdown(selections, [...catalog])
+    .filter((item) => suppressed.has(item.originalId))
+    .reduce((total, item) => total + item.price, 0);
 };
 
 export const filterDesignSelectionsForDecorativeFeatures = (
@@ -414,13 +480,14 @@ export const calculateGarmentDetailsPrice = (
   const applicableFeatures = new Set(
     getApplicableDecorativeFeatures(decorativeFeatureStyle, garment),
   );
-  const includedFeatures = new Set(
-    selectedFeatureContext
-      ? []
-      : getIncludedDecorativeFeatures(decorativeFeatureStyle).filter(
-          (feature) => applicableFeatures.has(feature),
-        ),
-  );
+  const includedFeatureList = getIncludedDecorativeFeatures(
+    decorativeFeatureStyle,
+  ).filter((feature) => {
+    if (feature === "Lining" || feature === "Net") return true;
+    if (selectedFeatureContext) return false;
+    return applicableFeatures.has(feature);
+  });
+  const includedFeatures = new Set(includedFeatureList);
   const selectedFeatures = new Set<DecorativeFeature>(
     applicableDetails.decorativeFeatures || [],
   );
@@ -460,10 +527,16 @@ export const calculateGarmentDetailsPrice = (
     (total, accessory) => total + accessory.price,
     0,
   );
+  const includedCatalogOverlap = getStyleIncludedCatalogOverlapPrice(
+    applicableDetails,
+    catalog,
+    includedFeatureList,
+  );
 
   return {
     total:
-      calculateCustomDetailsPrice(applicableDetails, catalog) +
+      calculateCustomDetailsPrice(applicableDetails, catalog) -
+      includedCatalogOverlap +
       monogramPrice +
       accessoryPrice,
     monogramPrice,
