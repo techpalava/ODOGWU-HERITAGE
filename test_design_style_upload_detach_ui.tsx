@@ -278,7 +278,9 @@ const textContent = (node: ReactTestInstance | string | null): string =>
     }));
   });
   assert.match(textContent(renderer.root), /0 of 1 garment/);
-  assert.equal(renderer.root.findByProps({ "aria-label": "Continue to Custom Details" }).props.disabled, true);
+  const continueButtons = renderer.root.findAllByProps({ "aria-label": "Continue to Custom Details" });
+  assert.ok(continueButtons.length > 0);
+  assert.ok(continueButtons.every((button) => button.props.disabled === true));
   assert.equal(renderer.root.findAllByProps({ type: "file" }).length, 1);
   act(() => renderer.unmount());
 }

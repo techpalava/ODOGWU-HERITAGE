@@ -1,12 +1,10 @@
 import {
   AlertTriangle,
-  ArrowRight,
   CheckCircle2,
-  LockKeyhole,
   Pencil,
   Trash2,
 } from "lucide-react";
-import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import type React from "react";
 import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "../utils/designPriceBreakdownPresentation";
 import {
@@ -213,10 +211,17 @@ export const DormantFutureSummaryStep = ({
       className="mx-auto min-w-0 max-w-6xl space-y-5 font-sans [overflow-wrap:anywhere]"
     >
       <header className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
-        <DesignStudioBackButton
-          destination="Measurement"
-          onClick={onBack}
+        <DesignStudioStepActions
+          backDestination="Measurement"
+          onBack={onBack}
           className="mb-5"
+          forward={{
+            destination: "Delivery",
+            onClick: onContinueToShipping,
+            disabled: !canContinueToShipping,
+            locked: !canContinueToShipping,
+            ariaLabel: "Continue to Delivery",
+          }}
         />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
           Step 7 of 9
@@ -746,34 +751,25 @@ export const DormantFutureSummaryStep = ({
       </section>
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <DesignStudioBackButton
-            destination="Measurement"
-            onClick={onBack}
-            className="w-full sm:w-auto"
-          />
-          <div className="min-w-0 sm:text-right">
-            <p id="summary-shipping-lock-reason" className="mb-2 text-xs leading-relaxed text-heritage-ink/60">
+        <DesignStudioStepActions
+          backDestination="Measurement"
+          onBack={onBack}
+          note={(
+            <p id="summary-shipping-lock-reason" className="text-xs leading-relaxed text-heritage-ink/60 lg:text-right">
               {canContinueToShipping
                 ? "Your Summary is ready. Continue to choose pickup or additional delivery."
                 : "Delivery & Pickup becomes available when this Summary is fully ready."}
             </p>
-            <button
-              type="button"
-              onClick={onContinueToShipping}
-              disabled={!canContinueToShipping}
-              aria-describedby="summary-shipping-lock-reason"
-              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 sm:w-auto"
-            >
-              {canContinueToShipping ? (
-                <ArrowRight aria-hidden="true" size={14} />
-              ) : (
-                <LockKeyhole aria-hidden="true" size={14} />
-              )}
-              Continue to Delivery
-            </button>
-          </div>
-        </div>
+          )}
+          forward={{
+            destination: "Delivery",
+            onClick: onContinueToShipping,
+            disabled: !canContinueToShipping,
+            locked: !canContinueToShipping,
+            describedBy: "summary-shipping-lock-reason",
+            ariaLabel: "Continue to Delivery",
+          }}
+        />
       </footer>
     </section>
   );

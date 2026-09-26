@@ -1,4 +1,4 @@
-import { ArrowRight, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION,
@@ -8,7 +8,7 @@ import {
   isCompanionCustomerAdditionalClothesCostGroup,
 } from "../config/GarmentDetailsConfig";
 import { getCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
-import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
 import type {
   CanonicalPhysicalGarmentType,
@@ -1480,10 +1480,19 @@ export const DormantFutureCustomDetailsStep = ({
     <section aria-labelledby={`future-${stage}-title`} data-stage-id={stage} data-stage-complete={canContinue} className="relative space-y-4 font-sans">
       <div ref={setTopSentinelRef} data-custom-details-top-sentinel="true" aria-hidden="true" className="h-px w-full" />
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-4 shadow-sm sm:p-5">
-        <DesignStudioBackButton
-          destination="Design Style"
-          onClick={onBack}
+        <DesignStudioStepActions
+          backDestination={previousStageLabel}
+          onBack={onBack}
           className="mb-3"
+          forward={{
+            destination: nextStageLabel,
+            onClick: onContinue,
+            disabled: !canContinue,
+            locked: !canContinue,
+            ariaLabel: canContinue
+              ? `Continue to ${nextStageLabel}`
+              : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`,
+          }}
         />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">Step {isPersonalizedAdditionsStage ? 5 : 4} of 10</p>
         <h2
@@ -1857,10 +1866,19 @@ export const DormantFutureCustomDetailsStep = ({
         )}
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <DesignStudioBackButton destination={previousStageLabel} onClick={onBack} />
-        <button type="button" onClick={onContinue} disabled={!canContinue} aria-label={canContinue ? `Continue to ${nextStageLabel}` : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45">Continue to {nextStageLabel} <ArrowRight aria-hidden="true" size={14} /></button>
-      </div>
+      <DesignStudioStepActions
+        backDestination={previousStageLabel}
+        onBack={onBack}
+        forward={{
+          destination: nextStageLabel,
+          onClick: onContinue,
+          disabled: !canContinue,
+          locked: !canContinue,
+          ariaLabel: canContinue
+            ? `Continue to ${nextStageLabel}`
+            : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`,
+        }}
+      />
 
       {shouldShowCustomDetailsGoToTop({
         sentinelOutOfView: showGoToTop,

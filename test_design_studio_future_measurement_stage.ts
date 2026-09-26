@@ -56,7 +56,7 @@ assert.match(measurementSource, /data-measurement-section/);
 assert.match(measurementSource, /MEASUREMENT_RISK_SELECTION_NOTICE/);
 assert.match(measurementSource, /aria-describedby="measurement-risk-selection-notice"/);
 assert.match(measurementSource, /DesignStudioBackButton/);
-assert.match(measurementSource, /destination="AI Try-on"/);
+assert.match(measurementSource, /backDestination="AI Try-on"/);
 assert.match(measurementSource, /Continue to Summary/);
 assert.match(measurementSource, /isFutureSummaryUnlockedByMeasurements\(resolvedState\)/);
 assert.equal(
