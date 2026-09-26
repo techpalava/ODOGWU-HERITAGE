@@ -294,6 +294,56 @@ assert.equal(
 assert.equal(projectPublishedDesignStyleRecord(historicalOdg)?.id, "ODG-042");
 assert.equal(projectPublishedDesignStyleRecord(generatedOdgh)?.id, "ODGH-043");
 
+const liningStyleRecord = createRecord(
+  "published",
+  null,
+  baseStyle({
+    includedDesignFeatures: {
+      hasMonogram: false,
+      hasEmbroidery: false,
+      hasMonogramTrimming: false,
+      hasLining: true,
+      hasNet: false,
+    },
+  }),
+);
+const reloadedLiningStyle = parseAuthoritativeDesignStyleRecord(
+  liningStyleRecord.id,
+  liningStyleRecord,
+);
+assert.equal(reloadedLiningStyle.status, "valid");
+if (reloadedLiningStyle.status === "valid") {
+  const reloadedProjection = projectPublishedDesignStyleRecord(
+    reloadedLiningStyle.record,
+  );
+  assert.equal(reloadedProjection?.includedDesignFeatures.hasLining, true);
+  assert.equal(reloadedProjection?.includedDesignFeatures.hasNet, false);
+  assert.equal(reloadedProjection?.hasLining, true);
+  assert.equal(reloadedProjection?.hasNet, false);
+}
+const historicalFeatures = {
+  ...published.presentation.includedDesignFeatures,
+};
+delete historicalFeatures.hasLining;
+delete historicalFeatures.hasNet;
+const historicalThreeFlags = parseAuthoritativeDesignStyleRecord(published.id, {
+  ...published,
+  presentation: {
+    ...published.presentation,
+    includedDesignFeatures: historicalFeatures,
+  },
+});
+assert.equal(historicalThreeFlags.status, "valid");
+if (historicalThreeFlags.status === "valid") {
+  const historicalProjection = projectPublishedDesignStyleRecord(
+    historicalThreeFlags.record,
+  );
+  assert.equal(historicalProjection?.includedDesignFeatures.hasLining, false);
+  assert.equal(historicalProjection?.includedDesignFeatures.hasNet, false);
+  assert.equal(historicalProjection?.hasLining, false);
+  assert.equal(historicalProjection?.hasNet, false);
+}
+
 console.log(
   "PASS: strict Design Style authority schema, lifecycle, revisions, projection, and legacy boundary",
 );
