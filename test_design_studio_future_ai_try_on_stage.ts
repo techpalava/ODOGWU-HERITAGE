@@ -265,7 +265,7 @@ assert.match(customDetailsSource, /onContinue/);
 assert.match(customDetailsSource, /Continue to AI Try-on/);
 assert.match(tryOnSource, /Step 5 of 9/);
 assert.match(tryOnSource, /DesignStudioBackButton/);
-assert.match(tryOnSource, /destination="Custom Details"/);
+assert.match(tryOnSource, /backDestination="Custom Details"/);
 assert.match(tryOnSource, /Continue to Measurement is locked/);
 assert.match(tryOnSource, /aria-live="polite"/);
 assert.match(tryOnSource, /Continue without AI Try-on/);

@@ -1,11 +1,10 @@
 import {
   AlertTriangle,
-  LockKeyhole,
   RefreshCw,
   ShieldCheck,
   SkipForward,
 } from "lucide-react";
-import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import type { AiTryOnWorkflowStateV1 } from "../types";
 import { getAiTryOnWorkflowAllowedActions } from "../utils/aiTryOnWorkflow";
 
@@ -86,10 +85,22 @@ export const DormantFutureAiTryOnStep = ({
       className="space-y-5 font-sans"
     >
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
-        <DesignStudioBackButton
-          destination="Custom Details"
-          onClick={onBack}
+        <DesignStudioStepActions
+          backDestination="Custom Details"
+          onBack={onBack}
           className="mb-5"
+          forward={{
+            destination: "Measurement",
+            onClick: onContinue,
+            disabled: !(workflow.status === "completed" || workflow.status === "skipped"),
+            locked: !(workflow.status === "completed" || workflow.status === "skipped"),
+            ariaLabel: workflow.status === "completed" || workflow.status === "skipped"
+              ? "Continue to Measurement"
+              : "Continue to Measurement is locked",
+            label: workflow.status === "completed" || workflow.status === "skipped"
+              ? undefined
+              : "Measurement is locked",
+          }}
         />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
           Step 5 of 9
@@ -170,31 +181,22 @@ export const DormantFutureAiTryOnStep = ({
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <DesignStudioBackButton
-          destination="Custom Details"
-          onClick={onBack}
-        />
-        {workflow.status === "completed" || workflow.status === "skipped" ? (
-          <button
-            type="button"
-            onClick={onContinue}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-          >
-            Continue to Measurement
-          </button>
-        ) : (
-          <button
-            type="button"
-            disabled
-            aria-label="Continue to Measurement is locked"
-            className="inline-flex min-h-11 cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-heritage-green/35 px-5 text-xs font-bold uppercase tracking-wider text-white"
-          >
-            <LockKeyhole aria-hidden="true" size={14} />
-            Measurement is locked
-          </button>
-        )}
-      </div>
+      <DesignStudioStepActions
+        backDestination="Custom Details"
+        onBack={onBack}
+        forward={{
+          destination: "Measurement",
+          onClick: onContinue,
+          disabled: !(workflow.status === "completed" || workflow.status === "skipped"),
+          locked: !(workflow.status === "completed" || workflow.status === "skipped"),
+          ariaLabel: workflow.status === "completed" || workflow.status === "skipped"
+            ? "Continue to Measurement"
+            : "Continue to Measurement is locked",
+          label: workflow.status === "completed" || workflow.status === "skipped"
+            ? undefined
+            : "Measurement is locked",
+        }}
+      />
     </section>
   );
 };

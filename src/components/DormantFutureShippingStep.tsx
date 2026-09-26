@@ -1,12 +1,11 @@
 import {
   CheckCircle2,
   Info,
-  LockKeyhole,
   MapPin,
   PackageCheck,
   Truck,
 } from "lucide-react";
-import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import type {
   FutureShippingFulfilmentSelection,
   FutureShippingStateV1,
@@ -148,10 +147,18 @@ export const DormantFutureShippingStep = ({
       className="mx-auto max-w-6xl space-y-5 overflow-x-hidden font-sans"
     >
       <header className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
-        <DesignStudioBackButton
-          destination="Summary"
-          onClick={onBack}
+        <DesignStudioStepActions
+          backDestination="Summary"
+          onBack={onBack}
           className="mb-5"
+          forward={{
+            label: "Review Order",
+            onClick: onContinueToReview,
+            disabled: !canContinueToReview,
+            locked: !canContinueToReview,
+            icon: canContinueToReview ? "package" : "lock",
+            ariaLabel: "Review Order",
+          }}
         />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
           Step 8 of 9
@@ -636,36 +643,28 @@ export const DormantFutureShippingStep = ({
       </section>
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <DesignStudioBackButton
-            destination="Summary"
-            onClick={onBack}
-            className="w-full sm:w-auto"
-          />
-          <div className="min-w-0 sm:text-right">
-            <p id="future-payment-lock-reason" className="mb-2 text-xs leading-relaxed text-heritage-ink/60">
+        <DesignStudioStepActions
+          backDestination="Summary"
+          onBack={onBack}
+          note={(
+            <p id="future-payment-lock-reason" className="text-xs leading-relaxed text-heritage-ink/60 lg:text-right">
               {canContinueToReview
                 ? "Your order review is ready. Online payment remains unavailable."
                 : resolution.quoteRequired
                   ? "Custom shipping quote required before reviewing payment."
                   : "Complete delivery or pickup before reviewing your order."}
             </p>
-            <button
-              type="button"
-              onClick={onContinueToReview}
-              disabled={!canContinueToReview}
-              aria-describedby="future-payment-lock-reason"
-              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-heritage-green/35 sm:w-auto"
-            >
-              {canContinueToReview ? (
-                <PackageCheck aria-hidden="true" size={14} />
-              ) : (
-                <LockKeyhole aria-hidden="true" size={14} />
-              )}
-              Review Order
-            </button>
-          </div>
-        </div>
+          )}
+          forward={{
+            label: "Review Order",
+            onClick: onContinueToReview,
+            disabled: !canContinueToReview,
+            locked: !canContinueToReview,
+            icon: canContinueToReview ? "package" : "lock",
+            describedBy: "future-payment-lock-reason",
+            ariaLabel: "Review Order",
+          }}
+        />
       </footer>
     </section>
   );

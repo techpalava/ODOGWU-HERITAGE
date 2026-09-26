@@ -10,7 +10,7 @@ import type {
 } from "../types";
 import { getGarmentTypeStepLabel } from "./GarmentTypeStep";
 import type { PhysicalGarmentOccurrence } from "../utils/designSourceState";
-import { DesignStudioBackButton } from "./DesignStudioBackButton";
+import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
 import {
   AssignedFabricPreview,
 } from "./AssignedFabricPreview";
@@ -2073,10 +2073,15 @@ export const DormantFutureFabricStep = ({
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)] lg:gap-6">
         <div className="min-w-0 space-y-6">
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
-        <DesignStudioBackButton
-          destination="Garment Type"
-          onClick={onBack}
+        <DesignStudioStepActions
+          backDestination="Garment Type"
+          onBack={onBack}
           className="mb-5"
+          forward={shouldDockContinueAction ? {
+            destination: "Design Style",
+            onClick: onContinue,
+            ariaLabel: "Continue to Design Style",
+          } : undefined}
         />
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-heritage-gold">
           Step 2 of 9
@@ -2811,26 +2816,26 @@ export const DormantFutureFabricStep = ({
         />
       ) : null}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <DesignStudioBackButton destination="Garment Type" onClick={onBack} />
-        {shouldDockContinueAction && (
-          <div
-            data-testid="future-fabric-continue-action"
-            data-docked="true"
-            className="fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3"
-          >
-            <div className="mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm sm:px-4 sm:py-3.5">
-              <button
-                type="button"
-                onClick={onContinue}
-                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
-              >
-                Continue to Design Style
-              </button>
-            </div>
+      <DesignStudioStepActions
+        backDestination="Garment Type"
+        onBack={onBack}
+      />
+      {shouldDockContinueAction && (
+        <div
+          data-testid="future-fabric-continue-action"
+          data-docked="true"
+          className="fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3"
+        >
+          <div className="mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm sm:px-4 sm:py-3.5">
+            <DesignStudioForwardButton
+              destination="Design Style"
+              onClick={onContinue}
+              ariaLabel="Continue to Design Style"
+              className="w-full sm:w-auto"
+            />
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {pendingOrphanRepair &&
         typeof document !== "undefined" &&

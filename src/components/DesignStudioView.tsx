@@ -8450,17 +8450,9 @@ export default function DesignStudioView({
             orderSummary={
               embedPersistentLiveOrderSummary ? liveOrderSummaryCard : null
             }
+            onContinue={handleOpenDormantFabricStage}
+            continueDisabled={!garmentTypeStageCompletion.isComplete}
           />
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={handleOpenDormantFabricStage}
-              disabled={!garmentTypeStageCompletion.isComplete}
-              className="inline-flex min-h-11 items-center justify-center rounded-xl bg-heritage-green px-5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-heritage-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              Continue to Fabric
-            </button>
-          </div>
         </div>
       ) : futureStageId === "fabric" ? (
         <DormantFutureFabricStep

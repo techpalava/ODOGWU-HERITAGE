@@ -132,7 +132,7 @@ const fabricForwardButton = findForwardButtons(
   fabricRenderer.root,
   "Continue to Design Style",
 );
-assert.equal(fabricForwardButton.length, 1);
+assert.equal(fabricForwardButton.length, 2);
 fabricForwardButton[0].props.onClick();
 assert.equal(fabricContinueCalls, 1, "The existing Fabric handler must remain intact.");
 
@@ -233,7 +233,7 @@ const styleForwardButton = findForwardButtons(
   styleRenderer.root,
   "Continue to Custom Details",
 );
-assert.equal(styleForwardButton.length, 1);
+assert.equal(styleForwardButton.length, 2);
 styleForwardButton[0].props.onClick();
 assert.equal(styleContinueCalls, 1, "The existing Style handler must remain intact.");
 
