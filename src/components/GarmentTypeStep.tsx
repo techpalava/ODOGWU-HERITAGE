@@ -1,6 +1,9 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { AlertCircle, Check, CheckCircle2, ImageOff, Layers3, UsersRound, X } from "lucide-react";
-import { DesignStudioStepActions } from "./DesignStudioBackButton";
+import {
+  DesignStudioForwardButton,
+  DesignStudioStepActions,
+} from "./DesignStudioBackButton";
 import type {
   CustomDetailDemographic,
   CustomDetailOption,
@@ -339,6 +342,8 @@ export const GarmentTypeStep = ({
     );
   };
 
+  const showDockedContinue = Boolean(onContinue) && !continueDisabled;
+
   const fabricQuantitySummary = (
     <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-heritage-gold/20 bg-heritage-cream/35 p-3 sm:p-4">
       <Layers3 aria-hidden="true" size={20} className="mt-0.5 shrink-0 text-heritage-gold" />
@@ -362,7 +367,7 @@ export const GarmentTypeStep = ({
   return (
     <section
       aria-labelledby={`${idPrefix}-title`}
-      className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-12"
+      className={`grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-12${showDockedContinue ? " pb-28 sm:pb-32" : ""}`}
     >
       <div className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7 lg:col-span-8">
         <DesignStudioStepActions
@@ -681,6 +686,22 @@ export const GarmentTypeStep = ({
         </aside>
         )}
       </div>
+      {showDockedContinue && (
+        <div
+          data-testid="future-garment-type-continue-action"
+          data-docked="true"
+          className="fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3"
+        >
+          <div className="mx-auto flex w-full max-w-4xl justify-end rounded-2xl border border-heritage-gold/30 bg-white/95 p-3 shadow-[0_14px_30px_rgba(19,33,29,0.18)] backdrop-blur-sm sm:px-4 sm:py-3.5">
+            <DesignStudioForwardButton
+              destination="Fabric"
+              onClick={onContinue}
+              ariaLabel="Continue to Fabric"
+              className="w-full sm:w-auto"
+            />
+          </div>
+        </div>
+      )}
     </section>
   );
 };
