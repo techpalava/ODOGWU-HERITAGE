@@ -1163,6 +1163,8 @@ export interface FutureMeasurementStateV1 {
   diagnostics: FutureMeasurementDiagnostic[];
   invalidInputKeys: string[];
   invalidInputKeysByRoute?: Record<MeasurementMethodId, string[]>;
+  /** Garment the customer had open. Optional so older drafts still load. */
+  activeGarmentKey?: string;
 }
 
 /** New wearers choose male or female. `unisex` is only a legacy single-wearer lift. */
