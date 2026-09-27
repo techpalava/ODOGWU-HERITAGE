@@ -45,6 +45,11 @@ export function AdminAuthGuard({
         friendlyMessage = "Google login was cancelled. Please try again.";
       } else if (err.code === "auth/network-request-failed") {
         friendlyMessage = "Network issue. Please check your connection and try again.";
+      } else if (err.code === "AUTH_SERVER_UNAVAILABLE") {
+        friendlyMessage =
+          typeof err.message === "string" && err.message.trim()
+            ? err.message
+            : "Authentication server is temporarily unavailable. Please try again.";
       }
       setError(friendlyMessage);
       setLoading(false);
