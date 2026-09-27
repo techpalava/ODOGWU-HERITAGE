@@ -583,4 +583,42 @@ assert.equal(
   0,
 );
 
+const continueDisabledMarkup = renderToStaticMarkup(
+  createElement(GarmentTypeStep, {
+    selectedGarmentTypes: ["shirt"],
+    selectedDemographics: ["male"],
+    normalizedCustomDetailCatalog: catalog,
+    onGarmentTypesChange: () => undefined,
+    onDemographicsChange: () => undefined,
+    onConstructionDefaultsChange: () => undefined,
+    onContinue: () => undefined,
+    continueDisabled: true,
+  }),
+);
+assert.equal(
+  continueDisabledMarkup.includes('data-testid="future-garment-type-continue-action"'),
+  false,
+  "Continue to Fabric stays in the header until the step is complete",
+);
+assert.ok(continueDisabledMarkup.includes("Continue to Fabric"));
+
+const continueEnabledMarkup = renderToStaticMarkup(
+  createElement(GarmentTypeStep, {
+    selectedGarmentTypes: ["shirt"],
+    selectedDemographics: ["male"],
+    normalizedCustomDetailCatalog: catalog,
+    onGarmentTypesChange: () => undefined,
+    onDemographicsChange: () => undefined,
+    onConstructionDefaultsChange: () => undefined,
+    onContinue: () => undefined,
+    continueDisabled: false,
+  }),
+);
+assert.ok(
+  continueEnabledMarkup.includes('data-testid="future-garment-type-continue-action"'),
+  "a complete Step 1 docks Continue to Fabric",
+);
+assert.ok(continueEnabledMarkup.includes('data-docked="true"'));
+assert.ok(continueEnabledMarkup.includes("fixed inset-x-0 bottom-0"));
+
 console.log("Garment Type Step controlled component verification passed.");
