@@ -50,6 +50,7 @@ interface DormantFutureMeasurementStepProps {
   plan: MeasurementRequirementPlan;
   state: FutureMeasurementStateV1;
   physicalGarments?: readonly MeasurementPhysicalGarment[];
+  setupPendingGarments?: readonly MeasurementPhysicalGarment[];
   hydrationInvalid?: boolean;
   orderMeasurementsComplete?: boolean;
   onChange: (state: FutureMeasurementStateV1) => void;
@@ -474,6 +475,7 @@ export const DormantFutureMeasurementStep = ({
   plan,
   state,
   physicalGarments = [],
+  setupPendingGarments = [],
   hydrationInvalid = false,
   orderMeasurementsComplete,
   onChange,
@@ -482,7 +484,9 @@ export const DormantFutureMeasurementStep = ({
   onContinue,
 }: DormantFutureMeasurementStepProps) => {
   const occurrenceLabels = projectOccurrenceDisplayLabels(physicalGarments);
-  const [pickedGarmentKey, setPickedGarmentKey] = useState<string | null>(null);
+  const [pickedGarmentKey, setPickedGarmentKey] = useState<string | null>(
+    state.activeGarmentKey ?? null,
+  );
   const resolvedState = reconcileFutureMeasurementState({ state, plan });
   const selectedMethod = isSelectedMeasurementMethod(resolvedState.route)
     ? resolvedState.route
@@ -543,9 +547,10 @@ export const DormantFutureMeasurementStep = ({
       ...resolvedState.diagnostics.map((diagnostic) => diagnostic.garmentKey),
     ].filter((garmentKey): garmentKey is string => Boolean(garmentKey)),
   );
-  const measurementGarments = physicalGarments.filter((garment) =>
-    plannedGarmentKeys.has(garment.garmentKey),
-  );
+  const measurementGarments = [
+    ...physicalGarments.filter((garment) => plannedGarmentKeys.has(garment.garmentKey)),
+    ...setupPendingGarments.filter((garment) => !plannedGarmentKeys.has(garment.garmentKey)),
+  ];
   const firstMeasurableGarmentKey =
     measurementGarments.find((garment) => measurableGarmentKeys.has(garment.garmentKey))
       ?.garmentKey ??
@@ -562,7 +567,12 @@ export const DormantFutureMeasurementStep = ({
   );
   const visibleRequirements = selectedGarmentKey
     ? presentationRequirements.filter(
-        (requirement) => requirement.garmentKey === selectedGarmentKey,
+        (requirement) =>
+          requirement.garmentKey === selectedGarmentKey ||
+          (
+            requirement.scope === "shared" &&
+            requirement.inputSource !== "calculated_average_factor"
+          ),
       )
     : presentationRequirements;
   const visibleRequiredRequirements = visibleRequirements.filter(
@@ -590,15 +600,35 @@ export const DormantFutureMeasurementStep = ({
           .map(getBlockerMessage),
       )]
     : [];
+  const canContinueToSummary =
+    !hydrationInvalid &&
+    (orderMeasurementsComplete !== undefined
+      ? orderMeasurementsComplete
+      : isFutureSummaryUnlockedByMeasurements(resolvedState));
+  const setupPendingLabels = measurementGarments
+    .filter((garment) => !measurableGarmentKeys.has(garment.garmentKey))
+    .map((garment) => formatGarmentLabel(
+      occurrenceLabels,
+      garment.garmentType,
+      garment.garmentKey,
+    ));
+  const summaryBlockedBySetup =
+    setupPendingLabels.length > 0 &&
+    !canContinueToSummary &&
+    resolvedState.calculationStatus === "complete";
   const routeSaveMessage = !selectedMethod
     ? MEASUREMENT_RISK_SELECTION_NOTICE
     : criticalRiskUnavailable
       ? criticalRiskBlockMessage
+    : summaryBlockedBySetup
+      ? `${setupPendingLabels.join(", ")} cannot be measured for this profile, so Summary stays locked.`
     : resolvedState.calculationStatus === "complete"
       ? "All required measurements are saved."
       : `${remainingManualInputCount} required measurement${remainingManualInputCount === 1 ? " remains" : "s remain"}.`;
   const routeStatusLabel = sampleSelected
     ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE
+    : summaryBlockedBySetup
+      ? "Setup pending"
     : selectedMethod
       ? getStatusLabel(
           selectedMethod,
@@ -611,11 +641,6 @@ export const DormantFutureMeasurementStep = ({
     selectedMethod,
     resolvedState.calculationStatus,
   );
-  const canContinueToSummary =
-    !hydrationInvalid &&
-    (orderMeasurementsComplete !== undefined
-      ? orderMeasurementsComplete
-      : isFutureSummaryUnlockedByMeasurements(resolvedState));
 
   return (
     <section
@@ -891,7 +916,12 @@ export const DormantFutureMeasurementStep = ({
                   aria-pressed={selected}
                   data-measurement-garment={garment.garmentKey}
                   data-measurement-garment-pending={pending ? "true" : "false"}
-                  onClick={() => setPickedGarmentKey(garment.garmentKey)}
+                  onClick={() => {
+                    setPickedGarmentKey(garment.garmentKey);
+                    if (state.activeGarmentKey !== garment.garmentKey) {
+                      onChange({ ...state, activeGarmentKey: garment.garmentKey });
+                    }
+                  }}
                   className={`inline-flex min-h-11 min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
                     selected
                       ? "border-heritage-green bg-heritage-green text-white"

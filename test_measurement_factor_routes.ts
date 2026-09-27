@@ -621,4 +621,65 @@ assert.equal(
 assert.equal(isFutureSummaryUnlockedByMeasurements(fredAfterHeightClear), false);
 assert.equal(fredAfterHeightClear.calculationStatus, "incomplete");
 
+const shirtTrouserPlan = planMeasurementRequirements({
+  route: "high_risk",
+  garmentTypeSelection: {
+    garmentTypes: ["shirt", "trouser"],
+    demographic: "male",
+    constructionByGarment: {
+      shirt: construction("shirt", "shirt_std_short", "shirt_construction"),
+    },
+  },
+  physicalGarments: [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "base:trouser", garmentType: "trouser" },
+  ],
+});
+const shirtCalculated = shirtTrouserPlan.requirements.find(
+  (requirement) =>
+    requirement.garmentKey === "base:shirt" &&
+    requirement.inputSource === "calculated_average_factor" &&
+    requirement.averageFactor !== null,
+);
+const trouserCalculated = shirtTrouserPlan.requirements.find(
+  (requirement) =>
+    requirement.garmentKey === "base:trouser" &&
+    requirement.inputSource === "calculated_average_factor" &&
+    requirement.averageFactor !== null,
+);
+assert.ok(shirtCalculated?.averageFactor);
+assert.ok(trouserCalculated);
+let shirtOnly = createEmptyFutureMeasurementState("high_risk", "cm");
+for (const requirement of shirtTrouserPlan.requirements.filter(
+  (item) => item.directInput && item.garmentKey === "base:shirt",
+)) {
+  shirtOnly = setFutureMeasurementInput({
+    state: shirtOnly,
+    requirement,
+    displayValue: requirement.measurementId === "total_height" ? 180 : 90,
+  });
+}
+shirtOnly = reconcileFutureMeasurementState({ state: shirtOnly, plan: shirtTrouserPlan });
+nearlyEqual(
+  derivedFor(shirtOnly, shirtCalculated)!.valueCm,
+  calculateMeasurementFromAverageFactor(180, shirtCalculated.averageFactor),
+);
+assert.equal(derivedFor(shirtOnly, trouserCalculated), undefined);
+assert.equal(shirtOnly.calculationStatus, "incomplete");
+assert.equal(isFutureSummaryUnlockedByMeasurements(shirtOnly), false);
+let bothGarments = shirtOnly;
+for (const requirement of shirtTrouserPlan.requirements.filter(
+  (item) => item.directInput && item.garmentKey === "base:trouser",
+)) {
+  bothGarments = setFutureMeasurementInput({
+    state: bothGarments,
+    requirement,
+    displayValue: 90,
+  });
+}
+bothGarments = reconcileFutureMeasurementState({ state: bothGarments, plan: shirtTrouserPlan });
+assert.ok(derivedFor(bothGarments, trouserCalculated));
+assert.equal(bothGarments.calculationStatus, "complete");
+assert.equal(isFutureSummaryUnlockedByMeasurements(bothGarments), true);
+
 console.log("PASS: measurement factor routes, height change, isolation, and summary readiness");

@@ -6,7 +6,9 @@ import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeas
 import type { GarmentTypeStepSelection } from "./src/types";
 import {
   createEmptyFutureMeasurementState,
+  normalizeFutureMeasurementState,
   planMeasurementRequirements,
+  reconcileFutureMeasurementState,
   setFutureMeasurementInput,
   setFutureMeasurementRoute,
 } from "./src/utils/measurementBlueprint";
@@ -197,3 +199,129 @@ const stored = setFutureMeasurementInput({
 assert.ok(stored.entered.byGarmentKey["additional:shirt:1"]);
 assert.equal(stored.entered.byGarmentKey["base:shirt"], undefined);
 assert.equal("Standard Shirt 2" in stored.entered.byGarmentKey, false);
+
+const shirtTrouserSelection: GarmentTypeStepSelection = {
+  garmentTypes: ["shirt", "trouser"],
+  demographic: "male",
+  constructionByGarment: { shirt: shirtConstruction },
+};
+const shirtTrouserGarments = [
+  { garmentKey: "base:shirt", garmentType: "shirt" as const },
+  { garmentKey: "base:trouser", garmentType: "trouser" as const },
+];
+const highRiskPlan = planMeasurementRequirements({
+  route: "high_risk",
+  garmentTypeSelection: shirtTrouserSelection,
+  physicalGarments: shirtTrouserGarments,
+});
+let sharedState = createEmptyFutureMeasurementState("high_risk", "cm");
+let sharedRenderer!: ReturnType<typeof create>;
+act(() => {
+  sharedRenderer = create(createElement(DormantFutureMeasurementStep, {
+    plan: highRiskPlan,
+    state: sharedState,
+    physicalGarments: shirtTrouserGarments,
+    onChange: (next) => {
+      sharedState = next;
+    },
+    onRouteChange: () => undefined,
+    onBack: () => undefined,
+    onContinue: () => undefined,
+  }));
+});
+act(() => {
+  sharedRenderer.root.findByProps({ "data-measurement-garment": "base:trouser" }).props.onClick();
+});
+const trouserHeight = sharedRenderer.root.findByProps({ "data-measurement-field": "total_height" });
+act(() => {
+  trouserHeight.findByType("input").props.onChange({ target: { value: "180" } });
+});
+act(() => {
+  sharedRenderer.update(createElement(DormantFutureMeasurementStep, {
+    plan: highRiskPlan,
+    state: sharedState,
+    physicalGarments: shirtTrouserGarments,
+    onChange: (next) => {
+      sharedState = next;
+    },
+    onRouteChange: () => undefined,
+    onBack: () => undefined,
+    onContinue: () => undefined,
+  }));
+});
+act(() => {
+  sharedRenderer.root.findByProps({ "data-measurement-garment": "base:shirt" }).props.onClick();
+});
+assert.equal(
+  sharedRenderer.root.findByProps({ "data-measurement-field": "total_height" }).findByType("input").props.value,
+  180,
+);
+assert.equal(sharedState.entered.shared.total_height?.valueCm, 180);
+
+let rememberedState = setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "high_risk");
+let rememberedRenderer!: ReturnType<typeof create>;
+const rememberedProps = () => ({
+  plan: highRiskPlan,
+  state: rememberedState,
+  physicalGarments: shirtTrouserGarments,
+  onChange: (next: typeof rememberedState) => {
+    rememberedState = next;
+  },
+  onRouteChange: () => undefined,
+  onBack: () => undefined,
+  onContinue: () => undefined,
+});
+act(() => {
+  rememberedRenderer = create(createElement(DormantFutureMeasurementStep, rememberedProps()));
+});
+act(() => {
+  rememberedRenderer.root.findByProps({ "data-measurement-garment": "base:trouser" }).props.onClick();
+});
+assert.equal(rememberedState.activeGarmentKey, "base:trouser");
+const reloaded = normalizeFutureMeasurementState(rememberedState);
+assert.equal(reloaded?.activeGarmentKey, "base:trouser");
+act(() => {
+  rememberedRenderer = create(createElement(DormantFutureMeasurementStep, {
+    ...rememberedProps(),
+    state: reloaded!,
+  }));
+});
+assert.equal(
+  rememberedRenderer.root.findByProps({ "data-measurement-garment": "base:trouser" }).props["aria-pressed"],
+  true,
+);
+
+const shirtOnlyPlan = planMeasurementRequirements({
+  route: "high_risk",
+  garmentTypeSelection: shirtSelection,
+  physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+});
+let completeShirt = createEmptyFutureMeasurementState("high_risk", "cm");
+for (const requirement of shirtOnlyPlan.requirements.filter((item) => item.directInput)) {
+  completeShirt = setFutureMeasurementInput({
+    state: completeShirt,
+    requirement,
+    displayValue: requirement.measurementId === "total_height" ? 180 : 90,
+  });
+}
+completeShirt = reconcileFutureMeasurementState({ state: completeShirt, plan: shirtOnlyPlan });
+let pendingRenderer!: ReturnType<typeof create>;
+act(() => {
+  pendingRenderer = create(createElement(DormantFutureMeasurementStep, {
+    plan: shirtOnlyPlan,
+    state: completeShirt,
+    physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    setupPendingGarments: [{ garmentKey: "base:bum_shorts", garmentType: "bum_shorts" }],
+    orderMeasurementsComplete: false,
+    onChange: () => undefined,
+    onRouteChange: () => undefined,
+    onBack: () => undefined,
+    onContinue: () => undefined,
+  }));
+});
+const pendingButton = pendingRenderer.root.findByProps({ "data-measurement-garment": "base:bum_shorts" });
+assert.equal(pendingButton.props["data-measurement-garment-pending"], "true");
+const pendingText = headingText(pendingRenderer.root);
+assert.ok(pendingText.includes("Setup pending"));
+assert.ok(pendingText.includes("cannot be measured for this profile, so Summary stays locked."));
+assert.equal(pendingText.includes("All required measurements are saved."), false);
