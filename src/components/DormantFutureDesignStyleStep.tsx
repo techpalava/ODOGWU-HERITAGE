@@ -196,6 +196,9 @@ export const DormantFutureDesignStyleStep = ({
   const detailsCloseRef = useRef<HTMLButtonElement | null>(null);
   const detailsTriggerRef = useRef<HTMLElement | null>(null);
   const allDesignsRef = useRef<HTMLDivElement | null>(null);
+  const continueActionRef = useRef<HTMLDivElement | null>(null);
+  const previousExactSetCompleteRef = useRef(exactSetComplete);
+  const completingAssignmentScrollYRef = useRef<number | null>(null);
   const garmentCardRefs = useRef(new Map<string, HTMLElement>());
   const assignmentFeedbackFrameRef = useRef<number | null>(null);
   const assignmentFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -252,6 +255,9 @@ export const DormantFutureDesignStyleStep = ({
     ) || null;
 
   useEffect(() => {
+    const completedByThisAssignment =
+      exactSetComplete && !previousExactSetCompleteRef.current;
+    previousExactSetCompleteRef.current = exactSetComplete;
     if (
       !assignmentFeedback ||
       handledAssignmentFeedbackIdRef.current === assignmentFeedback.eventId
@@ -260,7 +266,7 @@ export const DormantFutureDesignStyleStep = ({
     }
     const token = assignmentFeedback.target.occurrenceToken;
     const card = garmentCardRefs.current.get(token);
-    if (!card) return;
+    if (!completedByThisAssignment && !card) return;
 
     if (assignmentFeedbackFrameRef.current !== null) {
       if (typeof window !== "undefined") {
@@ -280,21 +286,47 @@ export const DormantFutureDesignStyleStep = ({
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     setHighlightPrefersReducedMotion(prefersReducedMotion);
-    const revealCard = () => {
-      card.scrollIntoView({
+    const placeContinueFocus = () => {
+      const savedScroll = completingAssignmentScrollYRef.current;
+      completingAssignmentScrollYRef.current = null;
+      if (savedScroll !== null && typeof window !== "undefined") {
+        window.scrollTo({ top: savedScroll, behavior: "auto" });
+      }
+      const continueButton = continueActionRef.current?.querySelector("button");
+      if (continueButton && "focus" in continueButton) {
+        (continueButton as HTMLElement).focus({ preventScroll: true });
+      }
+      assignmentFeedbackFrameRef.current = null;
+    };
+    const revealAssignment = () => {
+      if (completedByThisAssignment) {
+        // The Apply control is removed with the dialog. Chromium restores
+        // focus after that removal, so Continue is focused on the next frame.
+        if (
+          typeof window !== "undefined" &&
+          typeof window.requestAnimationFrame === "function"
+        ) {
+          assignmentFeedbackFrameRef.current =
+            window.requestAnimationFrame(placeContinueFocus);
+          return;
+        }
+        placeContinueFocus();
+        return;
+      }
+      card?.scrollIntoView({
         behavior: prefersReducedMotion ? "auto" : "smooth",
         block: "center",
       });
-      card.focus({ preventScroll: true });
+      card?.focus({ preventScroll: true });
       assignmentFeedbackFrameRef.current = null;
     };
     if (
       typeof window !== "undefined" &&
       typeof window.requestAnimationFrame === "function"
     ) {
-      assignmentFeedbackFrameRef.current = window.requestAnimationFrame(revealCard);
+      assignmentFeedbackFrameRef.current = window.requestAnimationFrame(revealAssignment);
     } else {
-      revealCard();
+      revealAssignment();
     }
     assignmentFeedbackTimerRef.current = setTimeout(() => {
       assignmentFeedbackTimerRef.current = null;
@@ -303,7 +335,7 @@ export const DormantFutureDesignStyleStep = ({
       );
     }, 800);
     onAssignmentFeedbackHandled?.(assignmentFeedback.eventId);
-  }, [assignmentFeedback, onAssignmentFeedbackHandled]);
+  }, [assignmentFeedback, exactSetComplete, onAssignmentFeedbackHandled]);
 
   useEffect(
     () => () => {
@@ -455,10 +487,20 @@ export const DormantFutureDesignStyleStep = ({
       return request ? [request] : [];
     });
     if (requests.length !== selectedOccurrences.length) return;
+    const completesDesignStep = occurrences.every(
+      (occurrence) =>
+        occurrence.status === "complete" ||
+        selectedOccurrenceTokens.has(occurrence.target.occurrenceToken),
+    );
+    if (completesDesignStep && typeof window !== "undefined") {
+      completingAssignmentScrollYRef.current = window.scrollY;
+    }
     setPendingEntry(null);
     setSelectedOccurrenceTokens(new Set());
     onAssignCatalogueStyle(requests);
-    dialogTriggerRef.current?.focus?.();
+    if (!completesDesignStep) {
+      dialogTriggerRef.current?.focus?.();
+    }
   };
 
   useEffect(() => {
@@ -939,7 +981,7 @@ export const DormantFutureDesignStyleStep = ({
           {reviewMessage && <div role="alert" data-testid="step3-migration-review" className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-bold">Review your Design Style choices</p><p className="mt-1 text-xs leading-relaxed">{reviewMessage}</p></div>}
           {mutationError && <div role="alert" className="mt-4 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-900">{mutationError}</div>}
           {runtimeStatus === "hydrating" && !draftHydrationFailed && <div role="status" className="mt-5 rounded-2xl border border-dashed border-heritage-gold/30 p-5 text-sm text-heritage-ink/70">Restoring your Design Style choices...</div>}
-          {draftHydrationFailed && <div role="alert" data-testid="step3-draft-hydration-failed" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">We could not restore your saved Design Style choices. Reload and try again; your saved draft was not replaced.</div>}
+          {draftHydrationFailed && <div role="alert" data-testid="step3-draft-hydration-failed" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">We could not restore your saved Design Style choices, so they were not replaced. You can choose or upload a design for this visit.</div>}
           {runtimeStatus === "blocked" && <div role="alert" className="mt-5 rounded-2xl border border-red-300 bg-red-50 p-5 text-sm text-red-900">Your saved Design Style choices cannot be changed safely here. Nothing has been overwritten.</div>}
           {(isCatalogueLoading || runtimeStatus === "loading") && <div role="status" className="mt-5 rounded-2xl border border-dashed border-heritage-gold/30 p-5 text-sm text-heritage-ink/70">Loading catalogue designs. Your saved assignments are preserved.</div>}
           {runtimeStatus === "error" && <div role="alert" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">The Design Style catalogue is temporarily unavailable. Your saved assignments are preserved.</div>}
@@ -1037,6 +1079,7 @@ export const DormantFutureDesignStyleStep = ({
           }}
         />
         <div
+          ref={continueActionRef}
           data-testid="future-design-style-continue-action"
           data-docked={exactSetComplete}
           className={exactSetComplete ? "fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3" : ""}

@@ -72,10 +72,19 @@ const renderModel = async (
   return renderer;
 };
 
-const continueButton = (root: ReactTestInstance) =>
-  root
+const continueButton = (root: ReactTestInstance) => {
+  const docked = root
     .findByProps({ "data-testid": "future-design-style-continue-action" })
-    .findByType("button");
+    .findAllByType("button");
+  if (docked[0]) return docked[0];
+  const labelled = root.findAll(
+    (node) =>
+      node.type === "button" &&
+      node.props["aria-label"] === "Continue to Custom Details",
+  );
+  assert.ok(labelled[0]);
+  return labelled[0]!;
+};
 
 const withReferenceGarmentTypes = (
   model: DesignStyleStepTestModel,
@@ -99,6 +108,8 @@ const withReferenceGarmentTypes = (
   });
   const visibleText = textContent(renderer.root);
   assert.match(visibleText, /could not restore your saved Design Style choices/i);
+  assert.match(visibleText, /choose or upload a design for this visit/i);
+  assert.equal(visibleText.includes("Reload and try again"), false);
   assert.equal(visibleText.includes("Restoring your Design Style choices..."), false);
 }
 
@@ -1317,6 +1328,123 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
       "hydration/remount data without a success event does not scroll",
     );
   } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    if (originalWindow === undefined) delete runtime.window;
+    else runtime.window = originalWindow;
+  }
+}
+
+// The assignment that finishes the last garment focuses Continue to Custom
+// Details. An assignment that still leaves a garment unfinished scrolls that card.
+{
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt", "skirt"]),
+  });
+  const target = model.projection.occurrences[0]!.target;
+  const scrolls: ScrollIntoViewOptions[] = [];
+  const continueFocusCalls: FocusOptions[] = [];
+  const continueButtonNode = {
+    focus(options?: FocusOptions) {
+      continueFocusCalls.push(options ?? {});
+    },
+  };
+  const scheduledTimers = new Map<number, () => void>();
+  let nextTimerId = 0;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  globalThis.setTimeout = ((callback: TimerHandler) => {
+    const timerId = ++nextTimerId;
+    scheduledTimers.set(timerId, () => {
+      if (typeof callback === "function") callback();
+    });
+    return timerId as unknown as ReturnType<typeof setTimeout>;
+  }) as typeof setTimeout;
+  globalThis.clearTimeout = ((timer: ReturnType<typeof setTimeout>) => {
+    scheduledTimers.delete(timer as unknown as number);
+  }) as typeof clearTimeout;
+  const runtime = globalThis as Omit<typeof globalThis, "window"> & {
+    window?: {
+      cancelAnimationFrame(handle: number): void;
+      matchMedia(query: string): { matches: boolean };
+      requestAnimationFrame(callback: FrameRequestCallback): number;
+    };
+  };
+  const originalWindow = runtime.window;
+  runtime.window = {
+    cancelAnimationFrame: () => undefined,
+    matchMedia: () => ({ matches: false }),
+    requestAnimationFrame: (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    },
+  };
+  try {
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(
+        <DormantFutureDesignStyleStep
+          {...createDesignStyleStepRenderProps(model)}
+          exactSetComplete={false}
+        />,
+        {
+          createNodeMock: (element) => {
+            if (element.props?.["data-testid"] === "future-design-style-continue-action") {
+              return {
+                querySelector: (selector: string) =>
+                  selector === "button" ? continueButtonNode : null,
+              };
+            }
+            if (
+              element.type === "article" &&
+              element.props["data-occurrence-token"] === target.occurrenceToken
+            ) {
+              return {
+                scrolls,
+                scrollIntoView(options: ScrollIntoViewOptions) {
+                  this.scrolls.push(options);
+                },
+                focus: () => undefined,
+              };
+            }
+            return { focus: () => undefined };
+          },
+        },
+      );
+    });
+    await act(async () => {
+      renderer.update(
+        <DormantFutureDesignStyleStep
+          {...createDesignStyleStepRenderProps(model)}
+          exactSetComplete={false}
+          assignmentFeedback={{ target, eventId: 1 }}
+        />,
+      );
+    });
+    assert.equal(scrolls.length, 1);
+    assert.equal(scrolls[0]?.block, "center");
+    assert.equal(continueFocusCalls.length, 0);
+
+    await act(async () => {
+      renderer.update(
+        <DormantFutureDesignStyleStep
+          {...createDesignStyleStepRenderProps(model)}
+          exactSetComplete
+          assignmentFeedback={{ target, eventId: 2 }}
+        />,
+      );
+    });
+    assert.equal(scrolls.length, 1, "the completing assignment does not scroll the garment card");
+    assert.deepEqual(continueFocusCalls, [{ preventScroll: true }]);
+    assert.equal(
+      renderer.root.findAll(
+        (node) => node.props?.["data-design-assignment-feedback"] === "true",
+      ).length,
+      1,
+    );
+  } finally {
+    scheduledTimers.clear();
     globalThis.setTimeout = originalSetTimeout;
     globalThis.clearTimeout = originalClearTimeout;
     if (originalWindow === undefined) delete runtime.window;
