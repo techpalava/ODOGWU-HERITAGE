@@ -1237,6 +1237,9 @@ export const normalizeFutureMeasurementState = (
     diagnostics: [],
     invalidInputKeys: route ? invalidInputKeysByRoute[route] : [],
     invalidInputKeysByRoute,
+    ...(typeof value.activeGarmentKey === "string" && value.activeGarmentKey.trim()
+      ? { activeGarmentKey: value.activeGarmentKey }
+      : {}),
   };
 };
 
@@ -1581,13 +1584,26 @@ export const deriveActiveCalculatedMeasurements = ({
     });
     return derived;
   }
-  if (route === "low_risk" || !requiredComplete) return derived;
+  if (route === "low_risk") return derived;
   const height = entered.shared.total_height;
   if (!isPositiveMeasurementValue(height)) return derived;
+  const directInputsCompleteByGarmentKey = new Map<string, boolean>();
+  const garmentDirectInputsComplete = (garmentKey: string): boolean => {
+    const known = directInputsCompleteByGarmentKey.get(garmentKey);
+    if (known !== undefined) return known;
+    const complete = plan.requirements
+      .filter((candidate) => candidate.directInput && candidate.garmentKey === garmentKey)
+      .every((candidate) =>
+        isPositiveMeasurementValue(getEnteredMeasurementValue(entered, candidate)),
+      );
+    directInputsCompleteByGarmentKey.set(garmentKey, complete);
+    return complete;
+  };
   plan.requirements.forEach((requirement) => {
     if (
       requirement.inputSource !== "calculated_average_factor" ||
-      requirement.averageFactor === null
+      requirement.averageFactor === null ||
+      !garmentDirectInputsComplete(requirement.garmentKey)
     ) {
       return;
     }

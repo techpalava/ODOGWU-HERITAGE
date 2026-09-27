@@ -8838,6 +8838,9 @@ export default function DesignStudioView({
               : undefined
           }
           physicalGarments={futureMeasurementPhysicalGarments}
+          setupPendingGarments={futureMeasurementPhysicalGarments.filter(
+            (garment) => !wearerOrderForPlan.assignmentByGarmentKey[garment.garmentKey],
+          )}
           hydrationInvalid={futureMeasurementHydrationInvalid}
           onChange={(state) => {
             if (futureMeasurementHydrationInvalid) return;
