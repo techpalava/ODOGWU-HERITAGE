@@ -688,6 +688,55 @@ try {
     assert.equal(snapshot.data()?.lifecycle, "published");
   });
 
+  await runCase(
+    "published styles may include lining and net without requiring them",
+    async () => {
+      const omittedId = "style-without-lining";
+      await assertSucceeds(
+        setDoc(
+          styleReference(admin(), omittedId),
+          validStyleRecord({ id: omittedId }),
+        ),
+      );
+      const omitted = await assertSucceeds(
+        getDoc(styleReference(admin(), omittedId)),
+      );
+      const omittedFeatures = omitted.data()?.presentation.includedDesignFeatures;
+      assert.equal(Object.hasOwn(omittedFeatures, "hasLining"), false);
+      assert.equal(Object.hasOwn(omittedFeatures, "hasNet"), false);
+
+      const linedId = "style-with-lining";
+      const basePresentation = validStyleRecord().presentation as Record<
+        string,
+        unknown
+      >;
+      await assertSucceeds(
+        setDoc(
+          styleReference(admin(), linedId),
+          validStyleRecord({
+            id: linedId,
+            presentation: {
+              ...basePresentation,
+              includedDesignFeatures: {
+                hasMonogram: false,
+                hasEmbroidery: false,
+                hasMonogramTrimming: false,
+                hasLining: true,
+                hasNet: true,
+              },
+            },
+          }),
+        ),
+      );
+      const lined = await assertSucceeds(
+        getDoc(styleReference(admin(), linedId)),
+      );
+      const linedFeatures = lined.data()?.presentation.includedDesignFeatures;
+      assert.equal(linedFeatures.hasLining, true);
+      assert.equal(linedFeatures.hasNet, true);
+    },
+  );
+
   await runCase("admin cannot write malformed, unknown, or mismatched style data", async () => {
     await assertFails(
       setDoc(
@@ -1131,8 +1180,8 @@ try {
     await assertFails(setDoc(publicFabric, { name: "Tampered fabric" }));
   });
 
-  assert.equal(passed, 48);
-  console.log(`Firestore emulator security matrix passed (${passed}/48).`);
+  assert.equal(passed, 49);
+  console.log(`Firestore emulator security matrix passed (${passed}/49).`);
 } finally {
   await testEnvironment.cleanup();
 }
