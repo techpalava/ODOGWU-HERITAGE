@@ -116,6 +116,7 @@ import {
   inspectPersistedDesignStyleDraft,
   createDesignStylePersistenceAcknowledgement,
   prepareDesignStyleDraftAutosave,
+  recoverDesignStyleHydrationAfterFailedRestore,
   shouldAcceptDesignStyleDraftSaveCompletion,
   shouldApplyDesignStyleDraftHydration,
   type DesignStyleDraftHydrationResult,
@@ -654,6 +655,8 @@ export default function DesignStudioView({
     useState<AuthoritativePhysicalOrderDiagnostic[]>([]);
   const [futureDraftPersistenceStatus, setFutureDraftPersistenceStatus] =
     useState<AuthenticatedFutureDraftIntegrationStatus>("resolving");
+  const [designStyleFailedRestoreNotice, setDesignStyleFailedRestoreNotice] =
+    useState(false);
   const cloudFutureDraftRevisionRef = useRef<number | null>(null);
   const cloudFutureDraftSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const futureDraftIdentityGenerationRef = useRef(0);
@@ -2016,6 +2019,34 @@ export default function DesignStudioView({
     futureDraftIdentityKey,
     authoritativePhysicalOccurrencesForDomain,
     futureDesignStyleDraftAuthority,
+    publishFutureDesignStyleHydration,
+  ]);
+
+  useEffect(() => {
+    const recovered = recoverDesignStyleHydrationAfterFailedRestore({
+      guestDraftHydrated,
+      persistenceStatus: futureDraftPersistenceStatus,
+      hydrationPresent: Boolean(currentFutureDesignStyleDraftHydration),
+      catalogueReady: stylesLoadState === "ready",
+      activeOccurrences: authoritativePhysicalOccurrencesForDomain,
+      authority: futureDesignStyleDraftAuthority,
+    });
+    if (!recovered) return;
+    publishFutureDesignStyleHydration({
+      identityKey: futureDraftIdentityKey,
+      identityGeneration: futureDraftIdentityGenerationRef.current,
+      result: recovered,
+    });
+    setFutureDesignStyleMutationError(null);
+    setDesignStyleFailedRestoreNotice(true);
+  }, [
+    guestDraftHydrated,
+    futureDraftPersistenceStatus,
+    currentFutureDesignStyleDraftHydration,
+    stylesLoadState,
+    authoritativePhysicalOccurrencesForDomain,
+    futureDesignStyleDraftAuthority,
+    futureDraftIdentityKey,
     publishFutureDesignStyleHydration,
   ]);
 
@@ -3720,6 +3751,7 @@ export default function DesignStudioView({
     cloudFutureDraftRevisionRef.current = null;
     cloudFutureDraftSaveQueueRef.current = Promise.resolve();
     clearFutureDesignStyleRuntimeHydration();
+    setDesignStyleFailedRestoreNotice(false);
     lastPersistedFutureDraftRef.current = null;
     lastDesignStylePersistenceAcknowledgementRef.current = null;
     uploadedSourceCleanupCandidatesRef.current.clear();
@@ -8517,10 +8549,11 @@ export default function DesignStudioView({
           reviewMessage={futureDesignStyleStepProjection.reviewMessage}
           mutationError={futureDesignStyleMutationError}
           draftHydrationFailed={
-            !currentFutureDesignStyleDraftHydration &&
-            (futureDraftPersistenceStatus === "blocked" ||
-              futureDraftPersistenceStatus === "conflict" ||
-              futureDraftPersistenceStatus === "invalid")
+            designStyleFailedRestoreNotice ||
+            (!currentFutureDesignStyleDraftHydration &&
+              (futureDraftPersistenceStatus === "blocked" ||
+                futureDraftPersistenceStatus === "conflict" ||
+                futureDraftPersistenceStatus === "invalid"))
           }
           uploadState={futureDesignStyleUploadStateForActiveOccurrence}
           uploadStateByOccurrenceToken={

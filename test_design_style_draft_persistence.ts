@@ -26,9 +26,11 @@ import {
   inspectPersistedDesignStyleDraft,
   parsePersistedDesignStyleDraftEnvelope,
   prepareDesignStyleDraftAutosave,
+  recoverDesignStyleHydrationAfterFailedRestore,
   serializePersistedDesignStyleDraftEnvelope,
   shouldAcceptDesignStyleDraftSaveCompletion,
   shouldApplyDesignStyleDraftHydration,
+  shouldRecoverDesignStyleAfterFailedRestore,
   DESIGN_STYLE_DRAFT_FIELD,
   type PersistedDesignStyleDraftV2,
 } from "./src/utils/designStyleDraftPersistence";
@@ -427,6 +429,99 @@ const combinedStyle = publishedStyle("style-combined", ["shirt", "trouser"]);
       priceActivatedFabricCode: "style-shirt",
     }).status,
     "absent",
+  );
+}
+
+// A failed restore with live garments gets a mutable empty ledger.
+// An existing hydration result is left alone.
+{
+  const occurrences = [shirt];
+  const authority = authorityFor({ styles: [shirtStyle], occurrences });
+  assert.equal(
+    shouldRecoverDesignStyleAfterFailedRestore({
+      guestDraftHydrated: true,
+      persistenceStatus: "invalid",
+      hydrationPresent: false,
+      catalogueReady: true,
+      occurrenceCount: occurrences.length,
+    }),
+    true,
+  );
+  for (const persistenceStatus of ["blocked", "conflict", "invalid"] as const) {
+    const recovered = recoverDesignStyleHydrationAfterFailedRestore({
+      guestDraftHydrated: true,
+      persistenceStatus,
+      hydrationPresent: false,
+      catalogueReady: true,
+      activeOccurrences: occurrences,
+      authority,
+    });
+    assert.equal(recovered?.status, "empty-v2");
+    assert.equal(recovered?.canAutosave, true);
+    assert.equal(recovered?.destructiveNormalizationProhibited, false);
+    assert.equal(recovered?.ledger?.revision, 0);
+    assert.equal(
+      Object.keys(recovered?.ledger?.assignmentsByGarmentKey || {}).length,
+      0,
+    );
+  }
+  const existing = hydrateDesignStyleDraftPersistence({
+    rawDraft: {},
+    activeOccurrences: occurrences,
+    authority,
+  });
+  assert.equal(
+    recoverDesignStyleHydrationAfterFailedRestore({
+      guestDraftHydrated: true,
+      persistenceStatus: "invalid",
+      hydrationPresent: true,
+      catalogueReady: true,
+      activeOccurrences: occurrences,
+      authority,
+    }),
+    null,
+    "a real hydration result is left alone",
+  );
+  assert.equal(existing.status, "empty-v2");
+  assert.equal(
+    shouldRecoverDesignStyleAfterFailedRestore({
+      guestDraftHydrated: true,
+      persistenceStatus: "ready",
+      hydrationPresent: false,
+      catalogueReady: true,
+      occurrenceCount: 1,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRecoverDesignStyleAfterFailedRestore({
+      guestDraftHydrated: false,
+      persistenceStatus: "invalid",
+      hydrationPresent: false,
+      catalogueReady: true,
+      occurrenceCount: 1,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRecoverDesignStyleAfterFailedRestore({
+      guestDraftHydrated: true,
+      persistenceStatus: "invalid",
+      hydrationPresent: false,
+      catalogueReady: false,
+      occurrenceCount: 1,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRecoverDesignStyleAfterFailedRestore({
+      guestDraftHydrated: true,
+      persistenceStatus: "invalid",
+      hydrationPresent: false,
+      catalogueReady: true,
+      occurrenceCount: 0,
+    }),
+    false,
   );
 }
 

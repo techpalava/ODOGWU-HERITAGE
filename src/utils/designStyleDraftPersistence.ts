@@ -1263,6 +1263,68 @@ const hydrateDesignStyleDraftPersistenceWithoutRegistryGuard = ({
   });
 };
 
+export const shouldRecoverDesignStyleAfterFailedRestore = ({
+  guestDraftHydrated,
+  persistenceStatus,
+  hydrationPresent,
+  catalogueReady,
+  occurrenceCount,
+}: {
+  guestDraftHydrated: boolean;
+  persistenceStatus: string;
+  hydrationPresent: boolean;
+  catalogueReady: boolean;
+  occurrenceCount: number;
+}): boolean =>
+  guestDraftHydrated &&
+  !hydrationPresent &&
+  catalogueReady &&
+  occurrenceCount > 0 &&
+  (persistenceStatus === "blocked" ||
+    persistenceStatus === "conflict" ||
+    persistenceStatus === "invalid");
+
+export const recoverDesignStyleHydrationAfterFailedRestore = ({
+  guestDraftHydrated,
+  persistenceStatus,
+  hydrationPresent,
+  catalogueReady,
+  activeOccurrences,
+  authority,
+}: {
+  guestDraftHydrated: boolean;
+  persistenceStatus: string;
+  hydrationPresent: boolean;
+  catalogueReady: boolean;
+  activeOccurrences: readonly PhysicalGarmentOccurrence[];
+  authority: GarmentScopedDesignStyleValidationAuthority;
+}): DesignStyleDraftHydrationResult | null => {
+  if (
+    !shouldRecoverDesignStyleAfterFailedRestore({
+      guestDraftHydrated,
+      persistenceStatus,
+      hydrationPresent,
+      catalogueReady,
+      occurrenceCount: activeOccurrences.length,
+    })
+  ) {
+    return null;
+  }
+  const recovered = hydrateDesignStyleDraftPersistence({
+    rawDraft: {},
+    activeOccurrences,
+    authority,
+  });
+  if (
+    !recovered.canAutosave ||
+    recovered.destructiveNormalizationProhibited ||
+    !recovered.ledger
+  ) {
+    return null;
+  }
+  return recovered;
+};
+
 export const shouldApplyDesignStyleDraftHydration = ({
   requestGeneration,
   currentGeneration,
