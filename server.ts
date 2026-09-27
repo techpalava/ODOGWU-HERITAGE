@@ -41,7 +41,7 @@ function getStripeClient(): Stripe {
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = 3112;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));

@@ -354,6 +354,7 @@ export default function DatabaseView({
             width: "45 inches",
             image: data.image || ""
           });
+          setFabricFormError(null);
           setEditingType("fabric");
           setFabricNameSuggestions([]);
           setSuggestionHistory([]);
@@ -397,13 +398,25 @@ export default function DatabaseView({
     type: "success" | "info" | "error";
   } | null>(null);
 
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const triggerStatus = (
     text: string,
     type: "success" | "info" | "error" = "success",
   ) => {
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
     setStatusMsg({ text, type });
-    setTimeout(() => setStatusMsg(null), 3000);
+    statusTimerRef.current = setTimeout(() => setStatusMsg(null), 3000);
   };
+
+  useEffect(() => {
+    return () => {
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    };
+  }, []);
+
+  // Inline validation message shown on the fabric form
+  const [fabricFormError, setFabricFormError] = useState<string | null>(null);
 
   // Discount configuration helper state mutations (Administrative Sandbox)
   const dSettings: DiscountSettings = businessSettings.discountSettings || {
@@ -1046,11 +1059,18 @@ export default function DatabaseView({
     e.preventDefault();
     console.log("[handleSaveFabric] Start. editingItem:", editingItem);
     const item = editingItem as Fabric;
-    if (!item.code || !item.name) {
-      console.log("[handleSaveFabric] Missing code or name. code:", item.code, "name:", item.name);
-      triggerStatus("Fabric Code and Name are required.", "error");
+    // New fabrics get their ODG code from FabricService, so only existing ones need a code here.
+    const missingName = !item.name?.trim();
+    const missingCode = !isNewRecord && !item.code?.trim();
+    if (missingName || missingCode) {
+      const message = missingCode
+        ? "Fabric Code and Name are required."
+        : "Fabric Name is required.";
+      setFabricFormError(message);
+      triggerStatus(message, "error");
       return;
     }
+    setFabricFormError(null);
     
     if (!item.category) {
       triggerStatus("Fabric Category is required. Please select an allowed category.", "error");
@@ -1065,6 +1085,8 @@ export default function DatabaseView({
     console.log("[handleSaveFabric] Creating finalItem");
     const finalItem: Fabric = {
       ...item,
+      // Placeholder document key until FabricService assigns the real ODG code
+      code: isNewRecord && !item.code?.trim() ? "Generating..." : item.code,
       price,
       stockStatus:
         item.stock <= 0
@@ -1103,6 +1125,12 @@ export default function DatabaseView({
   const handleDeleteFabric = async (code: string) => {
     const fabricToDelete = fabrics.find(f => f.code === code);
     if (fabricToDelete) {
+      if (
+        !window.confirm(
+          `Delete fabric "${fabricToDelete.name}" (${fabricToDelete.code}) from the catalogue?`,
+        )
+      )
+        return;
       try {
         await FabricService.deleteFabric(fabricToDelete);
         triggerStatus("Fabric catalogue entry deleted.", "info");
@@ -1353,9 +1381,18 @@ export default function DatabaseView({
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="fixed top-24 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-full bg-heritage-green text-heritage-gold border border-heritage-gold/30 shadow-2xl flex items-center gap-2 text-xs font-semibold uppercase tracking-wider"
+            role={statusMsg.type === "error" ? "alert" : "status"}
+            className={`fixed top-24 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 text-xs font-semibold uppercase tracking-wider border ${
+              statusMsg.type === "error"
+                ? "bg-red-700 text-white border-red-300"
+                : "bg-heritage-green text-heritage-gold border-heritage-gold/30"
+            }`}
           >
-            <Check size={14} className="text-heritage-gold" />
+            {statusMsg.type === "error" ? (
+              <AlertTriangle size={14} className="text-white" />
+            ) : (
+              <Check size={14} className="text-heritage-gold" />
+            )}
             <span>{statusMsg.text}</span>
           </motion.div>
         )}
@@ -2534,15 +2571,28 @@ export default function DatabaseView({
                         <input
                           type="text"
                           value={editingItem.name}
-                          onChange={(e) =>
+                          onChange={(e) => {
                             setEditingItem({
                               ...editingItem,
                               name: e.target.value,
-                            })
-                          }
-                          className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                            });
+                            if (
+                              e.target.value.trim() &&
+                              (isNewRecord || editingItem.code?.trim())
+                            )
+                              setFabricFormError(null);
+                          }}
+                          aria-invalid={!!fabricFormError}
+                          className={`w-full px-3 py-2 border bg-white rounded-lg ${
+                            fabricFormError ? "border-red-400" : "border-heritage-gold/20"
+                          }`}
                           placeholder="e.g. Royal Emerald Ankara"
                         />
+                        {fabricFormError && (
+                          <p role="alert" className="text-[11px] font-semibold text-red-600">
+                            {fabricFormError}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1">
                         <label className="font-bold text-heritage-green">
@@ -4544,6 +4594,7 @@ export default function DatabaseView({
                       });
                       setFabricNameSuggestions([]);
                       setSuggestionHistory([]);
+                      setFabricFormError(null);
                       setEditingType("fabric");
                       
                       try {
@@ -4629,7 +4680,7 @@ export default function DatabaseView({
                             <td className="px-4 py-3 text-right">
                               <div className="flex gap-2 justify-end">
                                 <button
-                                  onClick={() => {
+                                  onClick={async () => {
                                     const currentStock = f.stock ?? 30;
                                     const newStock = currentStock <= 0 ? 30 : 0;
                                     const finalItem: Fabric = {
@@ -4640,15 +4691,17 @@ export default function DatabaseView({
                                           ? "OUT_OF_STOCK"
                                           : "IN_STOCK",
                                     };
-                                    FabricService.saveFabric(finalItem).catch(err => {
+                                    try {
+                                      await FabricService.saveFabric(finalItem);
+                                      triggerStatus(
+                                        newStock <= 0
+                                          ? `Marked ${f.name} as Out of Stock!`
+                                          : `Restocked ${f.name} to 30 yards!`,
+                                      );
+                                    } catch (err) {
                                       console.error("Failed to update stock", err);
                                       triggerStatus("Failed to update stock", "error");
-                                    });
-                                    triggerStatus(
-                                      newStock <= 0
-                                        ? `Marked ${f.name} as Out of Stock!`
-                                        : `Restocked ${f.name} to 30 yards!`,
-                                    );
+                                    }
                                   }}
                                   className={`p-1.5 rounded transition ${
                                     (f.stock ?? 30) <= 0
@@ -4688,6 +4741,7 @@ export default function DatabaseView({
                                     });
                                     setFabricNameSuggestions([]);
                                     setSuggestionHistory([]);
+                                    setFabricFormError(null);
                                     setEditingType("fabric");
                                   }}
                                   className="p-1.5 bg-gray-50 hover:bg-heritage-green/10 text-heritage-green rounded transition"
