@@ -1,6 +1,6 @@
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
-import type { FabricGarmentType } from "../types";
-import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine.js";
+import type { FabricGarmentType } from "../types.js";
+import { getStep1GarmentDisplayLabel } from "./garmentConstructionPricing.js";
 
 export interface OccurrenceFamilyLabels {
   readonly broadLabel: string;

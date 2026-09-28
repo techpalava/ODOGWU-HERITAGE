@@ -9,13 +9,13 @@ import type {
   GarmentConstructionPricingResolution,
   GarmentTypeStepSelection,
   GuestDesignDraft,
-} from "../types";
-import { normalizePhysicalGarmentOccurrenceIdentityState } from "./physicalGarmentOccurrenceIdentity";
+} from "../types.js";
+import { normalizePhysicalGarmentOccurrenceIdentityState } from "./physicalGarmentOccurrenceIdentity.js";
 import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
   resolveGarmentConstructionPricing,
-} from "./garmentConstructionPricing";
-import { isClothingPriceSelectionGroup } from "./catalogHelpers";
+} from "./garmentConstructionPricing.js";
+import { isClothingPriceSelectionGroup } from "./catalogHelpers.js";
 
 const CANONICAL_GARMENT_TYPE_SET = new Set<FabricGarmentType>(
   CANONICAL_PHYSICAL_GARMENT_TYPES,

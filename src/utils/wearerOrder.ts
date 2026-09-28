@@ -1,4 +1,4 @@
-import { resolveActiveWearerCap } from "../config/WearerPolicy";
+import { resolveActiveWearerCap } from "../config/WearerPolicy.js";
 import type {
   AdditionalGarmentConstructionStateV1,
   CustomDetailDemographic,
@@ -9,7 +9,7 @@ import type {
   WearerFitContext,
   WearerOrderStateV2,
   WearerProfileV1,
-} from "../types";
+} from "../types.js";
 import {
   classifyFutureMeasurementHydration,
   countRemainingCustomerRequiredMeasurementUnits,
@@ -20,7 +20,7 @@ import {
   reconcileFutureMeasurementState,
   type MeasurementPhysicalGarment,
   type MeasurementRequirementPlan,
-} from "./measurementBlueprint";
+} from "./measurementBlueprint.js";
 
 export const WEARER_ORDER_SCHEMA_VERSION = 2 as const;
 const DISPLAY_NAME_MAX = 40;
