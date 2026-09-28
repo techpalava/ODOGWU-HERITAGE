@@ -5,23 +5,23 @@ import type {
   FabricGarmentType,
   GarmentConstructionPriceComponent,
   GarmentConstructionPricingResolution,
-} from "../types";
+} from "../types.js";
 export type {
   GarmentConstructionPriceComponent,
   GarmentConstructionPricingFailureCode,
   GarmentConstructionPricingResolution,
   ResolvedGarmentConstructionPricing,
   UnresolvedGarmentConstructionPricing,
-} from "../types";
+} from "../types.js";
 import {
   STYLE_BASE_GARMENT_TYPES,
   createStyleBaseGarmentSpec,
   getDefaultGarmentDetailsForSpec,
-} from "../config/StyleFabricCapacityConfig";
+} from "../config/StyleFabricCapacityConfig.js";
 import {
   isClothingPriceSelectionGroup,
   sortCustomDetailOptions,
-} from "./catalogHelpers";
+} from "./catalogHelpers.js";
 
 export const CANONICAL_PHYSICAL_GARMENT_TYPES: readonly CanonicalPhysicalGarmentType[] = [
   ...STYLE_BASE_GARMENT_TYPES,

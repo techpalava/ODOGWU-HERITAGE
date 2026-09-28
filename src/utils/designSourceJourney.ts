@@ -1,4 +1,4 @@
-import type { DesignStudioStageId } from "../types";
+import type { DesignStudioStageId } from "../types.js";
 
 export const DESIGN_STUDIO_NINE_STAGE_SCHEMA_VERSION = 1;
 export const DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION = 2;

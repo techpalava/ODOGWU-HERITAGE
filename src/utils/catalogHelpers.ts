@@ -10,7 +10,7 @@ import {
   FabricGarmentType,
   StyleCategory,
   UploadedDesignCustomDetailContext,
-} from "../types";
+} from "../types.js";
 import {
   ADDITIONAL_CLOTHES_COST_OPTION_ORDER,
   ADDITIONAL_CLOTHES_COST_SECTION_RANK,
@@ -26,17 +26,17 @@ import {
   CUSTOM_DETAIL_SELECTION_GROUP_SUMMARY_TITLE,
   CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION,
   DRESS_LINING_OPTION_ID,
-} from "../config/GarmentDetailsConfig";
+} from "../config/GarmentDetailsConfig.js";
 import {
   FABRIC_GARMENT_CAPACITY_UNITS,
   getCustomDetailGroupsForFabricComposition,
   getCustomDetailGroupsForFabricGarmentType,
   getStyleBaseCustomDetailGroups,
-} from "../config/StyleFabricCapacityConfig";
+} from "../config/StyleFabricCapacityConfig.js";
 import {
   getCanonicalShortsPriceCents,
   resolveGarmentPolicyDemographic,
-} from "../config/AdditionalGarmentPolicy";
+} from "../config/AdditionalGarmentPolicy.js";
 
 const VALID_GARMENT_GROUPS = new Set<CustomDetailGarmentGroup>([
   "shirt",

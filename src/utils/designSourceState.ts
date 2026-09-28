@@ -17,29 +17,29 @@ import type {
   GuestDesignDraft,
   StyleCategory,
   UploadedDesignSource,
-} from "../types";
-import { isCustomerDesignDraftStoragePath } from "../services/customerDesignUploadReference";
+} from "../types.js";
+import { isCustomerDesignDraftStoragePath } from "../services/customerDesignUploadReference.js";
 import {
   createStyleBaseGarmentSpec,
   FABRIC_GARMENT_CAPACITY_UNITS,
-} from "../config/StyleFabricCapacityConfig";
-import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine";
+} from "../config/StyleFabricCapacityConfig.js";
+import { getFabricGarmentLabel } from "../engine/FabricCapacityEngine.js";
 import {
   isCanonicalPhysicalGarmentType,
   isCustomerSelectableGarmentType,
-} from "./garmentConstructionPricing";
+} from "./garmentConstructionPricing.js";
 import {
   buildEffectiveUploadedJourneyGarmentTypeSelection,
   evaluateUploadedCompositionStep1Coverage,
   getUploadedDesignCompositionNeedsReview,
   UPLOADED_DESIGN_COMPOSITION_NEEDS_REVIEW_MESSAGE,
   UPLOADED_DESIGN_MISSING_REQUIRED_STEP1_GARMENTS_MESSAGE,
-} from "./uploadedDesignStep1";
-import { normalizeCustomDetailCatalog } from "./catalogHelpers";
+} from "./uploadedDesignStep1.js";
+import { normalizeCustomDetailCatalog } from "./catalogHelpers.js";
 import {
   getPhysicalGarmentOccurrenceGeneration,
   reconcilePhysicalGarmentOccurrenceIdentityState,
-} from "./physicalGarmentOccurrenceIdentity";
+} from "./physicalGarmentOccurrenceIdentity.js";
 
 export const CATALOG_DESIGN_SOURCE_PREFIX = "catalog:";
 export const UPLOADED_DESIGN_SOURCE_PREFIX = "uploaded:";

@@ -7,11 +7,11 @@ import type {
   GarmentConstructionSelectionMode,
   GarmentTypeStepSelection,
   GuestDesignDraft,
-} from "../types";
-import { DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION } from "./designSourceJourney";
-import { reconcileGarmentTypeStepSelection } from "./garmentTypeStepState";
-import { normalizeAiTryOnWorkflowState } from "./aiTryOnWorkflow";
-import { isFutureMeasurementStageUnlocked } from "./measurementBlueprint";
+} from "../types.js";
+import { DESIGN_STUDIO_TEN_STAGE_SCHEMA_VERSION } from "./designSourceJourney.js";
+import { reconcileGarmentTypeStepSelection } from "./garmentTypeStepState.js";
+import { normalizeAiTryOnWorkflowState } from "./aiTryOnWorkflow.js";
+import { isFutureMeasurementStageUnlocked } from "./measurementBlueprint.js";
 
 export type GarmentTypeStageBlockerCode =
   "GARMENT_REQUIRED" | "DEMOGRAPHIC_REQUIRED" | "CONSTRUCTION_UNRESOLVED";

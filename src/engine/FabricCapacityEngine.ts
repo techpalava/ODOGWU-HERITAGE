@@ -9,9 +9,9 @@ import type {
   FabricGarmentRole,
   AdditionalGarmentDependencyStatus,
   AdditionalGarmentEligibilityRule,
-} from "../types";
-import { FABRIC_GARMENT_CAPACITY_UNITS } from "../config/StyleFabricCapacityConfig";
-import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
+} from "../types.js";
+import { FABRIC_GARMENT_CAPACITY_UNITS } from "../config/StyleFabricCapacityConfig.js";
+import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing.js";
 
 type LowerGarmentType = "trousers" | "skirt";
 
