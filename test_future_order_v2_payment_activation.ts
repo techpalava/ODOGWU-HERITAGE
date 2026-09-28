@@ -161,6 +161,9 @@ const markup = renderToStaticMarkup(
   }),
 );
 assert.ok(markup.includes(FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE));
+assert.ok(markup.includes(`Order prepared with ID ${prepared.orderId}.`));
+assert.ok(markup.includes("data-future-order-v2-card"));
+assert.equal(markup.includes("Payment integration pending"), false);
 assert.ok(markup.includes("Authorize payment"));
 assert.ok(markup.includes("data-future-order-v2-payment"));
 

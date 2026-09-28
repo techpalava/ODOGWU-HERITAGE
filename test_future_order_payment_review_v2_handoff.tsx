@@ -187,6 +187,11 @@ assert.ok(
   "the repeated Shirt label is retained in both the style and garment reviews",
 );
 assert.ok(markup.includes('disabled=""'));
+assert.equal(
+  markup.includes("data-future-order-v2-card"),
+  false,
+  "the card field stays hidden until the order ID is prepared",
+);
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const paymentReviewHandlerSource = studioSource.slice(

@@ -10,7 +10,8 @@ import {
   Truck,
 } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
-import type React from "react";
+import { useState, type ReactNode } from "react";
+import { FutureOrderV2StripeCard } from "./FutureOrderV2StripeCard";
 import type { DesignStudioStageId } from "../types";
 import {
   type FutureOrderCandidateV2,
@@ -154,7 +155,7 @@ const ReviewSection = ({
   onEdit?: () => void;
   removalHeadingMarker?: string;
   compact?: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
 }) => (
   <section
     className={`min-w-0 rounded-2xl border border-heritage-gold/20 bg-white shadow-sm ${
@@ -626,6 +627,7 @@ export const DormantFuturePaymentReviewStep = ({
   const paymentCanExecute =
     preparationIsComplete &&
     (payment?.status === "ready" || payment?.status === "failed");
+  const [stripeCardReady, setStripeCardReady] = useState(false);
   const preparationMessage =
     payment?.status === "authorized"
       ? `Payment authorized for this prepared order. Reference: ${payment.providerTransactionReference}.`
@@ -1148,13 +1150,20 @@ export const DormantFuturePaymentReviewStep = ({
                 )}
               </>
             )}
+            {(paymentCanExecute || paymentIsProcessing) && onExecutePayment && (
+              <FutureOrderV2StripeCard
+                disabled={paymentIsProcessing}
+                onReadyChange={setStripeCardReady}
+              />
+            )}
             {paymentCanExecute && onExecutePayment && (
               <button
                 type="button"
                 data-future-order-v2-payment
+                disabled={!stripeCardReady}
                 onClick={onExecutePayment}
                 aria-describedby="future-payment-pending-explanation"
-                className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green sm:w-auto"
+                className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white sm:w-auto"
               >
                 <CheckCircle2 aria-hidden="true" size={14} />
                 Authorize payment

@@ -140,21 +140,135 @@ export const executeFutureOrderV2Payment = async ({
   }
 };
 
+export type FutureOrderV2CardConfirmation =
+  | { readonly status: "confirmed"; readonly paymentIntentId: string }
+  | { readonly status: "failed"; readonly message: string };
+
+/** Confirms the PaymentIntent client secret with the card entered in the browser. */
+export type FutureOrderV2CardConfirmer = (
+  clientSecret: string,
+) => Promise<FutureOrderV2CardConfirmation>;
+
+let cardConfirmer: FutureOrderV2CardConfirmer | null = null;
+
+export const registerFutureOrderV2CardConfirmer = (
+  confirmer: FutureOrderV2CardConfirmer | null,
+): void => {
+  cardConfirmer = confirmer;
+};
+
+const MINIMUM_CHARGE_CENTS = 50;
+
+export const readFutureOrderV2ReviewedTotalCents = (
+  attempt: FutureOrderV2PaymentAttempt,
+): number | null => {
+  const pricing = attempt.masterOrder.cartItem.candidate.pricing;
+  const amountCents = pricing.exactTotalCents;
+  if (
+    pricing.status !== "exact" ||
+    !Number.isSafeInteger(amountCents) ||
+    amountCents < MINIMUM_CHARGE_CENTS
+  ) {
+    return null;
+  }
+  return amountCents;
+};
+
 /**
- * The existing checkout uses a local simulated authorization. Keep that
- * temporary provider behavior separate from V2 order persistence and bind its
- * transaction identity to the stable V2 payment reference.
+ * Creates one Stripe test PaymentIntent for the reviewed euro total, then
+ * confirms the card in the browser. The payment reference is the idempotency
+ * key, so a retry of the same prepared order cannot create a second charge.
  */
 export const authorizeFutureOrderV2Payment = async (
   attempt: FutureOrderV2PaymentAttempt,
-): Promise<FutureOrderV2PaymentAuthorizationResult> =>
-  new Promise((resolve) => {
-    setTimeout(
-      () =>
-        resolve({
-        status: "authorized",
-        providerTransactionReference: attempt.paymentReference,
-        }),
-      2000,
-    );
-  });
+): Promise<FutureOrderV2PaymentAuthorizationResult> => {
+  const amountCents = readFutureOrderV2ReviewedTotalCents(attempt);
+  if (
+    amountCents === null ||
+    attempt.paymentReference !== `future-v2-payment-${attempt.orderId}`
+  ) {
+    return {
+      status: "failed",
+      message: "The reviewed total is not ready to charge.",
+    };
+  }
+  const confirmer = cardConfirmer;
+  if (!confirmer) {
+    return {
+      status: "failed",
+      message: "Enter the test card before authorizing this payment.",
+    };
+  }
+
+  let payload: unknown;
+  try {
+    const response = await fetch("/api/future-order-v2/payment-intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderId: attempt.orderId,
+        paymentReference: attempt.paymentReference,
+        masterOrder: attempt.masterOrder,
+      }),
+    });
+    payload = await response.json();
+    if (!response.ok) {
+      const message =
+        payload &&
+        typeof payload === "object" &&
+        "error" in payload &&
+        typeof payload.error === "string"
+          ? payload.error
+          : "Stripe could not start this payment. Retry this same order.";
+      return { status: "failed", message };
+    }
+  } catch {
+    return {
+      status: "failed",
+      message: "Stripe could not start this payment. Retry this same order.",
+    };
+  }
+
+  const clientSecret =
+    payload &&
+    typeof payload === "object" &&
+    "clientSecret" in payload &&
+    typeof payload.clientSecret === "string"
+      ? payload.clientSecret
+      : "";
+  const paymentIntentId =
+    payload &&
+    typeof payload === "object" &&
+    "paymentIntentId" in payload &&
+    typeof payload.paymentIntentId === "string"
+      ? payload.paymentIntentId
+      : "";
+  if (!clientSecret || !paymentIntentId.startsWith("pi_")) {
+    return {
+      status: "failed",
+      message: "Stripe did not return a payment that can be confirmed.",
+    };
+  }
+
+  try {
+    const confirmed = await confirmer(clientSecret);
+    if (confirmed.status !== "confirmed") {
+      return { status: "failed", message: confirmed.message };
+    }
+    if (confirmed.paymentIntentId !== paymentIntentId) {
+      return {
+        status: "failed",
+        message: "The confirmed card does not match this payment.",
+      };
+    }
+    return {
+      status: "authorized",
+      providerTransactionReference: confirmed.paymentIntentId,
+    };
+  } catch {
+    return {
+      status: "failed",
+      message: "The card could not be confirmed. Retry this same order safely.",
+    };
+  }
+};
