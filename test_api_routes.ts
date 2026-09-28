@@ -11,6 +11,8 @@ import uploadedDesignOwnershipClaimHandler from "./api/orders/create-uploaded-de
 import futureOrderV2PersistenceHandler from "./api/orders/persist-future-order-v2.js";
 import futureOrderV2HistoryHandler from "./api/orders/lookup-future-order-v2-history.js";
 import uploadedDesignDraftTransferHandler from "./api/design-studio/transfer-uploaded-design-draft.js";
+import futureOrderV2PaymentIntentHandler from "./api/future-order-v2/payment-intent.js";
+import futureOrderV2StripeConfigHandler from "./api/future-order-v2/stripe-config.js";
 import type {
   HttpRequest,
   HttpResponse,
@@ -76,6 +78,13 @@ function assertVercelRuntimeImports(entryFiles: string[]) {
     );
 
     for (const statement of sourceFile.statements) {
+      if (
+        (ts.isImportDeclaration(statement) &&
+          statement.importClause?.isTypeOnly) ||
+        (ts.isExportDeclaration(statement) && statement.isTypeOnly)
+      ) {
+        continue;
+      }
       const moduleSpecifier =
         ts.isImportDeclaration(statement) ||
         ts.isExportDeclaration(statement)
@@ -115,6 +124,10 @@ async function run() {
     "./api/orders/transfer-uploaded-design.ts",
     "./api/orders/create-uploaded-design-ownership-claim.ts",
     "./api/design-studio/transfer-uploaded-design-draft.ts",
+    "./api/orders/persist-future-order-v2.ts",
+    "./api/orders/lookup-future-order-v2-history.ts",
+    "./api/future-order-v2/payment-intent.ts",
+    "./api/future-order-v2/stripe-config.ts",
   ]);
 
   assert.equal(typeof healthHandler, "function");
@@ -126,6 +139,8 @@ async function run() {
   assert.equal(typeof futureOrderV2PersistenceHandler, "function");
   assert.equal(typeof futureOrderV2HistoryHandler, "function");
   assert.equal(typeof uploadedDesignDraftTransferHandler, "function");
+  assert.equal(typeof futureOrderV2PaymentIntentHandler, "function");
+  assert.equal(typeof futureOrderV2StripeConfigHandler, "function");
 
   const health = createResponse();
   await healthHandler(request("GET"), health.response);

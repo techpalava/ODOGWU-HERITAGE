@@ -1,10 +1,10 @@
-import type { FabricGarmentType, FutureMeasurementStateV1 } from "../types";
-import { projectOccurrenceDisplayLabels } from "./occurrenceDisplayLabel";
+import type { FabricGarmentType, FutureMeasurementStateV1 } from "../types.js";
+import { projectOccurrenceDisplayLabels } from "./occurrenceDisplayLabel.js";
 import {
   isFutureMeasurementStateV1,
   MEASUREMENT_METHOD_LABELS,
-} from "./measurementBlueprint";
-import { isWearerOrderStateV2, wearerPublicLabel } from "./wearerOrder";
+} from "./measurementBlueprint.js";
+import { isWearerOrderStateV2, wearerPublicLabel } from "./wearerOrder.js";
 
 export interface TailoringMeasurementValue {
   readonly measurementId: string;

@@ -3,7 +3,7 @@ import {
   type CanonicalMeasurementId,
   type MeasurementProfileId,
   type MeasurementRowFactors,
-} from "../config/MeasurementBlueprintConfig";
+} from "../config/MeasurementBlueprintConfig.js";
 
 export const calculateMeasurementFromAverageFactor = (
   heightValue: number,

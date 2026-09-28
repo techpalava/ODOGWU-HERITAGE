@@ -2,11 +2,11 @@ import {
   FabricCapacityEngine,
   getCustomerFacingFabricQuantityForAssignments,
   getFabricGarmentLabel,
-} from "../engine/FabricCapacityEngine";
+} from "../engine/FabricCapacityEngine.js";
 import {
   createStyleBaseGarmentSpec,
   FABRIC_GARMENT_CAPACITY_UNITS,
-} from "../config/StyleFabricCapacityConfig";
+} from "../config/StyleFabricCapacityConfig.js";
 import type {
   CustomerDesignUploadReference,
   CustomDetailDemographic,
@@ -15,19 +15,19 @@ import type {
   FabricGarmentType,
   GarmentTypeStepSelection,
   UploadedDesignSource,
-} from "../types";
+} from "../types.js";
 import {
   createUploadedDesignSource,
   isDesignSourceConfirmed,
-} from "./designSourceState";
-import { updateDormantGarmentTypeSelection } from "./designStudioJourneyMode";
+} from "./designSourceState.js";
+import { updateDormantGarmentTypeSelection } from "./designStudioJourneyMode.js";
 import {
   CANONICAL_PHYSICAL_GARMENT_TYPES,
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
   getCustomerSelectableGarmentTypes,
   isCanonicalPhysicalGarmentType,
   isCustomerSelectableGarmentType,
-} from "./garmentConstructionPricing";
+} from "./garmentConstructionPricing.js";
 
 export const UPLOADED_DESIGN_GARMENT_OPTIONS =
   CUSTOMER_SELECTABLE_GARMENT_TYPES.map((garmentType) => ({

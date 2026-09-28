@@ -1,4 +1,4 @@
-import { Batch, OrderContext } from "../types";
+import type { Batch, OrderContext } from "../types.js";
 
 export interface BatchProgressSummary {
   targetGarments: number;

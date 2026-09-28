@@ -1,5 +1,5 @@
-import { BatchProgressEngine, BatchProgressSummary } from "../engine/BatchProgressEngine";
-import { Batch, OrderContext } from "../types";
+import { BatchProgressEngine, type BatchProgressSummary } from "../engine/BatchProgressEngine.js";
+import type { Batch, OrderContext } from "../types.js";
 
 export const CapacityService = {
   getCapacitySummary(

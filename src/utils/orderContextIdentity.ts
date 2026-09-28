@@ -1,5 +1,5 @@
-import type { Batch, CustomGroup, GuestDesignDraft, OrderContext } from "../types";
-import { CapacityService } from "../services/CapacityService";
+import type { Batch, CustomGroup, GuestDesignDraft, OrderContext } from "../types.js";
+import { CapacityService } from "../services/CapacityService.js";
 
 export type CanonicalOrderIdentity =
   | Readonly<{ orderType: "Individual" }>

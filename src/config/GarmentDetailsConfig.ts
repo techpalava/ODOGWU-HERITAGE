@@ -4,8 +4,8 @@ import {
   CustomDetailOption,
   CustomDetailSelectionGroup,
   FabricGarmentType,
-} from "../types";
-import { FABRIC_GARMENT_CAPACITY_UNITS } from "./StyleFabricCapacityConfig";
+} from "../types.js";
+import { FABRIC_GARMENT_CAPACITY_UNITS } from "./StyleFabricCapacityConfig.js";
 
 export type Demographic = CustomDetailDemographic;
 export type GarmentGroup = CustomDetailGarmentGroup;

@@ -1,9 +1,9 @@
 import type {
   FutureOrderCandidateBlocker,
   FutureOrderCandidateV2,
-} from "./futureOrderCandidate";
-import { getCanonicalOrderIdentity } from "./orderContextIdentity";
-import { isSupportedDesignStudioJourneySchemaVersion } from "./designSourceJourney";
+} from "./futureOrderCandidate.js";
+import { getCanonicalOrderIdentity } from "./orderContextIdentity.js";
+import { isSupportedDesignStudioJourneySchemaVersion } from "./designSourceJourney.js";
 
 export interface FutureOrderCartItemV2 {
   readonly schemaVersion: 2;

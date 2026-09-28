@@ -9,18 +9,18 @@ import {
   type MeasurementProfile,
   type MeasurementProfileField,
   type MeasurementProfileId,
-} from "../config/MeasurementBlueprintConfig";
+} from "../config/MeasurementBlueprintConfig.js";
 import {
   calculateMeasurementFromAverageFactor,
   isManualValueOutsideExpectedRange,
-} from "./measurementFactorEngine";
-import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
+} from "./measurementFactorEngine.js";
+import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig.js";
 import {
   projectAuthoritativePhysicalOccurrences,
   resolveActiveDesignSource,
   resolveAuthoritativePhysicalOrder,
-} from "./designSourceState";
-import { buildEffectiveUploadedJourneyGarmentTypeSelection } from "./uploadedDesignStep1";
+} from "./designSourceState.js";
+import { buildEffectiveUploadedJourneyGarmentTypeSelection } from "./uploadedDesignStep1.js";
 import type {
   AdditionalGarmentConstructionStateV1,
   AiTryOnWorkflowStateV1,
@@ -43,7 +43,7 @@ import type {
   Measurements,
   SelectedMeasurementMethod,
   SelectedMeasurementRiskRoute,
-} from "../types";
+} from "../types.js";
 
 const MEASUREMENT_ID_SET = new Set<CanonicalMeasurementId>(
   MEASUREMENT_DEFINITIONS.map((definition) => definition.id),
