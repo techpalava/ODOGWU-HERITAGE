@@ -10,7 +10,7 @@ import {
   Truck,
 } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FutureOrderV2StripeCard } from "./FutureOrderV2StripeCard";
 import type { DesignStudioStageId } from "../types";
 import {
@@ -38,6 +38,7 @@ import {
   type FutureOrderV2PaymentPresentation,
 } from "../utils/designStudioFuturePaymentReview";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+import { formatFutureOrderV2PaidAmount } from "../utils/futureOrderV2PaymentRecord";
 import {
   formatCustomerFacingFabricCapacityAmount,
   formatCustomerFacingFabricCapacityNoun,
@@ -60,6 +61,8 @@ interface DormantFuturePaymentReviewStepProps {
   ) => void;
   onPrepareOrder?: () => void;
   onExecutePayment?: () => void;
+  onRetryPaymentRecord?: () => void;
+  onViewDashboard?: () => void;
 }
 
 const moneyFromCents = (amountCents: number): string =>
@@ -599,6 +602,8 @@ export const DormantFuturePaymentReviewStep = ({
   onRequestGarmentRemoval,
   onPrepareOrder,
   onExecutePayment,
+  onRetryPaymentRecord,
+  onViewDashboard,
 }: DormantFuturePaymentReviewStepProps) => {
   const candidate = result.candidate;
   const isReviewable = isFuturePaymentReviewStageUnlocked(result);
@@ -628,9 +633,18 @@ export const DormantFuturePaymentReviewStep = ({
     preparationIsComplete &&
     (payment?.status === "ready" || payment?.status === "failed");
   const [stripeCardReady, setStripeCardReady] = useState(false);
+  const confirmedHeadingRef = useRef<HTMLHeadingElement>(null);
+  const paymentIsConfirmed = payment?.status === "confirmed";
+  useEffect(() => {
+    if (paymentIsConfirmed) confirmedHeadingRef.current?.focus();
+  }, [paymentIsConfirmed]);
   const preparationMessage =
     payment?.status === "authorized"
-      ? `Payment authorized for this prepared order. Reference: ${payment.providerTransactionReference}.`
+      ? payment.recordError
+        ? payment.recordError
+        : payment.recording
+          ? "Payment received. Saving it to your order..."
+          : `Payment received. Reference: ${payment.providerTransactionReference}.`
       : payment?.status === "processing"
         ? "Authorizing payment for this prepared order..."
         : payment?.status === "failed"
@@ -1096,6 +1110,66 @@ export const DormantFuturePaymentReviewStep = ({
         </>
       )}
 
+      {payment?.status === "confirmed" && preparation?.status === "prepared" ? (
+      <section
+        aria-labelledby="future-order-confirmed-title"
+        data-future-order-v2-confirmed
+        className="min-w-0 rounded-2xl border border-heritage-gold/40 bg-heritage-green p-5 text-white shadow-sm sm:p-6"
+      >
+        <div className="flex min-w-0 items-start gap-3">
+          <CheckCircle2 aria-hidden="true" className="mt-0.5 shrink-0 text-heritage-gold" size={28} />
+          <div className="min-w-0 flex-1">
+            <h2
+              id="future-order-confirmed-title"
+              ref={confirmedHeadingRef}
+              tabIndex={-1}
+              className="font-serif text-2xl font-bold focus:outline-none"
+            >
+              Order confirmed
+            </h2>
+            <p role="status" className="mt-2 text-sm leading-relaxed text-white/85">
+              Thank you. Your payment was received and your order has been saved.
+            </p>
+            <dl className="mt-4 grid min-w-0 gap-3 rounded-xl bg-white/10 p-4 text-sm sm:grid-cols-3">
+              <div className="min-w-0">
+                <dt className="text-[10px] font-bold uppercase tracking-wider text-white/60">Order ID</dt>
+                <dd data-future-order-v2-confirmed-order-id className="mt-1 break-all font-mono font-semibold">
+                  {preparation.orderId}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-[10px] font-bold uppercase tracking-wider text-white/60">Amount paid</dt>
+                <dd data-future-order-v2-confirmed-amount className="mt-1 font-mono text-lg font-bold text-heritage-gold">
+                  {formatFutureOrderV2PaidAmount(payment.amountCents)}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-[10px] font-bold uppercase tracking-wider text-white/60">Payment reference</dt>
+                <dd data-future-order-v2-confirmed-reference className="mt-1 break-all font-mono text-xs">
+                  {payment.providerTransactionReference}
+                </dd>
+              </div>
+            </dl>
+            <p className="mt-4 text-sm font-semibold text-heritage-gold">
+              Test payment: no real money was charged.
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-white/80">
+              What happens next: the atelier reviews your order and measurements, then contacts you about production and delivery. Keep your order ID for reference.
+            </p>
+            {onViewDashboard && (
+              <button
+                type="button"
+                data-future-order-v2-view-dashboard
+                onClick={onViewDashboard}
+                className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green sm:w-auto"
+              >
+                Go to my dashboard
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+      ) : (
       <section
         aria-labelledby="future-payment-unavailable-title"
         className="min-w-0 rounded-2xl border border-heritage-gold/30 bg-heritage-green p-5 text-white shadow-sm sm:p-6"
@@ -1108,7 +1182,7 @@ export const DormantFuturePaymentReviewStep = ({
               className="font-serif text-xl font-bold"
             >
               {paymentIsAuthorized
-                ? "Payment authorized"
+                ? "Payment received"
                 : paymentCanExecute || paymentIsProcessing
                   ? "Payment authorization"
                   : FUTURE_PAYMENT_UNAVAILABLE_MESSAGE}
@@ -1182,6 +1256,21 @@ export const DormantFuturePaymentReviewStep = ({
                 Authorizing payment...
               </button>
             )}
+            {payment?.status === "authorized" &&
+              payment.recordError &&
+              !payment.recording &&
+              onRetryPaymentRecord && (
+                <button
+                  type="button"
+                  data-future-order-v2-retry-record
+                  onClick={onRetryPaymentRecord}
+                  aria-describedby="future-payment-pending-explanation"
+                  className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green sm:w-auto"
+                >
+                  <CheckCircle2 aria-hidden="true" size={14} />
+                  Retry saving
+                </button>
+              )}
             {!preparationIsComplete && (
               <button
                 type="button"
@@ -1196,6 +1285,7 @@ export const DormantFuturePaymentReviewStep = ({
           </div>
         </div>
       </section>
+      )}
 
       <footer className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioBackButton

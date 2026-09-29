@@ -81,6 +81,11 @@ import { Header } from "./components/Header";
 import { MobileMenu } from "./components/MobileMenu";
 import { CartDrawer } from "./components/CartDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { AppVersionBanner } from "./components/AppVersionBanner";
+import {
+  installPreloadErrorReload,
+  startAppVersionMonitoring,
+} from "./utils/appVersionCheck";
 import Footer from "./components/Footer";
 
 
@@ -164,6 +169,15 @@ export default function App() {
   React.useEffect(() => {
     initializeData();
   }, [initializeData]);
+
+  React.useEffect(() => {
+    const stopVersionMonitoring = startAppVersionMonitoring();
+    const removePreloadErrorReload = installPreloadErrorReload();
+    return () => {
+      stopVersionMonitoring();
+      removePreloadErrorReload();
+    };
+  }, []);
 
   // Scroll tracking to save position on active tab
   React.useEffect(() => {
@@ -1381,6 +1395,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-heritage-cream text-heritage-ink flex flex-col justify-between">
+      <AppVersionBanner />
       {/* Toast Notification HUD */}
       {notification && (
         <div className="fixed top-24 right-6 z-50 p-4 rounded-2xl bg-heritage-forest text-white border-2 border-heritage-gold shadow-2xl flex items-center gap-3 animate-fade-in text-xs font-sans max-w-sm select-none">

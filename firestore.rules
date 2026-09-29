@@ -778,6 +778,12 @@ service cloud.firestore {
         && isAdmin();
     }
 
+    match /future_order_v2_payments/{orderId} {
+      // Written only by the record-payment server route after Stripe confirms.
+      allow read: if isAdmin() || ownsExistingDocument();
+      allow write: if false;
+    }
+
     match /businessSettings/{document=**} {
       allow read: if true;
       allow write: if isAdmin();

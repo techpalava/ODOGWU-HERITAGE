@@ -193,6 +193,72 @@ assert.equal(
   "the card field stays hidden until the order ID is prepared",
 );
 
+const preparedPresentation = {
+  status: "prepared" as const,
+  cartItemId: "future-cart-confirmed",
+  orderId: "future-order-confirmed",
+};
+const confirmedMarkup = renderToStaticMarkup(
+  <DormantFuturePaymentReviewStep
+    result={createFutureOrderV2PaymentReviewHandoff(candidate, preparedPresentation, {
+      status: "confirmed",
+      paymentReference: "future-v2-payment-future-order-confirmed",
+      providerTransactionReference: "pi_test_confirmed_123",
+      amountCents: 30000,
+      recordedAt: "2026-09-29T10:00:00.000Z",
+    })}
+    onBack={() => undefined}
+    onEditStage={() => undefined}
+    onPrepareOrder={() => undefined}
+    onExecutePayment={() => undefined}
+    onViewDashboard={() => undefined}
+  />,
+);
+for (const expected of [
+  "Order confirmed",
+  "future-order-confirmed",
+  "€300.00",
+  "pi_test_confirmed_123",
+  "Test payment: no real money was charged.",
+  "What happens next",
+  "Go to my dashboard",
+]) {
+  assert.ok(confirmedMarkup.includes(expected), `Missing confirmed text: ${expected}`);
+}
+for (const hidden of [
+  "data-future-order-v2-card",
+  "data-future-order-v2-payment",
+  "Payment integration pending",
+  "data-future-order-v2-retry-record",
+]) {
+  assert.equal(confirmedMarkup.includes(hidden), false, `Confirmed order must hide: ${hidden}`);
+}
+
+const saveFailedMarkup = renderToStaticMarkup(
+  <DormantFuturePaymentReviewStep
+    result={createFutureOrderV2PaymentReviewHandoff(candidate, preparedPresentation, {
+      status: "authorized",
+      paymentReference: "future-v2-payment-future-order-confirmed",
+      providerTransactionReference: "pi_test_confirmed_123",
+      recordError: "Payment received, but saving it to your order failed.",
+    })}
+    onBack={() => undefined}
+    onEditStage={() => undefined}
+    onPrepareOrder={() => undefined}
+    onExecutePayment={() => undefined}
+    onRetryPaymentRecord={() => undefined}
+  />,
+);
+assert.ok(saveFailedMarkup.includes("Payment received"));
+assert.ok(saveFailedMarkup.includes("saving it to your order failed"));
+assert.ok(saveFailedMarkup.includes("data-future-order-v2-retry-record"));
+assert.equal(saveFailedMarkup.includes("Order confirmed"), false);
+assert.equal(
+  saveFailedMarkup.includes("data-future-order-v2-card"),
+  false,
+  "A received payment is never offered for a second charge",
+);
+
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const paymentReviewHandlerSource = studioSource.slice(
   studioSource.indexOf("const handleOpenDormantPaymentReviewStage"),

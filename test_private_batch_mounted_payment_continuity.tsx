@@ -353,7 +353,7 @@ assert.equal(root().props["data-private-batch-authorization"], "invalid");
 assert.throws(
   () =>
     studio.root.find((node) =>
-      node.children.some((child) => child === "Payment authorized"),
+      node.children.some((child) => child === "Payment received" || child === "Order confirmed"),
     ),
   /No instances found/,
   "A revoked prepared payment must not publish authorization.",
@@ -413,7 +413,7 @@ assert.equal(providerCalls, 1, "Only the authorized pending-payment control call
 assert.throws(
   () =>
     studio.root.find((node) =>
-      node.children.some((child) => child === "Payment authorized"),
+      node.children.some((child) => child === "Payment received" || child === "Order confirmed"),
     ),
   /No instances found/,
   "A stale provider completion must never publish payment authorization.",
