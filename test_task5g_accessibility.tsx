@@ -94,7 +94,7 @@ assert.equal(retry.props["aria-describedby"], status().props.id);
 act(() => retry.props.onClick());
 assert.equal(paymentCalls, 1);
 renderPayment(prepared, { status: "authorized", paymentReference: "stable-reference", providerTransactionReference: "provider-" + "r".repeat(180) });
-assert.match(text(status()), /Payment authorized/);
+assert.match(text(status()), /Payment received/);
 assert.equal(tree.root.findAllByProps({ "data-future-order-v2-payment": true }).length, 0);
 assert.ok(text(tree.root).includes(order.orderId), "Long order IDs remain discoverable in full");
 assert.ok(text(tree.root).includes(longName), "Long submitted names are not truncated");

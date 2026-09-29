@@ -18,6 +18,8 @@ import {
   handleFutureOrderV2StripeConfig,
   handleFutureOrderV2StripePayment,
 } from "./src/server/futureOrderV2StripePayment";
+import { handleFutureOrderV2PaymentRecord } from "./src/server/futureOrderV2PaymentRecord";
+import { handleAppVersion } from "./src/server/appVersion";
 import {
   handleCreatePrivateBatchInvite,
   handleRedeemPrivateBatchInvite,
@@ -72,6 +74,10 @@ app.get("/api/future-order-v2/stripe-config", (req, res) =>
 app.post("/api/future-order-v2/payment-intent", (req, res) =>
   handleFutureOrderV2StripePayment(req, res),
 );
+app.post("/api/future-order-v2/record-payment", (req, res) =>
+  handleFutureOrderV2PaymentRecord(req, res),
+);
+app.get("/api/version", (req, res) => handleAppVersion(req, res));
 app.post("/api/private-batches/create-invite", handleCreatePrivateBatchInvite);
 app.post("/api/private-batches/redeem-invite", handleRedeemPrivateBatchInvite);
 app.post("/api/private-batches/revoke-invite", handleRevokePrivateBatchInvite);

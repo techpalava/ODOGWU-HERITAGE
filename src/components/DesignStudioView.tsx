@@ -325,6 +325,8 @@ import {
   validatePreparedFutureOrderV2PaymentEligibility,
   type FutureOrderV2PaymentAttempt,
 } from "../utils/futureOrderV2Payment";
+import { recordFutureOrderV2Payment } from "../services/futureOrderV2PaymentRecordClient";
+import { ensureCurrentAppVersion } from "../utils/appVersionCheck";
 import {
   persistFutureOrderV2,
   type PrivateBatchPersistenceCapability,
@@ -446,6 +448,7 @@ export interface DesignStudioViewProps {
     buildCurrentCandidate?: () => FutureOrderCandidateV2BuildResult;
     persist?: typeof persistFutureOrderV2;
     authorizePayment?: typeof authorizeFutureOrderV2Payment;
+    recordPayment?: typeof recordFutureOrderV2Payment;
     onActions?: (actions: {
       seedPaymentReview: (handoff: FutureOrderV2PaymentReviewHandoff) => void;
       prepare: () => Promise<void>;
@@ -716,6 +719,7 @@ export default function DesignStudioView({
   const futureOrderV2PaymentAttemptRef =
     useRef<FutureOrderV2PaymentAttempt | null>(null);
   const futureOrderV2PaymentInFlightRef = useRef(false);
+  const futureOrderV2PaymentRecordInFlightRef = useRef(false);
   const [futurePaymentReviewTransitionBlockers, setFuturePaymentReviewTransitionBlockers] =
     useState<readonly FutureOrderCandidateBlocker[]>([]);
   const futureDesignStyleMutationAuthorityRef =
@@ -6568,6 +6572,8 @@ export default function DesignStudioView({
   };
   const handlePrepareFutureOrderV2 = async () => {
     if (futureOrderV2PreparationInFlightRef.current) return;
+    if (!(await ensureCurrentAppVersion())) return;
+    if (futureOrderV2PreparationInFlightRef.current) return;
     const capturedPrivateAuthorization = capturePrivateAuthorization();
     if (!isCurrentPrivateAuthorization(capturedPrivateAuthorization)) return;
     const reviewed = futurePaymentReviewHandoff?.candidate;
@@ -6755,10 +6761,13 @@ export default function DesignStudioView({
       !prepared ||
       reviewed.preparation.orderId !== prepared.orderId ||
       reviewed.preparation.cartItemId !== prepared.cartItemId ||
-      reviewed.payment.status === "authorized"
+      reviewed.payment.status === "authorized" ||
+      reviewed.payment.status === "confirmed"
     ) {
       return;
     }
+    if (!(await ensureCurrentAppVersion())) return;
+    if (futureOrderV2PaymentInFlightRef.current) return;
     const preparedGroupIdentity = isGroupRoleOrderIdentity(
       reviewed.candidate.orderIdentity,
     )
@@ -6833,23 +6842,105 @@ export default function DesignStudioView({
       return;
     }
     futureOrderV2PaymentAttemptRef.current = outcome.attempt;
+    if (outcome.status === "authorized") {
+      await recordFutureOrderV2PaymentForHandoff({
+        candidate: reviewed.candidate,
+        preparation: reviewed.preparation,
+        paymentReference: outcome.attempt.paymentReference,
+        providerTransactionReference: outcome.providerTransactionReference,
+      });
+      return;
+    }
     setFuturePaymentReviewHandoff(
       createFutureOrderV2PaymentReviewHandoff(
         reviewed.candidate,
         reviewed.preparation,
-        outcome.status === "authorized"
-          ? {
-              status: "authorized",
-              paymentReference: outcome.attempt.paymentReference,
-              providerTransactionReference: outcome.providerTransactionReference,
-            }
-          : {
-              status: "failed",
-              paymentReference: outcome.attempt.paymentReference,
-              message: outcome.message,
-            },
+        {
+          status: "failed",
+          paymentReference: outcome.attempt.paymentReference,
+          message: outcome.message,
+        },
       ),
     );
+  };
+  const recordFutureOrderV2PaymentForHandoff = async ({
+    candidate,
+    preparation,
+    paymentReference,
+    providerTransactionReference,
+  }: {
+    candidate: FutureOrderV2PaymentReviewHandoff["candidate"];
+    preparation: Extract<
+      FutureOrderV2PaymentReviewHandoff["preparation"],
+      { status: "prepared" }
+    >;
+    paymentReference: string;
+    providerTransactionReference: string;
+  }) => {
+    if (futureOrderV2PaymentRecordInFlightRef.current) return;
+    futureOrderV2PaymentRecordInFlightRef.current = true;
+    setFuturePaymentReviewHandoff(
+      createFutureOrderV2PaymentReviewHandoff(candidate, preparation, {
+        status: "authorized",
+        paymentReference,
+        providerTransactionReference,
+        recording: true,
+      }),
+    );
+    const recordPayment =
+      futureOrderV2TestHooks?.recordPayment ?? recordFutureOrderV2Payment;
+    const result = await recordPayment({
+      orderId: preparation.orderId,
+      paymentIntentId: providerTransactionReference,
+    });
+    futureOrderV2PaymentRecordInFlightRef.current = false;
+    setFuturePaymentReviewHandoff((current) => {
+      if (
+        !current ||
+        current.preparation.status !== "prepared" ||
+        current.preparation.orderId !== preparation.orderId ||
+        current.payment.status !== "authorized" ||
+        current.payment.providerTransactionReference !==
+          providerTransactionReference
+      ) {
+        return current;
+      }
+      return createFutureOrderV2PaymentReviewHandoff(
+        current.candidate,
+        current.preparation,
+        result.status === "recorded"
+          ? {
+              status: "confirmed",
+              paymentReference,
+              providerTransactionReference,
+              amountCents: result.record.amountCents,
+              recordedAt: result.record.recordedAt,
+            }
+          : {
+              status: "authorized",
+              paymentReference,
+              providerTransactionReference,
+              recordError: result.message,
+            },
+      );
+    });
+  };
+  const handleRetryFutureOrderV2PaymentRecord = async () => {
+    const reviewed = futurePaymentReviewHandoff;
+    if (
+      !reviewed ||
+      reviewed.preparation.status !== "prepared" ||
+      reviewed.payment.status !== "authorized" ||
+      reviewed.payment.recording
+    ) {
+      return;
+    }
+    await recordFutureOrderV2PaymentForHandoff({
+      candidate: reviewed.candidate,
+      preparation: reviewed.preparation,
+      paymentReference: reviewed.payment.paymentReference,
+      providerTransactionReference: reviewed.payment.providerTransactionReference,
+    });
   };
   useEffect(() => {
     futureOrderV2TestHooks?.onActions?.({
@@ -8941,6 +9032,8 @@ export default function DesignStudioView({
             onEditStage={(stage) => navigateToFutureStage(stage)}
             onPrepareOrder={handlePrepareFutureOrderV2}
             onExecutePayment={handleExecuteFutureOrderV2Payment}
+            onRetryPaymentRecord={handleRetryFutureOrderV2PaymentRecord}
+            onViewDashboard={() => useAppStore.getState().setActiveTab("dashboard")}
           />
         ) : null
       ) : null}

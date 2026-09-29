@@ -36,6 +36,10 @@ assert.match(
 );
 assert.match(
   rules,
+  /match \/future_order_v2_payments\/\{orderId\} \{[\s\S]*?allow read: if isAdmin\(\) \|\| ownsExistingDocument\(\);[\s\S]*?allow write: if false;/,
+);
+assert.match(
+  rules,
   /request\.auth\.token\.firebase\.sign_in_provider != "anonymous"/,
 );
 assert.match(rules, /request\.auth\.token\.admin == true/);

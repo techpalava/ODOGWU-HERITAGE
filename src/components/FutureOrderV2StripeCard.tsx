@@ -68,20 +68,33 @@ export const FutureOrderV2StripeCard = ({
         const result = await stripe.confirmCardPayment(clientSecret, {
           payment_method: { card: card! },
         });
+        // A retry of an already-paid order reuses the same PaymentIntent, which
+        // Stripe reports as an unexpected-state error carrying the succeeded intent.
+        const paymentIntent =
+          result.paymentIntent ?? result.error?.payment_intent ?? null;
+        const paymentIntentId = paymentIntent?.id || "";
+        if (paymentIntent?.status === "succeeded" && paymentIntentId.startsWith("pi_")) {
+          return { status: "confirmed", paymentIntentId };
+        }
         if (result.error) {
           return {
             status: "failed",
             message: result.error.message || "The card was not confirmed.",
           };
         }
-        const paymentIntentId = result.paymentIntent?.id || "";
         if (!paymentIntentId.startsWith("pi_")) {
           return {
             status: "failed",
             message: "Stripe did not return a payment reference.",
           };
         }
-        return { status: "confirmed", paymentIntentId };
+        return {
+          status: "failed",
+          message:
+            paymentIntent?.status === "processing"
+              ? "The card payment is still processing. Retry this same order in a moment."
+              : "The card payment was not completed. Retry this same order.",
+        };
       });
     };
 

@@ -61,6 +61,15 @@ export type FutureOrderV2PaymentPresentation =
       readonly status: "authorized";
       readonly paymentReference: string;
       readonly providerTransactionReference: string;
+      readonly recording?: boolean;
+      readonly recordError?: string;
+    }
+  | {
+      readonly status: "confirmed";
+      readonly paymentReference: string;
+      readonly providerTransactionReference: string;
+      readonly amountCents: number;
+      readonly recordedAt: string;
     };
 
 export interface FutureOrderV2PaymentReviewHandoff {

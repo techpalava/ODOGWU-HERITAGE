@@ -13,6 +13,8 @@ import futureOrderV2HistoryHandler from "./api/orders/lookup-future-order-v2-his
 import uploadedDesignDraftTransferHandler from "./api/design-studio/transfer-uploaded-design-draft.js";
 import futureOrderV2PaymentIntentHandler from "./api/future-order-v2/payment-intent.js";
 import futureOrderV2StripeConfigHandler from "./api/future-order-v2/stripe-config.js";
+import futureOrderV2RecordPaymentHandler from "./api/future-order-v2/record-payment.js";
+import appVersionHandler from "./api/version.js";
 import type {
   HttpRequest,
   HttpResponse,
@@ -128,6 +130,8 @@ async function run() {
     "./api/orders/lookup-future-order-v2-history.ts",
     "./api/future-order-v2/payment-intent.ts",
     "./api/future-order-v2/stripe-config.ts",
+    "./api/future-order-v2/record-payment.ts",
+    "./api/version.ts",
   ]);
 
   assert.equal(typeof healthHandler, "function");
@@ -141,6 +145,28 @@ async function run() {
   assert.equal(typeof uploadedDesignDraftTransferHandler, "function");
   assert.equal(typeof futureOrderV2PaymentIntentHandler, "function");
   assert.equal(typeof futureOrderV2StripeConfigHandler, "function");
+  assert.equal(typeof futureOrderV2RecordPaymentHandler, "function");
+  assert.equal(typeof appVersionHandler, "function");
+
+  const version = createResponse();
+  await appVersionHandler(request("GET"), version.response);
+  assert.equal(version.state.status, 200);
+  assert.equal(
+    typeof (version.state.body as { buildId?: unknown }).buildId,
+    "string",
+  );
+  assert.equal(version.state.headers["cache-control"], "no-store");
+
+  const recordPayment = createResponse();
+  await futureOrderV2RecordPaymentHandler(
+    request("POST", { body: {} }),
+    recordPayment.response,
+  );
+  assert.equal(recordPayment.state.status, 401);
+  assert.deepEqual(recordPayment.state.body, {
+    error: "Firebase authentication is required.",
+    code: "AUTH_REQUIRED",
+  });
 
   const health = createResponse();
   await healthHandler(request("GET"), health.response);
