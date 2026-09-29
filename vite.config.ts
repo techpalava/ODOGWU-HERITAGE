@@ -9,6 +9,12 @@ const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig(({isSsrBuild}) => {
   return {
     plugins: [react(), tailwindcss()],
+    define: {
+      // Must match readServerBuildId() in src/server/appVersion.ts.
+      __APP_BUILD_ID__: JSON.stringify(
+        (process.env.VERCEL_GIT_COMMIT_SHA || '').trim() || 'dev',
+      ),
+    },
     build: isSsrBuild
       ? {
           emptyOutDir: false,

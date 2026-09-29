@@ -120,6 +120,12 @@ import { DesignStyleDecorativePriceOverrides } from "./DesignStyleDecorativePric
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 import { db } from "../services/firebase";
+import {
+  FUTURE_ORDER_V2_PAYMENT_COLLECTION,
+  formatFutureOrderV2PaidAmount,
+  parseFutureOrderV2PaymentRecord,
+  type FutureOrderV2PaymentRecord,
+} from "../utils/futureOrderV2PaymentRecord";
 import { BatchManagementPanel } from "./BatchManagementPanel";
 import {
   getFabricGarmentLabel,
@@ -199,6 +205,27 @@ export default function DatabaseView({
     setActiveTab(initialTab);
     onInitialTabApplied?.();
   }, [initialTab, onInitialTabApplied]);
+  const [futureOrderV2PaymentsByOrderId, setFutureOrderV2PaymentsByOrderId] =
+    useState<ReadonlyMap<string, FutureOrderV2PaymentRecord>>(new Map());
+  useEffect(() => {
+    if (activeTab !== "orders") return;
+    return onSnapshot(
+      collection(db, FUTURE_ORDER_V2_PAYMENT_COLLECTION),
+      (snapshot) => {
+        const records = new Map<string, FutureOrderV2PaymentRecord>();
+        snapshot.docs.forEach((paymentDoc) => {
+          const record = parseFutureOrderV2PaymentRecord(paymentDoc.data());
+          if (record && record.orderId === paymentDoc.id) {
+            records.set(record.orderId, record);
+          }
+        });
+        setFutureOrderV2PaymentsByOrderId(records);
+      },
+      (error) => {
+        console.error("Error subscribing to V2 order payments:", error);
+      },
+    );
+  }, [activeTab]);
   const [settingsSubTab, setSettingsSubTab] = useState<
     "rules" | "discounts" | "pricing_engine"
   >("rules");
@@ -5378,7 +5405,20 @@ export default function DatabaseView({
                                     </span>
                                   </td>
                                   <td className="px-4 py-3 text-[10px] font-mono">
-                                    {history.paymentStatus.replaceAll("_", " ")}
+                                    {futureOrderV2PaymentsByOrderId.has(history.orderId) ? (
+                                      <span
+                                        data-future-order-v2-paid={history.orderId}
+                                        className="font-semibold text-heritage-green"
+                                        title={futureOrderV2PaymentsByOrderId.get(history.orderId)!.paymentIntentId}
+                                      >
+                                        Paid (test){" "}
+                                        {formatFutureOrderV2PaidAmount(
+                                          futureOrderV2PaymentsByOrderId.get(history.orderId)!.amountCents,
+                                        )}
+                                      </span>
+                                    ) : (
+                                      history.paymentStatus.replaceAll("_", " ")
+                                    )}
                                   </td>
                                   <td className="px-4 py-3 text-[10px] font-mono text-heritage-gold">
                                     Immutable snapshot
