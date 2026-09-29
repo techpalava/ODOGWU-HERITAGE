@@ -1,4 +1,4 @@
-export const APP_VERSION_ENDPOINT = "/api/version" as const;
+export const APP_VERSION_ENDPOINT = "/api/health" as const;
 export const APP_VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 export const APP_OUTDATED_MESSAGE = "A newer version is live. Reload to continue.";
 

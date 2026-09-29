@@ -6,7 +6,8 @@ import {
   readClientBuildId,
   shouldReloadAfterPreloadError,
 } from "./src/utils/appVersionCheck";
-import { handleAppVersion, readServerBuildId } from "./src/server/appVersion";
+import { handleHealth, readServerBuildId } from "./src/server/appVersion";
+import { APP_VERSION_ENDPOINT } from "./src/utils/appVersionCheck";
 import type { HttpResponse } from "./src/server/httpTypes";
 
 // Outside a Vite build the client reports the development build.
@@ -107,13 +108,17 @@ assert.equal(shouldReloadAfterPreloadError({ lastReloadAt: 1_000, now: 60_000 })
       return body;
     },
   };
-  handleAppVersion({ method: "GET", headers: {} }, res);
+  handleHealth({ method: "GET", headers: {} }, res);
   assert.equal(state.statusCode, 200);
-  assert.deepEqual(state.body, { buildId: "abc123" });
+  assert.deepEqual(state.body, { status: "ok", buildId: "abc123" });
   assert.equal(state.cache, "no-store");
   if (previous === undefined) delete process.env.VERCEL_GIT_COMMIT_SHA;
   else process.env.VERCEL_GIT_COMMIT_SHA = previous;
 }
+
+// The existing health function reports the build, keeping the Vercel function count unchanged.
+assert.equal(APP_VERSION_ENDPOINT, "/api/health");
+assert.match(readFileSync("api/health.ts", "utf8"), /handleHealth as default/);
 
 // The client build ID and the server build ID come from the same variable.
 const viteConfig = readFileSync("vite.config.ts", "utf8");

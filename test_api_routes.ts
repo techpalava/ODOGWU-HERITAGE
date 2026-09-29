@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import ts from "typescript";
 import healthHandler from "./api/health.js";
@@ -14,7 +14,6 @@ import uploadedDesignDraftTransferHandler from "./api/design-studio/transfer-upl
 import futureOrderV2PaymentIntentHandler from "./api/future-order-v2/payment-intent.js";
 import futureOrderV2StripeConfigHandler from "./api/future-order-v2/stripe-config.js";
 import futureOrderV2RecordPaymentHandler from "./api/future-order-v2/record-payment.js";
-import appVersionHandler from "./api/version.js";
 import type {
   HttpRequest,
   HttpResponse,
@@ -131,8 +130,24 @@ async function run() {
     "./api/future-order-v2/payment-intent.ts",
     "./api/future-order-v2/stripe-config.ts",
     "./api/future-order-v2/record-payment.ts",
-    "./api/version.ts",
   ]);
+
+  // Vercel Hobby deployments fail outright above 12 serverless functions.
+  const countFunctions = (directory: string): number =>
+    readdirSync(directory, { withFileTypes: true }).reduce(
+      (total, entry) =>
+        total +
+        (entry.isDirectory()
+          ? countFunctions(resolve(directory, entry.name))
+          : entry.name.endsWith(".ts")
+            ? 1
+            : 0),
+      0,
+    );
+  assert.ok(
+    countFunctions("./api") <= 12,
+    "Vercel Hobby allows at most 12 serverless functions under api/.",
+  );
 
   assert.equal(typeof healthHandler, "function");
   assert.equal(typeof bootstrapHandler, "function");
@@ -146,17 +161,6 @@ async function run() {
   assert.equal(typeof futureOrderV2PaymentIntentHandler, "function");
   assert.equal(typeof futureOrderV2StripeConfigHandler, "function");
   assert.equal(typeof futureOrderV2RecordPaymentHandler, "function");
-  assert.equal(typeof appVersionHandler, "function");
-
-  const version = createResponse();
-  await appVersionHandler(request("GET"), version.response);
-  assert.equal(version.state.status, 200);
-  assert.equal(
-    typeof (version.state.body as { buildId?: unknown }).buildId,
-    "string",
-  );
-  assert.equal(version.state.headers["cache-control"], "no-store");
-
   const recordPayment = createResponse();
   await futureOrderV2RecordPaymentHandler(
     request("POST", { body: {} }),
@@ -171,7 +175,10 @@ async function run() {
   const health = createResponse();
   await healthHandler(request("GET"), health.response);
   assert.equal(health.state.status, 200);
-  assert.deepEqual(health.state.body, { status: "ok" });
+  assert.deepEqual(health.state.body, {
+    status: "ok",
+    buildId: (process.env.VERCEL_GIT_COMMIT_SHA ?? "").trim() || "dev",
+  });
   assert.equal(health.state.headers["cache-control"], "no-store");
 
   const bootstrap = createResponse();

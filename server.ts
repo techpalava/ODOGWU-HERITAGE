@@ -19,7 +19,7 @@ import {
   handleFutureOrderV2StripePayment,
 } from "./src/server/futureOrderV2StripePayment";
 import { handleFutureOrderV2PaymentRecord } from "./src/server/futureOrderV2PaymentRecord";
-import { handleAppVersion } from "./src/server/appVersion";
+import { handleHealth } from "./src/server/appVersion";
 import {
   handleCreatePrivateBatchInvite,
   handleRedeemPrivateBatchInvite,
@@ -77,7 +77,6 @@ app.post("/api/future-order-v2/payment-intent", (req, res) =>
 app.post("/api/future-order-v2/record-payment", (req, res) =>
   handleFutureOrderV2PaymentRecord(req, res),
 );
-app.get("/api/version", (req, res) => handleAppVersion(req, res));
 app.post("/api/private-batches/create-invite", handleCreatePrivateBatchInvite);
 app.post("/api/private-batches/redeem-invite", handleRedeemPrivateBatchInvite);
 app.post("/api/private-batches/revoke-invite", handleRevokePrivateBatchInvite);
@@ -318,9 +317,7 @@ app.post("/api/charge-balance", async (req, res) => {
 });
 
 // API health endpoint
-app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
-});
+app.get("/api/health", (req, res) => handleHealth(req, res));
 
 // API route for exporting workshop production manifest as CSV
 app.post("/api/production-manifest", (req, res) => {
