@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { MasterOrder, HistoricalOrder, CustomGroup, OrderContext, Batch } from "../types";
 import { CustomerJourneyEngine } from "../engine/CustomerJourneyEngine";
@@ -7,6 +7,9 @@ import { Edit2, Users, User, Share2, Trash2, CheckCircle2, FileText, Check, Shie
 import { useAppStore } from "../store/useAppStore";
 import { BatchBusinessRules } from "../engine/BatchBusinessRules";
 import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
+import { StorageService } from "../services/storageService";
+import type { FutureOrderV2PaymentRecord } from "../utils/futureOrderV2PaymentRecord";
+import { CustomerFutureOrderV2List } from "./CustomerFutureOrderV2List";
 
 interface DashboardViewProps {
   masterOrder: MasterOrder | null;
@@ -56,6 +59,12 @@ export default function DashboardView({
   });
 
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
+  const [futureOrderV2PaymentsByOrderId, setFutureOrderV2PaymentsByOrderId] =
+    useState<ReadonlyMap<string, FutureOrderV2PaymentRecord>>(new Map());
+  useEffect(
+    () => StorageService.subscribeToCustomerFutureOrderV2Payments(setFutureOrderV2PaymentsByOrderId),
+    [currentUser?.email],
+  );
   const { businessSettings } = useAppStore();
   const profileName = currentUser?.name || "Guest";
   const profileEmail = currentUser?.email || "guest@example.com";
@@ -126,7 +135,11 @@ export default function DashboardView({
               ORDER WORKSPACE 
              ============================================================== */}
           <div className="space-y-8">
-            
+            <CustomerFutureOrderV2List
+              orders={activeOrders}
+              paymentsByOrderId={futureOrderV2PaymentsByOrderId}
+            />
+
             {/* 1. MY DRAFT DESIGNS */}
             {workspace.drafts.length > 0 && (
               <section className="rounded-3xl border border-heritage-gold/15 bg-white p-6 sm:p-8 shadow-sm space-y-4">
