@@ -274,7 +274,7 @@ await act(async () => {
   await Promise.resolve();
   await Promise.resolve();
 });
-const root = () => studio.root.findByProps({ id: "design-studio-nine-stage-journey" });
+const root = () => studio.root.findByProps({ id: "design-studio-ten-stage-journey" });
 assert.equal(root().props["data-private-batch-authorization"], "authorized");
 assert.ok(actions, "Mounted Studio must expose the actual preparation/payment handlers.");
 

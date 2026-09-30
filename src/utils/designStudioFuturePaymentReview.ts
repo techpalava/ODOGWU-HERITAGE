@@ -36,6 +36,11 @@ export const FUTURE_ORDER_V2_PAYMENT_ACTIVATION_PENDING_MESSAGE =
   "Your order has been prepared. Payment activation is still unavailable.";
 export const FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE =
   "Your prepared order is ready for payment authorization.";
+export const FUTURE_ORDER_V2_PAY_HEADING = "Payment";
+export const FUTURE_ORDER_V2_PAY_READY_MESSAGE =
+  "Enter your card details and pay to place your order.";
+export const FUTURE_ORDER_V2_SIGN_IN_TO_PAY_MESSAGE =
+  "Sign in to pay for this order.";
 
 export type FuturePaymentReviewCandidate =
   | FutureOrderCandidateV1

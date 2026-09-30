@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { DormantFuturePaymentReviewStep } from "./src/components/DormantFuturePaymentReviewStep";
 import {
   createFutureOrderV2PaymentReviewHandoff,
-  FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE,
+  FUTURE_ORDER_V2_PAY_READY_MESSAGE,
 } from "./src/utils/designStudioFuturePaymentReview";
 import {
   createFutureOrderV2PaymentAttempt,
@@ -156,16 +156,21 @@ const markup = renderToStaticMarkup(
     result: handoff,
     onBack: () => undefined,
     onEditStage: () => undefined,
-    onPrepareOrder: () => undefined,
-    onExecutePayment: () => undefined,
+    onPay: () => undefined,
   }),
 );
-assert.ok(markup.includes(FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE));
-assert.ok(markup.includes(`Order prepared with ID ${prepared.orderId}.`));
+assert.ok(markup.includes(FUTURE_ORDER_V2_PAY_READY_MESSAGE));
 assert.ok(markup.includes("data-future-order-v2-card"));
-assert.equal(markup.includes("Payment integration pending"), false);
-assert.ok(markup.includes("Authorize payment"));
-assert.ok(markup.includes("data-future-order-v2-payment"));
+assert.equal((markup.match(/data-future-order-v2-pay="true"/g) || []).length, 1);
+assert.match(markup, /Pay €\d+\.\d{2}/);
+for (const removed of [
+  "Payment integration pending",
+  "Authorize payment",
+  "Prepare order for future payment",
+  "Order prepared with ID",
+]) {
+  assert.equal(markup.includes(removed), false, `Removed payment wording returned: ${removed}`);
+}
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 assert.match(studioSource, /handleExecuteFutureOrderV2Payment/);
