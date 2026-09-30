@@ -10,6 +10,14 @@ import { BATCH_MINIMUM_GARMENTS } from "../utils/shippingPricing";
 import { StorageService } from "../services/storageService";
 import type { FutureOrderV2PaymentRecord } from "../utils/futureOrderV2PaymentRecord";
 import { CustomerFutureOrderV2List } from "./CustomerFutureOrderV2List";
+import { authorizeFutureOrderV2Payment } from "../utils/futureOrderV2Payment";
+import { recordFutureOrderV2Payment } from "../services/futureOrderV2PaymentRecordClient";
+import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
+
+const futureOrderV2DashboardPaymentActions: FutureOrderV2DashboardPaymentActions = {
+  authorize: authorizeFutureOrderV2Payment,
+  record: recordFutureOrderV2Payment,
+};
 
 interface DashboardViewProps {
   masterOrder: MasterOrder | null;
@@ -138,6 +146,7 @@ export default function DashboardView({
             <CustomerFutureOrderV2List
               orders={activeOrders}
               paymentsByOrderId={futureOrderV2PaymentsByOrderId}
+              paymentActions={futureOrderV2DashboardPaymentActions}
             />
 
             {/* 1. MY DRAFT DESIGNS */}

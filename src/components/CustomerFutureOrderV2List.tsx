@@ -13,6 +13,7 @@ import {
   formatFutureOrderV2PaidAmount,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
+import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
 import {
   CustomerFutureOrderV2Details,
   formatCustomerOrderDate,
@@ -21,6 +22,7 @@ import {
 interface CustomerFutureOrderV2ListProps {
   orders: readonly unknown[];
   paymentsByOrderId: ReadonlyMap<string, FutureOrderV2PaymentRecord>;
+  paymentActions?: FutureOrderV2DashboardPaymentActions;
 }
 
 interface CustomerFutureOrderV2Entry {
@@ -31,6 +33,7 @@ interface CustomerFutureOrderV2Entry {
 export const CustomerFutureOrderV2List = ({
   orders,
   paymentsByOrderId,
+  paymentActions,
 }: CustomerFutureOrderV2ListProps) => {
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   const entries = orders
@@ -114,14 +117,26 @@ export const CustomerFutureOrderV2List = ({
                 ) : (
                   <span />
                 )}
-                <button
-                  type="button"
-                  data-customer-v2-order-details={order.orderId}
-                  onClick={() => setOpenOrderId(order.orderId)}
-                  className="rounded-lg border border-heritage-green/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white cursor-pointer"
-                >
-                  View details
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  {!payment && paymentActions && order.exactTotalCents !== null && (
+                    <button
+                      type="button"
+                      data-customer-v2-order-pay-now={order.orderId}
+                      onClick={() => setOpenOrderId(order.orderId)}
+                      className="rounded-lg bg-heritage-gold px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white cursor-pointer"
+                    >
+                      Pay now
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    data-customer-v2-order-details={order.orderId}
+                    onClick={() => setOpenOrderId(order.orderId)}
+                    className="rounded-lg border border-heritage-green/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white cursor-pointer"
+                  >
+                    View details
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -132,6 +147,7 @@ export const CustomerFutureOrderV2List = ({
           order={openEntry.persisted}
           payment={paymentsByOrderId.get(openEntry.persisted.orderId)}
           onClose={() => setOpenOrderId(null)}
+          paymentActions={paymentActions}
         />
       )}
     </section>

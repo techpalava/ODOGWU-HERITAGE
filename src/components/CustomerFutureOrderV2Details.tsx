@@ -1,6 +1,13 @@
-import { useEffect, useRef, type ReactNode } from "react";
-import { FileText, Printer, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { FileText, LockKeyhole, Printer, X } from "lucide-react";
+import { FutureOrderV2StripeCard } from "./FutureOrderV2StripeCard";
 import type { PersistedFutureOrderV2 } from "../utils/futureOrderV2PersistenceContract";
+import {
+  payFutureOrderV2FromDashboard,
+  retryFutureOrderV2DashboardRecord,
+  type FutureOrderV2DashboardPaymentActions,
+  type FutureOrderV2DashboardPaymentOutcome,
+} from "../utils/futureOrderV2DashboardPayment";
 import {
   formatFutureOrderV2PaidAmount,
   type FutureOrderV2PaymentRecord,
@@ -15,7 +22,10 @@ interface CustomerFutureOrderV2DetailsProps {
   order: PersistedFutureOrderV2;
   payment: FutureOrderV2PaymentRecord | undefined;
   onClose: () => void;
+  paymentActions?: FutureOrderV2DashboardPaymentActions;
 }
+
+type DashboardPayPhase = "idle" | "processing" | "recording";
 
 export const formatCustomerOrderDate = (value: string): string => {
   const date = new Date(value);
@@ -33,9 +43,18 @@ const DetailsSection = ({ title, children }: { title: string; children: ReactNod
 
 export const CustomerFutureOrderV2Details = ({
   order,
-  payment,
+  payment: subscribedPayment,
   onClose,
+  paymentActions,
 }: CustomerFutureOrderV2DetailsProps) => {
+  const [localPayment, setLocalPayment] = useState<FutureOrderV2PaymentRecord | null>(null);
+  const [payPhase, setPayPhase] = useState<DashboardPayPhase>("idle");
+  const [payOutcome, setPayOutcome] = useState<
+    Exclude<FutureOrderV2DashboardPaymentOutcome, { status: "paid" }> | null
+  >(null);
+  const [cardReady, setCardReady] = useState(false);
+  const payInFlightRef = useRef(false);
+  const payment = subscribedPayment ?? localPayment ?? undefined;
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -63,6 +82,57 @@ export const CustomerFutureOrderV2Details = ({
   const address = customer.deliveryAddress;
   const isDelivery = shipping.fulfilmentMethod === "destination_delivery";
   const headingId = `customer-v2-order-details-${order.orderId}`;
+  const totalCents = candidate.pricing.exactTotalCents;
+  const canPay = !payment && Boolean(paymentActions) && totalCents !== null;
+  const payBusy = payPhase !== "idle";
+
+  const runPayment = async (
+    pay: (actions: FutureOrderV2DashboardPaymentActions) => Promise<FutureOrderV2DashboardPaymentOutcome>,
+  ) => {
+    if (!paymentActions || payInFlightRef.current) return;
+    payInFlightRef.current = true;
+    setPayOutcome(null);
+    setPayPhase("processing");
+    try {
+      const outcome = await pay({
+        authorize: paymentActions.authorize,
+        record: (input) => {
+          setPayPhase("recording");
+          return paymentActions.record(input);
+        },
+      });
+      if (outcome.status === "paid") setLocalPayment(outcome.record);
+      else setPayOutcome(outcome);
+    } finally {
+      payInFlightRef.current = false;
+      setPayPhase("idle");
+    }
+  };
+  const handlePay = () =>
+    runPayment((actions) => payFutureOrderV2FromDashboard({ order, ...actions }));
+  const handleRetrySaving = () => {
+    if (payOutcome?.status !== "record_failed") return;
+    const { paymentIntentId } = payOutcome;
+    return runPayment((actions) =>
+      retryFutureOrderV2DashboardRecord({
+        orderId: order.orderId,
+        paymentIntentId,
+        record: actions.record,
+      }),
+    );
+  };
+  const payLabel =
+    payPhase === "processing"
+      ? "Processing payment..."
+      : payPhase === "recording"
+        ? "Confirming payment..."
+        : `Pay ${formatFutureOrderV2PaidAmount(totalCents ?? 0)}`;
+  const payStatusMessage =
+    payPhase === "processing"
+      ? "Processing your card payment..."
+      : payPhase === "recording"
+        ? "Payment received. Saving it to your order..."
+        : payOutcome?.message ?? "Enter your card details and pay to complete your order.";
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-heritage-ink/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -245,6 +315,50 @@ export const CustomerFutureOrderV2Details = ({
               <div className="text-xs space-y-0.5">
                 <p className="font-semibold text-amber-800">Awaiting payment</p>
                 <p>Your order is saved but has not been paid yet.</p>
+              </div>
+            )}
+            {canPay && (
+              <div
+                data-customer-v2-order-pay-section
+                className="space-y-3 rounded-2xl bg-heritage-green p-4 text-white print:hidden"
+              >
+                <p
+                  id={`${headingId}-pay-status`}
+                  role="status"
+                  aria-atomic="true"
+                  className="text-xs text-white/85"
+                >
+                  {payStatusMessage}
+                </p>
+                {payOutcome?.status === "record_failed" ? (
+                  <button
+                    type="button"
+                    data-customer-v2-order-retry-record
+                    disabled={payBusy}
+                    aria-busy={payBusy}
+                    aria-describedby={`${headingId}-pay-status`}
+                    onClick={handleRetrySaving}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  >
+                    {payBusy ? "Saving..." : "Retry saving"}
+                  </button>
+                ) : (
+                  <>
+                    <FutureOrderV2StripeCard disabled={payBusy} onReadyChange={setCardReady} />
+                    <button
+                      type="button"
+                      data-customer-v2-order-pay
+                      disabled={!cardReady || payBusy}
+                      aria-busy={payBusy}
+                      aria-describedby={`${headingId}-pay-status`}
+                      onClick={handlePay}
+                      className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                    >
+                      <LockKeyhole size={14} aria-hidden="true" />
+                      {payLabel}
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </DetailsSection>
