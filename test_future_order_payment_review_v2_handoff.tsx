@@ -283,6 +283,33 @@ assert.equal(
   "A received payment is never offered for a second charge",
 );
 
+const declineMessage =
+  "Your bank declined this card. Try another card or contact your bank. You have not been charged.";
+const declinedMarkup = renderToStaticMarkup(
+  <DormantFuturePaymentReviewStep
+    result={createFutureOrderV2PaymentReviewHandoff(candidate, preparedPresentation, {
+      status: "failed",
+      paymentReference: "future-v2-payment-future-order-confirmed",
+      message: declineMessage,
+    })}
+    onBack={() => undefined}
+    onEditStage={() => undefined}
+    onPay={() => undefined}
+  />,
+);
+assert.match(
+  declinedMarkup,
+  /<div role="alert" data-future-order-v2-payment-error="true"[^>]*>[\s\S]*Payment not completed[\s\S]*You have not been charged\./,
+  "A declined card shows a prominent alert with the reason",
+);
+assert.equal(
+  declinedMarkup.split(declineMessage).length - 1,
+  1,
+  "The decline reason is shown once, in the alert",
+);
+assert.ok(declinedMarkup.includes("data-future-order-v2-card"));
+assert.ok(declinedMarkup.includes("data-future-order-v2-pay"), "A declined card keeps the Pay button");
+
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const paymentReviewHandlerSource = studioSource.slice(
   studioSource.indexOf("const handleOpenDormantPaymentReviewStage"),

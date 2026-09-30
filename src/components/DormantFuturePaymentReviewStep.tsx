@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { DesignStudioBackButton } from "./DesignStudioBackButton";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { FutureOrderV2PaymentAlert } from "./FutureOrderV2PaymentAlert";
 import { FutureOrderV2StripeCard } from "./FutureOrderV2StripeCard";
 import type { DesignStudioStageId } from "../types";
 import {
@@ -657,9 +658,7 @@ export const DormantFuturePaymentReviewStep = ({
           : `Payment received. Reference: ${payment.providerTransactionReference}.`
       : payment?.status === "processing"
         ? "Processing your card payment..."
-        : payment?.status === "failed"
-          ? payment.message
-          : preparationIsPending
+        : preparationIsPending
             ? "Saving your order..."
             : preparation?.status === "authentication_required" ||
                 preparation?.status === "error"
@@ -1223,6 +1222,9 @@ export const DormantFuturePaymentReviewStep = ({
                   disabled={payIsBusy}
                   onReadyChange={setStripeCardReady}
                 />
+                {payment?.status === "failed" && (
+                  <FutureOrderV2PaymentAlert message={payment.message} />
+                )}
                 <button
                   type="button"
                   data-future-order-v2-pay
