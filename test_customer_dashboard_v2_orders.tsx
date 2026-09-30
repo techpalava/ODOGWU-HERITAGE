@@ -160,6 +160,14 @@ const unpaidDetails = renderToStaticMarkup(
 assert.ok(unpaidDetails.includes("Awaiting payment"));
 assert.ok(unpaidDetails.includes("Your order is saved but has not been paid yet."));
 assert.ok(unpaidDetails.includes("Pick Up in Eindhoven"));
+const overlayClass = unpaidDetails.match(/^<div class="([^"]*)"/)?.[1] ?? "";
+assert.ok(overlayClass.includes("overflow-y-auto"), "the overlay scrolls");
+assert.equal(overlayClass.includes("items-center"), false, "the scrolling overlay never centres, so the top stays reachable");
+assert.match(
+  unpaidDetails,
+  /<div data-customer-v2-order-dialog-frame="true" class="[^"]*min-h-full[^"]*items-center/,
+  "the inner frame centres only when there is room",
+);
 assert.equal(unpaidDetails.includes("Payment reference"), false);
 assert.equal(unpaidDetails.includes("pi_"), false);
 
@@ -261,17 +269,33 @@ for (const hidden of ["data-future-order-v2-card", "data-customer-v2-order-pay="
 
 const mountPayableDetails = (actions: FutureOrderV2DashboardPaymentActions) => {
   let tree!: ReturnType<typeof create>;
+  const events = { closed: 0, successFocused: 0 };
   act(() => {
     tree = create(
-      <CustomerFutureOrderV2Details order={unpaidOrder} payment={undefined} onClose={() => undefined} paymentActions={actions} />,
+      <CustomerFutureOrderV2Details
+        order={unpaidOrder}
+        payment={undefined}
+        onClose={() => { events.closed += 1; }}
+        paymentActions={actions}
+      />,
+      {
+        createNodeMock: (element) =>
+          element.props["data-customer-v2-order-pay-success"]
+            ? { focus: () => { events.successFocused += 1; }, scrollIntoView: () => undefined }
+            : null,
+      },
     );
   });
   const payButtons = () =>
     tree.root.findAll((node) => node.type === "button" && node.props["data-customer-v2-order-pay"] === true);
   const retryButtons = () =>
     tree.root.findAll((node) => node.type === "button" && node.props["data-customer-v2-order-retry-record"] === true);
+  const alerts = () =>
+    tree.root.findAll((node) => node.type === "div" && node.props["data-future-order-v2-payment-error"] === true);
+  const successPanels = () =>
+    tree.root.findAll((node) => node.type === "div" && node.props["data-customer-v2-order-pay-success"] === true);
   const text = () => JSON.stringify(tree.toJSON());
-  return { tree, payButtons, retryButtons, text };
+  return { tree, events, payButtons, retryButtons, alerts, successPanels, text };
 };
 
 const happy = fakeActions(
@@ -287,6 +311,16 @@ assert.deepEqual(happy.calls, { authorize: 1, record: 1 });
 assert.ok(happyView.text().includes("pi_pay_now_ok"), "the payment reference is shown straight away");
 assert.match(happyView.text(), /Paid \(test\) /);
 assert.equal(happyView.payButtons().length, 0, "a paid order cannot be paid again");
+assert.equal(happyView.successPanels().length, 1, "a clear success panel replaces the pay controls");
+assert.match(happyView.text(), /Payment successful/);
+assert.match(happyView.text(), /€300\.00/);
+assert.match(happyView.text(), /paid\. Reference/);
+assert.equal(happyView.events.successFocused, 1, "the success panel receives focus");
+assert.equal(happyView.alerts().length, 0);
+act(() => {
+  happyView.tree.root.findByProps({ "data-customer-v2-order-pay-done": true }).props.onClick();
+});
+assert.equal(happyView.events.closed, 1, "Done closes the window");
 act(() => happyView.tree.unmount());
 
 const declinedPay = fakeActions([{ status: "failed", message: "Your card was declined." }], []);
@@ -294,7 +328,11 @@ const declinedView = mountPayableDetails(declinedPay.actions);
 await act(async () => {
   await declinedView.payButtons()[0].props.onClick();
 });
+assert.equal(declinedView.alerts().length, 1, "a decline shows a prominent alert");
+assert.equal(declinedView.alerts()[0].props.role, "alert");
+assert.ok(declinedView.text().includes("Payment not completed"));
 assert.ok(declinedView.text().includes("Your card was declined."));
+assert.equal(declinedView.successPanels().length, 0);
 assert.equal(declinedView.payButtons().length, 1, "a declined card leaves the Pay button available");
 assert.equal(declinedPay.calls.record, 0);
 act(() => declinedView.tree.unmount());
@@ -311,6 +349,8 @@ await act(async () => {
   await saveFailView.payButtons()[0].props.onClick();
 });
 assert.ok(saveFailView.text().includes("saving it to your order failed"));
+assert.equal(saveFailView.alerts().length, 1);
+assert.ok(saveFailView.text().includes("Payment received, not saved yet"));
 assert.equal(saveFailView.payButtons().length, 0, "a received payment is never offered for a second charge");
 assert.equal(saveFailView.retryButtons().length, 1);
 await act(async () => {
@@ -318,6 +358,8 @@ await act(async () => {
 });
 assert.deepEqual(saveFailing.calls, { authorize: 1, record: 2 }, "Retry saving never charges again");
 assert.ok(saveFailView.text().includes("pi_pay_now_saved_later"));
+assert.equal(saveFailView.successPanels().length, 1, "a saved retry ends in the success panel");
+assert.equal(saveFailView.alerts().length, 0);
 act(() => saveFailView.tree.unmount());
 
 console.log("Customer dashboard V2 order tests passed.");
