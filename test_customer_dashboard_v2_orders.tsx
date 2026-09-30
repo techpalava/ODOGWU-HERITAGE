@@ -7,6 +7,7 @@ import { CustomerFutureOrderV2List } from "./src/components/CustomerFutureOrderV
 import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import type { FutureOrderV2PaymentRecord } from "./src/utils/futureOrderV2PaymentRecord";
+import type { FutureOrderV2DashboardPaymentActions } from "./src/utils/futureOrderV2DashboardPayment";
 
 const OWNER_UID = "dashboard-owner";
 
@@ -211,5 +212,112 @@ assert.equal(dialogs()[0].props["data-customer-v2-order-dialog"], "future-order-
 act(() => keyListeners.forEach((listener) => listener({ key: "Escape" })));
 assert.equal(dialogs().length, 0, "Escape closes the dialog");
 act(() => listTree.unmount());
+
+// Pay now: the card field only mounts for unpaid orders when payment actions are provided.
+Object.assign(globalThis, { fetch: () => new Promise(() => undefined) });
+const recordFor = (orderId: string, paymentIntentId: string): FutureOrderV2PaymentRecord => ({
+  ...paidRecord,
+  orderId,
+  paymentIntentId,
+  amountCents: 30000,
+});
+const fakeActions = (
+  authorizations: Awaited<ReturnType<FutureOrderV2DashboardPaymentActions["authorize"]>>[],
+  records: Awaited<ReturnType<FutureOrderV2DashboardPaymentActions["record"]>>[],
+) => {
+  const calls = { authorize: 0, record: 0 };
+  const actions: FutureOrderV2DashboardPaymentActions = {
+    authorize: async () => authorizations[calls.authorize++],
+    record: async () => records[calls.record++],
+  };
+  return { calls, actions };
+};
+const idleActions = fakeActions([], []).actions;
+
+const payableList = renderToStaticMarkup(
+  <CustomerFutureOrderV2List
+    orders={[paidOrder, unpaidOrder]}
+    paymentsByOrderId={new Map([[paidRecord.orderId, paidRecord]])}
+    paymentActions={idleActions}
+  />,
+);
+assert.equal((payableList.match(/data-customer-v2-order-pay-now="/g) || []).length, 1);
+assert.ok(payableList.includes('data-customer-v2-order-pay-now="future-order-unpaid"'));
+assert.equal(markup.includes("data-customer-v2-order-pay-now"), false, "no Pay now without payment actions");
+
+const payableDetails = renderToStaticMarkup(
+  <CustomerFutureOrderV2Details order={unpaidOrder} payment={undefined} onClose={() => undefined} paymentActions={idleActions} />,
+);
+assert.ok(payableDetails.includes("data-future-order-v2-card"));
+assert.equal((payableDetails.match(/data-customer-v2-order-pay="true"/g) || []).length, 1, "exactly one Pay button");
+assert.match(payableDetails, /Pay €300\.00/);
+assert.equal(unpaidDetails.includes("data-future-order-v2-card"), false, "read-only without payment actions");
+const paidWithActions = renderToStaticMarkup(
+  <CustomerFutureOrderV2Details order={paidOrder} payment={paidRecord} onClose={() => undefined} paymentActions={idleActions} />,
+);
+for (const hidden of ["data-future-order-v2-card", "data-customer-v2-order-pay=", "data-customer-v2-order-retry-record"]) {
+  assert.equal(paidWithActions.includes(hidden), false, `A paid order never offers: ${hidden}`);
+}
+
+const mountPayableDetails = (actions: FutureOrderV2DashboardPaymentActions) => {
+  let tree!: ReturnType<typeof create>;
+  act(() => {
+    tree = create(
+      <CustomerFutureOrderV2Details order={unpaidOrder} payment={undefined} onClose={() => undefined} paymentActions={actions} />,
+    );
+  });
+  const payButtons = () =>
+    tree.root.findAll((node) => node.type === "button" && node.props["data-customer-v2-order-pay"] === true);
+  const retryButtons = () =>
+    tree.root.findAll((node) => node.type === "button" && node.props["data-customer-v2-order-retry-record"] === true);
+  const text = () => JSON.stringify(tree.toJSON());
+  return { tree, payButtons, retryButtons, text };
+};
+
+const happy = fakeActions(
+  [{ status: "authorized", providerTransactionReference: "pi_pay_now_ok" }],
+  [{ status: "recorded", record: recordFor("future-order-unpaid", "pi_pay_now_ok") }],
+);
+const happyView = mountPayableDetails(happy.actions);
+assert.equal(happyView.payButtons().length, 1);
+await act(async () => {
+  await happyView.payButtons()[0].props.onClick();
+});
+assert.deepEqual(happy.calls, { authorize: 1, record: 1 });
+assert.ok(happyView.text().includes("pi_pay_now_ok"), "the payment reference is shown straight away");
+assert.match(happyView.text(), /Paid \(test\) /);
+assert.equal(happyView.payButtons().length, 0, "a paid order cannot be paid again");
+act(() => happyView.tree.unmount());
+
+const declinedPay = fakeActions([{ status: "failed", message: "Your card was declined." }], []);
+const declinedView = mountPayableDetails(declinedPay.actions);
+await act(async () => {
+  await declinedView.payButtons()[0].props.onClick();
+});
+assert.ok(declinedView.text().includes("Your card was declined."));
+assert.equal(declinedView.payButtons().length, 1, "a declined card leaves the Pay button available");
+assert.equal(declinedPay.calls.record, 0);
+act(() => declinedView.tree.unmount());
+
+const saveFailing = fakeActions(
+  [{ status: "authorized", providerTransactionReference: "pi_pay_now_saved_later" }],
+  [
+    { status: "failed", message: "Payment received, but saving it to your order failed." },
+    { status: "recorded", record: recordFor("future-order-unpaid", "pi_pay_now_saved_later") },
+  ],
+);
+const saveFailView = mountPayableDetails(saveFailing.actions);
+await act(async () => {
+  await saveFailView.payButtons()[0].props.onClick();
+});
+assert.ok(saveFailView.text().includes("saving it to your order failed"));
+assert.equal(saveFailView.payButtons().length, 0, "a received payment is never offered for a second charge");
+assert.equal(saveFailView.retryButtons().length, 1);
+await act(async () => {
+  await saveFailView.retryButtons()[0].props.onClick();
+});
+assert.deepEqual(saveFailing.calls, { authorize: 1, record: 2 }, "Retry saving never charges again");
+assert.ok(saveFailView.text().includes("pi_pay_now_saved_later"));
+act(() => saveFailView.tree.unmount());
 
 console.log("Customer dashboard V2 order tests passed.");
