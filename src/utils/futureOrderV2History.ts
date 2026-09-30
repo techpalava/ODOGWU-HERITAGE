@@ -57,7 +57,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isClaimedV2Record = (value: unknown): boolean =>
   isRecord(value) && (value.schemaVersion === 2 || value.recordType === "future_order_v2");
 
-const unwrapDocumentProjection = (value: unknown): unknown => {
+export const unwrapDocumentProjection = (value: unknown): unknown => {
   if (!isRecord(value) || !("id" in value)) return value;
   const { id, ...persisted } = value;
   return typeof id === "string" && id === persisted.orderId ? persisted : value;

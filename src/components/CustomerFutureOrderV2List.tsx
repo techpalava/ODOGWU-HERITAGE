@@ -1,34 +1,52 @@
+import { useState } from "react";
 import { ShoppingBag } from "lucide-react";
 import {
   presentFutureOrderV2History,
+  unwrapDocumentProjection,
   type FutureOrderV2HistoryPresentation,
 } from "../utils/futureOrderV2History";
+import {
+  parsePersistedFutureOrderV2,
+  type PersistedFutureOrderV2,
+} from "../utils/futureOrderV2PersistenceContract";
 import {
   formatFutureOrderV2PaidAmount,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
+import {
+  CustomerFutureOrderV2Details,
+  formatCustomerOrderDate,
+} from "./CustomerFutureOrderV2Details";
 
 interface CustomerFutureOrderV2ListProps {
   orders: readonly unknown[];
   paymentsByOrderId: ReadonlyMap<string, FutureOrderV2PaymentRecord>;
 }
 
-const formatOrderDate = (persistedAt: string): string => {
-  const date = new Date(persistedAt);
-  return Number.isNaN(date.getTime())
-    ? persistedAt
-    : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-};
+interface CustomerFutureOrderV2Entry {
+  readonly persisted: PersistedFutureOrderV2;
+  readonly presentation: FutureOrderV2HistoryPresentation;
+}
 
 export const CustomerFutureOrderV2List = ({
   orders,
   paymentsByOrderId,
 }: CustomerFutureOrderV2ListProps) => {
-  const presentations = orders
-    .map((order) => presentFutureOrderV2History(order))
-    .flatMap((result) => (result.status === "valid" ? [result.value] : []))
-    .sort((left, right) => right.persistedAt.localeCompare(left.persistedAt));
-  if (presentations.length === 0) return null;
+  const [openOrderId, setOpenOrderId] = useState<string | null>(null);
+  const entries = orders
+    .flatMap((order): CustomerFutureOrderV2Entry[] => {
+      const parsed = parsePersistedFutureOrderV2(unwrapDocumentProjection(order));
+      if (parsed.status !== "valid") return [];
+      const presentation = presentFutureOrderV2History(parsed.value);
+      return presentation.status === "valid"
+        ? [{ persisted: parsed.value, presentation: presentation.value }]
+        : [];
+    })
+    .sort((left, right) =>
+      right.presentation.persistedAt.localeCompare(left.presentation.persistedAt),
+    );
+  if (entries.length === 0) return null;
+  const openEntry = entries.find((entry) => entry.persisted.orderId === openOrderId);
 
   return (
     <section
@@ -42,7 +60,7 @@ export const CustomerFutureOrderV2List = ({
         </h3>
       </div>
       <div className="space-y-4">
-        {presentations.map((order: FutureOrderV2HistoryPresentation) => {
+        {entries.map(({ presentation: order }) => {
           const payment = paymentsByOrderId.get(order.orderId);
           return (
             <div
@@ -53,7 +71,7 @@ export const CustomerFutureOrderV2List = ({
               <div className="flex justify-between gap-3">
                 <div className="min-w-0">
                   <h5 className="font-serif font-bold text-heritage-green">
-                    Order placed {formatOrderDate(order.persistedAt)}
+                    Order placed {formatCustomerOrderDate(order.persistedAt)}
                   </h5>
                   <div className="break-all text-[10px] font-mono text-heritage-ink/60">
                     {order.orderId}
@@ -86,17 +104,36 @@ export const CustomerFutureOrderV2List = ({
                   </li>
                 ))}
               </ul>
-              {order.exactTotalCents !== null && (
-                <div className="text-[10px] text-heritage-ink/75">
-                  Total: <span className="font-bold text-heritage-green">
-                    {formatFutureOrderV2PaidAmount(order.exactTotalCents)}
-                  </span>
-                </div>
-              )}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {order.exactTotalCents !== null ? (
+                  <div className="text-[10px] text-heritage-ink/75">
+                    Total: <span className="font-bold text-heritage-green">
+                      {formatFutureOrderV2PaidAmount(order.exactTotalCents)}
+                    </span>
+                  </div>
+                ) : (
+                  <span />
+                )}
+                <button
+                  type="button"
+                  data-customer-v2-order-details={order.orderId}
+                  onClick={() => setOpenOrderId(order.orderId)}
+                  className="rounded-lg border border-heritage-green/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green hover:text-white cursor-pointer"
+                >
+                  View details
+                </button>
+              </div>
             </div>
           );
         })}
       </div>
+      {openEntry && (
+        <CustomerFutureOrderV2Details
+          order={openEntry.persisted}
+          payment={paymentsByOrderId.get(openEntry.persisted.orderId)}
+          onClose={() => setOpenOrderId(null)}
+        />
+      )}
     </section>
   );
 };
