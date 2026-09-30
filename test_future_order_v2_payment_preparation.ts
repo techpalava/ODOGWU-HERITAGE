@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DormantFuturePaymentReviewStep } from "./src/components/DormantFuturePaymentReviewStep";
 import {
-  FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE,
+  FUTURE_ORDER_V2_PAY_READY_MESSAGE,
   createFutureOrderV2PaymentReviewHandoff,
 } from "./src/utils/designStudioFuturePaymentReview";
 import {
@@ -217,13 +217,12 @@ const markup = renderToStaticMarkup(
     result: preparedHandoff,
     onBack: () => undefined,
     onEditStage: () => undefined,
-    onPrepareOrder: () => undefined,
-    onExecutePayment: () => undefined,
+    onPay: () => undefined,
   }),
 );
-assert.ok(markup.includes(FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE));
-assert.ok(markup.includes(ids.orderId));
-assert.ok(markup.includes("Authorize payment"));
+assert.ok(markup.includes(FUTURE_ORDER_V2_PAY_READY_MESSAGE));
+assert.match(markup, /Pay €\d+\.\d{2}/);
+assert.equal(markup.includes("Authorize payment"), false);
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 assert.match(studioSource, /buildCurrentFutureOrderCandidateV2\(\)/);

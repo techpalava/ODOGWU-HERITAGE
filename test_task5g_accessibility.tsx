@@ -59,43 +59,49 @@ const snapshotBefore = JSON.stringify(candidate);
 const prepared: FutureOrderV2PreparationPresentation = {
   status: "prepared", orderId: order.orderId, cartItemId: order.cartItem.cartItemId,
 };
-let paymentCalls = 0;
+let payCalls = 0;
 const renderPayment = (preparation: FutureOrderV2PreparationPresentation, payment?: FutureOrderV2PaymentPresentation) => {
   const element = <DormantFuturePaymentReviewStep
     result={createFutureOrderV2PaymentReviewHandoff(candidate, preparation, payment)}
-    onBack={noop} onEditStage={noop} onPrepareOrder={noop}
-    onExecutePayment={() => { paymentCalls += 1; }} />;
+    onBack={noop} onEditStage={noop}
+    onPay={() => { payCalls += 1; }} />;
   act(() => { if (tree) tree.update(element); else tree = create(element); });
 };
 // The previous renderer is unmounted; create the payment renderer first.
 act(() => { tree = create(<></>); });
+const payButtons = () => tree.root.findAll((node) => node.type === "button" && node.props["data-future-order-v2-pay"] === true);
 renderPayment({ status: "preparing" });
 const status = () => tree.root.findByProps({ id: "future-payment-pending-explanation" });
 assert.equal(status().props.role, "status");
 assert.equal(status().props["aria-atomic"], "true");
-assert.match(text(status()), /Preparing your order/);
-const preparing = tree.root.findByProps({ "data-future-order-v2-prepare": true });
-assert.equal(preparing.props.disabled, true);
-assert.equal(preparing.props["aria-busy"], true);
-assert.equal(preparing.props["aria-describedby"], status().props.id);
-assert.equal(tree.root.findAllByProps({ "data-future-order-v2-payment": true }).length, 0);
+assert.match(text(status()), /Saving your order/);
+assert.equal(payButtons().length, 1, "one Pay button while the order is saved");
+const saving = payButtons()[0];
+assert.equal(saving.props.disabled, true);
+assert.equal(saving.props["aria-busy"], true);
+assert.equal(saving.props["aria-describedby"], status().props.id);
+assert.match(text(saving), /Saving your order/);
 renderPayment({ status: "error", message: "Could not prepare. Try again." });
 assert.match(text(status()), /Could not prepare/);
 renderPayment(prepared, { status: "processing", paymentReference: "stable-reference" });
-assert.match(text(status()), /Authorizing payment/);
-const processing = tree.root.findByProps({ "data-future-order-v2-payment": true });
+assert.match(text(status()), /Processing your card payment/);
+assert.equal(payButtons().length, 1);
+const processing = payButtons()[0];
 assert.equal(processing.props.disabled, true);
-assert.equal(processing.props["aria-busy"], "true");
+assert.equal(processing.props["aria-busy"], true);
+assert.match(text(processing), /Processing payment/);
 renderPayment(prepared, { status: "failed", paymentReference: "stable-reference", message: "Payment failed. Try again." });
 assert.match(text(status()), /Payment failed/);
-const retry = tree.root.findByProps({ "data-future-order-v2-payment": true });
-assert.equal(retry.type, "button");
+assert.equal(payButtons().length, 1, "a declined card leaves the Pay button available");
+const retry = payButtons()[0];
 assert.equal(retry.props["aria-describedby"], status().props.id);
+assert.equal(retry.props["aria-busy"], false);
+assert.match(text(retry), /Pay €\d+\.\d{2}/);
 act(() => retry.props.onClick());
-assert.equal(paymentCalls, 1);
+assert.equal(payCalls, 1);
 renderPayment(prepared, { status: "authorized", paymentReference: "stable-reference", providerTransactionReference: "provider-" + "r".repeat(180) });
 assert.match(text(status()), /Payment received/);
-assert.equal(tree.root.findAllByProps({ "data-future-order-v2-payment": true }).length, 0);
+assert.equal(payButtons().length, 0);
 assert.ok(text(tree.root).includes(order.orderId), "Long order IDs remain discoverable in full");
 assert.ok(text(tree.root).includes(longName), "Long submitted names are not truncated");
 assert.equal(JSON.stringify(candidate), snapshotBefore);
