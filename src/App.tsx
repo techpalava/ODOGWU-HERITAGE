@@ -57,6 +57,7 @@ import {
   getPersistableCartItemFabricAllocationsForOrder,
 } from "./utils/fabricAllocationPersistence";
 import { getCartDesignLabel } from "./utils/cartDesignDomain";
+import { presentFutureOrderV2History } from "./utils/futureOrderV2History";
 import { revalidateCartForCheckout } from "./utils/checkoutValidation";
 import { isBatchPricingRoute } from "./utils/designPricing";
 import {
@@ -281,6 +282,7 @@ export default function App() {
       if (currentUser) {
         const userOrder = orders.find(
           (o) =>
+            presentFutureOrderV2History(o).status === "not_v2" &&
             o.customer.email.toLowerCase() === currentUser.email?.toLowerCase(),
         );
         if (userOrder) {
