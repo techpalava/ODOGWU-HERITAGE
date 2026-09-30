@@ -21,6 +21,8 @@ import {
   FUTURE_PAYMENT_UNAVAILABLE_MESSAGE,
   FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
   FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE,
+  FUTURE_ORDER_V2_PAY_HEADING,
+  FUTURE_ORDER_V2_PAY_READY_MESSAGE,
   getFuturePaymentReviewAiStatusLabel,
   getFuturePaymentReviewContentBlockers,
   getFuturePaymentReviewContentStatusLabel,
@@ -59,8 +61,7 @@ interface DormantFuturePaymentReviewStepProps {
     target: FutureGarmentRemovalTarget,
     trigger: HTMLButtonElement,
   ) => void;
-  onPrepareOrder?: () => void;
-  onExecutePayment?: () => void;
+  onPay?: () => void;
   onRetryPaymentRecord?: () => void;
   onViewDashboard?: () => void;
 }
@@ -600,8 +601,7 @@ export const DormantFuturePaymentReviewStep = ({
   survivorSummary = null,
   removalTargets = [],
   onRequestGarmentRemoval,
-  onPrepareOrder,
-  onExecutePayment,
+  onPay,
   onRetryPaymentRecord,
   onViewDashboard,
 }: DormantFuturePaymentReviewStepProps) => {
@@ -629,9 +629,19 @@ export const DormantFuturePaymentReviewStep = ({
     "payment" in result ? result.payment : null;
   const paymentIsProcessing = payment?.status === "processing";
   const paymentIsAuthorized = payment?.status === "authorized";
-  const paymentCanExecute =
-    preparationIsComplete &&
-    (payment?.status === "ready" || payment?.status === "failed");
+  const paymentIsRecording =
+    payment?.status === "authorized" && Boolean(payment.recording);
+  const v2Payable = isV2PaymentReviewCandidate(candidate) && Boolean(onPay);
+  const payIsBusy = preparationIsPending || paymentIsProcessing;
+  const reviewedTotalCents =
+    candidate?.pricing.status === "exact" ? candidate.pricing.exactTotalCents : null;
+  const payLabel = preparationIsPending
+    ? "Saving your order..."
+    : paymentIsProcessing
+      ? "Processing payment..."
+      : reviewedTotalCents === null
+        ? "Pay"
+        : `Pay ${moneyFromCents(reviewedTotalCents)}`;
   const [stripeCardReady, setStripeCardReady] = useState(false);
   const confirmedHeadingRef = useRef<HTMLHeadingElement>(null);
   const paymentIsConfirmed = payment?.status === "confirmed";
@@ -646,15 +656,19 @@ export const DormantFuturePaymentReviewStep = ({
           ? "Payment received. Saving it to your order..."
           : `Payment received. Reference: ${payment.providerTransactionReference}.`
       : payment?.status === "processing"
-        ? "Authorizing payment for this prepared order..."
+        ? "Processing your card payment..."
         : payment?.status === "failed"
           ? payment.message
-          : preparation?.status === "authentication_required" ||
-            preparation?.status === "error"
-      ? preparation.message
-      : preparationIsComplete
-        ? FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE
-        : FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE;
+          : preparationIsPending
+            ? "Saving your order..."
+            : preparation?.status === "authentication_required" ||
+                preparation?.status === "error"
+              ? preparation.message
+              : v2Payable
+                ? FUTURE_ORDER_V2_PAY_READY_MESSAGE
+                : preparationIsComplete
+                  ? FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE
+                  : FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE;
 
   return (
     <main
@@ -1172,6 +1186,7 @@ export const DormantFuturePaymentReviewStep = ({
       ) : (
       <section
         aria-labelledby="future-payment-unavailable-title"
+        data-future-order-v2-prepared={preparation?.status}
         className="min-w-0 rounded-2xl border border-heritage-gold/30 bg-heritage-green p-5 text-white shadow-sm sm:p-6"
       >
         <div className="flex min-w-0 items-start gap-3">
@@ -1183,77 +1198,56 @@ export const DormantFuturePaymentReviewStep = ({
             >
               {paymentIsAuthorized
                 ? "Payment received"
-                : paymentCanExecute || paymentIsProcessing
-                  ? "Payment authorization"
+                : v2Payable
+                  ? FUTURE_ORDER_V2_PAY_HEADING
                   : FUTURE_PAYMENT_UNAVAILABLE_MESSAGE}
             </h2>
             <p id="future-payment-pending-explanation" role="status" aria-atomic="true" className="mt-2 break-words text-sm leading-relaxed text-white/80">
               {isV2PaymentReviewCandidate(candidate)
-                ? preparationIsPending ? "Preparing your order..." : preparationMessage
+                ? preparationMessage
                 : FUTURE_ORDER_NOT_SUBMITTED_MESSAGE}
             </p>
-            {!preparationIsComplete && (
+            {paymentIsAuthorized && preparation?.status === "prepared" && (
+              <p className="mt-2 break-all text-xs text-white/70">
+                Order ID: <span className="font-mono">{preparation.orderId}</span>
+              </p>
+            )}
+            {!v2Payable && !preparationIsComplete && (
               <p className="mt-1 text-xs leading-relaxed text-white/65">
                 Authentication and a verified payment provider will be required before real payment can begin.
               </p>
             )}
-            {isV2PaymentReviewCandidate(candidate) && onPrepareOrder && (
+            {v2Payable && !paymentIsAuthorized && (
               <>
-                {preparationIsComplete ? (
-                  <p
-                    data-future-order-v2-prepared={preparation?.status}
-                    className="mt-4 break-words text-sm font-semibold text-heritage-gold"
-                  >
-                    Order prepared with ID {preparation.orderId}.
-                  </p>
-                ) : (
-                  <button
-                    type="button"
-                    data-future-order-v2-prepare
-                    disabled={!isReviewable || preparationIsPending}
-                    aria-busy={preparationIsPending}
-                    aria-describedby="future-payment-pending-explanation"
-                    onClick={onPrepareOrder}
-                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white sm:mr-3 sm:w-auto"
-                  >
-                    <CheckCircle2 aria-hidden="true" size={14} />
-                    {preparationIsPending
-                      ? "Preparing order..."
-                      : "Prepare order for future payment"}
-                  </button>
-                )}
+                <FutureOrderV2StripeCard
+                  disabled={payIsBusy}
+                  onReadyChange={setStripeCardReady}
+                />
+                <button
+                  type="button"
+                  data-future-order-v2-pay
+                  disabled={!isReviewable || payIsBusy || !stripeCardReady}
+                  aria-busy={payIsBusy}
+                  aria-describedby="future-payment-pending-explanation"
+                  onClick={onPay}
+                  className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white sm:w-auto"
+                >
+                  <LockKeyhole aria-hidden="true" size={14} />
+                  {payLabel}
+                </button>
               </>
             )}
-            {(paymentCanExecute || paymentIsProcessing) && onExecutePayment && (
-              <FutureOrderV2StripeCard
-                disabled={paymentIsProcessing}
-                onReadyChange={setStripeCardReady}
-              />
-            )}
-            {paymentCanExecute && onExecutePayment && (
+            {paymentIsRecording && (
               <button
                 type="button"
-                data-future-order-v2-payment
-                disabled={!stripeCardReady}
-                onClick={onExecutePayment}
-                aria-describedby="future-payment-pending-explanation"
-                className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white sm:w-auto"
-              >
-                <CheckCircle2 aria-hidden="true" size={14} />
-                Authorize payment
-              </button>
-            )}
-            {paymentIsProcessing && (
-              <button
-                type="button"
-                data-future-order-v2-payment
+                data-future-order-v2-pay
                 disabled
                 aria-busy="true"
-                aria-describedby="future-payment-unavailable-title future-payment-pending-explanation"
+                aria-describedby="future-payment-pending-explanation"
                 className="mt-4 inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-white/20 px-5 text-xs font-bold uppercase tracking-wider text-white sm:w-auto"
               >
                 <LockKeyhole aria-hidden="true" size={14} />
-                Authorizing payment...
+                Confirming payment...
               </button>
             )}
             {payment?.status === "authorized" &&
@@ -1271,7 +1265,7 @@ export const DormantFuturePaymentReviewStep = ({
                   Retry saving
                 </button>
               )}
-            {!preparationIsComplete && (
+            {!v2Payable && !preparationIsComplete && (
               <button
                 type="button"
                 disabled

@@ -7,6 +7,7 @@ import { createEmptyFutureMeasurementState } from "./src/utils/measurementBluepr
 import { createEmptyFutureShippingState } from "./src/utils/designStudioFutureShipping";
 import {
   createFutureOrderV2PaymentReviewHandoff,
+  FUTURE_ORDER_V2_PAY_READY_MESSAGE,
   FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
   getFuturePaymentReviewContentBlockers,
   isFuturePaymentReviewStageUnlocked,
@@ -193,6 +194,30 @@ assert.equal(
   "the card field stays hidden until the order ID is prepared",
 );
 
+const payableMarkup = renderToStaticMarkup(
+  <DormantFuturePaymentReviewStep
+    result={handoff}
+    onBack={() => undefined}
+    onEditStage={() => undefined}
+    onPay={() => undefined}
+  />,
+);
+assert.ok(payableMarkup.includes("data-future-order-v2-card"), "the card is entered before the order is saved");
+assert.equal((payableMarkup.match(/data-future-order-v2-pay="true"/g) || []).length, 1, "exactly one Pay button");
+assert.match(payableMarkup, /Pay €\d+\.\d{2}/);
+assert.ok(payableMarkup.includes(FUTURE_ORDER_V2_PAY_READY_MESSAGE));
+for (const removed of [
+  "Prepare order for future payment",
+  "Authorize payment",
+  "Order prepared with ID",
+  "Payment integration pending",
+  "Authentication and a verified payment provider",
+  "Online payment is not available yet.",
+  FUTURE_ORDER_V2_PERSISTENCE_PENDING_MESSAGE,
+]) {
+  assert.equal(payableMarkup.includes(removed), false, `Removed payment wording returned: ${removed}`);
+}
+
 const preparedPresentation = {
   status: "prepared" as const,
   cartItemId: "future-cart-confirmed",
@@ -209,8 +234,7 @@ const confirmedMarkup = renderToStaticMarkup(
     })}
     onBack={() => undefined}
     onEditStage={() => undefined}
-    onPrepareOrder={() => undefined}
-    onExecutePayment={() => undefined}
+    onPay={() => undefined}
     onViewDashboard={() => undefined}
   />,
 );
@@ -227,7 +251,7 @@ for (const expected of [
 }
 for (const hidden of [
   "data-future-order-v2-card",
-  "data-future-order-v2-payment",
+  "data-future-order-v2-pay",
   "Payment integration pending",
   "data-future-order-v2-retry-record",
 ]) {
@@ -244,14 +268,14 @@ const saveFailedMarkup = renderToStaticMarkup(
     })}
     onBack={() => undefined}
     onEditStage={() => undefined}
-    onPrepareOrder={() => undefined}
-    onExecutePayment={() => undefined}
+    onPay={() => undefined}
     onRetryPaymentRecord={() => undefined}
   />,
 );
 assert.ok(saveFailedMarkup.includes("Payment received"));
 assert.ok(saveFailedMarkup.includes("saving it to your order failed"));
 assert.ok(saveFailedMarkup.includes("data-future-order-v2-retry-record"));
+assert.equal(saveFailedMarkup.includes("data-future-order-v2-pay"), false);
 assert.equal(saveFailedMarkup.includes("Order confirmed"), false);
 assert.equal(
   saveFailedMarkup.includes("data-future-order-v2-card"),
