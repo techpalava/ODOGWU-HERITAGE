@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadStripe, type StripeCardElement } from "@stripe/stripe-js";
 import { registerFutureOrderV2CardConfirmer } from "../utils/futureOrderV2Payment";
+import { describeFutureOrderV2CardError } from "../utils/futureOrderV2CardErrors";
 
 /**
  * Mounts a Stripe card field and confirms the PaymentIntent in the browser.
@@ -19,6 +20,7 @@ export const FutureOrderV2StripeCard = ({
   onReadyChangeRef.current = onReadyChange;
   const [message, setMessage] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(false);
+  const [fieldError, setFieldError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +66,9 @@ export const FutureOrderV2StripeCard = ({
           onReadyChangeRef.current(true);
         }
       });
+      card.on("change", (event) => {
+        if (!cancelled) setFieldError(event.error?.message ?? null);
+      });
       registerFutureOrderV2CardConfirmer(async (clientSecret) => {
         const result = await stripe.confirmCardPayment(clientSecret, {
           payment_method: { card: card! },
@@ -79,7 +84,11 @@ export const FutureOrderV2StripeCard = ({
         if (result.error) {
           return {
             status: "failed",
-            message: result.error.message || "The card was not confirmed.",
+            message: describeFutureOrderV2CardError({
+              code: result.error.code,
+              declineCode: result.error.decline_code,
+              message: result.error.message,
+            }),
           };
         }
         if (!paymentIntentId.startsWith("pi_")) {
@@ -131,6 +140,14 @@ export const FutureOrderV2StripeCard = ({
         data-future-order-v2-card
         className="min-h-11 rounded-xl border border-white/30 bg-white px-3 py-3"
       />
+      {fieldError && (
+        <p
+          data-future-order-v2-card-field-error
+          className="mt-2 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-red-700"
+        >
+          {fieldError}
+        </p>
+      )}
       {testMode && (
         <p className="mt-2 text-xs leading-relaxed text-white/75">
           Test card 4242 4242 4242 4242. Use any future expiry and any CVC.
