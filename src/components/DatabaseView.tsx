@@ -75,8 +75,8 @@ import {
 } from "../utils/shippingPricing";
 import { presentFutureOrderV2History } from "../utils/futureOrderV2History";
 import {
+  adminOrderPaymentState,
   matchesAdminPaymentFilter,
-  type AdminOrderPaymentState,
   type AdminPaymentFilter,
 } from "../utils/futureOrderV2AdminPayment";
 import { FutureOrderV2AdminPaymentCell } from "./FutureOrderV2AdminPaymentCell";
@@ -1365,18 +1365,23 @@ export default function DatabaseView({
         b.pickupLocation.toLowerCase().includes(batchSearch.toLowerCase())),
   );
 
-  const adminOrderPaymentState = (order: (typeof orders)[number]): AdminOrderPaymentState => {
-    const history = presentFutureOrderV2History(order);
-    if (history.status === "valid") {
-      return futureOrderV2PaymentsByOrderId.has(history.value.orderId) ? "paid" : "awaiting";
+  const paymentStateForOrder = (order: (typeof orders)[number]) => {
+    try {
+      const history = presentFutureOrderV2History(order);
+      return adminOrderPaymentState({
+        historyStatus: history.status,
+        hasV2PaymentRecord:
+          history.status === "valid" && futureOrderV2PaymentsByOrderId.has(history.value.orderId),
+        legacyIsPaid: order.payment?.isPaid,
+      });
+    } catch {
+      return "unknown" as const;
     }
-    if (history.status === "invalid_history") return "unknown";
-    return order.payment.isPaid ? "paid" : "awaiting";
   };
   const orderPaymentCounts = orders.reduce(
     (counts, order) => {
       counts.all += 1;
-      const state = adminOrderPaymentState(order);
+      const state = paymentStateForOrder(order);
       if (state === "paid" || state === "awaiting") counts[state] += 1;
       return counts;
     },
@@ -1384,16 +1389,18 @@ export default function DatabaseView({
   );
 
   const filteredOrders = orders.filter((order) => {
-    if (!matchesAdminPaymentFilter(orderPaymentFilter, adminOrderPaymentState(order))) {
+    try {
+    if (!matchesAdminPaymentFilter(orderPaymentFilter, paymentStateForOrder(order))) {
       return false;
     }
     const query = orderSearch.toLowerCase();
+    const includesQuery = (value: unknown) => String(value ?? "").toLowerCase().includes(query);
     const v2History = presentFutureOrderV2History(order);
     if (v2History.status === "valid") {
       return [
         v2History.value.orderId,
-        v2History.value.customer.fullName,
-        v2History.value.customer.email,
+        v2History.value.customer?.fullName,
+        v2History.value.customer?.email,
         futureOrderV2PaymentsByOrderId.get(v2History.value.orderId)?.paymentIntentId ?? "",
         ...v2History.value.occurrences.flatMap((occurrence) => [
           occurrence.garmentLabel,
@@ -1401,20 +1408,21 @@ export default function DatabaseView({
             ? occurrence.style.name
             : occurrence.style.displayLabel,
         ]),
-      ].some((value) => value.toLowerCase().includes(query));
+      ].some(includesQuery);
     }
     if (v2History.status === "invalid_history") {
-      return String((order as unknown as { orderId?: unknown }).orderId || "")
-        .toLowerCase()
-        .includes(query);
+      return includesQuery((order as unknown as { orderId?: unknown }).orderId);
     }
-    return (
-      order.shipment.trackingId.toLowerCase().includes(query) ||
-      order.customer.name.toLowerCase().includes(query) ||
-      order.customer.email.toLowerCase().includes(query) ||
-      order.style.name.toLowerCase().includes(query) ||
-      order.fabric.name.toLowerCase().includes(query)
-    );
+    return [
+      order.shipment?.trackingId,
+      order.customer?.name,
+      order.customer?.email,
+      order.style?.name,
+      order.fabric?.name,
+    ].some(includesQuery);
+    } catch {
+      return orderPaymentFilter === "all";
+    }
   });
 
   const filteredPhotos = communityPhotos.filter(

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FutureOrderV2AdminPaymentCell } from "./src/components/FutureOrderV2AdminPaymentCell";
 import {
+  adminOrderPaymentState,
   matchesAdminPaymentFilter,
   presentFutureOrderV2AdminPayment,
   type AdminOrderPaymentState,
@@ -35,6 +36,24 @@ assert.equal(
   `https://dashboard.stripe.com/test/payments/${record.paymentIntentId}`,
 );
 assert.deepEqual(presentFutureOrderV2AdminPayment(undefined), { kind: "awaiting" });
+
+assert.equal(
+  adminOrderPaymentState({ historyStatus: "not_v2", hasV2PaymentRecord: false, legacyIsPaid: undefined }),
+  "awaiting",
+  "A legacy order with no payment object must not be treated as paid",
+);
+assert.equal(
+  adminOrderPaymentState({ historyStatus: "not_v2", hasV2PaymentRecord: false, legacyIsPaid: true }),
+  "paid",
+);
+assert.equal(
+  adminOrderPaymentState({ historyStatus: "valid", hasV2PaymentRecord: false, legacyIsPaid: true }),
+  "awaiting",
+);
+assert.equal(
+  adminOrderPaymentState({ historyStatus: "invalid_history", hasV2PaymentRecord: false, legacyIsPaid: true }),
+  "unknown",
+);
 
 const states: AdminOrderPaymentState[] = ["paid", "awaiting", "unknown"];
 for (const state of states) {
