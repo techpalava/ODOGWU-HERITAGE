@@ -21,6 +21,8 @@ interface CustomerFutureOrderV2ListProps {
   orders: readonly unknown[];
   paymentsByOrderId: ReadonlyMap<string, FutureOrderV2PaymentRecord>;
   paymentActions?: FutureOrderV2DashboardPaymentActions;
+  openOrderId?: string | null;
+  onOpenOrderChange?: (orderId: string | null) => void;
 }
 
 interface CustomerFutureOrderV2Entry {
@@ -32,8 +34,15 @@ export const CustomerFutureOrderV2List = ({
   orders,
   paymentsByOrderId,
   paymentActions,
+  openOrderId: controlledOpenOrderId,
+  onOpenOrderChange,
 }: CustomerFutureOrderV2ListProps) => {
-  const [openOrderId, setOpenOrderId] = useState<string | null>(null);
+  const [internalOpenOrderId, setInternalOpenOrderId] = useState<string | null>(null);
+  const openOrderId = controlledOpenOrderId !== undefined ? controlledOpenOrderId : internalOpenOrderId;
+  const setOpenOrderId = (orderId: string | null) => {
+    onOpenOrderChange?.(orderId);
+    if (controlledOpenOrderId === undefined) setInternalOpenOrderId(orderId);
+  };
   const entries = orders
     .flatMap((order): CustomerFutureOrderV2Entry[] => {
       const parsed = parsePersistedFutureOrderV2(unwrapDocumentProjection(order));
