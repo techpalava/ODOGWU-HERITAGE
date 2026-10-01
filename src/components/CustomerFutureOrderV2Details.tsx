@@ -10,6 +10,7 @@ import {
   type FutureOrderV2DashboardPaymentOutcome,
 } from "../utils/futureOrderV2DashboardPayment";
 import {
+  formatCustomerOrderDate,
   formatFutureOrderV2PaidAmount,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
@@ -27,13 +28,6 @@ interface CustomerFutureOrderV2DetailsProps {
 }
 
 type DashboardPayPhase = "idle" | "processing" | "recording";
-
-export const formatCustomerOrderDate = (value: string): string => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-};
 
 const DetailsSection = ({ title, children }: { title: string; children: ReactNode }) => (
   <section className="space-y-2">

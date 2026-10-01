@@ -10,14 +10,12 @@ import {
   type PersistedFutureOrderV2,
 } from "../utils/futureOrderV2PersistenceContract";
 import {
+  formatCustomerOrderDate,
   formatFutureOrderV2PaidAmount,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
 import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
-import {
-  CustomerFutureOrderV2Details,
-  formatCustomerOrderDate,
-} from "./CustomerFutureOrderV2Details";
+import { CustomerFutureOrderV2Details } from "./CustomerFutureOrderV2Details";
 
 interface CustomerFutureOrderV2ListProps {
   orders: readonly unknown[];

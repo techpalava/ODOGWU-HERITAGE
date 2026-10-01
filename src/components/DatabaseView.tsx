@@ -74,6 +74,12 @@ import {
   BATCH_MINIMUM_GARMENTS,
 } from "../utils/shippingPricing";
 import { presentFutureOrderV2History } from "../utils/futureOrderV2History";
+import {
+  matchesAdminPaymentFilter,
+  type AdminOrderPaymentState,
+  type AdminPaymentFilter,
+} from "../utils/futureOrderV2AdminPayment";
+import { FutureOrderV2AdminPaymentCell } from "./FutureOrderV2AdminPaymentCell";
 
 interface DatabaseViewProps {
   customers: Customer[];
@@ -122,7 +128,6 @@ import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 import { db } from "../services/firebase";
 import {
   FUTURE_ORDER_V2_PAYMENT_COLLECTION,
-  formatFutureOrderV2PaidAmount,
   parseFutureOrderV2PaymentRecord,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
@@ -263,6 +268,7 @@ export default function DatabaseView({
   const [fabricSearch, setFabricSearch] = useState("");
   const [batchSearch, setBatchSearch] = useState("");
   const [orderSearch, setOrderSearch] = useState("");
+  const [orderPaymentFilter, setOrderPaymentFilter] = useState<AdminPaymentFilter>("all");
   const [showpieceSearch, setShowpieceSearch] = useState("");
   const [photoSearch, setPhotoSearch] = useState("");
 
@@ -1359,7 +1365,28 @@ export default function DatabaseView({
         b.pickupLocation.toLowerCase().includes(batchSearch.toLowerCase())),
   );
 
+  const adminOrderPaymentState = (order: (typeof orders)[number]): AdminOrderPaymentState => {
+    const history = presentFutureOrderV2History(order);
+    if (history.status === "valid") {
+      return futureOrderV2PaymentsByOrderId.has(history.value.orderId) ? "paid" : "awaiting";
+    }
+    if (history.status === "invalid_history") return "unknown";
+    return order.payment.isPaid ? "paid" : "awaiting";
+  };
+  const orderPaymentCounts = orders.reduce(
+    (counts, order) => {
+      counts.all += 1;
+      const state = adminOrderPaymentState(order);
+      if (state === "paid" || state === "awaiting") counts[state] += 1;
+      return counts;
+    },
+    { all: 0, paid: 0, awaiting: 0 },
+  );
+
   const filteredOrders = orders.filter((order) => {
+    if (!matchesAdminPaymentFilter(orderPaymentFilter, adminOrderPaymentState(order))) {
+      return false;
+    }
     const query = orderSearch.toLowerCase();
     const v2History = presentFutureOrderV2History(order);
     if (v2History.status === "valid") {
@@ -1367,6 +1394,7 @@ export default function DatabaseView({
         v2History.value.orderId,
         v2History.value.customer.fullName,
         v2History.value.customer.email,
+        futureOrderV2PaymentsByOrderId.get(v2History.value.orderId)?.paymentIntentId ?? "",
         ...v2History.value.occurrences.flatMap((occurrence) => [
           occurrence.garmentLabel,
           occurrence.style.kind === "catalogue"
@@ -5211,6 +5239,30 @@ export default function DatabaseView({
                       className="w-full pl-9 pr-4 py-2 border border-heritage-gold/20 rounded-xl text-xs"
                     />
                   </div>
+                  <div className="flex w-full flex-wrap gap-1 sm:w-auto" role="group" aria-label="Filter orders by payment">
+                    {(
+                      [
+                        ["all", `All (${orderPaymentCounts.all})`],
+                        ["paid", `Paid (${orderPaymentCounts.paid})`],
+                        ["awaiting", `Awaiting payment (${orderPaymentCounts.awaiting})`],
+                      ] as const
+                    ).map(([filter, label]) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        data-admin-order-payment-filter={filter}
+                        aria-pressed={orderPaymentFilter === filter}
+                        onClick={() => setOrderPaymentFilter(filter)}
+                        className={`rounded-xl border px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${
+                          orderPaymentFilter === filter
+                            ? "border-heritage-green bg-heritage-green text-white"
+                            : "border-heritage-gold/20 bg-white text-heritage-green"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <button
                     onClick={() => {
                       setIsNewRecord(true);
@@ -5404,21 +5456,11 @@ export default function DatabaseView({
                                       V2 submitted
                                     </span>
                                   </td>
-                                  <td className="px-4 py-3 text-[10px] font-mono">
-                                    {futureOrderV2PaymentsByOrderId.has(history.orderId) ? (
-                                      <span
-                                        data-future-order-v2-paid={history.orderId}
-                                        className="font-semibold text-heritage-green"
-                                        title={futureOrderV2PaymentsByOrderId.get(history.orderId)!.paymentIntentId}
-                                      >
-                                        Paid (test){" "}
-                                        {formatFutureOrderV2PaidAmount(
-                                          futureOrderV2PaymentsByOrderId.get(history.orderId)!.amountCents,
-                                        )}
-                                      </span>
-                                    ) : (
-                                      history.paymentStatus.replaceAll("_", " ")
-                                    )}
+                                  <td className="px-4 py-3 text-[10px]">
+                                    <FutureOrderV2AdminPaymentCell
+                                      orderId={history.orderId}
+                                      record={futureOrderV2PaymentsByOrderId.get(history.orderId)}
+                                    />
                                   </td>
                                   <td className="px-4 py-3 text-[10px] font-mono text-heritage-gold">
                                     Immutable snapshot
