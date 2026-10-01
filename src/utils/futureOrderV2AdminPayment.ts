@@ -1,3 +1,4 @@
+import { presentFutureOrderV2History } from "./futureOrderV2History.js";
 import {
   formatCustomerOrderDate,
   formatFutureOrderV2PaidAmount,
@@ -53,4 +54,46 @@ export const adminOrderPaymentState = ({
   if (historyStatus === "invalid_history") return "unknown";
   if (historyStatus === "valid") return hasV2PaymentRecord ? "paid" : "awaiting";
   return legacyIsPaid === true ? "paid" : "awaiting";
+};
+
+interface LegacyWorkshopOrder {
+  shipment?: { currentStage?: number; status?: string };
+  payment?: {
+    isPaid?: boolean;
+    secondPaymentStatus?: string;
+    subtotal?: unknown;
+    deposit?: unknown;
+    remaining?: unknown;
+  };
+}
+
+/** V2 orders have no legacy shipment or payment object. The documentation cards must skip them. */
+export const selectLegacyWorkshopOrders = (orders: readonly unknown[]): LegacyWorkshopOrder[] =>
+  orders.filter((order): order is LegacyWorkshopOrder => {
+    try {
+      return presentFutureOrderV2History(order).status === "not_v2";
+    } catch {
+      return false;
+    }
+  });
+
+const legacyAmount = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) ? value : 0);
+
+export const summarizeAdminDocumentationOrders = (orders: readonly unknown[]) => {
+  const legacy = selectLegacyWorkshopOrders(orders);
+  const collected = (order: LegacyWorkshopOrder) =>
+    order.payment?.isPaid || order.payment?.secondPaymentStatus === "paid"
+      ? legacyAmount(order.payment?.subtotal)
+      : legacyAmount(order.payment?.deposit);
+  const outstanding = (order: LegacyWorkshopOrder) =>
+    order.payment?.secondPaymentStatus !== "paid" ? legacyAmount(order.payment?.remaining) : 0;
+  return {
+    pending: legacy.filter((order) => [1, 2].includes(order.shipment?.currentStage ?? -1)).length,
+    production: legacy.filter((order) => [3, 4].includes(order.shipment?.currentStage ?? -1)).length,
+    completed: legacy.filter((order) => (order.shipment?.currentStage ?? 0) >= 5).length,
+    cancelled: legacy.filter((order) => String(order.shipment?.status ?? "").toLowerCase().includes("cancel")).length,
+    pendingPayments: legacy.reduce((sum, order) => sum + outstanding(order), 0),
+    completedPayments: legacy.reduce((sum, order) => sum + collected(order), 0),
+    outstandingBalance: legacy.reduce((sum, order) => sum + outstanding(order), 0),
+  };
 };
