@@ -14,6 +14,7 @@ import { authorizeFutureOrderV2Payment } from "../utils/futureOrderV2Payment";
 import { recordFutureOrderV2Payment } from "../services/futureOrderV2PaymentRecordClient";
 import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
 import { presentCustomerWorkshopProgress } from "../utils/customerWorkshopProgress";
+import { presentCustomerDashboardBanner } from "../utils/customerDashboardBanner";
 
 const futureOrderV2DashboardPaymentActions: FutureOrderV2DashboardPaymentActions = {
   authorize: authorizeFutureOrderV2Payment,
@@ -70,6 +71,11 @@ export default function DashboardView({
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
   const [futureOrderV2PaymentsByOrderId, setFutureOrderV2PaymentsByOrderId] =
     useState<ReadonlyMap<string, FutureOrderV2PaymentRecord>>(new Map());
+  const [openV2OrderId, setOpenV2OrderId] = useState<string | null>(null);
+  const v2Banner = presentCustomerDashboardBanner(
+    activeOrders,
+    futureOrderV2PaymentsByOrderId,
+  );
   useEffect(
     () => StorageService.subscribeToCustomerFutureOrderV2Payments(setFutureOrderV2PaymentsByOrderId),
     [currentUser?.email],
@@ -119,7 +125,20 @@ export default function DashboardView({
           <div className="lg:col-span-7 space-y-4 font-sans">
             <h2 className="text-xl font-serif mb-2">Welcome, {currentUser?.name || 'Guest'}</h2>
             
-            {journey.requiresAttention && (
+            {v2Banner ? (
+              <>
+                <p data-customer-dashboard-banner className="text-sm opacity-80 mb-4">{v2Banner.message}</p>
+                {v2Banner.action && (
+                  <button
+                    type="button"
+                    data-customer-dashboard-banner-details={v2Banner.action.orderId}
+                    onClick={() => setOpenV2OrderId(v2Banner.action.orderId)}
+                    className="bg-heritage-gold text-heritage-forest px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer">
+                    {v2Banner.action.label}
+                  </button>
+                )}
+              </>
+            ) : journey.requiresAttention && (
               <>
                 <p className="text-sm opacity-80 mb-4">{journey.notification}</p>
                 <div className="flex gap-4">
@@ -148,6 +167,8 @@ export default function DashboardView({
               orders={activeOrders}
               paymentsByOrderId={futureOrderV2PaymentsByOrderId}
               paymentActions={futureOrderV2DashboardPaymentActions}
+              openOrderId={openV2OrderId}
+              onOpenOrderChange={setOpenV2OrderId}
             />
 
             {/* 1. MY DRAFT DESIGNS */}

@@ -3,6 +3,7 @@ import { OrderRoutingEngine } from "./OrderRoutingEngine";
 import { AuthorizationEngine } from "./AuthorizationEngine";
 import { BatchBusinessRules } from "./BatchBusinessRules";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
+import { presentFutureOrderV2History } from "../utils/futureOrderV2History";
 
 
 export type JourneyState =
@@ -123,9 +124,19 @@ export class CustomerJourneyEngine {
              state = "ACCOUNT_CREATED";
         }
 
-        const userActiveOrders = activeOrders.filter(o => 
-            o.customer && currentUser && o.customer.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()
-        );
+        const userActiveOrders = activeOrders.filter((order) => {
+            try {
+                const history = presentFutureOrderV2History(order);
+                if (history.status === "valid" || history.status === "invalid_history") return false;
+            } catch {
+                return false;
+            }
+            return Boolean(
+                order.customer &&
+                currentUser &&
+                order.customer.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase(),
+            );
+        });
         const activeOrder = userActiveOrders.length > 0 ? userActiveOrders[0] : null;
 
         if (activeOrder) {
