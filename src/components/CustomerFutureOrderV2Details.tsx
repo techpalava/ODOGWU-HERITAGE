@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { CheckCircle2, FileText, LockKeyhole, Printer, X } from "lucide-react";
 import { FutureOrderV2PaymentAlert } from "./FutureOrderV2PaymentAlert";
 import { FutureOrderV2StripeCard } from "./FutureOrderV2StripeCard";
@@ -138,8 +139,8 @@ export const CustomerFutureOrderV2Details = ({
           ? "Your card payment went through."
           : "Enter your card details and pay to complete your order.";
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-heritage-ink/60 backdrop-blur-sm">
+  const dialog = (
+    <div className="fixed inset-0 z-[80] overflow-y-auto bg-heritage-ink/60 backdrop-blur-sm">
       <div data-customer-v2-order-dialog-frame className="flex min-h-full items-center justify-center p-4">
         <div
           role="dialog"
@@ -407,4 +408,8 @@ export const CustomerFutureOrderV2Details = ({
       </div>
     </div>
   );
+  if (typeof document !== "undefined" && document.body) {
+    return createPortal(dialog, document.body);
+  }
+  return dialog;
 };
