@@ -15,6 +15,7 @@ import {
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
 import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
+import { presentFutureOrderV2WorkshopCard, type FutureOrderV2WorkshopProgress } from "../utils/futureOrderV2WorkshopProgress";
 import { CustomerFutureOrderV2Details } from "./CustomerFutureOrderV2Details";
 
 interface CustomerFutureOrderV2ListProps {
@@ -23,6 +24,7 @@ interface CustomerFutureOrderV2ListProps {
   paymentActions?: FutureOrderV2DashboardPaymentActions;
   openOrderId?: string | null;
   onOpenOrderChange?: (orderId: string | null) => void;
+  workshopByOrderId?: ReadonlyMap<string, FutureOrderV2WorkshopProgress>;
 }
 
 interface CustomerFutureOrderV2Entry {
@@ -36,6 +38,7 @@ export const CustomerFutureOrderV2List = ({
   paymentActions,
   openOrderId: controlledOpenOrderId,
   onOpenOrderChange,
+  workshopByOrderId = new Map(),
 }: CustomerFutureOrderV2ListProps) => {
   const [internalOpenOrderId, setInternalOpenOrderId] = useState<string | null>(null);
   const openOrderId = controlledOpenOrderId !== undefined ? controlledOpenOrderId : internalOpenOrderId;
@@ -114,6 +117,22 @@ export const CustomerFutureOrderV2List = ({
                   </li>
                 ))}
               </ul>
+              {(() => {
+                const progress = presentFutureOrderV2WorkshopCard(
+                  workshopByOrderId.get(order.orderId),
+                );
+                return (
+                  <p
+                    data-customer-v2-order-progress={order.orderId}
+                    className="text-[10px] text-heritage-ink/75"
+                  >
+                    {progress.statusLabel}
+                    {progress.stageLabel ? <><br />{progress.stageLabel}</> : null}
+                    <br />
+                    Est. Delivery: {progress.deliveryLabel}
+                  </p>
+                );
+              })()}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 {order.exactTotalCents !== null ? (
                   <div className="text-[10px] text-heritage-ink/75">
