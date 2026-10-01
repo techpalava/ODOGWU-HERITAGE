@@ -80,6 +80,15 @@ import {
   summarizeAdminDocumentationOrders,
   type AdminPaymentFilter,
 } from "../utils/futureOrderV2AdminPayment";
+import {
+  applyCustomerDetailsToMatchingOrders,
+  ensureLegacyOrderEditorShape,
+  formatAdminShippingStatus,
+  legacyTrackingId,
+  presentLegacyMasterOrderRow,
+  replaceOrderByTrackingId,
+} from "../utils/masterOrderAdmin";
+import { buildProductionManifestCsv } from "../utils/productionManifestCsv";
 import { FutureOrderV2AdminPaymentCell } from "./FutureOrderV2AdminPaymentCell";
 
 interface DatabaseViewProps {
@@ -695,34 +704,26 @@ export default function DatabaseView({
 
   const [isExporting, setIsExporting] = useState(false);
 
-  const handleExportManifest = async () => {
+  const handleExportManifest = () => {
     setIsExporting(true);
     try {
-      const response = await fetch("/api/production-manifest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orders }),
-      });
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `heritage_workshop_production_manifest_${Date.now()}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(url);
-        triggerStatus(
-          "Production manifest exported successfully for workshop floor!",
-          "success",
-        );
-      } else {
-        alert("Failed to generate production manifest.");
-      }
+      const csv = buildProductionManifestCsv(orders);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `heritage_workshop_production_manifest_${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      triggerStatus(
+        "Production manifest exported successfully for workshop floor!",
+        "success",
+      );
     } catch (err) {
       console.error(err);
-      alert("Failed to connect to backend manifest engine.");
+      alert("Failed to generate production manifest.");
     } finally {
       setIsExporting(false);
     }
@@ -942,19 +943,12 @@ export default function DatabaseView({
       );
       // Update any orders placed by this customer as well
       setOrders((prev) =>
-        prev.map((o) =>
-          o.customer.email.toLowerCase() === item.email.toLowerCase()
-            ? {
-                ...o,
-                customer: {
-                  ...o.customer,
-                  name: item.name,
-                  phone: item.phone,
-                  location: item.location,
-                },
-              }
-            : o,
-        ),
+        applyCustomerDetailsToMatchingOrders(prev, {
+          email: item.email,
+          name: item.name,
+          phone: item.phone,
+          location: item.location,
+        }),
       );
       triggerStatus(`Updated Customer ${item.name} successfully!`);
     }
@@ -1198,28 +1192,36 @@ export default function DatabaseView({
   };
 
   // ORDERS
-  const handleSaveOrder = (e: React.FormEvent) => {
+  const handleSaveOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    const item = editingItem as MasterOrder;
-    if (!item.shipment.trackingId) {
+    const item = ensureLegacyOrderEditorShape(editingItem) as unknown as MasterOrder;
+    const trackingId = legacyTrackingId(item);
+    if (!trackingId) {
       alert("Order tracking ID is required.");
       return;
     }
-
-    if (isNewRecord) {
-      setOrders((prev) => [item, ...prev]);
-      triggerStatus(`Manually registered order ${item.shipment.trackingId}`);
-    } else {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.shipment.trackingId === item.shipment.trackingId ? item : o,
-        ),
-      );
-      triggerStatus(
-        `Order ${item.shipment.trackingId} tracking & payments updated!`,
-      );
+    if (presentFutureOrderV2History(item).status !== "not_v2") {
+      triggerStatus("V2 orders are read-only.", "error");
+      return;
     }
-    setEditingType(null);
+    const saved = {
+      ...item,
+      shipment: { ...item.shipment, trackingId },
+    };
+
+    try {
+      await StorageService.saveOrder(saved);
+      if (isNewRecord) {
+        setOrders((prev) => [saved, ...prev]);
+        triggerStatus(`Manually registered order ${trackingId}`);
+      } else {
+        setOrders((prev) => replaceOrderByTrackingId(prev, trackingId, saved));
+        triggerStatus(`Order ${trackingId} tracking & payments updated!`);
+      }
+      setEditingType(null);
+    } catch {
+      triggerStatus("Failed to save order", "error");
+    }
   };
 
   const handleDeleteOrder = async (trackingId: string) => {
@@ -3108,12 +3110,12 @@ export default function DatabaseView({
                         type="text"
                         required
                         disabled={!isNewRecord}
-                        value={editingItem.shipment.trackingId}
+                        value={editingItem.shipment?.trackingId || ""}
                         onChange={(e) =>
                           setEditingItem({
                             ...editingItem,
                             shipment: {
-                              ...editingItem.shipment,
+                              ...(editingItem.shipment || {}),
                               trackingId: e.target.value,
                             },
                           })
@@ -3127,7 +3129,7 @@ export default function DatabaseView({
                         Customer Link (User Email)
                       </label>
                       <select
-                        value={editingItem.customer.email}
+                        value={editingItem.customer?.email || ""}
                         onChange={(e) => {
                           const matched = customers.find(
                             (c) => c.email === e.target.value,
@@ -3158,7 +3160,7 @@ export default function DatabaseView({
                         Stitch tracking status (Shipment Stage 1 to 6)
                       </label>
                       <select
-                        value={editingItem.shipment.currentStage}
+                        value={editingItem.shipment?.currentStage || 1}
                         onChange={(e) => {
                           const val = parseInt(e.target.value);
                           const statusTexts = [
@@ -3172,7 +3174,7 @@ export default function DatabaseView({
                           setEditingItem({
                             ...editingItem,
                             shipment: {
-                              ...editingItem.shipment,
+                              ...(editingItem.shipment || {}),
                               currentStage: val,
                               status:
                                 statusTexts[val - 1] ||
@@ -3207,7 +3209,7 @@ export default function DatabaseView({
                         Sourced Fabric Swatch
                       </label>
                       <select
-                        value={editingItem.fabric.code}
+                        value={editingItem.fabric?.code || ""}
                         onChange={(e) => {
                           const f = fabrics.find(
                             (fb) => fb.code === e.target.value,
@@ -3233,7 +3235,7 @@ export default function DatabaseView({
                         Garment Style Base
                       </label>
                       <select
-                        value={editingItem.style.id}
+                        value={editingItem.style?.id || ""}
                         onChange={(e) => {
                           const s = styles.find(
                             (st) => st.id === e.target.value,
@@ -5387,7 +5389,7 @@ export default function DatabaseView({
                             </td>
                           </tr>
                         ) : (
-                          filteredOrders.map((o) => {
+                          filteredOrders.map((o, index) => {
                             const v2History = presentFutureOrderV2History(o);
                             if (v2History.status === "valid") {
                               const history = v2History.value;
@@ -5476,7 +5478,7 @@ export default function DatabaseView({
                                     Immutable snapshot
                                   </td>
                                   <td className="px-4 py-3 text-[10px] font-mono text-blue-600">
-                                    {history.shippingStatus.replaceAll("_", " ")}
+                                    {formatAdminShippingStatus(history.shippingStatus)}
                                   </td>
                                   <td className="px-4 py-3 font-bold text-heritage-green">
                                     {history.exactTotalCents === null
@@ -5501,20 +5503,21 @@ export default function DatabaseView({
                                 </tr>
                               );
                             }
+                            const row = presentLegacyMasterOrderRow(o);
                             return (
                             <tr
-                              key={o.shipment.trackingId}
+                              key={row.canMutate ? row.trackingId : `legacy-${index}`}
                               className="hover:bg-heritage-forest/5 transition"
                             >
                               <td className="px-4 py-3 font-mono font-bold text-heritage-green">
-                                {o.shipment.trackingId}
+                                {row.trackingId}
                               </td>
                               <td className="px-4 py-3 space-y-0.5">
                                 <p className="font-semibold text-heritage-ink leading-tight">
-                                  {o.customer.name}
+                                  {row.customerName}
                                 </p>
                                 <p className="text-[9px] text-gray-400 font-mono">
-                                  {o.customer.email}
+                                  {row.customerEmail}
                                 </p>
                               </td>
                               <td className="px-4 py-3 space-y-1">
@@ -5522,54 +5525,51 @@ export default function DatabaseView({
                                   <span
                                     className="h-2 w-2 rounded-full border border-gray-300"
                                     style={{
-                                      backgroundColor: o.fabric.colorHex,
+                                      backgroundColor: row.fabricColor,
                                     }}
                                   />
                                   <span className="text-[9px] text-gray-500 font-mono">
-                                    {o.fabric.name} ({o.fabric.code})
+                                    {row.fabricName}{row.fabricCode ? ` (${row.fabricCode})` : ""}
                                   </span>
                                 </div>
                               </td>
                               <td className="px-4 py-3">
                                 <span className="inline-block px-1.5 py-0.5 bg-heritage-forest/5 text-heritage-green rounded font-semibold text-[10px]">
-                                  {o.style.name}
+                                  {row.styleName}
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-xs text-gray-600">
-                                {o.style.outfitType || o.garment.type}
+                                {row.outfitType}
                               </td>
                               <td className="px-4 py-3 text-xs text-gray-600">
-                                {o.style.garmentComposition || "Standard"}
+                                {row.composition}
                               </td>
                               <td className="px-4 py-3 text-xs">
                                 <span className="px-2 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-600 text-[9px] uppercase tracking-wider">
-                                  {o.batchType || "batch"}
+                                  {row.batchType}
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-[10px] font-mono">
-                                {o.payment.isPaid ? "Deposit Paid" : "Unpaid"}
+                                {row.paymentLabel}
                               </td>
                               <td className="px-4 py-3 text-[10px] font-mono text-heritage-gold">
-                                Stage {o.shipment.currentStage || 1}
+                                Stage {row.stage}
                               </td>
                               <td className="px-4 py-3 text-[10px] font-mono text-blue-600">
-                                {o.shipment.status}
+                                {row.status}
                               </td>
                               <td className="px-4 py-3 font-bold text-heritage-green">
-                                €
-                                {(
-                                  o.garment.totalPrice || o.payment.subtotal
-                                ).toFixed(2)}
+                                €{row.totalLabel}
                               </td>
                               <td className="px-4 py-3 text-[10px] text-gray-400">
-                                {o.payment.date}
+                                {row.date}
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="flex gap-2 justify-end">
                                   <button
                                     onClick={() => {
                                       setIsNewRecord(false);
-                                      setEditingItem(o);
+                                      setEditingItem(ensureLegacyOrderEditorShape(o));
                                       setEditingType("order");
                                     }}
                                     className="p-1.5 bg-gray-50 hover:bg-heritage-green/10 text-heritage-green rounded transition"
@@ -5577,14 +5577,16 @@ export default function DatabaseView({
                                   >
                                     <Edit2 size={12} />
                                   </button>
-                                  <button
-                                    onClick={() =>
-                                      handleDeleteOrder(o.shipment.trackingId)
-                                    }
-                                    className="p-1.5 bg-gray-50 hover:bg-red-50 text-red-600 rounded transition"
-                                  >
-                                    <Trash2 size={12} />
-                                  </button>
+                                  {row.canMutate && (
+                                    <button
+                                      onClick={() =>
+                                        handleDeleteOrder(row.trackingId)
+                                      }
+                                      className="p-1.5 bg-gray-50 hover:bg-red-50 text-red-600 rounded transition"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
