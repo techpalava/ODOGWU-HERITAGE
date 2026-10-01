@@ -89,6 +89,7 @@ import {
   replaceOrderByTrackingId,
 } from "../utils/masterOrderAdmin";
 import { buildProductionManifestCsv } from "../utils/productionManifestCsv";
+import { workshopDeliveryDateInputValue } from "../utils/customerWorkshopProgress";
 import { FutureOrderV2AdminPaymentCell } from "./FutureOrderV2AdminPaymentCell";
 
 interface DatabaseViewProps {
@@ -3206,6 +3207,35 @@ export default function DatabaseView({
                     </div>
                     <div className="space-y-1">
                       <label className="font-bold text-heritage-green">
+                        Estimated delivery
+                      </label>
+                      <input
+                        type="date"
+                        value={workshopDeliveryDateInputValue(
+                          editingItem.shipment?.estimatedDeliveryDate,
+                        )}
+                        onChange={(e) =>
+                          setEditingItem({
+                            ...editingItem,
+                            shipment: {
+                              ...(editingItem.shipment || {}),
+                              estimatedDeliveryDate: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      />
+                      {editingItem.shipment?.estimatedDeliveryDate &&
+                        !workshopDeliveryDateInputValue(
+                          editingItem.shipment.estimatedDeliveryDate,
+                        ) && (
+                          <p className="text-[10px] text-heritage-ink/60">
+                            Current note: {editingItem.shipment.estimatedDeliveryDate}
+                          </p>
+                        )}
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
                         Sourced Fabric Swatch
                       </label>
                       <select
@@ -5332,7 +5362,7 @@ export default function DatabaseView({
                           trackingId: `ODH-${Date.now().toString().slice(-4)}`,
                           status: "Pattern Drafting & Sewing on Lagos floor",
                           currentStage: 3,
-                          estimatedDeliveryDate: "May 30",
+                          estimatedDeliveryDate: "",
                         },
                         specialInstructions: "Ensure loose comfort fits",
                         notesAboutLeftoverFabric: "Sew traditional fila cap",
