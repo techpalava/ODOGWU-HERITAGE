@@ -4,6 +4,10 @@ import {
 } from "./futureOrderV2History.js";
 import { parsePersistedFutureOrderV2 } from "./futureOrderV2PersistenceContract.js";
 import { formatCustomerOrderDate } from "./futureOrderV2PaymentRecord.js";
+import {
+  presentFutureOrderV2WorkshopCard,
+  type FutureOrderV2WorkshopProgress,
+} from "./futureOrderV2WorkshopProgress.js";
 
 export interface CustomerDashboardBannerAction {
   readonly orderId: string;
@@ -19,11 +23,13 @@ interface BannerOrder {
   readonly orderId: string;
   readonly persistedAt: string;
   readonly paid: boolean;
+  readonly progress: FutureOrderV2WorkshopProgress | undefined;
 }
 
 const bannerOrders = (
   orders: readonly unknown[],
   paymentsByOrderId: ReadonlyMap<string, unknown>,
+  workshopByOrderId: ReadonlyMap<string, FutureOrderV2WorkshopProgress>,
 ): BannerOrder[] =>
   orders.flatMap((order) => {
     try {
@@ -35,32 +41,43 @@ const bannerOrders = (
         orderId: history.value.orderId,
         persistedAt: history.value.persistedAt,
         paid: paymentsByOrderId.has(history.value.orderId),
+        progress: workshopByOrderId.get(history.value.orderId),
       }];
     } catch {
       return [];
     }
   });
 
+const paidProgressSentence = (order: BannerOrder): string => {
+  const placed = `Order placed ${formatCustomerOrderDate(order.persistedAt)} is paid.`;
+  if (!order.progress) return `${placed} Production has not started.`;
+  const card = presentFutureOrderV2WorkshopCard(order.progress);
+  return `${placed} ${card.statusLabel}. Stage ${order.progress.currentStage} of 6. Delivery ${card.deliveryLabel}.`;
+};
+
 export const presentCustomerDashboardBanner = (
   orders: readonly unknown[],
   paymentsByOrderId: ReadonlyMap<string, unknown>,
+  workshopByOrderId: ReadonlyMap<string, FutureOrderV2WorkshopProgress> = new Map(),
 ): CustomerDashboardBanner | null => {
-  const listed = bannerOrders(orders, paymentsByOrderId);
+  const listed = bannerOrders(orders, paymentsByOrderId, workshopByOrderId);
   if (listed.length === 0) return null;
   if (listed.length === 1) {
     const order = listed[0];
-    const placed = `Order placed ${formatCustomerOrderDate(order.persistedAt)}`;
     return {
       message: order.paid
-        ? `${placed} is paid. Production has not started.`
-        : `${placed} is waiting for payment.`,
+        ? paidProgressSentence(order)
+        : `Order placed ${formatCustomerOrderDate(order.persistedAt)} is waiting for payment.`,
       action: { orderId: order.orderId, label: "View details" },
     };
   }
   const unpaid = listed.filter((order) => !order.paid);
   if (unpaid.length === 0) {
+    const anyProgress = listed.some((order) => order.progress);
     return {
-      message: `You have ${listed.length} orders. ${listed.length} paid. Production has not started.`,
+      message: anyProgress
+        ? `You have ${listed.length} orders. ${listed.length} paid.`
+        : `You have ${listed.length} orders. ${listed.length} paid. Production has not started.`,
       action: null,
     };
   }

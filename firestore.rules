@@ -784,6 +784,24 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /future_order_v2_workshop/{orderId} {
+      // Workshop stage for a paid V2 order. The order snapshot itself stays immutable.
+      allow read: if isAdmin() || ownsExistingDocument();
+      allow create, update: if isAdmin()
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.orderId == orderId
+        && request.resource.data.ownerUid is string
+        && request.resource.data.ownerUid.size() > 0
+        && request.resource.data.currentStage is int
+        && request.resource.data.currentStage >= 1
+        && request.resource.data.currentStage <= 6
+        && request.resource.data.status is string
+        && request.resource.data.status.size() > 0
+        && request.resource.data.estimatedDeliveryDate is string
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
     match /businessSettings/{document=**} {
       allow read: if true;
       allow write: if isAdmin();
