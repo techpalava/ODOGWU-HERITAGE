@@ -77,6 +77,7 @@ import { presentFutureOrderV2History } from "../utils/futureOrderV2History";
 import {
   adminOrderPaymentState,
   matchesAdminPaymentFilter,
+  summarizeAdminDocumentationOrders,
   type AdminPaymentFilter,
 } from "../utils/futureOrderV2AdminPayment";
 import { FutureOrderV2AdminPaymentCell } from "./FutureOrderV2AdminPaymentCell";
@@ -1378,6 +1379,7 @@ export default function DatabaseView({
       return "unknown" as const;
     }
   };
+  const documentationOrderSummary = summarizeAdminDocumentationOrders(orders);
   const orderPaymentCounts = orders.reduce(
     (counts, order) => {
       counts.all += 1;
@@ -3832,7 +3834,7 @@ export default function DatabaseView({
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Active Customers</span>
-                    <strong className="text-xl text-heritage-green font-mono">{customers.filter(c => orders.some(o => o.customer.email === c.email)).length}</strong>
+                    <strong className="text-xl text-heritage-green font-mono">{customers.filter(c => orders.some(o => o.customer?.email === c.email)).length}</strong>
                   </div>
                   
                   {/* Fabrics */}
@@ -3860,37 +3862,37 @@ export default function DatabaseView({
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Pending Orders</span>
-                    <strong className="text-xl text-amber-600 font-mono">{orders.filter(o => [1, 2].includes(o.shipment.currentStage)).length}</strong>
+                    <strong className="text-xl text-amber-600 font-mono">{documentationOrderSummary.pending}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Production Orders</span>
-                    <strong className="text-xl text-heritage-gold font-mono">{orders.filter(o => [3, 4].includes(o.shipment.currentStage)).length}</strong>
+                    <strong className="text-xl text-heritage-gold font-mono">{documentationOrderSummary.production}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Completed Orders</span>
-                    <strong className="text-xl text-heritage-green font-mono">{orders.filter(o => o.shipment.currentStage >= 5).length}</strong>
+                    <strong className="text-xl text-heritage-green font-mono">{documentationOrderSummary.completed}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Cancelled Orders</span>
-                    <strong className="text-xl text-gray-500 font-mono">{orders.filter(o => o.shipment.status.toLowerCase().includes("cancel")).length}</strong>
+                    <strong className="text-xl text-gray-500 font-mono">{documentationOrderSummary.cancelled}</strong>
                   </div>
 
                   {/* Payments */}
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Pending Payments</span>
-                    <strong className="text-xl text-amber-600 font-mono">€{orders.reduce((sum, o) => sum + (o.payment.secondPaymentStatus !== "paid" ? o.payment.remaining : 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                    <strong className="text-xl text-amber-600 font-mono">€{documentationOrderSummary.pendingPayments.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Completed Payments</span>
-                    <strong className="text-xl text-heritage-green font-mono">€{orders.reduce((sum, o) => sum + (o.payment.isPaid || o.payment.secondPaymentStatus === "paid" ? o.payment.subtotal : (o.payment.deposit || 0)), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                    <strong className="text-xl text-heritage-green font-mono">€{documentationOrderSummary.completedPayments.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Total Revenue</span>
-                    <strong className="text-xl text-heritage-green font-mono">€{orders.reduce((sum, o) => sum + (o.payment.isPaid || o.payment.secondPaymentStatus === "paid" ? o.payment.subtotal : (o.payment.deposit || 0)), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                    <strong className="text-xl text-heritage-green font-mono">€{documentationOrderSummary.completedPayments.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
                   </div>
                   <div className="bg-white border border-heritage-gold/20 rounded-xl p-4 shadow-sm">
                     <span className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Outstanding Balance</span>
-                    <strong className="text-xl text-amber-600 font-mono">€{orders.reduce((sum, o) => sum + (o.payment.secondPaymentStatus !== "paid" ? o.payment.remaining : 0), 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                    <strong className="text-xl text-amber-600 font-mono">€{documentationOrderSummary.outstandingBalance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
                   </div>
 
                   {/* Gallery */}

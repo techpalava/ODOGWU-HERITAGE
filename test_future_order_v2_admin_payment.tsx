@@ -6,6 +6,7 @@ import {
   adminOrderPaymentState,
   matchesAdminPaymentFilter,
   presentFutureOrderV2AdminPayment,
+  summarizeAdminDocumentationOrders,
   type AdminOrderPaymentState,
 } from "./src/utils/futureOrderV2AdminPayment";
 import {
@@ -54,6 +55,25 @@ assert.equal(
   adminOrderPaymentState({ historyStatus: "invalid_history", hasV2PaymentRecord: false, legacyIsPaid: true }),
   "unknown",
 );
+
+const summary = summarizeAdminDocumentationOrders([
+  { schemaVersion: 2, recordType: "future_order_v2", orderId: "future-order-admin" },
+  { customer: { email: "member@example.com" } },
+  {
+    shipment: { currentStage: 1, status: "Pattern Drafting" },
+    payment: { isPaid: true, subtotal: 195, deposit: 97.5, remaining: 97.5, secondPaymentStatus: "unpaid" },
+  },
+  {
+    shipment: { currentStage: 6, status: "Cancelled by customer" },
+    payment: { isPaid: false, subtotal: 40, deposit: 10, remaining: 30, secondPaymentStatus: "unpaid" },
+  },
+]);
+assert.equal(summary.pending, 1, "A V2 order without shipment must not be counted or crash the panel");
+assert.equal(summary.completed, 1);
+assert.equal(summary.cancelled, 1);
+assert.equal(summary.completedPayments, 205);
+assert.equal(summary.pendingPayments, 97.5 + 30);
+assert.equal(summary.outstandingBalance, 97.5 + 30);
 
 const states: AdminOrderPaymentState[] = ["paid", "awaiting", "unknown"];
 for (const state of states) {
