@@ -13,6 +13,17 @@ import {
   formatCustomerOrderDate,
   type FutureOrderV2PaymentRecord,
 } from "./src/utils/futureOrderV2PaymentRecord";
+import {
+  applyCustomerDetailsToMatchingOrders,
+  ensureLegacyOrderEditorShape,
+  formatAdminShippingStatus,
+  presentLegacyMasterOrderRow,
+  replaceOrderByTrackingId,
+} from "./src/utils/masterOrderAdmin";
+import {
+  PRODUCTION_MANIFEST_HEADERS,
+  buildProductionManifestCsv,
+} from "./src/utils/productionManifestCsv";
 
 const record: FutureOrderV2PaymentRecord = {
   schemaVersion: 1,
@@ -125,5 +136,74 @@ assert.equal(
   filterSource.includes("payment provider unavailable"),
   false,
 );
+
+const v2Order = { schemaVersion: 2, recordType: "future_order_v2", orderId: "future-order-admin" };
+const legacyOrder = {
+  shipment: { trackingId: "ODG-1", currentStage: 3, status: "Sewing" },
+  customer: { name: "Ada", email: "ada@example.com" },
+  payment: { isPaid: true, subtotal: 195, date: "1 Oct 2026" },
+  garment: { totalPrice: 195, type: "Shirt" },
+  style: { name: "Senator" },
+  fabric: { name: "Ankara", code: "ODG-001", colorHex: "#111111" },
+};
+const incompleteOrder = { customer: { email: "ada@example.com" } };
+const replaced = replaceOrderByTrackingId<unknown>(
+  [v2Order, legacyOrder, incompleteOrder],
+  "ODG-1",
+  { ...legacyOrder, specialInstructions: "Loose fit" },
+);
+assert.equal(replaced[0], v2Order, "A V2 order without shipment stays untouched");
+assert.equal((replaced[1] as { specialInstructions?: string }).specialInstructions, "Loose fit");
+assert.equal(replaced[2], incompleteOrder);
+
+const renamed = applyCustomerDetailsToMatchingOrders(
+  [v2Order, incompleteOrder, { customer: { email: "other@example.com", name: "Other" } }],
+  { email: "ADA@example.com", name: "Ada Lovelace", phone: "1", location: "Eindhoven" },
+);
+assert.equal(renamed[0], v2Order);
+assert.equal((renamed[1] as { customer: { name: string } }).customer.name, "Ada Lovelace");
+assert.equal((renamed[2] as { customer: { name: string } }).customer.name, "Other");
+
+const blankRow = presentLegacyMasterOrderRow(incompleteOrder);
+assert.equal(blankRow.trackingId, "—");
+assert.equal(blankRow.paymentLabel, "Unpaid");
+assert.equal(blankRow.stage, 1);
+assert.equal(blankRow.canMutate, false);
+assert.equal(blankRow.totalLabel, "0.00");
+const editor = ensureLegacyOrderEditorShape(incompleteOrder);
+assert.equal((editor.shipment as { trackingId: string }).trackingId, "");
+assert.equal((editor.shipment as { currentStage: number }).currentStage, 1);
+assert.equal((editor.fabric as { code: string }).code, "");
+assert.equal((editor.style as { id: string }).id, "");
+assert.equal(formatAdminShippingStatus(undefined), "—");
+assert.equal(formatAdminShippingStatus("READY_FOR_PICKUP"), "READY FOR PICKUP");
+
+const csv = buildProductionManifestCsv([
+  legacyOrder,
+  v2Order,
+  { schemaVersion: 2, recordType: "future_order_v2" },
+]);
+const csvLines = csv.split("\n");
+assert.equal(csvLines.length, 4);
+assert.equal(csvLines[0].split(",").length, PRODUCTION_MANIFEST_HEADERS.length);
+assert.ok(csvLines[1].includes('"ODG-1"'));
+assert.ok(csvLines[1].includes('"Ada"'));
+assert.ok(csvLines[2].includes('"future-order-admin"'));
+assert.ok(csvLines[2].includes('"N/A"'));
+assert.equal(csvLines[2].split(",").length, PRODUCTION_MANIFEST_HEADERS.length);
+assert.equal(csvLines[3].split(",").length, PRODUCTION_MANIFEST_HEADERS.length);
+
+assert.ok(source.includes("StorageService.saveOrder"), "Sync writes the order");
+assert.ok(source.includes("replaceOrderByTrackingId"));
+assert.ok(source.includes("applyCustomerDetailsToMatchingOrders"));
+assert.ok(source.includes("presentLegacyMasterOrderRow"));
+assert.ok(source.includes("ensureLegacyOrderEditorShape"));
+assert.ok(source.includes("formatAdminShippingStatus"));
+assert.ok(source.includes("buildProductionManifestCsv"));
+assert.ok(source.includes("editingItem.shipment?.trackingId"));
+assert.equal(source.includes("o.shipment.trackingId"), false);
+assert.equal(source.includes("o.customer.email"), false);
+assert.equal(source.includes("/api/production-manifest"), false);
+assert.equal(source.includes("history.shippingStatus.replaceAll"), false);
 
 console.log("Future order V2 admin payment tests passed.");
