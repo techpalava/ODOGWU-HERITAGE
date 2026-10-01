@@ -13,6 +13,7 @@ import { CustomerFutureOrderV2List } from "./CustomerFutureOrderV2List";
 import { authorizeFutureOrderV2Payment } from "../utils/futureOrderV2Payment";
 import { recordFutureOrderV2Payment } from "../services/futureOrderV2PaymentRecordClient";
 import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
+import { presentCustomerWorkshopProgress } from "../utils/customerWorkshopProgress";
 
 const futureOrderV2DashboardPaymentActions: FutureOrderV2DashboardPaymentActions = {
   authorize: authorizeFutureOrderV2Payment,
@@ -192,23 +193,27 @@ export default function DashboardView({
                   </h3>
                 </div>
                 <div className="space-y-4">
-                  {workspace.communityOrders.map((order) => (
+                  {workspace.communityOrders.map((order) => {
+                    const progress = presentCustomerWorkshopProgress(order);
+                    return (
                     <div key={order.shipment?.trackingId || order.id} className="border border-heritage-gold/20 rounded-2xl p-4 space-y-3 flex flex-col">
                       <div className="flex justify-between">
                         <div>
                           <h5 className="font-serif font-bold text-heritage-green">{order.batchName || 'Community Batch'}</h5>
-                          <div className="text-[10px] font-mono text-heritage-ink/60">{order.style.name}</div>
+                          <div className="text-[10px] font-mono text-heritage-ink/60">{order.style?.name || "—"}</div>
                         </div>
                         <span className="px-2 py-1 rounded text-[8px] font-bold uppercase border bg-emerald-50 text-emerald-800 border-emerald-200 h-fit">
-                          {order.shipment?.status || 'Processing'}
+                          {progress.statusLabel}
                         </span>
                       </div>
-                      <div className="text-[10px] text-heritage-ink/75">
-                        Progress: Step {order.shipment?.currentStage || 1} of 6 <br/>
-                        Est. Delivery: {order.shipment?.estimatedDelivery || 'TBD'}
+                      <div className="text-[10px] text-heritage-ink/75" data-customer-workshop-progress={order.shipment?.trackingId || order.id}>
+                        {progress.statusLabel}<br/>
+                        {progress.stageLabel}<br/>
+                        Est. Delivery: {progress.deliveryLabel}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             )}
@@ -223,23 +228,27 @@ export default function DashboardView({
                   </h3>
                 </div>
                 <div className="space-y-4">
-                  {workspace.individualOrders.map((order) => (
+                  {workspace.individualOrders.map((order) => {
+                    const progress = presentCustomerWorkshopProgress(order);
+                    return (
                     <div key={order.shipment?.trackingId || order.id} className="border border-heritage-gold/20 rounded-2xl p-4 space-y-3 flex flex-col">
                       <div className="flex justify-between">
                         <div>
                           <h5 className="font-serif font-bold text-heritage-green">Individual Order</h5>
-                          <div className="text-[10px] font-mono text-heritage-ink/60">{order.style.name}</div>
+                          <div className="text-[10px] font-mono text-heritage-ink/60">{order.style?.name || "—"}</div>
                         </div>
                         <span className="px-2 py-1 rounded text-[8px] font-bold uppercase border bg-emerald-50 text-emerald-800 border-emerald-200 h-fit">
-                          {order.shipment?.status || 'Processing'}
+                          {progress.statusLabel}
                         </span>
                       </div>
-                      <div className="text-[10px] text-heritage-ink/75">
-                        Production Stage: {order.shipment?.currentStage || 1} <br/>
-                        Est. Delivery: {order.shipment?.estimatedDelivery || 'TBD'}
+                      <div className="text-[10px] text-heritage-ink/75" data-customer-workshop-progress={order.shipment?.trackingId || order.id}>
+                        {progress.statusLabel}<br/>
+                        {progress.stageLabel}<br/>
+                        Est. Delivery: {progress.deliveryLabel}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             )}
