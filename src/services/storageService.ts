@@ -49,6 +49,11 @@ import {
   parseFutureOrderV2PaymentRecord,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
+import {
+  FUTURE_ORDER_V2_WORKSHOP_COLLECTION,
+  parseFutureOrderV2WorkshopProgress,
+  type FutureOrderV2WorkshopProgress,
+} from "../utils/futureOrderV2WorkshopProgress";
 
 const GUEST_ORDER_SESSION_KEY = GUEST_ORDER_SESSION_STORAGE_NAMESPACE;
 const ACCOUNT_CART_KEY_PREFIX = "odogwu_account_cart_v1:";
@@ -674,6 +679,36 @@ export const StorageService = {
       },
       (error) => {
         console.error("Error subscribing to customer order payments:", error);
+        callback(new Map());
+      },
+    );
+  },
+
+  subscribeToCustomerFutureOrderV2Workshop: (
+    callback: (progressByOrderId: ReadonlyMap<string, FutureOrderV2WorkshopProgress>) => void,
+  ) => {
+    const ownerUid = auth.currentUser?.uid;
+    if (!ownerUid) {
+      callback(new Map());
+      return () => undefined;
+    }
+    return onSnapshot(
+      query(
+        collection(db, FUTURE_ORDER_V2_WORKSHOP_COLLECTION),
+        where("ownerUid", "==", ownerUid),
+      ),
+      (snapshot) => {
+        const records = new Map<string, FutureOrderV2WorkshopProgress>();
+        snapshot.docs.forEach((progressDocument) => {
+          const record = parseFutureOrderV2WorkshopProgress(progressDocument.data());
+          if (record && record.orderId === progressDocument.id) {
+            records.set(record.orderId, record);
+          }
+        });
+        callback(records);
+      },
+      (error) => {
+        console.error("Error subscribing to customer workshop progress:", error);
         callback(new Map());
       },
     );

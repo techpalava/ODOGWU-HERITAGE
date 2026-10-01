@@ -135,13 +135,19 @@ import { DesignStylePublicationError } from "../utils/designStylePublication";
 import { getNextDesignStyleId } from "../utils/designStyleId";
 import { DesignStyleDecorativePriceOverrides } from "./DesignStyleDecorativePriceOverrides";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
-import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
+import { collection, onSnapshot, deleteDoc, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../services/firebase";
 import {
   FUTURE_ORDER_V2_PAYMENT_COLLECTION,
   parseFutureOrderV2PaymentRecord,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
+import {
+  FUTURE_ORDER_V2_WORKSHOP_COLLECTION,
+  parseFutureOrderV2WorkshopProgress,
+  workshopStageStatus,
+  type FutureOrderV2WorkshopProgress,
+} from "../utils/futureOrderV2WorkshopProgress";
 import { BatchManagementPanel } from "./BatchManagementPanel";
 import {
   getFabricGarmentLabel,
@@ -242,6 +248,27 @@ export default function DatabaseView({
       },
     );
   }, [activeTab]);
+  const [futureOrderV2WorkshopByOrderId, setFutureOrderV2WorkshopByOrderId] =
+    useState<ReadonlyMap<string, FutureOrderV2WorkshopProgress>>(new Map());
+  useEffect(() => {
+    if (activeTab !== "orders") return;
+    return onSnapshot(
+      collection(db, FUTURE_ORDER_V2_WORKSHOP_COLLECTION),
+      (snapshot) => {
+        const records = new Map<string, FutureOrderV2WorkshopProgress>();
+        snapshot.docs.forEach((progressDoc) => {
+          const record = parseFutureOrderV2WorkshopProgress(progressDoc.data());
+          if (record && record.orderId === progressDoc.id) {
+            records.set(record.orderId, record);
+          }
+        });
+        setFutureOrderV2WorkshopByOrderId(records);
+      },
+      (error) => {
+        console.error("Error subscribing to V2 workshop progress:", error);
+      },
+    );
+  }, [activeTab]);
   const [settingsSubTab, setSettingsSubTab] = useState<
     "rules" | "discounts" | "pricing_engine"
   >("rules");
@@ -324,6 +351,7 @@ export default function DatabaseView({
     | "showpiece"
     | "photo"
     | "catalog_option"
+    | "v2-workshop"
     | null
   >(null);
   const [editingItem, setEditingItem] = useState<any>(null); // holds the item being edited or new template
@@ -1225,6 +1253,42 @@ export default function DatabaseView({
     }
   };
 
+  const handleSaveV2Workshop = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const orderId = typeof editingItem?.orderId === "string" ? editingItem.orderId : "";
+    const ownerUid = typeof editingItem?.ownerUid === "string" ? editingItem.ownerUid : "";
+    const currentStage = Number(editingItem?.currentStage);
+    if (!orderId || !ownerUid || !Number.isInteger(currentStage) || currentStage < 1 || currentStage > 6) {
+      alert("A paid order, owner, and stage are required.");
+      return;
+    }
+    if (!futureOrderV2PaymentsByOrderId.has(orderId)) {
+      triggerStatus("Only a paid order can move into production.", "error");
+      return;
+    }
+    try {
+      await setDoc(doc(db, FUTURE_ORDER_V2_WORKSHOP_COLLECTION, orderId), {
+        schemaVersion: 1,
+        orderId,
+        ownerUid,
+        currentStage,
+        status: workshopStageStatus(
+          currentStage,
+          businessSettings.productionSettings.defaultPickupLocation,
+        ),
+        estimatedDeliveryDate:
+          typeof editingItem?.estimatedDeliveryDate === "string"
+            ? editingItem.estimatedDeliveryDate
+            : "",
+        updatedAt: serverTimestamp(),
+      });
+      triggerStatus(`Workshop progress saved for ${orderId}`);
+      setEditingType(null);
+    } catch {
+      triggerStatus("Failed to save workshop progress", "error");
+    }
+  };
+
   const handleDeleteOrder = async (trackingId: string) => {
     try {
       await StorageService.deleteDocument("orders", trackingId);
@@ -1563,6 +1627,7 @@ export default function DatabaseView({
                         fabric: "Fabric Item",
                         batch: "Sourcing Batch",
                         order: "Master Order",
+                        "v2-workshop": "Workshop Progress",
                         showpiece: "Gallery Showpiece",
                         photo: "Community Photo",
                         catalog_option: "Custom Detail Option",
@@ -3093,6 +3158,69 @@ export default function DatabaseView({
                         className="px-4 py-2 bg-heritage-green text-heritage-gold font-bold rounded-lg border border-heritage-gold/20"
                       >
                         Save Batch Parameters
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {editingType === "v2-workshop" && (
+                  <form
+                    onSubmit={handleSaveV2Workshop}
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans"
+                  >
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="font-bold text-heritage-green">Order</label>
+                      <p className="font-mono text-heritage-ink/70">{editingItem.orderId}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">
+                        Stitch tracking status (Shipment Stage 1 to 6)
+                      </label>
+                      <select
+                        value={editingItem.currentStage || 1}
+                        onChange={(e) =>
+                          setEditingItem({
+                            ...editingItem,
+                            currentStage: parseInt(e.target.value, 10),
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      >
+                        <option value={1}>Stage 1: Deposit Verified & Sourced Fabric</option>
+                        <option value={2}>Stage 2: Pattern Drafting & Marking</option>
+                        <option value={3}>Stage 3: Cutting & Stitching on Atelier Floor</option>
+                        <option value={4}>Stage 4: Sewing Completed & Cultural QA Checked</option>
+                        <option value={5}>Stage 5: Schiphol Freight Transited</option>
+                        <option value={6}>Stage 6: Arrived at Pickup Location!</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold text-heritage-green">Estimated delivery</label>
+                      <input
+                        type="date"
+                        value={workshopDeliveryDateInputValue(editingItem.estimatedDeliveryDate)}
+                        onChange={(e) =>
+                          setEditingItem({
+                            ...editingItem,
+                            estimatedDeliveryDate: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      />
+                    </div>
+                    <div className="sm:col-span-2 pt-4 flex gap-2 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setEditingType(null)}
+                        className="px-4 py-2 bg-gray-100 rounded-lg font-bold"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-heritage-green text-heritage-gold font-bold rounded-lg border border-heritage-gold/20"
+                      >
+                        Save progress
                       </button>
                     </div>
                   </form>
@@ -5505,7 +5633,7 @@ export default function DatabaseView({
                                     />
                                   </td>
                                   <td className="px-4 py-3 text-[10px] font-mono text-heritage-gold">
-                                    Immutable snapshot
+                                    {futureOrderV2WorkshopByOrderId.get(history.orderId)?.status || "Immutable snapshot"}
                                   </td>
                                   <td className="px-4 py-3 text-[10px] font-mono text-blue-600">
                                     {formatAdminShippingStatus(history.shippingStatus)}
@@ -5519,7 +5647,28 @@ export default function DatabaseView({
                                     {history.persistedAt}
                                   </td>
                                   <td className="px-4 py-3 text-right text-[10px] text-gray-400">
-                                    Read-only
+                                    {futureOrderV2PaymentsByOrderId.has(history.orderId) ? (
+                                      <button
+                                        type="button"
+                                        data-admin-v2-workshop-progress={history.orderId}
+                                        onClick={() => {
+                                          const progress = futureOrderV2WorkshopByOrderId.get(history.orderId);
+                                          setIsNewRecord(false);
+                                          setEditingItem({
+                                            orderId: history.orderId,
+                                            ownerUid: history.customer.ownerUid,
+                                            currentStage: progress?.currentStage || 1,
+                                            estimatedDeliveryDate: progress?.estimatedDeliveryDate || "",
+                                          });
+                                          setEditingType("v2-workshop");
+                                        }}
+                                        className="rounded-lg border border-heritage-green/30 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green hover:bg-heritage-green hover:text-white"
+                                      >
+                                        Update progress
+                                      </button>
+                                    ) : (
+                                      "Read-only"
+                                    )}
                                   </td>
                                 </tr>
                               );

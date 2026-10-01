@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CustomerJourneyEngine } from "./src/engine/CustomerJourneyEngine";
 import { presentCustomerDashboardBanner } from "./src/utils/customerDashboardBanner";
+import { presentFutureOrderV2WorkshopCard } from "./src/utils/futureOrderV2WorkshopProgress";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import { formatCustomerOrderDate } from "./src/utils/futureOrderV2PaymentRecord";
 import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
@@ -50,6 +51,39 @@ const oneWaiting = presentCustomerDashboardBanner([paid, unpaid], paidMap);
 assert.ok(oneWaiting);
 assert.equal(oneWaiting.message, "You have 2 orders. 1 is waiting for payment.");
 assert.deepEqual(oneWaiting.action, { orderId: unpaid.orderId, label: "View details" });
+
+const sewing = {
+  schemaVersion: 1 as const,
+  orderId: paid.orderId,
+  ownerUid: "banner-owner",
+  currentStage: 3,
+  status: "Pattern Drafting & Sewing on Lagos floor",
+  estimatedDeliveryDate: "2026-05-30",
+};
+const withProgress = presentCustomerDashboardBanner([paid], paidMap, new Map([[paid.orderId, sewing]]));
+assert.ok(withProgress);
+assert.ok(withProgress.message.includes("Pattern Drafting & Sewing on Lagos floor"));
+assert.ok(withProgress.message.includes("Stage 3 of 6"));
+assert.ok(withProgress.message.includes("30 May 2026"));
+assert.equal(withProgress.action?.orderId, paid.orderId);
+
+const twoWithProgress = presentCustomerDashboardBanner(
+  [paid, persisted("future-order-paid-2", "2026-09-28T12:00:00.000Z")],
+  new Map([[paid.orderId, {}], ["future-order-paid-2", {}]]),
+  new Map([[paid.orderId, sewing]]),
+);
+assert.ok(twoWithProgress);
+assert.equal(twoWithProgress.message, "You have 2 orders. 2 paid.");
+assert.equal(twoWithProgress.action, null);
+
+const emptyCard = presentFutureOrderV2WorkshopCard(undefined);
+assert.equal(emptyCard.statusLabel, "Production has not started");
+assert.equal(emptyCard.stageLabel, null);
+assert.equal(emptyCard.deliveryLabel, "Not scheduled yet");
+const sewingCard = presentFutureOrderV2WorkshopCard(sewing);
+assert.equal(sewingCard.statusLabel, sewing.status);
+assert.equal(sewingCard.stageLabel, "Stage 3 of 6");
+assert.equal(sewingCard.deliveryLabel, "30 May 2026");
 
 assert.equal(presentCustomerDashboardBanner([{ shipment: { trackingId: "ODG-1" } }], new Map()), null);
 
@@ -107,5 +141,17 @@ assert.ok(v2Branch.includes("setOpenV2OrderId(v2Banner.action.orderId)"));
 assert.equal(v2Branch.includes("onNavigateToTab"), false);
 assert.ok(dashboard.includes("presentCustomerDashboardBanner"));
 assert.ok(dashboard.includes("openOrderId={openV2OrderId}"));
+assert.ok(dashboard.includes("subscribeToCustomerFutureOrderV2Workshop"));
+
+const admin = readFileSync("src/components/DatabaseView.tsx", "utf8");
+const paidAction = admin.slice(
+  admin.indexOf("futureOrderV2PaymentsByOrderId.has(history.orderId)"),
+  admin.indexOf("Read-only"),
+);
+assert.ok(paidAction.includes("data-admin-v2-workshop-progress"));
+assert.ok(paidAction.includes("Update progress"));
+assert.ok(admin.includes("Only a paid order can move into production."));
+assert.ok(admin.includes("FUTURE_ORDER_V2_WORKSHOP_COLLECTION"));
+assert.equal(admin.includes("setOrders"), true);
 
 console.log("Customer dashboard banner tests passed.");

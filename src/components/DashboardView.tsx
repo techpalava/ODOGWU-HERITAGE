@@ -15,6 +15,7 @@ import { recordFutureOrderV2Payment } from "../services/futureOrderV2PaymentReco
 import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
 import { presentCustomerWorkshopProgress } from "../utils/customerWorkshopProgress";
 import { presentCustomerDashboardBanner } from "../utils/customerDashboardBanner";
+import type { FutureOrderV2WorkshopProgress } from "../utils/futureOrderV2WorkshopProgress";
 
 const futureOrderV2DashboardPaymentActions: FutureOrderV2DashboardPaymentActions = {
   authorize: authorizeFutureOrderV2Payment,
@@ -72,9 +73,16 @@ export default function DashboardView({
   const [futureOrderV2PaymentsByOrderId, setFutureOrderV2PaymentsByOrderId] =
     useState<ReadonlyMap<string, FutureOrderV2PaymentRecord>>(new Map());
   const [openV2OrderId, setOpenV2OrderId] = useState<string | null>(null);
+  const [futureOrderV2WorkshopByOrderId, setFutureOrderV2WorkshopByOrderId] =
+    useState<ReadonlyMap<string, FutureOrderV2WorkshopProgress>>(new Map());
+  useEffect(
+    () => StorageService.subscribeToCustomerFutureOrderV2Workshop(setFutureOrderV2WorkshopByOrderId),
+    [currentUser?.email],
+  );
   const v2Banner = presentCustomerDashboardBanner(
     activeOrders,
     futureOrderV2PaymentsByOrderId,
+    futureOrderV2WorkshopByOrderId,
   );
   useEffect(
     () => StorageService.subscribeToCustomerFutureOrderV2Payments(setFutureOrderV2PaymentsByOrderId),
@@ -169,6 +177,7 @@ export default function DashboardView({
               paymentActions={futureOrderV2DashboardPaymentActions}
               openOrderId={openV2OrderId}
               onOpenOrderChange={setOpenV2OrderId}
+              workshopByOrderId={futureOrderV2WorkshopByOrderId}
             />
 
             {/* 1. MY DRAFT DESIGNS */}
