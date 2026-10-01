@@ -71,3 +71,10 @@ export const parseFutureOrderV2PaymentRecord = (
 
 export const formatFutureOrderV2PaidAmount = (amountCents: number): string =>
   `${PRICING_CURRENCY_SYMBOL}${(amountCents / 100).toFixed(2)}`;
+
+export const formatCustomerOrderDate = (value: string): string => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+};
