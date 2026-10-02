@@ -145,6 +145,7 @@ import {
 import {
   FUTURE_ORDER_V2_WORKSHOP_COLLECTION,
   parseFutureOrderV2WorkshopProgress,
+  resolveWorkshopPickupPin,
   workshopStageStatus,
   type FutureOrderV2WorkshopProgress,
 } from "../utils/futureOrderV2WorkshopProgress";
@@ -1280,6 +1281,10 @@ export default function DatabaseView({
           typeof editingItem?.estimatedDeliveryDate === "string"
             ? editingItem.estimatedDeliveryDate
             : "",
+        pickupPin: resolveWorkshopPickupPin(
+          currentStage,
+          futureOrderV2WorkshopByOrderId.get(orderId),
+        ),
         updatedAt: serverTimestamp(),
       });
       triggerStatus(`Workshop progress saved for ${orderId}`);
@@ -3208,6 +3213,17 @@ export default function DatabaseView({
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       />
                     </div>
+                    {Number(editingItem.currentStage) === 6 && (
+                      <div className="space-y-1 sm:col-span-2">
+                        <label className="font-bold text-heritage-green">Pickup PIN</label>
+                        <p className="font-mono text-heritage-ink/70">
+                          {futureOrderV2WorkshopByOrderId.get(editingItem.orderId)?.currentStage === 6
+                            && futureOrderV2WorkshopByOrderId.get(editingItem.orderId)?.pickupPin
+                            ? futureOrderV2WorkshopByOrderId.get(editingItem.orderId)?.pickupPin
+                            : "A pickup PIN is created when you save stage 6."}
+                        </p>
+                      </div>
+                    )}
                     <div className="sm:col-span-2 pt-4 flex gap-2 justify-end">
                       <button
                         type="button"

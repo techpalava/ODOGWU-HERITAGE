@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CustomerJourneyEngine } from "./src/engine/CustomerJourneyEngine";
 import { presentCustomerDashboardBanner } from "./src/utils/customerDashboardBanner";
-import { presentFutureOrderV2WorkshopCard } from "./src/utils/futureOrderV2WorkshopProgress";
+import { presentFutureOrderV2WorkshopCard, resolveWorkshopPickupPin } from "./src/utils/futureOrderV2WorkshopProgress";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import { formatCustomerOrderDate } from "./src/utils/futureOrderV2PaymentRecord";
 import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
@@ -59,6 +59,7 @@ const sewing = {
   currentStage: 3,
   status: "Pattern Drafting & Sewing on Lagos floor",
   estimatedDeliveryDate: "2026-05-30",
+  pickupPin: "",
 };
 const withProgress = presentCustomerDashboardBanner([paid], paidMap, new Map([[paid.orderId, sewing]]));
 assert.ok(withProgress);
@@ -84,6 +85,35 @@ const sewingCard = presentFutureOrderV2WorkshopCard(sewing);
 assert.equal(sewingCard.statusLabel, sewing.status);
 assert.equal(sewingCard.stageLabel, "Stage 3 of 6");
 assert.equal(sewingCard.deliveryLabel, "30 May 2026");
+assert.equal(sewingCard.pickupPinLabel, null);
+assert.equal(withProgress.message.includes("Pickup PIN"), false);
+
+const arrived = {
+  ...sewing,
+  currentStage: 6,
+  status: "Arrived at Eindhoven. Ready for secure PIN pickup!",
+  pickupPin: "482913",
+};
+const arrivedBanner = presentCustomerDashboardBanner([paid], paidMap, new Map([[paid.orderId, arrived]]));
+assert.ok(arrivedBanner);
+assert.ok(arrivedBanner.message.includes("Pickup PIN 482913"));
+assert.equal(presentFutureOrderV2WorkshopCard(arrived).pickupPinLabel, "482913");
+const arrivedWithoutPin = presentFutureOrderV2WorkshopCard({ ...arrived, pickupPin: "" });
+assert.equal(arrivedWithoutPin.pickupPinLabel, null);
+const hiddenEarlyPin = presentFutureOrderV2WorkshopCard({ ...sewing, pickupPin: "482913" });
+assert.equal(hiddenEarlyPin.pickupPinLabel, null);
+const twoAtArrival = presentCustomerDashboardBanner(
+  [paid, persisted("future-order-paid-2", "2026-09-28T12:00:00.000Z")],
+  new Map([[paid.orderId, {}], ["future-order-paid-2", {}]]),
+  new Map([[paid.orderId, arrived]]),
+);
+assert.ok(twoAtArrival);
+assert.equal(twoAtArrival.message, "You have 2 orders. 2 paid.");
+assert.equal(twoAtArrival.message.includes("482913"), false);
+assert.equal(resolveWorkshopPickupPin(3, arrived), "");
+assert.equal(resolveWorkshopPickupPin(6, arrived), "482913");
+assert.match(resolveWorkshopPickupPin(6, sewing), /^\d{6}$/);
+assert.equal(resolveWorkshopPickupPin(6, { ...arrived, pickupPin: "" }).length, 6);
 
 assert.equal(presentCustomerDashboardBanner([{ shipment: { trackingId: "ODG-1" } }], new Map()), null);
 
@@ -151,6 +181,8 @@ const paidAction = admin.slice(
 assert.ok(paidAction.includes("data-admin-v2-workshop-progress"));
 assert.ok(paidAction.includes("Update progress"));
 assert.ok(admin.includes("Only a paid order can move into production."));
+assert.ok(admin.includes("resolveWorkshopPickupPin"));
+assert.ok(admin.includes("A pickup PIN is created when you save stage 6."));
 assert.ok(admin.includes("FUTURE_ORDER_V2_WORKSHOP_COLLECTION"));
 assert.equal(admin.includes("setOrders"), true);
 

@@ -130,6 +130,7 @@ export const CustomerFutureOrderV2List = ({
                     {progress.stageLabel ? <><br />{progress.stageLabel}</> : null}
                     <br />
                     Est. Delivery: {progress.deliveryLabel}
+                    {progress.pickupPinLabel ? <><br />Pickup PIN: {progress.pickupPinLabel}</> : null}
                   </p>
                 );
               })()}
