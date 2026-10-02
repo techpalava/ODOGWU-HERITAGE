@@ -3321,6 +3321,7 @@ export default function DesignStudioView({
     materialPricing: futureFabricMaterialPricing,
     designStyleSelection: futureDesignStyleSelection,
     designStyleOccurrences: futureDesignStyleStepProjection.occurrences,
+    uploadedPreviewByOccurrenceToken: futureDesignStylePreviewByOccurrenceToken,
     styles,
     customDetailsReconciliation: futureScopedCustomDetailsReconciliation,
     customDetailsCompletion: futureCustomDetailsCompletion,

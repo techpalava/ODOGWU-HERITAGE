@@ -2255,5 +2255,59 @@ assert.deepEqual(
 );
 assert.equal(exactSummary.measurementSummary.wearerGroups, undefined);
 assert.equal(exactSummary.measurementSummary.routeLabel.includes("Amaka"), false);
+assert.equal(
+  exactSummary.designStyleOccurrences?.[0]?.image,
+  "https://example.invalid/private-safe-fallback.jpg",
+);
+const uploadedSummaryOccurrence = {
+  target: {
+    garmentKey: "base:shirt",
+    occurrenceToken: "base:shirt#1",
+  },
+  garmentType: "shirt" as const,
+  label: "Shirt",
+  status: "complete" as const,
+  assignmentLabel: "Uploaded design",
+  assignment: {
+    garmentKey: "base:shirt",
+    occurrenceToken: "base:shirt#1",
+    assignmentRevision: 1,
+    sourceKind: "uploaded" as const,
+    sourceKey: "uploaded:source-1",
+    uploadedSourceRef: "source-1",
+  },
+};
+const uploadedWithPreview = projectFutureDesignStudioSummary({
+  ...exactInput,
+  designStyleOccurrences: [uploadedSummaryOccurrence],
+  uploadedPreviewByOccurrenceToken: { "base:shirt#1": "blob:preview-shirt" },
+});
+assert.equal(uploadedWithPreview.designStyleOccurrences?.[0]?.image, "blob:preview-shirt");
+assert.equal(uploadedWithPreview.designStyleOccurrences?.[0]?.sourceKind, "uploaded");
+const uploadedWithoutPreview = projectFutureDesignStudioSummary({
+  ...exactInput,
+  designStyleOccurrences: [uploadedSummaryOccurrence],
+});
+assert.equal(uploadedWithoutPreview.designStyleOccurrences?.[0]?.image, null);
+const uploadedSummaryMarkup = renderToStaticMarkup(
+  createElement(DormantFutureSummaryStep, {
+    summary: uploadedWithPreview,
+    onBack: () => undefined,
+    onEditGarments: () => undefined,
+    onEditFabrics: () => undefined,
+    onEditDesignStyle: () => undefined,
+    onEditCustomDetails: () => undefined,
+    onEditAiTryOn: () => undefined,
+    onEditMeasurements: () => undefined,
+    canContinueToShipping: false,
+    onContinueToShipping: () => undefined,
+  }),
+);
+assert.match(uploadedSummaryMarkup, /src="blob:preview-shirt"/);
+assert.match(uploadedSummaryMarkup, /alt="Uploaded design preview for Shirt"/);
+assert.match(
+  readFileSync("src/components/DesignStudioView.tsx", "utf8"),
+  /uploadedPreviewByOccurrenceToken: futureDesignStylePreviewByOccurrenceToken/,
+);
 
 console.log("PASS: dormant future Summary projection and Step 7 integration");
