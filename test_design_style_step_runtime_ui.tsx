@@ -113,6 +113,57 @@ const withReferenceGarmentTypes = (
   assert.equal(visibleText.includes("Restoring your Design Style choices..."), false);
 }
 
+// A recovered failed restore names the failure and keeps Upload Design usable.
+{
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt"]),
+  });
+  const renderer = await renderModel(model, {
+    runtimeStatus: "ready",
+    draftHydrationFailed: true,
+    draftHydrationFailureReason: "blocked · uploaded_design_owner_mismatch",
+    onSelectUploadFile: () => {},
+  });
+  const reason = renderer.root.findByProps({
+    "data-testid": "step3-draft-hydration-reason",
+  });
+  assert.equal(
+    textContent(reason),
+    "Reference: blocked · uploaded_design_owner_mismatch",
+  );
+  const uploadButtons = renderer.root.findAll(
+    (node) =>
+      node.type === "button" &&
+      textContent(node) === "Upload Design",
+  );
+  assert.ok(uploadButtons.length > 0);
+  assert.ok(uploadButtons.every((button) => button.props.disabled === false));
+}
+
+// Without a usable ledger the message must not promise that uploads work.
+{
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt"]),
+  });
+  const renderer = await renderModel(model, {
+    runtimeStatus: "hydrating",
+    draftHydrationUnrecoverable: true,
+    draftHydrationFailureReason: "conflict · local_and_cloud_drafts_differ",
+  });
+  const visibleText = textContent(renderer.root);
+  assert.ok(
+    renderer.root.findByProps({
+      "data-testid": "step3-draft-hydration-unrecoverable",
+    }),
+  );
+  assert.match(visibleText, /Reload the page to try again/);
+  assert.equal(/choose or upload/i.test(visibleText), false);
+  assert.match(visibleText, /Reference: conflict · local_and_cloud_drafts_differ/);
+  assert.equal(visibleText.includes("Restoring your Design Style choices..."), false);
+}
+
 // Customer Step 3 intentionally has no demographic selector. Published styles
 // remain visible regardless of their demographic reference metadata.
 {

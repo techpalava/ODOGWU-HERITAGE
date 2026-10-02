@@ -660,6 +660,8 @@ export default function DesignStudioView({
     useState<AuthoritativePhysicalOrderDiagnostic[]>([]);
   const [futureDraftPersistenceStatus, setFutureDraftPersistenceStatus] =
     useState<AuthenticatedFutureDraftIntegrationStatus>("resolving");
+  const [futureDraftPersistenceReason, setFutureDraftPersistenceReason] =
+    useState<string | null>(null);
   const [designStyleFailedRestoreNotice, setDesignStyleFailedRestoreNotice] =
     useState(false);
   const cloudFutureDraftRevisionRef = useRef<number | null>(null);
@@ -1341,6 +1343,7 @@ export default function DesignStudioView({
       },
     ]);
     setFutureDraftPersistenceStatus("blocked");
+    setFutureDraftPersistenceReason("private_batch_authorization_invalid");
     setPersistedOrderContextStatus("invalid");
     if (!orderContext) setHydratedOrderContext(null);
   }, [isActivePrivateOrderTerminallyInvalid, orderContext]);
@@ -1634,6 +1637,10 @@ export default function DesignStudioView({
   const isFutureUploadedDesignPricingActive = Boolean(
     authoritativeUploadedDesignReadiness?.isPricingEligible,
   );
+  const futureDraftPersistenceFailed =
+    futureDraftPersistenceStatus === "blocked" ||
+    futureDraftPersistenceStatus === "conflict" ||
+    futureDraftPersistenceStatus === "invalid";
   const currentFutureDesignStyleDraftHydration =
     futureDesignStyleDraftHydration?.identityKey === futureDraftIdentityKey &&
     futureDesignStyleDraftHydration.identityGeneration ===
@@ -2031,7 +2038,6 @@ export default function DesignStudioView({
 
   useEffect(() => {
     const recovered = recoverDesignStyleHydrationAfterFailedRestore({
-      guestDraftHydrated,
       persistenceStatus: futureDraftPersistenceStatus,
       hydrationPresent: Boolean(currentFutureDesignStyleDraftHydration),
       catalogueReady: stylesLoadState === "ready",
@@ -2047,7 +2053,6 @@ export default function DesignStudioView({
     setFutureDesignStyleMutationError(null);
     setDesignStyleFailedRestoreNotice(true);
   }, [
-    guestDraftHydrated,
     futureDraftPersistenceStatus,
     currentFutureDesignStyleDraftHydration,
     stylesLoadState,
@@ -3775,6 +3780,7 @@ export default function DesignStudioView({
     setFutureUploadedDesignRestoreFailedBySourceKey({});
     revokeRestoredUploadedDesignPreviews();
     setFutureDraftPersistenceStatus("resolving");
+    setFutureDraftPersistenceReason(null);
     setHydratedOrderContext(null);
     setPersistedOrderContextStatus("resolving");
     futureOrderV2PreparationRef.current = null;
@@ -3847,8 +3853,16 @@ export default function DesignStudioView({
     ) {
       return;
     }
+    const failFutureDraftRestore = (
+      status: "blocked" | "conflict" | "invalid",
+      reason: string,
+    ) => {
+      console.warn("Future draft restore failed.", status, reason);
+      setFutureDraftPersistenceStatus(status);
+      setFutureDraftPersistenceReason(reason);
+    };
     if (futureDraftIdentity.status === "blocked") {
-      setFutureDraftPersistenceStatus("blocked");
+      failFutureDraftRestore("blocked", futureDraftIdentity.reason);
       return;
     }
     const identityGeneration = futureDraftIdentityGenerationRef.current;
@@ -3858,13 +3872,13 @@ export default function DesignStudioView({
     void (async () => {
       const localInspection = GuestOrderSessionService.inspectFutureDesignDraft();
       if (localInspection.status === "invalid") {
-        setFutureDraftPersistenceStatus("invalid");
+        failFutureDraftRestore("invalid", "local_draft_invalid");
         setPersistedOrderContextStatus("invalid");
         setGuestDraftHydrated(true);
         return;
       }
       if (localInspection.status === "unavailable") {
-        setFutureDraftPersistenceStatus("blocked");
+        failFutureDraftRestore("blocked", "local_draft_unavailable");
         setPersistedOrderContextStatus("unavailable");
         setGuestDraftHydrated(true);
         return;
@@ -3875,19 +3889,19 @@ export default function DesignStudioView({
         // migration. Preflight itself never reaches this mutating loader.
         const loaded = GuestOrderSessionService.loadFutureDesignDraftForHydration();
         if (loaded.status === "invalid") {
-          setFutureDraftPersistenceStatus("invalid");
+          failFutureDraftRestore("invalid", "local_draft_invalid");
           setPersistedOrderContextStatus("invalid");
           setGuestDraftHydrated(true);
           return;
         }
         if (loaded.status === "unavailable") {
-          setFutureDraftPersistenceStatus("blocked");
+          failFutureDraftRestore("blocked", "local_draft_unavailable");
           setPersistedOrderContextStatus("unavailable");
           setGuestDraftHydrated(true);
           return;
         }
         if (loaded.status !== "loaded") {
-          setFutureDraftPersistenceStatus("invalid");
+          failFutureDraftRestore("invalid", `local_draft_${loaded.status}`);
           setPersistedOrderContextStatus("invalid");
           setGuestDraftHydrated(true);
           return;
@@ -3895,7 +3909,7 @@ export default function DesignStudioView({
         localDraft = loaded.draft;
       }
       let storedDraft = localDraft;
-      let hydratedPersistenceStatus: "ready" | "invalid" = "ready";
+      let hydratedPersistenceReason: string | null = null;
       if (futureDraftIdentity.status === "authenticated") {
         const localDraftProvenance =
           authenticatedCloudDraftAuthorityEstablishedRef.current &&
@@ -3922,7 +3936,10 @@ export default function DesignStudioView({
               futureDraftHydrationRequestGenerationRef.current
           ) {
             console.error("Future draft synchronization failed.", error);
-            setFutureDraftPersistenceStatus("blocked");
+            failFutureDraftRestore(
+              "blocked",
+              `synchronize_threw:${error instanceof Error ? error.message : String(error)}`,
+            );
             setPersistedOrderContextStatus("unavailable");
           }
           return;
@@ -3937,7 +3954,7 @@ export default function DesignStudioView({
         }
         if (synchronization.status === "conflict") {
           cloudFutureDraftRevisionRef.current = synchronization.record.revision;
-          setFutureDraftPersistenceStatus("conflict");
+          failFutureDraftRestore("conflict", "local_and_cloud_drafts_differ");
           setPersistedOrderContextStatus("unavailable");
           return;
         }
@@ -3945,7 +3962,7 @@ export default function DesignStudioView({
           synchronization.status === "invalid" ||
           synchronization.status === "blocked"
         ) {
-          setFutureDraftPersistenceStatus(synchronization.status);
+          failFutureDraftRestore(synchronization.status, synchronization.reason);
           setPersistedOrderContextStatus(
             synchronization.status === "invalid" ? "invalid" : "unavailable",
           );
@@ -3957,7 +3974,7 @@ export default function DesignStudioView({
         ) {
           // Do not record cloud synchronization or clear a guest copy before
           // an authenticated payload has a canonical order identity.
-          setFutureDraftPersistenceStatus("invalid");
+          failFutureDraftRestore("invalid", "cloud_draft_missing_order_identity");
           setPersistedOrderContextStatus("invalid");
           setGuestDraftHydrated(true);
           return;
@@ -4032,7 +4049,7 @@ export default function DesignStudioView({
           requiresPrivateAuthority &&
           futureDraftIdentity.status !== "authenticated"
         ) {
-          setFutureDraftPersistenceStatus("invalid");
+          failFutureDraftRestore("invalid", "private_batch_requires_sign_in");
           setPersistedOrderContextStatus("invalid");
           setGuestDraftHydrated(true);
           return;
@@ -4059,7 +4076,12 @@ export default function DesignStudioView({
       const resolvedPersistedHydration =
         persistedHydration?.status === "valid" ? persistedHydration : null;
       if (storedDraft && !resolvedPersistedHydration) {
-        setFutureDraftPersistenceStatus("invalid");
+        failFutureDraftRestore(
+          "invalid",
+          persistedHydration?.status === "invalid"
+            ? persistedHydration.reason
+            : "order_context_unresolved",
+        );
         setPersistedOrderContextStatus("invalid");
         setGuestDraftHydrated(true);
         return;
@@ -4075,7 +4097,7 @@ export default function DesignStudioView({
           getCanonicalOrderIdentity(orderContext),
         )
       ) {
-        setFutureDraftPersistenceStatus("blocked");
+        failFutureDraftRestore("blocked", "order_context_mismatch");
         setPersistedOrderContextStatus("unavailable");
         setGuestDraftHydrated(true);
         return;
@@ -4130,7 +4152,7 @@ export default function DesignStudioView({
           : null;
       blockedPersistedFabricHydrationRef.current = blockedPersistedFabricHydration;
       if (blockedPersistedFabricHydration) {
-        hydratedPersistenceStatus = "invalid";
+        hydratedPersistenceReason = "fabric_allocations_invalid";
       }
       const rawFabricState = hydratedAllocations?.status === "valid"
         ? {
@@ -4232,7 +4254,7 @@ export default function DesignStudioView({
       setFutureUploadedDesignRestoreFailedBySourceKey({});
       revokeRestoredUploadedDesignPreviews();
       if (restoredDesignStyleDraftHydration.destructiveNormalizationProhibited) {
-        hydratedPersistenceStatus = "invalid";
+        hydratedPersistenceReason = `design_style_${restoredDesignStyleDraftHydration.status}`;
       }
       setGarmentTypeSelection(restoredGarmentTypeSelection);
       const restoredAuthoritativeOccurrenceKeys = new Set(
@@ -4495,7 +4517,13 @@ export default function DesignStudioView({
             reconciledFabricState.fabricAllocations[0]?.fabricCode,
         ) || null,
       );
-      setFutureDraftPersistenceStatus(hydratedPersistenceStatus);
+      if (hydratedPersistenceReason) {
+        failFutureDraftRestore("invalid", hydratedPersistenceReason);
+      } else {
+        setFutureDraftPersistenceStatus("ready");
+        setFutureDraftPersistenceReason(null);
+        setDesignStyleFailedRestoreNotice(false);
+      }
       setGuestDraftHydrated(true);
     })().catch((error) => {
       if (
@@ -4505,7 +4533,10 @@ export default function DesignStudioView({
           futureDraftHydrationRequestGenerationRef.current
       ) {
         console.error("Future draft hydration failed.", error);
-        setFutureDraftPersistenceStatus("invalid");
+        failFutureDraftRestore(
+          "invalid",
+          `hydration_threw:${error instanceof Error ? error.message : String(error)}`,
+        );
         setPersistedOrderContextStatus("invalid");
       }
     });
@@ -5137,6 +5168,7 @@ export default function DesignStudioView({
         });
       if (autosaveAllocationResolution.blockedByInvalidGeneratedAllocations) {
         setFutureDraftPersistenceStatus("invalid");
+        setFutureDraftPersistenceReason("generated_fabric_allocations_invalid");
         return;
       }
       if (!autosaveAllocationResolution.preserveInvalidHydratedModernData) {
@@ -5454,8 +5486,10 @@ export default function DesignStudioView({
                 // reconciled Step 3 hydration permanently, which hid the
                 // catalogue behind its hydrator guard after a stale action.
                 setFutureDraftPersistenceStatus("conflict");
+                setFutureDraftPersistenceReason("autosave_revision_conflict");
               } else {
                 setFutureDraftPersistenceStatus(result.status);
+                setFutureDraftPersistenceReason(`autosave_${result.reason}`);
               }
             })
             .catch((error) => {
@@ -5469,6 +5503,9 @@ export default function DesignStudioView({
                 }
                 console.error("Future draft autosave failed.", error);
                 setFutureDraftPersistenceStatus("blocked");
+                setFutureDraftPersistenceReason(
+                  `autosave_threw:${error instanceof Error ? error.message : String(error)}`,
+                );
               }
             });
       }
@@ -8487,6 +8524,7 @@ export default function DesignStudioView({
       }
       data-persisted-order-context-status={persistedOrderContextStatus}
       data-future-draft-persistence-status={futureDraftPersistenceStatus}
+      data-future-draft-persistence-reason={futureDraftPersistenceReason || ""}
       data-stage-complete={
         futureStageId === "garment_type"
           ? garmentTypeStageCompletion.isComplete
@@ -8664,12 +8702,18 @@ export default function DesignStudioView({
           exactSetComplete={futureDesignStyleStepProjection.isComplete}
           reviewMessage={futureDesignStyleStepProjection.reviewMessage}
           mutationError={futureDesignStyleMutationError}
-          draftHydrationFailed={
-            designStyleFailedRestoreNotice ||
-            (!currentFutureDesignStyleDraftHydration &&
-              (futureDraftPersistenceStatus === "blocked" ||
-                futureDraftPersistenceStatus === "conflict" ||
-                futureDraftPersistenceStatus === "invalid"))
+          draftHydrationFailed={designStyleFailedRestoreNotice}
+          draftHydrationUnrecoverable={
+            !designStyleFailedRestoreNotice &&
+            !currentFutureDesignStyleDraftHydration &&
+            futureDraftPersistenceFailed
+          }
+          draftHydrationFailureReason={
+            futureDraftPersistenceFailed
+              ? [futureDraftPersistenceStatus, futureDraftPersistenceReason]
+                  .filter(Boolean)
+                  .join(" · ")
+              : null
           }
           uploadState={futureDesignStyleUploadStateForActiveOccurrence}
           uploadStateByOccurrenceToken={
