@@ -40,7 +40,7 @@ assert.match(
 );
 assert.match(
   rules,
-  /match \/future_order_v2_workshop\/\{orderId\} \{[\s\S]*?allow read: if isAdmin\(\) \|\| ownsExistingDocument\(\);[\s\S]*?allow create, update: if isAdmin\(\)[\s\S]*?pickupPin\.matches\('\^\[0-9\]\{6\}\$'\)[\s\S]*?pickupPin == ""[\s\S]*?allow delete: if false;/,
+  /match \/future_order_v2_workshop\/\{orderId\} \{[\s\S]*?allow read: if isAdmin\(\) \|\| ownsExistingDocument\(\);[\s\S]*?allow create, update: if isAdmin\(\)[\s\S]*?pickupPin\.matches\('\^\[0-9\]\{6\}\$'\)[\s\S]*?pickupPin == ""[\s\S]*?dispatchStatus in \["not_dispatched", "dispatched", "arrived"\][\s\S]*?allow delete: if false;/,
 );
 assert.match(
   rules,

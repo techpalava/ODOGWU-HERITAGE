@@ -805,6 +805,7 @@ service cloud.firestore {
           || (request.resource.data.currentStage != 6
             && request.resource.data.pickupPin == "")
         )
+        && request.resource.data.dispatchStatus in ["not_dispatched", "dispatched", "arrived"]
         && request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }

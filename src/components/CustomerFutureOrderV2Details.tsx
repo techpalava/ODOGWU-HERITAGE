@@ -10,6 +10,8 @@ import {
   type FutureOrderV2DashboardPaymentActions,
   type FutureOrderV2DashboardPaymentOutcome,
 } from "../utils/futureOrderV2DashboardPayment";
+import type { FutureOrderV2WorkshopProgress } from "../utils/futureOrderV2WorkshopProgress";
+import { workshopDispatchLabel } from "../utils/futureOrderV2WorkshopProgress";
 import {
   formatCustomerOrderDate,
   formatFutureOrderV2PaidAmount,
@@ -24,6 +26,7 @@ import {
 interface CustomerFutureOrderV2DetailsProps {
   order: PersistedFutureOrderV2;
   payment: FutureOrderV2PaymentRecord | undefined;
+  workshop?: FutureOrderV2WorkshopProgress;
   onClose: () => void;
   paymentActions?: FutureOrderV2DashboardPaymentActions;
 }
@@ -40,6 +43,7 @@ const DetailsSection = ({ title, children }: { title: string; children: ReactNod
 export const CustomerFutureOrderV2Details = ({
   order,
   payment: subscribedPayment,
+  workshop,
   onClose,
   paymentActions,
 }: CustomerFutureOrderV2DetailsProps) => {
@@ -255,6 +259,11 @@ export const CustomerFutureOrderV2Details = ({
                     ? "Deliver to an Address"
                     : "Delivery method pending"}
               </p>
+              {workshop ? (
+                <p data-customer-v2-order-dispatch={order.orderId}>
+                  Dispatch: {workshopDispatchLabel(workshop.dispatchStatus)}
+                </p>
+              ) : null}
               <div className="grid gap-3 sm:grid-cols-2 text-xs">
                 <div>
                   <p className="font-semibold">{customer.fullName}</p>
