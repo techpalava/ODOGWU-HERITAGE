@@ -466,13 +466,17 @@ export const DormantFutureSummaryStep = ({
         {(summary.designStyleOccurrences || []).length > 0 ? (
           <div className="space-y-4">
             {(summary.designStyleOccurrences || []).map((occurrence) => (
-          <div key={occurrence.occurrenceLabel} className="grid min-w-0 gap-4 sm:grid-cols-[96px_minmax(0,1fr)] sm:items-center">
+          <div key={occurrence.garmentKey} className="grid min-w-0 gap-4 sm:grid-cols-[96px_minmax(0,1fr)] sm:items-center">
             <div className="aspect-[4/5] w-24 max-w-full overflow-hidden rounded-xl bg-heritage-cream/35">
               {occurrence.image ? (
                 <>
                   <img
                     src={occurrence.image}
-                    alt={`${occurrence.name} design for ${occurrence.occurrenceLabel}`}
+                    alt={
+                      occurrence.sourceKind === "uploaded"
+                        ? `Uploaded design preview for ${occurrence.occurrenceLabel}`
+                        : `${occurrence.name} design for ${occurrence.occurrenceLabel}`
+                    }
                     className="h-full w-full object-contain"
                     referrerPolicy="no-referrer"
                     onError={(event) => {
