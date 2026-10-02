@@ -10,7 +10,26 @@ export interface FutureOrderV2WorkshopProgress {
   readonly status: string;
   readonly estimatedDeliveryDate: string;
   readonly pickupPin: string;
+  readonly dispatchStatus: WorkshopDispatchStatus;
 }
+
+export const WORKSHOP_DISPATCH_STATUSES = ["not_dispatched", "dispatched", "arrived"] as const;
+
+export type WorkshopDispatchStatus = (typeof WORKSHOP_DISPATCH_STATUSES)[number];
+
+const DISPATCH_LABELS: Record<WorkshopDispatchStatus, string> = {
+  not_dispatched: "Not dispatched",
+  dispatched: "Dispatched",
+  arrived: "Arrived for pickup",
+};
+
+export const parseWorkshopDispatchStatus = (value: unknown): WorkshopDispatchStatus =>
+  value === "dispatched" || value === "arrived" || value === "not_dispatched"
+    ? value
+    : "not_dispatched";
+
+export const workshopDispatchLabel = (status: WorkshopDispatchStatus): string =>
+  DISPATCH_LABELS[status];
 
 const STAGE_STATUSES = [
   "Deposit Verified. Securing Fabric Swatch...",
@@ -78,6 +97,7 @@ export const parseFutureOrderV2WorkshopProgress = (
     status: value.status,
     estimatedDeliveryDate: value.estimatedDeliveryDate,
     pickupPin,
+    dispatchStatus: parseWorkshopDispatchStatus(value.dispatchStatus),
   };
 };
 
@@ -86,6 +106,7 @@ export interface FutureOrderV2WorkshopCard {
   readonly stageLabel: string | null;
   readonly deliveryLabel: string;
   readonly pickupPinLabel: string | null;
+  readonly dispatchLabel: string | null;
 }
 
 export const presentFutureOrderV2WorkshopCard = (
@@ -97,6 +118,7 @@ export const presentFutureOrderV2WorkshopCard = (
       stageLabel: null,
       deliveryLabel: CUSTOMER_WORKSHOP_DELIVERY_UNSCHEDULED,
       pickupPinLabel: null,
+      dispatchLabel: null,
     };
   }
   const progress = presentCustomerWorkshopProgress({
@@ -111,5 +133,6 @@ export const presentFutureOrderV2WorkshopCard = (
     stageLabel: progress.stageLabel,
     deliveryLabel: progress.deliveryLabel,
     pickupPinLabel: record.currentStage === 6 && PICKUP_PIN.test(record.pickupPin) ? record.pickupPin : null,
+    dispatchLabel: workshopDispatchLabel(record.dispatchStatus),
   };
 };
