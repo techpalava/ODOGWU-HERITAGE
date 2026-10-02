@@ -11,7 +11,18 @@ export interface FutureOrderV2WorkshopProgress {
   readonly estimatedDeliveryDate: string;
   readonly pickupPin: string;
   readonly dispatchStatus: WorkshopDispatchStatus;
+  /** Oldest first; the last entry always matches currentStage and status. */
+  readonly stageHistory: readonly WorkshopStageHistoryEntry[];
 }
+
+export interface WorkshopStageHistoryEntry {
+  readonly stage: number;
+  readonly status: string;
+  /** ISO time from the admin browser, or "" for a stage saved before history existed. */
+  readonly recordedAt: string;
+}
+
+export const WORKSHOP_STAGE_HISTORY_LIMIT = 24;
 
 export const WORKSHOP_DISPATCH_STATUSES = ["not_dispatched", "dispatched", "arrived"] as const;
 
@@ -67,6 +78,54 @@ export const workshopStageStatus = (stage: number, pickupLocation: string): stri
   return STAGE_STATUSES[stage - 1] || "In Production Pipeline";
 };
 
+const isWorkshopStage = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 6;
+
+const parseStageHistoryEntry = (value: unknown): WorkshopStageHistoryEntry | null =>
+  isRecord(value) &&
+  isWorkshopStage(value.stage) &&
+  typeof value.status === "string" &&
+  value.status.trim() &&
+  typeof value.recordedAt === "string"
+    ? { stage: value.stage, status: value.status, recordedAt: value.recordedAt }
+    : null;
+
+const parseStageHistory = (
+  value: unknown,
+  currentStage: number,
+  status: string,
+): WorkshopStageHistoryEntry[] => {
+  const fallback = [{ stage: currentStage, status, recordedAt: "" }];
+  if (!Array.isArray(value) || value.length === 0 || value.length > WORKSHOP_STAGE_HISTORY_LIMIT) {
+    return fallback;
+  }
+  const entries = value.map(parseStageHistoryEntry);
+  if (entries.some((entry) => entry === null)) return fallback;
+  const parsed = entries as WorkshopStageHistoryEntry[];
+  const last = parsed[parsed.length - 1];
+  return last.stage === currentStage && last.status === status ? parsed : fallback;
+};
+
+/**
+ * The history to save with a new stage. A repeat save of the same stage only
+ * refreshes that entry's status, so it never adds a line.
+ */
+export const appendWorkshopStageHistory = (
+  existing: FutureOrderV2WorkshopProgress | undefined,
+  stage: number,
+  status: string,
+  recordedAt: string,
+): WorkshopStageHistoryEntry[] => {
+  const history = existing ? [...existing.stageHistory] : [];
+  const last = history[history.length - 1];
+  if (last && last.stage === stage) {
+    history[history.length - 1] = { ...last, status };
+  } else {
+    history.push({ stage, status, recordedAt });
+  }
+  return history.slice(-WORKSHOP_STAGE_HISTORY_LIMIT);
+};
+
 export const parseFutureOrderV2WorkshopProgress = (
   value: unknown,
 ): FutureOrderV2WorkshopProgress | null => {
@@ -77,10 +136,7 @@ export const parseFutureOrderV2WorkshopProgress = (
     !value.orderId ||
     typeof value.ownerUid !== "string" ||
     !value.ownerUid ||
-    typeof stage !== "number" ||
-    !Number.isInteger(stage) ||
-    stage < 1 ||
-    stage > 6 ||
+    !isWorkshopStage(stage) ||
     typeof value.status !== "string" ||
     !value.status.trim() ||
     typeof value.estimatedDeliveryDate !== "string"
@@ -98,8 +154,14 @@ export const parseFutureOrderV2WorkshopProgress = (
     estimatedDeliveryDate: value.estimatedDeliveryDate,
     pickupPin,
     dispatchStatus: parseWorkshopDispatchStatus(value.dispatchStatus),
+    stageHistory: parseStageHistory(value.stageHistory, stage, value.status),
   };
 };
+
+export interface FutureOrderV2WorkshopStageLine {
+  readonly stageLabel: string;
+  readonly statusLabel: string;
+}
 
 export interface FutureOrderV2WorkshopCard {
   readonly statusLabel: string;
@@ -107,7 +169,16 @@ export interface FutureOrderV2WorkshopCard {
   readonly deliveryLabel: string;
   readonly pickupPinLabel: string | null;
   readonly dispatchLabel: string | null;
+  readonly stageLines: readonly FutureOrderV2WorkshopStageLine[];
 }
+
+export const presentWorkshopStageLines = (
+  record: FutureOrderV2WorkshopProgress | undefined,
+): FutureOrderV2WorkshopStageLine[] =>
+  (record?.stageHistory ?? []).map((entry) => ({
+    stageLabel: `Stage ${entry.stage} of 6`,
+    statusLabel: entry.status,
+  }));
 
 export const presentFutureOrderV2WorkshopCard = (
   record: FutureOrderV2WorkshopProgress | undefined,
@@ -119,6 +190,7 @@ export const presentFutureOrderV2WorkshopCard = (
       deliveryLabel: CUSTOMER_WORKSHOP_DELIVERY_UNSCHEDULED,
       pickupPinLabel: null,
       dispatchLabel: null,
+      stageLines: [],
     };
   }
   const progress = presentCustomerWorkshopProgress({
@@ -134,5 +206,6 @@ export const presentFutureOrderV2WorkshopCard = (
     deliveryLabel: progress.deliveryLabel,
     pickupPinLabel: record.currentStage === 6 && PICKUP_PIN.test(record.pickupPin) ? record.pickupPin : null,
     dispatchLabel: workshopDispatchLabel(record.dispatchStatus),
+    stageLines: presentWorkshopStageLines(record),
   };
 };
