@@ -17,6 +17,7 @@ import {
 import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
 import { presentFutureOrderV2WorkshopCard, type FutureOrderV2WorkshopProgress } from "../utils/futureOrderV2WorkshopProgress";
 import { CustomerFutureOrderV2Details } from "./CustomerFutureOrderV2Details";
+import { WorkshopStageList } from "./WorkshopStageList";
 
 interface CustomerFutureOrderV2ListProps {
   orders: readonly unknown[];
@@ -122,17 +123,24 @@ export const CustomerFutureOrderV2List = ({
                   workshopByOrderId.get(order.orderId),
                 );
                 return (
-                  <p
+                  <div
                     data-customer-v2-order-progress={order.orderId}
-                    className="text-[10px] text-heritage-ink/75"
+                    className="space-y-1 text-[10px] text-heritage-ink/75"
                   >
-                    {progress.statusLabel}
-                    {progress.stageLabel ? <><br />{progress.stageLabel}</> : null}
-                    <br />
-                    Est. Delivery: {progress.deliveryLabel}
-                    {progress.dispatchLabel ? <><br />Dispatch: {progress.dispatchLabel}</> : null}
-                    {progress.pickupPinLabel ? <><br />Pickup PIN: {progress.pickupPinLabel}</> : null}
-                  </p>
+                    {progress.stageLines.length > 0 ? (
+                      <WorkshopStageList
+                        orderId={order.orderId}
+                        stageLines={progress.stageLines}
+                      />
+                    ) : (
+                      <p>{progress.statusLabel}</p>
+                    )}
+                    <p>
+                      Est. Delivery: {progress.deliveryLabel}
+                      {progress.dispatchLabel ? <><br />Dispatch: {progress.dispatchLabel}</> : null}
+                      {progress.pickupPinLabel ? <><br />Pickup PIN: {progress.pickupPinLabel}</> : null}
+                    </p>
+                  </div>
                 );
               })()}
               <div className="flex flex-wrap items-center justify-between gap-3">

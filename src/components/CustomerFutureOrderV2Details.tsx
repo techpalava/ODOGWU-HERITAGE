@@ -11,7 +11,11 @@ import {
   type FutureOrderV2DashboardPaymentOutcome,
 } from "../utils/futureOrderV2DashboardPayment";
 import type { FutureOrderV2WorkshopProgress } from "../utils/futureOrderV2WorkshopProgress";
-import { workshopDispatchLabel } from "../utils/futureOrderV2WorkshopProgress";
+import {
+  presentWorkshopStageLines,
+  workshopDispatchLabel,
+} from "../utils/futureOrderV2WorkshopProgress";
+import { WorkshopStageList } from "./WorkshopStageList";
 import {
   formatCustomerOrderDate,
   formatFutureOrderV2PaidAmount,
@@ -197,6 +201,17 @@ export const CustomerFutureOrderV2Details = ({
                 </span>
               )}
             </div>
+
+            {workshop ? (
+              <DetailsSection title="Production">
+                <div className="text-xs">
+                  <WorkshopStageList
+                    orderId={order.orderId}
+                    stageLines={presentWorkshopStageLines(workshop)}
+                  />
+                </div>
+              </DetailsSection>
+            ) : null}
 
             <DetailsSection title="Garments">
               <ul className="space-y-3">

@@ -8,6 +8,10 @@ import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import type { FutureOrderV2PaymentRecord } from "./src/utils/futureOrderV2PaymentRecord";
 import type { FutureOrderV2DashboardPaymentActions } from "./src/utils/futureOrderV2DashboardPayment";
+import {
+  parseFutureOrderV2WorkshopProgress,
+  workshopStageStatus,
+} from "./src/utils/futureOrderV2WorkshopProgress";
 
 const OWNER_UID = "dashboard-owner";
 
@@ -361,5 +365,63 @@ assert.ok(saveFailView.text().includes("pi_pay_now_saved_later"));
 assert.equal(saveFailView.successPanels().length, 1, "a saved retry ends in the success panel");
 assert.equal(saveFailView.alerts().length, 0);
 act(() => saveFailView.tree.unmount());
+
+const stageOneStatus = workshopStageStatus(1, "Eindhoven");
+const stageThreeStatus = workshopStageStatus(3, "Eindhoven");
+const workshopAtStageThree = parseFutureOrderV2WorkshopProgress({
+  schemaVersion: 1,
+  orderId: paidOrder.orderId,
+  ownerUid: OWNER_UID,
+  currentStage: 3,
+  status: stageThreeStatus,
+  estimatedDeliveryDate: "2026-11-20",
+  pickupPin: "",
+  dispatchStatus: "not_dispatched",
+  stageHistory: [
+    { stage: 1, status: stageOneStatus, recordedAt: "2026-10-01T09:00:00.000Z" },
+    { stage: 3, status: stageThreeStatus, recordedAt: "2026-10-02T09:00:00.000Z" },
+  ],
+});
+assert.ok(workshopAtStageThree);
+const workshopList = renderToStaticMarkup(
+  <CustomerFutureOrderV2List
+    orders={[paidOrder]}
+    paymentsByOrderId={new Map([[paidRecord.orderId, paidRecord]])}
+    workshopByOrderId={new Map([[paidOrder.orderId, workshopAtStageThree]])}
+  />,
+);
+const stageLines = [...workshopList.matchAll(/<li[^>]*data-customer-v2-order-stage-line[^>]*>([\s\S]*?)<\/li>/g)]
+  .map((match) => match[1].replace(/<[^>]+>/g, "").replace(/&amp;/g, "&"));
+assert.deepEqual(stageLines, [
+  `Stage 1 of 6 · ${stageOneStatus}`,
+  `Stage 3 of 6 · ${stageThreeStatus}`,
+]);
+assert.ok(
+  workshopList.indexOf("data-customer-v2-order-stage-history") <
+    workshopList.indexOf("Est. Delivery:"),
+  "delivery, dispatch and PIN stay below the stage list",
+);
+const workshopDetails = renderToStaticMarkup(
+  <CustomerFutureOrderV2Details
+    order={paidOrder}
+    payment={paidRecord}
+    workshop={workshopAtStageThree}
+    onClose={() => undefined}
+  />,
+);
+assert.ok(workshopDetails.includes("Production"));
+assert.equal(
+  (workshopDetails.match(/data-customer-v2-order-stage-line/g) || []).length,
+  2,
+  "the details view shows the same stage list",
+);
+const noWorkshopList = renderToStaticMarkup(
+  <CustomerFutureOrderV2List
+    orders={[paidOrder]}
+    paymentsByOrderId={new Map([[paidRecord.orderId, paidRecord]])}
+  />,
+);
+assert.ok(noWorkshopList.includes("Production has not started"));
+assert.equal(noWorkshopList.includes("data-customer-v2-order-stage-history"), false);
 
 console.log("Customer dashboard V2 order tests passed.");
