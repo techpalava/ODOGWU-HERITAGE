@@ -143,6 +143,7 @@ import {
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
 import {
+  appendWorkshopStageHistory,
   FUTURE_ORDER_V2_WORKSHOP_COLLECTION,
   parseFutureOrderV2WorkshopProgress,
   resolveWorkshopPickupPin,
@@ -1268,24 +1269,29 @@ export default function DatabaseView({
       triggerStatus("Only a paid order can move into production.", "error");
       return;
     }
+    const existingWorkshop = futureOrderV2WorkshopByOrderId.get(orderId);
+    const status = workshopStageStatus(
+      currentStage,
+      businessSettings.productionSettings.defaultPickupLocation,
+    );
     try {
       await setDoc(doc(db, FUTURE_ORDER_V2_WORKSHOP_COLLECTION, orderId), {
         schemaVersion: 1,
         orderId,
         ownerUid,
         currentStage,
-        status: workshopStageStatus(
+        status,
+        stageHistory: appendWorkshopStageHistory(
+          existingWorkshop,
           currentStage,
-          businessSettings.productionSettings.defaultPickupLocation,
+          status,
+          new Date().toISOString(),
         ),
         estimatedDeliveryDate:
           typeof editingItem?.estimatedDeliveryDate === "string"
             ? editingItem.estimatedDeliveryDate
             : "",
-        pickupPin: resolveWorkshopPickupPin(
-          currentStage,
-          futureOrderV2WorkshopByOrderId.get(orderId),
-        ),
+        pickupPin: resolveWorkshopPickupPin(currentStage, existingWorkshop),
         dispatchStatus:
           editingItem?.dispatchStatus === "dispatched" || editingItem?.dispatchStatus === "arrived"
             ? editingItem.dispatchStatus

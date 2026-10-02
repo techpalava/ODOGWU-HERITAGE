@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CustomerJourneyEngine } from "./src/engine/CustomerJourneyEngine";
 import { presentCustomerDashboardBanner } from "./src/utils/customerDashboardBanner";
-import { presentFutureOrderV2WorkshopCard, parseFutureOrderV2WorkshopProgress, resolveWorkshopPickupPin } from "./src/utils/futureOrderV2WorkshopProgress";
+import {
+  appendWorkshopStageHistory,
+  presentFutureOrderV2WorkshopCard,
+  parseFutureOrderV2WorkshopProgress,
+  resolveWorkshopPickupPin,
+  WORKSHOP_STAGE_HISTORY_LIMIT,
+  workshopStageStatus,
+} from "./src/utils/futureOrderV2WorkshopProgress";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import { formatCustomerOrderDate } from "./src/utils/futureOrderV2PaymentRecord";
 import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
@@ -61,6 +68,9 @@ const sewing = {
   estimatedDeliveryDate: "2026-05-30",
   pickupPin: "",
   dispatchStatus: "not_dispatched" as const,
+  stageHistory: [
+    { stage: 3, status: "Pattern Drafting & Sewing on Lagos floor", recordedAt: "" },
+  ],
 };
 const withProgress = presentCustomerDashboardBanner([paid], paidMap, new Map([[paid.orderId, sewing]]));
 assert.ok(withProgress);
@@ -125,6 +135,94 @@ assert.equal(presentFutureOrderV2WorkshopCard(arrivedDispatch).dispatchLabel, "A
 const { dispatchStatus: _ignoredDispatch, ...withoutDispatch } = sewing;
 const parsedWithoutDispatch = parseFutureOrderV2WorkshopProgress(withoutDispatch);
 assert.equal(parsedWithoutDispatch?.dispatchStatus, "not_dispatched");
+
+// Stage history: an older record without a list reads as its current stage.
+const stageOne = parseFutureOrderV2WorkshopProgress({
+  ...withoutDispatch,
+  stageHistory: undefined,
+  currentStage: 1,
+  status: workshopStageStatus(1, "Eindhoven"),
+});
+assert.ok(stageOne);
+assert.deepEqual(stageOne.stageHistory, [
+  { stage: 1, status: workshopStageStatus(1, "Eindhoven"), recordedAt: "" },
+]);
+assert.deepEqual(presentFutureOrderV2WorkshopCard(stageOne).stageLines, [
+  { stageLabel: "Stage 1 of 6", statusLabel: workshopStageStatus(1, "Eindhoven") },
+]);
+
+// Moving from stage 1 to stage 3 keeps stage 1 and adds stage 3.
+const stageThreeStatus = workshopStageStatus(3, "Eindhoven");
+const movedHistory = appendWorkshopStageHistory(
+  stageOne,
+  3,
+  stageThreeStatus,
+  "2026-10-02T09:00:00.000Z",
+);
+assert.deepEqual(movedHistory, [
+  { stage: 1, status: workshopStageStatus(1, "Eindhoven"), recordedAt: "" },
+  { stage: 3, status: stageThreeStatus, recordedAt: "2026-10-02T09:00:00.000Z" },
+]);
+const stageThree = parseFutureOrderV2WorkshopProgress({
+  ...stageOne,
+  currentStage: 3,
+  status: stageThreeStatus,
+  stageHistory: movedHistory,
+});
+assert.ok(stageThree);
+assert.deepEqual(stageThree.stageHistory, movedHistory);
+assert.deepEqual(
+  presentFutureOrderV2WorkshopCard(stageThree).stageLines.map((line) => line.stageLabel),
+  ["Stage 1 of 6", "Stage 3 of 6"],
+);
+
+// Saving stage 3 again, or changing only delivery or dispatch, adds nothing.
+assert.deepEqual(
+  appendWorkshopStageHistory(stageThree, 3, stageThreeStatus, "2026-10-03T09:00:00.000Z"),
+  movedHistory,
+);
+const pickupStatus = workshopStageStatus(6, "Eindhoven");
+const atPickup = appendWorkshopStageHistory(stageThree, 6, pickupStatus, "2026-10-04T09:00:00.000Z");
+const renamedPickup = workshopStageStatus(6, "Amsterdam");
+const repeatPickup = appendWorkshopStageHistory(
+  { ...stageThree, currentStage: 6, status: pickupStatus, stageHistory: atPickup },
+  6,
+  renamedPickup,
+  "2026-10-05T09:00:00.000Z",
+);
+assert.equal(repeatPickup.length, 3);
+assert.deepEqual(repeatPickup[2], {
+  stage: 6,
+  status: renamedPickup,
+  recordedAt: "2026-10-04T09:00:00.000Z",
+});
+
+// A list whose last entry disagrees with the current stage is not trusted.
+const mismatched = parseFutureOrderV2WorkshopProgress({
+  ...stageThree,
+  stageHistory: [{ stage: 1, status: workshopStageStatus(1, "Eindhoven"), recordedAt: "" }],
+});
+assert.deepEqual(mismatched?.stageHistory, [
+  { stage: 3, status: stageThreeStatus, recordedAt: "" },
+]);
+
+// The list is capped and drops the oldest entries.
+let longHistory = stageOne;
+for (let index = 0; index < 30; index += 1) {
+  const stage = (index % 2) + 1;
+  const status = workshopStageStatus(stage, "Eindhoven");
+  longHistory = {
+    ...longHistory,
+    currentStage: stage,
+    status,
+    stageHistory: appendWorkshopStageHistory(longHistory, stage, status, `t${index}`),
+  };
+}
+assert.equal(longHistory.stageHistory.length, WORKSHOP_STAGE_HISTORY_LIMIT);
+assert.equal(longHistory.stageHistory[longHistory.stageHistory.length - 1].recordedAt, "t29");
+
+// An order with no workshop record has no list.
+assert.deepEqual(emptyCard.stageLines, []);
 
 assert.equal(presentCustomerDashboardBanner([{ shipment: { trackingId: "ODG-1" } }], new Map()), null);
 
@@ -197,6 +295,10 @@ assert.ok(admin.includes("A pickup PIN is created when you save stage 6."));
 assert.ok(admin.includes("workshopDispatchLabel"));
 assert.ok(admin.includes("Arrived for pickup"));
 assert.ok(admin.includes("FUTURE_ORDER_V2_WORKSHOP_COLLECTION"));
+assert.match(
+  admin,
+  /stageHistory: appendWorkshopStageHistory\(\s*existingWorkshop,\s*currentStage,\s*status,\s*new Date\(\)\.toISOString\(\),\s*\)/,
+);
 assert.equal(admin.includes("setOrders"), true);
 
 console.log("Customer dashboard banner tests passed.");
