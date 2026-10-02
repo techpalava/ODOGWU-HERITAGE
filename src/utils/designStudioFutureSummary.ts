@@ -225,6 +225,7 @@ export interface FutureDesignStudioSummaryInput {
   materialPricing: FabricAllocationPricingResult | null;
   designStyleSelection: FutureDesignStyleSelectionResolution;
   designStyleOccurrences?: readonly DesignStyleStepOccurrencePresentation[];
+  uploadedPreviewByOccurrenceToken?: Readonly<Record<string, string>>;
   styles?: readonly StyleCategory[];
   customDetailsReconciliation: GarmentScopedCustomDetailsReconciliationResult | null;
   customDetailsCompletion: GarmentScopedCustomDetailsCompletionResult | null;
@@ -511,10 +512,12 @@ const mapFabrics = ({
 const mapOccurrenceStyles = ({
   occurrences,
   styles,
+  uploadedPreviewByOccurrenceToken,
   blockers,
 }: {
   occurrences: readonly DesignStyleStepOccurrencePresentation[];
   styles: readonly StyleCategory[];
+  uploadedPreviewByOccurrenceToken: Readonly<Record<string, string>>;
   blockers: FutureDesignStudioSummaryBlocker[];
 }): FutureSummaryDesignStyleOccurrence[] => {
   const stylesById = new Map(styles.map((style) => [style.id, style] as const));
@@ -538,7 +541,7 @@ const mapOccurrenceStyles = ({
       sourceKind: "uploaded" as const,
       status: "selected" as const,
       name: "Uploaded design",
-      image: null,
+      image: uploadedPreviewByOccurrenceToken[occurrence.target.occurrenceToken]?.trim() || null,
       detail: "Uploaded design selected",
     };
     const status: FutureSummaryDesignStyleOccurrence["status"] = occurrence.status === "needs_review" || occurrence.status === "unavailable" ||
@@ -1006,6 +1009,7 @@ export const projectFutureDesignStudioSummary = (
   const designStyleOccurrences = mapOccurrenceStyles({
     occurrences: input.designStyleOccurrences || [],
     styles: input.styles || [],
+    uploadedPreviewByOccurrenceToken: input.uploadedPreviewByOccurrenceToken || {},
     blockers,
   });
   const customDetailsSummary = mapCustomDetails({
