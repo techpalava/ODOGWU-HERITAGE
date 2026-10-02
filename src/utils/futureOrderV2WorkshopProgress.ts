@@ -9,6 +9,7 @@ export interface FutureOrderV2WorkshopProgress {
   readonly currentStage: number;
   readonly status: string;
   readonly estimatedDeliveryDate: string;
+  readonly pickupPin: string;
 }
 
 const STAGE_STATUSES = [
@@ -19,8 +20,25 @@ const STAGE_STATUSES = [
   "Consolidated & Dispatched via Lagos-Schiethol Air Freight Route",
 ] as const;
 
+const PICKUP_PIN = /^\d{6}$/;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+export const generateWorkshopPickupPin = (): string => {
+  const bytes = new Uint32Array(1);
+  crypto.getRandomValues(bytes);
+  return String(bytes[0] % 1_000_000).padStart(6, "0");
+};
+
+export const resolveWorkshopPickupPin = (
+  stage: number,
+  existing: FutureOrderV2WorkshopProgress | undefined,
+): string => {
+  if (stage !== 6) return "";
+  if (existing?.currentStage === 6 && PICKUP_PIN.test(existing.pickupPin)) return existing.pickupPin;
+  return generateWorkshopPickupPin();
+};
 
 export const workshopStageStatus = (stage: number, pickupLocation: string): string => {
   if (stage === 6) {
@@ -50,6 +68,8 @@ export const parseFutureOrderV2WorkshopProgress = (
   ) {
     return null;
   }
+  const pickupPin = value.pickupPin === undefined ? "" : value.pickupPin;
+  if (typeof pickupPin !== "string" || (pickupPin !== "" && !PICKUP_PIN.test(pickupPin))) return null;
   return {
     schemaVersion: 1,
     orderId: value.orderId,
@@ -57,6 +77,7 @@ export const parseFutureOrderV2WorkshopProgress = (
     currentStage: stage,
     status: value.status,
     estimatedDeliveryDate: value.estimatedDeliveryDate,
+    pickupPin,
   };
 };
 
@@ -64,6 +85,7 @@ export interface FutureOrderV2WorkshopCard {
   readonly statusLabel: string;
   readonly stageLabel: string | null;
   readonly deliveryLabel: string;
+  readonly pickupPinLabel: string | null;
 }
 
 export const presentFutureOrderV2WorkshopCard = (
@@ -74,6 +96,7 @@ export const presentFutureOrderV2WorkshopCard = (
       statusLabel: "Production has not started",
       stageLabel: null,
       deliveryLabel: CUSTOMER_WORKSHOP_DELIVERY_UNSCHEDULED,
+      pickupPinLabel: null,
     };
   }
   const progress = presentCustomerWorkshopProgress({
@@ -87,5 +110,6 @@ export const presentFutureOrderV2WorkshopCard = (
     statusLabel: progress.statusLabel,
     stageLabel: progress.stageLabel,
     deliveryLabel: progress.deliveryLabel,
+    pickupPinLabel: record.currentStage === 6 && PICKUP_PIN.test(record.pickupPin) ? record.pickupPin : null,
   };
 };

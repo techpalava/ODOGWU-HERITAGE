@@ -798,6 +798,13 @@ service cloud.firestore {
         && request.resource.data.status is string
         && request.resource.data.status.size() > 0
         && request.resource.data.estimatedDeliveryDate is string
+        && request.resource.data.pickupPin is string
+        && (
+          (request.resource.data.currentStage == 6
+            && request.resource.data.pickupPin.matches('^[0-9]{6}$'))
+          || (request.resource.data.currentStage != 6
+            && request.resource.data.pickupPin == "")
+        )
         && request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }
