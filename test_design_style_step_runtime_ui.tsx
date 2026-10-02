@@ -164,6 +164,35 @@ const withReferenceGarmentTypes = (
   assert.equal(visibleText.includes("Restoring your Design Style choices..."), false);
 }
 
+// Guest photos that could not move to the account are named for re-upload.
+{
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt"]),
+  });
+  const renderer = await renderModel(model, {
+    runtimeStatus: "ready",
+    removedGuestUploadGarmentLabels: ["Standard Shirt", "Long Dress"],
+  });
+  assert.equal(
+    textContent(
+      renderer.root.findByProps({ "data-testid": "step3-guest-uploads-removed" }),
+    ),
+    "Photos you uploaded before signing in could not be moved to your account. Upload them again for: Standard Shirt, Long Dress.",
+  );
+
+  const withoutRemovals = await renderModel(model, {
+    runtimeStatus: "ready",
+    removedGuestUploadGarmentLabels: [],
+  });
+  assert.equal(
+    withoutRemovals.root.findAllByProps({
+      "data-testid": "step3-guest-uploads-removed",
+    }).length,
+    0,
+  );
+}
+
 // Customer Step 3 intentionally has no demographic selector. Published styles
 // remain visible regardless of their demographic reference metadata.
 {

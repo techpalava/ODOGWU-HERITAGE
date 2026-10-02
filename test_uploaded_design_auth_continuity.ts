@@ -23,6 +23,16 @@ import {
 } from "./src/services/customerDesignDraftOwnershipTransfer.js";
 import { createGuestUploadedDesignOwnershipContinuity } from "./src/services/guestUploadedDesignOwnershipContinuity.js";
 import { createUploadedDesignSource } from "./src/utils/designSourceState.js";
+import {
+  DESIGN_STYLE_DRAFT_FIELD,
+  inspectPersistedDesignStyleDraft,
+} from "./src/utils/designStyleDraftPersistence.js";
+import {
+  createEmptyUploadedDesignSourceRegistry,
+  inspectUploadedDesignSourceRegistry,
+  UPLOADED_DESIGN_SOURCE_REGISTRY_FIELD,
+  upsertUploadedDesignSources,
+} from "./src/utils/uploadedDesignSourceRegistry.js";
 
 const ANONYMOUS_UID = "anonymous-owner-001";
 const ACCOUNT_UID = "account-owner-002";
@@ -509,14 +519,24 @@ async function testGuestContinuityCoordinator() {
     },
   });
   assert.deepEqual(await unavailable.prepare(null), {
-    status: "transfer_required",
-    reason: "source_identity_unavailable",
+    status: "ready",
+    method: "not_required",
   });
   assert.equal(unavailableClaimCalls, 0);
+  assert.equal(unavailableDraft.uploadedDesignOwnershipTransition, undefined);
   assert.equal(
     unavailableDraft.designSource?.kind === "uploaded" &&
       unavailableDraft.designSource.uploadReference.ownerUid,
     ANONYMOUS_UID,
+  );
+  assert.deepEqual(await unavailable.ensure(accountIdentity), {
+    status: "ready",
+    method: "not_required",
+  });
+  assert.equal(
+    unavailableDraft.designSource,
+    null,
+    "An upload that can no longer be claimed is removed instead of blocking sign-in.",
   );
 
   let expiredDraft = uploadedDraft();
@@ -545,10 +565,12 @@ async function testGuestContinuityCoordinator() {
     getIdToken: async () => "anonymous-token",
   });
   assert.deepEqual(await expired.ensure(accountIdentity), {
-    status: "transfer_required",
-    reason: "claim_unavailable",
+    status: "ready",
+    method: "not_required",
   });
   assert.equal(expiredTransferCalls, 0);
+  assert.equal(expiredDraft.designSource, null);
+  assert.equal(expiredDraft.uploadedDesignOwnershipTransition, undefined);
 
   let staleDraft = uploadedDraft();
   let resolveStaleTransfer:
@@ -596,6 +618,202 @@ async function testGuestContinuityCoordinator() {
   );
 }
 
+const registrySourceFor = (reference: CustomerDesignUploadReference) =>
+  createUploadedDesignSource({
+    uploadReference: reference,
+    fabricCapacityComposition: [
+      { key: "base:shirt", garmentType: "shirt", fabricUnits: 1 },
+    ],
+    demographic: "male",
+  });
+
+const uploadedAssignment = (garmentKey: string, uploadedSourceRef: string) => ({
+  garmentKey,
+  occurrenceToken: `token-${garmentKey}`,
+  assignmentRevision: 1,
+  sourceKind: "uploaded" as const,
+  sourceKey: `uploaded:${uploadedSourceRef}`,
+  uploadedSourceRef,
+});
+
+const registryDraft = (
+  assignments: Record<string, string>,
+  references: CustomerDesignUploadReference[],
+): GuestDesignDraft =>
+  ({
+    journeySchemaVersion: 1,
+    currentStageId: "design_style",
+    designSource: null,
+    [DESIGN_STYLE_DRAFT_FIELD]: {
+      schemaVersion: 2,
+      ledger: {
+        schemaVersion: 2,
+        revision: 2,
+        assignmentsByGarmentKey: Object.fromEntries(
+          Object.entries(assignments).map(([garmentKey, ref]) => [
+            garmentKey,
+            uploadedAssignment(garmentKey, ref),
+          ]),
+        ),
+      },
+    },
+    [UPLOADED_DESIGN_SOURCE_REGISTRY_FIELD]: upsertUploadedDesignSources(
+      createEmptyUploadedDesignSourceRegistry(),
+      references.map(registrySourceFor),
+    ),
+  }) as unknown as GuestDesignDraft;
+
+const registryOwners = (draft: GuestDesignDraft) => {
+  const registry = inspectUploadedDesignSourceRegistry(draft);
+  assert.equal(registry.status, "valid");
+  if (registry.status !== "valid") throw new Error("unreachable");
+  return Object.fromEntries(
+    Object.entries(registry.registry.sourcesByUploadedSourceRef).map(
+      ([ref, source]) => [ref, source.uploadReference.ownerUid],
+    ),
+  );
+};
+
+const assignedRefs = (draft: GuestDesignDraft) => {
+  const envelope = inspectPersistedDesignStyleDraft(draft);
+  assert.equal(envelope.status, "valid");
+  if (envelope.status !== "valid") throw new Error("unreachable");
+  return Object.fromEntries(
+    Object.entries(envelope.envelope.ledger.assignmentsByGarmentKey).map(
+      ([garmentKey, assignment]) => [
+        garmentKey,
+        assignment.sourceKind === "uploaded" ? assignment.uploadedSourceRef : null,
+      ],
+    ),
+  );
+};
+
+async function testRegistryUploadsMoveOrAreRemoved() {
+  const shirtRef = referenceFor(ANONYMOUS_UID, "guest-shirt");
+  const dressRef = referenceFor(ANONYMOUS_UID, "guest-dress");
+  let draft = registryDraft(
+    { "shirt-1": "guest-shirt", "dress-1": "guest-dress" },
+    [shirtRef, dressRef],
+  );
+  const claimed: string[] = [];
+  const transferred: string[] = [];
+  const coordinator = createGuestUploadedDesignOwnershipContinuity({
+    loadDraft: () => clone(draft),
+    saveDraft: (next) => {
+      draft = clone(next);
+    },
+    claimClient: {
+      createOwnershipClaim: async (reference) => {
+        claimed.push(reference.designReferenceId);
+        return {
+          claimToken: CLAIM_TOKEN,
+          expiresAt: "2026-08-15T12:15:00.000Z",
+        };
+      },
+    },
+    transferClient: {
+      transferDraftOwnership: async (input) => {
+        transferred.push(input.draftReference.designReferenceId);
+        return {
+          ...referenceFor(ACCOUNT_UID, input.draftReference.designReferenceId),
+          createdAt: NOW.toISOString(),
+        };
+      },
+    },
+    now: () => NOW.getTime(),
+  });
+
+  await coordinator.prepare({
+    uid: ANONYMOUS_UID,
+    getIdToken: async () => "anonymous-token",
+  });
+  assert.deepEqual(claimed.sort(), ["guest-dress", "guest-shirt"]);
+  assert.deepEqual(await coordinator.ensure(accountIdentity), {
+    status: "ready",
+    method: "transferred",
+  });
+  assert.deepEqual(transferred.sort(), ["guest-dress", "guest-shirt"]);
+  assert.deepEqual(registryOwners(draft), {
+    "guest-dress": ACCOUNT_UID,
+    "guest-shirt": ACCOUNT_UID,
+  });
+  assert.deepEqual(assignedRefs(draft), {
+    "dress-1": "guest-dress",
+    "shirt-1": "guest-shirt",
+  });
+  assert.deepEqual(coordinator.takeRemovedGarmentKeys(), []);
+
+  let partialDraft = registryDraft({ "shirt-1": "guest-shirt" }, [shirtRef]);
+  const partial = createGuestUploadedDesignOwnershipContinuity({
+    loadDraft: () => clone(partialDraft),
+    saveDraft: (next) => {
+      partialDraft = clone(next);
+    },
+    claimClient: {
+      createOwnershipClaim: async () => ({
+        claimToken: CLAIM_TOKEN,
+        expiresAt: "2026-08-15T12:15:00.000Z",
+      }),
+    },
+    transferClient: {
+      transferDraftOwnership: async (input) =>
+        referenceFor(ACCOUNT_UID, input.draftReference.designReferenceId),
+    },
+    now: () => NOW.getTime(),
+  });
+  await partial.prepare({
+    uid: ANONYMOUS_UID,
+    getIdToken: async () => "anonymous-token",
+  });
+  partialDraft = registryDraft(
+    { "shirt-1": "guest-shirt", "dress-1": "guest-dress" },
+    [shirtRef, dressRef],
+  );
+  assert.deepEqual(await partial.ensure(accountIdentity), {
+    status: "ready",
+    method: "transferred",
+    removedGarmentKeys: ["dress-1"],
+  });
+  assert.deepEqual(registryOwners(partialDraft), {
+    "guest-shirt": ACCOUNT_UID,
+  });
+  assert.deepEqual(assignedRefs(partialDraft), { "shirt-1": "guest-shirt" });
+  assert.deepEqual(partial.takeRemovedGarmentKeys(), ["dress-1"]);
+  assert.deepEqual(partial.takeRemovedGarmentKeys(), []);
+
+  let failingDraft = registryDraft({ "shirt-1": "guest-shirt" }, [shirtRef]);
+  const failing = createGuestUploadedDesignOwnershipContinuity({
+    loadDraft: () => clone(failingDraft),
+    saveDraft: (next) => {
+      failingDraft = clone(next);
+    },
+    claimClient: {
+      createOwnershipClaim: async () => ({
+        claimToken: CLAIM_TOKEN,
+        expiresAt: "2026-08-15T12:15:00.000Z",
+      }),
+    },
+    transferClient: {
+      transferDraftOwnership: async () => {
+        throw new Error("temporary transfer failure");
+      },
+    },
+    now: () => NOW.getTime(),
+  });
+  await failing.prepare({
+    uid: ANONYMOUS_UID,
+    getIdToken: async () => "anonymous-token",
+  });
+  assert.deepEqual(await failing.ensure(accountIdentity), {
+    status: "transfer_required",
+    reason: "transfer_failed",
+  });
+  assert.deepEqual(registryOwners(failingDraft), {
+    "guest-shirt": ANONYMOUS_UID,
+  });
+  assert.deepEqual(assignedRefs(failingDraft), { "shirt-1": "guest-shirt" });
+}
+
 function testAuthIntegrationSourceContract() {
   const loginSource = readFileSync("src/components/LoginView.tsx", "utf8");
   const storeSource = readFileSync("src/store/useAppStore.ts", "utf8");
@@ -616,6 +834,7 @@ await testTrustedServerTransfer();
 await testHttpClaimBinding();
 await testClientReferenceValidation();
 await testGuestContinuityCoordinator();
+await testRegistryUploadsMoveOrAreRemoved();
 testAuthIntegrationSourceContract();
 
 console.log(

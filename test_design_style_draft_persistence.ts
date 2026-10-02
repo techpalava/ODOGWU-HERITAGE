@@ -560,6 +560,27 @@ const combinedStyle = publishedStyle("style-combined", ["shirt", "trouser"]);
     studioSource,
     /recoverDesignStyleHydrationAfterFailedRestore\(\{\s*persistenceStatus: futureDraftPersistenceStatus,/,
   );
+  const removalIndex = restoreEffect.search(
+    /removeForeignUploadedDesignSources\(\s*localDraft,\s*futureDraftIdentity\.ownerUid,/,
+  );
+  const synchronizeIndex = restoreEffect.indexOf(
+    "await repository.synchronize(localDraft,",
+  );
+  assert.ok(removalIndex > 0, "guest-owned uploads are removed during restore");
+  assert.ok(
+    removalIndex < synchronizeIndex,
+    "guest-owned uploads are removed before the signed-in synchronize",
+  );
+  assert.ok(
+    restoreEffect.includes(
+      "GuestOrderSessionService.saveFutureDesignDraft(removal.draft);",
+    ),
+  );
+  assert.ok(
+    restoreEffect.includes(
+      "guestUploadedDesignOwnershipContinuity.takeRemovedGarmentKeys()",
+    ),
+  );
 }
 
 // Malformed scalar evidence cannot create an assignment or be overwritten.
