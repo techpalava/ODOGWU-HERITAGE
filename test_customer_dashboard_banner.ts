@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CustomerJourneyEngine } from "./src/engine/CustomerJourneyEngine";
 import { presentCustomerDashboardBanner } from "./src/utils/customerDashboardBanner";
-import { presentFutureOrderV2WorkshopCard, resolveWorkshopPickupPin } from "./src/utils/futureOrderV2WorkshopProgress";
+import { presentFutureOrderV2WorkshopCard, parseFutureOrderV2WorkshopProgress, resolveWorkshopPickupPin } from "./src/utils/futureOrderV2WorkshopProgress";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
 import { formatCustomerOrderDate } from "./src/utils/futureOrderV2PaymentRecord";
 import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
@@ -60,6 +60,7 @@ const sewing = {
   status: "Pattern Drafting & Sewing on Lagos floor",
   estimatedDeliveryDate: "2026-05-30",
   pickupPin: "",
+  dispatchStatus: "not_dispatched" as const,
 };
 const withProgress = presentCustomerDashboardBanner([paid], paidMap, new Map([[paid.orderId, sewing]]));
 assert.ok(withProgress);
@@ -81,11 +82,14 @@ const emptyCard = presentFutureOrderV2WorkshopCard(undefined);
 assert.equal(emptyCard.statusLabel, "Production has not started");
 assert.equal(emptyCard.stageLabel, null);
 assert.equal(emptyCard.deliveryLabel, "Not scheduled yet");
+assert.equal(emptyCard.dispatchLabel, null);
 const sewingCard = presentFutureOrderV2WorkshopCard(sewing);
 assert.equal(sewingCard.statusLabel, sewing.status);
 assert.equal(sewingCard.stageLabel, "Stage 3 of 6");
 assert.equal(sewingCard.deliveryLabel, "30 May 2026");
 assert.equal(sewingCard.pickupPinLabel, null);
+assert.equal(sewingCard.dispatchLabel, "Not dispatched");
+assert.equal(withProgress.message.includes("Dispatch:"), false);
 assert.equal(withProgress.message.includes("Pickup PIN"), false);
 
 const arrived = {
@@ -114,6 +118,13 @@ assert.equal(resolveWorkshopPickupPin(3, arrived), "");
 assert.equal(resolveWorkshopPickupPin(6, arrived), "482913");
 assert.match(resolveWorkshopPickupPin(6, sewing), /^\d{6}$/);
 assert.equal(resolveWorkshopPickupPin(6, { ...arrived, pickupPin: "" }).length, 6);
+const dispatched = { ...sewing, dispatchStatus: "dispatched" as const };
+assert.equal(presentFutureOrderV2WorkshopCard(dispatched).dispatchLabel, "Dispatched");
+const arrivedDispatch = { ...sewing, dispatchStatus: "arrived" as const };
+assert.equal(presentFutureOrderV2WorkshopCard(arrivedDispatch).dispatchLabel, "Arrived for pickup");
+const { dispatchStatus: _ignoredDispatch, ...withoutDispatch } = sewing;
+const parsedWithoutDispatch = parseFutureOrderV2WorkshopProgress(withoutDispatch);
+assert.equal(parsedWithoutDispatch?.dispatchStatus, "not_dispatched");
 
 assert.equal(presentCustomerDashboardBanner([{ shipment: { trackingId: "ODG-1" } }], new Map()), null);
 
@@ -183,6 +194,8 @@ assert.ok(paidAction.includes("Update progress"));
 assert.ok(admin.includes("Only a paid order can move into production."));
 assert.ok(admin.includes("resolveWorkshopPickupPin"));
 assert.ok(admin.includes("A pickup PIN is created when you save stage 6."));
+assert.ok(admin.includes("workshopDispatchLabel"));
+assert.ok(admin.includes("Arrived for pickup"));
 assert.ok(admin.includes("FUTURE_ORDER_V2_WORKSHOP_COLLECTION"));
 assert.equal(admin.includes("setOrders"), true);
 

@@ -146,6 +146,7 @@ import {
   FUTURE_ORDER_V2_WORKSHOP_COLLECTION,
   parseFutureOrderV2WorkshopProgress,
   resolveWorkshopPickupPin,
+  workshopDispatchLabel,
   workshopStageStatus,
   type FutureOrderV2WorkshopProgress,
 } from "../utils/futureOrderV2WorkshopProgress";
@@ -1285,6 +1286,10 @@ export default function DatabaseView({
           currentStage,
           futureOrderV2WorkshopByOrderId.get(orderId),
         ),
+        dispatchStatus:
+          editingItem?.dispatchStatus === "dispatched" || editingItem?.dispatchStatus === "arrived"
+            ? editingItem.dispatchStatus
+            : "not_dispatched",
         updatedAt: serverTimestamp(),
       });
       triggerStatus(`Workshop progress saved for ${orderId}`);
@@ -3212,6 +3217,27 @@ export default function DatabaseView({
                         }
                         className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
                       />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="font-bold text-heritage-green">Dispatch</label>
+                      <select
+                        value={
+                          editingItem.dispatchStatus === "dispatched" || editingItem.dispatchStatus === "arrived"
+                            ? editingItem.dispatchStatus
+                            : "not_dispatched"
+                        }
+                        onChange={(e) =>
+                          setEditingItem({
+                            ...editingItem,
+                            dispatchStatus: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-heritage-gold/20 bg-white rounded-lg"
+                      >
+                        <option value="not_dispatched">Not dispatched</option>
+                        <option value="dispatched">Dispatched</option>
+                        <option value="arrived">Arrived for pickup</option>
+                      </select>
                     </div>
                     {Number(editingItem.currentStage) === 6 && (
                       <div className="space-y-1 sm:col-span-2">
@@ -5652,7 +5678,11 @@ export default function DatabaseView({
                                     {futureOrderV2WorkshopByOrderId.get(history.orderId)?.status || "Immutable snapshot"}
                                   </td>
                                   <td className="px-4 py-3 text-[10px] font-mono text-blue-600">
-                                    {formatAdminShippingStatus(history.shippingStatus)}
+                                    {futureOrderV2WorkshopByOrderId.has(history.orderId)
+                                      ? workshopDispatchLabel(
+                                          futureOrderV2WorkshopByOrderId.get(history.orderId)!.dispatchStatus,
+                                        )
+                                      : formatAdminShippingStatus(history.shippingStatus)}
                                   </td>
                                   <td className="px-4 py-3 font-bold text-heritage-green">
                                     {history.exactTotalCents === null
@@ -5675,6 +5705,7 @@ export default function DatabaseView({
                                             ownerUid: history.customer.ownerUid,
                                             currentStage: progress?.currentStage || 1,
                                             estimatedDeliveryDate: progress?.estimatedDeliveryDate || "",
+                                            dispatchStatus: progress?.dispatchStatus || "not_dispatched",
                                           });
                                           setEditingType("v2-workshop");
                                         }}

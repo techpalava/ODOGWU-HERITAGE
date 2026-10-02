@@ -130,6 +130,7 @@ export const CustomerFutureOrderV2List = ({
                     {progress.stageLabel ? <><br />{progress.stageLabel}</> : null}
                     <br />
                     Est. Delivery: {progress.deliveryLabel}
+                    {progress.dispatchLabel ? <><br />Dispatch: {progress.dispatchLabel}</> : null}
                     {progress.pickupPinLabel ? <><br />Pickup PIN: {progress.pickupPinLabel}</> : null}
                   </p>
                 );
@@ -173,6 +174,7 @@ export const CustomerFutureOrderV2List = ({
         <CustomerFutureOrderV2Details
           order={openEntry.persisted}
           payment={paymentsByOrderId.get(openEntry.persisted.orderId)}
+          workshop={workshopByOrderId.get(openEntry.persisted.orderId)}
           onClose={() => setOpenOrderId(null)}
           paymentActions={paymentActions}
         />
