@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createStyleBaseGarmentSpec } from "./src/config/StyleFabricCapacityConfig";
 import type {
   CanonicalPhysicalGarmentType,
@@ -439,7 +440,6 @@ const combinedStyle = publishedStyle("style-combined", ["shirt", "trouser"]);
   const authority = authorityFor({ styles: [shirtStyle], occurrences });
   assert.equal(
     shouldRecoverDesignStyleAfterFailedRestore({
-      guestDraftHydrated: true,
       persistenceStatus: "invalid",
       hydrationPresent: false,
       catalogueReady: true,
@@ -449,7 +449,6 @@ const combinedStyle = publishedStyle("style-combined", ["shirt", "trouser"]);
   );
   for (const persistenceStatus of ["blocked", "conflict", "invalid"] as const) {
     const recovered = recoverDesignStyleHydrationAfterFailedRestore({
-      guestDraftHydrated: true,
       persistenceStatus,
       hydrationPresent: false,
       catalogueReady: true,
@@ -472,7 +471,6 @@ const combinedStyle = publishedStyle("style-combined", ["shirt", "trouser"]);
   });
   assert.equal(
     recoverDesignStyleHydrationAfterFailedRestore({
-      guestDraftHydrated: true,
       persistenceStatus: "invalid",
       hydrationPresent: true,
       catalogueReady: true,
@@ -485,7 +483,6 @@ const combinedStyle = publishedStyle("style-combined", ["shirt", "trouser"]);
   assert.equal(existing.status, "empty-v2");
   assert.equal(
     shouldRecoverDesignStyleAfterFailedRestore({
-      guestDraftHydrated: true,
       persistenceStatus: "ready",
       hydrationPresent: false,
       catalogueReady: true,
@@ -494,18 +491,18 @@ const combinedStyle = publishedStyle("style-combined", ["shirt", "trouser"]);
     false,
   );
   assert.equal(
-    shouldRecoverDesignStyleAfterFailedRestore({
-      guestDraftHydrated: false,
-      persistenceStatus: "invalid",
+    recoverDesignStyleHydrationAfterFailedRestore({
+      persistenceStatus: "blocked",
       hydrationPresent: false,
       catalogueReady: true,
-      occurrenceCount: 1,
-    }),
-    false,
+      activeOccurrences: occurrences,
+      authority,
+    })?.status,
+    "empty-v2",
+    "a signed-in sync failure that stopped before the draft loaded still recovers",
   );
   assert.equal(
     shouldRecoverDesignStyleAfterFailedRestore({
-      guestDraftHydrated: true,
       persistenceStatus: "invalid",
       hydrationPresent: false,
       catalogueReady: false,
@@ -515,13 +512,53 @@ const combinedStyle = publishedStyle("style-combined", ["shirt", "trouser"]);
   );
   assert.equal(
     shouldRecoverDesignStyleAfterFailedRestore({
-      guestDraftHydrated: true,
       persistenceStatus: "invalid",
       hydrationPresent: false,
       catalogueReady: true,
       occurrenceCount: 0,
     }),
     false,
+  );
+}
+
+// Every failed restore branch records why it failed, so Step 3 can show it.
+{
+  const studioSource = readFileSync(
+    "src/components/DesignStudioView.tsx",
+    "utf8",
+  );
+  const restoreEffect = studioSource.slice(
+    studioSource.indexOf("const failFutureDraftRestore = ("),
+    studioSource.indexOf('console.error("Future draft hydration failed.", error);') + 400,
+  );
+  assert.match(
+    restoreEffect,
+    /console\.warn\("Future draft restore failed\.", status, reason\);\s*setFutureDraftPersistenceStatus\(status\);\s*setFutureDraftPersistenceReason\(reason\);/,
+  );
+  assert.equal(
+    /setFutureDraftPersistenceStatus\("(blocked|conflict|invalid)"\)/.test(
+      restoreEffect,
+    ),
+    false,
+    "failed restore branches go through failFutureDraftRestore",
+  );
+  for (const expected of [
+    'failFutureDraftRestore("blocked", futureDraftIdentity.reason)',
+    'failFutureDraftRestore("conflict", "local_and_cloud_drafts_differ")',
+    "failFutureDraftRestore(synchronization.status, synchronization.reason)",
+    'failFutureDraftRestore("blocked", "order_context_mismatch")',
+    "`synchronize_threw:",
+    "`hydration_threw:",
+  ]) {
+    assert.ok(restoreEffect.includes(expected), expected);
+  }
+  assert.match(
+    studioSource,
+    /data-future-draft-persistence-reason=\{futureDraftPersistenceReason \|\| ""\}/,
+  );
+  assert.match(
+    studioSource,
+    /recoverDesignStyleHydrationAfterFailedRestore\(\{\s*persistenceStatus: futureDraftPersistenceStatus,/,
   );
 }
 

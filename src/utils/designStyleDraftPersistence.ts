@@ -1264,19 +1264,16 @@ const hydrateDesignStyleDraftPersistenceWithoutRegistryGuard = ({
 };
 
 export const shouldRecoverDesignStyleAfterFailedRestore = ({
-  guestDraftHydrated,
   persistenceStatus,
   hydrationPresent,
   catalogueReady,
   occurrenceCount,
 }: {
-  guestDraftHydrated: boolean;
   persistenceStatus: string;
   hydrationPresent: boolean;
   catalogueReady: boolean;
   occurrenceCount: number;
 }): boolean =>
-  guestDraftHydrated &&
   !hydrationPresent &&
   catalogueReady &&
   occurrenceCount > 0 &&
@@ -1285,14 +1282,12 @@ export const shouldRecoverDesignStyleAfterFailedRestore = ({
     persistenceStatus === "invalid");
 
 export const recoverDesignStyleHydrationAfterFailedRestore = ({
-  guestDraftHydrated,
   persistenceStatus,
   hydrationPresent,
   catalogueReady,
   activeOccurrences,
   authority,
 }: {
-  guestDraftHydrated: boolean;
   persistenceStatus: string;
   hydrationPresent: boolean;
   catalogueReady: boolean;
@@ -1301,7 +1296,6 @@ export const recoverDesignStyleHydrationAfterFailedRestore = ({
 }): DesignStyleDraftHydrationResult | null => {
   if (
     !shouldRecoverDesignStyleAfterFailedRestore({
-      guestDraftHydrated,
       persistenceStatus,
       hydrationPresent,
       catalogueReady,
