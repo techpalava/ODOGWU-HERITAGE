@@ -1,7 +1,39 @@
-# FAST EXECUTOR GUIDE: v5 Cursor Edition
+# FAST EXECUTOR GUIDE: v6 Cursor Edition
 
-ODOGWU HERITAGE — FAST EXECUTOR GUIDE v5
+ODOGWU HERITAGE — FAST EXECUTOR GUIDE v6
 CURSOR EDITION — UPDATED REUSABLE STANDARD
+
+==================================================
+0. QUICK START FOR A NEW CHAT
+==================================================
+
+1. Read LIVING_PROJECT_STATE.md: product, journey, what is live, locks,
+   known baseline failures, and the active worktree.
+2. Confirm where you are, using the worktree as the working directory:
+   git rev-parse --show-toplevel
+   git branch --show-current
+   git status --short
+   git fetch github
+   The Cursor workspace folder may be a different checkout from the worktree.
+3. Find the task. It is usually an attached plan in C:\Users\techp\.cursor\plans\
+   with todos already created. Do not edit the plan file or recreate the todos.
+   Mark each todo in progress as you start it, and finish all of them.
+4. Pick the nearest tests from package.json before editing (section 3A).
+5. Know the gates: merge only after checks pass, verify the live build, and
+   deploy Firestore rules last (sections 19 to 22).
+
+Ten things that most often go wrong:
+1. Wrong checkout: confirm the worktree path before the first edit.
+2. Remote is github, never origin.
+3. Firebase tests fail under plain tsx: use the wrapper (section 3A).
+4. CRLF noise: stage named paths only; never git add . or -A.
+5. Literal "\n" source assertions fail locally on CRLF; that is not a regression.
+6. Merging while a check is pending: wait until gh pr checks exits 0.
+7. Rules deployed before the live app sends the new fields.
+8. A new file under api/ breaks the 12-function Vercel cap.
+9. Editing locked areas (payment intents, fabric pricing, ODG-xxx, Step 3)
+   without the task naming them.
+10. Calling a release live without /api/health and a live chunk check.
 
 ROLE
 Cursor is the controlled implementation executor for the currently authorized
@@ -20,7 +52,8 @@ current task block. A historical handoff does not automatically resume its task.
 1. SOURCE OF TRUTH AND AUTHORIZATION
 ==================================================
 
-Read the current Living Master Project State before substantial new work.
+Read the current Living Master Project State before substantial new work. It is
+LIVING_PROJECT_STATE.md at the repository root, committed on main and production.
 Use the newest explicit client instruction to change only the authority it
 actually addresses. Use current source, tests, and runtime evidence to establish
 implementation behavior; code behavior alone does not settle business intent.
@@ -46,7 +79,7 @@ ROLE: Executor / Reviewer / QA / Release operator
 MODEL: Recommended model and actual configured model, if different
 REASONING: Low / Medium / High / Extra High as supported
 CHAT: Fresh / Continue, with a short task title
-FAST EXECUTOR GUIDE: v5 Cursor Edition
+FAST EXECUTOR GUIDE: v6 Cursor Edition
 REPOSITORY: techpalava/ODOGWU-HERITAGE
 WORKTREE: Exact absolute path
 BRANCH: Exact branch
@@ -95,6 +128,46 @@ For an explicitly current-main task, establish and record the actual approved
 baseline. Do not silently move inherited WIP onto another base.
 
 ==================================================
+3A. ENVIRONMENT FACTS
+==================================================
+
+Shell is PowerShell on Windows:
+- Use single-quoted rg patterns: rg -n 'foo\(bar\)' src
+- rg does not expand bare globs on Windows: use rg -n 'x' -g 'test_*' .
+- Quote revision expressions: git rev-parse 'HEAD^{tree}'
+- Commit with two -m flags (title, then body). No interactive git (-i).
+- Put multi-line PR bodies in a file and pass it:
+  gh pr create ... --body-file "$env:TEMP\pr-body.md"
+- Long output is fine; do not pipe through head/tail only to shorten it.
+
+Tools:
+- The Cursor Grep/Glob tools search the Cursor workspace, which may not be the
+  task worktree. Use rg in the shell with the worktree as working directory.
+
+Tests and type-check:
+- npm run lint is tsc --noEmit. Compare errors with the known baseline in
+  LIVING_PROJECT_STATE.md.
+- Tests that import Firebase need the Vite production Firebase mode:
+  node scripts/tsxWithViteProductionFirebase.mjs test_name.ts
+  Prefer the matching npm run test:* script when one exists.
+- Other tests run with npx tsx test_name.ts(x).
+
+Line endings:
+- core.autocrlf is true and the working copy is CRLF while the index is LF.
+  Many files show as modified with CRLF-only differences.
+- Before staging, compare:
+  git diff --numstat -- <paths>
+  git diff --numstat --ignore-cr-at-eol -- <paths>
+  A file with changes only in the first output is CRLF noise: do not stage it.
+- Source assertions that search for a literal "\n" fail locally on CRLF and pass
+  on CI's LF checkout. Prefer whitespace-agnostic regexes in new assertions.
+
+Platform limits:
+- Vercel functions: every file under api/ (except _-prefixed helpers) is a
+  function. The project is at the 12-function cap. Do not add one.
+- Firebase project gen-lang-client-0614710868. Stripe test keys only.
+
+==================================================
 4. WORKTREE AND UNRELATED-WORK SAFETY
 ==================================================
 
@@ -116,6 +189,13 @@ Protect every unrelated change. Known persistent protected paths include:
 Inspect semantic diffs before touching protected paths. A task requiring a path
 does not authorize discarding unrelated changes within it. Add any other paths
 identified in the current Master or preflight to the protection list.
+
+When a task changes firestore.rules:
+- Check it compiles before release (publishes nothing):
+  npx firebase deploy --only firestore:rules --project gen-lang-client-0614710868 --non-interactive --dry-run
+- Deploy only after the live app sends the new fields (section 22):
+  npx firebase deploy --only firestore:rules --project gen-lang-client-0614710868 --non-interactive
+- Rules that require a field the live app does not send yet will reject saves.
 
 Do not expose secrets, tokens, environment values, or real customer data in
 prompts, screenshots, reports, fixtures, or commits.
@@ -449,6 +529,21 @@ Pending/failed required checks or an unexpected head: do not bypass the gate.
 Use an exact-head merge guard where supported. No admin override, force push,
 or unrequested squash/rebase. Never delete main or production as a PR head.
 
+Check-gated merge (PowerShell). gh pr checks exits 0 only when every check
+passed, and 8 while any is pending. A watcher that drops its network connection
+proves nothing, so poll and merge only on exit 0:
+
+$n = 123
+$ok = $false
+for ($i = 0; $i -lt 40; $i++) {
+  Start-Sleep -Seconds 30
+  $out = gh pr checks $n --repo techpalava/ODOGWU-HERITAGE 2>&1
+  if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+  if ($LASTEXITCODE -eq 1 -and ($out -match 'fail')) { break }
+}
+$out
+if ($ok) { gh pr merge $n --repo techpalava/ODOGWU-HERITAGE --merge --delete-branch=false }
+
 After merge, record the actual merge commit and verify the intended tree/delta.
 A feature-tree equality check is valid only when the verified base/merge context
 makes that equality expected; do not erase legitimate newer main content.
@@ -457,12 +552,26 @@ makes that equality expected; do not erase legitimate newer main content.
 20. RELEASE FLOW AND AUTHORIZATION
 ==================================================
 
-Normal flow:
-feature → PR to main → approved main merge → main-to-production PR
-→ authorized production merge → verify → history sync when necessary.
+Normal flow, all through GitHub PRs with merge commits (no local merges into
+main or production; the local main/production worktrees may be stale):
+
+1. Feature PR:
+   git push github <feature-branch>
+   gh pr create --repo techpalava/ODOGWU-HERITAGE --base main --head <feature-branch> --title "<title>" --body-file "$env:TEMP\pr-body.md"
+2. Release PR:
+   gh pr create --repo techpalava/ODOGWU-HERITAGE --base production --head main --title "Release <what> to production" --body "Releases PR #N: <summary>."
+3. Sync PR (reuse an open one; the title is exact):
+   gh pr list --repo techpalava/ODOGWU-HERITAGE --state open --base main --head production
+   gh pr create --repo techpalava/ODOGWU-HERITAGE --base main --head production --title "Sync production release history back to main" --body "Brings the production release merge for PR #N back into main."
+
+Merge each PR with the check-gated loop in section 19, in that order.
+Record each merge commit with:
+gh pr view N --repo techpalava/ODOGWU-HERITAGE --json state,mergeCommit
 
 Each write phase requires explicit permission. Creating a release PR does not
-automatically authorize merging it or promoting a hosting deployment.
+automatically authorize merging it or promoting a hosting deployment. An approved
+plan whose todos include the release authorizes the steps it lists, each still
+gated on passing checks.
 
 Release operations are mechanical: no implementation, refactor, new dependency,
 fixture cleanup, or opportunistic fix. Compare the exact reviewed release delta
@@ -471,6 +580,9 @@ and recheck remote state. Stop on unexpected content or concurrent changes.
 ==================================================
 21. HISTORY SYNC — USE ANCESTRY
 ==================================================
+
+The sync PR in section 20 is the normal mechanism. Use this check to confirm
+the cycle is complete, or to decide whether a sync PR is still needed.
 
 After fetch, compare the branch trees and run:
 
@@ -517,6 +629,31 @@ tooling, or change branch/domain settings without separate authorization.
 Do not claim LIVE while customer-domain evidence is missing. Report behavior
 verification separately even when deployment assignment is confirmed.
 
+Live verification for this project (after the production merge):
+
+$prod = '<production merge SHA>'
+for ($i = 0; $i -lt 20; $i++) {
+  $h = Invoke-RestMethod 'https://odogwu-heritage.vercel.app/api/health'
+  if ($h.buildId -eq $prod) { break }
+  Start-Sleep -Seconds 15
+}
+$h | ConvertTo-Json -Compress
+
+Then confirm a live chunk contains a string from the change:
+
+$needle = '<string from the change>'
+$base = 'https://odogwu-heritage.vercel.app'
+$html = (Invoke-WebRequest "$base/" -UseBasicParsing).Content
+$entry = [regex]::Match($html, '/assets/index-[^"]+\.js').Value
+$js = (Invoke-WebRequest "$base$entry" -UseBasicParsing).Content
+$chunks = [regex]::Matches($js, 'assets/[A-Za-z0-9_.-]+\.js') | ForEach-Object Value | Sort-Object -Unique
+$found = @($chunks | Where-Object { (Invoke-WebRequest "$base/$_" -UseBasicParsing).Content.Contains($needle) })
+if ($js.Contains($needle)) { $found += $entry }
+"found in: $($found -join ', ')"
+
+Only after both pass, deploy firestore.rules if the release changed them
+(section 4). Docs-only releases need no live chunk check.
+
 ==================================================
 23. RELOCK, MASTER STATE, AND FOLLOW-UPS
 ==================================================
@@ -526,7 +663,8 @@ not remain editable merely because publication or domain verification is pending
 Unlock only for an explicit new request or proven directly related defect.
 
 After major milestones, prepare an accurate Master checkpoint. Save it only to
-the actual authorized Master location and verify the write.
+the actual authorized Master location (LIVING_PROJECT_STATE.md, released like
+code) and verify the write.
 MASTER UPDATE: SAVED / PREPARED ONLY / NOT AVAILABLE.
 
 Keep feature completion, integration locks, release status, and deployment
@@ -548,7 +686,16 @@ or a required change to a locked pricing/security/identity/integration boundary.
 Do not stop repeatedly for routine TypeScript errors, safe in-scope helper work,
 or minor test-harness repairs already authorized by the task.
 
-Return a concise, evidence-based report using relevant fields only:
+Report to the user in plain language first:
+- the outcome in the first sentence (what is now true, or what blocked it);
+- what changed, in a few bullets of complete sentences;
+- checks run, with any failure named and explained (a known baseline exception
+  is still reported, not called a pass);
+- release links (PRs as markdown links), live build SHA, rules deploy;
+- the one thing the user should verify next.
+
+Use the fields below as a checklist when the task is high risk or the user asks
+for the structured report; include only the fields that apply:
 
 STATUS: IMPLEMENTED / PARTIAL / BLOCKED / CHECKPOINTED / other actual phase
 TASK AND INTERPRETATION
