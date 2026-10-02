@@ -40,6 +40,7 @@
     "test:uploaded-design-order-regression": "tsx test_uploaded_design_order_regression.ts",
     "test:uploaded-design-deletion-ui": "tsx test_uploaded_design_deletion_ui.tsx",
     "test:uploaded-design-auth-continuity": "node scripts/tsxWithViteProductionFirebase.mjs test_uploaded_design_auth_continuity.ts",
+    "test:foreign-uploaded-design-sources": "node scripts/tsxWithViteProductionFirebase.mjs test_foreign_uploaded_design_sources.ts",
     "test:firestore-security": "tsx test_firestore_security.ts",
     "test:design-style-authority": "tsx test_design_style_authority.ts && tsx test_design_style_publication.ts && tsx test_design_style_customer_projection.ts",
     "test:design-style-id": "tsx test_design_style_id.ts",

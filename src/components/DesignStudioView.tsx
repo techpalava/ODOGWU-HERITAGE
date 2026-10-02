@@ -368,6 +368,8 @@ import {
   CustomerDesignUploadService,
 } from "../services/customerDesignUploadService";
 import { ensureCustomerUploadIdentity } from "../services/customerDesignUploadIdentity";
+import { guestUploadedDesignOwnershipContinuity } from "../services/guestUploadedDesignOwnershipContinuity";
+import { removeForeignUploadedDesignSources } from "../utils/foreignUploadedDesignSources";
 import {
   deleteUploadedDesignBeforeSourceChange,
   deleteUploadedDesignCanonicalSource,
@@ -662,6 +664,10 @@ export default function DesignStudioView({
     useState<AuthenticatedFutureDraftIntegrationStatus>("resolving");
   const [futureDraftPersistenceReason, setFutureDraftPersistenceReason] =
     useState<string | null>(null);
+  const [
+    futureRemovedGuestUploadGarmentKeys,
+    setFutureRemovedGuestUploadGarmentKeys,
+  ] = useState<readonly string[]>([]);
   const [designStyleFailedRestoreNotice, setDesignStyleFailedRestoreNotice] =
     useState(false);
   const cloudFutureDraftRevisionRef = useRef<number | null>(null);
@@ -3041,6 +3047,25 @@ export default function DesignStudioView({
       futureCatalogInspection,
     ],
   );
+  const removedGuestUploadGarmentLabels = useMemo(() => {
+    const removedGarmentKeys = new Set(futureRemovedGuestUploadGarmentKeys);
+    return futureDesignStyleStepProjection.occurrences
+      .filter(
+        (occurrence) =>
+          removedGarmentKeys.has(occurrence.target.garmentKey) &&
+          !occurrence.assignment,
+      )
+      .map(
+        (occurrence) =>
+          yourGarmentsConstructionDisplayLabelByGarmentKey[
+            occurrence.target.garmentKey
+          ] ?? occurrence.label,
+      );
+  }, [
+    futureRemovedGuestUploadGarmentKeys,
+    futureDesignStyleStepProjection.occurrences,
+    yourGarmentsConstructionDisplayLabelByGarmentKey,
+  ]);
   const futureScopedCustomDetailsReconciliation =
     reconcileGarmentScopedCustomDetails({
       garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
@@ -3781,6 +3806,7 @@ export default function DesignStudioView({
     revokeRestoredUploadedDesignPreviews();
     setFutureDraftPersistenceStatus("resolving");
     setFutureDraftPersistenceReason(null);
+    setFutureRemovedGuestUploadGarmentKeys([]);
     setHydratedOrderContext(null);
     setPersistedOrderContextStatus("resolving");
     futureOrderV2PreparationRef.current = null;
@@ -3923,6 +3949,27 @@ export default function DesignStudioView({
             authResolved: firebaseDraftAuth.resolved,
             firebaseUser: firebaseDraftAuth.user,
           });
+        const removedGuestUploadGarmentKeys = new Set(
+          guestUploadedDesignOwnershipContinuity.takeRemovedGarmentKeys(),
+        );
+        if (localDraft) {
+          const removal = removeForeignUploadedDesignSources(
+            localDraft,
+            futureDraftIdentity.ownerUid,
+          );
+          if (removal.draft !== localDraft) {
+            GuestOrderSessionService.saveFutureDesignDraft(removal.draft);
+            localDraft = removal.draft;
+          }
+          removal.removedGarmentKeys.forEach((garmentKey) =>
+            removedGuestUploadGarmentKeys.add(garmentKey),
+          );
+        }
+        if (removedGuestUploadGarmentKeys.size > 0) {
+          setFutureRemovedGuestUploadGarmentKeys((current) => [
+            ...new Set([...current, ...removedGuestUploadGarmentKeys]),
+          ]);
+        }
         let synchronization;
         try {
           synchronization = await repository.synchronize(localDraft, {
@@ -8715,6 +8762,7 @@ export default function DesignStudioView({
                   .join(" · ")
               : null
           }
+          removedGuestUploadGarmentLabels={removedGuestUploadGarmentLabels}
           uploadState={futureDesignStyleUploadStateForActiveOccurrence}
           uploadStateByOccurrenceToken={
             futureDesignStyleUploadStateByOccurrenceToken
