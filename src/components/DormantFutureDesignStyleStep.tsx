@@ -50,6 +50,8 @@ interface DormantFutureDesignStyleStepProps {
   /** A saved draft could not be restored and no editable ledger is available. */
   draftHydrationUnrecoverable?: boolean;
   draftHydrationFailureReason?: string | null;
+  /** Garments whose guest-owned photos were removed at sign-in and still have no design. */
+  removedGuestUploadGarmentLabels?: readonly string[];
   uploadState?: {
     readonly status: "idle" | "pending" | "success" | "error";
     readonly message?: string;
@@ -170,6 +172,7 @@ export const DormantFutureDesignStyleStep = ({
   draftHydrationFailed = false,
   draftHydrationUnrecoverable = false,
   draftHydrationFailureReason = null,
+  removedGuestUploadGarmentLabels = [],
   uploadState = { status: "idle" },
   uploadStateByOccurrenceToken = {},
   uploadOperationBusy = false,
@@ -987,6 +990,7 @@ export const DormantFutureDesignStyleStep = ({
           {mutationError && <div role="alert" className="mt-4 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-900">{mutationError}</div>}
           {runtimeStatus === "hydrating" && !draftHydrationFailed && !draftHydrationUnrecoverable && <div role="status" className="mt-5 rounded-2xl border border-dashed border-heritage-gold/30 p-5 text-sm text-heritage-ink/70">Restoring your Design Style choices...</div>}
           {(draftHydrationFailed || draftHydrationUnrecoverable) && <div role="alert" data-testid={draftHydrationFailed ? "step3-draft-hydration-failed" : "step3-draft-hydration-unrecoverable"} className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900"><p>{draftHydrationFailed ? "We could not restore your saved Design Style choices, so they were not replaced. You can choose or upload a design for this visit." : "We could not restore your saved Design Style choices, so they were not replaced. Reload the page to try again."}</p>{draftHydrationFailureReason && <p data-testid="step3-draft-hydration-reason" className="mt-2 break-all font-mono text-[11px] text-amber-900/75">Reference: {draftHydrationFailureReason}</p>}</div>}
+          {removedGuestUploadGarmentLabels.length > 0 && <div role="status" data-testid="step3-guest-uploads-removed" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">Photos you uploaded before signing in could not be moved to your account. Upload them again for: {removedGuestUploadGarmentLabels.join(", ")}.</div>}
           {runtimeStatus === "blocked" && <div role="alert" className="mt-5 rounded-2xl border border-red-300 bg-red-50 p-5 text-sm text-red-900">Your saved Design Style choices cannot be changed safely here. Nothing has been overwritten.</div>}
           {(isCatalogueLoading || runtimeStatus === "loading") && <div role="status" className="mt-5 rounded-2xl border border-dashed border-heritage-gold/30 p-5 text-sm text-heritage-ink/70">Loading catalogue designs. Your saved assignments are preserved.</div>}
           {runtimeStatus === "error" && <div role="alert" className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">The Design Style catalogue is temporarily unavailable. Your saved assignments are preserved.</div>}
