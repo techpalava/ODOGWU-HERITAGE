@@ -52,7 +52,8 @@ const paidProgressSentence = (order: BannerOrder): string => {
   const placed = `Order placed ${formatCustomerOrderDate(order.persistedAt)} is paid.`;
   if (!order.progress) return `${placed} Production has not started.`;
   const card = presentFutureOrderV2WorkshopCard(order.progress);
-  return `${placed} ${card.statusLabel}. Stage ${order.progress.currentStage} of 6. Delivery ${card.deliveryLabel}.`;
+  const pin = card.pickupPinLabel ? ` Pickup PIN ${card.pickupPinLabel}.` : "";
+  return `${placed} ${card.statusLabel}. Stage ${order.progress.currentStage} of 6. Delivery ${card.deliveryLabel}.${pin}`;
 };
 
 export const presentCustomerDashboardBanner = (
