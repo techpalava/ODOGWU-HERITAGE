@@ -1,87 +1,128 @@
 # Living project state
 
-Updated: 2026-09-25. Read this file first. It exists only in this production checkout and is untracked.
+Updated: 2026-10-02. Read this file first in every new chat, then `FAST_EXECUTOR_GUIDE.md`.
+This file is committed on `main` and `production`. Update it after each release.
+
+## What the product is
+
+ODOGWU Heritage sells made-to-measure heritage garments. Customers design an order online,
+the Lagos atelier sews it, and the order is picked up in Eindhoven or delivered.
+
+- Stack: Vite + React + TypeScript, Firebase Auth / Firestore / Storage, Vercel serverless functions in `api/`.
+- Firebase project: `gen-lang-client-0614710868` (currently also used by the production build).
+- Live site: https://odogwu-heritage.vercel.app. `/api/health` returns the deployed `buildId` (the production merge SHA).
+- Payments: Stripe **test mode only**.
+- Admin: `src/components/DatabaseView.tsx` (catalogue, fabrics, orders, workshop progress).
+
+## Customer journey
+
+The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined in
+`DESIGN_STUDIO_TEN_STAGE_FOUNDATION` in `src/utils/designSourceJourney.ts`:
+
+1. Garment Type 2. Fabric 3. Design Style 4. Custom Details 5. Personalized Additions
+6. AI Try-on 7. Measurement 8. Summary 9. Delivery & Pickup 10. Order Review & Payment
+
+- Drafts: a guest draft in local storage (`GuestOrderSessionService`), and for signed-in
+  customers a cloud draft synced by `repository.synchronize` in the hydration effect.
+- Step 3 assignments are per garment occurrence. Uploaded photos live in the draft's
+  `uploadedDesignSourceRegistry`, each owned by a Firebase uid.
+- Guest uploads move to the account at sign-in (`guestUploadedDesignOwnershipContinuity`).
+  Uploads that cannot be moved are removed by `removeForeignUploadedDesignSources`, and
+  Step 3 asks the customer to upload them again.
+- Paid orders are V2 orders (`api/orders/persist-future-order-v2.ts`, `api/future-order-v2/*`).
+  Workshop progress is in the `future_order_v2_workshop` collection, including `stageHistory`.
+  The customer sees it under My orders on the dashboard.
 
 ## Status
 
-Multiple Wearers is released. The customer flow is live on production. No further feature work is authorized.
+All work below is released. The last feature build was `7e496a0`; `/api/health` shows the current one.
 
-## Git
+- [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
+- [#283](https://github.com/techpalava/ODOGWU-HERITAGE/pull/283) Uploaded photo on the Summary Design Style card
+- [#286](https://github.com/techpalava/ODOGWU-HERITAGE/pull/286) Step 3 stays usable after a failed signed-in restore, and shows the reason
+- [#289](https://github.com/techpalava/ODOGWU-HERITAGE/pull/289) Guest Step 3 uploads move to the account, or are removed so the rest restores
+- [#292](https://github.com/techpalava/ODOGWU-HERITAGE/pull/292) Workshop stage history on paid V2 orders (Firestore rules deployed)
 
-- Feature: `8e936173d6ecedb723bb0961e5a4e15afa12d15f` on `feat/multiple-wearers-measurement-assignment`. Keep this branch.
-- Main: `74fad474ec047d3533b8dd07a7a56c27c19415c2`
-- Production: `a058a92b5ac6da8c885b4b5ab4ec30e8574d4324`
-- Shared tree: `9512ad7e70120046d883837db191a3e8c18b12d7`
-- `8e93617` is an ancestor of main and production. Main and production trees match. Commit SHAs differ.
+The signed-in Chrome restore check after #289 passed.
 
-## Live site
+## Git and worktrees
 
-- Canonical URL: https://odogwu-heritage.vercel.app
-- Deployment: `dpl_3QXWYHACyi1QsVoA2QCgdWTyBQmn`
-- Vercel status: Ready, target production
-- Deployment URL: https://odogwu-heritage-a3sa22qb1-techpalavabox-4019s-projects.vercel.app
+- Repository `techpalava/ODOGWU-HERITAGE`. Remote name is `github`, never `origin`.
+- At the last feature release (#292): main `e9e8920`, production `7e496a0`. Docs-only releases
+  move both later, so check with `git fetch github`. Trees match; SHAs differ because of sync merges.
+- Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-step3-additional-garment-designs`
+  on `feat/step3-additional-garment-designs`.
+- The Cursor workspace folder (`...\2026-07-08\...\ODOGWU-HERITAGE-task1-task2`) is a different,
+  older checkout. Run shell commands with the worktree above as the working directory, and
+  confirm the path before editing.
+- The local `ODOGWU-HERITAGE-main-release` and `ODOGWU-HERITAGE-step3-exact-garment-labels`
+  (production) worktrees are stale. Do not release from them; releases go through GitHub PRs.
+- Many other `ODOGWU-HERITAGE-*` worktrees hold older feature branches. Do not delete them.
+- The active worktree shows many CRLF-only modified files. They are not real changes. Never stage them.
 
-## Live smoke
+## Release flow
 
-Passed on the canonical production site:
+1. Commit on the feature branch, push to `github`, open a PR to `main`.
+2. Open a PR from `main` to `production`.
+3. Open (or reuse) the PR from `production` to `main` titled exactly
+   `Sync production release history back to main`.
 
-- People panel, fit controls, disabled placeholder, rejected-then-successful assignment
-- Aggregate completion stays incomplete while one wearer is incomplete, and complete for both selections once both are complete
-- Summary shows Chief / Standard Shirt / male and Ada / Standard Shirt 2 / female, with no raw garment keys
-- Payment Review shows ownership and friendly method labels, with no schema error
-- Reload restores wearers, assignments, methods, completion, and wearer ids
-- 390px shows no critical overflow on People, Measurement, Summary, and Payment Review
+- Merge each PR with `gh pr merge N --repo techpalava/ODOGWU-HERITAGE --merge --delete-branch=false`,
+  only after `gh pr checks N` exits 0. A watcher that drops its connection is not a pass.
+- After production merges, confirm `/api/health` shows the production merge SHA and that a live
+  JS chunk contains a string from the change.
+- If `firestore.rules` changed, deploy it only after the live app sends the new fields:
+  `npx firebase deploy --only firestore:rules --project gen-lang-client-0614710868 --non-interactive`.
 
-Payment was not submitted.
-
-Wearer ids from that smoke:
-
-- Chief, male: `wearer-208f049a-a341-40a1-bd79-9a3127ad002f` assigned to Standard Shirt
-- Ada, female: `wearer-4c8d947b-07d5-4756-88a1-85e062bed6fe` assigned to Standard Shirt 2
+Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
 
 ## Still open
 
-Tailoring live QA: BLOCKED — NOT SAFELY ACCESSIBLE. Do not create or bypass admin access.
+- Admin live check of stage history: save a new stage on a paid order and confirm the customer
+  card lists the earlier stage and the new one.
+- Tailoring live QA is blocked without a real admin session. Do not create or bypass admin access.
+- No other work is authorized. Wait for the user's next task.
 
 ## Do not change
 
-- Stored `calculationStatus` is a non-authoritative cache. The live UI recomputes Complete from entered values. Do not change persistence to stamp complete.
-- Design Style catalogue headings may still say Shirt / Shirt 2. Step 3 stays locked.
-- Do not delete the feature branch, rebase, squash, force-push, or start another production deploy.
+- `/api/create-payment-intent`, `/api/charge-balance`, fabric pricing, and ODG-xxx assignment.
+- The stored Measurement `calculationStatus` is a non-authoritative cache. Completion is recomputed at runtime.
+- The Vercel function count stays at 12. Current functions:
+  `api/health.ts`, `api/auth/bootstrap.ts`, `api/auth/pin-login.ts`, `api/auth/pin-register.ts`,
+  `api/design-studio/transfer-uploaded-design-draft.ts`, `api/future-order-v2/payment-intent.ts`,
+  `api/future-order-v2/record-payment.ts`, `api/future-order-v2/stripe-config.ts`,
+  `api/orders/create-uploaded-design-ownership-claim.ts`, `api/orders/lookup-future-order-v2-history.ts`,
+  `api/orders/persist-future-order-v2.ts`, `api/orders/transfer-uploaded-design.ts`.
+- Never force-push, rebase, squash or amend published commits. Never push production onto main.
+- Never commit `.env` or `.env.local`. Never print Stripe secrets or the webhook signing secret.
+- Do not submit real payments or write real customer data.
 
-## Not next
+## Known baseline exceptions
 
-- A new feature
-- A Step 3 heading change
-- A dedicated production Firebase project (pre-launch, separate from this release)
+- `npx tsc --noEmit` has 4 known errors: `DesignStudioView.tsx` (~7630, `returnStage`),
+  `DormantFutureMeasurementStep.tsx` (505, 510), `test_monogram_pricing.ts` (107).
+- Known failing tests: `test_task5g_accessibility`, `test_mid_process_garment_removal_ui`,
+  `test_private_batch_foundation`, `test_homepage_draft_replacement_hydration`,
+  `test_order_context_presentation`, `test_step1_step3_catalogue_loading_ui`.
+- Tests that import Firebase fail under plain `tsx` with `FirebaseClientConfigurationError`.
+  Run them through `node scripts/tsxWithViteProductionFirebase.mjs` (or their `npm run test:*` script).
+- Source assertions that search for a literal `\n` fail on this CRLF checkout (for example
+  `test_design_style_upload_auth_transition`). They pass on CI's LF checkout.
 
-## Where this file is
+## How work arrives
 
-`C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-step3-exact-garment-labels\LIVING_PROJECT_STATE.md`
+- The user usually attaches a plan from `C:\Users\techp\.cursor\plans\` with todos already created.
+  Do not edit the plan file. Do not recreate the todos. Mark each one in progress, finish them all,
+  and release when the plan includes a release step.
+- When a decision is genuinely the user's, ask with the question tool before planning.
+- Report in plain language: outcome first, then what changed, checks, release links, and the
+  one thing the user should verify.
 
-Open this checkout to read it. It is not on the feature worktree or the main worktree, and it is not committed.
+## Working rules
 
-## How the former reviewer worked
+`FAST_EXECUTOR_GUIDE.md` holds the full rules. The ones broken most often:
 
-The Cursor agent was the executor. ChatGPT was the independent reviewer and did not implement. The user pasted each reviewer task into Cursor.
-
-Each task named the model, the candidate SHA, the worktree, a hard do-not list, numbered work, and a numbered report. The executor answered those points and stopped.
-
-Work moved in separate approvals: investigate or fix while uncommitted, then commit only after "APPROVED TO COMMIT", then push the feature branch only, then preview, then browser QA as report-only, then a controlled merge. A browser-QA turn did not fix defects. Commit messages were specified, and the previous SHA was not amended.
-
-Before editing, the executor reported branch, HEAD, and `git status --short`. It stopped if `github/main` or `github/production` had moved, if a merge conflicted, or if a task gate failed.
-
-## Improvements for the next reviewer
-
-Use the same gates, with these tighter rules:
-
-- Send one live task per message. Do not attach an older plan after a new task. Do not resend "implement the plan" for work that already finished. If two instructions conflict, the latest live task wins.
-- Name the checkout in the first lines: feature `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-multiple-wearers`, production `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-step3-exact-garment-labels`, or main `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-main-release`. The executor must confirm that path before editing.
-- Keep Step 3 / Design Style locked unless the task names a Step 3 change. Shirt / Shirt 2 catalogue headings are a known low note, not a release defect.
-- Do not reopen stored `calculationStatus`. It stays incomplete in the draft on purpose. Completion is recomputed at runtime.
-- Remote is `github`, never `origin`. Main merges use `git merge --no-ff`. Production merges use `git merge --no-ff main` with message `Merge branch 'main' into production`. Trees stay identical. Commit SHAs differ.
-- Do not rebase, amend, squash, cherry-pick, force-push, or delete `feat/multiple-wearers-measurement-assignment`.
-- Do not submit payment. Do not invent an admin session. Tailoring stays blocked without one.
-- Firebase-importing tests run through `node scripts/tsxWithViteProductionFirebase.mjs`. `npm run lint` is `tsc --noEmit`. In PowerShell, quote `SHA^{tree}`.
-- Correct only the named defect. Preserve the accepted wearer architecture.
-- After a release, read this file before assigning new work. Do not start a feature, deploy, or source change unless the user explicitly authorizes it.
+- Correct only the named defect. Keep locked areas locked unless the task names them.
+- Stage named paths only, never `git add .` or `git add -A`.
+- One live task at a time. If two instructions conflict, the latest one wins.
+- After a release, update this file before starting new work.
