@@ -41,7 +41,11 @@ export const LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE =
 
 export const LIVE_ORDER_SUMMARY_TOTAL_LABEL = "Total";
 export const LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL = "Current Total";
-export const LIVE_ORDER_SUMMARY_CURRENT_SUBTOTAL_LABEL = "Current Subtotal";
+/** @deprecated Use LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL. */
+export const LIVE_ORDER_SUMMARY_CURRENT_SUBTOTAL_LABEL =
+  LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL;
+export const LIVE_ORDER_SUMMARY_PERSONALIZED_ADDITIONS_SUBTOTAL_LABEL =
+  "Personalized Additions Subtotal";
 
 export type LiveOrderSummaryTotalStatus =
   | "exact"
@@ -122,7 +126,9 @@ export interface LiveOrderSummarySection {
   readonly editLabel?: string;
   readonly lines: readonly LiveOrderSummaryLine[];
   readonly subsections?: readonly LiveOrderSummarySubsection[];
+  /** Prefer `footers` when multiple money rows are needed. */
   readonly footer?: LiveOrderSummarySectionFooter | null;
+  readonly footers?: readonly LiveOrderSummarySectionFooter[];
 }
 
 export interface LiveOrderSummaryCostBreakdownLine {
@@ -298,21 +304,19 @@ const getPersonalizedAdditionCategory = (
   return "Accessories";
 };
 
-const quantityTimesUnitAmountLabel = (
-  priceCents: number | null,
-  priceStatus: "exact" | "evaluation_required" | "invalid",
-): string => {
-  if (priceStatus !== "exact") return "Price requires evaluation";
-  if (!priceCents || priceCents <= 0) return "Included";
-  return `1 × ${moneyFromCents(priceCents)}`;
+type PersonalizedAdditionOccurrence = {
+  occurrenceKey: string;
+  garmentKey: string;
+  garmentLabel: string;
+  optionId: string;
+  optionLabel: string;
+  priceStatus: "exact" | "evaluation_required" | "invalid";
+  priceCents: number | null;
 };
 
-/**
- * Embroidery/monogram rows are garment-scoped; accessories remain order-level.
- */
-const personalizedAdditionLines = (
+const collectPersonalizedAdditionOccurrences = (
   summary: FutureDesignStudioSummary,
-): LiveOrderSummaryLine[] => {
+): PersonalizedAdditionOccurrence[] => {
   const garmentScopedSelections = summary.customDetailsSummary
     .filter((group) => group.garmentKey !== "order")
     .flatMap((group) =>
@@ -322,8 +326,13 @@ const personalizedAdditionLines = (
             occurrence.selectionGroup === "order_optional_detail",
         )
         .map((occurrence) => ({
-          ...occurrence,
+          occurrenceKey: occurrence.occurrenceKey,
+          garmentKey: occurrence.garmentKey,
           garmentLabel: group.garmentLabel || occurrence.garmentLabel,
+          optionId: occurrence.optionId,
+          optionLabel: occurrence.optionLabel,
+          priceStatus: occurrence.priceStatus,
+          priceCents: occurrence.priceCents,
         })),
     );
   const orderLevelSelections =
@@ -331,10 +340,38 @@ const personalizedAdditionLines = (
       .find((group) => group.garmentKey === "order")
       ?.occurrences.filter(
         (occurrence) => occurrence.selectionGroup === "order_optional_detail",
-      ) || [];
-  const selections = [...garmentScopedSelections, ...orderLevelSelections];
+      )
+      .map((occurrence) => ({
+        occurrenceKey: occurrence.occurrenceKey,
+        garmentKey: occurrence.garmentKey,
+        garmentLabel: occurrence.garmentLabel,
+        optionId: occurrence.optionId,
+        optionLabel: occurrence.optionLabel,
+        priceStatus: occurrence.priceStatus,
+        priceCents: occurrence.priceCents,
+      })) || [];
+  return [...garmentScopedSelections, ...orderLevelSelections];
+};
 
-  return PERSONALIZED_ADDITION_CATEGORY_ORDER.flatMap((category) =>
+const personalizedAdditionsSubtotalCents = (
+  selections: readonly PersonalizedAdditionOccurrence[],
+): number =>
+  selections.reduce((total, occurrence) => {
+    if (occurrence.priceStatus !== "exact" || !occurrence.priceCents) {
+      return total;
+    }
+    return total + occurrence.priceCents;
+  }, 0);
+
+/**
+ * Embroidery/monogram rows are garment-scoped; accessories remain order-level.
+ * Money is shown once under Garments Ordered as Personalized Additions Subtotal;
+ * detail rows here use Included so euro amounts are not repeated.
+ */
+const personalizedAdditionLines = (
+  selections: readonly PersonalizedAdditionOccurrence[],
+): LiveOrderSummaryLine[] =>
+  PERSONALIZED_ADDITION_CATEGORY_ORDER.flatMap((category) =>
     selections
       .filter(
         (occurrence) =>
@@ -348,18 +385,11 @@ const personalizedAdditionLines = (
             ? occurrence.optionLabel
             : `${occurrence.garmentLabel}: ${occurrence.optionLabel}`,
         amountLabel:
-          occurrence.garmentKey === "order"
-            ? amountLabelForCustomDetail(
-                occurrence.priceCents,
-                occurrence.priceStatus,
-              )
-            : quantityTimesUnitAmountLabel(
-                occurrence.priceCents,
-                occurrence.priceStatus,
-              ),
+          occurrence.priceStatus === "exact"
+            ? "Included"
+            : "Price requires evaluation",
       })),
   );
-};
 
 const measurementStatusLine = (
   summary: FutureDesignStudioSummary,
@@ -506,7 +536,7 @@ const resolveTotal = ({
   if (subtotalCents !== null) {
     return {
       totalStatus: quoteRequired ? "quote_required" : "subtotal",
-      totalLabel: LIVE_ORDER_SUMMARY_CURRENT_SUBTOTAL_LABEL,
+      totalLabel: LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL,
       totalValueLabel: moneyFromCents(subtotalCents),
       totalAmountCents: subtotalCents,
       quoteRequired,
@@ -523,7 +553,7 @@ const resolveTotal = ({
   }
   return {
     totalStatus: quoteRequired ? "quote_required" : "pending",
-    totalLabel: LIVE_ORDER_SUMMARY_CURRENT_SUBTOTAL_LABEL,
+    totalLabel: LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL,
     totalValueLabel: "Pending",
     totalAmountCents: null,
     quoteRequired,
@@ -718,19 +748,33 @@ export const projectDesignStudioLiveOrderSummary = ({
     measurementPlan,
     orderMeasurementCompletion,
   );
-  const selectedPersonalizedAdditions = personalizedAdditionLines(summary);
+  const personalizedSelections = collectPersonalizedAdditionOccurrences(summary);
+  const selectedPersonalizedAdditions =
+    personalizedAdditionLines(personalizedSelections);
+  const personalizedSubtotalCents =
+    personalizedAdditionsSubtotalCents(personalizedSelections);
   const constructionSubtotalCents =
     authoritativeConstructionSubtotalCents(summary);
-  const constructionFooter: LiveOrderSummarySectionFooter | null =
-    constructionSubtotalCents === null
-      ? null
-      : {
-          id: "construction-subtotal",
-          label: LIVE_ORDER_SUMMARY_CONSTRUCTION_SUBTOTAL_LABEL,
-          amountLabel: moneyFromCents(constructionSubtotalCents),
-          amountCents: constructionSubtotalCents,
-          note: LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
-        };
+  const constructionFooters: LiveOrderSummarySectionFooter[] = [];
+  if (constructionSubtotalCents !== null) {
+    constructionFooters.push({
+      id: "construction-subtotal",
+      label: LIVE_ORDER_SUMMARY_CONSTRUCTION_SUBTOTAL_LABEL,
+      amountLabel: moneyFromCents(constructionSubtotalCents),
+      amountCents: constructionSubtotalCents,
+      note: LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
+    });
+  }
+  if (personalizedSubtotalCents > 0) {
+    constructionFooters.push({
+      id: "personalized-additions-subtotal",
+      label: LIVE_ORDER_SUMMARY_PERSONALIZED_ADDITIONS_SUBTOTAL_LABEL,
+      amountLabel: moneyFromCents(personalizedSubtotalCents),
+      amountCents: personalizedSubtotalCents,
+      note: "",
+    });
+  }
+  const constructionFooter = constructionFooters[0] || null;
   const firstAdditionalMissingFabric = summary.garmentSummary.find(
     (garment) =>
       garment.role === "additional" &&
@@ -768,6 +812,7 @@ export const projectDesignStudioLiveOrderSummary = ({
       editLabel: "Edit base garments",
       lines: baseConstructionLines,
       footer: constructionFooter,
+      footers: constructionFooters,
       ...(additionalGarmentSubsection
         ? { subsections: [additionalGarmentSubsection] }
         : {}),
@@ -815,7 +860,8 @@ export const projectDesignStudioLiveOrderSummary = ({
     (section) =>
       section.lines.length > 0 ||
       Boolean(section.subsections?.length) ||
-      Boolean(section.footer),
+      Boolean(section.footer) ||
+      Boolean(section.footers?.length),
   );
 
   return {
