@@ -8,6 +8,7 @@ import {
   createEmptyFutureMeasurementState,
   normalizeFutureMeasurementState,
   planMeasurementRequirements,
+  projectMeasurementRequirementsForPresentation,
   reconcileFutureMeasurementState,
   setFutureMeasurementInput,
   setFutureMeasurementRoute,
@@ -22,6 +23,10 @@ assert.match(studioSource, /futureMeasurementState/);
 assert.match(studioSource, /handleOpenDormantMeasurementStage/);
 assert.match(studioSource, /futureStageId === "measurement"/);
 assert.match(studioSource, /futureMeasurementState,/);
+assert.match(studioSource, /resolveWearerAssignmentPresentation/);
+assert.match(studioSource, /wearerPublicLabel/);
+assert.match(studioSource, /nextIncompleteWearer/);
+assert.match(studioSource, /onGoToWearer/);
 assert.match(measurementSource, /Dimension \/ Measurement/);
 assert.match(measurementSource, /Enter the complete measurements required for your selected garments\./);
 assert.match(measurementSource, /Enter the required measurements\. Optional values are calculated from height where available\./);
@@ -34,7 +39,39 @@ assert.match(measurementSource, /saved/);
 assert.match(measurementSource, /Shared Body Measurements/);
 assert.match(measurementSource, /Shared body measurements are entered once and used for all applicable garments\./);
 assert.match(measurementSource, /Measurement setup pending/);
-assert.match(measurementSource, /awaiting confirmation\. You can continue reviewing measurements for your other garments\./);
+assert.match(measurementSource, /Assign this garment to a person/);
+assert.match(measurementSource, /Assign person/);
+assert.match(measurementSource, /projectMeasurementGarmentChipStates/);
+assert.match(measurementSource, /data-measurement-garment-chip/);
+assert.match(measurementSource, /data-measurement-garment-remaining/);
+assert.match(measurementSource, /setAllowPendingChipSelection/);
+assert.match(measurementSource, /nextIncompleteGarmentLabel/);
+assert.match(measurementSource, /previousSharedRemainingRef/);
+assert.match(measurementSource, /data-measurement-go-to-next/);
+assert.match(measurementSource, /data-measurement-go-to-wearer/);
+assert.match(measurementSource, /Go to \{nextIncompleteGarmentLabel\}/);
+assert.match(measurementSource, /Shared left/);
+assert.match(measurementSource, /otherWearerIncompleteLabels/);
+assert.match(measurementSource, /emptyWearerLabels/);
+assert.match(measurementSource, /nextIncompleteWearer/);
+assert.match(measurementSource, /onGoToWearer/);
+assert.match(measurementSource, /activeWearerLabel/);
+assert.match(measurementSource, /activeWearerGarmentLabels/);
+assert.doesNotMatch(measurementSource, /wearerSwitchOptions/);
+assert.doesNotMatch(measurementSource, /data-measurement-switch-wearer/);
+assert.match(measurementSource, /Measuring for/);
+assert.match(measurementSource, /data-measurement-active-wearer=\{activeWearerLabel\}/);
+assert.match(
+  measurementSource,
+  /Add measurements for one of \$\{activeWearerLabel\}'s garments at a time/,
+);
+assert.match(
+  measurementSource,
+  /awaiting confirmation for the selected\s+profile\. You can continue reviewing measurements for your other garments\./,
+);
+assert.match(measurementSource, /projectMeasurementStepProgressPresentation/);
+assert.match(measurementSource, /unassignedGarments/);
+assert.doesNotMatch(measurementSource, /cannot be measured for this profile/);
 assert.match(measurementSource, /aria-invalid/);
 assert.match(measurementSource, /Enter a positive measurement value\./);
 assert.match(measurementSource, /Current route status/);
@@ -311,7 +348,7 @@ act(() => {
     plan: shirtOnlyPlan,
     state: completeShirt,
     physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
-    setupPendingGarments: [{ garmentKey: "base:bum_shorts", garmentType: "bum_shorts" }],
+    unassignedGarments: [{ garmentKey: "base:bum_shorts", garmentType: "bum_shorts" }],
     orderMeasurementsComplete: false,
     onChange: () => undefined,
     onRouteChange: () => undefined,
@@ -321,7 +358,617 @@ act(() => {
 });
 const pendingButton = pendingRenderer.root.findByProps({ "data-measurement-garment": "base:bum_shorts" });
 assert.equal(pendingButton.props["data-measurement-garment-pending"], "true");
+assert.equal(pendingButton.props["data-measurement-garment-pending-reason"], "assignment");
 const pendingText = headingText(pendingRenderer.root);
-assert.ok(pendingText.includes("Setup pending"));
-assert.ok(pendingText.includes("cannot be measured for this profile, so Summary stays locked."));
+assert.ok(pendingText.includes("Assign person") || pendingText.includes("Assignment needed"));
+assert.ok(pendingText.includes("Assign"));
+assert.ok(pendingText.includes("before Summary unlocks"));
+assert.equal(pendingText.includes("cannot be measured for this profile"), false);
 assert.equal(pendingText.includes("All required measurements are saved."), false);
+assert.equal(
+  pendingRenderer.root.findByProps({ "data-stage-id": "measurement" }).props[
+    "data-measurement-blocked-by-assignment"
+  ],
+  "true",
+);
+
+const renderPickerHarness = ({
+  state,
+  plan,
+  physicalGarments,
+  unassignedGarments,
+  orderMeasurementsComplete,
+}: {
+  state: ReturnType<typeof createEmptyFutureMeasurementState>;
+  plan: ReturnType<typeof planMeasurementRequirements>;
+  physicalGarments: Array<{ garmentKey: string; garmentType: "shirt" | "bum_shorts" | "trouser" }>;
+  unassignedGarments?: Array<{ garmentKey: string; garmentType: "shirt" | "bum_shorts" | "trouser" }>;
+  orderMeasurementsComplete?: boolean;
+}) => {
+  let liveState = state;
+  let renderer!: ReturnType<typeof create>;
+  const props = () => ({
+    plan,
+    state: liveState,
+    physicalGarments,
+    unassignedGarments,
+    orderMeasurementsComplete,
+    onChange: (next: typeof liveState) => {
+      liveState = next;
+    },
+    onRouteChange: () => undefined,
+    onBack: () => undefined,
+    onContinue: () => undefined,
+  });
+  act(() => {
+    renderer = create(createElement(DormantFutureMeasurementStep, props()));
+  });
+  const sync = () => {
+    act(() => {
+      renderer.update(createElement(DormantFutureMeasurementStep, props()));
+    });
+  };
+  return {
+    get state() {
+      return liveState;
+    },
+    setState: (next: typeof liveState) => {
+      liveState = next;
+      sync();
+    },
+    renderer,
+    sync,
+    fillVisible: () => {
+      const fields = renderer.root.findAll(
+        (node) =>
+          typeof node.props?.["data-measurement-field"] === "string" &&
+          node.props?.["data-measurement-calculated"] !== "true",
+      );
+      for (const field of fields) {
+        const input = field.findAllByType("input")[0];
+        if (!input) continue;
+        const measurementId = String(field.props["data-measurement-field"]);
+        act(() => {
+          input.props.onChange({
+            target: {
+              value: measurementId === "total_height" ? "180" : "90",
+            },
+          });
+        });
+        // Re-render after each field so the next onChange sees the latest state.
+        sync();
+      }
+    },
+  };
+};
+
+// Chip badges: incomplete shows remaining; complete shows Done.
+{
+  const badgePlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: shirtSelection,
+    physicalGarments: physicalShirts,
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: { "additional:shirt:1": shirtConstruction },
+    },
+  });
+  const badgeHarness = renderPickerHarness({
+    state: setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk"),
+    plan: badgePlan,
+    physicalGarments: physicalShirts,
+  });
+  const baseChip = badgeHarness.renderer.root.findByProps({
+    "data-measurement-garment": "base:shirt",
+  });
+  const secondChip = badgeHarness.renderer.root.findByProps({
+    "data-measurement-garment": "additional:shirt:1",
+  });
+  assert.equal(baseChip.props["data-measurement-garment-chip"], "remaining");
+  assert.equal(secondChip.props["data-measurement-garment-chip"], "remaining");
+  assert.ok(Number(baseChip.props["data-measurement-garment-remaining"]) > 0);
+  assert.ok(headingText(badgeHarness.renderer.root).includes("left"));
+
+  let completeBoth = setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk");
+  for (const requirement of badgePlan.requirements.filter((item) => item.directInput)) {
+    completeBoth = setFutureMeasurementInput({
+      state: completeBoth,
+      requirement,
+      displayValue: requirement.measurementId === "total_height" ? 180 : 90,
+    });
+  }
+  completeBoth = reconcileFutureMeasurementState({ state: completeBoth, plan: badgePlan });
+  const doneHarness = renderPickerHarness({
+    state: completeBoth,
+    plan: badgePlan,
+    physicalGarments: physicalShirts,
+    orderMeasurementsComplete: true,
+  });
+  assert.equal(
+    doneHarness.renderer.root.findByProps({ "data-measurement-garment": "base:shirt" }).props[
+      "data-measurement-garment-chip"
+    ],
+    "done",
+  );
+  assert.equal(
+    doneHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:shirt:1",
+    }).props["data-measurement-garment-chip"],
+    "done",
+  );
+  assert.ok(headingText(doneHarness.renderer.root).includes("Done"));
+}
+
+// Unassigned chip is not the default selection when a measurable incomplete garment exists.
+{
+  const incompleteShirt = setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk");
+  const defaultAwayPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: shirtSelection,
+    physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+  });
+  const defaultAwayHarness = renderPickerHarness({
+    state: {
+      ...incompleteShirt,
+      activeGarmentKey: "base:bum_shorts",
+    },
+    plan: defaultAwayPlan,
+    physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    unassignedGarments: [{ garmentKey: "base:bum_shorts", garmentType: "bum_shorts" }],
+    orderMeasurementsComplete: false,
+  });
+  assert.equal(
+    defaultAwayHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:shirt",
+    }).props["aria-pressed"],
+    true,
+  );
+  assert.equal(
+    defaultAwayHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:bum_shorts",
+    }).props["aria-pressed"],
+    false,
+  );
+  assert.equal(
+    defaultAwayHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:bum_shorts",
+    }).props["data-measurement-garment-chip"],
+    "assignment",
+  );
+}
+
+// Auto-advance: fill garment A → selection advances to garment B; Continue stays locked.
+{
+  const advancePlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: shirtSelection,
+    physicalGarments: physicalShirts,
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: { "additional:shirt:1": shirtConstruction },
+    },
+  });
+  const advanceHarness = renderPickerHarness({
+    state: {
+      ...setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk"),
+      activeGarmentKey: "base:shirt",
+    },
+    plan: advancePlan,
+    physicalGarments: physicalShirts,
+    orderMeasurementsComplete: false,
+  });
+  act(() => {
+    advanceHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:shirt",
+    }).props.onClick();
+  });
+  advanceHarness.sync();
+  assert.equal(
+    advanceHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:shirt",
+    }).props["aria-pressed"],
+    true,
+  );
+
+  // Leave one base garment-specific field empty so the selected chip stays incomplete,
+  // then complete that last field to trigger the complete → next-incomplete transition.
+  const requiredPresentation = projectMeasurementRequirementsForPresentation({
+    requirements: advancePlan.requirements,
+    state: advanceHarness.state,
+  }).filter((requirement) => requirement.section === "required");
+  const sharedById = new Map<string, (typeof requiredPresentation)[number]>();
+  for (const requirement of requiredPresentation) {
+    if (requirement.scope === "shared" && requirement.directInput) {
+      sharedById.set(requirement.measurementId, requirement);
+    }
+  }
+  const baseSpecific = requiredPresentation.filter(
+    (requirement) =>
+      requirement.directInput &&
+      requirement.garmentKey === "base:shirt" &&
+      requirement.scope !== "shared",
+  );
+  assert.ok(baseSpecific.length > 0);
+  const lastBaseField = baseSpecific.at(-1)!;
+  let almostDone = advanceHarness.state;
+  for (const requirement of [...sharedById.values(), ...baseSpecific.slice(0, -1)]) {
+    almostDone = setFutureMeasurementInput({
+      state: almostDone,
+      requirement,
+      displayValue: requirement.measurementId === "total_height" ? 180 : 90,
+    });
+  }
+  almostDone = reconcileFutureMeasurementState({
+    state: { ...almostDone, activeGarmentKey: "base:shirt" },
+    plan: advancePlan,
+  });
+  advanceHarness.setState(almostDone);
+  assert.equal(
+    advanceHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:shirt",
+    }).props["data-measurement-garment-chip"],
+    "remaining",
+  );
+
+  advanceHarness.setState(
+    reconcileFutureMeasurementState({
+      state: setFutureMeasurementInput({
+        state: advanceHarness.state,
+        requirement: lastBaseField,
+        displayValue: lastBaseField.measurementId === "total_height" ? 180 : 90,
+      }),
+      plan: advancePlan,
+    }),
+  );
+
+  assert.equal(
+    advanceHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:shirt:1",
+    }).props["aria-pressed"],
+    true,
+    "selection should auto-advance to the next incomplete garment",
+  );
+  assert.equal(
+    advanceHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:shirt",
+    }).props["data-measurement-garment-chip"],
+    "done",
+  );
+  assert.equal(
+    advanceHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:shirt:1",
+    }).props["data-measurement-garment-chip"],
+    "remaining",
+  );
+  assert.equal(advanceHarness.state.activeGarmentKey, "additional:shirt:1");
+  const continueButtons = advanceHarness.renderer.root.findAllByProps({
+    "aria-label": "Continue to Summary",
+  });
+  assert.ok(continueButtons.length > 0);
+  assert.ok(
+    continueButtons.every((button) => button.props.disabled === true),
+    "Continue must stay locked until the next garment is complete",
+  );
+  assert.ok(
+    headingText(advanceHarness.renderer.root).includes("Standard Shirt 2") ||
+      headingText(advanceHarness.renderer.root).includes("remains"),
+  );
+}
+
+console.log("PASS: measurement garment picker badges, default, and auto-advance");
+
+// Shared-then-advance: finish garment-specific first, then last shared → advances to B.
+{
+  const sharedAdvancePlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: shirtSelection,
+    physicalGarments: physicalShirts,
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: { "additional:shirt:1": shirtConstruction },
+    },
+  });
+  const sharedHarness = renderPickerHarness({
+    state: {
+      ...setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk"),
+      activeGarmentKey: "base:shirt",
+    },
+    plan: sharedAdvancePlan,
+    physicalGarments: physicalShirts,
+    orderMeasurementsComplete: false,
+  });
+  act(() => {
+    sharedHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:shirt",
+    }).props.onClick();
+  });
+  sharedHarness.sync();
+
+  const requiredPresentation = projectMeasurementRequirementsForPresentation({
+    requirements: sharedAdvancePlan.requirements,
+    state: sharedHarness.state,
+  }).filter((requirement) => requirement.section === "required");
+  const sharedById = new Map<string, (typeof requiredPresentation)[number]>();
+  for (const requirement of requiredPresentation) {
+    if (requirement.scope === "shared" && requirement.directInput) {
+      sharedById.set(requirement.measurementId, requirement);
+    }
+  }
+  const baseSpecific = requiredPresentation.filter(
+    (requirement) =>
+      requirement.directInput &&
+      requirement.garmentKey === "base:shirt" &&
+      requirement.scope !== "shared",
+  );
+  const sharedFields = [...sharedById.values()];
+  assert.ok(sharedFields.length > 0);
+  assert.ok(baseSpecific.length > 0);
+
+  let specificsDone = sharedHarness.state;
+  for (const requirement of baseSpecific) {
+    specificsDone = setFutureMeasurementInput({
+      state: specificsDone,
+      requirement,
+      displayValue: 90,
+    });
+  }
+  specificsDone = reconcileFutureMeasurementState({
+    state: { ...specificsDone, activeGarmentKey: "base:shirt" },
+    plan: sharedAdvancePlan,
+  });
+  sharedHarness.setState(specificsDone);
+  assert.equal(
+    sharedHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:shirt",
+    }).props["data-measurement-garment-chip"],
+    "shared",
+  );
+  assert.ok(headingText(sharedHarness.renderer.root).includes("Shared left"));
+  assert.equal(
+    sharedHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:shirt",
+    }).props["aria-pressed"],
+    true,
+    "stay on base while shared remaining is still open",
+  );
+
+  const lastShared = sharedFields.at(-1)!;
+  let almostShared = specificsDone;
+  for (const requirement of sharedFields.slice(0, -1)) {
+    almostShared = setFutureMeasurementInput({
+      state: almostShared,
+      requirement,
+      displayValue: requirement.measurementId === "total_height" ? 180 : 90,
+    });
+  }
+  almostShared = reconcileFutureMeasurementState({
+    state: { ...almostShared, activeGarmentKey: "base:shirt" },
+    plan: sharedAdvancePlan,
+  });
+  sharedHarness.setState(almostShared);
+  assert.equal(
+    sharedHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:shirt",
+    }).props["aria-pressed"],
+    true,
+  );
+
+  sharedHarness.setState(
+    reconcileFutureMeasurementState({
+      state: setFutureMeasurementInput({
+        state: sharedHarness.state,
+        requirement: lastShared,
+        displayValue: lastShared.measurementId === "total_height" ? 180 : 90,
+      }),
+      plan: sharedAdvancePlan,
+    }),
+  );
+
+  assert.equal(
+    sharedHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:shirt:1",
+    }).props["aria-pressed"],
+    true,
+    "finishing shared after garment-specific should auto-advance",
+  );
+  assert.equal(sharedHarness.state.activeGarmentKey, "additional:shirt:1");
+  assert.ok(
+    sharedHarness.renderer.root
+      .findAllByProps({ "aria-label": "Continue to Summary" })
+      .every((button) => button.props.disabled === true),
+  );
+}
+
+// Go-to CTA: stranded on Done with B remaining → control advances pick.
+{
+  const goPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: shirtSelection,
+    physicalGarments: physicalShirts,
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: { "additional:shirt:1": shirtConstruction },
+    },
+  });
+  const requiredPresentation = projectMeasurementRequirementsForPresentation({
+    requirements: goPlan.requirements,
+    state: createEmptyFutureMeasurementState("low_risk", "cm"),
+  }).filter((requirement) => requirement.section === "required");
+  let baseDoneState = setFutureMeasurementRoute(
+    createEmptyFutureMeasurementState(),
+    "low_risk",
+  );
+  for (const requirement of requiredPresentation.filter(
+    (item) =>
+      item.directInput &&
+      (item.scope === "shared" || item.garmentKey === "base:shirt"),
+  )) {
+    baseDoneState = setFutureMeasurementInput({
+      state: baseDoneState,
+      requirement,
+      displayValue: requirement.measurementId === "total_height" ? 180 : 90,
+    });
+  }
+  baseDoneState = reconcileFutureMeasurementState({
+    state: { ...baseDoneState, activeGarmentKey: "base:shirt" },
+    plan: goPlan,
+  });
+  const goHarness = renderPickerHarness({
+    state: baseDoneState,
+    plan: goPlan,
+    physicalGarments: physicalShirts,
+    orderMeasurementsComplete: false,
+  });
+  act(() => {
+    goHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:shirt",
+    }).props.onClick();
+  });
+  goHarness.sync();
+  assert.equal(
+    goHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:shirt",
+    }).props["data-measurement-garment-chip"],
+    "done",
+  );
+  assert.equal(
+    goHarness.renderer.root.findByProps({
+      "data-measurement-garment": "base:shirt",
+    }).props["aria-pressed"],
+    true,
+  );
+  const goButton = goHarness.renderer.root.findByProps({
+    "data-measurement-go-to-next": "additional:shirt:1",
+  });
+  assert.match(headingText(goButton), /Go to Standard Shirt 2/i);
+  act(() => {
+    goButton.props.onClick();
+  });
+  goHarness.sync();
+  assert.equal(
+    goHarness.renderer.root.findByProps({
+      "data-measurement-garment": "additional:shirt:1",
+    }).props["aria-pressed"],
+    true,
+  );
+  assert.equal(goHarness.state.activeGarmentKey, "additional:shirt:1");
+  assert.ok(
+    goHarness.renderer.root
+      .findAllByProps({ "aria-label": "Continue to Summary" })
+      .every((button) => button.props.disabled === true),
+  );
+}
+
+console.log("PASS: multi-garment shared-then-advance and Go-to next garment");
+
+// Go-to-person: active wearer complete + other incomplete → control switches wearer.
+{
+  const personPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: shirtSelection,
+    physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+  });
+  let personComplete = setFutureMeasurementRoute(
+    createEmptyFutureMeasurementState(),
+    "low_risk",
+  );
+  for (const requirement of personPlan.requirements.filter(
+    (item) => item.directInput,
+  )) {
+    personComplete = setFutureMeasurementInput({
+      state: personComplete,
+      requirement,
+      displayValue: requirement.measurementId === "total_height" ? 180 : 90,
+    });
+  }
+  personComplete = reconcileFutureMeasurementState({
+    state: personComplete,
+    plan: personPlan,
+  });
+  let wentToWearerId: string | null = null;
+  let personRenderer!: ReturnType<typeof create>;
+  act(() => {
+    personRenderer = create(
+      createElement(DormantFutureMeasurementStep, {
+        plan: personPlan,
+        state: personComplete,
+        physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+        orderMeasurementsComplete: false,
+        otherWearerIncompleteLabels: ["Person 2"],
+        nextIncompleteWearer: { wearerId: "wearer-b", label: "Person 2" },
+        onGoToWearer: (wearerId: string) => {
+          wentToWearerId = wearerId;
+        },
+        onChange: () => undefined,
+        onRouteChange: () => undefined,
+        onBack: () => undefined,
+        onContinue: () => undefined,
+      }),
+    );
+  });
+  const goPerson = personRenderer.root.findByProps({
+    "data-measurement-go-to-wearer": "wearer-b",
+  });
+  assert.match(headingText(goPerson), /Go to Person 2/i);
+  assert.ok(headingText(personRenderer.root).includes("Person 2"));
+  act(() => {
+    goPerson.props.onClick();
+  });
+  assert.equal(wentToWearerId, "wearer-b");
+}
+
+console.log("PASS: measurement Go-to-person and shared chip honesty");
+
+// Matching clarity: elevated Measuring for banner + garment pills; no duplicate person switcher.
+{
+  const matchPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: shirtSelection,
+    physicalGarments: physicalShirts,
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: { "additional:shirt:1": shirtConstruction },
+    },
+  });
+  let matchRenderer!: ReturnType<typeof create>;
+  act(() => {
+    matchRenderer = create(
+      createElement(DormantFutureMeasurementStep, {
+        plan: matchPlan,
+        state: setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk"),
+        physicalGarments: physicalShirts,
+        activeWearerLabel: "Person 2",
+        activeWearerGarmentLabels: ["Standard Shirt", "Standard Shirt 2"],
+        orderMeasurementsComplete: false,
+        onChange: () => undefined,
+        onRouteChange: () => undefined,
+        onBack: () => undefined,
+        onContinue: () => undefined,
+      }),
+    );
+  });
+  const matchText = headingText(matchRenderer.root);
+  assert.equal(
+    matchRenderer.root.findByProps({
+      "data-measurement-active-wearer": "Person 2",
+    }).props["data-measurement-active-wearer"],
+    "Person 2",
+  );
+  assert.ok(matchText.includes("Measuring for"));
+  assert.ok(matchText.includes("Person 2"));
+  assert.ok(matchText.includes("Standard Shirt"));
+  assert.ok(matchText.includes("Standard Shirt 2"));
+  assert.ok(
+    matchText.includes("Add measurements for one of Person 2's garments at a time"),
+  );
+  assert.equal(
+    matchRenderer.root.findAll(
+      (node) => typeof node.props?.["data-measurement-switch-wearer"] === "string",
+    ).length,
+    0,
+    "Measuring-for must not duplicate the People panel with a person switcher",
+  );
+  assert.ok(matchText.includes("Medium Risk") || matchText.includes("Low Risk"));
+}
+
+console.log("PASS: measurement matching clarity person + garments banner");

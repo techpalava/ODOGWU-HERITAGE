@@ -1357,7 +1357,7 @@ const midIncomplete = buildAuthority({
 });
 assert.match(
   section(midIncomplete.view, "measurements").lines[0]?.label || "",
-  /Mid Risk/,
+  /Medium Risk/,
 );
 assert.match(
   section(midIncomplete.view, "measurements").lines[0]?.label || "",
@@ -1401,7 +1401,7 @@ const midComplete = buildAuthority({
 });
 assert.equal(
   section(midComplete.view, "measurements").lines[0]?.label,
-  "Mid Risk — Complete",
+  "Medium Risk — Complete",
 );
 
 const pickup = buildAuthority({
