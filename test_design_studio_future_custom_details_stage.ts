@@ -734,7 +734,7 @@ assert.equal(
 assert.equal(
   optionInOccurrenceGroup(
     longConstruction,
-    "Long Length Shirt, Mid-Long Sleeve",
+    "Long Length Shirt, Short Sleeve",
   )?.findByType("input").props.checked,
   true,
   "the authoritative Long Shirt default remains selected",
@@ -1079,7 +1079,7 @@ assert.equal(
 assert.equal(
   optionInOccurrenceGroup(
     longDressOwnedConstruction,
-    "Long Length, Short Sleeve",
+    "Long Length, Sleeveless / Over Shoulder",
   )?.findByType("input").props.checked,
   true,
   "the authoritative Long Dress default remains selected",

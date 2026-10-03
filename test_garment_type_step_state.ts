@@ -72,7 +72,7 @@ if (shirt?.status === "resolved" && kaftan?.status === "resolved") {
 }
 
 if (longDress?.status === "resolved") {
-  assert.equal(longDress.components[0].optionId, "dress_long_short");
+  assert.equal(longDress.components[0].optionId, "dress_long_sleeveless");
   assert.equal(longDress.totalPriceCents, 7500);
 }
 
@@ -134,7 +134,7 @@ assert.equal(
     ? repairedLongDressDraft.components[0].optionId
     : null,
   "dress_long_midlong",
-  "A valid saved Long Dress construction outranks the canonical Short Sleeve default.",
+  "A valid saved Long Dress construction outranks the canonical Sleeveless default.",
 );
 assert.equal(
   repairedLongDressDraft?.status === "resolved"
