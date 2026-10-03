@@ -38,7 +38,12 @@ export const FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE =
   "Your prepared order is ready for payment authorization.";
 export const FUTURE_ORDER_V2_PAY_HEADING = "Payment";
 export const FUTURE_ORDER_V2_PAY_READY_MESSAGE =
-  "Enter your card details and pay to place your order.";
+  "Choose card or iDEAL and pay to place your order.";
+export const FUTURE_ORDER_V2_REDIRECTING_MESSAGE =
+  "Continue at your bank to authorize this iDEAL payment.";
+/** @deprecated Use FUTURE_ORDER_V2_REDIRECTING_MESSAGE. */
+export const FUTURE_ORDER_V2_PAYPAL_REDIRECTING_MESSAGE =
+  FUTURE_ORDER_V2_REDIRECTING_MESSAGE;
 export const FUTURE_ORDER_V2_SIGN_IN_TO_PAY_MESSAGE =
   "Sign in to pay for this order.";
 
@@ -61,6 +66,7 @@ export type FutureOrderV2PaymentPresentation =
   | { readonly status: "not_ready" }
   | { readonly status: "ready" }
   | { readonly status: "processing"; readonly paymentReference: string }
+  | { readonly status: "redirecting"; readonly paymentReference: string }
   | { readonly status: "failed"; readonly paymentReference: string; readonly message: string }
   | {
       readonly status: "authorized";

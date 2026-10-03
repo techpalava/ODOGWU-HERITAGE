@@ -33,6 +33,10 @@ interface CustomerFutureOrderV2DetailsProps {
   workshop?: FutureOrderV2WorkshopProgress;
   onClose: () => void;
   paymentActions?: FutureOrderV2DashboardPaymentActions;
+  initialPayOutcome?: Exclude<
+    FutureOrderV2DashboardPaymentOutcome,
+    { status: "paid" } | { status: "redirecting" }
+  > | null;
 }
 
 type DashboardPayPhase = "idle" | "processing" | "recording";
@@ -50,13 +54,15 @@ export const CustomerFutureOrderV2Details = ({
   workshop,
   onClose,
   paymentActions,
+  initialPayOutcome = null,
 }: CustomerFutureOrderV2DetailsProps) => {
   const [localPayment, setLocalPayment] = useState<FutureOrderV2PaymentRecord | null>(null);
   const [payPhase, setPayPhase] = useState<DashboardPayPhase>("idle");
   const [payOutcome, setPayOutcome] = useState<
-    Exclude<FutureOrderV2DashboardPaymentOutcome, { status: "paid" }> | null
-  >(null);
-  const [cardReady, setCardReady] = useState(false);
+    Exclude<FutureOrderV2DashboardPaymentOutcome, { status: "paid" } | { status: "redirecting" }> | null
+  >(initialPayOutcome);
+  const [paymentReady, setPaymentReady] = useState(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const payInFlightRef = useRef(false);
   const payment = subscribedPayment ?? localPayment ?? undefined;
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -113,6 +119,7 @@ export const CustomerFutureOrderV2Details = ({
         },
       });
       if (outcome.status === "paid") setLocalPayment(outcome.record);
+      else if (outcome.status === "redirecting") setIsRedirecting(true);
       else setPayOutcome(outcome);
     } finally {
       payInFlightRef.current = false;
@@ -140,12 +147,14 @@ export const CustomerFutureOrderV2Details = ({
         : `Pay ${formatFutureOrderV2PaidAmount(totalCents ?? 0)}`;
   const payStatusMessage =
     payPhase === "processing"
-      ? "Processing your card payment..."
+      ? "Processing your payment..."
       : payPhase === "recording"
         ? "Payment received. Saving it to your order..."
         : payOutcome?.status === "record_failed"
-          ? "Your card payment went through."
-          : "Enter your card details and pay to complete your order.";
+          ? "Your payment went through."
+          : isRedirecting
+            ? "Continue at your bank to authorize this iDEAL payment."
+            : "Choose card or iDEAL and pay to complete your order.";
 
   const dialog = (
     <div className="fixed inset-0 z-[80] overflow-y-auto bg-heritage-ink/60 backdrop-blur-sm">
@@ -406,22 +415,36 @@ export const CustomerFutureOrderV2Details = ({
                     </>
                   ) : (
                     <>
-                      <FutureOrderV2StripeCard disabled={payBusy} onReadyChange={setCardReady} />
+                      <FutureOrderV2StripeCard
+                        disabled={payBusy || isRedirecting}
+                        orderId={order.orderId}
+                        returnSurface="dashboard"
+                        onReadyChange={setPaymentReady}
+                      />
                       {payOutcome?.status === "failed" && !payBusy && (
                         <FutureOrderV2PaymentAlert message={payOutcome.message} />
                       )}
-                      <button
-                        type="button"
-                        data-customer-v2-order-pay
-                        disabled={!cardReady || payBusy}
-                        aria-busy={payBusy}
-                        aria-describedby={`${headingId}-pay-status`}
-                        onClick={handlePay}
-                        className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                      >
-                        <LockKeyhole size={14} aria-hidden="true" />
-                        {payLabel}
-                      </button>
+                      {isRedirecting ? (
+                        <p
+                          data-customer-v2-order-ideal-redirecting
+                          className="text-sm leading-relaxed text-heritage-ink/80"
+                        >
+                          Continue at your bank to authorize this iDEAL payment.
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          data-customer-v2-order-pay
+                          disabled={!paymentReady || payBusy}
+                          aria-busy={payBusy}
+                          aria-describedby={`${headingId}-pay-status`}
+                          onClick={handlePay}
+                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                        >
+                          <LockKeyhole size={14} aria-hidden="true" />
+                          {payLabel}
+                        </button>
+                      )}
                     </>
                   )}
                 </div>

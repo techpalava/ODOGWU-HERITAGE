@@ -18,6 +18,11 @@ import {
   handleFutureOrderV2StripeConfig,
   handleFutureOrderV2StripePayment,
 } from "./src/server/futureOrderV2StripePayment";
+import {
+  handleFutureOrderV2PayPalCapture,
+  handleFutureOrderV2PayPalConfig,
+  handleFutureOrderV2PayPalCreateOrder,
+} from "./src/server/futureOrderV2PayPalPayment";
 import { handleFutureOrderV2PaymentRecord } from "./src/server/futureOrderV2PaymentRecord";
 import { handleHealth } from "./src/server/appVersion";
 import {
@@ -68,12 +73,26 @@ app.post(
   "/api/orders/persist-future-order-v2",
   handleFutureOrderV2Persistence,
 );
-app.get("/api/future-order-v2/stripe-config", (req, res) =>
+app.get("/api/future-order-v2/payment-intent", (req, res) =>
   handleFutureOrderV2StripeConfig(req, res),
 );
 app.post("/api/future-order-v2/payment-intent", (req, res) =>
   handleFutureOrderV2StripePayment(req, res),
 );
+app.get("/api/future-order-v2/paypal", (req, res) =>
+  handleFutureOrderV2PayPalConfig(req, res),
+);
+app.post("/api/future-order-v2/paypal", async (req, res) => {
+  const body =
+    req.body && typeof req.body === "object" && !Array.isArray(req.body)
+      ? (req.body as Record<string, unknown>)
+      : null;
+  const action = typeof body?.action === "string" ? body.action : "";
+  if (action === "capture" || typeof body?.paypalOrderId === "string") {
+    return handleFutureOrderV2PayPalCapture(req, res);
+  }
+  return handleFutureOrderV2PayPalCreateOrder(req, res);
+});
 app.post("/api/future-order-v2/record-payment", (req, res) =>
   handleFutureOrderV2PaymentRecord(req, res),
 );

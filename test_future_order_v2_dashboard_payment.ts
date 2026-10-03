@@ -103,6 +103,16 @@ const thrown = await payFutureOrderV2FromDashboard({
 });
 assert.equal(thrown.status, "failed");
 
+// iDEAL redirects away before recording; the dashboard resumes after return.
+const idealRedirect = createFakes([{ status: "redirecting" }], []);
+const idealOutcome = await payFutureOrderV2FromDashboard({
+  order,
+  authorize: idealRedirect.authorize,
+  record: idealRedirect.record,
+});
+assert.equal(idealOutcome.status, "redirecting");
+assert.equal(idealRedirect.recordedCalls.length, 0);
+
 // The charge succeeds but saving fails; retrying saves without charging again.
 const saveFails = createFakes(
   [{ status: "authorized", providerTransactionReference: "pi_dashboard_saved_later" }],

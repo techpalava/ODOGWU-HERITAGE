@@ -103,6 +103,7 @@ for (const expected of [
   'target="_blank"',
   'rel="noreferrer"',
   record.paymentIntentId,
+  "Stripe:",
   `data-future-order-v2-paid="${record.orderId}"`,
   "data-future-order-v2-stripe-link",
 ]) {
@@ -129,8 +130,8 @@ assert.ok(
   "The orders table filters by payment state",
 );
 assert.ok(
-  filterSource.includes("paymentIntentId"),
-  "The orders search includes the Stripe reference",
+  filterSource.includes("getFutureOrderV2ProviderTransactionId"),
+  "The orders search includes the payment provider reference",
 );
 assert.equal(
   filterSource.includes("payment provider unavailable"),
