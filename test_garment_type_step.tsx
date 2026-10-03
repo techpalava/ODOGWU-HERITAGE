@@ -42,7 +42,7 @@ const approvedGarmentIds = [
   "shirt", "kaftan", "dress", "full_length_gown",
   "standard_shorts", "bum_shorts", "trouser", "skirt", "long_skirt",
 ] as const;
-const approvedPrices = [65, 75, 70, 75, 70, 70, 75, 75, 80];
+const approvedPrices = [65, 70, 70, 75, 70, 70, 75, 75, 80];
 assert.deepEqual(STEP_1_SELECTABLE_GARMENT_TYPES, approvedGarmentIds);
 
 const renderStep = ({
@@ -184,8 +184,8 @@ const kaftanPricing = kaftanPresentation.constructionPricing.find(
 );
 assert.equal(kaftanPricing?.status, "resolved");
 if (kaftanPricing?.status === "resolved") {
-  assert.equal(kaftanPricing.totalPriceCents, 7500);
-  assert.equal(kaftanPricing.components[0].optionId, "shirt_long_midlong");
+  assert.equal(kaftanPricing.totalPriceCents, 7000);
+  assert.equal(kaftanPricing.components[0].optionId, "shirt_long_short");
 }
 assert.equal(
   kaftanPresentation.categories.find((category) => category.garmentType === "kaftan")
@@ -275,7 +275,7 @@ const kaftanPlusShirtPresentation = getGarmentTypeStepPresentation({
 });
 assert.equal(
   kaftanPlusShirtPresentation.constructionSubtotalCents,
-  7500 + 6500,
+  7000 + 6500,
   "Kaftan must contribute exactly once to the construction subtotal",
 );
 
@@ -488,9 +488,9 @@ assert.deepEqual(
   approvedPrices,
   "Downstream construction projection must receive every approved catalogue price",
 );
-assert.equal(approvedProjection.readOnlyConstructionRows.reduce((sum, row) => sum + row.priceCents, 0), 65500);
+assert.equal(approvedProjection.readOnlyConstructionRows.reduce((sum, row) => sum + row.priceCents, 0), 65000);
 for (const [garmentType, optionId] of [
-  ["kaftan", "shirt_long_midlong"],
+  ["kaftan", "shirt_long_short"],
   ["full_length_gown", "dress_long_short"],
   ["dress", "dress_std_sleeveless"],
 ] as const) {
