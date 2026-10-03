@@ -16,6 +16,12 @@ import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV
 import { presentCustomerWorkshopProgress } from "../utils/customerWorkshopProgress";
 import { presentCustomerDashboardBanner } from "../utils/customerDashboardBanner";
 import type { FutureOrderV2WorkshopProgress } from "../utils/futureOrderV2WorkshopProgress";
+import {
+  consumeFutureOrderV2OpenOrderId,
+  resumeFutureOrderV2StripeReturn,
+  stashFutureOrderV2OpenOrderId,
+} from "../utils/futureOrderV2StripeReturn";
+import { loadStripe } from "@stripe/stripe-js";
 
 const futureOrderV2DashboardPaymentActions: FutureOrderV2DashboardPaymentActions = {
   authorize: authorizeFutureOrderV2Payment,
@@ -75,6 +81,52 @@ export default function DashboardView({
   const [openV2OrderId, setOpenV2OrderId] = useState<string | null>(null);
   const [futureOrderV2WorkshopByOrderId, setFutureOrderV2WorkshopByOrderId] =
     useState<ReadonlyMap<string, FutureOrderV2WorkshopProgress>>(new Map());
+  useEffect(() => {
+    const pendingOpen = consumeFutureOrderV2OpenOrderId();
+    if (pendingOpen) setOpenV2OrderId(pendingOpen);
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const resumeIdealReturn = async () => {
+      const search = window.location.search;
+      if (!search.includes("future_order_v2_stripe_return=1")) return;
+
+      const configResponse = await fetch("/api/future-order-v2/payment-intent");
+      const configPayload: unknown = await configResponse.json();
+      const publishableKey =
+        configResponse.ok &&
+        configPayload &&
+        typeof configPayload === "object" &&
+        "publishableKey" in configPayload &&
+        typeof configPayload.publishableKey === "string"
+          ? configPayload.publishableKey
+          : "";
+      if (!publishableKey.startsWith("pk_test_")) return;
+      const stripe = await loadStripe(publishableKey);
+      if (!stripe || cancelled) return;
+
+      const result = await resumeFutureOrderV2StripeReturn({
+        search,
+        retrievePaymentIntent: async (clientSecret) => {
+          const retrieved = await stripe.retrievePaymentIntent(clientSecret);
+          const paymentIntent = retrieved.paymentIntent;
+          return paymentIntent
+            ? { id: paymentIntent.id, status: paymentIntent.status }
+            : null;
+        },
+        record: recordFutureOrderV2Payment,
+      });
+      if (cancelled || result.status === "ignored") return;
+      if (result.orderId) {
+        stashFutureOrderV2OpenOrderId(result.orderId);
+        setOpenV2OrderId(result.orderId);
+      }
+    };
+    void resumeIdealReturn();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(
     () => StorageService.subscribeToCustomerFutureOrderV2Workshop(setFutureOrderV2WorkshopByOrderId),
     [currentUser?.email],

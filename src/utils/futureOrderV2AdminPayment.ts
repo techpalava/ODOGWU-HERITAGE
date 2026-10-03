@@ -2,6 +2,8 @@ import { presentFutureOrderV2History } from "./futureOrderV2History.js";
 import {
   formatCustomerOrderDate,
   formatFutureOrderV2PaidAmount,
+  getFutureOrderV2PaymentProvider,
+  getFutureOrderV2ProviderTransactionId,
   type FutureOrderV2PaymentRecord,
 } from "./futureOrderV2PaymentRecord.js";
 
@@ -11,22 +13,33 @@ export type FutureOrderV2AdminPaymentPresentation =
       readonly amountLabel: string;
       readonly paidOnLabel: string;
       readonly paymentIntentId: string;
+      readonly providerLabel: string;
+      readonly providerUrl: string;
+      /** @deprecated Prefer providerUrl. */
       readonly stripeUrl: string;
     }
   | { readonly kind: "awaiting" };
 
 export const presentFutureOrderV2AdminPayment = (
   record: FutureOrderV2PaymentRecord | undefined,
-): FutureOrderV2AdminPaymentPresentation =>
-  record
-    ? {
-        kind: "paid",
-        amountLabel: formatFutureOrderV2PaidAmount(record.amountCents),
-        paidOnLabel: formatCustomerOrderDate(record.recordedAt),
-        paymentIntentId: record.paymentIntentId,
-        stripeUrl: `https://dashboard.stripe.com/test/payments/${encodeURIComponent(record.paymentIntentId)}`,
-      }
-    : { kind: "awaiting" };
+): FutureOrderV2AdminPaymentPresentation => {
+  if (!record) return { kind: "awaiting" };
+  const provider = getFutureOrderV2PaymentProvider(record);
+  const providerTransactionId = getFutureOrderV2ProviderTransactionId(record);
+  const providerUrl =
+    provider === "paypal"
+      ? `https://www.sandbox.paypal.com/activity/payment/${encodeURIComponent(providerTransactionId)}`
+      : `https://dashboard.stripe.com/test/payments/${encodeURIComponent(providerTransactionId)}`;
+  return {
+    kind: "paid",
+    amountLabel: formatFutureOrderV2PaidAmount(record.amountCents),
+    paidOnLabel: formatCustomerOrderDate(record.recordedAt),
+    paymentIntentId: providerTransactionId,
+    providerLabel: provider === "paypal" ? "PayPal" : "Stripe",
+    providerUrl,
+    stripeUrl: providerUrl,
+  };
+};
 
 export type AdminPaymentFilter = "all" | "paid" | "awaiting";
 

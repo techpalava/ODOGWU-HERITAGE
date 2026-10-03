@@ -8,6 +8,7 @@ import {
 } from "../utils/futureOrderV2PersistenceContract.js";
 import {
   FUTURE_ORDER_V2_PAYMENT_COLLECTION,
+  getFutureOrderV2ProviderTransactionId,
   parseFutureOrderV2PaymentRecord,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord.js";
@@ -239,7 +240,11 @@ export const saveVerifiedFutureOrderV2Payment = async ({
       return { status: "recorded" as const, record: proposed };
     }
     const existing = parseFutureOrderV2PaymentRecord(existingValue);
-    if (existing && existing.paymentIntentId === paymentIntentId && existing.ownerUid === ownerUid) {
+    if (
+      existing &&
+      getFutureOrderV2ProviderTransactionId(existing) === paymentIntentId &&
+      existing.ownerUid === ownerUid
+    ) {
       return { status: "already_recorded" as const, record: existing };
     }
     return { status: "conflict" as const };

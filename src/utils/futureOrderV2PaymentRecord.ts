@@ -2,8 +2,10 @@ import { PRICING_CURRENCY_SYMBOL } from "./money.js";
 
 export const FUTURE_ORDER_V2_PAYMENT_COLLECTION = "future_order_v2_payments" as const;
 
-/** A Stripe test payment the server has verified for one persisted V2 order. */
-export interface FutureOrderV2PaymentRecord {
+export type FutureOrderV2PaymentProvider = "stripe" | "paypal";
+
+/** Legacy Stripe-only payment record. */
+export interface FutureOrderV2PaymentRecordV1 {
   readonly schemaVersion: 1;
   readonly orderId: string;
   readonly ownerUid: string;
@@ -14,6 +16,24 @@ export interface FutureOrderV2PaymentRecord {
   readonly testMode: true;
   readonly recordedAt: string;
 }
+
+/** Stripe or native PayPal payment the server has verified for one V2 order. */
+export interface FutureOrderV2PaymentRecordV2 {
+  readonly schemaVersion: 2;
+  readonly provider: FutureOrderV2PaymentProvider;
+  readonly providerTransactionId: string;
+  readonly orderId: string;
+  readonly ownerUid: string;
+  readonly amountCents: number;
+  readonly currency: "eur";
+  readonly status: "succeeded";
+  readonly testMode: true;
+  readonly recordedAt: string;
+}
+
+export type FutureOrderV2PaymentRecord =
+  | FutureOrderV2PaymentRecordV1
+  | FutureOrderV2PaymentRecordV2;
 
 export type RecordFutureOrderV2PaymentResponse =
   | { readonly status: "recorded" | "already_recorded"; readonly record: FutureOrderV2PaymentRecord }
@@ -34,18 +54,33 @@ const normalizeRecordedAt = (value: unknown): string | null => {
   return date && !Number.isNaN(date.getTime()) ? date.toISOString() : null;
 };
 
+const PAYPAL_ORDER_ID = /^[A-Z0-9]{10,50}$/i;
+
+export const getFutureOrderV2PaymentProvider = (
+  record: FutureOrderV2PaymentRecord,
+): FutureOrderV2PaymentProvider =>
+  record.schemaVersion === 1 ? "stripe" : record.provider;
+
+export const getFutureOrderV2ProviderTransactionId = (
+  record: FutureOrderV2PaymentRecord,
+): string =>
+  record.schemaVersion === 1
+    ? record.paymentIntentId
+    : record.providerTransactionId;
+
+/** @deprecated Prefer getFutureOrderV2ProviderTransactionId. */
+export const getFutureOrderV2PaymentIntentId = getFutureOrderV2ProviderTransactionId;
+
 export const parseFutureOrderV2PaymentRecord = (
   value: unknown,
 ): FutureOrderV2PaymentRecord | null => {
-  if (!isRecord(value) || value.schemaVersion !== 1) return null;
+  if (!isRecord(value)) return null;
   const recordedAt = normalizeRecordedAt(value.recordedAt);
   if (
     typeof value.orderId !== "string" ||
     !value.orderId ||
     typeof value.ownerUid !== "string" ||
     !value.ownerUid ||
-    typeof value.paymentIntentId !== "string" ||
-    !value.paymentIntentId.startsWith("pi_") ||
     typeof value.amountCents !== "number" ||
     !Number.isSafeInteger(value.amountCents) ||
     value.amountCents <= 0 ||
@@ -56,11 +91,53 @@ export const parseFutureOrderV2PaymentRecord = (
   ) {
     return null;
   }
+
+  if (value.schemaVersion === 1) {
+    if (
+      typeof value.paymentIntentId !== "string" ||
+      !value.paymentIntentId.startsWith("pi_")
+    ) {
+      return null;
+    }
+    return {
+      schemaVersion: 1,
+      orderId: value.orderId,
+      ownerUid: value.ownerUid,
+      paymentIntentId: value.paymentIntentId,
+      amountCents: value.amountCents,
+      currency: "eur",
+      status: "succeeded",
+      testMode: true,
+      recordedAt,
+    };
+  }
+
+  if (value.schemaVersion !== 2) return null;
+  if (value.provider !== "stripe" && value.provider !== "paypal") return null;
+  if (
+    typeof value.providerTransactionId !== "string" ||
+    !value.providerTransactionId
+  ) {
+    return null;
+  }
+  if (
+    value.provider === "stripe" &&
+    !value.providerTransactionId.startsWith("pi_")
+  ) {
+    return null;
+  }
+  if (
+    value.provider === "paypal" &&
+    !PAYPAL_ORDER_ID.test(value.providerTransactionId)
+  ) {
+    return null;
+  }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    provider: value.provider,
+    providerTransactionId: value.providerTransactionId,
     orderId: value.orderId,
     ownerUid: value.ownerUid,
-    paymentIntentId: value.paymentIntentId,
     amountCents: value.amountCents,
     currency: "eur",
     status: "succeeded",

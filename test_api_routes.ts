@@ -12,7 +12,7 @@ import futureOrderV2PersistenceHandler from "./api/orders/persist-future-order-v
 import futureOrderV2HistoryHandler from "./api/orders/lookup-future-order-v2-history.js";
 import uploadedDesignDraftTransferHandler from "./api/design-studio/transfer-uploaded-design-draft.js";
 import futureOrderV2PaymentIntentHandler from "./api/future-order-v2/payment-intent.js";
-import futureOrderV2StripeConfigHandler from "./api/future-order-v2/stripe-config.js";
+import futureOrderV2PayPalHandler from "./api/future-order-v2/paypal.js";
 import futureOrderV2RecordPaymentHandler from "./api/future-order-v2/record-payment.js";
 import type {
   HttpRequest,
@@ -128,7 +128,7 @@ async function run() {
     "./api/orders/persist-future-order-v2.ts",
     "./api/orders/lookup-future-order-v2-history.ts",
     "./api/future-order-v2/payment-intent.ts",
-    "./api/future-order-v2/stripe-config.ts",
+    "./api/future-order-v2/paypal.ts",
     "./api/future-order-v2/record-payment.ts",
   ]);
 
@@ -159,7 +159,7 @@ async function run() {
   assert.equal(typeof futureOrderV2HistoryHandler, "function");
   assert.equal(typeof uploadedDesignDraftTransferHandler, "function");
   assert.equal(typeof futureOrderV2PaymentIntentHandler, "function");
-  assert.equal(typeof futureOrderV2StripeConfigHandler, "function");
+  assert.equal(typeof futureOrderV2PayPalHandler, "function");
   assert.equal(typeof futureOrderV2RecordPaymentHandler, "function");
   const recordPayment = createResponse();
   await futureOrderV2RecordPaymentHandler(

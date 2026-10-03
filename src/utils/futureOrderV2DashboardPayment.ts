@@ -19,6 +19,7 @@ export interface FutureOrderV2DashboardPaymentActions {
 export type FutureOrderV2DashboardPaymentOutcome =
   | { readonly status: "paid"; readonly record: FutureOrderV2PaymentRecord }
   | { readonly status: "failed"; readonly message: string }
+  | { readonly status: "redirecting" }
   | {
       readonly status: "record_failed";
       readonly paymentIntentId: string;
@@ -63,8 +64,11 @@ export const payFutureOrderV2FromDashboard = async ({
   } catch {
     return {
       status: "failed",
-      message: "The card could not be confirmed. Retry this same order safely.",
+      message: "The payment could not be confirmed. Retry this same order safely.",
     };
+  }
+  if (authorization.status === "redirecting") {
+    return { status: "redirecting" };
   }
   if (authorization.status !== "authorized") {
     return { status: "failed", message: authorization.message };
