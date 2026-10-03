@@ -43,6 +43,7 @@ All work below is released. `/api/health` shows the current production build.
 - [#289](https://github.com/techpalava/ODOGWU-HERITAGE/pull/289) Guest Step 3 uploads move to the account, or are removed so the rest restores
 - [#292](https://github.com/techpalava/ODOGWU-HERITAGE/pull/292) Workshop stage history on paid V2 orders (Firestore rules deployed)
 - [#298](https://github.com/techpalava/ODOGWU-HERITAGE/pull/298) Long shirt defaults to Short Sleeve (EUR 70) in Step 1; a saved Mid-Long Sleeve choice still restores
+- [#301](https://github.com/techpalava/ODOGWU-HERITAGE/pull/301) Long Dress defaults to its first option, Sleeveless / Over Shoulder (EUR 75), in Step 1; a saved choice still restores
 
 The signed-in Chrome restore check after #289 passed.
 
@@ -51,8 +52,9 @@ The signed-in Chrome restore check after #289 passed.
 - Repository `techpalava/ODOGWU-HERITAGE`. Remote name is `github`, never `origin`.
 - Check current main and production SHAs with `git fetch github`. Trees match after each release;
   SHAs differ because of sync merges.
-- Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-long-shirt-short-sleeve`
-  on `fix/long-shirt-short-sleeve-default` (released in #298). For a new task, branch a fresh
+- Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-long-dress-sleeveless`
+  on `fix/long-dress-sleeveless-default` (released in #301). The #298 worktree
+  `ODOGWU-HERITAGE-long-shirt-short-sleeve` is merged; keep it. For a new task, branch a fresh
   worktree from `github/main`.
 - `ODOGWU-HERITAGE-step3-additional-garment-designs` is merged; keep it, do not reuse it.
 - The Cursor workspace folder (`...\2026-07-08\...\ODOGWU-HERITAGE-task1-task2`) is a different,
@@ -109,7 +111,15 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
   `test_private_batch_foundation`, `test_homepage_draft_replacement_hydration`,
   `test_order_context_presentation`, `test_step1_step3_catalogue_loading_ui`,
   `test_garment_construction_pricing` (garment list without Long Skirt, line 30),
-  `test_garment_construction_custom_details` ("Shirt construction" label, line 76).
+  `test_garment_construction_custom_details` ("Shirt construction" label, line 76),
+  `test_custom_detail_physical_component_identity`, `test_design_studio_inline_fabric_catalogue`,
+  `test_dormant_future_fabric_stage`, `test_dormant_garment_type_stage_integration`,
+  `test_fabric_ui_upload_extra_effective`, `test_future_fabric_bulk_assignment`,
+  `test_hide_agbada_upload_garment_sync`, `test_inline_fabric_picker_narrow_repair`,
+  `test_spare_fabric_capacity_persistence`, `test_step1_step3_catalogue_matrix`,
+  `test_step3_catalogue_discovery`, `test_uploaded_design_integration`,
+  `test_uploaded_design_pricing`, `test_uploaded_design_step1`
+  (all confirmed failing on main `5e50dcc`, before #298).
 - Tests that import Firebase fail under plain `tsx` with `FirebaseClientConfigurationError`.
   Run them through `node scripts/tsxWithViteProductionFirebase.mjs` (or their `npm run test:*` script).
 - Source assertions that search for a literal `\n` fail on this CRLF checkout (for example
