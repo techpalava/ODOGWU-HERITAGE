@@ -140,7 +140,7 @@ const sampleView: LiveOrderSummaryView = {
       lines: [
         {
           id: "measurements-complete",
-          label: "Mid Risk — Complete",
+          label: "Medium Risk — Complete",
           detail: null,
           amountLabel: null,
         },

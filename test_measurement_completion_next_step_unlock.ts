@@ -13,7 +13,9 @@ import {
   isFutureSummaryUnlockedByMeasurements,
   normalizeFutureMeasurementState,
   planMeasurementRequirements,
+  projectMeasurementGarmentChipStates,
   projectMeasurementRequirementsForPresentation,
+  projectMeasurementStepProgressPresentation,
   reconcileFutureMeasurementState,
   setFutureMeasurementInput,
   type MeasurementRequirementPlan,
@@ -23,6 +25,8 @@ import {
   DESIGN_STUDIO_STEPS,
   getDesignStudioJourneyStepState,
 } from "./src/components/DesignStudioJourneyStepper";
+import { resolveFutureStageCorrection } from "./src/utils/resolveFutureStageCorrection";
+import { resolveWearerAssignmentPresentation } from "./src/utils/wearerOrder";
 
 const construction = (
   garmentType: keyof GarmentTypeStepSelection["constructionByGarment"],
@@ -597,5 +601,330 @@ const unresolvedConstruction = reconcileFutureMeasurementState({
 });
 assert.equal(isFutureMeasurementStageComplete(unresolvedConstruction), false);
 assert.equal(isFutureSummaryUnlockedByMeasurements(unresolvedConstruction), false);
+
+const assignmentBlockedPresentation = projectMeasurementStepProgressPresentation({
+  selectedMethod: "low_risk",
+  sampleSelected: false,
+  criticalRiskUnavailable: false,
+  criticalRiskBlockMessage: "",
+  activeWearerComplete: true,
+  orderComplete: false,
+  unassignedLabels: ["Bum Shorts"],
+  profilePendingLabels: [],
+  remainingManualInputCount: 0,
+  riskSelectionNotice: "Choose one measurement option",
+  sampleFormTitle: "Sample cloth",
+});
+assert.equal(assignmentBlockedPresentation.blockedByAssignment, true);
+assert.equal(assignmentBlockedPresentation.statusLabel, "Assignment needed");
+assert.match(
+  assignmentBlockedPresentation.statusMessage,
+  /Assign Bum Shorts to a person before Summary unlocks/,
+);
+assert.equal(
+  assignmentBlockedPresentation.statusMessage.includes("cannot be measured for this profile"),
+  false,
+);
+assert.equal(
+  assignmentBlockedPresentation.statusMessage.includes("All required measurements are saved."),
+  false,
+);
+
+const remainingBlockedPresentation = projectMeasurementStepProgressPresentation({
+  selectedMethod: "low_risk",
+  sampleSelected: false,
+  criticalRiskUnavailable: false,
+  criticalRiskBlockMessage: "",
+  activeWearerComplete: false,
+  orderComplete: false,
+  unassignedLabels: [],
+  profilePendingLabels: [],
+  remainingManualInputCount: 1,
+  riskSelectionNotice: "Choose one measurement option",
+  sampleFormTitle: "Sample cloth",
+});
+assert.equal(remainingBlockedPresentation.statusLabel, "Incomplete");
+assert.equal(remainingBlockedPresentation.statusMessage, "1 required measurement remains.");
+assert.equal(
+  remainingBlockedPresentation.statusMessage.includes("All required measurements are saved."),
+  false,
+);
+
+const remainingWithGarment = projectMeasurementStepProgressPresentation({
+  ...{
+    selectedMethod: "low_risk" as const,
+    sampleSelected: false,
+    criticalRiskUnavailable: false,
+    criticalRiskBlockMessage: "",
+    activeWearerComplete: false,
+    orderComplete: false,
+    unassignedLabels: [],
+    profilePendingLabels: [],
+    remainingManualInputCount: 1,
+    nextIncompleteGarmentLabel: "Standard Shirt 2",
+    riskSelectionNotice: "Choose one measurement option",
+    sampleFormTitle: "Sample cloth",
+  },
+});
+assert.equal(
+  remainingWithGarment.statusMessage,
+  "1 required measurement remains for Standard Shirt 2.",
+);
+
+const otherWearerBlocked = projectMeasurementStepProgressPresentation({
+  selectedMethod: "low_risk",
+  sampleSelected: false,
+  criticalRiskUnavailable: false,
+  criticalRiskBlockMessage: "",
+  activeWearerComplete: true,
+  orderComplete: false,
+  unassignedLabels: [],
+  profilePendingLabels: [],
+  remainingManualInputCount: 0,
+  otherWearerIncompleteLabels: ["Ada"],
+  emptyWearerLabels: [],
+  riskSelectionNotice: "Choose one measurement option",
+  sampleFormTitle: "Sample cloth",
+});
+assert.equal(otherWearerBlocked.statusLabel, "Incomplete");
+assert.equal(
+  otherWearerBlocked.statusMessage,
+  "Finish measurements for Ada before Summary unlocks.",
+);
+
+const emptyWearerBlocked = projectMeasurementStepProgressPresentation({
+  selectedMethod: "low_risk",
+  sampleSelected: false,
+  criticalRiskUnavailable: false,
+  criticalRiskBlockMessage: "",
+  activeWearerComplete: true,
+  orderComplete: false,
+  unassignedLabels: [],
+  profilePendingLabels: [],
+  remainingManualInputCount: 0,
+  otherWearerIncompleteLabels: [],
+  emptyWearerLabels: ["Chidi"],
+  riskSelectionNotice: "Choose one measurement option",
+  sampleFormTitle: "Sample cloth",
+});
+assert.equal(emptyWearerBlocked.statusLabel, "Assignment needed");
+assert.equal(emptyWearerBlocked.blockedByAssignment, true);
+assert.equal(
+  emptyWearerBlocked.statusMessage,
+  "Assign garments to Chidi, or remove this person, before Summary unlocks.",
+);
+
+const personNBlocked = projectMeasurementStepProgressPresentation({
+  selectedMethod: "low_risk",
+  sampleSelected: false,
+  criticalRiskUnavailable: false,
+  criticalRiskBlockMessage: "",
+  activeWearerComplete: true,
+  orderComplete: false,
+  unassignedLabels: [],
+  profilePendingLabels: [],
+  remainingManualInputCount: 0,
+  otherWearerIncompleteLabels: ["Person 2"],
+  emptyWearerLabels: [],
+  riskSelectionNotice: "Choose one measurement option",
+  sampleFormTitle: "Sample cloth",
+});
+assert.equal(
+  personNBlocked.statusMessage,
+  "Finish measurements for Person 2 before Summary unlocks.",
+);
+assert.equal(personNBlocked.statusMessage.includes("Someone"), false);
+
+const profileEscapeCopy = projectMeasurementStepProgressPresentation({
+  selectedMethod: "low_risk",
+  sampleSelected: false,
+  criticalRiskUnavailable: false,
+  criticalRiskBlockMessage: "",
+  activeWearerComplete: false,
+  orderComplete: false,
+  unassignedLabels: [],
+  profilePendingLabels: ["Agbada"],
+  remainingManualInputCount: 0,
+  riskSelectionNotice: "Choose one measurement option",
+  sampleFormTitle: "Sample cloth",
+});
+assert.equal(profileEscapeCopy.blockedByProfileSetup, true);
+assert.match(
+  profileEscapeCopy.statusMessage,
+  /Change or remove this garment in earlier steps to continue/,
+);
+
+assert.equal(
+  resolveWearerAssignmentPresentation({
+    wearerCount: 1,
+    soleWearerFitContext: "male",
+    hasUnassignedGarments: false,
+  }),
+  "solo",
+);
+assert.equal(
+  resolveWearerAssignmentPresentation({
+    wearerCount: 1,
+    soleWearerFitContext: "male",
+    hasUnassignedGarments: true,
+  }),
+  "people",
+  "solo mode must expose assign UI when garments remain unassigned",
+);
+assert.equal(
+  resolveWearerAssignmentPresentation({
+    wearerCount: 2,
+    soleWearerFitContext: "male",
+    hasUnassignedGarments: false,
+  }),
+  "people",
+);
+
+const twoGarmentPlan = planMeasurementRequirements({
+  route: "low_risk",
+  garmentTypeSelection: shirtSelection,
+  physicalGarments: [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+  ],
+  additionalGarmentConstructions: {
+    schemaVersion: 1,
+    byGarmentKey: {
+      "additional:shirt:1": construction("shirt", "shirt_std_short", "shirt_construction"),
+    },
+  },
+});
+const emptyTwoGarment = reconcileFutureMeasurementState({
+  state: createEmptyFutureMeasurementState("low_risk", "cm"),
+  plan: twoGarmentPlan,
+});
+const twoGarmentRequired = projectMeasurementRequirementsForPresentation({
+  requirements: twoGarmentPlan.requirements,
+  state: emptyTwoGarment,
+}).filter((requirement) => requirement.section === "required");
+const emptyChips = projectMeasurementGarmentChipStates({
+  garmentKeys: ["base:shirt", "additional:shirt:1", "base:bum_shorts"],
+  requiredRequirements: twoGarmentRequired,
+  state: emptyTwoGarment,
+  unassignedGarmentKeys: ["base:bum_shorts"],
+  profilePendingGarmentKeys: [],
+});
+assert.deepEqual(
+  emptyChips.chips.map((chip) => ({
+    garmentKey: chip.garmentKey,
+    kind: chip.kind,
+  })),
+  [
+    { garmentKey: "base:shirt", kind: "remaining" },
+    { garmentKey: "additional:shirt:1", kind: "remaining" },
+    { garmentKey: "base:bum_shorts", kind: "assignment" },
+  ],
+);
+assert.equal(emptyChips.nextIncompleteGarmentKey, "base:shirt");
+assert.ok(emptyChips.sharedRemainingCount >= 0);
+
+let garmentSpecificOnly = emptyTwoGarment;
+for (const requirement of twoGarmentRequired.filter(
+  (item) =>
+    item.directInput &&
+    item.garmentKey === "base:shirt" &&
+    item.scope !== "shared",
+)) {
+  garmentSpecificOnly = setFutureMeasurementInput({
+    state: garmentSpecificOnly,
+    requirement,
+    displayValue: 90,
+  });
+}
+garmentSpecificOnly = reconcileFutureMeasurementState({
+  state: garmentSpecificOnly,
+  plan: twoGarmentPlan,
+});
+const sharedPendingChips = projectMeasurementGarmentChipStates({
+  garmentKeys: ["base:shirt", "additional:shirt:1"],
+  requiredRequirements: projectMeasurementRequirementsForPresentation({
+    requirements: twoGarmentPlan.requirements,
+    state: garmentSpecificOnly,
+  }).filter((requirement) => requirement.section === "required"),
+  state: garmentSpecificOnly,
+});
+assert.equal(
+  sharedPendingChips.chips.find((chip) => chip.garmentKey === "base:shirt")?.kind,
+  "shared",
+);
+assert.ok(sharedPendingChips.sharedRemainingCount > 0);
+assert.equal(sharedPendingChips.nextIncompleteGarmentKey, "additional:shirt:1");
+
+let filledBaseOnly = emptyTwoGarment;
+for (const requirement of twoGarmentRequired.filter(
+  (item) =>
+    item.directInput &&
+    (item.scope === "shared" || item.garmentKey === "base:shirt"),
+)) {
+  filledBaseOnly = setFutureMeasurementInput({
+    state: filledBaseOnly,
+    requirement,
+    displayValue: requirement.measurementId === "total_height" ? 180 : 90,
+  });
+}
+filledBaseOnly = reconcileFutureMeasurementState({
+  state: filledBaseOnly,
+  plan: twoGarmentPlan,
+});
+const midChips = projectMeasurementGarmentChipStates({
+  garmentKeys: ["base:shirt", "additional:shirt:1"],
+  requiredRequirements: projectMeasurementRequirementsForPresentation({
+    requirements: twoGarmentPlan.requirements,
+    state: filledBaseOnly,
+  }).filter((requirement) => requirement.section === "required"),
+  state: filledBaseOnly,
+});
+assert.equal(
+  midChips.chips.find((chip) => chip.garmentKey === "base:shirt")?.kind,
+  "done",
+);
+assert.equal(
+  midChips.chips.find((chip) => chip.garmentKey === "additional:shirt:1")?.kind,
+  "remaining",
+);
+assert.ok(
+  (midChips.chips.find((chip) => chip.garmentKey === "additional:shirt:1")
+    ?.remainingCount ?? 0) > 0,
+);
+assert.equal(midChips.nextIncompleteGarmentKey, "additional:shirt:1");
+assert.equal(midChips.sharedRemainingCount, 0);
+
+assert.equal(
+  resolveFutureStageCorrection({
+    currentStageId: "summary",
+    garmentTypeComplete: true,
+    fabricComplete: true,
+    designSourceReady: true,
+    customDetailsReady: true,
+    personalizedAdditionsReady: true,
+    measurementUnlocked: true,
+    // Order-wide gate: active wearer may be complete, but Summary stays locked.
+    summaryUnlocked: false,
+    inlineAdditionalGarmentFabricTransaction: null,
+  }),
+  "measurement",
+  "stage correction must use order-wide Summary unlock, not active-wearer-only completeness",
+);
+
+assert.equal(
+  resolveFutureStageCorrection({
+    currentStageId: "summary",
+    garmentTypeComplete: true,
+    fabricComplete: true,
+    designSourceReady: true,
+    customDetailsReady: true,
+    personalizedAdditionsReady: true,
+    measurementUnlocked: true,
+    summaryUnlocked: true,
+    inlineAdditionalGarmentFabricTransaction: null,
+  }),
+  null,
+  "order-wide Summary unlock keeps Summary mounted",
+);
 
 console.log("PASS: measurement completion next-step unlock authority");

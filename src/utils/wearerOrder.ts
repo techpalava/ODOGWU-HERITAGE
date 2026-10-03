@@ -687,6 +687,23 @@ export const hasUnassignedPhysicalGarments = ({
   return physicalGarmentKeys.some((garmentKey) => !assigned.has(garmentKey));
 };
 
+/** People panel mode for Measurement. Unassigned garments always expose assign UI. */
+export const resolveWearerAssignmentPresentation = ({
+  wearerCount,
+  soleWearerFitContext,
+  hasUnassignedGarments,
+}: {
+  wearerCount: number;
+  soleWearerFitContext: WearerFitContext | null;
+  hasUnassignedGarments: boolean;
+}): "people" | "solo" | "fit" => {
+  if (wearerCount > 1 || hasUnassignedGarments) return "people";
+  if (soleWearerFitContext === "male" || soleWearerFitContext === "female") {
+    return "solo";
+  }
+  return "fit";
+};
+
 export const isWearerOrderMeasurementComplete = ({
   order,
   runtimes,

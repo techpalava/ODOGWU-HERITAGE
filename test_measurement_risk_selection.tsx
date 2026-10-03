@@ -153,11 +153,11 @@ assert.deepEqual(
 );
 assert.deepEqual(
   optionLabels.map((node) => MEASUREMENT_RISK_ROUTE_LABELS[node.props["data-measurement-risk-option"] as MeasurementRiskRoute]),
-  ["Low Risk", "Mid Risk", "High Risk", "Critical Risk"],
+  ["Low Risk", "Medium Risk", "High Risk", "Critical Risk"],
 );
 const pageText = collectText(renderer.root);
 assert.match(pageText, /Low Risk/);
-assert.match(pageText, /Mid Risk/);
+assert.match(pageText, /Medium Risk/);
 assert.match(pageText, /High Risk/);
 assert.match(pageText, /Critical Risk/);
 assert.equal(radios.filter((radio) => radio.props.checked).length, 0);
