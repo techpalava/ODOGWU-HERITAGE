@@ -211,7 +211,7 @@ const criticalRuntimes = planWearerOrderMeasurements({
 const criticalYou = criticalRuntimes.find((runtime) => runtime.wearerId === you.wearerId);
 const criticalFriend = criticalRuntimes.find((runtime) => runtime.wearerId === friend.wearerId);
 assert.equal(criticalYou?.plan.criticalRiskSupported, true);
-assert.equal(criticalFriend?.plan.criticalRiskSupported, false);
+assert.equal(criticalFriend?.plan.criticalRiskSupported, true);
 assert.equal(criticalYou?.garmentKeys.includes("base:dress"), false);
 assert.equal(
   isWearerOrderMeasurementComplete({

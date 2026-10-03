@@ -656,6 +656,46 @@ const resolveFieldApplicability = ({
   return "include";
 };
 
+/**
+ * Critical-only applicability. Dress IF-APPLICABLE / square-neck rows never
+ * participate in Critical (null-factor prefs), even when Custom Details prove
+ * them — so a U/square neck cannot disable Critical. Unresolved mid/long sleeve
+ * groups default to the single factored sibling (long) so B/F/H can calculate
+ * from height without collapsing Medium/High one-of choice.
+ */
+const resolveCriticalFieldApplicability = ({
+  field,
+  profile,
+  constructionOptionId,
+  selectedOptionIds,
+}: {
+  field: MeasurementProfileField;
+  profile: MeasurementProfile;
+  constructionOptionId: string | null;
+  selectedOptionIds: readonly string[];
+}): "include" | "exclude" | "unresolved" => {
+  if (
+    field.conditionalRule === "applicability_unresolved" ||
+    field.conditionalRule === "square_neck_option"
+  ) {
+    return "exclude";
+  }
+  const applicability = resolveFieldApplicability({
+    field,
+    profile,
+    constructionOptionId,
+    selectedOptionIds,
+  });
+  if (applicability !== "unresolved") return applicability;
+  if (!field.alternativeGroup) return "unresolved";
+  const siblings = profile.fields.filter(
+    (candidate) => candidate.alternativeGroup === field.alternativeGroup,
+  );
+  const factored = siblings.filter((candidate) => candidate.averageFactor !== null);
+  if (factored.length !== 1) return "unresolved";
+  return factored[0]!.measurementId === field.measurementId ? "include" : "exclude";
+};
+
 const isCompleteSetField = (field: MeasurementProfileField): boolean =>
   field.directRoutes.includes("low_risk");
 
@@ -671,7 +711,7 @@ export const isCriticalRiskCompleteSetCalculable = ({
   let hasHeight = false;
   for (const field of profile.fields) {
     if (!isCompleteSetField(field)) continue;
-    const applicability = resolveFieldApplicability({
+    const applicability = resolveCriticalFieldApplicability({
       field,
       profile,
       constructionOptionId,
@@ -810,12 +850,19 @@ export const planMeasurementRequirements = ({
       resolution.garmentKey,
     );
     resolution.profile.fields.forEach((field) => {
-      const applicability = resolveFieldApplicability({
-        field,
-        profile: resolution.profile,
-        constructionOptionId: resolution.constructionOptionId,
-        selectedOptionIds,
-      });
+      const applicability = route === "critical_risk"
+        ? resolveCriticalFieldApplicability({
+            field,
+            profile: resolution.profile,
+            constructionOptionId: resolution.constructionOptionId,
+            selectedOptionIds,
+          })
+        : resolveFieldApplicability({
+            field,
+            profile: resolution.profile,
+            constructionOptionId: resolution.constructionOptionId,
+            selectedOptionIds,
+          });
       if (applicability === "exclude") return;
       if (route === "critical_risk") {
         if (!isCompleteSetField(field)) return;
