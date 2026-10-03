@@ -235,15 +235,19 @@ const architectureView: LiveOrderSummaryView = {
         lines: [{ id: "construction-additional:shirt:1", label: "Standard Shirt 2", detail: null, amountLabel: "€70.00", focusGarmentKey: "additional:shirt:1" }],
       }],
       footer: { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€210.00", amountCents: 21000, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
+      footers: [
+        { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€210.00", amountCents: 21000, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
+        { id: "personalized-additions-subtotal", label: "Personalized Additions Subtotal", amountLabel: "€36.00", amountCents: 3600, note: "" },
+      ],
     },
     {
       id: "personalized_additions",
       title: "Personalized Additions",
       editStage: "personalized_additions",
       lines: [
-        { id: "personalized-addition:order-detail:1:Name Monogram", label: "Monogram", detail: "Name Monogram", amountLabel: "€12.00" },
-        { id: "personalized-addition:order-detail:2:Embroidery", label: "Embroidery Design", detail: "Embroidery", amountLabel: "€12.00" },
-        { id: "personalized-addition:order-detail:3:Traditional Hat", label: "Accessories", detail: "Traditional Hat", amountLabel: "€12.00" },
+        { id: "personalized-addition:order-detail:1:Name Monogram", label: "Monogram", detail: "Name Monogram", amountLabel: "Included" },
+        { id: "personalized-addition:order-detail:2:Embroidery", label: "Embroidery Design", detail: "Embroidery", amountLabel: "Included" },
+        { id: "personalized-addition:order-detail:3:Traditional Hat", label: "Accessories", detail: "Traditional Hat", amountLabel: "Included" },
       ],
     },
     {
@@ -359,10 +363,25 @@ assert.ok(!textOf(architectureRenderer.root.findByProps({ "data-testid": "live-o
 assert.match(
   textOf(
     architectureRenderer.root.findByProps({
+      "data-testid": "live-order-summary-section-construction",
+    }),
+  ),
+  /Garment Subtotal.*€210\.00.*Personalized Additions Subtotal.*€36\.00/,
+);
+assert.match(
+  textOf(
+    architectureRenderer.root.findByProps({
       "data-testid": "live-order-summary-section-personalized_additions",
     }),
   ),
-  /Monogram.*Name Monogram.*€12\.00.*Embroidery Design.*Embroidery.*€12\.00.*Accessories.*Traditional Hat.*€12\.00/,
+  /Monogram.*Name Monogram.*Included.*Embroidery Design.*Embroidery.*Included.*Accessories.*Traditional Hat.*Included/,
+);
+assert.equal(
+  architectureRenderer.root.findAllByProps({
+    "data-testid":
+      "live-order-summary-construction-footer-personalized-additions-subtotal",
+  }).length,
+  1,
 );
 const emptyPersonalizedAdditionsView: LiveOrderSummaryView = {
   ...architectureView,
@@ -414,13 +433,13 @@ assert.match(
   renderer.root.findByProps({
     "data-testid": "live-order-summary-total-value",
   }).props.className,
-  /\btext-xl\b/,
+  /\btext-2xl\b/,
 );
 assert.doesNotMatch(
   renderer.root.findByProps({
     "data-testid": "live-order-summary-total-value",
   }).props.className,
-  /\btext-base\b/,
+  /\btext-xl\b/,
 );
 assert.equal(
   textOf(renderer.root.findByProps({
@@ -1034,7 +1053,8 @@ assert.match(summarySource, /lg:sticky/);
 assert.match(summarySource, /lg:top-24/);
 assert.match(summarySource, /lg:self-start/);
 assert.match(summarySource, /text-\[15px\] font-bold leading-snug text-heritage-green/);
-assert.doesNotMatch(summarySource, /text-2xl/);
+assert.match(summarySource, /text-2xl/);
+assert.match(summarySource, /section\.footers \?\? \(section\.footer \? \[section\.footer\] : \[\]\)/);
 assert.match(summarySource, /lg:max-h-\[calc\(100dvh-7rem\)\]/);
 assert.match(summarySource, /lg:overflow-y-auto/);
 assert.match(summarySource, /lg:overflow-x-hidden/);

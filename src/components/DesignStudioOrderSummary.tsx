@@ -131,28 +131,41 @@ const SummarySection = ({
         onEdit={onEditAdditionalGarments}
       />
     ))}
-    {section.footer ? (
-      <div
-        className="mt-1.5 border-t border-heritage-gold/20 pt-1.5"
-        data-testid={`live-order-summary-${section.id}-subtotal`}
-        data-subtotal-cents={section.footer.amountCents}
-      >
-        <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-          <p className="min-w-0 break-words text-[13px] font-semibold leading-snug text-heritage-ink">
-            {section.footer.label}
-          </p>
-          <span className="shrink-0 text-right font-mono text-[13px] font-semibold text-heritage-green">
-            {section.footer.amountLabel}
-          </span>
-        </div>
-        <p
-          className="mt-1 break-words text-[10px] font-normal leading-snug text-heritage-ink/60"
-          data-testid={`live-order-summary-${section.id}-inclusion`}
+    {(section.footers ?? (section.footer ? [section.footer] : [])).map(
+      (footer, footerIndex) => (
+        <div
+          key={footer.id}
+          className={
+            footerIndex === 0
+              ? "mt-1.5 border-t border-heritage-gold/20 pt-1.5"
+              : "mt-1.5 pt-0.5"
+          }
+          data-testid={
+            footerIndex === 0
+              ? `live-order-summary-${section.id}-subtotal`
+              : `live-order-summary-${section.id}-footer-${footer.id}`
+          }
+          data-subtotal-cents={footer.amountCents}
         >
-          {section.footer.note}
-        </p>
-      </div>
-    ) : null}
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+            <p className="min-w-0 break-words text-[13px] font-semibold leading-snug text-heritage-ink">
+              {footer.label}
+            </p>
+            <span className="shrink-0 text-right font-mono text-[13px] font-semibold text-heritage-green">
+              {footer.amountLabel}
+            </span>
+          </div>
+          {footer.note ? (
+            <p
+              className="mt-1 break-words text-[10px] font-normal leading-snug text-heritage-ink/60"
+              data-testid={`live-order-summary-${section.id}-inclusion`}
+            >
+              {footer.note}
+            </p>
+          ) : null}
+        </div>
+      ),
+    )}
   </section>
 );
 
@@ -350,11 +363,11 @@ export const DesignStudioOrderSummary = ({
                 </div>
               ) : null}
               <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2 border-t-2 border-heritage-green/25 pt-2.5">
-                <dt className="min-w-0 break-words text-sm font-bold uppercase tracking-wide text-heritage-green">
+                <dt className="min-w-0 break-words text-base font-bold uppercase tracking-wide text-heritage-green">
                   {view.totalLabel}
                 </dt>
                 <dd
-                  className="shrink-0 text-right font-serif text-xl font-bold leading-tight text-heritage-green"
+                  className="shrink-0 text-right font-serif text-2xl font-bold leading-tight text-heritage-green"
                   data-testid="live-order-summary-total-value"
                 >
                   {view.totalValueLabel}
@@ -363,11 +376,11 @@ export const DesignStudioOrderSummary = ({
             </dl>
           ) : (
             <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
-              <p className="min-w-0 break-words text-[13px] font-semibold text-heritage-ink">
+              <p className="min-w-0 break-words text-base font-bold text-heritage-ink">
                 {view.totalLabel}
               </p>
               <p
-                className="shrink-0 text-right font-serif text-base font-bold leading-tight text-heritage-green"
+                className="shrink-0 text-right font-serif text-2xl font-bold leading-tight text-heritage-green"
                 data-testid="live-order-summary-total-value"
               >
                 {view.totalValueLabel}

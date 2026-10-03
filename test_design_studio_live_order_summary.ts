@@ -40,6 +40,7 @@ import {
   LIVE_ORDER_SUMMARY_STANDARD_SHIPPING_LABEL,
   LIVE_ORDER_SUMMARY_CONSTRUCTION_SUBTOTAL_LABEL,
   LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
+  LIVE_ORDER_SUMMARY_PERSONALIZED_ADDITIONS_SUBTOTAL_LABEL,
   projectDesignStudioLiveOrderSummary,
   shouldShowPersistentLiveOrderSummary,
 } from "./src/utils/designStudioLiveOrderSummary";
@@ -676,7 +677,7 @@ assert.equal(JSON.stringify(multipleGarments.view).includes("Pending"), false);
 assert.equal(
   multipleGarments.view.totalAmountCents,
   section(multipleGarments.view, "construction").footer?.amountCents,
-  "Current Subtotal must equal the authoritative construction subtotal",
+  "Current Total must equal the authoritative construction subtotal",
 );
 
 const step2PreFabric = buildAuthority({
@@ -812,10 +813,15 @@ assert.equal(
   false,
 );
 assert.equal(
-  JSON.stringify(preDelivery.view.sections).split(
-    LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
-  ).length - 1,
+  (section(preDelivery.view, "construction").footers || []).filter(
+    (footer) => footer.note === LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
+  ).length,
   1,
+  "construction inclusion note appears once under Garments Ordered footers",
+);
+assert.equal(
+  section(preDelivery.view, "construction").footer?.note,
+  LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
 );
 
 const presentationGarment = preDelivery.summary.garmentSummary[0]!;
@@ -1762,10 +1768,11 @@ assert.equal(
   LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
 );
 assert.equal(
-  JSON.stringify(full.view.sections).split(
-    LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
-  ).length - 1,
+  (section(full.view, "construction").footers || []).filter(
+    (footer) => footer.note === LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
+  ).length,
   1,
+  "construction inclusion note appears once under Garments Ordered footers",
 );
 assert.equal(
   section(full.view, "delivery").lines.filter((line) =>
@@ -1932,21 +1939,55 @@ assert.deepEqual(
     {
       label: "Monogram",
       detail: "Standard Shirt: Name Monogram",
-      amountLabel: "1 × €12.00",
+      amountLabel: "Included",
     },
     {
       label: "Monogram",
       detail: "Standard Shirt: Monogram Trimming",
-      amountLabel: "1 × €12.00",
+      amountLabel: "Included",
     },
     {
       label: "Embroidery Design",
       detail: "Standard Shirt: Embroidery",
-      amountLabel: "1 × €12.00",
+      amountLabel: "Included",
     },
-    { label: "Accessories", detail: "Traditional Hat", amountLabel: "€12.00" },
+    { label: "Accessories", detail: "Traditional Hat", amountLabel: "Included" },
   ],
-  "garment-scoped embroidery/monogram lines show garment attribution and 1 × unit price",
+  "personalized addition detail lines show Included; money lives under Garments Ordered",
+);
+const constructionSection = section(personalizedAdditions.view, "construction");
+assert.equal(
+  constructionSection.footer?.id,
+  "construction-subtotal",
+  "footer remains the first construction money row for callers",
+);
+assert.deepEqual(
+  constructionSection.footers?.map(({ id, label, amountCents, note }) => ({
+    id,
+    label,
+    amountCents,
+    note,
+  })),
+  [
+    {
+      id: "construction-subtotal",
+      label: LIVE_ORDER_SUMMARY_CONSTRUCTION_SUBTOTAL_LABEL,
+      amountCents: constructionSection.footer?.amountCents,
+      note: LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
+    },
+    {
+      id: "personalized-additions-subtotal",
+      label: LIVE_ORDER_SUMMARY_PERSONALIZED_ADDITIONS_SUBTOTAL_LABEL,
+      amountCents: 4800,
+      note: "",
+    },
+  ],
+  "Garments Ordered stacks Garment Subtotal then Personalized Additions Subtotal",
+);
+assert.equal(
+  personalizedAdditions.view.totalLabel,
+  LIVE_ORDER_SUMMARY_CURRENT_TOTAL_LABEL,
+  "incomplete payable totals use Current Total",
 );
 assert.equal(personalizedSection.editStage, "personalized_additions");
 assert.equal(
