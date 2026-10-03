@@ -48,8 +48,14 @@ assert.equal(getMeasurementProfileField("E", "hip_circumference")?.averageFactor
 assert.equal(getProfileRowFactors("E", "hip_circumference"), null);
 assert.equal(getProfileRowFactors("I", "hip_circumference")?.averageFactor, 0.584591437335114);
 
-assert.equal(getMeasurementProfileField("G", "dress_length_long")?.averageFactor, null);
-assert.equal(getProfileRowFactors("G", "dress_length_long"), null);
+nearlyEqual(
+  getMeasurementProfileField("G", "dress_length_long")!.averageFactor!,
+  0.597092331523786,
+);
+nearlyEqual(
+  getProfileRowFactors("G", "dress_length_long")!.averageFactor,
+  0.597092331523786,
+);
 assert.equal(
   getProfileRowFactors("C", "shirt_length_long")?.averageFactor,
   0.597092331523786,
@@ -63,10 +69,25 @@ assert.notEqual(skirtKnee.averageFactor, pantsKnee.averageFactor);
 
 assert.equal(getProfileRowFactors("B", "sleeve_length_mid"), null);
 assert.equal(getProfileRowFactors("E", "sleeve_length_sleeveless"), null);
-assert.equal(getProfileRowFactors("I", "waist_to_feet_back_length"), null);
-assert.equal(getProfileRowFactors("K", "waist_to_lap_length"), null);
-assert.equal(getProfileRowFactors("L", "skirt_bottom_circumference"), null);
-assert.equal(getProfileRowFactors("L", "waist_to_lap_length"), null);
-assert.equal(getProfileRowFactors("M", "waist_to_ankle_length"), null);
+nearlyEqual(
+  getProfileRowFactors("I", "waist_to_feet_back_length")!.averageFactor,
+  0.561814572654843,
+);
+nearlyEqual(
+  getProfileRowFactors("K", "waist_to_lap_length")!.averageFactor,
+  (0.0897214528042889 + 0.289493733847171) / 2,
+);
+nearlyEqual(
+  getProfileRowFactors("L", "skirt_bottom_circumference")!.averageFactor,
+  0.584591437335114,
+);
+nearlyEqual(
+  getProfileRowFactors("L", "waist_to_lap_length")!.averageFactor,
+  (0.0897214528042889 + 0.289493733847171) / 2,
+);
+nearlyEqual(
+  getProfileRowFactors("M", "waist_to_ankle_length")!.averageFactor,
+  0.535919333317358,
+);
 
 console.log("PASS: measurement factor engine");

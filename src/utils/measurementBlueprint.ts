@@ -866,13 +866,15 @@ export const planMeasurementRequirements = ({
       // Unproven IF APPLICABLE rows stay optional. Unresolved alternative
       // groups (mid/long sleeve when construction cannot discriminate) stay
       // enterable as a one-of requirement: at least one member, never both
-      // independently required, never both omissible.
+      // independently required, never both omissible — including Medium/High/
+      // Critical planning, where sleeve rows are Low-only markers so they would
+      // otherwise silently become calculated_average_factor / optional_manual.
       const requiredOnRoute = applicability === "unresolved"
         ? false
         : provenRequiredOnRoute;
       const alternativeOneOf = applicability === "unresolved"
         && Boolean(field.alternativeGroup)
-        && provenRequiredOnRoute;
+        && (provenRequiredOnRoute || isCompleteSetField(field));
       const definition = DEFINITION_BY_ID.get(field.measurementId);
       if (!definition) return;
       const sampleGeometry = isSampleClothMeasurementMethod(route)

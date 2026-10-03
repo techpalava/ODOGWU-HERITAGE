@@ -227,6 +227,21 @@ const PANTS_SHORTS_WAIST_TO_KNEE = factor(0.289493733847171, 0.254, 0.3233532934
 const STANDARD_SKIRT_WAIST_TO_KNEE = factor(0.242042112706051, 0.205945945945946, 0.279120879120879, 0.0250665101464549);
 const PANTS_WAIST_TO_ANKLE = factor(0.535919333317358, 0.481987951807229, 0.562874251497006, 0.0245571761192079);
 const PANTS_WAIST_TO_FEET_SIDE = factor(0.561814572654843, 0.528594594594595, 0.598802395209581, 0.020152518065034);
+/** Workbook proxy: long dress length uses the long-shirt vertical factor family. */
+const LONG_DRESS_LENGTH = LONG_SHIRT_LENGTH;
+/** Workbook proxy: feet-back ≈ feet-side until a dedicated workbook factor exists. */
+const PANTS_WAIST_TO_FEET_BACK = PANTS_WAIST_TO_FEET_SIDE;
+/** Workbook proxy: lap length midpoint between waist→hip and waist→knee. */
+const WAIST_TO_LAP = factor(
+  (0.0897214528042889 + 0.289493733847171) / 2,
+  (0.0747058823529412 + 0.254) / 2,
+  (0.109837837837838 + 0.323353293413173) / 2,
+  (0.0116466601853131 + 0.0217034313693665) / 2,
+);
+/** Workbook proxy: skirt hem circumference ≈ hip scale. */
+const SKIRT_BOTTOM = LOWER_BODY_HIP;
+/** Workbook proxy: long-skirt waist→ankle ≈ pants waist→ankle. */
+const LONG_SKIRT_WAIST_TO_ANKLE = PANTS_WAIST_TO_ANKLE;
 
 const routesFromMask = (mask: number): MeasurementRiskRoute[] => [
   ...(mask & 1 ? ["low_risk" as const] : []),
@@ -383,7 +398,7 @@ const PROFILE_ROWS: Readonly<Record<MeasurementProfileId, readonly SourceTuple[]
     [141, "head_circumference", 1, HEAD],
     [142, "neck_circumference", 1, NECK],
     [143, "shoulder_length", 3, SHOULDER],
-    [144, "dress_length_long", 1, null],
+    [144, "dress_length_long", 1, LONG_DRESS_LENGTH],
     [145, "sleeve_length_sleeveless", 1, null],
     [146, "sleeve_length_short", 1, SHORT_SLEEVE],
     [147, "chest_bust_circumference", 7, CHEST],
@@ -405,7 +420,7 @@ const PROFILE_ROWS: Readonly<Record<MeasurementProfileId, readonly SourceTuple[]
     [166, "head_circumference", 1, HEAD],
     [167, "neck_circumference", 1, NECK],
     [168, "shoulder_length", 3, SHOULDER],
-    [169, "dress_length_long", 1, null],
+    [169, "dress_length_long", 1, LONG_DRESS_LENGTH],
     [170, "sleeve_length_mid", 1, null],
     [171, "sleeve_length_long", 1, LONG_SLEEVE],
     [172, "chest_bust_circumference", 7, CHEST],
@@ -434,7 +449,7 @@ const PROFILE_ROWS: Readonly<Record<MeasurementProfileId, readonly SourceTuple[]
     [198, "waist_to_knee_length", 1, PANTS_SHORTS_WAIST_TO_KNEE],
     [199, "waist_to_ankle_length", 3, PANTS_WAIST_TO_ANKLE],
     [200, "waist_to_feet_side_length", 1, PANTS_WAIST_TO_FEET_SIDE],
-    [201, "waist_to_feet_back_length", 3, null],
+    [201, "waist_to_feet_back_length", 3, PANTS_WAIST_TO_FEET_BACK],
     [202, "total_height", 7, HEIGHT],
     [204, "height_head_to_lower_neck", 3, HEIGHT_LENGTH_1],
     [205, "height_lower_neck_to_waist", 3, HEIGHT_LENGTH_2],
@@ -460,7 +475,7 @@ const PROFILE_ROWS: Readonly<Record<MeasurementProfileId, readonly SourceTuple[]
     [228, "knee_circumference", 1, KNEE],
     [229, "waist_to_hip_length", 1, WAIST_TO_HIP],
     [230, "waist_to_crotch_depth_length", 3, WAIST_TO_CROTCH],
-    [231, "waist_to_lap_length", 7, null],
+    [231, "waist_to_lap_length", 7, WAIST_TO_LAP],
     [232, "total_height", 7, HEIGHT],
     [234, "height_head_to_lower_neck", 3, HEIGHT_LENGTH_1],
     [235, "height_lower_neck_to_waist", 3, HEIGHT_LENGTH_2],
@@ -471,8 +486,8 @@ const PROFILE_ROWS: Readonly<Record<MeasurementProfileId, readonly SourceTuple[]
     [241, "hip_circumference", 3, LOWER_BODY_HIP],
     [242, "thigh_circumference", 1, THIGH],
     [243, "waist_to_hip_length", 1, WAIST_TO_HIP],
-    [244, "skirt_bottom_circumference", 3, null],
-    [245, "waist_to_lap_length", 7, null],
+    [244, "skirt_bottom_circumference", 3, SKIRT_BOTTOM],
+    [245, "waist_to_lap_length", 7, WAIST_TO_LAP],
     [246, "waist_to_knee_length", 7, STANDARD_SKIRT_WAIST_TO_KNEE],
     [247, "total_height", 7, HEIGHT],
     [249, "height_head_to_lower_neck", 3, HEIGHT_LENGTH_1],
@@ -484,8 +499,8 @@ const PROFILE_ROWS: Readonly<Record<MeasurementProfileId, readonly SourceTuple[]
     [256, "hip_circumference", 3, LOWER_BODY_HIP],
     [257, "thigh_circumference", 1, THIGH],
     [258, "waist_to_hip_length", 1, WAIST_TO_HIP],
-    [259, "skirt_bottom_circumference", 3, null],
-    [260, "waist_to_ankle_length", 7, null],
+    [259, "skirt_bottom_circumference", 3, SKIRT_BOTTOM],
+    [260, "waist_to_ankle_length", 7, LONG_SKIRT_WAIST_TO_ANKLE],
     [261, "total_height", 7, HEIGHT],
     [263, "height_head_to_lower_neck", 3, HEIGHT_LENGTH_1],
     [264, "height_lower_neck_to_waist", 3, HEIGHT_LENGTH_2],

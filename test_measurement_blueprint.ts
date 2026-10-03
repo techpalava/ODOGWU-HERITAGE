@@ -135,7 +135,7 @@ const markerDigest = createHash("sha256")
     ]),
   ])))
   .digest("hex");
-assert.equal(markerDigest, "a0fd5d7d3920d6402fbbbb5618b5d8947e3839d3a436130f6e76810e5c69be4d");
+assert.equal(markerDigest, "b960b05cbea4681f7703fb5ca2fb17277467330d1b9103d958d31883eee0505b");
 
 assert.equal(
   MEASUREMENT_PROFILES.find(({ id }) => id === "A")?.fields.find(
@@ -147,13 +147,13 @@ assert.equal(
   MEASUREMENT_PROFILES.find(({ id }) => id === "G")?.fields.find(
     ({ measurementId }) => measurementId === "dress_length_long",
   )?.factorStatus,
-  "missing",
+  "present",
 );
 assert.equal(
   MEASUREMENT_PROFILES.find(({ id }) => id === "I")?.fields.find(
     ({ measurementId }) => measurementId === "waist_to_feet_back_length",
   )?.averageFactor,
-  null,
+  0.561814572654843,
 );
 assert.equal(
   MEASUREMENT_PROFILES.find(({ id }) => id === "E")?.fields.find(
@@ -487,7 +487,7 @@ assert.deepEqual(
       ({ measurementId }) => measurementId === "dress_length_long",
     )?.section,
   },
-  { directInput: false, inputSource: "optional_manual", section: "optional" },
+  { directInput: false, inputSource: "calculated_average_factor", section: "optional" },
 );
 
 let state = createEmptyFutureMeasurementState("low_risk", "inch");

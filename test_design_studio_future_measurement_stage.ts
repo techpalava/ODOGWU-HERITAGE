@@ -33,7 +33,12 @@ assert.match(measurementSource, /Enter the required measurements\. Optional valu
 assert.match(measurementSource, /Required Measurements/);
 assert.match(measurementSource, /Optional Measurements/);
 assert.match(measurementSource, /Calculated from height/);
-assert.match(measurementSource, /These values fill in from Total Height once the required measurements are complete\./);
+assert.match(
+  measurementSource,
+  /These values fill in from Total Height after every required measurement for this garment is entered/,
+);
+assert.match(measurementSource, /data-measurement-calculated-pending/);
+assert.match(measurementSource, /Waiting on:/);
 assert.match(measurementSource, /Please recheck this measurement\./);
 assert.match(measurementSource, /saved/);
 assert.match(measurementSource, /Shared Body Measurements/);
@@ -972,3 +977,57 @@ console.log("PASS: measurement Go-to-person and shared chip honesty");
 }
 
 console.log("PASS: measurement matching clarity person + garments banner");
+
+{
+  const mediumPlan = planMeasurementRequirements({
+    route: "medium_risk",
+    garmentTypeSelection: shirtSelection,
+    physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+  });
+  let mediumState = setFutureMeasurementRoute(
+    createEmptyFutureMeasurementState(),
+    "medium_risk",
+  );
+  const heightRequirement = mediumPlan.requirements.find(
+    (requirement) =>
+      requirement.directInput && requirement.measurementId === "total_height",
+  );
+  assert.ok(heightRequirement);
+  mediumState = setFutureMeasurementInput({
+    state: mediumState,
+    requirement: heightRequirement!,
+    displayValue: 180,
+  });
+  mediumState = reconcileFutureMeasurementState({
+    state: mediumState,
+    plan: mediumPlan,
+  });
+  let pendingCalcRenderer!: ReturnType<typeof create>;
+  act(() => {
+    pendingCalcRenderer = create(
+      createElement(DormantFutureMeasurementStep, {
+        plan: mediumPlan,
+        state: mediumState,
+        physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+        onChange: () => undefined,
+        onRouteChange: () => undefined,
+        onBack: () => undefined,
+        onContinue: () => undefined,
+      }),
+    );
+  });
+  const pendingNode = pendingCalcRenderer.root.findByProps({
+    "data-measurement-calculated-pending": "true",
+  });
+  const waitingOn = String(pendingNode.props["data-measurement-calculated-waiting-on"] || "");
+  assert.ok(waitingOn.length > 0, "pending calc lists remaining required manuals");
+  assert.equal(waitingOn.includes("Total Height"), false);
+  assert.ok(headingText(pendingNode).includes("Waiting on:"));
+  assert.ok(
+    pendingCalcRenderer.root.findAll(
+      (node) => node.props?.["data-measurement-calculated-value"] === "pending",
+    ).length > 0,
+  );
+}
+
+console.log("PASS: measurement calculated-from-height pending remaining manuals");

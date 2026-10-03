@@ -20,8 +20,10 @@ import {
   criticalRiskUnavailableCopy,
   FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE,
   fromCanonicalCentimetres,
+  getEnteredMeasurementValue,
   getRequiredAlternativeGroupId,
   getResolvedMeasurementValue,
+  isRequiredAlternativeGroupSatisfied,
   getSampleClothCustomerLabel,
   getSampleClothFieldInstruction,
   getSampleClothProductionEquivalentCm,
@@ -106,12 +108,44 @@ const ROUTES: ReadonlyArray<{
 
 const CALCULATED_FROM_HEIGHT_LABEL = "Calculated from height";
 const CALCULATED_FROM_HEIGHT_DESCRIPTION =
-  "These values fill in from Total Height once the required measurements are complete.";
+  "These values fill in from Total Height after every required measurement for this garment is entered — not from height alone.";
 const IF_APPLICABLE_LABEL = "If applicable";
 const RANGE_RECHECK_MESSAGE = "Please recheck this measurement.";
 const DRESS_CONDITIONAL_MEASUREMENT_ID_SET = new Set<string>(
   DRESS_CONDITIONAL_MEASUREMENT_IDS,
 );
+
+const listRemainingRequiredMeasurementLabels = (
+  requirements: readonly PlannedMeasurementRequirement[],
+  state: FutureMeasurementStateV1,
+): string[] => {
+  const labels: string[] = [];
+  for (const requirement of requirements) {
+    if (!requirement.directInput) continue;
+    const value = getEnteredMeasurementValue(state.entered, requirement);
+    if (
+      state.invalidInputKeys.includes(requirement.key) ||
+      !value ||
+      !Number.isFinite(value.valueCm) ||
+      value.valueCm <= 0
+    ) {
+      labels.push(requirement.definition.customerLabel);
+    }
+  }
+  for (const members of collectRequiredAlternativeGroups(requirements).values()) {
+    if (
+      isRequiredAlternativeGroupSatisfied({
+        members,
+        entered: state.entered,
+        invalidInputKeys: state.invalidInputKeys,
+      })
+    ) {
+      continue;
+    }
+    labels.push(members.map((member) => member.definition.customerLabel).join(" or "));
+  }
+  return labels;
+};
 
 type MeasurementSectionKind = "required" | "calculated" | "optional";
 
@@ -283,7 +317,9 @@ const MeasurementField = ({
             className="flex min-h-11 w-full min-w-0 items-center rounded-xl border border-heritage-green/15 bg-heritage-cream/50 px-3 pr-14 text-sm text-heritage-ink"
             data-measurement-calculated-value={stored ? String(displayValue) : "pending"}
           >
-            {stored ? displayValue : null}
+            {stored ? displayValue : (
+              <span className="text-heritage-ink/45">Pending</span>
+            )}
           </span>
           <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-bold text-heritage-ink/50">
             {state.unit === "inch" ? "in" : "cm"}
@@ -352,6 +388,7 @@ const MeasurementSection = ({
   section,
   sampleMode,
   occurrenceLabels,
+  pendingRequiredLabels = [],
 }: {
   title: string;
   description: string;
@@ -361,6 +398,7 @@ const MeasurementSection = ({
   section: MeasurementSectionKind;
   sampleMode: boolean;
   occurrenceLabels: ReadonlyMap<string, { conciseLabel: string }>;
+  pendingRequiredLabels?: readonly string[];
 }) => {
   const sharedRequirements = requirements.filter(
     (requirement) =>
@@ -428,6 +466,15 @@ const MeasurementSection = ({
             )}
           </div>
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">{description}</p>
+          {section === "calculated" && pendingRequiredLabels.length > 0 && (
+            <p
+              data-measurement-calculated-pending="true"
+              data-measurement-calculated-waiting-on={pendingRequiredLabels.join("|")}
+              className="mt-2 text-sm leading-relaxed text-heritage-ink/70"
+            >
+              Waiting on: {pendingRequiredLabels.join(", ")}.
+            </p>
+          )}
         </div>
       </div>
       {sharedRequirements.length > 0 && (
@@ -732,6 +779,10 @@ export const DormantFutureMeasurementStep = ({
   );
   const visibleOptionalRequirements = visibleRequirements.filter(
     (requirement) => requirement.inputSource === "optional_manual",
+  );
+  const remainingRequiredLabelsForCalc = listRemainingRequiredMeasurementLabels(
+    visibleRequiredRequirements,
+    resolvedState,
   );
   const selectedGarmentLabel = formatGarmentLabel(
     occurrenceLabels,
@@ -1272,7 +1323,7 @@ export const DormantFutureMeasurementStep = ({
             ? MEASUREMENT_SAMPLE_CLOTH_REQUIRED_DESCRIPTION
             : selectedRoute === "low_risk"
             ? "Enter each of these measurements. They are not calculated from height."
-            : "Enter these measurements. The remaining values for this garment are calculated from Total Height."
+            : "Enter every required measurement for this garment. Calculated values appear only after this list is complete — height alone is not enough."
         }
         requirements={visibleRequiredRequirements}
         state={resolvedState}
@@ -1293,6 +1344,7 @@ export const DormantFutureMeasurementStep = ({
           section="calculated"
           sampleMode={false}
           occurrenceLabels={occurrenceLabels}
+          pendingRequiredLabels={remainingRequiredLabelsForCalc}
         />
       )}
 

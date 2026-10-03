@@ -212,7 +212,11 @@ assert.equal(
     ?.props["data-measurement-field"],
   "total_height",
 );
-assert.match(collectText(renderer.root), /These values fill in from Total Height once the required measurements are complete/);
+assert.match(
+  collectText(renderer.root),
+  /These values fill in from Total Height after every required measurement for this garment is entered/,
+);
+assert.match(collectText(renderer.root), /Waiting on:/);
 assert.equal(collectText(renderer.root).includes("Complete the required measurements to calculate this value"), false);
 assert.match(collectText(renderer.root), /Calculated from height/);
 
