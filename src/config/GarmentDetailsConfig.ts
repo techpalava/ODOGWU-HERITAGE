@@ -742,7 +742,7 @@ export const SEED_CUSTOM_DETAIL_CATALOG: CustomDetailOption[] = [
   },
 {
     id: "dress_pocket_multi",
-    label: "With Pocket(s)",
+    label: "With 2 Pocket(s)",
     description: "Specify the number and preferred position of the pockets.",
     priceCents: 0,
     garmentGroup: "dress",
