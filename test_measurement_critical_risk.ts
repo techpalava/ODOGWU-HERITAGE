@@ -8,6 +8,7 @@ import {
 import type {
   AdditionalGarmentConstructionStateV1,
   CustomDetailSelectionGroup,
+  GarmentScopedCustomDetailsStateV1,
   GarmentTypeStepSelection,
 } from "./src/types";
 import {
@@ -140,7 +141,7 @@ assert.equal(
     profile: profileById.B,
     constructionOptionId: "shirt_std_midlong",
   }),
-  false,
+  true,
 );
 assert.equal(
   isCriticalRiskCompleteSetCalculable({
@@ -161,7 +162,8 @@ assert.equal(
     profile: profileById.D,
     constructionOptionId: null,
   }),
-  false,
+  true,
+  "Critical defaults unresolved mid/long sleeve groups to the factored long sleeve even without a construction map.",
 );
 assert.equal(
   isCriticalRiskCompleteSetCalculable({
@@ -181,28 +183,36 @@ assert.equal(
     profile: profileById.E,
     constructionOptionId: "dress_std_short",
   }),
+  true,
+);
+assert.equal(
+  isCriticalRiskCompleteSetCalculable({
+    profile: profileById.E,
+    constructionOptionId: "dress_std_sleeveless",
+  }),
   false,
+  "Sleeveless finish still cannot be Critical Risk without an approved factor.",
 );
 assert.equal(
   isCriticalRiskCompleteSetCalculable({
     profile: profileById.F,
     constructionOptionId: "dress_std_midlong",
   }),
-  false,
+  true,
 );
 assert.equal(
   isCriticalRiskCompleteSetCalculable({
     profile: profileById.G,
     constructionOptionId: "dress_long_short",
   }),
-  false,
+  true,
 );
 assert.equal(
   isCriticalRiskCompleteSetCalculable({
     profile: profileById.H,
     constructionOptionId: "dress_long_midlong",
   }),
-  false,
+  true,
 );
 assert.equal(
   isCriticalRiskCompleteSetCalculable({
@@ -252,13 +262,13 @@ const support = (
   });
 
 assert.equal(support(shirtA, [garment("base:shirt", "shirt")]), true);
-assert.equal(support(shirtB, [garment("base:shirt", "shirt")]), false);
+assert.equal(support(shirtB, [garment("base:shirt", "shirt")]), true);
 assert.equal(support(shirtC, [garment("base:shirt", "shirt")]), true);
 assert.equal(support(shirtD, [garment("base:shirt", "shirt")]), true);
-assert.equal(support(dressE, [garment("base:dress", "dress")]), false);
-assert.equal(support(dressF, [garment("base:dress", "dress")]), false);
-assert.equal(support(dressG, [garment("base:dress", "dress")]), false);
-assert.equal(support(dressH, [garment("base:dress", "dress")]), false);
+assert.equal(support(dressE, [garment("base:dress", "dress")]), true);
+assert.equal(support(dressF, [garment("base:dress", "dress")]), true);
+assert.equal(support(dressG, [garment("base:dress", "dress")]), true);
+assert.equal(support(dressH, [garment("base:dress", "dress")]), true);
 assert.equal(support(trouserI, [garment("base:trouser", "trouser")]), true);
 assert.equal(support(nikkaJ, [garment("base:standard_shorts", "standard_shorts")]), true);
 assert.equal(support(bumK, [garment("base:bum_shorts", "bum_shorts")]), true);
@@ -305,12 +315,14 @@ const planCritical = (
   garmentTypeSelection: GarmentTypeStepSelection,
   physicalGarments: Array<{ garmentKey: string; garmentType: GarmentTypeStepSelection["garmentTypes"][number] }>,
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1,
+  garmentScopedCustomDetails?: GarmentScopedCustomDetailsStateV1,
 ) =>
   planMeasurementRequirements({
     route: "critical_risk",
     garmentTypeSelection,
     physicalGarments,
     additionalGarmentConstructions,
+    garmentScopedCustomDetails,
   });
 
 const supportedPlan = planCritical(shirtA, [garment("base:shirt", "shirt")]);
@@ -540,9 +552,144 @@ trouserCriticalState = reconcileFutureMeasurementState({
 assert.equal(trouserCriticalState.calculationStatus, "complete");
 assert.equal(isFutureSummaryUnlockedByMeasurements(trouserCriticalState), true);
 
-const unsupportedPlan = planCritical(shirtB, [garment("base:shirt", "shirt")]);
+const midLongShirtCriticalPlan = planCritical(shirtB, [garment("base:shirt", "shirt")]);
+assert.equal(midLongShirtCriticalPlan.criticalRiskSupported, true);
+assert.deepEqual(midLongShirtCriticalPlan.criticalRiskBlockingGarmentKeys, []);
+assert.equal(midLongShirtCriticalPlan.canCalculate, true);
+assert.ok(
+  midLongShirtCriticalPlan.requirements.some(
+    (requirement) =>
+      requirement.measurementId === "sleeve_length_long" &&
+      requirement.inputSource === "calculated_average_factor",
+  ),
+);
+assert.equal(
+  midLongShirtCriticalPlan.requirements.some(
+    (requirement) => requirement.measurementId === "sleeve_length_mid",
+  ),
+  false,
+);
+let midLongShirtCriticalState = createEmptyFutureMeasurementState("critical_risk", "cm");
+midLongShirtCriticalState = setFutureMeasurementInput({
+  state: midLongShirtCriticalState,
+  requirement: midLongShirtCriticalPlan.requirements.find((requirement) => requirement.directInput)!,
+  displayValue: 180,
+});
+midLongShirtCriticalState = reconcileFutureMeasurementState({
+  state: midLongShirtCriticalState,
+  plan: midLongShirtCriticalPlan,
+});
+assert.equal(midLongShirtCriticalState.calculationStatus, "complete");
+assert.equal(isFutureSummaryUnlockedByMeasurements(midLongShirtCriticalState), true);
+assert.ok(
+  midLongShirtCriticalState.derived.byGarmentKey["base:shirt"]?.sleeve_length_long,
+);
+
+for (const [label, selection] of [
+  ["F", dressF],
+  ["H", dressH],
+] as const) {
+  const dressCriticalPlan = planCritical(selection, [garment("base:dress", "dress")]);
+  assert.equal(dressCriticalPlan.criticalRiskSupported, true, `${label} Critical supported`);
+  assert.ok(
+    dressCriticalPlan.requirements.some(
+      (requirement) =>
+        requirement.measurementId === "sleeve_length_long" &&
+        requirement.inputSource === "calculated_average_factor",
+    ),
+    `${label} Critical calculates long sleeve`,
+  );
+  assert.equal(
+    dressCriticalPlan.requirements.some(
+      (requirement) => requirement.measurementId === "sleeve_length_mid",
+    ),
+    false,
+    `${label} Critical omits mid sleeve`,
+  );
+  let dressCriticalState = createEmptyFutureMeasurementState("critical_risk", "cm");
+  dressCriticalState = setFutureMeasurementInput({
+    state: dressCriticalState,
+    requirement: dressCriticalPlan.requirements.find((requirement) => requirement.directInput)!,
+    displayValue: 180,
+  });
+  dressCriticalState = reconcileFutureMeasurementState({
+    state: dressCriticalState,
+    plan: dressCriticalPlan,
+  });
+  assert.equal(dressCriticalState.calculationStatus, "complete", `${label} Critical completes`);
+}
+
+const squareNeckDetails: GarmentScopedCustomDetailsStateV1 = {
+  schemaVersion: 1,
+  selectionsByGarmentKey: {
+    "base:dress": { neck_design: "neck_no_u" },
+  },
+  snapshotsByGarmentKey: {},
+};
+const roundNeckDetails: GarmentScopedCustomDetailsStateV1 = {
+  schemaVersion: 1,
+  selectionsByGarmentKey: {
+    "base:dress": { neck_design: "neck_no_round" },
+  },
+  snapshotsByGarmentKey: {},
+};
+assert.equal(
+  isCriticalRiskCompleteSetCalculable({
+    profile: profileById.E,
+    constructionOptionId: "dress_std_short",
+    selectedOptionIds: ["neck_no_u"],
+  }),
+  true,
+  "Proven square-neck must not disable Critical complete-set calculability",
+);
+for (const [label, details] of [
+  ["square neck", squareNeckDetails],
+  ["round neck", roundNeckDetails],
+] as const) {
+  const dressSquareCriticalPlan = planCritical(
+    dressE,
+    [garment("base:dress", "dress")],
+    undefined,
+    details,
+  );
+  assert.equal(
+    dressSquareCriticalPlan.criticalRiskSupported,
+    true,
+    `Dress Critical stays supported with ${label} Custom Details`,
+  );
+  assert.equal(
+    dressSquareCriticalPlan.requirements.some((requirement) =>
+      ["square_neck_length", "square_neck_width", "under_bust_circumference", "hip_circumference", "shoulder_to_under_bust_length"].includes(
+        requirement.measurementId,
+      ),
+    ),
+    false,
+    `Dress Critical omits IF-APPLICABLE rows when ${label} is selected`,
+  );
+  let dressSquareState = createEmptyFutureMeasurementState("critical_risk", "cm");
+  dressSquareState = setFutureMeasurementInput({
+    state: dressSquareState,
+    requirement: dressSquareCriticalPlan.requirements.find((requirement) => requirement.directInput)!,
+    displayValue: 180,
+  });
+  dressSquareState = reconcileFutureMeasurementState({
+    state: dressSquareState,
+    plan: dressSquareCriticalPlan,
+  });
+  assert.equal(
+    dressSquareState.calculationStatus,
+    "complete",
+    `Dress Critical completes with height alone when ${label} is selected`,
+  );
+  assert.equal(isFutureSummaryUnlockedByMeasurements(dressSquareState), true);
+}
+
+const sleevelessDress = selectionFor(["dress"], "female", {
+  dress: construction("dress", "dress_std_sleeveless", "dress_construction"),
+});
+const unsupportedPlan = planCritical(sleevelessDress, [garment("base:dress", "dress")]);
 assert.equal(unsupportedPlan.criticalRiskSupported, false);
-assert.deepEqual(unsupportedPlan.criticalRiskBlockingGarmentKeys, ["base:shirt"]);
+assert.deepEqual(unsupportedPlan.criticalRiskBlockingGarmentKeys, ["base:dress"]);
 assert.deepEqual(supportedPlan.criticalRiskBlockingGarmentKeys, []);
 assert.equal(unsupportedPlan.canCalculate, false);
 assert.equal(unsupportedPlan.requirements.length, 0);
