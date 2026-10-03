@@ -371,6 +371,21 @@ assert.equal(
   new Set(seedOptionIds).size,
   "no duplicate Custom Detail option ID is introduced",
 );
+const dressPocketMulti = SEED_CUSTOM_DETAIL_CATALOG.find(
+  (option) => option.id === "dress_pocket_multi",
+);
+assert.equal(
+  dressPocketMulti?.label,
+  "With 2 Pocket(s)",
+  "dress multi-pocket option must show With 2 Pocket(s)",
+);
+assert.equal(
+  SEED_CUSTOM_DETAIL_CATALOG.some(
+    (option) => option.label === "With Pocket(s)",
+  ),
+  false,
+  "seed catalogue must not use the ambiguous With Pocket(s) label",
+);
 assert.equal(
   expectedOptionIdsByGroup.skirt_length.includes("shorts_std_rope_elastic") ||
     expectedOptionIdsByGroup.skirt_length.includes("bum_rope_elastic") ||
