@@ -941,10 +941,10 @@ assert.deepEqual(
     garmentKey: "base:full_length_gown",
     garmentType: "full_length_gown",
     label: "Long Dress",
-    construction: ["dress_long_short"],
+    construction: ["dress_long_sleeveless"],
     constructionTotalCents: 7500,
   }],
-  "Candidate projection must retain the exact Step 1 Long Dress title and its €75 short-sleeve construction.",
+  "Candidate projection must retain the exact Step 1 Long Dress title and its €75 sleeveless construction.",
 );
 
 const distinctSkirtPairInput = buildInput({
