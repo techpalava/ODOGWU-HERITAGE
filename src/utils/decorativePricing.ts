@@ -628,6 +628,85 @@ export const clearDecorativeFeaturesForGarment = (
 ): DesignSelections =>
   setDecorativeFeaturesForGarment(selections, garmentKey, []);
 
+export const getGarmentKeysForDecorativeFeature = (
+  selections: DesignSelections | null | undefined,
+  feature: DecorativeFeature,
+): string[] => {
+  if (!selections) return [];
+  if (hasGarmentScopedDecorativeFeatureSelections(selections)) {
+    return Object.entries(selections.decorativeFeaturesByGarmentKey || {})
+      .filter(([, features]) => features.includes(feature))
+      .map(([garmentKey]) => garmentKey)
+      .sort((left, right) => left.localeCompare(right));
+  }
+  return (selections.decorativeFeatures || []).includes(feature)
+    ? ["order"]
+    : [];
+};
+
+export const setDecorativeFeatureGarmentAssignment = (
+  selections: DesignSelections,
+  feature: DecorativeFeature,
+  garmentKey: string,
+  assigned: boolean,
+): DesignSelections => {
+  const current = new Set(getDecorativeFeaturesForGarment(selections, garmentKey));
+  if (assigned) current.add(feature);
+  else current.delete(feature);
+  return setDecorativeFeaturesForGarment(selections, garmentKey, [...current]);
+};
+
+export const clearDecorativeFeatureAcrossGarments = (
+  selections: DesignSelections,
+  feature: DecorativeFeature,
+): DesignSelections => {
+  if (!hasGarmentScopedDecorativeFeatureSelections(selections)) {
+    const remaining = sortDecorativeFeatures(
+      (selections.decorativeFeatures || []).filter((entry) => entry !== feature),
+    );
+    return {
+      ...selections,
+      decorativeFeatures: remaining,
+      monogramPlacement:
+        feature === "Name Monogram" || !remaining.includes("Name Monogram")
+          ? undefined
+          : selections.monogramPlacement,
+      decorativeFeaturesByGarmentKey: {},
+      monogramPlacementByGarmentKey: {},
+    };
+  }
+  let next = selections;
+  getGarmentKeysForDecorativeFeature(selections, feature).forEach((garmentKey) => {
+    next = setDecorativeFeatureGarmentAssignment(
+      next,
+      feature,
+      garmentKey,
+      false,
+    );
+  });
+  return next;
+};
+
+export const clearAllDecorativeFeatures = (
+  selections: DesignSelections,
+): DesignSelections => ({
+  ...selections,
+  decorativeFeatures: [],
+  monogramPlacement: undefined,
+  decorativeFeaturesByGarmentKey: {},
+  monogramPlacementByGarmentKey: {},
+});
+
+export const formatDecorativeFeatureQuantityPriceLabel = (
+  unitPrice: number,
+  quantity: number,
+): string => {
+  if (quantity <= 0) {
+    return `+${PRICING_CURRENCY_SYMBOL}${unitPrice.toFixed(2)} per garment`;
+  }
+  return `${quantity} × ${PRICING_CURRENCY_SYMBOL}${unitPrice.toFixed(2)}`;
+};
+
 export const setMonogramPlacementForGarment = (
   selections: DesignSelections,
   garmentKey: string,
