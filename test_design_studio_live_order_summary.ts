@@ -1870,6 +1870,9 @@ const personalizedAdditions = buildAuthority({
   fabricByGarment: { shirt: fabricA },
   measurementRoute: "low_risk",
   designSelections: {
+    decorativeFeaturesByGarmentKey: {
+      "base:shirt": ["Name Monogram", "Embroidery", "Monogram Trimming"],
+    },
     decorativeFeatures: ["Name Monogram", "Embroidery", "Monogram Trimming"],
     accessories: ["Traditional Hat"],
   },
@@ -1926,12 +1929,24 @@ assert.deepEqual(
     amountLabel,
   })),
   [
-    { label: "Monogram", detail: "Name Monogram", amountLabel: "€12.00" },
-    { label: "Monogram", detail: "Monogram Trimming", amountLabel: "€12.00" },
-    { label: "Embroidery Design", detail: "Embroidery", amountLabel: "€12.00" },
+    {
+      label: "Monogram",
+      detail: "Standard Shirt: Name Monogram",
+      amountLabel: "1 × €12.00",
+    },
+    {
+      label: "Monogram",
+      detail: "Standard Shirt: Monogram Trimming",
+      amountLabel: "1 × €12.00",
+    },
+    {
+      label: "Embroidery Design",
+      detail: "Standard Shirt: Embroidery",
+      amountLabel: "1 × €12.00",
+    },
     { label: "Accessories", detail: "Traditional Hat", amountLabel: "€12.00" },
   ],
-  "the existing order-level pricing projection supplies selected Step 5 values without new arithmetic",
+  "garment-scoped embroidery/monogram lines show garment attribution and 1 × unit price",
 );
 assert.equal(personalizedSection.editStage, "personalized_additions");
 assert.equal(

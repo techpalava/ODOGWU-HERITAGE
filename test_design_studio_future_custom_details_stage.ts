@@ -35,6 +35,7 @@ import {
 } from "./src/utils/additionalGarmentConstructionState";
 import type {
   DecorativeFeature,
+  DesignSelections,
   DesignStudioStageId,
   FabricGarmentAssignment,
 } from "./src/types";
@@ -258,13 +259,25 @@ const createNeckStep = ({
   constructionBreakdown = { status: "complete" as const, rows: [] },
   constructionSubtotal = 0,
   orderLevelCustomDetailsPrice = 0,
-  onDecorativeFeatureToggle = () => undefined,
+  designSelections = {},
+  onDecorativeFeatureEnable = () => undefined,
+  onDecorativeFeatureDisable = () => undefined,
+  onDecorativeFeatureGarmentAssign = () => undefined,
+  onClearDecorativeFeatures = () => undefined,
 }: {
   stage?: "custom_details" | "personalized_additions";
   constructionBreakdown?: Parameters<typeof DormantFutureCustomDetailsStep>[0]["constructionBreakdown"];
   constructionSubtotal?: number | null;
   orderLevelCustomDetailsPrice?: number;
-  onDecorativeFeatureToggle?: (feature: DecorativeFeature) => void;
+  designSelections?: DesignSelections;
+  onDecorativeFeatureEnable?: (feature: DecorativeFeature) => void;
+  onDecorativeFeatureDisable?: (feature: DecorativeFeature) => void;
+  onDecorativeFeatureGarmentAssign?: (
+    feature: DecorativeFeature,
+    garmentKey: string,
+    assigned: boolean,
+  ) => void;
+  onClearDecorativeFeatures?: () => void;
 } = {}) =>
   createElement(DormantFutureCustomDetailsStep, {
     stage,
@@ -276,7 +289,7 @@ const createNeckStep = ({
     orderLevelCustomDetailsPrice,
     constructionBreakdown,
     constructionSubtotal,
-    designSelections: {},
+    designSelections,
     selectedStyle: null,
     additionalGarments: [],
     additionalGarmentConstructionOptions: [],
@@ -322,8 +335,10 @@ const createNeckStep = ({
         }).state,
       );
     },
-    onDecorativeFeatureToggle,
-    onClearDecorativeFeatures: () => undefined,
+    onDecorativeFeatureEnable,
+    onDecorativeFeatureDisable,
+    onDecorativeFeatureGarmentAssign,
+    onClearDecorativeFeatures,
     onMonogramPlacementChange: () => undefined,
     onAccessoryToggle: () => undefined,
     onClearAccessories: () => undefined,
@@ -375,50 +390,166 @@ assert.match(
   "Personalized Additional must span the available Custom Details width",
 );
 
-const selectableDecorativeEvents: DecorativeFeature[] = [];
+const enabledDecorativeFeatures: DecorativeFeature[] = [];
+const assignedDecorativeEvents: Array<{
+  feature: DecorativeFeature;
+  garmentKey: string;
+  assigned: boolean;
+}> = [];
+let selectableDecorativeSelections: DesignSelections = {};
 let selectableDecorativeRenderer!: ReturnType<typeof create>;
+const renderSelectableDecorativeStep = () =>
+  createNeckStep({
+    stage: "personalized_additions",
+    designSelections: selectableDecorativeSelections,
+    onDecorativeFeatureEnable: (feature) => {
+      enabledDecorativeFeatures.push(feature);
+    },
+    onDecorativeFeatureGarmentAssign: (feature, garmentKey, assigned) => {
+      assignedDecorativeEvents.push({ feature, garmentKey, assigned });
+      const byGarment = {
+        ...(selectableDecorativeSelections.decorativeFeaturesByGarmentKey || {}),
+      };
+      const current = new Set(byGarment[garmentKey] || []);
+      if (assigned) current.add(feature);
+      else current.delete(feature);
+      if (current.size === 0) delete byGarment[garmentKey];
+      else byGarment[garmentKey] = [...current] as DecorativeFeature[];
+      selectableDecorativeSelections = {
+        ...selectableDecorativeSelections,
+        decorativeFeaturesByGarmentKey: byGarment,
+      };
+      act(() => {
+        selectableDecorativeRenderer.update(renderSelectableDecorativeStep());
+      });
+    },
+  });
 act(() => {
-  selectableDecorativeRenderer = create(
-    createNeckStep({
-      stage: "personalized_additions",
-      onDecorativeFeatureToggle: (feature) => {
-        selectableDecorativeEvents.push(feature);
-      },
-    }),
-  );
+  selectableDecorativeRenderer = create(renderSelectableDecorativeStep());
 });
+assert.equal(
+  selectableDecorativeRenderer.root.findAllByProps({
+    "data-custom-detail-section": "monogram-embroidery",
+  }).length,
+  1,
+  "Step 5 renders one Monogram and Embroidery section",
+);
+assert.equal(
+  selectableDecorativeRenderer.root.findAll(
+    (node) =>
+      Boolean(
+        node.props &&
+          typeof node.props === "object" &&
+          typeof node.props["data-decorative-garment-assign"] === "string",
+      ),
+  ).length,
+  0,
+  "Garment assignment panels stay collapsed until a feature is selected",
+);
 for (const feature of [
   "Name Monogram",
   "Embroidery",
   "Monogram Trimming",
 ] as const) {
-  const card = selectableDecorativeRenderer.root
-    .findAllByType("label")
-    .find((label) =>
-      textContent(label).includes(feature) &&
-      label.findAllByType("input").some(
-        (input) => input.props.type === "checkbox",
+  const card = selectableDecorativeRenderer.root.find(
+    (node) =>
+      Boolean(
+        node.props &&
+          typeof node.props === "object" &&
+          node.props["data-decorative-feature"] === feature,
       ),
-    );
+  );
   assert.ok(card, `${feature} renders as a Step 5 customer option`);
-  const checkbox = card.findByType("input");
-  assert.equal(
-    checkbox.props.disabled,
-    undefined,
-    `${feature} remains selectable when selected Design Style metadata is absent`,
-  );
-  assert.doesNotMatch(
+  assert.match(
     textContent(card),
-    /Not available for the current design\./,
+    /per garment/,
+    `${feature} shows unit price as per-garment until garments are assigned`,
   );
+  const featureCheckbox = card
+    .findAllByType("input")
+    .find((input) => input.props.type === "checkbox");
+  assert.ok(featureCheckbox, `${feature} has an enable checkbox`);
   act(() => {
-    checkbox.props.onChange();
+    featureCheckbox!.props.onChange({
+      target: { checked: true },
+    });
   });
 }
 assert.deepEqual(
-  selectableDecorativeEvents,
+  enabledDecorativeFeatures,
   ["Name Monogram", "Embroidery", "Monogram Trimming"],
-  "Step 5 forwards every customer decorative selection without a Design Style availability gate",
+  "Step 5 enables features without requiring an immediate garment choice",
+);
+const monogramAssignPanel = selectableDecorativeRenderer.root.findByProps({
+  "data-decorative-garment-assign": "Name Monogram",
+});
+assert.match(
+  textContent(monogramAssignPanel),
+  /Assign to garments/,
+  "Selecting a feature reveals the garment assignment panel",
+);
+const garmentAssignRows = monogramAssignPanel.findAll(
+  (node) =>
+    Boolean(
+      node.props &&
+        typeof node.props === "object" &&
+        typeof node.props["data-decorative-garment"] === "string",
+    ),
+);
+assert.ok(
+  garmentAssignRows.length > 0,
+  "Garment assignment checkboxes render for active garments",
+);
+if (garmentAssignRows.length > 1) {
+  assert.match(
+    textContent(monogramAssignPanel),
+    /Select which garments this applies to/,
+    "Multi-garment orders prompt for garment assignment after feature selection",
+  );
+}
+const firstGarmentKey = String(
+  garmentAssignRows[0].props["data-decorative-garment"],
+);
+const garmentAssignCheckbox = garmentAssignRows[0]
+  .findAllByType("input")
+  .find((input) => input.props.type === "checkbox");
+assert.ok(garmentAssignCheckbox, "Garment assignment checkbox renders");
+act(() => {
+  garmentAssignCheckbox!.props.onChange({
+    target: { checked: true },
+  });
+});
+assert.deepEqual(
+  assignedDecorativeEvents,
+  [{ feature: "Name Monogram", garmentKey: firstGarmentKey, assigned: true }],
+  "Assigning a garment scopes the selected feature to that garment",
+);
+act(() => {
+  selectableDecorativeRenderer.update(
+    createNeckStep({
+      stage: "personalized_additions",
+      designSelections: {
+        decorativeFeaturesByGarmentKey: {
+          [firstGarmentKey]: ["Name Monogram"],
+          "base:kaftan": ["Name Monogram"],
+        },
+      },
+    }),
+  );
+});
+assert.match(
+  textContent(
+    selectableDecorativeRenderer.root.find(
+      (node) =>
+        Boolean(
+          node.props &&
+            typeof node.props === "object" &&
+            node.props["data-decorative-feature"] === "Name Monogram",
+        ),
+    ),
+  ),
+  /2 × €12\.00/,
+  "Feature price label shows N × unit price when multiple garments are assigned",
 );
 act(() => selectableDecorativeRenderer.unmount());
 
@@ -637,7 +768,9 @@ act(() => {
       },
       onToggleMultiSelect: () => undefined,
       onPersonalizedTextChange: () => undefined,
-      onDecorativeFeatureToggle: () => undefined,
+      onDecorativeFeatureEnable: () => undefined,
+      onDecorativeFeatureDisable: () => undefined,
+      onDecorativeFeatureGarmentAssign: () => undefined,
       onClearDecorativeFeatures: () => undefined,
       onMonogramPlacementChange: () => undefined,
       onAccessoryToggle: () => undefined,
@@ -925,7 +1058,9 @@ const renderFutureCustomDetailsStage = ({
       },
       onToggleMultiSelect: () => undefined,
       onPersonalizedTextChange: () => undefined,
-      onDecorativeFeatureToggle: () => undefined,
+      onDecorativeFeatureEnable: () => undefined,
+      onDecorativeFeatureDisable: () => undefined,
+      onDecorativeFeatureGarmentAssign: () => undefined,
       onClearDecorativeFeatures: () => undefined,
       onMonogramPlacementChange: () => undefined,
       onAccessoryToggle: () => undefined,
@@ -1730,7 +1865,9 @@ act(() => {
       onConstructionSelect: () => undefined,
       onToggleMultiSelect: () => undefined,
       onPersonalizedTextChange: () => undefined,
-      onDecorativeFeatureToggle: () => undefined,
+      onDecorativeFeatureEnable: () => undefined,
+      onDecorativeFeatureDisable: () => undefined,
+      onDecorativeFeatureGarmentAssign: () => undefined,
       onClearDecorativeFeatures: () => undefined,
       onMonogramPlacementChange: () => undefined,
       onAccessoryToggle: () => undefined,
@@ -1825,7 +1962,9 @@ act(() => {
       onConstructionSelect: () => undefined,
       onToggleMultiSelect: () => undefined,
       onPersonalizedTextChange: () => undefined,
-      onDecorativeFeatureToggle: () => undefined,
+      onDecorativeFeatureEnable: () => undefined,
+      onDecorativeFeatureDisable: () => undefined,
+      onDecorativeFeatureGarmentAssign: () => undefined,
       onClearDecorativeFeatures: () => undefined,
       onMonogramPlacementChange: () => undefined,
       onAccessoryToggle: () => undefined,
@@ -2375,7 +2514,9 @@ const additionalStepProps = {
   onConstructionSelect: () => undefined,
   onToggleMultiSelect: () => undefined,
   onPersonalizedTextChange: () => undefined,
-  onDecorativeFeatureToggle: () => undefined,
+  onDecorativeFeatureEnable: () => undefined,
+      onDecorativeFeatureDisable: () => undefined,
+      onDecorativeFeatureGarmentAssign: () => undefined,
   onClearDecorativeFeatures: () => undefined,
   onMonogramPlacementChange: () => undefined,
   onAccessoryToggle: () => undefined,

@@ -663,7 +663,11 @@ const mapCustomDetails = ({
         occurrence,
       ]);
     });
-  const scopedGroups = [...grouped.entries()]
+  const scopedGroups: Array<{
+    garmentKey: string;
+    garmentLabel: string;
+    occurrences: FutureSummaryCustomDetailOccurrence[];
+  }> = [...grouped.entries()]
     .sort(
       ([left], [right]) =>
         (subjectOrder.get(left) ?? Number.MAX_SAFE_INTEGER) -
@@ -675,8 +679,68 @@ const mapCustomDetails = ({
       garmentLabel: occurrences[0]?.garmentLabel || "Garment",
       occurrences,
     }));
+  const garmentScopedDecorativeOccurrences = (
+    basePricing?.decorativeFeatures || []
+  ).filter(
+    (item) =>
+      Boolean(item.garmentKey) &&
+      item.garmentKey !== "order" &&
+      !item.includedByStyle,
+  );
+  garmentScopedDecorativeOccurrences.forEach((item) => {
+    const garmentKey = item.garmentKey as string;
+    const subject = subjectByKey.get(garmentKey);
+    const parentSubject = subject
+      ? subject
+      : customDetailsReconciliation.subjects.find(
+          (candidate) => candidate.parentGarmentKey === garmentKey,
+        );
+    const garmentLabel = parentSubject
+      ? getPhysicalSubjectLabel(
+          parentSubject.parentGarmentType,
+          parentSubject.parentGarmentType,
+        )
+      : garmentKey;
+    const occurrence: FutureSummaryCustomDetailOccurrence = {
+      occurrenceKey: `${garmentKey}:decorative:${item.label}`,
+      garmentKey,
+      garmentLabel,
+      selectionGroup: "order_optional_detail",
+      selectionGroupTitle: "Monogram and Embroidery",
+      optionId: item.label,
+      optionLabel: item.label,
+      priceStatus: "exact",
+      priceCents: Math.round(item.price * 100),
+      personalizedText: null,
+    };
+    const existingIndex = scopedGroups.findIndex(
+      (group) => group.garmentKey === garmentKey,
+    );
+    if (existingIndex >= 0) {
+      scopedGroups[existingIndex] = {
+        ...scopedGroups[existingIndex],
+        occurrences: [
+          ...scopedGroups[existingIndex].occurrences,
+          occurrence,
+        ],
+      };
+      return;
+    }
+    scopedGroups.push({
+      garmentKey,
+      garmentLabel,
+      occurrences: [occurrence],
+    });
+  });
+  const orderLevelDecorativeFeatures = (
+    basePricing?.decorativeFeatures || []
+  ).filter(
+    (item) =>
+      !item.includedByStyle &&
+      (!item.garmentKey || item.garmentKey === "order"),
+  );
   const orderLevelOccurrences: FutureSummaryCustomDetailOccurrence[] = [
-    ...(basePricing?.decorativeFeatures || []),
+    ...orderLevelDecorativeFeatures,
     ...(basePricing?.traditionalAccessories || []),
   ].map((item, index) => ({
     occurrenceKey: `order-detail:${index + 1}:${item.label}`,
