@@ -3,6 +3,8 @@ import type { HttpRequest, HttpResponse } from "./httpTypes.js";
 import { parseFutureOrderMasterOrderV2 } from "../utils/futureOrderV2Storage.js";
 
 const MINIMUM_EUR_CENTS = 50;
+export const FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES = ["card", "ideal"] as const;
+const IDEAL_IDEMPOTENCY_SUFFIX = ":ideal";
 
 export interface FutureOrderV2StripePaymentIntentInput {
   readonly amountCents: number;
@@ -13,6 +15,7 @@ export interface FutureOrderV2StripePaymentIntentInput {
 export interface FutureOrderV2StripePaymentIntent {
   readonly id: string;
   readonly clientSecret: string | null;
+  readonly paymentMethodTypes: readonly string[];
 }
 
 export interface FutureOrderV2StripePaymentDependencies {
@@ -57,32 +60,75 @@ export const readStripeTestPublishableKey = (
 
 let stripeTestClient: Stripe | null = null;
 
-/** One test PaymentIntent for the reviewed euro total. The payment reference is the idempotency key. */
-export const createFutureOrderV2StripeTestPaymentIntent = async (
-  input: FutureOrderV2StripePaymentIntentInput,
-): Promise<FutureOrderV2StripePaymentIntent> => {
+const getStripeTestClient = (): Stripe => {
   const key = (process.env.STRIPE_SECRET_KEY ?? "").trim();
   if (!key.startsWith("sk_test_")) {
     throw new Error("Stripe test payments are not configured.");
   }
   if (!stripeTestClient) stripeTestClient = new Stripe(key);
-  const paymentIntent = await stripeTestClient.paymentIntents.create(
-    {
-      amount: input.amountCents,
-      currency: "eur",
-      payment_method_types: ["card"],
-      metadata: {
-        orderId: input.orderId,
-        paymentReference: input.paymentReference,
-        stage: "Design Studio V2",
-      },
-    },
-    { idempotencyKey: input.paymentReference },
+  return stripeTestClient;
+};
+
+const paymentIntentSupportsIdeal = (
+  types: readonly string[] | null | undefined,
+): boolean => (types ?? []).includes("ideal");
+
+const isIdempotencyConflict = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") return false;
+  const typed = error as { type?: unknown; code?: unknown; message?: unknown };
+  return (
+    typed.type === "idempotency_error" ||
+    typed.code === "idempotency_key_in_use" ||
+    (typeof typed.message === "string" &&
+      /idempotenc/i.test(typed.message))
   );
-  return {
-    id: paymentIntent.id,
-    clientSecret: paymentIntent.client_secret,
+};
+
+const mapPaymentIntent = (
+  paymentIntent: Stripe.PaymentIntent,
+): FutureOrderV2StripePaymentIntent => ({
+  id: paymentIntent.id,
+  clientSecret: paymentIntent.client_secret,
+  paymentMethodTypes:
+    paymentIntent.payment_method_types ?? [...FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES],
+});
+
+/** One test PaymentIntent for the reviewed euro total. The payment reference is the idempotency key. */
+export const createFutureOrderV2StripeTestPaymentIntent = async (
+  input: FutureOrderV2StripePaymentIntentInput,
+): Promise<FutureOrderV2StripePaymentIntent> => {
+  const stripe = getStripeTestClient();
+  const createParams: Stripe.PaymentIntentCreateParams = {
+    amount: input.amountCents,
+    currency: "eur",
+    payment_method_types: [...FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES],
+    metadata: {
+      orderId: input.orderId,
+      paymentReference: input.paymentReference,
+      stage: "Design Studio V2",
+    },
   };
+
+  const createOnce = (idempotencyKey: string) =>
+    stripe.paymentIntents.create(createParams, { idempotencyKey });
+
+  try {
+    const paymentIntent = await createOnce(input.paymentReference);
+    if (paymentIntentSupportsIdeal(paymentIntent.payment_method_types)) {
+      return mapPaymentIntent(paymentIntent);
+    }
+    // Older card-only PI reused via idempotency — mint a card+iDEAL intent.
+    const upgraded = await createOnce(
+      `${input.paymentReference}${IDEAL_IDEMPOTENCY_SUFFIX}`,
+    );
+    return mapPaymentIntent(upgraded);
+  } catch (error) {
+    if (!isIdempotencyConflict(error)) throw error;
+    const upgraded = await createOnce(
+      `${input.paymentReference}${IDEAL_IDEMPOTENCY_SUFFIX}`,
+    );
+    return mapPaymentIntent(upgraded);
+  }
 };
 
 export const handleFutureOrderV2StripeConfig = (
@@ -176,6 +222,8 @@ export const handleFutureOrderV2StripePayment = async (
     return setNoStore(res).status(200).json({
       paymentIntentId: paymentIntent.id,
       clientSecret: paymentIntent.clientSecret,
+      paymentMethodTypes:
+        paymentIntent.paymentMethodTypes ?? [...FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES],
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Stripe error";

@@ -139,6 +139,7 @@ import { collection, onSnapshot, deleteDoc, doc, setDoc, serverTimestamp } from 
 import { db } from "../services/firebase";
 import {
   FUTURE_ORDER_V2_PAYMENT_COLLECTION,
+  getFutureOrderV2ProviderTransactionId,
   parseFutureOrderV2PaymentRecord,
   type FutureOrderV2PaymentRecord,
 } from "../utils/futureOrderV2PaymentRecord";
@@ -1486,7 +1487,10 @@ export default function DatabaseView({
         v2History.value.orderId,
         v2History.value.customer?.fullName,
         v2History.value.customer?.email,
-        futureOrderV2PaymentsByOrderId.get(v2History.value.orderId)?.paymentIntentId ?? "",
+        (() => {
+          const paid = futureOrderV2PaymentsByOrderId.get(v2History.value.orderId);
+          return paid ? getFutureOrderV2ProviderTransactionId(paid) : "";
+        })(),
         ...v2History.value.occurrences.flatMap((occurrence) => [
           occurrence.garmentLabel,
           occurrence.style.kind === "catalogue"

@@ -31,13 +31,14 @@ export const FutureOrderV2AdminPaymentCell = ({
       </span>
       <p className="text-[10px] text-gray-500">on {payment.paidOnLabel}</p>
       <a
-        href={payment.stripeUrl}
+        href={payment.providerUrl}
         target="_blank"
         rel="noreferrer"
         data-future-order-v2-stripe-link={orderId}
+        data-future-order-v2-provider={payment.providerLabel.toLowerCase()}
         className="block break-all font-mono text-[10px] text-heritage-green underline"
       >
-        {payment.paymentIntentId}
+        {payment.providerLabel}: {payment.paymentIntentId}
       </a>
     </div>
   );

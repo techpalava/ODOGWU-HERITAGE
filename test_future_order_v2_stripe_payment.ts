@@ -8,7 +8,7 @@ import type { HttpResponse } from "./src/server/httpTypes";
 import {
   authorizeFutureOrderV2Payment,
   readFutureOrderV2ReviewedTotalCents,
-  registerFutureOrderV2CardConfirmer,
+  registerFutureOrderV2PaymentConfirmer,
 } from "./src/utils/futureOrderV2Payment";
 import { createFutureOrderV2PreparationAttempt } from "./src/utils/futureOrderV2Preparation";
 import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
@@ -68,7 +68,11 @@ const response = () => {
       readSecretKey: () => "sk_live_example",
       async createPaymentIntent() {
         charged = true;
-        return { id: "pi_live_blocked", clientSecret: "secret" };
+        return {
+          id: "pi_live_blocked",
+          clientSecret: "secret",
+          paymentMethodTypes: ["card", "ideal"],
+        };
       },
     },
   );
@@ -98,6 +102,7 @@ const response = () => {
         return {
           id: "pi_test_reviewed",
           clientSecret: "pi_test_reviewed_secret_abc",
+          paymentMethodTypes: ["card", "ideal"],
         };
       },
     },
@@ -111,6 +116,7 @@ const response = () => {
   assert.deepEqual(state.body, {
     paymentIntentId: "pi_test_reviewed",
     clientSecret: "pi_test_reviewed_secret_abc",
+    paymentMethodTypes: ["card", "ideal"],
   });
 }
 
@@ -136,7 +142,11 @@ const response = () => {
       readSecretKey: () => "sk_test_example",
       async createPaymentIntent() {
         charged = true;
-        return { id: "pi_test_blocked", clientSecret: "secret" };
+        return {
+          id: "pi_test_blocked",
+          clientSecret: "secret",
+          paymentMethodTypes: ["card", "ideal"],
+        };
       },
     },
   );
@@ -171,9 +181,23 @@ assert.ok(paymentRouteStart >= 0 && paymentRouteEnd > paymentRouteStart);
 assert.equal(paymentRoute.includes("amount / 2"), false);
 const stripeSource = readFileSync("src/server/futureOrderV2StripePayment.ts", "utf8");
 assert.match(stripeSource, /currency: "eur"/);
-assert.match(stripeSource, /idempotencyKey: input\.paymentReference/);
-assert.equal(readFileSync("api/future-order-v2/payment-intent.ts", "utf8").includes("handleFutureOrderV2StripePayment"), true);
-assert.equal(readFileSync("api/future-order-v2/stripe-config.ts", "utf8").includes("handleFutureOrderV2StripeConfig"), true);
+assert.match(stripeSource, /createOnce\(input\.paymentReference\)/);
+assert.match(stripeSource, /payment_method_types: \[\.\.\.FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES\]/);
+assert.match(
+  stripeSource,
+  /FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES = \["card", "ideal"\]/,
+);
+assert.equal(stripeSource.includes('"paypal"'), false);
+assert.match(stripeSource, /IDEAL_IDEMPOTENCY_SUFFIX/);
+assert.match(stripeSource, /idempotencyKey/);
+const paymentIntentApi = readFileSync("api/future-order-v2/payment-intent.ts", "utf8");
+assert.equal(paymentIntentApi.includes("handleFutureOrderV2StripePayment"), true);
+assert.equal(paymentIntentApi.includes("handleFutureOrderV2StripeConfig"), true);
+const stripeCardSource = readFileSync("src/components/FutureOrderV2StripeCard.tsx", "utf8");
+assert.match(stripeCardSource, /confirmIdealPayment/);
+assert.match(stripeCardSource, /data-future-order-v2-method-ideal/);
+assert.equal(stripeCardSource.includes("confirmPayPalPayment"), false);
+assert.equal(stripeCardSource.includes("data-future-order-v2-method-paypal"), false);
 
 const originalFetch = globalThis.fetch;
 let postedAmount = false;
@@ -184,12 +208,14 @@ globalThis.fetch = async (_url, init) => {
     JSON.stringify({
       paymentIntentId: "pi_test_reviewed",
       clientSecret: "pi_test_reviewed_secret_abc",
+      paymentMethodTypes: ["card", "ideal"],
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
 };
-registerFutureOrderV2CardConfirmer(async (clientSecret) => {
+registerFutureOrderV2PaymentConfirmer(async (clientSecret, context) => {
   assert.equal(clientSecret, "pi_test_reviewed_secret_abc");
+  assert.deepEqual(context.paymentMethodTypes, ["card", "ideal"]);
   return { status: "confirmed", paymentIntentId: "pi_test_reviewed" };
 });
 try {
@@ -204,16 +230,42 @@ try {
   assert.equal(authorized.providerTransactionReference, "pi_test_reviewed");
   assert.equal(postedAmount, false);
 } finally {
-  registerFutureOrderV2CardConfirmer(null);
+  registerFutureOrderV2PaymentConfirmer(null);
   globalThis.fetch = originalFetch;
 }
 
-const missingCard = await authorizeFutureOrderV2Payment({
+globalThis.fetch = async () =>
+  new Response(
+    JSON.stringify({
+      paymentIntentId: "pi_test_ideal",
+      clientSecret: "pi_test_ideal_secret",
+      paymentMethodTypes: ["card", "ideal"],
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+registerFutureOrderV2PaymentConfirmer(async () => ({ status: "redirecting" }));
+try {
+  const redirecting = await authorizeFutureOrderV2Payment({
+    orderId: prepared.orderId,
+    cartItemId: prepared.cartItemId,
+    paymentReference,
+    masterOrder: prepared.masterOrder,
+  });
+  assert.equal(redirecting.status, "redirecting");
+} finally {
+  registerFutureOrderV2PaymentConfirmer(null);
+  globalThis.fetch = originalFetch;
+}
+
+const missingMethod = await authorizeFutureOrderV2Payment({
   orderId: prepared.orderId,
   cartItemId: prepared.cartItemId,
   paymentReference,
   masterOrder: prepared.masterOrder,
 });
-assert.equal(missingCard.status, "failed");
+assert.equal(missingMethod.status, "failed");
+if (missingMethod.status === "failed") {
+  assert.match(missingMethod.message, /payment method/i);
+}
 
 console.log("PASS: Design Studio V2 charges the reviewed euro total through Stripe");

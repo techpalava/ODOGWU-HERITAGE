@@ -17,6 +17,7 @@ import type { DesignStudioStageId } from "../types";
 import {
   type FutureOrderCandidateV2,
 } from "../utils/futureOrderCandidate";
+import type { FutureOrderV2PaymentMethod } from "../utils/futureOrderV2Payment";
 import {
   FUTURE_ORDER_NOT_SUBMITTED_MESSAGE,
   FUTURE_PAYMENT_UNAVAILABLE_MESSAGE,
@@ -24,6 +25,7 @@ import {
   FUTURE_ORDER_V2_PAYMENT_READY_MESSAGE,
   FUTURE_ORDER_V2_PAY_HEADING,
   FUTURE_ORDER_V2_PAY_READY_MESSAGE,
+  FUTURE_ORDER_V2_REDIRECTING_MESSAGE,
   getFuturePaymentReviewAiStatusLabel,
   getFuturePaymentReviewContentBlockers,
   getFuturePaymentReviewContentStatusLabel,
@@ -628,7 +630,8 @@ export const DormantFuturePaymentReviewStep = ({
   const preparationIsComplete = preparation?.status === "prepared";
   const payment: FutureOrderV2PaymentPresentation | null =
     "payment" in result ? result.payment : null;
-  const paymentIsProcessing = payment?.status === "processing";
+  const paymentIsProcessing =
+    payment?.status === "processing" || payment?.status === "redirecting";
   const paymentIsAuthorized = payment?.status === "authorized";
   const paymentIsRecording =
     payment?.status === "authorized" && Boolean(payment.recording);
@@ -638,12 +641,16 @@ export const DormantFuturePaymentReviewStep = ({
     candidate?.pricing.status === "exact" ? candidate.pricing.exactTotalCents : null;
   const payLabel = preparationIsPending
     ? "Saving your order..."
-    : paymentIsProcessing
+    : payment?.status === "redirecting"
+      ? "Continuing to your bank..."
+      : paymentIsProcessing
       ? "Processing payment..."
       : reviewedTotalCents === null
         ? "Pay"
         : `Pay ${moneyFromCents(reviewedTotalCents)}`;
-  const [stripeCardReady, setStripeCardReady] = useState(false);
+  const [stripePaymentReady, setStripePaymentReady] = useState(false);
+  const [paymentMethod, setPaymentMethod] =
+    useState<FutureOrderV2PaymentMethod>("card");
   const confirmedHeadingRef = useRef<HTMLHeadingElement>(null);
   const paymentIsConfirmed = payment?.status === "confirmed";
   useEffect(() => {
@@ -656,8 +663,10 @@ export const DormantFuturePaymentReviewStep = ({
         : payment.recording
           ? "Payment received. Saving it to your order..."
           : `Payment received. Reference: ${payment.providerTransactionReference}.`
+      : payment?.status === "redirecting"
+        ? FUTURE_ORDER_V2_REDIRECTING_MESSAGE
       : payment?.status === "processing"
-        ? "Processing your card payment..."
+        ? "Processing your payment..."
         : preparationIsPending
             ? "Saving your order..."
             : preparation?.status === "authentication_required" ||
@@ -1216,28 +1225,43 @@ export const DormantFuturePaymentReviewStep = ({
                 Authentication and a verified payment provider will be required before real payment can begin.
               </p>
             )}
-            {v2Payable && !paymentIsAuthorized && (
+            {v2Payable && !paymentIsAuthorized && payment?.status !== "redirecting" && (
               <>
                 <FutureOrderV2StripeCard
                   disabled={payIsBusy}
-                  onReadyChange={setStripeCardReady}
+                  orderId={
+                    preparation?.status === "prepared" ? preparation.orderId : ""
+                  }
+                  returnSurface="design-studio"
+                  onReadyChange={setStripePaymentReady}
+                  onMethodChange={setPaymentMethod}
                 />
                 {payment?.status === "failed" && (
                   <FutureOrderV2PaymentAlert message={payment.message} />
                 )}
-                <button
-                  type="button"
-                  data-future-order-v2-pay
-                  disabled={!isReviewable || payIsBusy || !stripeCardReady}
-                  aria-busy={payIsBusy}
-                  aria-describedby="future-payment-pending-explanation"
-                  onClick={onPay}
-                  className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white sm:w-auto"
-                >
-                  <LockKeyhole aria-hidden="true" size={14} />
-                  {payLabel}
-                </button>
+                {(paymentMethod === "card" || paymentMethod === "ideal") && (
+                  <button
+                    type="button"
+                    data-future-order-v2-pay
+                    disabled={!isReviewable || payIsBusy || !stripePaymentReady}
+                    aria-busy={payIsBusy}
+                    aria-describedby="future-payment-pending-explanation"
+                    onClick={onPay}
+                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white sm:w-auto"
+                  >
+                    <LockKeyhole aria-hidden="true" size={14} />
+                    {payLabel}
+                  </button>
+                )}
               </>
+            )}
+            {payment?.status === "redirecting" && (
+              <p
+                data-future-order-v2-ideal-redirecting
+                className="mt-4 text-sm leading-relaxed text-white/85"
+              >
+                {FUTURE_ORDER_V2_REDIRECTING_MESSAGE}
+              </p>
             )}
             {paymentIsRecording && (
               <button

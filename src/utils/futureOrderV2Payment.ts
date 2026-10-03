@@ -4,6 +4,8 @@ import type { FutureOrderV2PreparationAttempt } from "./futureOrderV2Preparation
 import type { Batch } from "../types";
 import { getRetainedCommunityBatchEligibilityBlocker } from "./futureOrderCandidate";
 
+export type FutureOrderV2PaymentMethod = "card" | "ideal";
+
 export interface FutureOrderV2PaymentAttempt {
   readonly orderId: string;
   readonly cartItemId: string;
@@ -18,6 +20,7 @@ export type FutureOrderV2PaymentPreparationResult =
 
 export type FutureOrderV2PaymentAuthorizationResult =
   | { readonly status: "authorized"; readonly providerTransactionReference: string }
+  | { readonly status: "redirecting" }
   | { readonly status: "failed"; readonly message: string };
 
 export type FutureOrderV2PaymentEligibilityResult =
@@ -51,6 +54,10 @@ export type FutureOrderV2PaymentOutcome =
       readonly status: "authorized";
       readonly attempt: FutureOrderV2PaymentAttempt;
       readonly providerTransactionReference: string;
+    }
+  | {
+      readonly status: "redirecting";
+      readonly attempt: FutureOrderV2PaymentAttempt;
     }
   | {
       readonly status: "failed";
@@ -124,13 +131,17 @@ export const executeFutureOrderV2Payment = async ({
 
   try {
     const result = await authorize(payment.attempt);
-    return result.status === "authorized"
-      ? {
-          status: "authorized",
-          attempt: payment.attempt,
-          providerTransactionReference: result.providerTransactionReference,
-        }
-      : { status: "failed", attempt: payment.attempt, message: result.message };
+    if (result.status === "authorized") {
+      return {
+        status: "authorized",
+        attempt: payment.attempt,
+        providerTransactionReference: result.providerTransactionReference,
+      };
+    }
+    if (result.status === "redirecting") {
+      return { status: "redirecting", attempt: payment.attempt };
+    }
+    return { status: "failed", attempt: payment.attempt, message: result.message };
   } catch {
     return {
       status: "failed",
@@ -140,21 +151,41 @@ export const executeFutureOrderV2Payment = async ({
   }
 };
 
-export type FutureOrderV2CardConfirmation =
+export type FutureOrderV2PaymentConfirmation =
   | { readonly status: "confirmed"; readonly paymentIntentId: string }
+  | { readonly status: "redirecting" }
   | { readonly status: "failed"; readonly message: string };
 
-/** Confirms the PaymentIntent client secret with the card entered in the browser. */
-export type FutureOrderV2CardConfirmer = (
+export interface FutureOrderV2PaymentConfirmContext {
+  readonly paymentIntentId: string;
+  readonly orderId: string;
+  readonly paymentMethodTypes: readonly string[];
+}
+
+/** Confirms the PaymentIntent client secret with the selected Stripe method. */
+export type FutureOrderV2PaymentConfirmer = (
   clientSecret: string,
-) => Promise<FutureOrderV2CardConfirmation>;
+  context: FutureOrderV2PaymentConfirmContext,
+) => Promise<FutureOrderV2PaymentConfirmation>;
 
-let cardConfirmer: FutureOrderV2CardConfirmer | null = null;
+/** @deprecated Use FutureOrderV2PaymentConfirmer. Kept for existing call sites/tests. */
+export type FutureOrderV2CardConfirmation = FutureOrderV2PaymentConfirmation;
+/** @deprecated Use FutureOrderV2PaymentConfirmer. */
+export type FutureOrderV2CardConfirmer = FutureOrderV2PaymentConfirmer;
 
-export const registerFutureOrderV2CardConfirmer = (
-  confirmer: FutureOrderV2CardConfirmer | null,
+let paymentConfirmer: FutureOrderV2PaymentConfirmer | null = null;
+
+export const registerFutureOrderV2PaymentConfirmer = (
+  confirmer: FutureOrderV2PaymentConfirmer | null,
 ): void => {
-  cardConfirmer = confirmer;
+  paymentConfirmer = confirmer;
+};
+
+/** @deprecated Prefer registerFutureOrderV2PaymentConfirmer. */
+export const registerFutureOrderV2CardConfirmer = (
+  confirmer: FutureOrderV2PaymentConfirmer | null,
+): void => {
+  registerFutureOrderV2PaymentConfirmer(confirmer);
 };
 
 const MINIMUM_CHARGE_CENTS = 50;
@@ -176,8 +207,9 @@ export const readFutureOrderV2ReviewedTotalCents = (
 
 /**
  * Creates one Stripe test PaymentIntent for the reviewed euro total, then
- * confirms the card in the browser. The payment reference is the idempotency
- * key, so a retry of the same prepared order cannot create a second charge.
+ * confirms the selected method in the browser. The payment reference is the
+ * idempotency key, so a retry of the same prepared order cannot create a
+ * second charge.
  */
 export const authorizeFutureOrderV2Payment = async (
   attempt: FutureOrderV2PaymentAttempt,
@@ -192,11 +224,11 @@ export const authorizeFutureOrderV2Payment = async (
       message: "The reviewed total is not ready to charge.",
     };
   }
-  const confirmer = cardConfirmer;
+  const confirmer = paymentConfirmer;
   if (!confirmer) {
     return {
       status: "failed",
-      message: "Enter the test card before authorizing this payment.",
+      message: "Choose a payment method before authorizing this payment.",
     };
   }
 
@@ -243,6 +275,15 @@ export const authorizeFutureOrderV2Payment = async (
     typeof payload.paymentIntentId === "string"
       ? payload.paymentIntentId
       : "";
+  const paymentMethodTypes =
+    payload &&
+    typeof payload === "object" &&
+    "paymentMethodTypes" in payload &&
+    Array.isArray(payload.paymentMethodTypes)
+      ? payload.paymentMethodTypes.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : [];
   if (!clientSecret || !paymentIntentId.startsWith("pi_")) {
     return {
       status: "failed",
@@ -251,14 +292,21 @@ export const authorizeFutureOrderV2Payment = async (
   }
 
   try {
-    const confirmed = await confirmer(clientSecret);
+    const confirmed = await confirmer(clientSecret, {
+      paymentIntentId,
+      orderId: attempt.orderId,
+      paymentMethodTypes,
+    });
+    if (confirmed.status === "redirecting") {
+      return { status: "redirecting" };
+    }
     if (confirmed.status !== "confirmed") {
       return { status: "failed", message: confirmed.message };
     }
     if (confirmed.paymentIntentId !== paymentIntentId) {
       return {
         status: "failed",
-        message: "The confirmed card does not match this payment.",
+        message: "The confirmed payment does not match this order.",
       };
     }
     return {
@@ -268,7 +316,7 @@ export const authorizeFutureOrderV2Payment = async (
   } catch {
     return {
       status: "failed",
-      message: "The card could not be confirmed. Retry this same order safely.",
+      message: "The payment could not be confirmed. Retry this same order safely.",
     };
   }
 };

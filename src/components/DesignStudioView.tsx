@@ -327,6 +327,11 @@ import {
   type FutureOrderV2PaymentAttempt,
 } from "../utils/futureOrderV2Payment";
 import { recordFutureOrderV2Payment } from "../services/futureOrderV2PaymentRecordClient";
+import {
+  resumeFutureOrderV2StripeReturn,
+  stashFutureOrderV2OpenOrderId,
+} from "../utils/futureOrderV2StripeReturn";
+import { loadStripe } from "@stripe/stripe-js";
 import { ensureCurrentAppVersion } from "../utils/appVersionCheck";
 import {
   persistFutureOrderV2,
@@ -6942,6 +6947,19 @@ export default function DesignStudioView({
       });
       return;
     }
+    if (outcome.status === "redirecting") {
+      setFuturePaymentReviewHandoff(
+        createFutureOrderV2PaymentReviewHandoff(
+          reviewed.candidate,
+          reviewed.preparation,
+          {
+            status: "redirecting",
+            paymentReference: outcome.attempt.paymentReference,
+          },
+        ),
+      );
+      return;
+    }
     setFuturePaymentReviewHandoff(
       createFutureOrderV2PaymentReviewHandoff(
         reviewed.candidate,
@@ -7047,6 +7065,51 @@ export default function DesignStudioView({
       providerTransactionReference: reviewed.payment.providerTransactionReference,
     });
   };
+  useEffect(() => {
+    let cancelled = false;
+    const resumeIdealReturn = async () => {
+      const search = window.location.search;
+      if (!search.includes("future_order_v2_stripe_return=1")) return;
+
+      const configResponse = await fetch("/api/future-order-v2/payment-intent");
+      const configPayload: unknown = await configResponse.json();
+      const publishableKey =
+        configResponse.ok &&
+        configPayload &&
+        typeof configPayload === "object" &&
+        "publishableKey" in configPayload &&
+        typeof configPayload.publishableKey === "string"
+          ? configPayload.publishableKey
+          : "";
+      if (!publishableKey.startsWith("pk_test_")) return;
+      const stripe = await loadStripe(publishableKey);
+      if (!stripe || cancelled) return;
+
+      const result = await resumeFutureOrderV2StripeReturn({
+        search,
+        retrievePaymentIntent: async (clientSecret) => {
+          const retrieved = await stripe.retrievePaymentIntent(clientSecret);
+          const paymentIntent = retrieved.paymentIntent;
+          return paymentIntent
+            ? { id: paymentIntent.id, status: paymentIntent.status }
+            : null;
+        },
+        record: (input) =>
+          (futureOrderV2TestHooks?.recordPayment ?? recordFutureOrderV2Payment)(
+            input,
+          ),
+      });
+      if (cancelled || result.status === "ignored") return;
+
+      // Bank redirect reloads the app; open the order on the dashboard.
+      if (result.orderId) stashFutureOrderV2OpenOrderId(result.orderId);
+      useAppStore.getState().setActiveTab("dashboard");
+    };
+    void resumeIdealReturn();
+    return () => {
+      cancelled = true;
+    };
+  }, [futureOrderV2TestHooks?.recordPayment]);
   useEffect(() => {
     futureOrderV2TestHooks?.onActions?.({
       seedPaymentReview: (handoff) => {
