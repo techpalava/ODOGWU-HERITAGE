@@ -168,7 +168,7 @@ export const MEASUREMENT_METHOD_ORDER = [
 
 export const MEASUREMENT_RISK_ROUTE_LABELS: Record<MeasurementRiskRoute, string> = {
   low_risk: "Low Risk",
-  medium_risk: "Mid Risk",
+  medium_risk: "Medium Risk",
   high_risk: "High Risk",
   critical_risk: "Critical Risk",
 };
@@ -1825,6 +1825,234 @@ export const isFutureSummaryUnlockedByMeasurements = (
     isSelectedMeasurementMethod(state?.route) &&
       state?.calculationStatus === "complete",
   );
+
+/** Customer-facing Measurement status when Continue is still locked. */
+export type MeasurementStepProgressPresentation = {
+  readonly statusLabel: string | null;
+  readonly statusMessage: string;
+  readonly blockedByAssignment: boolean;
+  readonly blockedByProfileSetup: boolean;
+};
+
+export type MeasurementGarmentChipKind =
+  | "assignment"
+  | "profile"
+  | "remaining"
+  | "shared"
+  | "done";
+
+export type MeasurementGarmentChipState = {
+  readonly garmentKey: string;
+  readonly kind: MeasurementGarmentChipKind;
+  readonly remainingCount: number;
+};
+
+export type MeasurementGarmentChipProjection = {
+  readonly chips: readonly MeasurementGarmentChipState[];
+  readonly sharedRemainingCount: number;
+  readonly nextIncompleteGarmentKey: string | null;
+};
+
+/**
+ * Per-garment chip progress for the Measurement picker. Shared required units
+ * are counted once separately so they do not mark every garment incomplete.
+ * Garment-specific complete + shared still open → kind "shared" (not Done).
+ */
+export const projectMeasurementGarmentChipStates = ({
+  garmentKeys,
+  requiredRequirements,
+  state,
+  unassignedGarmentKeys = [],
+  profilePendingGarmentKeys = [],
+}: {
+  garmentKeys: readonly string[];
+  requiredRequirements: readonly PlannedMeasurementRequirement[];
+  state: FutureMeasurementStateV1;
+  unassignedGarmentKeys?: readonly string[];
+  profilePendingGarmentKeys?: readonly string[];
+}): MeasurementGarmentChipProjection => {
+  const unassigned = new Set(unassignedGarmentKeys);
+  const profilePending = new Set(profilePendingGarmentKeys);
+  const sharedRequired = requiredRequirements.filter(
+    (requirement) =>
+      requirement.scope === "shared" &&
+      requirement.inputSource !== "calculated_average_factor",
+  );
+  const sharedRemainingCount = countRemainingRequiredMeasurementUnits({
+    requirements: sharedRequired,
+    entered: state.entered,
+    invalidInputKeys: state.invalidInputKeys,
+  });
+  const chips = garmentKeys.map((garmentKey): MeasurementGarmentChipState => {
+    if (unassigned.has(garmentKey)) {
+      return { garmentKey, kind: "assignment", remainingCount: 0 };
+    }
+    if (profilePending.has(garmentKey)) {
+      return { garmentKey, kind: "profile", remainingCount: 0 };
+    }
+    const garmentSpecific = requiredRequirements.filter(
+      (requirement) =>
+        requirement.garmentKey === garmentKey &&
+        requirement.scope !== "shared",
+    );
+    const remainingCount = countRemainingRequiredMeasurementUnits({
+      requirements: garmentSpecific,
+      entered: state.entered,
+      invalidInputKeys: state.invalidInputKeys,
+    });
+    if (remainingCount > 0) {
+      return { garmentKey, kind: "remaining", remainingCount };
+    }
+    if (sharedRemainingCount > 0) {
+      return { garmentKey, kind: "shared", remainingCount: 0 };
+    }
+    return { garmentKey, kind: "done", remainingCount: 0 };
+  });
+  const nextIncompleteGarmentKey =
+    chips.find((chip) => chip.kind === "remaining")?.garmentKey ??
+    (sharedRemainingCount > 0
+      ? chips.find((chip) => chip.kind === "shared")?.garmentKey ?? null
+      : null);
+  return { chips, sharedRemainingCount, nextIncompleteGarmentKey };
+};
+
+/**
+ * Pure status copy for the Measurement step. Distinguishes wearer assignment
+ * gaps from true profile-setup failures and never claims "saved" while the
+ * order-wide Continue gate is still locked.
+ */
+export const projectMeasurementStepProgressPresentation = ({
+  selectedMethod,
+  sampleSelected,
+  criticalRiskUnavailable,
+  criticalRiskBlockMessage,
+  activeWearerComplete,
+  orderComplete,
+  unassignedLabels,
+  profilePendingLabels,
+  remainingManualInputCount,
+  nextIncompleteGarmentLabel = null,
+  otherWearerIncompleteLabels = [],
+  emptyWearerLabels = [],
+  riskSelectionNotice,
+  sampleFormTitle,
+}: {
+  selectedMethod: MeasurementMethodId | null;
+  sampleSelected: boolean;
+  criticalRiskUnavailable: boolean;
+  criticalRiskBlockMessage: string;
+  activeWearerComplete: boolean;
+  orderComplete: boolean;
+  unassignedLabels: readonly string[];
+  profilePendingLabels: readonly string[];
+  remainingManualInputCount: number;
+  nextIncompleteGarmentLabel?: string | null;
+  otherWearerIncompleteLabels?: readonly string[];
+  emptyWearerLabels?: readonly string[];
+  riskSelectionNotice: string;
+  sampleFormTitle: string;
+}): MeasurementStepProgressPresentation => {
+  if (!selectedMethod) {
+    return {
+      statusLabel: null,
+      statusMessage: riskSelectionNotice,
+      blockedByAssignment: false,
+      blockedByProfileSetup: false,
+    };
+  }
+  if (criticalRiskUnavailable) {
+    return {
+      statusLabel: "Setup pending",
+      statusMessage: criticalRiskBlockMessage,
+      blockedByAssignment: false,
+      blockedByProfileSetup: true,
+    };
+  }
+  if (orderComplete) {
+    return {
+      statusLabel: sampleSelected ? sampleFormTitle : "Complete",
+      statusMessage: "All required measurements are saved.",
+      blockedByAssignment: false,
+      blockedByProfileSetup: false,
+    };
+  }
+  if (unassignedLabels.length > 0) {
+    const list = unassignedLabels.join(", ");
+    return {
+      statusLabel: "Assignment needed",
+      statusMessage:
+        unassignedLabels.length === 1
+          ? `Assign ${list} to a person before Summary unlocks.`
+          : `Assign these garments to a person before Summary unlocks: ${list}.`,
+      blockedByAssignment: true,
+      blockedByProfileSetup: false,
+    };
+  }
+  if (profilePendingLabels.length > 0) {
+    const list = profilePendingLabels.join(", ");
+    return {
+      statusLabel: "Setup pending",
+      statusMessage:
+        `${list} still need measurement setup for this profile, so Summary stays locked. Change or remove ${
+          profilePendingLabels.length === 1 ? "this garment" : "these garments"
+        } in earlier steps to continue.`,
+      blockedByAssignment: false,
+      blockedByProfileSetup: true,
+    };
+  }
+  if (remainingManualInputCount > 0) {
+    const base = `${remainingManualInputCount} required measurement${
+      remainingManualInputCount === 1 ? " remains" : "s remain"
+    }`;
+    return {
+      statusLabel: sampleSelected ? sampleFormTitle : "Incomplete",
+      statusMessage: nextIncompleteGarmentLabel
+        ? `${base} for ${nextIncompleteGarmentLabel}.`
+        : `${base}.`,
+      blockedByAssignment: false,
+      blockedByProfileSetup: false,
+    };
+  }
+  if (activeWearerComplete) {
+    if (emptyWearerLabels.length > 0) {
+      const list = emptyWearerLabels.join(", ");
+      return {
+        statusLabel: "Assignment needed",
+        statusMessage:
+          emptyWearerLabels.length === 1
+            ? `Assign garments to ${list}, or remove this person, before Summary unlocks.`
+            : `Assign garments to these people, or remove them, before Summary unlocks: ${list}.`,
+        blockedByAssignment: true,
+        blockedByProfileSetup: false,
+      };
+    }
+    if (otherWearerIncompleteLabels.length > 0) {
+      const list = otherWearerIncompleteLabels.join(", ");
+      return {
+        statusLabel: "Incomplete",
+        statusMessage:
+          otherWearerIncompleteLabels.length === 1
+            ? `Finish measurements for ${list} before Summary unlocks.`
+            : `Finish measurements for these people before Summary unlocks: ${list}.`,
+        blockedByAssignment: false,
+        blockedByProfileSetup: false,
+      };
+    }
+    return {
+      statusLabel: "Incomplete",
+      statusMessage:
+        "Finish measurements for every person and garment before Summary unlocks.",
+      blockedByAssignment: false,
+      blockedByProfileSetup: false,
+    };
+  }
+  return {
+    statusLabel: sampleSelected ? sampleFormTitle : "Incomplete",
+    statusMessage: "Review the measurements shown below before this step can be completed.",
+    blockedByAssignment: false,
+    blockedByProfileSetup: false,
+  };
+};
 
 const omitUnassignedEntered = (
   state: FutureMeasurementStateV1,

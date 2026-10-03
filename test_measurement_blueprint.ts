@@ -650,7 +650,7 @@ assert.equal(migratedLegacyManual?.entered.shared.neck_circumference?.valueCm, 3
 assert.deepEqual(
   normalizeFutureMeasurementState(JSON.parse(JSON.stringify(mediumState)))?.entered,
   mediumState.entered,
-  "Formula-pending Mid Risk inputs survive draft JSON persistence.",
+  "Formula-pending Medium Risk inputs survive draft JSON persistence.",
 );
 assert.deepEqual(
   normalizeFutureMeasurementState(JSON.parse(JSON.stringify(highState)))?.entered,
@@ -717,7 +717,7 @@ assert.equal(state.blueprintVersion, MEASUREMENT_BLUEPRINT_VERSION);
 
 assert.deepEqual(MEASUREMENT_RISK_ROUTE_LABELS, {
   low_risk: "Low Risk",
-  medium_risk: "Mid Risk",
+  medium_risk: "Medium Risk",
   high_risk: "High Risk",
   critical_risk: "Critical Risk",
 });
@@ -765,7 +765,7 @@ const lowOnlyField = lowPlan.requirements.find(
         candidate.measurementId === requirement.measurementId,
     ),
 );
-assert.ok(lowOnlyField, "Low Risk must require at least one field that Mid Risk does not.");
+assert.ok(lowOnlyField, "Low Risk must require at least one field that Medium Risk does not.");
 let switchedFromLow = setFutureMeasurementRoute(state, "medium_risk");
 assert.equal(
   getActiveFutureMeasurementEntered(switchedFromLow).shared[lowOnlyField.measurementId] === undefined &&
@@ -796,7 +796,7 @@ assert.equal(
     diagnostic.code === "required_measurement_missing",
   ),
   false,
-  "Low-only missing/present fields must not be required while Mid Risk is active.",
+  "Low-only missing/present fields must not be required while Medium Risk is active.",
 );
 assert.equal(switchedMediumReconciled.route, "medium_risk");
 
@@ -975,7 +975,7 @@ assert.equal(
   projectedMediumFromEnumOnly.entered.shared[lowOnlyField.measurementId] === undefined &&
     projectedMediumFromEnumOnly.entered.byGarmentKey[lowOnlyField.garmentKey || ""]?.[lowOnlyField.measurementId] === undefined,
   true,
-  "Inactive Low / No Risk values must not project as active Mid Risk measurements.",
+  "Inactive Low / No Risk values must not project as active Medium Risk measurements.",
 );
 const projectedLow = projectActiveFutureMeasurementState({
   state,

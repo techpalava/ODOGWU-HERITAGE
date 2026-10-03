@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Ruler, ShieldAlert } from "lucide-react";
 import { DesignStudioForwardButton, DesignStudioStepActions } from "./DesignStudioBackButton";
 import { DRESS_CONDITIONAL_MEASUREMENT_IDS } from "../config/MeasurementBlueprintConfig";
@@ -25,6 +25,7 @@ import {
   getSampleClothCustomerLabel,
   getSampleClothFieldInstruction,
   getSampleClothProductionEquivalentCm,
+  isFutureMeasurementStageComplete,
   isFutureSummaryUnlockedByMeasurements,
   isSampleClothMeasurementMethod,
   isSelectedMeasurementMethod,
@@ -36,11 +37,14 @@ import {
   MEASUREMENT_SAMPLE_CLOTH_LABEL,
   MEASUREMENT_SAMPLE_CLOTH_METHOD,
   MEASUREMENT_SAMPLE_CLOTH_REQUIRED_DESCRIPTION,
+  projectMeasurementGarmentChipStates,
   projectMeasurementRequirementsForPresentation,
+  projectMeasurementStepProgressPresentation,
   reconcileFutureMeasurementState,
   roundMeasurementDisplayValue,
   setFutureMeasurementInput,
   setFutureMeasurementUnit,
+  type MeasurementGarmentChipState,
   type MeasurementPhysicalGarment,
   type MeasurementRequirementPlan,
   type PlannedMeasurementRequirement,
@@ -50,9 +54,23 @@ interface DormantFutureMeasurementStepProps {
   plan: MeasurementRequirementPlan;
   state: FutureMeasurementStateV1;
   physicalGarments?: readonly MeasurementPhysicalGarment[];
+  /** Garments not yet assigned to a wearer; blocks order-wide Summary unlock. */
+  unassignedGarments?: readonly MeasurementPhysicalGarment[];
+  /** @deprecated Use unassignedGarments. */
   setupPendingGarments?: readonly MeasurementPhysicalGarment[];
   hydrationInvalid?: boolean;
   orderMeasurementsComplete?: boolean;
+  /** Other people still missing measurements (order-wide Continue gate). */
+  otherWearerIncompleteLabels?: readonly string[];
+  /** People with no garments assigned (order-wide Continue gate). */
+  emptyWearerLabels?: readonly string[];
+  /** Next person to finish when the active wearer is already complete. */
+  nextIncompleteWearer?: { wearerId: string; label: string } | null;
+  onGoToWearer?: (wearerId: string) => void;
+  /** Active person label for matching clarity (Person N / display name). */
+  activeWearerLabel?: string | null;
+  /** Garments assigned to the active person, for matching clarity. */
+  activeWearerGarmentLabels?: readonly string[];
   onChange: (state: FutureMeasurementStateV1) => void;
   onRouteChange: (route: MeasurementMethodId) => void;
   onBack: () => void;
@@ -475,9 +493,16 @@ export const DormantFutureMeasurementStep = ({
   plan,
   state,
   physicalGarments = [],
+  unassignedGarments,
   setupPendingGarments = [],
   hydrationInvalid = false,
   orderMeasurementsComplete,
+  otherWearerIncompleteLabels = [],
+  emptyWearerLabels = [],
+  nextIncompleteWearer = null,
+  onGoToWearer,
+  activeWearerLabel = null,
+  activeWearerGarmentLabels = [],
   onChange,
   onRouteChange,
   onBack,
@@ -487,6 +512,9 @@ export const DormantFutureMeasurementStep = ({
   const [pickedGarmentKey, setPickedGarmentKey] = useState<string | null>(
     state.activeGarmentKey ?? null,
   );
+  const [allowPendingChipSelection, setAllowPendingChipSelection] = useState(false);
+  const previousSelectedRemainingRef = useRef<number | null>(null);
+  const previousSharedRemainingRef = useRef<number | null>(null);
   const resolvedState = reconcileFutureMeasurementState({ state, plan });
   const selectedMethod = isSelectedMeasurementMethod(resolvedState.route)
     ? resolvedState.route
@@ -539,7 +567,9 @@ export const DormantFutureMeasurementStep = ({
       )
     : [];
   const measurableGarmentKeys = new Set(
-    presentationRequirements.map((requirement) => requirement.garmentKey),
+    presentationRequirements
+      .map((requirement) => requirement.garmentKey)
+      .filter((garmentKey): garmentKey is string => Boolean(garmentKey)),
   );
   const plannedGarmentKeys = new Set(
     [
@@ -547,24 +577,143 @@ export const DormantFutureMeasurementStep = ({
       ...resolvedState.diagnostics.map((diagnostic) => diagnostic.garmentKey),
     ].filter((garmentKey): garmentKey is string => Boolean(garmentKey)),
   );
+  const assignmentPendingGarments = unassignedGarments ?? setupPendingGarments;
+  const unassignedGarmentKeySet = new Set(
+    assignmentPendingGarments.map((garment) => garment.garmentKey),
+  );
   const measurementGarments = [
     ...physicalGarments.filter((garment) => plannedGarmentKeys.has(garment.garmentKey)),
-    ...setupPendingGarments.filter((garment) => !plannedGarmentKeys.has(garment.garmentKey)),
+    ...assignmentPendingGarments.filter(
+      (garment) => !plannedGarmentKeys.has(garment.garmentKey),
+    ),
   ];
-  const firstMeasurableGarmentKey =
+  const profilePendingGarmentKeys = measurementGarments
+    .filter(
+      (garment) =>
+        !unassignedGarmentKeySet.has(garment.garmentKey) &&
+        (
+          unsupportedGarments.some(
+            (diagnostic) => diagnostic.garmentKey === garment.garmentKey,
+          ) ||
+          !measurableGarmentKeys.has(garment.garmentKey)
+        ),
+    )
+    .map((garment) => garment.garmentKey);
+  const chipProjection = projectMeasurementGarmentChipStates({
+    garmentKeys: measurementGarments.map((garment) => garment.garmentKey),
+    requiredRequirements,
+    state: resolvedState,
+    unassignedGarmentKeys: [...unassignedGarmentKeySet],
+    profilePendingGarmentKeys,
+  });
+  const chipByGarmentKey = new Map(
+    chipProjection.chips.map((chip) => [chip.garmentKey, chip]),
+  );
+  const defaultGarmentKey =
+    chipProjection.chips.find((chip) => chip.kind === "remaining")?.garmentKey ??
+    (chipProjection.sharedRemainingCount > 0
+      ? chipProjection.chips.find((chip) => chip.kind === "shared")?.garmentKey
+      : null) ??
+    chipProjection.chips.find((chip) => chip.kind === "done")?.garmentKey ??
     measurementGarments.find((garment) => measurableGarmentKeys.has(garment.garmentKey))
       ?.garmentKey ??
-    measurementGarments[0]?.garmentKey ??
     null;
-  const selectedGarmentKey = measurementGarments.some(
-    (garment) => garment.garmentKey === pickedGarmentKey,
-  )
-    ? pickedGarmentKey
-    : firstMeasurableGarmentKey;
-  const selectedGarmentPending = Boolean(selectedGarmentKey) && (
-    unsupportedGarments.some((diagnostic) => diagnostic.garmentKey === selectedGarmentKey) ||
-    !measurableGarmentKeys.has(selectedGarmentKey)
+  const pickExists = Boolean(
+    pickedGarmentKey &&
+    measurementGarments.some((garment) => garment.garmentKey === pickedGarmentKey),
   );
+  const pickedChipState = pickExists && pickedGarmentKey
+    ? chipByGarmentKey.get(pickedGarmentKey) || null
+    : null;
+  const pickIsPending =
+    pickedChipState?.kind === "assignment" || pickedChipState?.kind === "profile";
+  const selectedGarmentKey =
+    pickExists && (!pickIsPending || allowPendingChipSelection)
+      ? pickedGarmentKey
+      : defaultGarmentKey;
+  const selectedChip: MeasurementGarmentChipState | null = selectedGarmentKey
+    ? chipByGarmentKey.get(selectedGarmentKey) || null
+    : null;
+  const selectedGarmentUnassigned = selectedChip?.kind === "assignment";
+  const selectedGarmentProfilePending = selectedChip?.kind === "profile";
+  const selectedGarmentPending =
+    selectedGarmentUnassigned || selectedGarmentProfilePending;
+  const projectionNextKey = chipProjection.nextIncompleteGarmentKey;
+  const projectionNextChip = projectionNextKey
+    ? chipByGarmentKey.get(projectionNextKey) || null
+    : null;
+  const nextIncompleteGarmentKey =
+    chipProjection.chips.find(
+      (chip) =>
+        chip.kind === "remaining" && chip.garmentKey !== selectedGarmentKey,
+    )?.garmentKey ??
+    (projectionNextChip?.kind === "remaining" ? projectionNextKey : null) ??
+    null;
+  const nextIncompleteGarmentLabel = nextIncompleteGarmentKey
+    ? formatGarmentLabel(
+        occurrenceLabels,
+        measurementGarments.find(
+          (garment) => garment.garmentKey === nextIncompleteGarmentKey,
+        )?.garmentType,
+        nextIncompleteGarmentKey,
+      )
+    : null;
+  const selectedGarmentRemaining =
+    selectedChip?.kind === "remaining"
+      ? selectedChip.remainingCount
+      : selectedChip?.kind === "done" || selectedChip?.kind === "shared"
+        ? 0
+        : null;
+  const selectGarmentKey = (garmentKey: string) => {
+    const chip = chipByGarmentKey.get(garmentKey);
+    const kind = chip?.kind || "profile";
+    previousSelectedRemainingRef.current =
+      kind === "remaining"
+        ? chip?.remainingCount ?? 0
+        : kind === "done" || kind === "shared"
+          ? 0
+          : null;
+    previousSharedRemainingRef.current = chipProjection.sharedRemainingCount;
+    setAllowPendingChipSelection(kind === "assignment" || kind === "profile");
+    setPickedGarmentKey(garmentKey);
+    if (state.activeGarmentKey !== garmentKey) {
+      onChange({ ...state, activeGarmentKey: garmentKey });
+    }
+  };
+  useEffect(() => {
+    const previousRemaining = previousSelectedRemainingRef.current;
+    const previousShared = previousSharedRemainingRef.current;
+    previousSelectedRemainingRef.current = selectedGarmentRemaining;
+    previousSharedRemainingRef.current = chipProjection.sharedRemainingCount;
+
+    const garmentJustCompleted =
+      selectedGarmentRemaining === 0 &&
+      previousRemaining !== null &&
+      previousRemaining > 0 &&
+      chipProjection.sharedRemainingCount === 0;
+    const sharedJustCompleted =
+      chipProjection.sharedRemainingCount === 0 &&
+      previousShared !== null &&
+      previousShared > 0 &&
+      (selectedChip?.kind === "done" || selectedChip?.kind === "shared");
+    if (!garmentJustCompleted && !sharedJustCompleted) return;
+    if (!nextIncompleteGarmentKey || nextIncompleteGarmentKey === selectedGarmentKey) {
+      return;
+    }
+    setAllowPendingChipSelection(false);
+    setPickedGarmentKey(nextIncompleteGarmentKey);
+    if (state.activeGarmentKey !== nextIncompleteGarmentKey) {
+      onChange({ ...state, activeGarmentKey: nextIncompleteGarmentKey });
+    }
+  }, [
+    selectedGarmentRemaining,
+    chipProjection.sharedRemainingCount,
+    nextIncompleteGarmentKey,
+    selectedGarmentKey,
+    selectedChip?.kind,
+    state,
+    onChange,
+  ]);
   const visibleRequirements = selectedGarmentKey
     ? presentationRequirements.filter(
         (requirement) =>
@@ -594,8 +743,7 @@ export const DormantFutureMeasurementStep = ({
         resolvedState.diagnostics
           .filter((diagnostic) =>
             diagnostic.code !== "measurement_profile_unmapped" &&
-            diagnostic.code !== "measurement_range_recheck" &&
-            (diagnostic.code !== "calculation_configuration_pending" || criticalRiskUnavailable)
+            diagnostic.code !== "measurement_range_recheck",
           )
           .map(getBlockerMessage),
       )]
@@ -605,41 +753,69 @@ export const DormantFutureMeasurementStep = ({
     (orderMeasurementsComplete !== undefined
       ? orderMeasurementsComplete
       : isFutureSummaryUnlockedByMeasurements(resolvedState));
-  const setupPendingLabels = measurementGarments
-    .filter((garment) => !measurableGarmentKeys.has(garment.garmentKey))
-    .map((garment) => formatGarmentLabel(
+  const activeWearerComplete = isFutureMeasurementStageComplete(resolvedState);
+  const unassignedLabels = assignmentPendingGarments.map((garment) =>
+    formatGarmentLabel(occurrenceLabels, garment.garmentType, garment.garmentKey),
+  );
+  const profilePendingLabels = profilePendingGarmentKeys.map((garmentKey) =>
+    formatGarmentLabel(
       occurrenceLabels,
-      garment.garmentType,
-      garment.garmentKey,
-    ));
-  const summaryBlockedBySetup =
-    setupPendingLabels.length > 0 &&
+      measurementGarments.find((garment) => garment.garmentKey === garmentKey)
+        ?.garmentType,
+      garmentKey,
+    ),
+  );
+  const statusNextGarmentLabel =
+    selectedChip?.kind === "remaining" && selectedGarmentLabel
+      ? selectedGarmentLabel
+      : nextIncompleteGarmentLabel ||
+        ((projectionNextChip?.kind === "shared" || projectionNextChip?.kind === "done") &&
+        projectionNextKey
+          ? formatGarmentLabel(
+              occurrenceLabels,
+              measurementGarments.find(
+                (garment) => garment.garmentKey === projectionNextKey,
+              )?.garmentType,
+              projectionNextKey,
+            )
+          : null);
+  const showGoToNextGarment =
     !canContinueToSummary &&
-    resolvedState.calculationStatus === "complete";
-  const routeSaveMessage = !selectedMethod
-    ? MEASUREMENT_RISK_SELECTION_NOTICE
-    : criticalRiskUnavailable
-      ? criticalRiskBlockMessage
-    : summaryBlockedBySetup
-      ? `${setupPendingLabels.join(", ")} cannot be measured for this profile, so Summary stays locked.`
-    : resolvedState.calculationStatus === "complete"
-      ? "All required measurements are saved."
-      : `${remainingManualInputCount} required measurement${remainingManualInputCount === 1 ? " remains" : "s remain"}.`;
-  const routeStatusLabel = sampleSelected
-    ? MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE
-    : summaryBlockedBySetup
-      ? "Setup pending"
-    : selectedMethod
-      ? getStatusLabel(
-          selectedMethod,
-          selectedMethod,
-          resolvedState.calculationStatus,
-        )
-      : null;
+    Boolean(nextIncompleteGarmentKey) &&
+    nextIncompleteGarmentKey !== selectedGarmentKey &&
+    (selectedChip?.kind === "done" || selectedGarmentPending);
+  const showGoToNextWearer =
+    !canContinueToSummary &&
+    activeWearerComplete &&
+    Boolean(nextIncompleteWearer?.wearerId) &&
+    Boolean(onGoToWearer);
+  const progressPresentation = projectMeasurementStepProgressPresentation({
+    selectedMethod,
+    sampleSelected,
+    criticalRiskUnavailable,
+    criticalRiskBlockMessage,
+    activeWearerComplete,
+    orderComplete: canContinueToSummary,
+    unassignedLabels,
+    profilePendingLabels,
+    remainingManualInputCount,
+    nextIncompleteGarmentLabel: statusNextGarmentLabel,
+    otherWearerIncompleteLabels,
+    emptyWearerLabels,
+    riskSelectionNotice: MEASUREMENT_RISK_SELECTION_NOTICE,
+    sampleFormTitle: MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE,
+  });
+  const routeSaveMessage = progressPresentation.statusMessage;
+  const routeStatusLabel = progressPresentation.statusLabel;
   const sampleStatus = getStatusLabel(
     MEASUREMENT_SAMPLE_CLOTH_METHOD,
     selectedMethod,
-    resolvedState.calculationStatus,
+    // Never show Complete on the sample chip while the order gate is locked.
+    canContinueToSummary && resolvedState.calculationStatus === "complete"
+      ? "complete"
+      : resolvedState.calculationStatus === "complete"
+        ? "incomplete"
+        : resolvedState.calculationStatus,
   );
 
   return (
@@ -651,6 +827,10 @@ export const DormantFutureMeasurementStep = ({
       data-measurement-risk-selected={selectedRoute || "none"}
       data-measurement-method-selected={selectedMethod || "none"}
       data-critical-risk-supported={criticalRiskSupported ? "true" : "false"}
+      data-measurement-order-complete={canContinueToSummary ? "true" : "false"}
+      data-measurement-blocked-by-assignment={
+        progressPresentation.blockedByAssignment ? "true" : "false"
+      }
       className="space-y-5 font-sans"
     >
       <header className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
@@ -679,6 +859,40 @@ export const DormantFutureMeasurementStep = ({
           Add the measurements needed for your selected garments. Your values stay
           consistent when you switch between inches and centimetres.
         </p>
+        {activeWearerLabel ? (
+          <div className="mt-5 space-y-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-heritage-gold">
+                Measuring for
+              </p>
+              <p
+                data-measurement-active-wearer={activeWearerLabel}
+                className="mt-1 font-serif text-xl font-bold text-heritage-green sm:text-2xl"
+              >
+                {activeWearerLabel}
+              </p>
+            </div>
+            <div data-measurement-active-garments="true">
+              {activeWearerGarmentLabels.length > 0 ? (
+                <div className="flex flex-wrap gap-2" role="list" aria-label={`Garments for ${activeWearerLabel}`}>
+                  {activeWearerGarmentLabels.map((label, index) => (
+                    <span
+                      key={`${label}:${index}`}
+                      role="listitem"
+                      className="inline-flex min-h-9 items-center rounded-lg border border-heritage-green/20 bg-heritage-cream/50 px-3 text-xs font-semibold text-heritage-green"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm leading-relaxed text-heritage-ink/70">
+                  No garments assigned to {activeWearerLabel} yet.
+                </p>
+              )}
+            </div>
+          </div>
+        ) : null}
       </header>
 
       <section
@@ -708,7 +922,12 @@ export const DormantFutureMeasurementStep = ({
               const status = getStatusLabel(
                 route.id,
                 selectedRoute,
-                resolvedState.calculationStatus,
+                // Keep option chips aligned with the order-wide Continue gate.
+                canContinueToSummary && resolvedState.calculationStatus === "complete"
+                  ? "complete"
+                  : resolvedState.calculationStatus === "complete"
+                    ? "incomplete"
+                    : resolvedState.calculationStatus,
               );
               return (
                 <label
@@ -865,6 +1084,18 @@ export const DormantFutureMeasurementStep = ({
             {completedManualInputCount} / {requiredUnitCount} saved
           </div>
         </div>
+        {showGoToNextWearer && nextIncompleteWearer && onGoToWearer && (
+          <div className="mt-4">
+            <button
+              type="button"
+              data-measurement-go-to-wearer={nextIncompleteWearer.wearerId}
+              onClick={() => onGoToWearer(nextIncompleteWearer.wearerId)}
+              className="inline-flex min-h-11 items-center justify-center rounded-xl border-2 border-heritage-green/75 bg-white px-4 text-xs font-bold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+            >
+              Go to {nextIncompleteWearer.label}
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
@@ -898,7 +1129,9 @@ export const DormantFutureMeasurementStep = ({
             Choose a garment
           </h3>
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">
-            Add the measurements for one garment at a time. Shared body measurements stay saved when you switch.
+            {activeWearerLabel
+              ? `Add measurements for one of ${activeWearerLabel}'s garments at a time. Shared body measurements stay saved when you switch.`
+              : "Add the measurements for one garment at a time. Shared body measurements stay saved when you switch."}
           </p>
           <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Choose a garment to measure">
             {measurementGarments.map((garment) => {
@@ -907,8 +1140,20 @@ export const DormantFutureMeasurementStep = ({
                 garment.garmentType,
                 garment.garmentKey,
               );
-              const pending = !measurableGarmentKeys.has(garment.garmentKey);
+              const chip = chipByGarmentKey.get(garment.garmentKey);
+              const kind = chip?.kind || "profile";
+              const pending = kind === "assignment" || kind === "profile";
               const selected = garment.garmentKey === selectedGarmentKey;
+              const badgeLabel =
+                kind === "assignment"
+                  ? "Assign person"
+                  : kind === "profile"
+                    ? "Setup pending"
+                    : kind === "remaining"
+                      ? `${chip?.remainingCount ?? 0} left`
+                      : kind === "shared"
+                        ? "Shared left"
+                        : "Done";
               return (
                 <button
                   key={garment.garmentKey}
@@ -916,12 +1161,18 @@ export const DormantFutureMeasurementStep = ({
                   aria-pressed={selected}
                   data-measurement-garment={garment.garmentKey}
                   data-measurement-garment-pending={pending ? "true" : "false"}
-                  onClick={() => {
-                    setPickedGarmentKey(garment.garmentKey);
-                    if (state.activeGarmentKey !== garment.garmentKey) {
-                      onChange({ ...state, activeGarmentKey: garment.garmentKey });
-                    }
-                  }}
+                  data-measurement-garment-pending-reason={
+                    kind === "assignment"
+                      ? "assignment"
+                      : kind === "profile"
+                        ? "profile"
+                        : "none"
+                  }
+                  data-measurement-garment-chip={kind}
+                  data-measurement-garment-remaining={
+                    kind === "remaining" ? String(chip?.remainingCount ?? 0) : "0"
+                  }
+                  onClick={() => selectGarmentKey(garment.garmentKey)}
                   className={`inline-flex min-h-11 min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
                     selected
                       ? "border-heritage-green bg-heritage-green text-white"
@@ -929,30 +1180,47 @@ export const DormantFutureMeasurementStep = ({
                   }`}
                 >
                   <span className="break-words">{label}</span>
-                  {pending && (
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                      selected ? "bg-white/15 text-white" : "bg-heritage-gold/15 text-heritage-gold"
-                    }`}>
-                      Setup pending
-                    </span>
-                  )}
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                      selected
+                        ? "bg-white/15 text-white"
+                        : kind === "done"
+                          ? "bg-heritage-green/10 text-heritage-green"
+                          : "bg-heritage-gold/15 text-heritage-gold"
+                    }`}
+                  >
+                    {badgeLabel}
+                  </span>
                 </button>
               );
             })}
           </div>
+          {showGoToNextGarment && nextIncompleteGarmentLabel && nextIncompleteGarmentKey && (
+            <div className="mt-4">
+              <button
+                type="button"
+                data-measurement-go-to-next={nextIncompleteGarmentKey}
+                onClick={() => selectGarmentKey(nextIncompleteGarmentKey)}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border-2 border-heritage-green/75 bg-white px-4 text-xs font-bold uppercase tracking-wider text-heritage-green shadow-sm transition hover:border-heritage-green hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              >
+                Go to {nextIncompleteGarmentLabel}
+              </button>
+            </div>
+          )}
         </section>
       )}
 
-      {selectedGarmentPending && (
+      {selectedGarmentUnassigned && (
         <section className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4 sm:p-5">
           <div className="flex min-w-0 items-start gap-3">
             <ShieldAlert aria-hidden="true" size={19} className="mt-0.5 shrink-0 text-heritage-gold" />
             <div className="min-w-0">
               <h3 className="font-serif text-lg font-bold text-heritage-green">
-                Measurement setup pending
+                Assign this garment to a person
               </h3>
               <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
-                The measurement setup for this garment is awaiting confirmation. You can continue reviewing measurements for your other garments.
+                Assign {selectedGarmentLabel} above before its measurements can unlock Summary.
+                You can keep measuring other assigned garments.
               </p>
               <p className="mt-2 inline-flex rounded-full border border-heritage-gold/25 bg-white px-2.5 py-1 text-xs font-semibold text-heritage-green">
                 {selectedGarmentLabel}
@@ -962,7 +1230,27 @@ export const DormantFutureMeasurementStep = ({
         </section>
       )}
 
-      {blockerMessages.length > 0 && !selectedGarmentPending && (
+      {selectedGarmentProfilePending && (
+        <section className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4 sm:p-5">
+          <div className="flex min-w-0 items-start gap-3">
+            <ShieldAlert aria-hidden="true" size={19} className="mt-0.5 shrink-0 text-heritage-gold" />
+            <div className="min-w-0">
+              <h3 className="font-serif text-lg font-bold text-heritage-green">
+                Measurement setup pending
+              </h3>
+              <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
+                The measurement setup for this garment is awaiting confirmation for the selected
+                profile. You can continue reviewing measurements for your other garments.
+              </p>
+              <p className="mt-2 inline-flex rounded-full border border-heritage-gold/25 bg-white px-2.5 py-1 text-xs font-semibold text-heritage-green">
+                {selectedGarmentLabel}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {blockerMessages.length > 0 && (
         <section className="rounded-2xl border border-heritage-gold/35 bg-heritage-gold/8 p-4">
           <div className="flex min-w-0 items-start gap-3">
             <ShieldAlert aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-heritage-gold" />

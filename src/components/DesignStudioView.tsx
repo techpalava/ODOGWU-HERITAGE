@@ -265,6 +265,7 @@ import {
   createEmptyFutureMeasurementState,
   getMeasurementPhysicalGarments,
   resolveHydratedMeasurementPhysicalGarments,
+  isFutureMeasurementStageComplete,
   isFutureMeasurementStageUnlocked,
   isFutureSummaryUnlockedByMeasurements,
   setFutureMeasurementRoute,
@@ -277,8 +278,10 @@ import {
   classifyPersistedMeasurement,
   createEmptyWearerOrder,
   deleteWearer,
+  hasUnassignedPhysicalGarments,
   isWearerOrderMeasurementComplete,
   planWearerOrderMeasurements,
+  resolveWearerAssignmentPresentation,
   summarizeWearerOrderMeasurementCompletion,
   reconcileWearerOrder,
   removeGarmentFromWearerOrder,
@@ -287,6 +290,7 @@ import {
   setWearerFitContext,
   shouldReplacePersistedMeasurement,
   updateWearerMeasurement,
+  wearerPublicLabel,
 } from "../utils/wearerOrder";
 import { WearerAssignmentPanel } from "./WearerAssignmentPanel";
 import { projectFutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
@@ -396,6 +400,7 @@ import {
 import { CATALOGUE_ADDITIONAL_GARMENT_TYPES, createCatalogueAdditionalGarmentSelection } from "../utils/additionalGarmentDomain";
 import {
   CUSTOMER_SELECTABLE_GARMENT_TYPES,
+  getStep1GarmentDisplayLabel,
   resolveGarmentConstructionPricing,
 } from "../utils/garmentConstructionPricing";
 import { projectFutureCustomDetailsCatalogue } from "../utils/futureCustomDetailsCatalogue";
@@ -3257,7 +3262,86 @@ export default function DesignStudioView({
     ),
   });
   const wearerMeasurementsComplete = wearerOrderMeasurementCompletion.complete;
-
+  const wearerLabelById = new Map(
+    wearerOrderForPlan.wearers.map((wearer) => [
+      wearer.wearerId,
+      wearerPublicLabel(wearer.displayName, wearer.presentationOrder),
+    ]),
+  );
+  const labelForMeasurementWearer = (wearerId: string, displayName: string) =>
+    wearerLabelById.get(wearerId) ||
+    wearerPublicLabel(displayName, 0);
+  const measurementEmptyWearerLabels = wearerMeasurementRuntimes
+    .filter((runtime) => runtime.garmentKeys.length === 0)
+    .map((runtime) =>
+      labelForMeasurementWearer(runtime.wearerId, runtime.displayName),
+    );
+  const measurementOtherWearerIncompleteLabels = wearerMeasurementRuntimes
+    .filter(
+      (runtime) =>
+        runtime.wearerId !== activeWearer?.wearerId &&
+        runtime.garmentKeys.length > 0 &&
+        !isFutureMeasurementStageComplete(runtime.measurement),
+    )
+    .map((runtime) =>
+      labelForMeasurementWearer(runtime.wearerId, runtime.displayName),
+    );
+  const measurementNextIncompleteWearer = (() => {
+    const empty = wearerMeasurementRuntimes.find(
+      (runtime) =>
+        runtime.wearerId !== activeWearer?.wearerId &&
+        runtime.garmentKeys.length === 0,
+    );
+    if (empty) {
+      return {
+        wearerId: empty.wearerId,
+        label: labelForMeasurementWearer(empty.wearerId, empty.displayName),
+      };
+    }
+    const incomplete = wearerMeasurementRuntimes.find(
+      (runtime) =>
+        runtime.wearerId !== activeWearer?.wearerId &&
+        runtime.garmentKeys.length > 0 &&
+        !isFutureMeasurementStageComplete(runtime.measurement),
+    );
+    if (!incomplete) return null;
+    return {
+      wearerId: incomplete.wearerId,
+      label: labelForMeasurementWearer(
+        incomplete.wearerId,
+        incomplete.displayName,
+      ),
+    };
+  })();
+  const measurementHasUnassignedGarments = hasUnassignedPhysicalGarments({
+    order: wearerOrderForPlan,
+    physicalGarmentKeys: futureMeasurementPhysicalGarments.map(
+      (garment) => garment.garmentKey,
+    ),
+  });
+  const measurementWearerAssignmentPresentation =
+    resolveWearerAssignmentPresentation({
+      wearerCount: wearerOrderForPlan.wearers.length,
+      soleWearerFitContext: wearerOrderForPlan.wearers[0]?.fitContext ?? null,
+      hasUnassignedGarments: measurementHasUnassignedGarments,
+    });
+  const measurementActiveWearerLabel =
+    activeWearer &&
+    (wearerOrderForPlan.wearers.length > 1 ||
+      measurementWearerAssignmentPresentation === "people")
+      ? labelForMeasurementWearer(activeWearer.wearerId, activeWearer.displayName)
+      : null;
+  const measurementActiveWearerGarmentLabels = (
+    activeWearerRuntime?.garmentKeys || []
+  ).map((garmentKey) => {
+    const garment = futureMeasurementPhysicalGarments.find(
+      (candidate) => candidate.garmentKey === garmentKey,
+    );
+    return (
+      yourGarmentsConstructionDisplayLabelByGarmentKey[garmentKey] ||
+      (garment ? getStep1GarmentDisplayLabel(garment.garmentType) : garmentKey)
+    );
+  });
   // Batch / Group Options (Site-wide adaptive ordering options)
   const [batchType, setBatchType] = useState<
     "community" | "alone" | "personalized" | "actual"
@@ -3388,13 +3472,17 @@ export default function DesignStudioView({
               : ctx.orderType,
         batchId: batchType === "alone" ? undefined : ctx.batchId,
       });
-  const isFutureSummaryStageUnlocked =
-    (futureSummary.status === "ready" ||
-      futureSummary.status === "pricing_pending") &&
+  // One order-wide authority for Continue, Journey Stepper, Live Summary, and
+  // stage correction. Do not use active-wearer-only completeness here.
+  const summaryUnlockedByMeasurements =
     !futureMeasurementHydrationInvalid &&
     (wearerMeasurementRuntimes.length > 0
       ? wearerMeasurementsComplete
       : isFutureSummaryUnlockedByMeasurements(reconciledFutureMeasurementState));
+  const isFutureSummaryStageUnlocked =
+    (futureSummary.status === "ready" ||
+      futureSummary.status === "pricing_pending") &&
+    summaryUnlockedByMeasurements;
   const isFutureShippingUnlocked = isFutureShippingStageUnlocked(
     futureSummary.status,
   );
@@ -5081,11 +5169,7 @@ export default function DesignStudioView({
       customDetailsReady: isFutureStep4CustomDetailsReady,
       personalizedAdditionsReady: isFutureCustomDetailsStageReady,
       measurementUnlocked: isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow),
-      summaryUnlocked:
-        !futureMeasurementHydrationInvalid &&
-        isFutureSummaryUnlockedByMeasurements(
-          reconciledFutureMeasurementState,
-        ),
+      summaryUnlocked: summaryUnlockedByMeasurements,
       inlineAdditionalGarmentFabricTransaction:
         additionalGarmentFabricTransaction,
       additionalGarmentFabricRepairTargeted:
@@ -5102,9 +5186,7 @@ export default function DesignStudioView({
     isFutureStep4CustomDetailsReady,
     isFutureCustomDetailsStageReady,
     futureAiTryOnWorkflow,
-    futureMeasurementHydrationInvalid,
-    reconciledFutureMeasurementState.route,
-    reconciledFutureMeasurementState.calculationStatus,
+    summaryUnlockedByMeasurements,
     additionalGarmentFabricTransaction,
     targetedAdditionalGarmentNeedsFabric,
     futurePhysicalGarmentRemovalAuthoritySignature,
@@ -8711,9 +8793,7 @@ export default function DesignStudioView({
                   ? futureAiTryOnWorkflow.status === "completed" ||
                     futureAiTryOnWorkflow.status === "skipped"
                   : futureStageId === "measurement"
-                    ? !futureMeasurementHydrationInvalid &&
-                      reconciledFutureMeasurementState.calculationStatus ===
-                      "complete"
+                    ? summaryUnlockedByMeasurements
                     : futureStageId === "summary"
                       ? futureSummary.status === "ready"
                       : futureStageId === "shipping"
@@ -9081,14 +9161,7 @@ export default function DesignStudioView({
         ) : null}
         <WearerAssignmentPanel
           order={wearerOrderForPlan}
-          presentation={
-            wearerOrderForPlan.wearers.length > 1
-              ? "people"
-              : wearerOrderForPlan.wearers[0]?.fitContext === "male" ||
-                  wearerOrderForPlan.wearers[0]?.fitContext === "female"
-                ? "solo"
-                : "fit"
-          }
+          presentation={measurementWearerAssignmentPresentation}
           activeWearerId={activeWearer?.wearerId || null}
           garments={futureMeasurementPhysicalGarments}
           garmentLabels={yourGarmentsConstructionDisplayLabelByGarmentKey}
@@ -9168,15 +9241,25 @@ export default function DesignStudioView({
         <DormantFutureMeasurementStep
           plan={futureMeasurementPlan}
           state={reconciledFutureMeasurementState}
-          orderMeasurementsComplete={
-            wearerMeasurementRuntimes.length > 0
-              ? wearerMeasurementsComplete
-              : undefined
-          }
+          orderMeasurementsComplete={summaryUnlockedByMeasurements}
           physicalGarments={futureMeasurementPhysicalGarments}
-          setupPendingGarments={futureMeasurementPhysicalGarments.filter(
+          unassignedGarments={futureMeasurementPhysicalGarments.filter(
             (garment) => !wearerOrderForPlan.assignmentByGarmentKey[garment.garmentKey],
           )}
+          otherWearerIncompleteLabels={measurementOtherWearerIncompleteLabels}
+          emptyWearerLabels={measurementEmptyWearerLabels}
+          activeWearerLabel={measurementActiveWearerLabel}
+          activeWearerGarmentLabels={measurementActiveWearerGarmentLabels}
+          nextIncompleteWearer={measurementNextIncompleteWearer}
+          onGoToWearer={(wearerId) => {
+            const next = wearerOrderForPlan.wearers.find(
+              (wearer) => wearer.wearerId === wearerId,
+            );
+            if (!next) return;
+            setWearerOrder(wearerOrderForPlan);
+            setActiveWearerId(wearerId);
+            setFutureMeasurementState(next.measurement);
+          }}
           hydrationInvalid={futureMeasurementHydrationInvalid}
           onChange={(state) => {
             if (futureMeasurementHydrationInvalid) return;
