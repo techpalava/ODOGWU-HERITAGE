@@ -1609,6 +1609,9 @@ const calculateFutureDecorativePricing = (
   return pricing;
 };
 const decorativePricing = calculateFutureDecorativePricing({
+  decorativeFeaturesByGarmentKey: {
+    "base:shirt": ["Name Monogram"],
+  },
   decorativeFeatures: ["Name Monogram"],
 });
 assert.equal(decorativePricing.customDetailsPrice, 12);
@@ -1620,19 +1623,55 @@ assert.equal(
   exactSummary.pricingSummary.customDetailsExactSubtotal + 12,
   "the real selected-style pricing path includes a paid monogram exactly once",
 );
+const decorativeMonogramOccurrences = decorativeSummary.customDetailsSummary
+  .flatMap((group) => group.occurrences)
+  .filter((occurrence) => occurrence.optionLabel === "Name Monogram");
+assert.equal(decorativeMonogramOccurrences.length, 1);
+assert.equal(decorativeMonogramOccurrences[0]?.garmentKey, "base:shirt");
 assert.equal(
-  decorativeSummary.customDetailsSummary
-    .flatMap((group) => group.occurrences)
-    .filter((occurrence) => occurrence.optionLabel === "Name Monogram").length,
-  1,
+  decorativeMonogramOccurrences[0]?.occurrenceKey,
+  "base:shirt:decorative:Name Monogram",
 );
 assert.equal(
   decorativeSummary.pricingSummary.selectedDesignPrice?.selectedDesignPrice,
   exactSummary.pricingSummary.selectedDesignPrice!.selectedDesignPrice! + 12,
 );
+const multiGarmentDecorativePricing = calculateFutureDecorativePricing({
+  decorativeFeaturesByGarmentKey: {
+    "base:shirt": ["Name Monogram"],
+    "base:trouser": ["Name Monogram"],
+  },
+  decorativeFeatures: ["Name Monogram"],
+});
+assert.equal(
+  multiGarmentDecorativePricing.monogramPrice,
+  24,
+  "Name Monogram selected on two garments charges 2 × unit price",
+);
+const multiGarmentDecorativeSummary = projectFutureDesignStudioSummary({
+  ...exactInput,
+  basePricing: multiGarmentDecorativePricing,
+});
+assert.equal(
+  multiGarmentDecorativeSummary.customDetailsSummary
+    .flatMap((group) => group.occurrences)
+    .filter((occurrence) => occurrence.optionLabel === "Name Monogram").length,
+  2,
+  "Summary projects one Name Monogram occurrence per selected garment",
+);
+assert.equal(
+  multiGarmentDecorativeSummary.pricingSummary.customDetailsExactSubtotal,
+  exactSummary.pricingSummary.customDetailsExactSubtotal + 24,
+);
+
 const formerlyInapplicableDecorativeStyle = makeStyle(["trouser"]);
 const formerlyInapplicableDecorativePricing = calculateFutureDecorativePricing(
-  { decorativeFeatures: ["Name Monogram"] },
+  {
+    decorativeFeaturesByGarmentKey: {
+      "base:shirt": ["Name Monogram"],
+    },
+    decorativeFeatures: ["Name Monogram"],
+  },
   formerlyInapplicableDecorativeStyle,
 );
 assert.equal(
@@ -1680,7 +1719,12 @@ for (const includedDesignFeatures of [
   assert.deepEqual(includedOnlyPricing.decorativeFeatures, []);
 }
 const explicitIncludedMonogramPricing = calculateFutureDecorativePricing(
-  { decorativeFeatures: ["Name Monogram"] },
+  {
+    decorativeFeaturesByGarmentKey: {
+      "base:shirt": ["Name Monogram"],
+    },
+    decorativeFeatures: ["Name Monogram"],
+  },
   makeStyle(["shirt"], {
     includedDesignFeatures: { hasMonogram: true },
   }),

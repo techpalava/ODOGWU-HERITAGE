@@ -400,8 +400,12 @@ import {
 } from "../utils/garmentConstructionPricing";
 import { projectFutureCustomDetailsCatalogue } from "../utils/futureCustomDetailsCatalogue";
 import {
-  sortDecorativeFeatures,
+  clearDecorativeFeaturesForGarment,
+  expandLegacyDecorativeFeaturesOntoGarments,
+  hasGarmentScopedDecorativeFeatureSelections,
+  setMonogramPlacementForGarment,
   sortTraditionalAccessories,
+  toggleDecorativeFeatureForGarment,
   type TraditionalAccessory,
 } from "../utils/decorativePricing";
 import {
@@ -7412,33 +7416,59 @@ export default function DesignStudioView({
       };
     });
   };
+  const futureDecorativeParentGarmentKeys = useMemo(() => {
+    const seen = new Set<string>();
+    const keys: string[] = [];
+    futureScopedCustomDetailsReconciliation.subjects.forEach((subject) => {
+      if (seen.has(subject.parentGarmentKey)) return;
+      seen.add(subject.parentGarmentKey);
+      keys.push(subject.parentGarmentKey);
+    });
+    return keys;
+  }, [futureScopedCustomDetailsReconciliation.subjects]);
+  useEffect(() => {
+    if (futureDecorativeParentGarmentKeys.length === 0) return;
+    setDesignSelections((current) => {
+      if (hasGarmentScopedDecorativeFeatureSelections(current)) return current;
+      if (!(current.decorativeFeatures || []).length) return current;
+      return expandLegacyDecorativeFeaturesOntoGarments(
+        current,
+        futureDecorativeParentGarmentKeys,
+      );
+    });
+  }, [futureDecorativeParentGarmentKeys]);
   const handleFutureDecorativeFeatureToggle = (
+    garmentKey: string,
     feature: DecorativeFeature,
   ) => {
     setDesignSelections((current) => {
-      const selected = new Set(current.decorativeFeatures || []);
-      if (selected.has(feature)) selected.delete(feature);
-      else selected.add(feature);
-      return {
-        ...current,
-        decorativeFeatures: sortDecorativeFeatures([...selected]),
-      };
+      const seeded = expandLegacyDecorativeFeaturesOntoGarments(
+        current,
+        futureDecorativeParentGarmentKeys,
+      );
+      return toggleDecorativeFeatureForGarment(seeded, garmentKey, feature);
     });
   };
-  const handleClearFutureDecorativeFeatures = () => {
-    setDesignSelections((current) => ({
-      ...current,
-      decorativeFeatures: [],
-      monogramPlacement: undefined,
-    }));
+  const handleClearFutureDecorativeFeatures = (garmentKey: string) => {
+    setDesignSelections((current) => {
+      const seeded = expandLegacyDecorativeFeaturesOntoGarments(
+        current,
+        futureDecorativeParentGarmentKeys,
+      );
+      return clearDecorativeFeaturesForGarment(seeded, garmentKey);
+    });
   };
   const handleFutureMonogramPlacementChange = (
+    garmentKey: string,
     placement: MonogramPlacement,
   ) => {
-    setDesignSelections((current) => ({
-      ...current,
-      monogramPlacement: placement,
-    }));
+    setDesignSelections((current) => {
+      const seeded = expandLegacyDecorativeFeaturesOntoGarments(
+        current,
+        futureDecorativeParentGarmentKeys,
+      );
+      return setMonogramPlacementForGarment(seeded, garmentKey, placement);
+    });
   };
   const handleFutureAccessoryToggle = (accessory: TraditionalAccessory) => {
     setDesignSelections((current) => {

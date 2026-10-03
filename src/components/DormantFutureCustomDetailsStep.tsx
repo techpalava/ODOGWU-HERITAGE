@@ -38,10 +38,14 @@ import {
   DECORATIVE_FEATURE_DESCRIPTIONS,
   TRADITIONAL_ACCESSORY_DESCRIPTIONS,
   TRADITIONAL_ACCESSORY_OPTIONS,
+  formatDecorativeFeatureUnitPriceLabel,
   getAvailableMonogramPlacements,
   getCustomerSelectableDecorativeFeatures,
   getDecorativeFeaturePrice,
+  getDecorativeFeaturesForGarment,
+  getMonogramPlacementForGarment,
   getTraditionalAccessoryPrice,
+  hasGarmentScopedDecorativeFeatureSelections,
 } from "../utils/decorativePricing";
 import type {
   GarmentScopedCustomDetailsCompletionResult,
@@ -101,9 +105,12 @@ interface DormantFutureCustomDetailsStepProps {
   onConstructionSelect: (parentGarmentKey: string, garmentType: CanonicalPhysicalGarmentType, selectionGroup: CustomDetailSelectionGroup, optionId: string) => void;
   onToggleMultiSelect: (garmentKey: string, selectionGroup: CustomDetailSelectionGroup, optionId: string) => void;
   onPersonalizedTextChange: (garmentKey: string, selectionGroup: CustomDetailSelectionGroup, optionId: string, text: string) => void;
-  onDecorativeFeatureToggle: (feature: DecorativeFeature) => void;
-  onClearDecorativeFeatures: () => void;
-  onMonogramPlacementChange: (placement: MonogramPlacement) => void;
+  onDecorativeFeatureToggle: (garmentKey: string, feature: DecorativeFeature) => void;
+  onClearDecorativeFeatures: (garmentKey: string) => void;
+  onMonogramPlacementChange: (
+    garmentKey: string,
+    placement: MonogramPlacement,
+  ) => void;
   onAccessoryToggle: (accessory: TraditionalAccessory) => void;
   onClearAccessories: () => void;
   onAddAdditionalGarment: (
@@ -561,10 +568,52 @@ export const DormantFutureCustomDetailsStep = ({
     ]),
   );
   const canContinue = isFutureCustomDetailsContentReady(completion);
-  const selectedDecorativeFeatures = new Set(designSelections.decorativeFeatures || []);
-  const customerSelectableDecorativeFeatures =
-    getCustomerSelectableDecorativeFeatures();
-  const availableMonogramPlacements = getAvailableMonogramPlacements(designSelections, selectedStyle);
+  const decorativeParentGarments = useMemo(() => {
+    const seen = new Set<string>();
+    const parents: {
+      garmentKey: string;
+      garmentType: FabricGarmentType;
+      role: "base" | "additional";
+      label: string;
+    }[] = [];
+    reconciliation.subjects.forEach((subject) => {
+      if (seen.has(subject.parentGarmentKey)) return;
+      seen.add(subject.parentGarmentKey);
+      const role = subject.parentGarmentKey.startsWith("additional:")
+        ? ("additional" as const)
+        : ("base" as const);
+      parents.push({
+        garmentKey: subject.parentGarmentKey,
+        garmentType: subject.parentGarmentType,
+        role,
+        label: `${exactParentLabel(
+          parentOccurrenceLabels,
+          subject.parentGarmentKey,
+          subject.parentGarmentType,
+        )} - ${role === "additional" ? "Added garment" : "Base garment"}`,
+      });
+    });
+    return parents;
+  }, [reconciliation.subjects, parentOccurrenceLabels]);
+  const decorativeFeatureLines = useMemo(() => {
+    if (hasGarmentScopedDecorativeFeatureSelections(designSelections)) {
+      return decorativeParentGarments.flatMap((parent) =>
+        getDecorativeFeaturesForGarment(
+          designSelections,
+          parent.garmentKey,
+        ).map((feature) => ({
+          garmentKey: parent.garmentKey,
+          garmentLabel: parent.label.replace(/ - (Base|Added) garment$/, ""),
+          feature,
+        })),
+      );
+    }
+    return (designSelections.decorativeFeatures || []).map((feature) => ({
+      garmentKey: "order",
+      garmentLabel: "Order",
+      feature,
+    }));
+  }, [designSelections, decorativeParentGarments]);
   const selectedAccessories = new Set(designSelections.accessories || []);
   const compatibleCopySources = useMemo(() => {
     if (!additionalGarmentChoice) return [];
@@ -1631,14 +1680,147 @@ export const DormantFutureCustomDetailsStep = ({
           {isPersonalizedAdditionsStage && (
           <section data-custom-detail-section="monogram-embroidery" className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5">
             <h3 className="border-b border-heritage-gold/35 pb-3 font-serif text-lg font-bold uppercase tracking-wide text-heritage-green">Monogram and Embroidery Design</h3>
-            <p className="mt-1 text-xs text-heritage-ink/60">Optional. Select None to remove all monogram and embroidery choices.</p>
-            <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-              <label className={`flex min-h-12 min-w-0 items-center gap-3 rounded-xl border-2 p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${selectedDecorativeFeatures.size === 0 ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}><input type="radio" name="future-decorative-none" checked={selectedDecorativeFeatures.size === 0} onChange={onClearDecorativeFeatures} className="size-5 shrink-0 accent-heritage-green" /><span className="min-w-0"><span className="block text-sm font-bold text-heritage-green">None</span><span className="mt-1 block text-xs text-heritage-ink/65">No selection for this category</span></span></label>
-              {customerSelectableDecorativeFeatures.map((feature) => <label key={feature} className={`flex min-h-12 min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${selectedDecorativeFeatures.has(feature) ? "border-heritage-green bg-heritage-green/5" : "border-heritage-green/65 bg-white"}`}><input type="checkbox" checked={selectedDecorativeFeatures.has(feature)} onChange={() => onDecorativeFeatureToggle(feature)} className="mt-0.5 size-5 shrink-0 accent-heritage-green" /><span className="min-w-0 flex-1"><span className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1"><span className="min-w-0 break-words text-sm font-bold text-heritage-green">{feature}</span><span className="shrink-0 font-mono text-xs font-bold text-heritage-gold">+{money(getDecorativeFeaturePrice(selectedStyle, feature))}</span></span><span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">{DECORATIVE_FEATURE_DESCRIPTIONS[feature]}</span></span></label>)}
+            <p className="mt-1 text-xs text-heritage-ink/60">Optional. Choose embroidery or monogram for each garment. Price is charged per garment as 1 × unit price.</p>
+            <div className="mt-4 space-y-4">
+              {decorativeParentGarments.map((parent) => {
+                const garmentFeatures = new Set(
+                  getDecorativeFeaturesForGarment(
+                    designSelections,
+                    parent.garmentKey,
+                  ),
+                );
+                const selectableFeatures =
+                  getCustomerSelectableDecorativeFeatures();
+                const garmentSelectionsForPlacement = {
+                  ...designSelections,
+                  decorativeFeatures: [...garmentFeatures],
+                };
+                const availableMonogramPlacements = getAvailableMonogramPlacements(
+                  garmentSelectionsForPlacement,
+                  selectedStyle,
+                  { type: parent.garmentType },
+                );
+                const placement = getMonogramPlacementForGarment(
+                  designSelections,
+                  parent.garmentKey,
+                );
+                return (
+                  <div
+                    key={parent.garmentKey}
+                    data-decorative-garment={parent.garmentKey}
+                    className="min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/20 p-3 sm:p-4"
+                  >
+                    <h4
+                      className={`border-b border-heritage-gold/20 pb-2 text-sm font-bold uppercase tracking-wide outline-none ${
+                        parent.role === "additional"
+                          ? "text-heritage-gold"
+                          : "text-heritage-green"
+                      }`}
+                    >
+                      {parent.label}
+                    </h4>
+                    <div className="mt-3 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                      <label
+                        className={`flex min-h-12 min-w-0 items-center gap-3 rounded-xl border-2 p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                          garmentFeatures.size === 0
+                            ? "border-heritage-green bg-heritage-green/5"
+                            : "border-heritage-green/65 bg-white"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`future-decorative-none-${parent.garmentKey}`}
+                          checked={garmentFeatures.size === 0}
+                          onChange={() =>
+                            onClearDecorativeFeatures(parent.garmentKey)
+                          }
+                          className="size-5 shrink-0 accent-heritage-green"
+                        />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-bold text-heritage-green">
+                            None
+                          </span>
+                          <span className="mt-1 block text-xs text-heritage-ink/65">
+                            No selection for this garment
+                          </span>
+                        </span>
+                      </label>
+                      {selectableFeatures.map((feature) => (
+                        <label
+                          key={`${parent.garmentKey}:${feature}`}
+                          className={`flex min-h-12 min-w-0 cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition hover:border-heritage-gold focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                            garmentFeatures.has(feature)
+                              ? "border-heritage-green bg-heritage-green/5"
+                              : "border-heritage-green/65 bg-white"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={garmentFeatures.has(feature)}
+                            onChange={() =>
+                              onDecorativeFeatureToggle(
+                                parent.garmentKey,
+                                feature,
+                              )
+                            }
+                            className="mt-0.5 size-5 shrink-0 accent-heritage-green"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                              <span className="min-w-0 break-words text-sm font-bold text-heritage-green">
+                                {feature}
+                              </span>
+                              <span className="shrink-0 font-mono text-xs font-bold text-heritage-gold">
+                                +
+                                {formatDecorativeFeatureUnitPriceLabel(
+                                  getDecorativeFeaturePrice(
+                                    selectedStyle,
+                                    feature,
+                                  ),
+                                )}
+                              </span>
+                            </span>
+                            <span className="mt-1 block break-words text-xs leading-relaxed text-heritage-ink/65">
+                              {DECORATIVE_FEATURE_DESCRIPTIONS[feature]}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    {garmentFeatures.has("Name Monogram") &&
+                      availableMonogramPlacements.length > 0 && (
+                        <fieldset className="mt-4">
+                          <legend className="text-xs font-bold text-heritage-green">
+                            Monogram placement
+                          </legend>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {availableMonogramPlacements.map((option) => (
+                              <label
+                                key={`${parent.garmentKey}:${option.value}`}
+                                className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-heritage-green/15 px-3 text-xs text-heritage-green focus-within:ring-2 focus-within:ring-heritage-gold"
+                              >
+                                <input
+                                  type="radio"
+                                  name={`future-monogram-placement-${parent.garmentKey}`}
+                                  checked={placement === option.value}
+                                  onChange={() =>
+                                    onMonogramPlacementChange(
+                                      parent.garmentKey,
+                                      option.value,
+                                    )
+                                  }
+                                  className="size-4 accent-heritage-green"
+                                />
+                                {option.label}
+                              </label>
+                            ))}
+                          </div>
+                        </fieldset>
+                      )}
+                  </div>
+                );
+              })}
             </div>
-            {selectedDecorativeFeatures.has("Name Monogram") && availableMonogramPlacements.length > 0 && (
-              <fieldset className="mt-4"><legend className="text-xs font-bold text-heritage-green">Monogram placement</legend><div className="mt-2 flex flex-wrap gap-2">{availableMonogramPlacements.map((placement) => <label key={placement.value} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-heritage-green/15 px-3 text-xs text-heritage-green focus-within:ring-2 focus-within:ring-heritage-gold"><input type="radio" name="future-monogram-placement" checked={designSelections.monogramPlacement === placement.value} onChange={() => onMonogramPlacementChange(placement.value)} className="size-4 accent-heritage-green" />{placement.label}</label>)}</div></fieldset>
-            )}
           </section>
           )}
 
@@ -1857,7 +2039,7 @@ export const DormantFutureCustomDetailsStep = ({
             <p className="text-xs leading-relaxed text-heritage-ink/60">Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing.</p>
             <div className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 break-words text-heritage-ink/70">Custom Details subtotal</span><span className="shrink-0 font-mono font-bold text-heritage-green">{money(customDetailsSubtotal)}</span></div>
             {pricing.lines.length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{pricing.lines.map((line) => <div key={line.occurrenceKey} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words leading-relaxed text-heritage-ink/60">{subjectLabelByGarmentKey.get(line.garmentKey) || "Garment"}: {line.label}</span><span className="shrink-0 font-mono text-heritage-green">{line.status === "evaluation_required" ? "Evaluation" : line.status === "exact" && line.lineTotalCents !== undefined ? money(line.lineTotalCents / 100) : "Review"}</span></div>)}</div>}
-            {[...(designSelections.decorativeFeatures || []), ...(designSelections.accessories || [])].length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{(designSelections.decorativeFeatures || []).map((feature) => <div key={feature} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{feature}</span><span className="shrink-0 font-mono text-heritage-green">{money(getDecorativeFeaturePrice(selectedStyle, feature))}</span></div>)}{(designSelections.accessories || []).map((accessory) => <div key={accessory} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{accessory}</span><span className="shrink-0 font-mono text-heritage-green">{money(getTraditionalAccessoryPrice(selectedStyle, accessory as TraditionalAccessory))}</span></div>)}</div>}
+            {[...decorativeFeatureLines, ...(designSelections.accessories || [])].length > 0 && <div className="space-y-2 border-t border-heritage-gold/15 pt-3">{decorativeFeatureLines.map((line) => <div key={`${line.garmentKey}:${line.feature}`} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{line.garmentKey === "order" ? line.feature : `${line.garmentLabel}: ${line.feature}`}</span><span className="shrink-0 font-mono text-heritage-green">{formatDecorativeFeatureUnitPriceLabel(getDecorativeFeaturePrice(selectedStyle, line.feature))}</span></div>)}{(designSelections.accessories || []).map((accessory) => <div key={accessory} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-heritage-ink/60">{accessory}</span><span className="shrink-0 font-mono text-heritage-green">{money(getTraditionalAccessoryPrice(selectedStyle, accessory as TraditionalAccessory))}</span></div>)}</div>}
             {pricing.status === "pending" && <p className="rounded-lg bg-heritage-cream/50 p-2 text-xs leading-relaxed text-heritage-ink/70">A personalized requirement needs price evaluation before an exact total is available.</p>}
             {pricing.status === "invalid" && <p className="rounded-lg bg-red-50 p-2 text-xs leading-relaxed text-red-700">A saved Custom Details price needs review.</p>}
             <div className="flex min-w-0 items-start justify-between gap-3 border-t border-heritage-gold/15 pt-3 font-bold text-heritage-green"><span className="min-w-0 break-words">Estimated total so far</span><span className="shrink-0 font-mono">{estimatedTotal === null ? "Pending" : money(estimatedTotal)}</span></div>

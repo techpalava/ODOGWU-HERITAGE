@@ -380,8 +380,14 @@ export interface DesignSelections {
   hasMonogram?: boolean;
   hasEmbroidery?: boolean;
   hasMonogramTrimming?: boolean;
+  /** @deprecated Prefer decorativeFeaturesByGarmentKey for Future Design Studio. */
   decorativeFeatures?: DecorativeFeature[];
+  /** @deprecated Prefer monogramPlacementByGarmentKey for Future Design Studio. */
   monogramPlacement?: MonogramPlacement;
+  /** Per-garment embroidery/monogram selections (parent garment keys). */
+  decorativeFeaturesByGarmentKey?: Record<string, DecorativeFeature[]>;
+  /** Per-garment monogram placement when Name Monogram is selected for that garment. */
+  monogramPlacementByGarmentKey?: Record<string, MonogramPlacement>;
 
   // New detailed garment fields
   customDetails?: Partial<

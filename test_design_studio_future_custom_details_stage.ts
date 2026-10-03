@@ -264,7 +264,10 @@ const createNeckStep = ({
   constructionBreakdown?: Parameters<typeof DormantFutureCustomDetailsStep>[0]["constructionBreakdown"];
   constructionSubtotal?: number | null;
   orderLevelCustomDetailsPrice?: number;
-  onDecorativeFeatureToggle?: (feature: DecorativeFeature) => void;
+  onDecorativeFeatureToggle?: (
+    garmentKey: string,
+    feature: DecorativeFeature,
+  ) => void;
 } = {}) =>
   createElement(DormantFutureCustomDetailsStep, {
     stage,
@@ -375,24 +378,43 @@ assert.match(
   "Personalized Additional must span the available Custom Details width",
 );
 
-const selectableDecorativeEvents: DecorativeFeature[] = [];
+const selectableDecorativeEvents: Array<{
+  garmentKey: string;
+  feature: DecorativeFeature;
+}> = [];
 let selectableDecorativeRenderer!: ReturnType<typeof create>;
 act(() => {
   selectableDecorativeRenderer = create(
     createNeckStep({
       stage: "personalized_additions",
-      onDecorativeFeatureToggle: (feature) => {
-        selectableDecorativeEvents.push(feature);
+      onDecorativeFeatureToggle: (garmentKey, feature) => {
+        selectableDecorativeEvents.push({ garmentKey, feature });
       },
     }),
   );
 });
+const decorativeGarmentBlocks =
+  selectableDecorativeRenderer.root.findAll(
+    (node) =>
+      Boolean(
+        node.props &&
+          typeof node.props === "object" &&
+          typeof node.props["data-decorative-garment"] === "string",
+      ),
+  );
+assert.ok(
+  decorativeGarmentBlocks.length > 0,
+  "Step 5 renders per-garment Monogram and Embroidery blocks",
+);
+const firstDecorativeGarmentKey = String(
+  decorativeGarmentBlocks[0].props["data-decorative-garment"],
+);
 for (const feature of [
   "Name Monogram",
   "Embroidery",
   "Monogram Trimming",
 ] as const) {
-  const card = selectableDecorativeRenderer.root
+  const card = decorativeGarmentBlocks[0]
     .findAllByType("label")
     .find((label) =>
       textContent(label).includes(feature) &&
@@ -407,6 +429,11 @@ for (const feature of [
     undefined,
     `${feature} remains selectable when selected Design Style metadata is absent`,
   );
+  assert.match(
+    textContent(card),
+    /\+1 × €12\.00/,
+    `${feature} shows unit price as 1 × unit amount`,
+  );
   assert.doesNotMatch(
     textContent(card),
     /Not available for the current design\./,
@@ -417,8 +444,12 @@ for (const feature of [
 }
 assert.deepEqual(
   selectableDecorativeEvents,
-  ["Name Monogram", "Embroidery", "Monogram Trimming"],
-  "Step 5 forwards every customer decorative selection without a Design Style availability gate",
+  [
+    { garmentKey: firstDecorativeGarmentKey, feature: "Name Monogram" },
+    { garmentKey: firstDecorativeGarmentKey, feature: "Embroidery" },
+    { garmentKey: firstDecorativeGarmentKey, feature: "Monogram Trimming" },
+  ],
+  "Step 5 forwards every customer decorative selection scoped to its garment",
 );
 act(() => selectableDecorativeRenderer.unmount());
 
