@@ -64,7 +64,8 @@ assert.equal(standardSkirt?.status, "resolved");
 assert.equal(longSkirt?.status, "resolved");
 if (shirt?.status === "resolved" && kaftan?.status === "resolved") {
   assert.equal(shirt.components[0].optionId, "shirt_std_short");
-  assert.equal(kaftan.components[0].optionId, "shirt_long_midlong");
+  assert.equal(kaftan.components[0].optionId, "shirt_long_short");
+  assert.equal(kaftan.totalPriceCents, 7000);
   assert.notEqual(shirt.components[0].componentKey, kaftan.components[0].componentKey);
   assert.match(shirt.components[0].componentKey, /^shirt:/);
   assert.match(kaftan.components[0].componentKey, /^kaftan:/);
@@ -141,6 +142,36 @@ assert.equal(
     : null,
   8000,
   "Hydration keeps the saved Long Dress option and replaces persisted cents with the current catalog price.",
+);
+
+const savedMidLongShirtDraft = structuredClone(initial.selection);
+const savedMidLongShirt = savedMidLongShirtDraft.constructionByGarment.kaftan;
+if (savedMidLongShirt?.status === "resolved") {
+  savedMidLongShirt.components[0].optionId = "shirt_long_midlong";
+  savedMidLongShirt.components[0].componentKey =
+    "kaftan:shirt_construction:shirt_long_midlong";
+  savedMidLongShirt.components[0].priceCents = 1;
+  savedMidLongShirt.components[0].price = 0.01;
+  savedMidLongShirt.totalPriceCents = 1;
+  savedMidLongShirt.totalPrice = 0.01;
+}
+const restoredMidLongShirt = reconcileGarmentTypeStepSelection({
+  persistedSelection: savedMidLongShirtDraft,
+  normalizedCustomDetailCatalog: catalog,
+}).selection.constructionByGarment.kaftan;
+assert.equal(
+  restoredMidLongShirt?.status === "resolved"
+    ? restoredMidLongShirt.components[0].optionId
+    : null,
+  "shirt_long_midlong",
+  "A valid saved Long shirt Mid-Long Sleeve choice outranks the canonical Short Sleeve default.",
+);
+assert.equal(
+  restoredMidLongShirt?.status === "resolved"
+    ? restoredMidLongShirt.totalPriceCents
+    : null,
+  7500,
+  "Hydration keeps the saved Long shirt option and replaces persisted cents with the current catalog price.",
 );
 
 const malformedSkirtPair = reconcileGarmentTypeStepSelection({
