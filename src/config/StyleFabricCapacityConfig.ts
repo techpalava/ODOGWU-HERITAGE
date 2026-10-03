@@ -42,7 +42,7 @@ const DEFAULT_CUSTOM_DETAILS_BY_GARMENT_TYPE: Readonly<
     neck_design: "neck_no_round",
   },
   kaftan: {
-    shirt_construction: "shirt_long_midlong",
+    shirt_construction: "shirt_long_short",
     shirt_pockets: "shirt_pocket_0",
     neck_design: "neck_no_round",
   },

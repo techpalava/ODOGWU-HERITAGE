@@ -1,6 +1,6 @@
 # Living project state
 
-Updated: 2026-10-02. Read this file first in every new chat, then `FAST_EXECUTOR_GUIDE.md`.
+Updated: 2026-10-03. Read this file first in every new chat, then `FAST_EXECUTOR_GUIDE.md`.
 This file is committed on `main` and `production`. Update it after each release.
 
 ## What the product is
@@ -35,26 +35,30 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 
 ## Status
 
-All work below is released. The last feature build was `7e496a0`; `/api/health` shows the current one.
+All work below is released. `/api/health` shows the current production build.
 
 - [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
 - [#283](https://github.com/techpalava/ODOGWU-HERITAGE/pull/283) Uploaded photo on the Summary Design Style card
 - [#286](https://github.com/techpalava/ODOGWU-HERITAGE/pull/286) Step 3 stays usable after a failed signed-in restore, and shows the reason
 - [#289](https://github.com/techpalava/ODOGWU-HERITAGE/pull/289) Guest Step 3 uploads move to the account, or are removed so the rest restores
 - [#292](https://github.com/techpalava/ODOGWU-HERITAGE/pull/292) Workshop stage history on paid V2 orders (Firestore rules deployed)
+- [#298](https://github.com/techpalava/ODOGWU-HERITAGE/pull/298) Long shirt defaults to Short Sleeve (EUR 70) in Step 1; a saved Mid-Long Sleeve choice still restores
 
 The signed-in Chrome restore check after #289 passed.
 
 ## Git and worktrees
 
 - Repository `techpalava/ODOGWU-HERITAGE`. Remote name is `github`, never `origin`.
-- At the last feature release (#292): main `e9e8920`, production `7e496a0`. Docs-only releases
-  move both later, so check with `git fetch github`. Trees match; SHAs differ because of sync merges.
-- Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-step3-additional-garment-designs`
-  on `feat/step3-additional-garment-designs`.
+- Check current main and production SHAs with `git fetch github`. Trees match after each release;
+  SHAs differ because of sync merges.
+- Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-long-shirt-short-sleeve`
+  on `fix/long-shirt-short-sleeve-default` (released in #298). For a new task, branch a fresh
+  worktree from `github/main`.
+- `ODOGWU-HERITAGE-step3-additional-garment-designs` is merged; keep it, do not reuse it.
 - The Cursor workspace folder (`...\2026-07-08\...\ODOGWU-HERITAGE-task1-task2`) is a different,
   older checkout. Run shell commands with the worktree above as the working directory, and
-  confirm the path before editing.
+  confirm the path before editing. It holds an unpushed local commit `d691a8c` from an early
+  attempt at #298; it is superseded and must not be pushed.
 - The local `ODOGWU-HERITAGE-main-release` and `ODOGWU-HERITAGE-step3-exact-garment-labels`
   (production) worktrees are stale. Do not release from them; releases go through GitHub PRs.
 - Many other `ODOGWU-HERITAGE-*` worktrees hold older feature branches. Do not delete them.
@@ -103,7 +107,9 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
   `DormantFutureMeasurementStep.tsx` (505, 510), `test_monogram_pricing.ts` (107).
 - Known failing tests: `test_task5g_accessibility`, `test_mid_process_garment_removal_ui`,
   `test_private_batch_foundation`, `test_homepage_draft_replacement_hydration`,
-  `test_order_context_presentation`, `test_step1_step3_catalogue_loading_ui`.
+  `test_order_context_presentation`, `test_step1_step3_catalogue_loading_ui`,
+  `test_garment_construction_pricing` (garment list without Long Skirt, line 30),
+  `test_garment_construction_custom_details` ("Shirt construction" label, line 76).
 - Tests that import Firebase fail under plain `tsx` with `FirebaseClientConfigurationError`.
   Run them through `node scripts/tsxWithViteProductionFirebase.mjs` (or their `npm run test:*` script).
 - Source assertions that search for a literal `\n` fail on this CRLF checkout (for example

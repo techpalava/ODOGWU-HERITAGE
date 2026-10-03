@@ -225,7 +225,7 @@ assert.deepEqual(
   [
     ["shirt", 65],
     ["trouser", 75],
-    ["kaftan", 75],
+    ["kaftan", 70],
     ["agbada", 140],
   ],
 );
