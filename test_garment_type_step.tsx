@@ -491,7 +491,7 @@ assert.deepEqual(
 assert.equal(approvedProjection.readOnlyConstructionRows.reduce((sum, row) => sum + row.priceCents, 0), 65000);
 for (const [garmentType, optionId] of [
   ["kaftan", "shirt_long_short"],
-  ["full_length_gown", "dress_long_short"],
+  ["full_length_gown", "dress_long_sleeveless"],
   ["dress", "dress_std_sleeveless"],
 ] as const) {
   assert.deepEqual(
