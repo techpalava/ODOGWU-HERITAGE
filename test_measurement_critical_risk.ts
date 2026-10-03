@@ -209,7 +209,7 @@ assert.equal(
     profile: profileById.I,
     constructionOptionId: null,
   }),
-  false,
+  true,
 );
 assert.equal(
   isCriticalRiskCompleteSetCalculable({
@@ -223,21 +223,21 @@ assert.equal(
     profile: profileById.K,
     constructionOptionId: null,
   }),
-  false,
+  true,
 );
 assert.equal(
   isCriticalRiskCompleteSetCalculable({
     profile: profileById.L,
     constructionOptionId: "skirt_std",
   }),
-  false,
+  true,
 );
 assert.equal(
   isCriticalRiskCompleteSetCalculable({
     profile: profileById.M,
     constructionOptionId: "skirt_long",
   }),
-  false,
+  true,
 );
 
 const support = (
@@ -259,11 +259,11 @@ assert.equal(support(dressE, [garment("base:dress", "dress")]), false);
 assert.equal(support(dressF, [garment("base:dress", "dress")]), false);
 assert.equal(support(dressG, [garment("base:dress", "dress")]), false);
 assert.equal(support(dressH, [garment("base:dress", "dress")]), false);
-assert.equal(support(trouserI, [garment("base:trouser", "trouser")]), false);
+assert.equal(support(trouserI, [garment("base:trouser", "trouser")]), true);
 assert.equal(support(nikkaJ, [garment("base:standard_shorts", "standard_shorts")]), true);
-assert.equal(support(bumK, [garment("base:bum_shorts", "bum_shorts")]), false);
-assert.equal(support(skirtL, [garment("base:skirt", "skirt")]), false);
-assert.equal(support(skirtM, [garment("base:skirt", "skirt")]), false);
+assert.equal(support(bumK, [garment("base:bum_shorts", "bum_shorts")]), true);
+assert.equal(support(skirtL, [garment("base:skirt", "skirt")]), true);
+assert.equal(support(skirtM, [garment("base:skirt", "skirt")]), true);
 assert.equal(
   support(shirtAndNikka, [
     garment("base:shirt", "shirt"),
@@ -276,7 +276,7 @@ assert.equal(
     garment("base:shirt", "shirt"),
     garment("base:trouser", "trouser"),
   ]),
-  false,
+  true,
 );
 assert.equal(
   support(
@@ -298,7 +298,7 @@ assert.equal(
     ],
     additionalConstruction("additional:trouser:1", "trouser", "trouser_rope", "trouser_fastening"),
   ),
-  false,
+  true,
 );
 
 const planCritical = (
@@ -516,9 +516,33 @@ assert.deepEqual(
   ["additional:shirt:1", "base:shirt"],
 );
 
-const unsupportedPlan = planCritical(trouserI, [garment("base:trouser", "trouser")]);
+const trouserCriticalPlan = planCritical(trouserI, [garment("base:trouser", "trouser")]);
+assert.equal(trouserCriticalPlan.criticalRiskSupported, true);
+assert.deepEqual(trouserCriticalPlan.criticalRiskBlockingGarmentKeys, []);
+assert.equal(trouserCriticalPlan.canCalculate, true);
+assert.ok(
+  trouserCriticalPlan.requirements.some(
+    (requirement) =>
+      requirement.measurementId === "waist_to_feet_back_length" &&
+      requirement.inputSource === "calculated_average_factor",
+  ),
+);
+let trouserCriticalState = createEmptyFutureMeasurementState("critical_risk", "cm");
+trouserCriticalState = setFutureMeasurementInput({
+  state: trouserCriticalState,
+  requirement: trouserCriticalPlan.requirements.find((requirement) => requirement.directInput)!,
+  displayValue: 180,
+});
+trouserCriticalState = reconcileFutureMeasurementState({
+  state: trouserCriticalState,
+  plan: trouserCriticalPlan,
+});
+assert.equal(trouserCriticalState.calculationStatus, "complete");
+assert.equal(isFutureSummaryUnlockedByMeasurements(trouserCriticalState), true);
+
+const unsupportedPlan = planCritical(shirtB, [garment("base:shirt", "shirt")]);
 assert.equal(unsupportedPlan.criticalRiskSupported, false);
-assert.deepEqual(unsupportedPlan.criticalRiskBlockingGarmentKeys, ["base:trouser"]);
+assert.deepEqual(unsupportedPlan.criticalRiskBlockingGarmentKeys, ["base:shirt"]);
 assert.deepEqual(supportedPlan.criticalRiskBlockingGarmentKeys, []);
 assert.equal(unsupportedPlan.canCalculate, false);
 assert.equal(unsupportedPlan.requirements.length, 0);

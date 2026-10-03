@@ -349,8 +349,8 @@ const longShirtLength = longDressShirtPlan.requirements.find(
     requirement.garmentKey === "base:shirt" &&
     requirement.measurementId === "shirt_length_long",
 )!;
-assert.equal(longDressLength.averageFactor, null);
-assert.equal(longDressLength.inputSource, "optional_manual");
+assert.equal(longDressLength.averageFactor, 0.597092331523786);
+assert.equal(longDressLength.inputSource, "calculated_average_factor");
 assert.equal(longShirtLength.averageFactor, 0.597092331523786);
 assert.equal(longShirtLength.inputSource, "calculated_average_factor");
 

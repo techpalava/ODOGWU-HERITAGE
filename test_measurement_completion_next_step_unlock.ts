@@ -420,11 +420,24 @@ const midLongHighPlan = planMeasurementRequirements({
   garmentTypeSelection: midLongDressSelection,
   physicalGarments: [{ garmentKey: "base:dress", garmentType: "dress" }],
 });
-assert.equal(alternativeMembers(midLongHighPlan).length, 0);
-const midLongHighComplete = fillVisibleRequired(midLongHighPlan);
+assert.equal(
+  alternativeMembers(midLongHighPlan, "F_sleeve_length").length,
+  2,
+  "High Risk mid/long dress keeps sleeve one-of while construction cannot discriminate",
+);
+const midLongHighBothEmpty = fillVisibleRequired(midLongHighPlan);
+assert.equal(isFutureMeasurementStageComplete(midLongHighBothEmpty), false);
+const midLongHighComplete = fillAlternative(
+  midLongHighPlan,
+  midLongHighBothEmpty,
+  "sleeve_length_mid",
+  42,
+);
 assert.equal(isFutureMeasurementStageComplete(midLongHighComplete), true);
 assert.deepEqual(
-  visibleRequired(midLongHighPlan).map((requirement) => requirement.measurementId),
+  visibleRequired(midLongHighPlan)
+    .filter((requirement) => requirement.directInput)
+    .map((requirement) => requirement.measurementId),
   ["total_height", "chest_bust_circumference", "belly_circumference"],
 );
 
