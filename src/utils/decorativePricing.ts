@@ -13,6 +13,7 @@ import {
   getSelectedCustomDetailOptionIds,
   getSupportedCustomDetailGroupResolution,
 } from "./catalogHelpers";
+import { PRICING_CURRENCY_SYMBOL } from "./money";
 
 export const DECORATIVE_FEATURE_OPTIONS: readonly DecorativeFeature[] = [
   "Name Monogram",
@@ -444,7 +445,308 @@ export interface PricedSelection {
   label: string;
   price: number;
   includedByStyle: boolean;
+  /** Set when this surcharge is charged for a specific parent garment occurrence. */
+  garmentKey?: string;
+  /** Always 1 for per-garment decorative feature lines. */
+  quantity?: number;
 }
+
+export const hasGarmentScopedDecorativeFeatureSelections = (
+  selections: DesignSelections | null | undefined,
+): boolean =>
+  Boolean(
+    selections?.decorativeFeaturesByGarmentKey &&
+      Object.keys(selections.decorativeFeaturesByGarmentKey).length > 0,
+  );
+
+export const getDecorativeFeaturesForGarment = (
+  selections: DesignSelections | null | undefined,
+  garmentKey: string,
+): DecorativeFeature[] => {
+  if (!selections) return [];
+  if (hasGarmentScopedDecorativeFeatureSelections(selections)) {
+    return sortDecorativeFeatures(
+      selections.decorativeFeaturesByGarmentKey?.[garmentKey] || [],
+    );
+  }
+  return sortDecorativeFeatures(selections.decorativeFeatures || []);
+};
+
+export const getMonogramPlacementForGarment = (
+  selections: DesignSelections | null | undefined,
+  garmentKey: string,
+): MonogramPlacement | undefined => {
+  if (!selections) return undefined;
+  if (hasGarmentScopedDecorativeFeatureSelections(selections)) {
+    return selections.monogramPlacementByGarmentKey?.[garmentKey];
+  }
+  return selections.monogramPlacement;
+};
+
+export const enumerateGarmentScopedDecorativeFeatureSelections = (
+  selections: DesignSelections | null | undefined,
+): readonly {
+  garmentKey: string;
+  feature: DecorativeFeature;
+  placement?: MonogramPlacement;
+}[] => {
+  if (!selections || !hasGarmentScopedDecorativeFeatureSelections(selections)) {
+    return (selections?.decorativeFeatures || []).map((feature) => ({
+      garmentKey: "order",
+      feature,
+      placement:
+        feature === "Name Monogram" ? selections?.monogramPlacement : undefined,
+    }));
+  }
+  const rows: {
+    garmentKey: string;
+    feature: DecorativeFeature;
+    placement?: MonogramPlacement;
+  }[] = [];
+  Object.entries(selections.decorativeFeaturesByGarmentKey || {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .forEach(([garmentKey, features]) => {
+      sortDecorativeFeatures(features).forEach((feature) => {
+        rows.push({
+          garmentKey,
+          feature,
+          placement:
+            feature === "Name Monogram"
+              ? selections.monogramPlacementByGarmentKey?.[garmentKey]
+              : undefined,
+        });
+      });
+    });
+  return rows;
+};
+
+const syncLegacyDecorativeFeatureMirror = (
+  byGarmentKey: Readonly<Record<string, readonly DecorativeFeature[]>>,
+  placementByGarmentKey: Readonly<Record<string, MonogramPlacement | undefined>>,
+): Pick<DesignSelections, "decorativeFeatures" | "monogramPlacement"> => {
+  const union = sortDecorativeFeatures(
+    Object.values(byGarmentKey).flatMap((features) => [...features]),
+  );
+  const placement =
+    Object.values(placementByGarmentKey).find(
+      (value): value is MonogramPlacement => Boolean(value),
+    ) || undefined;
+  return {
+    decorativeFeatures: union,
+    monogramPlacement: union.includes("Name Monogram") ? placement : undefined,
+  };
+};
+
+export const expandLegacyDecorativeFeaturesOntoGarments = (
+  selections: DesignSelections,
+  activeParentGarmentKeys: readonly string[],
+): DesignSelections => {
+  if (
+    hasGarmentScopedDecorativeFeatureSelections(selections) ||
+    activeParentGarmentKeys.length === 0
+  ) {
+    return selections;
+  }
+  const legacyFeatures = sortDecorativeFeatures(
+    selections.decorativeFeatures || [],
+  );
+  if (legacyFeatures.length === 0) return selections;
+  const decorativeFeaturesByGarmentKey = Object.fromEntries(
+    activeParentGarmentKeys.map((garmentKey) => [
+      garmentKey,
+      [...legacyFeatures],
+    ]),
+  );
+  const monogramPlacementByGarmentKey =
+    legacyFeatures.includes("Name Monogram") && selections.monogramPlacement
+      ? Object.fromEntries(
+          activeParentGarmentKeys.map((garmentKey) => [
+            garmentKey,
+            selections.monogramPlacement as MonogramPlacement,
+          ]),
+        )
+      : {};
+  return {
+    ...selections,
+    decorativeFeaturesByGarmentKey,
+    monogramPlacementByGarmentKey,
+    ...syncLegacyDecorativeFeatureMirror(
+      decorativeFeaturesByGarmentKey,
+      monogramPlacementByGarmentKey,
+    ),
+  };
+};
+
+export const setDecorativeFeaturesForGarment = (
+  selections: DesignSelections,
+  garmentKey: string,
+  features: readonly DecorativeFeature[],
+): DesignSelections => {
+  const nextFeatures = sortDecorativeFeatures(features);
+  const decorativeFeaturesByGarmentKey = {
+    ...(selections.decorativeFeaturesByGarmentKey || {}),
+  };
+  const monogramPlacementByGarmentKey = {
+    ...(selections.monogramPlacementByGarmentKey || {}),
+  };
+  if (nextFeatures.length === 0) {
+    delete decorativeFeaturesByGarmentKey[garmentKey];
+    delete monogramPlacementByGarmentKey[garmentKey];
+  } else {
+    decorativeFeaturesByGarmentKey[garmentKey] = nextFeatures;
+    if (!nextFeatures.includes("Name Monogram")) {
+      delete monogramPlacementByGarmentKey[garmentKey];
+    } else if (!monogramPlacementByGarmentKey[garmentKey]) {
+      monogramPlacementByGarmentKey[garmentKey] = DEFAULT_MONOGRAM_PLACEMENT;
+    }
+  }
+  return {
+    ...selections,
+    decorativeFeaturesByGarmentKey,
+    monogramPlacementByGarmentKey,
+    ...syncLegacyDecorativeFeatureMirror(
+      decorativeFeaturesByGarmentKey,
+      monogramPlacementByGarmentKey,
+    ),
+  };
+};
+
+export const toggleDecorativeFeatureForGarment = (
+  selections: DesignSelections,
+  garmentKey: string,
+  feature: DecorativeFeature,
+): DesignSelections => {
+  const current = new Set(getDecorativeFeaturesForGarment(selections, garmentKey));
+  if (current.has(feature)) current.delete(feature);
+  else current.add(feature);
+  return setDecorativeFeaturesForGarment(selections, garmentKey, [...current]);
+};
+
+export const clearDecorativeFeaturesForGarment = (
+  selections: DesignSelections,
+  garmentKey: string,
+): DesignSelections =>
+  setDecorativeFeaturesForGarment(selections, garmentKey, []);
+
+export const getGarmentKeysForDecorativeFeature = (
+  selections: DesignSelections | null | undefined,
+  feature: DecorativeFeature,
+): string[] => {
+  if (!selections) return [];
+  if (hasGarmentScopedDecorativeFeatureSelections(selections)) {
+    return Object.entries(selections.decorativeFeaturesByGarmentKey || {})
+      .filter(([, features]) => features.includes(feature))
+      .map(([garmentKey]) => garmentKey)
+      .sort((left, right) => left.localeCompare(right));
+  }
+  return (selections.decorativeFeatures || []).includes(feature)
+    ? ["order"]
+    : [];
+};
+
+export const setDecorativeFeatureGarmentAssignment = (
+  selections: DesignSelections,
+  feature: DecorativeFeature,
+  garmentKey: string,
+  assigned: boolean,
+): DesignSelections => {
+  const current = new Set(getDecorativeFeaturesForGarment(selections, garmentKey));
+  if (assigned) current.add(feature);
+  else current.delete(feature);
+  return setDecorativeFeaturesForGarment(selections, garmentKey, [...current]);
+};
+
+export const clearDecorativeFeatureAcrossGarments = (
+  selections: DesignSelections,
+  feature: DecorativeFeature,
+): DesignSelections => {
+  if (!hasGarmentScopedDecorativeFeatureSelections(selections)) {
+    const remaining = sortDecorativeFeatures(
+      (selections.decorativeFeatures || []).filter((entry) => entry !== feature),
+    );
+    return {
+      ...selections,
+      decorativeFeatures: remaining,
+      monogramPlacement:
+        feature === "Name Monogram" || !remaining.includes("Name Monogram")
+          ? undefined
+          : selections.monogramPlacement,
+      decorativeFeaturesByGarmentKey: {},
+      monogramPlacementByGarmentKey: {},
+    };
+  }
+  let next = selections;
+  getGarmentKeysForDecorativeFeature(selections, feature).forEach((garmentKey) => {
+    next = setDecorativeFeatureGarmentAssignment(
+      next,
+      feature,
+      garmentKey,
+      false,
+    );
+  });
+  return next;
+};
+
+export const clearAllDecorativeFeatures = (
+  selections: DesignSelections,
+): DesignSelections => ({
+  ...selections,
+  decorativeFeatures: [],
+  monogramPlacement: undefined,
+  decorativeFeaturesByGarmentKey: {},
+  monogramPlacementByGarmentKey: {},
+});
+
+export const formatDecorativeFeatureQuantityPriceLabel = (
+  unitPrice: number,
+  quantity: number,
+): string => {
+  if (quantity <= 0) {
+    return `+${PRICING_CURRENCY_SYMBOL}${unitPrice.toFixed(2)} per garment`;
+  }
+  return `${quantity} × ${PRICING_CURRENCY_SYMBOL}${unitPrice.toFixed(2)}`;
+};
+
+export const setMonogramPlacementForGarment = (
+  selections: DesignSelections,
+  garmentKey: string,
+  placement: MonogramPlacement,
+): DesignSelections => {
+  const features = getDecorativeFeaturesForGarment(selections, garmentKey);
+  if (!features.includes("Name Monogram")) return selections;
+  const decorativeFeaturesByGarmentKey = {
+    ...(selections.decorativeFeaturesByGarmentKey || {
+      [garmentKey]: features,
+    }),
+    [garmentKey]: features,
+  };
+  const monogramPlacementByGarmentKey = {
+    ...(selections.monogramPlacementByGarmentKey || {}),
+    [garmentKey]: placement,
+  };
+  return {
+    ...selections,
+    decorativeFeaturesByGarmentKey,
+    monogramPlacementByGarmentKey,
+    ...syncLegacyDecorativeFeatureMirror(
+      decorativeFeaturesByGarmentKey,
+      monogramPlacementByGarmentKey,
+    ),
+  };
+};
+
+export const getCustomerSelectableDecorativeFeaturesForGarment = (
+  style?: StyleCategory | null,
+  garment?: CustomDetailGarmentContext | null,
+): DecorativeFeature[] =>
+  getCustomerSelectableDecorativeFeatures().filter(
+    (feature) =>
+      feature !== "Name Monogram" || isNameMonogramApplicable(style, garment),
+  );
+
+export const formatDecorativeFeatureUnitPriceLabel = (
+  unitPrice: number,
+): string => `1 × ${PRICING_CURRENCY_SYMBOL}${unitPrice.toFixed(2)}`;
 
 export interface GarmentDetailsPrice {
   total: number;
@@ -472,8 +774,19 @@ export const calculateGarmentDetailsPrice = (
   const decorativeFeatureStyle = selectedFeatureContext
     ? selectedFeatureContext.applicabilityStyle
     : style;
+  const usesGarmentScopedSelections =
+    hasGarmentScopedDecorativeFeatureSelections(details);
+  const detailsForApplicability = usesGarmentScopedSelections
+    ? {
+        ...details,
+        // Style-included / placement filters still run on a flat view; customer
+        // charges are summed from the by-garment map below.
+        decorativeFeatures: [],
+        monogramPlacement: undefined,
+      }
+    : details;
   const applicableDetails = filterDesignSelectionsForDecorativeFeatures(
-    details,
+    detailsForApplicability,
     decorativeFeatureStyle,
     garment,
   );
@@ -489,10 +802,13 @@ export const calculateGarmentDetailsPrice = (
   });
   const includedFeatures = new Set(includedFeatureList);
   const selectedFeatures = new Set<DecorativeFeature>(
-    applicableDetails.decorativeFeatures || [],
+    usesGarmentScopedSelections
+      ? []
+      : applicableDetails.decorativeFeatures || [],
   );
 
   if (
+    !usesGarmentScopedSelections &&
     applicableDetails.embroideryDesign &&
     DECORATIVE_FEATURE_OPTIONS.includes(
       applicableDetails.embroideryDesign as DecorativeFeature,
@@ -503,15 +819,40 @@ export const calculateGarmentDetailsPrice = (
     );
   }
 
-  const allFeatures = new Set<DecorativeFeature>([
+  const includedPricedFeatures = sortDecorativeFeatures([
     ...includedFeatures,
-    ...selectedFeatures,
-  ]);
-  const decorativeFeatures = sortDecorativeFeatures([...allFeatures]).map((feature) => ({
+  ]).map((feature) => ({
     label: feature,
     price: getDecorativeFeaturePrice(style, feature),
-    includedByStyle: includedFeatures.has(feature),
+    includedByStyle: true as const,
   }));
+  const customerPricedFeatures: PricedSelection[] = usesGarmentScopedSelections
+    ? enumerateGarmentScopedDecorativeFeatureSelections(details)
+        .filter(
+          ({ feature }) =>
+            getCustomerSelectableDecorativeFeatures().includes(feature) &&
+            !includedFeatures.has(feature),
+        )
+        .map(({ garmentKey, feature }) => ({
+          label: feature,
+          price: getDecorativeFeaturePrice(style, feature),
+          includedByStyle: false,
+          garmentKey,
+          quantity: 1 as const,
+        }))
+    : sortDecorativeFeatures(
+        [...selectedFeatures].filter((feature) => !includedFeatures.has(feature)),
+      ).map((feature) => ({
+        label: feature,
+        price: getDecorativeFeaturePrice(style, feature),
+        includedByStyle: false,
+      }));
+  // Style-included features remain a single order-level charge. Customer
+  // garment-scoped lines are additive across garments.
+  const decorativeFeatures = [
+    ...includedPricedFeatures,
+    ...customerPricedFeatures,
+  ];
   const accessories = sortTraditionalAccessories(
     applicableDetails.accessories || [],
   ).map((accessory) => ({

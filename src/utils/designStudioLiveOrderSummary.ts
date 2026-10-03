@@ -235,6 +235,7 @@ const constructionOptionsForGarment = (
       .find((group) => group.garmentKey === garment.garmentKey)
       ?.occurrences.filter(
         (occurrence) =>
+          occurrence.selectionGroup !== "order_optional_detail" &&
           !baseSelectionKeys.has(
             `${occurrence.selectionGroup}:${occurrence.optionId}`,
           ) &&
@@ -297,23 +298,44 @@ const getPersonalizedAdditionCategory = (
   return "Accessories";
 };
 
+const quantityTimesUnitAmountLabel = (
+  priceCents: number | null,
+  priceStatus: "exact" | "evaluation_required" | "invalid",
+): string => {
+  if (priceStatus !== "exact") return "Price requires evaluation";
+  if (!priceCents || priceCents <= 0) return "Included";
+  return `1 × ${moneyFromCents(priceCents)}`;
+};
+
 /**
- * Step 5 decorative selections are intentionally order-level. The Future
- * Summary already projects their authoritative pricing rows under the `order`
- * owner; this only gives those rows their own customer-facing section.
+ * Embroidery/monogram rows are garment-scoped; accessories remain order-level.
  */
 const personalizedAdditionLines = (
   summary: FutureDesignStudioSummary,
 ): LiveOrderSummaryLine[] => {
+  const garmentScopedSelections = summary.customDetailsSummary
+    .filter((group) => group.garmentKey !== "order")
+    .flatMap((group) =>
+      group.occurrences
+        .filter(
+          (occurrence) =>
+            occurrence.selectionGroup === "order_optional_detail",
+        )
+        .map((occurrence) => ({
+          ...occurrence,
+          garmentLabel: group.garmentLabel || occurrence.garmentLabel,
+        })),
+    );
   const orderLevelSelections =
     summary.customDetailsSummary
       .find((group) => group.garmentKey === "order")
       ?.occurrences.filter(
         (occurrence) => occurrence.selectionGroup === "order_optional_detail",
       ) || [];
+  const selections = [...garmentScopedSelections, ...orderLevelSelections];
 
   return PERSONALIZED_ADDITION_CATEGORY_ORDER.flatMap((category) =>
-    orderLevelSelections
+    selections
       .filter(
         (occurrence) =>
           getPersonalizedAdditionCategory(occurrence.optionId) === category,
@@ -321,11 +343,20 @@ const personalizedAdditionLines = (
       .map((occurrence) => ({
         id: `personalized-addition:${occurrence.occurrenceKey}`,
         label: category,
-        detail: occurrence.optionLabel,
-        amountLabel: amountLabelForCustomDetail(
-          occurrence.priceCents,
-          occurrence.priceStatus,
-        ),
+        detail:
+          occurrence.garmentKey === "order"
+            ? occurrence.optionLabel
+            : `${occurrence.garmentLabel}: ${occurrence.optionLabel}`,
+        amountLabel:
+          occurrence.garmentKey === "order"
+            ? amountLabelForCustomDetail(
+                occurrence.priceCents,
+                occurrence.priceStatus,
+              )
+            : quantityTimesUnitAmountLabel(
+                occurrence.priceCents,
+                occurrence.priceStatus,
+              ),
       })),
   );
 };

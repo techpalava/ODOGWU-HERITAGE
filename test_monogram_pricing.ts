@@ -204,6 +204,41 @@ assert.equal(
   26.5,
 );
 
+const multiGarmentDecorativePricing = calculateGarmentDetailsPrice(
+  {
+    decorativeFeaturesByGarmentKey: {
+      "base:shirt": ["Name Monogram", "Embroidery"],
+      "base:kaftan": ["Name Monogram"],
+    },
+    decorativeFeatures: ["Name Monogram", "Embroidery"],
+  },
+  makeStyle(),
+  [],
+  null,
+  { applicabilityStyle: makeStyle() },
+);
+assert.equal(
+  multiGarmentDecorativePricing.monogramPrice,
+  36,
+  "per-garment embroidery/monogram charges unit price once for each selected garment",
+);
+assert.equal(
+  multiGarmentDecorativePricing.decorativeFeatures.filter(
+    (feature) => !feature.includedByStyle,
+  ).length,
+  3,
+);
+assert.deepEqual(
+  multiGarmentDecorativePricing.decorativeFeatures
+    .filter((feature) => !feature.includedByStyle)
+    .map((feature) => [feature.garmentKey, feature.label, feature.quantity]),
+  [
+    ["base:kaftan", "Name Monogram", 1],
+    ["base:shirt", "Name Monogram", 1],
+    ["base:shirt", "Embroidery", 1],
+  ],
+);
+
 const makeGarmentAwareStyle = (
   supportedGarmentGroups: NonNullable<
     StyleCategory["customDetailConfig"]
