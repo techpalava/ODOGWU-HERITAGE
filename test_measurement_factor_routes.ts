@@ -205,6 +205,89 @@ assert.equal(
   "Unresolved sleeve alternatives stay a required one-of group, not two independent required rows.",
 );
 
+for (const profileId of ["B", "F", "H"] as const) {
+  for (const route of ["medium_risk", "high_risk"] as const) {
+    const plan = planFor(profileId, route);
+    const sleeveOneOf = plan.requirements.filter(
+      (requirement) =>
+        requirement.alternativeGroup?.endsWith("_sleeve_length") &&
+        requirement.section === "required" &&
+        !requirement.directInput &&
+        requirement.inputSource === "route_marker",
+    );
+    const sleeveIds = sleeveOneOf.map((requirement) => requirement.measurementId).sort();
+    assert.deepEqual(
+      sleeveIds,
+      ["sleeve_length_long", "sleeve_length_mid"],
+      `${profileId} ${route} keeps mid/long as a required one-of`,
+    );
+    assert.equal(
+      plan.requirements.some(
+        (requirement) =>
+          requirement.measurementId === "sleeve_length_long" &&
+          requirement.inputSource === "calculated_average_factor",
+      ),
+      false,
+      `${profileId} ${route} must not auto-calculate long sleeve while mid/long is unresolved`,
+    );
+    const filled = fillRequired(profileId, route);
+    assert.equal(
+      isFutureMeasurementStageComplete(filled.state),
+      false,
+      `${profileId} ${route} stays incomplete until a sleeve alternative is entered`,
+    );
+    const midSleeve = sleeveOneOf.find(
+      (requirement) => requirement.measurementId === "sleeve_length_mid",
+    )!;
+    const withSleeve = reconcileFutureMeasurementState({
+      state: setFutureMeasurementInput({
+        state: filled.state,
+        requirement: midSleeve,
+        displayValue: 40,
+      }),
+      plan,
+    });
+    assert.equal(isFutureMeasurementStageComplete(withSleeve), true);
+    assert.equal(isFutureSummaryUnlockedByMeasurements(withSleeve), true);
+    assert.equal(
+      withSleeve.derived.byGarmentKey[PROFILE_FIXTURES[profileId].garmentKey]?.sleeve_length_long,
+      undefined,
+    );
+  }
+}
+
+const sleevelessDressHigh = (() => {
+  const fixture = PROFILE_FIXTURES.E;
+  const garmentTypeSelection: GarmentTypeStepSelection = {
+    garmentTypes: ["dress"],
+    demographic: "female",
+    constructionByGarment: {
+      dress: construction("dress", "dress_std_sleeveless", "dress_construction"),
+    },
+  };
+  const plan = planMeasurementRequirements({
+    route: "high_risk",
+    garmentTypeSelection,
+    physicalGarments: [{ garmentKey: fixture.garmentKey, garmentType: "dress" }],
+  });
+  assert.equal(
+    plan.requirements.some((requirement) => requirement.measurementId === "sleeve_length_short"),
+    false,
+    "Sleeveless construction excludes short sleeve on High Risk",
+  );
+  assert.equal(
+    plan.requirements.some(
+      (requirement) =>
+        requirement.measurementId === "sleeve_length_sleeveless" &&
+        requirement.inputSource === "optional_manual",
+    ),
+    true,
+    "Sleeveless finish stays optional (no average factor) when construction selects it",
+  );
+  return plan;
+})();
+assert.ok(sleevelessDressHigh);
+
 for (const profileId of ["A", "E", "I", "L"] as const) {
   const before = fillRequired(profileId, "medium_risk");
   const requiredIds = before.plan.requirements
@@ -316,11 +399,11 @@ const longDressLength = longDressMid.plan.requirements.find(
   (requirement) => requirement.measurementId === "dress_length_long",
 );
 assert.ok(longDressLength);
-assert.equal(longDressLength.inputSource, "optional_manual");
-assert.equal(longDressLength.averageFactor, null);
-assert.equal(
-  longDressMid.state.derived.byGarmentKey["dress:1"]?.dress_length_long,
-  undefined,
+assert.equal(longDressLength.inputSource, "calculated_average_factor");
+nearlyEqual(longDressLength.averageFactor!, 0.597092331523786);
+nearlyEqual(
+  longDressMid.state.derived.byGarmentKey["dress:1"]!.dress_length_long!.valueCm,
+  calculateMeasurementFromAverageFactor(180, longDressLength.averageFactor!),
 );
 
 const skirtMid = fillRequired("L", "medium_risk");
@@ -414,6 +497,10 @@ assert.equal(
   optionalBlank.state.entered.byGarmentKey["dress:1"]?.dress_length_long,
   undefined,
 );
+assert.equal(
+  optionalBlank.state.derived.byGarmentKey["dress:1"]?.dress_length_long?.provenance,
+  "calculated_average_factor",
+);
 assert.equal(isFutureSummaryUnlockedByMeasurements(optionalBlank.state), true);
 
 // Fred's High-Risk mix: Profile B shirt + Profile K bum shorts.
@@ -486,6 +573,43 @@ for (const requirement of fredPlan.requirements.filter((item) => item.directInpu
   });
 }
 fredState = reconcileFutureMeasurementState({ state: fredState, plan: fredPlan });
+assert.equal(
+  fredState.calculationStatus,
+  "incomplete",
+  "Profile B High Risk stays incomplete until mid/long sleeve one-of is satisfied",
+);
+const fredMidSleeve = fredPlan.requirements.find(
+  (candidate) =>
+    candidate.garmentKey === "fred:shirt:1" &&
+    candidate.measurementId === "sleeve_length_mid" &&
+    candidate.alternativeGroup === "B_sleeve_length",
+)!;
+assert.equal(fredMidSleeve.inputSource, "route_marker");
+assert.equal(fredMidSleeve.section, "required");
+assert.equal(fredMidSleeve.directInput, false);
+const fredLongSleeve = fredPlan.requirements.find(
+  (candidate) =>
+    candidate.garmentKey === "fred:shirt:1" &&
+    candidate.measurementId === "sleeve_length_long" &&
+    candidate.alternativeGroup === "B_sleeve_length",
+)!;
+assert.equal(fredLongSleeve.inputSource, "route_marker");
+assert.equal(fredLongSleeve.section, "required");
+assert.equal(
+  fredPlan.requirements.some(
+    (candidate) =>
+      candidate.garmentKey === "fred:shirt:1" &&
+      candidate.measurementId === "sleeve_length_long" &&
+      candidate.inputSource === "calculated_average_factor",
+  ),
+  false,
+);
+fredState = setFutureMeasurementInput({
+  state: fredState,
+  requirement: fredMidSleeve,
+  displayValue: 15.5,
+});
+fredState = reconcileFutureMeasurementState({ state: fredState, plan: fredPlan });
 assert.equal(fredState.calculationStatus, "complete");
 assert.equal(fredState.entered.shared.chest_bust_circumference?.provenance, "customer_entered");
 assert.equal(fredState.entered.shared.belly_circumference?.provenance, "customer_entered");
@@ -495,13 +619,20 @@ assert.equal(
   fredState.entered.byGarmentKey["fred:bum-shorts:1"]?.waist_to_lap_length?.provenance,
   "customer_entered",
 );
+assert.equal(
+  fredState.entered.byGarmentKey["fred:shirt:1"]?.sleeve_length_mid?.provenance,
+  "customer_entered",
+);
+assert.equal(
+  fredState.derived.byGarmentKey["fred:shirt:1"]?.sleeve_length_long,
+  undefined,
+);
 
 const fredAutomaticRows = [
   ["fred:shirt:1", "head_circumference", 22.97],
   ["fred:shirt:1", "neck_circumference", 15.89],
   ["fred:shirt:1", "shoulder_length", 17.19],
   ["fred:shirt:1", "shirt_length_standard", 29.96],
-  ["fred:shirt:1", "sleeve_length_long", 23.2],
   ["fred:shirt:1", "bicep_circumference", 13.37],
   ["fred:shirt:1", "elbow_circumference", 11.52],
   ["fred:shirt:1", "armhole_circumference", 19.76],
@@ -542,15 +673,6 @@ for (const garmentKey of ["fred:shirt:1", "fred:bum-shorts:1"]) {
   );
 }
 
-for (const [garmentKey, measurementId] of [
-  ["fred:shirt:1", "sleeve_length_mid"],
-] as const) {
-  const requirement = fredPlan.requirements.find(
-    (candidate) => candidate.garmentKey === garmentKey && candidate.measurementId === measurementId,
-  );
-  assert.equal(requirement?.inputSource, "optional_manual");
-  assert.equal(fredState.derived.byGarmentKey[garmentKey]?.[measurementId], undefined);
-}
 assert.equal(fredRequirement("waist_to_lap_length", "fred:bum-shorts:1").inputSource, "route_marker");
 assert.equal(fredRequirement("waist_to_lap_length", "fred:bum-shorts:1").directInput, true);
 
