@@ -263,8 +263,10 @@ import {
 } from "../utils/aiTryOnWorkflow";
 import {
   createEmptyFutureMeasurementState,
+  getActiveFutureMeasurementEntered,
   getMeasurementPhysicalGarments,
   resolveHydratedMeasurementPhysicalGarments,
+  isFutureMeasurementEnteredBagEmpty,
   isFutureMeasurementStageComplete,
   isFutureMeasurementStageUnlocked,
   isFutureSummaryUnlockedByMeasurements,
@@ -931,6 +933,9 @@ export default function DesignStudioView({
     useState<FutureMeasurementStateV1>(createEmptyFutureMeasurementState);
   const [wearerOrder, setWearerOrder] = useState(createEmptyWearerOrder);
   const [activeWearerId, setActiveWearerId] = useState<string | null>(null);
+  const [measurementPersistFlushNonce, setMeasurementPersistFlushNonce] =
+    useState(0);
+  const futureDraftAutosaveDelayMsRef = useRef(250);
   const [futureShippingState, setFutureShippingState] =
     useState<FutureShippingStateV1>(createEmptyFutureShippingState);
   const [futureSelectedStyleId, setFutureSelectedStyleId] = useState<
@@ -5327,7 +5332,7 @@ export default function DesignStudioView({
         futureMeasurementState: preservedInvalidHydratedMeasurementsRef.current
           ? (preservedInvalidHydratedMeasurementsRef.current
               .preservedRaw as GuestDesignDraft["futureMeasurementState"])
-          : wearerOrderForPlan,
+          : wearerOrderForPlanRef.current,
         selectedFabricCode: selectedFabric?.code || null,
         selectedStyleId: activeCatalogStyleId,
         designSource: activeDesignSource,
@@ -5516,6 +5521,13 @@ export default function DesignStudioView({
       const saveGeneration = ++futureDraftAutosaveGenerationRef.current;
       lastDesignStylePersistenceAcknowledgementRef.current = null;
       lastScheduledFutureDraftRef.current = canonicalGuestDraft;
+      if (futureDraftIdentity.status === "authenticated") {
+        // Mirror cloud-bound drafts locally so a refresh before the cloud write
+        // lands can still prefer the newer Clear-all / edit snapshot.
+        if (isCurrentPrivateAuthorization(scheduledPrivateAuthorization)) {
+          GuestOrderSessionService.saveFutureDesignDraft(canonicalGuestDraft);
+        }
+      }
       if (futureDraftIdentity.status === "guest") {
         if (!isCurrentPrivateAuthorization(scheduledPrivateAuthorization)) {
           return;
@@ -5649,7 +5661,11 @@ export default function DesignStudioView({
               }
             });
       }
-    }, 250);
+    }, (() => {
+      const delayMs = futureDraftAutosaveDelayMsRef.current;
+      futureDraftAutosaveDelayMsRef.current = 250;
+      return delayMs;
+    })());
 
     return () => activeFutureDraftAutosaveScheduler.cancel(persistTimer);
   }, [
@@ -5681,6 +5697,8 @@ export default function DesignStudioView({
     futurePrimaryFabricCode,
     futureAiTryOnWorkflow,
     reconciledFutureMeasurementState,
+    wearerOrderForPlan,
+    measurementPersistFlushNonce,
     futureShippingState,
     styles,
     stylesLoadState,
@@ -9263,6 +9281,12 @@ export default function DesignStudioView({
           hydrationInvalid={futureMeasurementHydrationInvalid}
           onChange={(state) => {
             if (futureMeasurementHydrationInvalid) return;
+            const previousBagFilled = !isFutureMeasurementEnteredBagEmpty(
+              getActiveFutureMeasurementEntered(futureMeasurementState),
+            );
+            const nextBagEmpty = isFutureMeasurementEnteredBagEmpty(
+              getActiveFutureMeasurementEntered(state),
+            );
             setFutureMeasurementState(state);
             if (activeWearer) {
               setWearerOrder((order) =>
@@ -9273,6 +9297,10 @@ export default function DesignStudioView({
                   state,
                 ),
               );
+            }
+            if (previousBagFilled && nextBagEmpty) {
+              futureDraftAutosaveDelayMsRef.current = 0;
+              setMeasurementPersistFlushNonce((current) => current + 1);
             }
           }}
           onRouteChange={handleFutureMeasurementRouteChange}

@@ -1240,7 +1240,9 @@ export const normalizeFutureMeasurementState = (
   } else if (
     hasEnteredByRouteField &&
     route &&
-    isFutureMeasurementEnteredBagEmpty(enteredByRoute[route]) &&
+    // Present-but-empty active bags are intentional (e.g. Clear all). Only
+    // lift legacy `entered` when that route key was omitted from the map.
+    !Object.prototype.hasOwnProperty.call(enteredByRouteSource, route) &&
     !isFutureMeasurementEnteredBagEmpty(legacyEntered)
   ) {
     enteredByRoute[route] = cloneFutureMeasurementEnteredBag(legacyEntered);
