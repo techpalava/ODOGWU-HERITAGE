@@ -19,12 +19,14 @@ import {
   isFutureSummaryUnlockedByMeasurements,
   MEASUREMENT_RISK_ROUTE_LABELS,
   MEASUREMENT_RISK_SELECTION_NOTICE,
+  normalizeFutureMeasurementState,
   planMeasurementRequirements,
   projectActiveFutureMeasurementState,
   reconcileFutureMeasurementState,
   setFutureMeasurementInput,
   setFutureMeasurementRoute,
 } from "./src/utils/measurementBlueprint";
+import { shouldReplacePersistedMeasurement } from "./src/utils/wearerOrder";
 
 const construction = (
   garmentType: keyof GarmentTypeStepSelection["constructionByGarment"],
@@ -472,5 +474,51 @@ const clearAllRenderer = renderHarness(hydrated.state);
   );
   assert.match(collectText(clearAllRenderer.root), /0 of \d+ complete/i);
 }
+
+const clearedPersisted = clearActiveFutureMeasurementEntered(hydrated.state);
+{
+  const filledOrder = {
+    schemaVersion: 2 as const,
+    wearers: [
+      {
+        wearerId: "wearer-1",
+        displayName: "Person 1",
+        fitContext: "male" as const,
+        presentationOrder: 0,
+        measurement: hydrated.state,
+      },
+    ],
+    assignmentByGarmentKey: { "shirt:1": "wearer-1" },
+  };
+  const clearedOrder = {
+    ...filledOrder,
+    wearers: [
+      {
+        ...filledOrder.wearers[0],
+        measurement: clearedPersisted,
+      },
+    ],
+  };
+  assert.equal(
+    shouldReplacePersistedMeasurement({
+      persisted: filledOrder,
+      incoming: clearedOrder,
+    }),
+    true,
+    "Cleared V2 wearer order must be allowed to replace a filled persisted V2 bag",
+  );
+}
+
+const resurrectProbe = normalizeFutureMeasurementState({
+  ...clearedPersisted,
+  entered: hydrated.state.entered,
+  enteredByRoute: clearedPersisted.enteredByRoute,
+});
+assert.ok(resurrectProbe);
+assert.equal(
+  isFutureMeasurementEnteredBagEmpty(getActiveFutureMeasurementEntered(resurrectProbe!)),
+  true,
+  "Present-but-empty enteredByRoute[route] must not refill from stale entered on hydrate",
+);
 
 console.log("PASS: mutually exclusive measurement risk selection, active-path validation, and notice");

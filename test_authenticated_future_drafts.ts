@@ -9,6 +9,7 @@ import type {
 } from "./src/types";
 import {
   createAuthenticatedFutureDraftRepository,
+  isFutureDraftUpdatedAtNewer,
   isPristineFutureDesignDraft,
   resolveAuthenticatedFutureDraftIdentity,
   type AuthenticatedFutureDraftIdentity,
@@ -745,6 +746,148 @@ const meaningfulPreAuthRestoredModel = createDesignStyleStepTestModel({
 assert.equal(meaningfulPreAuthRestoredModel.projection.runtimeStatus, "ready");
 assert.equal(meaningfulPreAuthRestoredModel.projection.completedCount, 2);
 assert.equal(meaningfulPreAuthRestoredModel.catalogueEntries.length, 1);
+
+assert.equal(
+  isFutureDraftUpdatedAtNewer(
+    { updatedAt: "2026-10-04T12:00:01.000Z" },
+    { updatedAt: "2026-10-04T12:00:00.000Z" },
+  ),
+  true,
+);
+assert.equal(
+  isFutureDraftUpdatedAtNewer(
+    { updatedAt: "2026-10-04T12:00:00.000Z" },
+    { updatedAt: "2026-10-04T12:00:01.000Z" },
+  ),
+  false,
+);
+
+const newerLocalClearAdapter = new MemoryAdapter();
+const newerLocalClearRepository = createAuthenticatedFutureDraftRepository({
+  adapter: newerLocalClearAdapter,
+  getIdentity: () => ({
+    status: "authenticated" as const,
+    ownerUid: "uid-newer-local-clear",
+  }),
+});
+const olderCloudDraft = {
+  ...makeDraft("measurement", "Cloud filled"),
+  updatedAt: "2026-10-04T10:00:00.000Z",
+  futureMeasurementState: {
+    schemaVersion: 2 as const,
+    wearers: [
+      {
+        wearerId: "wearer-1",
+        displayName: "Person 1",
+        fitContext: "male" as const,
+        presentationOrder: 0,
+        measurement: {
+          schemaVersion: 1 as const,
+          route: "low_risk" as const,
+          unit: "inch" as const,
+          entered: {
+            shared: {
+              total_height: {
+                valueCm: 180,
+                provenance: "customer_entered" as const,
+              },
+            },
+            byGarmentKey: {},
+          },
+          enteredByRoute: {
+            low_risk: {
+              shared: {
+                total_height: {
+                  valueCm: 180,
+                  provenance: "customer_entered" as const,
+                },
+              },
+              byGarmentKey: {},
+            },
+            medium_risk: { shared: {}, byGarmentKey: {} },
+            high_risk: { shared: {}, byGarmentKey: {} },
+            critical_risk: { shared: {}, byGarmentKey: {} },
+            sample_cloth: { shared: {}, byGarmentKey: {} },
+          },
+          derived: { shared: {}, byGarmentKey: {} },
+          blueprintVersion: "measurement-blueprint-v1",
+          formulaVersion: null,
+          inputFingerprint: "measurement-input-v1",
+          calculationStatus: "complete" as const,
+          diagnostics: [],
+          invalidInputKeys: [],
+          invalidInputKeysByRoute: {
+            low_risk: [],
+            medium_risk: [],
+            high_risk: [],
+            critical_risk: [],
+            sample_cloth: [],
+          },
+        },
+      },
+    ],
+    assignmentByGarmentKey: { "shirt:1": "wearer-1" },
+  },
+};
+assert.equal(
+  (await newerLocalClearRepository.save(olderCloudDraft, null)).status,
+  "saved",
+);
+const newerLocalClearedDraft = {
+  ...olderCloudDraft,
+  customerName: "Local cleared",
+  updatedAt: "2026-10-04T10:00:05.000Z",
+  futureMeasurementState: {
+    schemaVersion: 2 as const,
+    wearers: [
+      {
+        wearerId: "wearer-1",
+        displayName: "Person 1",
+        fitContext: "male" as const,
+        presentationOrder: 0,
+        measurement: {
+          schemaVersion: 1 as const,
+          route: "low_risk" as const,
+          unit: "inch" as const,
+          entered: { shared: {}, byGarmentKey: {} },
+          enteredByRoute: {
+            low_risk: { shared: {}, byGarmentKey: {} },
+            medium_risk: { shared: {}, byGarmentKey: {} },
+            high_risk: { shared: {}, byGarmentKey: {} },
+            critical_risk: { shared: {}, byGarmentKey: {} },
+            sample_cloth: { shared: {}, byGarmentKey: {} },
+          },
+          derived: { shared: {}, byGarmentKey: {} },
+          blueprintVersion: "measurement-blueprint-v1",
+          formulaVersion: null,
+          inputFingerprint: "measurement-input-v1",
+          calculationStatus: "incomplete" as const,
+          diagnostics: [],
+          invalidInputKeys: [],
+          invalidInputKeysByRoute: {
+            low_risk: [],
+            medium_risk: [],
+            high_risk: [],
+            critical_risk: [],
+            sample_cloth: [],
+          },
+        },
+      },
+    ],
+    assignmentByGarmentKey: { "shirt:1": "wearer-1" },
+  },
+};
+const newerLocalSync = await newerLocalClearRepository.synchronize(
+  newerLocalClearedDraft,
+  { localDraftProvenance: "pre_authenticated_cloud_authority" },
+);
+assert.equal(newerLocalSync.status, "guest_transferred");
+assert.equal(newerLocalSync.draft?.customerName, "Local cleared");
+assert.equal(
+  (newerLocalSync.draft?.futureMeasurementState as { wearers?: Array<{ measurement?: { entered?: { shared?: Record<string, unknown> } } }> })
+    ?.wearers?.[0]?.measurement?.entered?.shared?.total_height,
+  undefined,
+);
 
 const differentGuest = makeDraft("custom_details", "Different Customer");
 const conflict = await transferRepository.synchronize(differentGuest, {
