@@ -294,6 +294,10 @@ import {
   updateWearerMeasurement,
   wearerPublicLabel,
 } from "../utils/wearerOrder";
+import {
+  createDesignStudioResumeLocus,
+  resolveDesignStudioResumeLocus,
+} from "../utils/designStudioResumeLocus";
 import { WearerAssignmentPanel } from "./WearerAssignmentPanel";
 import { projectFutureDesignStudioSummary } from "../utils/designStudioFutureSummary";
 import {
@@ -933,6 +937,9 @@ export default function DesignStudioView({
     useState<FutureMeasurementStateV1>(createEmptyFutureMeasurementState);
   const [wearerOrder, setWearerOrder] = useState(createEmptyWearerOrder);
   const [activeWearerId, setActiveWearerId] = useState<string | null>(null);
+  const pendingResumeScrollYRef = useRef<number | null>(null);
+  const [hydratedMeasurementGarmentKey, setHydratedMeasurementGarmentKey] =
+    useState<string | null>(null);
   const [measurementPersistFlushNonce, setMeasurementPersistFlushNonce] =
     useState(0);
   const futureDraftAutosaveDelayMsRef = useRef(250);
@@ -3685,6 +3692,16 @@ export default function DesignStudioView({
     }
   }, [futureStageId]);
 
+  useEffect(() => {
+    if (!guestDraftHydrated) return;
+    const scrollY = pendingResumeScrollYRef.current;
+    if (scrollY === null) return;
+    pendingResumeScrollYRef.current = null;
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: scrollY, behavior: "auto" });
+    });
+  }, [guestDraftHydrated, futureStageId]);
+
   useLayoutEffect(() => {
     const request = futureStageNavigationRequest;
     if (!request || request.stage !== futureStageId) return;
@@ -3940,6 +3957,8 @@ export default function DesignStudioView({
     setFutureMeasurementState(createEmptyFutureMeasurementState());
     setWearerOrder(createEmptyWearerOrder());
     setActiveWearerId(null);
+    setHydratedMeasurementGarmentKey(null);
+    pendingResumeScrollYRef.current = null;
     setFutureShippingState(createEmptyFutureShippingState());
     setFutureSelectedStyleId(null);
     setFutureDesignSource(null);
@@ -4575,7 +4594,15 @@ export default function DesignStudioView({
             : null,
       });
       const canRestoreShipping = canRestoreSummary;
-      setFutureStageId(
+      const restoredMeasurementUnlocked = isFutureMeasurementStageUnlocked(
+        restoredAiTryOnWorkflow,
+      );
+      const restoredPersonalizedAdditionsReady =
+        isFutureCustomDetailsContentReady(restoredCustomDetailsCompletion);
+      const restoredStep4Ready = isFutureCustomDetailsContentReady(
+        restoredStep4CustomDetailsCompletion,
+      );
+      const restoredStageId =
         storedDraft?.currentStageId === "shipping" && canRestoreShipping
           ? "shipping"
           : storedDraft?.currentStageId === "summary" && canRestoreSummary
@@ -4583,19 +4610,17 @@ export default function DesignStudioView({
             : storedDraft?.currentStageId === "measurement" &&
                 restoredFabricCompletion.isComplete &&
                 restoredSourceReady &&
-                isFutureMeasurementStageUnlocked(restoredAiTryOnWorkflow)
+                restoredMeasurementUnlocked
               ? "measurement"
               : storedDraft?.currentStageId === "try_on" &&
                   restoredFabricCompletion.isComplete &&
                   restoredSourceReady &&
-                  isFutureCustomDetailsContentReady(restoredCustomDetailsCompletion)
+                  restoredPersonalizedAdditionsReady
                 ? "try_on"
                 : storedDraft?.currentStageId === "personalized_additions" &&
                     restoredFabricCompletion.isComplete &&
                     restoredSourceReady &&
-                    isFutureCustomDetailsContentReady(
-                      restoredStep4CustomDetailsCompletion,
-                    )
+                    restoredStep4Ready
                   ? "personalized_additions"
                 : storedDraft?.currentStageId === "custom_details" &&
                     restoredFabricCompletion.isComplete &&
@@ -4606,12 +4631,38 @@ export default function DesignStudioView({
                     ? "design_style"
                     : futureJourney.currentStageId === "fabric"
                       ? "fabric"
-                      : "garment_type",
-      );
+                      : "garment_type";
+      setFutureStageId(restoredStageId);
       setFutureAiTryOnWorkflow(restoredAiTryOnWorkflow);
       setWearerOrder(restoredWearerOrder);
-      setActiveWearerId(restoredWearerOrder.wearers[0]?.wearerId || null);
-      setFutureMeasurementState(restoredReconciledMeasurementState);
+      const restoredResumeLocus = resolveDesignStudioResumeLocus({
+        locus: storedDraft?.resumeLocus,
+        wearerIds: restoredWearerOrder.wearers.map((wearer) => wearer.wearerId),
+        garmentKeys: restoredMeasurementPhysicalGarments.map(
+          (garment) => garment.garmentKey,
+        ),
+      });
+      const restoredWearerId =
+        restoredResumeLocus.activeWearerId ||
+        restoredWearerOrder.wearers[0]?.wearerId ||
+        null;
+      const restoredWearerMeasurement =
+        restoredWearerOrder.wearers.find(
+          (wearer) => wearer.wearerId === restoredWearerId,
+        )?.measurement || restoredReconciledMeasurementState;
+      setActiveWearerId(restoredWearerId);
+      setHydratedMeasurementGarmentKey(
+        restoredResumeLocus.measurementGarmentKey,
+      );
+      pendingResumeScrollYRef.current = restoredResumeLocus.scrollY;
+      setFutureMeasurementState(
+        restoredResumeLocus.measurementGarmentKey
+          ? {
+              ...restoredWearerMeasurement,
+              activeGarmentKey: restoredResumeLocus.measurementGarmentKey,
+            }
+          : restoredWearerMeasurement,
+      );
       setFutureShippingState(restoredShippingResolution.state);
       setFutureSelectedStyleId(restoredStyleId);
       setFutureDesignSource(restoredDesignSource);
@@ -5284,8 +5335,14 @@ export default function DesignStudioView({
     ) {
       return;
     }
+    const canRetryAuthenticatedAutosaveThrow =
+      futureDraftIdentity.status === "authenticated" &&
+      futureDraftPersistenceStatus === "blocked" &&
+      typeof futureDraftPersistenceReason === "string" &&
+      futureDraftPersistenceReason.startsWith("autosave_threw:");
     if (
-      futureDraftPersistenceStatus !== "ready" ||
+      (futureDraftPersistenceStatus !== "ready" &&
+        !canRetryAuthenticatedAutosaveThrow) ||
       (futureDraftIdentity.status !== "guest" &&
         futureDraftIdentity.status !== "authenticated")
     ) {
@@ -5333,6 +5390,14 @@ export default function DesignStudioView({
           ? (preservedInvalidHydratedMeasurementsRef.current
               .preservedRaw as GuestDesignDraft["futureMeasurementState"])
           : wearerOrderForPlanRef.current,
+        resumeLocus: createDesignStudioResumeLocus({
+          activeWearerId,
+          measurementGarmentKey:
+            futureMeasurementState.activeGarmentKey ||
+            hydratedMeasurementGarmentKey,
+          scrollY:
+            typeof window === "undefined" ? null : Math.round(window.scrollY),
+        }),
         selectedFabricCode: selectedFabric?.code || null,
         selectedStyleId: activeCatalogStyleId,
         designSource: activeDesignSource,
@@ -5675,6 +5740,7 @@ export default function DesignStudioView({
     futureDraftIdentity,
     hasUnresolvedPrivateOrderAuthorization,
     futureDraftPersistenceStatus,
+    futureDraftPersistenceReason,
     guestDraftHydrated,
     isAdditionalGarmentCommitPending,
     futureDraftFabricIntegrityBlockers,
@@ -9190,6 +9256,7 @@ export default function DesignStudioView({
             if (!next) return;
             setWearerOrder(wearerOrderForPlan);
             setActiveWearerId(wearerId);
+            setHydratedMeasurementGarmentKey(null);
             setFutureMeasurementState(next.measurement);
           }}
           onAddWearer={(displayName, fitContext) => {
@@ -9259,6 +9326,7 @@ export default function DesignStudioView({
         <DormantFutureMeasurementStep
           plan={futureMeasurementPlan}
           state={reconciledFutureMeasurementState}
+          restoredGarmentKey={hydratedMeasurementGarmentKey}
           orderMeasurementsComplete={summaryUnlockedByMeasurements}
           physicalGarments={futureMeasurementPhysicalGarments}
           unassignedGarments={futureMeasurementPhysicalGarments.filter(
@@ -9276,6 +9344,7 @@ export default function DesignStudioView({
             if (!next) return;
             setWearerOrder(wearerOrderForPlan);
             setActiveWearerId(wearerId);
+            setHydratedMeasurementGarmentKey(null);
             setFutureMeasurementState(next.measurement);
           }}
           hydrationInvalid={futureMeasurementHydrationInvalid}

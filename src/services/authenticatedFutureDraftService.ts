@@ -648,26 +648,35 @@ export const createAuthenticatedFutureDraftRepository = ({
       record: AuthenticatedFutureDraftRecordV1,
       localDraft: GuestDesignDraft,
     ): Promise<AuthenticatedFutureDraftSyncResult> => {
-      const transferred = await save(localDraft, record.revision);
-      if (transferred.status === "saved") {
+      try {
+        const transferred = await save(localDraft, record.revision);
+        if (transferred.status === "saved") {
+          return {
+            status: "guest_transferred",
+            record: transferred.record,
+            draft: transferred.record.draft || localDraft,
+          };
+        }
+        if (transferred.status === "conflict") {
+          const racedCloud = await load();
+          if (racedCloud.status === "loaded") {
+            return resolvePresentCloud(racedCloud.record);
+          }
+        }
+        // Hydrate the newer local draft even if the cloud write raced; autosave retries.
         return {
-          status: "guest_transferred",
-          record: transferred.record,
-          draft: transferred.record.draft || localDraft,
+          status: "cloud_restored",
+          record,
+          draft: localDraft,
+        };
+      } catch {
+        // Keep the newer local draft for hydrate; autosave retries the cloud write.
+        return {
+          status: "cloud_restored",
+          record,
+          draft: localDraft,
         };
       }
-      if (transferred.status === "conflict") {
-        const racedCloud = await load();
-        if (racedCloud.status === "loaded") {
-          return resolvePresentCloud(racedCloud.record);
-        }
-      }
-      // Hydrate the newer local draft even if the cloud write raced; autosave retries.
-      return {
-        status: "cloud_restored",
-        record,
-        draft: localDraft,
-      };
     };
     if (cloud.status === "absent") {
       if (!guest.draft) {
@@ -713,7 +722,8 @@ export const createAuthenticatedFutureDraftRepository = ({
     ) {
       return transferGuestOverCloud(cloudRecord, guest.draft);
     }
-    return resolvePresentCloud(cloudRecord);
+    const resolved = resolvePresentCloud(cloudRecord);
+    return resolved;
   };
 
   return { load, save, clear, synchronize };
