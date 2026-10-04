@@ -36,7 +36,7 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 ## Status
 
 All work below is released. `/api/health` shows the current production build
-(`ba835d7…` after #325; advances again when this Master docs release lands).
+(`21688e1…` after #331; advances again when this Master docs release lands).
 
 - [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
 - [#283](https://github.com/techpalava/ODOGWU-HERITAGE/pull/283) Uploaded photo on the Summary Design Style card
@@ -53,6 +53,7 @@ All work below is released. `/api/health` shows the current production build
 - [#318](https://github.com/techpalava/ODOGWU-HERITAGE/pull/318) Measurement risk gaps for sleeves, factors, and pending calc UI
 - [#321](https://github.com/techpalava/ODOGWU-HERITAGE/pull/321) Critical Risk works for mid/long sleeves; Dress IF-APPLICABLE fields stay excluded from Critical
 - [#324](https://github.com/techpalava/ODOGWU-HERITAGE/pull/324) Design Style catalogue cards show “Image unavailable” when a style image URL fails to load
+- [#330](https://github.com/techpalava/ODOGWU-HERITAGE/pull/330) Clear all on Required Measurements wipes only the active method for the current wearer
 
 The signed-in Chrome restore check after #289 passed.
 
@@ -62,8 +63,11 @@ The signed-in Chrome restore check after #289 passed.
 - Check current main and production SHAs with `git fetch github`. Trees match after each release;
   SHAs differ because of sync merges.
 - Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-next-task`
-  on `fix/design-style-catalogue-image-fallback` (released in #324). For a new task, branch a
+  on `fix/measurement-clear-all` (released in #330). For a new task, branch a
   fresh worktree (or branch) from `github/main`.
+- Critical Risk “height alone” copy fix is parked in local stash
+  `park critical-risk-height-copy before clear-all` (not released). Restore onto a fresh
+  branch from `github/main` when authorized; do not mix it into unrelated work.
 - `ODOGWU-HERITAGE-long-dress-sleeveless` (#301) and `ODOGWU-HERITAGE-long-shirt-short-sleeve`
   (#298) are merged; keep them. `ODOGWU-HERITAGE-step3-additional-garment-designs` is merged;
   keep it, do not reuse it.
@@ -102,6 +106,8 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
   no longer looks blank.
 - Measurement Critical mid-sleeve accuracy still needs a real mid factor from the client workbook
   (proxy-factor item on hold). Mid/long Critical completion already uses the long-sleeve path.
+- Critical Risk Required / Calculated copy still incorrectly shares the Mid/High “height alone
+  is not enough” fallthrough; fix is stashed, not released.
 - No other work is authorized. Wait for the user's next task.
 
 ## Do not change
