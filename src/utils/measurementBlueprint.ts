@@ -1447,6 +1447,38 @@ export const setFutureMeasurementRoute = (
   };
 };
 
+/** Clears only the active method bag. Other routes, route selection, unit, and garment focus stay. */
+export const clearActiveFutureMeasurementEntered = (
+  state: FutureMeasurementStateV1,
+): FutureMeasurementStateV1 => {
+  if (!isSelectedMeasurementMethod(state.route)) {
+    return state;
+  }
+  const route = state.route;
+  const enteredByRoute = ensureEnteredByRoute(state);
+  const invalidInputKeysByRoute = ensureInvalidKeysByRoute(state);
+  if (
+    isFutureMeasurementEnteredBagEmpty(enteredByRoute[route]) &&
+    invalidInputKeysByRoute[route].length === 0 &&
+    isFutureMeasurementEnteredBagEmpty(state.entered) &&
+    state.invalidInputKeys.length === 0
+  ) {
+    return state;
+  }
+  enteredByRoute[route] = createEmptyEnteredBag();
+  invalidInputKeysByRoute[route] = [];
+  return {
+    ...state,
+    entered: createEmptyEnteredBag(),
+    enteredByRoute,
+    derived: { shared: {}, byGarmentKey: {} },
+    calculationStatus: "incomplete",
+    diagnostics: [],
+    invalidInputKeys: [],
+    invalidInputKeysByRoute,
+  };
+};
+
 export const getEnteredMeasurementValue = (
   entered: FutureMeasurementEnteredBagV1,
   requirement: PlannedMeasurementRequirement,

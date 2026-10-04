@@ -10,6 +10,7 @@ import type {
   MeasurementRiskRoute,
 } from "./src/types";
 import {
+  clearActiveFutureMeasurementEntered,
   createEmptyFutureMeasurementState,
   getActiveFutureMeasurementEntered,
   isFutureMeasurementEnteredBagEmpty,
@@ -178,6 +179,11 @@ assert.equal(
   renderer.root.findByProps({ type: "radio", value: "low_risk" }).props.checked,
   true,
 );
+{
+  const clearAllButton = renderer.root.findByProps({ "data-measurement-clear-all": "true" });
+  assert.equal(clearAllButton.props.disabled, true);
+  assert.equal(clearAllButton.props.children, "Clear all");
+}
 assert.equal(
   renderer.root.findAllByProps({ type: "radio" }).filter((radio) => radio.props.checked).length,
   1,
@@ -417,5 +423,54 @@ assert.equal(projectedMidOwn.enteredByRoute?.low_risk.shared[overlappingId], und
 const hydrated = fillDirectRequirements("low_risk");
 assert.equal(hydrated.state.route, "low_risk");
 assert.equal(isFutureMeasurementStageComplete(hydrated.state), true);
+
+const clearedLow = reconcileFutureMeasurementState({
+  state: clearActiveFutureMeasurementEntered(hydrated.state),
+  plan: hydrated.plan,
+});
+assert.equal(clearedLow.route, "low_risk");
+assert.equal(isFutureMeasurementEnteredBagEmpty(getActiveFutureMeasurementEntered(clearedLow)), true);
+assert.equal(isFutureMeasurementSelectedPathInputComplete(clearedLow), false);
+assert.equal(isFutureMeasurementStageComplete(clearedLow), false);
+assert.equal(isFutureSummaryUnlockedByMeasurements(clearedLow), false);
+
+const lowThenMedium = fillDirectRequirements("medium_risk", hydrated.state);
+assert.equal(lowThenMedium.state.route, "medium_risk");
+assert.equal(isFutureMeasurementStageComplete(lowThenMedium.state), true);
+assert.equal(
+  isFutureMeasurementEnteredBagEmpty(lowThenMedium.state.enteredByRoute?.low_risk),
+  false,
+);
+const clearedMediumKeepsLow = reconcileFutureMeasurementState({
+  state: clearActiveFutureMeasurementEntered(lowThenMedium.state),
+  plan: lowThenMedium.plan,
+});
+assert.equal(clearedMediumKeepsLow.route, "medium_risk");
+assert.equal(
+  isFutureMeasurementEnteredBagEmpty(getActiveFutureMeasurementEntered(clearedMediumKeepsLow)),
+  true,
+);
+assert.deepEqual(
+  clearedMediumKeepsLow.enteredByRoute?.low_risk,
+  lowThenMedium.state.enteredByRoute?.low_risk,
+);
+assert.equal(isFutureMeasurementStageComplete(clearedMediumKeepsLow), false);
+assert.equal(isFutureSummaryUnlockedByMeasurements(clearedMediumKeepsLow), false);
+
+const clearAllRenderer = renderHarness(hydrated.state);
+{
+  const clearAllButton = clearAllRenderer.root.findByProps({ "data-measurement-clear-all": "true" });
+  assert.equal(clearAllButton.props.disabled, false);
+  act(() => {
+    clearAllButton.props.onClick();
+  });
+  const afterClearButton = clearAllRenderer.root.findByProps({ "data-measurement-clear-all": "true" });
+  assert.equal(afterClearButton.props.disabled, true);
+  assert.equal(
+    clearAllRenderer.root.findAllByProps({ "data-measurement-section": "required" }).length,
+    1,
+  );
+  assert.match(collectText(clearAllRenderer.root), /0 of \d+ complete/i);
+}
 
 console.log("PASS: mutually exclusive measurement risk selection, active-path validation, and notice");

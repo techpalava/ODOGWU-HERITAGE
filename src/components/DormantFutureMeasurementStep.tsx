@@ -11,6 +11,7 @@ import type {
 import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
 import {
+  clearActiveFutureMeasurementEntered,
   collectRequiredAlternativeGroups,
   countRemainingCustomerRequiredMeasurementUnits,
   countRequiredMeasurementUnits,
@@ -20,6 +21,7 @@ import {
   criticalRiskUnavailableCopy,
   FUTURE_MEASUREMENT_INVALID_HYDRATION_MESSAGE,
   fromCanonicalCentimetres,
+  getActiveFutureMeasurementEntered,
   getEnteredMeasurementValue,
   getRequiredAlternativeGroupId,
   getResolvedMeasurementValue,
@@ -27,6 +29,7 @@ import {
   getSampleClothCustomerLabel,
   getSampleClothFieldInstruction,
   getSampleClothProductionEquivalentCm,
+  isFutureMeasurementEnteredBagEmpty,
   isFutureMeasurementStageComplete,
   isFutureSummaryUnlockedByMeasurements,
   isSampleClothMeasurementMethod,
@@ -418,6 +421,10 @@ const MeasurementSection = ({
     invalidInputKeys: state.invalidInputKeys,
   });
   const requiredCount = countRequiredMeasurementUnits(requirements);
+  const activeBagEmpty = isFutureMeasurementEnteredBagEmpty(
+    getActiveFutureMeasurementEntered(state),
+  );
+  const canClearActive = section === "required" && !activeBagEmpty;
 
   const renderFields = (fields: PlannedMeasurementRequirement[]) =>
     fields.map((requirement) => (
@@ -463,6 +470,20 @@ const MeasurementSection = ({
               <span className="rounded-full border border-heritage-green/20 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-heritage-ink/60">
                 Optional
               </span>
+            )}
+            {section === "required" && (
+              <button
+                type="button"
+                data-measurement-clear-all="true"
+                disabled={!canClearActive}
+                onClick={() => {
+                  if (!canClearActive) return;
+                  onChange(clearActiveFutureMeasurementEntered(state));
+                }}
+                className="ml-auto shrink-0 rounded-full border border-heritage-green/20 bg-white px-3 py-1 text-xs font-semibold text-heritage-green transition enabled:hover:border-heritage-gold/40 enabled:hover:bg-heritage-cream/40 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Clear all
+              </button>
             )}
           </div>
           <p className="mt-1 text-sm leading-relaxed text-heritage-ink/65">{description}</p>
