@@ -324,6 +324,17 @@ export const areFutureDraftsEquivalent = (
   );
 };
 
+/** True when local `updatedAt` is a strictly later ISO timestamp than cloud. */
+export const isFutureDraftUpdatedAtNewer = (
+  local: Pick<GuestDesignDraft, "updatedAt">,
+  cloud: Pick<GuestDesignDraft, "updatedAt">,
+): boolean => {
+  const localMs = Date.parse(local.updatedAt);
+  const cloudMs = Date.parse(cloud.updatedAt);
+  if (!Number.isFinite(localMs) || !Number.isFinite(cloudMs)) return false;
+  return localMs > cloudMs;
+};
+
 /**
  * A local draft can be written while the client is still resolving an existing
  * authenticated session. It is not a customer edit when it has not progressed
@@ -633,6 +644,31 @@ export const createAuthenticatedFutureDraftRepository = ({
         guestDraft: guest.draft,
       };
     };
+    const transferGuestOverCloud = async (
+      record: AuthenticatedFutureDraftRecordV1,
+      localDraft: GuestDesignDraft,
+    ): Promise<AuthenticatedFutureDraftSyncResult> => {
+      const transferred = await save(localDraft, record.revision);
+      if (transferred.status === "saved") {
+        return {
+          status: "guest_transferred",
+          record: transferred.record,
+          draft: transferred.record.draft || localDraft,
+        };
+      }
+      if (transferred.status === "conflict") {
+        const racedCloud = await load();
+        if (racedCloud.status === "loaded") {
+          return resolvePresentCloud(racedCloud.record);
+        }
+      }
+      // Hydrate the newer local draft even if the cloud write raced; autosave retries.
+      return {
+        status: "cloud_restored",
+        record,
+        draft: localDraft,
+      };
+    };
     if (cloud.status === "absent") {
       if (!guest.draft) {
         return { status: "empty", record: null, draft: null };
@@ -667,7 +703,17 @@ export const createAuthenticatedFutureDraftRepository = ({
         draft: transferred.record.draft || null,
       };
     }
-    return resolvePresentCloud(cloud.record);
+    const cloudRecord = cloud.record;
+    if (
+      cloudRecord.lifecycleStatus === "active" &&
+      cloudRecord.draft &&
+      guest.draft &&
+      !areFutureDraftsEquivalent(cloudRecord.draft, guest.draft) &&
+      isFutureDraftUpdatedAtNewer(guest.draft, cloudRecord.draft)
+    ) {
+      return transferGuestOverCloud(cloudRecord, guest.draft);
+    }
+    return resolvePresentCloud(cloudRecord);
   };
 
   return { load, save, clear, synchronize };
