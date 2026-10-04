@@ -36,7 +36,7 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 ## Status
 
 All work below is released. `/api/health` shows the current production build
-(`ac8ab46…` after #337; advances again when this Master docs release lands).
+(`853d50e…` after #343).
 
 - [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
 - [#283](https://github.com/techpalava/ODOGWU-HERITAGE/pull/283) Uploaded photo on the Summary Design Style card
@@ -55,6 +55,7 @@ All work below is released. `/api/health` shows the current production build
 - [#324](https://github.com/techpalava/ODOGWU-HERITAGE/pull/324) Design Style catalogue cards show “Image unavailable” when a style image URL fails to load
 - [#330](https://github.com/techpalava/ODOGWU-HERITAGE/pull/330) Clear all on Required Measurements wipes only the active method for the current wearer
 - [#336](https://github.com/techpalava/ODOGWU-HERITAGE/pull/336) Clear all persists across refresh (empty route bags, autosave flush, newer local sync)
+- [#342](https://github.com/techpalava/ODOGWU-HERITAGE/pull/342) Signed-in drafts restore the last Studio step and in-page wearer/garment/scroll locus; ten-stage cloud writes (`personalized_additions`) are allowed
 
 The signed-in Chrome restore check after #289 passed.
 
@@ -64,7 +65,7 @@ The signed-in Chrome restore check after #289 passed.
 - Check current main and production SHAs with `git fetch github`. Trees match after each release;
   SHAs differ because of sync merges.
 - Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-next-task`
-  on `fix/persist-measurement-clear` (released in #336). For a new task, branch a
+  on `fix/draft-resume-locus` (released in #342). For a new task, branch a
   fresh worktree (or branch) from `github/main`.
 - Critical Risk “height alone” copy fix is parked in local stash
   `park critical-risk-height-copy before clear-all` (not released). Restore onto a fresh
