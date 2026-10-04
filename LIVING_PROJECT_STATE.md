@@ -36,7 +36,7 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 ## Status
 
 All work below is released. `/api/health` shows the current production build
-(`853d50e…` after #343).
+(`103cbad…` after the #342–#347 feature and docs sync cycle).
 
 - [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
 - [#283](https://github.com/techpalava/ODOGWU-HERITAGE/pull/283) Uploaded photo on the Summary Design Style card
@@ -64,9 +64,9 @@ The signed-in Chrome restore check after #289 passed.
 - Repository `techpalava/ODOGWU-HERITAGE`. Remote name is `github`, never `origin`.
 - Check current main and production SHAs with `git fetch github`. Trees match after each release;
   SHAs differ because of sync merges.
-- Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-next-task`
-  on `fix/draft-resume-locus` (released in #342). For a new task, branch a
-  fresh worktree (or branch) from `github/main`.
+- Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-next-task`,
+  aligned to `github/main` and ready for a fresh feature branch when the next
+  task is authorized. Do not reuse released branches such as `fix/draft-resume-locus`.
 - Critical Risk “height alone” copy fix is parked in local stash
   `park critical-risk-height-copy before clear-all` (not released). Restore onto a fresh
   branch from `github/main` when authorized; do not mix it into unrelated work.
@@ -77,8 +77,10 @@ The signed-in Chrome restore check after #289 passed.
   older checkout. Run shell commands with the worktree above as the working directory, and
   confirm the path before editing. It holds an unpushed local commit `d691a8c` from an early
   attempt at #298; it is superseded and must not be pushed.
-- The local `ODOGWU-HERITAGE-main-release` and `ODOGWU-HERITAGE-step3-exact-garment-labels`
-  (production) worktrees are stale. Do not release from them; releases go through GitHub PRs.
+- The local `ODOGWU-HERITAGE-main-release` worktree may hold the `main` branch at a stale
+  SHA, and `ODOGWU-HERITAGE-step3-exact-garment-labels` may hold `production` stale. Do not
+  release from them; releases go through GitHub PRs. For local edits, branch from
+  `github/main` in the next-task worktree.
 - Many other `ODOGWU-HERITAGE-*` worktrees hold older feature branches. Do not delete them.
 - The active worktree shows many CRLF-only modified files. They are not real changes. Never stage them.
 
