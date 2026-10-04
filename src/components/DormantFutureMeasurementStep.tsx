@@ -72,6 +72,7 @@ interface DormantFutureMeasurementStepProps {
   /** Next person to finish when the active wearer is already complete. */
   nextIncompleteWearer?: { wearerId: string; label: string } | null;
   onGoToWearer?: (wearerId: string) => void;
+  restoredGarmentKey?: string | null;
   /** Active person label for matching clarity (Person N / display name). */
   activeWearerLabel?: string | null;
   /** Garments assigned to the active person, for matching clarity. */
@@ -569,6 +570,7 @@ export const DormantFutureMeasurementStep = ({
   emptyWearerLabels = [],
   nextIncompleteWearer = null,
   onGoToWearer,
+  restoredGarmentKey = null,
   activeWearerLabel = null,
   activeWearerGarmentLabels = [],
   onChange,
@@ -578,8 +580,11 @@ export const DormantFutureMeasurementStep = ({
 }: DormantFutureMeasurementStepProps) => {
   const occurrenceLabels = projectOccurrenceDisplayLabels(physicalGarments);
   const [pickedGarmentKey, setPickedGarmentKey] = useState<string | null>(
-    state.activeGarmentKey ?? null,
+    restoredGarmentKey ?? state.activeGarmentKey ?? null,
   );
+  useEffect(() => {
+    setPickedGarmentKey(restoredGarmentKey ?? state.activeGarmentKey ?? null);
+  }, [restoredGarmentKey, state.activeGarmentKey]);
   const [allowPendingChipSelection, setAllowPendingChipSelection] = useState(false);
   const previousSelectedRemainingRef = useRef<number | null>(null);
   const previousSharedRemainingRef = useRef<number | null>(null);

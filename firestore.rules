@@ -39,14 +39,17 @@ service cloud.firestore {
     }
 
     function hasValidFutureDraftPayload(draft) {
+      // Journey schema 1 = nine-stage, 2 = ten-stage (design_style split).
+      // Client normalizers accept both; writes must match that allowlist.
       return draft is map
-        && draft.journeySchemaVersion == 1
+        && (draft.journeySchemaVersion == 1 || draft.journeySchemaVersion == 2)
         && draft.currentStageId is string
         && draft.currentStageId in [
           "garment_type",
           "fabric",
           "design_style",
           "custom_details",
+          "personalized_additions",
           "try_on",
           "measurement",
           "summary",
