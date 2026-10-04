@@ -24,6 +24,7 @@ import {
   migrateLegacyManualMeasurements,
 } from "../utils/measurementBlueprint";
 import { normalizeWearerOrderState } from "../utils/wearerOrder";
+import { normalizeDesignStudioResumeLocus } from "../utils/designStudioResumeLocus";
 import {
   createDesignStudioDraftRepository,
   GUEST_ORDER_SESSION_STORAGE_NAMESPACE,
@@ -114,13 +115,18 @@ export const normalizeGuestDesignDraft = (
   const {
     aiTryOnWorkflow: _discardedAiTryOnWorkflow,
     futureMeasurementState: _discardedFutureMeasurementState,
+    resumeLocus: _discardedResumeLocus,
     ...draftWithoutAiTryOnWorkflow
   } = garmentTypeReconciledDraft;
+  const resumeLocus = normalizeDesignStudioResumeLocus(
+    garmentTypeReconciledDraft.resumeLocus,
+  );
   const workflowReconciledDraft: GuestDesignDraft = {
     ...draftWithoutAiTryOnWorkflow,
     ...(normalizedAiTryOnWorkflow
       ? { aiTryOnWorkflow: normalizedAiTryOnWorkflow }
       : {}),
+    ...(resumeLocus ? { resumeLocus } : {}),
     ...(normalizedWearerOrder
       ? { futureMeasurementState: normalizedWearerOrder }
       : measurementHydration?.status === "invalid"

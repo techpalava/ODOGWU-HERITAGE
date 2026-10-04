@@ -59,6 +59,14 @@ assert.match(
 );
 assert.match(
   rules,
+  /draft\.journeySchemaVersion == 1 \|\| draft\.journeySchemaVersion == 2/,
+);
+assert.match(
+  rules,
+  /"custom_details",\s*"personalized_additions",\s*"try_on"/,
+);
+assert.match(
+  rules,
   /request\.auth\.uid == ownerUid/,
 );
 assert.match(

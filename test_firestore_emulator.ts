@@ -527,9 +527,14 @@ try {
   });
 
   await runCase("active records require an approved normalized draft marker", async () => {
-    await assertFails(
+    await assertSucceeds(
       setDoc(reference(signedIn(OWNER_UID)), activeCreate({}, {
         journeySchemaVersion: 2,
+      })),
+    );
+    await assertFails(
+      setDoc(reference(signedIn(OWNER_UID)), activeCreate({}, {
+        journeySchemaVersion: 3,
       })),
     );
     await assertFails(

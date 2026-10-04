@@ -1195,6 +1195,13 @@ export interface WearerOrderStateV2 {
   assignmentByGarmentKey: Record<string, string>;
 }
 
+export interface DesignStudioResumeLocusV1 {
+  schemaVersion: 1;
+  activeWearerId: string | null;
+  measurementGarmentKey: string | null;
+  scrollY: number | null;
+}
+
 export interface GuestDesignDraft {
   journeySchemaVersion?: number;
   currentStageId?: DesignStudioStageId;
@@ -1210,6 +1217,7 @@ export interface GuestDesignDraft {
   aiTryOnWorkflow?: AiTryOnWorkflowStateV1;
   futureMeasurementState?: FutureMeasurementStateV1 | WearerOrderStateV2;
   futureShippingState?: FutureShippingStateV1;
+  resumeLocus?: DesignStudioResumeLocusV1;
   selectedFabricCode: string | null;
   selectedStyleId: string | null;
   designSource?: DesignSource | null;
