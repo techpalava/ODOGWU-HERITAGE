@@ -1,6 +1,6 @@
 # Living project state
 
-Updated: 2026-10-03. Read this file first in every new chat, then `FAST_EXECUTOR_GUIDE.md`.
+Updated: 2026-10-04. Read this file first in every new chat, then `FAST_EXECUTOR_GUIDE.md`.
 This file is committed on `main` and `production`. Update it after each release.
 
 ## What the product is
@@ -35,7 +35,8 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 
 ## Status
 
-All work below is released. `/api/health` shows the current production build.
+All work below is released. `/api/health` shows the current production build
+(`ba835d7…` after #325; advances again when this Master docs release lands).
 
 - [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
 - [#283](https://github.com/techpalava/ODOGWU-HERITAGE/pull/283) Uploaded photo on the Summary Design Style card
@@ -44,6 +45,14 @@ All work below is released. `/api/health` shows the current production build.
 - [#292](https://github.com/techpalava/ODOGWU-HERITAGE/pull/292) Workshop stage history on paid V2 orders (Firestore rules deployed)
 - [#298](https://github.com/techpalava/ODOGWU-HERITAGE/pull/298) Long shirt defaults to Short Sleeve (EUR 70) in Step 1; a saved Mid-Long Sleeve choice still restores
 - [#301](https://github.com/techpalava/ODOGWU-HERITAGE/pull/301) Long Dress defaults to its first option, Sleeveless / Over Shoulder (EUR 75), in Step 1; a saved choice still restores
+- [#303](https://github.com/techpalava/ODOGWU-HERITAGE/pull/303) Stripe iDEAL for Future Order V2 (PayPal UI deferred)
+- [#306](https://github.com/techpalava/ODOGWU-HERITAGE/pull/306) Embroidery and monogram scoped per garment
+- [#309](https://github.com/techpalava/ODOGWU-HERITAGE/pull/309) Clearer Order Summary money hierarchy
+- [#312](https://github.com/techpalava/ODOGWU-HERITAGE/pull/312) Dress multi-pocket labelled With 2 Pocket(s)
+- [#315](https://github.com/techpalava/ODOGWU-HERITAGE/pull/315) Measurement step unlock and multi-garment person flow
+- [#318](https://github.com/techpalava/ODOGWU-HERITAGE/pull/318) Measurement risk gaps for sleeves, factors, and pending calc UI
+- [#321](https://github.com/techpalava/ODOGWU-HERITAGE/pull/321) Critical Risk works for mid/long sleeves; Dress IF-APPLICABLE fields stay excluded from Critical
+- [#324](https://github.com/techpalava/ODOGWU-HERITAGE/pull/324) Design Style catalogue cards show “Image unavailable” when a style image URL fails to load
 
 The signed-in Chrome restore check after #289 passed.
 
@@ -52,11 +61,12 @@ The signed-in Chrome restore check after #289 passed.
 - Repository `techpalava/ODOGWU-HERITAGE`. Remote name is `github`, never `origin`.
 - Check current main and production SHAs with `git fetch github`. Trees match after each release;
   SHAs differ because of sync merges.
-- Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-long-dress-sleeveless`
-  on `fix/long-dress-sleeveless-default` (released in #301). The #298 worktree
-  `ODOGWU-HERITAGE-long-shirt-short-sleeve` is merged; keep it. For a new task, branch a fresh
-  worktree from `github/main`.
-- `ODOGWU-HERITAGE-step3-additional-garment-designs` is merged; keep it, do not reuse it.
+- Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-next-task`
+  on `fix/design-style-catalogue-image-fallback` (released in #324). For a new task, branch a
+  fresh worktree (or branch) from `github/main`.
+- `ODOGWU-HERITAGE-long-dress-sleeveless` (#301) and `ODOGWU-HERITAGE-long-shirt-short-sleeve`
+  (#298) are merged; keep them. `ODOGWU-HERITAGE-step3-additional-garment-designs` is merged;
+  keep it, do not reuse it.
 - The Cursor workspace folder (`...\2026-07-08\...\ODOGWU-HERITAGE-task1-task2`) is a different,
   older checkout. Run shell commands with the worktree above as the working directory, and
   confirm the path before editing. It holds an unpushed local commit `d691a8c` from an early
@@ -76,7 +86,7 @@ The signed-in Chrome restore check after #289 passed.
 - Merge each PR with `gh pr merge N --repo techpalava/ODOGWU-HERITAGE --merge --delete-branch=false`,
   only after `gh pr checks N` exits 0. A watcher that drops its connection is not a pass.
 - After production merges, confirm `/api/health` shows the production merge SHA and that a live
-  JS chunk contains a string from the change.
+  JS chunk contains a string from the change (docs-only releases may skip the chunk check).
 - If `firestore.rules` changed, deploy it only after the live app sends the new fields:
   `npx firebase deploy --only firestore:rules --project gen-lang-client-0614710868 --non-interactive`.
 
@@ -87,6 +97,11 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
 - Admin live check of stage history: save a new stage on a paid order and confirm the customer
   card lists the earlier stage and the new one.
 - Tailoring live QA is blocked without a real admin session. Do not create or bypass admin access.
+- Bow-Tie Bum Short (`casual-bum-short-1`) still needs an Admin Database View re-upload of its
+  design photo; live Storage URL 404s. The #324 catalogue `onError` fallback is live so the card
+  no longer looks blank.
+- Measurement Critical mid-sleeve accuracy still needs a real mid factor from the client workbook
+  (proxy-factor item on hold). Mid/long Critical completion already uses the long-sleeve path.
 - No other work is authorized. Wait for the user's next task.
 
 ## Do not change
@@ -105,8 +120,13 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
 
 ## Known baseline exceptions
 
-- `npx tsc --noEmit` has 4 known errors: `DesignStudioView.tsx` (~7630, `returnStage`),
-  `DormantFutureMeasurementStep.tsx` (505, 510), `test_monogram_pricing.ts` (107).
+- `npx tsc --noEmit` currently reports these known errors on main (observed 2026-10-04):
+  `DesignStudioView.tsx` (`returnStage` / capacityReuse),
+  `DormantFutureMeasurementStep.tsx` (unused `calculatedRequirements` / `optionalRequirements`),
+  `CustomerFutureOrderV2Details.tsx` (`paymentIntentId` on V2 payment record),
+  `src/services/futureOrderV2PaymentRecordClient.ts` (`paymentIntentId`),
+  `test_future_order_v2_stripe_return.ts` (`providerTransactionId`),
+  `test_monogram_pricing.ts` (107, missing Lining/Net decorative keys).
 - Known failing tests: `test_task5g_accessibility`, `test_mid_process_garment_removal_ui`,
   `test_private_batch_foundation`, `test_homepage_draft_replacement_hydration`,
   `test_order_context_presentation`, `test_step1_step3_catalogue_loading_ui`,
