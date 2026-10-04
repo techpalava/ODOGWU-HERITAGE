@@ -1651,4 +1651,38 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   );
 }
 
+// Dead catalogue image URLs must not leave a blank broken <img>; show the
+// same "Image unavailable" fallback used when presentation.image is empty.
+{
+  const brokenImageStyle = {
+    ...style,
+    id: "broken-image-style",
+    name: "Bow-Tie Broken Image",
+    image: "https://example.invalid/styles/missing-bow-tie.webp",
+  };
+  const model = createDesignStyleStepTestModel({
+    styles: [brokenImageStyle],
+    garmentTypeSelection: selection(["shirt"]),
+  });
+  const renderer = await renderModel(model);
+  const card = renderer.root.findByProps({
+    "data-style-name": brokenImageStyle.name,
+  });
+  const img = card.findByProps({ "data-style-card-image": "true" });
+  assert.equal(img.type, "img");
+  assert.equal(img.props.src, brokenImageStyle.image);
+  await act(async () => {
+    img.props.onError(new Error("load failed"));
+  });
+  const afterCard = renderer.root.findByProps({
+    "data-style-name": brokenImageStyle.name,
+  });
+  assert.equal(afterCard.findAllByType("img").length, 0);
+  const fallback = afterCard.findByProps({
+    "data-style-card-image-fallback": "true",
+  });
+  assert.match(textContent(fallback), /Image unavailable/);
+  assert.match(String(fallback.props["aria-label"]), /unavailable/i);
+}
+
 console.log("PASS: garment-scoped Design Style Step 3 rendered runtime");
