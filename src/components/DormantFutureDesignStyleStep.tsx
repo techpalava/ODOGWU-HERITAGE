@@ -156,6 +156,45 @@ const assignmentListClassName = (count: number): string =>
     count > 2 ? " divide-y divide-heritage-green/15" : ""
   }`;
 
+const DesignStyleCatalogueCardImage = ({
+  imageUrl,
+  alt,
+}: {
+  imageUrl: string | null | undefined;
+  alt: string;
+}) => {
+  const trimmedUrl = typeof imageUrl === "string" ? imageUrl.trim() : "";
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [trimmedUrl]);
+
+  if (!trimmedUrl || imageFailed) {
+    return (
+      <div
+        className="flex h-full items-center justify-center px-4 text-center text-xs text-heritage-ink/45"
+        data-style-card-image-fallback="true"
+        aria-label={`${alt} unavailable`}
+      >
+        Image unavailable
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={trimmedUrl}
+      alt={alt}
+      loading="lazy"
+      className="h-full w-full object-contain"
+      referrerPolicy="no-referrer"
+      data-style-card-image="true"
+      onError={() => setImageFailed(true)}
+    />
+  );
+};
+
 export const DormantFutureDesignStyleStep = ({
   occurrences,
   constructionDisplayLabelByGarmentKey,
@@ -1045,7 +1084,10 @@ export const DormantFutureDesignStyleStep = ({
                    <article key={entry.style.id} data-style-card="true" data-style-name={entry.style.name} className="relative flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border-2 border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-heritage-gold/60 hover:shadow-md">
                     <button type="button" disabled={!mutationsEnabled} onClick={(event) => openDialog(entry, event.currentTarget)} aria-label={`Select ${displayStyleName}`} className="absolute inset-0 z-0 cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-heritage-gold disabled:cursor-not-allowed" />
                     <div className="pointer-events-none relative z-[1] aspect-[4/3] overflow-hidden bg-heritage-cream/35">
-                      {entry.style.image ? <img src={entry.style.image} alt={`${displayStyleName} design`} loading="lazy" className="h-full w-full object-contain" referrerPolicy="no-referrer" /> : <div className="flex h-full items-center justify-center px-4 text-center text-xs text-heritage-ink/45">Image unavailable</div>}
+                      <DesignStyleCatalogueCardImage
+                        imageUrl={entry.style.image}
+                        alt={`${displayStyleName} design`}
+                      />
                       {entry.selectedOccurrenceLabels.length > 0 && <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-heritage-gold px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm"><Check aria-hidden="true" size={14} />IN USE</span>}
                     </div>
                      <div data-testid="design-style-card-content" className="pointer-events-none relative z-[1] flex min-w-0 flex-1 flex-col p-3 sm:p-4">
