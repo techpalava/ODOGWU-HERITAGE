@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { Readable } from "node:stream";
+import Stripe from "stripe";
+import { config as recordPaymentConfig } from "./api/future-order-v2/record-payment";
 import {
   createFutureOrderV2PaymentRecordHandler,
+  httpRequestFromRawBody,
+  readRawHttpBody,
   type FutureOrderV2PaymentRecordStore,
   type StripeEventSummary,
   type StripePaymentIntentSummary,
@@ -14,6 +20,12 @@ const ORDER_ID = "future-order-webhook";
 const OWNER_UID = "webhook-owner";
 const PAYMENT_INTENT_ID = "pi_test_webhook_123";
 const EVENT_ID = "evt_test_webhook_123";
+const FORGED_EVENT_ID = "evt_forged_body";
+const WEBHOOK_SECRET = "whsec_test_placeholder";
+const VALID_SIGNATURE = "t=1700000000,v1=testvalid";
+const FORGED_SIGNATURE = "t=1,v1=forged-not-a-real-signature";
+// Spacing must survive verification. Re-serializing this JSON changes the bytes.
+const RAW_BODY = '{ "id" : "evt_forged_body" }';
 
 const persisted = createPersistedFutureOrderV2({
   masterOrder: createFutureOrderV2Fixture(ORDER_ID),
@@ -87,24 +99,30 @@ const response = () => {
 };
 
 const webhookRequest = (
-  body: unknown = { id: EVENT_ID, object: "event", type: "payment_intent.succeeded" },
-  headers: HttpRequest["headers"] = { "stripe-signature": "t=1,v1=ignored" },
-): HttpRequest => ({ method: "POST", headers, body });
+  body: unknown = { id: FORGED_EVENT_ID, object: "event", type: "payment_intent.succeeded" },
+  headers: HttpRequest["headers"] = { "stripe-signature": VALID_SIGNATURE },
+  rawBody: string | Uint8Array | undefined = RAW_BODY,
+): HttpRequest => ({ method: "POST", headers, body, rawBody });
 
 const createHandler = ({
   store = createMemoryStore().store,
-  event = succeededEvent() as StripeEventSummary | null | Error,
+  event = succeededEvent() as StripeEventSummary | Error,
   intent = succeededIntent() as StripePaymentIntentSummary | Error,
   secret = "sk_test_example",
+  webhookSecret = WEBHOOK_SECRET,
   verifiedUid = OWNER_UID,
+  acceptSignature = true,
 }: {
   store?: FutureOrderV2PaymentRecordStore;
-  event?: StripeEventSummary | null | Error;
+  event?: StripeEventSummary | Error;
   intent?: StripePaymentIntentSummary | Error;
   secret?: string;
+  webhookSecret?: string;
   verifiedUid?: string;
+  acceptSignature?: boolean;
 } = {}) => {
-  const calls = { retrieveEvent: 0, verifyIdToken: 0 };
+  const calls = { constructEvent: 0, retrievePaymentIntent: 0, verifyIdToken: 0 };
+  const seenRawBodies: Array<string | Uint8Array> = [];
   const handler = createFutureOrderV2PaymentRecordHandler({
     getServices: () => ({
       auth: {
@@ -118,33 +136,88 @@ const createHandler = ({
     }),
     createStore: () => store,
     readSecretKey: () => secret,
-    async retrieveEvent(eventId) {
-      calls.retrieveEvent += 1;
-      assert.equal(eventId, EVENT_ID, "only the event ID from the body is used");
-      if (event instanceof Error) throw event;
+    readWebhookSecret: () => webhookSecret,
+    constructEvent(rawBody, signature, webhookSecretArg) {
+      calls.constructEvent += 1;
+      seenRawBodies.push(rawBody);
+      assert.equal(webhookSecretArg, WEBHOOK_SECRET);
+      assert.notEqual(webhookSecretArg, secret);
+      if (!acceptSignature || signature !== VALID_SIGNATURE || event instanceof Error) {
+        throw new Error("invalid signature");
+      }
       return event;
     },
     async retrievePaymentIntent() {
+      calls.retrievePaymentIntent += 1;
       if (intent instanceof Error) throw intent;
       return intent;
     },
     now: () => new Date("2026-09-30T12:00:00.000Z"),
     log: () => undefined,
   });
-  return { handler, calls };
+  return { handler, calls, seenRawBodies };
 };
 
 const bodyOf = (state: { body: unknown }) => state.body as Record<string, unknown>;
 
-// A succeeded event saves the payment under the order owner's account.
+assert.notEqual(JSON.stringify(JSON.parse(RAW_BODY)), RAW_BODY);
+
+// The Vercel route keeps the raw stream, and Express mounts it before JSON parsing.
+{
+  assert.equal(recordPaymentConfig.api.bodyParser, false);
+  const apiSource = readFileSync("api/future-order-v2/record-payment.ts", "utf8");
+  assert.match(apiSource, /readRawHttpBody/);
+  assert.match(apiSource, /httpRequestFromRawBody/);
+  const serverSource = readFileSync("server.ts", "utf8");
+  const recordAt = serverSource.search(
+    /app\.post\(\s*["']\/api\/future-order-v2\/record-payment["']/,
+  );
+  const jsonAt = serverSource.search(/app\.use\(\s*express\.json\(/);
+  assert.ok(recordAt !== -1 && jsonAt !== -1 && recordAt < jsonAt);
+  assert.match(serverSource, /express\.raw\(/);
+  assert.match(serverSource, /httpRequestFromRawBody/);
+}
+
+// Chunked streams are concatenated without parsing, and webhook requests do not expose body.id.
+{
+  const raw = Buffer.from(RAW_BODY);
+  const stream = Readable.from([raw.subarray(0, 8), raw.subarray(8)]);
+  const read = await readRawHttpBody(stream);
+  assert.equal(read.toString("utf8"), RAW_BODY);
+  const webhook = httpRequestFromRawBody({
+    method: "POST",
+    headers: { "stripe-signature": FORGED_SIGNATURE },
+    rawBody: read,
+  });
+  assert.equal(webhook.body, undefined);
+  assert.equal(webhook.rawBody, read);
+
+  const browserRaw = '{ "orderId" : "future-order-webhook", "paymentIntentId" : "pi_test_webhook_123" }';
+  const browser = httpRequestFromRawBody({
+    method: "POST",
+    headers: { authorization: "Bearer valid-token" },
+    rawBody: browserRaw,
+  });
+  assert.equal(browser.rawBody, browserRaw);
+  assert.deepEqual(browser.body, {
+    orderId: ORDER_ID,
+    paymentIntentId: PAYMENT_INTENT_ID,
+  });
+  assert.notEqual(JSON.stringify(browser.body), browserRaw);
+}
+
+// A verified test event saves the payment. The forged id inside the raw body is not used.
 {
   const memory = createMemoryStore();
-  const { handler, calls } = createHandler({ store: memory.store });
+  const { handler, calls, seenRawBodies } = createHandler({ store: memory.store });
   const first = response();
   await handler(webhookRequest(), first.res);
   assert.equal(first.state.statusCode, 200);
   assert.equal(bodyOf(first.state).status, "recorded");
   assert.equal(calls.verifyIdToken, 0, "a webhook never needs a Firebase token");
+  assert.equal(calls.constructEvent, 1);
+  assert.equal(seenRawBodies[0], RAW_BODY);
+  assert.equal(calls.retrievePaymentIntent, 1);
   assert.deepEqual(parseFutureOrderV2PaymentRecord(memory.payments.get(ORDER_ID)), {
     schemaVersion: 1,
     orderId: ORDER_ID,
@@ -166,6 +239,7 @@ const bodyOf = (state: { body: unknown }) => state.body as Record<string, unknow
 
   // The browser's own save after the webhook still succeeds.
   const browser = response();
+  const constructCallsBeforeBrowser = calls.constructEvent;
   await handler(
     {
       method: "POST",
@@ -177,6 +251,7 @@ const bodyOf = (state: { body: unknown }) => state.body as Record<string, unknow
   assert.equal(browser.state.statusCode, 200);
   assert.equal(bodyOf(browser.state).status, "already_recorded");
   assert.equal(memory.writes(), 1);
+  assert.equal(calls.constructEvent, constructCallsBeforeBrowser);
 }
 
 // Events that are not V2 test payments are acknowledged without writing.
@@ -212,26 +287,64 @@ for (const [label, options] of [
   assert.equal(memory.writes(), 0);
 }
 
-// Malformed bodies and events Stripe does not know are rejected.
+// An invalid signature is rejected and the forged body id is never fetched or saved.
 {
-  const { handler, calls } = createHandler();
-  const malformed = response();
-  await handler(webhookRequest({ id: "not-an-event" }), malformed.res);
-  assert.equal(malformed.state.statusCode, 400);
-  assert.equal(calls.retrieveEvent, 0);
+  const memory = createMemoryStore();
+  const { handler, calls } = createHandler({ store: memory.store, acceptSignature: false });
+  const forged = response();
+  await handler(
+    webhookRequest(
+      { id: FORGED_EVENT_ID, object: "event" },
+      { "stripe-signature": FORGED_SIGNATURE },
+      RAW_BODY,
+    ),
+    forged.res,
+  );
+  assert.equal(forged.state.statusCode, 400);
+  assert.equal(bodyOf(forged.state).code, "INVALID_STRIPE_SIGNATURE");
+  assert.equal(calls.constructEvent, 1);
+  assert.equal(calls.retrievePaymentIntent, 0);
+  assert.equal(memory.writes(), 0);
+}
 
-  const unknown = response();
-  await createHandler({ event: null }).handler(webhookRequest(), unknown.res);
-  assert.equal(unknown.state.statusCode, 400);
-  assert.equal(bodyOf(unknown.state).code, "UNKNOWN_STRIPE_EVENT");
+// A missing raw body cannot fall back to body.id.
+{
+  const memory = createMemoryStore();
+  const { handler, calls } = createHandler({ store: memory.store });
+  const missingRaw = response();
+  await handler(
+    {
+      method: "POST",
+      headers: { "stripe-signature": VALID_SIGNATURE },
+      body: { id: EVENT_ID, object: "event" },
+    },
+    missingRaw.res,
+  );
+  assert.equal(missingRaw.state.statusCode, 400);
+  assert.equal(bodyOf(missingRaw.state).code, "INVALID_STRIPE_SIGNATURE");
+  assert.equal(calls.constructEvent, 0);
+  assert.equal(calls.retrievePaymentIntent, 0);
+  assert.equal(memory.writes(), 0);
+}
+
+// An unset webhook secret fails closed. The old body.id retrieve must not run.
+{
+  const memory = createMemoryStore();
+  const { handler, calls } = createHandler({ store: memory.store, webhookSecret: "  " });
+  const unconfigured = response();
+  await handler(
+    webhookRequest({ id: FORGED_EVENT_ID }, { "stripe-signature": FORGED_SIGNATURE }),
+    unconfigured.res,
+  );
+  assert.equal(unconfigured.state.statusCode, 400);
+  assert.equal(bodyOf(unconfigured.state).code, "STRIPE_WEBHOOK_SECRET_REQUIRED");
+  assert.equal(calls.constructEvent, 0);
+  assert.equal(calls.retrievePaymentIntent, 0);
+  assert.equal(memory.writes(), 0);
 }
 
 // Temporary Stripe or storage failures return 500 so Stripe retries.
 {
-  const eventOutage = response();
-  await createHandler({ event: new Error("stripe down") }).handler(webhookRequest(), eventOutage.res);
-  assert.equal(eventOutage.state.statusCode, 500);
-
   const intentOutage = response();
   await createHandler({ intent: new Error("stripe down") }).handler(webhookRequest(), intentOutage.res);
   assert.equal(intentOutage.state.statusCode, 500);
@@ -257,7 +370,8 @@ for (const [label, options] of [
   const { res, state } = response();
   await handler(webhookRequest(), res);
   assert.equal(state.statusCode, 503);
-  assert.equal(calls.retrieveEvent, 0);
+  assert.equal(calls.constructEvent, 0);
+  assert.equal(calls.retrievePaymentIntent, 0);
 }
 
 // A Bearer token always takes the browser path, even with a stripe-signature header.
@@ -268,22 +382,121 @@ for (const [label, options] of [
   await handler(
     {
       method: "POST",
-      headers: { authorization: "Bearer valid-token", "stripe-signature": "t=1,v1=ignored" },
+      headers: { authorization: "Bearer valid-token", "stripe-signature": VALID_SIGNATURE },
       body: { orderId: ORDER_ID, paymentIntentId: PAYMENT_INTENT_ID },
+      rawBody: RAW_BODY,
     },
     res,
   );
-  assert.equal(calls.retrieveEvent, 0);
+  assert.equal(calls.constructEvent, 0);
+  assert.equal(calls.retrievePaymentIntent, 0);
   assert.equal(calls.verifyIdToken, 1);
   assert.equal(state.statusCode, 403, "the signed-in owner check still applies");
   assert.equal(memory.writes(), 0);
 }
 
-// Without a Bearer token or a stripe-signature header, authentication is required.
+// Without a Bearer token or a stripe-signature header, nothing is processed.
 {
+  const memory = createMemoryStore();
+  const { handler, calls } = createHandler({ store: memory.store });
   const { res, state } = response();
-  await createHandler().handler(webhookRequest(undefined, {}), res);
+  await handler(webhookRequest({ id: FORGED_EVENT_ID }, {}, undefined), res);
   assert.equal(state.statusCode, 401);
+  assert.equal(bodyOf(state).code, "AUTH_REQUIRED");
+  assert.equal(calls.constructEvent, 0);
+  assert.equal(calls.retrievePaymentIntent, 0);
+  assert.equal(memory.writes(), 0);
+}
+
+// Oversized streams are refused before a payment can be recorded.
+{
+  const chunk = Buffer.alloc(600_000, 1);
+  await assert.rejects(readRawHttpBody(Readable.from([chunk, chunk])));
+}
+
+// The default verifier is Stripe's constructEvent. A signed payload records;
+// a forged body or a fake signature does not retrieve or save.
+{
+  const previousKey = process.env.STRIPE_SECRET_KEY;
+  process.env.STRIPE_SECRET_KEY = "sk_test_example";
+  try {
+    const payload = JSON.stringify({
+      id: EVENT_ID,
+      object: "event",
+      type: "payment_intent.succeeded",
+      livemode: false,
+      data: { object: { id: PAYMENT_INTENT_ID, object: "payment_intent" } },
+    });
+    const header = Stripe.webhooks.generateTestHeaderString({
+      payload,
+      secret: WEBHOOK_SECRET,
+    });
+    const memory = createMemoryStore();
+    let paymentIntentReads = 0;
+    const handler = createFutureOrderV2PaymentRecordHandler({
+      getServices: () => ({
+        auth: { async verifyIdToken() { throw new Error("unused"); } },
+        db: {},
+      }),
+      createStore: () => memory.store,
+      readSecretKey: () => "sk_test_example",
+      readWebhookSecret: () => WEBHOOK_SECRET,
+      async retrievePaymentIntent() {
+        paymentIntentReads += 1;
+        return succeededIntent();
+      },
+      now: () => new Date("2026-09-30T12:00:00.000Z"),
+      log: () => undefined,
+    });
+
+    const recorded = response();
+    await handler(
+      {
+        method: "POST",
+        headers: { "stripe-signature": header },
+        body: { id: FORGED_EVENT_ID },
+        rawBody: payload,
+      },
+      recorded.res,
+    );
+    assert.equal(recorded.state.statusCode, 200);
+    assert.equal(bodyOf(recorded.state).status, "recorded");
+    assert.equal(paymentIntentReads, 1);
+    assert.equal(memory.writes(), 1);
+
+    const forged = response();
+    await handler(
+      {
+        method: "POST",
+        headers: { "stripe-signature": FORGED_SIGNATURE },
+        body: { id: FORGED_EVENT_ID },
+        rawBody: payload,
+      },
+      forged.res,
+    );
+    assert.equal(forged.state.statusCode, 400);
+    assert.equal(bodyOf(forged.state).code, "INVALID_STRIPE_SIGNATURE");
+    assert.equal(paymentIntentReads, 1);
+    assert.equal(memory.writes(), 1);
+
+    const tampered = response();
+    await handler(
+      {
+        method: "POST",
+        headers: { "stripe-signature": header },
+        body: { id: FORGED_EVENT_ID },
+        rawBody: payload.replace(EVENT_ID, FORGED_EVENT_ID),
+      },
+      tampered.res,
+    );
+    assert.equal(tampered.state.statusCode, 400);
+    assert.equal(bodyOf(tampered.state).code, "INVALID_STRIPE_SIGNATURE");
+    assert.equal(paymentIntentReads, 1);
+    assert.equal(memory.writes(), 1);
+  } finally {
+    if (previousKey === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = previousKey;
+  }
 }
 
 console.log("PASS: V2 order Stripe payment webhook");
