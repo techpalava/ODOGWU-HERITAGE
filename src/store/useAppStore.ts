@@ -602,37 +602,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       stylesLoadError: null,
     });
     try {
-      const catalog = await StorageService.getCatalog();
-      if (!isCurrentInitialization()) return;
-      set({ customDetailCatalog: catalog });
-      const storedSettings = await StorageService.getBusinessSettings();
-      if (!isCurrentInitialization()) return;
+      // Start catalog/settings fetches and real-time listeners together so
+      // fabrics/styles can arrive while those reads are in flight.
+      const catalogPromise = StorageService.getCatalog();
+      const settingsPromise = StorageService.getBusinessSettings();
 
-      const isInitialized =
-        storedSettings?.applicationSettings?.hasInitializedData;
-
-      const savedBusinessSettings: BusinessSettings = {
-        ...DEFAULT_BUSINESS_SETTINGS,
-        ...(storedSettings || {}),
-        discountSettings:
-          storedSettings?.discountSettings ||
-          DEFAULT_BUSINESS_SETTINGS.discountSettings,
-        outfitTypes:
-          storedSettings?.outfitTypes || DEFAULT_BUSINESS_SETTINGS.outfitTypes,
-        garmentCompositions:
-          storedSettings?.garmentCompositions ||
-          DEFAULT_BUSINESS_SETTINGS.garmentCompositions,
-      };
-
-      if (!isInitialized) {
-        savedBusinessSettings.applicationSettings = {
-          ...savedBusinessSettings.applicationSettings,
-          hasInitializedData: true,
-        };
-      }
-
-      // All listener installation and completion publishing belongs only to
-      // the latest invocation. An older catalog/settings request is inert.
       if (!isCurrentInitialization()) return;
 
       storeUnsubs.push(
@@ -817,8 +791,37 @@ export const useAppStore = create<AppState>((set, get) => ({
         })
       );
 
+      const [catalog, storedSettings] = await Promise.all([
+        catalogPromise,
+        settingsPromise,
+      ]);
       if (!isCurrentInitialization()) return;
+
+      const isInitialized =
+        storedSettings?.applicationSettings?.hasInitializedData;
+
+      const savedBusinessSettings: BusinessSettings = {
+        ...DEFAULT_BUSINESS_SETTINGS,
+        ...(storedSettings || {}),
+        discountSettings:
+          storedSettings?.discountSettings ||
+          DEFAULT_BUSINESS_SETTINGS.discountSettings,
+        outfitTypes:
+          storedSettings?.outfitTypes || DEFAULT_BUSINESS_SETTINGS.outfitTypes,
+        garmentCompositions:
+          storedSettings?.garmentCompositions ||
+          DEFAULT_BUSINESS_SETTINGS.garmentCompositions,
+      };
+
+      if (!isInitialized) {
+        savedBusinessSettings.applicationSettings = {
+          ...savedBusinessSettings.applicationSettings,
+          hasInitializedData: true,
+        };
+      }
+
       set({
+        customDetailCatalog: catalog,
         // others are set via subscriptions
         businessSettings: savedBusinessSettings,
         hasLoadedBusinessSettings: true,

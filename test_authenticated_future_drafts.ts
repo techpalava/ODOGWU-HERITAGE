@@ -1184,6 +1184,14 @@ assert.equal(
   }).status,
   "blocked",
 );
+assert.deepEqual(
+  resolveAuthenticatedFutureDraftIdentity({
+    authResolved: true,
+    firebaseUser: { uid: "uid-a", email: "a@example.com", isAnonymous: false },
+    customer: null,
+  }),
+  { status: "pending_authenticated", ownerUid: "uid-a" },
+);
 assert.equal(
   resolveAuthenticatedFutureDraftIdentity({
     authResolved: true,
@@ -1232,6 +1240,21 @@ assert.doesNotMatch(
 );
 assert.match(studioSource, /createFirebaseAuthenticatedFutureDraftRepository/);
 assert.match(studioSource, /futureDraftIdentity\.status === "authenticated"/);
+assert.match(
+  studioSource,
+  /pending_authenticated/,
+  "Signed-in bootstrap must use a pending authenticated identity instead of hard-blocking.",
+);
+assert.match(
+  studioSource,
+  /shouldSynchronizeAfterLocalPaint/,
+  "Authenticated refresh must paint the local draft before awaiting cloud synchronize.",
+);
+assert.match(
+  studioSource,
+  /Restoring your draft/,
+  "Studio must show a restoring shell while draft hydration is still in flight.",
+);
 assert.match(
   studioSource,
   /repository\.synchronize\(localDraft,\s*\{\s*localDraftProvenance,\s*\}\)/,
