@@ -9,6 +9,9 @@ import {
   type WearerMutationResult,
 } from "../utils/wearerOrder";
 
+const SOLO_FIRST_COPY =
+  "These clothes are for you. Add another person if you are ordering for someone else.";
+
 const blockedWearerRemovalMessage = (displayName: string): string => {
   const name = displayName.trim() || "this person";
   return `Cannot remove ${name} yet. Reassign their garments to another person first.`;
@@ -117,45 +120,8 @@ export const WearerAssignmentPanel = ({
       + Add another person
     </button>
   );
-  const soleWearer = wearers.length === 1 ? wearers[0] : null;
   const showPeopleUi =
     wearers.length > 1 || peopleExpanded || presentation === "people";
-
-  if (!showPeopleUi && presentation === "fit" && soleWearer) {
-    return (
-      <section className="mb-6 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm">
-        <p className="text-sm text-heritage-ink/70">These clothes are for you.</p>
-        <fieldset className="mt-4">
-          <legend className="text-sm font-semibold text-heritage-ink">
-            Fit for measurements
-          </legend>
-          <p className="mt-1 text-xs text-heritage-ink/60">
-            Used to determine the correct measurement requirements.
-          </p>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-            {(["male", "female"] as const).map((fitContext) => (
-              <label
-                key={fitContext}
-                className="flex min-h-11 cursor-pointer items-center justify-center rounded-xl border border-heritage-gold/30 bg-white px-3 font-semibold text-heritage-green"
-              >
-                <input
-                  type="radio"
-                  className="sr-only"
-                  name={`wearer-fit-${soleWearer.wearerId}`}
-                  checked={soleWearer.fitContext === fitContext}
-                  onChange={() => onSetFitContext(soleWearer.wearerId, fitContext)}
-                />
-                {fitContext === "male" ? "Male fit" : "Female fit"}
-              </label>
-            ))}
-          </div>
-          <p className="mt-2 text-sm text-heritage-ink/70">
-            Select a fit for {labelForWearer(soleWearer)} before assigning garments.
-          </p>
-        </fieldset>
-      </section>
-    );
-  }
 
   if (!showPeopleUi) {
     return (
@@ -163,7 +129,7 @@ export const WearerAssignmentPanel = ({
         className="mb-6 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm"
         data-wearer-solo-first="true"
       >
-        <p className="text-sm text-heritage-ink/70">These clothes are for you.</p>
+        <p className="text-sm text-heritage-ink/70">{SOLO_FIRST_COPY}</p>
         <button
           type="button"
           data-wearer-add-people="true"

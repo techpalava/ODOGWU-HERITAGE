@@ -705,24 +705,22 @@ export const hasUnassignedPhysicalGarments = ({
  * People panel mode for Measurement.
  * Multi-person / assign UI opens when there are multiple wearers or the user
  * opted in (`peopleExpanded`). Unassigned garments alone no longer force it.
+ * Closed first screen is always solo (never a dedicated fit wall).
  */
 export const resolveWearerAssignmentPresentation = ({
   wearerCount,
-  soleWearerFitContext,
   peopleExpanded = false,
 }: {
   wearerCount: number;
-  soleWearerFitContext: WearerFitContext | null;
+  /** @deprecated Ignored — closed first screen no longer depends on sole fit. */
+  soleWearerFitContext?: WearerFitContext | null;
   /** User clicked Add people on the solo first-screen (or equivalent). */
   peopleExpanded?: boolean;
   /** @deprecated Ignored — kept so older call sites type-check during rollout. */
   hasUnassignedGarments?: boolean;
 }): "people" | "solo" | "fit" => {
   if (wearerCount > 1 || peopleExpanded) return "people";
-  if (soleWearerFitContext === "male" || soleWearerFitContext === "female") {
-    return "solo";
-  }
-  return "fit";
+  return "solo";
 };
 
 export const isWearerOrderMeasurementComplete = ({

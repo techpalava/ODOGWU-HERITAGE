@@ -804,7 +804,8 @@ assert.equal(
     wearerCount: 1,
     soleWearerFitContext: null,
   }),
-  "fit",
+  "solo",
+  "missing sole fit must not open a first-screen fit wall",
 );
 
 const twoGarmentPlan = planMeasurementRequirements({
