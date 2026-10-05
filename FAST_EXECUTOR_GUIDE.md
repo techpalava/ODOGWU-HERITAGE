@@ -472,6 +472,13 @@ people and + Add another person, Assign garments appears; Only for me returns
 to solo. Male/Female fit stays on the measurement card for a sole wearer and on
 each person card when multiple people exist.
 
+Contextual Re-entry Guidance (as shipped in #367): when the customer advances
+or stage-corrects while a dependent step is incomplete, land on that step and
+focus the blocking item — first unassigned Fabric garment card, or first
+incomplete Design Style occurrence — with a gold flash. Do not dump at stage
+top (Design Style leftover fabric-capacity prompt is not the focus target).
+Fabric upstream-delta copy is consume-once and session-only.
+
 Report NOT RUN or PARTIAL for missing cases. Unit tests are not browser proof.
 A supported construction path not exercised live remains a stated limitation.
 
