@@ -20,9 +20,10 @@ export { isFabricAvailableForCustomerSelection } from "./fabricCatalogueAvailabi
 
 export type AdditionalGarmentFabricTransactionPhase =
   | "catalogue"
-  | "custom_details_choice"
   | "assigning"
   | "awaiting_commit"
+  | "design_style"
+  | "custom_details_choice"
   | "committed";
 
 export type AdditionalGarmentFabricTransaction = {
@@ -66,6 +67,63 @@ export type AdditionalGarmentFabricTransaction = {
   /** True when the Step 5 fabric dialog was opened for this transaction. */
   openedModal?: boolean;
 };
+
+/**
+ * Step 5 Add Additional Garment keeps a singleton session keyed by garmentKey
+ * + occurrenceGeneration through Design Style and Custom Detail Copy so stage
+ * correction cannot bounce to the full Step 3 page mid-flow.
+ */
+export const isAdditionalGarmentStep5ConfigurationSession = (
+  transaction: AdditionalGarmentFabricTransaction | null | undefined,
+): boolean =>
+  Boolean(
+    transaction &&
+      transaction.origin === "new_addition" &&
+      !transaction.designStyleReuse &&
+      !transaction.capacityReuse &&
+      (transaction.phase === "design_style" ||
+        transaction.phase === "custom_details_choice"),
+  );
+
+export const isAdditionalGarmentDesignStyleSessionPhase = (
+  transaction: AdditionalGarmentFabricTransaction | null | undefined,
+): boolean =>
+  Boolean(
+    transaction &&
+      transaction.origin === "new_addition" &&
+      !transaction.designStyleReuse &&
+      !transaction.capacityReuse &&
+      transaction.phase === "design_style",
+  );
+
+export const isAdditionalGarmentCustomDetailsChoiceSessionPhase = (
+  transaction: AdditionalGarmentFabricTransaction | null | undefined,
+): boolean =>
+  Boolean(
+    transaction &&
+      transaction.origin === "new_addition" &&
+      !transaction.designStyleReuse &&
+      !transaction.capacityReuse &&
+      transaction.phase === "custom_details_choice",
+  );
+
+export const advanceAdditionalGarmentSessionToDesignStyle = (
+  transaction: AdditionalGarmentFabricTransaction,
+  fabricCode: string,
+): AdditionalGarmentFabricTransaction => ({
+  ...transaction,
+  phase: "design_style",
+  openedModal: false,
+  requestedFabricCode: fabricCode,
+});
+
+export const advanceAdditionalGarmentSessionToCustomDetailsChoice = (
+  transaction: AdditionalGarmentFabricTransaction,
+): AdditionalGarmentFabricTransaction => ({
+  ...transaction,
+  phase: "custom_details_choice",
+  openedModal: false,
+});
 
 export type AdditionalGarmentFabricAssignmentResult =
   | {
@@ -379,7 +437,10 @@ export const isAdditionalGarmentFabricTransactionTargetValid = ({
   }
   if (
     transaction.phase === "awaiting_commit" ||
-    transaction.phase === "assigning"
+    transaction.phase === "assigning" ||
+    transaction.phase === "design_style" ||
+    transaction.phase === "custom_details_choice" ||
+    transaction.phase === "committed"
   ) {
     return (
       matching.length === 1 &&

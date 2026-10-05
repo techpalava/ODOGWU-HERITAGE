@@ -89,6 +89,18 @@ const stubWindow = {
   addEventListener: () => undefined,
   removeEventListener: () => undefined,
   localStorage: memoryStorage,
+  location: {
+    search: "",
+    href: "http://localhost/",
+    pathname: "/",
+    hash: "",
+    assign: () => undefined,
+    replace: () => undefined,
+  },
+  history: {
+    replaceState: () => undefined,
+    pushState: () => undefined,
+  },
   matchMedia: () => ({
     matches: false,
     addListener: () => undefined,
@@ -291,7 +303,7 @@ const mountSeededStudio = async (): Promise<void> => {
 await mountSeededStudio();
 
 assert.equal(
-  renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props[
+  renderer.root.findByProps({ id: "design-studio-ten-stage-journey" }).props[
     "data-stage-id"
   ],
   "fabric",
@@ -304,7 +316,7 @@ await act(async () => {
   await Promise.resolve();
 });
 assert.equal(
-  renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props[
+  renderer.root.findByProps({ id: "design-studio-ten-stage-journey" }).props[
     "data-stage-id"
   ],
   "design_style",
@@ -331,7 +343,7 @@ await act(async () => {
   await Promise.resolve();
 });
 assert.equal(
-  renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props[
+  renderer.root.findByProps({ id: "design-studio-ten-stage-journey" }).props[
     "data-stage-id"
   ],
   "custom_details",
@@ -354,6 +366,19 @@ const findButton = (label: string): ReactTestInstance => {
   );
   return button;
 };
+
+await act(async () => {
+  renderer.root.findByType(DormantFutureCustomDetailsStep).props.onContinue();
+  await Promise.resolve();
+  await Promise.resolve();
+});
+assert.equal(
+  renderer.root.findByProps({ id: "design-studio-ten-stage-journey" }).props[
+    "data-stage-id"
+  ],
+  "personalized_additions",
+  "Additional Garment add begins from Step 5 Personalized Additions",
+);
 
 act(() => {
   findButton("Add Trouser").props.onClick({ currentTarget: null });
@@ -466,7 +491,7 @@ assert.equal(sameFabricState.pendingFabricGarment, null);
 assert.equal(
   afterUseSame.props.additionalGarmentCustomDetailsRequest,
   null,
-  "Custom Details choices must wait until the additional garment has a Step 3 design",
+  "Custom Details choices must wait until the additional garment has a Design Style",
 );
 assert.equal(
   Object.prototype.hasOwnProperty.call(
@@ -500,132 +525,82 @@ assert.equal(
   1,
 );
 
-// The added Trouser has an exact scoped Design Style request. Complete that
-// current handoff before proving that the terminal transaction releases the
-// next Step 4 add.
-await act(async () => {
-  renderer.root
-    .findAllByType("button")
-    .find((button) => textContent(button).trim().startsWith("3Design Style"))!
-    .props.onClick();
-  await Promise.resolve();
-  await Promise.resolve();
-});
+// Fabric success keeps Step 5 mounted and opens the Design Style modal for the
+// exact additional Trouser — never the full Step 3 page.
 assert.equal(
-  renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props[
-    "data-stage-id"
-  ],
-  "design_style",
-);
-const additionalDesignStyleStep = renderer.root.findByType(
-  DormantFutureDesignStyleStep,
-);
-assert.ok(
-  additionalDesignStyleStep.props.occurrences.some(
-    (occurrence: { target: { garmentKey: string } }) =>
-      occurrence.target.garmentKey === pendingTrouserKey,
-  ),
-  "Step 3 must list the fabric-committed additional Trouser",
-);
-const trouserCatalogueEntry = additionalDesignStyleStep.props.catalogueEntries.find(
-  (entry: {
-    requestsByOccurrenceToken: Record<
-      string,
-      { target: { garmentKey: string } }
-    >;
-  }) =>
-    Object.values(entry.requestsByOccurrenceToken).some(
-      (request) => request.target.garmentKey === pendingTrouserKey,
-    ),
-);
-assert.ok(trouserCatalogueEntry, "the new Trouser must have its own Design Style request");
-const trouserStyleRequests = Object.values(
-  trouserCatalogueEntry.requestsByOccurrenceToken as Record<
-    string,
-    { target: { garmentKey: string } }
-  >,
-).filter((request) => request.target.garmentKey === pendingTrouserKey);
-assert.equal(trouserStyleRequests.length, 1);
-await act(async () => {
-  additionalDesignStyleStep.props.onAssignCatalogueStyle(trouserStyleRequests);
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-});
-const completedAdditionalDesignStyleStep = renderer.root.findByType(
-  DormantFutureDesignStyleStep,
-);
-assert.equal(completedAdditionalDesignStyleStep.props.exactSetComplete, true);
-await act(async () => {
-  completedAdditionalDesignStyleStep.props.onContinue();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-});
-assert.equal(
-  renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props[
-    "data-stage-id"
-  ],
-  "custom_details",
-);
-const customDetailsAfterDesign = renderer.root.findByType(
-  DormantFutureCustomDetailsStep,
-);
-assert.equal(
-  customDetailsAfterDesign.props.additionalGarmentCustomDetailsRequest,
-  null,
-  "an extra trouser with no same-type garment applies its own construction without the dialog",
-);
-assert.equal(
-  renderer.root.findAllByProps({
-    "data-additional-garment-custom-details-dialog": "true",
-  }).length,
-  0,
-  "Step 4 does not show the Add garment dialog when Use Same is unavailable",
-);
-const completeTrouserCustomDetails =
-  customDetailsAfterDesign.props.onCompleteAdditionalGarmentCustomDetails;
-const finalizedTrouser = customDetailsAfterDesign;
-await act(async () => {
-  finalizedTrouser.props.onContinue();
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-});
-assert.equal(
-  renderer.root.findByProps({ id: "design-studio-nine-stage-journey" }).props[
+  renderer.root.findByProps({ id: "design-studio-ten-stage-journey" }).props[
     "data-stage-id"
   ],
   "personalized_additions",
+  "Fabric confirm for a Step 5 additional garment must stay on Personalized Additions",
+);
+assert.equal(
+  renderer.root.findAllByType(DormantFutureDesignStyleStep).length,
+  0,
+  "the Step 5 additional-garment Design Style handoff must not mount the Step 3 page",
+);
+const designStyleDialog = renderer.root.findByProps({
+  "data-additional-garment-design-style-dialog": "true",
+});
+assert.equal(
+  designStyleDialog.props["data-garment-key"],
+  pendingTrouserKey,
+  "Design Style modal must bind to the exact additional garment key",
+);
+assert.match(
+  textContent(designStyleDialog),
+  /Choose Design Style for Trouser/,
+);
+const trouserDesignCard = designStyleDialog
+  .findAllByProps({
+    "data-testid": "additional-garment-design-style-card",
+  })
+  .find(
+    (card) => card.props["data-garment-key"] === pendingTrouserKey,
+  );
+assert.ok(
+  trouserDesignCard,
+  "the Design Style modal must offer a catalogue card for the additional Trouser",
+);
+await act(async () => {
+  trouserDesignCard!
+    .findAllByType("button")
+    .find((button) => textContent(button).trim().startsWith("Use This Design"))!
+    .props.onClick();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+});
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-additional-garment-design-style-dialog": "true",
+  }).length,
+  0,
+  "Design Style modal closes after the exact Trouser style is saved",
+);
+assert.equal(
+  renderer.root.findByProps({ id: "design-studio-ten-stage-journey" }).props[
+    "data-stage-id"
+  ],
+  "personalized_additions",
+  "after Design Style the customer remains on Step 5",
 );
 assert.equal(
   renderer.root.findAllByProps({
     "data-additional-garment-custom-details-dialog": "true",
   }).length,
   0,
-  "Step 5 does not show the extra-garment construction dialog",
+  "an extra trouser with no same-type garment auto-chooses Custom Details without a dialog",
 );
-let duplicateCompletionResult = true;
-act(() => {
-  duplicateCompletionResult = completeTrouserCustomDetails(
-    {
-      transactionId: 0,
-      garmentKey: pendingTrouserKey,
-      garmentType: "trouser",
-      occurrenceGeneration: 0,
-    },
-    { mode: "choose" },
-  );
-});
 assert.equal(
-  duplicateCompletionResult,
-  false,
-  "the same Custom Details completion callback must not finalize twice",
+  renderer.root.findAllByType(DormantFutureDesignStyleStep).length,
+  0,
+  "the completed Step 5 session must not leave the Step 3 page mounted",
 );
 
-// Once Fabric, Custom Details, and the required scoped Design Style have all
-// committed, the ordinary Step 5 action must be available for a distinct
-// second occurrence.
+// Once Fabric, Design Style, and Custom Details have all committed on Step 5,
+// the ordinary Step 5 action must be available for a distinct second occurrence.
 assert.equal(
   renderer.root.findAllByProps({
     "data-additional-garment-fabric-dialog": "true",

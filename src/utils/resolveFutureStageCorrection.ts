@@ -10,9 +10,10 @@ export type InlineAdditionalGarmentFabricTransactionLike = {
  * Pure stage-correction decision used by DesignStudioView.
  * Returns null when the current stage should stay mounted.
  *
- * While an inline Optional Extra Garment Fabric transaction is active
- * (including the terminal "committed" stabilization phase), Step 5 stays
- * mounted even if Fabric/Design Source readiness briefly flickers.
+ * While an inline Optional Extra Garment Fabric / Step 5 configuration
+ * session is active (catalogue through design_style / custom_details_choice,
+ * plus the terminal "committed" stabilization phase), Step 5 stays mounted
+ * even if Fabric/Design Source readiness briefly flickers.
  */
 export const resolveFutureStageCorrection = ({
   currentStageId,

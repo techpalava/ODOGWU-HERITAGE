@@ -133,6 +133,12 @@ interface DormantFutureCustomDetailsStepProps {
     triggerElement?: HTMLElement | null,
   ) => void;
   additionalGarmentCustomDetailsRequest?: AdditionalGarmentCustomDetailsRequest | null;
+  /**
+   * When false on Personalized Additions, suppress the deferred Custom Detail
+   * Copy dialog (e.g. while the Design Style modal session is still open).
+   * Step 4 keeps the historical always-on behavior when this prop is omitted.
+   */
+  allowAdditionalGarmentCustomDetailsPrompt?: boolean;
   onCompleteAdditionalGarmentCustomDetails?: (
     request: AdditionalGarmentCustomDetailsRequest,
     choice: AdditionalGarmentCustomDetailsChoice,
@@ -438,6 +444,7 @@ export const DormantFutureCustomDetailsStep = ({
   onClearAccessories,
   onAddAdditionalGarment,
   additionalGarmentCustomDetailsRequest,
+  allowAdditionalGarmentCustomDetailsPrompt = true,
   onCompleteAdditionalGarmentCustomDetails,
   onCancelAdditionalGarmentCustomDetails,
   onChangeAdditionalGarmentFabric,
@@ -458,6 +465,9 @@ export const DormantFutureCustomDetailsStep = ({
 }: DormantFutureCustomDetailsStepProps) => {
   const isPersonalizedAdditionsStage = stage === "personalized_additions";
   const isCustomDetailsStage = !isPersonalizedAdditionsStage;
+  const canPresentAdditionalGarmentCustomDetailsPrompt =
+    isCustomDetailsStage ||
+    (isPersonalizedAdditionsStage && allowAdditionalGarmentCustomDetailsPrompt);
   const stageTitle = isPersonalizedAdditionsStage
     ? "Personalized Additions"
     : "Custom Details";
@@ -474,7 +484,8 @@ export const DormantFutureCustomDetailsStep = ({
     sourceParentGarmentKey: string | null;
     }
   | null>(() =>
-    isCustomDetailsStage && additionalGarmentCustomDetailsRequest
+    canPresentAdditionalGarmentCustomDetailsPrompt &&
+    additionalGarmentCustomDetailsRequest
       ? {
           ...additionalGarmentCustomDetailsRequest,
           sourceParentGarmentKey: null,
@@ -665,7 +676,10 @@ export const DormantFutureCustomDetailsStep = ({
       : null);
 
   useEffect(() => {
-    if (!additionalGarmentCustomDetailsRequest) {
+    if (
+      !canPresentAdditionalGarmentCustomDetailsPrompt ||
+      !additionalGarmentCustomDetailsRequest
+    ) {
       setAdditionalGarmentChoice(null);
       return;
     }
@@ -681,7 +695,10 @@ export const DormantFutureCustomDetailsStep = ({
             sourceParentGarmentKey: null,
           },
     );
-  }, [additionalGarmentCustomDetailsRequest]);
+  }, [
+    additionalGarmentCustomDetailsRequest,
+    canPresentAdditionalGarmentCustomDetailsPrompt,
+  ]);
 
   useEffect(() => {
     if (!additionalGarmentChoice) return;
@@ -905,12 +922,17 @@ export const DormantFutureCustomDetailsStep = ({
     }
   };
   const showAdditionalGarmentChoiceDialog =
-    isCustomDetailsStage &&
+    canPresentAdditionalGarmentCustomDetailsPrompt &&
     additionalGarmentChoice !== null &&
     compatibleCopySources.length > 0;
 
   useEffect(() => {
-    if (!isCustomDetailsStage || !additionalGarmentChoice) return;
+    if (
+      !canPresentAdditionalGarmentCustomDetailsPrompt ||
+      !additionalGarmentChoice
+    ) {
+      return;
+    }
     if (compatibleCopySources.length > 0) return;
     const identity = `${additionalGarmentChoice.transactionId}:${additionalGarmentChoice.garmentKey}:${additionalGarmentChoice.occurrenceGeneration}`;
     if (autoChosenRequestIdentityRef.current === identity) return;
@@ -919,7 +941,7 @@ export const DormantFutureCustomDetailsStep = ({
   }, [
     additionalGarmentChoice,
     compatibleCopySources.length,
-    isCustomDetailsStage,
+    canPresentAdditionalGarmentCustomDetailsPrompt,
   ]);
 
   const renderOptions = (
