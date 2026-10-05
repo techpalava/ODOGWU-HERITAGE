@@ -23,7 +23,10 @@ import {
   handleFutureOrderV2PayPalConfig,
   handleFutureOrderV2PayPalCreateOrder,
 } from "./src/server/futureOrderV2PayPalPayment";
-import { handleFutureOrderV2PaymentRecord } from "./src/server/futureOrderV2PaymentRecord";
+import {
+  handleFutureOrderV2PaymentRecord,
+  httpRequestFromRawBody,
+} from "./src/server/futureOrderV2PaymentRecord";
 import { handleHealth } from "./src/server/appVersion";
 import {
   handleCreatePrivateBatchInvite,
@@ -53,6 +56,24 @@ function getStripeClient(): Stripe {
 
 const app = express();
 const PORT = 3112;
+
+// Stripe webhook verification needs the exact bytes. Register this route
+// before express.json() so the body is not parsed and then re-serialized.
+app.post(
+  "/api/future-order-v2/record-payment",
+  express.raw({ type: () => true, limit: "1mb" }),
+  (req, res) => {
+    const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    return handleFutureOrderV2PaymentRecord(
+      httpRequestFromRawBody({
+        method: req.method,
+        headers: req.headers,
+        rawBody,
+      }),
+      res,
+    );
+  },
+);
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -93,9 +114,6 @@ app.post("/api/future-order-v2/paypal", async (req, res) => {
   }
   return handleFutureOrderV2PayPalCreateOrder(req, res);
 });
-app.post("/api/future-order-v2/record-payment", (req, res) =>
-  handleFutureOrderV2PaymentRecord(req, res),
-);
 app.post("/api/private-batches/create-invite", handleCreatePrivateBatchInvite);
 app.post("/api/private-batches/redeem-invite", handleRedeemPrivateBatchInvite);
 app.post("/api/private-batches/revoke-invite", handleRevokePrivateBatchInvite);
