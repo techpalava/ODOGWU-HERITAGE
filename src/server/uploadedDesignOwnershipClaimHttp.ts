@@ -5,8 +5,12 @@ import {
   createUploadedDesignOwnershipClaim,
   type OwnershipClaimStore,
 } from "./uploadedDesignOwnershipClaim.js";
-import type { TrustedStorageBucket, VerifiedFirebaseToken } from "./uploadedDesignTransfer.js";
-import { parseUploadedDesignTransferRequest } from "./uploadedDesignTransfer.js";
+import {
+  TrustedUploadedDesignTransferError,
+  parseUploadedDesignTransferRequest,
+  type TrustedStorageBucket,
+  type VerifiedFirebaseToken,
+} from "./uploadedDesignTransfer.js";
 
 type OwnershipClaimAdminServices = {
   auth: { verifyIdToken(token: string): Promise<VerifiedFirebaseToken> };
@@ -83,10 +87,21 @@ export const createUploadedDesignOwnershipClaimHandler = (
           "Firebase authentication could not be verified.",
         );
       }
-      const parsed = parseUploadedDesignTransferRequest({
-        orderId: "claim-preparation",
-        draftReference,
-      });
+      let parsed;
+      try {
+        parsed = parseUploadedDesignTransferRequest({
+          orderId: "claim-preparation",
+          draftReference,
+        });
+      } catch (error) {
+        if (error instanceof TrustedUploadedDesignTransferError) {
+          throw new UploadedDesignOwnershipClaimError(
+            "CLAIM_INVALID_REFERENCE",
+            "The customer design reference is not a valid private draft.",
+          );
+        }
+        throw error;
+      }
       const result = await createUploadedDesignOwnershipClaim({
         authenticatedUid: token.uid,
         draftReference: parsed.draftReference,
@@ -101,14 +116,12 @@ export const createUploadedDesignOwnershipClaimHandler = (
         log(`uploaded-design-claim-create error=${error.code}`);
         return sendError(res, error);
       }
-      log("uploaded-design-claim-create error=CLAIM_INVALID_REFERENCE");
-      return sendError(
-        res,
-        new UploadedDesignOwnershipClaimError(
-          "CLAIM_INVALID_REFERENCE",
-          "The customer design reference is not a valid private draft.",
-        ),
-      );
+      const detail =
+        error instanceof Error ? error.stack || error.message : "unknown";
+      log(`uploaded-design-claim-create error=UNEXPECTED ${detail}`);
+      return setNoStore(res).status(500).json({
+        error: "The customer design ownership claim could not be prepared.",
+      });
     }
   };
 };
