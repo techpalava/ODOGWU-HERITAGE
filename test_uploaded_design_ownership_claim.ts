@@ -489,6 +489,67 @@ async function run() {
     "string",
   );
 
+  const invalidReference = createResponse();
+  await createHandler(
+    {
+      method: "POST",
+      headers: { authorization: "Bearer anon-token" },
+      body: {
+        draftReference: { ...handlerDraft, storagePath: "fabrics/public.jpg" },
+      },
+    },
+    invalidReference.response,
+  );
+  assert.equal(invalidReference.state.status, 400);
+  assert.deepEqual(invalidReference.state.body, {
+    error: "The customer design reference is not a valid private draft.",
+    code: "CLAIM_INVALID_REFERENCE",
+  });
+
+  const unexpectedLogs: string[] = [];
+  const bucketThrows = createResponse();
+  const throwingHandler = createUploadedDesignOwnershipClaimHandler({
+    getServices: () => ({
+      auth: {
+        verifyIdToken: async () => ({ uid: ANON_UID }),
+      },
+      db: integrationStore,
+      storage: {
+        bucket() {
+          throw new Error("Bucket name not specified or invalid.");
+        },
+      },
+    }),
+    now: () => NOW,
+    log: (message) => {
+      unexpectedLogs.push(message);
+    },
+  });
+  await throwingHandler(
+    {
+      method: "POST",
+      headers: { authorization: "Bearer anon-token" },
+      body: { draftReference: handlerDraft },
+    },
+    bucketThrows.response,
+  );
+  assert.equal(bucketThrows.state.status, 500);
+  assert.deepEqual(bucketThrows.state.body, {
+    error: "The customer design ownership claim could not be prepared.",
+  });
+  assert.equal(
+    (bucketThrows.state.body as { code?: unknown }).code,
+    undefined,
+  );
+  assert.equal(
+    unexpectedLogs.some(
+      (message) =>
+        message.includes("error=UNEXPECTED") &&
+        message.includes("Bucket name not specified or invalid."),
+    ),
+    true,
+  );
+
   console.log("PASS: trusted anonymous-to-account uploaded-design ownership claims");
 }
 
