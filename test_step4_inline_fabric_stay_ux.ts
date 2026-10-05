@@ -24,15 +24,14 @@ import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1Physica
 import {
   resolveAuthoritativePrimaryFabricCode,
 } from "./src/utils/additionalGarmentFabricPicker";
-import {
-  attachCustomDetailsGoToTopObserver,
-  scrollCustomDetailsToTop,
-} from "./src/utils/customDetailsGoToTop";
+import { scrollCustomDetailsToTop } from "./src/utils/customDetailsGoToTop";
 import {
   CUSTOM_DETAILS_GO_TO_BOTTOM_HIDE_AT_PROGRESS,
   attachCustomDetailsGoToBottomScrollListener,
+  attachCustomDetailsScrollProgressListener,
   getCustomDetailsScrollProgress,
   isCustomDetailsGoToBottomVisibleFromProgress,
+  isCustomDetailsGoToTopVisibleFromProgress,
   scrollCustomDetailsToBottom,
 } from "./src/utils/customDetailsGoToBottom";
 import { applyFutureFabricCardSelection } from "./src/utils/designStudioFutureFabricStage";
@@ -204,9 +203,14 @@ const fabricB: Fabric = {
 
 // Go to Top visibility / action
 {
+  assert.equal(isCustomDetailsGoToTopVisibleFromProgress(0), false);
+  assert.equal(isCustomDetailsGoToTopVisibleFromProgress(0.39), false);
+  assert.equal(isCustomDetailsGoToTopVisibleFromProgress(0.4), true);
+  assert.equal(isCustomDetailsGoToTopVisibleFromProgress(1), true);
+
   assert.equal(
     shouldShowCustomDetailsGoToTop({
-      sentinelOutOfView: false,
+      scrollAtOrAboveFortyPercent: false,
       fabricModalOpen: false,
       choiceDialogOpen: false,
     }),
@@ -215,16 +219,16 @@ const fabricB: Fabric = {
   );
   assert.equal(
     shouldShowCustomDetailsGoToTop({
-      sentinelOutOfView: true,
+      scrollAtOrAboveFortyPercent: true,
       fabricModalOpen: false,
       choiceDialogOpen: false,
     }),
     true,
-    "visible after top sentinel leaves view",
+    "visible at or above 40% scroll progress",
   );
   assert.equal(
     shouldShowCustomDetailsGoToTop({
-      sentinelOutOfView: true,
+      scrollAtOrAboveFortyPercent: true,
       fabricModalOpen: true,
       choiceDialogOpen: false,
     }),
@@ -233,7 +237,7 @@ const fabricB: Fabric = {
   );
   assert.equal(
     shouldShowCustomDetailsGoToTop({
-      sentinelOutOfView: true,
+      scrollAtOrAboveFortyPercent: true,
       fabricModalOpen: false,
       choiceDialogOpen: true,
     }),
@@ -241,50 +245,21 @@ const fabricB: Fabric = {
     "hidden while additional-garment choice dialog open",
   );
 
-  let observed: IntersectionObserverCallback | null = null;
-  let disconnectCount = 0;
-  let visibility: boolean | null = null;
-  const OriginalIO = globalThis.IntersectionObserver;
-  class MockIO {
-    constructor(cb: IntersectionObserverCallback) {
-      observed = cb;
-    }
-    observe() {}
-    disconnect() {
-      disconnectCount += 1;
-    }
-    unobserve() {}
-    takeRecords() {
-      return [];
-    }
-    root = null;
-    rootMargin = "";
-    thresholds = [];
+  // Mutual exclusion across the shared 40% threshold
+  for (const progress of [0, 0.39, 0.4, 1] as const) {
+    const showBottom = isCustomDetailsGoToBottomVisibleFromProgress(progress);
+    const showTop = isCustomDetailsGoToTopVisibleFromProgress(progress);
+    assert.equal(
+      showBottom && showTop,
+      false,
+      `never both visible at progress ${progress}`,
+    );
+    assert.equal(
+      showBottom || showTop,
+      true,
+      `exactly one visible at progress ${progress}`,
+    );
   }
-  (globalThis as typeof globalThis & {
-    IntersectionObserver: typeof MockIO;
-  }).IntersectionObserver = MockIO;
-
-  const detach = attachCustomDetailsGoToTopObserver({
-    sentinel: {} as Element,
-    onVisibilityChange: (show) => {
-      visibility = show;
-    },
-  });
-  assert.ok(observed);
-  observed?.(
-    [{ isIntersecting: true } as IntersectionObserverEntry],
-    {} as IntersectionObserver,
-  );
-  assert.equal(visibility, false);
-  observed?.(
-    [{ isIntersecting: false } as IntersectionObserverEntry],
-    {} as IntersectionObserver,
-  );
-  assert.equal(visibility, true);
-  const beforeDetach = disconnectCount;
-  detach();
-  assert.ok(disconnectCount > beforeDetach);
 
   let scrollIntoViewCalls = 0;
   let focusCalls = 0;
@@ -412,7 +387,7 @@ const fabricB: Fabric = {
     renderer.root.findAllByProps({ "data-custom-details-go-to-top": "true" })
       .length,
     0,
-    "Go to Top absent near top before sentinel leaves view",
+    "Go to Top absent near top (progress under 40%)",
   );
   assert.equal(
     renderer.root.findAllByProps({ "data-custom-details-bottom-target": "true" })
@@ -420,7 +395,6 @@ const fabricB: Fabric = {
     1,
   );
 
-  globalThis.IntersectionObserver = OriginalIO;
   void DESIGN_STUDIO_STEPS;
   void textContent;
 }
@@ -502,7 +476,15 @@ const fabricB: Fabric = {
   }) as typeof window.removeEventListener;
 
   let progress = 0;
+  let reportedProgress: number | null = null;
   let bottomVisibility: boolean | null = null;
+  const detachProgress = attachCustomDetailsScrollProgressListener({
+    onProgressChange: (next) => {
+      reportedProgress = next;
+    },
+    getProgress: () => progress,
+  });
+  assert.equal(reportedProgress, 0, "progress listener reports initial progress");
   const detachBottom = attachCustomDetailsGoToBottomScrollListener({
     onVisibilityChange: (show) => {
       bottomVisibility = show;
@@ -515,17 +497,29 @@ const fabricB: Fabric = {
 
   progress = 0.4;
   for (const fn of listeners.get("scroll") ?? []) fn();
+  assert.equal(reportedProgress, 0.4);
   assert.equal(bottomVisibility, false, "40% progress hides Go to Bottom");
+  assert.equal(
+    isCustomDetailsGoToTopVisibleFromProgress(reportedProgress ?? 0),
+    true,
+    "40% progress shows Go to Top",
+  );
 
   progress = 0.2;
   for (const fn of listeners.get("resize") ?? []) fn();
   assert.equal(bottomVisibility, true, "resize re-evaluates visibility");
+  assert.equal(
+    isCustomDetailsGoToTopVisibleFromProgress(reportedProgress ?? 0),
+    false,
+    "under 40% keeps Go to Top hidden",
+  );
 
   const scrollListenerCount = listeners.get("scroll")?.size ?? 0;
   const resizeListenerCount = listeners.get("resize")?.size ?? 0;
   detachBottom();
-  assert.equal(listeners.get("scroll")?.size ?? 0, scrollListenerCount - 1);
-  assert.equal(listeners.get("resize")?.size ?? 0, resizeListenerCount - 1);
+  detachProgress();
+  assert.equal(listeners.get("scroll")?.size ?? 0, scrollListenerCount - 2);
+  assert.equal(listeners.get("resize")?.size ?? 0, resizeListenerCount - 2);
 
   if (originalAdd) globalThis.window.addEventListener = originalAdd;
   if (originalRemove) globalThis.window.removeEventListener = originalRemove;

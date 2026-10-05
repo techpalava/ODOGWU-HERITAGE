@@ -5,12 +5,12 @@ interface CustomDetailsGoToTopButtonProps {
 }
 
 export function shouldShowCustomDetailsGoToTop(args: {
-  sentinelOutOfView: boolean;
+  scrollAtOrAboveFortyPercent: boolean;
   fabricModalOpen: boolean;
   choiceDialogOpen: boolean;
 }): boolean {
   return (
-    args.sentinelOutOfView &&
+    args.scrollAtOrAboveFortyPercent &&
     !args.fabricModalOpen &&
     !args.choiceDialogOpen
   );

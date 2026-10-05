@@ -35,9 +35,15 @@ export function isCustomDetailsGoToBottomVisibleFromProgress(
   return progress < hideAt;
 }
 
-export function attachCustomDetailsGoToBottomScrollListener(args: {
-  onVisibilityChange: (showGoToBottom: boolean) => void;
-  hideAtProgress?: number;
+export function isCustomDetailsGoToTopVisibleFromProgress(
+  progress: number,
+  showAt: number = CUSTOM_DETAILS_GO_TO_BOTTOM_HIDE_AT_PROGRESS,
+): boolean {
+  return progress >= showAt;
+}
+
+export function attachCustomDetailsScrollProgressListener(args: {
+  onProgressChange: (progress: number) => void;
   getProgress?: () => number;
 }): () => void {
   if (
@@ -47,15 +53,11 @@ export function attachCustomDetailsGoToBottomScrollListener(args: {
     return () => undefined;
   }
 
-  const hideAt =
-    args.hideAtProgress ?? CUSTOM_DETAILS_GO_TO_BOTTOM_HIDE_AT_PROGRESS;
   const getProgress =
     args.getProgress ?? (() => getCustomDetailsScrollProgress());
 
   const update = () => {
-    args.onVisibilityChange(
-      isCustomDetailsGoToBottomVisibleFromProgress(getProgress(), hideAt),
-    );
+    args.onProgressChange(getProgress());
   };
 
   update();
@@ -66,6 +68,23 @@ export function attachCustomDetailsGoToBottomScrollListener(args: {
     globalThis.window.removeEventListener("scroll", update);
     globalThis.window.removeEventListener("resize", update);
   };
+}
+
+export function attachCustomDetailsGoToBottomScrollListener(args: {
+  onVisibilityChange: (showGoToBottom: boolean) => void;
+  hideAtProgress?: number;
+  getProgress?: () => number;
+}): () => void {
+  const hideAt =
+    args.hideAtProgress ?? CUSTOM_DETAILS_GO_TO_BOTTOM_HIDE_AT_PROGRESS;
+  return attachCustomDetailsScrollProgressListener({
+    getProgress: args.getProgress,
+    onProgressChange: (progress) => {
+      args.onVisibilityChange(
+        isCustomDetailsGoToBottomVisibleFromProgress(progress, hideAt),
+      );
+    },
+  });
 }
 
 export function scrollCustomDetailsToBottom(args: {
