@@ -281,7 +281,6 @@ import {
   classifyPersistedMeasurement,
   createEmptyWearerOrder,
   deleteWearer,
-  hasUnassignedPhysicalGarments,
   isWearerOrderMeasurementComplete,
   planWearerOrderMeasurements,
   resolveWearerAssignmentPresentation,
@@ -293,7 +292,7 @@ import {
   setWearerFitContext,
   shouldReplacePersistedMeasurement,
   updateWearerMeasurement,
-  wearerPublicLabel,
+  wearerAssignmentLabel,
 } from "../utils/wearerOrder";
 import {
   createDesignStudioResumeLocus,
@@ -3289,12 +3288,12 @@ export default function DesignStudioView({
   const wearerLabelById = new Map(
     wearerOrderForPlan.wearers.map((wearer) => [
       wearer.wearerId,
-      wearerPublicLabel(wearer.displayName, wearer.presentationOrder),
+      wearerAssignmentLabel(wearer.displayName, wearer.presentationOrder),
     ]),
   );
   const labelForMeasurementWearer = (wearerId: string, displayName: string) =>
     wearerLabelById.get(wearerId) ||
-    wearerPublicLabel(displayName, 0);
+    wearerAssignmentLabel(displayName, 0);
   const measurementEmptyWearerLabels = wearerMeasurementRuntimes
     .filter((runtime) => runtime.garmentKeys.length === 0)
     .map((runtime) =>
@@ -3337,17 +3336,10 @@ export default function DesignStudioView({
       ),
     };
   })();
-  const measurementHasUnassignedGarments = hasUnassignedPhysicalGarments({
-    order: wearerOrderForPlan,
-    physicalGarmentKeys: futureMeasurementPhysicalGarments.map(
-      (garment) => garment.garmentKey,
-    ),
-  });
   const measurementWearerAssignmentPresentation =
     resolveWearerAssignmentPresentation({
       wearerCount: wearerOrderForPlan.wearers.length,
       soleWearerFitContext: wearerOrderForPlan.wearers[0]?.fitContext ?? null,
-      hasUnassignedGarments: measurementHasUnassignedGarments,
     });
   const measurementActiveWearerLabel =
     activeWearer &&
@@ -9550,17 +9542,34 @@ export default function DesignStudioView({
           onDeleteWearer={(wearerId) => {
             const result = deleteWearer(wearerOrderForPlanRef.current, wearerId);
             if (result.status === "updated") {
-              wearerOrderForPlanRef.current = result.order;
-              setWearerOrder(result.order);
+              const nextOrder =
+                result.order.wearers.length === 1
+                  ? reconcileWearerOrder({
+                      order: result.order,
+                      garmentKeys: futureMeasurementPhysicalGarments.map(
+                        (garment) => garment.garmentKey,
+                      ),
+                      compatibilityDemographic:
+                        effectiveJourneyGarmentTypeSelection.demographic,
+                      garments: futureMeasurementPhysicalGarments,
+                      garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+                      additionalGarmentConstructions:
+                        designSelections.additionalGarmentConstructions,
+                    })
+                  : result.order;
+              wearerOrderForPlanRef.current = nextOrder;
+              setWearerOrder(nextOrder);
               if (activeWearer?.wearerId === wearerId) {
-                setActiveWearerId(result.order.wearers[0]?.wearerId || null);
+                setActiveWearerId(nextOrder.wearers[0]?.wearerId || null);
                 setFutureMeasurementState(
-                  result.order.wearers[0]?.measurement ||
+                  nextOrder.wearers[0]?.measurement ||
                     createEmptyFutureMeasurementState(),
                 );
               }
             }
-            return result;
+            return result.status === "updated"
+              ? { ...result, order: wearerOrderForPlanRef.current }
+              : result;
           }}
           onAssignGarment={(garmentKey, wearerId) => {
             const garment = futureMeasurementPhysicalGarments.find(
@@ -9582,8 +9591,42 @@ export default function DesignStudioView({
               additionalGarmentConstructions:
                 designSelections.additionalGarmentConstructions,
             });
-            if (result.status === "updated") setWearerOrder(result.order);
+            if (result.status === "updated") {
+              setWearerOrder(result.order);
+              // Keep live form bag aligned with stripped garment fields so
+              // wearerOrderForPlan overlay cannot re-inject Sample Cloth values.
+              const activeId = activeWearer?.wearerId;
+              const synced =
+                result.order.wearers.find((wearer) => wearer.wearerId === activeId) ||
+                result.order.wearers[0];
+              if (synced) {
+                setFutureMeasurementState(synced.measurement);
+              } else {
+                setFutureMeasurementState(createEmptyFutureMeasurementState());
+              }
+            }
             return result;
+          }}
+          onCollapseToSolo={() => {
+            const nextOrder = reconcileWearerOrder({
+              order: wearerOrderForPlanRef.current,
+              garmentKeys: futureMeasurementPhysicalGarments.map(
+                (garment) => garment.garmentKey,
+              ),
+              compatibilityDemographic:
+                effectiveJourneyGarmentTypeSelection.demographic,
+              garments: futureMeasurementPhysicalGarments,
+              garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+              additionalGarmentConstructions:
+                designSelections.additionalGarmentConstructions,
+            });
+            wearerOrderForPlanRef.current = nextOrder;
+            setWearerOrder(nextOrder);
+            const sole = nextOrder.wearers[0];
+            setActiveWearerId(sole?.wearerId || null);
+            setFutureMeasurementState(
+              sole?.measurement || createEmptyFutureMeasurementState(),
+            );
           }}
         />
         <DormantFutureMeasurementStep
@@ -9592,6 +9635,7 @@ export default function DesignStudioView({
           restoredGarmentKey={hydratedMeasurementGarmentKey}
           orderMeasurementsComplete={summaryUnlockedByMeasurements}
           physicalGarments={futureMeasurementPhysicalGarments}
+          multiPersonAssignmentActive={wearerOrderForPlan.wearers.length > 1}
           unassignedGarments={futureMeasurementPhysicalGarments.filter(
             (garment) => !wearerOrderForPlan.assignmentByGarmentKey[garment.garmentKey],
           )}
@@ -9600,6 +9644,31 @@ export default function DesignStudioView({
           activeWearerLabel={measurementActiveWearerLabel}
           activeWearerGarmentLabels={measurementActiveWearerGarmentLabels}
           nextIncompleteWearer={measurementNextIncompleteWearer}
+          showSoleFitControl={wearerOrderForPlan.wearers.length === 1}
+          soleFitContext={wearerOrderForPlan.wearers[0]?.fitContext ?? null}
+          onSetSoleFitContext={(fitContext) => {
+            const sole = wearerOrderForPlan.wearers[0];
+            if (!sole) return;
+            const result = setWearerFitContext(
+              wearerOrderForPlan,
+              sole.wearerId,
+              fitContext,
+            );
+            if (result.status !== "updated") return;
+            const nextOrder = reconcileWearerOrder({
+              order: result.order,
+              garmentKeys: futureMeasurementPhysicalGarments.map(
+                (garment) => garment.garmentKey,
+              ),
+              compatibilityDemographic:
+                effectiveJourneyGarmentTypeSelection.demographic,
+              garments: futureMeasurementPhysicalGarments,
+              garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+              additionalGarmentConstructions:
+                designSelections.additionalGarmentConstructions,
+            });
+            setWearerOrder(nextOrder);
+          }}
           onGoToWearer={(wearerId) => {
             const next = wearerOrderForPlan.wearers.find(
               (wearer) => wearer.wearerId === wearerId,

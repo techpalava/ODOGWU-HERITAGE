@@ -61,6 +61,11 @@ interface DormantFutureMeasurementStepProps {
   physicalGarments?: readonly MeasurementPhysicalGarment[];
   /** Garments not yet assigned to a wearer; blocks order-wide Summary unlock. */
   unassignedGarments?: readonly MeasurementPhysicalGarment[];
+  /**
+   * When false (Only for me / single wearer), garment chips never show
+   * "Assign person" even if the assignment map is empty.
+   */
+  multiPersonAssignmentActive?: boolean;
   /** @deprecated Use unassignedGarments. */
   setupPendingGarments?: readonly MeasurementPhysicalGarment[];
   hydrationInvalid?: boolean;
@@ -77,6 +82,13 @@ interface DormantFutureMeasurementStepProps {
   activeWearerLabel?: string | null;
   /** Garments assigned to the active person, for matching clarity. */
   activeWearerGarmentLabels?: readonly string[];
+  /**
+   * Solo order — compact fit control in this card so fit can be set or changed
+   * without opening Add people. Multi-person uses person-card fit instead.
+   */
+  showSoleFitControl?: boolean;
+  soleFitContext?: "male" | "female" | null;
+  onSetSoleFitContext?: (fitContext: "male" | "female") => void;
   onChange: (state: FutureMeasurementStateV1) => void;
   onRouteChange: (route: MeasurementMethodId) => void;
   onBack: () => void;
@@ -563,6 +575,7 @@ export const DormantFutureMeasurementStep = ({
   state,
   physicalGarments = [],
   unassignedGarments,
+  multiPersonAssignmentActive = true,
   setupPendingGarments = [],
   hydrationInvalid = false,
   orderMeasurementsComplete,
@@ -573,6 +586,9 @@ export const DormantFutureMeasurementStep = ({
   restoredGarmentKey = null,
   activeWearerLabel = null,
   activeWearerGarmentLabels = [],
+  showSoleFitControl = false,
+  soleFitContext = null,
+  onSetSoleFitContext,
   onChange,
   onRouteChange,
   onBack,
@@ -650,7 +666,9 @@ export const DormantFutureMeasurementStep = ({
       ...resolvedState.diagnostics.map((diagnostic) => diagnostic.garmentKey),
     ].filter((garmentKey): garmentKey is string => Boolean(garmentKey)),
   );
-  const assignmentPendingGarments = unassignedGarments ?? setupPendingGarments;
+  const assignmentPendingGarments = multiPersonAssignmentActive
+    ? (unassignedGarments ?? setupPendingGarments)
+    : [];
   const unassignedGarmentKeySet = new Set(
     assignmentPendingGarments.map((garment) => garment.garmentKey),
   );
@@ -967,6 +985,45 @@ export const DormantFutureMeasurementStep = ({
                   No garments assigned to {activeWearerLabel} yet.
                 </p>
               )}
+            </div>
+          </div>
+        ) : null}
+        {showSoleFitControl && onSetSoleFitContext ? (
+          <div
+            className="mt-5 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/40 p-4"
+            data-measurement-sole-fit="true"
+            role="group"
+            aria-labelledby="measurement-sole-fit-heading"
+          >
+            <h3
+              id="measurement-sole-fit-heading"
+              className="text-sm font-semibold text-heritage-ink"
+            >
+              Fit for measurements
+            </h3>
+            <p className="mt-1 text-xs text-heritage-ink/60">
+              Used to determine the correct measurement requirements.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              {(["male", "female"] as const).map((fitContext) => {
+                const selected = soleFitContext === fitContext;
+                return (
+                  <button
+                    key={fitContext}
+                    type="button"
+                    data-measurement-sole-fit-option={fitContext}
+                    data-measurement-sole-fit-selected={selected ? "true" : "false"}
+                    className={`flex min-h-11 items-center justify-center rounded-xl border px-3 font-semibold ${
+                      selected
+                        ? "border-heritage-green bg-heritage-green text-white"
+                        : "border-heritage-gold/30 bg-white text-heritage-green"
+                    }`}
+                    onClick={() => onSetSoleFitContext(fitContext)}
+                  >
+                    {fitContext === "male" ? "Male fit" : "Female fit"}
+                  </button>
+                );
+              })}
             </div>
           </div>
         ) : null}
