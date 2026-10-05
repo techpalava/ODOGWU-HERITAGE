@@ -38,7 +38,7 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 ## Status
 
 All work below is released. `/api/health` shows the current production build
-(`b9dab38…` after the #372 Admin SDK storage bucket release).
+(`7602a97…` after the #367 Contextual Re-entry Guidance release).
 
 - [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
 - [#283](https://github.com/techpalava/ODOGWU-HERITAGE/pull/283) Uploaded photo on the Summary Design Style card
@@ -63,8 +63,9 @@ All work below is released. `/api/health` shows the current production build
 - [#361](https://github.com/techpalava/ODOGWU-HERITAGE/pull/361) Step 7 Measurement solo-first people UX: These clothes are for you + Add people; default wearer You; persistent in-card Male/Female fit; Assign garments only after a second person; Sample Cloth copy simplified and form bag synced after assign / Only-for-me
 - [#368](https://github.com/techpalava/ODOGWU-HERITAGE/pull/368) Storage rules wired in `firebase.json` and deployed 2026-10-05: `customer-design-drafts/` is no longer publicly listable or downloadable (unauthenticated list/get now 403); public `fabrics/`, `styles/`, `designs/`, `gallery/`, `communityPhotos/` reads still 200
 - [#372](https://github.com/techpalava/ODOGWU-HERITAGE/pull/372) Admin SDK `storageBucket` set in `src/server/firebaseAdmin.ts`: guest uploaded-design ownership claims (were 400 `CLAIM_INVALID_REFERENCE` from a catch-all) and the order/draft transfer endpoints work again; unexpected claim errors now return 500. No rules or Firebase deploy changes
+- [#367](https://github.com/techpalava/ODOGWU-HERITAGE/pull/367) Contextual Re-entry Guidance for Fabric and Design Style: a consume-once banner names garments that still need Fabric when returning to a previously visited Fabric step after an upstream change; incomplete Fabric or Design Style re-entry scrolls to the blocking garment card with a gold highlight; ordinary revisits and refresh stay silent
 
-The signed-in Chrome restore check after #289 passed. Live chunk after #361 contains
+The signed-in Chrome restore check after #289 passed. Live checks after #368 and #372 passed on 2026-10-05 against production `7602a97`: signed-in Step 3 upload restores after reload, including in a fresh incognito session; the guest upload transfers to the account after sign-in; signed-out catalogue and fabric images load. Live chunk after #361 contains
 `These clothes are for you` / `Laid-flat widths are doubled for production`.
 
 ## Git and worktrees
@@ -115,9 +116,6 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
 
 ## Still open
 
-- Live check after #372 that a guest Step 3 upload transfers to the account after sign-in.
-- Studio live check after #368 Storage rules: signed-in Step 3 upload, reload, draft image restores;
-  guest upload and sign-in transfer still work; signed-out catalogue and fabric images load.
 - Remaining security review items (payment-intent auth and server-side amount, Stripe webhook
   signature, `vercel.json` headers, admin allowlist in client, PIN length, `/api/health` buildId)
   are not authorized yet.
