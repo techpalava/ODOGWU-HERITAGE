@@ -30,6 +30,7 @@ function getAdminApp(): App {
         ? cert({ projectId, clientEmail, privateKey })
         : applicationDefault(),
     projectId,
+    storageBucket: firebaseConfig.storageBucket,
   });
 }
 

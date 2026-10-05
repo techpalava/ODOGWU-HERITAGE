@@ -36,6 +36,7 @@
     "test:fabric-primary-replacement": "tsx test_fabric_primary_replacement.ts",
     "test:uploaded-design-transfer": "tsx test_uploaded_design_transfer.ts",
     "test:uploaded-design-ownership-claim": "tsx test_uploaded_design_ownership_claim.ts",
+    "test:admin-storage-bucket": "tsx test_admin_storage_bucket.ts",
     "test:uploaded-design-checkout-preparation": "tsx test_uploaded_design_checkout_preparation.ts",
     "test:uploaded-design-order-regression": "tsx test_uploaded_design_order_regression.ts",
     "test:uploaded-design-deletion-ui": "tsx test_uploaded_design_deletion_ui.tsx",
