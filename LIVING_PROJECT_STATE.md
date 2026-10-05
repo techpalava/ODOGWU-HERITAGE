@@ -38,7 +38,7 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 ## Status
 
 All work below is released. `/api/health` shows the current production build
-(`d9553fe…` after the #355 Custom Details Go to Bottom release).
+(`350757c…` after the #361 Step 7 people UX solo-first release).
 
 - [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
 - [#283](https://github.com/techpalava/ODOGWU-HERITAGE/pull/283) Uploaded photo on the Summary Design Style card
@@ -60,9 +60,10 @@ All work below is released. `/api/health` shows the current production build
 - [#342](https://github.com/techpalava/ODOGWU-HERITAGE/pull/342) Signed-in drafts restore the last Studio step and in-page wearer/garment/scroll locus; ten-stage cloud writes (`personalized_additions`) are allowed
 - [#351](https://github.com/techpalava/ODOGWU-HERITAGE/pull/351) Faster draft restore after refresh (local-first paint, stable pending-authenticated identity, earlier catalogue listeners, restoring shell)
 - [#355](https://github.com/techpalava/ODOGWU-HERITAGE/pull/355) Custom Details Go to Bottom FAB; mutually exclusive with Go to Top at 40% scroll progress
+- [#361](https://github.com/techpalava/ODOGWU-HERITAGE/pull/361) Step 7 Measurement solo-first people UX: These clothes are for you + Add people; default wearer You; persistent in-card Male/Female fit; Assign garments only after a second person; Sample Cloth copy simplified and form bag synced after assign / Only-for-me
 
-The signed-in Chrome restore check after #289 passed. Live chunk after #355 contains
-`Go to bottom of Custom Details`.
+The signed-in Chrome restore check after #289 passed. Live chunk after #361 contains
+`These clothes are for you` / `Laid-flat widths are doubled for production`.
 
 ## Git and worktrees
 
@@ -72,7 +73,8 @@ The signed-in Chrome restore check after #289 passed. Live chunk after #355 cont
 - Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-next-task`,
   aligned to `github/main` and ready for a fresh feature branch when the next
   task is authorized. Do not reuse released branches such as `fix/draft-resume-locus`,
-  `fix/faster-draft-restore`, or `feat/custom-details-go-to-bottom`.
+  `fix/faster-draft-restore`, `feat/custom-details-go-to-bottom`, or
+  `feat/step7-people-ux-solo-first`.
 - Critical Risk “height alone” copy fix is parked in local stash
   `park critical-risk-height-copy before clear-all` (not released). Restore onto a fresh
   branch from `github/main` when authorized; do not mix it into unrelated work.

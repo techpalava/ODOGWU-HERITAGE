@@ -34,6 +34,11 @@ Ten things that most often go wrong:
 9. Editing locked areas (payment intents, fabric pricing, ODG-xxx, Step 3)
    without the task naming them.
 10. Calling a release live without /api/health and a live chunk check.
+11. Merging on a stale PR head: after push, confirm
+    `gh pr view N --json headRefOid` equals the pushed SHA before treating
+    green checks as mergeable (GitHub can briefly still show the old head).
+12. Treating Vercel SSO / Deployment Protection on a preview as a hosting
+    failure: that is NOT VERIFIED access, not a broken deploy (section 16).
 
 ROLE
 Cursor is the controlled implementation executor for the currently authorized
@@ -439,6 +444,12 @@ suite PASS. Missing mandatory coverage remains a gate, not an assumed success.
 For material client-visible work, use a preview serving the exact intended
 worktree. Record URL/origin, branch, HEAD, and relevant WIP.
 
+Vercel preview URLs often sit behind Deployment Protection / team SSO. Cursor
+browser automation cannot complete that login. Prefer production post-merge
+proof (section 22), or a preview Xavier has already authenticated in the Cursor
+browser. If SSO blocks access, report NOT VERIFIED — that is an evidence gap,
+not proof the preview failed to build.
+
 Do not assume localhost serves the newest branch. Do not terminate another
 project's server, change server configuration, or start duplicates needlessly.
 A port collision is an environment issue; record the verified replacement.
@@ -454,6 +465,12 @@ Test relevant desktop, approximately 768px, and 390px layouts. Check keyboard
 selection, visible labels, controls, empty state, grouping, and overflow.
 Test select/switch/clear/reload, representative mixed orders, and repeated
 occurrences where the changed contract depends on them.
+
+Step 7 Measurement people UX (as shipped in #361): first screen is solo —
+"These clothes are for you" plus Add people only (no Assign strip). After Add
+people and + Add another person, Assign garments appears; Only for me returns
+to solo. Male/Female fit stays on the measurement card for a sole wearer and on
+each person card when multiple people exist.
 
 Report NOT RUN or PARTIAL for missing cases. Unit tests are not browser proof.
 A supported construction path not exercised live remains a stated limitation.
@@ -525,6 +542,11 @@ Immediately before merge, recheck exact head/base, file/content scope, conflicts
 and actual required checks. An aggregate merge-state label alone is not a full
 explanation of individual check results.
 
+After `git push`, GitHub can briefly still report the previous `headRefOid`.
+Confirm `gh pr view N --repo techpalava/ODOGWU-HERITAGE --json headRefOid`
+equals the SHA you just pushed before starting the check-gated merge loop.
+Green checks on a stale head are not a pass.
+
 Pending/failed required checks or an unexpected head: do not bypass the gate.
 Use an exact-head merge guard where supported. No admin override, force push,
 or unrequested squash/rebase. Never delete main or production as a PR head.
@@ -576,6 +598,12 @@ gated on passing checks.
 Release operations are mechanical: no implementation, refactor, new dependency,
 fixture cleanup, or opportunistic fix. Compare the exact reviewed release delta
 and recheck remote state. Stop on unexpected content or concurrent changes.
+
+After the feature→production→sync cycle finishes, update the Living Master
+(and Fast Executor when the session taught a reusable rule) on a dedicated
+branch named `docs/living-project-state-post-N`, then run the same three-PR
+cycle. Do not fold Master edits into the feature PR, and do not commit docs
+from a dirty feature worktree that still holds unrelated WIP.
 
 ==================================================
 21. HISTORY SYNC — USE ANCESTRY
@@ -631,6 +659,11 @@ verification separately even when deployment assignment is confirmed.
 
 Live verification for this project (after the production merge):
 
+$prod is the production merge SHA (the merge commit of the main→production
+release PR). It is not the feature-branch merge into main, and not the
+production→main sync merge. `/api/health` `buildId` must equal that production
+merge SHA.
+
 $prod = '<production merge SHA>'
 for ($i = 0; $i -lt 20; $i++) {
   $h = Invoke-RestMethod 'https://odogwu-heritage.vercel.app/api/health'
@@ -639,7 +672,8 @@ for ($i = 0; $i -lt 20; $i++) {
 }
 $h | ConvertTo-Json -Compress
 
-Then confirm a live chunk contains a string from the change:
+Then confirm a live chunk contains a string from the change (customer-visible
+copy from the feature, not an internal identifier):
 
 $needle = '<string from the change>'
 $base = 'https://odogwu-heritage.vercel.app'
@@ -664,7 +698,11 @@ Unlock only for an explicit new request or proven directly related defect.
 
 After major milestones, prepare an accurate Master checkpoint. Save it only to
 the actual authorized Master location (LIVING_PROJECT_STATE.md, released like
-code) and verify the write.
+code) and verify the write. Prefer branch `docs/living-project-state-post-N`
+after the feature release cycle (section 20), not a commit on the feature
+branch. Update Status live build SHA, the new PR bullet, the live-chunk needle,
+and the do-not-reuse branch list. Include Fast Executor changes in that same
+docs PR when the session taught a reusable rule.
 MASTER UPDATE: SAVED / PREPARED ONLY / NOT AVAILABLE.
 
 Keep feature completion, integration locks, release status, and deployment
