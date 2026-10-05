@@ -335,20 +335,29 @@ let completeShirt = fillDirect(
   () => 40,
 );
 assert.equal(completeShirt.calculationStatus, "complete");
+const completeShirtShared = {
+  ...completeShirt.entered.shared,
+  total_height: { valueCm: 180, provenance: "customer_entered" as const },
+};
+const completeShirtByGarment = {
+  ...completeShirt.entered.byGarmentKey,
+  "base:shirt": {
+    ...(completeShirt.entered.byGarmentKey["base:shirt"] || {}),
+    shirt_length_standard: { valueCm: 70, provenance: "customer_entered" as const },
+  },
+};
 completeShirt = {
   ...completeShirt,
   entered: {
     ...completeShirt.entered,
-      shared: {
-      ...completeShirt.entered.shared,
-      total_height: { valueCm: 180, provenance: "customer_entered" },
-    },
-    byGarmentKey: {
-      ...completeShirt.entered.byGarmentKey,
-      "base:shirt": {
-        ...(completeShirt.entered.byGarmentKey["base:shirt"] || {}),
-        shirt_length_standard: { valueCm: 70, provenance: "customer_entered" },
-      },
+    shared: completeShirtShared,
+    byGarmentKey: completeShirtByGarment,
+  },
+  enteredByRoute: {
+    ...completeShirt.enteredByRoute!,
+    low_risk: {
+      shared: completeShirtShared,
+      byGarmentKey: completeShirtByGarment,
     },
   },
 };
@@ -488,6 +497,15 @@ assert.equal(isWearerOrderStateV2(authenticated.draft?.futureMeasurementState), 
 
 const legacy = createEmptyFutureMeasurementState("low_risk", "cm");
 legacy.entered.shared.total_height = { valueCm: 180, provenance: "customer_entered" };
+if (legacy.enteredByRoute) {
+  legacy.enteredByRoute.low_risk = {
+    ...legacy.enteredByRoute.low_risk,
+    shared: {
+      ...legacy.enteredByRoute.low_risk.shared,
+      total_height: { valueCm: 180, provenance: "customer_entered" },
+    },
+  };
+}
 const legacyDraft = guestShell(legacy);
 const legacyNormalized = normalizeGuestDesignDraft(legacyDraft);
 assert.equal(isFutureMeasurementStateV1(legacyNormalized.futureMeasurementState), true);
@@ -774,6 +792,206 @@ const blockedEleventh = addWearer({
 });
 assert.equal(blockedEleventh.status, "blocked");
 
+{
+  const sampleSelection = selectionFor(["shirt"], "male");
+  const sampleGarments = [
+    { garmentKey: "base:shirt", garmentType: "shirt" as const },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" as const },
+  ];
+  const sampleAdditional = {
+    schemaVersion: 1 as const,
+    byGarmentKey: {
+      "additional:shirt:1": construction("shirt", "shirt_std_short", "shirt_construction"),
+    },
+  };
+  const soloSampleOrder = reconcileWearerOrder({
+    order: {
+      schemaVersion: 2,
+      wearers: [],
+      assignmentByGarmentKey: {},
+    },
+    garmentKeys: sampleGarments.map((garment) => garment.garmentKey),
+    compatibilityDemographic: "male",
+    garments: sampleGarments,
+    garmentTypeSelection: sampleSelection,
+    additionalGarmentConstructions: sampleAdditional,
+  });
+  assert.equal(soloSampleOrder.wearers.length, 1);
+  const youId = soloSampleOrder.wearers[0].wearerId;
+  const twoShirtSamplePlan = planMeasurementRequirements({
+    route: "sample_cloth",
+    garmentTypeSelection: { ...sampleSelection, demographic: "male" },
+    physicalGarments: sampleGarments,
+    additionalGarmentConstructions: sampleAdditional,
+  });
+  const youSampleFilled = fillDirect(
+    createEmptyFutureMeasurementState("sample_cloth", "inch"),
+    twoShirtSamplePlan,
+    (measurementId) => (measurementId === "chest_bust_circumference" ? 20 : 10),
+  );
+  assert.ok(youSampleFilled.entered.byGarmentKey["additional:shirt:1"]);
+  assert.ok(youSampleFilled.entered.byGarmentKey["base:shirt"]);
+  const youChest =
+    youSampleFilled.entered.shared.chest_bust_circumference?.valueCm;
+  assert.ok(typeof youChest === "number" && youChest > 0);
+  assert.equal(
+    youSampleFilled.derived.shared.chest_bust_circumference?.valueCm,
+    getSampleClothProductionEquivalentCm(youChest),
+  );
+
+  let withYouFilled = updateWearerMeasurement(
+    soloSampleOrder,
+    youId,
+    youSampleFilled,
+  );
+  const addedPerson = addWearer({
+    order: withYouFilled,
+    physicalGarmentCount: sampleGarments.length,
+    displayName: "Friend",
+    fitContext: "male",
+  });
+  assert.equal(addedPerson.status, "updated");
+  if (addedPerson.status !== "updated") throw new Error("expected Friend");
+  withYouFilled = addedPerson.order;
+  const friendId = withYouFilled.wearers.find(
+    (wearer) => wearer.displayName === "Friend",
+  )?.wearerId;
+  assert.ok(friendId);
+  const friendBeforeAssign = withYouFilled.wearers.find(
+    (wearer) => wearer.wearerId === friendId,
+  );
+  assert.equal(
+    friendBeforeAssign?.measurement.entered.shared.chest_bust_circumference,
+    undefined,
+    "addWearer must not copy You Sample Cloth shared values",
+  );
+  assert.notEqual(friendBeforeAssign?.measurement.route, "sample_cloth");
+
+  const reassigned = assignGarmentToWearer({
+    order: withYouFilled,
+    garmentKey: "additional:shirt:1",
+    wearerId: friendId!,
+    garment: sampleGarments[1],
+    garmentTypeSelection: sampleSelection,
+    additionalGarmentConstructions: sampleAdditional,
+  });
+  assert.equal(reassigned.status, "updated");
+  if (reassigned.status !== "updated") throw new Error("reassign sample shirt");
+  const youAfter = reassigned.order.wearers.find(
+    (wearer) => wearer.wearerId === youId,
+  );
+  const friendAfter = reassigned.order.wearers.find(
+    (wearer) => wearer.wearerId === friendId,
+  );
+  assert.equal(youAfter?.measurement.entered.byGarmentKey["additional:shirt:1"], undefined);
+  assert.equal(youAfter?.measurement.entered.shared.chest_bust_circumference?.valueCm, youChest);
+  assert.equal(
+    friendAfter?.measurement.entered.shared.chest_bust_circumference,
+    undefined,
+    "reassign must not copy You Sample shared chest to Friend",
+  );
+  assert.equal(friendAfter?.measurement.entered.byGarmentKey["additional:shirt:1"], undefined);
+
+  // Live form overlay must use the stripped bag (Design Studio sync invariant).
+  const overlaidYou = updateWearerMeasurement(
+    reassigned.order,
+    youId,
+    youAfter!.measurement,
+  );
+  assert.equal(
+    overlaidYou.wearers.find((wearer) => wearer.wearerId === youId)?.measurement
+      .entered.byGarmentKey["additional:shirt:1"],
+    undefined,
+  );
+  const leakIfStaleForm = updateWearerMeasurement(
+    reassigned.order,
+    youId,
+    youSampleFilled,
+  );
+  assert.ok(
+    leakIfStaleForm.wearers.find((wearer) => wearer.wearerId === youId)?.measurement
+      .entered.byGarmentKey["additional:shirt:1"],
+    "stale form bag would re-inject moved garment — sync after assign is required",
+  );
+
+  const splitRuntimes = planWearerOrderMeasurements({
+    order: reassigned.order,
+    garmentTypeSelection: sampleSelection,
+    physicalGarments: sampleGarments,
+    additionalGarmentConstructions: sampleAdditional,
+  });
+  assert.equal(
+    isWearerOrderMeasurementComplete({
+      order: reassigned.order,
+      runtimes: splitRuntimes,
+      physicalGarmentKeys: sampleGarments.map((garment) => garment.garmentKey),
+    }),
+    false,
+  );
+
+  const youOneShirtPlan = planMeasurementRequirements({
+    route: "sample_cloth",
+    garmentTypeSelection: { ...sampleSelection, demographic: "male" },
+    physicalGarments: [sampleGarments[0]],
+  });
+  const friendOneShirtPlan = planMeasurementRequirements({
+    route: "sample_cloth",
+    garmentTypeSelection: { ...sampleSelection, demographic: "male" },
+    physicalGarments: [sampleGarments[1]],
+    additionalGarmentConstructions: sampleAdditional,
+  });
+  const youResized = fillDirect(
+    createEmptyFutureMeasurementState("sample_cloth", "inch"),
+    youOneShirtPlan,
+    (measurementId) => (measurementId === "chest_bust_circumference" ? 20 : 10),
+  );
+  const friendSampleFilled = fillDirect(
+    createEmptyFutureMeasurementState("sample_cloth", "inch"),
+    friendOneShirtPlan,
+    (measurementId) => (measurementId === "chest_bust_circumference" ? 18 : 10),
+  );
+  assert.equal(youResized.calculationStatus, "complete");
+  assert.equal(friendSampleFilled.calculationStatus, "complete");
+  const bothFilled = updateWearerMeasurement(
+    updateWearerMeasurement(reassigned.order, youId, youResized),
+    friendId!,
+    friendSampleFilled,
+  );
+  const bothRuntimes = planWearerOrderMeasurements({
+    order: bothFilled,
+    garmentTypeSelection: sampleSelection,
+    physicalGarments: sampleGarments,
+    additionalGarmentConstructions: sampleAdditional,
+  });
+  assert.equal(
+    isWearerOrderMeasurementComplete({
+      order: bothFilled,
+      runtimes: bothRuntimes,
+      physicalGarmentKeys: sampleGarments.map((garment) => garment.garmentKey),
+    }),
+    true,
+  );
+  const youRuntime = bothRuntimes.find((runtime) => runtime.wearerId === youId);
+  const friendRuntime = bothRuntimes.find((runtime) => runtime.wearerId === friendId);
+  assert.equal(
+    youRuntime?.measurement.derived.shared.chest_bust_circumference?.valueCm,
+    getSampleClothProductionEquivalentCm(
+      youRuntime?.measurement.entered.shared.chest_bust_circumference?.valueCm || 0,
+    ),
+  );
+  assert.equal(
+    friendRuntime?.measurement.derived.shared.chest_bust_circumference?.valueCm,
+    getSampleClothProductionEquivalentCm(
+      friendRuntime?.measurement.entered.shared.chest_bust_circumference?.valueCm || 0,
+    ),
+  );
+  assert.notEqual(
+    youRuntime?.measurement.derived.shared.chest_bust_circumference?.valueCm,
+    friendRuntime?.measurement.derived.shared.chest_bust_circumference?.valueCm,
+  );
+}
+console.log("PASS: sample cloth add-person reassign isolation and collation");
+
 const studioSource = readFileSync(
   new URL("./src/components/DesignStudioView.tsx", import.meta.url),
   "utf8",
@@ -781,6 +999,16 @@ const studioSource = readFileSync(
 assert.match(studioSource, /wearerRuntimes:\s*wearerMeasurementRuntimes/);
 assert.match(studioSource, /buildFutureOrderCandidateV2\(\{/);
 assert.equal(studioSource.includes("buildFutureOrderCandidate("), false);
+assert.match(
+  studioSource,
+  /onAssignGarment[\s\S]*setFutureMeasurementState\(synced\.measurement\)/,
+  "assign garment must sync live measurement form after strip",
+);
+assert.match(
+  studioSource,
+  /onCollapseToSolo[\s\S]*setFutureMeasurementState\(\s*sole\?\.measurement/,
+  "Only for me must sync sole measurement form after reconcile",
+);
 const legacyOnly = projectAuthoritativeOrderMeasurements({
   measurementState: completeShirt,
   measurementPlan: lowShirtPlan,

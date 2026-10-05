@@ -9591,7 +9591,20 @@ export default function DesignStudioView({
               additionalGarmentConstructions:
                 designSelections.additionalGarmentConstructions,
             });
-            if (result.status === "updated") setWearerOrder(result.order);
+            if (result.status === "updated") {
+              setWearerOrder(result.order);
+              // Keep live form bag aligned with stripped garment fields so
+              // wearerOrderForPlan overlay cannot re-inject Sample Cloth values.
+              const activeId = activeWearer?.wearerId;
+              const synced =
+                result.order.wearers.find((wearer) => wearer.wearerId === activeId) ||
+                result.order.wearers[0];
+              if (synced) {
+                setFutureMeasurementState(synced.measurement);
+              } else {
+                setFutureMeasurementState(createEmptyFutureMeasurementState());
+              }
+            }
             return result;
           }}
           onCollapseToSolo={() => {
@@ -9609,6 +9622,11 @@ export default function DesignStudioView({
             });
             wearerOrderForPlanRef.current = nextOrder;
             setWearerOrder(nextOrder);
+            const sole = nextOrder.wearers[0];
+            setActiveWearerId(sole?.wearerId || null);
+            setFutureMeasurementState(
+              sole?.measurement || createEmptyFutureMeasurementState(),
+            );
           }}
         />
         <DormantFutureMeasurementStep

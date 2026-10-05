@@ -52,6 +52,14 @@ assert.match(measurementSource, /multiPersonAssignmentActive/);
 assert.match(measurementSource, /projectMeasurementGarmentChipStates/);
 assert.match(studioSource, /multiPersonAssignmentActive=\{wearerOrderForPlan\.wearers\.length > 1\}/);
 assert.match(studioSource, /onCollapseToSolo/);
+assert.match(
+  studioSource,
+  /onAssignGarment[\s\S]*setFutureMeasurementState\(synced\.measurement\)/,
+);
+assert.match(
+  studioSource,
+  /onCollapseToSolo[\s\S]*setFutureMeasurementState\(\s*sole\?\.measurement/,
+);
 assert.match(measurementSource, /data-measurement-garment-chip/);
 assert.match(measurementSource, /data-measurement-garment-remaining/);
 assert.match(measurementSource, /setAllowPendingChipSelection/);
