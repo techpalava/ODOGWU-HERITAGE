@@ -9626,10 +9626,8 @@ export default function DesignStudioView({
           activeWearerLabel={measurementActiveWearerLabel}
           activeWearerGarmentLabels={measurementActiveWearerGarmentLabels}
           nextIncompleteWearer={measurementNextIncompleteWearer}
-          soleFitSelectionNeeded={
-            wearerOrderForPlan.wearers.length === 1 &&
-            wearerOrderForPlan.wearers[0]?.fitContext === null
-          }
+          showSoleFitControl={wearerOrderForPlan.wearers.length === 1}
+          soleFitContext={wearerOrderForPlan.wearers[0]?.fitContext ?? null}
           onSetSoleFitContext={(fitContext) => {
             const sole = wearerOrderForPlan.wearers[0];
             if (!sole) return;

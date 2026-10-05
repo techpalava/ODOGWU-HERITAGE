@@ -83,10 +83,11 @@ interface DormantFutureMeasurementStepProps {
   /** Garments assigned to the active person, for matching clarity. */
   activeWearerGarmentLabels?: readonly string[];
   /**
-   * Solo order with null fit after demographic reconcile — compact fit control
-   * in this card so Summary can unlock without opening Add people.
+   * Solo order — compact fit control in this card so fit can be set or changed
+   * without opening Add people. Multi-person uses person-card fit instead.
    */
-  soleFitSelectionNeeded?: boolean;
+  showSoleFitControl?: boolean;
+  soleFitContext?: "male" | "female" | null;
   onSetSoleFitContext?: (fitContext: "male" | "female") => void;
   onChange: (state: FutureMeasurementStateV1) => void;
   onRouteChange: (route: MeasurementMethodId) => void;
@@ -585,7 +586,8 @@ export const DormantFutureMeasurementStep = ({
   restoredGarmentKey = null,
   activeWearerLabel = null,
   activeWearerGarmentLabels = [],
-  soleFitSelectionNeeded = false,
+  showSoleFitControl = false,
+  soleFitContext = null,
   onSetSoleFitContext,
   onChange,
   onRouteChange,
@@ -986,7 +988,7 @@ export const DormantFutureMeasurementStep = ({
             </div>
           </div>
         ) : null}
-        {soleFitSelectionNeeded && onSetSoleFitContext ? (
+        {showSoleFitControl && onSetSoleFitContext ? (
           <fieldset
             className="mt-5 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/40 p-4"
             data-measurement-sole-fit="true"
@@ -998,17 +1000,25 @@ export const DormantFutureMeasurementStep = ({
               Used to determine the correct measurement requirements.
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              {(["male", "female"] as const).map((fitContext) => (
-                <button
-                  key={fitContext}
-                  type="button"
-                  data-measurement-sole-fit-option={fitContext}
-                  className="flex min-h-11 items-center justify-center rounded-xl border border-heritage-gold/30 bg-white px-3 font-semibold text-heritage-green"
-                  onClick={() => onSetSoleFitContext(fitContext)}
-                >
-                  {fitContext === "male" ? "Male fit" : "Female fit"}
-                </button>
-              ))}
+              {(["male", "female"] as const).map((fitContext) => {
+                const selected = soleFitContext === fitContext;
+                return (
+                  <button
+                    key={fitContext}
+                    type="button"
+                    data-measurement-sole-fit-option={fitContext}
+                    data-measurement-sole-fit-selected={selected ? "true" : "false"}
+                    className={`flex min-h-11 items-center justify-center rounded-xl border px-3 font-semibold ${
+                      selected
+                        ? "border-heritage-green bg-heritage-green text-white"
+                        : "border-heritage-gold/30 bg-white text-heritage-green"
+                    }`}
+                    onClick={() => onSetSoleFitContext(fitContext)}
+                  >
+                    {fitContext === "male" ? "Male fit" : "Female fit"}
+                  </button>
+                );
+              })}
             </div>
           </fieldset>
         ) : null}
