@@ -27,6 +27,33 @@ export type FutureOrderV2PaymentEligibilityResult =
   | { readonly status: "valid" }
   | { readonly status: "invalid"; readonly message: string };
 
+export interface FutureOrderV2PaymentIdentity {
+  readonly isAnonymous: boolean;
+  getIdToken(forceRefresh?: boolean): Promise<string>;
+}
+
+type FutureOrderV2PaymentIdentityResolver = () => FutureOrderV2PaymentIdentity | null;
+
+let paymentIdentityResolver: FutureOrderV2PaymentIdentityResolver | null = null;
+
+/** Test hook — production resolves `auth.currentUser` via a lazy Firebase import. */
+export const registerFutureOrderV2PaymentIdentityResolver = (
+  resolver: FutureOrderV2PaymentIdentityResolver | null,
+): void => {
+  paymentIdentityResolver = resolver;
+};
+
+const resolvePaymentIdentity = async (): Promise<FutureOrderV2PaymentIdentity | null> => {
+  if (paymentIdentityResolver) return paymentIdentityResolver();
+  try {
+    // Lazy import keeps static UI tests from initializing the Firebase client.
+    const { auth } = await import("../services/firebase");
+    return auth.currentUser as FutureOrderV2PaymentIdentity | null;
+  } catch {
+    return null;
+  }
+};
+
 /**
  * This is deliberately evaluated at payment time. A prepared Community order
  * remains bound to its retained batch ID, never the current homepage batch.
@@ -209,7 +236,7 @@ export const readFutureOrderV2ReviewedTotalCents = (
  * Creates one Stripe test PaymentIntent for the reviewed euro total, then
  * confirms the selected method in the browser. The payment reference is the
  * idempotency key, so a retry of the same prepared order cannot create a
- * second charge.
+ * second charge. The server charges the persisted order total after auth.
  */
 export const authorizeFutureOrderV2Payment = async (
   attempt: FutureOrderV2PaymentAttempt,
@@ -232,14 +259,36 @@ export const authorizeFutureOrderV2Payment = async (
     };
   }
 
+  const identity = await resolvePaymentIdentity();
+  if (!identity || identity.isAnonymous) {
+    return {
+      status: "failed",
+      message: "Sign in to pay for this order.",
+    };
+  }
+  let idToken: string;
+  try {
+    idToken = await identity.getIdToken(true);
+  } catch {
+    return {
+      status: "failed",
+      message: "Sign in again to pay for this order.",
+    };
+  }
+
   let payload: unknown;
   try {
     const response = await fetch("/api/future-order-v2/payment-intent", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
       body: JSON.stringify({
         orderId: attempt.orderId,
         paymentReference: attempt.paymentReference,
+        // Kept for client-side reviewed-total checks only. The server ignores
+        // masterOrder pricing and charges the persisted order total.
         masterOrder: attempt.masterOrder,
       }),
     });
