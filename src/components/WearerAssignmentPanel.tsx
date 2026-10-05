@@ -5,7 +5,7 @@ import type { MeasurementPhysicalGarment } from "../utils/measurementBlueprint";
 import type { WearerOrderStateV2 } from "../types";
 import {
   hasUnassignedPhysicalGarments,
-  wearerPublicLabel,
+  wearerAssignmentLabel,
   type WearerMutationResult,
 } from "../utils/wearerOrder";
 
@@ -63,13 +63,16 @@ export const WearerAssignmentPanel = ({
   const [deleteRejection, setDeleteRejection] = useState<string | null>(null);
   const [assignmentRejectionByGarmentKey, setAssignmentRejectionByGarmentKey] =
     useState<Readonly<Record<string, AssignmentRejection>>>({});
+  const [peopleExpanded, setPeopleExpanded] = useState(
+    () => order.wearers.length > 1 || presentation === "people",
+  );
   const nameInputByWearerId = useRef(new Map<string, HTMLInputElement>());
   const knownWearerIds = useRef<string[] | null>(null);
   const wearers = [...order.wearers].sort(
     (left, right) => left.presentationOrder - right.presentationOrder,
   );
   const labelForWearer = (wearer: (typeof wearers)[number]) =>
-    wearerPublicLabel(wearer.displayName, wearer.presentationOrder);
+    wearerAssignmentLabel(wearer.displayName, wearer.presentationOrder);
   const cap = resolveActiveWearerCap(garments.length);
   const labelFor = (garment: MeasurementPhysicalGarment) =>
     garmentLabels[garment.garmentKey] ||
@@ -78,6 +81,10 @@ export const WearerAssignmentPanel = ({
     order,
     physicalGarmentKeys: garments.map((garment) => garment.garmentKey),
   });
+
+  useEffect(() => {
+    if (wearers.length > 1) setPeopleExpanded(true);
+  }, [wearers.length]);
 
   useEffect(() => {
     const liveKeys = new Set(garments.map((garment) => garment.garmentKey));
@@ -102,6 +109,7 @@ export const WearerAssignmentPanel = ({
   const addAnotherPerson = (
     <button
       type="button"
+      data-wearer-add-another="true"
       className="mt-4 inline-flex min-h-11 items-center rounded-xl border border-heritage-green bg-heritage-green px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
       disabled={wearers.length >= cap}
       onClick={() => onAddWearer("", null)}
@@ -110,18 +118,14 @@ export const WearerAssignmentPanel = ({
     </button>
   );
   const soleWearer = wearers.length === 1 ? wearers[0] : null;
-  if (presentation === "solo") {
+  const showPeopleUi =
+    wearers.length > 1 || peopleExpanded || presentation === "people";
+
+  if (!showPeopleUi && presentation === "fit" && soleWearer) {
     return (
       <section className="mb-6 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm">
         <p className="text-sm text-heritage-ink/70">These clothes are for you.</p>
-        {addAnotherPerson}
-      </section>
-    );
-  }
-  if (presentation === "fit" && soleWearer) {
-    return (
-      <section className="mb-6 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm">
-        <fieldset>
+        <fieldset className="mt-4">
           <legend className="text-sm font-semibold text-heritage-ink">
             Fit for measurements
           </legend>
@@ -153,14 +157,38 @@ export const WearerAssignmentPanel = ({
     );
   }
 
+  if (!showPeopleUi) {
+    return (
+      <section
+        className="mb-6 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm"
+        data-wearer-solo-first="true"
+      >
+        <p className="text-sm text-heritage-ink/70">These clothes are for you.</p>
+        <button
+          type="button"
+          data-wearer-add-people="true"
+          className="mt-4 inline-flex min-h-11 items-center rounded-xl border border-heritage-green bg-heritage-green px-4 py-2 text-sm font-bold text-white"
+          onClick={() => setPeopleExpanded(true)}
+        >
+          Add people
+        </button>
+      </section>
+    );
+  }
+
   return (
-    <section className="mb-6 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section
+      className="mb-6 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm"
+      data-wearer-people="true"
+    >
+      <p className="text-sm text-heritage-ink/70">These clothes are for you.</p>
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
         <h3 className="font-serif text-lg font-bold text-heritage-green">
           People in this order
         </h3>
         <button
           type="button"
+          data-wearer-only-for-me="true"
           className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green"
           onClick={() => {
             for (let index = wearers.length - 1; index >= 1; index -= 1) {
@@ -175,6 +203,7 @@ export const WearerAssignmentPanel = ({
               }
               if (result.status === "updated") setDeleteRejection(null);
             }
+            setPeopleExpanded(false);
           }}
         >
           Only for me
@@ -210,7 +239,7 @@ export const WearerAssignmentPanel = ({
                 }}
                 aria-label={`Name or nickname for ${labelForWearer(wearer)}`}
                 className="mt-1 min-h-11 w-full rounded-xl border border-heritage-gold/30 bg-white px-3 py-2 text-sm text-heritage-ink placeholder:text-heritage-ink/40"
-                placeholder="Add person"
+                placeholder={index === 0 ? "You" : "Add person"}
                 value={wearer.displayName}
                 onFocus={() => onSelectWearer(wearer.wearerId)}
                 onChange={(event) =>

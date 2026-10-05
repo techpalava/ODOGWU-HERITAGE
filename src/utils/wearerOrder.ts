@@ -35,6 +35,20 @@ export const wearerPublicLabel = (
   return `Person ${presentationOrder + 1}`;
 };
 
+/**
+ * Measurement assignment UI label. The default sole wearer (order 0) is "You",
+ * not "Person 1", when the stored name is blank.
+ */
+export const wearerAssignmentLabel = (
+  displayName: string,
+  presentationOrder: number,
+): string => {
+  const name = displayName.trim();
+  if (name) return name;
+  if (presentationOrder === 0) return "You";
+  return `Person ${presentationOrder + 1}`;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
@@ -687,17 +701,24 @@ export const hasUnassignedPhysicalGarments = ({
   return physicalGarmentKeys.some((garmentKey) => !assigned.has(garmentKey));
 };
 
-/** People panel mode for Measurement. Unassigned garments always expose assign UI. */
+/**
+ * People panel mode for Measurement.
+ * Multi-person / assign UI opens when there are multiple wearers or the user
+ * opted in (`peopleExpanded`). Unassigned garments alone no longer force it.
+ */
 export const resolveWearerAssignmentPresentation = ({
   wearerCount,
   soleWearerFitContext,
-  hasUnassignedGarments,
+  peopleExpanded = false,
 }: {
   wearerCount: number;
   soleWearerFitContext: WearerFitContext | null;
-  hasUnassignedGarments: boolean;
+  /** User clicked Add people on the solo first-screen (or equivalent). */
+  peopleExpanded?: boolean;
+  /** @deprecated Ignored — kept so older call sites type-check during rollout. */
+  hasUnassignedGarments?: boolean;
 }): "people" | "solo" | "fit" => {
-  if (wearerCount > 1 || hasUnassignedGarments) return "people";
+  if (wearerCount > 1 || peopleExpanded) return "people";
   if (soleWearerFitContext === "male" || soleWearerFitContext === "female") {
     return "solo";
   }

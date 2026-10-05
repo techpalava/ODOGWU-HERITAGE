@@ -26,7 +26,7 @@ assert.match(studioSource, /futureMeasurementState,/);
 assert.match(studioSource, /resumeLocus/);
 assert.match(studioSource, /resolveDesignStudioResumeLocus/);
 assert.match(studioSource, /resolveWearerAssignmentPresentation/);
-assert.match(studioSource, /wearerPublicLabel/);
+assert.match(studioSource, /wearerAssignmentLabel/);
 assert.match(studioSource, /nextIncompleteWearer/);
 assert.match(studioSource, /onGoToWearer/);
 assert.match(measurementSource, /Dimension \/ Measurement/);

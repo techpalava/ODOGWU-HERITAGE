@@ -771,7 +771,6 @@ assert.equal(
   resolveWearerAssignmentPresentation({
     wearerCount: 1,
     soleWearerFitContext: "male",
-    hasUnassignedGarments: false,
   }),
   "solo",
 );
@@ -781,16 +780,31 @@ assert.equal(
     soleWearerFitContext: "male",
     hasUnassignedGarments: true,
   }),
+  "solo",
+  "unassigned garments alone must not force people UI before opt-in",
+);
+assert.equal(
+  resolveWearerAssignmentPresentation({
+    wearerCount: 1,
+    soleWearerFitContext: "male",
+    peopleExpanded: true,
+  }),
   "people",
-  "solo mode must expose assign UI when garments remain unassigned",
+  "opt-in expand opens people UI with a single wearer",
 );
 assert.equal(
   resolveWearerAssignmentPresentation({
     wearerCount: 2,
     soleWearerFitContext: "male",
-    hasUnassignedGarments: false,
   }),
   "people",
+);
+assert.equal(
+  resolveWearerAssignmentPresentation({
+    wearerCount: 1,
+    soleWearerFitContext: null,
+  }),
+  "fit",
 );
 
 const twoGarmentPlan = planMeasurementRequirements({

@@ -281,7 +281,6 @@ import {
   classifyPersistedMeasurement,
   createEmptyWearerOrder,
   deleteWearer,
-  hasUnassignedPhysicalGarments,
   isWearerOrderMeasurementComplete,
   planWearerOrderMeasurements,
   resolveWearerAssignmentPresentation,
@@ -293,7 +292,7 @@ import {
   setWearerFitContext,
   shouldReplacePersistedMeasurement,
   updateWearerMeasurement,
-  wearerPublicLabel,
+  wearerAssignmentLabel,
 } from "../utils/wearerOrder";
 import {
   createDesignStudioResumeLocus,
@@ -3289,12 +3288,12 @@ export default function DesignStudioView({
   const wearerLabelById = new Map(
     wearerOrderForPlan.wearers.map((wearer) => [
       wearer.wearerId,
-      wearerPublicLabel(wearer.displayName, wearer.presentationOrder),
+      wearerAssignmentLabel(wearer.displayName, wearer.presentationOrder),
     ]),
   );
   const labelForMeasurementWearer = (wearerId: string, displayName: string) =>
     wearerLabelById.get(wearerId) ||
-    wearerPublicLabel(displayName, 0);
+    wearerAssignmentLabel(displayName, 0);
   const measurementEmptyWearerLabels = wearerMeasurementRuntimes
     .filter((runtime) => runtime.garmentKeys.length === 0)
     .map((runtime) =>
@@ -3337,17 +3336,10 @@ export default function DesignStudioView({
       ),
     };
   })();
-  const measurementHasUnassignedGarments = hasUnassignedPhysicalGarments({
-    order: wearerOrderForPlan,
-    physicalGarmentKeys: futureMeasurementPhysicalGarments.map(
-      (garment) => garment.garmentKey,
-    ),
-  });
   const measurementWearerAssignmentPresentation =
     resolveWearerAssignmentPresentation({
       wearerCount: wearerOrderForPlan.wearers.length,
       soleWearerFitContext: wearerOrderForPlan.wearers[0]?.fitContext ?? null,
-      hasUnassignedGarments: measurementHasUnassignedGarments,
     });
   const measurementActiveWearerLabel =
     activeWearer &&
