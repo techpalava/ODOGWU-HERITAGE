@@ -73,6 +73,7 @@ import { DesignStudioOrderSummary } from "./DesignStudioOrderSummary";
 import { StudioOrderContextIndicator } from "./CustomerOrderContext";
 import {
   createDesignStudioNavigationRequest,
+  getFabricUnassignedNavigationTarget,
   getMainStageNavigationTarget,
   getOrderSummaryNavigationTarget,
   getValidationNavigationTarget,
@@ -82,6 +83,7 @@ import {
 import {
   captureFabricReentryBaseline,
   detectFabricContextualReentryGuidance,
+  getFirstUnassignedFabricGarmentKey,
   type ContextualReentryGuidance,
   type FabricReentryBaseline,
 } from "../utils/designStudioContextualReentryGuidance";
@@ -909,10 +911,13 @@ export default function DesignStudioView({
     fabricAllocationState: FabricAllocationState;
     requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
     fabricHistoricallyVisited: boolean;
+    fabricStageComplete: boolean;
     labelForGarmentKey: (garmentKey: string, garmentType: string) => string;
   } | null>(null);
   const [activeContextualReentryGuidance, setActiveContextualReentryGuidance] =
     useState<ContextualReentryGuidance | null>(null);
+  const [fabricUnassignedFocusRequest, setFabricUnassignedFocusRequest] =
+    useState<{ id: number; garmentKey: string } | null>(null);
   /**
    * Only explicit customer navigation is routed through this helper. Hydration,
    * safety correction, and modal/sub-flow state updates continue to set the
@@ -924,8 +929,22 @@ export default function DesignStudioView({
       target: DesignStudioNavigationTarget = getMainStageNavigationTarget(),
     ) => {
       const detectInputs = fabricReentryDetectInputsRef.current;
+      let effectiveStage = stage;
+      let effectiveTarget = target;
+      let redirectedForIncompleteFabric = false;
+
+      if (
+        detectInputs &&
+        !detectInputs.fabricStageComplete &&
+        effectiveStage !== "garment_type" &&
+        effectiveStage !== "fabric"
+      ) {
+        effectiveStage = "fabric";
+        redirectedForIncompleteFabric = true;
+      }
+
       const reentryGuidance =
-        stage === "fabric" && detectInputs
+        effectiveStage === "fabric" && detectInputs
           ? detectFabricContextualReentryGuidance({
               baseline: fabricReentryBaselineRef.current,
               fabricHistoricallyVisited: detectInputs.fabricHistoricallyVisited,
@@ -936,13 +955,33 @@ export default function DesignStudioView({
               labelForGarmentKey: detectInputs.labelForGarmentKey,
             })
           : null;
+
+      if (effectiveStage === "fabric" && detectInputs) {
+        const focusGarmentKey =
+          effectiveTarget.kind === "fabric_unassigned"
+            ? effectiveTarget.garmentKey
+            : (reentryGuidance?.focusGarmentKey ??
+              (redirectedForIncompleteFabric ||
+              effectiveTarget.kind === "validation_target"
+                ? getFirstUnassignedFabricGarmentKey({
+                    garmentTypeSelection: detectInputs.garmentTypeSelection,
+                    fabricAllocationState: detectInputs.fabricAllocationState,
+                    requiredPhysicalOccurrences:
+                      detectInputs.requiredPhysicalOccurrences,
+                  })
+                : null));
+        if (focusGarmentKey) {
+          effectiveTarget = getFabricUnassignedNavigationTarget(focusGarmentKey);
+        }
+      }
+
       futureStageNavigationRequestIdRef.current += 1;
-      setFutureStageId(stage);
+      setFutureStageId(effectiveStage);
       setFutureStageNavigationRequest(
         createDesignStudioNavigationRequest({
           id: futureStageNavigationRequestIdRef.current,
-          stage,
-          target,
+          stage: effectiveStage,
+          target: effectiveTarget,
           reentryGuidance,
         }),
       );
@@ -1696,6 +1735,7 @@ export default function DesignStudioView({
     requiredPhysicalOccurrences: fabricTransactionPhysicalOccurrences,
     fabricHistoricallyVisited:
       fabricStageIndex >= 0 && fabricStageIndex <= highestUnlockedStageIndex,
+    fabricStageComplete: futureFabricStageCompletion.isComplete,
     labelForGarmentKey: (garmentKey, garmentType) => {
       const occurrenceLabel = fabricOccurrenceLabels.get(garmentKey);
       if (occurrenceLabel) return occurrenceLabel.conciseLabel;
@@ -3746,6 +3786,7 @@ export default function DesignStudioView({
           });
         }
         setActiveContextualReentryGuidance(null);
+        setFabricUnassignedFocusRequest(null);
       }
       futureGarmentRemovalStageRetentionLeaseRef.current = null;
       futureGarmentRemovalConfirmationGenerationRef.current += 1;
@@ -3788,6 +3829,21 @@ export default function DesignStudioView({
             detectInputs.requiredPhysicalOccurrences,
         });
       }
+    }
+
+    const unassignedFocusGarmentKey =
+      request.target.kind === "fabric_unassigned"
+        ? request.target.garmentKey
+        : (request.reentryGuidance?.focusGarmentKey ?? null);
+    if (unassignedFocusGarmentKey && request.stage === "fabric") {
+      setFabricUnassignedFocusRequest({
+        id: request.id,
+        garmentKey: unassignedFocusGarmentKey,
+      });
+      setFutureStageNavigationRequest((current) =>
+        current?.id === request.id ? null : current,
+      );
+      return;
     }
 
     // Exact Additional Garment requests are fulfilled by Step 4 after its
@@ -5550,10 +5606,16 @@ export default function DesignStudioView({
     });
     if (!correctedStageId || correctedStageId === futureStageId) return;
     if (shouldRetainCurrentStageAfterGarmentRemoval(futureStageId)) return;
+    if (correctedStageId === "fabric") {
+      // Bounce with unassigned-card focus instead of a silent stage-top dump.
+      navigateToFutureStage("fabric", getValidationNavigationTarget());
+      return;
+    }
     setFutureStageId(correctedStageId);
   }, [
     futureStageId,
     futureFabricStageCompletion.isComplete,
+    navigateToFutureStage,
     garmentTypeStageCompletion.isComplete,
     isFutureDesignSourceReadyForCustomDetails,
     isFutureStep4CustomDetailsReady,
@@ -9333,6 +9395,15 @@ export default function DesignStudioView({
           onDismissContextualReentryGuidance={() =>
             setActiveContextualReentryGuidance(null)
           }
+          unassignedFocusRequestId={fabricUnassignedFocusRequest?.id ?? null}
+          unassignedFocusGarmentKey={
+            fabricUnassignedFocusRequest?.garmentKey ?? null
+          }
+          onUnassignedFocusHandled={(requestId) => {
+            setFabricUnassignedFocusRequest((current) =>
+              current?.id === requestId ? null : current,
+            );
+          }}
           onAssignFabricToGarment={handleAssignFutureFabricToGarment}
           onChangeFabricAllocationProduct={handleChangeFutureFabricAllocationProduct}
           onRemoveFabricFromGarment={handleRemoveFutureFabricAssignment}

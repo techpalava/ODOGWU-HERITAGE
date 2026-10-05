@@ -32,6 +32,8 @@ export interface ContextualReentryGuidance {
   readonly cause: ContextualReentryCause;
   readonly affectedItems: readonly ContextualReentryAffectedItem[];
   readonly message: string;
+  /** First garment card to scroll/flash; null when guidance is copy-only. */
+  readonly focusGarmentKey: string | null;
 }
 
 /**
@@ -182,5 +184,22 @@ export const detectFabricContextualReentryGuidance = ({
       cause,
       labels: affectedItems.map((item) => item.label),
     }),
+    focusGarmentKey: affectedItems[0]?.id ?? null,
   };
 };
+
+/** First unassigned Fabric garment key, if any. */
+export const getFirstUnassignedFabricGarmentKey = ({
+  garmentTypeSelection,
+  fabricAllocationState,
+  requiredPhysicalOccurrences,
+}: {
+  garmentTypeSelection: GarmentTypeStepSelection;
+  fabricAllocationState: FabricAllocationState;
+  requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+}): string | null =>
+  getFutureUnassignedFabricTargets({
+    garmentTypeSelection,
+    fabricAllocationState,
+    requiredPhysicalOccurrences,
+  })[0]?.assignment.garmentKey ?? null;

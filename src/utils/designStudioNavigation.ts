@@ -9,7 +9,8 @@ import type { ContextualReentryGuidance } from "./designStudioContextualReentryG
 export type DesignStudioNavigationTarget =
   | { kind: "stage_top" }
   | { kind: "additional_garment"; garmentKey: string | null }
-  | { kind: "validation_target" };
+  | { kind: "validation_target" }
+  | { kind: "fabric_unassigned"; garmentKey: string };
 
 export interface DesignStudioNavigationRequest {
   readonly id: number;
@@ -59,4 +60,12 @@ export const getOrderSummaryNavigationTarget = ({
 
 export const getValidationNavigationTarget = (): DesignStudioNavigationTarget => ({
   kind: "validation_target",
+});
+
+/** Scroll/flash a specific unassigned Fabric garment card. */
+export const getFabricUnassignedNavigationTarget = (
+  garmentKey: string,
+): DesignStudioNavigationTarget => ({
+  kind: "fabric_unassigned",
+  garmentKey,
 });

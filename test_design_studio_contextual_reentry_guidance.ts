@@ -8,6 +8,7 @@ import {
   captureFabricReentryBaseline,
   detectFabricContextualReentryGuidance,
   formatFabricContextualReentryMessage,
+  getFirstUnassignedFabricGarmentKey,
 } from "./src/utils/designStudioContextualReentryGuidance";
 import {
   assignSameFabricProductToGarments,
@@ -16,6 +17,7 @@ import {
 } from "./src/utils/designStudioFutureFabricStage";
 import {
   createDesignStudioNavigationRequest,
+  getFabricUnassignedNavigationTarget,
   getMainStageNavigationTarget,
 } from "./src/utils/designStudioNavigation";
 import { reconcileGarmentTypeStepSelection } from "./src/utils/garmentTypeStepState";
@@ -169,6 +171,7 @@ const detect = ({
   assert.equal(guidance!.cause, "new_items");
   assert.equal(guidance!.destinationStageId, "fabric");
   assert.equal(guidance!.affectedItems.length, 1);
+  assert.equal(guidance!.focusGarmentKey, guidance!.affectedItems[0]!.id);
   assert.match(guidance!.message, /You added .+ It still needs a Fabric assignment\./);
 }
 
@@ -290,26 +293,54 @@ assert.equal(
   "Some garments need Fabric attention: Standard Shirt, Trouser, and Skirt.",
 );
 
-// --- navigation request carries reentryGuidance ---
+// --- navigation request carries reentryGuidance + fabric_unassigned ---
 {
   const request = createDesignStudioNavigationRequest({
     id: 1,
     stage: "fabric",
-    target: getMainStageNavigationTarget(),
+    target: getFabricUnassignedNavigationTarget("base:trouser"),
     reentryGuidance: {
       destinationStageId: "fabric",
       cause: "new_items",
       affectedItems: [{ id: "base:trouser", label: "Trouser" }],
       message: "You added Trouser. It still needs a Fabric assignment.",
+      focusGarmentKey: "base:trouser",
     },
   });
   assert.equal(request.reentryGuidance?.cause, "new_items");
+  assert.equal(request.reentryGuidance?.focusGarmentKey, "base:trouser");
+  assert.deepEqual(request.target, {
+    kind: "fabric_unassigned",
+    garmentKey: "base:trouser",
+  });
   const ordinary = createDesignStudioNavigationRequest({
     id: 2,
     stage: "fabric",
     target: getMainStageNavigationTarget(),
   });
   assert.equal(ordinary.reentryGuidance, null);
+}
+
+// --- first unassigned key helper ---
+{
+  const shirtTrouser = selection(["shirt", "trouser"]);
+  const shirtOnly = assignAll(selection(["shirt"]));
+  const reconciled = reconcileFutureFabricAllocationState({
+    state: shirtOnly,
+    garmentTypeSelection: shirtTrouser,
+  });
+  const firstKey = getFirstUnassignedFabricGarmentKey({
+    garmentTypeSelection: shirtTrouser,
+    fabricAllocationState: reconciled,
+  });
+  assert.ok(firstKey);
+  assert.equal(
+    firstKey,
+    getFutureUnassignedFabricTargets({
+      garmentTypeSelection: shirtTrouser,
+      fabricAllocationState: reconciled,
+    })[0]!.assignment.garmentKey,
+  );
 }
 
 // --- wiring: Design Studio + Fabric step ---
@@ -325,19 +356,28 @@ assert.equal(
   );
 
   assert.match(navigationSource, /reentryGuidance/);
+  assert.match(navigationSource, /fabric_unassigned/);
+  assert.match(navigationSource, /getFabricUnassignedNavigationTarget/);
   assert.match(studioSource, /detectFabricContextualReentryGuidance/);
   assert.match(studioSource, /captureFabricReentryBaseline/);
   assert.match(studioSource, /activeContextualReentryGuidance/);
-  assert.match(studioSource, /reentryGuidance,/);
+  assert.match(studioSource, /redirectedForIncompleteFabric/);
+  assert.match(studioSource, /getFabricUnassignedNavigationTarget/);
+  assert.match(studioSource, /fabricUnassignedFocusRequest/);
   assert.match(
     studioSource,
-    /setFutureStageId\(correctedStageId\)/,
-    "stage correction must keep direct setFutureStageId (no guidance attach)",
+    /correctedStageId === "fabric"[\s\S]*navigateToFutureStage\("fabric"/,
+    "stage correction to Fabric must navigate with focus, not bare setFutureStageId",
   );
   assert.match(fabricSource, /data-contextual-reentry-guidance="fabric"/);
   assert.match(fabricSource, /CONTEXTUAL_REENTRY_AUTO_DISMISS_MS/);
   assert.match(fabricSource, /data-contextual-reentry-dismiss/);
   assert.match(fabricSource, /onDismissContextualReentryGuidance/);
+  assert.match(fabricSource, /unassignedFocusGarmentKey/);
+  assert.match(
+    fabricSource,
+    /navigateToStep2PostAssignmentDestination\(\s*unassignedFocusGarmentKey,\s*"next_unassigned"/,
+  );
 }
 
 console.log("PASS: contextual re-entry guidance (Fabric)");

@@ -147,6 +147,9 @@ interface DormantFutureFabricStepProps {
   orderSummary?: ReactNode;
   contextualReentryGuidance?: ContextualReentryGuidance | null;
   onDismissContextualReentryGuidance?: () => void;
+  unassignedFocusRequestId?: number | null;
+  unassignedFocusGarmentKey?: string | null;
+  onUnassignedFocusHandled?: (requestId: number) => void;
 }
 
 const OTHER_ADDITIONAL_GARMENT_PENDING_MESSAGE =
@@ -367,8 +370,12 @@ export const DormantFutureFabricStep = ({
   orderSummary = null,
   contextualReentryGuidance = null,
   onDismissContextualReentryGuidance,
+  unassignedFocusRequestId = null,
+  unassignedFocusGarmentKey = null,
+  onUnassignedFocusHandled,
 }: DormantFutureFabricStepProps) => {
   void onUseSameFabricForGarment;
+  const lastHandledUnassignedFocusRequestIdRef = useRef<number | null>(null);
   const [isCatalogueOpen, setIsCatalogueOpen] = useState(false);
   const [catalogueTargetGarmentKey, setCatalogueTargetGarmentKey] = useState<
     string | null
@@ -927,6 +934,26 @@ export const DormantFutureFabricStep = ({
       focus();
     }
   };
+
+  useEffect(() => {
+    if (
+      unassignedFocusRequestId == null ||
+      !unassignedFocusGarmentKey ||
+      lastHandledUnassignedFocusRequestIdRef.current === unassignedFocusRequestId
+    ) {
+      return;
+    }
+    lastHandledUnassignedFocusRequestIdRef.current = unassignedFocusRequestId;
+    navigateToStep2PostAssignmentDestination(
+      unassignedFocusGarmentKey,
+      "next_unassigned",
+    );
+    onUnassignedFocusHandled?.(unassignedFocusRequestId);
+  }, [
+    unassignedFocusRequestId,
+    unassignedFocusGarmentKey,
+    onUnassignedFocusHandled,
+  ]);
 
   const completeCatalogueAssignment = (garmentKey: string) => {
     catalogueFocusRequestRef.current += 1;
