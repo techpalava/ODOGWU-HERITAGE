@@ -48,7 +48,10 @@ assert.match(measurementSource, /Shared body measurements are entered once and u
 assert.match(measurementSource, /Measurement setup pending/);
 assert.match(measurementSource, /Assign this garment to a person/);
 assert.match(measurementSource, /Assign person/);
+assert.match(measurementSource, /multiPersonAssignmentActive/);
 assert.match(measurementSource, /projectMeasurementGarmentChipStates/);
+assert.match(studioSource, /multiPersonAssignmentActive=\{wearerOrderForPlan\.wearers\.length > 1\}/);
+assert.match(studioSource, /onCollapseToSolo/);
 assert.match(measurementSource, /data-measurement-garment-chip/);
 assert.match(measurementSource, /data-measurement-garment-remaining/);
 assert.match(measurementSource, /setAllowPendingChipSelection/);
@@ -356,6 +359,7 @@ act(() => {
     state: completeShirt,
     physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
     unassignedGarments: [{ garmentKey: "base:bum_shorts", garmentType: "bum_shorts" }],
+    multiPersonAssignmentActive: true,
     orderMeasurementsComplete: false,
     onChange: () => undefined,
     onRouteChange: () => undefined,
@@ -377,6 +381,37 @@ assert.equal(
     "data-measurement-blocked-by-assignment"
   ],
   "true",
+);
+
+let soloAssignHiddenRenderer!: ReturnType<typeof create>;
+act(() => {
+  soloAssignHiddenRenderer = create(createElement(DormantFutureMeasurementStep, {
+    plan: shirtOnlyPlan,
+    state: completeShirt,
+    physicalGarments: [
+      { garmentKey: "base:shirt", garmentType: "shirt" },
+      { garmentKey: "base:bum_shorts", garmentType: "bum_shorts" },
+    ],
+    unassignedGarments: [
+      { garmentKey: "base:shirt", garmentType: "shirt" },
+      { garmentKey: "base:bum_shorts", garmentType: "bum_shorts" },
+    ],
+    multiPersonAssignmentActive: false,
+    orderMeasurementsComplete: false,
+    onChange: () => undefined,
+    onRouteChange: () => undefined,
+    onBack: () => undefined,
+    onContinue: () => undefined,
+  }));
+});
+const soloAssignBody = headingText(soloAssignHiddenRenderer.root);
+assert.equal(soloAssignBody.includes("Assign person"), false);
+assert.equal(
+  soloAssignHiddenRenderer.root.findAllByProps({
+    "data-measurement-garment-pending-reason": "assignment",
+  }).length,
+  0,
+  "Only for me / solo must not show Assign person chips",
 );
 
 const renderPickerHarness = ({

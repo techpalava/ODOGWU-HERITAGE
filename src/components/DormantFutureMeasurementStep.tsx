@@ -61,6 +61,11 @@ interface DormantFutureMeasurementStepProps {
   physicalGarments?: readonly MeasurementPhysicalGarment[];
   /** Garments not yet assigned to a wearer; blocks order-wide Summary unlock. */
   unassignedGarments?: readonly MeasurementPhysicalGarment[];
+  /**
+   * When false (Only for me / single wearer), garment chips never show
+   * "Assign person" even if the assignment map is empty.
+   */
+  multiPersonAssignmentActive?: boolean;
   /** @deprecated Use unassignedGarments. */
   setupPendingGarments?: readonly MeasurementPhysicalGarment[];
   hydrationInvalid?: boolean;
@@ -563,6 +568,7 @@ export const DormantFutureMeasurementStep = ({
   state,
   physicalGarments = [],
   unassignedGarments,
+  multiPersonAssignmentActive = true,
   setupPendingGarments = [],
   hydrationInvalid = false,
   orderMeasurementsComplete,
@@ -650,7 +656,9 @@ export const DormantFutureMeasurementStep = ({
       ...resolvedState.diagnostics.map((diagnostic) => diagnostic.garmentKey),
     ].filter((garmentKey): garmentKey is string => Boolean(garmentKey)),
   );
-  const assignmentPendingGarments = unassignedGarments ?? setupPendingGarments;
+  const assignmentPendingGarments = multiPersonAssignmentActive
+    ? (unassignedGarments ?? setupPendingGarments)
+    : [];
   const unassignedGarmentKeySet = new Set(
     assignmentPendingGarments.map((garment) => garment.garmentKey),
   );

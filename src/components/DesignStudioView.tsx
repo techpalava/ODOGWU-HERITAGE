@@ -9542,17 +9542,34 @@ export default function DesignStudioView({
           onDeleteWearer={(wearerId) => {
             const result = deleteWearer(wearerOrderForPlanRef.current, wearerId);
             if (result.status === "updated") {
-              wearerOrderForPlanRef.current = result.order;
-              setWearerOrder(result.order);
+              const nextOrder =
+                result.order.wearers.length === 1
+                  ? reconcileWearerOrder({
+                      order: result.order,
+                      garmentKeys: futureMeasurementPhysicalGarments.map(
+                        (garment) => garment.garmentKey,
+                      ),
+                      compatibilityDemographic:
+                        effectiveJourneyGarmentTypeSelection.demographic,
+                      garments: futureMeasurementPhysicalGarments,
+                      garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+                      additionalGarmentConstructions:
+                        designSelections.additionalGarmentConstructions,
+                    })
+                  : result.order;
+              wearerOrderForPlanRef.current = nextOrder;
+              setWearerOrder(nextOrder);
               if (activeWearer?.wearerId === wearerId) {
-                setActiveWearerId(result.order.wearers[0]?.wearerId || null);
+                setActiveWearerId(nextOrder.wearers[0]?.wearerId || null);
                 setFutureMeasurementState(
-                  result.order.wearers[0]?.measurement ||
+                  nextOrder.wearers[0]?.measurement ||
                     createEmptyFutureMeasurementState(),
                 );
               }
             }
-            return result;
+            return result.status === "updated"
+              ? { ...result, order: wearerOrderForPlanRef.current }
+              : result;
           }}
           onAssignGarment={(garmentKey, wearerId) => {
             const garment = futureMeasurementPhysicalGarments.find(
@@ -9577,6 +9594,22 @@ export default function DesignStudioView({
             if (result.status === "updated") setWearerOrder(result.order);
             return result;
           }}
+          onCollapseToSolo={() => {
+            const nextOrder = reconcileWearerOrder({
+              order: wearerOrderForPlanRef.current,
+              garmentKeys: futureMeasurementPhysicalGarments.map(
+                (garment) => garment.garmentKey,
+              ),
+              compatibilityDemographic:
+                effectiveJourneyGarmentTypeSelection.demographic,
+              garments: futureMeasurementPhysicalGarments,
+              garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+              additionalGarmentConstructions:
+                designSelections.additionalGarmentConstructions,
+            });
+            wearerOrderForPlanRef.current = nextOrder;
+            setWearerOrder(nextOrder);
+          }}
         />
         <DormantFutureMeasurementStep
           plan={futureMeasurementPlan}
@@ -9584,6 +9617,7 @@ export default function DesignStudioView({
           restoredGarmentKey={hydratedMeasurementGarmentKey}
           orderMeasurementsComplete={summaryUnlockedByMeasurements}
           physicalGarments={futureMeasurementPhysicalGarments}
+          multiPersonAssignmentActive={wearerOrderForPlan.wearers.length > 1}
           unassignedGarments={futureMeasurementPhysicalGarments.filter(
             (garment) => !wearerOrderForPlan.assignmentByGarmentKey[garment.garmentKey],
           )}

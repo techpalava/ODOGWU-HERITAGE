@@ -775,3 +775,69 @@ console.log("PASS: wearer assignment panel solo-first people UX");
 }
 
 console.log("PASS: wearer assignment panel hides fit on first screen");
+
+{
+  const collapseGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+  ];
+  const collapseOrder = reconcileWearerOrder({
+    order: createEmptyWearerOrder(),
+    garmentKeys: collapseGarments.map((garment) => garment.garmentKey),
+    compatibilityDemographic: "female",
+    garments: collapseGarments,
+    garmentTypeSelection: selection(),
+  });
+  let collapseCalls = 0;
+  const CollapseHarness = () => {
+    const [order, setOrder] = useState(collapseOrder);
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        presentation="solo"
+        activeWearerId={order.wearers[0]?.wearerId || null}
+        garments={collapseGarments}
+        garmentLabels={{
+          "base:shirt": "Standard Shirt",
+          "additional:shirt:1": "Standard Shirt 2",
+        }}
+        onSelectWearer={() => {}}
+        onAddWearer={(displayName, fitContext) => {
+          const result = addWearer({
+            order,
+            physicalGarmentCount: collapseGarments.length,
+            displayName,
+            fitContext,
+          });
+          if (result.status === "updated") setOrder(result.order);
+        }}
+        onRenameWearer={() => {}}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => {
+          const result = deleteWearer(order, wearerId);
+          if (result.status === "updated") setOrder(result.order);
+          return result;
+        }}
+        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order })}
+        onCollapseToSolo={() => {
+          collapseCalls += 1;
+        }}
+      />
+    );
+  };
+  let collapseRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    collapseRenderer = create(<CollapseHarness />);
+  });
+  await act(async () => {
+    collapseRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  await act(async () => {
+    collapseRenderer.root.findByProps({ "data-wearer-only-for-me": "true" }).props.onClick();
+  });
+  assert.equal(collapseCalls, 1, "Only for me must notify Design Studio to reconcile solo assignments");
+  assert.equal(collapseRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length, 1);
+}
+
+console.log("PASS: wearer assignment panel Only for me collapse reconciles");

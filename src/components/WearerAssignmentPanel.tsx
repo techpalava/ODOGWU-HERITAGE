@@ -49,6 +49,7 @@ export const WearerAssignmentPanel = ({
   onSetFitContext,
   onDeleteWearer,
   onAssignGarment,
+  onCollapseToSolo,
 }: {
   order: WearerOrderStateV2;
   presentation?: "people" | "solo" | "fit";
@@ -62,6 +63,8 @@ export const WearerAssignmentPanel = ({
   onSetFitContext: (wearerId: string, fitContext: "male" | "female") => void;
   onDeleteWearer: (wearerId: string) => WearerMutationResult;
   onAssignGarment: (garmentKey: string, wearerId: string) => WearerMutationResult;
+  /** Fired after Only for me successfully returns to the solo first-screen. */
+  onCollapseToSolo?: () => void;
 }) => {
   const [deleteRejection, setDeleteRejection] = useState<string | null>(null);
   const [assignmentRejectionByGarmentKey, setAssignmentRejectionByGarmentKey] =
@@ -170,6 +173,7 @@ export const WearerAssignmentPanel = ({
               if (result.status === "updated") setDeleteRejection(null);
             }
             setPeopleExpanded(false);
+            onCollapseToSolo?.();
           }}
         >
           Only for me
