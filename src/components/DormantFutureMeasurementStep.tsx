@@ -989,13 +989,18 @@ export const DormantFutureMeasurementStep = ({
           </div>
         ) : null}
         {showSoleFitControl && onSetSoleFitContext ? (
-          <fieldset
+          <div
             className="mt-5 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/40 p-4"
             data-measurement-sole-fit="true"
+            role="group"
+            aria-labelledby="measurement-sole-fit-heading"
           >
-            <legend className="px-1 text-sm font-semibold text-heritage-ink">
+            <h3
+              id="measurement-sole-fit-heading"
+              className="text-sm font-semibold text-heritage-ink"
+            >
               Fit for measurements
-            </legend>
+            </h3>
             <p className="mt-1 text-xs text-heritage-ink/60">
               Used to determine the correct measurement requirements.
             </p>
@@ -1020,7 +1025,7 @@ export const DormantFutureMeasurementStep = ({
                 );
               })}
             </div>
-          </fieldset>
+          </div>
         ) : null}
       </header>
 
