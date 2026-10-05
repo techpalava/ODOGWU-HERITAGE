@@ -26,7 +26,7 @@ assert.match(studioSource, /futureMeasurementState,/);
 assert.match(studioSource, /resumeLocus/);
 assert.match(studioSource, /resolveDesignStudioResumeLocus/);
 assert.match(studioSource, /resolveWearerAssignmentPresentation/);
-assert.match(studioSource, /wearerPublicLabel/);
+assert.match(studioSource, /wearerAssignmentLabel/);
 assert.match(studioSource, /nextIncompleteWearer/);
 assert.match(studioSource, /onGoToWearer/);
 assert.match(measurementSource, /Dimension \/ Measurement/);
@@ -48,7 +48,18 @@ assert.match(measurementSource, /Shared body measurements are entered once and u
 assert.match(measurementSource, /Measurement setup pending/);
 assert.match(measurementSource, /Assign this garment to a person/);
 assert.match(measurementSource, /Assign person/);
+assert.match(measurementSource, /multiPersonAssignmentActive/);
 assert.match(measurementSource, /projectMeasurementGarmentChipStates/);
+assert.match(studioSource, /multiPersonAssignmentActive=\{wearerOrderForPlan\.wearers\.length > 1\}/);
+assert.match(studioSource, /onCollapseToSolo/);
+assert.match(
+  studioSource,
+  /onAssignGarment[\s\S]*setFutureMeasurementState\(synced\.measurement\)/,
+);
+assert.match(
+  studioSource,
+  /onCollapseToSolo[\s\S]*setFutureMeasurementState\(\s*sole\?\.measurement/,
+);
 assert.match(measurementSource, /data-measurement-garment-chip/);
 assert.match(measurementSource, /data-measurement-garment-remaining/);
 assert.match(measurementSource, /setAllowPendingChipSelection/);
@@ -356,6 +367,7 @@ act(() => {
     state: completeShirt,
     physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
     unassignedGarments: [{ garmentKey: "base:bum_shorts", garmentType: "bum_shorts" }],
+    multiPersonAssignmentActive: true,
     orderMeasurementsComplete: false,
     onChange: () => undefined,
     onRouteChange: () => undefined,
@@ -378,6 +390,133 @@ assert.equal(
   ],
   "true",
 );
+
+let soloAssignHiddenRenderer!: ReturnType<typeof create>;
+act(() => {
+  soloAssignHiddenRenderer = create(createElement(DormantFutureMeasurementStep, {
+    plan: shirtOnlyPlan,
+    state: completeShirt,
+    physicalGarments: [
+      { garmentKey: "base:shirt", garmentType: "shirt" },
+      { garmentKey: "base:bum_shorts", garmentType: "bum_shorts" },
+    ],
+    unassignedGarments: [
+      { garmentKey: "base:shirt", garmentType: "shirt" },
+      { garmentKey: "base:bum_shorts", garmentType: "bum_shorts" },
+    ],
+    multiPersonAssignmentActive: false,
+    orderMeasurementsComplete: false,
+    onChange: () => undefined,
+    onRouteChange: () => undefined,
+    onBack: () => undefined,
+    onContinue: () => undefined,
+  }));
+});
+const soloAssignBody = headingText(soloAssignHiddenRenderer.root);
+assert.equal(soloAssignBody.includes("Assign person"), false);
+assert.equal(
+  soloAssignHiddenRenderer.root.findAllByProps({
+    "data-measurement-garment-pending-reason": "assignment",
+  }).length,
+  0,
+  "Only for me / solo must not show Assign person chips",
+);
+
+{
+  let soleFitChoice: "male" | "female" | null = null;
+  let soleFitContext: "male" | "female" | null = null;
+  let soleFitRenderer!: ReturnType<typeof create>;
+  const soleFitProps = () => ({
+    plan: shirtOnlyPlan,
+    state: completeShirt,
+    physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    multiPersonAssignmentActive: false,
+    showSoleFitControl: true,
+    soleFitContext,
+    onSetSoleFitContext: (fitContext: "male" | "female") => {
+      soleFitChoice = fitContext;
+      soleFitContext = fitContext;
+    },
+    orderMeasurementsComplete: false,
+    onChange: () => undefined,
+    onRouteChange: () => undefined,
+    onBack: () => undefined,
+    onContinue: () => undefined,
+  });
+  act(() => {
+    soleFitRenderer = create(createElement(DormantFutureMeasurementStep, soleFitProps()));
+  });
+  assert.equal(
+    soleFitRenderer.root.findAllByProps({ "data-measurement-sole-fit": "true" }).length,
+    1,
+    "compact sole-fit UI appears for solo orders",
+  );
+  assert.match(headingText(soleFitRenderer.root), /Fit for measurements/);
+  act(() => {
+    soleFitRenderer.root
+      .findByProps({ "data-measurement-sole-fit-option": "female" })
+      .props.onClick();
+  });
+  assert.equal(soleFitChoice, "female");
+  act(() => {
+    soleFitRenderer.update(createElement(DormantFutureMeasurementStep, soleFitProps()));
+  });
+  assert.equal(
+    soleFitRenderer.root.findAllByProps({ "data-measurement-sole-fit": "true" }).length,
+    1,
+    "compact sole-fit UI stays after a fit is chosen",
+  );
+  assert.equal(
+    soleFitRenderer.root.findByProps({ "data-measurement-sole-fit-option": "female" }).props[
+      "data-measurement-sole-fit-selected"
+    ],
+    "true",
+  );
+  assert.equal(
+    soleFitRenderer.root.findByProps({ "data-measurement-sole-fit-option": "male" }).props[
+      "data-measurement-sole-fit-selected"
+    ],
+    "false",
+  );
+  act(() => {
+    soleFitRenderer.root
+      .findByProps({ "data-measurement-sole-fit-option": "male" })
+      .props.onClick();
+  });
+  assert.equal(soleFitChoice, "male");
+  act(() => {
+    soleFitRenderer.update(createElement(DormantFutureMeasurementStep, soleFitProps()));
+  });
+  assert.equal(
+    soleFitRenderer.root.findByProps({ "data-measurement-sole-fit-option": "male" }).props[
+      "data-measurement-sole-fit-selected"
+    ],
+    "true",
+  );
+
+  let hiddenFitRenderer!: ReturnType<typeof create>;
+  act(() => {
+    hiddenFitRenderer = create(createElement(DormantFutureMeasurementStep, {
+      plan: shirtOnlyPlan,
+      state: completeShirt,
+      physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+      multiPersonAssignmentActive: true,
+      showSoleFitControl: false,
+      soleFitContext: "female",
+      orderMeasurementsComplete: true,
+      onChange: () => undefined,
+      onRouteChange: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    }));
+  });
+  assert.equal(
+    hiddenFitRenderer.root.findAllByProps({ "data-measurement-sole-fit": "true" }).length,
+    0,
+    "compact sole-fit UI stays hidden for multi-person orders",
+  );
+}
+console.log("PASS: measurement step compact sole-fit UI");
 
 const renderPickerHarness = ({
   state,

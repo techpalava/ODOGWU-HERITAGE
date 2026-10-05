@@ -35,6 +35,20 @@ export const wearerPublicLabel = (
   return `Person ${presentationOrder + 1}`;
 };
 
+/**
+ * Measurement assignment UI label. The default sole wearer (order 0) is "You",
+ * not "Person 1", when the stored name is blank.
+ */
+export const wearerAssignmentLabel = (
+  displayName: string,
+  presentationOrder: number,
+): string => {
+  const name = displayName.trim();
+  if (name) return name;
+  if (presentationOrder === 0) return "You";
+  return `Person ${presentationOrder + 1}`;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
@@ -451,6 +465,12 @@ export const reconcileWearerOrder = ({
       wearer,
     ),
   );
+  if (wearers.length === 1) {
+    const inferredFit = resolveNewWearerFitContext(compatibilityDemographic);
+    if (wearers[0].fitContext === null && inferredFit !== null) {
+      wearers = [{ ...wearers[0], fitContext: inferredFit }];
+    }
+  }
   if (wearers.length === 1 && garmentTypeSelection) {
     const only = wearers[0];
     for (const garmentKey of uniqueKeys) {
@@ -687,21 +707,26 @@ export const hasUnassignedPhysicalGarments = ({
   return physicalGarmentKeys.some((garmentKey) => !assigned.has(garmentKey));
 };
 
-/** People panel mode for Measurement. Unassigned garments always expose assign UI. */
+/**
+ * People panel mode for Measurement.
+ * Multi-person / assign UI opens when there are multiple wearers or the user
+ * opted in (`peopleExpanded`). Unassigned garments alone no longer force it.
+ * Closed first screen is always solo (never a dedicated fit wall).
+ */
 export const resolveWearerAssignmentPresentation = ({
   wearerCount,
-  soleWearerFitContext,
-  hasUnassignedGarments,
+  peopleExpanded = false,
 }: {
   wearerCount: number;
-  soleWearerFitContext: WearerFitContext | null;
-  hasUnassignedGarments: boolean;
+  /** @deprecated Ignored — closed first screen no longer depends on sole fit. */
+  soleWearerFitContext?: WearerFitContext | null;
+  /** User clicked Add people on the solo first-screen (or equivalent). */
+  peopleExpanded?: boolean;
+  /** @deprecated Ignored — kept so older call sites type-check during rollout. */
+  hasUnassignedGarments?: boolean;
 }): "people" | "solo" | "fit" => {
-  if (wearerCount > 1 || hasUnassignedGarments) return "people";
-  if (soleWearerFitContext === "male" || soleWearerFitContext === "female") {
-    return "solo";
-  }
-  return "fit";
+  if (wearerCount > 1 || peopleExpanded) return "people";
+  return "solo";
 };
 
 export const isWearerOrderMeasurementComplete = ({

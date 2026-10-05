@@ -11,6 +11,8 @@ import {
   reconcileWearerOrder,
   renameWearer,
   createEmptyWearerOrder,
+  resolveWearerAssignmentPresentation,
+  wearerAssignmentLabel,
 } from "./src/utils/wearerOrder";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -555,18 +557,15 @@ const alerts = (root: ReactTestInstance) =>
       />,
     );
   });
-  assert.match(textContent(missingFitRenderer.root), /Select a fit for Person 1 before assigning garments/);
-  assert.match(textContent(missingFitRenderer.root), /Assign all garments to continue/);
-  await act(async () => {
-    selectFor(missingFitRenderer.root, "Standard Shirt").props.onChange({
-      currentTarget: { value: unfitted.wearers[0].wearerId },
-    });
-  });
-  assert.equal(selectFor(missingFitRenderer.root, "Standard Shirt").props.value, "");
-  assert.match(
-    alerts(missingFitRenderer.root).join(" "),
-    /Select a fit for Person 1 before assigning this garment/,
+  const missingFitBody = textContent(missingFitRenderer.root);
+  assert.equal(
+    missingFitRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length,
+    1,
+    "solo null-fit stays on first screen; fit is chosen in the measurement card",
   );
+  assert.equal(missingFitBody.includes("Select a fit for You before assigning garments"), false);
+  assert.equal(missingFitBody.includes("2. Assign garments"), false);
+  assert.equal(missingFitBody.includes("Assign all garments to continue"), false);
 
   const reconciled = reconcileWearerOrder({
     order: authority,
@@ -594,3 +593,308 @@ const alerts = (root: ReactTestInstance) =>
 }
 
 console.log("PASS: wearer assignment panel keeps authoritative garment ownership");
+
+{
+  assert.equal(wearerAssignmentLabel("", 0), "You");
+  assert.equal(wearerAssignmentLabel("", 1), "Person 2");
+  assert.equal(wearerAssignmentLabel("Amaka", 0), "Amaka");
+  assert.equal(
+    resolveWearerAssignmentPresentation({
+      wearerCount: 1,
+      soleWearerFitContext: "female",
+      hasUnassignedGarments: true,
+    }),
+    "solo",
+  );
+
+  const soloGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+  ];
+  const soloOrder = reconcileWearerOrder({
+    order: createEmptyWearerOrder(),
+    garmentKeys: soloGarments.map((garment) => garment.garmentKey),
+    compatibilityDemographic: "female",
+    garments: soloGarments,
+    garmentTypeSelection: selection(),
+  });
+  assert.equal(soloOrder.wearers.length, 1);
+
+  let latestSolo = soloOrder;
+  let addWearerCalls = 0;
+  const SoloHarness = () => {
+    const [order, setOrder] = useState(latestSolo);
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        presentation="solo"
+        activeWearerId={order.wearers[0]?.wearerId || null}
+        garments={soloGarments}
+        garmentLabels={{
+          "base:shirt": "Standard Shirt",
+          "additional:shirt:1": "Standard Shirt 2",
+        }}
+        onSelectWearer={() => {}}
+        onAddWearer={(displayName, fitContext) => {
+          addWearerCalls += 1;
+          const result = addWearer({
+            order,
+            physicalGarmentCount: soloGarments.length,
+            displayName,
+            fitContext,
+          });
+          if (result.status === "updated") {
+            latestSolo = result.order;
+            setOrder(result.order);
+          }
+        }}
+        onRenameWearer={() => {}}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => {
+          const result = deleteWearer(order, wearerId);
+          if (result.status === "updated") {
+            latestSolo = result.order;
+            setOrder(result.order);
+          }
+          return result;
+        }}
+        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order })}
+      />
+    );
+  };
+
+  let soloRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    soloRenderer = create(<SoloHarness />);
+  });
+  const soloBody = textContent(soloRenderer.root);
+  assert.match(
+    soloBody,
+    /These clothes are for you\. Add another person if you are ordering for someone else\./,
+  );
+  assert.equal(soloBody.includes("1. Add people"), false);
+  assert.equal(soloBody.includes("Person 1"), false);
+  assert.equal(soloBody.includes("Male fit"), false);
+  assert.equal(soloBody.includes("Female fit"), false);
+  assert.equal(soloBody.includes("Fit for measurements"), false);
+  assert.equal(soloRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length, 1);
+  const addPeople = soloRenderer.root.findByProps({ "data-wearer-add-people": "true" });
+  assert.equal(textContent(addPeople), "Add people");
+  assert.equal(addWearerCalls, 0);
+  assert.equal(latestSolo.wearers.length, 1);
+
+  await act(async () => {
+    addPeople.props.onClick();
+  });
+  assert.equal(addWearerCalls, 0, "expand must not create a person");
+  assert.equal(latestSolo.wearers.length, 1);
+  const expandedBody = textContent(soloRenderer.root);
+  assert.match(
+    expandedBody,
+    /These clothes are for you\. Add another person if you are ordering for someone else\./,
+  );
+  assert.match(expandedBody, /1\. Add people/);
+  assert.match(expandedBody, /Fit for measurements/);
+  assert.match(expandedBody, /Male fit/);
+  assert.equal(expandedBody.includes("Person 1"), false);
+  const youNameInput = soloRenderer.root.findByProps({
+    "aria-label": "Name or nickname for You",
+  });
+  assert.equal(youNameInput.props.placeholder, "You");
+  assert.equal(
+    expandedBody.includes("2. Assign garments"),
+    false,
+    "Assign garments stays hidden until a second person exists",
+  );
+  assert.equal(soloRenderer.root.findAllByProps({ "data-wearer-people": "true" }).length, 1);
+
+  const addAnother = soloRenderer.root.findByProps({ "data-wearer-add-another": "true" });
+  await act(async () => {
+    addAnother.props.onClick();
+  });
+  assert.equal(addWearerCalls, 1);
+  assert.equal(latestSolo.wearers.length, 2);
+  assert.equal(
+    wearerAssignmentLabel(latestSolo.wearers[1].displayName, latestSolo.wearers[1].presentationOrder),
+    "Person 2",
+  );
+  assert.match(
+    textContent(soloRenderer.root),
+    /2\. Assign garments/,
+    "Assign garments appears once a second person exists",
+  );
+
+  await act(async () => {
+    soloRenderer.root.findByProps({ "data-wearer-only-for-me": "true" }).props.onClick();
+  });
+  assert.equal(latestSolo.wearers.length, 1);
+  assert.equal(soloRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length, 1);
+  assert.equal(textContent(soloRenderer.root).includes("1. Add people"), false);
+  assert.equal(textContent(soloRenderer.root).includes("2. Assign garments"), false);
+}
+
+console.log("PASS: wearer assignment panel solo-first people UX");
+
+{
+  const unfittedSolo = reconcileWearerOrder({
+    order: createEmptyWearerOrder(),
+    garmentKeys: ["base:shirt", "additional:shirt:1"],
+    compatibilityDemographic: null,
+    garments: [
+      { garmentKey: "base:shirt", garmentType: "shirt" },
+      { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+    ],
+    garmentTypeSelection: selection(),
+  });
+  assert.equal(unfittedSolo.wearers[0]?.fitContext ?? null, null);
+  let fitFirstRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    fitFirstRenderer = create(
+      <WearerAssignmentPanel
+        order={unfittedSolo}
+        presentation="fit"
+        activeWearerId={unfittedSolo.wearers[0]?.wearerId || null}
+        garments={[
+          { garmentKey: "base:shirt", garmentType: "shirt" },
+          { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+        ]}
+        garmentLabels={{
+          "base:shirt": "Standard Shirt",
+          "additional:shirt:1": "Standard Shirt 2",
+        }}
+        onSelectWearer={() => {}}
+        onAddWearer={() => {}}
+        onRenameWearer={() => {}}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => deleteWearer(unfittedSolo, wearerId)}
+        onAssignGarment={() => ({
+          status: "blocked",
+          code: "WEARER_NOT_FOUND",
+          order: unfittedSolo,
+        })}
+      />,
+    );
+  });
+  const fitFirstBody = textContent(fitFirstRenderer.root);
+  assert.match(
+    fitFirstBody,
+    /These clothes are for you\. Add another person if you are ordering for someone else\./,
+  );
+  assert.equal(fitFirstBody.includes("Male fit"), false);
+  assert.equal(fitFirstBody.includes("Female fit"), false);
+  assert.equal(fitFirstBody.includes("Fit for measurements"), false);
+  assert.equal(fitFirstRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length, 1);
+}
+
+console.log("PASS: wearer assignment panel hides fit on first screen");
+
+{
+  const collapseGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+  ];
+  const collapseOrder = reconcileWearerOrder({
+    order: createEmptyWearerOrder(),
+    garmentKeys: collapseGarments.map((garment) => garment.garmentKey),
+    compatibilityDemographic: "female",
+    garments: collapseGarments,
+    garmentTypeSelection: selection(),
+  });
+  let collapseCalls = 0;
+  const CollapseHarness = () => {
+    const [order, setOrder] = useState(collapseOrder);
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        presentation="solo"
+        activeWearerId={order.wearers[0]?.wearerId || null}
+        garments={collapseGarments}
+        garmentLabels={{
+          "base:shirt": "Standard Shirt",
+          "additional:shirt:1": "Standard Shirt 2",
+        }}
+        onSelectWearer={() => {}}
+        onAddWearer={(displayName, fitContext) => {
+          const result = addWearer({
+            order,
+            physicalGarmentCount: collapseGarments.length,
+            displayName,
+            fitContext,
+          });
+          if (result.status === "updated") setOrder(result.order);
+        }}
+        onRenameWearer={() => {}}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => {
+          const result = deleteWearer(order, wearerId);
+          if (result.status === "updated") setOrder(result.order);
+          return result;
+        }}
+        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order })}
+        onCollapseToSolo={() => {
+          collapseCalls += 1;
+        }}
+      />
+    );
+  };
+  let collapseRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    collapseRenderer = create(<CollapseHarness />);
+  });
+  await act(async () => {
+    collapseRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  await act(async () => {
+    collapseRenderer.root.findByProps({ "data-wearer-only-for-me": "true" }).props.onClick();
+  });
+  assert.equal(collapseCalls, 1, "Only for me must notify Design Studio to reconcile solo assignments");
+  assert.equal(collapseRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length, 1);
+}
+
+console.log("PASS: wearer assignment panel Only for me collapse reconciles");
+
+{
+  const defaultSoloOrder = reconcileWearerOrder({
+    order: createEmptyWearerOrder(),
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "female",
+    garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    garmentTypeSelection: selection(),
+  });
+  let defaultRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    defaultRenderer = create(
+      <WearerAssignmentPanel
+        order={defaultSoloOrder}
+        activeWearerId={defaultSoloOrder.wearers[0]?.wearerId || null}
+        garments={[{ garmentKey: "base:shirt", garmentType: "shirt" }]}
+        garmentLabels={{ "base:shirt": "Standard Shirt" }}
+        onSelectWearer={() => {}}
+        onAddWearer={() => {}}
+        onRenameWearer={() => {}}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => deleteWearer(defaultSoloOrder, wearerId)}
+        onAssignGarment={() => ({
+          status: "blocked",
+          code: "WEARER_NOT_FOUND",
+          order: defaultSoloOrder,
+        })}
+      />,
+    );
+  });
+  assert.equal(
+    defaultRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length,
+    1,
+    "presentation defaults to solo",
+  );
+  assert.equal(
+    defaultRenderer.root.findAllByProps({ "data-wearer-people": "true" }).length,
+    0,
+  );
+}
+
+console.log("PASS: wearer assignment panel presentation defaults to solo");
