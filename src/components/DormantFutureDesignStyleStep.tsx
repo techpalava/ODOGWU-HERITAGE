@@ -115,6 +115,9 @@ interface DormantFutureDesignStyleStepProps {
   onBack: () => void;
   onReturnToGarmentType: () => void;
   onContinue: () => void;
+  incompleteFocusRequestId?: number | null;
+  incompleteFocusOccurrenceToken?: string | null;
+  onIncompleteFocusHandled?: (requestId: number) => void;
 }
 
 const formatDisplayStyleLabel = (style: StyleCategory): string => {
@@ -234,8 +237,12 @@ export const DormantFutureDesignStyleStep = ({
   onBack,
   onReturnToGarmentType,
   onContinue,
+  incompleteFocusRequestId = null,
+  incompleteFocusOccurrenceToken = null,
+  onIncompleteFocusHandled,
 }: DormantFutureDesignStyleStepProps) => {
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const lastHandledIncompleteFocusRequestIdRef = useRef<number | null>(null);
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
   const dialogInitialFocusRef = useRef<HTMLButtonElement | null>(null);
   const dialogTriggerRef = useRef<HTMLElement | null>(null);
@@ -383,6 +390,51 @@ export const DormantFutureDesignStyleStep = ({
     }, 800);
     onAssignmentFeedbackHandled?.(assignmentFeedback.eventId);
   }, [assignmentFeedback, exactSetComplete, onAssignmentFeedbackHandled]);
+
+  useEffect(() => {
+    if (
+      incompleteFocusRequestId == null ||
+      !incompleteFocusOccurrenceToken ||
+      lastHandledIncompleteFocusRequestIdRef.current === incompleteFocusRequestId
+    ) {
+      return;
+    }
+    lastHandledIncompleteFocusRequestIdRef.current = incompleteFocusRequestId;
+    const token = incompleteFocusOccurrenceToken;
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setHighlightPrefersReducedMotion(prefersReducedMotion);
+    setHighlightedOccurrenceToken(token);
+    const focusCard = () => {
+      const card = garmentCardRefs.current.get(token);
+      card?.scrollIntoView({
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+        block: "center",
+      });
+      card?.focus({ preventScroll: true });
+    };
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      window.requestAnimationFrame(focusCard);
+    } else {
+      focusCard();
+    }
+    const clearTimer = window.setTimeout(() => {
+      setHighlightedOccurrenceToken((current) =>
+        current === token ? null : current,
+      );
+    }, 1200);
+    onIncompleteFocusHandled?.(incompleteFocusRequestId);
+    return () => window.clearTimeout(clearTimer);
+  }, [
+    incompleteFocusRequestId,
+    incompleteFocusOccurrenceToken,
+    onIncompleteFocusHandled,
+  ]);
 
   useEffect(
     () => () => {
@@ -756,6 +808,13 @@ export const DormantFutureDesignStyleStep = ({
         data-occurrence-garment-key={occurrence.target.garmentKey}
         data-design-assignment-feedback={
           isAssignmentFeedbackTarget ? "true" : undefined
+        }
+        data-contextual-reentry-focus={
+          isAssignmentFeedbackTarget &&
+          incompleteFocusOccurrenceToken ===
+            occurrence.target.occurrenceToken
+            ? "design_style"
+            : undefined
         }
         className={`flex min-w-0 flex-col gap-1.5 border-l-2 px-3 py-2 ${
           highlightPrefersReducedMotion

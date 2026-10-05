@@ -78,6 +78,10 @@ import {
   formatFabricStockExhaustedCopy,
 } from "../utils/fabricStockAvailability";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
+import {
+  CONTEXTUAL_REENTRY_AUTO_DISMISS_MS,
+  type ContextualReentryGuidance,
+} from "../utils/designStudioContextualReentryGuidance";
 
 export { isUsableFabricColorHex } from "./AssignedFabricPreview";
 
@@ -141,6 +145,11 @@ interface DormantFutureFabricStepProps {
   onChooseAnotherFabric: () => void;
   onCancelPendingFabric: () => void;
   orderSummary?: ReactNode;
+  contextualReentryGuidance?: ContextualReentryGuidance | null;
+  onDismissContextualReentryGuidance?: () => void;
+  unassignedFocusRequestId?: number | null;
+  unassignedFocusGarmentKey?: string | null;
+  onUnassignedFocusHandled?: (requestId: number) => void;
 }
 
 const OTHER_ADDITIONAL_GARMENT_PENDING_MESSAGE =
@@ -359,8 +368,14 @@ export const DormantFutureFabricStep = ({
   onChooseAnotherFabric,
   onCancelPendingFabric,
   orderSummary = null,
+  contextualReentryGuidance = null,
+  onDismissContextualReentryGuidance,
+  unassignedFocusRequestId = null,
+  unassignedFocusGarmentKey = null,
+  onUnassignedFocusHandled,
 }: DormantFutureFabricStepProps) => {
   void onUseSameFabricForGarment;
+  const lastHandledUnassignedFocusRequestIdRef = useRef<number | null>(null);
   const [isCatalogueOpen, setIsCatalogueOpen] = useState(false);
   const [catalogueTargetGarmentKey, setCatalogueTargetGarmentKey] = useState<
     string | null
@@ -519,6 +534,16 @@ export const DormantFutureFabricStep = ({
     },
     [],
   );
+
+  useEffect(() => {
+    if (!contextualReentryGuidance || !onDismissContextualReentryGuidance) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      onDismissContextualReentryGuidance();
+    }, CONTEXTUAL_REENTRY_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [contextualReentryGuidance, onDismissContextualReentryGuidance]);
   const unassignedTargets = getFutureUnassignedFabricTargets({
     garmentTypeSelection,
     fabricAllocationState,
@@ -909,6 +934,26 @@ export const DormantFutureFabricStep = ({
       focus();
     }
   };
+
+  useEffect(() => {
+    if (
+      unassignedFocusRequestId == null ||
+      !unassignedFocusGarmentKey ||
+      lastHandledUnassignedFocusRequestIdRef.current === unassignedFocusRequestId
+    ) {
+      return;
+    }
+    lastHandledUnassignedFocusRequestIdRef.current = unassignedFocusRequestId;
+    navigateToStep2PostAssignmentDestination(
+      unassignedFocusGarmentKey,
+      "next_unassigned",
+    );
+    onUnassignedFocusHandled?.(unassignedFocusRequestId);
+  }, [
+    unassignedFocusRequestId,
+    unassignedFocusGarmentKey,
+    onUnassignedFocusHandled,
+  ]);
 
   const completeCatalogueAssignment = (garmentKey: string) => {
     catalogueFocusRequestRef.current += 1;
@@ -2136,6 +2181,31 @@ export const DormantFutureFabricStep = ({
             </div>
           </div>
         </div>
+
+        {contextualReentryGuidance ? (
+          <div
+            role="status"
+            aria-live="polite"
+            data-contextual-reentry-guidance="fabric"
+            data-contextual-reentry-cause={contextualReentryGuidance.cause}
+            className="mt-4 flex items-start gap-3 rounded-xl border border-heritage-gold/40 bg-heritage-cream/50 px-4 py-3 text-sm leading-relaxed text-heritage-ink"
+          >
+            <p className="min-w-0 flex-1 font-semibold text-heritage-green">
+              {contextualReentryGuidance.message}
+            </p>
+            {onDismissContextualReentryGuidance ? (
+              <button
+                type="button"
+                onClick={onDismissContextualReentryGuidance}
+                aria-label="Dismiss re-entry guidance"
+                data-contextual-reentry-dismiss="true"
+                className="shrink-0 rounded-lg p-1 text-heritage-ink/60 transition hover:bg-heritage-green/10 hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+              >
+                <X aria-hidden="true" size={16} />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         {orphanRepairAnnouncement ? (
           <p
