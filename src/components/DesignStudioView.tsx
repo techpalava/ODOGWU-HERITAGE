@@ -50,7 +50,7 @@ import { CapacityService } from "../services/CapacityService";
 import { OrderRoutingEngine } from "../engine/OrderRoutingEngine";
 import { FabricAllocationStateEngine } from "../engine/FabricAllocationStateEngine";
 import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
-import { GarmentTypeStep } from "./GarmentTypeStep";
+import { GarmentTypeStep, getGarmentTypeStepLabel } from "./GarmentTypeStep";
 import { DormantFutureFabricStep } from "./DormantFutureFabricStep";
 import { DormantFutureDesignStyleStep } from "./DormantFutureDesignStyleStep";
 import { DesignStudioJourneyStepper, DESIGN_STUDIO_STEPS } from "./DesignStudioJourneyStepper";
@@ -73,12 +73,22 @@ import { DesignStudioOrderSummary } from "./DesignStudioOrderSummary";
 import { StudioOrderContextIndicator } from "./CustomerOrderContext";
 import {
   createDesignStudioNavigationRequest,
+  getDesignStyleIncompleteNavigationTarget,
+  getFabricUnassignedNavigationTarget,
   getMainStageNavigationTarget,
   getOrderSummaryNavigationTarget,
   getValidationNavigationTarget,
   type DesignStudioNavigationRequest,
   type DesignStudioNavigationTarget,
 } from "../utils/designStudioNavigation";
+import {
+  captureFabricReentryBaseline,
+  detectFabricContextualReentryGuidance,
+  getFirstUnassignedFabricGarmentKey,
+  type ContextualReentryGuidance,
+  type FabricReentryBaseline,
+} from "../utils/designStudioContextualReentryGuidance";
+import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import {
   canonicalOrderIdentitiesMatch,
@@ -896,6 +906,23 @@ export default function DesignStudioView({
   const [futureStageNavigationRequest, setFutureStageNavigationRequest] =
     useState<DesignStudioNavigationRequest | null>(null);
   const futureStageNavigationTargetRef = useRef<HTMLElement | null>(null);
+  const fabricReentryBaselineRef = useRef<FabricReentryBaseline | null>(null);
+  const fabricReentryDetectInputsRef = useRef<{
+    garmentTypeSelection: GarmentTypeStepSelection;
+    fabricAllocationState: FabricAllocationState;
+    requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+    fabricHistoricallyVisited: boolean;
+    fabricStageComplete: boolean;
+    designStyleComplete: boolean;
+    firstIncompleteDesignStyleOccurrenceToken: string | null;
+    labelForGarmentKey: (garmentKey: string, garmentType: string) => string;
+  } | null>(null);
+  const [activeContextualReentryGuidance, setActiveContextualReentryGuidance] =
+    useState<ContextualReentryGuidance | null>(null);
+  const [fabricUnassignedFocusRequest, setFabricUnassignedFocusRequest] =
+    useState<{ id: number; garmentKey: string } | null>(null);
+  const [designStyleIncompleteFocusRequest, setDesignStyleIncompleteFocusRequest] =
+    useState<{ id: number; occurrenceToken: string } | null>(null);
   /**
    * Only explicit customer navigation is routed through this helper. Hydration,
    * safety correction, and modal/sub-flow state updates continue to set the
@@ -906,13 +933,86 @@ export default function DesignStudioView({
       stage: DesignStudioStageId,
       target: DesignStudioNavigationTarget = getMainStageNavigationTarget(),
     ) => {
+      const detectInputs = fabricReentryDetectInputsRef.current;
+      let effectiveStage = stage;
+      let effectiveTarget = target;
+      let redirectedForIncompleteFabric = false;
+      let redirectedForIncompleteDesignStyle = false;
+
+      if (
+        detectInputs &&
+        !detectInputs.fabricStageComplete &&
+        effectiveStage !== "garment_type" &&
+        effectiveStage !== "fabric"
+      ) {
+        effectiveStage = "fabric";
+        redirectedForIncompleteFabric = true;
+      } else if (
+        detectInputs &&
+        !detectInputs.designStyleComplete &&
+        effectiveStage !== "garment_type" &&
+        effectiveStage !== "fabric" &&
+        effectiveStage !== "design_style"
+      ) {
+        effectiveStage = "design_style";
+        redirectedForIncompleteDesignStyle = true;
+      }
+
+      const reentryGuidance =
+        effectiveStage === "fabric" && detectInputs
+          ? detectFabricContextualReentryGuidance({
+              baseline: fabricReentryBaselineRef.current,
+              fabricHistoricallyVisited: detectInputs.fabricHistoricallyVisited,
+              garmentTypeSelection: detectInputs.garmentTypeSelection,
+              fabricAllocationState: detectInputs.fabricAllocationState,
+              requiredPhysicalOccurrences:
+                detectInputs.requiredPhysicalOccurrences,
+              labelForGarmentKey: detectInputs.labelForGarmentKey,
+            })
+          : null;
+
+      if (effectiveStage === "fabric" && detectInputs) {
+        const focusGarmentKey =
+          effectiveTarget.kind === "fabric_unassigned"
+            ? effectiveTarget.garmentKey
+            : (reentryGuidance?.focusGarmentKey ??
+              (redirectedForIncompleteFabric ||
+              effectiveTarget.kind === "validation_target"
+                ? getFirstUnassignedFabricGarmentKey({
+                    garmentTypeSelection: detectInputs.garmentTypeSelection,
+                    fabricAllocationState: detectInputs.fabricAllocationState,
+                    requiredPhysicalOccurrences:
+                      detectInputs.requiredPhysicalOccurrences,
+                  })
+                : null));
+        if (focusGarmentKey) {
+          effectiveTarget = getFabricUnassignedNavigationTarget(focusGarmentKey);
+        }
+      }
+
+      if (effectiveStage === "design_style" && detectInputs) {
+        const focusOccurrenceToken =
+          effectiveTarget.kind === "design_style_incomplete"
+            ? effectiveTarget.occurrenceToken
+            : redirectedForIncompleteDesignStyle ||
+                effectiveTarget.kind === "validation_target" ||
+                effectiveTarget.kind === "stage_top"
+              ? detectInputs.firstIncompleteDesignStyleOccurrenceToken
+              : null;
+        if (focusOccurrenceToken) {
+          effectiveTarget =
+            getDesignStyleIncompleteNavigationTarget(focusOccurrenceToken);
+        }
+      }
+
       futureStageNavigationRequestIdRef.current += 1;
-      setFutureStageId(stage);
+      setFutureStageId(effectiveStage);
       setFutureStageNavigationRequest(
         createDesignStudioNavigationRequest({
           id: futureStageNavigationRequestIdRef.current,
-          stage,
-          target,
+          stage: effectiveStage,
+          target: effectiveTarget,
+          reentryGuidance,
         }),
       );
     },
@@ -1653,6 +1753,33 @@ export default function DesignStudioView({
     step1GarmentTypeSelection: garmentTypeSelection,
     effectiveJourneyGarmentTypeSelection,
   });
+  const fabricOccurrenceLabels = projectOccurrenceDisplayLabels(
+    fabricTransactionPhysicalOccurrences,
+  );
+  const fabricStageIndex = DESIGN_STUDIO_STEPS.findIndex(
+    (step) => step.id === "fabric",
+  );
+  fabricReentryDetectInputsRef.current = {
+    garmentTypeSelection: fabricStepGarmentTypeSelection,
+    fabricAllocationState,
+    requiredPhysicalOccurrences: fabricTransactionPhysicalOccurrences,
+    fabricHistoricallyVisited:
+      fabricStageIndex >= 0 && fabricStageIndex <= highestUnlockedStageIndex,
+    fabricStageComplete: futureFabricStageCompletion.isComplete,
+    designStyleComplete:
+      fabricReentryDetectInputsRef.current?.designStyleComplete ?? true,
+    firstIncompleteDesignStyleOccurrenceToken:
+      fabricReentryDetectInputsRef.current
+        ?.firstIncompleteDesignStyleOccurrenceToken ?? null,
+    labelForGarmentKey: (garmentKey, garmentType) => {
+      const occurrenceLabel = fabricOccurrenceLabels.get(garmentKey);
+      if (occurrenceLabel) return occurrenceLabel.conciseLabel;
+      if (garmentType === "other") return "Other Garment";
+      return getGarmentTypeStepLabel(
+        garmentType as Exclude<FabricGarmentType, "other">,
+      );
+    },
+  };
   const futureFabricComposition = getFutureFabricCapacityComposition(
     effectiveJourneyGarmentTypeSelection,
   );
@@ -2007,6 +2134,17 @@ export default function DesignStudioView({
   );
   const isFutureDesignSourceReadyForCustomDetails =
     futureDesignStyleStepProjection.isComplete;
+  const firstIncompleteDesignStyleOccurrenceToken =
+    futureDesignStyleStepProjection.occurrences.find(
+      (occurrence) => occurrence.status !== "complete",
+    )?.target.occurrenceToken ?? null;
+  if (fabricReentryDetectInputsRef.current) {
+    fabricReentryDetectInputsRef.current = {
+      ...fabricReentryDetectInputsRef.current,
+      designStyleComplete: isFutureDesignSourceReadyForCustomDetails,
+      firstIncompleteDesignStyleOccurrenceToken,
+    };
+  }
   futureDesignStyleMutationAuthorityRef.current =
     currentFutureDesignStyleDraftHydration?.result.ledger
       ? {
@@ -3683,6 +3821,22 @@ export default function DesignStudioView({
 
   useEffect(() => {
     if (previousFutureStageIdRef.current !== futureStageId) {
+      if (previousFutureStageIdRef.current === "fabric") {
+        const detectInputs = fabricReentryDetectInputsRef.current;
+        if (detectInputs) {
+          fabricReentryBaselineRef.current = captureFabricReentryBaseline({
+            garmentTypeSelection: detectInputs.garmentTypeSelection,
+            fabricAllocationState: detectInputs.fabricAllocationState,
+            requiredPhysicalOccurrences:
+              detectInputs.requiredPhysicalOccurrences,
+          });
+        }
+        setActiveContextualReentryGuidance(null);
+        setFabricUnassignedFocusRequest(null);
+      }
+      if (previousFutureStageIdRef.current === "design_style") {
+        setDesignStyleIncompleteFocusRequest(null);
+      }
       futureGarmentRemovalStageRetentionLeaseRef.current = null;
       futureGarmentRemovalConfirmationGenerationRef.current += 1;
       futureGarmentRemovalConfirmingRef.current = false;
@@ -3709,6 +3863,51 @@ export default function DesignStudioView({
   useLayoutEffect(() => {
     const request = futureStageNavigationRequest;
     if (!request || request.stage !== futureStageId) return;
+
+    if (
+      request.reentryGuidance &&
+      request.reentryGuidance.destinationStageId === futureStageId
+    ) {
+      setActiveContextualReentryGuidance(request.reentryGuidance);
+      const detectInputs = fabricReentryDetectInputsRef.current;
+      if (detectInputs) {
+        fabricReentryBaselineRef.current = captureFabricReentryBaseline({
+          garmentTypeSelection: detectInputs.garmentTypeSelection,
+          fabricAllocationState: detectInputs.fabricAllocationState,
+          requiredPhysicalOccurrences:
+            detectInputs.requiredPhysicalOccurrences,
+        });
+      }
+    }
+
+    const unassignedFocusGarmentKey =
+      request.target.kind === "fabric_unassigned"
+        ? request.target.garmentKey
+        : (request.reentryGuidance?.focusGarmentKey ?? null);
+    if (unassignedFocusGarmentKey && request.stage === "fabric") {
+      setFabricUnassignedFocusRequest({
+        id: request.id,
+        garmentKey: unassignedFocusGarmentKey,
+      });
+      setFutureStageNavigationRequest((current) =>
+        current?.id === request.id ? null : current,
+      );
+      return;
+    }
+
+    if (
+      request.target.kind === "design_style_incomplete" &&
+      request.stage === "design_style"
+    ) {
+      setDesignStyleIncompleteFocusRequest({
+        id: request.id,
+        occurrenceToken: request.target.occurrenceToken,
+      });
+      setFutureStageNavigationRequest((current) =>
+        current?.id === request.id ? null : current,
+      );
+      return;
+    }
 
     // Exact Additional Garment requests are fulfilled by Step 4 after its
     // occurrence cards mount. They must not first scroll to the stage top.
@@ -5470,10 +5669,21 @@ export default function DesignStudioView({
     });
     if (!correctedStageId || correctedStageId === futureStageId) return;
     if (shouldRetainCurrentStageAfterGarmentRemoval(futureStageId)) return;
+    if (correctedStageId === "fabric") {
+      // Bounce with unassigned-card focus instead of a silent stage-top dump.
+      navigateToFutureStage("fabric", getValidationNavigationTarget());
+      return;
+    }
+    if (correctedStageId === "design_style") {
+      // Bounce to the incomplete occurrence, not Design Style stage top / capacity.
+      navigateToFutureStage("design_style", getValidationNavigationTarget());
+      return;
+    }
     setFutureStageId(correctedStageId);
   }, [
     futureStageId,
     futureFabricStageCompletion.isComplete,
+    navigateToFutureStage,
     garmentTypeStageCompletion.isComplete,
     isFutureDesignSourceReadyForCustomDetails,
     isFutureStep4CustomDetailsReady,
@@ -9245,6 +9455,23 @@ export default function DesignStudioView({
             futureGarmentFabricPlanning.selectedFabricQuantity
           }
           constructionPrice={futureConstructionPrice}
+          contextualReentryGuidance={
+            activeContextualReentryGuidance?.destinationStageId === "fabric"
+              ? activeContextualReentryGuidance
+              : null
+          }
+          onDismissContextualReentryGuidance={() =>
+            setActiveContextualReentryGuidance(null)
+          }
+          unassignedFocusRequestId={fabricUnassignedFocusRequest?.id ?? null}
+          unassignedFocusGarmentKey={
+            fabricUnassignedFocusRequest?.garmentKey ?? null
+          }
+          onUnassignedFocusHandled={(requestId) => {
+            setFabricUnassignedFocusRequest((current) =>
+              current?.id === requestId ? null : current,
+            );
+          }}
           onAssignFabricToGarment={handleAssignFutureFabricToGarment}
           onChangeFabricAllocationProduct={handleChangeFutureFabricAllocationProduct}
           onRemoveFabricFromGarment={handleRemoveFutureFabricAssignment}
@@ -9329,6 +9556,17 @@ export default function DesignStudioView({
           onAssignmentFeedbackHandled={(eventId) => {
             setFutureDesignStyleAssignmentFeedback((current) =>
               current?.eventId === eventId ? null : current,
+            );
+          }}
+          incompleteFocusRequestId={
+            designStyleIncompleteFocusRequest?.id ?? null
+          }
+          incompleteFocusOccurrenceToken={
+            designStyleIncompleteFocusRequest?.occurrenceToken ?? null
+          }
+          onIncompleteFocusHandled={(requestId) => {
+            setDesignStyleIncompleteFocusRequest((current) =>
+              current?.id === requestId ? null : current,
             );
           }}
           onSelectOccurrence={handleSelectFutureDesignStyleOccurrence}

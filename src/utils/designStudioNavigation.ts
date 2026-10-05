@@ -1,4 +1,5 @@
 import type { DesignStudioStageId } from "../types";
+import type { ContextualReentryGuidance } from "./designStudioContextualReentryGuidance";
 
 /**
  * A customer-initiated Design Studio move. State changes caused by hydration,
@@ -8,23 +9,34 @@ import type { DesignStudioStageId } from "../types";
 export type DesignStudioNavigationTarget =
   | { kind: "stage_top" }
   | { kind: "additional_garment"; garmentKey: string | null }
-  | { kind: "validation_target" };
+  | { kind: "validation_target" }
+  | { kind: "fabric_unassigned"; garmentKey: string }
+  | { kind: "design_style_incomplete"; occurrenceToken: string };
 
 export interface DesignStudioNavigationRequest {
   readonly id: number;
   readonly stage: DesignStudioStageId;
   readonly target: DesignStudioNavigationTarget;
+  /** Transient Contextual Re-entry Guidance; omitted on ordinary moves. */
+  readonly reentryGuidance?: ContextualReentryGuidance | null;
 }
 
 export const createDesignStudioNavigationRequest = ({
   id,
   stage,
   target = { kind: "stage_top" },
+  reentryGuidance = null,
 }: {
   id: number;
   stage: DesignStudioStageId;
   target?: DesignStudioNavigationTarget;
-}): DesignStudioNavigationRequest => ({ id, stage, target });
+  reentryGuidance?: ContextualReentryGuidance | null;
+}): DesignStudioNavigationRequest => ({
+  id,
+  stage,
+  target,
+  reentryGuidance,
+});
 
 /** Main-stage moves always land at the destination top. */
 export const getMainStageNavigationTarget = (): DesignStudioNavigationTarget => ({
@@ -49,4 +61,20 @@ export const getOrderSummaryNavigationTarget = ({
 
 export const getValidationNavigationTarget = (): DesignStudioNavigationTarget => ({
   kind: "validation_target",
+});
+
+/** Scroll/flash a specific unassigned Fabric garment card. */
+export const getFabricUnassignedNavigationTarget = (
+  garmentKey: string,
+): DesignStudioNavigationTarget => ({
+  kind: "fabric_unassigned",
+  garmentKey,
+});
+
+/** Scroll/highlight a Design Style occurrence that still needs a design. */
+export const getDesignStyleIncompleteNavigationTarget = (
+  occurrenceToken: string,
+): DesignStudioNavigationTarget => ({
+  kind: "design_style_incomplete",
+  occurrenceToken,
 });
