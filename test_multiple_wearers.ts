@@ -87,6 +87,54 @@ assert.equal(maleOrder.wearers[0].fitContext, "male");
 assert.equal(maleOrder.assignmentByGarmentKey["base:shirt"], maleOrder.wearers[0].wearerId);
 assert.equal(maleOrder.assignmentByGarmentKey["base:dress"], undefined);
 
+{
+  const nullFitSolo = reconcileWearerOrder({
+    order: {
+      schemaVersion: 2,
+      wearers: [
+        createWearerProfile({
+          wearerId: "wearer-sole-null-fit",
+          displayName: "",
+          fitContext: null,
+          presentationOrder: 0,
+        }),
+      ],
+      assignmentByGarmentKey: {},
+    },
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "female",
+    garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    garmentTypeSelection: selection("female"),
+  });
+  assert.equal(nullFitSolo.wearers[0]?.fitContext, "female");
+  assert.equal(
+    nullFitSolo.assignmentByGarmentKey["base:shirt"],
+    "wearer-sole-null-fit",
+    "demographic fit must unlock sole auto-assign",
+  );
+
+  const stillNull = reconcileWearerOrder({
+    order: {
+      schemaVersion: 2,
+      wearers: [
+        createWearerProfile({
+          wearerId: "wearer-sole-null-fit",
+          displayName: "",
+          fitContext: null,
+          presentationOrder: 0,
+        }),
+      ],
+      assignmentByGarmentKey: {},
+    },
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: null,
+    garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    garmentTypeSelection: selection("male"),
+  });
+  assert.equal(stillNull.wearers[0]?.fitContext, null);
+  assert.equal(stillNull.assignmentByGarmentKey["base:shirt"], undefined);
+}
+
 const renamed = renameWearer(maleOrder, maleOrder.wearers[0].wearerId, "Amaka");
 assert.equal(renamed.status, "updated");
 if (renamed.status === "updated") {
@@ -564,18 +612,11 @@ act(() => {
     onContinue: () => undefined,
   }));
 });
-const buttonText = (node: { props?: { children?: unknown } }): string => {
-  const children = node.props?.children;
-  if (typeof children === "string") return children;
-  if (Array.isArray(children)) {
-    return children.map((child) => typeof child === "string" ? child : "").join("");
-  }
-  return "";
-};
-const continueButton = continueRenderer.root.findAllByType("button").find((node) =>
-  buttonText(node).includes("Continue to Summary"),
+const continueButton = continueRenderer.root.findAllByType("button").find(
+  (node) => node.props["aria-label"] === "Continue to Summary",
 );
-assert.equal(continueButton?.props.disabled, !selectChief.completion.complete);
+assert.ok(continueButton, "expected Continue to Summary control");
+assert.equal(continueButton.props.disabled, !selectChief.completion.complete);
 assert.equal(selectChief.completion.complete, false);
 
 console.log("multiple wearers domain tests passed");

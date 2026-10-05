@@ -82,6 +82,12 @@ interface DormantFutureMeasurementStepProps {
   activeWearerLabel?: string | null;
   /** Garments assigned to the active person, for matching clarity. */
   activeWearerGarmentLabels?: readonly string[];
+  /**
+   * Solo order with null fit after demographic reconcile — compact fit control
+   * in this card so Summary can unlock without opening Add people.
+   */
+  soleFitSelectionNeeded?: boolean;
+  onSetSoleFitContext?: (fitContext: "male" | "female") => void;
   onChange: (state: FutureMeasurementStateV1) => void;
   onRouteChange: (route: MeasurementMethodId) => void;
   onBack: () => void;
@@ -579,6 +585,8 @@ export const DormantFutureMeasurementStep = ({
   restoredGarmentKey = null,
   activeWearerLabel = null,
   activeWearerGarmentLabels = [],
+  soleFitSelectionNeeded = false,
+  onSetSoleFitContext,
   onChange,
   onRouteChange,
   onBack,
@@ -977,6 +985,32 @@ export const DormantFutureMeasurementStep = ({
               )}
             </div>
           </div>
+        ) : null}
+        {soleFitSelectionNeeded && onSetSoleFitContext ? (
+          <fieldset
+            className="mt-5 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/40 p-4"
+            data-measurement-sole-fit="true"
+          >
+            <legend className="px-1 text-sm font-semibold text-heritage-ink">
+              Fit for measurements
+            </legend>
+            <p className="mt-1 text-xs text-heritage-ink/60">
+              Used to determine the correct measurement requirements.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              {(["male", "female"] as const).map((fitContext) => (
+                <button
+                  key={fitContext}
+                  type="button"
+                  data-measurement-sole-fit-option={fitContext}
+                  className="flex min-h-11 items-center justify-center rounded-xl border border-heritage-gold/30 bg-white px-3 font-semibold text-heritage-green"
+                  onClick={() => onSetSoleFitContext(fitContext)}
+                >
+                  {fitContext === "male" ? "Male fit" : "Female fit"}
+                </button>
+              ))}
+            </div>
+          </fieldset>
         ) : null}
       </header>
 

@@ -9626,6 +9626,33 @@ export default function DesignStudioView({
           activeWearerLabel={measurementActiveWearerLabel}
           activeWearerGarmentLabels={measurementActiveWearerGarmentLabels}
           nextIncompleteWearer={measurementNextIncompleteWearer}
+          soleFitSelectionNeeded={
+            wearerOrderForPlan.wearers.length === 1 &&
+            wearerOrderForPlan.wearers[0]?.fitContext === null
+          }
+          onSetSoleFitContext={(fitContext) => {
+            const sole = wearerOrderForPlan.wearers[0];
+            if (!sole) return;
+            const result = setWearerFitContext(
+              wearerOrderForPlan,
+              sole.wearerId,
+              fitContext,
+            );
+            if (result.status !== "updated") return;
+            const nextOrder = reconcileWearerOrder({
+              order: result.order,
+              garmentKeys: futureMeasurementPhysicalGarments.map(
+                (garment) => garment.garmentKey,
+              ),
+              compatibilityDemographic:
+                effectiveJourneyGarmentTypeSelection.demographic,
+              garments: futureMeasurementPhysicalGarments,
+              garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+              additionalGarmentConstructions:
+                designSelections.additionalGarmentConstructions,
+            });
+            setWearerOrder(nextOrder);
+          }}
           onGoToWearer={(wearerId) => {
             const next = wearerOrderForPlan.wearers.find(
               (wearer) => wearer.wearerId === wearerId,

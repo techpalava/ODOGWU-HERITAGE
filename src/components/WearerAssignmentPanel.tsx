@@ -38,7 +38,7 @@ const assignmentRejectionMessage = (
 
 export const WearerAssignmentPanel = ({
   order,
-  presentation = "people",
+  presentation = "solo",
   activeWearerId,
   garments,
   garmentLabels,
@@ -150,7 +150,7 @@ export const WearerAssignmentPanel = ({
       className="mb-6 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm"
       data-wearer-people="true"
     >
-      <p className="text-sm text-heritage-ink/70">These clothes are for you.</p>
+      <p className="text-sm text-heritage-ink/70">{SOLO_FIRST_COPY}</p>
       <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
         <h3 className="font-serif text-lg font-bold text-heritage-green">
           People in this order
@@ -294,82 +294,86 @@ export const WearerAssignmentPanel = ({
         ))}
       </div>
       {addAnotherPerson}
-      <h4 className="mt-8 text-sm font-bold text-heritage-green">
-        2. Assign garments
-      </h4>
-      <p className="mt-1 text-sm text-heritage-ink/65">
-        Choose who will wear each garment. Every garment must be assigned before
-        you continue.
-      </p>
-      <ul className="mt-4 space-y-3">
-        {garments.map((garment) => {
-          const label = labelFor(garment);
-          const assignedWearerId = order.assignmentByGarmentKey[garment.garmentKey] ?? "";
-          const rejection = assignmentRejectionByGarmentKey[garment.garmentKey];
-          const rejectedWearer = rejection
-            ? wearers.find((candidate) => candidate.wearerId === rejection.wearerId)
-            : undefined;
-          return (
-            <li key={garment.garmentKey} className="grid items-center gap-2 rounded-2xl border border-heritage-gold/20 p-3 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)] sm:gap-4">
-              <div className="font-semibold text-heritage-green">{label}</div>
-              <label className="grid gap-1 text-xs font-semibold uppercase tracking-wide text-heritage-ink/55">
-                For:
-                <select
-                  aria-label={`Wearer for ${label}`}
-                  className="min-h-11 w-full rounded-xl border border-heritage-gold/30 bg-white px-3 text-sm font-normal normal-case tracking-normal text-heritage-ink"
-                  value={assignedWearerId}
-                  onChange={(event) => {
-                    const wearerId = event.currentTarget.value;
-                    if (!wearerId) return;
-                    const result = onAssignGarment(garment.garmentKey, wearerId);
-                    if (result.status === "updated") {
-                      setAssignmentRejectionByGarmentKey((current) => {
-                        if (!(garment.garmentKey in current)) return current;
-                        const next = { ...current };
-                        delete next[garment.garmentKey];
-                        return next;
-                      });
-                      return;
-                    }
-                    if (
-                      result.code !== "WEARER_FIT_REQUIRED" &&
-                      result.code !== "GARMENT_INELIGIBLE_FOR_WEARER"
-                    ) {
-                      return;
-                    }
-                    setAssignmentRejectionByGarmentKey((current) => ({
-                      ...current,
-                      [garment.garmentKey]: {
-                        code: result.code,
-                        wearerId,
-                      },
-                    }));
-                  }}
-                >
-                  <option value="" disabled>Choose a person</option>
-                  {wearers.map((wearer) => (
-                    <option key={wearer.wearerId} value={wearer.wearerId}>
-                      {labelForWearer(wearer)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {rejection ? (
-                <p role="alert" className="mt-1 text-sm font-semibold text-red-700">
-                  {assignmentRejectionMessage(
-                    rejection.code,
-                    rejectedWearer ? labelForWearer(rejectedWearer) : "",
-                  )}
-                </p>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-      {garmentsRemainUnassigned ? (
-        <p className="mt-4 text-sm font-semibold text-heritage-ink">
-          Assign all garments to continue.
-        </p>
+      {wearers.length > 1 ? (
+        <>
+          <h4 className="mt-8 text-sm font-bold text-heritage-green">
+            2. Assign garments
+          </h4>
+          <p className="mt-1 text-sm text-heritage-ink/65">
+            Choose who will wear each garment. Every garment must be assigned before
+            you continue.
+          </p>
+          <ul className="mt-4 space-y-3">
+            {garments.map((garment) => {
+              const label = labelFor(garment);
+              const assignedWearerId = order.assignmentByGarmentKey[garment.garmentKey] ?? "";
+              const rejection = assignmentRejectionByGarmentKey[garment.garmentKey];
+              const rejectedWearer = rejection
+                ? wearers.find((candidate) => candidate.wearerId === rejection.wearerId)
+                : undefined;
+              return (
+                <li key={garment.garmentKey} className="grid items-center gap-2 rounded-2xl border border-heritage-gold/20 p-3 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)] sm:gap-4">
+                  <div className="font-semibold text-heritage-green">{label}</div>
+                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-wide text-heritage-ink/55">
+                    For:
+                    <select
+                      aria-label={`Wearer for ${label}`}
+                      className="min-h-11 w-full rounded-xl border border-heritage-gold/30 bg-white px-3 text-sm font-normal normal-case tracking-normal text-heritage-ink"
+                      value={assignedWearerId}
+                      onChange={(event) => {
+                        const wearerId = event.currentTarget.value;
+                        if (!wearerId) return;
+                        const result = onAssignGarment(garment.garmentKey, wearerId);
+                        if (result.status === "updated") {
+                          setAssignmentRejectionByGarmentKey((current) => {
+                            if (!(garment.garmentKey in current)) return current;
+                            const next = { ...current };
+                            delete next[garment.garmentKey];
+                            return next;
+                          });
+                          return;
+                        }
+                        if (
+                          result.code !== "WEARER_FIT_REQUIRED" &&
+                          result.code !== "GARMENT_INELIGIBLE_FOR_WEARER"
+                        ) {
+                          return;
+                        }
+                        setAssignmentRejectionByGarmentKey((current) => ({
+                          ...current,
+                          [garment.garmentKey]: {
+                            code: result.code,
+                            wearerId,
+                          },
+                        }));
+                      }}
+                    >
+                      <option value="" disabled>Choose a person</option>
+                      {wearers.map((wearer) => (
+                        <option key={wearer.wearerId} value={wearer.wearerId}>
+                          {labelForWearer(wearer)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {rejection ? (
+                    <p role="alert" className="mt-1 text-sm font-semibold text-red-700">
+                      {assignmentRejectionMessage(
+                        rejection.code,
+                        rejectedWearer ? labelForWearer(rejectedWearer) : "",
+                      )}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+          {garmentsRemainUnassigned ? (
+            <p className="mt-4 text-sm font-semibold text-heritage-ink">
+              Assign all garments to continue.
+            </p>
+          ) : null}
+        </>
       ) : null}
     </section>
   );

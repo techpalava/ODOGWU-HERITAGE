@@ -465,6 +465,12 @@ export const reconcileWearerOrder = ({
       wearer,
     ),
   );
+  if (wearers.length === 1) {
+    const inferredFit = resolveNewWearerFitContext(compatibilityDemographic);
+    if (wearers[0].fitContext === null && inferredFit !== null) {
+      wearers = [{ ...wearers[0], fitContext: inferredFit }];
+    }
+  }
   if (wearers.length === 1 && garmentTypeSelection) {
     const only = wearers[0];
     for (const garmentKey of uniqueKeys) {

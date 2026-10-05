@@ -414,6 +414,62 @@ assert.equal(
   "Only for me / solo must not show Assign person chips",
 );
 
+{
+  let soleFitChoice: "male" | "female" | null = null;
+  let soleFitRenderer!: ReturnType<typeof create>;
+  act(() => {
+    soleFitRenderer = create(createElement(DormantFutureMeasurementStep, {
+      plan: shirtOnlyPlan,
+      state: completeShirt,
+      physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+      multiPersonAssignmentActive: false,
+      soleFitSelectionNeeded: true,
+      onSetSoleFitContext: (fitContext: "male" | "female") => {
+        soleFitChoice = fitContext;
+      },
+      orderMeasurementsComplete: false,
+      onChange: () => undefined,
+      onRouteChange: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    }));
+  });
+  assert.equal(
+    soleFitRenderer.root.findAllByProps({ "data-measurement-sole-fit": "true" }).length,
+    1,
+    "compact sole-fit UI appears when fit is still null",
+  );
+  assert.match(headingText(soleFitRenderer.root), /Fit for measurements/);
+  act(() => {
+    soleFitRenderer.root
+      .findByProps({ "data-measurement-sole-fit-option": "female" })
+      .props.onClick();
+  });
+  assert.equal(soleFitChoice, "female");
+
+  let hiddenFitRenderer!: ReturnType<typeof create>;
+  act(() => {
+    hiddenFitRenderer = create(createElement(DormantFutureMeasurementStep, {
+      plan: shirtOnlyPlan,
+      state: completeShirt,
+      physicalGarments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+      multiPersonAssignmentActive: false,
+      soleFitSelectionNeeded: false,
+      orderMeasurementsComplete: true,
+      onChange: () => undefined,
+      onRouteChange: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    }));
+  });
+  assert.equal(
+    hiddenFitRenderer.root.findAllByProps({ "data-measurement-sole-fit": "true" }).length,
+    0,
+    "compact sole-fit UI stays hidden once fit is known",
+  );
+}
+console.log("PASS: measurement step compact sole-fit UI");
+
 const renderPickerHarness = ({
   state,
   plan,

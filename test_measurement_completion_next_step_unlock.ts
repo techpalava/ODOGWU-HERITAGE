@@ -26,7 +26,12 @@ import {
   getDesignStudioJourneyStepState,
 } from "./src/components/DesignStudioJourneyStepper";
 import { resolveFutureStageCorrection } from "./src/utils/resolveFutureStageCorrection";
-import { resolveWearerAssignmentPresentation } from "./src/utils/wearerOrder";
+import {
+  createEmptyWearerOrder,
+  createWearerProfile,
+  reconcileWearerOrder,
+  resolveWearerAssignmentPresentation,
+} from "./src/utils/wearerOrder";
 
 const construction = (
   garmentType: keyof GarmentTypeStepSelection["constructionByGarment"],
@@ -807,6 +812,44 @@ assert.equal(
   "solo",
   "missing sole fit must not open a first-screen fit wall",
 );
+
+{
+  const softLockPrevented = reconcileWearerOrder({
+    order: {
+      schemaVersion: 2,
+      wearers: [
+        createWearerProfile({
+          wearerId: "wearer-soft-lock",
+          displayName: "",
+          fitContext: null,
+          presentationOrder: 0,
+        }),
+      ],
+      assignmentByGarmentKey: {},
+    },
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "male",
+    garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    garmentTypeSelection: shirtSelection,
+  });
+  assert.equal(softLockPrevented.wearers[0]?.fitContext, "male");
+  assert.equal(
+    softLockPrevented.assignmentByGarmentKey["base:shirt"],
+    "wearer-soft-lock",
+    "sole null fit + male demographic must auto-assign",
+  );
+
+  const nullDemographic = reconcileWearerOrder({
+    order: createEmptyWearerOrder(),
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: null,
+    garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    garmentTypeSelection: shirtSelection,
+  });
+  assert.equal(nullDemographic.wearers[0]?.fitContext, null);
+  assert.equal(nullDemographic.assignmentByGarmentKey["base:shirt"], undefined);
+}
+console.log("PASS: sole wearer demographic fit prevents soft-lock");
 
 const twoGarmentPlan = planMeasurementRequirements({
   route: "low_risk",
