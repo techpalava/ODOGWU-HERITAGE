@@ -1,8 +1,14 @@
 import Stripe from "stripe";
+import type { Firestore } from "firebase-admin/firestore";
+import { getAdminServices } from "./firebaseAdmin.js";
 import type { HttpRequest, HttpResponse } from "./httpTypes.js";
-import { parseFutureOrderMasterOrderV2 } from "../utils/futureOrderV2Storage.js";
+import {
+  FUTURE_ORDER_V2_COLLECTION,
+  parsePersistedFutureOrderV2,
+} from "../utils/futureOrderV2PersistenceContract.js";
 
 const MINIMUM_EUR_CENTS = 50;
+const SAFE_ORDER_ID = /^[A-Za-z0-9_-]{1,128}$/;
 export const FUTURE_ORDER_V2_STRIPE_PAYMENT_METHOD_TYPES = ["card", "ideal"] as const;
 const IDEAL_IDEMPOTENCY_SUFFIX = ":ideal";
 
@@ -18,12 +24,24 @@ export interface FutureOrderV2StripePaymentIntent {
   readonly paymentMethodTypes: readonly string[];
 }
 
+interface VerifiedStripePaymentToken {
+  readonly uid: string;
+  readonly firebase?: { readonly sign_in_provider?: unknown };
+}
+
+type StripePaymentAdminServices = {
+  auth: { verifyIdToken(token: string): Promise<VerifiedStripePaymentToken> };
+  db: unknown;
+};
+
 export interface FutureOrderV2StripePaymentDependencies {
   readSecretKey?: () => string;
   createPaymentIntent?: (
     input: FutureOrderV2StripePaymentIntentInput,
   ) => Promise<FutureOrderV2StripePaymentIntent>;
   readPublishableKey?: () => string;
+  getServices?: () => StripePaymentAdminServices;
+  readPersistedOrder?: (orderId: string) => Promise<unknown | null>;
 }
 
 const setNoStore = (res: HttpResponse): HttpResponse => {
@@ -41,6 +59,13 @@ const sendError = (
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
+const getBearerToken = (req: HttpRequest): string | null => {
+  const header = req.headers.authorization;
+  const authorization = Array.isArray(header) ? header[0] : header;
+  const match = authorization?.match(/^Bearer ([^\s]+)$/);
+  return match?.[1] || null;
+};
+
 const readTestSecretKey = (
   dependencies: FutureOrderV2StripePaymentDependencies,
 ): string =>
@@ -56,6 +81,17 @@ export const readStripeTestPublishableKey = (
     ""
   ).trim();
   return key.startsWith("pk_test_") ? key : null;
+};
+
+const readPersistedOrderFromAdmin = async (
+  db: unknown,
+  orderId: string,
+): Promise<unknown | null> => {
+  const snapshot = await (db as Firestore)
+    .collection(FUTURE_ORDER_V2_COLLECTION)
+    .doc(orderId)
+    .get();
+  return snapshot.exists ? snapshot.data() : null;
 };
 
 let stripeTestClient: Stripe | null = null;
@@ -148,6 +184,11 @@ export const handleFutureOrderV2StripeConfig = (
   return setNoStore(res).status(200).json({ publishableKey, testMode: true });
 };
 
+/**
+ * Creates a Stripe test PaymentIntent for a persisted Future Order V2.
+ * Amount comes only from the server-loaded order owned by the caller — never
+ * from client `masterOrder` pricing.
+ */
 export const handleFutureOrderV2StripePayment = async (
   req: HttpRequest,
   res: HttpResponse,
@@ -156,6 +197,17 @@ export const handleFutureOrderV2StripePayment = async (
   if (req.method !== "POST") {
     return sendError(res, 405, "METHOD_NOT_ALLOWED", "Use POST for this payment.");
   }
+
+  const bearerToken = getBearerToken(req);
+  if (!bearerToken) {
+    return sendError(
+      res,
+      401,
+      "AUTH_REQUIRED",
+      "Firebase authentication is required.",
+    );
+  }
+
   const secret = readTestSecretKey(dependencies);
   if (!secret.startsWith("sk_test_")) {
     return sendError(
@@ -165,6 +217,51 @@ export const handleFutureOrderV2StripePayment = async (
       "Stripe test payments are not configured.",
     );
   }
+
+  const getServices =
+    dependencies.getServices ||
+    (getAdminServices as unknown as () => StripePaymentAdminServices);
+
+  let services: StripePaymentAdminServices;
+  let token: VerifiedStripePaymentToken;
+  try {
+    services = getServices();
+    token = await services.auth.verifyIdToken(bearerToken);
+  } catch {
+    return sendError(
+      res,
+      401,
+      "AUTH_REQUIRED",
+      "Firebase authentication could not be verified.",
+    );
+  }
+
+  const signInProvider = token.firebase?.sign_in_provider;
+  if (typeof signInProvider !== "string" || !signInProvider) {
+    return sendError(
+      res,
+      401,
+      "AUTH_REQUIRED",
+      "Firebase authentication could not be verified.",
+    );
+  }
+  if (signInProvider === "anonymous") {
+    return sendError(
+      res,
+      403,
+      "ANONYMOUS_NOT_ALLOWED",
+      "Sign in with your account to pay for this order.",
+    );
+  }
+  if (typeof token.uid !== "string" || !token.uid.trim()) {
+    return sendError(
+      res,
+      401,
+      "AUTH_REQUIRED",
+      "Firebase authentication could not be verified.",
+    );
+  }
+
   const createPaymentIntent =
     dependencies.createPaymentIntent ?? createFutureOrderV2StripeTestPaymentIntent;
 
@@ -172,7 +269,10 @@ export const handleFutureOrderV2StripePayment = async (
   const orderId = typeof body?.orderId === "string" ? body.orderId : "";
   const paymentReference =
     typeof body?.paymentReference === "string" ? body.paymentReference : "";
-  if (!orderId || paymentReference !== `future-v2-payment-${orderId}`) {
+  if (
+    !SAFE_ORDER_ID.test(orderId) ||
+    paymentReference !== `future-v2-payment-${orderId}`
+  ) {
     return sendError(
       res,
       400,
@@ -181,16 +281,41 @@ export const handleFutureOrderV2StripePayment = async (
     );
   }
 
-  const parsed = parseFutureOrderMasterOrderV2(body?.masterOrder);
-  if (parsed.status !== "valid" || parsed.value.orderId !== orderId) {
+  const readPersistedOrder =
+    dependencies.readPersistedOrder ??
+    ((id: string) => readPersistedOrderFromAdmin(services.db, id));
+
+  let persistedRaw: unknown | null;
+  try {
+    persistedRaw = await readPersistedOrder(orderId);
+  } catch {
     return sendError(
       res,
-      400,
-      "INVALID_PREPARED_ORDER",
-      "The prepared order could not be verified for payment.",
+      503,
+      "ORDER_LOOKUP_UNAVAILABLE",
+      "The prepared order could not be loaded right now. Retry this same order.",
     );
   }
-  const pricing = parsed.value.cartItem.candidate.pricing;
+
+  const order = parsePersistedFutureOrderV2(persistedRaw, orderId);
+  if (order.status !== "valid") {
+    return sendError(
+      res,
+      404,
+      "ORDER_NOT_FOUND",
+      "This prepared order could not be found.",
+    );
+  }
+  if (order.value.ownerUid !== token.uid) {
+    return sendError(
+      res,
+      403,
+      "OWNER_MISMATCH",
+      "This order belongs to another account.",
+    );
+  }
+
+  const pricing = order.value.masterOrder.cartItem.candidate.pricing;
   const amountCents = pricing.exactTotalCents;
   if (
     pricing.status !== "exact" ||
