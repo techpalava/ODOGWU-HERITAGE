@@ -680,7 +680,9 @@ export const DormantFutureCustomDetailsStep = ({
       !canPresentAdditionalGarmentCustomDetailsPrompt ||
       !additionalGarmentCustomDetailsRequest
     ) {
-      setAdditionalGarmentChoice(null);
+      setAdditionalGarmentChoice((current) =>
+        current === null ? current : null,
+      );
       return;
     }
     setAdditionalGarmentChoice((current) =>

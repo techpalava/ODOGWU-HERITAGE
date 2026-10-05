@@ -49,31 +49,22 @@ export const FutureAdditionalGarmentDesignStyleDialog = ({
   );
 
   useEffect(() => {
-    if (typeof document === "undefined" || typeof window === "undefined") {
-      return;
-    }
-    const previouslyFocused =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    const frame = window.requestAnimationFrame(() => {
-      (initialFocusRef.current || dialogRef.current)?.focus();
-    });
+    if (typeof document === "undefined") return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
-      window.cancelAnimationFrame(frame);
       document.body.style.overflow = previousOverflow;
-      if (previouslyFocused?.isConnected) {
-        previouslyFocused.focus({ preventScroll: true });
-      }
     };
   }, []);
 
   useEffect(() => {
-    if (typeof document === "undefined") return;
-    const dialog = dialogRef.current;
-    if (!dialog) return;
+    if (assigning) return;
+    const node = initialFocusRef.current || dialogRef.current;
+    node?.focus?.({ preventScroll: true });
+  }, [assigning]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         if (assigning) return;
@@ -86,8 +77,8 @@ export const FutureAdditionalGarmentDesignStyleDialog = ({
         onCancel();
         return;
       }
-      if (event.key !== "Tab") return;
-      const focusable = getFocusableElements(dialog);
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = getFocusableElements(dialogRef.current);
       if (focusable.length === 0) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -99,8 +90,8 @@ export const FutureAdditionalGarmentDesignStyleDialog = ({
         first.focus();
       }
     };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [assigning, onCancel, pendingAdaptation]);
 
   const chooseEntry = (entry: DesignStyleStepCatalogueEntry) => {

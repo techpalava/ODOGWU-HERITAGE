@@ -671,6 +671,9 @@ const getFutureDesignStyleHydrationFingerprint = (
     legacyScalarFingerprint: result.legacyScalarFingerprint,
   });
 
+const EMPTY_ADDITIONAL_GARMENT_DESIGN_STYLE_CATALOGUE: readonly DesignStyleStepCatalogueEntry[] =
+  [];
+
 export default function DesignStudioView({
   currentUser,
   orderContext,
@@ -1999,16 +2002,25 @@ export default function DesignStudioView({
       currentFutureDesignStyleDraftHydration,
     ],
   );
-  const additionalGarmentDesignStyleSessionTarget =
-    isAdditionalGarmentDesignStyleSessionPhase(
-      additionalGarmentFabricTransaction,
-    )
-      ? futureDesignStyleStepProjection.occurrences.find(
-          (occurrence) =>
-            occurrence.target.garmentKey ===
-            additionalGarmentFabricTransaction!.garmentKey,
-        )?.target ?? null
-      : null;
+  const additionalGarmentDesignStyleSessionTarget = useMemo(() => {
+    if (
+      !isAdditionalGarmentDesignStyleSessionPhase(
+        additionalGarmentFabricTransaction,
+      )
+    ) {
+      return null;
+    }
+    return (
+      futureDesignStyleStepProjection.occurrences.find(
+        (occurrence) =>
+          occurrence.target.garmentKey ===
+          additionalGarmentFabricTransaction!.garmentKey,
+      )?.target ?? null
+    );
+  }, [
+    additionalGarmentFabricTransaction,
+    futureDesignStyleStepProjection.occurrences,
+  ]);
   const additionalGarmentDesignStyleCatalogueEntries = useMemo(
     () =>
       additionalGarmentDesignStyleSessionTarget
@@ -2025,7 +2037,7 @@ export default function DesignStudioView({
               currentFutureDesignStyleDraftHydration?.result.ledger?.revision ??
               -1,
           })
-        : [],
+        : EMPTY_ADDITIONAL_GARMENT_DESIGN_STYLE_CATALOGUE,
     [
       additionalGarmentDesignStyleSessionTarget,
       futureDesignStyleStepProjection,
@@ -2209,11 +2221,7 @@ export default function DesignStudioView({
           ),
           activeTarget: resolvedFutureActiveDesignStyleOccurrence,
           authority: futureDesignStyleDraftAuthority,
-          stepIsActive:
-            futureStageId === "design_style" ||
-            isAdditionalGarmentDesignStyleSessionPhase(
-              additionalGarmentFabricTransaction,
-            ),
+          stepIsActive: futureStageId === "design_style",
         }
       : null;
 
@@ -9835,7 +9843,7 @@ export default function DesignStudioView({
             additionalGarmentCustomDetailsRequest
           }
           allowAdditionalGarmentCustomDetailsPrompt={
-            futureStageId !== "personalized_additions" ||
+            futureStageId === "custom_details" ||
             isAdditionalGarmentCustomDetailsChoiceSessionPhase(
               additionalGarmentFabricTransaction,
             )
