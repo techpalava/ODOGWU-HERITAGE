@@ -38,7 +38,7 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 ## Status
 
 All work below is released. `/api/health` shows the current production build
-(`7602a97…` after the #367 Contextual Re-entry Guidance release).
+(`728c523…` after the #385 Stripe payment-intent auth release).
 
 - [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
 - [#283](https://github.com/techpalava/ODOGWU-HERITAGE/pull/283) Uploaded photo on the Summary Design Style card
@@ -64,8 +64,9 @@ All work below is released. `/api/health` shows the current production build
 - [#368](https://github.com/techpalava/ODOGWU-HERITAGE/pull/368) Storage rules wired in `firebase.json` and deployed 2026-10-05: `customer-design-drafts/` is no longer publicly listable or downloadable (unauthenticated list/get now 403); public `fabrics/`, `styles/`, `designs/`, `gallery/`, `communityPhotos/` reads still 200
 - [#372](https://github.com/techpalava/ODOGWU-HERITAGE/pull/372) Admin SDK `storageBucket` set in `src/server/firebaseAdmin.ts`: guest uploaded-design ownership claims (were 400 `CLAIM_INVALID_REFERENCE` from a catch-all) and the order/draft transfer endpoints work again; unexpected claim errors now return 500. No rules or Firebase deploy changes
 - [#367](https://github.com/techpalava/ODOGWU-HERITAGE/pull/367) Contextual Re-entry Guidance for Fabric and Design Style: a consume-once banner names garments that still need Fabric when returning to a previously visited Fabric step after an upstream change; incomplete Fabric or Design Style re-entry scrolls to the blocking garment card with a gold highlight; ordinary revisits and refresh stay silent
+- [#385](https://github.com/techpalava/ODOGWU-HERITAGE/pull/385) Future Order V2 Stripe `payment-intent` requires a non-anonymous Firebase Bearer token and charges the persisted order total owned by the caller (client `masterOrder` pricing ignored)
 
-The signed-in Chrome restore check after #289 passed. Live checks after #368 and #372 passed on 2026-10-05 against production `7602a97`: signed-in Step 3 upload restores after reload, including in a fresh incognito session; the guest upload transfers to the account after sign-in; signed-out catalogue and fabric images load. Live chunk after #361 contains
+The signed-in Chrome restore check after #289 passed. Live checks after #368 and #372 passed on 2026-10-05 against production `7602a97`: signed-in Step 3 upload restores after reload, including in a fresh incognito session; the guest upload transfers to the account after sign-in; signed-out catalogue and fabric images load. Live after #385 on production `728c523`: unauthenticated `POST /api/future-order-v2/payment-intent` returns **401** `AUTH_REQUIRED`. Live chunk after #361 contains
 `These clothes are for you` / `Laid-flat widths are doubled for production`.
 
 ## Git and worktrees
@@ -76,8 +77,8 @@ The signed-in Chrome restore check after #289 passed. Live checks after #368 and
 - Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-next-task`,
   aligned to `github/main` and ready for a fresh feature branch when the next
   task is authorized. Do not reuse released branches such as `fix/draft-resume-locus`,
-  `fix/faster-draft-restore`, `feat/custom-details-go-to-bottom`, or
-  `feat/step7-people-ux-solo-first`.
+  `fix/faster-draft-restore`, `feat/custom-details-go-to-bottom`,
+  `feat/step7-people-ux-solo-first`, or `fix/payment-intent-auth-amount`.
 - Critical Risk “height alone” copy fix is parked in local stash
   `park critical-risk-height-copy before clear-all` (not released). Restore onto a fresh
   branch from `github/main` when authorized; do not mix it into unrelated work.
@@ -116,9 +117,8 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
 
 ## Still open
 
-- Remaining security review items (payment-intent auth and server-side amount, Stripe webhook
-  signature, `vercel.json` headers, admin allowlist in client, PIN length, `/api/health` buildId)
-  are not authorized yet.
+- Remaining security review items (Stripe webhook signature, `vercel.json` headers, admin
+  allowlist in client, PIN length, `/api/health` buildId) are not authorized yet.
 - Admin live check of stage history: save a new stage on a paid order and confirm the customer
   card lists the earlier stage and the new one.
 - Tailoring live QA is blocked without a real admin session. Do not create or bypass admin access.
