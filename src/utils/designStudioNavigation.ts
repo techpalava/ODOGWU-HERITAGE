@@ -1,4 +1,5 @@
 import type { DesignStudioStageId } from "../types";
+import type { ContextualReentryGuidance } from "./designStudioContextualReentryGuidance";
 
 /**
  * A customer-initiated Design Studio move. State changes caused by hydration,
@@ -14,17 +15,26 @@ export interface DesignStudioNavigationRequest {
   readonly id: number;
   readonly stage: DesignStudioStageId;
   readonly target: DesignStudioNavigationTarget;
+  /** Transient Contextual Re-entry Guidance; omitted on ordinary moves. */
+  readonly reentryGuidance?: ContextualReentryGuidance | null;
 }
 
 export const createDesignStudioNavigationRequest = ({
   id,
   stage,
   target = { kind: "stage_top" },
+  reentryGuidance = null,
 }: {
   id: number;
   stage: DesignStudioStageId;
   target?: DesignStudioNavigationTarget;
-}): DesignStudioNavigationRequest => ({ id, stage, target });
+  reentryGuidance?: ContextualReentryGuidance | null;
+}): DesignStudioNavigationRequest => ({
+  id,
+  stage,
+  target,
+  reentryGuidance,
+});
 
 /** Main-stage moves always land at the destination top. */
 export const getMainStageNavigationTarget = (): DesignStudioNavigationTarget => ({

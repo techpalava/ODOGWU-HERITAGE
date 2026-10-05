@@ -50,7 +50,7 @@ import { CapacityService } from "../services/CapacityService";
 import { OrderRoutingEngine } from "../engine/OrderRoutingEngine";
 import { FabricAllocationStateEngine } from "../engine/FabricAllocationStateEngine";
 import { createStyleBaseGarmentSpec } from "../config/StyleFabricCapacityConfig";
-import { GarmentTypeStep } from "./GarmentTypeStep";
+import { GarmentTypeStep, getGarmentTypeStepLabel } from "./GarmentTypeStep";
 import { DormantFutureFabricStep } from "./DormantFutureFabricStep";
 import { DormantFutureDesignStyleStep } from "./DormantFutureDesignStyleStep";
 import { DesignStudioJourneyStepper, DESIGN_STUDIO_STEPS } from "./DesignStudioJourneyStepper";
@@ -79,6 +79,13 @@ import {
   type DesignStudioNavigationRequest,
   type DesignStudioNavigationTarget,
 } from "../utils/designStudioNavigation";
+import {
+  captureFabricReentryBaseline,
+  detectFabricContextualReentryGuidance,
+  type ContextualReentryGuidance,
+  type FabricReentryBaseline,
+} from "../utils/designStudioContextualReentryGuidance";
+import { projectOccurrenceDisplayLabels } from "../utils/occurrenceDisplayLabel";
 import { getCurrentCommunityBatch } from "../utils/batchUtils";
 import {
   canonicalOrderIdentitiesMatch,
@@ -896,6 +903,16 @@ export default function DesignStudioView({
   const [futureStageNavigationRequest, setFutureStageNavigationRequest] =
     useState<DesignStudioNavigationRequest | null>(null);
   const futureStageNavigationTargetRef = useRef<HTMLElement | null>(null);
+  const fabricReentryBaselineRef = useRef<FabricReentryBaseline | null>(null);
+  const fabricReentryDetectInputsRef = useRef<{
+    garmentTypeSelection: GarmentTypeStepSelection;
+    fabricAllocationState: FabricAllocationState;
+    requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
+    fabricHistoricallyVisited: boolean;
+    labelForGarmentKey: (garmentKey: string, garmentType: string) => string;
+  } | null>(null);
+  const [activeContextualReentryGuidance, setActiveContextualReentryGuidance] =
+    useState<ContextualReentryGuidance | null>(null);
   /**
    * Only explicit customer navigation is routed through this helper. Hydration,
    * safety correction, and modal/sub-flow state updates continue to set the
@@ -906,6 +923,19 @@ export default function DesignStudioView({
       stage: DesignStudioStageId,
       target: DesignStudioNavigationTarget = getMainStageNavigationTarget(),
     ) => {
+      const detectInputs = fabricReentryDetectInputsRef.current;
+      const reentryGuidance =
+        stage === "fabric" && detectInputs
+          ? detectFabricContextualReentryGuidance({
+              baseline: fabricReentryBaselineRef.current,
+              fabricHistoricallyVisited: detectInputs.fabricHistoricallyVisited,
+              garmentTypeSelection: detectInputs.garmentTypeSelection,
+              fabricAllocationState: detectInputs.fabricAllocationState,
+              requiredPhysicalOccurrences:
+                detectInputs.requiredPhysicalOccurrences,
+              labelForGarmentKey: detectInputs.labelForGarmentKey,
+            })
+          : null;
       futureStageNavigationRequestIdRef.current += 1;
       setFutureStageId(stage);
       setFutureStageNavigationRequest(
@@ -913,6 +943,7 @@ export default function DesignStudioView({
           id: futureStageNavigationRequestIdRef.current,
           stage,
           target,
+          reentryGuidance,
         }),
       );
     },
@@ -1653,6 +1684,27 @@ export default function DesignStudioView({
     step1GarmentTypeSelection: garmentTypeSelection,
     effectiveJourneyGarmentTypeSelection,
   });
+  const fabricOccurrenceLabels = projectOccurrenceDisplayLabels(
+    fabricTransactionPhysicalOccurrences,
+  );
+  const fabricStageIndex = DESIGN_STUDIO_STEPS.findIndex(
+    (step) => step.id === "fabric",
+  );
+  fabricReentryDetectInputsRef.current = {
+    garmentTypeSelection: fabricStepGarmentTypeSelection,
+    fabricAllocationState,
+    requiredPhysicalOccurrences: fabricTransactionPhysicalOccurrences,
+    fabricHistoricallyVisited:
+      fabricStageIndex >= 0 && fabricStageIndex <= highestUnlockedStageIndex,
+    labelForGarmentKey: (garmentKey, garmentType) => {
+      const occurrenceLabel = fabricOccurrenceLabels.get(garmentKey);
+      if (occurrenceLabel) return occurrenceLabel.conciseLabel;
+      if (garmentType === "other") return "Other Garment";
+      return getGarmentTypeStepLabel(
+        garmentType as Exclude<FabricGarmentType, "other">,
+      );
+    },
+  };
   const futureFabricComposition = getFutureFabricCapacityComposition(
     effectiveJourneyGarmentTypeSelection,
   );
@@ -3683,6 +3735,18 @@ export default function DesignStudioView({
 
   useEffect(() => {
     if (previousFutureStageIdRef.current !== futureStageId) {
+      if (previousFutureStageIdRef.current === "fabric") {
+        const detectInputs = fabricReentryDetectInputsRef.current;
+        if (detectInputs) {
+          fabricReentryBaselineRef.current = captureFabricReentryBaseline({
+            garmentTypeSelection: detectInputs.garmentTypeSelection,
+            fabricAllocationState: detectInputs.fabricAllocationState,
+            requiredPhysicalOccurrences:
+              detectInputs.requiredPhysicalOccurrences,
+          });
+        }
+        setActiveContextualReentryGuidance(null);
+      }
       futureGarmentRemovalStageRetentionLeaseRef.current = null;
       futureGarmentRemovalConfirmationGenerationRef.current += 1;
       futureGarmentRemovalConfirmingRef.current = false;
@@ -3709,6 +3773,22 @@ export default function DesignStudioView({
   useLayoutEffect(() => {
     const request = futureStageNavigationRequest;
     if (!request || request.stage !== futureStageId) return;
+
+    if (
+      request.reentryGuidance &&
+      request.reentryGuidance.destinationStageId === futureStageId
+    ) {
+      setActiveContextualReentryGuidance(request.reentryGuidance);
+      const detectInputs = fabricReentryDetectInputsRef.current;
+      if (detectInputs) {
+        fabricReentryBaselineRef.current = captureFabricReentryBaseline({
+          garmentTypeSelection: detectInputs.garmentTypeSelection,
+          fabricAllocationState: detectInputs.fabricAllocationState,
+          requiredPhysicalOccurrences:
+            detectInputs.requiredPhysicalOccurrences,
+        });
+      }
+    }
 
     // Exact Additional Garment requests are fulfilled by Step 4 after its
     // occurrence cards mount. They must not first scroll to the stage top.
@@ -9245,6 +9325,14 @@ export default function DesignStudioView({
             futureGarmentFabricPlanning.selectedFabricQuantity
           }
           constructionPrice={futureConstructionPrice}
+          contextualReentryGuidance={
+            activeContextualReentryGuidance?.destinationStageId === "fabric"
+              ? activeContextualReentryGuidance
+              : null
+          }
+          onDismissContextualReentryGuidance={() =>
+            setActiveContextualReentryGuidance(null)
+          }
           onAssignFabricToGarment={handleAssignFutureFabricToGarment}
           onChangeFabricAllocationProduct={handleChangeFutureFabricAllocationProduct}
           onRemoveFabricFromGarment={handleRemoveFutureFabricAssignment}
