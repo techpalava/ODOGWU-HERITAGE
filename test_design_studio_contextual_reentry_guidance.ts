@@ -17,6 +17,7 @@ import {
 } from "./src/utils/designStudioFutureFabricStage";
 import {
   createDesignStudioNavigationRequest,
+  getDesignStyleIncompleteNavigationTarget,
   getFabricUnassignedNavigationTarget,
   getMainStageNavigationTarget,
 } from "./src/utils/designStudioNavigation";
@@ -343,11 +344,32 @@ assert.equal(
   );
 }
 
+// --- design_style_incomplete navigation target ---
+{
+  assert.deepEqual(
+    getDesignStyleIncompleteNavigationTarget("occ:shirt:1"),
+    { kind: "design_style_incomplete", occurrenceToken: "occ:shirt:1" },
+  );
+  const request = createDesignStudioNavigationRequest({
+    id: 3,
+    stage: "design_style",
+    target: getDesignStyleIncompleteNavigationTarget("occ:trouser:1"),
+  });
+  assert.equal(request.target.kind, "design_style_incomplete");
+  if (request.target.kind === "design_style_incomplete") {
+    assert.equal(request.target.occurrenceToken, "occ:trouser:1");
+  }
+}
+
 // --- wiring: Design Studio + Fabric step ---
 {
   const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
   const fabricSource = readFileSync(
     "src/components/DormantFutureFabricStep.tsx",
+    "utf8",
+  );
+  const designStyleSource = readFileSync(
+    "src/components/DormantFutureDesignStyleStep.tsx",
     "utf8",
   );
   const navigationSource = readFileSync(
@@ -357,17 +379,38 @@ assert.equal(
 
   assert.match(navigationSource, /reentryGuidance/);
   assert.match(navigationSource, /fabric_unassigned/);
+  assert.match(navigationSource, /design_style_incomplete/);
   assert.match(navigationSource, /getFabricUnassignedNavigationTarget/);
+  assert.match(navigationSource, /getDesignStyleIncompleteNavigationTarget/);
   assert.match(studioSource, /detectFabricContextualReentryGuidance/);
   assert.match(studioSource, /captureFabricReentryBaseline/);
   assert.match(studioSource, /activeContextualReentryGuidance/);
   assert.match(studioSource, /redirectedForIncompleteFabric/);
+  assert.match(studioSource, /redirectedForIncompleteDesignStyle/);
   assert.match(studioSource, /getFabricUnassignedNavigationTarget/);
+  assert.match(studioSource, /getDesignStyleIncompleteNavigationTarget/);
   assert.match(studioSource, /fabricUnassignedFocusRequest/);
+  assert.match(studioSource, /designStyleIncompleteFocusRequest/);
+  assert.match(studioSource, /firstIncompleteDesignStyleOccurrenceToken/);
   assert.match(
     studioSource,
     /correctedStageId === "fabric"[\s\S]*navigateToFutureStage\("fabric"/,
     "stage correction to Fabric must navigate with focus, not bare setFutureStageId",
+  );
+  assert.match(
+    studioSource,
+    /correctedStageId === "design_style"[\s\S]*navigateToFutureStage\("design_style"/,
+    "stage correction to Design Style must navigate with occurrence focus",
+  );
+  assert.match(
+    studioSource,
+    /request\.target\.kind === "design_style_incomplete"[\s\S]*return;/,
+    "design_style_incomplete must skip stage-top scroll",
+  );
+  assert.match(
+    studioSource,
+    /unassignedFocusGarmentKey && request\.stage === "fabric"[\s\S]*return;/,
+    "fabric_unassigned must skip stage-top scroll",
   );
   assert.match(fabricSource, /data-contextual-reentry-guidance="fabric"/);
   assert.match(fabricSource, /CONTEXTUAL_REENTRY_AUTO_DISMISS_MS/);
@@ -378,6 +421,13 @@ assert.equal(
     fabricSource,
     /navigateToStep2PostAssignmentDestination\(\s*unassignedFocusGarmentKey,\s*"next_unassigned"/,
   );
+  assert.match(designStyleSource, /incompleteFocusOccurrenceToken/);
+  assert.match(designStyleSource, /data-contextual-reentry-focus=\{/);
+  assert.match(designStyleSource, /"design_style"/);
+  assert.match(
+    designStyleSource,
+    /setHighlightedOccurrenceToken\(token\)/,
+  );
 }
 
-console.log("PASS: contextual re-entry guidance (Fabric)");
+console.log("PASS: contextual re-entry guidance (Fabric + Design Style focus)");

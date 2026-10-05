@@ -73,6 +73,7 @@ import { DesignStudioOrderSummary } from "./DesignStudioOrderSummary";
 import { StudioOrderContextIndicator } from "./CustomerOrderContext";
 import {
   createDesignStudioNavigationRequest,
+  getDesignStyleIncompleteNavigationTarget,
   getFabricUnassignedNavigationTarget,
   getMainStageNavigationTarget,
   getOrderSummaryNavigationTarget,
@@ -912,12 +913,16 @@ export default function DesignStudioView({
     requiredPhysicalOccurrences?: readonly PhysicalGarmentOccurrence[];
     fabricHistoricallyVisited: boolean;
     fabricStageComplete: boolean;
+    designStyleComplete: boolean;
+    firstIncompleteDesignStyleOccurrenceToken: string | null;
     labelForGarmentKey: (garmentKey: string, garmentType: string) => string;
   } | null>(null);
   const [activeContextualReentryGuidance, setActiveContextualReentryGuidance] =
     useState<ContextualReentryGuidance | null>(null);
   const [fabricUnassignedFocusRequest, setFabricUnassignedFocusRequest] =
     useState<{ id: number; garmentKey: string } | null>(null);
+  const [designStyleIncompleteFocusRequest, setDesignStyleIncompleteFocusRequest] =
+    useState<{ id: number; occurrenceToken: string } | null>(null);
   /**
    * Only explicit customer navigation is routed through this helper. Hydration,
    * safety correction, and modal/sub-flow state updates continue to set the
@@ -932,6 +937,7 @@ export default function DesignStudioView({
       let effectiveStage = stage;
       let effectiveTarget = target;
       let redirectedForIncompleteFabric = false;
+      let redirectedForIncompleteDesignStyle = false;
 
       if (
         detectInputs &&
@@ -941,6 +947,15 @@ export default function DesignStudioView({
       ) {
         effectiveStage = "fabric";
         redirectedForIncompleteFabric = true;
+      } else if (
+        detectInputs &&
+        !detectInputs.designStyleComplete &&
+        effectiveStage !== "garment_type" &&
+        effectiveStage !== "fabric" &&
+        effectiveStage !== "design_style"
+      ) {
+        effectiveStage = "design_style";
+        redirectedForIncompleteDesignStyle = true;
       }
 
       const reentryGuidance =
@@ -972,6 +987,21 @@ export default function DesignStudioView({
                 : null));
         if (focusGarmentKey) {
           effectiveTarget = getFabricUnassignedNavigationTarget(focusGarmentKey);
+        }
+      }
+
+      if (effectiveStage === "design_style" && detectInputs) {
+        const focusOccurrenceToken =
+          effectiveTarget.kind === "design_style_incomplete"
+            ? effectiveTarget.occurrenceToken
+            : redirectedForIncompleteDesignStyle ||
+                effectiveTarget.kind === "validation_target" ||
+                effectiveTarget.kind === "stage_top"
+              ? detectInputs.firstIncompleteDesignStyleOccurrenceToken
+              : null;
+        if (focusOccurrenceToken) {
+          effectiveTarget =
+            getDesignStyleIncompleteNavigationTarget(focusOccurrenceToken);
         }
       }
 
@@ -1736,6 +1766,11 @@ export default function DesignStudioView({
     fabricHistoricallyVisited:
       fabricStageIndex >= 0 && fabricStageIndex <= highestUnlockedStageIndex,
     fabricStageComplete: futureFabricStageCompletion.isComplete,
+    designStyleComplete:
+      fabricReentryDetectInputsRef.current?.designStyleComplete ?? true,
+    firstIncompleteDesignStyleOccurrenceToken:
+      fabricReentryDetectInputsRef.current
+        ?.firstIncompleteDesignStyleOccurrenceToken ?? null,
     labelForGarmentKey: (garmentKey, garmentType) => {
       const occurrenceLabel = fabricOccurrenceLabels.get(garmentKey);
       if (occurrenceLabel) return occurrenceLabel.conciseLabel;
@@ -2099,6 +2134,17 @@ export default function DesignStudioView({
   );
   const isFutureDesignSourceReadyForCustomDetails =
     futureDesignStyleStepProjection.isComplete;
+  const firstIncompleteDesignStyleOccurrenceToken =
+    futureDesignStyleStepProjection.occurrences.find(
+      (occurrence) => occurrence.status !== "complete",
+    )?.target.occurrenceToken ?? null;
+  if (fabricReentryDetectInputsRef.current) {
+    fabricReentryDetectInputsRef.current = {
+      ...fabricReentryDetectInputsRef.current,
+      designStyleComplete: isFutureDesignSourceReadyForCustomDetails,
+      firstIncompleteDesignStyleOccurrenceToken,
+    };
+  }
   futureDesignStyleMutationAuthorityRef.current =
     currentFutureDesignStyleDraftHydration?.result.ledger
       ? {
@@ -3788,6 +3834,9 @@ export default function DesignStudioView({
         setActiveContextualReentryGuidance(null);
         setFabricUnassignedFocusRequest(null);
       }
+      if (previousFutureStageIdRef.current === "design_style") {
+        setDesignStyleIncompleteFocusRequest(null);
+      }
       futureGarmentRemovalStageRetentionLeaseRef.current = null;
       futureGarmentRemovalConfirmationGenerationRef.current += 1;
       futureGarmentRemovalConfirmingRef.current = false;
@@ -3839,6 +3888,20 @@ export default function DesignStudioView({
       setFabricUnassignedFocusRequest({
         id: request.id,
         garmentKey: unassignedFocusGarmentKey,
+      });
+      setFutureStageNavigationRequest((current) =>
+        current?.id === request.id ? null : current,
+      );
+      return;
+    }
+
+    if (
+      request.target.kind === "design_style_incomplete" &&
+      request.stage === "design_style"
+    ) {
+      setDesignStyleIncompleteFocusRequest({
+        id: request.id,
+        occurrenceToken: request.target.occurrenceToken,
       });
       setFutureStageNavigationRequest((current) =>
         current?.id === request.id ? null : current,
@@ -5609,6 +5672,11 @@ export default function DesignStudioView({
     if (correctedStageId === "fabric") {
       // Bounce with unassigned-card focus instead of a silent stage-top dump.
       navigateToFutureStage("fabric", getValidationNavigationTarget());
+      return;
+    }
+    if (correctedStageId === "design_style") {
+      // Bounce to the incomplete occurrence, not Design Style stage top / capacity.
+      navigateToFutureStage("design_style", getValidationNavigationTarget());
       return;
     }
     setFutureStageId(correctedStageId);
@@ -9488,6 +9556,17 @@ export default function DesignStudioView({
           onAssignmentFeedbackHandled={(eventId) => {
             setFutureDesignStyleAssignmentFeedback((current) =>
               current?.eventId === eventId ? null : current,
+            );
+          }}
+          incompleteFocusRequestId={
+            designStyleIncompleteFocusRequest?.id ?? null
+          }
+          incompleteFocusOccurrenceToken={
+            designStyleIncompleteFocusRequest?.occurrenceToken ?? null
+          }
+          onIncompleteFocusHandled={(requestId) => {
+            setDesignStyleIncompleteFocusRequest((current) =>
+              current?.id === requestId ? null : current,
             );
           }}
           onSelectOccurrence={handleSelectFutureDesignStyleOccurrence}

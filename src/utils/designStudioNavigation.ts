@@ -10,7 +10,8 @@ export type DesignStudioNavigationTarget =
   | { kind: "stage_top" }
   | { kind: "additional_garment"; garmentKey: string | null }
   | { kind: "validation_target" }
-  | { kind: "fabric_unassigned"; garmentKey: string };
+  | { kind: "fabric_unassigned"; garmentKey: string }
+  | { kind: "design_style_incomplete"; occurrenceToken: string };
 
 export interface DesignStudioNavigationRequest {
   readonly id: number;
@@ -68,4 +69,12 @@ export const getFabricUnassignedNavigationTarget = (
 ): DesignStudioNavigationTarget => ({
   kind: "fabric_unassigned",
   garmentKey,
+});
+
+/** Scroll/highlight a Design Style occurrence that still needs a design. */
+export const getDesignStyleIncompleteNavigationTarget = (
+  occurrenceToken: string,
+): DesignStudioNavigationTarget => ({
+  kind: "design_style_incomplete",
+  occurrenceToken,
 });
