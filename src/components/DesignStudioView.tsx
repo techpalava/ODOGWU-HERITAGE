@@ -106,6 +106,7 @@ import {
   type AuthenticatedFutureDraftIntegrationStatus,
   type AuthenticatedFutureDraftIdentity,
   type AuthenticatedFutureDraftRepository,
+  type AuthenticatedFutureDraftSyncResult,
 } from "../services/authenticatedFutureDraftService";
 import {
   buildDesignStyleDraftValidationAuthority,
@@ -697,6 +698,16 @@ export default function DesignStudioView({
   const futureDraftIdentityGenerationRef = useRef(0);
   const futureDraftHydrationRequestGenerationRef = useRef(0);
   const futureDraftAutosaveGenerationRef = useRef(0);
+  /** Owner uid that painted from local before customer/cloud sync finished. */
+  const localOnlyHydrationOwnerUidRef = useRef<string | null>(null);
+  /**
+   * When set (including `null` for a cleared cloud draft), the next hydration
+   * pass applies this payload without waiting on synchronize again.
+   */
+  const pendingCloudReconcileDraftRef = useRef<
+    GuestDesignDraft | null | undefined
+  >(undefined);
+  const authenticatedCloudSyncDoneRef = useRef(false);
   // Retain only stable identity and known visibility. This survives a private
   // listener reset without retaining any protected display data.
   const retainedGroupOrderIdentityRef = useRef<
@@ -865,7 +876,8 @@ export default function DesignStudioView({
     [firebaseDraftAuth, currentUser],
   );
   const futureDraftIdentityKey =
-    futureDraftIdentity.status === "authenticated"
+    futureDraftIdentity.status === "authenticated" ||
+    futureDraftIdentity.status === "pending_authenticated"
       ? `authenticated:${futureDraftIdentity.ownerUid}`
       : futureDraftIdentity.status === "blocked"
         ? `blocked:${futureDraftIdentity.reason}`
@@ -3907,6 +3919,9 @@ export default function DesignStudioView({
     authenticatedCloudDraftAuthorityEstablishedRef.current = false;
     authenticatedCloudDraftUserMutationRef.current = false;
     awaitingFreshAuthenticatedDraftMutationRef.current = false;
+    localOnlyHydrationOwnerUidRef.current = null;
+    pendingCloudReconcileDraftRef.current = undefined;
+    authenticatedCloudSyncDoneRef.current = false;
     cloudFutureDraftRevisionRef.current = null;
     cloudFutureDraftSaveQueueRef.current = Promise.resolve();
     clearFutureDesignStyleRuntimeHydration();
@@ -4059,7 +4074,89 @@ export default function DesignStudioView({
       }
       let storedDraft = localDraft;
       let hydratedPersistenceReason: string | null = null;
-      if (futureDraftIdentity.status === "authenticated") {
+      let shouldSynchronizeAfterLocalPaint = false;
+      const applyAuthenticatedSynchronization = (
+        synchronization: AuthenticatedFutureDraftSyncResult,
+        ownerUid: string,
+      ):
+        | { ok: true; draft: GuestDesignDraft | null; reapply: boolean }
+        | { ok: false } => {
+        if (synchronization.status === "conflict") {
+          cloudFutureDraftRevisionRef.current = synchronization.record.revision;
+          failFutureDraftRestore("conflict", "local_and_cloud_drafts_differ");
+          setPersistedOrderContextStatus("unavailable");
+          return { ok: false };
+        }
+        if (
+          synchronization.status === "invalid" ||
+          synchronization.status === "blocked"
+        ) {
+          failFutureDraftRestore(synchronization.status, synchronization.reason);
+          setPersistedOrderContextStatus(
+            synchronization.status === "invalid" ? "invalid" : "unavailable",
+          );
+          return { ok: false };
+        }
+        if (
+          synchronization.draft &&
+          !getPersistedDraftOrderIdentity(synchronization.draft)
+        ) {
+          failFutureDraftRestore("invalid", "cloud_draft_missing_order_identity");
+          setPersistedOrderContextStatus("invalid");
+          setGuestDraftHydrated(true);
+          return { ok: false };
+        }
+        cloudFutureDraftRevisionRef.current =
+          synchronization.record?.revision ?? null;
+        if (synchronization.record) {
+          GuestOrderSessionService.recordFutureDesignDraftCloudSynchronization(
+            ownerUid,
+            synchronization.record.revision,
+          );
+          if (
+            synchronization.status === "guest_transferred" ||
+            synchronization.status === "equivalent" ||
+            synchronization.status === "cloud_restored" ||
+            synchronization.status === "cloud_cleared"
+          ) {
+            GuestOrderSessionService.clearFutureDesignDraftAfterCloudSynchronization();
+          }
+        }
+        if (synchronization.status === "cloud_cleared") {
+          awaitingFreshAuthenticatedDraftMutationRef.current = true;
+        }
+        const reapply =
+          synchronization.status === "cloud_restored" ||
+          synchronization.status === "cloud_cleared" ||
+          synchronization.status === "guest_transferred";
+        return { ok: true, draft: synchronization.draft, reapply };
+      };
+
+      if (pendingCloudReconcileDraftRef.current !== undefined) {
+        storedDraft = pendingCloudReconcileDraftRef.current;
+        pendingCloudReconcileDraftRef.current = undefined;
+        authenticatedCloudSyncDoneRef.current = true;
+      } else if (futureDraftIdentity.status === "pending_authenticated") {
+        if (!localDraft) {
+          // No local copy yet — wait for customer bootstrap + cloud sync.
+          return;
+        }
+        const removal = removeForeignUploadedDesignSources(
+          localDraft,
+          futureDraftIdentity.ownerUid,
+        );
+        if (removal.draft !== localDraft) {
+          GuestOrderSessionService.saveFutureDesignDraft(removal.draft);
+          localDraft = removal.draft;
+        }
+        if (removal.removedGarmentKeys.length > 0) {
+          setFutureRemovedGuestUploadGarmentKeys((current) => [
+            ...new Set([...current, ...removal.removedGarmentKeys]),
+          ]);
+        }
+        localOnlyHydrationOwnerUidRef.current = futureDraftIdentity.ownerUid;
+        storedDraft = localDraft;
+      } else if (futureDraftIdentity.status === "authenticated") {
         const localDraftProvenance =
           authenticatedCloudDraftAuthorityEstablishedRef.current &&
           authenticatedCloudDraftUserMutationRef.current
@@ -4093,84 +4190,51 @@ export default function DesignStudioView({
             ...new Set([...current, ...removedGuestUploadGarmentKeys]),
           ]);
         }
-        let synchronization;
-        try {
-          synchronization = await repository.synchronize(localDraft, {
-            localDraftProvenance,
-          });
-        } catch (error) {
+        if (localDraft) {
+          // Paint the local draft immediately; reconcile cloud afterward.
+          localOnlyHydrationOwnerUidRef.current = null;
+          storedDraft = localDraft;
+          shouldSynchronizeAfterLocalPaint = true;
+        } else {
+          localOnlyHydrationOwnerUidRef.current = null;
+          let synchronization;
+          try {
+            synchronization = await repository.synchronize(localDraft, {
+              localDraftProvenance,
+            });
+          } catch (error) {
+            if (
+              !cancelled &&
+              identityGeneration === futureDraftIdentityGenerationRef.current &&
+              hydrationRequestGeneration ===
+                futureDraftHydrationRequestGenerationRef.current
+            ) {
+              console.error("Future draft synchronization failed.", error);
+              failFutureDraftRestore(
+                "blocked",
+                `synchronize_threw:${error instanceof Error ? error.message : String(error)}`,
+              );
+              setPersistedOrderContextStatus("unavailable");
+            }
+            return;
+          }
           if (
-            !cancelled &&
-            identityGeneration === futureDraftIdentityGenerationRef.current &&
-            hydrationRequestGeneration ===
+            cancelled ||
+            identityGeneration !== futureDraftIdentityGenerationRef.current ||
+            hydrationRequestGeneration !==
               futureDraftHydrationRequestGenerationRef.current
           ) {
-            console.error("Future draft synchronization failed.", error);
-            failFutureDraftRestore(
-              "blocked",
-              `synchronize_threw:${error instanceof Error ? error.message : String(error)}`,
-            );
-            setPersistedOrderContextStatus("unavailable");
+            return;
           }
-          return;
-        }
-        if (
-          cancelled ||
-          identityGeneration !== futureDraftIdentityGenerationRef.current ||
-          hydrationRequestGeneration !==
-            futureDraftHydrationRequestGenerationRef.current
-        ) {
-          return;
-        }
-        if (synchronization.status === "conflict") {
-          cloudFutureDraftRevisionRef.current = synchronization.record.revision;
-          failFutureDraftRestore("conflict", "local_and_cloud_drafts_differ");
-          setPersistedOrderContextStatus("unavailable");
-          return;
-        }
-        if (
-          synchronization.status === "invalid" ||
-          synchronization.status === "blocked"
-        ) {
-          failFutureDraftRestore(synchronization.status, synchronization.reason);
-          setPersistedOrderContextStatus(
-            synchronization.status === "invalid" ? "invalid" : "unavailable",
-          );
-          return;
-        }
-        if (
-          synchronization.draft &&
-          !getPersistedDraftOrderIdentity(synchronization.draft)
-        ) {
-          // Do not record cloud synchronization or clear a guest copy before
-          // an authenticated payload has a canonical order identity.
-          failFutureDraftRestore("invalid", "cloud_draft_missing_order_identity");
-          setPersistedOrderContextStatus("invalid");
-          setGuestDraftHydrated(true);
-          return;
-        }
-        cloudFutureDraftRevisionRef.current =
-          synchronization.record?.revision ?? null;
-        if (synchronization.record) {
-          GuestOrderSessionService.recordFutureDesignDraftCloudSynchronization(
+          const applied = applyAuthenticatedSynchronization(
+            synchronization,
             futureDraftIdentity.ownerUid,
-            synchronization.record.revision,
           );
-          if (
-            synchronization.status === "guest_transferred" ||
-            synchronization.status === "equivalent" ||
-            synchronization.status === "cloud_restored" ||
-            synchronization.status === "cloud_cleared"
-          ) {
-            GuestOrderSessionService.clearFutureDesignDraftAfterCloudSynchronization();
+          if (!applied.ok) {
+            return;
           }
-        }
-        storedDraft = synchronization.draft;
-        if (synchronization.status === "cloud_cleared") {
-          // A cleared tombstone is the authority for the old draft only. Keep
-          // its revision for the next checked write, and wait until the
-          // customer makes a meaningful new Studio change before reactivating.
-          awaitingFreshAuthenticatedDraftMutationRef.current = true;
+          storedDraft = applied.draft;
+          authenticatedCloudSyncDoneRef.current = true;
         }
       }
       if (
@@ -4215,13 +4279,17 @@ export default function DesignStudioView({
             retainedGroupOrderIdentityRef.current?.identity.batchId ===
               persistedIdentity.batchId &&
             retainedGroupOrderIdentityRef.current.visibility === "PRIVATE");
-        if (
-          requiresPrivateAuthority &&
-          futureDraftIdentity.status !== "authenticated"
-        ) {
+        if (requiresPrivateAuthority && futureDraftIdentity.status === "guest") {
           failFutureDraftRestore("invalid", "private_batch_requires_sign_in");
           setPersistedOrderContextStatus("invalid");
           setGuestDraftHydrated(true);
+          return;
+        }
+        if (
+          requiresPrivateAuthority &&
+          futureDraftIdentity.status === "pending_authenticated"
+        ) {
+          // Wait for customer bootstrap before deciding private-batch access.
           return;
         }
         if (requiresPrivateAuthority && !customGroupPrivateAccessReady) {
@@ -4411,7 +4479,10 @@ export default function DesignStudioView({
         identityGeneration,
         result: restoredDesignStyleDraftHydration,
       });
-      if (futureDraftIdentity.status === "authenticated") {
+      if (
+        futureDraftIdentity.status === "authenticated" ||
+        futureDraftIdentity.status === "pending_authenticated"
+      ) {
         authenticatedCloudDraftAuthorityEstablishedRef.current = true;
         authenticatedCloudDraftUserMutationRef.current = false;
       }
@@ -4727,6 +4798,65 @@ export default function DesignStudioView({
         setDesignStyleFailedRestoreNotice(false);
       }
       setGuestDraftHydrated(true);
+
+      if (
+        shouldSynchronizeAfterLocalPaint &&
+        futureDraftIdentity.status === "authenticated"
+      ) {
+        const localDraftProvenance =
+          authenticatedCloudDraftAuthorityEstablishedRef.current &&
+          authenticatedCloudDraftUserMutationRef.current
+            ? "authenticated_user_edit"
+            : "pre_authenticated_cloud_authority";
+        const repository =
+          futureDraftRepository ??
+          createFirebaseAuthenticatedFutureDraftRepository({
+            customer: currentUser,
+            authResolved: firebaseDraftAuth.resolved,
+            firebaseUser: firebaseDraftAuth.user,
+          });
+        let synchronization;
+        try {
+          synchronization = await repository.synchronize(localDraft, {
+            localDraftProvenance,
+          });
+        } catch (error) {
+          if (
+            !cancelled &&
+            identityGeneration === futureDraftIdentityGenerationRef.current &&
+            hydrationRequestGeneration ===
+              futureDraftHydrationRequestGenerationRef.current
+          ) {
+            console.error("Future draft synchronization failed.", error);
+            failFutureDraftRestore(
+              "blocked",
+              `synchronize_threw:${error instanceof Error ? error.message : String(error)}`,
+            );
+            setPersistedOrderContextStatus("unavailable");
+          }
+          return;
+        }
+        if (
+          cancelled ||
+          identityGeneration !== futureDraftIdentityGenerationRef.current ||
+          hydrationRequestGeneration !==
+            futureDraftHydrationRequestGenerationRef.current
+        ) {
+          return;
+        }
+        const applied = applyAuthenticatedSynchronization(
+          synchronization,
+          futureDraftIdentity.ownerUid,
+        );
+        if (!applied.ok) {
+          return;
+        }
+        authenticatedCloudSyncDoneRef.current = true;
+        if (applied.reapply) {
+          pendingCloudReconcileDraftRef.current = applied.draft;
+          setGuestDraftHydrated(false);
+        }
+      }
     })().catch((error) => {
       if (
         !cancelled &&
@@ -4764,6 +4894,121 @@ export default function DesignStudioView({
     customGroupPrivateAccessReady,
     businessSettings.productionSettings.defaultPickupLocation,
     publishFutureDesignStyleHydration,
+  ]);
+
+  // After a pending-authenticated local paint, reconcile the cloud draft once
+  // the application customer is ready — without hard-resetting Studio.
+  useEffect(() => {
+    if (futureDraftIdentity.status !== "authenticated") return;
+    if (!guestDraftHydrated) return;
+    if (authenticatedCloudSyncDoneRef.current) return;
+    if (localOnlyHydrationOwnerUidRef.current !== futureDraftIdentity.ownerUid) {
+      return;
+    }
+    if (!currentUser) return;
+
+    const identityGeneration = futureDraftIdentityGenerationRef.current;
+    const hydrationRequestGeneration =
+      futureDraftHydrationRequestGenerationRef.current;
+    let cancelled = false;
+    localOnlyHydrationOwnerUidRef.current = null;
+
+    void (async () => {
+      const localInspection = GuestOrderSessionService.inspectFutureDesignDraft();
+      let localDraft =
+        localInspection.status === "valid"
+          ? GuestOrderSessionService.loadFutureDesignDraftForHydration()
+          : null;
+      const loadedDraft =
+        localDraft && localDraft.status === "loaded" ? localDraft.draft : null;
+      const localDraftProvenance =
+        authenticatedCloudDraftAuthorityEstablishedRef.current &&
+        authenticatedCloudDraftUserMutationRef.current
+          ? "authenticated_user_edit"
+          : "pre_authenticated_cloud_authority";
+      const repository =
+        futureDraftRepository ??
+        createFirebaseAuthenticatedFutureDraftRepository({
+          customer: currentUser,
+          authResolved: firebaseDraftAuth.resolved,
+          firebaseUser: firebaseDraftAuth.user,
+        });
+      let synchronization: AuthenticatedFutureDraftSyncResult;
+      try {
+        synchronization = await repository.synchronize(loadedDraft, {
+          localDraftProvenance,
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Future draft synchronization failed.", error);
+          setFutureDraftPersistenceStatus("blocked");
+          setFutureDraftPersistenceReason(
+            `synchronize_threw:${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        return;
+      }
+      if (
+        cancelled ||
+        identityGeneration !== futureDraftIdentityGenerationRef.current ||
+        hydrationRequestGeneration !==
+          futureDraftHydrationRequestGenerationRef.current
+      ) {
+        return;
+      }
+      if (synchronization.status === "conflict") {
+        cloudFutureDraftRevisionRef.current = synchronization.record.revision;
+        setFutureDraftPersistenceStatus("conflict");
+        setFutureDraftPersistenceReason("local_and_cloud_drafts_differ");
+        return;
+      }
+      if (
+        synchronization.status === "invalid" ||
+        synchronization.status === "blocked"
+      ) {
+        setFutureDraftPersistenceStatus(synchronization.status);
+        setFutureDraftPersistenceReason(synchronization.reason);
+        return;
+      }
+      cloudFutureDraftRevisionRef.current =
+        synchronization.record?.revision ?? null;
+      if (synchronization.record) {
+        GuestOrderSessionService.recordFutureDesignDraftCloudSynchronization(
+          futureDraftIdentity.ownerUid,
+          synchronization.record.revision,
+        );
+        if (
+          synchronization.status === "guest_transferred" ||
+          synchronization.status === "equivalent" ||
+          synchronization.status === "cloud_restored" ||
+          synchronization.status === "cloud_cleared"
+        ) {
+          GuestOrderSessionService.clearFutureDesignDraftAfterCloudSynchronization();
+        }
+      }
+      if (synchronization.status === "cloud_cleared") {
+        awaitingFreshAuthenticatedDraftMutationRef.current = true;
+      }
+      authenticatedCloudSyncDoneRef.current = true;
+      if (
+        synchronization.status === "cloud_restored" ||
+        synchronization.status === "cloud_cleared" ||
+        synchronization.status === "guest_transferred"
+      ) {
+        pendingCloudReconcileDraftRef.current = synchronization.draft;
+        setGuestDraftHydrated(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentUser,
+    firebaseDraftAuth,
+    futureDraftIdentity,
+    futureDraftRepository,
+    guestDraftHydrated,
   ]);
 
   useEffect(() => {
@@ -8847,6 +9092,13 @@ export default function DesignStudioView({
       futureStageId === "personalized_additions");
   const showShellLiveOrderSummary =
     showPersistentLiveOrderSummary && !embedPersistentLiveOrderSummary;
+  const isRestoringFutureDraft =
+    !guestDraftHydrated &&
+    futureDraftIdentity.status !== "blocked" &&
+    (futureDraftIdentity.status === "resolving" ||
+      futureDraftIdentity.status === "pending_authenticated" ||
+      futureDraftIdentity.status === "authenticated" ||
+      futureDraftIdentity.status === "guest");
 
   return (
     <div
@@ -8862,6 +9114,7 @@ export default function DesignStudioView({
       data-persisted-order-context-status={persistedOrderContextStatus}
       data-future-draft-persistence-status={futureDraftPersistenceStatus}
       data-future-draft-persistence-reason={futureDraftPersistenceReason || ""}
+      data-future-draft-restoring={isRestoringFutureDraft ? "true" : "false"}
       data-stage-complete={
         futureStageId === "garment_type"
           ? garmentTypeStageCompletion.isComplete
@@ -8886,6 +9139,16 @@ export default function DesignStudioView({
       }
       className="font-sans"
     >
+      {isRestoringFutureDraft && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-future-draft-restoring-shell="true"
+          className="mb-4 min-w-0 rounded-2xl border border-heritage-green/20 bg-heritage-green/5 px-4 py-3 text-sm font-semibold leading-relaxed text-heritage-green"
+        >
+          Restoring your draft…
+        </div>
+      )}
       {futureGarmentRemovalAnnouncement && (
         <div
           role={

@@ -32,6 +32,8 @@ export const shouldAwaitStylesCatalogueBeforeDraftHydration = (
 /**
  * Gate for Design Studio guest/authenticated draft hydration.
  * Must NOT require styles.length > 0 — a ready empty catalogue is valid.
+ * `pending_authenticated` is allowed so a signed-in refresh can paint the local
+ * draft before customer bootstrap finishes.
  */
 export const canBeginFutureDesignDraftHydration = ({
   guestDraftHydrated,
