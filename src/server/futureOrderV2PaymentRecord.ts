@@ -55,15 +55,24 @@ export interface FutureOrderV2PaymentRecordDependencies {
   createStore?: (db: unknown) => FutureOrderV2PaymentRecordStore;
   readSecretKey?: () => string;
   retrievePaymentIntent?: (paymentIntentId: string) => Promise<StripePaymentIntentSummary>;
-  /** Resolves null when Stripe has no such event. */
-  retrieveEvent?: (eventId: string) => Promise<StripeEventSummary | null>;
+  /**
+   * Verifies the raw webhook body. Throw when the signature does not match.
+   * The returned event is the only event the webhook path may trust.
+   */
+  constructEvent?: (
+    rawBody: string | Uint8Array,
+    signature: string,
+    webhookSecret: string,
+  ) => StripeEventSummary;
+  /** Stripe TEST endpoint signing secret. Blank means webhooks fail closed. */
+  readWebhookSecret?: () => string;
   now?: () => Date;
   log?: (message: string) => void;
 }
 
 const SAFE_ORDER_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const PAYMENT_INTENT_ID = /^pi_[A-Za-z0-9_]{1,255}$/;
-const EVENT_ID = /^evt_[A-Za-z0-9_]{1,255}$/;
+const MAX_RECORD_PAYMENT_BODY_BYTES = 1_048_576;
 
 const getBearerToken = (req: HttpRequest): string | null => {
   const header = req.headers.authorization;
@@ -139,20 +148,75 @@ const retrieveStripeTestPaymentIntent = async (
   };
 };
 
-const retrieveStripeTestEvent = async (eventId: string): Promise<StripeEventSummary | null> => {
-  let event: Stripe.Event;
-  try {
-    event = await getStripeTestClient().events.retrieve(eventId);
-  } catch (error) {
-    if (isRecord(error) && error.code === "resource_missing") return null;
-    throw error;
-  }
+const summarizeStripeEvent = (event: Stripe.Event): StripeEventSummary => {
   const object: unknown = event.data.object;
   const paymentIntentId =
     isRecord(object) && object.object === "payment_intent" && typeof object.id === "string"
       ? object.id
       : null;
   return { id: event.id, type: event.type, livemode: event.livemode, paymentIntentId };
+};
+
+const constructStripeWebhookEvent = (
+  rawBody: string | Uint8Array,
+  signature: string,
+  webhookSecret: string,
+): StripeEventSummary =>
+  summarizeStripeEvent(
+    getStripeTestClient().webhooks.constructEvent(rawBody, signature, webhookSecret),
+  );
+
+const isWebhookRawBody = (value: unknown): value is string | Uint8Array =>
+  typeof value === "string" || value instanceof Uint8Array;
+
+const headerText = (headers: HttpRequest["headers"], name: string): string | null => {
+  const value = headers[name];
+  const first = Array.isArray(value) ? value[0] : value;
+  if (typeof first !== "string" || first.trim() === "") return null;
+  return first;
+};
+
+export const readRawHttpBody = async (
+  source: AsyncIterable<Uint8Array | string>,
+): Promise<Buffer> => {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of source) {
+    const buffer = typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk);
+    total += buffer.length;
+    if (total > MAX_RECORD_PAYMENT_BODY_BYTES) {
+      throw new Error("RECORD_PAYMENT_BODY_TOO_LARGE");
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks);
+};
+
+/**
+ * Builds the handler request from the exact bytes Express or Vercel read.
+ * Webhook calls keep `body` unset so `body.id` cannot be consulted. Browser
+ * calls parse those same bytes as JSON without re-serializing them.
+ */
+export const httpRequestFromRawBody = ({
+  method,
+  headers,
+  rawBody,
+}: {
+  method?: string;
+  headers: HttpRequest["headers"];
+  rawBody: string | Uint8Array;
+}): HttpRequest => {
+  const request: HttpRequest = { method, headers, rawBody };
+  if (!getBearerToken(request) && headerText(headers, "stripe-signature")) {
+    return request;
+  }
+  const text = typeof rawBody === "string" ? rawBody : Buffer.from(rawBody).toString("utf8");
+  if (text.length === 0) return { ...request, body: {} };
+  try {
+    return { ...request, body: JSON.parse(text) as unknown };
+  } catch {
+    return { ...request, body: undefined };
+  }
 };
 
 export type FutureOrderV2PaymentSaveOutcome =
@@ -254,9 +318,11 @@ export const saveVerifiedFutureOrderV2Payment = async ({
 /**
  * Records a Stripe test payment only after the server has checked the signed-in
  * owner, the persisted order, and the PaymentIntent itself. Requests carrying a
- * `stripe-signature` header and no Bearer token are Stripe webhooks; only the
- * event ID is trusted, and the event is re-read from Stripe. Repeating either
- * call for the same PaymentIntent is safe.
+ * `stripe-signature` header and no Bearer token are Stripe webhooks. Their
+ * signature is verified with `stripe.webhooks.constructEvent` against the raw
+ * body and `STRIPE_WEBHOOK_SECRET`. The body `id` is never trusted. Live mode
+ * and non-succeeded events are ignored. Repeating either call for the same
+ * PaymentIntent is safe.
  */
 export const createFutureOrderV2PaymentRecordHandler = (
   dependencies: FutureOrderV2PaymentRecordDependencies = {},
@@ -269,36 +335,45 @@ export const createFutureOrderV2PaymentRecordHandler = (
     ((db: unknown) => createAdminFutureOrderV2PaymentRecordStore(db as Firestore));
   const retrievePaymentIntent =
     dependencies.retrievePaymentIntent || retrieveStripeTestPaymentIntent;
-  const retrieveEvent = dependencies.retrieveEvent || retrieveStripeTestEvent;
+  const constructEvent = dependencies.constructEvent || constructStripeWebhookEvent;
   const now = dependencies.now || (() => new Date());
   const log = dependencies.log || ((message: string) => console.info(message));
   const readSecret = () =>
     (dependencies.readSecretKey?.() ?? process.env.STRIPE_SECRET_KEY ?? "").trim();
+  const readWebhookSecret = () =>
+    (dependencies.readWebhookSecret?.() ?? process.env.STRIPE_WEBHOOK_SECRET ?? "").trim();
 
   const handleStripeWebhook = async (req: HttpRequest, res: HttpResponse) => {
     const reply = (status: number, body: Record<string, unknown>) => {
       log(`future-order-v2-payment-webhook status=${String(body.status ?? body.code)}`);
       return setNoStore(res).status(status).json(body);
     };
+    const rejectUnverified = () =>
+      reply(400, {
+        error: "Stripe webhook signature could not be verified.",
+        code: "INVALID_STRIPE_SIGNATURE",
+      });
     if (!readSecret().startsWith("sk_test_")) {
       return reply(503, {
         error: "Stripe test payments are not configured.",
         code: "STRIPE_TEST_KEY_REQUIRED",
       });
     }
-    const eventId = isRecord(req.body) && typeof req.body.id === "string" ? req.body.id : "";
-    if (!EVENT_ID.test(eventId)) {
-      return reply(400, { error: "This is not a Stripe event.", code: "INVALID_STRIPE_EVENT" });
+    const webhookSecret = readWebhookSecret();
+    if (!webhookSecret) {
+      return reply(400, {
+        error: "Stripe webhooks are not configured.",
+        code: "STRIPE_WEBHOOK_SECRET_REQUIRED",
+      });
     }
+    const signature = headerText(req.headers, "stripe-signature");
+    if (!signature || !isWebhookRawBody(req.rawBody)) return rejectUnverified();
 
-    let event: StripeEventSummary | null;
+    let event: StripeEventSummary;
     try {
-      event = await retrieveEvent(eventId);
+      event = constructEvent(req.rawBody, signature, webhookSecret);
     } catch {
-      return reply(500, { error: "Stripe could not be reached.", code: "STRIPE_LOOKUP_FAILED" });
-    }
-    if (!event) {
-      return reply(400, { error: "Stripe has no such event.", code: "UNKNOWN_STRIPE_EVENT" });
+      return rejectUnverified();
     }
     if (event.livemode || event.type !== "payment_intent.succeeded" || !event.paymentIntentId) {
       return reply(200, { received: true, status: "ignored" });
@@ -347,7 +422,7 @@ export const createFutureOrderV2PaymentRecordHandler = (
     }
 
     const bearerToken = getBearerToken(req);
-    if (!bearerToken && req.headers["stripe-signature"]) {
+    if (!bearerToken && headerText(req.headers, "stripe-signature")) {
       return handleStripeWebhook(req, res);
     }
     if (!bearerToken) {
