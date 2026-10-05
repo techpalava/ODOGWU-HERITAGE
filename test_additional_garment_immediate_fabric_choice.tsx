@@ -78,14 +78,16 @@ class MemoryStorage implements Storage {
 const memoryStorage = new MemoryStorage();
 const stubWindow = {
   scrollY: 0,
+  innerHeight: 800,
   scrollTo: () => undefined,
   setTimeout: globalThis.setTimeout.bind(globalThis),
   clearTimeout: globalThis.clearTimeout.bind(globalThis),
-  requestAnimationFrame: (callback: FrameRequestCallback) => {
-    callback(0);
-    return 1;
+  // Defer rAF so focus/scroll effects cannot synchronously re-enter render.
+  requestAnimationFrame: (callback: FrameRequestCallback) =>
+    Number(globalThis.setTimeout(() => callback(0), 0)),
+  cancelAnimationFrame: (id: number) => {
+    globalThis.clearTimeout(id);
   },
-  cancelAnimationFrame: () => undefined,
   addEventListener: () => undefined,
   removeEventListener: () => undefined,
   localStorage: memoryStorage,
@@ -117,6 +119,13 @@ Object.defineProperty(globalThis, "localStorage", {
   configurable: true,
   value: memoryStorage,
 });
+
+const { createRequire } = await import("node:module");
+const require = createRequire(import.meta.url);
+const reactDomRuntime = require("react-dom") as {
+  createPortal: (children: unknown, container: unknown) => unknown;
+};
+reactDomRuntime.createPortal = (children) => children;
 
 const { StorageService } = await import("./src/services/storageService");
 const { GuestOrderSessionService } = await import(
@@ -379,7 +388,6 @@ assert.equal(
   "personalized_additions",
   "Additional Garment add begins from Step 5 Personalized Additions",
 );
-
 act(() => {
   findButton("Add Trouser").props.onClick({ currentTarget: null });
 });

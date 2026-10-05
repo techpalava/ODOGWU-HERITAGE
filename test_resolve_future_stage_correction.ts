@@ -76,6 +76,25 @@ assert.equal(
 
 assert.equal(
   resolveFutureStageCorrection({
+    currentStageId: "personalized_additions",
+    garmentTypeComplete: true,
+    fabricComplete: false,
+    designSourceReady: true,
+    customDetailsReady: false,
+    personalizedAdditionsReady: false,
+    measurementUnlocked: false,
+    summaryUnlocked: false,
+    inlineAdditionalGarmentFabricTransaction: {
+      garmentKey: "additional:trouser:1",
+      phase: "catalogue",
+    },
+  }),
+  null,
+  "a pending Step 5 Fabric session must not bounce to Custom Details or Fabric while Step 4 briefly looks incomplete",
+);
+
+assert.equal(
+  resolveFutureStageCorrection({
     currentStageId: "custom_details",
     garmentTypeComplete: true,
     fabricComplete: false,

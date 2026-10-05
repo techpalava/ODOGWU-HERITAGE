@@ -508,6 +508,14 @@ export const validateRawFabricAssignments = ({
     seenKeys.add(assignment.garmentKey);
     assignmentKeys.push(assignment.garmentKey);
     if (!authoritativeOccurrenceKeys.has(assignment.garmentKey)) {
+      // Pending catalogue selection (Optional Extra Garment Fabric chooser) is
+      // intentionally ahead of construction-ledger occurrence authority.
+      if (
+        fabricAllocationState?.pendingFabricGarment?.garmentKey ===
+        assignment.garmentKey
+      ) {
+        return;
+      }
       diagnostics.push({
         code: "orphan_fabric_assignment",
         message:

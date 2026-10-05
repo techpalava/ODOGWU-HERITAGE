@@ -54,12 +54,17 @@ export const resolveFutureStageCorrection = ({
   const reuseInDesignStyle =
     currentStageId === "design_style" &&
     Boolean(inlineAdditionalGarmentFabricTransaction?.designStyleReuse);
+  // Step 5 Add Additional Garment keeps the customer on Personalized Additions
+  // for the whole Fabric → Design Style → Copy session, even while the new
+  // occurrence briefly makes Fabric / Design Source / Step 4 look incomplete.
+  if (currentStageId === "personalized_additions" && inlineActive) {
+    return null;
+  }
   const suppressFabricIncompleteRedirect =
     (currentStageId === "personalized_additions" &&
-      (inlineActive || additionalGarmentFabricRepairTargeted)) ||
+      additionalGarmentFabricRepairTargeted) ||
     reuseInDesignStyle;
-  const suppressDesignSourceRedirect =
-    (currentStageId === "personalized_additions" && inlineActive) || reuseInDesignStyle;
+  const suppressDesignSourceRedirect = reuseInDesignStyle;
 
   const fabricCompleteForCorrection =
     fabricComplete || suppressFabricIncompleteRedirect;

@@ -2345,7 +2345,9 @@ export default function DesignStudioView({
 
   // Reset page to 1 when fabric filters change
   useEffect(() => {
-    setFabricPage(1);
+    // Reset page to 1 when fabric filters change. Bail out when already on page 1
+    // so mount/filter-stable renders do not schedule a useless update.
+    setFabricPage((current) => (current === 1 ? current : 1));
   }, [fabricSearch, fabricCategoryFilter]);
 
   // Load preset style & fabric from Gallery selection
@@ -5343,25 +5345,61 @@ export default function DesignStudioView({
     uploadedDesignComposition,
   ]);
 
+  const fabricTransactionPhysicalOccurrenceSignature = JSON.stringify(
+    fabricTransactionPhysicalOccurrences.map((occurrence) => [
+      occurrence.garmentKey,
+      occurrence.garmentType,
+      occurrence.fabricUnits,
+      occurrence.occurrenceGeneration ?? null,
+      occurrence.additionalPersistenceAuthority ?? null,
+    ]),
+  );
+  const fabricTransactionPhysicalOccurrencesRef = useRef(
+    fabricTransactionPhysicalOccurrences,
+  );
+  fabricTransactionPhysicalOccurrencesRef.current =
+    fabricTransactionPhysicalOccurrences;
+  const fabricAllocationStateRef = useRef(fabricAllocationState);
+  fabricAllocationStateRef.current = fabricAllocationState;
+  const effectiveJourneyGarmentTypeSelectionRef = useRef(
+    effectiveJourneyGarmentTypeSelection,
+  );
+  effectiveJourneyGarmentTypeSelectionRef.current =
+    effectiveJourneyGarmentTypeSelection;
+  const garmentTypeSelectionReconcileSignature = JSON.stringify({
+    types: garmentTypeSelection.garmentTypes,
+    demographic: garmentTypeSelection.selectedDemographic,
+    identity: garmentTypeSelection.physicalOccurrenceIdentityState,
+  });
+
   useEffect(() => {
     if (!guestDraftHydrated) return;
     if (!garmentTypeStageCompletion.isComplete) {
       setFutureStageId("garment_type");
     }
-    setFabricAllocationState((current) =>
-      reconcileFutureFabricAllocationStateIfChanged({
-        state: current,
-        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
-        requiredPhysicalOccurrences: fabricTransactionPhysicalOccurrences,
-      }),
-    );
+    const current = fabricAllocationStateRef.current;
+    // Pending Fabric is owned by an in-flight Optional Extra Garment (or other)
+    // catalogue choice. Auto-reconcile rewrites that pending assignment and
+    // re-enters journey composition through fabricAssignmentSignature.
+    if (current.pendingFabricGarment) {
+      return;
+    }
+    const next = reconcileFutureFabricAllocationStateIfChanged({
+      state: current,
+      garmentTypeSelection: effectiveJourneyGarmentTypeSelectionRef.current,
+      requiredPhysicalOccurrences:
+        fabricTransactionPhysicalOccurrencesRef.current,
+    });
+    if (next !== current) {
+      setFabricAllocationState(next);
+    }
   }, [
     guestDraftHydrated,
-    garmentTypeSelection,
-    effectiveJourneyGarmentTypeSelection,
     garmentTypeStageCompletion.isComplete,
     activeUploadedDesignSource?.sourceKey,
-    fabricTransactionPhysicalOccurrences,
+    fabricTransactionPhysicalOccurrenceSignature,
+    garmentTypeSelectionReconcileSignature,
+    fabricAllocationState.pendingFabricGarment?.garmentKey,
   ]);
 
   useEffect(() => {
