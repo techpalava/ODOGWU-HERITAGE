@@ -1,6 +1,6 @@
 # Living project state
 
-Updated: 2026-10-04. Read this file first in every new chat, then `FAST_EXECUTOR_GUIDE.md`.
+Updated: 2026-10-05. Read this file first in every new chat, then `FAST_EXECUTOR_GUIDE.md`.
 This file is committed on `main` and `production`. Update it after each release.
 
 ## What the product is
@@ -24,6 +24,8 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 
 - Drafts: a guest draft in local storage (`GuestOrderSessionService`), and for signed-in
   customers a cloud draft synced by `repository.synchronize` in the hydration effect.
+  After refresh, Studio paints the local draft first (stable `pending_authenticated`
+  identity during customer bootstrap), then reconciles cloud without an empty Step 1 wipe.
 - Step 3 assignments are per garment occurrence. Uploaded photos live in the draft's
   `uploadedDesignSourceRegistry`, each owned by a Firebase uid.
 - Guest uploads move to the account at sign-in (`guestUploadedDesignOwnershipContinuity`).
@@ -36,7 +38,7 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 ## Status
 
 All work below is released. `/api/health` shows the current production build
-(`103cbad…` after the #342–#347 feature and docs sync cycle).
+(`a7bd7d5…` after the #351 faster draft-restore release).
 
 - [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
 - [#283](https://github.com/techpalava/ODOGWU-HERITAGE/pull/283) Uploaded photo on the Summary Design Style card
@@ -56,8 +58,10 @@ All work below is released. `/api/health` shows the current production build
 - [#330](https://github.com/techpalava/ODOGWU-HERITAGE/pull/330) Clear all on Required Measurements wipes only the active method for the current wearer
 - [#336](https://github.com/techpalava/ODOGWU-HERITAGE/pull/336) Clear all persists across refresh (empty route bags, autosave flush, newer local sync)
 - [#342](https://github.com/techpalava/ODOGWU-HERITAGE/pull/342) Signed-in drafts restore the last Studio step and in-page wearer/garment/scroll locus; ten-stage cloud writes (`personalized_additions`) are allowed
+- [#351](https://github.com/techpalava/ODOGWU-HERITAGE/pull/351) Faster draft restore after refresh (local-first paint, stable pending-authenticated identity, earlier catalogue listeners, restoring shell)
 
-The signed-in Chrome restore check after #289 passed.
+The signed-in Chrome restore check after #289 passed. Live chunk after #351 contains
+`Restoring your draft`.
 
 ## Git and worktrees
 
@@ -66,7 +70,8 @@ The signed-in Chrome restore check after #289 passed.
   SHAs differ because of sync merges.
 - Active worktree: `C:\Users\techp\Documents\Codex\ODOGWU-HERITAGE-next-task`,
   aligned to `github/main` and ready for a fresh feature branch when the next
-  task is authorized. Do not reuse released branches such as `fix/draft-resume-locus`.
+  task is authorized. Do not reuse released branches such as `fix/draft-resume-locus`
+  or `fix/faster-draft-restore`.
 - Critical Risk “height alone” copy fix is parked in local stash
   `park critical-risk-height-copy before clear-all` (not released). Restore onto a fresh
   branch from `github/main` when authorized; do not mix it into unrelated work.
