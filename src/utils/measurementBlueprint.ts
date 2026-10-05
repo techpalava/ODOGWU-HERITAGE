@@ -81,7 +81,7 @@ export const MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE = "Sample Cloth Measurements";
 export const MEASUREMENT_SAMPLE_CLOTH_REQUIRED_DESCRIPTION =
   "Measure these on the sample garment.";
 export const MEASUREMENT_SAMPLE_CLOTH_CONVERTED_COPY =
-  "Production equivalent (sample circumference = laid-flat width × 2). No extra ease is added, because the sample already includes the fit you like.";
+  "Laid-flat widths are doubled for production. No extra ease is added — the sample already has the fit you like.";
 export const MEASUREMENT_SAMPLE_CLOTH_DESCRIPTION =
   `${MEASUREMENT_SAMPLE_CLOTH_REQUIRED_DESCRIPTION} ${MEASUREMENT_SAMPLE_CLOTH_CONVERTED_COPY}`;
 export const MEASUREMENT_SAMPLE_CLOTH_LENGTH_INSTRUCTION =

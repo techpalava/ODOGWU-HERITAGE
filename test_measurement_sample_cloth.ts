@@ -168,7 +168,7 @@ assert.equal(MEASUREMENT_SAMPLE_CLOTH_METHOD, "sample_cloth");
 assert.equal(MEASUREMENT_SAMPLE_CLOTH_LABEL, "Sample Cloth Measurements");
 assert.equal(
   MEASUREMENT_SAMPLE_CLOTH_DESCRIPTION,
-  "Measure these on the sample garment. Production equivalent (sample circumference = laid-flat width × 2). No extra ease is added, because the sample already includes the fit you like.",
+  "Measure these on the sample garment. Laid-flat widths are doubled for production. No extra ease is added — the sample already has the fit you like.",
 );
 assert.equal(MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE, "Sample Cloth Measurements");
 assert.equal(MEASUREMENT_METHOD_LABELS.sample_cloth, "Sample Cloth Measurements");
