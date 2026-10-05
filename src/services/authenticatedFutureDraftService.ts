@@ -75,10 +75,18 @@ export type AuthenticatedFutureDraftIdentity =
       ownerUid: string;
     }
   | {
+      /**
+       * Firebase uid is known; application customer bootstrap is still in flight.
+       * Shares the authenticated identity key so Studio does not hard-reset while
+       * `/api/auth/bootstrap` completes.
+       */
+      status: "pending_authenticated";
+      ownerUid: string;
+    }
+  | {
       status: "blocked";
       reason:
         | "application_customer_without_firebase_user"
-        | "firebase_user_without_application_customer"
         | "firebase_uid_mismatch"
         | "firebase_email_mismatch";
     };
@@ -394,8 +402,8 @@ export const resolveAuthenticatedFutureDraftIdentity = ({
   }
   if (!customer) {
     return {
-      status: "blocked",
-      reason: "firebase_user_without_application_customer",
+      status: "pending_authenticated",
+      ownerUid: firebaseUser.uid,
     };
   }
   if (customer.ownerUid !== firebaseUser.uid) {

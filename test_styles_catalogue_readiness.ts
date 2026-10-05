@@ -106,6 +106,18 @@ const shirtTrouserMale = selection(["shirt", "trouser"], ["male"]);
     true,
     "ready empty catalogue must not block draft hydration",
   );
+  assert.equal(
+    canBeginFutureDesignDraftHydration({
+      guestDraftHydrated: false,
+      isLoadingData: false,
+      stylesLoadState: "ready",
+      hasFabrics: true,
+      hasGarmentCatalog: true,
+      identityStatus: "pending_authenticated",
+    }),
+    true,
+    "pending authenticated identity must allow local draft paint",
+  );
 }
 
 // TEST D — listener failure is not empty_catalogue
