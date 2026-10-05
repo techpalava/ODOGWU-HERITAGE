@@ -61,6 +61,7 @@ All work below is released. `/api/health` shows the current production build
 - [#351](https://github.com/techpalava/ODOGWU-HERITAGE/pull/351) Faster draft restore after refresh (local-first paint, stable pending-authenticated identity, earlier catalogue listeners, restoring shell)
 - [#355](https://github.com/techpalava/ODOGWU-HERITAGE/pull/355) Custom Details Go to Bottom FAB; mutually exclusive with Go to Top at 40% scroll progress
 - [#361](https://github.com/techpalava/ODOGWU-HERITAGE/pull/361) Step 7 Measurement solo-first people UX: These clothes are for you + Add people; default wearer You; persistent in-card Male/Female fit; Assign garments only after a second person; Sample Cloth copy simplified and form bag synced after assign / Only-for-me
+- [#368](https://github.com/techpalava/ODOGWU-HERITAGE/pull/368) Storage rules wired in `firebase.json` and deployed 2026-10-05: `customer-design-drafts/` is no longer publicly listable or downloadable (unauthenticated list/get now 403); public `fabrics/`, `styles/`, `designs/`, `gallery/`, `communityPhotos/` reads still 200
 
 The signed-in Chrome restore check after #289 passed. Live chunk after #361 contains
 `These clothes are for you` / `Laid-flat widths are doubled for production`.
@@ -105,11 +106,19 @@ The signed-in Chrome restore check after #289 passed. Live chunk after #361 cont
   JS chunk contains a string from the change (docs-only releases may skip the chunk check).
 - If `firestore.rules` changed, deploy it only after the live app sends the new fields:
   `npx firebase deploy --only firestore:rules --project gen-lang-client-0614710868 --non-interactive`.
+- If `storage.rules` changed, deploy it with
+  `npx firebase deploy --only storage --project gen-lang-client-0614710868 --non-interactive`.
+  `storage.rules` ends in a deny-all catch-all: add a rule for any new public Storage prefix before using it.
 
 Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
 
 ## Still open
 
+- Studio live check after #368 Storage rules: signed-in Step 3 upload, reload, draft image restores;
+  guest upload and sign-in transfer still work; signed-out catalogue and fabric images load.
+- Remaining security review items (payment-intent auth and server-side amount, Stripe webhook
+  signature, `vercel.json` headers, admin allowlist in client, PIN length, `/api/health` buildId)
+  are not authorized yet.
 - Admin live check of stage history: save a new stage on a paid order and confirm the customer
   card lists the earlier stage and the new one.
 - Tailoring live QA is blocked without a real admin session. Do not create or bypass admin access.
