@@ -78,9 +78,17 @@ import {
   scrollCustomDetailsToTop,
 } from "../utils/customDetailsGoToTop";
 import {
+  attachCustomDetailsGoToBottomScrollListener,
+  scrollCustomDetailsToBottom,
+} from "../utils/customDetailsGoToBottom";
+import {
   CustomDetailsGoToTopButton,
   shouldShowCustomDetailsGoToTop,
 } from "./CustomDetailsGoToTopButton";
+import {
+  CustomDetailsGoToBottomButton,
+  shouldShowCustomDetailsGoToBottom,
+} from "./CustomDetailsGoToBottomButton";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 
 interface DormantFutureCustomDetailsStepProps {
@@ -487,8 +495,11 @@ export const DormantFutureCustomDetailsStep = ({
   >(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const bottomTargetRef = useRef<HTMLDivElement | null>(null);
   const goToTopDetachRef = useRef<(() => void) | null>(null);
+  const goToBottomDetachRef = useRef<(() => void) | null>(null);
   const [showGoToTop, setShowGoToTop] = useState(false);
+  const [showGoToBottom, setShowGoToBottom] = useState(false);
   const setTopSentinelRef = useCallback((node: HTMLDivElement | null) => {
     topSentinelRef.current = node;
     goToTopDetachRef.current?.();
@@ -779,7 +790,13 @@ export const DormantFutureCustomDetailsStep = ({
   ]);
 
   useEffect(() => {
+    goToBottomDetachRef.current?.();
+    goToBottomDetachRef.current = attachCustomDetailsGoToBottomScrollListener({
+      onVisibilityChange: setShowGoToBottom,
+    });
     return () => {
+      goToBottomDetachRef.current?.();
+      goToBottomDetachRef.current = null;
       goToTopDetachRef.current?.();
       goToTopDetachRef.current = null;
     };
@@ -787,6 +804,10 @@ export const DormantFutureCustomDetailsStep = ({
 
   const handleGoToTop = () => {
     scrollCustomDetailsToTop({ title: titleRef.current });
+  };
+
+  const handleGoToBottom = () => {
+    scrollCustomDetailsToBottom({ target: bottomTargetRef.current });
   };
 
   const getAssignedFabricForGarment = (garmentKey: string) => {
@@ -2133,19 +2154,34 @@ export const DormantFutureCustomDetailsStep = ({
         )}
       </div>
 
-      <DesignStudioStepActions
-        backDestination={previousStageLabel}
-        onBack={onBack}
-        forward={{
-          destination: nextStageLabel,
-          onClick: onContinue,
-          disabled: !canContinue,
-          locked: !canContinue,
-          ariaLabel: canContinue
-            ? `Continue to ${nextStageLabel}`
-            : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`,
-        }}
-      />
+      <div
+        ref={bottomTargetRef}
+        data-custom-details-bottom-target="true"
+        tabIndex={-1}
+        className="outline-none"
+      >
+        <DesignStudioStepActions
+          backDestination={previousStageLabel}
+          onBack={onBack}
+          forward={{
+            destination: nextStageLabel,
+            onClick: onContinue,
+            disabled: !canContinue,
+            locked: !canContinue,
+            ariaLabel: canContinue
+              ? `Continue to ${nextStageLabel}`
+              : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`,
+          }}
+        />
+      </div>
+
+      {shouldShowCustomDetailsGoToBottom({
+        scrollBelowFortyPercent: showGoToBottom,
+        fabricModalOpen,
+        choiceDialogOpen: showAdditionalGarmentChoiceDialog,
+      }) ? (
+        <CustomDetailsGoToBottomButton onClick={handleGoToBottom} />
+      ) : null}
 
       {shouldShowCustomDetailsGoToTop({
         sentinelOutOfView: showGoToTop,

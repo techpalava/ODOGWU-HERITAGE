@@ -1,6 +1,6 @@
 /**
  * UX repair: another-Fabric stays on Step 4; primary fabric / Design Source
- * authority; unlock history; scroll; Go to Top.
+ * authority; unlock history; scroll; Go to Top; Go to Bottom.
  */
 import assert from "node:assert/strict";
 import { createElement } from "react";
@@ -14,6 +14,10 @@ import {
   CustomDetailsGoToTopButton,
   shouldShowCustomDetailsGoToTop,
 } from "./src/components/CustomDetailsGoToTopButton";
+import {
+  CustomDetailsGoToBottomButton,
+  shouldShowCustomDetailsGoToBottom,
+} from "./src/components/CustomDetailsGoToBottomButton";
 import { FabricAllocationStateEngine } from "./src/engine/FabricAllocationStateEngine";
 import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import { createCatalogueAdditionalGarmentSelection, projectCatalogueStep1PhysicalOccurrences } from "./src/utils/additionalGarmentDomain";
@@ -24,6 +28,13 @@ import {
   attachCustomDetailsGoToTopObserver,
   scrollCustomDetailsToTop,
 } from "./src/utils/customDetailsGoToTop";
+import {
+  CUSTOM_DETAILS_GO_TO_BOTTOM_HIDE_AT_PROGRESS,
+  attachCustomDetailsGoToBottomScrollListener,
+  getCustomDetailsScrollProgress,
+  isCustomDetailsGoToBottomVisibleFromProgress,
+  scrollCustomDetailsToBottom,
+} from "./src/utils/customDetailsGoToBottom";
 import { applyFutureFabricCardSelection } from "./src/utils/designStudioFutureFabricStage";
 import { activateFutureCatalogStyleSelection } from "./src/utils/designSourceState";
 import { resolveFutureStageCorrection } from "./src/utils/resolveFutureStageCorrection";
@@ -403,10 +414,167 @@ const fabricB: Fabric = {
     0,
     "Go to Top absent near top before sentinel leaves view",
   );
+  assert.equal(
+    renderer.root.findAllByProps({ "data-custom-details-bottom-target": "true" })
+      .length,
+    1,
+  );
 
   globalThis.IntersectionObserver = OriginalIO;
   void DESIGN_STUDIO_STEPS;
   void textContent;
 }
 
-console.log("PASS: step4 stay / unlock / go-to-top UX repair");
+// Go to Bottom visibility / action
+{
+  assert.equal(CUSTOM_DETAILS_GO_TO_BOTTOM_HIDE_AT_PROGRESS, 0.4);
+  assert.equal(getCustomDetailsScrollProgress({ scrollY: 0, scrollHeight: 1000, clientHeight: 500 }), 0);
+  assert.equal(
+    getCustomDetailsScrollProgress({ scrollY: 195, scrollHeight: 1000, clientHeight: 500 }),
+    0.39,
+  );
+  assert.equal(
+    getCustomDetailsScrollProgress({ scrollY: 200, scrollHeight: 1000, clientHeight: 500 }),
+    0.4,
+  );
+  assert.equal(
+    getCustomDetailsScrollProgress({ scrollY: 500, scrollHeight: 1000, clientHeight: 500 }),
+    1,
+  );
+  assert.equal(isCustomDetailsGoToBottomVisibleFromProgress(0), true);
+  assert.equal(isCustomDetailsGoToBottomVisibleFromProgress(0.39), true);
+  assert.equal(isCustomDetailsGoToBottomVisibleFromProgress(0.4), false);
+  assert.equal(isCustomDetailsGoToBottomVisibleFromProgress(1), false);
+
+  assert.equal(
+    shouldShowCustomDetailsGoToBottom({
+      scrollBelowFortyPercent: true,
+      fabricModalOpen: false,
+      choiceDialogOpen: false,
+    }),
+    true,
+    "visible near Step 4 top",
+  );
+  assert.equal(
+    shouldShowCustomDetailsGoToBottom({
+      scrollBelowFortyPercent: false,
+      fabricModalOpen: false,
+      choiceDialogOpen: false,
+    }),
+    false,
+    "hidden once scroll reaches 40%",
+  );
+  assert.equal(
+    shouldShowCustomDetailsGoToBottom({
+      scrollBelowFortyPercent: true,
+      fabricModalOpen: true,
+      choiceDialogOpen: false,
+    }),
+    false,
+    "hidden while fabric modal open",
+  );
+  assert.equal(
+    shouldShowCustomDetailsGoToBottom({
+      scrollBelowFortyPercent: true,
+      fabricModalOpen: false,
+      choiceDialogOpen: true,
+    }),
+    false,
+    "hidden while additional-garment choice dialog open",
+  );
+
+  if (!globalThis.window) {
+    // @ts-expect-error test env
+    globalThis.window = globalThis;
+  }
+  const listeners = new Map<string, Set<() => void>>();
+  const originalAdd = globalThis.window.addEventListener?.bind(globalThis.window);
+  const originalRemove = globalThis.window.removeEventListener?.bind(globalThis.window);
+  globalThis.window.addEventListener = ((type: string, listener: EventListenerOrEventListenerObject) => {
+    const fn = typeof listener === "function" ? listener : () => undefined;
+    const set = listeners.get(type) ?? new Set();
+    set.add(fn as () => void);
+    listeners.set(type, set);
+  }) as typeof window.addEventListener;
+  globalThis.window.removeEventListener = ((type: string, listener: EventListenerOrEventListenerObject) => {
+    const fn = typeof listener === "function" ? listener : () => undefined;
+    listeners.get(type)?.delete(fn as () => void);
+  }) as typeof window.removeEventListener;
+
+  let progress = 0;
+  let bottomVisibility: boolean | null = null;
+  const detachBottom = attachCustomDetailsGoToBottomScrollListener({
+    onVisibilityChange: (show) => {
+      bottomVisibility = show;
+    },
+    getProgress: () => progress,
+  });
+  assert.equal(bottomVisibility, true, "initial progress 0 shows Go to Bottom");
+  assert.ok(listeners.get("scroll")?.size);
+  assert.ok(listeners.get("resize")?.size);
+
+  progress = 0.4;
+  for (const fn of listeners.get("scroll") ?? []) fn();
+  assert.equal(bottomVisibility, false, "40% progress hides Go to Bottom");
+
+  progress = 0.2;
+  for (const fn of listeners.get("resize") ?? []) fn();
+  assert.equal(bottomVisibility, true, "resize re-evaluates visibility");
+
+  const scrollListenerCount = listeners.get("scroll")?.size ?? 0;
+  const resizeListenerCount = listeners.get("resize")?.size ?? 0;
+  detachBottom();
+  assert.equal(listeners.get("scroll")?.size ?? 0, scrollListenerCount - 1);
+  assert.equal(listeners.get("resize")?.size ?? 0, resizeListenerCount - 1);
+
+  if (originalAdd) globalThis.window.addEventListener = originalAdd;
+  if (originalRemove) globalThis.window.removeEventListener = originalRemove;
+
+  let scrollIntoViewCalls = 0;
+  let focusCalls = 0;
+  const target = {
+    style: {} as Record<string, string>,
+    scrollIntoView: () => {
+      scrollIntoViewCalls += 1;
+    },
+    focus: () => {
+      focusCalls += 1;
+    },
+  } as unknown as HTMLElement;
+  const originalSetTimeout = globalThis.window.setTimeout;
+  globalThis.window.setTimeout = ((fn: () => void) => {
+    fn();
+    return 0;
+  }) as typeof setTimeout;
+  scrollCustomDetailsToBottom({ target });
+  assert.equal(scrollIntoViewCalls, 1);
+  assert.equal(focusCalls, 1);
+  assert.equal(target.style.scrollMarginBottom, "6rem");
+  globalThis.window.setTimeout = originalSetTimeout;
+
+  let goToBottomClicks = 0;
+  let bottomRenderer!: ReturnType<typeof create>;
+  act(() => {
+    bottomRenderer = create(
+      createElement(CustomDetailsGoToBottomButton, {
+        onClick: () => {
+          goToBottomClicks += 1;
+        },
+      }),
+    );
+  });
+  const bottomBtn = bottomRenderer.root.findByProps({
+    "data-custom-details-go-to-bottom": "true",
+  });
+  assert.equal(bottomBtn.props["aria-label"], "Go to bottom of Custom Details");
+  assert.equal(bottomBtn.props.title, "Go to bottom");
+  assert.equal(bottomBtn.props.type, "button");
+  assert.match(String(bottomBtn.props.className || ""), /bottom-\[calc\(5\.5rem/);
+  assert.match(String(bottomBtn.props.className || ""), /size-11/);
+  act(() => {
+    bottomBtn.props.onClick();
+  });
+  assert.equal(goToBottomClicks, 1);
+}
+
+console.log("PASS: step4 stay / unlock / go-to-top / go-to-bottom UX repair");
