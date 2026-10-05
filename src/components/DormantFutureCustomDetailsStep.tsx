@@ -1,5 +1,5 @@
 import { Plus, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   CUSTOM_DETAIL_PARENT_SECTION_PRESENTATION,
   CUSTOM_DETAIL_SELECTION_GROUP_TO_PARENT_SECTION,
@@ -73,14 +73,21 @@ import type { CustomDetailsPresentationStageId } from "../utils/customDetailsSta
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 import { isFutureCustomDetailsContentReady } from "../utils/aiTryOnWorkflow";
 import type { CustomerGarmentConstructionBreakdownProjection } from "../utils/designPriceBreakdownPresentation";
+import { scrollCustomDetailsToTop } from "../utils/customDetailsGoToTop";
 import {
-  attachCustomDetailsGoToTopObserver,
-  scrollCustomDetailsToTop,
-} from "../utils/customDetailsGoToTop";
+  attachCustomDetailsScrollProgressListener,
+  isCustomDetailsGoToBottomVisibleFromProgress,
+  isCustomDetailsGoToTopVisibleFromProgress,
+  scrollCustomDetailsToBottom,
+} from "../utils/customDetailsGoToBottom";
 import {
   CustomDetailsGoToTopButton,
   shouldShowCustomDetailsGoToTop,
 } from "./CustomDetailsGoToTopButton";
+import {
+  CustomDetailsGoToBottomButton,
+  shouldShowCustomDetailsGoToBottom,
+} from "./CustomDetailsGoToBottomButton";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 
 interface DormantFutureCustomDetailsStepProps {
@@ -485,20 +492,10 @@ export const DormantFutureCustomDetailsStep = ({
   const lastHandledAdditionalGarmentNavigationRequestIdRef = useRef<
     number | null
   >(null);
-  const topSentinelRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
-  const goToTopDetachRef = useRef<(() => void) | null>(null);
-  const [showGoToTop, setShowGoToTop] = useState(false);
-  const setTopSentinelRef = useCallback((node: HTMLDivElement | null) => {
-    topSentinelRef.current = node;
-    goToTopDetachRef.current?.();
-    goToTopDetachRef.current = null;
-    if (!node) return;
-    goToTopDetachRef.current = attachCustomDetailsGoToTopObserver({
-      sentinel: node,
-      onVisibilityChange: setShowGoToTop,
-    });
-  }, []);
+  const bottomTargetRef = useRef<HTMLDivElement | null>(null);
+  const scrollProgressDetachRef = useRef<(() => void) | null>(null);
+  const [scrollProgress, setScrollProgress] = useState(0);
   const selectedPersonalizedIdentities = useMemo(
     () => reconciliation.subjects.flatMap((subject) => {
       const group = reconciliation.applicabilityByGarmentKey
@@ -779,14 +776,22 @@ export const DormantFutureCustomDetailsStep = ({
   ]);
 
   useEffect(() => {
+    scrollProgressDetachRef.current?.();
+    scrollProgressDetachRef.current = attachCustomDetailsScrollProgressListener({
+      onProgressChange: setScrollProgress,
+    });
     return () => {
-      goToTopDetachRef.current?.();
-      goToTopDetachRef.current = null;
+      scrollProgressDetachRef.current?.();
+      scrollProgressDetachRef.current = null;
     };
   }, []);
 
   const handleGoToTop = () => {
     scrollCustomDetailsToTop({ title: titleRef.current });
+  };
+
+  const handleGoToBottom = () => {
+    scrollCustomDetailsToBottom({ target: bottomTargetRef.current });
   };
 
   const getAssignedFabricForGarment = (garmentKey: string) => {
@@ -1555,7 +1560,7 @@ export const DormantFutureCustomDetailsStep = ({
 
   return (
     <section aria-labelledby={`future-${stage}-title`} data-stage-id={stage} data-stage-complete={canContinue} className="relative space-y-4 font-sans">
-      <div ref={setTopSentinelRef} data-custom-details-top-sentinel="true" aria-hidden="true" className="h-px w-full" />
+      <div data-custom-details-top-sentinel="true" aria-hidden="true" className="h-px w-full" />
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions
           backDestination={previousStageLabel}
@@ -2133,22 +2138,39 @@ export const DormantFutureCustomDetailsStep = ({
         )}
       </div>
 
-      <DesignStudioStepActions
-        backDestination={previousStageLabel}
-        onBack={onBack}
-        forward={{
-          destination: nextStageLabel,
-          onClick: onContinue,
-          disabled: !canContinue,
-          locked: !canContinue,
-          ariaLabel: canContinue
-            ? `Continue to ${nextStageLabel}`
-            : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`,
-        }}
-      />
+      <div
+        ref={bottomTargetRef}
+        data-custom-details-bottom-target="true"
+        tabIndex={-1}
+        className="outline-none"
+      >
+        <DesignStudioStepActions
+          backDestination={previousStageLabel}
+          onBack={onBack}
+          forward={{
+            destination: nextStageLabel,
+            onClick: onContinue,
+            disabled: !canContinue,
+            locked: !canContinue,
+            ariaLabel: canContinue
+              ? `Continue to ${nextStageLabel}`
+              : `Continue to ${nextStageLabel} is locked until ${stageTitle} are complete`,
+          }}
+        />
+      </div>
+
+      {shouldShowCustomDetailsGoToBottom({
+        scrollBelowFortyPercent:
+          isCustomDetailsGoToBottomVisibleFromProgress(scrollProgress),
+        fabricModalOpen,
+        choiceDialogOpen: showAdditionalGarmentChoiceDialog,
+      }) ? (
+        <CustomDetailsGoToBottomButton onClick={handleGoToBottom} />
+      ) : null}
 
       {shouldShowCustomDetailsGoToTop({
-        sentinelOutOfView: showGoToTop,
+        scrollAtOrAboveFortyPercent:
+          isCustomDetailsGoToTopVisibleFromProgress(scrollProgress),
         fabricModalOpen,
         choiceDialogOpen: showAdditionalGarmentChoiceDialog,
       }) ? (
