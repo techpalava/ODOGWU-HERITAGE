@@ -159,6 +159,7 @@ import {
   projectDesignStyleStep,
   resolveActiveDesignStyleOccurrence,
   type DesignStyleStepCatalogMutationRequest,
+  type DesignStyleStepCatalogueEntry,
   type DesignStyleStepClearMutationRequest,
   type UploadedDesignStyleDetachLifecycleOutcome,
 } from "../utils/designStyleStepRuntime";
@@ -231,11 +232,16 @@ import { getCustomDetailsStageCompletion } from "../utils/customDetailsStageOwne
 import { resolveShowAdditionalClothesCosts } from "../config/GarmentDetailsConfig";
 import { projectActiveCustomerDesignSelections } from "../utils/customerAvailableDesignSelections";
 import {
+  advanceAdditionalGarmentSessionToCustomDetailsChoice,
+  advanceAdditionalGarmentSessionToDesignStyle,
   applyAdditionalGarmentConstructionAndCopy,
   canCancelPendingForAdditionalGarmentTransaction,
   confirmAdditionalGarmentFabricAssignment,
   confirmAdditionalGarmentTransactionCommitted,
+  createAdditionalGarmentDesignStyleOnlySession,
   dismissDeferredAdditionalGarmentCustomDetailsPrompt,
+  isAdditionalGarmentCustomDetailsChoiceSessionPhase,
+  isAdditionalGarmentDesignStyleSessionPhase,
   isAdditionalGarmentFabricTransactionTargetValid,
   mergeProvisionalAdditionalConstructionForLiveSummary,
   queueDeferredAdditionalGarmentCustomDetailsPrompt,
@@ -248,6 +254,7 @@ import {
 } from "../utils/additionalGarmentFabricPicker";
 import { resolveFutureStageCorrection } from "../utils/resolveFutureStageCorrection";
 import { FutureAdditionalGarmentFabricDialog } from "./FutureAdditionalGarmentFabricDialog";
+import { FutureAdditionalGarmentDesignStyleDialog } from "./FutureAdditionalGarmentDesignStyleDialog";
 import {
   FutureRemainingFabricCapacityOfferCard,
   FutureRemainingFabricCapacityOfferPrompt,
@@ -664,6 +671,9 @@ const getFutureDesignStyleHydrationFingerprint = (
     diagnostics: result.diagnostics,
     legacyScalarFingerprint: result.legacyScalarFingerprint,
   });
+
+const EMPTY_ADDITIONAL_GARMENT_DESIGN_STYLE_CATALOGUE: readonly DesignStyleStepCatalogueEntry[] =
+  [];
 
 export default function DesignStudioView({
   currentUser,
@@ -1523,6 +1533,14 @@ export default function DesignStudioView({
   const [additionalGarmentFabricError, setAdditionalGarmentFabricError] =
     useState<string | null>(null);
   const [
+    additionalGarmentDesignStyleError,
+    setAdditionalGarmentDesignStyleError,
+  ] = useState<string | null>(null);
+  const [
+    additionalGarmentDesignStyleAssigning,
+    setAdditionalGarmentDesignStyleAssigning,
+  ] = useState(false);
+  const [
     additionalGarmentFabricPersistentError,
     setAdditionalGarmentFabricPersistentError,
   ] = useState<string | null>(null);
@@ -1985,6 +2003,69 @@ export default function DesignStudioView({
       currentFutureDesignStyleDraftHydration,
     ],
   );
+  const additionalGarmentDesignStyleSessionTarget = useMemo(() => {
+    if (
+      !isAdditionalGarmentDesignStyleSessionPhase(
+        additionalGarmentFabricTransaction,
+      )
+    ) {
+      return null;
+    }
+    return (
+      futureDesignStyleStepProjection.occurrences.find(
+        (occurrence) =>
+          occurrence.target.garmentKey ===
+          additionalGarmentFabricTransaction!.garmentKey,
+      )?.target ?? null
+    );
+  }, [
+    additionalGarmentFabricTransaction,
+    futureDesignStyleStepProjection.occurrences,
+  ]);
+  const additionalGarmentDesignStyleCatalogueEntries = useMemo(
+    () =>
+      additionalGarmentDesignStyleSessionTarget
+        ? bindDesignStyleStepCatalogueLedgerRevision({
+            entries: projectActiveOccurrenceDesignStyleCatalogue({
+              projection: futureDesignStyleStepProjection,
+              activeTarget: additionalGarmentDesignStyleSessionTarget,
+              styles,
+              authority: futureDesignStyleDraftAuthority,
+              runtimeGeneration:
+                currentFutureDesignStyleDraftHydration?.runtimeGeneration ?? -1,
+            }),
+            ledgerRevision:
+              currentFutureDesignStyleDraftHydration?.result.ledger?.revision ??
+              -1,
+          })
+        : EMPTY_ADDITIONAL_GARMENT_DESIGN_STYLE_CATALOGUE,
+    [
+      additionalGarmentDesignStyleSessionTarget,
+      futureDesignStyleStepProjection,
+      styles,
+      futureDesignStyleDraftAuthority,
+      currentFutureDesignStyleDraftHydration,
+    ],
+  );
+  const additionalGarmentDesignStyleLabelsByKey = useMemo(() => {
+    const additionalKeys = new Set(
+      futureAdditionalGarments
+        .filter((garment) => garment.sourceRole === "additional")
+        .map((garment) => garment.garmentKey),
+    );
+    const labels: Record<string, string | null> = {};
+    for (const occurrence of futureDesignStyleStepProjection.occurrences) {
+      const garmentKey = occurrence.target.garmentKey;
+      if (!additionalKeys.has(garmentKey) || !occurrence.assignment) {
+        continue;
+      }
+      labels[garmentKey] = occurrence.assignmentLabel;
+    }
+    return labels;
+  }, [
+    futureAdditionalGarments,
+    futureDesignStyleStepProjection.occurrences,
+  ]);
   const futureDesignStyleClearRequest: DesignStyleStepClearMutationRequest | null =
     resolvedFutureActiveDesignStyleOccurrence &&
     currentFutureDesignStyleDraftHydration?.result.ledger
@@ -2284,7 +2365,9 @@ export default function DesignStudioView({
 
   // Reset page to 1 when fabric filters change
   useEffect(() => {
-    setFabricPage(1);
+    // Reset page to 1 when fabric filters change. Bail out when already on page 1
+    // so mount/filter-stable renders do not schedule a useless update.
+    setFabricPage((current) => (current === 1 ? current : 1));
   }, [fabricSearch, fabricCategoryFilter]);
 
   // Load preset style & fabric from Gallery selection
@@ -5282,25 +5365,61 @@ export default function DesignStudioView({
     uploadedDesignComposition,
   ]);
 
+  const fabricTransactionPhysicalOccurrenceSignature = JSON.stringify(
+    fabricTransactionPhysicalOccurrences.map((occurrence) => [
+      occurrence.garmentKey,
+      occurrence.garmentType,
+      occurrence.fabricUnits,
+      occurrence.occurrenceGeneration ?? null,
+      occurrence.additionalPersistenceAuthority ?? null,
+    ]),
+  );
+  const fabricTransactionPhysicalOccurrencesRef = useRef(
+    fabricTransactionPhysicalOccurrences,
+  );
+  fabricTransactionPhysicalOccurrencesRef.current =
+    fabricTransactionPhysicalOccurrences;
+  const fabricAllocationStateRef = useRef(fabricAllocationState);
+  fabricAllocationStateRef.current = fabricAllocationState;
+  const effectiveJourneyGarmentTypeSelectionRef = useRef(
+    effectiveJourneyGarmentTypeSelection,
+  );
+  effectiveJourneyGarmentTypeSelectionRef.current =
+    effectiveJourneyGarmentTypeSelection;
+  const garmentTypeSelectionReconcileSignature = JSON.stringify({
+    types: garmentTypeSelection.garmentTypes,
+    demographic: garmentTypeSelection.selectedDemographic,
+    identity: garmentTypeSelection.physicalOccurrenceIdentityState,
+  });
+
   useEffect(() => {
     if (!guestDraftHydrated) return;
     if (!garmentTypeStageCompletion.isComplete) {
       setFutureStageId("garment_type");
     }
-    setFabricAllocationState((current) =>
-      reconcileFutureFabricAllocationStateIfChanged({
-        state: current,
-        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
-        requiredPhysicalOccurrences: fabricTransactionPhysicalOccurrences,
-      }),
-    );
+    const current = fabricAllocationStateRef.current;
+    // Pending Fabric is owned by an in-flight Optional Extra Garment (or other)
+    // catalogue choice. Auto-reconcile rewrites that pending assignment and
+    // re-enters journey composition through fabricAssignmentSignature.
+    if (current.pendingFabricGarment) {
+      return;
+    }
+    const next = reconcileFutureFabricAllocationStateIfChanged({
+      state: current,
+      garmentTypeSelection: effectiveJourneyGarmentTypeSelectionRef.current,
+      requiredPhysicalOccurrences:
+        fabricTransactionPhysicalOccurrencesRef.current,
+    });
+    if (next !== current) {
+      setFabricAllocationState(next);
+    }
   }, [
     guestDraftHydrated,
-    garmentTypeSelection,
-    effectiveJourneyGarmentTypeSelection,
     garmentTypeStageCompletion.isComplete,
     activeUploadedDesignSource?.sourceKey,
-    fabricTransactionPhysicalOccurrences,
+    fabricTransactionPhysicalOccurrenceSignature,
+    garmentTypeSelectionReconcileSignature,
+    fabricAllocationState.pendingFabricGarment?.garmentKey,
   ]);
 
   useEffect(() => {
@@ -5568,14 +5687,27 @@ export default function DesignStudioView({
         ? `${garmentLabel} now uses ${fabricName}.`
         : `${garmentLabel} added with ${fabricName}.`,
     );
-    // Keep transaction in terminal "committed" until readiness is stable so
-    // stage correction cannot bounce to Design Style for one render.
-    const committedTransaction: AdditionalGarmentFabricTransaction = {
-      ...transaction,
-      phase: "committed",
-      openedModal: false,
-      requestedFabricCode: commitResult.fabricCode,
-    };
+    // Keep the Step 5 configuration session alive after fabric so Design Style
+    // and Custom Detail Copy can run without bouncing to the Step 3 page.
+    // Change Fabric (change_existing) and reuse paths stay terminal "committed".
+    // Add Fabric (repair_missing) continues the same Design Style → Copy chain.
+    const shouldContinueStep5Configuration =
+      (transaction.origin === "new_addition" ||
+        transaction.origin === "repair_missing") &&
+      !transaction.designStyleReuse &&
+      !transaction.capacityReuse;
+    const committedTransaction: AdditionalGarmentFabricTransaction =
+      shouldContinueStep5Configuration
+        ? advanceAdditionalGarmentSessionToDesignStyle(
+            transaction,
+            commitResult.fabricCode,
+          )
+        : {
+            ...transaction,
+            phase: "committed",
+            openedModal: false,
+            requestedFabricCode: commitResult.fabricCode,
+          };
     additionalGarmentFabricTransactionRef.current = committedTransaction;
     setAdditionalGarmentFabricTransaction(committedTransaction);
     if (transaction.designStyleReuse) {
@@ -6409,6 +6541,100 @@ export default function DesignStudioView({
     if (feedbackTarget) {
       requestFutureDesignStyleAssignmentFeedback(feedbackTarget);
     }
+  };
+
+  const clearAdditionalGarmentStep5ConfigurationSession = () => {
+    additionalGarmentFabricTransactionRef.current = null;
+    setAdditionalGarmentFabricTransaction(null);
+    setAdditionalGarmentDesignStyleError(null);
+    setAdditionalGarmentDesignStyleAssigning(false);
+  };
+
+  const handleCancelAdditionalGarmentDesignStyleDialog = () => {
+    const transaction = additionalGarmentFabricTransactionRef.current;
+    if (!isAdditionalGarmentDesignStyleSessionPhase(transaction)) return;
+    // Keep fabric + construction; do not open Custom Detail Copy.
+    if (transaction.designStyleOnly) {
+      clearAdditionalGarmentStep5ConfigurationSession();
+      return;
+    }
+    // Hold the terminal committed phase so Step 5 is not bounced to Step 3.
+    const committedTransaction: AdditionalGarmentFabricTransaction = {
+      ...transaction,
+      phase: "committed",
+      openedModal: false,
+    };
+    additionalGarmentFabricTransactionRef.current = committedTransaction;
+    setAdditionalGarmentFabricTransaction(committedTransaction);
+    setAdditionalGarmentDesignStyleError(null);
+    setAdditionalGarmentDesignStyleAssigning(false);
+  };
+
+  const handleAssignAdditionalGarmentDesignStyle = (
+    entry: DesignStyleStepCatalogueEntry,
+  ) => {
+    const transaction = additionalGarmentFabricTransactionRef.current;
+    if (!isAdditionalGarmentDesignStyleSessionPhase(transaction)) return;
+    const request =
+      Object.values(entry.requestsByOccurrenceToken).find(
+        (candidate) =>
+          candidate.target.garmentKey === transaction.garmentKey,
+      ) ||
+      (entry.request.target.garmentKey === transaction.garmentKey
+        ? entry.request
+        : null);
+    if (!request) {
+      setAdditionalGarmentDesignStyleError(
+        "That design style is no longer available for this garment.",
+      );
+      return;
+    }
+    setAdditionalGarmentDesignStyleAssigning(true);
+    setAdditionalGarmentDesignStyleError(null);
+    const current = futureDesignStyleMutationAuthorityRef.current;
+    const ledger = current?.hydration.ledger || null;
+    if (!current || !ledger) {
+      setAdditionalGarmentDesignStyleAssigning(false);
+      setAdditionalGarmentDesignStyleError(
+        "Design Style is not ready yet. Try again in a moment.",
+      );
+      return;
+    }
+    const result = assignCatalogueStyleToOccurrencesThroughStepRuntime({
+      ledger,
+      activeOccurrences: current.activeOccurrences,
+      authority: current.authority,
+      requests: [request],
+      currentRuntimeGeneration: current.runtimeGeneration,
+      stepIsActive: true,
+      hydrationMutable:
+        current.hydration.canAutosave &&
+        !current.hydration.destructiveNormalizationProhibited,
+    });
+    if (result.status === "rejected") {
+      setAdditionalGarmentDesignStyleAssigning(false);
+      setAdditionalGarmentDesignStyleError(
+        result.reason === "STYLE_NOT_ELIGIBLE"
+          ? "That design style cannot be used for this garment."
+          : "That design style could not be saved. Try another style.",
+      );
+      return;
+    }
+    if (!applyFutureDesignStyleMutationLedger(current, result.ledger)) {
+      setAdditionalGarmentDesignStyleAssigning(false);
+      setAdditionalGarmentDesignStyleError(
+        "That design style could not be saved. Try another style.",
+      );
+      return;
+    }
+    retireFutureDesignStyleUploadDisplayForTarget(request.target);
+    const nextSession = advanceAdditionalGarmentSessionToCustomDetailsChoice(
+      transaction,
+    );
+    additionalGarmentFabricTransactionRef.current = nextSession;
+    setAdditionalGarmentFabricTransaction(nextSession);
+    setAdditionalGarmentDesignStyleAssigning(false);
+    setAdditionalGarmentDesignStyleError(null);
   };
 
   const queueUploadedSourceCleanupCandidate = ({
@@ -8488,6 +8714,15 @@ export default function DesignStudioView({
         deferredPrompt.garmentKey,
       ),
     );
+    if (
+      isAdditionalGarmentCustomDetailsChoiceSessionPhase(
+        additionalGarmentFabricTransactionRef.current,
+      ) &&
+      additionalGarmentFabricTransactionRef.current?.garmentKey ===
+        deferredPrompt.garmentKey
+    ) {
+      clearAdditionalGarmentStep5ConfigurationSession();
+    }
     return true;
   };
   const handleCancelAdditionalGarmentCustomDetails = (
@@ -8508,6 +8743,15 @@ export default function DesignStudioView({
         deferredPrompt.garmentKey,
       ),
     );
+    if (
+      isAdditionalGarmentCustomDetailsChoiceSessionPhase(
+        additionalGarmentFabricTransactionRef.current,
+      ) &&
+      additionalGarmentFabricTransactionRef.current?.garmentKey ===
+        deferredPrompt.garmentKey
+    ) {
+      clearAdditionalGarmentStep5ConfigurationSession();
+    }
     return true;
   };
   const handleRemoveFuturePhysicalGarmentOccurrence = ({
@@ -8982,7 +9226,8 @@ export default function DesignStudioView({
       return;
     }
     const shouldDeferCustomDetails =
-      transaction.origin === "new_addition" &&
+      (transaction.origin === "new_addition" ||
+        transaction.origin === "repair_missing") &&
       !transaction.designStyleReuse &&
       !transaction.capacityReuse;
     let constructionAppliedTransaction = transaction;
@@ -9212,6 +9457,17 @@ export default function DesignStudioView({
     ) {
       return;
     }
+    const occurrenceGeneration = getPhysicalGarmentOccurrenceGeneration(
+      garmentTypeSelection.physicalOccurrenceIdentityState,
+      garmentKey,
+    );
+    if (!occurrenceGeneration) {
+      setNotification({
+        message: "This garment is no longer available for fabric assignment.",
+        type: "info",
+      });
+      return;
+    }
     additionalGarmentFabricTriggerRef.current = triggerElement || null;
     additionalGarmentFabricScrollYRef.current =
       typeof window !== "undefined" ? window.scrollY : null;
@@ -9225,6 +9481,7 @@ export default function DesignStudioView({
       garmentKey,
       garmentType:
         authoritativeAdditional.garmentType as CanonicalPhysicalGarmentType,
+      occurrenceGeneration,
       ...(assignment ? { previousFabricCode: assignment.fabricCode } : {}),
       openedModal: true,
     });
@@ -9232,6 +9489,79 @@ export default function DesignStudioView({
     // only after React has committed the dialog render.
     additionalGarmentFabricTransactionRef.current = transaction;
     setAdditionalGarmentFabricTransaction(transaction);
+  };
+  const handleOpenAdditionalGarmentDesignStyle = (
+    garmentKey: string,
+    triggerElement?: HTMLElement | null,
+  ) => {
+    if (
+      fabricAllocationState.pendingFabricGarment ||
+      fabricAllocationState.awaitingFabricForPendingGarment ||
+      additionalGarmentFabricTransaction
+    ) {
+      setNotification({
+        message:
+          "Finish the current additional-garment setup before changing Design Style.",
+        type: "info",
+      });
+      return;
+    }
+    const authoritativeAdditional = futureAdditionalGarments.find(
+      (garment) =>
+        garment.garmentKey === garmentKey &&
+        garment.sourceRole === "additional",
+    );
+    if (!authoritativeAdditional) return;
+    const hasFabric = fabricAllocationState.fabricAllocations.some((allocation) =>
+      allocation.garmentAssignments.some(
+        (candidate) =>
+          candidate.garmentKey === garmentKey &&
+          candidate.sourceRole === "additional",
+      ),
+    );
+    if (!hasFabric) {
+      setNotification({
+        message: "Assign fabric for this garment before choosing Design Style.",
+        type: "info",
+      });
+      return;
+    }
+    const occurrenceGeneration = getPhysicalGarmentOccurrenceGeneration(
+      garmentTypeSelection.physicalOccurrenceIdentityState,
+      garmentKey,
+    );
+    if (!occurrenceGeneration) {
+      setNotification({
+        message: "This garment is no longer available for Design Style.",
+        type: "info",
+      });
+      return;
+    }
+    additionalGarmentFabricTriggerRef.current = triggerElement || null;
+    additionalGarmentFabricScrollYRef.current =
+      typeof window !== "undefined" ? window.scrollY : null;
+    setAdditionalGarmentDesignStyleError(null);
+    setAdditionalGarmentDesignStyleAssigning(false);
+    const transaction = beginAdditionalGarmentFabricTransaction(
+      createAdditionalGarmentDesignStyleOnlySession({
+        garmentKey,
+        garmentType:
+          authoritativeAdditional.garmentType as CanonicalPhysicalGarmentType,
+        occurrenceGeneration,
+      }),
+    );
+    additionalGarmentFabricTransactionRef.current = transaction;
+    setAdditionalGarmentFabricTransaction(transaction);
+    setDeferredAdditionalGarmentCustomDetailsPrompts((current) =>
+      queueDeferredAdditionalGarmentCustomDetailsPrompt(current, {
+        transactionId: transaction.transactionId,
+        garmentKey: transaction.garmentKey,
+        garmentType: transaction.garmentType,
+        occurrenceGeneration,
+      }),
+    );
+    setFutureCustomDetailsFocusGarmentKey(garmentKey);
+    setFutureStageId("personalized_additions");
   };
   const handleCancelAdditionalGarmentFabricDialog = ({
     transactionId,
@@ -9270,6 +9600,10 @@ export default function DesignStudioView({
         additionalGarmentFabricTransaction.phase === "assigning" ||
         additionalGarmentFabricTransaction.phase === "awaiting_commit"),
   );
+  const showAdditionalGarmentDesignStyleDialog =
+    isAdditionalGarmentDesignStyleSessionPhase(
+      additionalGarmentFabricTransaction,
+    ) && futureStageId === "personalized_additions";
   const additionalGarmentCustomDetailsRequest: AdditionalGarmentCustomDetailsRequest | null =
     resolveDeferredAdditionalGarmentCustomDetailsRequest({
       prompts: deferredAdditionalGarmentCustomDetailsPrompts,
@@ -9658,6 +9992,12 @@ export default function DesignStudioView({
           additionalGarmentCustomDetailsRequest={
             additionalGarmentCustomDetailsRequest
           }
+          allowAdditionalGarmentCustomDetailsPrompt={
+            futureStageId === "custom_details" ||
+            isAdditionalGarmentCustomDetailsChoiceSessionPhase(
+              additionalGarmentFabricTransaction,
+            )
+          }
           onCompleteAdditionalGarmentCustomDetails={
             handleCompleteAdditionalGarmentCustomDetails
           }
@@ -9673,6 +10013,12 @@ export default function DesignStudioView({
             })
           }
           onChangeAdditionalGarmentFabric={handleChangeAdditionalGarmentFabric}
+          onChangeAdditionalGarmentDesignStyle={
+            handleOpenAdditionalGarmentDesignStyle
+          }
+          additionalGarmentDesignStyleLabelsByKey={
+            additionalGarmentDesignStyleLabelsByKey
+          }
           fabrics={fabrics}
           fabricAllocationState={fabricAllocationState}
           fabricAnnouncement={additionalGarmentFabricAnnouncement}
@@ -10111,6 +10457,18 @@ export default function DesignStudioView({
           }
         />
       )}
+      {showAdditionalGarmentDesignStyleDialog &&
+        additionalGarmentFabricTransaction && (
+          <FutureAdditionalGarmentDesignStyleDialog
+            garmentType={additionalGarmentFabricTransaction.garmentType}
+            garmentKey={additionalGarmentFabricTransaction.garmentKey}
+            catalogueEntries={additionalGarmentDesignStyleCatalogueEntries}
+            assigning={additionalGarmentDesignStyleAssigning}
+            errorMessage={additionalGarmentDesignStyleError}
+            onSelectStyle={handleAssignAdditionalGarmentDesignStyle}
+            onCancel={handleCancelAdditionalGarmentDesignStyleDialog}
+          />
+        )}
       {futureGarmentRemovalDialogRequest && (
         <FutureGarmentRemovalConfirmationDialog
           target={futureGarmentRemovalDialogRequest.target}

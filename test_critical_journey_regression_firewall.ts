@@ -415,8 +415,13 @@ const catalogStyleIdFor = (
   assert.match(detailsSource, /context\.sourceRole === "additional"/);
   assert.match(
     detailsSource,
-    /isCustomDetailsStage && onChangeAdditionalGarmentFabric/,
-    "Fabric reassignment must remain unavailable in Step 5",
+    /isPersonalizedAdditionsStage &&[\s\S]*onChangeAdditionalGarmentFabric/,
+    "Step 5 additional-garment cards expose Add/Change Fabric",
+  );
+  assert.match(
+    detailsSource,
+    /onChangeAdditionalGarmentDesignStyle/,
+    "Step 5 additional-garment cards expose Add/Change Design Style",
   );
   assert.doesNotMatch(detailsSource, /Garments in this order/);
 }

@@ -20,9 +20,10 @@ export { isFabricAvailableForCustomerSelection } from "./fabricCatalogueAvailabi
 
 export type AdditionalGarmentFabricTransactionPhase =
   | "catalogue"
-  | "custom_details_choice"
   | "assigning"
   | "awaiting_commit"
+  | "design_style"
+  | "custom_details_choice"
   | "committed";
 
 export type AdditionalGarmentFabricTransaction = {
@@ -65,7 +66,96 @@ export type AdditionalGarmentFabricTransaction = {
   };
   /** True when the Step 5 fabric dialog was opened for this transaction. */
   openedModal?: boolean;
+  /**
+   * Card-driven Design Style entry on Step 5 when fabric is already assigned.
+   * Skips the fabric catalogue; Design Style / Copy still bind to garmentKey.
+   */
+  designStyleOnly?: boolean;
 };
+
+/**
+ * Step 5 popup configuration (full chain after fabric, Add Fabric repair, or
+ * design-only card entry). Excludes Change Fabric, design-style reuse, and
+ * capacity reuse.
+ */
+export const isAdditionalGarmentStep5PopupConfigurationEligible = (
+  transaction: AdditionalGarmentFabricTransaction | null | undefined,
+): boolean =>
+  Boolean(
+    transaction &&
+      !transaction.designStyleReuse &&
+      !transaction.capacityReuse &&
+      (transaction.origin === "new_addition" ||
+        transaction.origin === "repair_missing" ||
+        transaction.designStyleOnly === true),
+  );
+
+/**
+ * Step 5 Add Additional Garment keeps a singleton session keyed by garmentKey
+ * + occurrenceGeneration through Design Style and Custom Detail Copy so stage
+ * correction cannot bounce to the full Step 3 page mid-flow.
+ */
+export const isAdditionalGarmentStep5ConfigurationSession = (
+  transaction: AdditionalGarmentFabricTransaction | null | undefined,
+): boolean =>
+  Boolean(
+    isAdditionalGarmentStep5PopupConfigurationEligible(transaction) &&
+      (transaction!.phase === "design_style" ||
+        transaction!.phase === "custom_details_choice"),
+  );
+
+export const isAdditionalGarmentDesignStyleSessionPhase = (
+  transaction: AdditionalGarmentFabricTransaction | null | undefined,
+): boolean =>
+  Boolean(
+    isAdditionalGarmentStep5PopupConfigurationEligible(transaction) &&
+      transaction!.phase === "design_style",
+  );
+
+export const isAdditionalGarmentCustomDetailsChoiceSessionPhase = (
+  transaction: AdditionalGarmentFabricTransaction | null | undefined,
+): boolean =>
+  Boolean(
+    isAdditionalGarmentStep5PopupConfigurationEligible(transaction) &&
+      transaction!.phase === "custom_details_choice",
+  );
+
+export const advanceAdditionalGarmentSessionToDesignStyle = (
+  transaction: AdditionalGarmentFabricTransaction,
+  fabricCode: string,
+): AdditionalGarmentFabricTransaction => ({
+  ...transaction,
+  phase: "design_style",
+  openedModal: false,
+  requestedFabricCode: fabricCode,
+});
+
+export const advanceAdditionalGarmentSessionToCustomDetailsChoice = (
+  transaction: AdditionalGarmentFabricTransaction,
+): AdditionalGarmentFabricTransaction => ({
+  ...transaction,
+  phase: "custom_details_choice",
+  openedModal: false,
+});
+
+/** Card "Add/Change Design Style" on Step 5 — fabric already assigned. */
+export const createAdditionalGarmentDesignStyleOnlySession = ({
+  garmentKey,
+  garmentType,
+  occurrenceGeneration,
+}: {
+  garmentKey: string;
+  garmentType: CanonicalPhysicalGarmentType;
+  occurrenceGeneration: number;
+}): Omit<AdditionalGarmentFabricTransaction, "transactionId"> => ({
+  phase: "design_style",
+  origin: "change_existing",
+  designStyleOnly: true,
+  garmentKey,
+  garmentType,
+  occurrenceGeneration,
+  openedModal: false,
+});
 
 export type AdditionalGarmentFabricAssignmentResult =
   | {
@@ -379,7 +469,10 @@ export const isAdditionalGarmentFabricTransactionTargetValid = ({
   }
   if (
     transaction.phase === "awaiting_commit" ||
-    transaction.phase === "assigning"
+    transaction.phase === "assigning" ||
+    transaction.phase === "design_style" ||
+    transaction.phase === "custom_details_choice" ||
+    transaction.phase === "committed"
   ) {
     return (
       matching.length === 1 &&
