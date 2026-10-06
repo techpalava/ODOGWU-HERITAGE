@@ -387,6 +387,16 @@ assert.equal(
   assert.match(studioSource, /activeContextualReentryGuidance/);
   assert.match(studioSource, /redirectedForIncompleteFabric/);
   assert.match(studioSource, /redirectedForIncompleteDesignStyle/);
+  assert.match(
+    studioSource,
+    /redirectedForIncompleteDesignStyle \|\|\s*effectiveTarget\.kind === "validation_target"\s*\?/,
+    "Design Style gold flash is only jump-ahead or validation, not ordinary stage_top",
+  );
+  assert.doesNotMatch(
+    studioSource,
+    /redirectedForIncompleteDesignStyle[\s\S]{0,220}stage_top/,
+    "ordinary Design Style stage_top must not gold-flash the first incomplete card",
+  );
   assert.match(studioSource, /getFabricUnassignedNavigationTarget/);
   assert.match(studioSource, /getDesignStyleIncompleteNavigationTarget/);
   assert.match(studioSource, /fabricUnassignedFocusRequest/);

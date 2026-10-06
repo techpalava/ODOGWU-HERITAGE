@@ -1532,6 +1532,138 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   }
 }
 
+// Incomplete-occurrence gold flash stays until its timeout even after the
+// parent clears the request. Ordinary render without a request stays quiet.
+{
+  const model = createDesignStyleStepTestModel({
+    styles: [style],
+    garmentTypeSelection: selection(["shirt", "trouser"]),
+  });
+  const firstIncompleteToken =
+    model.projection.occurrences[0]!.target.occurrenceToken;
+  const handledRequestIds: number[] = [];
+  const scheduledTimers = new Map<number, () => void>();
+  type IncompleteFocusWindowHarness = {
+    matchMedia(query: string): Pick<MediaQueryList, "matches">;
+    requestAnimationFrame(callback: FrameRequestCallback): number;
+  };
+  const runtime = globalThis as Omit<typeof globalThis, "window"> & {
+    window?: IncompleteFocusWindowHarness;
+  };
+  const originalWindow = runtime.window;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  let nextTimerId = 0;
+  runtime.window = {
+    matchMedia: () => ({ matches: false }),
+    requestAnimationFrame: (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    },
+  };
+  globalThis.setTimeout = ((callback: TimerHandler) => {
+    const timerId = ++nextTimerId;
+    scheduledTimers.set(timerId, () => {
+      if (typeof callback === "function") callback();
+    });
+    return timerId as unknown as ReturnType<typeof setTimeout>;
+  }) as typeof setTimeout;
+  globalThis.clearTimeout = ((timer: ReturnType<typeof setTimeout>) => {
+    scheduledTimers.delete(timer as unknown as number);
+  }) as typeof clearTimeout;
+
+  try {
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(
+        <DormantFutureDesignStyleStep
+          {...createDesignStyleStepRenderProps(model)}
+        />,
+        {
+          createNodeMock: (element) => {
+            if (element.type === "article") {
+              return {
+                scrollIntoView: () => undefined,
+                focus: () => undefined,
+              };
+            }
+            return { focus: () => undefined };
+          },
+        },
+      );
+    });
+    assert.equal(
+      renderer.root.findAll(
+        (node) => node.props?.["data-design-assignment-feedback"] === "true",
+      ).length,
+      0,
+      "ordinary Design Style render stays quiet",
+    );
+
+    await act(async () => {
+      renderer.update(
+        <DormantFutureDesignStyleStep
+          {...createDesignStyleStepRenderProps(model)}
+          incompleteFocusRequestId={7}
+          incompleteFocusOccurrenceToken={firstIncompleteToken}
+          onIncompleteFocusHandled={(requestId) =>
+            handledRequestIds.push(requestId)
+          }
+        />,
+      );
+    });
+    assert.deepEqual(handledRequestIds, [7]);
+    assert.deepEqual(
+      renderer.root
+        .findAll(
+          (node) => node.props?.["data-design-assignment-feedback"] === "true",
+        )
+        .map((node) => node.props["data-occurrence-token"]),
+      [firstIncompleteToken],
+    );
+    assert.equal(scheduledTimers.size, 1, "incomplete-focus starts a dismiss timer");
+
+    await act(async () => {
+      renderer.update(
+        <DormantFutureDesignStyleStep
+          {...createDesignStyleStepRenderProps(model)}
+        />,
+      );
+    });
+    assert.equal(
+      scheduledTimers.size,
+      1,
+      "clearing the handled request must not cancel the gold-flash timer",
+    );
+    assert.deepEqual(
+      renderer.root
+        .findAll(
+          (node) => node.props?.["data-design-assignment-feedback"] === "true",
+        )
+        .map((node) => node.props["data-occurrence-token"]),
+      [firstIncompleteToken],
+      "the gold flash stays until the timeout after the parent drops the request",
+    );
+
+    for (const callback of [...scheduledTimers.values()]) {
+      await act(async () => callback());
+    }
+    assert.equal(
+      renderer.root.findAll(
+        (node) => node.props?.["data-design-assignment-feedback"] === "true",
+      ).length,
+      0,
+      "the incomplete-focus gold flash expires on its timeout",
+    );
+  } finally {
+    scheduledTimers.clear();
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    if (originalWindow === undefined) delete runtime.window;
+    else runtime.window = originalWindow;
+  }
+}
+
 // Step 5 additional garments appear after Your Garments with the same
 // choose/upload actions. A missing generation never becomes a Step 3 row.
 {
