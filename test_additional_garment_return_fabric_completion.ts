@@ -47,8 +47,38 @@ assert.match(customDetailsSource, /data-step5-garment-context/);
 assert.match(customDetailsSource, /context\.sourceRole === "additional"/);
 assert.match(
   customDetailsSource,
-  /isCustomDetailsStage && onChangeAdditionalGarmentFabric/,
-  "Step 5 context must not expose a Fabric-change control",
+  /isPersonalizedAdditionsStage &&[\s\S]*onChangeAdditionalGarmentFabric/,
+  "Step 5 additional-garment cards expose Add/Change Fabric",
+);
+assert.match(
+  customDetailsSource,
+  /onChangeAdditionalGarmentDesignStyle/,
+  "Step 5 additional-garment cards expose Add/Change Design Style",
+);
+assert.match(
+  customDetailsSource,
+  /Add Design Style/,
+  "missing Design Style uses the Add Design Style card label",
+);
+assert.match(
+  customDetailsSource,
+  /Change Design Style/,
+  "assigned Design Style uses the Change Design Style card label",
+);
+assert.match(
+  studioSource,
+  /createAdditionalGarmentDesignStyleOnlySession/,
+  "Step 5 Design Style card actions open the design-only session",
+);
+assert.match(
+  studioSource,
+  /const shouldContinueStep5Configuration =\s*\(\s*transaction\.origin === "new_addition" \|\|\s*transaction\.origin === "repair_missing"\s*\)/,
+  "Add Fabric (repair_missing) continues Design Style; Change Fabric (change_existing) does not",
+);
+assert.doesNotMatch(
+  studioSource,
+  /shouldContinueStep5Configuration[\s\S]{0,120}change_existing/,
+  "Change Fabric must not continue into the Design Style session",
 );
 
 assert.equal(

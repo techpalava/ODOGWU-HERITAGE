@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import {
   advanceAdditionalGarmentSessionToCustomDetailsChoice,
   advanceAdditionalGarmentSessionToDesignStyle,
+  createAdditionalGarmentDesignStyleOnlySession,
   isAdditionalGarmentCustomDetailsChoiceSessionPhase,
   isAdditionalGarmentDesignStyleSessionPhase,
   isAdditionalGarmentStep5ConfigurationSession,
+  isAdditionalGarmentStep5PopupConfigurationEligible,
   type AdditionalGarmentFabricTransaction,
 } from "./src/utils/additionalGarmentFabricPicker";
 
@@ -75,7 +77,35 @@ assert.equal(
     origin: "change_existing",
   }),
   false,
-  "fabric change/repair detours are not the Step 5 configuration session",
+  "Change Fabric without designStyleOnly is not the Step 5 configuration session",
+);
+
+assert.equal(
+  isAdditionalGarmentStep5ConfigurationSession({
+    ...designStyleSession,
+    origin: "repair_missing",
+  }),
+  true,
+  "Add Fabric (repair_missing) continues into the Step 5 Design Style session",
+);
+
+const designOnlySession: AdditionalGarmentFabricTransaction = {
+  transactionId: 9,
+  ...createAdditionalGarmentDesignStyleOnlySession({
+    garmentKey: "additional:shirt:2",
+    garmentType: "shirt",
+    occurrenceGeneration: 4,
+  }),
+};
+assert.equal(
+  isAdditionalGarmentStep5PopupConfigurationEligible(designOnlySession),
+  true,
+);
+assert.equal(isAdditionalGarmentDesignStyleSessionPhase(designOnlySession), true);
+assert.equal(
+  isAdditionalGarmentStep5ConfigurationSession(designOnlySession),
+  true,
+  "card-driven Design Style entry uses the same Step 5 popup session",
 );
 
 assert.equal(

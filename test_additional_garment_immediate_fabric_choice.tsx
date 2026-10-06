@@ -607,6 +607,88 @@ assert.equal(
   "the completed Step 5 session must not leave the Step 3 page mounted",
 );
 
+// Step 5 cards expose Change Fabric / Change Design Style once both are set.
+const trouserChangeFabric = renderer.root.findByProps({
+  "data-change-additional-garment-fabric": pendingTrouserKey,
+  "data-additional-garment-fabric-action": "change",
+});
+assert.match(textContent(trouserChangeFabric), /Change Fabric/);
+const trouserChangeDesignStyle = renderer.root.findByProps({
+  "data-change-additional-garment-design-style": pendingTrouserKey,
+  "data-additional-garment-design-style-action": "change",
+});
+assert.match(textContent(trouserChangeDesignStyle), /Change Design Style/);
+
+// Change Fabric opens the fabric catalogue for that key and does not open Design Style.
+await act(async () => {
+  trouserChangeFabric.props.onClick({ currentTarget: null });
+  await Promise.resolve();
+  await Promise.resolve();
+});
+const changeFabricDialog = renderer.root.findByProps({
+  "data-additional-garment-fabric-dialog": "true",
+});
+assert.equal(
+  changeFabricDialog.props["data-target-garment-key"],
+  pendingTrouserKey,
+  "Change Fabric must bind to the exact additional garment key",
+);
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-additional-garment-design-style-dialog": "true",
+  }).length,
+  0,
+  "opening Change Fabric must not open the Design Style modal",
+);
+act(() => {
+  renderer.root
+    .findByProps({ "data-fabric-dialog-action": "cancel" })
+    .props.onClick();
+});
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-additional-garment-fabric-dialog": "true",
+  }).length,
+  0,
+);
+
+// Card Design Style entry opens the modal bound to that garmentKey.
+await act(async () => {
+  renderer.root
+    .findByProps({
+      "data-change-additional-garment-design-style": pendingTrouserKey,
+    })
+    .props.onClick({ currentTarget: null });
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+});
+const cardDesignStyleDialog = renderer.root.findByProps({
+  "data-additional-garment-design-style-dialog": "true",
+});
+assert.equal(
+  cardDesignStyleDialog.props["data-garment-key"],
+  pendingTrouserKey,
+  "Add/Change Design Style must bind the modal to that garmentKey",
+);
+await act(async () => {
+  cardDesignStyleDialog
+    .findAllByType("button")
+    .find(
+      (button) =>
+        button.props["aria-label"] === "Close design style picker",
+    )!
+    .props.onClick();
+  await Promise.resolve();
+  await Promise.resolve();
+});
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-additional-garment-design-style-dialog": "true",
+  }).length,
+  0,
+);
+
 // Once Fabric, Design Style, and Custom Details have all committed on Step 5,
 // the ordinary Step 5 action must be available for a distinct second occurrence.
 assert.equal(
