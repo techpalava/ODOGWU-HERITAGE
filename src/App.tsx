@@ -619,7 +619,30 @@ export default function App() {
       const decision = classifyHomepageDraftEntry({
         existing: inspected.existing,
         clickedOrderContext: currentEntry.orderContext,
+        studioParkedInCart:
+          useAppStore.getState().studioParkedInFutureOrderV2Cart,
       });
+      if (decision.kind === "start_fresh_parked_bag") {
+        const discarded = await draftAuthority.discard(inspected.existing);
+        if (discarded.status !== "discarded") {
+          triggerNotification(
+            "We could not start a new order without touching your bagged design. Please try again.",
+            "info",
+          );
+          return;
+        }
+        useAppStore.getState().setStudioParkedInFutureOrderV2Cart(false);
+        const parkedEntry = resolveCurrentHomepageCommunityEntry(selectedBatch.id);
+        if (!parkedEntry) {
+          triggerNotification(
+            "This batch is no longer accepting orders. Your bagged order is unchanged.",
+            "info",
+          );
+          return;
+        }
+        openFreshCommunityStudio(parkedEntry.orderContext);
+        return;
+      }
       if (decision.kind === "resume_existing" && existingOrderContext) {
         openFreshCommunityStudio(existingOrderContext);
         return;
@@ -1443,14 +1466,43 @@ export default function App() {
                     | "login",
                 ) => setActiveTab(tabId)}
                 onStartIndividualOrder={() => {
-                  setPresetStyleId(null);
-                  setPresetFabricCode(null);
-                  setOrderContext({
-                    orderType: "Individual",
-                    deliveryWindow:
-                      "Within 2-3 weeks (Express Air Priority)",
-                  });
-                  setActiveTab("design");
+                  void (async () => {
+                    if (useAppStore.getState().studioParkedInFutureOrderV2Cart) {
+                      const authority = getHomepageDraftReplacementService();
+                      const inspected = await authority.inspect();
+                      if (inspected.status === "valid") {
+                        const discarded = await authority.discard(
+                          inspected.existing,
+                        );
+                        if (discarded.status !== "discarded") {
+                          triggerNotification(
+                            "We could not start a new order without touching your bagged design. Please try again.",
+                            "info",
+                          );
+                          return;
+                        }
+                      } else if (inspected.status !== "empty") {
+                        triggerNotification(
+                          "We could not safely check your unfinished order. Please try again.",
+                          "info",
+                        );
+                        return;
+                      } else {
+                        GuestOrderSessionService.clearFutureDesignDraft();
+                      }
+                      useAppStore
+                        .getState()
+                        .setStudioParkedInFutureOrderV2Cart(false);
+                    }
+                    setPresetStyleId(null);
+                    setPresetFabricCode(null);
+                    setOrderContext({
+                      orderType: "Individual",
+                      deliveryWindow:
+                        "Within 2-3 weeks (Express Air Priority)",
+                    });
+                    setActiveTab("design");
+                  })();
                 }}
                 onJoinCommunityBatch={handleJoinCommunityBatch}
                 joinBatch={

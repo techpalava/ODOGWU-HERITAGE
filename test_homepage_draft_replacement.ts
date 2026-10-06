@@ -227,6 +227,21 @@ assert.deepEqual(
   classifyHomepageDraftEntry({ existing: null, clickedOrderContext: pioneers }),
   { kind: "start_fresh" },
 );
+assert.deepEqual(
+  classifyHomepageDraftEntry({
+    existing: {
+      source: "guest",
+      draft: avatarsDraft(),
+      orderIdentity: { orderType: "Individual" },
+      inspectionSession: emptyGuest.authority.inspectionSession,
+      guestStorageSource: "future_v1",
+      guestFingerprint: "parked-fingerprint",
+    },
+    clickedOrderContext: pioneers,
+    studioParkedInCart: true,
+  }),
+  { kind: "start_fresh_parked_bag" },
+);
 const pristineJourney = createDormantDesignStudioJourneyState({
   persistedDraft: null,
   normalizedCustomDetailCatalog: [],

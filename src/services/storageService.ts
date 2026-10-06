@@ -57,9 +57,14 @@ import {
 
 const GUEST_ORDER_SESSION_KEY = GUEST_ORDER_SESSION_STORAGE_NAMESPACE;
 const ACCOUNT_CART_KEY_PREFIX = "odogwu_account_cart_v1:";
+const ACCOUNT_FUTURE_ORDER_V2_CART_KEY_PREFIX =
+  "odogwu_account_future_order_v2_cart_v1:";
 
 const getAccountCartStorageKey = (canonicalEmail: string): string =>
   `${ACCOUNT_CART_KEY_PREFIX}${encodeURIComponent(canonicalEmail)}`;
+
+const getAccountFutureOrderV2CartStorageKey = (canonicalEmail: string): string =>
+  `${ACCOUNT_FUTURE_ORDER_V2_CART_KEY_PREFIX}${encodeURIComponent(canonicalEmail)}`;
 
 function deepEqual(a: any, b: any): boolean {
   if (a === b) return true;
@@ -522,6 +527,47 @@ export const StorageService = {
     localStorage.setItem(
       getAccountCartStorageKey(canonicalEmail),
       JSON.stringify(items),
+    );
+  },
+  getAccountFutureOrderV2CartItems: (canonicalEmail: string): unknown[] => {
+    if (typeof window === "undefined" || !canonicalEmail) return [];
+    const parsed = StorageService.safeParse<{
+      items?: unknown;
+      studioParkedInFutureOrderV2Cart?: unknown;
+    }>(
+      localStorage.getItem(
+        getAccountFutureOrderV2CartStorageKey(canonicalEmail),
+      ),
+    );
+    return Array.isArray(parsed?.items) ? parsed.items : [];
+  },
+  getAccountStudioParkedInFutureOrderV2Cart: (
+    canonicalEmail: string,
+  ): boolean => {
+    if (typeof window === "undefined" || !canonicalEmail) return false;
+    const parsed = StorageService.safeParse<{
+      studioParkedInFutureOrderV2Cart?: unknown;
+    }>(
+      localStorage.getItem(
+        getAccountFutureOrderV2CartStorageKey(canonicalEmail),
+      ),
+    );
+    return parsed?.studioParkedInFutureOrderV2Cart === true;
+  },
+  saveAccountFutureOrderV2Cart: (
+    canonicalEmail: string,
+    state: {
+      items: unknown[];
+      studioParkedInFutureOrderV2Cart: boolean;
+    },
+  ) => {
+    if (typeof window === "undefined" || !canonicalEmail) return;
+    localStorage.setItem(
+      getAccountFutureOrderV2CartStorageKey(canonicalEmail),
+      JSON.stringify({
+        items: state.items,
+        studioParkedInFutureOrderV2Cart: state.studioParkedInFutureOrderV2Cart,
+      }),
     );
   },
 

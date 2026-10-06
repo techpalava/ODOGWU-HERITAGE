@@ -263,7 +263,7 @@ type FutureOrderCandidateNonStyleEnvelope = Omit<
   "schemaVersion" | "source" | "design"
 >;
 
-/** Complete immutable V2 envelope; it is intentionally not wired to cart or checkout. */
+/** Complete immutable V2 envelope for review, unpaid cart parking, and V2 checkout. */
 export type FutureOrderCandidateV2 = Readonly<
   FutureOrderCandidateNonStyleEnvelope & {
     readonly schemaVersion: 2;

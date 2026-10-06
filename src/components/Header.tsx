@@ -21,7 +21,9 @@ export function Header() {
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const setIsMobileMenuOpen = useAppStore((state) => state.setIsMobileMenuOpen);
   const setIsCartOpen = useAppStore((state) => state.setIsCartOpen);
-  const cartItemsCount = useAppStore((state) => state.cartItems.length);
+  const cartItemsCount = useAppStore(
+    (state) => state.cartItems.length + state.futureOrderV2CartItems.length,
+  );
   const businessSettings = useAppStore((state) => state.businessSettings);
 
   const { currentUser, setCurrentUser } = useAppStore();
