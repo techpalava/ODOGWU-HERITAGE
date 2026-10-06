@@ -1,6 +1,6 @@
 # Living project state
 
-Updated: 2026-10-05. Read this file first in every new chat, then `FAST_EXECUTOR_GUIDE.md`.
+Updated: 2026-10-06. Read this file first in every new chat, then `FAST_EXECUTOR_GUIDE.md`.
 This file is committed on `main` and `production`. Update it after each release.
 
 ## What the product is
@@ -38,7 +38,7 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 ## Status
 
 All work below is released. `/api/health` shows the current production build
-(`96f255c…` after the #390 Stripe webhook constructEvent release).
+(`1a94ad9` after the #392 Step 5 Additional Garment popup flow release).
 
 - [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
 - [#283](https://github.com/techpalava/ODOGWU-HERITAGE/pull/283) Uploaded photo on the Summary Design Style card
@@ -66,8 +66,9 @@ All work below is released. `/api/health` shows the current production build
 - [#367](https://github.com/techpalava/ODOGWU-HERITAGE/pull/367) Contextual Re-entry Guidance for Fabric and Design Style: a consume-once banner names garments that still need Fabric when returning to a previously visited Fabric step after an upstream change; incomplete Fabric or Design Style re-entry scrolls to the blocking garment card with a gold highlight; ordinary revisits and refresh stay silent
 - [#385](https://github.com/techpalava/ODOGWU-HERITAGE/pull/385) Future Order V2 Stripe `payment-intent` requires a non-anonymous Firebase Bearer token and charges the persisted order total owned by the caller (client `masterOrder` pricing ignored)
 - [#390](https://github.com/techpalava/ODOGWU-HERITAGE/pull/390) Future Order V2 Stripe `record-payment` webhooks verify `constructEvent(rawBody, stripe-signature, STRIPE_WEBHOOK_SECRET)`; forged signature / missing secret fail closed; `body.id` is never trusted
+- [#392](https://github.com/techpalava/ODOGWU-HERITAGE/pull/392) Step 5 Additional Garment popup flow: Add AG stays on Personalized Additions through Fabric then Design Style then Custom Detail Copy; per-card Add/Change Fabric and Design Style; Change Fabric ends after fabric save. Fast Executor Guide documents the UX rule (ask when ambiguous). No Firestore/Storage rules deploy
 
-The signed-in Chrome restore check after #289 passed. Live checks after #368 and #372 passed on 2026-10-05 against production `7602a97`: signed-in Step 3 upload restores after reload, including in a fresh incognito session; the guest upload transfers to the account after sign-in; signed-out catalogue and fabric images load. Live after #385 on production `728c523`: unauthenticated `POST /api/future-order-v2/payment-intent` returns **401** `AUTH_REQUIRED`. Live after #390 on production `96f255c`: forged `stripe-signature` on `record-payment` returns **400** `STRIPE_WEBHOOK_SECRET_REQUIRED` until Xavier sets the test `whsec_…` in Vercel Preview/Production (fail-closed). Live chunk after #361 contains
+The signed-in Chrome restore check after #289 passed. Live checks after #368 and #372 passed on 2026-10-05 against production `7602a97`: signed-in Step 3 upload restores after reload, including in a fresh incognito session; the guest upload transfers to the account after sign-in; signed-out catalogue and fabric images load. Live after #385 on production `728c523`: unauthenticated `POST /api/future-order-v2/payment-intent` returns **401** `AUTH_REQUIRED`. Live after #390 on production `96f255c`: forged `stripe-signature` on `record-payment` returns **400** `STRIPE_WEBHOOK_SECRET_REQUIRED` until Xavier sets the test `whsec_` in Vercel Preview/Production (fail-closed). Live after #392 on production `1a94ad9`: visual check passed; live chunk contains `Add Design Style`. Live chunk after #361 contains
 `These clothes are for you` / `Laid-flat widths are doubled for production`.
 
 ## Git and worktrees
@@ -79,8 +80,9 @@ The signed-in Chrome restore check after #289 passed. Live checks after #368 and
   aligned to `github/main` and ready for a fresh feature branch when the next
   task is authorized. Do not reuse released branches such as `fix/draft-resume-locus`,
   `fix/faster-draft-restore`, `feat/custom-details-go-to-bottom`,
-  `feat/step7-people-ux-solo-first`, `fix/payment-intent-auth-amount`, or
-  `fix/stripe-webhook-construct-event`.
+  `feat/step7-people-ux-solo-first`, `fix/payment-intent-auth-amount`,
+  `fix/stripe-webhook-construct-event`, or
+  `feat/additional-garment-flow-step5-session`.
 - Critical Risk “height alone” copy fix is parked in local stash
   `park critical-risk-height-copy before clear-all` (not released). Restore onto a fresh
   branch from `github/main` when authorized; do not mix it into unrelated work.
