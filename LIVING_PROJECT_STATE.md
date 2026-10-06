@@ -38,7 +38,7 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 ## Status
 
 All work below is released. `/api/health` shows the current production build
-(`728c523…` after the #385 Stripe payment-intent auth release).
+(`96f255c…` after the #390 Stripe webhook constructEvent release).
 
 - [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
 - [#283](https://github.com/techpalava/ODOGWU-HERITAGE/pull/283) Uploaded photo on the Summary Design Style card
@@ -65,8 +65,9 @@ All work below is released. `/api/health` shows the current production build
 - [#372](https://github.com/techpalava/ODOGWU-HERITAGE/pull/372) Admin SDK `storageBucket` set in `src/server/firebaseAdmin.ts`: guest uploaded-design ownership claims (were 400 `CLAIM_INVALID_REFERENCE` from a catch-all) and the order/draft transfer endpoints work again; unexpected claim errors now return 500. No rules or Firebase deploy changes
 - [#367](https://github.com/techpalava/ODOGWU-HERITAGE/pull/367) Contextual Re-entry Guidance for Fabric and Design Style: a consume-once banner names garments that still need Fabric when returning to a previously visited Fabric step after an upstream change; incomplete Fabric or Design Style re-entry scrolls to the blocking garment card with a gold highlight; ordinary revisits and refresh stay silent
 - [#385](https://github.com/techpalava/ODOGWU-HERITAGE/pull/385) Future Order V2 Stripe `payment-intent` requires a non-anonymous Firebase Bearer token and charges the persisted order total owned by the caller (client `masterOrder` pricing ignored)
+- [#390](https://github.com/techpalava/ODOGWU-HERITAGE/pull/390) Future Order V2 Stripe `record-payment` webhooks verify `constructEvent(rawBody, stripe-signature, STRIPE_WEBHOOK_SECRET)`; forged signature / missing secret fail closed; `body.id` is never trusted
 
-The signed-in Chrome restore check after #289 passed. Live checks after #368 and #372 passed on 2026-10-05 against production `7602a97`: signed-in Step 3 upload restores after reload, including in a fresh incognito session; the guest upload transfers to the account after sign-in; signed-out catalogue and fabric images load. Live after #385 on production `728c523`: unauthenticated `POST /api/future-order-v2/payment-intent` returns **401** `AUTH_REQUIRED`. Live chunk after #361 contains
+The signed-in Chrome restore check after #289 passed. Live checks after #368 and #372 passed on 2026-10-05 against production `7602a97`: signed-in Step 3 upload restores after reload, including in a fresh incognito session; the guest upload transfers to the account after sign-in; signed-out catalogue and fabric images load. Live after #385 on production `728c523`: unauthenticated `POST /api/future-order-v2/payment-intent` returns **401** `AUTH_REQUIRED`. Live after #390 on production `96f255c`: forged `stripe-signature` on `record-payment` returns **400** `STRIPE_WEBHOOK_SECRET_REQUIRED` until Xavier sets the test `whsec_…` in Vercel Preview/Production (fail-closed). Live chunk after #361 contains
 `These clothes are for you` / `Laid-flat widths are doubled for production`.
 
 ## Git and worktrees
@@ -78,7 +79,8 @@ The signed-in Chrome restore check after #289 passed. Live checks after #368 and
   aligned to `github/main` and ready for a fresh feature branch when the next
   task is authorized. Do not reuse released branches such as `fix/draft-resume-locus`,
   `fix/faster-draft-restore`, `feat/custom-details-go-to-bottom`,
-  `feat/step7-people-ux-solo-first`, or `fix/payment-intent-auth-amount`.
+  `feat/step7-people-ux-solo-first`, `fix/payment-intent-auth-amount`, or
+  `fix/stripe-webhook-construct-event`.
 - Critical Risk “height alone” copy fix is parked in local stash
   `park critical-risk-height-copy before clear-all` (not released). Restore onto a fresh
   branch from `github/main` when authorized; do not mix it into unrelated work.
@@ -117,8 +119,11 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
 
 ## Still open
 
-- Remaining security review items (Stripe webhook signature, `vercel.json` headers, admin
-  allowlist in client, PIN length, `/api/health` buildId) are not authorized yet.
+- Set Vercel env `STRIPE_WEBHOOK_SECRET` (Stripe test `whsec_…` for
+  `/api/future-order-v2/record-payment`) on Preview and Production so signed webhooks can
+  verify after #390; until set, the webhook path returns 400 fail-closed.
+- Remaining security review items (`vercel.json` headers, admin allowlist in client, PIN
+  length, `/api/health` buildId) are not authorized yet.
 - Admin live check of stage history: save a new stage on a paid order and confirm the customer
   card lists the earlier stage and the new one.
 - Tailoring live QA is blocked without a real admin session. Do not create or bypass admin access.
