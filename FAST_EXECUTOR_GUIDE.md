@@ -227,6 +227,22 @@ An approved plan does not need another architecture pass merely to start work.
 If a supposedly visual change needs persistence, pricing, or integration changes,
 report the necessary expansion before editing those locked areas.
 
+When product UX is ambiguous (labels, which modal opens next, whether a change
+path re-opens a later step, stay-on-stage vs navigate), ask the requester before
+implementing. Do not invent a flow from adjacent code alone.
+
+Step 5 Additional Garment popup chain (confirmed product rule):
+- Happy path on Personalized Additions: Add AG → Fabric popup → Design Style
+  popup → Custom Detail Copy popup → remain on Step 5. Session is keyed by
+  garmentKey + occurrenceGeneration (never “last selected”).
+- Per-card actions use the same machinery: missing → “Add …”; set → “Change …”.
+- Change Fabric ends after fabric save (keep design + custom details). Do not
+  reopen Design Style or Copy.
+- Add Fabric (missing) continues Design Style → Copy on Step 5.
+- Add/Change Design Style is design-only (fabric already required); after assign,
+  Copy may open when the deferred prompt resolves. Cancel clears/advances the
+  session without Copy and stays on Step 5.
+
 ==================================================
 6. RISK AND REVIEW LEVEL
 ==================================================

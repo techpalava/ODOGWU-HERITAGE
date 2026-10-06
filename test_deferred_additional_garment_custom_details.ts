@@ -44,7 +44,7 @@ assert.equal(
     ],
   }),
   null,
-  "Step 5 must not open the dialog before a Step 3 design exists",
+  "Step 5 must not open the dialog before a Design Style exists",
 );
 
 assert.deepEqual(

@@ -479,8 +479,18 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
+  /advanceAdditionalGarmentSessionToDesignStyle/,
+  "after Fabric, Step 5 must continue into the Design Style modal session",
+);
+assert.match(
+  source,
+  /FutureAdditionalGarmentDesignStyleDialog/,
+  "Design Style for a new additional garment must open as a modal on Step 5",
+);
+assert.match(
+  source,
   /resolveDeferredAdditionalGarmentCustomDetailsRequest\(\{[\s\S]*futureDesignStyleStepProjection\.occurrences/,
-  "the Custom Details dialog must wait for a Step 3 design assignment",
+  "the Custom Details dialog must wait for a design assignment on the exact additional garment",
 );
 assert.doesNotMatch(
   addGarmentHandlerSource,
@@ -509,13 +519,13 @@ assert.match(
 );
 assert.match(
   customDetailsSource,
-  /isCustomDetailsStage && additionalGarmentCustomDetailsRequest[\s\S]*sourceParentGarmentKey: null/,
-  "Step 4 must initialize the extra-garment construction dialog from the deferred request on first paint",
+  /canPresentAdditionalGarmentCustomDetailsPrompt &&\s*additionalGarmentCustomDetailsRequest[\s\S]*sourceParentGarmentKey: null/,
+  "Step 4/5 must initialize the extra-garment construction dialog from the deferred request on first paint",
 );
 assert.match(
   customDetailsSource,
   /showAdditionalGarmentChoiceDialog[\s\S]*compatibleCopySources\.length > 0/,
-  "the extra-garment construction dialog renders on Custom Details only when a same-type copy source exists",
+  "the extra-garment construction dialog renders when a same-type copy source exists",
 );
 assert.match(
   customDetailsSource,

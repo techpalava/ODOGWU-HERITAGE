@@ -10,9 +10,10 @@ export type InlineAdditionalGarmentFabricTransactionLike = {
  * Pure stage-correction decision used by DesignStudioView.
  * Returns null when the current stage should stay mounted.
  *
- * While an inline Optional Extra Garment Fabric transaction is active
- * (including the terminal "committed" stabilization phase), Step 5 stays
- * mounted even if Fabric/Design Source readiness briefly flickers.
+ * While an inline Optional Extra Garment Fabric / Step 5 configuration
+ * session is active (catalogue through design_style / custom_details_choice,
+ * plus the terminal "committed" stabilization phase), Step 5 stays mounted
+ * even if Fabric/Design Source readiness briefly flickers.
  */
 export const resolveFutureStageCorrection = ({
   currentStageId,
@@ -53,12 +54,17 @@ export const resolveFutureStageCorrection = ({
   const reuseInDesignStyle =
     currentStageId === "design_style" &&
     Boolean(inlineAdditionalGarmentFabricTransaction?.designStyleReuse);
+  // Step 5 Add Additional Garment keeps the customer on Personalized Additions
+  // for the whole Fabric → Design Style → Copy session, even while the new
+  // occurrence briefly makes Fabric / Design Source / Step 4 look incomplete.
+  if (currentStageId === "personalized_additions" && inlineActive) {
+    return null;
+  }
   const suppressFabricIncompleteRedirect =
     (currentStageId === "personalized_additions" &&
-      (inlineActive || additionalGarmentFabricRepairTargeted)) ||
+      additionalGarmentFabricRepairTargeted) ||
     reuseInDesignStyle;
-  const suppressDesignSourceRedirect =
-    (currentStageId === "personalized_additions" && inlineActive) || reuseInDesignStyle;
+  const suppressDesignSourceRedirect = reuseInDesignStyle;
 
   const fabricCompleteForCorrection =
     fabricComplete || suppressFabricIncompleteRedirect;

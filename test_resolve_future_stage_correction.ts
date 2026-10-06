@@ -38,6 +38,63 @@ assert.equal(
 
 assert.equal(
   resolveFutureStageCorrection({
+    currentStageId: "personalized_additions",
+    garmentTypeComplete: true,
+    fabricComplete: true,
+    designSourceReady: false,
+    customDetailsReady: true,
+    personalizedAdditionsReady: true,
+    measurementUnlocked: false,
+    summaryUnlocked: false,
+    inlineAdditionalGarmentFabricTransaction: {
+      garmentKey: "additional:trouser:1",
+      phase: "design_style",
+    },
+  }),
+  null,
+  "a Step 5 Design Style session must not bounce to the Step 3 page",
+);
+
+assert.equal(
+  resolveFutureStageCorrection({
+    currentStageId: "personalized_additions",
+    garmentTypeComplete: true,
+    fabricComplete: true,
+    designSourceReady: false,
+    customDetailsReady: true,
+    personalizedAdditionsReady: true,
+    measurementUnlocked: false,
+    summaryUnlocked: false,
+    inlineAdditionalGarmentFabricTransaction: {
+      garmentKey: "additional:trouser:1",
+      phase: "custom_details_choice",
+    },
+  }),
+  null,
+  "a Step 5 Custom Detail Copy session must not bounce to the Step 3 page",
+);
+
+assert.equal(
+  resolveFutureStageCorrection({
+    currentStageId: "personalized_additions",
+    garmentTypeComplete: true,
+    fabricComplete: false,
+    designSourceReady: true,
+    customDetailsReady: false,
+    personalizedAdditionsReady: false,
+    measurementUnlocked: false,
+    summaryUnlocked: false,
+    inlineAdditionalGarmentFabricTransaction: {
+      garmentKey: "additional:trouser:1",
+      phase: "catalogue",
+    },
+  }),
+  null,
+  "a pending Step 5 Fabric session must not bounce to Custom Details or Fabric while Step 4 briefly looks incomplete",
+);
+
+assert.equal(
+  resolveFutureStageCorrection({
     currentStageId: "custom_details",
     garmentTypeComplete: true,
     fabricComplete: false,

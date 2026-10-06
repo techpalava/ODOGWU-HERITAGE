@@ -133,6 +133,12 @@ interface DormantFutureCustomDetailsStepProps {
     triggerElement?: HTMLElement | null,
   ) => void;
   additionalGarmentCustomDetailsRequest?: AdditionalGarmentCustomDetailsRequest | null;
+  /**
+   * When false on Personalized Additions, suppress the deferred Custom Detail
+   * Copy dialog (e.g. while the Design Style modal session is still open).
+   * Step 4 keeps the historical always-on behavior when this prop is omitted.
+   */
+  allowAdditionalGarmentCustomDetailsPrompt?: boolean;
   onCompleteAdditionalGarmentCustomDetails?: (
     request: AdditionalGarmentCustomDetailsRequest,
     choice: AdditionalGarmentCustomDetailsChoice,
@@ -151,6 +157,14 @@ interface DormantFutureCustomDetailsStepProps {
     garmentKey: string,
     triggerElement?: HTMLElement | null,
   ) => void;
+  onChangeAdditionalGarmentDesignStyle?: (
+    garmentKey: string,
+    triggerElement?: HTMLElement | null,
+  ) => void;
+  /** Keys present = Design Style assigned; value is the display label. */
+  additionalGarmentDesignStyleLabelsByKey?: Readonly<
+    Record<string, string | null>
+  >;
   fabrics?: readonly Fabric[];
   fabricAllocationState?: FabricAllocationState | null;
   fabricAnnouncement?: string;
@@ -438,9 +452,12 @@ export const DormantFutureCustomDetailsStep = ({
   onClearAccessories,
   onAddAdditionalGarment,
   additionalGarmentCustomDetailsRequest,
+  allowAdditionalGarmentCustomDetailsPrompt = true,
   onCompleteAdditionalGarmentCustomDetails,
   onCancelAdditionalGarmentCustomDetails,
   onChangeAdditionalGarmentFabric,
+  onChangeAdditionalGarmentDesignStyle,
+  additionalGarmentDesignStyleLabelsByKey = {},
   removalTargets = [],
   onRequestGarmentRemoval,
   fabrics = [],
@@ -458,6 +475,9 @@ export const DormantFutureCustomDetailsStep = ({
 }: DormantFutureCustomDetailsStepProps) => {
   const isPersonalizedAdditionsStage = stage === "personalized_additions";
   const isCustomDetailsStage = !isPersonalizedAdditionsStage;
+  const canPresentAdditionalGarmentCustomDetailsPrompt =
+    isCustomDetailsStage ||
+    (isPersonalizedAdditionsStage && allowAdditionalGarmentCustomDetailsPrompt);
   const stageTitle = isPersonalizedAdditionsStage
     ? "Personalized Additions"
     : "Custom Details";
@@ -474,7 +494,8 @@ export const DormantFutureCustomDetailsStep = ({
     sourceParentGarmentKey: string | null;
     }
   | null>(() =>
-    isCustomDetailsStage && additionalGarmentCustomDetailsRequest
+    canPresentAdditionalGarmentCustomDetailsPrompt &&
+    additionalGarmentCustomDetailsRequest
       ? {
           ...additionalGarmentCustomDetailsRequest,
           sourceParentGarmentKey: null,
@@ -665,8 +686,13 @@ export const DormantFutureCustomDetailsStep = ({
       : null);
 
   useEffect(() => {
-    if (!additionalGarmentCustomDetailsRequest) {
-      setAdditionalGarmentChoice(null);
+    if (
+      !canPresentAdditionalGarmentCustomDetailsPrompt ||
+      !additionalGarmentCustomDetailsRequest
+    ) {
+      setAdditionalGarmentChoice((current) =>
+        current === null ? current : null,
+      );
       return;
     }
     setAdditionalGarmentChoice((current) =>
@@ -681,7 +707,10 @@ export const DormantFutureCustomDetailsStep = ({
             sourceParentGarmentKey: null,
           },
     );
-  }, [additionalGarmentCustomDetailsRequest]);
+  }, [
+    additionalGarmentCustomDetailsRequest,
+    canPresentAdditionalGarmentCustomDetailsPrompt,
+  ]);
 
   useEffect(() => {
     if (!additionalGarmentChoice) return;
@@ -905,12 +934,17 @@ export const DormantFutureCustomDetailsStep = ({
     }
   };
   const showAdditionalGarmentChoiceDialog =
-    isCustomDetailsStage &&
+    canPresentAdditionalGarmentCustomDetailsPrompt &&
     additionalGarmentChoice !== null &&
     compatibleCopySources.length > 0;
 
   useEffect(() => {
-    if (!isCustomDetailsStage || !additionalGarmentChoice) return;
+    if (
+      !canPresentAdditionalGarmentCustomDetailsPrompt ||
+      !additionalGarmentChoice
+    ) {
+      return;
+    }
     if (compatibleCopySources.length > 0) return;
     const identity = `${additionalGarmentChoice.transactionId}:${additionalGarmentChoice.garmentKey}:${additionalGarmentChoice.occurrenceGeneration}`;
     if (autoChosenRequestIdentityRef.current === identity) return;
@@ -919,7 +953,7 @@ export const DormantFutureCustomDetailsStep = ({
   }, [
     additionalGarmentChoice,
     compatibleCopySources.length,
-    isCustomDetailsStage,
+    canPresentAdditionalGarmentCustomDetailsPrompt,
   ]);
 
   const renderOptions = (
@@ -2015,8 +2049,20 @@ export const DormantFutureCustomDetailsStep = ({
                       </div>
                       {(() => {
                         const assigned = getAssignedFabricForGarment(garment.garmentKey);
-                        if (!assigned) {
-                          return (
+                        const showFabricAction =
+                          (isCustomDetailsStage || isPersonalizedAdditionsStage) &&
+                          Boolean(onChangeAdditionalGarmentFabric);
+                        const hasDesignStyle = Object.prototype.hasOwnProperty.call(
+                          additionalGarmentDesignStyleLabelsByKey,
+                          garment.garmentKey,
+                        );
+                        const designStyleLabel = hasDesignStyle
+                          ? additionalGarmentDesignStyleLabelsByKey[garment.garmentKey]
+                          : null;
+                        const showDesignStyleAction =
+                          isPersonalizedAdditionsStage &&
+                          Boolean(onChangeAdditionalGarmentDesignStyle);
+                        const fabricSummary = !assigned ? (
                             <div
                               data-additional-garment-fabric-summary={garment.garmentKey}
                               className="flex min-w-0 flex-col gap-3 rounded-xl border border-amber-300/60 bg-amber-50/60 p-3 sm:flex-row sm:items-center sm:justify-between"
@@ -2029,13 +2075,13 @@ export const DormantFutureCustomDetailsStep = ({
                                   Assign fabric for this added garment here.
                                 </p>
                               </div>
-                              {isCustomDetailsStage && onChangeAdditionalGarmentFabric ? (
+                              {showFabricAction ? (
                                 <button
                                   type="button"
                                   data-change-additional-garment-fabric={garment.garmentKey}
                                   data-additional-garment-fabric-action="add"
                                   onClick={(event) =>
-                                    onChangeAdditionalGarmentFabric(
+                                    onChangeAdditionalGarmentFabric!(
                                       garment.garmentKey,
                                       event.currentTarget,
                                     )
@@ -2046,9 +2092,7 @@ export const DormantFutureCustomDetailsStep = ({
                                 </button>
                               ) : null}
                             </div>
-                          );
-                        }
-                        return (
+                          ) : (
                           <div
                             data-additional-garment-fabric-summary={garment.garmentKey}
                             className="flex min-w-0 flex-col gap-3 rounded-xl border border-heritage-gold/20 bg-heritage-cream/25 p-3 sm:flex-row sm:items-center sm:justify-between"
@@ -2074,13 +2118,13 @@ export const DormantFutureCustomDetailsStep = ({
                                 )}
                               </div>
                             </div>
-                            {isCustomDetailsStage && onChangeAdditionalGarmentFabric && (
+                            {showFabricAction ? (
                               <button
                                 type="button"
                                 data-change-additional-garment-fabric={garment.garmentKey}
                                 data-additional-garment-fabric-action="change"
                                 onClick={(event) =>
-                                  onChangeAdditionalGarmentFabric(
+                                  onChangeAdditionalGarmentFabric!(
                                     garment.garmentKey,
                                     event.currentTarget,
                                   )
@@ -2089,7 +2133,55 @@ export const DormantFutureCustomDetailsStep = ({
                               >
                                 Change Fabric
                               </button>
-                            )}
+                            ) : null}
+                          </div>
+                        );
+                        const designStyleSummary = showDesignStyleAction ? (
+                          <div
+                            data-additional-garment-design-style-summary={garment.garmentKey}
+                            className={`flex min-w-0 flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between ${
+                              hasDesignStyle
+                                ? "border-heritage-gold/20 bg-heritage-cream/25"
+                                : "border-amber-300/60 bg-amber-50/60"
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-heritage-green">
+                                {hasDesignStyle
+                                  ? designStyleLabel || "Design style assigned"
+                                  : "Design Style: Needs design"}
+                              </p>
+                              <p className="mt-1 text-[11px] leading-relaxed text-heritage-ink/65">
+                                {assigned
+                                  ? hasDesignStyle
+                                    ? "Change the design style for this added garment."
+                                    : "Choose a design style for this added garment."
+                                  : "Assign fabric first, then choose a design style."}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              data-change-additional-garment-design-style={garment.garmentKey}
+                              data-additional-garment-design-style-action={
+                                hasDesignStyle ? "change" : "add"
+                              }
+                              disabled={!assigned}
+                              onClick={(event) =>
+                                onChangeAdditionalGarmentDesignStyle!(
+                                  garment.garmentKey,
+                                  event.currentTarget,
+                                )
+                              }
+                              className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-heritage-green/25 px-3 text-xs font-bold uppercase tracking-wide text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-heritage-green"
+                            >
+                              {hasDesignStyle ? "Change Design Style" : "Add Design Style"}
+                            </button>
+                          </div>
+                        ) : null;
+                        return (
+                          <div className="min-w-0 space-y-3">
+                            {fabricSummary}
+                            {designStyleSummary}
                           </div>
                         );
                       })()}
