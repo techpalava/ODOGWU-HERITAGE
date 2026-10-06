@@ -19,7 +19,7 @@ export function AdminAuthGuard({
   onNavigateHome,
   requiredPermission,
 }: AdminAuthGuardProps) {
-  const { currentUser, setCurrentUser } = useAppStore();
+  const { currentUser, setCurrentUser, customerAuthReady } = useAppStore();
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
 
@@ -65,7 +65,7 @@ export function AdminAuthGuard({
     }
   };
 
-  if (loading) {
+  if (loading || !customerAuthReady) {
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="animate-spin text-heritage-gold h-12 w-12" />

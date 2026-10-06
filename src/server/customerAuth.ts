@@ -11,9 +11,9 @@ import {
 } from "firebase-admin/firestore";
 import type { Auth, DecodedIdToken } from "firebase-admin/auth";
 import type { Customer } from "../types.js";
+import { isAllowedAdminEmail } from "./adminAllowlist.js";
 import {
   getCanonicalEmail,
-  isAllowedAdminEmail,
   normalizePhone,
 } from "../security/authIdentity.js";
 

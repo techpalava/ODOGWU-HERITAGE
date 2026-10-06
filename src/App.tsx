@@ -1189,6 +1189,7 @@ export default function App() {
     const user = {
       ...customer,
       email: AuthorizationEngine.getCanonicalEmail(customer.email),
+      // Server bootstrap role only. resolveRole does not elevate by email.
       role: AuthorizationEngine.resolveRole(customer),
     };
 

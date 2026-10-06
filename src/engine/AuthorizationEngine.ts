@@ -1,9 +1,5 @@
 import { Customer } from "../types";
-import {
-  ALLOWED_ADMIN_EMAILS,
-  getCanonicalEmail,
-  isAllowedAdminEmail,
-} from "../security/authIdentity";
+import { getCanonicalEmail } from "../security/authIdentity";
 
 export class AuthorizationEngine {
   // Base role definitions (future expansion should load this dynamically)
@@ -17,26 +13,25 @@ export class AuthorizationEngine {
     SUPER_ADMINISTRATOR: "Super Administrator",
   };
 
-  static ALLOWED_ADMIN_EMAILS = [...ALLOWED_ADMIN_EMAILS];
-
   static getCanonicalEmail(email?: string): string {
     return getCanonicalEmail(email);
   }
 
-  static isAdminEmail(email?: string): boolean {
-    return isAllowedAdminEmail(email);
-  }
-
-  // Helper to resolve the role of the user, defaults to Guest
+  /**
+   * Role comes from server bootstrap (`customer.role`).
+   * Missing, unknown, or client-invented roles stay Customer.
+   * Email is never an admin signal.
+   */
   static resolveRole(user: Customer | null): string {
     if (!user) return AuthorizationEngine.ROLES.GUEST;
-    
-    // Enforce admin access strictly based on email allowlist
-    if (this.isAdminEmail(user.email)) {
-      return AuthorizationEngine.ROLES.SUPER_ADMINISTRATOR;
+
+    if (
+      user.role === AuthorizationEngine.ROLES.SUPER_ADMINISTRATOR ||
+      user.role === AuthorizationEngine.ROLES.ADMINISTRATOR
+    ) {
+      return user.role;
     }
-    
-    // Default all other users to Customer, regardless of legacy labels
+
     return AuthorizationEngine.ROLES.CUSTOMER;
   }
 
