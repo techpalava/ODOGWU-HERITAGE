@@ -138,8 +138,8 @@ export default function LoginView({
       setError("Please enter your registered email address or phone number.");
       return;
     }
-    if (!loginPasscode) {
-      setError("Please enter your 4-digit security PIN.");
+    if (!/^(?:\d{4}|\d{6})$/.test(loginPasscode)) {
+      setError("Please enter your 4-digit or 6-digit security PIN.");
       return;
     }
 
@@ -239,8 +239,8 @@ export default function LoginView({
       setError("Please enter a valid email address.");
       return;
     }
-    if (regPIN.length < 4) {
-      setError("Please set a 4-digit security PIN.");
+    if (!/^\d{6}$/.test(regPIN)) {
+      setError("Please set a 6-digit security PIN.");
       return;
     }
 
@@ -431,7 +431,7 @@ export default function LoginView({
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
                   <label className="block text-[10px] uppercase font-bold text-heritage-ink/50 tracking-wider">
-                    Security PIN
+                    4- or 6-Digit Security PIN
                   </label>
                   <span className="text-[9px] text-heritage-gold hover:text-heritage-green cursor-pointer transition-colors">
                     Forgot PIN?
@@ -443,12 +443,12 @@ export default function LoginView({
                   </div>
                   <input
                     type="password"
-                    maxLength={4}
+                    maxLength={6}
                     value={loginPasscode}
                     onChange={(e) =>
                       setLoginPasscode(e.target.value.replace(/\D/g, ""))
                     }
-                    placeholder="••••"
+                    placeholder="4 or 6 digits"
                     className="block w-full pl-10 pr-4 py-2.5 bg-heritage-cream/40 border border-gray-250 rounded-xl text-xs focus:ring-1 focus:ring-heritage-gold focus:border-heritage-gold outline-none text-heritage-ink font-mono tracking-widest font-bold"
                   />
                 </div>
@@ -505,7 +505,7 @@ export default function LoginView({
 
                   <div className="space-y-1.5">
                     <label className="block text-[10px] uppercase font-bold text-heritage-ink/50 tracking-wider">
-                      Choose 4-Digit Security PIN
+                      Choose 6-Digit Security PIN
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-heritage-ink/30">
@@ -513,12 +513,12 @@ export default function LoginView({
                       </div>
                       <input
                         type="password"
-                        maxLength={4}
+                        maxLength={6}
                         value={regPIN}
                         onChange={(e) =>
                           setRegPIN(e.target.value.replace(/\D/g, ""))
                         }
-                        placeholder="Choose code (e.g. 1234)"
+                        placeholder="Choose code (e.g. 123456)"
                         className="block w-full pl-10 pr-4 py-2.5 bg-heritage-cream/40 border border-gray-250 rounded-xl text-xs focus:ring-1 focus:ring-heritage-gold focus:border-heritage-gold outline-none text-heritage-ink font-mono tracking-widest font-bold"
                       />
                     </div>
@@ -589,7 +589,7 @@ export default function LoginView({
 
                   <div className="space-y-1.5">
                     <label className="block text-[10px] uppercase font-bold text-heritage-ink/50 tracking-wider">
-                      Choose 4-Digit Security PIN
+                      Choose 6-Digit Security PIN
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-heritage-ink/30">
@@ -597,12 +597,12 @@ export default function LoginView({
                       </div>
                       <input
                         type="password"
-                        maxLength={4}
+                        maxLength={6}
                         value={regPIN}
                         onChange={(e) =>
                           setRegPIN(e.target.value.replace(/\D/g, ""))
                         }
-                        placeholder="Choose PIN code"
+                        placeholder="Choose 6-digit PIN"
                         className="block w-full pl-10 pr-4 py-2.5 bg-heritage-cream/40 border border-gray-250 rounded-xl text-xs focus:ring-1 focus:ring-heritage-gold focus:border-heritage-gold outline-none text-heritage-ink font-mono tracking-widest font-bold"
                       />
                     </div>
