@@ -68,7 +68,7 @@ All work below is released. `/api/health` shows the current production build
 - [#390](https://github.com/techpalava/ODOGWU-HERITAGE/pull/390) Future Order V2 Stripe `record-payment` webhooks verify `constructEvent(rawBody, stripe-signature, STRIPE_WEBHOOK_SECRET)`; forged signature / missing secret fail closed; `body.id` is never trusted
 - [#392](https://github.com/techpalava/ODOGWU-HERITAGE/pull/392) Step 5 Additional Garment popup flow: Add AG stays on Personalized Additions through Fabric then Design Style then Custom Detail Copy; per-card Add/Change Fabric and Design Style; Change Fabric ends after fabric save. Fast Executor Guide documents the UX rule (ask when ambiguous). No Firestore/Storage rules deploy
 
-The signed-in Chrome restore check after #289 passed. Live checks after #368 and #372 passed on 2026-10-05 against production `7602a97`: signed-in Step 3 upload restores after reload, including in a fresh incognito session; the guest upload transfers to the account after sign-in; signed-out catalogue and fabric images load. Live after #385 on production `728c523`: unauthenticated `POST /api/future-order-v2/payment-intent` returns **401** `AUTH_REQUIRED`. Live after #390 on production `96f255c`: forged `stripe-signature` on `record-payment` returns **400** `STRIPE_WEBHOOK_SECRET_REQUIRED` until Xavier sets the test `whsec_` in Vercel Preview/Production (fail-closed). Live after #392 on production `1a94ad9`: visual check passed; live chunk contains `Add Design Style`. Live chunk after #361 contains
+The signed-in Chrome restore check after #289 passed. Live checks after #368 and #372 passed on 2026-10-05 against production `7602a97`: signed-in Step 3 upload restores after reload, including in a fresh incognito session; the guest upload transfers to the account after sign-in; signed-out catalogue and fabric images load. Live after #385 on production `728c523`: unauthenticated `POST /api/future-order-v2/payment-intent` returns **401** `AUTH_REQUIRED`. Live after #390 on production `96f255c`: forged `stripe-signature` on `record-payment` returned **400** `STRIPE_WEBHOOK_SECRET_REQUIRED` before the secret was set. Ops accepted 2026-10-06: Vercel Preview/Production now have test `STRIPE_WEBHOOK_SECRET`; forged signature returns **400** `INVALID_STRIPE_SIGNATURE` (verified against live `08f307b…`). Optional: one real signed test `payment_intent.succeeded` to the production endpoint remains unproven. Live after #392 on production `1a94ad9`: visual check passed; live chunk contains `Add Design Style`. Live chunk after #361 contains
 `These clothes are for you` / `Laid-flat widths are doubled for production`.
 
 ## Git and worktrees
@@ -121,9 +121,9 @@ Exact commands are in `FAST_EXECUTOR_GUIDE.md`, sections 19 to 22.
 
 ## Still open
 
-- Set Vercel env `STRIPE_WEBHOOK_SECRET` (Stripe test `whsec_…` for
-  `/api/future-order-v2/record-payment`) on Preview and Production so signed webhooks can
-  verify after #390; until set, the webhook path returns 400 fail-closed.
+- Optional: send one real signed Stripe test `payment_intent.succeeded` to
+  `https://odogwu-heritage.vercel.app/api/future-order-v2/record-payment` to prove the
+  happy-path record (forged-sig verification already live).
 - Remaining security review items (`vercel.json` headers, admin allowlist in client, PIN
   length, `/api/health` buildId) are not authorized yet.
 - Admin live check of stage history: save a new stage on a paid order and confirm the customer
