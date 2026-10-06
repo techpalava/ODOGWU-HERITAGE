@@ -38,8 +38,8 @@ The Design Studio (`src/components/DesignStudioView.tsx`) has 10 stages, defined
 ## Status
 
 All work below is released. Prefer `/api/health` `buildId` as the live production
-SHA. Feature #421 production merge was `b9ce11f` (allowlist off the client bundle;
-live `buildId` `b9ce11f2ea43f1b704eb064dc8725c443220d495`).
+SHA. Feature #427 production merge was `be13568` (Design Style gold flash only on
+blocked jump-ahead; live `buildId` `be13568ad1d26a319256f7ede9633502ce952b9e`).
 Handoff 2026-10-06 earlier observed customer-domain `buildId` `5255780` (#408).
 
 - [#281](https://github.com/techpalava/ODOGWU-HERITAGE/pull/281) Dispatch progress on paid V2 orders
@@ -71,9 +71,10 @@ Handoff 2026-10-06 earlier observed customer-domain `buildId` `5255780` (#408).
 - [#392](https://github.com/techpalava/ODOGWU-HERITAGE/pull/392) Step 5 Additional Garment popup flow: Add AG stays on Personalized Additions through Fabric then Design Style then Custom Detail Copy; per-card Add/Change Fabric and Design Style; Change Fabric ends after fabric save. Fast Executor Guide documents the UX rule (ask when ambiguous). No Firestore/Storage rules deploy
 - [#413](https://github.com/techpalava/ODOGWU-HERITAGE/pull/413) Global security headers via new `vercel.json`: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, `Permissions-Policy` (camera/microphone/geolocation disabled; `payment` omitted for Stripe wallets), and `Content-Security-Policy-Report-Only` for Stripe / Firebase / Google Fonts / Storage / Unsplash. No CORS change, no COOP/COEP. CSP enforce deferred until report-only violations are reviewed
 - [#421](https://github.com/techpalava/ODOGWU-HERITAGE/pull/421) Security Medium #1 done: admin email allowlist moved to server-only `src/server/adminAllowlist.ts` (head `1dc6415`, merged to main `1c3af72`, released via #422 production `b9ce11f`, synced via #423 main `45d5a13`). `customerAuth.ts` still sets the Firebase `admin` custom claim from it. `firestore.rules` and `storage.rules` unchanged (`request.auth.token.admin == true`). Client role comes only from the `/api/auth/bootstrap` role (`Super Administrator` / `Administrator`); a missing role or failed bootstrap means Customer. `AdminAuthGuard` waits for bootstrap before rendering. `test_firestore_security.ts` scans client sources for the allowlist identifiers and addresses. Public footer no longer hardcodes two allowlisted addresses as mailto fallbacks; it shows only business settings `primaryEmail` / `secondaryEmail`
+- [#427](https://github.com/techpalava/ODOGWU-HERITAGE/pull/427) Design Style Your Garments gold ring is a jump-ahead flash only: ordinary `stage_top` visits (Continue from Fabric, Back, allowed step click) stay quiet; blocked skip-ahead / `validation_target` still scrolls to the first incomplete occurrence and gold-flashes it. The dismiss timer is kept on a ref so clearing the handled request no longer leaves the ring stuck. Head `afe566f`, merged to main `772a368`, released via #428 production `be13568`, synced via #429 main `7089deb`. No Firestore/Storage rules deploy
 
 The signed-in Chrome restore check after #289 passed. Live checks after #368 and #372 passed on 2026-10-05 against production `7602a97`: signed-in Step 3 upload restores after reload, including in a fresh incognito session; the guest upload transfers to the account after sign-in; signed-out catalogue and fabric images load. Live after #385 on production `728c523`: unauthenticated `POST /api/future-order-v2/payment-intent` returns **401** `AUTH_REQUIRED`. Live after #390 on production `96f255c`: forged `stripe-signature` on `record-payment` returned **400** `STRIPE_WEBHOOK_SECRET_REQUIRED` before the secret was set. Ops accepted 2026-10-06: Vercel Preview/Production now have test `STRIPE_WEBHOOK_SECRET`; forged signature returns **400** `INVALID_STRIPE_SIGNATURE` (verified against live `08f307b…`). Optional: one real signed test `payment_intent.succeeded` to the production endpoint remains unproven. Live after #392 on production `1a94ad9`: visual check passed; live chunk contains `Add Design Style`. Handoff observed customer-domain `buildId` `5255780` (#408). Live after #413 on production `e8bb6ab`: `/` and `/api/health` return the five new security headers (including CSP-Report-Only). Live after #421 on production `b9ce11f` (`/api/health` `buildId` `b9ce11f2ea43f1b704eb064dc8725c443220d495`), 2026-10-06 ~09:35 WAT: all 24 production JS files contain 0 of the four admin addresses (including the dot-stripped Gmail form) and 0 occurrences of `ALLOWED_ADMIN_EMAILS` / `isAllowedAdminEmail` / `isAdminEmail` / `adminAllowlist` (before the fix, 8 hits). A signed-in non-admin customer sees no “Admin Portal & DB” nav entry. The public footer shows no email row (phone numbers, location, and hours only). Owner verification 2026-10-06 ~09:45 WAT on production `b9ce11f`: the owner's authorized admin Google account sees “Admin Portal & DB” after bootstrap and the Admin Portal (“Bespoke Tailoring Database Hub”) loads with no Access Denied; a non-admin Google account sees no “Admin Portal & DB” entry and gets no admin access. Both passed. Live chunk after #361 contains
-`These clothes are for you` / `Laid-flat widths are doubled for production`.
+`These clothes are for you` / `Laid-flat widths are doubled for production`. Live after #427 on production `be13568` (`/api/health` `buildId` `be13568ad1d26a319256f7ede9633502ce952b9e`): guest Shirt + Trouser, Continue from Fabric onto Design Style, both Your Garments cards have no gold ring (`data-design-assignment-feedback` absent). No unique customer-copy needle. Jump-ahead flash while Continue is locked was not re-proven on production after the merge (preview visual approved).
 
 ## Git and worktrees
 
@@ -87,8 +88,9 @@ The signed-in Chrome restore check after #289 passed. Live checks after #368 and
   `feat/step7-people-ux-solo-first`,   `fix/payment-intent-auth-amount`,
   `fix/stripe-webhook-construct-event`,
   `feat/additional-garment-flow-step5-session`,
-  `fix/security-headers-vercel`, or
-  `fix/admin-allowlist-server-only`.
+  `fix/security-headers-vercel`,
+  `fix/admin-allowlist-server-only`, or
+  `fix/design-style-incomplete-flash-only`.
 - Critical Risk “height alone” copy fix is parked in local stash
   `park critical-risk-height-copy before clear-all` (not released). Restore onto a fresh
   branch from `github/main` when authorized; do not mix it into unrelated work.
