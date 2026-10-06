@@ -51,8 +51,12 @@ export function verifyPin(pin: string, storedHash?: string): boolean {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-export function validatePin(pin: unknown): pin is string {
-  return typeof pin === "string" && /^\d{4}$/.test(pin);
+export function validateLoginPin(pin: unknown): pin is string {
+  return typeof pin === "string" && /^(?:\d{4}|\d{6})$/.test(pin);
+}
+
+export function validateRegisterPin(pin: unknown): pin is string {
+  return typeof pin === "string" && /^\d{6}$/.test(pin);
 }
 
 function toPublicCustomer(customer: StoredCustomer): PublicCustomer {
@@ -265,7 +269,7 @@ export async function loginWithPin(
   identifier: string,
   pin: string,
 ) {
-  if (!validatePin(pin)) {
+  if (!validateLoginPin(pin)) {
     throw new Error("INVALID_CREDENTIALS");
   }
 
@@ -345,7 +349,7 @@ export async function registerWithPin(
 ) {
   const name = input.name.trim();
   const canonicalEmail = getCanonicalEmail(input.email);
-  if (!name || !canonicalEmail.includes("@") || !validatePin(input.pin)) {
+  if (!name || !canonicalEmail.includes("@") || !validateRegisterPin(input.pin)) {
     throw new Error("INVALID_REGISTRATION");
   }
   if (isAllowedAdminEmail(canonicalEmail)) {

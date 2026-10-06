@@ -9,7 +9,8 @@ import {
 } from "./src/server/adminAllowlist";
 import {
   hashPin,
-  validatePin,
+  validateLoginPin,
+  validateRegisterPin,
   verifyPin,
 } from "./src/server/customerAuth";
 
@@ -171,9 +172,14 @@ for (const file of clientSources) {
 const pinHash = hashPin("4826", "0123456789abcdef0123456789abcdef");
 assert.equal(verifyPin("4826", pinHash), true);
 assert.equal(verifyPin("4827", pinHash), false);
-assert.equal(validatePin("4826"), true);
-assert.equal(validatePin("48261"), false);
-assert.equal(validatePin("48a6"), false);
+assert.equal(validateLoginPin("4826"), true);
+assert.equal(validateLoginPin("482619"), true);
+assert.equal(validateRegisterPin("482619"), true);
+assert.equal(validateRegisterPin("4826"), false);
+assert.equal(validateLoginPin("48261"), false);
+assert.equal(validateRegisterPin("48261"), false);
+assert.equal(validateLoginPin("48a6"), false);
+assert.equal(validateRegisterPin("48a6"), false);
 
 const rules = readFileSync("firestore.rules", "utf8");
 assert.doesNotMatch(rules, /function isAdmin\(\)\s*\{\s*return true/);

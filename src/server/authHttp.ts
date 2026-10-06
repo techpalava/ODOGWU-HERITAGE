@@ -33,7 +33,7 @@ function authErrorResponse(error: unknown) {
     case "INVALID_REGISTRATION":
       return {
         status: 400,
-        message: "Enter a valid name, email address and 4-digit PIN.",
+        message: "Enter a valid name, email address and 6-digit PIN.",
       };
     default:
       console.error("Firebase customer authentication failed:", error);
