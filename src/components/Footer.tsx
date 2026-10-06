@@ -21,6 +21,10 @@ import odogwuLogo from "../assets/images/odogwu_logo_1782556303014.jpg";
 
 export default function Footer() {
   const { activeTab, setActiveTab, businessSettings, batches } = useAppStore();
+  const primaryEmail =
+    businessSettings?.applicationSettings?.primaryEmail?.trim() || "";
+  const secondaryEmail =
+    businessSettings?.applicationSettings?.secondaryEmail?.trim() || "";
 
   const handleNavigation = (e: React.MouseEvent, tab: string) => {
     e.preventDefault();
@@ -149,28 +153,32 @@ export default function Footer() {
                   (WhatsApp)
                 </a>
               </li>
-              <li className="flex flex-col sm:flex-row items-center sm:items-start gap-1.5 sm:gap-3">
-                <Mail
-                  size={14}
-                  className="text-heritage-gold mt-0.5 shrink-0"
-                />
-                <div className="flex flex-col space-y-1 items-center sm:items-start">
-                  <a
-                    href={`mailto:${businessSettings?.applicationSettings?.primaryEmail || "f.o.startups@gmail.com"}`}
-                    className="hover:text-heritage-gold transition"
-                  >
-                    {businessSettings?.applicationSettings?.primaryEmail ||
-                      "f.o.startups@gmail.com"}
-                  </a>
-                  <a
-                    href={`mailto:${businessSettings?.applicationSettings?.secondaryEmail || "vaprecfamily@gmail.com"}`}
-                    className="hover:text-heritage-gold transition"
-                  >
-                    {businessSettings?.applicationSettings?.secondaryEmail ||
-                      "vaprecfamily@gmail.com"}
-                  </a>
-                </div>
-              </li>
+              {(primaryEmail || secondaryEmail) && (
+                <li className="flex flex-col sm:flex-row items-center sm:items-start gap-1.5 sm:gap-3">
+                  <Mail
+                    size={14}
+                    className="text-heritage-gold mt-0.5 shrink-0"
+                  />
+                  <div className="flex flex-col space-y-1 items-center sm:items-start">
+                    {primaryEmail && (
+                      <a
+                        href={`mailto:${primaryEmail}`}
+                        className="hover:text-heritage-gold transition"
+                      >
+                        {primaryEmail}
+                      </a>
+                    )}
+                    {secondaryEmail && (
+                      <a
+                        href={`mailto:${secondaryEmail}`}
+                        className="hover:text-heritage-gold transition"
+                      >
+                        {secondaryEmail}
+                      </a>
+                    )}
+                  </div>
+                </li>
+              )}
               <li className="flex flex-col sm:flex-row items-center sm:items-start gap-1.5 sm:gap-3">
                 <MapPin
                   size={14}
