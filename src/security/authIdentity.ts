@@ -1,10 +1,3 @@
-export const ALLOWED_ADMIN_EMAILS = [
-  "techpalavabox@gmail.com",
-  "f.o.startups@gmail.com",
-  "vaprecfamily@gmail.com",
-  "millstechbox@gmail.com",
-] as const;
-
 export function getCanonicalEmail(email?: string): string {
   if (!email) return "";
 
@@ -22,16 +15,6 @@ export function getCanonicalEmail(email?: string): string {
   }
 
   return `${localPart}@${domain}`;
-}
-
-export function isAllowedAdminEmail(email?: string): boolean {
-  const canonicalEmail = getCanonicalEmail(email);
-  return (
-    canonicalEmail.length > 0 &&
-    ALLOWED_ADMIN_EMAILS.some(
-      (allowedEmail) => getCanonicalEmail(allowedEmail) === canonicalEmail,
-    )
-  );
 }
 
 export function normalizePhone(phone?: string): string {

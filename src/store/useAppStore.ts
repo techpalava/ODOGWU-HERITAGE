@@ -106,6 +106,11 @@ export interface AppState {
   stylesLoadState: StylesLoadState;
   stylesLoadError: string | null;
   currentUser: Customer | null;
+  /**
+   * False until the signed-in Firebase session has finished bootstrap
+   * (or confirmed there is no signed-in customer). Admin UI must wait.
+   */
+  customerAuthReady: boolean;
   setCurrentUser: (user: Customer | null) => void;
   customers: Customer[];
   setCustomers: (
@@ -312,6 +317,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   stylesLoadState: "loading",
   stylesLoadError: null,
   currentUser: null,
+  customerAuthReady: false,
   setCurrentUser: (user) => {
     clearPrivateStoreSubscriptions();
     // Clear UID-scoped group state synchronously before a new identity can
@@ -332,6 +338,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ownerUid: firebaseUser.uid,
         email: AuthorizationEngine.getCanonicalEmail(user.email),
         canonicalEmail: AuthorizationEngine.getCanonicalEmail(user.email),
+        // Server bootstrap role only. resolveRole does not elevate by email.
         role: AuthorizationEngine.resolveRole(user),
       };
       const claim = GuestOrderSessionService.claimGuestCart(canonicalUser);
@@ -585,6 +592,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     privateBatchSubscriptionController?.dispose();
     privateBatchSubscriptionController = null;
     set({
+      customerAuthReady: false,
       customGroups: [],
       customGroupAccessById: {},
       customGroupPrivateAccessReady: false,
@@ -645,6 +653,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                   ) {
                     ApiService.clearSession();
                     get().setCurrentUser(null);
+                    set({ customerAuthReady: true });
                   }
                   return;
                 }
@@ -655,6 +664,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                   isCurrentInitialization()
                 ) {
                   get().setCurrentUser(customer);
+                  set({ customerAuthReady: true });
                 }
               } catch (error) {
                 console.error(
@@ -667,12 +677,14 @@ export const useAppStore = create<AppState>((set, get) => ({
                 ) {
                   ApiService.clearSession();
                   get().setCurrentUser(null);
+                  set({ customerAuthReady: true });
                 }
               }
             })();
           } else {
             ApiService.clearSession();
             get().setCurrentUser(null);
+            set({ customerAuthReady: true });
           }
         })
       );
