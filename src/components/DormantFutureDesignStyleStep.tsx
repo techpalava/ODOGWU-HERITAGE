@@ -261,6 +261,9 @@ export const DormantFutureDesignStyleStep = ({
   const incompleteFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const continueFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const handledAssignmentFeedbackIdRef = useRef<number | null>(null);
   const mappingScrollTopRef = useRef(0);
   const hasSeenReuseFabricRef = useRef(false);
@@ -339,6 +342,10 @@ export const DormantFutureDesignStyleStep = ({
       clearTimeout(incompleteFocusTimerRef.current);
       incompleteFocusTimerRef.current = null;
     }
+    if (continueFocusTimerRef.current !== null) {
+      clearTimeout(continueFocusTimerRef.current);
+      continueFocusTimerRef.current = null;
+    }
 
     handledAssignmentFeedbackIdRef.current = assignmentFeedback.eventId;
     setHighlightedOccurrenceToken(token);
@@ -355,23 +362,38 @@ export const DormantFutureDesignStyleStep = ({
       }
       const continueButton = continueActionRef.current?.querySelector("button");
       if (continueButton && "focus" in continueButton) {
-        (continueButton as HTMLElement).focus({ preventScroll: true });
+        (continueButton as HTMLElement).focus();
       }
       assignmentFeedbackFrameRef.current = null;
     };
+    const scheduleContinueFocus = () => {
+      const run = () => {
+        continueFocusTimerRef.current = null;
+        placeContinueFocus();
+      };
+      const afterPaint = () => {
+        assignmentFeedbackFrameRef.current = null;
+        continueFocusTimerRef.current = setTimeout(run, 0);
+      };
+      // Dialog Apply unmounts first; Chromium restore lands one or two frames
+      // later. Wait those frames, then a timeout, so Continue keeps focus.
+      if (
+        typeof window !== "undefined" &&
+        typeof window.requestAnimationFrame === "function"
+      ) {
+        assignmentFeedbackFrameRef.current = window.requestAnimationFrame(
+          () => {
+            assignmentFeedbackFrameRef.current =
+              window.requestAnimationFrame(afterPaint);
+          },
+        );
+        return;
+      }
+      afterPaint();
+    };
     const revealAssignment = () => {
       if (completedByThisAssignment) {
-        // The Apply control is removed with the dialog. Chromium restores
-        // focus after that removal, so Continue is focused on the next frame.
-        if (
-          typeof window !== "undefined" &&
-          typeof window.requestAnimationFrame === "function"
-        ) {
-          assignmentFeedbackFrameRef.current =
-            window.requestAnimationFrame(placeContinueFocus);
-          return;
-        }
-        placeContinueFocus();
+        scheduleContinueFocus();
         return;
       }
       card?.scrollIntoView({
@@ -464,6 +486,9 @@ export const DormantFutureDesignStyleStep = ({
       }
       if (incompleteFocusTimerRef.current !== null) {
         clearTimeout(incompleteFocusTimerRef.current);
+      }
+      if (continueFocusTimerRef.current !== null) {
+        clearTimeout(continueFocusTimerRef.current);
       }
     },
     [],
@@ -820,7 +845,9 @@ export const DormantFutureDesignStyleStep = ({
           else garmentCardRefs.current.delete(token);
         }}
         role="listitem"
-        tabIndex={isAssignmentFeedbackTarget ? -1 : undefined}
+        tabIndex={
+          isAssignmentFeedbackTarget && !exactSetComplete ? -1 : undefined
+        }
         data-occurrence-label={occurrence.label}
         data-occurrence-token={occurrence.target.occurrenceToken}
         data-occurrence-garment-key={occurrence.target.garmentKey}
