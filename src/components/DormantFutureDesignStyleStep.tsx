@@ -258,6 +258,9 @@ export const DormantFutureDesignStyleStep = ({
   const assignmentFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const incompleteFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const handledAssignmentFeedbackIdRef = useRef<number | null>(null);
   const mappingScrollTopRef = useRef(0);
   const hasSeenReuseFabricRef = useRef(false);
@@ -332,6 +335,10 @@ export const DormantFutureDesignStyleStep = ({
       clearTimeout(assignmentFeedbackTimerRef.current);
       assignmentFeedbackTimerRef.current = null;
     }
+    if (incompleteFocusTimerRef.current !== null) {
+      clearTimeout(incompleteFocusTimerRef.current);
+      incompleteFocusTimerRef.current = null;
+    }
 
     handledAssignmentFeedbackIdRef.current = assignmentFeedback.eventId;
     setHighlightedOccurrenceToken(token);
@@ -401,6 +408,14 @@ export const DormantFutureDesignStyleStep = ({
     }
     lastHandledIncompleteFocusRequestIdRef.current = incompleteFocusRequestId;
     const token = incompleteFocusOccurrenceToken;
+    if (assignmentFeedbackTimerRef.current !== null) {
+      clearTimeout(assignmentFeedbackTimerRef.current);
+      assignmentFeedbackTimerRef.current = null;
+    }
+    if (incompleteFocusTimerRef.current !== null) {
+      clearTimeout(incompleteFocusTimerRef.current);
+      incompleteFocusTimerRef.current = null;
+    }
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       typeof window.matchMedia === "function" &&
@@ -423,13 +438,13 @@ export const DormantFutureDesignStyleStep = ({
     } else {
       focusCard();
     }
-    const clearTimer = window.setTimeout(() => {
+    incompleteFocusTimerRef.current = setTimeout(() => {
+      incompleteFocusTimerRef.current = null;
       setHighlightedOccurrenceToken((current) =>
         current === token ? null : current,
       );
     }, 1200);
     onIncompleteFocusHandled?.(incompleteFocusRequestId);
-    return () => window.clearTimeout(clearTimer);
   }, [
     incompleteFocusRequestId,
     incompleteFocusOccurrenceToken,
@@ -446,6 +461,9 @@ export const DormantFutureDesignStyleStep = ({
       }
       if (assignmentFeedbackTimerRef.current !== null) {
         clearTimeout(assignmentFeedbackTimerRef.current);
+      }
+      if (incompleteFocusTimerRef.current !== null) {
+        clearTimeout(incompleteFocusTimerRef.current);
       }
     },
     [],

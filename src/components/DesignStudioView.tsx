@@ -1005,8 +1005,7 @@ export default function DesignStudioView({
           effectiveTarget.kind === "design_style_incomplete"
             ? effectiveTarget.occurrenceToken
             : redirectedForIncompleteDesignStyle ||
-                effectiveTarget.kind === "validation_target" ||
-                effectiveTarget.kind === "stage_top"
+                effectiveTarget.kind === "validation_target"
               ? detectInputs.firstIncompleteDesignStyleOccurrenceToken
               : null;
         if (focusOccurrenceToken) {
