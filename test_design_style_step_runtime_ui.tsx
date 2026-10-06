@@ -1424,7 +1424,17 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
   });
   const target = model.projection.occurrences[0]!.target;
   const scrolls: ScrollIntoViewOptions[] = [];
+  const cardFocusCalls: FocusOptions[] = [];
   const continueFocusCalls: FocusOptions[] = [];
+  const cardMock = {
+    scrolls,
+    scrollIntoView(options: ScrollIntoViewOptions) {
+      this.scrolls.push(options);
+    },
+    focus(options?: FocusOptions) {
+      cardFocusCalls.push(options ?? {});
+    },
+  };
   const continueButtonNode = {
     focus(options?: FocusOptions) {
       continueFocusCalls.push(options ?? {});
@@ -1480,13 +1490,7 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
               element.type === "article" &&
               element.props["data-occurrence-token"] === target.occurrenceToken
             ) {
-              return {
-                scrolls,
-                scrollIntoView(options: ScrollIntoViewOptions) {
-                  this.scrolls.push(options);
-                },
-                focus: () => undefined,
-              };
+              return cardMock;
             }
             return { focus: () => undefined };
           },
@@ -1504,7 +1508,8 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
     });
     assert.equal(scrolls.length, 1);
     assert.equal(scrolls[0]?.block, "center");
-    assert.equal(continueFocusCalls.length, 0);
+    assert.deepEqual(cardFocusCalls, [{ preventScroll: true }]);
+    assert.equal(continueFocusCalls.length, 0, "an unfinished set does not focus Continue");
 
     await act(async () => {
       renderer.update(
@@ -1516,7 +1521,34 @@ for (const [count, selectedStyleIdByGarmentKey, complete] of [
       );
     });
     assert.equal(scrolls.length, 1, "the completing assignment does not scroll the garment card");
-    assert.deepEqual(continueFocusCalls, [{ preventScroll: true }]);
+    assert.equal(
+      cardFocusCalls.length,
+      1,
+      "the completing assignment does not focus the garment card",
+    );
+    const completingCard = renderer.root.find(
+      (node) =>
+        node.props?.["data-occurrence-token"] === target.occurrenceToken,
+    );
+    assert.equal(
+      completingCard.props.tabIndex,
+      undefined,
+      "the completing gold flash is not a tab stop",
+    );
+    assert.equal(
+      continueFocusCalls.length,
+      0,
+      "Continue waits for restore-safe delay",
+    );
+    cardMock.focus();
+    const continueTimer = [...scheduledTimers.values()][0];
+    assert.equal(typeof continueTimer, "function");
+    await act(async () => continueTimer!());
+    assert.deepEqual(
+      continueFocusCalls,
+      [{}],
+      "Continue focus wins after Chromium restore onto the article",
+    );
     assert.equal(
       renderer.root.findAll(
         (node) => node.props?.["data-design-assignment-feedback"] === "true",
