@@ -659,6 +659,8 @@ export interface FutureShippingStateV1 {
   fulfilmentMethod: FutureShippingFulfilmentSelection | null;
   destinationSelectionMode: FutureShippingDestinationSelectionMode | null;
   otherDestinationCountry: string;
+  /** Snapshotted Admin default pickup venue when fulfilment is Eindhoven pickup; empty otherwise. */
+  pickupLocation: string;
   customerInformation: FutureShippingCustomerInformationV1;
   destinationZoneId: FutureShippingDestinationZone | null;
   destinationZoneSource: FutureShippingDestinationZoneSource;

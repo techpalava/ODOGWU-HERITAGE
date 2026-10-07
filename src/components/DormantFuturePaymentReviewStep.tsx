@@ -1054,7 +1054,9 @@ export const DormantFuturePaymentReviewStep = ({
                   <dd className="break-words text-heritage-ink/65">{shippingCustomer.phone || "Phone pending"}</dd>
                 </div>
                 <div className="min-w-0 rounded-xl border border-heritage-green/10 p-3">
-                  <dt className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">Destination</dt>
+                  <dt className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
+                    {isDelivery ? "Destination" : "Pickup location"}
+                  </dt>
                   <dd className="mt-1 break-words text-heritage-ink/70">
                     {isDelivery
                       ? [
@@ -1066,14 +1068,16 @@ export const DormantFuturePaymentReviewStep = ({
                           shippingAddress?.countryCode ||
                             candidate.shipping.state.otherDestinationCountry,
                         ].filter(Boolean).join(", ") || "Address pending"
-                      : candidate.shipping.destinationLabel || "Pick Up in Eindhoven"}
+                      : candidate.shipping.state.pickupLocation.trim() ||
+                        candidate.shipping.destinationLabel ||
+                        "Pick Up in Eindhoven"}
                   </dd>
-                  {candidate.shipping.destinationLabel && (
+                  {isDelivery && candidate.shipping.destinationLabel && (
                     <dd className="mt-2 break-words text-xs text-heritage-ink/60">
                       Zone: {candidate.shipping.destinationLabel}
                     </dd>
                   )}
-                  {candidate.shipping.parcelWeightKg !== null && (
+                  {isDelivery && candidate.shipping.parcelWeightKg !== null && (
                     <dd className="mt-1 break-words text-xs text-heritage-ink/60">
                       Estimated shipment weight: {candidate.shipping.parcelWeightKg.toFixed(1)} kg
                     </dd>

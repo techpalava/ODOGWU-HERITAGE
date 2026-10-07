@@ -107,6 +107,7 @@ const createCandidate = (
         fulfilmentMethod: "eindhoven_pickup",
         destinationSelectionMode: null,
         otherDestinationCountry: "",
+        pickupLocation: "Veldhoven Campus Lockers",
         customerInformation: {
           fullName: "Ada Lovelace",
           phone: "+31 6 12345678",

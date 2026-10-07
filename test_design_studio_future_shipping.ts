@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { FutureShippingStateV1 } from "./src/types";
 import {
+  DEFAULT_FUTURE_PICKUP_LOCATION,
   FUTURE_SHIPPING_DESTINATION_ZONE_OPTIONS,
   createEmptyFutureShippingState,
   getStep8OrderSummaryRows,
@@ -119,6 +120,34 @@ assert.equal(pickup.postEindhovenAdjustmentCents, 0);
 assert.equal(pickup.projectedTotalCents, 50000);
 assert.equal(pickup.state.quoteReference?.quoteRequired, false);
 assert.equal(pickup.diagnostics.some((diagnostic) => diagnostic.field === "addressLine1"), false);
+assert.equal(pickup.state.pickupLocation, DEFAULT_FUTURE_PICKUP_LOCATION);
+
+const pickupFromAdmin = reconcileFutureShippingState({
+  state: pickupState,
+  garmentCount: 2,
+  selectedDesignPrice: 500,
+  defaultPickupLocation: "  Atelier Front Desk  ",
+});
+assert.equal(pickupFromAdmin.state.pickupLocation, "Atelier Front Desk");
+
+const pickupPreservesSnapshot = reconcileFutureShippingState({
+  state: { ...pickupState, pickupLocation: "Snapshotted Venue" },
+  garmentCount: 2,
+  selectedDesignPrice: 500,
+});
+assert.equal(pickupPreservesSnapshot.state.pickupLocation, "Snapshotted Venue");
+
+const deliveryClearsPickup = reconcileFutureShippingState({
+  state: withDelivery(
+    { ...withContact(createEmptyFutureShippingState()), pickupLocation: "Should Clear" },
+    "NL",
+    "Eindhoven",
+  ),
+  garmentCount: 2,
+  selectedDesignPrice: 500,
+});
+assert.equal(deliveryClearsPickup.state.pickupLocation, "");
+assert.equal(deliveryClearsPickup.status, "quote_ready");
 
 const incompleteDelivery = reconcileFutureShippingState({
   state: {
@@ -249,13 +278,20 @@ assert.equal(
 const pickupSummaryRows = getStep8OrderSummaryRows(pickup);
 assert.deepEqual(
   pickupSummaryRows.map((row) => row.label),
-  ["Delivery Method"],
+  ["Delivery Method", "Pickup location"],
 );
 assert.equal(pickupSummaryRows[0].value, "Pick Up in Eindhoven");
+assert.equal(pickupSummaryRows[1].value, DEFAULT_FUTURE_PICKUP_LOCATION);
 assert.equal(
   pickupSummaryRows.some((row) => row.label === "Shipping"),
   false,
   "collection must not render a misleading €0 shipping row",
+);
+
+const pickupAdminSummaryRows = getStep8OrderSummaryRows(pickupFromAdmin);
+assert.equal(
+  pickupAdminSummaryRows.find((row) => row.label === "Pickup location")?.value,
+  "Atelier Front Desk",
 );
 
 const quoteRequired = reconcileFutureShippingState({
