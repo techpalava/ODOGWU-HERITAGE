@@ -905,6 +905,15 @@ export const DormantFutureSummaryStep = ({
               </dd>
             </div>
           ) : null}
+          {deliveryMethod === "eindhoven_pickup" &&
+          shippingResolution?.state.pickupLocation.trim() ? (
+            <div className="flex min-w-0 flex-wrap justify-between gap-3 text-white/80">
+              <dt className="min-w-0">Pickup location</dt>
+              <dd className="min-w-0 max-w-full break-words text-right">
+                {shippingResolution.state.pickupLocation.trim()}
+              </dd>
+            </div>
+          ) : null}
           {isDestinationDelivery ? (
             <div className="flex min-w-0 flex-wrap justify-between gap-3 text-white/80">
               <dt className="min-w-0">Shipping</dt>

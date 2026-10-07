@@ -16,6 +16,7 @@ import {
   STEP8_OTHER_DESTINATION_SELECT_VALUE,
 } from "../config/Step8AdditionalDeliveryConfig";
 import {
+  DEFAULT_FUTURE_PICKUP_LOCATION,
   type FutureShippingFieldId,
   type FutureShippingStageResolution,
 } from "../utils/designStudioFutureShipping";
@@ -220,7 +221,7 @@ export const DormantFutureShippingStep = ({
                 </span>
               </span>
               <span className="mt-1 block text-xs leading-relaxed text-heritage-ink/65">
-                Pick up your finished order at an arranged location in Eindhoven.
+                Collect your finished order at the Eindhoven pickup location below.
               </span>
             </span>
           </label>
@@ -313,6 +314,30 @@ export const DormantFutureShippingStep = ({
                 </span>
               )}
             </label>
+
+            {isPickup && (
+              <div
+                data-testid="future-shipping-pickup-location"
+                className="min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3 md:col-span-2"
+              >
+                <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
+                  Pickup location
+                </p>
+                <p className="mt-1.5 flex min-w-0 items-start gap-2 break-words text-sm font-semibold text-heritage-green">
+                  <MapPin
+                    aria-hidden="true"
+                    className="mt-0.5 shrink-0 text-heritage-gold"
+                    size={16}
+                  />
+                  <span className="min-w-0">
+                    {state.pickupLocation.trim() || DEFAULT_FUTURE_PICKUP_LOCATION}
+                  </span>
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-heritage-ink/55">
+                  This is where you collect your order in Eindhoven. It is set by the atelier and cannot be edited here.
+                </p>
+              </div>
+            )}
 
             {isDelivery && (
               <>
@@ -507,6 +532,16 @@ export const DormantFutureShippingStep = ({
                 {isPickup ? "Pick Up in Eindhoven" : "Deliver to an Address"}
               </dd>
             </div>
+            {isPickup && (
+              <div className="min-w-0">
+                <dt className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
+                  Pickup location
+                </dt>
+                <dd className="mt-1 break-words font-semibold text-heritage-green">
+                  {state.pickupLocation.trim() || DEFAULT_FUTURE_PICKUP_LOCATION}
+                </dd>
+              </div>
+            )}
             {isDelivery && (
               <>
                 <div className="min-w-0">
