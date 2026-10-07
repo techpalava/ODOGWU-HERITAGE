@@ -539,11 +539,8 @@ const getCustomerDesignUploadErrorMessage = (error: unknown): string => {
   }
 };
 
-type FutureGarmentRemovalOriginStage =
-  | "custom_details"
-  | "personalized_additions"
-  | "summary"
-  | "payment";
+/** Stage where garment removal was requested; retention lease only for summary/payment. */
+type FutureGarmentRemovalOriginStage = DesignStudioStageId;
 
 type FutureGarmentRemovalDialogRequest = {
   target: FutureGarmentRemovalTarget;
@@ -4107,7 +4104,9 @@ export default function DesignStudioView({
                 ? "future-personalized_additions-title"
                 : request.originStage === "summary"
                 ? "future-summary-title"
-                : "future-payment-review-title",
+                : request.originStage === "payment"
+                  ? "future-payment-review-title"
+                  : "live-order-summary-heading",
           )
         : null);
 
@@ -9928,6 +9927,20 @@ export default function DesignStudioView({
       unlockedStages={liveOrderSummaryUnlockedStages}
       currentStageId={futureStageId}
       onEditStage={handleLiveOrderSummaryEdit}
+      removalTargets={futureGarmentRemovalTargets}
+      onRequestGarmentRemoval={(target, trigger) =>
+        openFutureGarmentRemovalDialog({
+          target,
+          originStage: futureStageId,
+          opener: trigger,
+        })
+      }
+      onRequestCancelOrder={
+        canCancelFutureOrderDraft &&
+        futureSummary.garmentSummary.length > 0
+          ? handleRequestCancelFutureOrder
+          : undefined
+      }
     />
   );
   const embedPersistentLiveOrderSummary =
