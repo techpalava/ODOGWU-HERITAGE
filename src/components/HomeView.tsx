@@ -219,17 +219,21 @@ export default function HomeView({
 
   return (
     <div id="home-view-container" className="space-y-16">
-      <HomepageOrderGateway
-        state={orderGatewayState}
-        isLoading={isBatchGatewayLoading}
-        onStartIndividualOrder={onStartIndividualOrder}
-        onJoinBatch={onJoinCommunityBatch}
-        onCreatePrivateBatch={onCreatePrivateBatch}
-        onBrowseGallery={() => onNavigateToTab("gallery")}
-        onManageSourcingBatches={onManageSourcingBatches}
-      />
+      {/* Slim review band sits directly above Start Your Order; the tight
+          inner gap keeps the gateway near the top despite space-y-16. */}
+      <div className="space-y-4">
+        <CustomerReviewsSlider />
 
-      <CustomerReviewsSlider />
+        <HomepageOrderGateway
+          state={orderGatewayState}
+          isLoading={isBatchGatewayLoading}
+          onStartIndividualOrder={onStartIndividualOrder}
+          onJoinBatch={onJoinCommunityBatch}
+          onCreatePrivateBatch={onCreatePrivateBatch}
+          onBrowseGallery={() => onNavigateToTab("gallery")}
+          onManageSourcingBatches={onManageSourcingBatches}
+        />
+      </div>
 
       {/* Editorial Luxury Hero Header */}
       <section className="relative overflow-hidden rounded-3xl bg-heritage-green p-8 sm:p-12 lg:p-16 text-white shadow-2xl border border-heritage-gold/20">

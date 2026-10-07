@@ -5,14 +5,16 @@ import {
   resolvePublishedReviewsForDisplay,
   selectSliderReviews,
 } from "../utils/customerReviews";
-import { CustomerReviewCard } from "./CustomerReviewCard";
+import { ReviewStars } from "./CustomerReviewCard";
 import CustomerReviewForm from "./CustomerReviewForm";
 
+// Homepage trust band: one rotating review at a time so the order gateway
+// below stays close to the top of the page. The full list lives in ReviewsView.
 export default function CustomerReviewsSlider() {
   const customerReviews = useAppStore((state) => state.customerReviews);
   const hasLoaded = useAppStore((state) => state.hasLoadedCustomerReviews);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
-  const [startIndex, setStartIndex] = useState(0);
+  const [index, setIndex] = useState(0);
   const [isFormOpen, setIsFormOpen] = useState(false);
 
   const slides = useMemo(
@@ -23,17 +25,12 @@ export default function CustomerReviewsSlider() {
     [customerReviews, hasLoaded],
   );
   const count = slides.length;
-  const safeStart = count > 0 ? startIndex % count : 0;
-  // Rotating the list keeps one source of truth: mobile shows the first
-  // card, desktop shows all of them starting from the same card.
-  const ordered = slides
-    .slice(safeStart)
-    .concat(slides.slice(0, safeStart));
+  const current = count > 0 ? slides[index % count] : undefined;
 
   const goPrevious = () =>
-    setStartIndex((index) => (count > 0 ? (index - 1 + count) % count : 0));
+    setIndex((value) => (count > 0 ? (value - 1 + count) % count : 0));
   const goNext = () =>
-    setStartIndex((index) => (count > 0 ? (index + 1) % count : 0));
+    setIndex((value) => (count > 0 ? (value + 1) % count : 0));
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "ArrowLeft") {
@@ -46,27 +43,29 @@ export default function CustomerReviewsSlider() {
   };
 
   const arrowClass =
-    "flex h-8 w-8 items-center justify-center rounded-full border border-heritage-gold/30 bg-white text-heritage-green shadow-sm transition hover:bg-heritage-gold hover:text-heritage-forest focus:outline-none focus:ring-2 focus:ring-heritage-gold/40 disabled:opacity-40";
+    "flex h-7 w-7 items-center justify-center rounded-full border border-heritage-gold/30 bg-white text-heritage-green transition hover:bg-heritage-gold hover:text-heritage-forest focus:outline-none focus:ring-2 focus:ring-heritage-gold/40 disabled:opacity-40";
+  const ctaClass =
+    "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition";
 
   return (
     <section
       id="home-customer-reviews"
       aria-labelledby="home-customer-reviews-title"
-      className="space-y-3"
+      className="space-y-2"
     >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <span className="block text-xs font-bold uppercase tracking-widest text-heritage-gold">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-heritage-gold">
             Reviews
           </span>
           <h2
             id="home-customer-reviews-title"
-            className="font-serif text-2xl font-semibold text-heritage-green sm:text-3xl"
+            className="truncate font-serif text-base font-semibold text-heritage-green sm:text-lg"
           >
             What our community says
           </h2>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={goPrevious}
@@ -75,7 +74,7 @@ export default function CustomerReviewsSlider() {
             aria-controls="home-customer-reviews-track"
             className={arrowClass}
           >
-            <ChevronLeft size={16} />
+            <ChevronLeft size={14} />
           </button>
           <button
             type="button"
@@ -85,7 +84,7 @@ export default function CustomerReviewsSlider() {
             aria-controls="home-customer-reviews-track"
             className={arrowClass}
           >
-            <ChevronRight size={16} />
+            <ChevronRight size={14} />
           </button>
         </div>
       </div>
@@ -98,39 +97,52 @@ export default function CustomerReviewsSlider() {
         aria-live="polite"
         tabIndex={0}
         onKeyDown={handleKeyDown}
-        className="grid grid-cols-1 items-start gap-3 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold/40 md:grid-cols-3"
+        className="rounded-xl border border-heritage-gold/20 bg-white px-4 py-2.5 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold/40"
       >
-        {ordered.map((review, index) => (
-          <CustomerReviewCard
-            key={review.id}
-            review={review}
-            density="compact"
-            className={index === 0 ? "" : "hidden md:flex"}
-          />
-        ))}
-        {count === 0 && hasLoaded && (
-          <div className="rounded-2xl border border-heritage-gold/20 bg-heritage-cream p-8 text-center md:col-span-3">
-            <p className="font-serif text-lg text-heritage-green">
-              Be the first to share your Odogwu Heritage story.
-            </p>
-          </div>
+        {current ? (
+          <figure
+            key={current.id}
+            className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4"
+          >
+            <ReviewStars rating={current.rating} size={12} />
+            <blockquote className="min-w-0 flex-1 font-serif text-[13px] italic leading-snug text-heritage-ink/80 line-clamp-2">
+              "{current.body}"
+            </blockquote>
+            <figcaption className="shrink-0 truncate text-[11px] leading-tight sm:max-w-[14rem]">
+              <strong className="text-heritage-green">
+                {current.authorName}
+              </strong>
+              {current.location && (
+                <span className="text-heritage-ink/55">
+                  {" · "}
+                  {current.location}
+                </span>
+              )}
+            </figcaption>
+          </figure>
+        ) : (
+          <p className="text-[12px] text-heritage-ink/60">
+            {hasLoaded
+              ? "Be the first to share your Odogwu Heritage story."
+              : "Loading reviews…"}
+          </p>
         )}
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => setIsFormOpen(true)}
-          className="flex items-center justify-center gap-2 rounded-xl bg-heritage-green px-5 py-3 text-xs font-bold uppercase tracking-wider text-heritage-gold transition hover:bg-heritage-forest"
+          className={`${ctaClass} bg-heritage-green text-heritage-gold hover:bg-heritage-forest`}
         >
-          <PenLine size={14} /> Write a review
+          <PenLine size={12} /> Write a review
         </button>
         <button
           type="button"
           onClick={() => setActiveTab("reviews")}
-          className="flex items-center justify-center gap-2 rounded-xl border border-heritage-gold/40 px-5 py-3 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-gold/10"
+          className={`${ctaClass} border border-heritage-gold/40 text-heritage-green hover:bg-heritage-gold/10`}
         >
-          See all reviews <ArrowRight size={14} />
+          See all reviews <ArrowRight size={12} />
         </button>
       </div>
 
