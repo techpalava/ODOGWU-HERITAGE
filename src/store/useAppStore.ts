@@ -7,6 +7,7 @@ import { CustomDetailOption, Customer,
   StyleCategory,
   Showpiece,
   CommunityPhoto,
+  CustomerReview,
   HistoricalOrder,
   CartItem,
   OrderContext,
@@ -67,7 +68,7 @@ export interface AppState {
     | "about"
     | "gallery"
     | "database"
-    | "custom-order" | "private-batch-setup" | "login";
+    | "custom-order" | "private-batch-setup" | "login" | "reviews";
   pendingRedirect: string | null;
   setPendingRedirect: (redirect: string | null) => void;
   setActiveTab: (
@@ -78,7 +79,7 @@ export interface AppState {
       | "about"
     | "gallery"
     | "database"
-    | "custom-order" | "private-batch-setup" | "login",
+    | "custom-order" | "private-batch-setup" | "login" | "reviews",
   ) => void;
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (isOpen: boolean) => void;
@@ -185,6 +186,11 @@ export interface AppState {
   setCommunityPhotos: (
     photos: CommunityPhoto[] | ((prev: CommunityPhoto[]) => CommunityPhoto[]),
   ) => void;
+  /** Published reviews, readable by everyone. */
+  customerReviews: CustomerReview[];
+  hasLoadedCustomerReviews: boolean;
+  /** Every review including hidden ones; only filled for gallery managers. */
+  adminCustomerReviews: CustomerReview[];
   businessSettings: BusinessSettings;
   setBusinessSettings: (
     settings: BusinessSettings | ((prev: BusinessSettings) => BusinessSettings),
@@ -373,6 +379,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         customers: [canonicalUser],
         orders: [],
         hasLoadedOrders: false,
+        adminCustomerReviews: [],
       });
       ApiService.saveSession(canonicalUser);
       if (!firebaseUser.isAnonymous) {
@@ -391,6 +398,13 @@ export const useAppStore = create<AppState>((set, get) => ({
               set({ orders: ordersList, hasLoadedOrders: true }),
           ),
         );
+        if (AuthorizationEngine.canManageGallery(canonicalUser)) {
+          privateStoreUnsubs.push(
+            StorageService.subscribeToCustomerReviews("all", (reviews) =>
+              set({ adminCustomerReviews: reviews }),
+            ),
+          );
+        }
       } else {
         privateStoreUnsubs.push(
           StorageService.subscribeToCustomerAccount(
@@ -688,6 +702,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ communityPhotos: newPhotos });
     StorageService.saveCommunityPhotos(newPhotos);
   },
+  customerReviews: [],
+  hasLoadedCustomerReviews: false,
+  adminCustomerReviews: [],
   businessSettings: DEFAULT_BUSINESS_SETTINGS,
   setBusinessSettings: (settings) => {
     const newSettings =
@@ -918,6 +935,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         StorageService.subscribeToCollection<CommunityPhoto>("communityPhotos", (photos) => {
           set({ communityPhotos: photos });
         })
+      );
+
+      storeUnsubs.push(
+        StorageService.subscribeToCustomerReviews(
+          "published",
+          (reviews) =>
+            set({ customerReviews: reviews, hasLoadedCustomerReviews: true }),
+          () => set({ customerReviews: [], hasLoadedCustomerReviews: true }),
+        )
       );
 
       privateBatchSubscriptionController?.dispose();

@@ -9,6 +9,7 @@ import {
   Menu,
   LogIn,
   LogOut,
+  Star,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { auth } from "../services/firebase";
@@ -95,6 +96,7 @@ export function Header() {
                   : null),
                 { id: "about", label: "About", icon: Info },
                 { id: "gallery", label: "Gallery", icon: Layers },
+                { id: "reviews", label: "Reviews", icon: Star },
                 (AuthorizationEngine.canViewStaffDashboard(currentUser) ? { id: "database", label: "Admin Portal & DB", icon: Database } : null),
               ].filter(Boolean).map((tab) => {
                 if (!tab) return null;

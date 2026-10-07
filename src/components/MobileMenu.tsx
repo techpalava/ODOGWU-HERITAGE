@@ -10,6 +10,7 @@ import {
   Info,
   Database,
   MessageCircle,
+  Star,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
@@ -117,6 +118,7 @@ export function MobileMenu() {
                       }
                     : null),
                   { id: "gallery", label: "Gallery", icon: Layers },
+                  { id: "reviews", label: "Reviews", icon: Star },
                   { id: "about", label: "About Us", icon: Info },
                   (AuthorizationEngine.canViewStaffDashboard(currentUser) ? { id: "database", label: "Admin & DB Panel", icon: Database } : null),
                 ].filter(Boolean).map((tab) => {

@@ -1545,6 +1545,20 @@ export interface CommunityPhoto {
   status: "active" | "inactive";
 }
 
+export interface CustomerReview {
+  id: string;
+  authorName: string;
+  location?: string;
+  body: string;
+  rating: 1 | 2 | 3 | 4 | 5;
+  status: "published" | "hidden";
+  featured: boolean;
+  displayOrder: number;
+  /** ISO string normalized from the Firestore server timestamp. */
+  createdAt: string;
+  createdByUid?: string | null;
+}
+
 // Foundation Platform Types
 export interface MediaItem {
   id: string;
