@@ -945,7 +945,9 @@ export const DormantFutureSummaryStep = ({
           note={(
             <p id="summary-shipping-lock-reason" className="text-xs leading-relaxed text-heritage-ink/60 lg:text-right">
               {canContinueToShipping
-                ? "Your Summary is ready. Continue to choose pickup or additional delivery."
+                ? summary.status === "pricing_pending"
+                  ? "Continue to choose pickup or additional delivery. Exact totals update after personalised evaluation."
+                  : "Your Summary is ready. Continue to choose pickup or additional delivery."
                 : "Delivery & Pickup becomes available when this Summary is fully ready."}
             </p>
           )}

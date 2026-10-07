@@ -56,10 +56,14 @@ const withDelivery = (
 });
 
 assert.equal(isFutureShippingStageUnlocked("ready"), true);
+assert.equal(
+  isFutureShippingStageUnlocked("pricing_pending"),
+  true,
+  "personalized evaluation pending must still unlock Delivery from Summary",
+);
 for (const status of [
   "incomplete",
   "invalid",
-  "pricing_pending",
   "measurement_calculation_pending",
   "profile_mapping_pending",
 ] as const) {
@@ -609,6 +613,15 @@ assert.match(studioSource, /prefillFutureShippingContact/);
 assert.match(studioSource, /const canRestoreShipping = canRestoreSummary;/);
 assert.match(summarySource, /canContinueToShipping/);
 assert.match(summarySource, /onContinueToShipping/);
+assert.match(
+  summarySource,
+  /summary\.status === "pricing_pending"/,
+  "Summary continue note must special-case pricing_pending once Delivery is unlocked",
+);
+assert.match(
+  summarySource,
+  /Exact totals update after personalised evaluation/,
+);
 assert.match(summarySource, /Cost Breakdown/);
 assert.match(stepperSource, /canEnterShipping/);
 assert.match(shippingSource, /Delivery &amp; Pickup/);
