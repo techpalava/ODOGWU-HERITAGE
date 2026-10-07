@@ -180,13 +180,42 @@ const normalizeText = ({
   if (typeof value !== "string") {
     return { value: "", malformed: true };
   }
+  // Do not trim here: live reconcile syncs this state back into controlled
+  // inputs, and trimming would eat spacebar while the customer is typing.
   const normalizedLineEndings = value.replace(/\r\n?/g, "\n");
   const normalized = multiline
-    ? normalizedLineEndings.trim()
-    : normalizedLineEndings.replace(/\n+/g, " ").trim();
+    ? normalizedLineEndings
+    : normalizedLineEndings.replace(/\n+/g, " ");
   return {
     value: normalized.slice(0, maximumLength),
     malformed: normalized.length > maximumLength,
+  };
+};
+
+/** Trim free-text shipping fields for persist / quote fingerprints only. */
+export const trimFutureShippingCustomerText = (
+  state: FutureShippingStateV1,
+): FutureShippingStateV1 => {
+  const customer = state.customerInformation;
+  const address = customer.deliveryAddress;
+  return {
+    ...state,
+    otherDestinationCountry: state.otherDestinationCountry.trim(),
+    pickupLocation: state.pickupLocation.trim(),
+    customerInformation: {
+      fullName: customer.fullName.trim(),
+      phone: customer.phone.trim(),
+      email: customer.email.trim(),
+      comment: customer.comment.trim(),
+      deliveryAddress: {
+        addressLine1: address.addressLine1.trim(),
+        addressLine2: (address.addressLine2 || "").trim(),
+        city: address.city.trim(),
+        stateRegion: (address.stateRegion || "").trim(),
+        postalCode: address.postalCode.trim(),
+        countryCode: address.countryCode.trim(),
+      },
+    },
   };
 };
 
@@ -460,6 +489,16 @@ const getCustomerDiagnostics = (
 ): FutureShippingStageDiagnostic[] => {
   const diagnostics: FutureShippingStageDiagnostic[] = [];
   const customer = state.customerInformation;
+  const address = customer.deliveryAddress;
+  const fullName = customer.fullName.trim();
+  const phone = customer.phone.trim();
+  const email = customer.email.trim();
+  const addressLine1 = address.addressLine1.trim();
+  const city = address.city.trim();
+  const postalCode = address.postalCode.trim();
+  const countryCode = address.countryCode.trim();
+  const stateRegion = (address.stateRegion || "").trim();
+  const otherDestinationCountry = state.otherDestinationCountry.trim();
   const requireText = (
     field: FutureShippingFieldId,
     value: string,
@@ -467,10 +506,10 @@ const getCustomerDiagnostics = (
   ) => {
     if (!value) diagnostics.push({ code: "REQUIRED_FIELD", field, message });
   };
-  requireText("fullName", customer.fullName, "Enter the recipient's full name.");
-  requireText("phone", customer.phone, "Enter a phone contact.");
-  requireText("email", customer.email, "Enter an email address.");
-  if (customer.email && !isValidEmail(customer.email)) {
+  requireText("fullName", fullName, "Enter the recipient's full name.");
+  requireText("phone", phone, "Enter a phone contact.");
+  requireText("email", email, "Enter an email address.");
+  if (email && !isValidEmail(email)) {
     diagnostics.push({
       code: "INVALID_EMAIL",
       field: "email",
@@ -478,43 +517,25 @@ const getCustomerDiagnostics = (
     });
   }
   if (state.fulfilmentMethod === "destination_delivery") {
-    requireText(
-      "addressLine1",
-      customer.deliveryAddress.addressLine1,
-      "Enter the delivery address.",
-    );
-    requireText("city", customer.deliveryAddress.city, "Enter the delivery city.");
-    requireText(
-      "postalCode",
-      customer.deliveryAddress.postalCode,
-      "Enter the postal code.",
-    );
+    requireText("addressLine1", addressLine1, "Enter the delivery address.");
+    requireText("city", city, "Enter the delivery city.");
+    requireText("postalCode", postalCode, "Enter the postal code.");
     if (state.destinationSelectionMode === "other_destination") {
       requireText(
         "otherDestinationCountry",
-        state.otherDestinationCountry,
+        otherDestinationCountry,
         "Enter the destination country or territory.",
       );
     } else {
-      requireText(
-        "countryCode",
-        customer.deliveryAddress.countryCode,
-        "Select a destination country.",
-      );
-      if (
-        customer.deliveryAddress.countryCode &&
-        !isValidIsoCountryCode(customer.deliveryAddress.countryCode)
-      ) {
+      requireText("countryCode", countryCode, "Select a destination country.");
+      if (countryCode && !isValidIsoCountryCode(countryCode)) {
         diagnostics.push({
           code: "INVALID_COUNTRY",
           field: "countryCode",
           message: "Select a valid ISO country.",
         });
       }
-      if (
-        step8RequiresRegion(customer.deliveryAddress.countryCode) &&
-        !customer.deliveryAddress.stateRegion
-      ) {
+      if (step8RequiresRegion(countryCode) && !stateRegion) {
         diagnostics.push({
           code: "REQUIRED_FIELD",
           field: "stateRegion",
@@ -545,11 +566,12 @@ const createQuoteInputFingerprint = ({
   garmentCount: number;
   destinationZoneId: FutureShippingDestinationZone | null;
 }): string => {
-  const address = state.customerInformation.deliveryAddress;
+  const trimmed = trimFutureShippingCustomerText(state);
+  const address = trimmed.customerInformation.deliveryAddress;
   return createOpaqueFingerprint({
     rateVersion: STEP8_DELIVERY_RATE_VERSION,
-    fulfilmentMethod: state.fulfilmentMethod,
-    destinationSelectionMode: state.destinationSelectionMode,
+    fulfilmentMethod: trimmed.fulfilmentMethod,
+    destinationSelectionMode: trimmed.destinationSelectionMode,
     destinationZoneId,
     addressLine1: address.addressLine1,
     addressLine2: address.addressLine2 || "",
@@ -557,7 +579,7 @@ const createQuoteInputFingerprint = ({
     stateRegion: address.stateRegion || "",
     postalCode: address.postalCode,
     countryCode: address.countryCode,
-    otherDestinationCountry: state.otherDestinationCountry || "",
+    otherDestinationCountry: trimmed.otherDestinationCountry || "",
     garmentCount,
   });
 };
@@ -861,7 +883,9 @@ export const persistFutureShippingState = <T extends object>({
   state: FutureShippingStateV1;
 }): T & { futureShippingState: FutureShippingStateV1 } => ({
   ...draft,
-  futureShippingState: normalizeFutureShippingState(state).state,
+  futureShippingState: trimFutureShippingCustomerText(
+    normalizeFutureShippingState(state).state,
+  ),
 });
 
 export const getFutureShippingRuleById = (ruleId: string): { ruleId: string } | null =>
