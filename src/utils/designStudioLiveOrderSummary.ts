@@ -107,6 +107,7 @@ export interface LiveOrderSummarySection {
     | "design_style"
     | "construction"
     | "custom_details"
+    | "style_and_options"
     | "personalized_additions"
     | "optional_extras"
     | "additional_clothes"
@@ -124,6 +125,9 @@ export interface LiveOrderSummarySection {
     | null;
   /** Visible copy remains EDIT while the accessible name can be ownership-specific. */
   readonly editLabel?: string;
+  /** Optional second edit destination (Style & Options → Custom Details). */
+  readonly secondaryEditStage?: "custom_details" | null;
+  readonly secondaryEditLabel?: string;
   readonly lines: readonly LiveOrderSummaryLine[];
   readonly subsections?: readonly LiveOrderSummarySubsection[];
   /** Prefer `footers` when multiple money rows are needed. */
@@ -662,21 +666,6 @@ export const projectDesignStudioLiveOrderSummary = ({
       occurrence,
     ] as const),
   );
-  const designStyleLines = committedLines(
-    summary.garmentSummary.map((garment) => {
-      const occurrence = designStyleByGarmentKey.get(garment.garmentKey);
-      return {
-        id: `design-style-${garment.garmentKey}`,
-        // The garment roster owns customer labels; Design Style runtime labels
-        // use Fabric terminology and cannot substitute for Step 1 labels here.
-        label: garmentLabels.get(garment.garmentKey) || garment.label,
-        // Composition/applicability is catalogue metadata, not the selected Design name.
-        detail: occurrence?.name || "Not selected",
-        amountLabel: null,
-        imageUrl: occurrence?.image || null,
-      };
-    }),
-  );
 
   const constructionLineFor = (
     garment: (typeof summary.garmentSummary)[number],
@@ -702,31 +691,42 @@ export const projectDesignStudioLiveOrderSummary = ({
       .filter((garment) => garment.role === "additional")
       .map(constructionLineFor),
   );
-  const constructionOptionLines = committedLines([
-    ...summary.garmentSummary.map((garment) => ({
-      id: `construction-options-${garment.garmentKey}`,
-      label: garmentLabels.get(garment.garmentKey) || garment.label,
-      detail: null,
-      amountLabel: null,
-      constructionOptions: constructionOptionsForGarment(
+  const orderConstructionOptions = constructionOptionsForOrder(
+    summary,
+    showAdditionalClothesCosts,
+  );
+  const styleAndOptionsLines = committedLines([
+    ...summary.garmentSummary.map((garment) => {
+      const occurrence = designStyleByGarmentKey.get(garment.garmentKey);
+      const constructionOptions = constructionOptionsForGarment(
         summary,
         garment,
         showAdditionalClothesCosts,
-      ),
-    })),
-    ...(constructionOptionsForOrder(summary, showAdditionalClothesCosts).length > 0
-      ? [{
-          id: "construction-options-order",
-          label: "Order Details",
-          detail: null,
-          amountLabel: null,
-          constructionOptions: constructionOptionsForOrder(
-            summary,
-            showAdditionalClothesCosts,
-          ),
-        }]
+      );
+      return {
+        id: `style-and-options-${garment.garmentKey}`,
+        // The garment roster owns customer labels; Design Style runtime labels
+        // use Fabric terminology and cannot substitute for Step 1 labels here.
+        label: garmentLabels.get(garment.garmentKey) || garment.label,
+        // Composition/applicability is catalogue metadata, not the selected Design name.
+        detail: occurrence?.name || "Not selected",
+        amountLabel: null,
+        imageUrl: occurrence?.image || null,
+        ...(constructionOptions.length > 0 ? { constructionOptions } : {}),
+      };
+    }),
+    ...(orderConstructionOptions.length > 0
+      ? [
+          {
+            id: "style-and-options-order",
+            label: "Order Details",
+            detail: null,
+            amountLabel: null,
+            constructionOptions: orderConstructionOptions,
+          },
+        ]
       : []),
-  ]).filter((line) => (line.constructionOptions?.length || 0) > 0);
+  ]);
   const additionalGarments = summary.garmentSummary.filter(
     (garment) => garment.role === "additional",
   );
@@ -830,16 +830,13 @@ export const projectDesignStudioLiveOrderSummary = ({
       lines: fabricLines,
     },
     {
-      id: "design_style",
-      title: "Design Style",
+      id: "style_and_options",
+      title: "Style & Options",
       editStage: "design_style",
-      lines: designStyleLines,
-    },
-    {
-      id: "custom_details",
-      title: "Construction Options",
-      editStage: "custom_details",
-      lines: constructionOptionLines,
+      editLabel: "Edit Style",
+      secondaryEditStage: "custom_details",
+      secondaryEditLabel: "Edit Options",
+      lines: styleAndOptionsLines,
     },
     {
       id: "measurements",

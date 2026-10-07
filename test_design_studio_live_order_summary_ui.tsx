@@ -94,12 +94,15 @@ const sampleView: LiveOrderSummaryView = {
       ],
     },
     {
-      id: "design_style",
-      title: "Design Style",
+      id: "style_and_options",
+      title: "Style & Options",
       editStage: "design_style",
+      editLabel: "Edit Style",
+      secondaryEditStage: "custom_details",
+      secondaryEditLabel: "Edit Options",
       lines: [
         {
-          id: "design-style-base:shirt",
+          id: "style-and-options-base:shirt",
           label: "Standard Shirt",
           detail: "Casual Native",
           imageUrl: "https://example.invalid/casual-native.jpg",
@@ -112,7 +115,7 @@ const sampleView: LiveOrderSummaryView = {
           amountLabel: null,
         },
         {
-          id: "design-style-base:trouser",
+          id: "style-and-options-base:trouser",
           label: "Trouser",
           detail: "Casual Native",
           imageUrl: "https://example.invalid/casual-native-trouser.jpg",
@@ -122,7 +125,7 @@ const sampleView: LiveOrderSummaryView = {
           amountLabel: null,
         },
         {
-          id: "design-style-additional:shirt:1",
+          id: "style-and-options-additional:shirt:1",
           label: "Standard Shirt 2",
           detail: "Geometric Print Shirt Set",
           imageUrl: "https://example.invalid/geometric-shirt.jpg",
@@ -179,12 +182,40 @@ const sampleView: LiveOrderSummaryView = {
   },
 };
 
-const textOf = (node: { children?: unknown[] } | string | null): string => {
+const textOf = (
+  node: { children?: unknown[] } | string | null,
+  seen = new WeakSet<object>(),
+): string => {
   if (typeof node === "string") return node;
-  if (!node?.children) return "";
+  if (!node || typeof node !== "object") return "";
+  if (seen.has(node)) return "";
+  seen.add(node);
+  if (!Array.isArray(node.children)) return "";
   return node.children
-    .map((child) => textOf(child as { children?: unknown[] } | string))
+    .map((child) => textOf(child as { children?: unknown[] } | string, seen))
     .join("");
+};
+
+const oneByTestId = (
+  root: ReturnType<typeof create>["root"],
+  testId: string,
+) => {
+  const matches = root.findAll(
+    (node) => node.props?.["data-testid"] === testId,
+  );
+  assert.equal(matches.length, 1, "expected one node for " + testId);
+  return matches[0];
+};
+
+const oneByLineId = (
+  root: ReturnType<typeof create>["root"],
+  lineId: string,
+) => {
+  const matches = root.findAll(
+    (node) => node.props?.["data-line-id"] === lineId,
+  );
+  assert.equal(matches.length, 1, "expected one node for line " + lineId);
+  return matches[0];
 };
 
 let renderer: ReturnType<typeof create>;
@@ -261,31 +292,45 @@ const architectureView: LiveOrderSummaryView = {
       ],
     },
     {
-      id: "design_style",
-      title: "Design Style",
+      id: "style_and_options",
+      title: "Style & Options",
       editStage: "design_style",
+      editLabel: "Edit Style",
+      secondaryEditStage: "custom_details",
+      secondaryEditLabel: "Edit Options",
       lines: [
-        { id: "design-style-base:shirt", label: "Standard Shirt", detail: "Casual Native", imageUrl: "https://example.invalid/casual-native.jpg", amountLabel: null },
-        { id: "design-style-base:trouser", label: "Trouser", detail: "Casual Native", imageUrl: "https://example.invalid/casual-native-trouser.jpg", amountLabel: null },
-        { id: "design-style-additional:shirt:1", label: "Standard Shirt 2", detail: "Geometric Print Shirt Set", imageUrl: "https://example.invalid/geometric-shirt.jpg", amountLabel: null },
-      ],
-    },
-    {
-      id: "custom_details",
-      title: "Construction Options",
-      editStage: "custom_details",
-      lines: [
-        { id: "construction-options-base:shirt", label: "Standard Shirt", detail: null, amountLabel: null, constructionOptions: [
-          { id: "shirt-length", label: "Standard Length Shirt", amountLabel: "Included" },
-          { id: "shirt-pocket", label: "No Pockets", amountLabel: "Included" },
-          { id: "shirt-cuff", label: "Detailed Cuff", amountLabel: "€12.50" },
-        ] },
-        { id: "construction-options-base:trouser", label: "Trouser", detail: null, amountLabel: null, constructionOptions: [
-          { id: "trouser-rope", label: "With Rope", amountLabel: "Included" },
-        ] },
-        { id: "construction-options-additional:shirt:1", label: "Standard Shirt 2", detail: null, amountLabel: null, constructionOptions: [
-          { id: "additional-shirt-length", label: "Standard Length Shirt", amountLabel: "Included" },
-        ] },
+        {
+          id: "style-and-options-base:shirt",
+          label: "Standard Shirt",
+          detail: "Casual Native",
+          imageUrl: "https://example.invalid/casual-native.jpg",
+          amountLabel: null,
+          constructionOptions: [
+            { id: "shirt-length", label: "Standard Length Shirt", amountLabel: "Included" },
+            { id: "shirt-pocket", label: "No Pockets", amountLabel: "Included" },
+            { id: "shirt-cuff", label: "Detailed Cuff", amountLabel: "€12.50" },
+          ],
+        },
+        {
+          id: "style-and-options-base:trouser",
+          label: "Trouser",
+          detail: "Casual Native",
+          imageUrl: "https://example.invalid/casual-native-trouser.jpg",
+          amountLabel: null,
+          constructionOptions: [
+            { id: "trouser-rope", label: "With Rope", amountLabel: "Included" },
+          ],
+        },
+        {
+          id: "style-and-options-additional:shirt:1",
+          label: "Standard Shirt 2",
+          detail: "Geometric Print Shirt Set",
+          imageUrl: "https://example.invalid/geometric-shirt.jpg",
+          amountLabel: null,
+          constructionOptions: [
+            { id: "additional-shirt-length", label: "Standard Length Shirt", amountLabel: "Included" },
+          ],
+        },
       ],
     },
     { id: "measurements", title: "Measurements", editStage: "measurement", lines: [{ id: "measurements-complete", label: "Low Risk — Complete", detail: null, amountLabel: null }] },
@@ -307,7 +352,7 @@ const architectureSectionIds = architectureRenderer.root.findAll((node) =>
   typeof node.props["data-testid"] === "string" &&
   /^live-order-summary-section-(?!header-)/.test(node.props["data-testid"]),
 ).map((node) => node.props["data-testid"].replace("live-order-summary-section-", ""));
-assert.deepEqual(architectureSectionIds, ["construction", "personalized_additions", "fabrics", "design_style", "custom_details", "measurements", "delivery"]);
+assert.deepEqual(architectureSectionIds, ["construction", "personalized_additions", "fabrics", "style_and_options", "measurements", "delivery"]);
 assert.equal(
   architectureSectionIds.indexOf("personalized_additions"),
   architectureSectionIds.indexOf("construction") + 1,
@@ -322,60 +367,71 @@ assert.deepEqual(
   architectureSectionIds.slice(
     architectureSectionIds.indexOf("personalized_additions") + 1,
   ),
-  ["fabrics", "design_style", "custom_details", "measurements", "delivery"],
+  ["fabrics", "style_and_options", "measurements", "delivery"],
   "unrelated Summary sections keep their existing relative order after Personalized Additions",
 );
-assert.match(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })), /Standard Shirt.*€65\.00.*Trouser.*€75\.00/);
-assert.equal(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })).includes("Garments Ordered"), true);
+{
+  const t = textOf(architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-section-construction")[0]);
+  assert.ok(t.includes("Standard Shirt") && t.includes("€65.00") && t.includes("Trouser") && t.includes("€75.00"));
+  assert.ok(t.includes("Garments Ordered"));
+}
 assert.equal(architectureRenderer.root.findAllByProps({ "data-line-id": "construction-additional:shirt:1" }).length, 1, "an Additional Garment is shown once in Garments Ordered");
 assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-construction" }).length, 1);
 assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-fabrics" }).length, 1);
-assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-design_style" }).length, 1);
-assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-custom_details" }).length, 1);
+assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-style_and_options" }).length, 1);
+assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-style_and_options-options" }).length, 1);
 assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-personalized_additions" }).length, 1);
 assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-measurements" }).length, 1);
 assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-edit-delivery" }).length, 1);
-assert.ok(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })).includes("Garment Subtotal"));
-assert.ok(!textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-construction" })).includes("Garment Construction Subtotal"));
-for (const [sectionId, stage] of [
-  ["construction", "garment_type"],
-  ["fabrics", "fabric"],
-  ["design_style", "design_style"],
-  ["custom_details", "custom_details"],
-  ["personalized_additions", "personalized_additions"],
-  ["measurements", "measurement"],
-  ["delivery", "shipping"],
+assert.ok(textOf(oneByTestId(architectureRenderer.root, "live-order-summary-section-construction")).includes("Garment Subtotal"));
+assert.ok(!textOf(oneByTestId(architectureRenderer.root, "live-order-summary-section-construction")).includes("Garment Construction Subtotal"));
+for (const [editTestId, stage] of [
+  ["live-order-summary-edit-construction", "garment_type"],
+  ["live-order-summary-edit-fabrics", "fabric"],
+  ["live-order-summary-edit-style_and_options", "design_style"],
+  ["live-order-summary-edit-style_and_options-options", "custom_details"],
+  ["live-order-summary-edit-personalized_additions", "personalized_additions"],
+  ["live-order-summary-edit-measurements", "measurement"],
+  ["live-order-summary-edit-delivery", "shipping"],
 ] as const) {
-  act(() => {
-    architectureRenderer.root
-      .findByProps({ "data-testid": `live-order-summary-edit-${sectionId}` })
-      .props.onClick();
-  });
+  const matches = architectureRenderer.root.findAll(
+    (node) => node.props?.["data-testid"] === editTestId,
+  );
+  assert.equal(matches.length, 1, "edit control " + editTestId);
+  act(() => { matches[0].props.onClick(); });
   assert.equal(architectureEditedStages.at(-1), stage);
 }
-assert.match(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-fabrics" })), /Standard Shirt.*Ivory Imperial Leaf.*Trouser.*Heritage Ivory Lattice.*Standard Shirt 2.*Royal Forest Mosaic/);
-assert.equal(architectureRenderer.root.findAllByProps({ "data-testid": "live-order-summary-construction-options-design-style-base:shirt" }).length, 0, "Design Style contains identity and Design only");
-assert.match(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-design-image-design-style-base:shirt" }).props.className, /h-9 w-9/);
-const optionRow = architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-construction-option-construction-options-base:shirt-shirt-cuff" });
-assert.match(optionRow.props.className, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
-assert.ok(textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-custom_details" })).includes("Included"));
-assert.ok(!textOf(architectureRenderer.root.findByProps({ "data-testid": "live-order-summary-section-custom_details" })).includes("€65.00"), "option rows never repeat the garment base price");
-assert.match(
-  textOf(
-    architectureRenderer.root.findByProps({
-      "data-testid": "live-order-summary-section-construction",
-    }),
-  ),
-  /Garment Subtotal.*€210\.00.*Personalized Additions Subtotal.*€36\.00/,
-);
-assert.match(
-  textOf(
-    architectureRenderer.root.findByProps({
-      "data-testid": "live-order-summary-section-personalized_additions",
-    }),
-  ),
-  /Monogram.*Name Monogram.*Included.*Embroidery Design.*Embroidery.*Included.*Accessories.*Traditional Hat.*Included/,
-);
+{
+  const t = textOf(architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-section-fabrics")[0]);
+  assert.ok(t.includes("Ivory Imperial Leaf") && t.includes("Heritage Ivory Lattice") && t.includes("Royal Forest Mosaic"));
+}
+assert.equal(architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-construction-options-style-and-options-base:shirt").length, 1);
+const styleImg = architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-design-image-style-and-options-base:shirt");
+assert.equal(styleImg.length, 1);
+assert.match(styleImg[0].props.className, /h-9 w-9/);
+const optionRow = architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-construction-option-style-and-options-base:shirt-shirt-cuff");
+assert.equal(optionRow.length, 1);
+assert.match(optionRow[0].props.className, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
+const styleSection = architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-section-style_and_options");
+assert.equal(styleSection.length, 1);
+assert.ok(textOf(styleSection[0]).includes("Included"));
+assert.ok(!textOf(styleSection[0]).includes("€65.00"), "option rows never repeat the garment base price");
+{
+  const constructionNodes = architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-section-construction");
+  assert.equal(constructionNodes.length, 1);
+  const constructionText = textOf(constructionNodes[0]);
+  assert.ok(constructionText.includes("Garment Subtotal"));
+  assert.ok(constructionText.includes("€210.00"));
+  assert.ok(constructionText.includes("Personalized Additions Subtotal"));
+  assert.ok(constructionText.includes("€36.00"));
+  const personalizedNodes = architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-section-personalized_additions");
+  assert.equal(personalizedNodes.length, 1);
+  const personalizedText = textOf(personalizedNodes[0]);
+  assert.ok(personalizedText.includes("Monogram"));
+  assert.ok(personalizedText.includes("Name Monogram"));
+  assert.ok(personalizedText.includes("Embroidery Design"));
+  assert.ok(personalizedText.includes("Traditional Hat"));
+}
 assert.equal(
   architectureRenderer.root.findAllByProps({
     "data-testid":
@@ -419,59 +475,45 @@ assert.deepEqual(
     typeof node.props["data-testid"] === "string" &&
     /^live-order-summary-section-(?!header-)/.test(node.props["data-testid"]),
   ).map((node) => node.props["data-testid"].replace("live-order-summary-section-", "")),
-  ["construction", "fabrics", "design_style", "custom_details", "measurements", "delivery"],
+  ["construction", "fabrics", "style_and_options", "measurements", "delivery"],
 );
+act(() => {
+  architectureRenderer.unmount();
+  emptyPersonalizedAdditionsRenderer!.unmount();
+});
 assert.equal(
-  textOf(
-    renderer.root.findByProps({
-      "data-testid": "live-order-summary-total-value",
-    }),
-  ),
+  textOf(oneByTestId(renderer.root, "live-order-summary-total-value")),
   "€245.00",
 );
 assert.match(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-total-value",
-  }).props.className,
+  oneByTestId(renderer.root, "live-order-summary-total-value").props.className,
   /\btext-2xl\b/,
 );
 assert.doesNotMatch(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-total-value",
-  }).props.className,
+  oneByTestId(renderer.root, "live-order-summary-total-value").props.className,
   /\btext-xl\b/,
 );
 assert.equal(
-  textOf(renderer.root.findByProps({
-    "data-testid": "live-order-summary-order-subtotal",
-  })),
+  textOf(oneByTestId(renderer.root, "live-order-summary-order-subtotal")),
   "Order Subtotal€220.00",
 );
 assert.equal(
-  textOf(renderer.root.findByProps({
-    "data-testid": "live-order-summary-shipping",
-  })),
+  textOf(oneByTestId(renderer.root, "live-order-summary-shipping")),
   "Shipping€25.00",
 );
 assert.match(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-shipping",
-  }).findByType("dd").props.className,
+  oneByTestId(renderer.root, "live-order-summary-shipping").findByType("dd").props.className,
   /font-medium/,
 );
 assert.match(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-total-value",
-  }).props.className,
+  oneByTestId(renderer.root, "live-order-summary-total-value").props.className,
   /font-bold/,
 );
 assert.ok(textOf(renderer.root).includes("Total"));
 assert.ok(textOf(renderer.root).includes("Shirt"));
 assert.ok(textOf(renderer.root).includes("Royal Forest Mosaic"));
 assert.ok(textOf(renderer.root).includes("€70.00"));
-const selectedDesignRow = renderer.root.findByProps({
-  "data-line-id": "design-style-base:shirt",
-});
+const selectedDesignRow = oneByLineId(renderer.root, "style-and-options-base:shirt");
 assert.equal(
   textOf(selectedDesignRow).includes("Standard Shirt"),
   true,
@@ -479,34 +521,25 @@ assert.equal(
 );
 assert.ok(textOf(selectedDesignRow).includes("Casual Native"));
 assert.ok(!textOf(selectedDesignRow).includes("Kaftan + Shirt"));
-assert.match(textOf(selectedDesignRow), /Standard Length Shirt.*Included.*Short Sleeve.*Included.*No Pockets.*Included.*Detailed Cuff.*€12\.50/);
+assert.ok(textOf(selectedDesignRow).includes("Standard Length Shirt") && textOf(selectedDesignRow).includes("Short Sleeve") && textOf(selectedDesignRow).includes("No Pockets") && textOf(selectedDesignRow).includes("Detailed Cuff") && textOf(selectedDesignRow).includes("€12.50"));
 assert.equal(
   (textOf(selectedDesignRow).match(/Standard Length Shirt/g) || []).length,
   1,
   "the mounted Summary renders each selected base construction option once",
 );
 assert.equal(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-design-image-design-style-base:shirt",
-  }).props.src,
+  oneByTestId(renderer.root, "live-order-summary-design-image-style-and-options-base:shirt").props.src,
   "https://example.invalid/casual-native.jpg",
 );
   assert.equal(
-    renderer.root.findByProps({
-      "data-testid": "live-order-summary-design-image-design-style-additional:shirt:1",
-  }).props.src,
+    oneByTestId(renderer.root, "live-order-summary-design-image-style-and-options-additional:shirt:1").props.src,
   "https://example.invalid/geometric-shirt.jpg",
     "repeated garment occurrences keep their own selected Design thumbnail",
   );
-  const selectedDesignImage = renderer.root.findByProps({
-    "data-testid": "live-order-summary-design-image-design-style-base:shirt",
-  });
+  const selectedDesignImage = oneByTestId(renderer.root, "live-order-summary-design-image-style-and-options-base:shirt");
   assert.match(selectedDesignImage.props.className, /h-9 w-9/);
 
-  const constructionOption = renderer.root.findByProps({
-    "data-testid":
-      "live-order-summary-construction-option-design-style-base:shirt-base-shirt-pocket",
-  });
+  const constructionOption = oneByTestId(renderer.root, "live-order-summary-construction-option-style-and-options-base:shirt-base-shirt-pocket");
   assert.match(
     constructionOption.props.className,
     /grid-cols-\[minmax\(0,1fr\)_auto\]/,
@@ -516,21 +549,21 @@ assert.equal(
 assert.match(constructionOptionSpans[1].props.className, /whitespace-nowrap/);
 assert.equal(
   renderer.root.findAllByProps({
-    "data-testid": "live-order-summary-garment-group-design-style-base:shirt",
+    "data-testid": "live-order-summary-garment-group-style-and-options-base:shirt",
   }).length,
   1,
   "the base garment identity, selected Design, and construction options share one group",
 );
 assert.equal(
   renderer.root.findAllByProps({
-    "data-testid": "live-order-summary-garment-group-design-style-additional:shirt:1",
+    "data-testid": "live-order-summary-garment-group-style-and-options-additional:shirt:1",
   }).length,
   1,
   "the repeated Additional Garment uses the same exact-occurrence group structure",
 );
 assert.equal(
   renderer.root.findAllByProps({
-    "data-testid": "live-order-summary-garment-group-design-style-base:trouser",
+    "data-testid": "live-order-summary-garment-group-style-and-options-base:trouser",
   }).length,
   1,
   "another base garment uses the same compact group structure",
@@ -559,16 +592,14 @@ assert.ok(textOf(renderer.root).includes("Additional Garments"));
 assert.ok(textOf(renderer.root).includes("Fabric: Needs fabric"));
 assert.ok(textOf(renderer.root).includes("Additional Garment Fabrics"));
 assert.ok(textOf(renderer.root).includes("Needs fabric"));
-const additionalGarmentsHeading = renderer.root
-  .findByProps({
-    "data-testid": "live-order-summary-subsection-additional_garments",
-  })
-  .findByType("h4");
-const additionalGarmentFabricsHeading = renderer.root
-  .findByProps({
-    "data-testid": "live-order-summary-subsection-additional_garment_fabrics",
-  })
-  .findByType("h4");
+const additionalGarmentsHeading = oneByTestId(
+  renderer.root,
+  "live-order-summary-subsection-additional_garments",
+).findByType("h4");
+const additionalGarmentFabricsHeading = oneByTestId(
+  renderer.root,
+  "live-order-summary-subsection-additional_garment_fabrics",
+).findByType("h4");
 assert.equal(textOf(additionalGarmentsHeading), "Additional Garments");
 assert.equal(textOf(additionalGarmentFabricsHeading), "Additional Garment Fabrics");
 assert.doesNotMatch(
@@ -632,84 +663,74 @@ assert.equal(
   1,
 );
 assert.equal(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-construction-subtotal",
-  }).props["data-subtotal-cents"],
+  oneByTestId(renderer.root, "live-order-summary-construction-subtotal").props["data-subtotal-cents"],
   7000,
 );
 assert.match(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-sidebar",
-  }).props.className,
+  oneByTestId(renderer.root, "live-order-summary-sidebar").props.className,
   /lg:max-h-\[calc\(100dvh-7rem\)\]/,
 );
 assert.match(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-content",
-  }).props.className,
+  oneByTestId(renderer.root, "live-order-summary-content").props.className,
   /lg:overflow-y-auto/,
 );
 assert.match(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-content",
-  }).props.className,
+  oneByTestId(renderer.root, "live-order-summary-content").props.className,
   /lg:overflow-x-hidden/,
 );
 assert.match(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-sidebar",
-  }).props.className,
+  oneByTestId(renderer.root, "live-order-summary-sidebar").props.className,
   /lg:sticky/,
 );
 assert.match(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-sidebar",
-  }).props.className,
+  oneByTestId(renderer.root, "live-order-summary-sidebar").props.className,
   /lg:top-24/,
 );
 assert.match(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-sidebar",
-  }).props.className,
+  oneByTestId(renderer.root, "live-order-summary-sidebar").props.className,
   /lg:self-start/,
 );
 assert.doesNotMatch(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-sidebar",
-  }).props.className,
+  oneByTestId(renderer.root, "live-order-summary-sidebar").props.className,
   /(?:^|\s)(?:sticky|fixed)(?:\s|$)/,
 );
 
-const constructionHeading = renderer.root
-  .findByProps({ "data-testid": "live-order-summary-section-construction" })
-  .findByType("h3");
-const constructionEdit = renderer.root.findByProps({
-  "data-testid": "live-order-summary-edit-construction",
-});
-const constructionHeader = renderer.root.findByProps({
-  "data-testid": "live-order-summary-section-header-construction",
-});
-const additionalGarmentsHeader = renderer.root.findByProps({
-  "data-testid": "live-order-summary-subsection-header-additional_garments",
-});
-const fabricsHeading = renderer.root
-  .findByProps({ "data-testid": "live-order-summary-section-fabrics" })
-  .findByType("h3");
-const constructionSubtotalLabel = renderer.root
-  .findByProps({ "data-testid": "live-order-summary-construction-subtotal" })
-  .findAllByType("p")[0];
+const constructionHeading = oneByTestId(
+  renderer.root,
+  "live-order-summary-section-construction",
+).findByType("h3");
+const constructionEdit = oneByTestId(
+  renderer.root,
+  "live-order-summary-edit-construction",
+);
+const constructionHeader = oneByTestId(
+  renderer.root,
+  "live-order-summary-section-header-construction",
+);
+const additionalGarmentsHeader = oneByTestId(
+  renderer.root,
+  "live-order-summary-subsection-header-additional_garments",
+);
+const fabricsHeading = oneByTestId(
+  renderer.root,
+  "live-order-summary-section-fabrics",
+).findByType("h3");
+const constructionSubtotalLabel = oneByTestId(
+  renderer.root,
+  "live-order-summary-construction-subtotal",
+).findAllByType("p")[0];
 assert.match(constructionHeading.props.className, /text-\[15px\]/);
 assert.match(constructionHeading.props.className, /font-bold/);
 assert.match(constructionHeading.props.className, /text-heritage-green/);
 assert.equal(
   constructionHeading.parent,
-  constructionEdit.parent,
-  "Garment Construction and Edit share one compact header row",
-);
-assert.equal(
-  constructionHeading.parent,
   constructionHeader,
   "the Garment Construction header row is the shared section header container",
+);
+assert.equal(
+  constructionEdit.parent?.parent,
+  constructionHeader,
+  "Garment Construction Edit sits in the shared section header row",
 );
 assert.equal(
   additionalGarmentsHeading.parent,
@@ -789,40 +810,37 @@ act(() => {
   );
 });
 act(() => {
-  renderer.root
-    .findByProps({ "data-testid": "live-order-summary-edit-fabrics" })
+  oneByTestId(renderer.root, "live-order-summary-edit-fabrics" )
     .props.onClick();
 });
 assert.equal(editedStage, "fabric");
 act(() => {
-  renderer.root
-    .findByProps({ "data-testid": "live-order-summary-edit-construction" })
+  oneByTestId(renderer.root, "live-order-summary-edit-construction" )
     .props.onClick();
 });
 assert.equal(editedStage, "garment_type");
+{
+  const styleEdit = renderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-edit-style_and_options");
+  assert.equal(styleEdit.length, 1);
+  act(() => { styleEdit[0].props.onClick(); });
+  assert.equal(editedStage, "design_style");
+  const optionsEdit = renderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-edit-style_and_options-options");
+  assert.equal(optionsEdit.length, 1);
+  act(() => { optionsEdit[0].props.onClick(); });
+  assert.equal(editedStage, "custom_details");
+}
 act(() => {
-  renderer.root
-    .findByProps({ "data-testid": "live-order-summary-edit-design_style" })
-    .props.onClick();
-});
-assert.equal(editedStage, "design_style");
-act(() => {
-  renderer.root
-    .findByProps({ "data-testid": "live-order-summary-edit-measurements" })
+  oneByTestId(renderer.root, "live-order-summary-edit-measurements" )
     .props.onClick();
 });
 assert.equal(editedStage, "measurement");
 act(() => {
-  renderer.root
-    .findByProps({ "data-testid": "live-order-summary-edit-delivery" })
+  oneByTestId(renderer.root, "live-order-summary-edit-delivery" )
     .props.onClick();
 });
 assert.equal(editedStage, "shipping");
 act(() => {
-  renderer.root
-    .findByProps({
-      "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
-    })
+  oneByTestId(renderer.root, "live-order-summary-edit-additional_garments-additional:shirt:1")
     .props.onClick();
 });
 assert.equal(editedStage, "personalized_additions");
@@ -832,10 +850,7 @@ assert.equal(
   "Additional Garments Edit passes its exact repair occurrence to Step 5",
 );
 act(() => {
-  renderer.root
-    .findByProps({
-      "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
-    })
+  oneByTestId(renderer.root, "live-order-summary-edit-additional_garments-additional:shirt:1")
     .props.onClick();
 });
 assert.deepEqual(
@@ -888,10 +903,7 @@ act(() => {
   );
 });
 act(() => {
-  renderer.root
-    .findByProps({
-      "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:2",
-    })
+  oneByTestId(renderer.root, "live-order-summary-edit-additional_garments-additional:shirt:2")
     .props.onClick();
 });
 assert.equal(editedStage, "personalized_additions");
@@ -901,8 +913,7 @@ assert.equal(
   "each Additional Garment Edit retains its own exact occurrence identity",
 );
 assert.equal(
-  renderer.root
-    .findByProps({ "data-testid": "live-order-summary-edit-construction" })
+  oneByTestId(renderer.root, "live-order-summary-edit-construction" )
     .props["aria-label"],
   "Edit base garments",
   "the existing Garment Construction control remains explicitly base-owned",
@@ -929,10 +940,7 @@ assert.equal(
   "Additional Garments Edit remains available while the authorized Step 5 is current",
 );
 act(() => {
-  renderer.root
-    .findByProps({
-      "data-testid": "live-order-summary-edit-additional_garments-additional:shirt:1",
-    })
+  oneByTestId(renderer.root, "live-order-summary-edit-additional_garments-additional:shirt:1")
     .props.onClick();
 });
 assert.equal(editedStage, "personalized_additions");
@@ -980,10 +988,7 @@ act(() => {
   );
 });
 act(() => {
-  renderer.root
-    .findByProps({
-      "data-testid": "live-order-summary-edit-additional_garments",
-    })
+  oneByTestId(renderer.root, "live-order-summary-edit-additional_garments")
     .props.onClick();
 });
 assert.equal(sectionLevelEditStage, "personalized_additions");
@@ -1250,15 +1255,11 @@ assert.ok(!manyMarkup.includes("Not selected yet"));
 assert.ok(!manyMarkup.includes("Not completed yet"));
 assert.ok(!manyMarkup.includes("Lagos → Eindhoven Standard Shipping"));
 assert.match(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-sidebar",
-  }).props.className,
+  oneByTestId(renderer.root, "live-order-summary-sidebar").props.className,
   /lg:max-h-\[/,
 );
 assert.match(
-  renderer.root.findByProps({
-    "data-testid": "live-order-summary-content",
-  }).props.className,
+  oneByTestId(renderer.root, "live-order-summary-content").props.className,
   /lg:overflow-y-auto/,
 );
 
@@ -1289,12 +1290,12 @@ act(() => renderer.update(createElement(DesignStudioOrderSummary, {
 })));
 for (const [index, label] of ["Standard Nikka Shorts", "Standard Bum Shorts"].entries()) {
   for (const suffix of ["", ":2"]) {
-    const row = renderer.root.findByProps({ "data-line-id": `${shortsLines[index].id}${suffix}` });
+    const row = oneByLineId(renderer.root, `${shortsLines[index].id}${suffix}`);
     assert.equal(textOf(row.findAllByType("p")[0]), `${label}${suffix ? " 2" : ""}`);
     assert.ok(textOf(row).includes("With Rope€70.00"));
   }
 }
-assert.equal(textOf(renderer.root.findByProps({ "data-testid": "live-order-summary-total-value" })), "€280.00");
+assert.equal(textOf(oneByTestId(renderer.root, "live-order-summary-total-value")), "€280.00");
 assert.equal(JSON.stringify(shortsView), shortsViewBefore, "Rendering labels must not mutate order IDs or pricing data");
 
 const emptySummaryView: LiveOrderSummaryView = {
@@ -1314,9 +1315,7 @@ act(() => {
     }),
   );
 });
-const emptySlot = renderer.root.findByProps({
-  "data-testid": "live-order-summary-slot",
-});
+const emptySlot = oneByTestId(renderer.root, "live-order-summary-slot");
 assert.equal(emptySlot.props["data-empty"], "true");
 assert.equal(emptySlot.props["aria-hidden"], "true");
 assert.ok(String(emptySlot.props.className || "").includes("invisible"));
@@ -1425,9 +1424,7 @@ assert.ok(!emptyMarkup.includes("animate-live-order-summary-enter"));
       }),
     );
   });
-  const occupiedSlot = renderer.root.findByProps({
-    "data-testid": "live-order-summary-slot",
-  });
+  const occupiedSlot = oneByTestId(renderer.root, "live-order-summary-slot");
   assert.equal(occupiedSlot.props["data-empty"], "false");
   assert.equal(
     renderer.root.findAllByProps({
@@ -1436,14 +1433,10 @@ assert.ok(!emptyMarkup.includes("animate-live-order-summary-enter"));
     1,
   );
   assert.match(
-    renderer.root.findByProps({
-      "data-testid": "live-order-summary-sidebar",
-    }).props.className,
+    oneByTestId(renderer.root, "live-order-summary-sidebar").props.className,
     /animate-live-order-summary-enter/,
   );
-  const cancelButton = renderer.root.findByProps({
-    "data-testid": "live-order-summary-cancel-order",
-  });
+  const cancelButton = oneByTestId(renderer.root, "live-order-summary-cancel-order");
   assert.equal(textOf(cancelButton), "Cancel Order");
   assert.equal(
     cancelButton.props["data-live-order-summary-cancel-order"],
@@ -1460,9 +1453,7 @@ assert.ok(!emptyMarkup.includes("animate-live-order-summary-enter"));
     1,
   );
   assert.equal(
-    renderer.root.findByProps({
-      "data-testid": "live-order-summary-remove-base:shirt",
-    }).props.disabled,
+    oneByTestId(renderer.root, "live-order-summary-remove-base:shirt").props.disabled,
     false,
   );
   act(() => {
@@ -1485,9 +1476,7 @@ assert.ok(!emptyMarkup.includes("animate-live-order-summary-enter"));
       }),
     );
   });
-  const lastRemove = renderer.root.findByProps({
-    "data-testid": "live-order-summary-remove-base:shirt",
-  });
+  const lastRemove = oneByTestId(renderer.root, "live-order-summary-remove-base:shirt");
   assert.equal(lastRemove.props.disabled, true);
   assert.ok(
     textOf(renderer.root).includes(

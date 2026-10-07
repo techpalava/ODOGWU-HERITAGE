@@ -572,7 +572,7 @@ assert.equal(
 );
 hiddenSection(early.view, "fabrics");
 assert.deepEqual(
-  section(early.view, "design_style").lines.map((line) => `${line.label} — ${line.detail}`),
+  section(early.view, "style_and_options").lines.map((line) => `${line.label} — ${line.detail}`),
   ["Standard Shirt — Not selected"],
   "authoritative unassigned occurrences remain visible without inheriting a sibling style",
 );
@@ -715,7 +715,7 @@ assert.equal(
   false,
 );
 hiddenSection(step1Only.view, "fabrics");
-assert.equal(section(step1Only.view, "design_style").lines[0]?.detail, "Not selected");
+assert.equal(section(step1Only.view, "style_and_options").lines[0]?.detail, "Not selected");
 hiddenSection(step1Only.view, "measurements");
 hiddenSection(step1Only.view, "delivery");
 hiddenSection(step1Only.view, "optional_extras");
@@ -766,7 +766,7 @@ assert.deepEqual(
   ),
   ["Trouser — Royal Forest Mosaic"],
 );
-assert.equal(section(afterFabric.view, "design_style").lines[0]?.detail, "Not selected");
+assert.equal(section(afterFabric.view, "style_and_options").lines[0]?.detail, "Not selected");
 hiddenSection(afterFabric.view, "measurements");
 hiddenSection(afterFabric.view, "delivery");
 
@@ -892,11 +892,7 @@ const presentationView = projectDesignStudioLiveOrderSummary({
   measurementPlan: preDelivery.measurementPlan,
   designSource: { kind: "catalog", sourceKey: "casual-native", styleId: "casual-native" },
 });
-const presentationLine = section(presentationView, "design_style").lines[0]!;
-const presentationOptionsLine = section(
-  presentationView,
-  "custom_details",
-).lines[0]!;
+const presentationLine = section(presentationView, "style_and_options").lines[0]!;
 assert.equal(
   presentationLine.label,
   "Standard Shirt",
@@ -906,7 +902,7 @@ assert.equal(presentationLine.detail, "Casual Native");
 assert.equal(presentationLine.imageUrl, "https://example.invalid/casual-native.jpg");
 assert.ok(!presentationLine.detail?.includes("Kaftan + Shirt"));
 assert.deepEqual(
-  presentationOptionsLine.constructionOptions?.map(
+  presentationLine.constructionOptions?.map(
     (option) => `${option.label} — ${option.amountLabel}`,
   ),
   [
@@ -917,7 +913,7 @@ assert.deepEqual(
   "the live projection retains selected options only, with base rows deduped by group and option id",
 );
 assert.equal(
-  presentationOptionsLine.constructionOptions?.filter(
+  presentationLine.constructionOptions?.filter(
     (option) => option.label === baseConstruction.label,
   ).length,
   1,
@@ -961,7 +957,7 @@ assert.equal(
 );
 hiddenSection(step1Only.view, "fabrics");
 assert.ok(section(multiFabric.view, "fabrics"));
-assert.ok(section(multiFabric.view, "design_style"));
+assert.ok(section(multiFabric.view, "style_and_options"));
 
 const extraSelection = createAdditionalGarmentSelection({
   garmentType: "shirt",
@@ -1328,8 +1324,8 @@ const dressOccurrence = dressCost.summary.customDetailsSummary
   .flatMap((group) => group.occurrences)
   .find((occurrence) => occurrence.optionId === "dress_additional_net");
 assert.ok(dressOccurrence);
-const dressOptionsLine = section(dressCost.view, "custom_details").lines.find(
-  (line) => line.id === "construction-options-base:dress",
+const dressOptionsLine = section(dressCost.view, "style_and_options").lines.find(
+  (line) => line.id === "style-and-options-base:dress",
 );
 const dressLine = dressOptionsLine?.constructionOptions?.find(
   (option) => option.id === `custom-detail-option:${dressOccurrence.occurrenceKey}`,
@@ -1343,7 +1339,7 @@ assert.equal(
     : `€${(dressOccurrence.priceCents / 100).toFixed(2)}`,
 );
 assert.equal(
-  section(dressCost.view, "custom_details").lines.some((line) =>
+  section(dressCost.view, "style_and_options").lines.some((line) =>
     /shirt additional|trouser additional/i.test(
       line.constructionOptions?.map((option) => option.label).join(" ") || "",
     ),
@@ -1631,11 +1627,11 @@ const uploaded = projectDesignStudioLiveOrderSummary({
   designSource: uploadedDesignSource,
 });
 assert.equal(
-  section(uploaded, "design_style").lines[0]?.label,
+  section(uploaded, "style_and_options").lines[0]?.label,
   "Standard Shirt",
 );
 assert.equal(
-  section(uploaded, "design_style").lines[0]?.detail,
+  section(uploaded, "style_and_options").lines[0]?.detail,
   "Uploaded design",
 );
 assert.notEqual(uploaded.totalLabel, LIVE_ORDER_SUMMARY_TOTAL_LABEL);
@@ -1744,7 +1740,7 @@ assert.notEqual(
   "optional extra row amount must not be added again into Total",
 );
 assert.ok(
-  section(full.view, "custom_details").lines.some((line) =>
+  section(full.view, "style_and_options").lines.some((line) =>
     line.constructionOptions?.some(
       (option) => option.id === `custom-detail-option:${dressOccurrence.occurrenceKey}`,
     ),
@@ -1800,8 +1796,7 @@ assert.deepEqual(
       "optional_extras",
       "additional_clothes",
       "fabrics",
-      "design_style",
-      "custom_details",
+      "style_and_options",
       "measurements",
       "delivery",
     ].includes(id),
@@ -1809,8 +1804,7 @@ assert.deepEqual(
   [
     "construction",
     "fabrics",
-    "design_style",
-    "custom_details",
+    "style_and_options",
     "measurements",
     "delivery",
   ],
@@ -1906,8 +1900,7 @@ assert.deepEqual(
     "construction",
     "personalized_additions",
     "fabrics",
-    "design_style",
-    "custom_details",
+    "style_and_options",
     "measurements",
   ],
   "Personalized Additions renders immediately after Garments Ordered and is omitted when empty",
@@ -1921,7 +1914,7 @@ assert.deepEqual(
   personalizedSectionIds.slice(
     personalizedSectionIds.indexOf("personalized_additions") + 1,
   ),
-  ["fabrics", "design_style", "custom_details", "measurements"],
+  ["fabrics", "style_and_options", "measurements"],
   "unrelated Summary sections keep their existing relative order after Personalized Additions",
 );
 assert.equal(
@@ -2000,10 +1993,10 @@ assert.equal(
 );
 assert.equal(
   personalizedAdditions.view.sections
-    .find((item) => item.id === "custom_details")
+    .find((item) => item.id === "style_and_options")
     ?.lines.some((line) => line.label === "Order Details"),
   false,
-  "order-level personalized additions no longer duplicate Construction Options",
+  "order-level personalized additions no longer duplicate Style & Options",
 );
 
 const viewSource = readFileSync(

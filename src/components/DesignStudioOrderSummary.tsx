@@ -55,11 +55,15 @@ const RemoveGarmentButton = ({
   );
 };
 
+const summaryEditButtonClassName =
+  "inline-flex min-h-8 shrink-0 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2";
+
 const SummarySection = ({
   section,
   canEdit,
+  canEditSecondary,
   canEditAdditionalGarments,
-  onEdit,
+  onEditStage,
   onEditAdditionalGarments,
   removalTargets,
   onRequestGarmentRemoval,
@@ -67,8 +71,9 @@ const SummarySection = ({
 }: {
   section: LiveOrderSummarySection;
   canEdit: boolean;
+  canEditSecondary: boolean;
   canEditAdditionalGarments: boolean;
-  onEdit?: () => void;
+  onEditStage?: (stage: DesignStudioStageId) => void;
   onEditAdditionalGarments?: (focusGarmentKey?: string | null) => void;
   removalTargets: readonly FutureGarmentRemovalTarget[];
   onRequestGarmentRemoval?: (
@@ -83,6 +88,13 @@ const SummarySection = ({
           (target) => target.garmentKey === line.focusGarmentKey,
         )
       : undefined;
+  const hasSecondaryEdit = Boolean(
+    section.secondaryEditStage && section.secondaryEditLabel,
+  );
+  const primaryVisibleLabel = hasSecondaryEdit
+    ? "Style"
+    : "Edit";
+  const secondaryVisibleLabel = "Options";
 
   return (
   <section
@@ -96,18 +108,34 @@ const SummarySection = ({
       <h3 className="min-w-0 flex-1 break-words text-[15px] font-bold leading-snug text-heritage-green">
         {section.title}
       </h3>
-      {canEdit && onEdit ? (
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label={section.editLabel || `Edit ${section.title}`}
-          data-testid={`live-order-summary-edit-${section.id}`}
-          className="inline-flex min-h-8 shrink-0 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-        >
-          <Pencil aria-hidden="true" size={11} />
-          Edit
-        </button>
-      ) : null}
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+        {canEdit && section.editStage && onEditStage ? (
+          <button
+            type="button"
+            onClick={() => onEditStage(section.editStage as DesignStudioStageId)}
+            aria-label={section.editLabel || `Edit ${section.title}`}
+            data-testid={`live-order-summary-edit-${section.id}`}
+            className={summaryEditButtonClassName}
+          >
+            <Pencil aria-hidden="true" size={11} />
+            {primaryVisibleLabel}
+          </button>
+        ) : null}
+        {canEditSecondary &&
+        section.secondaryEditStage &&
+        onEditStage ? (
+          <button
+            type="button"
+            onClick={() => onEditStage(section.secondaryEditStage!)}
+            aria-label={section.secondaryEditLabel || "Edit Options"}
+            data-testid={`live-order-summary-edit-${section.id}-options`}
+            className={summaryEditButtonClassName}
+          >
+            <Pencil aria-hidden="true" size={11} />
+            {secondaryVisibleLabel}
+          </button>
+        ) : null}
+      </div>
     </div>
     {section.lines.length > 0 ? (
       <ul className="mt-1.5 space-y-1">
@@ -407,15 +435,16 @@ export const DesignStudioOrderSummary = ({
       key={section.id}
       section={section}
       canEdit={canEditStage(section.editStage)}
+      canEditSecondary={canEditStage(section.secondaryEditStage ?? null)}
       canEditAdditionalGarments={Boolean(
         canEditStage("personalized_additions") &&
           section.subsections?.some(
             (subsection) => subsection.id === "additional_garments",
           ),
       )}
-      onEdit={
-        section.editStage && onEditStage
-          ? () => onEditStage(section.editStage as DesignStudioStageId)
+      onEditStage={
+        onEditStage
+          ? (stage) => onEditStage(stage)
           : undefined
       }
       onEditAdditionalGarments={
