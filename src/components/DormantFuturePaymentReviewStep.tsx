@@ -69,6 +69,8 @@ interface DormantFuturePaymentReviewStepProps {
   onParkCompleteOrder?: () => void;
   parkCompleteOrderStatus?: "idle" | "added" | "already_present";
   onStartAnotherOrder?: () => void;
+  /** Draft-only; omit after payment is confirmed. */
+  onRequestCancelOrder?: () => void;
   onRetryPaymentRecord?: () => void;
   onViewDashboard?: () => void;
 }
@@ -612,6 +614,7 @@ export const DormantFuturePaymentReviewStep = ({
   onParkCompleteOrder,
   parkCompleteOrderStatus = "idle",
   onStartAnotherOrder,
+  onRequestCancelOrder,
   onRetryPaymentRecord,
   onViewDashboard,
 }: DormantFuturePaymentReviewStepProps) => {
@@ -715,6 +718,18 @@ export const DormantFuturePaymentReviewStep = ({
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
           Review your selections and totals before payment.
         </p>
+        {onRequestCancelOrder ? (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={onRequestCancelOrder}
+              data-payment-review-cancel-order="true"
+              className="inline-flex min-h-11 items-center justify-center rounded-xl border border-red-200 px-4 text-xs font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+            >
+              Cancel Order
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <OrderContextDetails context={orderContext} />
