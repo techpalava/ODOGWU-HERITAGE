@@ -283,6 +283,12 @@ export const CustomerFutureOrderV2Details = ({
                     ? "Deliver to an Address"
                     : "Delivery method pending"}
               </p>
+              {shipping.fulfilmentMethod === "eindhoven_pickup" &&
+                shipping.pickupLocation.trim() && (
+                  <p data-customer-v2-order-pickup-location>
+                    Pickup location: {shipping.pickupLocation.trim()}
+                  </p>
+                )}
               {workshop ? (
                 <p data-customer-v2-order-dispatch={order.orderId}>
                   Dispatch: {workshopDispatchLabel(workshop.dispatchStatus)}

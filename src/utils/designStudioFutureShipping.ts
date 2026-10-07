@@ -28,6 +28,9 @@ import {
 
 export const FUTURE_SHIPPING_STATE_SCHEMA_VERSION = 1 as const;
 
+/** Fallback when Admin defaultPickupLocation is blank (matches Footer / batches). */
+export const DEFAULT_FUTURE_PICKUP_LOCATION = "Veldhoven Campus Lockers";
+
 export const FUTURE_SHIPPING_DESTINATION_ZONE_OPTIONS: readonly {
   id: FutureShippingDestinationZone;
   label: string;
@@ -103,6 +106,7 @@ const MAX_LENGTHS = Object.freeze({
   postalCode: 32,
   countryCode: 8,
   otherDestinationCountry: 80,
+  pickupLocation: 200,
   comment: 1000,
 });
 
@@ -125,6 +129,7 @@ export const createEmptyFutureShippingState = (): FutureShippingStateV1 => ({
   fulfilmentMethod: null,
   destinationSelectionMode: null,
   otherDestinationCountry: "",
+  pickupLocation: "",
   customerInformation: {
     fullName: "",
     phone: "",
@@ -136,6 +141,29 @@ export const createEmptyFutureShippingState = (): FutureShippingStateV1 => ({
   destinationZoneSource: null,
   quoteReference: null,
 });
+
+/**
+ * Resolves the venue label for Eindhoven pickup.
+ * Draft path passes `defaultPickupLocation` to refresh from Admin settings.
+ * Persist/candidate path omits it so the snapshotted string is preserved.
+ */
+export const resolveFuturePickupLocation = ({
+  fulfilmentMethod,
+  storedPickupLocation,
+  defaultPickupLocation,
+}: {
+  fulfilmentMethod: FutureShippingFulfilmentSelection | null;
+  storedPickupLocation: string;
+  defaultPickupLocation?: string | null;
+}): string => {
+  if (fulfilmentMethod !== "eindhoven_pickup") return "";
+  if (defaultPickupLocation !== undefined && defaultPickupLocation !== null) {
+    const fromAdmin = defaultPickupLocation.trim();
+    return fromAdmin || DEFAULT_FUTURE_PICKUP_LOCATION;
+  }
+  const stored = storedPickupLocation.trim();
+  return stored || DEFAULT_FUTURE_PICKUP_LOCATION;
+};
 
 const normalizeText = ({
   value,
@@ -356,6 +384,11 @@ export const normalizeFutureShippingState = (
       maximumLength: MAX_LENGTHS.comment,
       multiline: true,
     }),
+    pickupLocation: normalizeText({
+      value:
+        "pickupLocation" in candidate ? candidate.pickupLocation : undefined,
+      maximumLength: MAX_LENGTHS.pickupLocation,
+    }),
   };
   const hasMalformedField = Object.values(normalizedFields).some(
     (field) => field.malformed,
@@ -383,6 +416,10 @@ export const normalizeFutureShippingState = (
       fulfilmentMethod,
       destinationSelectionMode: destinationSelection.mode,
       otherDestinationCountry: destinationSelection.otherDestinationCountry,
+      pickupLocation:
+        fulfilmentMethod === "eindhoven_pickup"
+          ? normalizedFields.pickupLocation.value
+          : "",
       customerInformation: {
         fullName: normalizedFields.fullName.value,
         phone: normalizedFields.phone.value,
@@ -627,13 +664,23 @@ export const reconcileFutureShippingState = ({
   state,
   garmentCount,
   selectedDesignPrice,
+  defaultPickupLocation,
 }: {
   state: unknown;
   garmentCount: number;
   selectedDesignPrice: number | null;
+  /** When provided (Design Studio draft), refresh pickup venue from Admin settings. */
+  defaultPickupLocation?: string | null;
 }): FutureShippingStageResolution => {
   const normalized = normalizeFutureShippingState(state);
-  const normalizedState = normalized.state;
+  const normalizedState: FutureShippingStateV1 = {
+    ...normalized.state,
+    pickupLocation: resolveFuturePickupLocation({
+      fulfilmentMethod: normalized.state.fulfilmentMethod,
+      storedPickupLocation: normalized.state.pickupLocation,
+      defaultPickupLocation,
+    }),
+  };
   if (!normalizedState.fulfilmentMethod) {
     return baseResolution({
       state: normalizedState,
@@ -792,15 +839,18 @@ export const refreshFutureShippingQuote = ({
   state,
   garmentCount,
   selectedDesignPrice,
+  defaultPickupLocation,
 }: {
   state: FutureShippingStateV1;
   garmentCount: number;
   selectedDesignPrice: number | null;
+  defaultPickupLocation?: string | null;
 }): FutureShippingStageResolution =>
   reconcileFutureShippingState({
     state: { ...state, quoteReference: null },
     garmentCount,
     selectedDesignPrice,
+    defaultPickupLocation,
   });
 
 export const persistFutureShippingState = <T extends object>({
@@ -850,6 +900,14 @@ export const getStep8OrderSummaryRows = (
       value: isPickup ? "Pick Up in Eindhoven" : "Deliver to an Address",
     },
   ];
+  if (isPickup) {
+    const pickupLocation =
+      resolution.state.pickupLocation.trim() || DEFAULT_FUTURE_PICKUP_LOCATION;
+    rows.push({
+      label: "Pickup location",
+      value: pickupLocation,
+    });
+  }
   if (!isPickup) {
     const address = resolution.state.customerInformation.deliveryAddress;
     rows.push({

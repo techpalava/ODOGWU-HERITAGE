@@ -3748,17 +3748,21 @@ export default function DesignStudioView({
       ? (futureSummary.pricingSummary.selectedDesignPrice
           ?.selectedDesignPrice ?? null)
       : null;
+  const futureDefaultPickupLocation =
+    businessSettings.productionSettings.defaultPickupLocation || "";
   const futureShippingResolution = useMemo(
     () =>
       reconcileFutureShippingState({
         state: futureShippingState,
         garmentCount: futureGarmentPieceCount,
         selectedDesignPrice: futureSelectedDesignPrice,
+        defaultPickupLocation: futureDefaultPickupLocation,
       }),
     [
       futureShippingState,
       futureGarmentPieceCount,
       futureSelectedDesignPrice,
+      futureDefaultPickupLocation,
     ],
   );
   const isFuturePaymentReviewUnlocked = Boolean(
@@ -4959,6 +4963,8 @@ export default function DesignStudioView({
           typeof storedDraft?.pricingBreakdown?.selectedDesignPrice === "number"
             ? storedDraft.pricingBreakdown.selectedDesignPrice
             : null,
+        defaultPickupLocation:
+          businessSettings.productionSettings.defaultPickupLocation || "",
       });
       const canRestoreShipping = canRestoreSummary;
       const restoredMeasurementUnlocked = isFutureMeasurementStageUnlocked(
@@ -8355,6 +8361,7 @@ export default function DesignStudioView({
         state: futureShippingResolution.state,
         garmentCount: futureGarmentPieceCount,
         selectedDesignPrice: futureSelectedDesignPrice,
+        defaultPickupLocation: futureDefaultPickupLocation,
       }).state,
     );
   };

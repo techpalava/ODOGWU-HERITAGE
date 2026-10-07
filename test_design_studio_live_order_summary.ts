@@ -1414,6 +1414,10 @@ assert.equal(
   "Pick Up in Eindhoven",
 );
 assert.equal(
+  pickupDelivery.find((line) => line.label === "Pickup location")?.detail,
+  "Veldhoven Campus Lockers",
+);
+assert.equal(
   pickupDelivery.some((line) => line.label === "Shipping"),
   false,
   "pickup must not display a shipping charge",
