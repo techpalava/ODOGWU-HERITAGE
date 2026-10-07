@@ -146,7 +146,7 @@ export const DesignStudioJourneyStepper = ({
               data-step-state={state}
               className={`flex min-h-11 w-full min-w-0 flex-col items-start justify-center rounded-xl px-2 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
                 isCurrent
-                  ? "cursor-default bg-heritage-gold/10 text-heritage-gold ring-1 ring-heritage-gold/35"
+                  ? "cursor-default bg-heritage-gold text-heritage-forest ring-2 ring-heritage-gold/80 shadow-sm"
                   : isCompleted
                     ? "cursor-pointer bg-heritage-green/10 text-heritage-green ring-1 ring-heritage-green/20 hover:bg-heritage-green hover:text-white"
                     : isUnlocked
