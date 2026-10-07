@@ -46,13 +46,13 @@ export default function CustomerReviewsSlider() {
   };
 
   const arrowClass =
-    "flex h-10 w-10 items-center justify-center rounded-full border border-heritage-gold/30 bg-white text-heritage-green shadow-sm transition hover:bg-heritage-gold hover:text-heritage-forest focus:outline-none focus:ring-2 focus:ring-heritage-gold/40 disabled:opacity-40";
+    "flex h-8 w-8 items-center justify-center rounded-full border border-heritage-gold/30 bg-white text-heritage-green shadow-sm transition hover:bg-heritage-gold hover:text-heritage-forest focus:outline-none focus:ring-2 focus:ring-heritage-gold/40 disabled:opacity-40";
 
   return (
     <section
       id="home-customer-reviews"
       aria-labelledby="home-customer-reviews-title"
-      className="space-y-6"
+      className="space-y-3"
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">
@@ -75,7 +75,7 @@ export default function CustomerReviewsSlider() {
             aria-controls="home-customer-reviews-track"
             className={arrowClass}
           >
-            <ChevronLeft size={18} />
+            <ChevronLeft size={16} />
           </button>
           <button
             type="button"
@@ -85,7 +85,7 @@ export default function CustomerReviewsSlider() {
             aria-controls="home-customer-reviews-track"
             className={arrowClass}
           >
-            <ChevronRight size={18} />
+            <ChevronRight size={16} />
           </button>
         </div>
       </div>
@@ -98,12 +98,13 @@ export default function CustomerReviewsSlider() {
         aria-live="polite"
         tabIndex={0}
         onKeyDown={handleKeyDown}
-        className="grid grid-cols-1 gap-6 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold/40 md:grid-cols-3"
+        className="grid grid-cols-1 items-start gap-3 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold/40 md:grid-cols-3"
       >
         {ordered.map((review, index) => (
           <CustomerReviewCard
             key={review.id}
             review={review}
+            density="compact"
             className={index === 0 ? "" : "hidden md:flex"}
           />
         ))}

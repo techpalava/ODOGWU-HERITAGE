@@ -1,6 +1,8 @@
 import { Star } from "lucide-react";
 import type { CustomerReview } from "../types";
 
+export type CustomerReviewCardDensity = "compact" | "comfortable";
+
 export function ReviewStars({
   rating,
   size = 14,
@@ -33,10 +35,12 @@ export function ReviewStars({
 export function CustomerReviewCard({
   review,
   clamp = true,
+  density = "comfortable",
   className = "",
 }: {
   review: CustomerReview;
   clamp?: boolean;
+  density?: CustomerReviewCardDensity;
   className?: string;
 }) {
   const initials = review.authorName
@@ -45,6 +49,40 @@ export function CustomerReviewCard({
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
+
+  if (density === "compact") {
+    // Homepage strip: size to content so cards never stretch into empty space.
+    return (
+      <article
+        className={`flex h-auto flex-col justify-start gap-2 rounded-xl border border-heritage-gold/20 bg-white p-3 shadow-sm ${className}`}
+      >
+        <div className="space-y-1.5">
+          <ReviewStars rating={review.rating} size={12} />
+          <p
+            className={`font-serif text-[12px] italic leading-snug text-heritage-ink/80 ${
+              clamp ? "line-clamp-3" : "whitespace-pre-line"
+            }`}
+          >
+            "{review.body}"
+          </p>
+        </div>
+        <div className="flex items-center gap-2 border-t border-heritage-gold/10 pt-2">
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-heritage-green font-serif text-[10px] font-bold text-heritage-gold">
+            {initials || "?"}
+          </div>
+          <p className="min-w-0 truncate text-[11px] leading-tight">
+            <strong className="text-heritage-green">{review.authorName}</strong>
+            {review.location && (
+              <span className="text-heritage-ink/55">
+                {" · "}
+                {review.location}
+              </span>
+            )}
+          </p>
+        </div>
+      </article>
+    );
+  }
 
   return (
     <article
@@ -57,12 +95,12 @@ export function CustomerReviewCard({
             clamp ? "line-clamp-5" : "whitespace-pre-line"
           }`}
         >
-          “{review.body}”
+          "{review.body}"
         </p>
       </div>
       <div className="flex items-center gap-3 border-t border-heritage-gold/15 pt-3">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-heritage-green font-serif text-xs font-bold text-heritage-gold">
-          {initials || "★"}
+          {initials || "?"}
         </div>
         <div className="min-w-0">
           <strong className="block truncate text-xs text-heritage-green">
