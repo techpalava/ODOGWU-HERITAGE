@@ -86,13 +86,32 @@ assert.equal(shouldReloadAfterPreloadError({ lastReloadAt: null, now: 1_000 }), 
 assert.equal(shouldReloadAfterPreloadError({ lastReloadAt: 1_000, now: 5_000 }), false);
 assert.equal(shouldReloadAfterPreloadError({ lastReloadAt: 1_000, now: 60_000 }), true);
 
-// The server reports the deployment commit and is never cached.
-{
-  const previous = process.env.VERCEL_GIT_COMMIT_SHA;
-  delete process.env.VERCEL_GIT_COMMIT_SHA;
-  assert.equal(readServerBuildId(), "dev");
-  process.env.VERCEL_GIT_COMMIT_SHA = " abc123 ";
-  assert.equal(readServerBuildId(), "abc123");
+const BUILD_ENV_KEYS = ["VERCEL", "VERCEL_ENV", "VERCEL_GIT_COMMIT_SHA"] as const;
+
+const withBuildEnv = (
+  values: Partial<Record<(typeof BUILD_ENV_KEYS)[number], string>>,
+  run: () => void,
+) => {
+  const previous = new Map<string, string | undefined>(
+    BUILD_ENV_KEYS.map((key) => [key, process.env[key]]),
+  );
+  try {
+    for (const key of BUILD_ENV_KEYS) {
+      const value = values[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    run();
+  } finally {
+    for (const key of BUILD_ENV_KEYS) {
+      const value = previous.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+};
+
+const invokeHealth = () => {
   const state = { statusCode: 0, body: null as unknown, cache: "" };
   const res: HttpResponse = {
     status(code) {
@@ -109,12 +128,74 @@ assert.equal(shouldReloadAfterPreloadError({ lastReloadAt: 1_000, now: 60_000 })
     },
   };
   handleHealth({ method: "GET", headers: {} }, res);
+  return state;
+};
+
+const assertBuildIdUnavailable = () => {
+  assert.equal(readServerBuildId(), null);
+  const state = invokeHealth();
+  assert.equal(state.statusCode, 503);
+  assert.equal(state.cache, "no-store");
+  assert.deepEqual(state.body, {
+    error: "Build id unavailable.",
+    code: "BUILD_ID_UNAVAILABLE",
+  });
+  const serialized = JSON.stringify(state.body);
+  assert.equal(serialized.includes("dev"), false);
+  assert.equal(serialized.includes("VERCEL_GIT_COMMIT_SHA"), false);
+};
+
+// Local and other non-Vercel runtimes still report the development build.
+withBuildEnv({}, () => {
+  assert.equal(readServerBuildId(), "dev");
+  const state = invokeHealth();
+  assert.equal(state.statusCode, 200);
+  assert.deepEqual(state.body, { status: "ok", buildId: "dev" });
+  assert.equal(state.cache, "no-store");
+});
+
+// A blank VERCEL flag is not a hosted runtime.
+withBuildEnv({ VERCEL: "  ", VERCEL_ENV: "development" }, () => {
+  assert.equal(readServerBuildId(), "dev");
+  const state = invokeHealth();
+  assert.equal(state.statusCode, 200);
+  assert.deepEqual(state.body, { status: "ok", buildId: "dev" });
+});
+
+// The server reports the deployment commit and is never cached.
+withBuildEnv({ VERCEL_GIT_COMMIT_SHA: " abc123 " }, () => {
+  assert.equal(readServerBuildId(), "abc123");
+  const state = invokeHealth();
   assert.equal(state.statusCode, 200);
   assert.deepEqual(state.body, { status: "ok", buildId: "abc123" });
   assert.equal(state.cache, "no-store");
-  if (previous === undefined) delete process.env.VERCEL_GIT_COMMIT_SHA;
-  else process.env.VERCEL_GIT_COMMIT_SHA = previous;
-}
+});
+
+// A hosted deploy with a SHA keeps the public health shape, including on Vercel.
+withBuildEnv(
+  { VERCEL: "1", VERCEL_ENV: "production", VERCEL_GIT_COMMIT_SHA: "abc123" },
+  () => {
+    assert.equal(readServerBuildId(), "abc123");
+    const state = invokeHealth();
+    assert.equal(state.statusCode, 200);
+    assert.deepEqual(state.body, { status: "ok", buildId: "abc123" });
+    assert.equal(state.cache, "no-store");
+  },
+);
+
+// Vercel without a SHA must not claim the development sentinel.
+withBuildEnv({ VERCEL: "1", VERCEL_GIT_COMMIT_SHA: "   " }, () => {
+  assertBuildIdUnavailable();
+});
+withBuildEnv({ VERCEL: "1" }, () => {
+  assertBuildIdUnavailable();
+});
+withBuildEnv({ VERCEL_ENV: "production" }, () => {
+  assertBuildIdUnavailable();
+});
+withBuildEnv({ VERCEL_ENV: "preview" }, () => {
+  assertBuildIdUnavailable();
+});
 
 // The existing health function reports the build, keeping the Vercel function count unchanged.
 assert.equal(APP_VERSION_ENDPOINT, "/api/health");
