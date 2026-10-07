@@ -110,7 +110,7 @@ const candidate = (styleName = "Shirt Historical Style"): FutureOrderCandidateV2
         fulfilmentMethod: "eindhoven_pickup",
         destinationSelectionMode: null,
         otherDestinationCountry: "",
-        pickupLocation: "Veldhoven Campus Lockers",
+        pickupLocation: "Eindhoven",
         customerInformation: {
           fullName: "Ada Lovelace",
           phone: "+31 6 12345678",

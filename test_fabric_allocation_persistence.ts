@@ -199,7 +199,7 @@ const makeCartItem = (
       garmentPieceCount: 1,
       deliverySelection: {
         method: "PICKUP",
-        pickupLocation: "Veldhoven Campus Lockers",
+        pickupLocation: "Eindhoven",
       },
       ...overrides,
     } as CartItem,

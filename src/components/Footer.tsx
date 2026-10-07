@@ -45,7 +45,7 @@ export default function Footer() {
         allowOrders: openBatch.allowOrders,
         batchStatus: openBatch.status,
         pickupLocation:
-          openBatch.pickupLocation || businessSettings?.productionSettings?.defaultPickupLocation || "Veldhoven Campus Lockers",
+          openBatch.pickupLocation || businessSettings?.productionSettings?.defaultPickupLocation || "Eindhoven",
       } as any
     : null;
 

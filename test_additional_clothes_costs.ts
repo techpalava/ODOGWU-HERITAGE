@@ -394,7 +394,7 @@ const makeNeckCheckoutItem = (
     design,
     deliverySelection: {
       method: "PICKUP",
-      pickupLocation: "Veldhoven Campus Lockers",
+      pickupLocation: "Eindhoven",
     },
     garment: {
       type: "Neck additional pricing test",

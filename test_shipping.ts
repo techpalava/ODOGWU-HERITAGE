@@ -39,7 +39,7 @@ const closeTo = (
 
 const pickupSelection: DeliverySelection = {
   method: "PICKUP",
-  pickupLocation: "Veldhoven Campus Lockers",
+  pickupLocation: "Eindhoven",
   pickupWindow: "Monday Afternoon",
 };
 

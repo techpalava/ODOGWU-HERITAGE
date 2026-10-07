@@ -68,7 +68,7 @@ export const BatchManagementPanel: React.FC<BatchManagementPanelProps> = ({ batc
         currentOrders: 0,
         displayOrder: nextBatchNumber,
         allowOrders: false,
-        pickupLocation: "Veldhoven Campus Lockers",
+        pickupLocation: "Eindhoven",
         estimatedDelivery: "TBD", duration: "4 Weeks", currentCustomers: 0, visibility: "PUBLIC",
       };
 

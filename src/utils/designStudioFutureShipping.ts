@@ -29,7 +29,14 @@ import {
 export const FUTURE_SHIPPING_STATE_SCHEMA_VERSION = 1 as const;
 
 /** Fallback when Admin defaultPickupLocation is blank (matches Footer / batches). */
-export const DEFAULT_FUTURE_PICKUP_LOCATION = "Veldhoven Campus Lockers";
+export const DEFAULT_FUTURE_PICKUP_LOCATION = "Eindhoven";
+
+export const FUTURE_PICKUP_ATELIER_ADDRESS =
+  "Frans Snijderslaan 4-b, 5642 AN, Eindhoven";
+
+export const FUTURE_PICKUP_ATELIER_PHONE_DISPLAY = "+31 644 533 190";
+
+export const FUTURE_PICKUP_ATELIER_WHATSAPP_URL = "https://wa.me/31644533190";
 
 export const FUTURE_SHIPPING_DESTINATION_ZONE_OPTIONS: readonly {
   id: FutureShippingDestinationZone;
