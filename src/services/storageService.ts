@@ -8,6 +8,7 @@ import { CustomDetailOption, CustomGroup,
   StyleCategory,
   Showpiece,
   CommunityPhoto,
+  CustomerReview,
   Customer,
   MasterOrder,
   CartItem,
@@ -39,8 +40,16 @@ import {
   deleteDoc,
   onSnapshot,
   where,
+  serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 import { AuthorizationEngine } from "../engine/AuthorizationEngine";
+import {
+  CUSTOMER_REVIEWS_COLLECTION,
+  buildCustomerReviewCreatePayload,
+  normalizeCustomerReview,
+  type CustomerReviewValidation,
+} from "../utils/customerReviews";
 import {
   GUEST_ORDER_SESSION_STORAGE_NAMESPACE,
 } from "../utils/designStudioDraftPersistence";
@@ -628,6 +637,69 @@ export const StorageService = {
   },
   saveCommunityPhotos: async (photos: CommunityPhoto[]) => {
     await StorageService.saveCollection("communityPhotos", photos, (p) => p.id);
+  },
+
+  // Customer Reviews. Customers may only list published reviews (rules
+  // reject unfiltered reads), so the public listener always filters.
+  subscribeToCustomerReviews(
+    scope: "published" | "all",
+    callback: (reviews: CustomerReview[]) => void,
+    onError?: (error: Error) => void,
+  ) {
+    const reviewsRef = collection(db, CUSTOMER_REVIEWS_COLLECTION);
+    const source =
+      scope === "published"
+        ? query(reviewsRef, where("status", "==", "published"))
+        : reviewsRef;
+    return onSnapshot(
+      source,
+      (snapshot) => {
+        callback(
+          snapshot.docs.map((reviewDoc) =>
+            normalizeCustomerReview(
+              reviewDoc.id,
+              reviewDoc.data({ serverTimestamps: "estimate" }),
+            ),
+          ),
+        );
+      },
+      (error) => {
+        console.error("Error subscribing to customer reviews:", error);
+        onError?.(error);
+      },
+    );
+  },
+  createCustomerReview: async (
+    value: Extract<CustomerReviewValidation, { ok: true }>["value"],
+    createdByUid: string | null,
+  ): Promise<string> => {
+    const reviewRef = doc(collection(db, CUSTOMER_REVIEWS_COLLECTION));
+    await setDoc(
+      reviewRef,
+      buildCustomerReviewCreatePayload(value, createdByUid, serverTimestamp()),
+    );
+    return reviewRef.id;
+  },
+  updateCustomerReview: async (
+    id: string,
+    patch: Partial<Pick<CustomerReview, "status" | "featured" | "displayOrder">>,
+  ) => {
+    await updateDoc(doc(db, CUSTOMER_REVIEWS_COLLECTION, id), patch);
+  },
+  deleteCustomerReview: async (id: string) => {
+    await deleteDoc(doc(db, CUSTOMER_REVIEWS_COLLECTION, id));
+  },
+  /** Admin-only: writes starter reviews under their fixed ids. */
+  seedCustomerReviews: async (reviews: CustomerReview[]) => {
+    const batch = writeBatch(db);
+    for (const { id, ...review } of reviews) {
+      batch.set(doc(db, CUSTOMER_REVIEWS_COLLECTION, id), {
+        ...review,
+        createdAt: serverTimestamp(),
+        createdByUid: null,
+      });
+    }
+    await batch.commit();
   },
 
   // Orders

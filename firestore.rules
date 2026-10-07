@@ -463,6 +463,36 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Guests publish reviews directly; admins moderate. Mirrors
+    // CUSTOMER_REVIEW_CREATE_KEYS and CUSTOMER_REVIEW_LIMITS in
+    // src/utils/customerReviews.ts.
+    function hasValidCustomerReviewCreate(data) {
+      return data.keys().hasAll(["authorName", "body", "rating", "status", "featured", "displayOrder", "createdAt", "createdByUid"])
+        && data.keys().hasOnly(["authorName", "location", "body", "rating", "status", "featured", "displayOrder", "createdAt", "createdByUid"])
+        && data.authorName is string
+        && data.authorName.size() >= 2
+        && data.authorName.size() <= 60
+        && (!("location" in data) || (data.location is string && data.location.size() <= 80))
+        && data.body is string
+        && data.body.size() >= 10
+        && data.body.size() <= 1000
+        && data.rating is int
+        && data.rating >= 1
+        && data.rating <= 5
+        && data.status == "published"
+        && data.featured == false
+        && data.displayOrder == 0
+        && data.createdAt == request.time
+        && (data.createdByUid == null
+          || (request.auth != null && data.createdByUid == request.auth.uid));
+    }
+
+    match /customer_reviews/{reviewId} {
+      allow read: if resource.data.status == "published" || isAdmin();
+      allow create: if isAdmin() || hasValidCustomerReviewCreate(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+
     // Private Batch records use an immutable document ID plus stable Firebase
     // UIDs. A display name, inviteCode field from historical records, and
     // currentMembers are never authorization authorities.

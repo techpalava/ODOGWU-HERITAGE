@@ -278,4 +278,40 @@ assert.match(
   /match \/styles\/\{styleId\} \{[\s\S]*?allow delete: if false;/,
 );
 
+const customerReviewRules = rules.match(
+  /match \/customer_reviews\/\{reviewId\} \{[\s\S]*?\n    \}/,
+)?.[0];
+assert.ok(customerReviewRules, "customer_reviews rules block must exist");
+assert.match(
+  customerReviewRules,
+  /allow read: if resource\.data\.status == "published" \|\| isAdmin\(\);/,
+);
+assert.match(
+  customerReviewRules,
+  /allow create: if isAdmin\(\) \|\| hasValidCustomerReviewCreate\(request\.resource\.data\);/,
+);
+assert.match(customerReviewRules, /allow update, delete: if isAdmin\(\);/);
+assert.doesNotMatch(customerReviewRules, /allow (read|write|create|update|delete)[^;]*if true/);
+const customerReviewCreate = rules.match(
+  /function hasValidCustomerReviewCreate\(data\) \{[\s\S]*?\n    \}/,
+)?.[0];
+assert.ok(customerReviewCreate, "customer review create validator must exist");
+for (const clause of [
+  /data\.keys\(\)\.hasOnly\(\[/,
+  /data\.rating is int/,
+  /data\.rating >= 1/,
+  /data\.rating <= 5/,
+  /data\.authorName\.size\(\) <= 60/,
+  /data\.body\.size\(\) >= 10/,
+  /data\.body\.size\(\) <= 1000/,
+  /data\.location\.size\(\) <= 80/,
+  /data\.status == "published"/,
+  /data\.featured == false/,
+  /data\.displayOrder == 0/,
+  /data\.createdAt == request\.time/,
+  /data\.createdByUid == request\.auth\.uid/,
+]) {
+  assert.match(customerReviewCreate, clause);
+}
+
 console.log("PASS: Firebase identity and Firestore rule security checks");
