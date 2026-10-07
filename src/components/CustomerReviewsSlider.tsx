@@ -54,17 +54,12 @@ export default function CustomerReviewsSlider() {
       className="space-y-2"
     >
       <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-heritage-gold">
-            Reviews
-          </span>
-          <h2
-            id="home-customer-reviews-title"
-            className="truncate font-serif text-base font-semibold text-heritage-green sm:text-lg"
-          >
-            What our community says
-          </h2>
-        </div>
+        <h2
+          id="home-customer-reviews-title"
+          className="min-w-0 truncate font-serif text-base font-semibold text-heritage-green sm:text-lg"
+        >
+          What our community says
+        </h2>
         <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
@@ -104,10 +99,10 @@ export default function CustomerReviewsSlider() {
             key={current.id}
             className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4"
           >
-            <ReviewStars rating={current.rating} size={12} />
             <blockquote className="min-w-0 flex-1 font-serif text-[13px] italic leading-snug text-heritage-ink/80 line-clamp-2">
               "{current.body}"
             </blockquote>
+            <ReviewStars rating={current.rating} size={12} />
             <figcaption className="shrink-0 truncate text-[11px] leading-tight sm:max-w-[14rem]">
               <strong className="text-heritage-green">
                 {current.authorName}
@@ -129,7 +124,7 @@ export default function CustomerReviewsSlider() {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2">
         <button
           type="button"
           onClick={() => setIsFormOpen(true)}
