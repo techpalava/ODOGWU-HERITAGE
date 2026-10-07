@@ -222,10 +222,9 @@ export const FutureGarmentRemovalConfirmationDialog = ({
               id={descriptionId}
               className="min-w-0 break-words text-sm leading-relaxed text-red-950/85"
             >
-              This removes only this garment from your order. Its saved Fabric
-              assignment, Custom Details and measurements will also be removed.
-              Your other garments will remain. You can add this garment again
-              later, but its saved details will not be restored.
+              This will remove this garment and all of its associated fabric,
+              design style, custom details, and uploads from your order. Your
+              other garments will remain unchanged.
             </p>
           </div>
           {terminalError && (
