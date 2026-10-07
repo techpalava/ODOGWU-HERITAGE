@@ -654,7 +654,8 @@ const baseResolution = ({
 
 export const isFutureShippingStageUnlocked = (
   summaryStatus: FutureDesignStudioSummaryStatus,
-): boolean => summaryStatus === "ready";
+): boolean =>
+  summaryStatus === "ready" || summaryStatus === "pricing_pending";
 
 export const prefillFutureShippingContact = ({
   state,
