@@ -97,6 +97,10 @@ assert.match(stepperSource, /data-step-state=\{state\}/);
 assert.match(stepperSource, /data-stage-clickable=/);
 assert.match(stepperSource, /highestUnlockedStageIndex/);
 assert.match(stepperSource, /disabled=\{!isClickable\}/);
+assert.match(
+  stepperSource,
+  /bg-heritage-gold text-heritage-forest ring-2 ring-heritage-gold\/80 shadow-sm/,
+);
 assert.match(stepperSource, /bg-heritage-green\/10/);
 assert.match(stepperSource, /border-heritage-green\/25 bg-white text-heritage-ink/);
 assert.match(backButtonSource, /<button/);
@@ -120,14 +124,17 @@ for (const file of [
   assert.match(source, /DesignStudioBackButton/);
 }
 
-assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("garment_type"\)\}/);
+assert.match(
+  studioSource,
+  /onBack=\{\(\) => handleBackDuringSummaryEdit\("garment_type"\)\}/,
+);
 assert.match(
   studioSource,
   /futureStageId === "custom_details"\s*\? "design_style"\s*:\s*"custom_details"/,
 );
 assert.match(
   studioSource,
-  /onBack=\{\(\) => navigateToFutureStage\("personalized_additions"\)\}/,
+  /onBack=\{\(\) => handleBackDuringSummaryEdit\("personalized_additions"\)\}/,
 );
 assert.match(studioSource, /onBack=\{\(\) => navigateToFutureStage\("shipping"\)\}/);
 assert.equal(studioSource.includes("legacy_five_stage"), false);
