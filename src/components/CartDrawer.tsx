@@ -44,6 +44,7 @@ import {
 } from "../utils/cartDesignDomain";
 import { customerDesignOrderTransferClient } from "../services/customerDesignOrderTransfer";
 import { createAnonymousUploadedDesignClaims } from "../utils/uploadedDesignCheckoutPreparation";
+import { FutureOrderV2CartPayPanel } from "./FutureOrderV2CartPayPanel";
 
 export function CartDrawer() {
   const [shippingEditorItemId, setShippingEditorItemId] = useState<
@@ -70,6 +71,9 @@ export function CartDrawer() {
   const isCartOpen = useAppStore((state) => state.isCartOpen);
   const setIsCartOpen = useAppStore((state) => state.setIsCartOpen);
   const cartItems = useAppStore((state) => state.cartItems);
+  const futureOrderV2CartItems = useAppStore(
+    (state) => state.futureOrderV2CartItems,
+  );
   const setCartItems = useAppStore((state) => state.setCartItems);
   const setIsCheckoutPaymentOpen = useAppStore(
     (state) => state.setIsCheckoutPaymentOpen,
@@ -341,7 +345,8 @@ export function CartDrawer() {
                   Shopping Cart
                 </h2>
                 <p className="text-[10px] text-heritage-beige/70 mt-0.5">
-                  {cartItems.length} custom items in your cart
+                  {cartItems.length + futureOrderV2CartItems.length} custom
+                  items in your cart
                 </p>
               </div>
             </div>
@@ -355,7 +360,7 @@ export function CartDrawer() {
 
           {/* Drawer Content */}
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            {cartItems.length === 0 ? (
+            {cartItems.length === 0 && futureOrderV2CartItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4 select-none">
                 <div className="h-16 w-16 rounded-full bg-heritage-gold/10 border border-heritage-gold/20 flex items-center justify-center text-heritage-gold animate-bounce">
                   <ShoppingBag size={28} />
@@ -381,6 +386,12 @@ export function CartDrawer() {
               </div>
             ) : (
               <div className="space-y-4">
+                {futureOrderV2CartItems.map((item) => (
+                  <FutureOrderV2CartPayPanel
+                    key={item.cartItemId}
+                    item={item}
+                  />
+                ))}
                 {cartItems.map((item) => {
                   const itemTotal = Math.max(
                     0,

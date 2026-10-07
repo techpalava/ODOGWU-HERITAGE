@@ -37,6 +37,11 @@ import {
 import { StorageService } from "./storageService";
 import { migrateLegacyAgbadaActiveDraft } from "../utils/legacyAgbadaActiveDraftMigration";
 import { normalizeDesignStyleDraftFieldForGuestDraft } from "../utils/designStyleDraftPersistence";
+import type { FutureOrderCartItemV2 } from "../utils/futureOrderV2Storage";
+import {
+  mergeFutureOrderV2CartBags,
+  sanitizeFutureOrderV2CartItems,
+} from "../utils/futureOrderV2CartBag";
 
 export const GUEST_ORDER_SESSION_VERSION = "2026-07-30-guest-order-v1";
 
@@ -228,6 +233,13 @@ const normalizeSessionForPersistence = (
   const normalizedCartItems = normalizeCartItemsForPersistence(
     session.cartItems,
   );
+  const futureOrderV2CartItems = sanitizeFutureOrderV2CartItems(
+    session.futureOrderV2CartItems,
+  );
+  const studioParkedInFutureOrderV2Cart = Boolean(
+    session.studioParkedInFutureOrderV2Cart &&
+      futureOrderV2CartItems.length > 0,
+  );
   const normalizedDraft = session.designDraft
     ? normalizeGuestDesignDraft(session.designDraft)
     : undefined;
@@ -236,11 +248,15 @@ const normalizeSessionForPersistence = (
     return {
       ...sessionWithoutDraft,
       cartItems: normalizedCartItems,
+      futureOrderV2CartItems,
+      studioParkedInFutureOrderV2Cart,
     };
   }
   return {
     ...session,
     cartItems: normalizedCartItems,
+    futureOrderV2CartItems,
+    studioParkedInFutureOrderV2Cart,
     designDraft: normalizedDraft,
   };
 };
@@ -283,6 +299,8 @@ export const createGuestOrderSession = (
     updatedAt: createdAt,
     checkoutIntent: false,
     cartItems: migratedItems,
+    futureOrderV2CartItems: [],
+    studioParkedInFutureOrderV2Cart: false,
   };
 };
 
@@ -350,6 +368,8 @@ const getDesignStudioDraftRepository =
 
 export interface GuestCartClaimResult {
   items: CartItem[];
+  futureOrderV2CartItems: FutureOrderCartItemV2[];
+  studioParkedInFutureOrderV2Cart: boolean;
   claimed: boolean;
   addedItemCount: number;
 }
@@ -515,6 +535,67 @@ export const GuestOrderSessionService = {
     return migratedItems;
   },
 
+  getGuestFutureOrderV2CartItems: (): FutureOrderCartItemV2[] =>
+    sanitizeFutureOrderV2CartItems(
+      getOrCreateActiveGuestSession().futureOrderV2CartItems,
+    ),
+
+  getGuestStudioParkedInFutureOrderV2Cart: (): boolean =>
+    Boolean(getOrCreateActiveGuestSession().studioParkedInFutureOrderV2Cart),
+
+  saveGuestFutureOrderV2Cart: ({
+    items,
+    studioParkedInFutureOrderV2Cart,
+  }: {
+    items: readonly FutureOrderCartItemV2[];
+    studioParkedInFutureOrderV2Cart: boolean;
+  }): FutureOrderCartItemV2[] => {
+    const session = getOrCreateActiveGuestSession();
+    const sanitized = sanitizeFutureOrderV2CartItems(items);
+    StorageService.saveGuestOrderSession({
+      ...session,
+      futureOrderV2CartItems: sanitized,
+      studioParkedInFutureOrderV2Cart:
+        studioParkedInFutureOrderV2Cart && sanitized.length > 0,
+      updatedAt: new Date().toISOString(),
+    });
+    return sanitized;
+  },
+
+  getAccountFutureOrderV2CartItems: (email: string): FutureOrderCartItemV2[] => {
+    const canonicalEmail = AuthorizationEngine.getCanonicalEmail(email);
+    return sanitizeFutureOrderV2CartItems(
+      StorageService.getAccountFutureOrderV2CartItems(canonicalEmail),
+    );
+  },
+
+  getAccountStudioParkedInFutureOrderV2Cart: (email: string): boolean => {
+    const canonicalEmail = AuthorizationEngine.getCanonicalEmail(email);
+    return StorageService.getAccountStudioParkedInFutureOrderV2Cart(
+      canonicalEmail,
+    );
+  },
+
+  saveAccountFutureOrderV2Cart: (
+    email: string,
+    {
+      items,
+      studioParkedInFutureOrderV2Cart,
+    }: {
+      items: readonly FutureOrderCartItemV2[];
+      studioParkedInFutureOrderV2Cart: boolean;
+    },
+  ): FutureOrderCartItemV2[] => {
+    const canonicalEmail = AuthorizationEngine.getCanonicalEmail(email);
+    const sanitized = sanitizeFutureOrderV2CartItems(items);
+    StorageService.saveAccountFutureOrderV2Cart(canonicalEmail, {
+      items: sanitized,
+      studioParkedInFutureOrderV2Cart:
+        studioParkedInFutureOrderV2Cart && sanitized.length > 0,
+    });
+    return sanitized;
+  },
+
   claimGuestCart: (customer: Customer): GuestCartClaimResult => {
     const canonicalEmail = AuthorizationEngine.getCanonicalEmail(
       customer.email,
@@ -525,14 +606,27 @@ export const GuestOrderSessionService = {
       : null;
     const accountItems =
       GuestOrderSessionService.getAccountCartItems(canonicalEmail);
+    const accountV2Items =
+      GuestOrderSessionService.getAccountFutureOrderV2CartItems(canonicalEmail);
+    const accountStudioParked =
+      GuestOrderSessionService.getAccountStudioParkedInFutureOrderV2Cart(
+        canonicalEmail,
+      );
 
-    if (
-      !storedSession ||
-      storedSession.status === "CLAIMED" ||
-      storedSession.cartItems.length === 0
-    ) {
+    const guestLegacyItems = storedSession?.cartItems ?? [];
+    const guestV2Items = sanitizeFutureOrderV2CartItems(
+      storedSession?.futureOrderV2CartItems,
+    );
+    const guestHasClaimableCart =
+      storedSession &&
+      storedSession.status !== "CLAIMED" &&
+      (guestLegacyItems.length > 0 || guestV2Items.length > 0);
+
+    if (!guestHasClaimableCart) {
       return {
         items: accountItems,
+        futureOrderV2CartItems: accountV2Items,
+        studioParkedInFutureOrderV2Cart: accountStudioParked,
         claimed: false,
         addedItemCount: 0,
       };
@@ -540,20 +634,33 @@ export const GuestOrderSessionService = {
 
     const merge = mergeCartItems(
       accountItems,
-      storedSession.cartItems,
+      guestLegacyItems,
       customer,
       storedSession.guestCartId,
     );
+    const v2Merge = mergeFutureOrderV2CartBags({
+      accountItems: accountV2Items,
+      guestItems: guestV2Items,
+    });
     const migratedItems = migrateLegacyCartShippingItems(merge.items).items;
+    const studioParkedInFutureOrderV2Cart =
+      (accountStudioParked ||
+        Boolean(storedSession.studioParkedInFutureOrderV2Cart)) &&
+      v2Merge.items.length > 0;
 
-    // Persist the authenticated cart before removing any guest data.
     StorageService.saveAccountCartItems(canonicalEmail, migratedItems);
+    StorageService.saveAccountFutureOrderV2Cart(canonicalEmail, {
+      items: v2Merge.items,
+      studioParkedInFutureOrderV2Cart,
+    });
     const now = new Date().toISOString();
     StorageService.saveGuestOrderSession({
       ...storedSession,
       status: "CLAIMED",
       checkoutIntent: false,
       cartItems: [],
+      futureOrderV2CartItems: [],
+      studioParkedInFutureOrderV2Cart: false,
       designDraft: undefined,
       claimedAt: now,
       claimedByEmail: canonicalEmail,
@@ -562,8 +669,10 @@ export const GuestOrderSessionService = {
 
     return {
       items: migratedItems,
+      futureOrderV2CartItems: v2Merge.items,
+      studioParkedInFutureOrderV2Cart,
       claimed: true,
-      addedItemCount: merge.addedItemCount,
+      addedItemCount: merge.addedItemCount + v2Merge.addedItemCount,
     };
   },
 };
