@@ -1344,6 +1344,7 @@ assert.ok(!emptyMarkup.includes("Current Subtotal"));
 assert.ok(!emptyMarkup.includes("€0.00"));
 assert.ok(!emptyMarkup.includes(LIVE_ORDER_SUMMARY_HEADING));
 assert.ok(!emptyMarkup.includes("Cancel Order"));
+assert.ok(!emptyMarkup.includes("animate-live-order-summary-enter"));
 
 {
   const removableView: LiveOrderSummaryView = {
@@ -1433,6 +1434,12 @@ assert.ok(!emptyMarkup.includes("Cancel Order"));
       "data-testid": "live-order-summary-sidebar",
     }).length,
     1,
+  );
+  assert.match(
+    renderer.root.findByProps({
+      "data-testid": "live-order-summary-sidebar",
+    }).props.className,
+    /animate-live-order-summary-enter/,
   );
   const cancelButton = renderer.root.findByProps({
     "data-testid": "live-order-summary-cancel-order",

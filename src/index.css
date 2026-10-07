@@ -17,6 +17,7 @@
   --animate-step1-select-attention: step1-select-attention 3.2s ease-in-out infinite;
   --animate-step2-assignment-success: step2-assignment-success 1.2s ease-out 1;
   --animate-step2-next-unassigned: step2-next-unassigned 1.2s ease-out 1;
+  --animate-live-order-summary-enter: live-order-summary-enter 350ms ease-out 1;
 }
 
 @keyframes step1-select-attention {
@@ -50,6 +51,17 @@
   }
   100% {
     box-shadow: 0 0 0 0 rgb(197 168 92 / 0);
+  }
+}
+
+@keyframes live-order-summary-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

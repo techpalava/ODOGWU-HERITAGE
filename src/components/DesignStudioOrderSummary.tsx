@@ -456,7 +456,7 @@ export const DesignStudioOrderSummary = ({
       <aside
         aria-labelledby={headingId}
         data-testid="live-order-summary-sidebar"
-        className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-3 shadow-sm [overflow-wrap:anywhere] sm:p-3.5 lg:sticky lg:top-24 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:flex-col"
+        className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-3 shadow-sm [overflow-wrap:anywhere] motion-safe:animate-live-order-summary-enter motion-reduce:animate-none sm:p-3.5 lg:sticky lg:top-24 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:flex-col"
       >
         <div className="flex min-w-0 items-start justify-between gap-2 border-b border-gray-100 pb-2">
           <div className="flex min-w-0 items-center gap-2">
