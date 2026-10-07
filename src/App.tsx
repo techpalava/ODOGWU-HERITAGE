@@ -76,6 +76,7 @@ const DashboardView = lazy(() => import("./components/DashboardView"));
 const CustomOrderView = lazy(() => import("./components/CustomOrderView"));
 const AboutView = lazy(() => import("./components/AboutView"));
 const GalleryView = lazy(() => import("./components/GalleryView"));
+const ReviewsView = lazy(() => import("./components/ReviewsView"));
 const LoginView = lazy(() => import("./components/LoginView"));
 const DatabaseView = lazy(() => import("./components/DatabaseView"));
 import { Header } from "./components/Header";
@@ -1692,6 +1693,8 @@ export default function App() {
             )}
 
             {activeTab === "about" && <AboutView />}
+
+            {activeTab === "reviews" && <ReviewsView />}
 
             {activeTab === "gallery" && (
               <GalleryView
