@@ -1310,20 +1310,40 @@ act(() => {
     createElement(DesignStudioOrderSummary, {
       view: emptySummaryView,
       unlockedStages: new Set<DesignStudioStageId>(),
+      onRequestCancelOrder: () => undefined,
     }),
   );
 });
-const emptyMarkup = textOf(renderer.root);
+const emptySlot = renderer.root.findByProps({
+  "data-testid": "live-order-summary-slot",
+});
+assert.equal(emptySlot.props["data-empty"], "true");
+assert.equal(emptySlot.props["aria-hidden"], "true");
+assert.ok(String(emptySlot.props.className || "").includes("invisible"));
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-sidebar",
+  }).length,
+  0,
+);
+assert.equal(
+  renderer.root.findAllByProps({
+    "data-testid": "live-order-summary-cancel-order",
+  }).length,
+  0,
+);
 assert.equal(
   renderer.root.findAllByProps({
     "data-testid": "live-order-summary-total",
   }).length,
   0,
 );
+const emptyMarkup = textOf(renderer.root);
 assert.ok(!emptyMarkup.includes("Pending"));
 assert.ok(!emptyMarkup.includes("Current Subtotal"));
 assert.ok(!emptyMarkup.includes("€0.00"));
-assert.ok(emptyMarkup.includes(LIVE_ORDER_SUMMARY_HEADING));
+assert.ok(!emptyMarkup.includes(LIVE_ORDER_SUMMARY_HEADING));
+assert.ok(!emptyMarkup.includes("Cancel Order"));
 
 {
   const removableView: LiveOrderSummaryView = {
@@ -1404,6 +1424,16 @@ assert.ok(emptyMarkup.includes(LIVE_ORDER_SUMMARY_HEADING));
       }),
     );
   });
+  const occupiedSlot = renderer.root.findByProps({
+    "data-testid": "live-order-summary-slot",
+  });
+  assert.equal(occupiedSlot.props["data-empty"], "false");
+  assert.equal(
+    renderer.root.findAllByProps({
+      "data-testid": "live-order-summary-sidebar",
+    }).length,
+    1,
+  );
   const cancelButton = renderer.root.findByProps({
     "data-testid": "live-order-summary-cancel-order",
   });

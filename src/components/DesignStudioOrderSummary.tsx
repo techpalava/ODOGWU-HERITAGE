@@ -386,6 +386,16 @@ export const DesignStudioOrderSummary = ({
     }
   }, []);
   const removalOriginStage: DesignStudioStageId = currentStageId || "fabric";
+  const hasCommittedGarments = view.sections.some(
+    (section) =>
+      section.id === "construction" &&
+      (section.lines.length > 0 ||
+        Boolean(
+          section.subsections?.some((subsection) => subsection.lines.length > 0),
+        )),
+  );
+  const stickySlotClassName =
+    "min-w-0 lg:sticky lg:top-24 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:flex-col";
   const canEditStage = (stage: DesignStudioStageId | null): boolean =>
     Boolean(
       stage &&
@@ -424,38 +434,56 @@ export const DesignStudioOrderSummary = ({
     />
   );
 
-  return (
-    <aside
-      aria-labelledby={headingId}
-      data-testid="live-order-summary-sidebar"
-      className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-3 shadow-sm [overflow-wrap:anywhere] sm:p-3.5 lg:sticky lg:top-24 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:flex-col"
-    >
-      <div className="flex min-w-0 items-start justify-between gap-2 border-b border-gray-100 pb-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <UsersRound
-            aria-hidden="true"
-            size={16}
-            className="shrink-0 text-heritage-gold"
-          />
-          <h2
-            id={headingId}
-            className="min-w-0 break-words font-serif text-base font-bold uppercase tracking-wide text-heritage-green"
-          >
-            {LIVE_ORDER_SUMMARY_HEADING}
-          </h2>
-        </div>
-        {onRequestCancelOrder ? (
-          <button
-            type="button"
-            onClick={onRequestCancelOrder}
-            data-live-order-summary-cancel-order="true"
-            data-testid="live-order-summary-cancel-order"
-            className="inline-flex min-h-8 shrink-0 items-center justify-center rounded-md border border-red-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
-          >
-            Cancel Order
-          </button>
-        ) : null}
+  if (!hasCommittedGarments) {
+    return (
+      <div
+        data-testid="live-order-summary-slot"
+        data-empty="true"
+        aria-hidden="true"
+        className={`${stickySlotClassName} invisible pointer-events-none`}
+      >
+        <div className="min-h-[12rem] w-full" />
       </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid="live-order-summary-slot"
+      data-empty="false"
+      className={stickySlotClassName}
+    >
+      <aside
+        aria-labelledby={headingId}
+        data-testid="live-order-summary-sidebar"
+        className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-3 shadow-sm [overflow-wrap:anywhere] sm:p-3.5 lg:sticky lg:top-24 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:flex-col"
+      >
+        <div className="flex min-w-0 items-start justify-between gap-2 border-b border-gray-100 pb-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <UsersRound
+              aria-hidden="true"
+              size={16}
+              className="shrink-0 text-heritage-gold"
+            />
+            <h2
+              id={headingId}
+              className="min-w-0 break-words font-serif text-base font-bold uppercase tracking-wide text-heritage-green"
+            >
+              {LIVE_ORDER_SUMMARY_HEADING}
+            </h2>
+          </div>
+          {onRequestCancelOrder ? (
+            <button
+              type="button"
+              onClick={onRequestCancelOrder}
+              data-live-order-summary-cancel-order="true"
+              data-testid="live-order-summary-cancel-order"
+              className="inline-flex min-h-8 shrink-0 items-center justify-center rounded-md border border-red-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+            >
+              Cancel Order
+            </button>
+          ) : null}
+        </div>
       {view.sections.length > 0 ? (
         <div
           ref={contentRef}
@@ -532,6 +560,7 @@ export const DesignStudioOrderSummary = ({
           ) : null}
         </div>
       )}
-    </aside>
+      </aside>
+    </div>
   );
 };

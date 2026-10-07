@@ -9936,7 +9936,8 @@ export default function DesignStudioView({
         })
       }
       onRequestCancelOrder={
-        canCancelFutureOrderDraft
+        canCancelFutureOrderDraft &&
+        futureSummary.garmentSummary.length > 0
           ? handleRequestCancelFutureOrder
           : undefined
       }
