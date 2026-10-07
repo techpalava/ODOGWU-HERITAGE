@@ -1502,20 +1502,27 @@ export const DormantFutureCustomDetailsStep = ({
             helper:
               "Optional extras for this dress. Keep None if you do not want lining, net, or wraps.",
           }
-        : selectionGroups.size === 1 &&
-            selectionGroups.has("standard_shorts_additional")
+        : selectionGroups.size === 1 && selectionGroups.has("skirt_additional")
           ? {
-              section: "standard-shorts-additional-clothes-costs",
-              ariaLabel: "Standard Nikka Shorts additional clothes costs",
+              section: "skirt-additional-clothes-costs",
+              ariaLabel: "Skirt additional clothes costs",
               helper:
-                "Optional extras for these shorts. Keep None if you do not want extra pockets.",
+                "Optional extras for this skirt. Keep None if you do not want lining or net.",
             }
-          : {
-              section: "additional-clothes-costs",
-              ariaLabel: "Additional clothes costs",
-              helper:
-                "Optional extras for this garment. Keep None if you do not want additions.",
-            };
+          : selectionGroups.size === 1 &&
+              selectionGroups.has("standard_shorts_additional")
+            ? {
+                section: "standard-shorts-additional-clothes-costs",
+                ariaLabel: "Standard Nikka Shorts additional clothes costs",
+                helper:
+                  "Optional extras for these shorts. Keep None if you do not want extra pockets.",
+              }
+            : {
+                section: "additional-clothes-costs",
+                ariaLabel: "Additional clothes costs",
+                helper:
+                  "Optional extras for this garment. Keep None if you do not want additions.",
+              };
     return (
       <aside
         data-custom-detail-section={companionPresentation.section}
