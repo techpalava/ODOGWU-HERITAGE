@@ -172,14 +172,70 @@ async function run() {
     code: "AUTH_REQUIRED",
   });
 
-  const health = createResponse();
-  await healthHandler(request("GET"), health.response);
-  assert.equal(health.state.status, 200);
-  assert.deepEqual(health.state.body, {
-    status: "ok",
-    buildId: (process.env.VERCEL_GIT_COMMIT_SHA ?? "").trim() || "dev",
-  });
-  assert.equal(health.state.headers["cache-control"], "no-store");
+  const healthEnvKeys = ["VERCEL", "VERCEL_ENV", "VERCEL_GIT_COMMIT_SHA"] as const;
+  const previousHealthEnv = new Map<string, string | undefined>(
+    healthEnvKeys.map((key) => [key, process.env[key]]),
+  );
+  const applyHealthEnv = (
+    values: Partial<Record<(typeof healthEnvKeys)[number], string>>,
+  ) => {
+    for (const key of healthEnvKeys) {
+      const value = values[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
+  try {
+    applyHealthEnv({
+      VERCEL: "1",
+      VERCEL_ENV: "production",
+      VERCEL_GIT_COMMIT_SHA: " abc123 ",
+    });
+    const health = createResponse();
+    await healthHandler(request("GET"), health.response);
+    assert.equal(health.state.status, 200);
+    assert.deepEqual(health.state.body, {
+      status: "ok",
+      buildId: "abc123",
+    });
+    assert.equal(health.state.headers["cache-control"], "no-store");
+
+    applyHealthEnv({ VERCEL: "1", VERCEL_ENV: "production" });
+    const missingSha = createResponse();
+    await healthHandler(request("GET"), missingSha.response);
+    assert.equal(missingSha.state.status, 503);
+    assert.deepEqual(missingSha.state.body, {
+      error: "Build id unavailable.",
+      code: "BUILD_ID_UNAVAILABLE",
+    });
+    assert.equal(missingSha.state.headers["cache-control"], "no-store");
+    assert.equal(JSON.stringify(missingSha.state.body).includes("dev"), false);
+
+    applyHealthEnv({ VERCEL_ENV: "preview" });
+    const previewMissingSha = createResponse();
+    await healthHandler(request("GET"), previewMissingSha.response);
+    assert.equal(previewMissingSha.state.status, 503);
+    assert.deepEqual(previewMissingSha.state.body, {
+      error: "Build id unavailable.",
+      code: "BUILD_ID_UNAVAILABLE",
+    });
+    assert.equal(previewMissingSha.state.headers["cache-control"], "no-store");
+
+    applyHealthEnv({});
+    const localHealth = createResponse();
+    await healthHandler(request("GET"), localHealth.response);
+    assert.equal(localHealth.state.status, 200);
+    assert.deepEqual(localHealth.state.body, {
+      status: "ok",
+      buildId: "dev",
+    });
+  } finally {
+    for (const key of healthEnvKeys) {
+      const value = previousHealthEnv.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 
   const bootstrap = createResponse();
   await bootstrapHandler(request("POST"), bootstrap.response);
