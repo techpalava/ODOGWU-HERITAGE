@@ -200,10 +200,15 @@ const payableMarkup = renderToStaticMarkup(
     onBack={() => undefined}
     onEditStage={() => undefined}
     onPay={() => undefined}
+    onParkCompleteOrder={() => undefined}
   />,
 );
 assert.ok(payableMarkup.includes("data-future-order-v2-card"), "the card is entered before the order is saved");
 assert.equal((payableMarkup.match(/data-future-order-v2-pay="true"/g) || []).length, 1, "exactly one Pay button");
+assert.ok(
+  payableMarkup.includes('data-testid="future-order-v2-add-to-cart"'),
+  "Add to cart sits beside Pay now",
+);
 assert.match(payableMarkup, /Pay €\d+\.\d{2}/);
 assert.ok(payableMarkup.includes(FUTURE_ORDER_V2_PAY_READY_MESSAGE));
 for (const removed of [

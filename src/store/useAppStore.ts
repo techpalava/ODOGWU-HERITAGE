@@ -49,6 +49,13 @@ import {
 import { createPrivateBatchAccessSession } from "../services/privateBatchAccessSession";
 import type { PrivateBatchAccessById } from "../utils/orderContextIdentity";
 import { createPrivateBatchAuthCoordinator } from "../services/privateBatchAuthCoordinator";
+import type { FutureOrderCartItemV2 } from "../utils/futureOrderV2Storage";
+import type { FutureOrderCandidateV2 } from "../utils/futureOrderCandidate";
+import {
+  dropMatchingFutureOrderV2CartItems,
+  parkReviewableFutureOrderV2Candidate,
+  sanitizeFutureOrderV2CartItems,
+} from "../utils/futureOrderV2CartBag";
 
 export interface AppState {
 
@@ -137,6 +144,21 @@ export interface AppState {
   setCartItems: (
     items: CartItem[] | ((prev: CartItem[]) => CartItem[]),
   ) => void;
+  futureOrderV2CartItems: FutureOrderCartItemV2[];
+  studioParkedInFutureOrderV2Cart: boolean;
+  setFutureOrderV2CartItems: (
+    items:
+      | FutureOrderCartItemV2[]
+      | ((prev: FutureOrderCartItemV2[]) => FutureOrderCartItemV2[]),
+  ) => void;
+  setStudioParkedInFutureOrderV2Cart: (parked: boolean) => void;
+  parkFutureOrderV2Candidate: (
+    candidate: FutureOrderCandidateV2,
+  ) => "added" | "already_present" | "blocked";
+  dropPaidFutureOrderV2CartCandidate: (
+    candidate: FutureOrderCandidateV2,
+  ) => void;
+  dropFutureOrderV2CartItem: (cartItemId: string) => void;
   historicalOrders: HistoricalOrder[];
   setHistoricalOrders: (
     orders:
@@ -345,6 +367,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         currentUser: canonicalUser,
         cartItems: claim.items,
+        futureOrderV2CartItems: claim.futureOrderV2CartItems,
+        studioParkedInFutureOrderV2Cart:
+          claim.studioParkedInFutureOrderV2Cart,
         customers: [canonicalUser],
         orders: [],
         hasLoadedOrders: false,
@@ -398,12 +423,26 @@ export const useAppStore = create<AppState>((set, get) => ({
           previousUser.email,
           get().cartItems,
         );
+        GuestOrderSessionService.saveAccountFutureOrderV2Cart(
+          previousUser.email,
+          {
+            items: get().futureOrderV2CartItems,
+            studioParkedInFutureOrderV2Cart:
+              get().studioParkedInFutureOrderV2Cart,
+          },
+        );
       }
       ApiService.clearSession();
       const guestSession = GuestOrderSessionService.getActiveSession();
       set({
         currentUser: null,
         cartItems: guestSession.cartItems,
+        futureOrderV2CartItems: sanitizeFutureOrderV2CartItems(
+          guestSession.futureOrderV2CartItems,
+        ),
+        studioParkedInFutureOrderV2Cart: Boolean(
+          guestSession.studioParkedInFutureOrderV2Cart,
+        ),
         guestCartId: guestSession.guestCartId,
         checkoutIntent: guestSession.checkoutIntent,
         customers: [],
@@ -481,6 +520,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     StorageService.saveBatches(newBatches);
   },
   cartItems: initialGuestSession?.cartItems || [],
+  futureOrderV2CartItems: sanitizeFutureOrderV2CartItems(
+    initialGuestSession?.futureOrderV2CartItems,
+  ),
+  studioParkedInFutureOrderV2Cart: Boolean(
+    initialGuestSession?.studioParkedInFutureOrderV2Cart,
+  ),
   setCartItems: (items) => {
     const requestedItems =
       typeof items === "function" ? items(get().cartItems) : items;
@@ -493,6 +538,116 @@ export const useAppStore = create<AppState>((set, get) => ({
         )
       : GuestOrderSessionService.saveGuestCartItems(migration.items);
     set({ cartItems: newItems });
+  },
+  setFutureOrderV2CartItems: (items) => {
+    const requested =
+      typeof items === "function"
+        ? items(get().futureOrderV2CartItems)
+        : items;
+    const currentUser = get().currentUser;
+    const studioParkedInFutureOrderV2Cart = get().studioParkedInFutureOrderV2Cart;
+    const newItems = currentUser
+      ? GuestOrderSessionService.saveAccountFutureOrderV2Cart(currentUser.email, {
+          items: requested,
+          studioParkedInFutureOrderV2Cart,
+        })
+      : GuestOrderSessionService.saveGuestFutureOrderV2Cart({
+          items: requested,
+          studioParkedInFutureOrderV2Cart,
+        });
+    set({
+      futureOrderV2CartItems: newItems,
+      studioParkedInFutureOrderV2Cart:
+        studioParkedInFutureOrderV2Cart && newItems.length > 0,
+    });
+  },
+  setStudioParkedInFutureOrderV2Cart: (parked) => {
+    const currentUser = get().currentUser;
+    const items = get().futureOrderV2CartItems;
+    const studioParkedInFutureOrderV2Cart = parked && items.length > 0;
+    if (currentUser) {
+      GuestOrderSessionService.saveAccountFutureOrderV2Cart(currentUser.email, {
+        items,
+        studioParkedInFutureOrderV2Cart,
+      });
+    } else {
+      GuestOrderSessionService.saveGuestFutureOrderV2Cart({
+        items,
+        studioParkedInFutureOrderV2Cart,
+      });
+    }
+    set({ studioParkedInFutureOrderV2Cart });
+  },
+  parkFutureOrderV2Candidate: (candidate) => {
+    const result = parkReviewableFutureOrderV2Candidate({
+      candidate,
+      items: get().futureOrderV2CartItems,
+    });
+    if (result.status === "blocked") return "blocked";
+    const currentUser = get().currentUser;
+    const studioParkedInFutureOrderV2Cart = true;
+    const newItems = currentUser
+      ? GuestOrderSessionService.saveAccountFutureOrderV2Cart(currentUser.email, {
+          items: result.items,
+          studioParkedInFutureOrderV2Cart,
+        })
+      : GuestOrderSessionService.saveGuestFutureOrderV2Cart({
+          items: result.items,
+          studioParkedInFutureOrderV2Cart,
+        });
+    set({
+      futureOrderV2CartItems: newItems,
+      studioParkedInFutureOrderV2Cart: true,
+    });
+    return result.status;
+  },
+  dropPaidFutureOrderV2CartCandidate: (candidate) => {
+    const currentUser = get().currentUser;
+    const nextItems = dropMatchingFutureOrderV2CartItems({
+      items: get().futureOrderV2CartItems,
+      candidate,
+    });
+    const studioParkedInFutureOrderV2Cart =
+      get().studioParkedInFutureOrderV2Cart && nextItems.length > 0;
+    if (currentUser) {
+      GuestOrderSessionService.saveAccountFutureOrderV2Cart(currentUser.email, {
+        items: nextItems,
+        studioParkedInFutureOrderV2Cart,
+      });
+    } else {
+      GuestOrderSessionService.saveGuestFutureOrderV2Cart({
+        items: nextItems,
+        studioParkedInFutureOrderV2Cart,
+      });
+    }
+    set({
+      futureOrderV2CartItems: nextItems,
+      studioParkedInFutureOrderV2Cart,
+    });
+  },
+  dropFutureOrderV2CartItem: (cartItemId) => {
+    const currentUser = get().currentUser;
+    const nextItems = dropMatchingFutureOrderV2CartItems({
+      items: get().futureOrderV2CartItems,
+      cartItemId,
+    });
+    const studioParkedInFutureOrderV2Cart =
+      get().studioParkedInFutureOrderV2Cart && nextItems.length > 0;
+    if (currentUser) {
+      GuestOrderSessionService.saveAccountFutureOrderV2Cart(currentUser.email, {
+        items: nextItems,
+        studioParkedInFutureOrderV2Cart,
+      });
+    } else {
+      GuestOrderSessionService.saveGuestFutureOrderV2Cart({
+        items: nextItems,
+        studioParkedInFutureOrderV2Cart,
+      });
+    }
+    set({
+      futureOrderV2CartItems: nextItems,
+      studioParkedInFutureOrderV2Cart,
+    });
   },
   historicalOrders: [],
   setHistoricalOrders: (orders) => {

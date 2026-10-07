@@ -103,10 +103,16 @@ const stableSerialize = (value: unknown): string => {
   return JSON.stringify(value) ?? "undefined";
 };
 
+export const getFutureOrderV2CandidateFingerprint = (
+  candidate: FutureOrderCandidateV2,
+): string => stableSerialize(candidate);
+
 export const areFutureOrderV2CandidatesSemanticallyEqual = (
   reviewed: FutureOrderCandidateV2,
   fresh: FutureOrderCandidateV2,
-): boolean => stableSerialize(reviewed) === stableSerialize(fresh);
+): boolean =>
+  getFutureOrderV2CandidateFingerprint(reviewed) ===
+  getFutureOrderV2CandidateFingerprint(fresh);
 
 export const resolveFutureOrderV2ReviewedCandidate = ({
   reviewed,

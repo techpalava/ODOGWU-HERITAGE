@@ -85,6 +85,7 @@ export interface HomepageAuthenticatedDraftAuthority {
 
 export type HomepageDraftEntryDecision =
   | Readonly<{ kind: "start_fresh" }>
+  | Readonly<{ kind: "start_fresh_parked_bag" }>
   | Readonly<{ kind: "resume_existing" }>
   | Readonly<{ kind: "replacement_required" }>;
 
@@ -146,11 +147,14 @@ const toValidDraft = ({
 export const classifyHomepageDraftEntry = ({
   existing,
   clickedOrderContext,
+  studioParkedInCart = false,
 }: {
   existing: LoadedHomepageMutableDraft | null;
   clickedOrderContext: OrderContext;
+  studioParkedInCart?: boolean;
 }): HomepageDraftEntryDecision => {
   if (!existing) return { kind: "start_fresh" };
+  if (studioParkedInCart) return { kind: "start_fresh_parked_bag" };
   return canonicalOrderIdentitiesMatch(
     existing.orderIdentity,
     getCanonicalOrderIdentity(clickedOrderContext),

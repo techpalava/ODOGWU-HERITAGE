@@ -5,6 +5,7 @@ import {
   Pencil,
   Ruler,
   Shirt,
+  ShoppingBag,
   Sparkles,
   Trash2,
   Truck,
@@ -65,6 +66,9 @@ interface DormantFuturePaymentReviewStepProps {
     trigger: HTMLButtonElement,
   ) => void;
   onPay?: () => void;
+  onParkCompleteOrder?: () => void;
+  parkCompleteOrderStatus?: "idle" | "added" | "already_present";
+  onStartAnotherOrder?: () => void;
   onRetryPaymentRecord?: () => void;
   onViewDashboard?: () => void;
 }
@@ -605,6 +609,9 @@ export const DormantFuturePaymentReviewStep = ({
   removalTargets = [],
   onRequestGarmentRemoval,
   onPay,
+  onParkCompleteOrder,
+  parkCompleteOrderStatus = "idle",
+  onStartAnotherOrder,
   onRetryPaymentRecord,
   onViewDashboard,
 }: DormantFuturePaymentReviewStepProps) => {
@@ -1239,20 +1246,52 @@ export const DormantFuturePaymentReviewStep = ({
                 {payment?.status === "failed" && (
                   <FutureOrderV2PaymentAlert message={payment.message} />
                 )}
-                {(paymentMethod === "card" || paymentMethod === "ideal") && (
-                  <button
+                <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                    <button
                     type="button"
-                    data-future-order-v2-pay
+                    data-future-order-v2-pay={true}
                     disabled={!isReviewable || payIsBusy || !stripePaymentReady}
                     aria-busy={payIsBusy}
                     aria-describedby="future-payment-pending-explanation"
                     onClick={onPay}
-                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white sm:w-auto"
+                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-heritage-gold px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-green transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white sm:w-auto"
                   >
                     <LockKeyhole aria-hidden="true" size={14} />
                     {payLabel}
                   </button>
-                )}
+                    {onParkCompleteOrder ? (
+                      <button
+                        type="button"
+                        data-testid="future-order-v2-add-to-cart"
+                        disabled={!isReviewable || payIsBusy}
+                        onClick={onParkCompleteOrder}
+                        className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-heritage-gold/50 bg-heritage-forest px-5 py-2 text-xs font-bold uppercase tracking-wider text-heritage-gold transition hover:bg-heritage-gold hover:text-heritage-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
+                      >
+                        <ShoppingBag aria-hidden="true" size={14} />
+                        {parkCompleteOrderStatus === "already_present"
+                          ? "Already in cart"
+                          : parkCompleteOrderStatus === "added"
+                            ? "In your cart"
+                            : "Add to cart"}
+                      </button>
+                    ) : null}
+                  </div>
+                {onParkCompleteOrder && parkCompleteOrderStatus !== "idle" ? (
+                  <p className="mt-3 text-xs leading-relaxed text-white/75">
+                    This complete order is in your tailoring bag. You can still
+                    pay now, or start another order.
+                  </p>
+                ) : null}
+                {onStartAnotherOrder && parkCompleteOrderStatus !== "idle" ? (
+                  <button
+                    type="button"
+                    data-testid="future-order-v2-start-another-order"
+                    onClick={onStartAnotherOrder}
+                    className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl px-5 py-2 text-xs font-bold uppercase tracking-wider text-white/80 underline-offset-4 hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 focus-visible:ring-offset-heritage-green sm:w-auto"
+                  >
+                    Start another order
+                  </button>
+                ) : null}
               </>
             )}
             {payment?.status === "redirecting" && (

@@ -1304,6 +1304,10 @@ export interface GuestOrderSession {
   checkoutIntent: boolean;
   designDraft?: GuestDesignDraft;
   cartItems: CartItem[];
+  /** Unpaid complete Future Order V2 designs parked from Studio. */
+  futureOrderV2CartItems?: unknown[];
+  /** True after Add to cart until the Studio draft is cleared or edited. */
+  studioParkedInFutureOrderV2Cart?: boolean;
   claimedAt?: string;
   claimedByEmail?: string;
 }

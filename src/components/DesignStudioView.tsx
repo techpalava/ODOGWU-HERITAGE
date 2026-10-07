@@ -459,8 +459,8 @@ import {
 } from "./FutureGarmentRemovalConfirmationDialog";
 
 export interface DesignStudioViewProps {
-  onAddToCart: (item: Omit<CartItem, "id">) => void;
-  openCartDrawer: () => void;
+  onAddToCart?: (item: Omit<CartItem, "id">) => void;
+  openCartDrawer?: () => void;
   currentUser?: {
     email?: string;
     phone?: string;
@@ -764,6 +764,8 @@ export default function DesignStudioView({
     useState<string | null>(null);
   const [futurePaymentReviewHandoff, setFuturePaymentReviewHandoff] =
     useState<FutureOrderV2PaymentReviewHandoff | null>(null);
+  const [futureOrderV2AddToCartStatus, setFutureOrderV2AddToCartStatus] =
+    useState<"idle" | "added" | "already_present">("idle");
   const futureOrderV2PreparationRef =
     useRef<FutureOrderV2PreparationAttempt | null>(null);
   // A successful PRIVATE preparation is bound to the exact post-refresh
@@ -7877,6 +7879,9 @@ export default function DesignStudioView({
             },
       );
     });
+    if (result.status === "recorded") {
+      useAppStore.getState().dropPaidFutureOrderV2CartCandidate(candidate);
+    }
   };
   const handlePayFutureOrderV2 = async () => {
     if (futureOrderV2PayInFlightRef.current) return;
@@ -7891,6 +7896,45 @@ export default function DesignStudioView({
     } finally {
       futureOrderV2PayInFlightRef.current = false;
     }
+  };
+  const handleParkFutureOrderV2InCart = () => {
+    const candidate = futurePaymentReviewHandoff?.candidate;
+    if (!candidate || candidate.schemaVersion !== 2) return;
+    const status = useAppStore.getState().parkFutureOrderV2Candidate(candidate);
+    if (status === "blocked") {
+      setNotification({
+        message:
+          "This order is not ready to add to the cart. Finish review first.",
+        type: "info",
+      });
+      return;
+    }
+    setFutureOrderV2AddToCartStatus(status);
+    setNotification({
+      message:
+        status === "already_present"
+          ? "This complete order is already in your tailoring cart."
+          : "Complete order added to your tailoring cart. You can still pay now.",
+      type: "success",
+    });
+  };
+  const handleStartAnotherOrderAfterCartPark = () => {
+    GuestOrderSessionService.clearFutureDesignDraft();
+    useAppStore.getState().setStudioParkedInFutureOrderV2Cart(false);
+    const repository =
+      futureDraftRepository ??
+      createFirebaseAuthenticatedFutureDraftRepository({
+        customer: currentUser,
+        authResolved: firebaseDraftAuth.resolved,
+        firebaseUser: firebaseDraftAuth.user,
+      });
+    void repository.clear(null);
+    useAppStore.getState().setActiveTab("home");
+    setNotification({
+      message:
+        "Your bagged order is saved in the cart. You can start a new design.",
+      type: "info",
+    });
   };
   const handleRetryFutureOrderV2PaymentRecord = async () => {
     const reviewed = futurePaymentReviewHandoff;
@@ -7912,6 +7956,7 @@ export default function DesignStudioView({
   useEffect(() => {
     let cancelled = false;
     const resumeIdealReturn = async () => {
+      if (typeof window === "undefined") return;
       const search = window.location.search;
       if (!search.includes("future_order_v2_stripe_return=1")) return;
 
@@ -7962,7 +8007,7 @@ export default function DesignStudioView({
         futureOrderV2PreparationPersonalizedAuthorityRef.current = null;
         futureOrderV2PaymentAttemptRef.current = null;
         setFuturePaymentReviewHandoff(handoff);
-        navigateToFutureStage("payment");
+        setFutureStageId("payment");
       },
       prepare: async () => {
         await handlePrepareFutureOrderV2();
@@ -7975,7 +8020,6 @@ export default function DesignStudioView({
     handlePrepareFutureOrderV2,
     handleExecuteFutureOrderV2Payment,
     handlePayFutureOrderV2,
-    navigateToFutureStage,
   ]);
   const handleLiveOrderSummaryEdit = (
     stage: DesignStudioStageId,
@@ -10371,6 +10415,9 @@ export default function DesignStudioView({
             onBack={() => navigateToFutureStage("shipping")}
             onEditStage={(stage) => navigateToFutureStage(stage)}
             onPay={handlePayFutureOrderV2}
+            onParkCompleteOrder={handleParkFutureOrderV2InCart}
+            parkCompleteOrderStatus={futureOrderV2AddToCartStatus}
+            onStartAnotherOrder={handleStartAnotherOrderAfterCartPark}
             onRetryPaymentRecord={handleRetryFutureOrderV2PaymentRecord}
             onViewDashboard={() => useAppStore.getState().setActiveTab("dashboard")}
           />
