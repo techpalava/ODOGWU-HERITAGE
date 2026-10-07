@@ -73,8 +73,8 @@ export interface LiveOrderSummaryLine {
   /** Selected construction/customization rows owned by this exact garment. */
   readonly constructionOptions?: readonly LiveOrderSummaryConstructionOption[];
   /**
-   * Present only for an editable Additional Garment construction occurrence.
-   * This preserves the stable occurrence identity through the Summary UI.
+   * Stable physical occurrence identity for Edit/Remove from the live Summary.
+   * Present on Garments Ordered lines (base and additional).
    */
   readonly focusGarmentKey?: string | null;
 }
@@ -689,6 +689,7 @@ export const projectDesignStudioLiveOrderSummary = ({
         garment.constructionTotalCents === null
           ? null
           : moneyFromCents(garment.constructionTotalCents),
+      focusGarmentKey: garment.garmentKey,
     };
   };
   const baseConstructionLines = committedLines(
@@ -699,10 +700,7 @@ export const projectDesignStudioLiveOrderSummary = ({
   const additionalConstructionLines = committedLines(
     summary.garmentSummary
       .filter((garment) => garment.role === "additional")
-      .map((garment) => ({
-        ...constructionLineFor(garment),
-        focusGarmentKey: garment.garmentKey,
-      })),
+      .map(constructionLineFor),
   );
   const constructionOptionLines = committedLines([
     ...summary.garmentSummary.map((garment) => ({

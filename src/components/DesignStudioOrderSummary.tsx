@@ -1,13 +1,59 @@
 import { useEffect, useRef } from "react";
-import { UsersRound, Pencil } from "lucide-react";
+import { UsersRound, Pencil, Trash2 } from "lucide-react";
 import type { DesignStudioStageId } from "../types";
 import type {
+  LiveOrderSummaryLine,
   LiveOrderSummarySection,
   LiveOrderSummarySubsection,
   LiveOrderSummaryView,
 } from "../utils/designStudioLiveOrderSummary";
 import { LIVE_ORDER_SUMMARY_HEADING } from "../utils/designStudioLiveOrderSummary";
 import { formatCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
+import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
+
+const RemoveGarmentButton = ({
+  target,
+  originStage,
+  onRequestGarmentRemoval,
+}: {
+  target: FutureGarmentRemovalTarget;
+  originStage: DesignStudioStageId;
+  onRequestGarmentRemoval: (
+    target: FutureGarmentRemovalTarget,
+    trigger: HTMLButtonElement,
+  ) => void;
+}) => {
+  const reasonId = `live-order-summary-removal-reason-${target.garmentKey}`;
+  return (
+    <div className="flex min-w-0 flex-col items-end gap-0.5">
+      <button
+        type="button"
+        disabled={!target.canRequestRemoval}
+        aria-label={target.accessibleName}
+        aria-describedby={target.disabledReason ? reasonId : undefined}
+        data-garment-removal-button={target.garmentKey}
+        data-garment-removal-origin-stage={originStage}
+        data-testid={`live-order-summary-remove-${target.garmentKey}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          onRequestGarmentRemoval(target, event.currentTarget);
+        }}
+        className="inline-flex min-h-8 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
+      >
+        <Trash2 aria-hidden="true" size={11} />
+        Remove
+      </button>
+      {target.disabledReason ? (
+        <p
+          id={reasonId}
+          className="max-w-[10rem] break-words text-right text-[9px] leading-snug text-heritage-ink/55"
+        >
+          {target.disabledReason}
+        </p>
+      ) : null}
+    </div>
+  );
+};
 
 const SummarySection = ({
   section,
@@ -15,13 +61,30 @@ const SummarySection = ({
   canEditAdditionalGarments,
   onEdit,
   onEditAdditionalGarments,
+  removalTargets,
+  onRequestGarmentRemoval,
+  removalOriginStage,
 }: {
   section: LiveOrderSummarySection;
   canEdit: boolean;
   canEditAdditionalGarments: boolean;
   onEdit?: () => void;
   onEditAdditionalGarments?: (focusGarmentKey?: string | null) => void;
-}) => (
+  removalTargets: readonly FutureGarmentRemovalTarget[];
+  onRequestGarmentRemoval?: (
+    target: FutureGarmentRemovalTarget,
+    trigger: HTMLButtonElement,
+  ) => void;
+  removalOriginStage: DesignStudioStageId;
+}) => {
+  const removalForLine = (line: LiveOrderSummaryLine) =>
+    line.focusGarmentKey
+      ? removalTargets.find(
+          (target) => target.garmentKey === line.focusGarmentKey,
+        )
+      : undefined;
+
+  return (
   <section
     data-testid={`live-order-summary-section-${section.id}`}
     className="min-w-0"
@@ -48,7 +111,9 @@ const SummarySection = ({
     </div>
     {section.lines.length > 0 ? (
       <ul className="mt-1.5 space-y-1">
-        {section.lines.map((line) => (
+        {section.lines.map((line) => {
+          const removalTarget = removalForLine(line);
+          return (
           <li
             key={line.id}
             data-line-id={line.id}
@@ -110,13 +175,23 @@ const SummarySection = ({
                 ) : null}
               </div>
             </div>
-            {line.amountLabel ? (
-              <span className="shrink-0 text-right font-mono text-[13px] font-semibold text-heritage-green">
-                {line.amountLabel}
-              </span>
-            ) : null}
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              {removalTarget && onRequestGarmentRemoval ? (
+                <RemoveGarmentButton
+                  target={removalTarget}
+                  originStage={removalOriginStage}
+                  onRequestGarmentRemoval={onRequestGarmentRemoval}
+                />
+              ) : null}
+              {line.amountLabel ? (
+                <span className="text-right font-mono text-[13px] font-semibold text-heritage-green">
+                  {line.amountLabel}
+                </span>
+              ) : null}
+            </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
     ) : null}
     {section.subsections?.map((subsection) => (
@@ -129,6 +204,9 @@ const SummarySection = ({
           Boolean(onEditAdditionalGarments)
         }
         onEdit={onEditAdditionalGarments}
+        removalTargets={removalTargets}
+        onRequestGarmentRemoval={onRequestGarmentRemoval}
+        removalOriginStage={removalOriginStage}
       />
     ))}
     {(section.footers ?? (section.footer ? [section.footer] : [])).map(
@@ -167,16 +245,26 @@ const SummarySection = ({
       ),
     )}
   </section>
-);
+  );
+};
 
 const SummarySubsection = ({
   subsection,
   canEdit,
   onEdit,
+  removalTargets,
+  onRequestGarmentRemoval,
+  removalOriginStage,
 }: {
   subsection: LiveOrderSummarySubsection;
   canEdit: boolean;
   onEdit?: (focusGarmentKey?: string | null) => void;
+  removalTargets: readonly FutureGarmentRemovalTarget[];
+  onRequestGarmentRemoval?: (
+    target: FutureGarmentRemovalTarget,
+    trigger: HTMLButtonElement,
+  ) => void;
+  removalOriginStage: DesignStudioStageId;
 }) => (
   <section
     data-testid={`live-order-summary-subsection-${subsection.id}`}
@@ -203,7 +291,13 @@ const SummarySubsection = ({
       ) : null}
     </div>
     <ul className="mt-1.5 space-y-1">
-      {subsection.lines.map((line) => (
+      {subsection.lines.map((line) => {
+        const removalTarget = line.focusGarmentKey
+          ? removalTargets.find(
+              (target) => target.garmentKey === line.focusGarmentKey,
+            )
+          : undefined;
+        return (
         <li
           key={line.id}
           data-line-id={line.id}
@@ -224,19 +318,30 @@ const SummarySubsection = ({
               </p>
             ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {canEdit && onEdit && line.focusGarmentKey ? (
-              <button
-                type="button"
-                onClick={() => onEdit(line.focusGarmentKey)}
-                aria-label={`Edit ${line.label}`}
-                data-testid={`live-order-summary-edit-${subsection.id}-${line.focusGarmentKey}`}
-                className="inline-flex min-h-8 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
-              >
-                <Pencil aria-hidden="true" size={11} />
-                Edit
-              </button>
-            ) : null}
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <div className="flex items-center gap-1.5">
+              {canEdit && onEdit && line.focusGarmentKey ? (
+                <button
+                  type="button"
+                  onClick={() => onEdit(line.focusGarmentKey)}
+                  aria-label={`Edit ${line.label}`}
+                  data-testid={`live-order-summary-edit-${subsection.id}-${line.focusGarmentKey}`}
+                  className="inline-flex min-h-8 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold uppercase tracking-wider text-heritage-green transition hover:bg-heritage-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2"
+                >
+                  <Pencil aria-hidden="true" size={11} />
+                  Edit
+                </button>
+              ) : null}
+              {removalTarget &&
+              onRequestGarmentRemoval &&
+              subsection.id === "additional_garments" ? (
+                <RemoveGarmentButton
+                  target={removalTarget}
+                  originStage={removalOriginStage}
+                  onRequestGarmentRemoval={onRequestGarmentRemoval}
+                />
+              ) : null}
+            </div>
             {line.amountLabel ? (
               <span className="text-right font-mono text-[13px] font-semibold text-heritage-green">
                 {line.amountLabel}
@@ -244,7 +349,8 @@ const SummarySubsection = ({
             ) : null}
           </div>
         </li>
-      ))}
+        );
+      })}
     </ul>
   </section>
 );
@@ -252,7 +358,11 @@ const SummarySubsection = ({
 export const DesignStudioOrderSummary = ({
   view,
   unlockedStages,
+  currentStageId = null,
   onEditStage,
+  removalTargets = [],
+  onRequestGarmentRemoval,
+  onRequestCancelOrder,
 }: {
   view: LiveOrderSummaryView;
   unlockedStages: ReadonlySet<DesignStudioStageId>;
@@ -261,6 +371,12 @@ export const DesignStudioOrderSummary = ({
     stage: DesignStudioStageId,
     options?: { focusAdditionalGarmentKey?: string | null },
   ) => void;
+  removalTargets?: readonly FutureGarmentRemovalTarget[];
+  onRequestGarmentRemoval?: (
+    target: FutureGarmentRemovalTarget,
+    trigger: HTMLButtonElement,
+  ) => void;
+  onRequestCancelOrder?: () => void;
 }) => {
   const headingId = "live-order-summary-heading";
   const contentRef = useRef<HTMLDivElement>(null);
@@ -269,6 +385,7 @@ export const DesignStudioOrderSummary = ({
       contentRef.current.scrollTop = 0;
     }
   }, []);
+  const removalOriginStage: DesignStudioStageId = currentStageId || "fabric";
   const canEditStage = (stage: DesignStudioStageId | null): boolean =>
     Boolean(
       stage &&
@@ -297,6 +414,13 @@ export const DesignStudioOrderSummary = ({
               onEditStage("personalized_additions", { focusAdditionalGarmentKey })
           : undefined
       }
+      removalTargets={
+        section.id === "construction" ? removalTargets : []
+      }
+      onRequestGarmentRemoval={
+        section.id === "construction" ? onRequestGarmentRemoval : undefined
+      }
+      removalOriginStage={removalOriginStage}
     />
   );
 
@@ -306,18 +430,31 @@ export const DesignStudioOrderSummary = ({
       data-testid="live-order-summary-sidebar"
       className="min-w-0 rounded-3xl border border-heritage-gold/25 bg-white p-3 shadow-sm [overflow-wrap:anywhere] sm:p-3.5 lg:sticky lg:top-24 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:flex-col"
     >
-      <div className="flex min-w-0 items-center gap-2 border-b border-gray-100 pb-2">
-        <UsersRound
-          aria-hidden="true"
-          size={16}
-          className="shrink-0 text-heritage-gold"
-        />
-        <h2
-          id={headingId}
-          className="min-w-0 break-words font-serif text-base font-bold uppercase tracking-wide text-heritage-green"
-        >
-          {LIVE_ORDER_SUMMARY_HEADING}
-        </h2>
+      <div className="flex min-w-0 items-start justify-between gap-2 border-b border-gray-100 pb-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <UsersRound
+            aria-hidden="true"
+            size={16}
+            className="shrink-0 text-heritage-gold"
+          />
+          <h2
+            id={headingId}
+            className="min-w-0 break-words font-serif text-base font-bold uppercase tracking-wide text-heritage-green"
+          >
+            {LIVE_ORDER_SUMMARY_HEADING}
+          </h2>
+        </div>
+        {onRequestCancelOrder ? (
+          <button
+            type="button"
+            onClick={onRequestCancelOrder}
+            data-live-order-summary-cancel-order="true"
+            data-testid="live-order-summary-cancel-order"
+            className="inline-flex min-h-8 shrink-0 items-center justify-center rounded-md border border-red-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+          >
+            Cancel Order
+          </button>
+        ) : null}
       </div>
       {view.sections.length > 0 ? (
         <div

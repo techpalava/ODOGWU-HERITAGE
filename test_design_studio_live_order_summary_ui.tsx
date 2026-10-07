@@ -1325,4 +1325,138 @@ assert.ok(!emptyMarkup.includes("Current Subtotal"));
 assert.ok(!emptyMarkup.includes("€0.00"));
 assert.ok(emptyMarkup.includes(LIVE_ORDER_SUMMARY_HEADING));
 
+{
+  const removableView: LiveOrderSummaryView = {
+    sections: [
+      {
+        id: "construction",
+        title: "Garments Ordered",
+        editStage: "garment_type",
+        editLabel: "Edit base garments",
+        lines: [
+          {
+            id: "construction-base:shirt",
+            label: "Shirt",
+            detail: null,
+            amountLabel: "€70.00",
+            focusGarmentKey: "base:shirt",
+          },
+          {
+            id: "construction-base:trouser",
+            label: "Trouser",
+            detail: null,
+            amountLabel: "€75.00",
+            focusGarmentKey: "base:trouser",
+          },
+        ],
+      },
+    ],
+    totalStatus: "exact",
+    totalLabel: "Total",
+    totalValueLabel: "€145.00",
+    totalAmountCents: 14500,
+    quoteRequired: false,
+  };
+  const lastGarmentTargets = [
+    {
+      garmentKey: "base:shirt",
+      occurrenceLabel: "Shirt",
+      roleLabel: "base garment",
+      presentationOrdinal: 1,
+      canRequestRemoval: false,
+      disabledReason: "At least one garment must remain in your order.",
+      accessibleName: "Remove Shirt, base garment",
+    },
+  ];
+  const multiGarmentTargets = [
+    {
+      garmentKey: "base:shirt",
+      occurrenceLabel: "Shirt",
+      roleLabel: "base garment",
+      presentationOrdinal: 1,
+      canRequestRemoval: true,
+      disabledReason: null,
+      accessibleName: "Remove Shirt, base garment",
+    },
+    {
+      garmentKey: "base:trouser",
+      occurrenceLabel: "Trouser",
+      roleLabel: "base garment",
+      presentationOrdinal: 1,
+      canRequestRemoval: true,
+      disabledReason: null,
+      accessibleName: "Remove Trouser, base garment",
+    },
+  ];
+  let cancelClicks = 0;
+  act(() => {
+    renderer.update(
+      createElement(DesignStudioOrderSummary, {
+        view: removableView,
+        unlockedStages: new Set<DesignStudioStageId>(["garment_type"]),
+        currentStageId: "fabric",
+        onEditStage: () => undefined,
+        removalTargets: multiGarmentTargets,
+        onRequestGarmentRemoval: () => undefined,
+        onRequestCancelOrder: () => {
+          cancelClicks += 1;
+        },
+      }),
+    );
+  });
+  const cancelButton = renderer.root.findByProps({
+    "data-testid": "live-order-summary-cancel-order",
+  });
+  assert.equal(textOf(cancelButton), "Cancel Order");
+  assert.equal(
+    cancelButton.props["data-live-order-summary-cancel-order"],
+    "true",
+  );
+  act(() => {
+    cancelButton.props.onClick();
+  });
+  assert.equal(cancelClicks, 1);
+  assert.equal(
+    renderer.root.findAllByProps({
+      "data-testid": "live-order-summary-remove-base:shirt",
+    }).length,
+    1,
+  );
+  assert.equal(
+    renderer.root.findByProps({
+      "data-testid": "live-order-summary-remove-base:shirt",
+    }).props.disabled,
+    false,
+  );
+  act(() => {
+    renderer.update(
+      createElement(DesignStudioOrderSummary, {
+        view: {
+          ...removableView,
+          sections: [
+            {
+              ...removableView.sections[0],
+              lines: [removableView.sections[0].lines[0]],
+            },
+          ],
+        },
+        unlockedStages: new Set<DesignStudioStageId>(["garment_type"]),
+        currentStageId: "fabric",
+        removalTargets: lastGarmentTargets,
+        onRequestGarmentRemoval: () => undefined,
+        onRequestCancelOrder: () => undefined,
+      }),
+    );
+  });
+  const lastRemove = renderer.root.findByProps({
+    "data-testid": "live-order-summary-remove-base:shirt",
+  });
+  assert.equal(lastRemove.props.disabled, true);
+  assert.ok(
+    textOf(renderer.root).includes(
+      "At least one garment must remain in your order.",
+    ),
+  );
+}
+
 console.log("test_design_studio_live_order_summary_ui.tsx: all assertions passed");
