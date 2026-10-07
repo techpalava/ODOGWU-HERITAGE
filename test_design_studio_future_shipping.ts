@@ -149,6 +149,79 @@ const deliveryClearsPickup = reconcileFutureShippingState({
 assert.equal(deliveryClearsPickup.state.pickupLocation, "");
 assert.equal(deliveryClearsPickup.status, "quote_ready");
 
+const commentTrailingSpace = reconcileFutureShippingState({
+  state: {
+    ...pickupState,
+    customerInformation: {
+      ...pickupState.customerInformation,
+      comment: "Leave at desk ",
+    },
+  },
+  garmentCount: 2,
+  selectedDesignPrice: 500,
+});
+assert.equal(commentTrailingSpace.status, "quote_ready");
+assert.equal(
+  commentTrailingSpace.state.customerInformation.comment,
+  "Leave at desk ",
+  "live reconcile must keep trailing spaces so spacebar works while typing",
+);
+
+const commentMultiWord = reconcileFutureShippingState({
+  state: {
+    ...pickupState,
+    customerInformation: {
+      ...pickupState.customerInformation,
+      comment: "Call before pickup",
+    },
+  },
+  garmentCount: 2,
+  selectedDesignPrice: 500,
+});
+assert.equal(
+  commentMultiWord.state.customerInformation.comment,
+  "Call before pickup",
+);
+
+const whitespaceOnlyName = reconcileFutureShippingState({
+  state: {
+    ...createEmptyFutureShippingState(),
+    fulfilmentMethod: "eindhoven_pickup",
+    customerInformation: {
+      ...createEmptyFutureShippingState().customerInformation,
+      fullName: "   ",
+      phone: "+31612345678",
+      email: "ada@example.com",
+    },
+  },
+  garmentCount: 2,
+  selectedDesignPrice: 500,
+});
+assert.equal(whitespaceOnlyName.status, "incomplete");
+assert.ok(
+  whitespaceOnlyName.diagnostics.some((diagnostic) => diagnostic.field === "fullName"),
+);
+
+const persistedTrimmedComment = persistFutureShippingState({
+  draft: { id: "draft-1" },
+  state: {
+    ...pickupState,
+    customerInformation: {
+      ...pickupState.customerInformation,
+      fullName: " Ada Lovelace ",
+      comment: "Leave at desk ",
+    },
+  },
+});
+assert.equal(
+  persistedTrimmedComment.futureShippingState.customerInformation.fullName,
+  "Ada Lovelace",
+);
+assert.equal(
+  persistedTrimmedComment.futureShippingState.customerInformation.comment,
+  "Leave at desk",
+);
+
 const incompleteDelivery = reconcileFutureShippingState({
   state: {
     ...withContact(createEmptyFutureShippingState()),
