@@ -1415,7 +1415,7 @@ assert.equal(
 );
 assert.equal(
   pickupDelivery.find((line) => line.label === "Pickup location")?.detail,
-  "Veldhoven Campus Lockers",
+  "Eindhoven",
 );
 assert.equal(
   pickupDelivery.some((line) => line.label === "Shipping"),

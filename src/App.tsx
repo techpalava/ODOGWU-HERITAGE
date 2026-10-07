@@ -257,7 +257,7 @@ export default function App() {
   const registrationBatch = getCurrentRegistrationBatch(batches);
   const defaultCommunityPickupLocation =
     businessSettings.productionSettings.defaultPickupLocation ||
-    "Veldhoven Campus Lockers";
+    "Eindhoven";
   const homepageDefaultPickupLocationRef = React.useRef(
     defaultCommunityPickupLocation,
   );

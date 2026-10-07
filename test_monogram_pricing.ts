@@ -750,7 +750,7 @@ const makeCartItem = (
   batchType: "alone",
   deliverySelection: {
     method: "PICKUP",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
   },
 });
 

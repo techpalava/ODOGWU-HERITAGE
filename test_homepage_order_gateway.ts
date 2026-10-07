@@ -125,7 +125,7 @@ assert.equal(
 const homepageEntry = resolveHomepageCommunityBatchEntry(
   [makeBatch()],
   "batch-6",
-  "Veldhoven Campus Lockers",
+  "Eindhoven",
   new Date(now),
 );
 assert.deepEqual(homepageEntry?.orderContext, {
@@ -138,13 +138,13 @@ assert.deepEqual(homepageEntry?.orderContext, {
   currentMembers: 12,
   allowOrders: true,
   batchStatus: "OPEN",
-  pickupLocation: "Veldhoven Campus Lockers",
+  pickupLocation: "Eindhoven",
 });
 assert.equal(
   resolveHomepageCommunityBatchEntry(
     [makeBatch({ id: "batch-8", name: "Pioneers" })],
     "batch-6",
-    "Veldhoven Campus Lockers",
+    "Eindhoven",
     new Date(now),
   ),
   null,
@@ -201,7 +201,7 @@ assert.deepEqual(
       makeBatch({ id: "batch-7", name: "Avatars", status: "CLOSED" }),
       makeBatch({ id: "batch-8", name: "Pioneers" }),
     ],
-    "Veldhoven Campus Lockers",
+    "Eindhoven",
   ),
   {
     orderType: "Community",
@@ -213,7 +213,7 @@ assert.deepEqual(
     currentMembers: 12,
     allowOrders: true,
     batchStatus: "CLOSED",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
   },
   "Reload must resolve a Community draft by its retained batch ID, not the current homepage batch.",
 );
@@ -221,7 +221,7 @@ assert.deepEqual(
   resolvePersistedDraftOrderContext(
     persistedAvatarsDraft,
     [makeBatch({ id: "batch-8", name: "Pioneers" })],
-    "Veldhoven Campus Lockers",
+    "Eindhoven",
   ),
   {
     orderType: "Community",

@@ -44,7 +44,7 @@ export const DEFAULT_BUSINESS_SETTINGS: BusinessSettings = {
     productionStartThresholdPercentage: 90,
     estimatedProductionDurationDays: 45,
     defaultDeliveryWindowDays: 60,
-    defaultPickupLocation: "Veldhoven Campus Lockers",
+    defaultPickupLocation: "Eindhoven",
   },
   applicationSettings: {
     communityName: "NIGERIAN TRADITIONAL CLOTHING COMMUNITY (NTCC)",
@@ -330,7 +330,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "COMPLETED",
     visibility: "PUBLIC",
     estimatedDelivery: "May 2025",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
     timeline: { delivered: "2025-05-15" },
   },
   {
@@ -347,7 +347,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "COMPLETED",
     visibility: "PUBLIC",
     estimatedDelivery: "Dec 2025",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
     timeline: { delivered: "2025-12-10" },
   },
   {
@@ -364,7 +364,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "COMPLETED",
     visibility: "PUBLIC",
     estimatedDelivery: "Mar 2026",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
     timeline: { delivered: "2026-03-05" },
   },
   {
@@ -381,7 +381,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "COMPLETED",
     visibility: "PUBLIC",
     estimatedDelivery: "Jun 2026",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
     timeline: { delivered: "2026-06-12" },
   },
   {
@@ -398,7 +398,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "PRODUCTION_STARTED",
     visibility: "PUBLIC",
     estimatedDelivery: "Aug 2026",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
     fabricForecast: {
       requiredYards: 240,
       requiredRolls: 40,
@@ -426,7 +426,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "RECRUITING",
     visibility: "PUBLIC",
     estimatedDelivery: "Nov 2026",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
     fabricForecast: {
       requiredYards: 430,
       requiredRolls: 72,
@@ -454,7 +454,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "YET_TO_START",
     visibility: "PUBLIC",
     estimatedDelivery: "Nov 2026",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
   },
   {
     id: "batch-8",
@@ -470,7 +470,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "YET_TO_START",
     visibility: "PUBLIC",
     estimatedDelivery: "Dec 2026",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
   },
   {
     id: "batch-9",
@@ -486,7 +486,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "YET_TO_START",
     visibility: "PUBLIC",
     estimatedDelivery: "Jan 2027",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
   },
   {
     id: "batch-10",
@@ -502,7 +502,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "YET_TO_START",
     visibility: "PUBLIC",
     estimatedDelivery: "Feb 2027",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
   },
   {
     id: "batch-11",
@@ -518,7 +518,7 @@ export const MOCK_BATCHES: Batch[] = [
     status: "YET_TO_START",
     visibility: "PUBLIC",
     estimatedDelivery: "Apr 2027",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
   },
 ];
 

@@ -770,7 +770,7 @@ const cartItem = {
   batchType: "alone",
   deliverySelection: {
     method: "PICKUP",
-    pickupLocation: "Veldhoven Campus Lockers",
+    pickupLocation: "Eindhoven",
   },
   garment: {
     type: "Test",

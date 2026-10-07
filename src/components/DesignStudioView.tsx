@@ -4603,7 +4603,7 @@ export default function DesignStudioView({
             storedDraft,
             storeBatches || [],
             businessSettings.productionSettings.defaultPickupLocation ||
-              "Veldhoven Campus Lockers",
+              "Eindhoven",
             {
               groups: storeCustomGroups,
               viewerUid: firebaseDraftAuth.user?.uid || null,
