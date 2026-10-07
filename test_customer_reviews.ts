@@ -11,6 +11,7 @@ import {
   filterPublishedReviews,
   isValidRating,
   normalizeCustomerReview,
+  resolvePublishedReviewsForDisplay,
   selectSliderReviews,
   validateCustomerReviewInput,
 } from "./src/utils/customerReviews";
@@ -124,8 +125,23 @@ assert.equal(SEED_CUSTOMER_REVIEWS.length, 3);
 for (const seed of SEED_CUSTOMER_REVIEWS) {
   assert.equal(seed.status, "published");
   assert.equal(seed.featured, true);
-  assert.ok(seed.rating >= 4 && seed.rating <= 5);
+  assert.equal(seed.rating, 5);
 }
+
+// Display fallback: seeds only when loaded and empty; never extra fakes.
+assert.deepEqual(resolvePublishedReviewsForDisplay([], true), SEED_CUSTOMER_REVIEWS);
+assert.deepEqual(resolvePublishedReviewsForDisplay([], false), []);
+assert.deepEqual(
+  resolvePublishedReviewsForDisplay([review("hidden-only", { status: "hidden" })], true),
+  SEED_CUSTOMER_REVIEWS,
+);
+const realOnly = resolvePublishedReviewsForDisplay([review("real")], true);
+assert.deepEqual(realOnly.map((r) => r.id), ["real"]);
+assert.equal(realOnly.some((r) => r.id.startsWith("seed-review-")), false);
+assert.deepEqual(
+  selectSliderReviews(resolvePublishedReviewsForDisplay([], true)).map((r) => r.rating),
+  [5, 5, 5],
+);
 
 // Form validation and create payload
 assert.equal(

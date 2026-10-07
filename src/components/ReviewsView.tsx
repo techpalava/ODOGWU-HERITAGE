@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { PenLine } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import {
-  filterPublishedReviews,
+  resolvePublishedReviewsForDisplay,
   sortReviewsNewestFirst,
 } from "../utils/customerReviews";
 import { CustomerReviewCard, ReviewStars } from "./CustomerReviewCard";
@@ -14,8 +14,11 @@ export default function ReviewsView() {
   const [isFormOpen, setIsFormOpen] = useState(false);
 
   const published = useMemo(
-    () => sortReviewsNewestFirst(filterPublishedReviews(customerReviews)),
-    [customerReviews],
+    () =>
+      sortReviewsNewestFirst(
+        resolvePublishedReviewsForDisplay(customerReviews, hasLoaded),
+      ),
+    [customerReviews, hasLoaded],
   );
   const average =
     published.length > 0

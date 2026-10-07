@@ -76,7 +76,7 @@ export const SEED_CUSTOMER_REVIEWS: CustomerReview[] = [
     authorName: "Ngozi E.",
     location: "Netherlands",
     body: "Choosing my own fabric and style made the whole order feel personal. It is a lovely way to celebrate our heritage far from Lagos.",
-    rating: 4,
+    rating: 5,
     status: "published",
     featured: true,
     displayOrder: 3,
@@ -183,6 +183,19 @@ export function selectSliderReviews(
     published.filter((review) => !featuredIds.has(review.id)),
   );
   return [...featured, ...newest].slice(0, size);
+}
+
+/**
+ * Display-only fallback: once Firestore has loaded and holds no published
+ * reviews, show the three starter reviews. This never writes to Firestore;
+ * admins persist the seeds with "Add starter reviews".
+ */
+export function resolvePublishedReviewsForDisplay(
+  published: readonly CustomerReview[],
+  hasLoaded: boolean,
+): CustomerReview[] {
+  const visible = filterPublishedReviews(published);
+  return hasLoaded && visible.length === 0 ? SEED_CUSTOMER_REVIEWS : visible;
 }
 
 export function countFeaturedReviews(

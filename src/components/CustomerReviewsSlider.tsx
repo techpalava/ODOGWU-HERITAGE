@@ -1,19 +1,26 @@
 import { useMemo, useState, type KeyboardEvent } from "react";
 import { ArrowRight, ChevronLeft, ChevronRight, PenLine } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
-import { selectSliderReviews } from "../utils/customerReviews";
+import {
+  resolvePublishedReviewsForDisplay,
+  selectSliderReviews,
+} from "../utils/customerReviews";
 import { CustomerReviewCard } from "./CustomerReviewCard";
 import CustomerReviewForm from "./CustomerReviewForm";
 
 export default function CustomerReviewsSlider() {
   const customerReviews = useAppStore((state) => state.customerReviews);
+  const hasLoaded = useAppStore((state) => state.hasLoadedCustomerReviews);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const [startIndex, setStartIndex] = useState(0);
   const [isFormOpen, setIsFormOpen] = useState(false);
 
   const slides = useMemo(
-    () => selectSliderReviews(customerReviews),
-    [customerReviews],
+    () =>
+      selectSliderReviews(
+        resolvePublishedReviewsForDisplay(customerReviews, hasLoaded),
+      ),
+    [customerReviews, hasLoaded],
   );
   const count = slides.length;
   const safeStart = count > 0 ? startIndex % count : 0;
@@ -100,7 +107,7 @@ export default function CustomerReviewsSlider() {
             className={index === 0 ? "" : "hidden md:flex"}
           />
         ))}
-        {count === 0 && (
+        {count === 0 && hasLoaded && (
           <div className="rounded-2xl border border-heritage-gold/20 bg-heritage-cream p-8 text-center md:col-span-3">
             <p className="font-serif text-lg text-heritage-green">
               Be the first to share your Odogwu Heritage story.
