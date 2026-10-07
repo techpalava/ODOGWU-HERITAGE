@@ -23,7 +23,7 @@ export interface Customer {
   name: string;
   email: string;
   phone: string;
-  location?: string; // e.g. "Veldhoven Campus Lockers" or similar
+  location?: string; // e.g. "Eindhoven" or similar
   role?: string;
   passcode?: string;
   orderStatus?: string;

@@ -17,6 +17,9 @@ import {
 } from "../config/Step8AdditionalDeliveryConfig";
 import {
   DEFAULT_FUTURE_PICKUP_LOCATION,
+  FUTURE_PICKUP_ATELIER_ADDRESS,
+  FUTURE_PICKUP_ATELIER_PHONE_DISPLAY,
+  FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
   type FutureShippingFieldId,
   type FutureShippingStageResolution,
 } from "../utils/designStudioFutureShipping";
@@ -261,7 +264,7 @@ export const DormantFutureShippingStep = ({
       {state.fulfilmentMethod && (
         <section className="min-w-0 rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6">
           <h3 className="font-serif text-lg font-bold text-heritage-green">
-            {isPickup ? "Pickup contact" : "Delivery details"}
+            {isPickup ? "Recipient Contact" : "Delivery details"}
           </h3>
           <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-2">
             <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65">
@@ -281,7 +284,7 @@ export const DormantFutureShippingStep = ({
               )}
             </label>
             <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65">
-              Phone
+              {isPickup ? "Phone No. (Whatsapp Preferred)" : "Phone"}
               <input
                 type="tel"
                 value={customer.phone}
@@ -333,7 +336,28 @@ export const DormantFutureShippingStep = ({
                     {state.pickupLocation.trim() || DEFAULT_FUTURE_PICKUP_LOCATION}
                   </span>
                 </p>
-                <p className="mt-1 text-xs leading-relaxed text-heritage-ink/55">
+                <p className="mt-2 text-xs leading-relaxed text-heritage-ink/70">
+                  <span className="font-bold uppercase tracking-wider text-heritage-ink/50">
+                    Address
+                  </span>
+                  <span className="mt-1 block normal-case tracking-normal">
+                    {FUTURE_PICKUP_ATELIER_ADDRESS}
+                  </span>
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-heritage-ink/70">
+                  <span className="font-bold uppercase tracking-wider text-heritage-ink/50">
+                    Phone
+                  </span>
+                  <a
+                    href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 block normal-case tracking-normal font-semibold text-heritage-green underline-offset-2 hover:underline"
+                  >
+                    {FUTURE_PICKUP_ATELIER_PHONE_DISPLAY}
+                  </a>
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-heritage-ink/55">
                   This is where you collect your order in Eindhoven. It is set by the atelier and cannot be edited here.
                 </p>
               </div>
