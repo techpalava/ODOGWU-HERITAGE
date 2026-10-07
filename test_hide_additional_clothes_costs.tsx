@@ -223,6 +223,7 @@ assert.equal(
 );
 assert.deepEqual([...CUSTOMER_VISIBLE_ADDITIONAL_CLOTHES_COST_GROUPS], [
   "dress_additional",
+  "skirt_additional",
   "standard_shorts_additional",
 ]);
 assert.equal(

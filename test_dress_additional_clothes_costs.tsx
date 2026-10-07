@@ -255,7 +255,7 @@ assert.equal(
 );
 assert.equal(
   isCustomerAvailableCustomDetailSelectionGroup("skirt_additional"),
-  false,
+  true,
 );
 assert.equal(
   isCustomerAvailableCustomDetailSelectionGroup("bum_shorts_additional"),
@@ -271,6 +271,27 @@ assert.equal(
     "full_length_gown",
   ),
   true,
+);
+assert.equal(
+  isCustomerVisibleAdditionalClothesCostForGarment(
+    "skirt_additional",
+    "skirt",
+  ),
+  true,
+);
+assert.equal(
+  isCustomerVisibleAdditionalClothesCostForGarment(
+    "skirt_additional",
+    "long_skirt",
+  ),
+  true,
+);
+assert.equal(
+  isCustomerVisibleAdditionalClothesCostForGarment(
+    "skirt_additional",
+    "dress",
+  ),
+  false,
 );
 assert.equal(
   isCustomerVisibleAdditionalClothesCostForGarment(

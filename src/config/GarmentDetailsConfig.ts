@@ -267,7 +267,7 @@ export type AdditionalClothesCostSection =
 /**
  * Customer-facing “Additional Clothes Costs” full restore.
  * Flip to `true` to restore every additional-cost group, its completion rules,
- * and active pricing. Dress and Standard Nikka Shorts additional costs remain
+ * and active pricing. Dress, Skirt, and Standard Nikka Shorts additional costs remain
  * customer-visible even while this flag is false. Does not delete catalogue
  * options, Admin support, or draft/historical data.
  */
@@ -288,6 +288,7 @@ export type CustomerFacingAdditionalClothesCostGroup =
  */
 export const CUSTOMER_VISIBLE_ADDITIONAL_CLOTHES_COST_GROUPS = [
   "dress_additional",
+  "skirt_additional",
   "standard_shorts_additional",
 ] as const satisfies readonly CustomerFacingAdditionalClothesCostGroup[];
 
@@ -301,6 +302,7 @@ export const ADDITIONAL_CLOTHES_COST_CUSTOMER_VISIBLE_PARENT: Readonly<
   >
 > = {
   dress_additional: ["dress", "full_length_gown"],
+  skirt_additional: ["skirt", "long_skirt"],
   standard_shorts_additional: ["standard_shorts"],
 };
 
