@@ -32,6 +32,13 @@ interface DormantFutureSummaryStepProps {
   onEditCustomDetails: () => void;
   onEditAiTryOn: () => void;
   onEditMeasurements: () => void;
+  /** Per-garment Edit — focuses that garmentKey in Fabric (return lease). */
+  onEditGarment?: (garmentKey: string) => void;
+  onChangeGarmentFabric?: (garmentKey: string) => void;
+  onRemoveGarmentFabric?: (garmentKey: string) => void;
+  onChangeGarmentDesignStyle?: (garmentKey: string) => void;
+  onRemoveGarmentDesignStyle?: (garmentKey: string) => void;
+  onEditGarmentCustomDetails?: (garmentKey: string) => void;
   canContinueToShipping: boolean;
   onContinueToShipping: () => void;
   shippingResolution?: FutureShippingStageResolution | null;
@@ -40,6 +47,8 @@ interface DormantFutureSummaryStepProps {
     target: FutureGarmentRemovalTarget,
     trigger: HTMLButtonElement,
   ) => void;
+  /** Draft-only; omit when the order is no longer freely editable. */
+  onRequestCancelOrder?: () => void;
 }
 
 const money = (value: number): string =>
@@ -108,6 +117,34 @@ const Section = ({
   </section>
 );
 
+const ChoiceActionButton = ({
+  label,
+  onClick,
+  tone = "neutral",
+  testId,
+}: {
+  label: string;
+  onClick: () => void;
+  tone?: "neutral" | "danger";
+  testId?: string;
+}) => (
+  <button
+    type="button"
+    onClick={(event) => {
+      event.stopPropagation();
+      onClick();
+    }}
+    data-summary-choice-action={testId}
+    className={`inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg border px-2.5 text-[10px] font-bold uppercase tracking-wider transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 ${
+      tone === "danger"
+        ? "border-red-200 text-red-700 hover:bg-red-50"
+        : "border-heritage-green/20 text-heritage-green hover:bg-heritage-green hover:text-white"
+    }`}
+  >
+    {label}
+  </button>
+);
+
 export const DormantFutureSummaryStep = ({
   summary,
   orderContext = defaultOrderContext,
@@ -118,11 +155,18 @@ export const DormantFutureSummaryStep = ({
   onEditCustomDetails,
   onEditAiTryOn,
   onEditMeasurements,
+  onEditGarment,
+  onChangeGarmentFabric,
+  onRemoveGarmentFabric,
+  onChangeGarmentDesignStyle,
+  onRemoveGarmentDesignStyle,
+  onEditGarmentCustomDetails,
   canContinueToShipping,
   onContinueToShipping,
   shippingResolution = null,
   removalTargets = [],
   onRequestGarmentRemoval,
+  onRequestCancelOrder,
 }: DormantFutureSummaryStepProps) => {
   const isReady = summary.status === "ready";
   const firstBlocker = summary.blockers[0] || null;
@@ -234,8 +278,21 @@ export const DormantFutureSummaryStep = ({
         </h2>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
           Review the choices from Garment Type through Measurements before
-          Shipping becomes available.
+          Shipping becomes available. You can edit or remove individual choices
+          without leaving this summary.
         </p>
+        {onRequestCancelOrder ? (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={onRequestCancelOrder}
+              data-summary-cancel-order="true"
+              className="inline-flex min-h-11 items-center justify-center rounded-xl border border-red-200 px-4 text-xs font-bold uppercase tracking-wider text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+            >
+              Cancel Order
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <OrderContextDetails context={orderContext} />
@@ -296,11 +353,24 @@ export const DormantFutureSummaryStep = ({
             );
             const reasonId = `summary-removal-reason-${index}`;
             const selectedCustomDetails = customDetailsForGarment(garment);
+            const fabricAllocation = summary.fabricSummary.find((allocation) =>
+              allocation.garments.some(
+                (assigned) => assigned.garmentKey === garment.garmentKey,
+              ),
+            );
+            const designStyle =
+              (summary.designStyleOccurrences || []).find(
+                (occurrence) => occurrence.garmentKey === garment.garmentKey,
+              ) || null;
+            const hasFabric = Boolean(fabricAllocation);
+            const hasDesignStyle =
+              Boolean(designStyle) && designStyle?.status === "selected";
             return (
               <article
                 key={garment.garmentKey}
                 className="min-w-0 rounded-xl border border-heritage-green/12 bg-heritage-cream/20 p-4"
                 data-garment-removal-row={garment.garmentKey}
+                data-summary-garment-card={garment.garmentKey}
               >
                 <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
                   <div className="min-w-0">
@@ -325,29 +395,46 @@ export const DormantFutureSummaryStep = ({
                       </p>
                     )}
                   </div>
-                  {removalTarget && (
-                    <button
-                      type="button"
-                      disabled={!removalTarget.canRequestRemoval}
-                      aria-label={removalTarget.accessibleName}
-                      aria-describedby={
-                        removalTarget.disabledReason ? reasonId : undefined
-                      }
-                      data-garment-removal-button={garment.garmentKey}
-                      data-garment-removal-origin-stage="summary"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onRequestGarmentRemoval?.(
-                          removalTarget,
-                          event.currentTarget,
-                        );
-                      }}
-                      className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
-                    >
-                      <Trash2 aria-hidden="true" size={15} />
-                      Remove
-                    </button>
-                  )}
+                  <div className="flex min-w-0 flex-col gap-2 sm:items-end">
+                    {onEditGarment ? (
+                      <button
+                        type="button"
+                        aria-label={`Edit ${garment.label}`}
+                        data-summary-edit-garment={garment.garmentKey}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onEditGarment(garment.garmentKey);
+                        }}
+                        className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-heritage-green/20 px-3 text-xs font-bold text-heritage-green transition hover:bg-heritage-green hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold focus-visible:ring-offset-2 sm:w-auto"
+                      >
+                        <Pencil aria-hidden="true" size={15} />
+                        Edit
+                      </button>
+                    ) : null}
+                    {removalTarget && (
+                      <button
+                        type="button"
+                        disabled={!removalTarget.canRequestRemoval}
+                        aria-label={removalTarget.accessibleName}
+                        aria-describedby={
+                          removalTarget.disabledReason ? reasonId : undefined
+                        }
+                        data-garment-removal-button={garment.garmentKey}
+                        data-garment-removal-origin-stage="summary"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onRequestGarmentRemoval?.(
+                            removalTarget,
+                            event.currentTarget,
+                          );
+                        }}
+                        className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 text-xs font-bold text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+                      >
+                        <Trash2 aria-hidden="true" size={15} />
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 </div>
               <p className="mt-1 text-xs capitalize text-heritage-ink/60">
                 {garment.demographic || "Demographic pending"} | {formatCustomerFacingFabricCapacityAmount(garment.fabricUnits)} fabric capacity {formatCustomerFacingFabricCapacityNoun(garment.fabricUnits)}
@@ -357,6 +444,94 @@ export const DormantFutureSummaryStep = ({
                   Components: {garment.physicalComponents.map((component) => component.label).join(", ")}
                 </p>
               )}
+              <section
+                className="mt-3 space-y-2"
+                data-summary-garment-choices={garment.garmentKey}
+              >
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-heritage-green/10 bg-white/70 px-3 py-2">
+                  <p className="min-w-0 text-sm text-heritage-ink/80">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+                      Fabric:{" "}
+                    </span>
+                    {hasFabric
+                      ? fabricAllocation?.fabricName
+                      : "Not selected"}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {onChangeGarmentFabric ? (
+                      <ChoiceActionButton
+                        label={hasFabric ? "Change Fabric" : "Select Fabric"}
+                        testId={`change-fabric:${garment.garmentKey}`}
+                        onClick={() => onChangeGarmentFabric(garment.garmentKey)}
+                      />
+                    ) : null}
+                    {hasFabric && onRemoveGarmentFabric ? (
+                      <ChoiceActionButton
+                        label="Remove Fabric"
+                        tone="danger"
+                        testId={`remove-fabric:${garment.garmentKey}`}
+                        onClick={() => onRemoveGarmentFabric(garment.garmentKey)}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-heritage-green/10 bg-white/70 px-3 py-2">
+                  <p className="min-w-0 text-sm text-heritage-ink/80">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+                      Design Style:{" "}
+                    </span>
+                    {hasDesignStyle
+                      ? designStyle?.name
+                      : designStyle
+                        ? designStyle.name || "Needs review"
+                        : "Not selected"}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {onChangeGarmentDesignStyle ? (
+                      <ChoiceActionButton
+                        label={
+                          hasDesignStyle
+                            ? "Change Design Style"
+                            : "Select Design Style"
+                        }
+                        testId={`change-style:${garment.garmentKey}`}
+                        onClick={() =>
+                          onChangeGarmentDesignStyle(garment.garmentKey)
+                        }
+                      />
+                    ) : null}
+                    {hasDesignStyle && onRemoveGarmentDesignStyle ? (
+                      <ChoiceActionButton
+                        label="Remove Design Style"
+                        tone="danger"
+                        testId={`remove-style:${garment.garmentKey}`}
+                        onClick={() =>
+                          onRemoveGarmentDesignStyle(garment.garmentKey)
+                        }
+                      />
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-heritage-green/10 bg-white/70 px-3 py-2">
+                  <p className="min-w-0 text-sm text-heritage-ink/80">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+                      Custom Details:{" "}
+                    </span>
+                    {selectedCustomDetails.length > 0
+                      ? `${selectedCustomDetails.length} selected`
+                      : "None added"}
+                  </p>
+                  {onEditGarmentCustomDetails ? (
+                    <ChoiceActionButton
+                      label="Edit Custom Details"
+                      testId={`edit-details:${garment.garmentKey}`}
+                      onClick={() =>
+                        onEditGarmentCustomDetails(garment.garmentKey)
+                      }
+                    />
+                  ) : null}
+                </div>
+              </section>
               {(garment.construction.length > 0 || selectedCustomDetails.length > 0) && (
                 <section className="mt-3" data-summary-garment-construction={garment.garmentKey}>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">

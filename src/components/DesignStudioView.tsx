@@ -165,7 +165,17 @@ import {
 } from "../utils/designStyleStepRuntime";
 import { projectYourGarmentsConstructionDisplayLabels } from "../utils/yourGarmentsConstructionLabel";
 import { resolveLatestSuccessfulDesignStyleFeedbackTarget } from "../utils/designStyleAssignmentFeedback";
-import { removeExactGarmentDesignStyleAssignment } from "../utils/garmentScopedDesignStyleAssignment";
+import {
+  clearGarmentDesignStyleAssignment,
+  removeExactGarmentDesignStyleAssignment,
+} from "../utils/garmentScopedDesignStyleAssignment";
+import {
+  createSummaryEditReturnLease,
+  shouldConsumeSummaryEditReturnOnContinue,
+  type SummaryEditFocusStageId,
+  type SummaryEditReturnLease,
+  type SummaryEditReturnStageId,
+} from "../utils/designStudioSummaryEditReturn";
 import {
   createDesignStyleUploadOperationState,
   failDesignStyleUploadOperation,
@@ -457,6 +467,8 @@ import {
   projectFutureGarmentRemovalTargets,
   type FutureGarmentRemovalTarget,
 } from "./FutureGarmentRemovalConfirmationDialog";
+import { FutureOrderCancelConfirmationDialog } from "./FutureOrderCancelConfirmationDialog";
+import { SummaryFabricChangeDependencyDialog } from "./SummaryFabricChangeDependencyDialog";
 
 export interface DesignStudioViewProps {
   onAddToCart?: (item: Omit<CartItem, "id">) => void;
@@ -1032,6 +1044,16 @@ export default function DesignStudioView({
   const futureGarmentRemovalGenerationRef = useRef(0);
   const futureGarmentRemovalStageRetentionLeaseRef =
     useRef<RemovalStageRetentionLease | null>(null);
+  const summaryEditReturnGenerationRef = useRef(0);
+  const summaryEditReturnLeaseRef = useRef<SummaryEditReturnLease | null>(null);
+  const [summaryFabricChangePending, setSummaryFabricChangePending] = useState<{
+    garmentKey: string;
+    garmentLabel: string;
+  } | null>(null);
+  const [futureOrderCancelDialogOpen, setFutureOrderCancelDialogOpen] =
+    useState(false);
+  const [futureOrderCancelConfirming, setFutureOrderCancelConfirming] =
+    useState(false);
   const futureGarmentRemovalConfirmationGenerationRef = useRef(0);
   const futureGarmentRemovalProcessedGenerationRef = useRef<number | null>(null);
   const futureGarmentRemovalConfirmingRef = useRef(false);
@@ -7326,7 +7348,192 @@ export default function DesignStudioView({
     const index = DESIGN_STUDIO_STEPS.findIndex((step) => step.id === stageId);
     return index >= 0 && index <= highestUnlockedStageIndex;
   };
+  const beginSummaryEditReturn = ({
+    focusStageId,
+    focusGarmentKey = null,
+    returnStageId = "summary",
+  }: {
+    focusStageId: SummaryEditFocusStageId;
+    focusGarmentKey?: string | null;
+    returnStageId?: SummaryEditReturnStageId;
+  }) => {
+    summaryEditReturnGenerationRef.current += 1;
+    summaryEditReturnLeaseRef.current = createSummaryEditReturnLease({
+      returnStageId,
+      focusStageId,
+      focusGarmentKey,
+      generation: summaryEditReturnGenerationRef.current,
+      sessionIdentityKey: futureDraftIdentityKey,
+    });
+  };
+  const clearSummaryEditReturnLease = () => {
+    summaryEditReturnLeaseRef.current = null;
+  };
+  const consumeSummaryEditReturnLeaseIfActive =
+    (): SummaryEditReturnStageId | null => {
+      const lease = summaryEditReturnLeaseRef.current;
+      if (
+        !shouldConsumeSummaryEditReturnOnContinue({
+          lease,
+          generation: summaryEditReturnGenerationRef.current,
+          sessionIdentityKey: futureDraftIdentityKey,
+          currentStageId: futureStageId,
+        })
+      ) {
+        return null;
+      }
+      const returnStageId = lease!.returnStageId;
+      summaryEditReturnLeaseRef.current = null;
+      return returnStageId;
+    };
+  const handleBackDuringSummaryEdit = (fallbackStage: DesignStudioStageId) => {
+    const lease = summaryEditReturnLeaseRef.current;
+    if (
+      lease &&
+      lease.generation === summaryEditReturnGenerationRef.current &&
+      lease.sessionIdentityKey === futureDraftIdentityKey
+    ) {
+      const returnStageId = lease.returnStageId;
+      clearSummaryEditReturnLease();
+      navigateToFutureStage(returnStageId);
+      return;
+    }
+    navigateToFutureStage(fallbackStage);
+  };
+  const clearSummaryDesignStyleForGarment = (garmentKey: string): boolean => {
+    const authority = futureDesignStyleMutationAuthorityRef.current;
+    const ledger = authority?.hydration.ledger || null;
+    if (!authority || !ledger) return false;
+    const target = authority.occurrenceTargets.find(
+      (candidate) => candidate.garmentKey === garmentKey,
+    );
+    if (!target) return false;
+    const assignment = ledger.assignmentsByGarmentKey[garmentKey];
+    if (!assignment || assignment.occurrenceToken !== target.occurrenceToken) {
+      return true;
+    }
+    const cleared = clearGarmentDesignStyleAssignment({
+      ledger,
+      expectedLedgerRevision: ledger.revision,
+      activeOccurrences: authority.activeOccurrences,
+      target,
+    });
+    if (cleared.status === "rejected") {
+      rejectFutureDesignStyleMutation(cleared.reason);
+      return false;
+    }
+    if (cleared.status === "unchanged") return true;
+    const nextHydration = applyDesignStyleStepLedgerToHydration({
+      hydration: authority.hydration,
+      ledger: cleared.ledger,
+      activeOccurrences: authority.activeOccurrences,
+      authority: authority.authority,
+    });
+    publishFutureDesignStyleHydration({
+      identityKey: authority.identityKey,
+      identityGeneration: authority.identityGeneration,
+      result: nextHydration,
+    });
+    retireFutureDesignStyleUploadDisplayForTarget(target);
+    return true;
+  };
+  const navigateSummaryEditToFabric = (garmentKey: string) => {
+    beginSummaryEditReturn({
+      focusStageId: "fabric",
+      focusGarmentKey: garmentKey,
+      returnStageId: "summary",
+    });
+    if (
+      !garmentTypeStageCompletion.isComplete &&
+      !isStageHistoricallyUnlocked("fabric")
+    ) {
+      navigateToFutureStage("garment_type", getValidationNavigationTarget());
+      return;
+    }
+    navigateToFutureStage(
+      "fabric",
+      getFabricUnassignedNavigationTarget(garmentKey),
+    );
+  };
+  const navigateSummaryEditToDesignStyle = (garmentKey: string) => {
+    const occurrence = futureDesignStyleStepProjection.occurrences.find(
+      (candidate) => candidate.target.garmentKey === garmentKey,
+    );
+    beginSummaryEditReturn({
+      focusStageId: "design_style",
+      focusGarmentKey: garmentKey,
+      returnStageId: "summary",
+    });
+    if (
+      !futureFabricStageCompletion.isComplete &&
+      !isStageHistoricallyUnlocked("design_style")
+    ) {
+      navigateToFutureStage("fabric", getValidationNavigationTarget());
+      return;
+    }
+    if (occurrence) {
+      navigateToFutureStage(
+        "design_style",
+        getDesignStyleIncompleteNavigationTarget(
+          occurrence.target.occurrenceToken,
+        ),
+      );
+      return;
+    }
+    navigateToFutureStage("design_style");
+  };
+  const handleSummaryEditGarment = (garmentKey: string) => {
+    navigateSummaryEditToFabric(garmentKey);
+  };
+  const handleSummaryChangeGarmentFabric = (garmentKey: string) => {
+    const styleOccurrence = (futureSummary.designStyleOccurrences || []).find(
+      (occurrence) =>
+        occurrence.garmentKey === garmentKey && occurrence.status === "selected",
+    );
+    if (styleOccurrence) {
+      const garmentLabel =
+        futureSummary.garmentSummary.find(
+          (garment) => garment.garmentKey === garmentKey,
+        )?.label || styleOccurrence.occurrenceLabel;
+      setSummaryFabricChangePending({ garmentKey, garmentLabel });
+      return;
+    }
+    navigateSummaryEditToFabric(garmentKey);
+  };
+  const handleSummaryFabricChangeProceed = () => {
+    const pending = summaryFabricChangePending;
+    if (!pending) return;
+    setSummaryFabricChangePending(null);
+    clearSummaryDesignStyleForGarment(pending.garmentKey);
+    navigateSummaryEditToFabric(pending.garmentKey);
+  };
+  const handleSummaryRemoveGarmentFabric = (garmentKey: string) => {
+    handleRemoveFutureFabricAssignment(garmentKey);
+  };
+  const handleSummaryRemoveGarmentDesignStyle = (garmentKey: string) => {
+    clearSummaryDesignStyleForGarment(garmentKey);
+  };
+  const handleSummaryChangeGarmentDesignStyle = (garmentKey: string) => {
+    navigateSummaryEditToDesignStyle(garmentKey);
+  };
+  const handleSummaryEditGarmentCustomDetails = (garmentKey: string) => {
+    beginSummaryEditReturn({
+      focusStageId: "custom_details",
+      focusGarmentKey: garmentKey,
+      returnStageId: "summary",
+    });
+    handleOpenDormantCustomDetailsStage(
+      getOrderSummaryNavigationTarget({
+        focusAdditionalGarmentKey: garmentKey,
+      }),
+    );
+  };
   const handleOpenDormantFabricStage = () => {
+    const returnStage = consumeSummaryEditReturnLeaseIfActive();
+    if (returnStage) {
+      navigateToFutureStage(returnStage);
+      return;
+    }
     if (
       !garmentTypeStageCompletion.isComplete &&
       !isStageHistoricallyUnlocked("fabric")
@@ -7337,6 +7544,11 @@ export default function DesignStudioView({
     navigateToFutureStage("fabric");
   };
   const handleOpenDormantDesignStyleStage = () => {
+    const returnStage = consumeSummaryEditReturnLeaseIfActive();
+    if (returnStage) {
+      navigateToFutureStage(returnStage);
+      return;
+    }
     if (
       !futureFabricStageCompletion.isComplete &&
       !isStageHistoricallyUnlocked("design_style")
@@ -7388,6 +7600,11 @@ export default function DesignStudioView({
   const handleOpenDormantCustomDetailsStage = (
     target: DesignStudioNavigationTarget = getMainStageNavigationTarget(),
   ) => {
+    const returnStage = consumeSummaryEditReturnLeaseIfActive();
+    if (returnStage) {
+      navigateToFutureStage(returnStage);
+      return;
+    }
     if (
       (!futureFabricStageCompletion.isComplete ||
         !isFutureDesignSourceReadyForCustomDetails) &&
@@ -7401,6 +7618,11 @@ export default function DesignStudioView({
   const handleOpenDormantPersonalizedAdditionsStage = (
     target: DesignStudioNavigationTarget = getMainStageNavigationTarget(),
   ) => {
+    const returnStage = consumeSummaryEditReturnLeaseIfActive();
+    if (returnStage) {
+      navigateToFutureStage(returnStage);
+      return;
+    }
     if (
       !isFutureStep4CustomDetailsReady &&
       !isStageHistoricallyUnlocked("personalized_additions")
@@ -7411,6 +7633,11 @@ export default function DesignStudioView({
     navigateToFutureStage("personalized_additions", target);
   };
   const handleOpenDormantAiTryOnStage = () => {
+    const returnStage = consumeSummaryEditReturnLeaseIfActive();
+    if (returnStage) {
+      navigateToFutureStage(returnStage);
+      return;
+    }
     if (
       !isFutureCustomDetailsStageReady &&
       !isStageHistoricallyUnlocked("try_on")
@@ -7426,6 +7653,11 @@ export default function DesignStudioView({
     navigateToFutureStage("try_on");
   };
   const handleOpenDormantMeasurementStage = () => {
+    const returnStage = consumeSummaryEditReturnLeaseIfActive();
+    if (returnStage) {
+      navigateToFutureStage(returnStage);
+      return;
+    }
     if (
       !isFutureMeasurementStageUnlocked(futureAiTryOnWorkflow) &&
       !isStageHistoricallyUnlocked("measurement")
@@ -7436,6 +7668,11 @@ export default function DesignStudioView({
     navigateToFutureStage("measurement");
   };
   const handleOpenDormantSummaryStage = () => {
+    const returnStage = consumeSummaryEditReturnLeaseIfActive();
+    if (returnStage) {
+      navigateToFutureStage(returnStage);
+      return;
+    }
     if (
       !isFutureSummaryStageUnlocked &&
       !isStageHistoricallyUnlocked("summary")
@@ -7933,6 +8170,36 @@ export default function DesignStudioView({
     setNotification({
       message:
         "Your bagged order is saved in the cart. You can start a new design.",
+      type: "info",
+    });
+  };
+  const canCancelFutureOrderDraft =
+    futurePaymentReviewHandoff?.payment.status !== "confirmed";
+  const handleRequestCancelFutureOrder = () => {
+    if (!canCancelFutureOrderDraft) return;
+    setFutureOrderCancelDialogOpen(true);
+  };
+  const handleConfirmCancelFutureOrder = () => {
+    if (!canCancelFutureOrderDraft) return;
+    setFutureOrderCancelConfirming(true);
+    clearSummaryEditReturnLease();
+    setSummaryFabricChangePending(null);
+    invalidateFutureGarmentRemovalRetention();
+    GuestOrderSessionService.clearFutureDesignDraft();
+    useAppStore.getState().setStudioParkedInFutureOrderV2Cart(false);
+    const repository =
+      futureDraftRepository ??
+      createFirebaseAuthenticatedFutureDraftRepository({
+        customer: currentUser,
+        authResolved: firebaseDraftAuth.resolved,
+        firebaseUser: firebaseDraftAuth.user,
+      });
+    void repository.clear(null);
+    setFutureOrderCancelDialogOpen(false);
+    setFutureOrderCancelConfirming(false);
+    useAppStore.getState().setActiveTab("home");
+    setNotification({
+      message: "Order cancelled. You can start a new design when ready.",
       type: "info",
     });
   };
@@ -9860,7 +10127,7 @@ export default function DesignStudioView({
           onAssignGarmentToExistingAllocation={
             handleAssignGarmentToExistingAllocation
           }
-          onBack={() => navigateToFutureStage("garment_type")}
+          onBack={() => handleBackDuringSummaryEdit("garment_type")}
           onContinue={handleOpenDormantDesignStyleStage}
           onUseSameFabric={handleUseSameFutureFabric}
           onChooseAnotherFabric={handleChooseAnotherFutureFabric}
@@ -9957,8 +10224,8 @@ export default function DesignStudioView({
               current?.garmentKey === garmentKey ? null : current,
             );
           }}
-          onBack={() => navigateToFutureStage("fabric")}
-          onReturnToGarmentType={() => navigateToFutureStage("garment_type")}
+          onBack={() => handleBackDuringSummaryEdit("fabric")}
+          onReturnToGarmentType={() => handleBackDuringSummaryEdit("garment_type")}
           onContinue={handleOpenDormantCustomDetailsStage}
         />
         </div>
@@ -10088,7 +10355,7 @@ export default function DesignStudioView({
             });
           }}
           onBack={() =>
-            navigateToFutureStage(
+            handleBackDuringSummaryEdit(
               futureStageId === "custom_details"
                 ? "design_style"
                 : "custom_details",
@@ -10108,7 +10375,7 @@ export default function DesignStudioView({
         <DormantFutureAiTryOnStep
           workflow={futureAiTryOnWorkflow}
           skipAllowed
-          onBack={() => navigateToFutureStage("personalized_additions")}
+          onBack={() => handleBackDuringSummaryEdit("personalized_additions")}
           onRetry={handleRetryDormantAiTryOn}
           onSkip={handleSkipDormantAiTryOn}
           onContinue={handleOpenDormantMeasurementStage}
@@ -10332,7 +10599,7 @@ export default function DesignStudioView({
             }
           }}
           onRouteChange={handleFutureMeasurementRouteChange}
-          onBack={() => navigateToFutureStage("try_on")}
+          onBack={() => handleBackDuringSummaryEdit("try_on")}
           onContinue={handleOpenDormantSummaryStage}
         />
         </>
@@ -10352,12 +10619,58 @@ export default function DesignStudioView({
           summary={futureSummary}
           orderContext={customerOrderContextPresentation}
           onBack={() => navigateToFutureStage("measurement")}
-          onEditGarments={() => navigateToFutureStage("garment_type")}
-          onEditFabrics={handleOpenDormantFabricStage}
-          onEditDesignStyle={handleOpenDormantDesignStyleStage}
-          onEditCustomDetails={handleOpenDormantCustomDetailsStage}
-          onEditAiTryOn={handleOpenDormantAiTryOnStage}
-          onEditMeasurements={handleOpenDormantMeasurementStage}
+          onEditGarments={() => {
+            beginSummaryEditReturn({ focusStageId: "garment_type" });
+            navigateToFutureStage("garment_type");
+          }}
+          onEditFabrics={() => {
+            beginSummaryEditReturn({ focusStageId: "fabric" });
+            if (
+              !garmentTypeStageCompletion.isComplete &&
+              !isStageHistoricallyUnlocked("fabric")
+            ) {
+              navigateToFutureStage("garment_type", getValidationNavigationTarget());
+              return;
+            }
+            navigateToFutureStage("fabric");
+          }}
+          onEditDesignStyle={() => {
+            beginSummaryEditReturn({ focusStageId: "design_style" });
+            if (
+              !futureFabricStageCompletion.isComplete &&
+              !isStageHistoricallyUnlocked("design_style")
+            ) {
+              navigateToFutureStage("fabric", getValidationNavigationTarget());
+              return;
+            }
+            navigateToFutureStage("design_style");
+          }}
+          onEditCustomDetails={() => {
+            beginSummaryEditReturn({ focusStageId: "custom_details" });
+            if (
+              (!futureFabricStageCompletion.isComplete ||
+                !isFutureDesignSourceReadyForCustomDetails) &&
+              !isStageHistoricallyUnlocked("custom_details")
+            ) {
+              navigateToFutureStage("design_style", getValidationNavigationTarget());
+              return;
+            }
+            navigateToFutureStage("custom_details");
+          }}
+          onEditAiTryOn={() => {
+            beginSummaryEditReturn({ focusStageId: "try_on" });
+            navigateToFutureStage("try_on");
+          }}
+          onEditMeasurements={() => {
+            beginSummaryEditReturn({ focusStageId: "measurement" });
+            navigateToFutureStage("measurement");
+          }}
+          onEditGarment={handleSummaryEditGarment}
+          onChangeGarmentFabric={handleSummaryChangeGarmentFabric}
+          onRemoveGarmentFabric={handleSummaryRemoveGarmentFabric}
+          onChangeGarmentDesignStyle={handleSummaryChangeGarmentDesignStyle}
+          onRemoveGarmentDesignStyle={handleSummaryRemoveGarmentDesignStyle}
+          onEditGarmentCustomDetails={handleSummaryEditGarmentCustomDetails}
           canContinueToShipping={isFutureShippingUnlocked}
           onContinueToShipping={handleOpenDormantShippingStage}
           shippingResolution={futureShippingResolution}
@@ -10368,6 +10681,11 @@ export default function DesignStudioView({
               originStage: "summary",
               opener: trigger,
             })
+          }
+          onRequestCancelOrder={
+            canCancelFutureOrderDraft
+              ? handleRequestCancelFutureOrder
+              : undefined
           }
         />
         </>
@@ -10413,11 +10731,33 @@ export default function DesignStudioView({
               })
             }
             onBack={() => navigateToFutureStage("shipping")}
-            onEditStage={(stage) => navigateToFutureStage(stage)}
+            onEditStage={(stage) => {
+              if (
+                stage === "garment_type" ||
+                stage === "fabric" ||
+                stage === "design_style" ||
+                stage === "custom_details" ||
+                stage === "personalized_additions" ||
+                stage === "try_on" ||
+                stage === "measurement" ||
+                stage === "shipping"
+              ) {
+                beginSummaryEditReturn({
+                  focusStageId: stage,
+                  returnStageId: "payment",
+                });
+              }
+              navigateToFutureStage(stage);
+            }}
             onPay={handlePayFutureOrderV2}
             onParkCompleteOrder={handleParkFutureOrderV2InCart}
             parkCompleteOrderStatus={futureOrderV2AddToCartStatus}
             onStartAnotherOrder={handleStartAnotherOrderAfterCartPark}
+            onRequestCancelOrder={
+              canCancelFutureOrderDraft
+                ? handleRequestCancelFutureOrder
+                : undefined
+            }
             onRetryPaymentRecord={handleRetryFutureOrderV2PaymentRecord}
             onViewDashboard={() => useAppStore.getState().setActiveTab("dashboard")}
           />
@@ -10522,6 +10862,24 @@ export default function DesignStudioView({
           terminalError={futureGarmentRemovalDialogError}
           onCancel={cancelFutureGarmentRemovalDialog}
           onConfirm={confirmFutureGarmentRemoval}
+        />
+      )}
+      {summaryFabricChangePending && (
+        <SummaryFabricChangeDependencyDialog
+          garmentLabel={summaryFabricChangePending.garmentLabel}
+          onCancelChange={() => setSummaryFabricChangePending(null)}
+          onChooseNewDesignStyle={handleSummaryFabricChangeProceed}
+        />
+      )}
+      {futureOrderCancelDialogOpen && (
+        <FutureOrderCancelConfirmationDialog
+          confirming={futureOrderCancelConfirming}
+          onKeepOrder={() => {
+            if (!futureOrderCancelConfirming) {
+              setFutureOrderCancelDialogOpen(false);
+            }
+          }}
+          onConfirmCancel={handleConfirmCancelFutureOrder}
         />
       )}
     </div>
