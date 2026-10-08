@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { resolveActiveWearerCap } from "../config/WearerPolicy";
+import { MAX_CONFIGURED_ACTIVE_WEARERS, resolveActiveWearerCap } from "../config/WearerPolicy";
 import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 import type { MeasurementPhysicalGarment } from "../utils/measurementBlueprint";
 import type { WearerOrderStateV2 } from "../types";
@@ -13,7 +13,10 @@ const SOLO_FIRST_COPY =
   "These clothes are for you. Add another person if you are ordering for someone else.";
 
 const SAVE_NAMES_BEFORE_ADDING_COPY = "Save each person’s name before adding another";
-const MAXIMUM_PEOPLE_COPY = "Maximum people reached";
+/** People are capped by garment count (each person needs a garment), up to the hard ceiling. */
+const NEED_GARMENT_FOR_PERSON_COPY =
+  "Each person needs a garment. Add another garment to add another person.";
+const MAXIMUM_PEOPLE_COPY = `Maximum of ${MAX_CONFIGURED_ACTIVE_WEARERS} people per order.`;
 const NAME_REQUIRED_HINT = "Enter a name or nickname";
 
 const blockedWearerRemovalMessage = (displayName: string): string => {
@@ -159,8 +162,11 @@ export const WearerAssignmentPanel = ({
   };
   const atWearerCap = wearers.length >= cap;
   const namesPending = wearers.some((wearer) => !isNameConfirmed(wearer));
+  // The cap reason always wins over the save-name reason.
   const addAnotherDisabledReason = atWearerCap
-    ? MAXIMUM_PEOPLE_COPY
+    ? wearers.length >= MAX_CONFIGURED_ACTIVE_WEARERS
+      ? MAXIMUM_PEOPLE_COPY
+      : NEED_GARMENT_FOR_PERSON_COPY
     : namesPending
       ? SAVE_NAMES_BEFORE_ADDING_COPY
       : null;
