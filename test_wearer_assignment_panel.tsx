@@ -1846,3 +1846,123 @@ console.log("PASS: wearer assignment panel Add Garment at the cap unlocks anothe
 }
 
 console.log("PASS: wearer assignment panel Add Garment follows spare capacity and the ceiling");
+
+{
+  // Sole expanded card is simplified: Name + Save, Fit, Remove only (no Move up,
+  // no garment checkboxes). A second person brings back the full card chrome.
+  const soleGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+  ];
+  const soleStart = reconcileWithChosenSoleFit({
+    order: createEmptyWearerOrder(),
+    garmentKeys: soleGarments.map((garment) => garment.garmentKey),
+    compatibilityDemographic: "female",
+    garments: soleGarments,
+    garmentTypeSelection: selection(),
+  }, "female");
+  let soleCollapseCalls = 0;
+  const SoleCardHarness = () => {
+    const [order, setOrder] = useState(soleStart);
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        activeWearerId={order.wearers[0]?.wearerId || null}
+        garments={soleGarments}
+        garmentLabels={{ "base:shirt": "Standard Shirt", "additional:shirt:1": "Standard Shirt 2" }}
+        onSelectWearer={() => {}}
+        onAddWearer={(displayName, fitContext) => {
+          const result = addWearer({
+            order,
+            physicalGarmentCount: soleGarments.length,
+            displayName,
+            fitContext,
+          });
+          if (result.status === "updated") setOrder(result.order);
+        }}
+        onRenameWearer={(wearerId, displayName) => {
+          const result = renameWearer(order, wearerId, displayName);
+          if (result.status === "updated") setOrder(result.order);
+        }}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => deleteWearer(order, wearerId)}
+        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order })}
+        onCollapseToSolo={() => {
+          soleCollapseCalls += 1;
+          setOrder(soleStart);
+        }}
+      />
+    );
+  };
+  const hostButtons = (node: ReactTestInstance, marker: string) =>
+    node.findAllByProps({ [marker]: "true" }).filter((match) => typeof match.type === "string");
+  const expectSoleCard = (root: ReactTestInstance) => {
+    const cards = root.findAllByType("article");
+    assert.equal(cards.length, 1);
+    const card = cards[0];
+    const text = textContent(card);
+    assert.match(text, /Name or nickname/);
+    assert.equal(hostButtons(card, "data-wearer-name-save").length, 1, "Save is on the sole card");
+    assert.match(text, /Fit for measurements/);
+    assert.equal(
+      card.findAll((node) => node.type === "input" && node.props.type === "radio").length,
+      2,
+      "Male / Female fit on the sole card",
+    );
+    assert.equal(hostButtons(card, "data-wearer-remove").length, 1, "Remove person is on the sole card");
+    assert.equal(hostButtons(card, "data-wearer-move-up").length, 0, "Move up is hidden, not disabled");
+    assert.equal(text.includes("Move up"), false);
+    assert.equal(hostButtons(card, "data-wearer-garment-assign").length, 0, "no garment-assign block");
+    assert.equal(text.includes("Garments for this person"), false);
+  };
+
+  let sole!: ReturnType<typeof create>;
+  await act(async () => {
+    sole = create(<SoleCardHarness />);
+  });
+  await act(async () => {
+    sole.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  expectSoleCard(sole.root);
+  await typeName(sole.root, "You", "Ada");
+  await saveName(sole.root, "Ada");
+  expectSoleCard(sole.root);
+  await act(async () => {
+    addAnotherButton(sole.root).props.onClick();
+  });
+  const cards = sole.root.findAllByType("article");
+  assert.equal(cards.length, 2, "second person added");
+  for (const card of cards) {
+    assert.equal(hostButtons(card, "data-wearer-move-up").length, 1, "Move up returns with 2+ people");
+    assert.equal(hostButtons(card, "data-wearer-remove").length, 1);
+    assert.equal(hostButtons(card, "data-wearer-name-save").length, 1);
+    assert.equal(hostButtons(card, "data-wearer-garment-assign").length, 1, "garment checkboxes return");
+    assert.match(textContent(card), /Fit for measurements/);
+  }
+  assert.equal(hostButtons(cards[0], "data-wearer-move-up")[0].props.disabled, true, "first card cannot move up");
+  assert.equal(hostButtons(cards[1], "data-wearer-move-up")[0].props.disabled, false);
+
+  // Fresh sole card: Remove person still returns to the For me strip.
+  let removeSole!: ReturnType<typeof create>;
+  await act(async () => {
+    removeSole = create(<SoleCardHarness />);
+  });
+  await act(async () => {
+    removeSole.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  expectSoleCard(removeSole.root);
+  await act(async () => {
+    hostButtons(removeSole.root.findAllByType("article")[0], "data-wearer-remove")[0].props.onClick({
+      stopPropagation() {},
+    });
+  });
+  assert.equal(soleCollapseCalls, 1, "sole Remove = Only for me");
+  assert.equal(removeSole.root.findAllByProps({ "data-wearer-solo-first": "true" }).length, 1);
+  assert.equal(
+    removeSole.root.findByProps({ "data-wearer-for-me": "true" }).props["data-wearer-for-me-selected"],
+    "true",
+  );
+}
+
+console.log("PASS: wearer assignment panel sole expanded card is simplified");

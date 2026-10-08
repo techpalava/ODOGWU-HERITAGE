@@ -432,25 +432,30 @@ export const WearerAssignmentPanel = ({
               </p>
             ) : null}
             <div className="mt-3 flex flex-wrap items-center gap-2">
+              {/* Sole expanded card: no ordering to do, so Move up is hidden, not just disabled. */}
+              {wearers.length > 1 ? (
+                <button
+                  type="button"
+                  data-wearer-move-up="true"
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={index === 0}
+                  onClick={(event) => {
+                    event?.stopPropagation();
+                    const ids = wearers.map((item) => item.wearerId);
+                    const swapped = [...ids];
+                    [swapped[index - 1], swapped[index]] = [
+                      swapped[index],
+                      swapped[index - 1],
+                    ];
+                    onReorderWearers(swapped);
+                  }}
+                >
+                  Move up
+                </button>
+              ) : null}
               <button
                 type="button"
-                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={index === 0}
-                onClick={(event) => {
-                  event?.stopPropagation();
-                  const ids = wearers.map((item) => item.wearerId);
-                  const swapped = [...ids];
-                  [swapped[index - 1], swapped[index]] = [
-                    swapped[index],
-                    swapped[index - 1],
-                  ];
-                  onReorderWearers(swapped);
-                }}
-              >
-                Move up
-              </button>
-              <button
-                type="button"
+                data-wearer-remove="true"
                 className="inline-flex min-h-11 items-center justify-center rounded-xl px-3 text-xs font-bold text-heritage-ink/60"
                 onClick={(event) => {
                   event?.stopPropagation();
