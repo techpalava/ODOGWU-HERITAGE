@@ -23,7 +23,6 @@ import {
   isValidIsoCountryCode,
   normalizeStep8CountryCode,
   resolveStep8AdditionalDelivery,
-  step8RequiresRegion,
 } from "./step8AdditionalDelivery";
 
 export const FUTURE_SHIPPING_STATE_SCHEMA_VERSION = 1 as const;
@@ -538,6 +537,13 @@ const getCustomerDiagnostics = (
     requireText("addressLine1", addressLine1, "Enter the delivery address.");
     requireText("city", city, "Enter the delivery city.");
     requireText("postalCode", postalCode, "Enter the postal code.");
+    // Every destination delivery needs a region so the courier address is
+    // complete; step8RequiresRegion stays courier metadata only.
+    requireText(
+      "stateRegion",
+      stateRegion,
+      "Enter the state, province, or region.",
+    );
     if (state.destinationSelectionMode === "other_destination") {
       requireText(
         "otherDestinationCountry",
@@ -551,13 +557,6 @@ const getCustomerDiagnostics = (
           code: "INVALID_COUNTRY",
           field: "countryCode",
           message: "Select a valid ISO country.",
-        });
-      }
-      if (step8RequiresRegion(countryCode) && !stateRegion) {
-        diagnostics.push({
-          code: "REQUIRED_FIELD",
-          field: "stateRegion",
-          message: "Enter the state, province, or region.",
         });
       }
     }

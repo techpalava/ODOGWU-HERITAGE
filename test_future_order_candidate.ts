@@ -364,6 +364,7 @@ const deliveryState = (): FutureShippingStateV1 => ({
       addressLine1: "1 Heritage Way",
       addressLine2: "Suite 4",
       city: "Paris",
+      stateRegion: "Ile-de-France",
       postalCode: "75001",
       countryCode: "FR",
     },
@@ -1437,6 +1438,7 @@ const eindhovenCandidate = buildFutureOrderCandidate({
         deliveryAddress: {
           addressLine1: "1 Heritage Way",
           city: "Eindhoven",
+          stateRegion: "Noord-Brabant",
           postalCode: "5611 AA",
           countryCode: "NL",
         },

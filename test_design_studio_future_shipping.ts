@@ -48,7 +48,8 @@ const withDelivery = (
       addressLine1: " 1 Heritage Way ",
       addressLine2: " Suite 4 ",
       city,
-      stateRegion: extras.stateRegion || "",
+      // Step 9 requires a region for every destination delivery.
+      stateRegion: extras.stateRegion ?? " Test Region ",
       postalCode: extras.postalCode || " 5611 AA ",
       countryCode,
     },
@@ -511,6 +512,7 @@ assert.equal(isFutureShippingStepComplete(supportedHeavy), true);
 
 const usBlankRegion = reconcileFutureShippingState({
   state: withDelivery(createEmptyFutureShippingState(), "US", "Boston", {
+    stateRegion: "",
     postalCode: "02108",
   }),
   garmentCount: 2,
@@ -539,6 +541,7 @@ assert.equal(
 
 const caBlankRegion = reconcileFutureShippingState({
   state: withDelivery(createEmptyFutureShippingState(), "CA", "Toronto", {
+    stateRegion: "",
     postalCode: "M5V 2T6",
   }),
   garmentCount: 2,
@@ -574,6 +577,72 @@ assert.equal(
   europe.diagnostics.some((diagnostic) => diagnostic.field === "stateRegion"),
   false,
 );
+
+// Region is required for every destination delivery, not only US/CA.
+const blankRegionCases = [
+  { name: "NL Eindhoven", countryCode: "NL", city: "Eindhoven" },
+  { name: "NL Amsterdam", countryCode: "NL", city: "Amsterdam" },
+  { name: "FR Paris", countryCode: "FR", city: "Paris" },
+];
+for (const blankCase of blankRegionCases) {
+  const blankRegion = reconcileFutureShippingState({
+    state: withDelivery(
+      createEmptyFutureShippingState(),
+      blankCase.countryCode,
+      blankCase.city,
+      { stateRegion: "  " },
+    ),
+    garmentCount: 2,
+    selectedDesignPrice: 500,
+  });
+  assert.equal(blankRegion.status, "incomplete", blankCase.name);
+  assert.equal(blankRegion.formInputsComplete, false, blankCase.name);
+  assert.equal(isFutureShippingStepComplete(blankRegion), false, blankCase.name);
+  assert.equal(
+    blankRegion.diagnostics.find((diagnostic) => diagnostic.field === "stateRegion")
+      ?.message,
+    "Enter the state, province, or region.",
+    blankCase.name,
+  );
+}
+const nlWithRegion = reconcileFutureShippingState({
+  state: withDelivery(createEmptyFutureShippingState(), "NL", "Eindhoven", {
+    stateRegion: "Noord-Brabant",
+  }),
+  garmentCount: 2,
+  selectedDesignPrice: 500,
+});
+assert.equal(nlWithRegion.status, "quote_ready");
+assert.equal(isFutureShippingStepComplete(nlWithRegion), true);
+assert.equal(nlWithRegion.state.destinationZoneId, "EINDHOVEN");
+
+const otherDestinationBlankRegion = reconcileFutureShippingState({
+  state: {
+    ...withDelivery(createEmptyFutureShippingState(), "", "Suva", { stateRegion: "" }),
+    destinationSelectionMode: "other_destination",
+    otherDestinationCountry: " Fiji ",
+  },
+  garmentCount: 2,
+  selectedDesignPrice: 500,
+});
+assert.equal(otherDestinationBlankRegion.formInputsComplete, false);
+assert.ok(
+  otherDestinationBlankRegion.diagnostics.some(
+    (diagnostic) => diagnostic.field === "stateRegion",
+  ),
+  "other_destination must also require a region",
+);
+
+const blankCityRegion = reconcileFutureShippingState({
+  state: withDelivery(createEmptyFutureShippingState(), "NL", "", { stateRegion: "" }),
+  garmentCount: 2,
+  selectedDesignPrice: 500,
+});
+assert.ok(blankCityRegion.diagnostics.some((diagnostic) => diagnostic.field === "city"));
+assert.ok(
+  blankCityRegion.diagnostics.some((diagnostic) => diagnostic.field === "stateRegion"),
+);
+assert.equal(isFutureShippingStepComplete(blankCityRegion), false);
 
 const persisted = persistFutureShippingState({
   draft: {
@@ -663,6 +732,19 @@ assert.doesNotMatch(shippingSource, /STEP8_COUNTRY_ZONE_INDEX\.keys/);
 assert.doesNotMatch(shippingSource, /Select country/);
 assert.match(shippingSource, /stateRegion/);
 assert.match(shippingSource, /future-shipping-region-error/);
+assert.doesNotMatch(shippingSource, /\(if applicable\)/);
+assert.doesNotMatch(shippingSource, /step8RequiresRegion/);
+assert.match(shippingSource, /const regionRequired = isDelivery;/);
+assert.match(shippingSource, /The city must be in the selected country\./);
+assert.match(shippingSource, /exactly selects the local Eindhoven shipping rate/);
+assert.match(shippingSource, /data-delivery-address-check="true"/);
+assert.match(shippingSource, /Check this matches the courier address before continuing\./);
+assert.match(
+  shippingSource,
+  /projectedTotalCents === null\s*\?\s*"min-w-0 font-serif text-sm font-semibold sm:text-base"/,
+  "pending total copy must be smaller than the euro Total",
+);
+assert.match(shippingSource, /"shrink-0 font-serif text-2xl font-bold sm:text-3xl"/);
 assert.doesNotMatch(shippingSource, /Destination region/);
 assert.equal(appSource.includes("future_nine_stage"), false);
 assert.equal(studioSource.includes("legacy_five_stage"), false);

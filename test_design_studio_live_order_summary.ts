@@ -244,7 +244,8 @@ const withDelivery = (
       addressLine1: "1 Heritage Way",
       addressLine2: "",
       city,
-      stateRegion: extras.stateRegion || "",
+      // Step 9 requires a region for every destination delivery.
+      stateRegion: extras.stateRegion ?? "Test Region",
       postalCode: extras.postalCode || "5611 AA",
       countryCode,
     },
