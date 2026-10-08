@@ -145,6 +145,19 @@ export const WearerAssignmentPanel = ({
     });
   }, [garments]);
 
+  // A garment now owned by someone else drops any stale fit rejection for it.
+  useEffect(() => {
+    setAssignmentRejectionByGarmentKey((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([garmentKey, rejection]) => {
+          const ownerId = order.assignmentByGarmentKey[garmentKey];
+          return !ownerId || ownerId === rejection.wearerId;
+        }),
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [order.assignmentByGarmentKey]);
+
   useEffect(() => {
     const ids = wearers.map((wearer) => wearer.wearerId);
     const previous = knownWearerIds.current;
@@ -528,18 +541,33 @@ export const WearerAssignmentPanel = ({
                 <ul className="mt-2 grid gap-2">
                   {garments.map((garment) => {
                     const label = labelFor(garment);
-                    const checked =
-                      order.assignmentByGarmentKey[garment.garmentKey] === wearer.wearerId;
+                    const ownerId = order.assignmentByGarmentKey[garment.garmentKey];
+                    const checked = ownerId === wearer.wearerId;
+                    // Owned by another person: listed but locked (no stealing). The owner
+                    // unticks first. Shown even when this card's fit is missing.
+                    const otherOwner =
+                      ownerId && !checked
+                        ? wearers.find((candidate) => candidate.wearerId === ownerId) || null
+                        : null;
                     const fitMissing = wearer.fitContext === null;
-                    const rejection = assignmentRejectionByGarmentKey[garment.garmentKey];
+                    const locked = fitMissing || otherOwner !== null;
+                    // The fit rejection never shows on an owned-by-other row.
+                    const rejection = otherOwner
+                      ? undefined
+                      : assignmentRejectionByGarmentKey[garment.garmentKey];
                     return (
-                      <li key={garment.garmentKey}>
+                      <li
+                        key={garment.garmentKey}
+                        data-wearer-garment-owned-by-other={otherOwner ? otherOwner.wearerId : undefined}
+                      >
                         <label
                           className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 text-sm ${
                             checked
                               ? "border-heritage-green bg-heritage-green/5 font-semibold text-heritage-green"
-                              : "border-heritage-gold/30 bg-white text-heritage-ink"
-                          } ${fitMissing ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+                              : otherOwner
+                                ? "border-heritage-gold/20 bg-heritage-cream/30 text-heritage-ink/55"
+                                : "border-heritage-gold/30 bg-white text-heritage-ink"
+                          } ${locked ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
                         >
                           <input
                             type="checkbox"
@@ -547,9 +575,14 @@ export const WearerAssignmentPanel = ({
                             aria-label={`${label} for ${labelForWearer(wearer)}`}
                             className="size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed"
                             checked={checked}
-                            disabled={fitMissing}
+                            disabled={locked}
+                            aria-describedby={
+                              otherOwner
+                                ? `${wearer.wearerId}-${garment.garmentKey}-owner`
+                                : undefined
+                            }
                             onChange={() => {
-                              if (fitMissing) return;
+                              if (locked) return;
                               if (checked) {
                                 clearAssignmentRejection(garment.garmentKey);
                                 onUnassignGarment?.(garment.garmentKey);
@@ -560,6 +593,15 @@ export const WearerAssignmentPanel = ({
                           />
                           <span className="min-w-0 break-words">{label}</span>
                         </label>
+                        {otherOwner ? (
+                          <p
+                            id={`${wearer.wearerId}-${garment.garmentKey}-owner`}
+                            data-wearer-garment-owner-note="true"
+                            className="mt-1 text-xs text-heritage-ink/60"
+                          >
+                            Assigned to {labelForWearer(otherOwner)}
+                          </p>
+                        ) : null}
                         {rejection && rejection.wearerId === wearer.wearerId ? (
                           <p role="alert" className="mt-1 text-sm font-semibold text-red-700">
                             {assignmentRejectionMessage(rejection.code, labelForWearer(wearer))}

@@ -210,6 +210,7 @@ const PanelHarness = () => {
         if (result.status === "updated") publish(result.order);
         return result;
       }}
+      onUnassignGarment={(garmentKey) => publish(removeGarmentFromWearerOrder(order, garmentKey))}
     />
   );
 };
@@ -246,8 +247,25 @@ assert.equal(
 );
 
 assert.equal(garmentBox(renderer.root, "Amaka", "additional:shirt:1").props.checked, true);
+// Owned by Amaka: You's row is listed but locked with a guide; clicking never steals it.
+const youOwnedByAmaka = garmentBox(renderer.root, "You", "additional:shirt:1");
+assert.equal(youOwnedByAmaka.props.disabled, true);
+assert.equal(youOwnedByAmaka.props.checked, false);
+assert.match(textContent(cardFor(renderer.root, "You")), /Assigned to Amaka/);
+await toggleGarment(renderer.root, "You", "additional:shirt:1");
+assert.equal(
+  latestOrder.assignmentByGarmentKey["additional:shirt:1"],
+  amaka.wearerId,
+  "an owned-by-other row never steals",
+);
+// The owner unticks; then You can tick it.
+await toggleGarment(renderer.root, "Amaka", "additional:shirt:1");
+assert.equal(latestOrder.assignmentByGarmentKey["additional:shirt:1"], undefined);
+assert.equal(garmentBox(renderer.root, "You", "additional:shirt:1").props.disabled, false);
+assert.equal(textContent(cardFor(renderer.root, "You")).includes("Assigned to"), false);
 await toggleGarment(renderer.root, "You", "additional:shirt:1");
 assert.equal(garmentBox(renderer.root, "Amaka", "additional:shirt:1").props.checked, false);
+assert.match(textContent(cardFor(renderer.root, "Amaka")), /Assigned to You/);
 assert.equal(latestOrder.assignmentByGarmentKey["additional:shirt:1"], youId);
 assert.ok(latestOrder.wearers.some((wearer) => wearer.wearerId === amaka.wearerId));
 
@@ -414,19 +432,32 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
   }
   assert.equal(authority.assignmentByGarmentKey["base:shirt"], you.wearerId);
 
+  // Owned by You: Amaka's row is locked with "Assigned to You"; no stealing.
+  const amakaShirt = garmentBox(root(), "Amaka", "base:shirt");
+  assert.equal(amakaShirt.props.disabled, true);
+  assert.equal(amakaShirt.props.checked, false);
+  assert.match(textContent(cardFor(root(), "Amaka")), /Assigned to You/);
+  await toggleGarment(root(), "Amaka", "base:shirt");
+  assert.equal(authority.assignmentByGarmentKey["base:shirt"], you.wearerId, "a locked row never steals");
+  // You unticks; Amaka can now tick it.
+  await toggleGarment(root(), "You", "base:shirt");
+  assert.equal(authority.assignmentByGarmentKey["base:shirt"], undefined);
   await toggleGarment(root(), "Amaka", "base:shirt");
   assert.equal(authority.assignmentByGarmentKey["base:shirt"], amakaWearer.wearerId);
   assert.equal(garmentBox(root(), "Amaka", "base:shirt").props.checked, true);
-  assert.equal(
-    garmentBox(root(), "You", "base:shirt").props.checked,
-    false,
-    "checking on one card moves the garment off the other card",
-  );
+  assert.equal(garmentBox(root(), "You", "base:shirt").props.disabled, true);
+  assert.match(textContent(cardFor(root(), "You")), /Assigned to Amaka/);
 
+  // And back: Amaka unticks, then You ticks.
+  await toggleGarment(root(), "Amaka", "base:shirt");
   await toggleGarment(root(), "You", "base:shirt");
   assert.equal(authority.assignmentByGarmentKey["base:shirt"], you.wearerId);
   assert.equal(garmentBox(root(), "Amaka", "base:shirt").props.checked, false);
 
+  // The dress is still on You: You unticks it first, then Amaka ticks it.
+  assert.equal(authority.assignmentByGarmentKey["base:dress"], you.wearerId);
+  assert.equal(garmentBox(root(), "Amaka", "base:dress").props.disabled, true);
+  await toggleGarment(root(), "You", "base:dress");
   await toggleGarment(root(), "Amaka", "base:dress");
   assert.equal(authority.assignmentByGarmentKey["base:dress"], amakaWearer.wearerId);
   assert.equal(garmentBox(root(), "Amaka", "base:dress").props.checked, true);
@@ -603,25 +634,46 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
     );
   });
   const ownedDress = maleFriend.order.assignmentByGarmentKey["base:dress"];
-  await toggleGarment(rejectionRenderer.root, "Chike", "base:dress");
-  assert.equal(garmentBox(rejectionRenderer.root, "Chike", "base:dress").props.checked, false);
-  assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], ownedDress);
-  assert.match(
-    alerts(rejectionRenderer.root).join(" "),
-    /This garment is not available for Chike's selected fit/,
+  const dressOwner = maleFriend.order.wearers.find((wearer) => wearer.wearerId === ownedDress);
+  if (!dressOwner || dressOwner.wearerId === chike.wearerId) throw new Error("expected another dress owner");
+  const dressOwnerLabel = wearerAssignmentLabel(dressOwner.displayName, dressOwner.presentationOrder);
+  // Owned by another person: locked with "Assigned to …", never the fit rejection, no steal.
+  const chikeDress = garmentBox(rejectionRenderer.root, "Chike", "base:dress");
+  assert.equal(chikeDress.props.disabled, true);
+  assert.equal(chikeDress.props.checked, false);
+  assert.ok(
+    textContent(cardFor(rejectionRenderer.root, "Chike")).includes(`Assigned to ${dressOwnerLabel}`),
   );
-  await toggleGarment(rejectionRenderer.root, "You", "base:dress");
-  assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], you.wearerId);
+  await toggleGarment(rejectionRenderer.root, "Chike", "base:dress");
+  assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], ownedDress, "no stealing");
   assert.equal(
     alerts(rejectionRenderer.root).some((alert) => alert.includes("not available")),
     false,
-    "a successful assignment clears the garment's rejection",
+    "owned-by-other never shows the fit rejection",
   );
+  // The owner unticks: now unassigned, Chike's tick reaches the fit check (fit copy).
+  await toggleGarment(rejectionRenderer.root, dressOwnerLabel, "base:dress");
+  assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], undefined);
+  assert.equal(garmentBox(rejectionRenderer.root, "Chike", "base:dress").props.disabled, false);
   await toggleGarment(rejectionRenderer.root, "Chike", "base:dress");
+  assert.equal(garmentBox(rejectionRenderer.root, "Chike", "base:dress").props.checked, false);
+  assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], undefined);
   assert.match(
     alerts(rejectionRenderer.root).join(" "),
     /This garment is not available for Chike's selected fit/,
   );
+  const chikeDressRow = cardFor(rejectionRenderer.root, "Chike")
+    .findAllByType("li")
+    .find((row) =>
+      row.findAll((node) => node.props?.["data-wearer-garment-key"] === "base:dress").length > 0,
+    );
+  if (!chikeDressRow) throw new Error("expected Chike's dress row");
+  assert.equal(
+    textContent(chikeDressRow).includes("Assigned to"),
+    false,
+    "a fit-ineligible unassigned garment uses the fit copy, not Assigned to",
+  );
+  assert.match(textContent(chikeDressRow), /This garment is not available for Chike's selected fit/);
   const chikeName = rejectionRenderer.root.findByProps({
     "aria-label": "Name or nickname for Chike",
   });
@@ -631,6 +683,15 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
   const rejectionText = alerts(rejectionRenderer.root).join(" ");
   assert.match(rejectionText, /This garment is not available for Chief's selected fit/);
   assert.equal(rejectionText.includes("Chike"), false);
+  await toggleGarment(rejectionRenderer.root, "You", "base:dress");
+  assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], you.wearerId);
+  assert.equal(
+    alerts(rejectionRenderer.root).some((alert) => alert.includes("not available")),
+    false,
+    "a successful assignment clears the garment's rejection",
+  );
+  assert.match(textContent(cardFor(rejectionRenderer.root, "Chief")), /Assigned to You/);
+  assert.equal(garmentBox(rejectionRenderer.root, "Chief", "base:dress").props.disabled, true);
 
   const withUnfittedPerson = addWearer({
     order: authority,
@@ -1439,6 +1500,13 @@ console.log("PASS: wearer assignment panel 1-garment order shows the garment cap
     bolaFemale.props.onChange();
   });
   assert.equal(capOrder.wearers[1].fitContext, "female");
+  // Ada still owns both garments: Bola's rows are locked until Ada unticks one.
+  assert.equal(garmentBox(root(), "Bola", "additional:shirt:1").props.disabled, true);
+  assert.match(textContent(cardFor(root(), "Bola")), /Assigned to Ada/);
+  await toggleGarment(root(), "Bola", "additional:shirt:1");
+  assert.equal(capOrder.assignmentByGarmentKey["additional:shirt:1"], soleId, "no stealing");
+  await toggleGarment(root(), "Ada", "additional:shirt:1");
+  assert.equal(capOrder.assignmentByGarmentKey["additional:shirt:1"], undefined);
   await toggleGarment(root(), "Bola", "additional:shirt:1");
   assert.equal(capOrder.assignmentByGarmentKey["additional:shirt:1"], capOrder.wearers[1].wearerId);
   assert.equal(garmentBox(root(), "Ada", "additional:shirt:1").props.checked, false);
@@ -1966,3 +2034,101 @@ console.log("PASS: wearer assignment panel Add Garment follows spare capacity an
 }
 
 console.log("PASS: wearer assignment panel sole expanded card is simplified");
+
+{
+  // Acceptance: Shirt on fred -> nol's Shirt row is disabled with "Assigned to fred";
+  // fred unticks -> nol can tick it.
+  const fnGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+  ];
+  const fnBase = reconcileWithChosenSoleFit({
+    order: createEmptyWearerOrder(),
+    garmentKeys: fnGarments.map((garment) => garment.garmentKey),
+    compatibilityDemographic: "female",
+    garments: fnGarments,
+    garmentTypeSelection: selection(),
+  }, "female");
+  const fredNamed = renameWearer(fnBase, fnBase.wearers[0].wearerId, "fred");
+  if (fredNamed.status !== "updated") throw new Error("expected fred");
+  const withNol = addWearer({
+    order: fredNamed.order,
+    physicalGarmentCount: fnGarments.length,
+    displayName: "nol",
+    fitContext: "female",
+  });
+  if (withNol.status !== "updated") throw new Error("expected nol");
+  const fredId = fnBase.wearers[0].wearerId;
+  const nolId = withNol.order.wearers.find((wearer) => wearer.displayName === "nol")!.wearerId;
+  assert.equal(withNol.order.assignmentByGarmentKey["base:shirt"], fredId);
+  let fnOrder = withNol.order;
+  let fnAssignCalls = 0;
+  const FredNolHarness = () => {
+    const [order, setOrder] = useState(fnOrder);
+    const publish = (next: WearerOrderStateV2) => {
+      fnOrder = next;
+      setOrder(next);
+    };
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        activeWearerId={fredId}
+        garments={fnGarments}
+        garmentLabels={{ "base:shirt": "Shirt", "additional:shirt:1": "Shirt 2" }}
+        onSelectWearer={() => {}}
+        onAddWearer={() => {}}
+        onRenameWearer={() => {}}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => deleteWearer(order, wearerId)}
+        onAssignGarment={(garmentKey, wearerId) => {
+          fnAssignCalls += 1;
+          const garment = fnGarments.find((item) => item.garmentKey === garmentKey)!;
+          const result = assignGarmentToWearer({
+            order,
+            garmentKey,
+            wearerId,
+            garment,
+            garmentTypeSelection: selection(),
+          });
+          if (result.status === "updated") publish(result.order);
+          return result;
+        }}
+        onUnassignGarment={(garmentKey) => publish(removeGarmentFromWearerOrder(order, garmentKey))}
+      />
+    );
+  };
+  let fn!: ReturnType<typeof create>;
+  await act(async () => {
+    fn = create(<FredNolHarness />);
+  });
+  const nolShirt = garmentBox(fn.root, "nol", "base:shirt");
+  assert.equal(nolShirt.props.disabled, true);
+  assert.equal(nolShirt.props.checked, false);
+  const nolRow = cardFor(fn.root, "nol")
+    .findAll((node) => node.type === "li" && node.props["data-wearer-garment-owned-by-other"] === fredId);
+  assert.equal(nolRow.length, 2, "both of fred's garments are locked on nol's card");
+  const notes = cardFor(fn.root, "nol")
+    .findAllByProps({ "data-wearer-garment-owner-note": "true" })
+    .filter((node) => typeof node.type === "string")
+    .map((node) => textContent(node));
+  assert.deepEqual(notes, ["Assigned to fred", "Assigned to fred"]);
+  assert.equal(nolShirt.props["aria-describedby"] !== undefined, true);
+  await toggleGarment(fn.root, "nol", "base:shirt");
+  assert.equal(fnAssignCalls, 0, "onAssignGarment is never called from an owned-by-other row");
+  assert.equal(fnOrder.assignmentByGarmentKey["base:shirt"], fredId);
+  assert.equal(cardFor(fn.root, "fred").findAllByProps({ "data-wearer-garment-owner-note": "true" }).length, 0);
+  await toggleGarment(fn.root, "fred", "base:shirt");
+  assert.equal(fnOrder.assignmentByGarmentKey["base:shirt"], undefined);
+  assert.equal(garmentBox(fn.root, "nol", "base:shirt").props.disabled, false);
+  await toggleGarment(fn.root, "nol", "base:shirt");
+  assert.equal(fnOrder.assignmentByGarmentKey["base:shirt"], nolId);
+  assert.equal(garmentBox(fn.root, "nol", "base:shirt").props.checked, true);
+  const fredNotes = cardFor(fn.root, "fred")
+    .findAllByProps({ "data-wearer-garment-owner-note": "true" })
+    .filter((node) => typeof node.type === "string")
+    .map((node) => textContent(node));
+  assert.deepEqual(fredNotes, ["Assigned to nol"]);
+}
+
+console.log("PASS: wearer assignment panel owned-by-other rows are locked with an owner guide");
