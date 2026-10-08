@@ -23,10 +23,7 @@ import {
   type FutureShippingFieldId,
   type FutureShippingStageResolution,
 } from "../utils/designStudioFutureShipping";
-import {
-  formatStep8CustomerDestination,
-  step8RequiresRegion,
-} from "../utils/step8AdditionalDelivery";
+import { formatStep8CustomerDestination } from "../utils/step8AdditionalDelivery";
 import { PRICING_CURRENCY_SYMBOL } from "../utils/money";
 
 interface DormantFutureShippingStepProps {
@@ -117,7 +114,13 @@ export const DormantFutureShippingStep = ({
   const isPickup = state.fulfilmentMethod === "eindhoven_pickup";
   const isOtherDestination =
     isDelivery && state.destinationSelectionMode === "other_destination";
-  const regionRequired = !isOtherDestination && step8RequiresRegion(address.countryCode);
+  const regionRequired = isDelivery;
+  const isNetherlandsDelivery = !isOtherDestination && address.countryCode === "NL";
+  const addressCheckCountry =
+    formatStep8CustomerDestination({
+      countryCode: isOtherDestination ? "" : address.countryCode,
+      otherDestinationCountry: isOtherDestination ? state.otherDestinationCountry : "",
+    }) || "Not entered";
   const countrySelectValue = isOtherDestination
     ? STEP8_OTHER_DESTINATION_SELECT_VALUE
     : address.countryCode || "";
@@ -473,10 +476,23 @@ export const DormantFutureShippingStep = ({
                     value={address.city}
                     onChange={(event) => updateAddress({ city: event.target.value })}
                     aria-invalid={Boolean(errorFor("city"))}
-                    aria-describedby={errorFor("city") ? "future-shipping-city-error" : undefined}
+                    aria-describedby={
+                      errorFor("city")
+                        ? "future-shipping-city-hint future-shipping-city-error"
+                        : "future-shipping-city-hint"
+                    }
                     autoComplete="address-level2"
                     className={`${inputClassName} mt-1.5`}
                   />
+                  <span
+                    id="future-shipping-city-hint"
+                    data-testid="future-shipping-city-hint"
+                    className="mt-1 block text-[11px] font-normal normal-case leading-snug tracking-normal text-heritage-ink/55"
+                  >
+                    The city must be in the selected country.
+                    {isNetherlandsDelivery &&
+                      " Writing \"Eindhoven\" exactly selects the local Eindhoven shipping rate."}
+                  </span>
                   {errorFor("city") && (
                     <span id="future-shipping-city-error" className="mt-1 block normal-case tracking-normal text-red-700">
                       {errorFor("city")!.message}
@@ -484,13 +500,11 @@ export const DormantFutureShippingStep = ({
                   )}
                 </label>
                 <label className="min-w-0 text-xs font-bold uppercase tracking-wider text-heritage-ink/65">
-                  State / Province / Region{" "}
-                  {regionRequired ? null : (
-                    <span className="font-normal normal-case tracking-normal">(if applicable)</span>
-                  )}
+                  State / Province / Region
                   <input
                     value={address.stateRegion || ""}
                     onChange={(event) => updateAddress({ stateRegion: event.target.value })}
+                    aria-required={regionRequired}
                     aria-invalid={Boolean(errorFor("stateRegion"))}
                     aria-describedby={
                       errorFor("stateRegion") ? "future-shipping-region-error" : undefined
@@ -569,7 +583,7 @@ export const DormantFutureShippingStep = ({
             )}
             {isDelivery && (
               <>
-                <div className="min-w-0">
+                <div className="min-w-0 sm:col-span-2" data-delivery-address-check="true">
                   <dt className="text-[10px] font-bold uppercase tracking-wider text-heritage-ink/50">
                     Destination
                   </dt>
@@ -581,6 +595,37 @@ export const DormantFutureShippingStep = ({
                     }) ||
                       resolution.destinationLabel ||
                       "Pending"}
+                  </dd>
+                  <dd className="mt-2 rounded-xl border border-heritage-gold/20 bg-heritage-cream/60 p-3">
+                    <dl className="grid min-w-0 gap-2 text-xs sm:grid-cols-2">
+                      {[
+                        { label: "City", value: address.city.trim() || "Not entered" },
+                        {
+                          label: "State / Province / Region",
+                          value: (address.stateRegion || "").trim() || "Not entered",
+                        },
+                        {
+                          label: isOtherDestination ? "Country / territory" : "Country",
+                          value: addressCheckCountry,
+                        },
+                        {
+                          label: "Postal / ZIP code",
+                          value: address.postalCode.trim() || "Not entered",
+                        },
+                      ].map((row) => (
+                        <div key={row.label} className="min-w-0">
+                          <dt className="text-[10px] uppercase tracking-wider text-heritage-ink/50">
+                            {row.label}
+                          </dt>
+                          <dd className="break-words font-semibold text-heritage-green">
+                            {row.value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <p className="mt-2 text-[11px] leading-snug text-heritage-ink/60">
+                      Check this matches the courier address before continuing.
+                    </p>
                   </dd>
                 </div>
                 <div className="min-w-0">
@@ -693,7 +738,13 @@ export const DormantFutureShippingStep = ({
             <dt className="font-bold uppercase tracking-wide">
               {resolution.projectedTotalCents === null ? "Current Subtotal" : "Total"}
             </dt>
-            <dd className="shrink-0 font-serif text-2xl font-bold sm:text-3xl">
+            <dd
+              className={
+                resolution.projectedTotalCents === null
+                  ? "min-w-0 font-serif text-sm font-semibold sm:text-base"
+                  : "shrink-0 font-serif text-2xl font-bold sm:text-3xl"
+              }
+            >
               {resolution.projectedTotalCents === null
                 ? "Available after delivery is resolved"
                 : moneyFromCents(resolution.projectedTotalCents)}

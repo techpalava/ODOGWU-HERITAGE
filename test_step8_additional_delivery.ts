@@ -251,6 +251,7 @@ const courier = reconcileFutureShippingState({
       deliveryAddress: {
         addressLine1: "1 Heritage Way",
         city: "Paris",
+        stateRegion: "Ile-de-France",
         postalCode: "75001",
         countryCode: "FR",
       },

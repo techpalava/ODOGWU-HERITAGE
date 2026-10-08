@@ -1990,7 +1990,7 @@ const destinationDeliveryResolution = reconcileFutureShippingState({
         addressLine1: "1 Heritage Way",
         addressLine2: "",
         city: "Paris",
-        stateRegion: "",
+        stateRegion: "Ile-de-France",
         postalCode: "75001",
         countryCode: "FR",
       },
