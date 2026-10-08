@@ -6,6 +6,7 @@ import { FutureOrderV2StripeCard } from "./FutureOrderV2StripeCard";
 import { FutureOrderV2PaymentAlert } from "./FutureOrderV2PaymentAlert";
 import { persistFutureOrderV2 } from "../services/futureOrderV2Persistence";
 import { recordFutureOrderV2Payment } from "../services/futureOrderV2PaymentRecordClient";
+import { retireStudioFutureDesignDraft } from "../services/retirePaidStudioDraft";
 import {
   authorizeFutureOrderV2Payment,
   executeFutureOrderV2Payment,
@@ -115,6 +116,7 @@ export const FutureOrderV2CartPayPanel = ({
         return;
       }
       dropFutureOrderV2CartItem(item.cartItemId);
+      void retireStudioFutureDesignDraft();
       setNotification({
         message: "Payment received. This order has left your cart.",
         type: "success",
