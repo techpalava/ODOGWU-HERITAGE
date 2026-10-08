@@ -19,6 +19,10 @@ import {
   reconcileFutureMeasurementState,
   setFutureMeasurementRoute,
 } from "./src/utils/measurementBlueprint";
+import {
+  FUTURE_PICKUP_ATELIER_PHONE_DISPLAY,
+  FUTURE_PICKUP_ATELIER_WHATSAPP_URL,
+} from "./src/utils/designStudioFutureShipping";
 
 const construction = (
   garmentType: keyof GarmentTypeStepSelection["constructionByGarment"],
@@ -104,9 +108,47 @@ const optionSections = renderer.root.findAll(
 );
 assert.deepEqual(
   optionSections.map((node) => node.props["data-measurement-option-section"]),
-  ["risk", "sample_cloth"],
+  ["risk", "sample_cloth", "alternate_contact", "ai_measurements"],
 );
-assert.equal(optionSections.length, 2);
+assert.equal(optionSections.length, 4);
+
+// Onsite / AI sections are display-only: no radio, no route, shared atelier WhatsApp contact.
+const alternateSection = renderer.root.findByProps({
+  "data-measurement-option-section": "alternate_contact",
+});
+const aiSection = renderer.root.findByProps({
+  "data-measurement-option-section": "ai_measurements",
+});
+for (const infoSection of [alternateSection, aiSection]) {
+  assert.equal(infoSection.findAll((node) => node.type === "input").length, 0);
+  assert.equal(
+    infoSection.findAll((node) => typeof node.props?.onClick === "function").length,
+    0,
+  );
+}
+assert.equal(alternateSection.findAllByProps({ "data-measurement-ai-coming-soon": "true" }).length, 0);
+assert.match(collectText(alternateSection), /Information only\. These do not complete your measurements\./);
+assert.doesNotMatch(collectText(aiSection), /Information only/);
+const onsiteCard = alternateSection.findByProps({ "data-measurement-onsite-info": "true" });
+assert.match(collectText(onsiteCard), /Onsite Physical measurements/);
+assert.match(collectText(onsiteCard), /Reach out to the contact to arrange a measurement/);
+const onsiteLink = onsiteCard.findByType("a");
+assert.equal(onsiteLink.props.href, FUTURE_PICKUP_ATELIER_WHATSAPP_URL);
+assert.equal(onsiteLink.props.target, "_blank");
+assert.equal(onsiteLink.props.rel, "noopener noreferrer");
+assert.match(onsiteLink.props["aria-label"], /WhatsApp/);
+assert.equal(
+  collectText(onsiteLink),
+  `${FUTURE_PICKUP_ATELIER_PHONE_DISPLAY} (WhatsApp)`,
+);
+const aiCard = aiSection.findByProps({ "data-measurement-ai-coming-soon": "true" });
+assert.equal(aiCard.props["aria-disabled"], "true");
+assert.match(collectText(aiCard), /AI Measurements \(coming soon\)/);
+assert.equal(aiCard.findAll((node) => node.type === "a" || node.type === "button").length, 0);
+assert.equal(
+  renderer.root.findAllByProps({ type: "radio" }).filter((radio) => radio.props.checked).length,
+  0,
+);
 
 const riskSelector = renderer.root.findByProps({ "data-measurement-risk-selector": "true" });
 const riskOptions = riskSelector.findAll(
