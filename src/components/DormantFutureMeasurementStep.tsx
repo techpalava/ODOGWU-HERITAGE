@@ -87,6 +87,13 @@ interface DormantFutureMeasurementStepProps {
   /** Garments assigned to the active person, for matching clarity. */
   activeWearerGarmentLabels?: readonly string[];
   /**
+   * Every person in the order (card / assignment labels), shown as Measuring-for
+   * chips when activeWearerLabel is shown. Clicking one switches the person.
+   */
+  wearerChips?: readonly { wearerId: string; label: string }[];
+  activeWearerId?: string | null;
+  onSelectWearer?: (wearerId: string) => void;
+  /**
    * Solo order — compact fit control in this card so fit can be set or changed
    * without opening Add people. Multi-person uses person-card fit instead.
    */
@@ -590,6 +597,9 @@ export const DormantFutureMeasurementStep = ({
   restoredGarmentKey = null,
   activeWearerLabel = null,
   activeWearerGarmentLabels = [],
+  wearerChips = [],
+  activeWearerId = null,
+  onSelectWearer,
   showSoleFitControl = false,
   soleFitContext = null,
   onSetSoleFitContext,
@@ -964,12 +974,45 @@ export const DormantFutureMeasurementStep = ({
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-heritage-gold">
                 Measuring for
               </p>
-              <p
-                data-measurement-active-wearer={activeWearerLabel}
-                className="mt-1 font-serif text-xl font-bold text-heritage-green sm:text-2xl"
-              >
-                {activeWearerLabel}
-              </p>
+              {wearerChips.length > 0 && onSelectWearer ? (
+                <div
+                  role="group"
+                  aria-label="Measuring for"
+                  data-measurement-wearer-chips="true"
+                  className="mt-2 flex flex-wrap gap-2"
+                >
+                  {wearerChips.map((chip) => {
+                    const selected = chip.wearerId === activeWearerId;
+                    return (
+                      <button
+                        key={chip.wearerId}
+                        type="button"
+                        data-measurement-wearer-chip={chip.wearerId}
+                        data-measurement-wearer-chip-selected={selected ? "true" : "false"}
+                        data-measurement-active-wearer={selected ? chip.label : undefined}
+                        aria-pressed={selected}
+                        className={`inline-flex min-h-11 items-center rounded-xl border px-4 text-sm font-bold ${
+                          selected
+                            ? "border-heritage-green bg-heritage-green text-white"
+                            : "border-heritage-green/30 bg-white text-heritage-green"
+                        }`}
+                        onClick={() => {
+                          if (!selected) onSelectWearer(chip.wearerId);
+                        }}
+                      >
+                        {chip.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p
+                  data-measurement-active-wearer={activeWearerLabel}
+                  className="mt-1 font-serif text-xl font-bold text-heritage-green sm:text-2xl"
+                >
+                  {activeWearerLabel}
+                </p>
+              )}
             </div>
             <div data-measurement-active-garments="true">
               {activeWearerGarmentLabels.length > 0 ? (

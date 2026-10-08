@@ -3613,6 +3613,26 @@ export default function DesignStudioView({
       (garment ? getStep1GarmentDisplayLabel(garment.garmentType) : garmentKey)
     );
   });
+  // Measuring-for chips: every person, in card order, with the card labels.
+  const measurementWearerChips = measurementActiveWearerLabel
+    ? [...wearerOrderForPlan.wearers]
+        .sort((left, right) => left.presentationOrder - right.presentationOrder)
+        .map((wearer) => ({
+          wearerId: wearer.wearerId,
+          label: labelForMeasurementWearer(wearer.wearerId, wearer.displayName),
+        }))
+    : [];
+  /** One select-wearer path for the people panel, Measuring-for chips, and Go to person. */
+  const handleSelectMeasurementWearer = (wearerId: string) => {
+    const next = wearerOrderForPlan.wearers.find(
+      (wearer) => wearer.wearerId === wearerId,
+    );
+    if (!next) return;
+    setWearerOrder(wearerOrderForPlan);
+    setActiveWearerId(wearerId);
+    setHydratedMeasurementGarmentKey(null);
+    setFutureMeasurementState(next.measurement);
+  };
   // Batch / Group Options (Site-wide adaptive ordering options)
   const [batchType, setBatchType] = useState<
     "community" | "alone" | "personalized" | "actual"
@@ -10464,16 +10484,7 @@ export default function DesignStudioView({
           activeWearerId={activeWearer?.wearerId || null}
           garments={futureMeasurementPhysicalGarments}
           garmentLabels={yourGarmentsConstructionDisplayLabelByGarmentKey}
-          onSelectWearer={(wearerId) => {
-            const next = wearerOrderForPlan.wearers.find(
-              (wearer) => wearer.wearerId === wearerId,
-            );
-            if (!next) return;
-            setWearerOrder(wearerOrderForPlan);
-            setActiveWearerId(wearerId);
-            setHydratedMeasurementGarmentKey(null);
-            setFutureMeasurementState(next.measurement);
-          }}
+          onSelectWearer={handleSelectMeasurementWearer}
           onAddWearer={(displayName, fitContext) => {
             const result = addWearer({
               order: wearerOrderForPlan,
@@ -10622,6 +10633,9 @@ export default function DesignStudioView({
           emptyWearerLabels={measurementEmptyWearerLabels}
           activeWearerLabel={measurementActiveWearerLabel}
           activeWearerGarmentLabels={measurementActiveWearerGarmentLabels}
+          wearerChips={measurementWearerChips}
+          activeWearerId={activeWearer?.wearerId || null}
+          onSelectWearer={handleSelectMeasurementWearer}
           nextIncompleteWearer={measurementNextIncompleteWearer}
           showSoleFitControl={
             wearerOrderForPlan.wearers.length === 1 && !measurementPeopleUiOpen
@@ -10650,16 +10664,7 @@ export default function DesignStudioView({
             });
             setWearerOrder(nextOrder);
           }}
-          onGoToWearer={(wearerId) => {
-            const next = wearerOrderForPlan.wearers.find(
-              (wearer) => wearer.wearerId === wearerId,
-            );
-            if (!next) return;
-            setWearerOrder(wearerOrderForPlan);
-            setActiveWearerId(wearerId);
-            setHydratedMeasurementGarmentKey(null);
-            setFutureMeasurementState(next.measurement);
-          }}
+          onGoToWearer={handleSelectMeasurementWearer}
           hydrationInvalid={futureMeasurementHydrationInvalid}
           onChange={(state) => {
             if (futureMeasurementHydrationInvalid) return;

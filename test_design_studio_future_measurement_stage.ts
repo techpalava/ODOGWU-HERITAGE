@@ -1269,12 +1269,162 @@ console.log("PASS: measurement Go-to-person and shared chip honesty");
       (node) => typeof node.props?.["data-measurement-switch-wearer"] === "string",
     ).length,
     0,
-    "Measuring-for must not duplicate the People panel with a person switcher",
+    "the legacy switch-wearer control stays retired (Measuring-for chips replace it)",
+  );
+  assert.equal(
+    matchRenderer.root.findAll(
+      (node) => typeof node.props?.["data-measurement-wearer-chip"] === "string",
+    ).length,
+    0,
+    "no chip row without wearerChips / onSelectWearer",
   );
   assert.ok(matchText.includes("Medium Risk") || matchText.includes("Low Risk"));
 }
 
 console.log("PASS: measurement matching clarity person + garments banner");
+
+// Measuring-for person chips: every person is a chip; clicking switches the active person.
+{
+  assert.match(studioSource, /wearerChips=\{measurementWearerChips\}/);
+  assert.match(studioSource, /activeWearerId=\{activeWearer\?\.wearerId \|\| null\}/);
+  assert.equal(
+    (studioSource.match(/onSelectWearer=\{handleSelectMeasurementWearer\}/g) || []).length,
+    2,
+    "people panel and Measuring-for chips share one select-wearer path",
+  );
+  assert.match(studioSource, /onGoToWearer=\{handleSelectMeasurementWearer\}/);
+  assert.match(
+    studioSource,
+    /const measurementWearerChips = measurementActiveWearerLabel\s*\?/,
+    "chips only where Measuring-for already shows (not the solo first-screen)",
+  );
+  const chipPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: shirtSelection,
+    physicalGarments: physicalShirts,
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: { "additional:shirt:1": shirtConstruction },
+    },
+  });
+  const chips = [
+    { wearerId: "wearer-a", label: "Ada" },
+    { wearerId: "wearer-b", label: "Person 2" },
+    { wearerId: "wearer-c", label: "Bola" },
+  ];
+  const garmentsByWearer: Record<string, string[]> = {
+    "wearer-a": ["Standard Shirt"],
+    "wearer-b": [],
+    "wearer-c": ["Standard Shirt 2"],
+  };
+  const selectCalls: string[] = [];
+  const ChipHarness = () => {
+    const [activeId, setActiveId] = useState("wearer-a");
+    const active = chips.find((chip) => chip.wearerId === activeId)!;
+    return createElement(DormantFutureMeasurementStep, {
+      plan: chipPlan,
+      state: setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk"),
+      physicalGarments: physicalShirts,
+      activeWearerLabel: active.label,
+      activeWearerGarmentLabels: garmentsByWearer[activeId],
+      wearerChips: chips,
+      activeWearerId: activeId,
+      onSelectWearer: (wearerId: string) => {
+        selectCalls.push(wearerId);
+        setActiveId(wearerId);
+      },
+      orderMeasurementsComplete: false,
+      onChange: () => undefined,
+      onRouteChange: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    });
+  };
+  let chipRenderer!: ReturnType<typeof create>;
+  act(() => {
+    chipRenderer = create(createElement(ChipHarness));
+  });
+  const chipButtons = () =>
+    chipRenderer.root.findAll(
+      (node) =>
+        node.type === "button" &&
+        typeof node.props?.["data-measurement-wearer-chip"] === "string",
+    );
+  const selectedFlags = () =>
+    chipButtons().map((chip) => [
+      chip.props["data-measurement-wearer-chip"],
+      chip.props["data-measurement-wearer-chip-selected"],
+      chip.props["aria-pressed"],
+    ]);
+  const garmentLine = () =>
+    headingText(chipRenderer.root.findByProps({ "data-measurement-active-garments": "true" }));
+  assert.deepEqual(
+    chipButtons().map((chip) => headingText(chip)),
+    ["Ada", "Person 2", "Bola"],
+    "every person label renders as a chip, in order",
+  );
+  assert.deepEqual(selectedFlags(), [
+    ["wearer-a", "true", true],
+    ["wearer-b", "false", false],
+    ["wearer-c", "false", false],
+  ]);
+  assert.equal(
+    chipRenderer.root.findByProps({ "data-measurement-active-wearer": "Ada" }).type,
+    "button",
+    "the selected chip carries data-measurement-active-wearer",
+  );
+  assert.match(garmentLine(), /Standard Shirt/);
+  act(() => {
+    chipButtons()[1].props.onClick();
+  });
+  assert.deepEqual(selectCalls, ["wearer-b"]);
+  assert.deepEqual(selectedFlags(), [
+    ["wearer-a", "false", false],
+    ["wearer-b", "true", true],
+    ["wearer-c", "false", false],
+  ]);
+  assert.match(garmentLine(), /No garments assigned to Person 2 yet\./);
+  act(() => {
+    chipButtons()[2].props.onClick();
+  });
+  assert.deepEqual(selectCalls, ["wearer-b", "wearer-c"]);
+  assert.match(garmentLine(), /Standard Shirt 2/);
+  assert.equal(garmentLine().includes("No garments assigned"), false);
+  act(() => {
+    chipButtons()[2].props.onClick();
+  });
+  assert.deepEqual(selectCalls, ["wearer-b", "wearer-c"], "clicking the selected chip is a no-op");
+
+  // Solo closed first-screen: no Measuring-for and no chip row.
+  let soloRenderer!: ReturnType<typeof create>;
+  act(() => {
+    soloRenderer = create(
+      createElement(DormantFutureMeasurementStep, {
+        plan: chipPlan,
+        state: setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk"),
+        physicalGarments: physicalShirts,
+        activeWearerLabel: null,
+        wearerChips: [],
+        activeWearerId: "wearer-a",
+        onSelectWearer: () => undefined,
+        orderMeasurementsComplete: false,
+        onChange: () => undefined,
+        onRouteChange: () => undefined,
+        onBack: () => undefined,
+        onContinue: () => undefined,
+      }),
+    );
+  });
+  assert.equal(headingText(soloRenderer.root).includes("Measuring for"), false);
+  assert.equal(
+    soloRenderer.root.findAll(
+      (node) => typeof node.props?.["data-measurement-wearer-chip"] === "string",
+    ).length,
+    0,
+  );
+}
+
+console.log("PASS: measurement Measuring-for person chips switch the active wearer");
 
 {
   const mediumPlan = planMeasurementRequirements({
