@@ -134,6 +134,21 @@ const pickupFromAdmin = reconcileFutureShippingState({
 });
 assert.equal(pickupFromAdmin.state.pickupLocation, "Atelier Front Desk");
 
+const pickupFromLegacyAdmin = reconcileFutureShippingState({
+  state: pickupState,
+  garmentCount: 2,
+  selectedDesignPrice: 500,
+  defaultPickupLocation: "  Veldhoven Campus Lockers  ",
+});
+assert.equal(pickupFromLegacyAdmin.state.pickupLocation, DEFAULT_FUTURE_PICKUP_LOCATION);
+
+const pickupFromLegacySnapshot = reconcileFutureShippingState({
+  state: { ...pickupState, pickupLocation: "veldhoven campus lockers" },
+  garmentCount: 2,
+  selectedDesignPrice: 500,
+});
+assert.equal(pickupFromLegacySnapshot.state.pickupLocation, DEFAULT_FUTURE_PICKUP_LOCATION);
+
 const pickupPreservesSnapshot = reconcileFutureShippingState({
   state: { ...pickupState, pickupLocation: "Snapshotted Venue" },
   garmentCount: 2,
