@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { MAX_CONFIGURED_ACTIVE_WEARERS, resolveActiveWearerCap } from "../config/WearerPolicy";
 import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
+import { REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT } from "./FutureRemainingFabricCapacityOffer";
 import type { MeasurementPhysicalGarment } from "../utils/measurementBlueprint";
 import type { WearerOrderStateV2 } from "../types";
 import {
@@ -59,6 +60,9 @@ export const WearerAssignmentPanel = ({
   onUnassignGarment,
   onCollapseToSolo,
   onPeopleUiChange,
+  onAddGarment,
+  spareFabricCapacityAvailable = false,
+  initialPeopleExpanded = false,
 }: {
   order: WearerOrderStateV2;
   presentation?: "people" | "solo" | "fit";
@@ -81,12 +85,22 @@ export const WearerAssignmentPanel = ({
    * Design Studio can hide the solo-only Dimension fit. Reports false on unmount.
    */
   onPeopleUiChange?: (open: boolean) => void;
+  /**
+   * Starts Design Studio's existing Add Garment path (fabric-capacity offer or
+   * the Step 5 Additional Garment chooser). Shown on the people panel when the
+   * garment-tied cap blocks another person, or when spare fabric capacity exists.
+   */
+  onAddGarment?: () => void;
+  /** The unused fabric capacity offer exists (same signal as the capacity prompt). */
+  spareFabricCapacityAvailable?: boolean;
+  /** Mount with the people panel open (returning from the Add Garment trip). */
+  initialPeopleExpanded?: boolean;
 }) => {
   const [deleteRejection, setDeleteRejection] = useState<string | null>(null);
   const [assignmentRejectionByGarmentKey, setAssignmentRejectionByGarmentKey] =
     useState<Readonly<Record<string, AssignmentRejection>>>({});
   const [peopleExpanded, setPeopleExpanded] = useState(
-    () => order.wearers.length > 1 || presentation === "people",
+    () => order.wearers.length > 1 || presentation === "people" || initialPeopleExpanded,
   );
   /**
    * Name confirmation is panel UI state, not persisted. A person whose name was
@@ -176,22 +190,39 @@ export const WearerAssignmentPanel = ({
     : namesPending
       ? SAVE_NAMES_BEFORE_ADDING_COPY
       : null;
+  // Another garment raises the garment-tied cap, unless the hard ceiling is reached.
+  const showAddGarment =
+    Boolean(onAddGarment) &&
+    ((atWearerCap && wearers.length < MAX_CONFIGURED_ACTIVE_WEARERS) ||
+      spareFabricCapacityAvailable);
   const addAnotherPerson = (
     <div className="mt-4">
-      <button
-        type="button"
-        data-wearer-add-another="true"
-        className="inline-flex min-h-11 items-center rounded-xl border border-heritage-green bg-heritage-green px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
-        disabled={addAnotherDisabledReason !== null}
-        title={addAnotherDisabledReason ?? undefined}
-        aria-describedby={addAnotherDisabledReason ? addAnotherReasonId : undefined}
-        onClick={() => {
-          if (addAnotherDisabledReason !== null) return;
-          onAddWearer("", null);
-        }}
-      >
-        + Add another person
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          data-wearer-add-another="true"
+          className="inline-flex min-h-11 items-center rounded-xl border border-heritage-green bg-heritage-green px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={addAnotherDisabledReason !== null}
+          title={addAnotherDisabledReason ?? undefined}
+          aria-describedby={addAnotherDisabledReason ? addAnotherReasonId : undefined}
+          onClick={() => {
+            if (addAnotherDisabledReason !== null) return;
+            onAddWearer("", null);
+          }}
+        >
+          + Add another person
+        </button>
+        {showAddGarment ? (
+          <button
+            type="button"
+            data-wearer-add-garment="true"
+            className="inline-flex min-h-11 items-center rounded-xl border border-heritage-green bg-white px-4 py-2 text-sm font-bold text-heritage-green"
+            onClick={() => onAddGarment?.()}
+          >
+            {REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT}
+          </button>
+        ) : null}
+      </div>
       {addAnotherDisabledReason ? (
         <p
           id={addAnotherReasonId}

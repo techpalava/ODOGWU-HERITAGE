@@ -69,6 +69,33 @@ const sessionIdentityKey = "test-session";
     sessionIdentityKey,
   });
   assert.equal(paymentLease.returnStageId, "payment");
+  // Step 7 Add Garment: Step 5 Continue returns to Measurement.
+  const measurementLease = createSummaryEditReturnLease({
+    returnStageId: "measurement",
+    focusStageId: "personalized_additions",
+    generation: 2,
+    sessionIdentityKey,
+  });
+  assert.equal(measurementLease.returnStageId, "measurement");
+  assert.equal(
+    shouldConsumeSummaryEditReturnOnContinue({
+      lease: measurementLease,
+      generation: 2,
+      sessionIdentityKey,
+      currentStageId: "personalized_additions",
+    }),
+    true,
+  );
+  assert.equal(
+    shouldConsumeSummaryEditReturnOnContinue({
+      lease: measurementLease,
+      generation: 2,
+      sessionIdentityKey,
+      currentStageId: "design_style",
+    }),
+    false,
+    "the AG Design Style leg does not consume the Step 5 lease",
+  );
 }
 
 {

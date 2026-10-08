@@ -3,9 +3,10 @@ import type { DesignStudioStageId } from "../types";
 /**
  * When the customer starts an edit from Summary (or Payment Review), remember
  * where to return after they finish the focused stage Continue/save.
+ * Step 7 Measurement also uses it for its Add Garment trip to Step 5.
  * Sibling of RemovalStageRetentionLease — navigation only, not authority.
  */
-export type SummaryEditReturnStageId = "summary" | "payment";
+export type SummaryEditReturnStageId = "summary" | "payment" | "measurement";
 
 export type SummaryEditFocusStageId = Extract<
   DesignStudioStageId,

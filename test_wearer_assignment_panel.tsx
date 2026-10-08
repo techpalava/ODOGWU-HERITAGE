@@ -1622,3 +1622,227 @@ console.log("PASS: wearer assignment panel sole Remove person returns to For me"
 }
 
 console.log("PASS: wearer assignment panel reloaded names count as saved");
+
+const addGarmentButtons = (root: ReactTestInstance) =>
+  root.findAllByProps({ "data-wearer-add-garment": "true" }).filter(
+    (node) => typeof node.type === "string",
+  );
+
+{
+  // Step 7 Add Garment: at the garment-tied cap the people panel offers the
+  // existing Add Garment path; a new garment (panel stays mounted, as with the
+  // fabric-capacity commit) unlocks Add another person under the new cap.
+  const startGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+  ];
+  const startOrder = reconcileWithChosenSoleFit({
+    order: createEmptyWearerOrder(),
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "female",
+    garments: startGarments,
+    garmentTypeSelection: selection(),
+  }, "female");
+  let addGarmentCalls = 0;
+  let addWearerCalls = 0;
+  const AddGarmentHarness = ({ withHandler }: { withHandler: boolean }) => {
+    const [order, setOrder] = useState(startOrder);
+    const [liveGarments, setLiveGarments] = useState(startGarments);
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        activeWearerId={order.wearers[0]?.wearerId || null}
+        garments={liveGarments}
+        garmentLabels={{ "base:shirt": "Standard Shirt" }}
+        onSelectWearer={() => {}}
+        onAddWearer={() => {
+          addWearerCalls += 1;
+        }}
+        onRenameWearer={(wearerId, displayName) => {
+          const result = renameWearer(order, wearerId, displayName);
+          if (result.status === "updated") setOrder(result.order);
+        }}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => deleteWearer(order, wearerId)}
+        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order })}
+        onAddGarment={
+          withHandler
+            ? () => {
+                addGarmentCalls += 1;
+                const next: MeasurementPhysicalGarment[] = [
+                  ...liveGarments,
+                  { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+                ];
+                setLiveGarments(next);
+                setOrder(
+                  reconcileWearerOrder({
+                    order,
+                    garmentKeys: next.map((garment) => garment.garmentKey),
+                    compatibilityDemographic: "female",
+                    garments: next,
+                    garmentTypeSelection: selection(),
+                  }),
+                );
+              }
+            : undefined
+        }
+      />
+    );
+  };
+
+  // No handler wired: never rendered.
+  let bare!: ReturnType<typeof create>;
+  await act(async () => {
+    bare = create(<AddGarmentHarness withHandler={false} />);
+  });
+  await act(async () => {
+    bare.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  assert.equal(addGarmentButtons(bare.root).length, 0, "no Add Garment without a handler");
+
+  let renderer!: ReturnType<typeof create>;
+  await act(async () => {
+    renderer = create(<AddGarmentHarness withHandler />);
+  });
+  assert.equal(addGarmentButtons(renderer.root).length, 0, "solo first-screen has no Add Garment");
+  await act(async () => {
+    renderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  let buttons = addGarmentButtons(renderer.root);
+  assert.equal(buttons.length, 1, "Add Garment shows at the garment cap");
+  assert.equal(textContent(buttons[0]), "Add Garment");
+  assert.equal(addAnotherButton(renderer.root).props.disabled, true);
+  assert.equal(addAnotherReason(renderer.root), NEED_GARMENT_REASON, "cap reason line is kept");
+  await typeName(renderer.root, "You", "Ada");
+  await saveName(renderer.root, "Ada");
+  await act(async () => {
+    addGarmentButtons(renderer.root)[0].props.onClick();
+  });
+  assert.equal(addGarmentCalls, 1);
+  assert.ok(
+    renderer.root.findAllByProps({ "data-wearer-people": "true" }).length > 0,
+    "people panel stays expanded after the garment lands",
+  );
+  assert.equal(
+    addAnotherButton(renderer.root).props.disabled,
+    false,
+    "the new garment raises the cap; saved names unlock Add another person",
+  );
+  assert.equal(addAnotherReason(renderer.root), "");
+  assert.equal(addGarmentButtons(renderer.root).length, 0, "below the cap without spare capacity: hidden");
+  await act(async () => {
+    addAnotherButton(renderer.root).props.onClick();
+  });
+  assert.equal(addWearerCalls, 1);
+}
+
+console.log("PASS: wearer assignment panel Add Garment at the cap unlocks another person");
+
+{
+  // Spare fabric capacity surfaces Add Garment below the cap; the hard ceiling hides it.
+  const twoGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+  ];
+  const base = reconcileWithChosenSoleFit({
+    order: createEmptyWearerOrder(),
+    garmentKeys: twoGarments.map((garment) => garment.garmentKey),
+    compatibilityDemographic: "female",
+    garments: twoGarments,
+    garmentTypeSelection: selection(),
+  }, "female");
+  let spareCalls = 0;
+  const renderPanel = (props: {
+    order: WearerOrderStateV2;
+    garments: MeasurementPhysicalGarment[];
+    spare: boolean;
+    initialPeopleExpanded?: boolean;
+  }) =>
+    create(
+      <WearerAssignmentPanel
+        order={props.order}
+        activeWearerId={props.order.wearers[0]?.wearerId || null}
+        garments={props.garments}
+        garmentLabels={{}}
+        onSelectWearer={() => {}}
+        onAddWearer={() => {}}
+        onRenameWearer={() => {}}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => deleteWearer(props.order, wearerId)}
+        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order: props.order })}
+        onAddGarment={() => {
+          spareCalls += 1;
+        }}
+        spareFabricCapacityAvailable={props.spare}
+        initialPeopleExpanded={props.initialPeopleExpanded}
+      />,
+    );
+
+  let below!: ReturnType<typeof create>;
+  await act(async () => {
+    below = renderPanel({ order: base, garments: twoGarments, spare: false, initialPeopleExpanded: true });
+  });
+  assert.ok(
+    below.root.findAllByProps({ "data-wearer-people": "true" }).length > 0,
+    "initialPeopleExpanded remounts with the people panel open (return trip)",
+  );
+  assert.equal(addGarmentButtons(below.root).length, 0, "below the cap, no offer: hidden");
+
+  let spare!: ReturnType<typeof create>;
+  await act(async () => {
+    spare = renderPanel({ order: base, garments: twoGarments, spare: true, initialPeopleExpanded: true });
+  });
+  const spareButtons = addGarmentButtons(spare.root);
+  assert.equal(spareButtons.length, 1, "spare fabric capacity shows Add Garment below the cap");
+  await act(async () => {
+    spareButtons[0].props.onClick();
+  });
+  assert.equal(spareCalls, 1);
+
+  let collapsed!: ReturnType<typeof create>;
+  await act(async () => {
+    collapsed = renderPanel({ order: base, garments: twoGarments, spare: true });
+  });
+  assert.equal(
+    collapsed.root.findAllByProps({ "data-wearer-people": "true" }).length,
+    0,
+    "without initialPeopleExpanded a sole order mounts on the solo first-screen",
+  );
+  assert.equal(addGarmentButtons(collapsed.root).length, 0, "solo first-screen has no Add Garment");
+
+  // 10 people on 10 garments: the hard ceiling, so another garment cannot add a person.
+  const tenGarments: MeasurementPhysicalGarment[] = Array.from({ length: 10 }, (_, index) => ({
+    garmentKey: index === 0 ? "base:shirt" : `additional:shirt:${index}`,
+    garmentType: "shirt",
+  }));
+  const tenBase = reconcileWithChosenSoleFit({
+    order: createEmptyWearerOrder(),
+    garmentKeys: tenGarments.map((garment) => garment.garmentKey),
+    compatibilityDemographic: "female",
+    garments: tenGarments,
+    garmentTypeSelection: selection(),
+  }, "female");
+  const firstNamed = renameWearer(tenBase, tenBase.wearers[0].wearerId, "Person A");
+  if (firstNamed.status !== "updated") throw new Error("expected rename");
+  let tenOrder = firstNamed.order;
+  for (let index = 1; index < 10; index += 1) {
+    const result = addWearer({
+      order: tenOrder,
+      physicalGarmentCount: 10,
+      displayName: `Guest ${index}`,
+      fitContext: null,
+    });
+    if (result.status !== "updated") throw new Error(`expected guest ${index}`);
+    tenOrder = result.order;
+  }
+  assert.equal(tenOrder.wearers.length, 10);
+  let ceiling!: ReturnType<typeof create>;
+  await act(async () => {
+    ceiling = renderPanel({ order: tenOrder, garments: tenGarments, spare: false });
+  });
+  assert.equal(addAnotherButton(ceiling.root).props.disabled, true);
+  assert.equal(addGarmentButtons(ceiling.root).length, 0, "at the 10-person ceiling Add Garment is hidden");
+}
+
+console.log("PASS: wearer assignment panel Add Garment follows spare capacity and the ceiling");

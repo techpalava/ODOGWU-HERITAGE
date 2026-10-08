@@ -1084,6 +1084,13 @@ export default function DesignStudioView({
   const [wearerOrder, setWearerOrder] = useState(createEmptyWearerOrder);
   /** People panel open (Add a person / 2+ people). The Dimension sole fit is solo-only. */
   const [measurementPeopleUiOpen, setMeasurementPeopleUiOpen] = useState(false);
+  /**
+   * Set when Step 7 Add Garment leaves Measurement for the Step 5 Additional
+   * Garment chooser, so the remounted people panel opens expanded on return.
+   * Consumed when the panel reports it is open.
+   */
+  const [measurementResumePeopleExpanded, setMeasurementResumePeopleExpanded] =
+    useState(false);
   const [activeWearerId, setActiveWearerId] = useState<string | null>(null);
   const pendingResumeScrollYRef = useRef<number | null>(null);
   const [hydratedMeasurementGarmentKey, setHydratedMeasurementGarmentKey] =
@@ -7414,6 +7421,32 @@ export default function DesignStudioView({
     }
     navigateToFutureStage(fallbackStage);
   };
+  /**
+   * Step 7 people panel Add Garment. Reuses the existing Add Garment entries:
+   * - spare fabric capacity: the remaining-fabric-capacity offer modal (#392),
+   *   whose commit returns to Measurement via capacityReuse.returnStage, so the
+   *   people panel never unmounts;
+   * - otherwise: the Step 5 Additional Garment chooser (#392) under a return
+   *   lease, so Step 5 Continue / Back comes back to Measurement with the people
+   *   panel expanded.
+   */
+  const handleMeasurementAddGarment = () => {
+    if (remainingFabricCapacityOffers.length > 0) {
+      setRemainingFabricCapacityOfferRequestedAllocationId(
+        remainingFabricCapacityOffers.length === 1
+          ? remainingFabricCapacityOffers[0].allocationId
+          : null,
+      );
+      setRemainingFabricCapacityOfferRequested(true);
+      return;
+    }
+    setMeasurementResumePeopleExpanded(true);
+    beginSummaryEditReturn({
+      focusStageId: "personalized_additions",
+      returnStageId: "measurement",
+    });
+    navigateToFutureStage("personalized_additions");
+  };
   const clearSummaryDesignStyleForGarment = (garmentKey: string): boolean => {
     const authority = futureDesignStyleMutationAuthorityRef.current;
     const ledger = authority?.hydration.ledger || null;
@@ -10567,7 +10600,13 @@ export default function DesignStudioView({
               sole?.measurement || createEmptyFutureMeasurementState(),
             );
           }}
-          onPeopleUiChange={setMeasurementPeopleUiOpen}
+          onPeopleUiChange={(open) => {
+            setMeasurementPeopleUiOpen(open);
+            if (open) setMeasurementResumePeopleExpanded(false);
+          }}
+          onAddGarment={handleMeasurementAddGarment}
+          spareFabricCapacityAvailable={Boolean(remainingFabricCapacityOfferSignature)}
+          initialPeopleExpanded={measurementResumePeopleExpanded}
         />
         <DormantFutureMeasurementStep
           plan={futureMeasurementPlan}

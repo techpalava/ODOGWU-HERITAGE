@@ -58,7 +58,33 @@ assert.match(measurementSource, /Assign person/);
 assert.match(measurementSource, /multiPersonAssignmentActive/);
 assert.match(measurementSource, /projectMeasurementGarmentChipStates/);
 assert.match(studioSource, /multiPersonAssignmentActive=\{wearerOrderForPlan\.wearers\.length > 1\}/);
-assert.match(studioSource, /onPeopleUiChange=\{setMeasurementPeopleUiOpen\}/);
+assert.match(
+  studioSource,
+  /onPeopleUiChange=\{\(open\) => \{\s*setMeasurementPeopleUiOpen\(open\);\s*if \(open\) setMeasurementResumePeopleExpanded\(false\);\s*\}\}/,
+);
+// Step 7 Add Garment reuses existing Add Garment entries (no Measurement modal stack).
+assert.match(studioSource, /onAddGarment=\{handleMeasurementAddGarment\}/);
+assert.match(
+  studioSource,
+  /spareFabricCapacityAvailable=\{Boolean\(remainingFabricCapacityOfferSignature\)\}/,
+);
+assert.match(studioSource, /initialPeopleExpanded=\{measurementResumePeopleExpanded\}/);
+{
+  const handlerStart = studioSource.indexOf("const handleMeasurementAddGarment = () => {");
+  assert.ok(handlerStart > 0, "Measurement Add Garment handler exists");
+  const handler = studioSource.slice(handlerStart, studioSource.indexOf("\n  };", handlerStart));
+  assert.match(
+    handler,
+    /remainingFabricCapacityOffers\.length > 0[\s\S]*setRemainingFabricCapacityOfferRequestedAllocationId\([\s\S]*setRemainingFabricCapacityOfferRequested\(true\);\s*return;/,
+    "spare capacity opens the existing fabric-capacity Add Garment modal",
+  );
+  assert.match(
+    handler,
+    /setMeasurementResumePeopleExpanded\(true\);\s*beginSummaryEditReturn\(\{\s*focusStageId: "personalized_additions",\s*returnStageId: "measurement",\s*\}\);\s*navigateToFutureStage\("personalized_additions"\);/,
+    "otherwise the Step 5 Additional Garment chooser under a return lease back to Measurement",
+  );
+  assert.doesNotMatch(handler, /Dialog|Modal|garment_type/, "no new modal stack or Step 1 fork");
+}
 assert.match(
   studioSource,
   /showSoleFitControl=\{\s*wearerOrderForPlan\.wearers\.length === 1 && !measurementPeopleUiOpen\s*\}/,
