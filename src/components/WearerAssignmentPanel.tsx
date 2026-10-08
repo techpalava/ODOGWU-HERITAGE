@@ -125,6 +125,26 @@ export const WearerAssignmentPanel = ({
   );
   const showPeopleUi =
     wearers.length > 1 || peopleExpanded || presentation === "people";
+  // For me is the solo first-screen choice; Add a person / people UI deselects it.
+  const forMeSelected = !showPeopleUi;
+
+  /** Only for me / For me: remove extra people, then return to the solo first-screen. */
+  const collapseToSolo = () => {
+    for (let index = wearers.length - 1; index >= 1; index -= 1) {
+      const wearer = wearers[index];
+      const result = onDeleteWearer(wearer.wearerId);
+      if (
+        result.status === "blocked" &&
+        result.code === "WEARER_OWNS_GARMENTS"
+      ) {
+        setDeleteRejection(blockedWearerRemovalMessage(labelForWearer(wearer)));
+        return;
+      }
+      if (result.status === "updated") setDeleteRejection(null);
+    }
+    setPeopleExpanded(false);
+    onCollapseToSolo?.();
+  };
 
   if (!showPeopleUi) {
     return (
@@ -133,14 +153,34 @@ export const WearerAssignmentPanel = ({
         data-wearer-solo-first="true"
       >
         <p className="text-sm text-heritage-ink/70">{SOLO_FIRST_COPY}</p>
-        <button
-          type="button"
-          data-wearer-add-people="true"
-          className="mt-4 inline-flex min-h-11 items-center rounded-xl border border-heritage-green bg-heritage-green px-4 py-2 text-sm font-bold text-white"
-          onClick={() => setPeopleExpanded(true)}
-        >
-          Add people
-        </button>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            data-wearer-for-me="true"
+            data-wearer-for-me-selected={forMeSelected ? "true" : "false"}
+            aria-pressed={forMeSelected}
+            className={`inline-flex min-h-11 items-center rounded-xl border px-4 py-2 text-sm font-bold ${
+              forMeSelected
+                ? "border-heritage-green bg-heritage-green text-white"
+                : "border-heritage-gold/30 bg-white text-heritage-green"
+            }`}
+            onClick={collapseToSolo}
+          >
+            For me
+          </button>
+          <button
+            type="button"
+            data-wearer-add-people="true"
+            className={`inline-flex min-h-11 items-center rounded-xl border px-4 py-2 text-sm font-bold ${
+              forMeSelected
+                ? "border-heritage-gold/30 bg-white text-heritage-green"
+                : "border-heritage-green bg-heritage-green text-white"
+            }`}
+            onClick={() => setPeopleExpanded(true)}
+          >
+            Add a person
+          </button>
+        </div>
       </section>
     );
   }
@@ -159,22 +199,7 @@ export const WearerAssignmentPanel = ({
           type="button"
           data-wearer-only-for-me="true"
           className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green"
-          onClick={() => {
-            for (let index = wearers.length - 1; index >= 1; index -= 1) {
-              const wearer = wearers[index];
-              const result = onDeleteWearer(wearer.wearerId);
-              if (
-                result.status === "blocked" &&
-                result.code === "WEARER_OWNS_GARMENTS"
-              ) {
-                setDeleteRejection(blockedWearerRemovalMessage(labelForWearer(wearer)));
-                return;
-              }
-              if (result.status === "updated") setDeleteRejection(null);
-            }
-            setPeopleExpanded(false);
-            onCollapseToSolo?.();
-          }}
+          onClick={collapseToSolo}
         >
           Only for me
         </button>
