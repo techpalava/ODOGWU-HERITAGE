@@ -149,10 +149,23 @@ export const createEmptyFutureShippingState = (): FutureShippingStateV1 => ({
   quoteReference: null,
 });
 
+/** Legacy Admin / draft venue label replaced by DEFAULT_FUTURE_PICKUP_LOCATION. */
+const LEGACY_FUTURE_PICKUP_LOCATION = "veldhoven campus lockers";
+
+const normalizeFuturePickupLocationLabel = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return DEFAULT_FUTURE_PICKUP_LOCATION;
+  if (trimmed.toLocaleLowerCase("en") === LEGACY_FUTURE_PICKUP_LOCATION) {
+    return DEFAULT_FUTURE_PICKUP_LOCATION;
+  }
+  return trimmed;
+};
+
 /**
  * Resolves the venue label for Eindhoven pickup.
  * Draft path passes `defaultPickupLocation` to refresh from Admin settings.
  * Persist/candidate path omits it so the snapshotted string is preserved.
+ * Blank and legacy "Veldhoven Campus Lockers" resolve to Eindhoven.
  */
 export const resolveFuturePickupLocation = ({
   fulfilmentMethod,
@@ -165,11 +178,9 @@ export const resolveFuturePickupLocation = ({
 }): string => {
   if (fulfilmentMethod !== "eindhoven_pickup") return "";
   if (defaultPickupLocation !== undefined && defaultPickupLocation !== null) {
-    const fromAdmin = defaultPickupLocation.trim();
-    return fromAdmin || DEFAULT_FUTURE_PICKUP_LOCATION;
+    return normalizeFuturePickupLocationLabel(defaultPickupLocation);
   }
-  const stored = storedPickupLocation.trim();
-  return stored || DEFAULT_FUTURE_PICKUP_LOCATION;
+  return normalizeFuturePickupLocationLabel(storedPickupLocation);
 };
 
 const normalizeText = ({

@@ -352,9 +352,10 @@ export const DormantFutureShippingStep = ({
                     href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-1 block normal-case tracking-normal font-semibold text-heritage-green underline-offset-2 hover:underline"
+                    aria-label={`WhatsApp ${FUTURE_PICKUP_ATELIER_PHONE_DISPLAY}`}
+                    className="mt-1 block normal-case tracking-normal font-semibold text-heritage-green underline underline-offset-2"
                   >
-                    {FUTURE_PICKUP_ATELIER_PHONE_DISPLAY}
+                    {FUTURE_PICKUP_ATELIER_PHONE_DISPLAY} (WhatsApp)
                   </a>
                 </p>
                 <p className="mt-2 text-xs leading-relaxed text-heritage-ink/55">
