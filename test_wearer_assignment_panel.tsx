@@ -58,6 +58,53 @@ const toggleGarment = async (root: ReactTestInstance, wearerLabel: string, garme
   });
 };
 
+const nameInput = (root: ReactTestInstance, wearerLabel: string) =>
+  root.findByProps({ "aria-label": `Name or nickname for ${wearerLabel}` });
+
+const typeName = async (root: ReactTestInstance, wearerLabel: string, value: string) => {
+  const input = nameInput(root, wearerLabel);
+  await act(async () => {
+    input.props.onChange({ currentTarget: { value } });
+  });
+};
+
+const blurName = async (root: ReactTestInstance, wearerLabel: string) => {
+  const input = nameInput(root, wearerLabel);
+  await act(async () => {
+    input.props.onBlur();
+  });
+};
+
+const nameSaveButton = (root: ReactTestInstance, wearerLabel: string) =>
+  cardFor(root, wearerLabel).findByProps({ "data-wearer-name-save": "true" });
+
+const saveName = async (root: ReactTestInstance, wearerLabel: string) => {
+  const button = nameSaveButton(root, wearerLabel);
+  await act(async () => {
+    button.props.onClick({ stopPropagation() {} });
+  });
+};
+
+const nameHintCount = (root: ReactTestInstance) =>
+  root.findAllByProps({ "data-wearer-name-hint": "true" }).length;
+
+const addAnotherButton = (root: ReactTestInstance) =>
+  root.findByProps({ "data-wearer-add-another": "true" });
+
+const addAnotherReason = (root: ReactTestInstance) =>
+  root
+    .findAllByProps({ "data-wearer-add-another-reason": "true" })
+    .map((node) => textContent(node))
+    .join(" ");
+
+const removeButtonIn = (root: ReactTestInstance, wearerLabel: string) => {
+  const button = cardFor(root, wearerLabel)
+    .findAllByType("button")
+    .find((candidate) => textContent(candidate) === "Remove person");
+  if (!button) throw new Error(`expected remove control for ${wearerLabel}`);
+  return button;
+};
+
 const selection = (): GarmentTypeStepSelection => ({
   garmentTypes: ["shirt"],
   demographic: "female",
@@ -354,6 +401,8 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
   if (!addButton || addButton.props.type !== "button") {
     throw new Error("expected Add another person button");
   }
+  assert.equal(addButton.props.disabled, true, "You has no saved name yet");
+  assert.equal(addAnotherReason(root()), "Save each person\u2019s name before adding another");
 
   assert.equal(garmentBox(root(), "You", "additional:shirt:1").props.checked, false);
   assert.equal(garmentBox(root(), "Amaka", "additional:shirt:1").props.checked, false);
@@ -653,9 +702,18 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
   assert.equal(reconciled.assignmentByGarmentKey["base:dress"], amakaWearer.wearerId);
   assert.equal(reconciled.assignmentByGarmentKey["additional:shirt:1"], amakaWearer.wearerId);
 
+  await typeName(root(), "You", "Ada");
+  await blurName(root(), "Ada");
+  assert.equal(
+    addAnotherButton(root()).props.disabled,
+    true,
+    "Amaka Obi was edited and not saved yet",
+  );
+  await saveName(root(), "Amaka Obi");
+  assert.equal(addAnotherButton(root()).props.disabled, false);
   const assignmentsBeforeAdd = { ...authority.assignmentByGarmentKey };
   await act(async () => {
-    addButton.props.onClick();
+    addAnotherButton(root()).props.onClick();
   });
   assert.deepEqual(authority.assignmentByGarmentKey, assignmentsBeforeAdd);
   assert.equal(
@@ -729,7 +787,13 @@ console.log("PASS: wearer assignment panel in-card garment assignment");
             setOrder(result.order);
           }
         }}
-        onRenameWearer={() => {}}
+        onRenameWearer={(wearerId, displayName) => {
+          const result = renameWearer(order, wearerId, displayName);
+          if (result.status === "updated") {
+            latestSolo = result.order;
+            setOrder(result.order);
+          }
+        }}
         onReorderWearers={() => {}}
         onSetFitContext={() => {}}
         onDeleteWearer={(wearerId) => {
@@ -792,9 +856,15 @@ console.log("PASS: wearer assignment panel in-card garment assignment");
   assert.equal(expandedBody.includes("Garments for this person"), false);
   assert.equal(soloRenderer.root.findAllByProps({ "data-wearer-people": "true" }).length, 1);
 
-  const addAnother = soloRenderer.root.findByProps({ "data-wearer-add-another": "true" });
+  assert.equal(addAnotherButton(soloRenderer.root).props.disabled, true);
   await act(async () => {
-    addAnother.props.onClick();
+    addAnotherButton(soloRenderer.root).props.onClick();
+  });
+  assert.equal(addWearerCalls, 0, "unsaved name keeps Add another person locked");
+  await typeName(soloRenderer.root, "You", "Ada");
+  await saveName(soloRenderer.root, "Ada");
+  await act(async () => {
+    addAnotherButton(soloRenderer.root).props.onClick();
   });
   assert.equal(addWearerCalls, 1);
   assert.equal(latestSolo.wearers.length, 2);
@@ -813,7 +883,7 @@ console.log("PASS: wearer assignment panel in-card garment assignment");
     true,
     "Person 2 has no fit yet",
   );
-  assert.equal(garmentBox(soloRenderer.root, "You", "base:shirt").props.disabled, false);
+  assert.equal(garmentBox(soloRenderer.root, "Ada", "base:shirt").props.disabled, false);
 
   await act(async () => {
     soloRenderer.root.findByProps({ "data-wearer-only-for-me": "true" }).props.onClick();
@@ -1034,7 +1104,13 @@ console.log("PASS: wearer assignment panel presentation defaults to solo");
             setOrder(result.order);
           }
         }}
-        onRenameWearer={() => {}}
+        onRenameWearer={(wearerId, displayName) => {
+          const result = renameWearer(order, wearerId, displayName);
+          if (result.status === "updated") {
+            forMeOrder = result.order;
+            setOrder(result.order);
+          }
+        }}
         onReorderWearers={() => {}}
         onSetFitContext={() => {}}
         onDeleteWearer={(wearerId) => {
@@ -1109,8 +1185,10 @@ console.log("PASS: wearer assignment panel presentation defaults to solo");
   assert.equal(soleFitRadios.length, 2);
   assert.equal(soleFitRadios.some((radio) => radio.props.checked), false, "no fit pre-selected");
 
+  await typeName(forMeRenderer.root, "You", "Ada");
+  await blurName(forMeRenderer.root, "Ada");
   await act(async () => {
-    forMeRenderer.root.findByProps({ "data-wearer-add-another": "true" }).props.onClick();
+    addAnotherButton(forMeRenderer.root).props.onClick();
   });
   assert.equal(addCalls, 1);
   assert.equal(forMeOrder.wearers.length, 2);
@@ -1130,3 +1208,311 @@ console.log("PASS: wearer assignment panel presentation defaults to solo");
 }
 
 console.log("PASS: wearer assignment panel For me / Add a person solo strip");
+
+const SAVE_NAMES_REASON = "Save each person\u2019s name before adding another";
+
+{
+  // Name confirm (Save / blur), cap not limited by garments, fit not required to add.
+  const oneGarment: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+  ];
+  let capOrder = reconcileWithChosenSoleFit({
+    order: createEmptyWearerOrder(),
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "female",
+    garments: oneGarment,
+    garmentTypeSelection: selection(),
+  }, "female");
+  const soleId = capOrder.wearers[0].wearerId;
+  assert.equal(capOrder.assignmentByGarmentKey["base:shirt"], soleId);
+  const CapHarness = () => {
+    const [order, setOrder] = useState(capOrder);
+    const publish = (next: WearerOrderStateV2) => {
+      capOrder = next;
+      setOrder(next);
+    };
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        activeWearerId={order.wearers[0]?.wearerId || null}
+        garments={oneGarment}
+        garmentLabels={{ "base:shirt": "Standard Shirt" }}
+        onSelectWearer={() => {}}
+        onAddWearer={(displayName, fitContext) => {
+          const result = addWearer({
+            order,
+            physicalGarmentCount: oneGarment.length,
+            displayName,
+            fitContext,
+          });
+          if (result.status === "updated") publish(result.order);
+        }}
+        onRenameWearer={(wearerId, displayName) => {
+          const result = renameWearer(order, wearerId, displayName);
+          if (result.status === "updated") publish(result.order);
+        }}
+        onReorderWearers={() => {}}
+        onSetFitContext={(wearerId, fitContext) => {
+          const result = setWearerFitContext(order, wearerId, fitContext);
+          if (result.status === "updated") publish(result.order);
+        }}
+        onDeleteWearer={(wearerId) => {
+          const result = deleteWearer(order, wearerId);
+          if (result.status === "updated") publish(result.order);
+          return result;
+        }}
+        onAssignGarment={(garmentKey, wearerId) => {
+          const garment = oneGarment.find((item) => item.garmentKey === garmentKey);
+          if (!garment) return { status: "blocked", code: "WEARER_NOT_FOUND", order };
+          const result = assignGarmentToWearer({
+            order,
+            garmentKey,
+            wearerId,
+            garment,
+            garmentTypeSelection: selection(),
+          });
+          if (result.status === "updated") publish(result.order);
+          return result;
+        }}
+        onUnassignGarment={(garmentKey) => publish(removeGarmentFromWearerOrder(order, garmentKey))}
+      />
+    );
+  };
+  let capRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    capRenderer = create(<CapHarness />);
+  });
+  const root = () => capRenderer.root;
+  await act(async () => {
+    root().findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+
+  // Empty name: never confirmed, Add another person disabled with the reason.
+  let add = addAnotherButton(root());
+  assert.equal(add.props.disabled, true, "1-garment order: blocked only by the unsaved name");
+  assert.equal(add.props.title, SAVE_NAMES_REASON);
+  assert.ok(add.props["aria-describedby"], "disabled reason is announced");
+  assert.equal(addAnotherReason(root()), SAVE_NAMES_REASON);
+  assert.equal(nameSaveButton(root(), "You").props["data-wearer-name-confirmed"], "false");
+  assert.equal(nameHintCount(root()), 0);
+  await saveName(root(), "You");
+  assert.equal(nameHintCount(root()), 1, "Save with an empty name shows the hint");
+  assert.match(textContent(root()), /Enter a name or nickname/);
+  assert.equal(addAnotherButton(root()).props.disabled, true);
+  await typeName(root(), "You", "   ");
+  await saveName(root(), "You");
+  assert.equal(addAnotherButton(root()).props.disabled, true, "whitespace is never confirmed");
+
+  // Typing clears the hint but does not confirm; blur with a name confirms.
+  await typeName(root(), "You", "Ada");
+  assert.equal(nameHintCount(root()), 0);
+  assert.equal(textContent(nameSaveButton(root(), "Ada")), "Save");
+  assert.equal(addAnotherButton(root()).props.disabled, true, "an edit is not confirmed yet");
+  await blurName(root(), "Ada");
+  const savedButton = nameSaveButton(root(), "Ada");
+  assert.equal(textContent(savedButton), "Saved");
+  assert.equal(savedButton.props["data-wearer-name-confirmed"], "true");
+  assert.equal(savedButton.props["aria-label"], "Name saved for Ada");
+  add = addAnotherButton(root());
+  assert.equal(add.props.disabled, false, "blur with a name unlocks Add another person");
+  assert.equal(add.props.title, undefined);
+  assert.equal(add.props["aria-describedby"], undefined);
+  assert.equal(addAnotherReason(root()), "");
+
+  // Any edit clears confirmation until Save again; clearing clears it too.
+  await typeName(root(), "Ada", "Adaeze");
+  assert.equal(textContent(nameSaveButton(root(), "Adaeze")), "Save");
+  assert.equal(addAnotherButton(root()).props.disabled, true);
+  await saveName(root(), "Adaeze");
+  assert.equal(textContent(nameSaveButton(root(), "Adaeze")), "Saved");
+  assert.equal(addAnotherButton(root()).props.disabled, false, "Save confirms");
+  await typeName(root(), "Adaeze", "");
+  assert.equal(addAnotherButton(root()).props.disabled, true, "clearing clears confirmation");
+  await blurName(root(), "You");
+  assert.equal(addAnotherButton(root()).props.disabled, true, "blur with an empty name never confirms");
+  assert.equal(nameHintCount(root()), 0, "blur alone does not nag");
+  await typeName(root(), "You", "Ada");
+  await saveName(root(), "Ada");
+
+  // Add a second person on a 1-garment order (cap is no longer the garment count).
+  await act(async () => {
+    addAnotherButton(root()).props.onClick();
+  });
+  assert.equal(capOrder.wearers.length, 2, "1-garment order accepts a second person");
+  assert.equal(addAnotherButton(root()).props.disabled, true, "Person 2 needs a saved name");
+  assert.equal(addAnotherReason(root()), SAVE_NAMES_REASON);
+  await act(async () => {
+    addAnotherButton(root()).props.onClick();
+  });
+  assert.equal(capOrder.wearers.length, 2, "a disabled Add another person does nothing");
+  await typeName(root(), "Person 2", "Bola");
+  await blurName(root(), "Bola");
+  assert.equal(capOrder.wearers[1].fitContext, null);
+  assert.equal(
+    addAnotherButton(root()).props.disabled,
+    false,
+    "Male/Female is not required to add another person",
+  );
+
+  // 1 garment + 2 people: checkboxes work and only one box can be ticked.
+  assert.equal(garmentBox(root(), "Bola", "base:shirt").props.disabled, true, "fit before garments");
+  const bolaFemale = cardFor(root(), "Bola").findAll(
+    (node) => node.type === "input" && node.props.type === "radio",
+  )[1];
+  await act(async () => {
+    bolaFemale.props.onChange();
+  });
+  assert.equal(capOrder.wearers[1].fitContext, "female");
+  const tickedCount = () =>
+    root()
+      .findAll((node) => node.type === "input" && node.props.type === "checkbox")
+      .filter((box) => box.props.checked).length;
+  assert.equal(tickedCount(), 1);
+  await toggleGarment(root(), "Bola", "base:shirt");
+  assert.equal(capOrder.assignmentByGarmentKey["base:shirt"], capOrder.wearers[1].wearerId);
+  assert.equal(garmentBox(root(), "Ada", "base:shirt").props.checked, false);
+  assert.equal(tickedCount(), 1, "one garment, one tick in total");
+  await toggleGarment(root(), "Bola", "base:shirt");
+  assert.equal(tickedCount(), 0);
+  assert.equal(
+    hasUnassignedPhysicalGarments({ order: capOrder, physicalGarmentKeys: ["base:shirt"] }),
+    true,
+    "Continue still needs the garment assigned",
+  );
+  assert.equal(root().findAllByProps({ "data-wearer-unassigned-note": "true" }).length, 1);
+  await toggleGarment(root(), "Ada", "base:shirt");
+  assert.equal(capOrder.assignmentByGarmentKey["base:shirt"], soleId);
+  assert.equal(tickedCount(), 1);
+
+  // Fill up to the hard ceiling of 10.
+  for (let count = 3; count <= 10; count += 1) {
+    assert.equal(addAnotherButton(root()).props.disabled, false, `can add person ${count}`);
+    await act(async () => {
+      addAnotherButton(root()).props.onClick();
+    });
+    await typeName(root(), `Person ${count}`, `Guest ${count}`);
+    await blurName(root(), `Guest ${count}`);
+  }
+  assert.equal(capOrder.wearers.length, 10);
+  add = addAnotherButton(root());
+  assert.equal(add.props.disabled, true);
+  assert.equal(add.props.title, "Maximum people reached");
+  assert.equal(addAnotherReason(root()), "Maximum people reached");
+
+  // 2+ people: Remove deletes only that person.
+  await act(async () => {
+    removeButtonIn(root(), "Guest 10").props.onClick();
+  });
+  assert.equal(capOrder.wearers.length, 9);
+  assert.equal(capOrder.wearers.some((wearer) => wearer.displayName === "Guest 10"), false);
+  assert.equal(capOrder.wearers.some((wearer) => wearer.displayName === "Bola"), true);
+  assert.equal(root().findAllByProps({ "data-wearer-people": "true" }).length, 1);
+  assert.equal(addAnotherButton(root()).props.disabled, false);
+}
+
+console.log("PASS: wearer assignment panel Save name unlocks Add another person; cap 10");
+
+{
+  // Sole expanded card: Remove person = Only for me (back to For me strip).
+  const soleOrder = reconcileWithChosenSoleFit({
+    order: createEmptyWearerOrder(),
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "female",
+    garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    garmentTypeSelection: selection(),
+  }, "female");
+  let deleteCalls = 0;
+  let collapseCalls = 0;
+  let soleRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    soleRenderer = create(
+      <WearerAssignmentPanel
+        order={soleOrder}
+        activeWearerId={soleOrder.wearers[0].wearerId}
+        garments={[{ garmentKey: "base:shirt", garmentType: "shirt" }]}
+        garmentLabels={{ "base:shirt": "Standard Shirt" }}
+        onSelectWearer={() => {}}
+        onAddWearer={() => {}}
+        onRenameWearer={() => {}}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => {
+          deleteCalls += 1;
+          return deleteWearer(soleOrder, wearerId);
+        }}
+        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order: soleOrder })}
+        onCollapseToSolo={() => {
+          collapseCalls += 1;
+        }}
+      />,
+    );
+  });
+  await act(async () => {
+    soleRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  assert.equal(soleRenderer.root.findAllByProps({ "data-wearer-people": "true" }).length, 1);
+  await act(async () => {
+    removeButtonIn(soleRenderer.root, "You").props.onClick({ stopPropagation() {} });
+  });
+  assert.equal(deleteCalls, 0, "the sole person is not deleted");
+  assert.equal(collapseCalls, 1, "same path as Only for me");
+  assert.equal(soleRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length, 1);
+  assert.equal(
+    soleRenderer.root.findByProps({ "data-wearer-for-me": "true" }).props["data-wearer-for-me-selected"],
+    "true",
+  );
+  assert.equal(soleRenderer.root.findAllByProps({ role: "alert" }).length, 0);
+}
+
+console.log("PASS: wearer assignment panel sole Remove person returns to For me");
+
+{
+  // Reloaded draft: non-empty names already in the order count as confirmed.
+  const base = reconcileWithChosenSoleFit({
+    order: createEmptyWearerOrder(),
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "female",
+    garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    garmentTypeSelection: selection(),
+  }, "female");
+  const named = renameWearer(base, base.wearers[0].wearerId, "Ada");
+  if (named.status !== "updated") throw new Error("expected rename");
+  const withGuest = addWearer({
+    order: named.order,
+    physicalGarmentCount: 1,
+    displayName: "Bola",
+    fitContext: null,
+  });
+  if (withGuest.status !== "updated") throw new Error("expected Bola");
+  let reloadRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    reloadRenderer = create(
+      <WearerAssignmentPanel
+        order={withGuest.order}
+        activeWearerId={withGuest.order.wearers[0].wearerId}
+        garments={[{ garmentKey: "base:shirt", garmentType: "shirt" }]}
+        garmentLabels={{ "base:shirt": "Standard Shirt" }}
+        onSelectWearer={() => {}}
+        onAddWearer={() => {}}
+        onRenameWearer={() => {}}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => deleteWearer(withGuest.order, wearerId)}
+        onAssignGarment={() => ({
+          status: "blocked",
+          code: "WEARER_NOT_FOUND",
+          order: withGuest.order,
+        })}
+      />,
+    );
+  });
+  assert.equal(addAnotherButton(reloadRenderer.root).props.disabled, false);
+  assert.deepEqual(
+    reloadRenderer.root
+      .findAllByProps({ "data-wearer-name-save": "true" })
+      .map((button) => textContent(button)),
+    ["Saved", "Saved"],
+  );
+}
+
+console.log("PASS: wearer assignment panel reloaded names count as saved");

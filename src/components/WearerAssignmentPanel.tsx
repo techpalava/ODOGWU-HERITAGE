@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { resolveActiveWearerCap } from "../config/WearerPolicy";
 import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 import type { MeasurementPhysicalGarment } from "../utils/measurementBlueprint";
@@ -11,6 +11,10 @@ import {
 
 const SOLO_FIRST_COPY =
   "These clothes are for you. Add another person if you are ordering for someone else.";
+
+const SAVE_NAMES_BEFORE_ADDING_COPY = "Save each person’s name before adding another";
+const MAXIMUM_PEOPLE_COPY = "Maximum people reached";
+const NAME_REQUIRED_HINT = "Enter a name or nickname";
 
 const blockedWearerRemovalMessage = (displayName: string): string => {
   const name = displayName.trim() || "this person";
@@ -75,6 +79,19 @@ export const WearerAssignmentPanel = ({
   const [peopleExpanded, setPeopleExpanded] = useState(
     () => order.wearers.length > 1 || presentation === "people",
   );
+  /**
+   * Name confirmation is panel UI state, not persisted. A person whose name was
+   * edited here stays unconfirmed until Save or blur with a non-empty name. A
+   * non-empty name that arrives from the order (e.g. a reloaded draft) counts
+   * as confirmed, so returning customers are not stuck.
+   */
+  const [unsavedNameWearerIds, setUnsavedNameWearerIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [nameHintWearerIds, setNameHintWearerIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const addAnotherReasonId = useId();
   const nameInputByWearerId = useRef(new Map<string, HTMLInputElement>());
   const knownWearerIds = useRef<string[] | null>(null);
   const wearers = [...order.wearers].sort(
@@ -115,16 +132,64 @@ export const WearerAssignmentPanel = ({
     nameInputByWearerId.current.get(added)?.focus?.();
   }, [wearers]);
 
+  const withoutId = (current: ReadonlySet<string>, wearerId: string) => {
+    if (!current.has(wearerId)) return current;
+    const next = new Set(current);
+    next.delete(wearerId);
+    return next;
+  };
+  const withId = (current: ReadonlySet<string>, wearerId: string) => {
+    if (current.has(wearerId)) return current;
+    const next = new Set(current);
+    next.add(wearerId);
+    return next;
+  };
+  /** Confirmed = a real non-empty name (not the "You" placeholder) that was saved or blurred. */
+  const isNameConfirmed = (wearer: (typeof wearers)[number]) =>
+    wearer.displayName.trim().length > 0 && !unsavedNameWearerIds.has(wearer.wearerId);
+  const confirmName = (wearer: (typeof wearers)[number], source: "save" | "blur") => {
+    if (wearer.displayName.trim().length === 0) {
+      if (source === "save") {
+        setNameHintWearerIds((current) => withId(current, wearer.wearerId));
+      }
+      return;
+    }
+    setUnsavedNameWearerIds((current) => withoutId(current, wearer.wearerId));
+    setNameHintWearerIds((current) => withoutId(current, wearer.wearerId));
+  };
+  const atWearerCap = wearers.length >= cap;
+  const namesPending = wearers.some((wearer) => !isNameConfirmed(wearer));
+  const addAnotherDisabledReason = atWearerCap
+    ? MAXIMUM_PEOPLE_COPY
+    : namesPending
+      ? SAVE_NAMES_BEFORE_ADDING_COPY
+      : null;
   const addAnotherPerson = (
-    <button
-      type="button"
-      data-wearer-add-another="true"
-      className="mt-4 inline-flex min-h-11 items-center rounded-xl border border-heritage-green bg-heritage-green px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
-      disabled={wearers.length >= cap}
-      onClick={() => onAddWearer("", null)}
-    >
-      + Add another person
-    </button>
+    <div className="mt-4">
+      <button
+        type="button"
+        data-wearer-add-another="true"
+        className="inline-flex min-h-11 items-center rounded-xl border border-heritage-green bg-heritage-green px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+        disabled={addAnotherDisabledReason !== null}
+        title={addAnotherDisabledReason ?? undefined}
+        aria-describedby={addAnotherDisabledReason ? addAnotherReasonId : undefined}
+        onClick={() => {
+          if (addAnotherDisabledReason !== null) return;
+          onAddWearer("", null);
+        }}
+      >
+        + Add another person
+      </button>
+      {addAnotherDisabledReason ? (
+        <p
+          id={addAnotherReasonId}
+          data-wearer-add-another-reason="true"
+          className="mt-2 text-xs text-heritage-ink/65"
+        >
+          {addAnotherDisabledReason}
+        </p>
+      ) : null}
+    </div>
   );
   const showPeopleUi =
     wearers.length > 1 || peopleExpanded || presentation === "people";
@@ -256,23 +321,58 @@ export const WearerAssignmentPanel = ({
                 : "border-heritage-gold/20 bg-white"
             }`}
           >
-            <label className="block text-sm font-semibold text-heritage-ink/70">
-              Name or nickname
-              <input
-                ref={(node) => {
-                  if (node) nameInputByWearerId.current.set(wearer.wearerId, node);
-                  else nameInputByWearerId.current.delete(wearer.wearerId);
-                }}
-                aria-label={`Name or nickname for ${labelForWearer(wearer)}`}
-                className="mt-1 min-h-11 w-full rounded-xl border border-heritage-gold/30 bg-white px-3 py-2 text-sm text-heritage-ink placeholder:text-heritage-ink/40"
-                placeholder={index === 0 ? "You" : "Add person"}
-                value={wearer.displayName}
-                onFocus={() => onSelectWearer(wearer.wearerId)}
-                onChange={(event) =>
-                  onRenameWearer(wearer.wearerId, event.currentTarget.value)
+            <div className="flex items-end gap-2">
+              <label className="block min-w-0 flex-1 text-sm font-semibold text-heritage-ink/70">
+                Name or nickname
+                <input
+                  ref={(node) => {
+                    if (node) nameInputByWearerId.current.set(wearer.wearerId, node);
+                    else nameInputByWearerId.current.delete(wearer.wearerId);
+                  }}
+                  aria-label={`Name or nickname for ${labelForWearer(wearer)}`}
+                  className="mt-1 min-h-11 w-full min-w-0 rounded-xl border border-heritage-gold/30 bg-white px-3 py-2 text-sm text-heritage-ink placeholder:text-heritage-ink/40"
+                  placeholder={index === 0 ? "You" : "Add person"}
+                  value={wearer.displayName}
+                  onFocus={() => onSelectWearer(wearer.wearerId)}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    // Any edit clears confirmation until Save or blur again.
+                    setUnsavedNameWearerIds((current) => withId(current, wearer.wearerId));
+                    if (value.trim().length > 0) {
+                      setNameHintWearerIds((current) => withoutId(current, wearer.wearerId));
+                    }
+                    onRenameWearer(wearer.wearerId, value);
+                  }}
+                  onBlur={() => confirmName(wearer, "blur")}
+                />
+              </label>
+              <button
+                type="button"
+                data-wearer-name-save="true"
+                data-wearer-name-confirmed={isNameConfirmed(wearer) ? "true" : "false"}
+                aria-label={
+                  isNameConfirmed(wearer)
+                    ? `Name saved for ${labelForWearer(wearer)}`
+                    : `Save name for ${labelForWearer(wearer)}`
                 }
-              />
-            </label>
+                className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border px-3 text-xs font-bold ${
+                  isNameConfirmed(wearer)
+                    ? "border-heritage-gold/30 bg-white text-heritage-ink/55"
+                    : "border-heritage-green bg-heritage-green text-white"
+                }`}
+                onClick={(event) => {
+                  event?.stopPropagation?.();
+                  confirmName(wearer, "save");
+                }}
+              >
+                {isNameConfirmed(wearer) ? "Saved" : "Save"}
+              </button>
+            </div>
+            {nameHintWearerIds.has(wearer.wearerId) && wearer.displayName.trim().length === 0 ? (
+              <p data-wearer-name-hint="true" className="mt-1 text-xs font-semibold text-red-700">
+                {NAME_REQUIRED_HINT}
+              </p>
+            ) : null}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -296,6 +396,11 @@ export const WearerAssignmentPanel = ({
                 className="inline-flex min-h-11 items-center justify-center rounded-xl px-3 text-xs font-bold text-heritage-ink/60"
                 onClick={(event) => {
                   event?.stopPropagation();
+                  // Sole expanded card: same path as Only for me (back to For me).
+                  if (wearers.length === 1) {
+                    collapseToSolo();
+                    return;
+                  }
                   const result = onDeleteWearer(wearer.wearerId);
                   if (
                     result.status === "blocked" &&

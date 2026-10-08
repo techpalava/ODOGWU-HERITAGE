@@ -85,8 +85,57 @@ const garments = [
 const keys = garments.map((garment) => garment.garmentKey);
 
 assert.equal(resolveActiveWearerCap(11), MAX_CONFIGURED_ACTIVE_WEARERS);
-assert.equal(resolveActiveWearerCap(3), 3);
+assert.equal(MAX_CONFIGURED_ACTIVE_WEARERS, 10, "hard ceiling stays at 10");
+// The cap is no longer limited by garment count.
+assert.equal(resolveActiveWearerCap(3), MAX_CONFIGURED_ACTIVE_WEARERS);
+assert.equal(resolveActiveWearerCap(1), MAX_CONFIGURED_ACTIVE_WEARERS);
 assert.equal(resolveActiveWearerCap(0), 0);
+
+{
+  // 1-garment order: more people than garments is allowed, up to the ceiling.
+  const oneGarment = [{ garmentKey: "base:shirt", garmentType: "shirt" as const }];
+  let crowd = reconcileWithChosenSoleFit({
+    order: createEmptyWearerOrder(),
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "male",
+    garments: oneGarment,
+    garmentTypeSelection: selection("male"),
+  }, "male");
+  const soleId = crowd.wearers[0].wearerId;
+  assert.equal(crowd.assignmentByGarmentKey["base:shirt"], soleId);
+  for (let count = 2; count <= MAX_CONFIGURED_ACTIVE_WEARERS; count += 1) {
+    const result = addWearer({
+      order: crowd,
+      physicalGarmentCount: oneGarment.length,
+      displayName: `Guest ${count}`,
+      fitContext: "male",
+    });
+    assert.equal(result.status, "updated", `person ${count} fits under the cap`);
+    if (result.status === "updated") crowd = result.order;
+  }
+  assert.equal(crowd.wearers.length, MAX_CONFIGURED_ACTIVE_WEARERS);
+  const overCap = addWearer({
+    order: crowd,
+    physicalGarmentCount: oneGarment.length,
+    displayName: "One too many",
+    fitContext: "male",
+  });
+  assert.equal(overCap.status, "blocked");
+  if (overCap.status === "blocked") assert.equal(overCap.code, "WEARER_CAP_REACHED");
+  // The single garment still moves exclusively between people.
+  const guestTwo = crowd.wearers.find((wearer) => wearer.displayName === "Guest 2")!;
+  const moved = assignGarmentToWearer({
+    order: crowd,
+    garmentKey: "base:shirt",
+    wearerId: guestTwo.wearerId,
+    garment: oneGarment[0],
+    garmentTypeSelection: selection("male"),
+  });
+  assert.equal(moved.status, "updated");
+  if (moved.status === "updated") {
+    assert.deepEqual(moved.order.assignmentByGarmentKey, { "base:shirt": guestTwo.wearerId });
+  }
+}
 
 const freshSolo = reconcileWearerOrder({
   order: createEmptyWearerOrder(),
