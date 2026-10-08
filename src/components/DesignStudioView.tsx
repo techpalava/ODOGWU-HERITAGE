@@ -107,6 +107,11 @@ import {
 import { calculateDesignPricing } from "../utils/designPricing";
 import { projectCustomerGarmentConstructionBreakdown } from "../utils/designPriceBreakdownPresentation";
 import { GuestOrderSessionService } from "../services/guestOrderSessionService";
+import {
+  allowNextStudioFutureDesignDraftSession,
+  isStudioFutureDesignDraftRetired,
+  retireStudioFutureDesignDraft,
+} from "../services/retirePaidStudioDraft";
 import { auth } from "../services/firebase";
 import {
   areFutureDraftsEquivalent,
@@ -4212,6 +4217,7 @@ export default function DesignStudioView({
   );
 
   useEffect(() => {
+    allowNextStudioFutureDesignDraftSession();
     invalidateFutureGarmentRemovalRetention();
     futureDraftIdentityGenerationRef.current += 1;
     futureDraftHydrationRequestGenerationRef.current += 1;
@@ -5967,6 +5973,7 @@ export default function DesignStudioView({
         // private context immediately before persistence begins.
         return;
       }
+      if (isStudioFutureDesignDraftRetired()) return;
       const autosaveAllocationResolution =
         resolveDraftAutosaveFabricAllocations({
           preservedInvalidHydratedFabricAllocations:
@@ -8123,7 +8130,21 @@ export default function DesignStudioView({
     });
     if (result.status === "recorded") {
       useAppStore.getState().dropPaidFutureOrderV2CartCandidate(candidate);
+      retireCurrentStudioDraft();
     }
+  };
+  const retireCurrentStudioDraft = () => {
+    const repository =
+      futureDraftRepository ??
+      createFirebaseAuthenticatedFutureDraftRepository({
+        customer: currentUser,
+        authResolved: firebaseDraftAuth.resolved,
+        firebaseUser: firebaseDraftAuth.user,
+      });
+    void retireStudioFutureDesignDraft({
+      repository,
+      expectedRevision: cloudFutureDraftRevisionRef.current,
+    });
   };
   const handlePayFutureOrderV2 = async () => {
     if (futureOrderV2PayInFlightRef.current) return;
@@ -8161,16 +8182,7 @@ export default function DesignStudioView({
     });
   };
   const handleStartAnotherOrderAfterCartPark = () => {
-    GuestOrderSessionService.clearFutureDesignDraft();
-    useAppStore.getState().setStudioParkedInFutureOrderV2Cart(false);
-    const repository =
-      futureDraftRepository ??
-      createFirebaseAuthenticatedFutureDraftRepository({
-        customer: currentUser,
-        authResolved: firebaseDraftAuth.resolved,
-        firebaseUser: firebaseDraftAuth.user,
-      });
-    void repository.clear(null);
+    retireCurrentStudioDraft();
     useAppStore.getState().setActiveTab("home");
     setNotification({
       message:
@@ -8190,16 +8202,7 @@ export default function DesignStudioView({
     clearSummaryEditReturnLease();
     setSummaryFabricChangePending(null);
     invalidateFutureGarmentRemovalRetention();
-    GuestOrderSessionService.clearFutureDesignDraft();
-    useAppStore.getState().setStudioParkedInFutureOrderV2Cart(false);
-    const repository =
-      futureDraftRepository ??
-      createFirebaseAuthenticatedFutureDraftRepository({
-        customer: currentUser,
-        authResolved: firebaseDraftAuth.resolved,
-        firebaseUser: firebaseDraftAuth.user,
-      });
-    void repository.clear(null);
+    retireCurrentStudioDraft();
     setFutureOrderCancelDialogOpen(false);
     setFutureOrderCancelConfirming(false);
     useAppStore.getState().setActiveTab("home");
@@ -8261,6 +8264,14 @@ export default function DesignStudioView({
           ),
       });
       if (cancelled || result.status === "ignored") return;
+      if (result.status === "recorded") {
+        void retireStudioFutureDesignDraft({
+          ...(futureDraftRepository
+            ? { repository: futureDraftRepository }
+            : {}),
+          expectedRevision: cloudFutureDraftRevisionRef.current,
+        });
+      }
 
       // Bank redirect reloads the app; open the order on the dashboard.
       if (result.orderId) stashFutureOrderV2OpenOrderId(result.orderId);

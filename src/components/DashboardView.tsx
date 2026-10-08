@@ -12,6 +12,7 @@ import type { FutureOrderV2PaymentRecord } from "../utils/futureOrderV2PaymentRe
 import { CustomerFutureOrderV2List } from "./CustomerFutureOrderV2List";
 import { authorizeFutureOrderV2Payment } from "../utils/futureOrderV2Payment";
 import { recordFutureOrderV2Payment } from "../services/futureOrderV2PaymentRecordClient";
+import { retireStudioFutureDesignDraft } from "../services/retirePaidStudioDraft";
 import type { FutureOrderV2DashboardPaymentActions } from "../utils/futureOrderV2DashboardPayment";
 import { presentCustomerWorkshopProgress } from "../utils/customerWorkshopProgress";
 import { presentCustomerDashboardBanner } from "../utils/customerDashboardBanner";
@@ -117,6 +118,9 @@ export default function DashboardView({
         record: recordFutureOrderV2Payment,
       });
       if (cancelled || result.status === "ignored") return;
+      if (result.status === "recorded") {
+        void retireStudioFutureDesignDraft();
+      }
       if (result.orderId) {
         stashFutureOrderV2OpenOrderId(result.orderId);
         setOpenV2OrderId(result.orderId);
