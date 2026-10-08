@@ -26,7 +26,21 @@ import {
   reorderWearers,
   summarizeWearerOrderMeasurementCompletion,
   updateWearerMeasurement,
+  setWearerFitContext,
 } from "./src/utils/wearerOrder";
+
+/** Customer picks the sole fit on Measurement; Studio then reconciles (no demographic inference). */
+const reconcileWithChosenSoleFit = (
+  input: Parameters<typeof reconcileWearerOrder>[0],
+  fitContext: "male" | "female",
+) => {
+  const first = reconcileWearerOrder(input);
+  const sole = first.wearers[0];
+  if (first.wearers.length !== 1 || !sole || sole.fitContext !== null) return first;
+  const chosen = setWearerFitContext(first, sole.wearerId, fitContext);
+  if (chosen.status !== "updated") throw new Error("expected sole fit choice");
+  return reconcileWearerOrder({ ...input, order: chosen.order });
+};
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
@@ -74,13 +88,24 @@ assert.equal(resolveActiveWearerCap(11), MAX_CONFIGURED_ACTIVE_WEARERS);
 assert.equal(resolveActiveWearerCap(3), 3);
 assert.equal(resolveActiveWearerCap(0), 0);
 
-const maleOrder = reconcileWearerOrder({
+const freshSolo = reconcileWearerOrder({
   order: createEmptyWearerOrder(),
   garmentKeys: keys,
   compatibilityDemographic: "male",
   garments,
   garmentTypeSelection: selection("male"),
 });
+assert.equal(freshSolo.wearers.length, 1);
+assert.equal(freshSolo.wearers[0].fitContext, null, "fresh solo starts with no fit selected");
+assert.deepEqual(freshSolo.assignmentByGarmentKey, {});
+
+const maleOrder = reconcileWithChosenSoleFit({
+  order: createEmptyWearerOrder(),
+  garmentKeys: keys,
+  compatibilityDemographic: "male",
+  garments,
+  garmentTypeSelection: selection("male"),
+}, "male");
 assert.equal(maleOrder.wearers.length, 1);
 assert.equal(maleOrder.wearers[0].displayName, "");
 assert.equal(maleOrder.wearers[0].fitContext, "male");
@@ -106,11 +131,30 @@ assert.equal(maleOrder.assignmentByGarmentKey["base:dress"], undefined);
     garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
     garmentTypeSelection: selection("female"),
   });
-  assert.equal(nullFitSolo.wearers[0]?.fitContext, "female");
+  assert.equal(
+    nullFitSolo.wearers[0]?.fitContext,
+    null,
+    "Step 1 demographic must not pre-select the sole fit",
+  );
   assert.equal(
     nullFitSolo.assignmentByGarmentKey["base:shirt"],
+    undefined,
+    "sole garments wait for the customer's fit choice",
+  );
+  const chosenFemale = setWearerFitContext(nullFitSolo, "wearer-sole-null-fit", "female");
+  if (chosenFemale.status !== "updated") throw new Error("expected fit choice");
+  const afterChoice = reconcileWearerOrder({
+    order: chosenFemale.order,
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "female",
+    garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    garmentTypeSelection: selection("female"),
+  });
+  assert.equal(afterChoice.wearers[0]?.fitContext, "female");
+  assert.equal(
+    afterChoice.assignmentByGarmentKey["base:shirt"],
     "wearer-sole-null-fit",
-    "demographic fit must unlock sole auto-assign",
+    "customer fit choice unlocks sole auto-assign",
   );
 
   const stillNull = reconcileWearerOrder({
@@ -269,13 +313,13 @@ const capOrder = tenKeys.reduce((order, _garmentKey, index) => {
     fitContext: index % 2 === 0 ? "female" : "male",
   });
   return next.status === "updated" ? next.order : order;
-}, reconcileWearerOrder({
+}, reconcileWithChosenSoleFit({
   order: createEmptyWearerOrder(),
   garmentKeys: tenKeys,
   compatibilityDemographic: "male",
   garments: tenKeys.map((garmentKey) => ({ garmentKey, garmentType: "shirt" as const })),
   garmentTypeSelection: selection("male"),
-}));
+}, "male"));
 assert.equal(capOrder.wearers.length, 10);
 assert.equal(
   addWearer({
@@ -334,13 +378,13 @@ assert.notEqual(
   other.measurement.entered.shared.chest_bust_circumference?.valueCm,
 );
 
-const displayedYou = reconcileWearerOrder({
+const displayedYou = reconcileWithChosenSoleFit({
   order: createEmptyWearerOrder(),
   garmentKeys: ["base:shirt"],
   compatibilityDemographic: "male",
   garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
   garmentTypeSelection: selection("male"),
-});
+}, "male");
 const stableId = displayedYou.wearers[0]?.wearerId || "";
 assert.equal(displayedYou.wearers[0]?.displayName, "");
 assert.ok(stableId);
@@ -618,5 +662,41 @@ const continueButton = continueRenderer.root.findAllByType("button").find(
 assert.ok(continueButton, "expected Continue to Summary control");
 assert.equal(continueButton.props.disabled, !selectChief.completion.complete);
 assert.equal(selectChief.completion.complete, false);
+
+{
+  const chosenSoleFits: Array<"male" | "female"> = [];
+  let soleFitRenderer!: ReturnType<typeof create>;
+  act(() => {
+    soleFitRenderer = create(createElement(DormantFutureMeasurementStep, {
+      plan: chiefSeed.plan,
+      state: chiefComplete,
+      showSoleFitControl: true,
+      soleFitContext: null,
+      onSetSoleFitContext: (fitContext: "male" | "female") => {
+        chosenSoleFits.push(fitContext);
+      },
+      onChange: () => undefined,
+      onRouteChange: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    }));
+  });
+  const soleFitOptions = soleFitRenderer.root.findAll(
+    (node) => typeof node.props?.["data-measurement-sole-fit-option"] === "string",
+  );
+  assert.deepEqual(
+    soleFitOptions.map((node) => node.props["data-measurement-sole-fit-option"]),
+    ["male", "female"],
+  );
+  assert.equal(
+    soleFitOptions.every((node) => node.props["data-measurement-sole-fit-selected"] === "false"),
+    true,
+    "Dimension card shows Male/Female with neither selected until the customer picks",
+  );
+  act(() => {
+    soleFitOptions[1].props.onClick();
+  });
+  assert.deepEqual(chosenSoleFits, ["female"]);
+}
 
 console.log("multiple wearers domain tests passed");

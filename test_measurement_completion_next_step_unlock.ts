@@ -31,6 +31,7 @@ import {
   createWearerProfile,
   reconcileWearerOrder,
   resolveWearerAssignmentPresentation,
+  setWearerFitContext,
 } from "./src/utils/wearerOrder";
 
 const construction = (
@@ -832,11 +833,25 @@ assert.equal(
     garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
     garmentTypeSelection: shirtSelection,
   });
-  assert.equal(softLockPrevented.wearers[0]?.fitContext, "male");
   assert.equal(
-    softLockPrevented.assignmentByGarmentKey["base:shirt"],
+    softLockPrevented.wearers[0]?.fitContext,
+    null,
+    "male demographic must not pre-select the sole fit",
+  );
+  assert.equal(softLockPrevented.assignmentByGarmentKey["base:shirt"], undefined);
+  const soleFitChosen = setWearerFitContext(softLockPrevented, "wearer-soft-lock", "male");
+  if (soleFitChosen.status !== "updated") throw new Error("expected sole fit choice");
+  const afterSoleFitChoice = reconcileWearerOrder({
+    order: soleFitChosen.order,
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "male",
+    garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    garmentTypeSelection: shirtSelection,
+  });
+  assert.equal(
+    afterSoleFitChoice.assignmentByGarmentKey["base:shirt"],
     "wearer-soft-lock",
-    "sole null fit + male demographic must auto-assign",
+    "sole fit chosen on Measurement must auto-assign",
   );
 
   const nullDemographic = reconcileWearerOrder({
@@ -849,7 +864,7 @@ assert.equal(
   assert.equal(nullDemographic.wearers[0]?.fitContext, null);
   assert.equal(nullDemographic.assignmentByGarmentKey["base:shirt"], undefined);
 }
-console.log("PASS: sole wearer demographic fit prevents soft-lock");
+console.log("PASS: sole wearer fit waits for the customer, then auto-assigns");
 
 const twoGarmentPlan = planMeasurementRequirements({
   route: "low_risk",

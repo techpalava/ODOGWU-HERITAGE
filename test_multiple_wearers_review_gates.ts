@@ -30,7 +30,21 @@ import {
   shouldAcceptMeasurementAutosave,
   shouldReplacePersistedMeasurement,
   updateWearerMeasurement,
+  setWearerFitContext,
 } from "./src/utils/wearerOrder";
+
+/** Customer picks the sole fit on Measurement; Studio then reconciles (no demographic inference). */
+const reconcileWithChosenSoleFit = (
+  input: Parameters<typeof reconcileWearerOrder>[0],
+  fitContext: "male" | "female",
+) => {
+  const first = reconcileWearerOrder(input);
+  const sole = first.wearers[0];
+  if (first.wearers.length !== 1 || !sole || sole.fitContext !== null) return first;
+  const chosen = setWearerFitContext(first, sole.wearerId, fitContext);
+  if (chosen.status !== "updated") throw new Error("expected sole fit choice");
+  return reconcileWearerOrder({ ...input, order: chosen.order });
+};
 
 const construction = (
   garmentType: keyof GarmentTypeStepSelection["constructionByGarment"],
@@ -804,7 +818,7 @@ assert.equal(blockedEleventh.status, "blocked");
       "additional:shirt:1": construction("shirt", "shirt_std_short", "shirt_construction"),
     },
   };
-  const soloSampleOrder = reconcileWearerOrder({
+  const soloSampleOrder = reconcileWithChosenSoleFit({
     order: {
       schemaVersion: 2,
       wearers: [],
@@ -815,7 +829,7 @@ assert.equal(blockedEleventh.status, "blocked");
     garments: sampleGarments,
     garmentTypeSelection: sampleSelection,
     additionalGarmentConstructions: sampleAdditional,
-  });
+  }, "male");
   assert.equal(soloSampleOrder.wearers.length, 1);
   const youId = soloSampleOrder.wearers[0].wearerId;
   const twoShirtSamplePlan = planMeasurementRequirements({

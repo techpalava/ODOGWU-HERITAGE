@@ -418,10 +418,17 @@ export const setWearerMeasurementRoute = (
   ),
 });
 
+/**
+ * Reconcile wearers with the live physical garments.
+ *
+ * The sole wearer's fit is never inferred from `compatibilityDemographic`:
+ * Measurement starts with no fit selected until the customer picks one (or a
+ * saved draft already carries an explicit fit). The field stays on the input
+ * type so existing call sites keep compiling.
+ */
 export const reconcileWearerOrder = ({
   order,
   garmentKeys,
-  compatibilityDemographic,
   garments = [],
   garmentTypeSelection,
   additionalGarmentConstructions,
@@ -439,7 +446,7 @@ export const reconcileWearerOrder = ({
     wearers = [
       createWearerProfile({
         presentationOrder: 0,
-        fitContext: resolveNewWearerFitContext(compatibilityDemographic),
+        fitContext: null,
       }),
     ];
   }
@@ -465,12 +472,6 @@ export const reconcileWearerOrder = ({
       wearer,
     ),
   );
-  if (wearers.length === 1) {
-    const inferredFit = resolveNewWearerFitContext(compatibilityDemographic);
-    if (wearers[0].fitContext === null && inferredFit !== null) {
-      wearers = [{ ...wearers[0], fitContext: inferredFit }];
-    }
-  }
   if (wearers.length === 1 && garmentTypeSelection) {
     const only = wearers[0];
     for (const garmentKey of uniqueKeys) {
