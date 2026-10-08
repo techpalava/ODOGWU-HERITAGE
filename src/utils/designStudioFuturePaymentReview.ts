@@ -276,6 +276,17 @@ export type FuturePaymentReviewMeasurementHeader =
       }[];
     };
 
+/** A solo wearer's public name, or null for a blank / generic "you" sole (stays unlabeled). */
+const namedSoleWearerLabel = (displayName: string): string | null => {
+  const name = displayName.trim();
+  return !name || name.toLowerCase() === "you" ? null : name;
+};
+
+const measurementMethodTitle = (route: SelectedMeasurementMethod): string =>
+  isSelectedMeasurementMethod(route)
+    ? MEASUREMENT_METHOD_LABELS[route]
+    : "method not selected";
+
 export const getFuturePaymentReviewMeasurementHeader = (
   measurements: FutureMeasurementStateV1 | WearerOrderStateV2,
 ): FuturePaymentReviewMeasurementHeader => {
@@ -285,11 +296,10 @@ export const getFuturePaymentReviewMeasurementHeader = (
     );
     if (wearers.length === 1) {
       const wearer = wearers[0];
-      const name = wearer.displayName.trim();
       const routeLabel = formatMeasurementRoute(wearer.measurement.route);
       return {
         kind: "single",
-        wearerLabel: !name || name.toLowerCase() === "you" ? null : name,
+        wearerLabel: namedSoleWearerLabel(wearer.displayName),
         routeLabel,
         statusLabel: formatMeasurementStatus(wearer.measurement.calculationStatus),
       };
@@ -395,7 +405,19 @@ export const getFuturePaymentReviewMeasurementGroups = (
   const measurements = candidate.measurements;
   if (isWearerOrderStateV2(measurements)) {
     if (measurements.wearers.length === 1) {
-      return groupsFromMeasurementBag(measurements.wearers[0].measurement, candidate.garments);
+      const sole = measurements.wearers[0];
+      const soleGroups = groupsFromMeasurementBag(sole.measurement, candidate.garments);
+      const soleName = namedSoleWearerLabel(sole.displayName);
+      if (!soleName) return soleGroups;
+      // A named solo wearer is prefixed like multi-person groups: "{name} - {method|garment}".
+      return soleGroups.map((group) => ({
+        ...group,
+        title: `${soleName} - ${
+          group.garmentKey === null
+            ? measurementMethodTitle(sole.measurement.route)
+            : group.title
+        }`,
+      }));
     }
     if (measurements.wearers.length === 0) return [];
     const wearerOrder = measurements;

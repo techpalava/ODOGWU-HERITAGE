@@ -663,6 +663,80 @@ const oneWearerGroups = getFuturePaymentReviewMeasurementGroups({
   garments: [{ garmentKey: "base:dress", label: "Standard Dress" }],
 });
 assert.equal(oneWearerGroups.some((group) => group.garmentKey === "base:dress"), true);
+assert.ok(oneWearerGroups.length > 0);
+assert.equal(
+  oneWearerGroups.every((group) => group.title.startsWith("Amaka - ")),
+  true,
+  "a named solo wearer prefixes every measurement group like multi-person orders",
+);
+assert.equal(
+  oneWearerGroups.find((group) => group.garmentKey === "base:dress")?.title,
+  "Amaka - Standard Dress",
+);
+const oneWearerShared = oneWearerGroups.find((group) => group.garmentKey === null);
+if (oneWearerShared) {
+  assert.equal(oneWearerShared.title, "Amaka - Sample Cloth Measurements");
+}
+const youGroups = getFuturePaymentReviewMeasurementGroups({
+  measurements: youProjection,
+  garments: [{ garmentKey: "base:shirt", label: "Standard Shirt" }],
+});
+assert.ok(youGroups.length > 0);
+assert.equal(
+  youGroups.some((group) => group.title.startsWith("You")),
+  false,
+  "a generic 'You' sole stays unlabeled",
+);
+const blankSoleProjection = projectAuthoritativeOrderMeasurements({
+  measurementState: completeShirt,
+  measurementPlan: lowShirtPlan,
+  wearerRuntimes: [
+    {
+      wearerId: you.wearerId,
+      displayName: "   ",
+      fitContext: "male",
+      garmentKeys: ["base:shirt"],
+      plan: lowShirtPlan,
+      measurement: completeShirt,
+    },
+  ],
+});
+const blankSoleHeader = getFuturePaymentReviewMeasurementHeader(blankSoleProjection);
+if (blankSoleHeader.kind === "single") assert.equal(blankSoleHeader.wearerLabel, null);
+const blankSoleGroups = getFuturePaymentReviewMeasurementGroups({
+  measurements: blankSoleProjection,
+  garments: [{ garmentKey: "base:shirt", label: "Standard Shirt" }],
+});
+assert.ok(blankSoleGroups.length > 0);
+assert.equal(blankSoleGroups.some((group) => group.title.includes(" - ")), false, "blank sole stays unlabeled");
+assert.equal(blankSoleGroups.some((group) => group.title === "Shared measurements"), true);
+const fredProjection = projectAuthoritativeOrderMeasurements({
+  measurementState: completeShirt,
+  measurementPlan: lowShirtPlan,
+  wearerRuntimes: [
+    {
+      wearerId: you.wearerId,
+      displayName: "fred",
+      fitContext: "male",
+      garmentKeys: ["base:shirt"],
+      plan: lowShirtPlan,
+      measurement: completeShirt,
+    },
+  ],
+});
+if (isWearerOrderStateV2(fredProjection)) {
+  assert.equal(fredProjection.wearers[0]?.displayName, "fred", "paid V2 measurements keep the solo name");
+}
+const fredHeader = getFuturePaymentReviewMeasurementHeader(fredProjection);
+assert.equal(fredHeader.kind, "single");
+if (fredHeader.kind === "single") assert.equal(fredHeader.wearerLabel, "fred");
+const fredGroups = getFuturePaymentReviewMeasurementGroups({
+  measurements: fredProjection,
+  garments: [{ garmentKey: "base:shirt", label: "Standard Shirt" }],
+});
+assert.ok(fredGroups.length > 0);
+assert.equal(fredGroups.every((group) => group.title.startsWith("fred - ")), true);
+assert.equal(fredGroups.some((group) => group.title === "Shared measurements"), false);
 const historicalHeader = getFuturePaymentReviewMeasurementHeader(completeShirt);
 assert.equal(historicalHeader.kind, "single");
 if (historicalHeader.kind === "single") assert.equal(historicalHeader.wearerLabel, null);
