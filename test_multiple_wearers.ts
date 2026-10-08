@@ -601,6 +601,42 @@ const unassigned = {
 assert.equal(completionFor(unassigned, "wearer-chief", chiefComplete).completion.complete, false);
 assert.equal(completionFor(unassigned, "wearer-ada", adaFilled).completion.complete, false);
 
+{
+  // In-card uncheck: the garment is left unassigned, is not auto-stolen while
+  // 2+ people exist, and keeps Continue blocked.
+  const unchecked = removeGarmentFromWearerOrder(bothCompleteOrder, "additional:shirt:1");
+  assert.equal(unchecked.assignmentByGarmentKey["additional:shirt:1"], undefined);
+  const reconcileShirts = (order: typeof unchecked) =>
+    reconcileWearerOrder({
+      order,
+      garmentKeys: shirtKeys,
+      compatibilityDemographic: "male",
+      garments: shirtPhysical,
+      garmentTypeSelection: shirtSelection,
+      additionalGarmentConstructions: additionalShirtConstructions,
+    });
+  const twoPeople = reconcileShirts(unchecked);
+  assert.equal(
+    twoPeople.assignmentByGarmentKey["additional:shirt:1"],
+    undefined,
+    "2+ people: an unassigned garment is not auto-assigned",
+  );
+  assert.equal(completionFor(twoPeople, "wearer-chief", chiefComplete).completion.complete, false);
+  // Removing the now-empty second person hands the garment back to the sole wearer.
+  const adaRemoved = deleteWearer(twoPeople, "wearer-ada");
+  assert.equal(adaRemoved.status, "updated");
+  if (adaRemoved.status === "updated") {
+    const handedBack = reconcileShirts(adaRemoved.order);
+    assert.equal(handedBack.wearers.length, 1);
+    assert.equal(handedBack.assignmentByGarmentKey["base:shirt"], "wearer-chief");
+    assert.equal(
+      handedBack.assignmentByGarmentKey["additional:shirt:1"],
+      "wearer-chief",
+      "back to one wearer: sole reconcile assigns every eligible garment to You",
+    );
+  }
+}
+
 const measurementLine = (complete: boolean) => {
   const summary = {
     garmentSummary: [],

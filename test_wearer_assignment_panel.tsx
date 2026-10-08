@@ -8,7 +8,9 @@ import {
   addWearer,
   assignGarmentToWearer,
   deleteWearer,
+  hasUnassignedPhysicalGarments,
   reconcileWearerOrder,
+  removeGarmentFromWearerOrder,
   renameWearer,
   createEmptyWearerOrder,
   resolveWearerAssignmentPresentation,
@@ -35,6 +37,26 @@ const textContent = (node: ReactTestInstance | string): string =>
   typeof node === "string"
     ? node
     : node.children.map((child) => textContent(child as ReactTestInstance | string)).join("");
+
+const cardFor = (root: ReactTestInstance, wearerLabel: string) => {
+  const card = root.findAllByType("article").find((article) =>
+    article
+      .findAllByType("input")
+      .some((input) => input.props["aria-label"] === `Name or nickname for ${wearerLabel}`),
+  );
+  if (!card) throw new Error(`expected person card for ${wearerLabel}`);
+  return card;
+};
+
+const garmentBox = (root: ReactTestInstance, wearerLabel: string, garmentKey: string) =>
+  cardFor(root, wearerLabel).findByProps({ "data-wearer-garment-key": garmentKey });
+
+const toggleGarment = async (root: ReactTestInstance, wearerLabel: string, garmentKey: string) => {
+  const box = garmentBox(root, wearerLabel, garmentKey);
+  await act(async () => {
+    box.props.onChange({ currentTarget: { checked: !box.props.checked } });
+  });
+};
 
 const selection = (): GarmentTypeStepSelection => ({
   garmentTypes: ["shirt"],
@@ -176,13 +198,9 @@ assert.equal(
   170,
 );
 
-const amakaShirtSelect = renderer.root
-  .findAllByType("select")
-  .find((select) => select.props.value === amaka.wearerId);
-if (!amakaShirtSelect) throw new Error("expected Amaka garment select");
-await act(async () => {
-  amakaShirtSelect.props.onChange({ currentTarget: { value: youId } });
-});
+assert.equal(garmentBox(renderer.root, "Amaka", "additional:shirt:1").props.checked, true);
+await toggleGarment(renderer.root, "You", "additional:shirt:1");
+assert.equal(garmentBox(renderer.root, "Amaka", "additional:shirt:1").props.checked, false);
 assert.equal(latestOrder.assignmentByGarmentKey["additional:shirt:1"], youId);
 assert.ok(latestOrder.wearers.some((wearer) => wearer.wearerId === amaka.wearerId));
 
@@ -198,25 +216,11 @@ assert.equal(latestOrder.assignmentByGarmentKey["additional:shirt:1"], youId);
 
 console.log("PASS: wearer assignment panel blocks occupied removal");
 
-const selectFor = (root: ReactTestInstance, label: string) => {
-  const select = root.findAllByType("select").find(
-    (candidate) => candidate.props["aria-label"] === `Wearer for ${label}`,
-  );
-  if (!select) throw new Error(`expected select for ${label}`);
-  return select;
-};
-
-const optionValues = (select: ReactTestInstance) =>
-  select.findAllByType("option").map((option) => option.props.value);
-
-const placeholderOption = (select: ReactTestInstance) => {
-  const option = select.findAllByType("option")[0];
-  if (!option) throw new Error("expected Choose a person option");
-  return option;
-};
-
 const alerts = (root: ReactTestInstance) =>
   root.findAllByProps({ role: "alert" }).map((node) => textContent(node));
+
+const unassignedNoteCount = (root: ReactTestInstance) =>
+  root.findAllByProps({ "data-wearer-unassigned-note": "true" }).length;
 
 {
   const shirtGarments: MeasurementPhysicalGarment[] = [
@@ -224,9 +228,10 @@ const alerts = (root: ReactTestInstance) =>
     { garmentKey: "base:dress", garmentType: "dress" },
     { garmentKey: "additional:shirt:1", garmentType: "shirt" },
   ];
+  const shirtKeys = shirtGarments.map((garment) => garment.garmentKey);
   const fitted = reconcileWithChosenSoleFit({
     order: createEmptyWearerOrder(),
-    garmentKeys: shirtGarments.map((garment) => garment.garmentKey),
+    garmentKeys: shirtKeys,
     compatibilityDemographic: "female",
     garments: shirtGarments,
     garmentTypeSelection: selection(),
@@ -303,6 +308,11 @@ const alerts = (root: ReactTestInstance) =>
           }
           return result;
         }}
+        onUnassignGarment={(garmentKey) => {
+          const next = removeGarmentFromWearerOrder(order, garmentKey);
+          publishAuthority(next);
+          setOrder(next);
+        }}
       />
     );
   };
@@ -310,98 +320,117 @@ const alerts = (root: ReactTestInstance) =>
   await act(async () => {
     assignmentRenderer = create(<AssignmentHarness />);
   });
-  const body = textContent(assignmentRenderer.root);
-  assert.match(body, /1\. Add people/);
+  const root = () => assignmentRenderer.root;
+  const body = textContent(root());
+  assert.match(body, /Add people/);
+  assert.equal(body.includes("1. Add people"), false);
   assert.match(body, /Name or nickname/);
   assert.match(body, /Fit for measurements/);
-  assert.match(body, /2\. Assign garments/);
-  assert.match(body, /Choose who will wear each garment/);
-  const addButton = assignmentRenderer.root.findAllByType("button").find(
+  assert.match(body, /Garments for this person/);
+  assert.match(body, /tick the\s+garments each person will wear on their card/);
+  assert.equal(body.includes("2. Assign garments"), false, "step-2 assign block is gone");
+  assert.equal(body.includes("Choose who will wear each garment"), false);
+  assert.equal(root().findAllByType("select").length, 0, "per-garment dropdowns are gone");
+  const groups = root().findAllByProps({ "data-wearer-garment-assign": "true" });
+  assert.equal(groups.length, 2, "every person card gets garment checkboxes");
+  for (const group of groups) {
+    assert.deepEqual(
+      group
+        .findAll((node) => node.type === "input" && node.props.type === "checkbox")
+        .map((node) => node.props["data-wearer-garment-key"]),
+      shirtKeys,
+    );
+  }
+  const youCardText = textContent(cardFor(root(), "You"));
+  assert.ok(youCardText.indexOf("Name or nickname") < youCardText.indexOf("Move up"));
+  assert.ok(youCardText.indexOf("Remove person") < youCardText.indexOf("Fit for measurements"));
+  assert.ok(
+    youCardText.indexOf("Fit for measurements") < youCardText.indexOf("Garments for this person"),
+    "fit comes before garments on the card",
+  );
+  const addButton = root().findAllByType("button").find(
     (button) => textContent(button) === "+ Add another person",
   );
   if (!addButton || addButton.props.type !== "button") {
     throw new Error("expected Add another person button");
   }
-  const shirtSelect = selectFor(assignmentRenderer.root, "Standard Shirt");
-  const dressSelect = selectFor(assignmentRenderer.root, "Standard Dress");
-  const repeatSelect = selectFor(assignmentRenderer.root, "Standard Shirt 2");
-  assert.equal(repeatSelect.props.value, "");
-  assert.equal(textContent(placeholderOption(repeatSelect)), "Choose a person");
-  assert.equal(placeholderOption(repeatSelect).props.disabled, true);
-  assert.equal(placeholderOption(shirtSelect).props.disabled, true);
-  assert.deepEqual(optionValues(shirtSelect).slice(1), [you.wearerId, amakaWearer.wearerId]);
-  assert.equal(optionValues(shirtSelect).includes("You"), false);
-  assert.equal(optionValues(shirtSelect).includes("Amaka"), false);
 
-  await act(async () => {
-    shirtSelect.props.onChange({ currentTarget: { value: you.wearerId } });
-  });
-  assert.equal(authority.assignmentByGarmentKey["base:shirt"], you.wearerId);
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Shirt").props.value, you.wearerId);
-  assert.equal(
-    placeholderOption(selectFor(assignmentRenderer.root, "Standard Shirt")).props.disabled,
-    true,
-  );
-  await act(async () => {
-    selectFor(assignmentRenderer.root, "Standard Shirt").props.onChange({
-      currentTarget: { value: "" },
-    });
-  });
-  assert.equal(authority.assignmentByGarmentKey["base:shirt"], you.wearerId);
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Shirt").props.value, you.wearerId);
+  assert.equal(garmentBox(root(), "You", "additional:shirt:1").props.checked, false);
+  assert.equal(garmentBox(root(), "Amaka", "additional:shirt:1").props.checked, false);
+  assert.equal(unassignedNoteCount(root()), 1, "order-level note while a garment is unassigned");
+  assert.match(textContent(root()), /Assign all garments to continue\./);
 
-  await act(async () => {
-    selectFor(assignmentRenderer.root, "Standard Shirt").props.onChange({
-      currentTarget: { value: amakaWearer.wearerId },
-    });
-  });
+  if (!garmentBox(root(), "You", "base:shirt").props.checked) {
+    await toggleGarment(root(), "You", "base:shirt");
+  }
+  assert.equal(authority.assignmentByGarmentKey["base:shirt"], you.wearerId);
+
+  await toggleGarment(root(), "Amaka", "base:shirt");
   assert.equal(authority.assignmentByGarmentKey["base:shirt"], amakaWearer.wearerId);
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Shirt").props.value, amakaWearer.wearerId);
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Dress").props.value, dressSelect.props.value);
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Shirt 2").props.value, "");
-  await act(async () => {
-    selectFor(assignmentRenderer.root, "Standard Shirt").props.onChange({
-      currentTarget: { value: you.wearerId },
-    });
-  });
-  assert.equal(authority.assignmentByGarmentKey["base:shirt"], you.wearerId);
+  assert.equal(garmentBox(root(), "Amaka", "base:shirt").props.checked, true);
+  assert.equal(
+    garmentBox(root(), "You", "base:shirt").props.checked,
+    false,
+    "checking on one card moves the garment off the other card",
+  );
 
-  await act(async () => {
-    selectFor(assignmentRenderer.root, "Standard Dress").props.onChange({
-      currentTarget: { value: amakaWearer.wearerId },
-    });
-  });
+  await toggleGarment(root(), "You", "base:shirt");
+  assert.equal(authority.assignmentByGarmentKey["base:shirt"], you.wearerId);
+  assert.equal(garmentBox(root(), "Amaka", "base:shirt").props.checked, false);
+
+  await toggleGarment(root(), "Amaka", "base:dress");
   assert.equal(authority.assignmentByGarmentKey["base:dress"], amakaWearer.wearerId);
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Dress").props.value, amakaWearer.wearerId);
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Shirt").props.value, you.wearerId);
+  assert.equal(garmentBox(root(), "Amaka", "base:dress").props.checked, true);
+  assert.equal(garmentBox(root(), "You", "base:dress").props.checked, false);
+  assert.equal(authority.assignmentByGarmentKey["base:shirt"], you.wearerId);
 
   await act(async () => {
     assignmentRenderer.update(<AssignmentHarness />);
   });
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Shirt").props.value, you.wearerId);
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Dress").props.value, amakaWearer.wearerId);
+  assert.equal(garmentBox(root(), "You", "base:shirt").props.checked, true);
+  assert.equal(garmentBox(root(), "Amaka", "base:dress").props.checked, true);
 
-  const beforeRename = authority.assignmentByGarmentKey["base:shirt"];
-  const amakaName = assignmentRenderer.root.findByProps({
-    "aria-label": "Name or nickname for Amaka",
-  });
+  const amakaName = root().findByProps({ "aria-label": "Name or nickname for Amaka" });
   await act(async () => {
     amakaName.props.onChange({ currentTarget: { value: "Amaka Obi" } });
   });
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Shirt").props.value, beforeRename);
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Dress").props.value, amakaWearer.wearerId);
-
-  await act(async () => {
-    selectFor(assignmentRenderer.root, "Standard Shirt 2").props.onChange({
-      currentTarget: { value: amakaWearer.wearerId },
-    });
-  });
   assert.equal(authority.assignmentByGarmentKey["base:shirt"], you.wearerId);
+  assert.equal(authority.assignmentByGarmentKey["base:dress"], amakaWearer.wearerId);
+
+  await toggleGarment(root(), "Amaka Obi", "additional:shirt:1");
   assert.equal(authority.assignmentByGarmentKey["additional:shirt:1"], amakaWearer.wearerId);
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Shirt").props.value, you.wearerId);
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Shirt 2").props.value, amakaWearer.wearerId);
-  assert.equal(selectFor(assignmentRenderer.root, "Standard Dress").props.value, amakaWearer.wearerId);
-  assert.equal(textContent(assignmentRenderer.root).includes("Assign all garments to continue."), false);
+  assert.equal(unassignedNoteCount(root()), 0);
+  assert.equal(textContent(root()).includes("Assign all garments to continue."), false);
+
+  await toggleGarment(root(), "Amaka Obi", "additional:shirt:1");
+  assert.equal(
+    authority.assignmentByGarmentKey["additional:shirt:1"],
+    undefined,
+    "unchecking leaves the garment unassigned",
+  );
+  assert.equal(garmentBox(root(), "Amaka Obi", "additional:shirt:1").props.checked, false);
+  assert.equal(garmentBox(root(), "You", "additional:shirt:1").props.checked, false);
+  assert.equal(
+    hasUnassignedPhysicalGarments({ order: authority, physicalGarmentKeys: shirtKeys }),
+    true,
+    "an unchecked garment keeps the Continue gate closed",
+  );
+  assert.equal(unassignedNoteCount(root()), 1);
+  const stillUnassigned = reconcileWearerOrder({
+    order: authority,
+    garmentKeys: shirtKeys,
+    compatibilityDemographic: "female",
+    garments: shirtGarments,
+    garmentTypeSelection: selection(),
+  });
+  assert.equal(
+    stillUnassigned.assignmentByGarmentKey["additional:shirt:1"],
+    undefined,
+    "with 2+ people an unassigned garment is not auto-stolen",
+  );
+
+  await toggleGarment(root(), "Amaka Obi", "additional:shirt:1");
+  assert.equal(authority.assignmentByGarmentKey["additional:shirt:1"], amakaWearer.wearerId);
 
   const dressSelection = (): GarmentTypeStepSelection => ({
     ...selection(),
@@ -464,6 +493,7 @@ const alerts = (root: ReactTestInstance) =>
   if (missingFit.status === "blocked") assert.equal(missingFit.code, "WEARER_FIT_REQUIRED");
   assert.equal(missingFit.order.assignmentByGarmentKey["base:shirt"], undefined);
 
+  let rejectionAuthority: WearerOrderStateV2 = maleFriend.order;
   const RejectionHarness = ({
     initial,
     garmentsForPanel,
@@ -474,6 +504,10 @@ const alerts = (root: ReactTestInstance) =>
     garmentTypeSelection: GarmentTypeStepSelection;
   }) => {
     const [order, setOrder] = useState(initial);
+    const publish = (next: WearerOrderStateV2) => {
+      rejectionAuthority = next;
+      setOrder(next);
+    };
     return (
       <WearerAssignmentPanel
         order={order}
@@ -487,7 +521,7 @@ const alerts = (root: ReactTestInstance) =>
         onAddWearer={() => {}}
         onRenameWearer={(wearerId, displayName) => {
           const result = renameWearer(order, wearerId, displayName);
-          if (result.status === "updated") setOrder(result.order);
+          if (result.status === "updated") publish(result.order);
         }}
         onReorderWearers={() => {}}
         onSetFitContext={() => {}}
@@ -502,9 +536,10 @@ const alerts = (root: ReactTestInstance) =>
             garment,
             garmentTypeSelection,
           });
-          if (result.status === "updated") setOrder(result.order);
+          if (result.status === "updated") publish(result.order);
           return result;
         }}
+        onUnassignGarment={(garmentKey) => publish(removeGarmentFromWearerOrder(order, garmentKey))}
       />
     );
   };
@@ -519,34 +554,21 @@ const alerts = (root: ReactTestInstance) =>
     );
   });
   const ownedDress = maleFriend.order.assignmentByGarmentKey["base:dress"];
-  await act(async () => {
-    selectFor(rejectionRenderer.root, "Standard Dress").props.onChange({
-      currentTarget: { value: chike.wearerId },
-    });
-  });
-  assert.equal(
-    selectFor(rejectionRenderer.root, "Standard Dress").props.value,
-    ownedDress || "",
-  );
+  await toggleGarment(rejectionRenderer.root, "Chike", "base:dress");
+  assert.equal(garmentBox(rejectionRenderer.root, "Chike", "base:dress").props.checked, false);
+  assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], ownedDress);
   assert.match(
     alerts(rejectionRenderer.root).join(" "),
     /This garment is not available for Chike's selected fit/,
   );
-  await act(async () => {
-    selectFor(rejectionRenderer.root, "Standard Dress").props.onChange({
-      currentTarget: { value: ownedDress },
-    });
-  });
-  assert.equal(selectFor(rejectionRenderer.root, "Standard Dress").props.value, ownedDress);
+  await toggleGarment(rejectionRenderer.root, "You", "base:dress");
+  assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], you.wearerId);
   assert.equal(
     alerts(rejectionRenderer.root).some((alert) => alert.includes("not available")),
     false,
+    "a successful assignment clears the garment's rejection",
   );
-  await act(async () => {
-    selectFor(rejectionRenderer.root, "Standard Dress").props.onChange({
-      currentTarget: { value: chike.wearerId },
-    });
-  });
+  await toggleGarment(rejectionRenderer.root, "Chike", "base:dress");
   assert.match(
     alerts(rejectionRenderer.root).join(" "),
     /This garment is not available for Chike's selected fit/,
@@ -560,6 +582,45 @@ const alerts = (root: ReactTestInstance) =>
   const rejectionText = alerts(rejectionRenderer.root).join(" ");
   assert.match(rejectionText, /This garment is not available for Chief's selected fit/);
   assert.equal(rejectionText.includes("Chike"), false);
+
+  const withUnfittedPerson = addWearer({
+    order: authority,
+    physicalGarmentCount: shirtGarments.length,
+    displayName: "",
+    fitContext: null,
+  });
+  if (withUnfittedPerson.status !== "updated") throw new Error("expected Person 3");
+  rejectionAuthority = withUnfittedPerson.order;
+  let unfittedCardRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    unfittedCardRenderer = create(
+      <RejectionHarness
+        initial={withUnfittedPerson.order}
+        garmentsForPanel={shirtGarments}
+        garmentTypeSelection={selection()}
+      />,
+    );
+  });
+  const person3Card = cardFor(unfittedCardRenderer.root, "Person 3");
+  const person3Group = person3Card.findByProps({ "data-wearer-garment-assign": "true" });
+  assert.equal(person3Group.props.disabled, true, "fit is required before garments");
+  const person3Boxes = person3Group.findAll(
+    (node) => node.type === "input" && node.props.type === "checkbox",
+  );
+  assert.equal(person3Boxes.length, shirtKeys.length);
+  assert.equal(person3Boxes.every((box) => box.props.disabled === true), true);
+  assert.match(
+    textContent(person3Card),
+    /Select a fit for Person 3 before assigning garments\./,
+  );
+  const beforeDisabledToggle = structuredClone(rejectionAuthority.assignmentByGarmentKey);
+  await toggleGarment(unfittedCardRenderer.root, "Person 3", "base:shirt");
+  assert.deepEqual(rejectionAuthority.assignmentByGarmentKey, beforeDisabledToggle);
+  assert.equal(
+    garmentBox(unfittedCardRenderer.root, "You", "base:shirt").props.disabled,
+    false,
+    "a fitted person's checkboxes stay enabled",
+  );
 
   let missingFitRenderer!: ReturnType<typeof create>;
   await act(async () => {
@@ -578,12 +639,12 @@ const alerts = (root: ReactTestInstance) =>
     "solo null-fit stays on first screen; fit is chosen in the measurement card",
   );
   assert.equal(missingFitBody.includes("Select a fit for You before assigning garments"), false);
-  assert.equal(missingFitBody.includes("2. Assign garments"), false);
+  assert.equal(missingFitBody.includes("Garments for this person"), false);
   assert.equal(missingFitBody.includes("Assign all garments to continue"), false);
 
   const reconciled = reconcileWearerOrder({
     order: authority,
-    garmentKeys: shirtGarments.map((garment) => garment.garmentKey),
+    garmentKeys: shirtKeys,
     compatibilityDemographic: "female",
     garments: shirtGarments,
     garmentTypeSelection: selection(),
@@ -601,12 +662,18 @@ const alerts = (root: ReactTestInstance) =>
     authority.wearers.some((wearer) => wearer.displayName === "" && wearer.fitContext === null),
     true,
   );
-  assert.equal(alerts(assignmentRenderer.root).some((message) => message.includes("Standard Shirt")), false);
-  void dressSelect;
-  void repeatSelect;
+  assert.equal(
+    root().findAllByProps({ "data-wearer-garment-assign": "true" }).length,
+    3,
+    "a new person also gets the in-card garment list",
+  );
+  assert.equal(
+    cardFor(root(), "Person 3").findByProps({ "data-wearer-garment-assign": "true" }).props.disabled,
+    true,
+  );
 }
 
-console.log("PASS: wearer assignment panel keeps authoritative garment ownership");
+console.log("PASS: wearer assignment panel in-card garment assignment");
 
 {
   assert.equal(wearerAssignmentLabel("", 0), "You");
@@ -708,7 +775,8 @@ console.log("PASS: wearer assignment panel keeps authoritative garment ownership
     expandedBody,
     /These clothes are for you\. Add another person if you are ordering for someone else\./,
   );
-  assert.match(expandedBody, /1\. Add people/);
+  assert.match(expandedBody, /Add people/);
+  assert.equal(expandedBody.includes("1. Add people"), false);
   assert.match(expandedBody, /Fit for measurements/);
   assert.match(expandedBody, /Male fit/);
   assert.equal(expandedBody.includes("Person 1"), false);
@@ -717,10 +785,11 @@ console.log("PASS: wearer assignment panel keeps authoritative garment ownership
   });
   assert.equal(youNameInput.props.placeholder, "You");
   assert.equal(
-    expandedBody.includes("2. Assign garments"),
-    false,
-    "Assign garments stays hidden until a second person exists",
+    soloRenderer.root.findAllByProps({ "data-wearer-garment-assign": "true" }).length,
+    0,
+    "one wearer: no in-card garment checkboxes",
   );
+  assert.equal(expandedBody.includes("Garments for this person"), false);
   assert.equal(soloRenderer.root.findAllByProps({ "data-wearer-people": "true" }).length, 1);
 
   const addAnother = soloRenderer.root.findByProps({ "data-wearer-add-another": "true" });
@@ -733,19 +802,26 @@ console.log("PASS: wearer assignment panel keeps authoritative garment ownership
     wearerAssignmentLabel(latestSolo.wearers[1].displayName, latestSolo.wearers[1].presentationOrder),
     "Person 2",
   );
-  assert.match(
-    textContent(soloRenderer.root),
-    /2\. Assign garments/,
-    "Assign garments appears once a second person exists",
+  assert.equal(
+    soloRenderer.root.findAllByProps({ "data-wearer-garment-assign": "true" }).length,
+    2,
+    "garment checkboxes appear on every card once a second person exists",
   );
+  assert.equal(textContent(soloRenderer.root).includes("2. Assign garments"), false);
+  assert.equal(
+    garmentBox(soloRenderer.root, "Person 2", "base:shirt").props.disabled,
+    true,
+    "Person 2 has no fit yet",
+  );
+  assert.equal(garmentBox(soloRenderer.root, "You", "base:shirt").props.disabled, false);
 
   await act(async () => {
     soloRenderer.root.findByProps({ "data-wearer-only-for-me": "true" }).props.onClick();
   });
   assert.equal(latestSolo.wearers.length, 1);
   assert.equal(soloRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length, 1);
-  assert.equal(textContent(soloRenderer.root).includes("1. Add people"), false);
-  assert.equal(textContent(soloRenderer.root).includes("2. Assign garments"), false);
+  assert.equal(textContent(soloRenderer.root).includes("Add people"), false);
+  assert.equal(soloRenderer.root.findAllByProps({ "data-wearer-garment-assign": "true" }).length, 0);
 }
 
 console.log("PASS: wearer assignment panel solo-first people UX");

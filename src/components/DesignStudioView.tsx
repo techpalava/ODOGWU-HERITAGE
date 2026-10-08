@@ -10532,6 +10532,18 @@ export default function DesignStudioView({
             }
             return result;
           }}
+          onUnassignGarment={(garmentKey) => {
+            const nextOrder = removeGarmentFromWearerOrder(wearerOrderForPlan, garmentKey);
+            setWearerOrder(nextOrder);
+            // Same live-form sync as assign: stripped garment fields must not re-inject.
+            const activeId = activeWearer?.wearerId;
+            const synced =
+              nextOrder.wearers.find((wearer) => wearer.wearerId === activeId) ||
+              nextOrder.wearers[0];
+            setFutureMeasurementState(
+              synced?.measurement || createEmptyFutureMeasurementState(),
+            );
+          }}
           onCollapseToSolo={() => {
             const nextOrder = reconcileWearerOrder({
               order: wearerOrderForPlanRef.current,

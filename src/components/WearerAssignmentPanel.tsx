@@ -49,6 +49,7 @@ export const WearerAssignmentPanel = ({
   onSetFitContext,
   onDeleteWearer,
   onAssignGarment,
+  onUnassignGarment,
   onCollapseToSolo,
 }: {
   order: WearerOrderStateV2;
@@ -63,6 +64,8 @@ export const WearerAssignmentPanel = ({
   onSetFitContext: (wearerId: string, fitContext: "male" | "female") => void;
   onDeleteWearer: (wearerId: string) => WearerMutationResult;
   onAssignGarment: (garmentKey: string, wearerId: string) => WearerMutationResult;
+  /** Clears a garment's owner (in-card checkbox unchecked). Leaves it unassigned. */
+  onUnassignGarment?: (garmentKey: string) => void;
   /** Fired after Only for me successfully returns to the solo first-screen. */
   onCollapseToSolo?: () => void;
 }) => {
@@ -127,6 +130,34 @@ export const WearerAssignmentPanel = ({
     wearers.length > 1 || peopleExpanded || presentation === "people";
   // For me is the solo first-screen choice; Add a person / people UI deselects it.
   const forMeSelected = !showPeopleUi;
+
+  const clearAssignmentRejection = (garmentKey: string) => {
+    setAssignmentRejectionByGarmentKey((current) => {
+      if (!(garmentKey in current)) return current;
+      const next = { ...current };
+      delete next[garmentKey];
+      return next;
+    });
+  };
+
+  /** In-card checkbox: assign to this person (moves it off anyone else). */
+  const assignGarmentToCardWearer = (garmentKey: string, wearerId: string) => {
+    const result = onAssignGarment(garmentKey, wearerId);
+    if (result.status === "updated") {
+      clearAssignmentRejection(garmentKey);
+      return;
+    }
+    if (
+      result.code !== "WEARER_FIT_REQUIRED" &&
+      result.code !== "GARMENT_INELIGIBLE_FOR_WEARER"
+    ) {
+      return;
+    }
+    setAssignmentRejectionByGarmentKey((current) => ({
+      ...current,
+      [garmentKey]: { code: result.code, wearerId },
+    }));
+  };
 
   /** Only for me / For me: remove extra people, then return to the solo first-screen. */
   const collapseToSolo = () => {
@@ -205,15 +236,15 @@ export const WearerAssignmentPanel = ({
         </button>
       </div>
       <p className="mt-1 text-sm text-heritage-ink/65">
-        Add everyone these clothes are for, choose their fit, then assign each
-        garment to the right person.
+        Add everyone these clothes are for, choose their fit, then tick the
+        garments each person will wear on their card.
       </p>
       {deleteRejection ? (
         <p role="alert" className="mt-3 text-sm font-semibold text-red-700">
           {deleteRejection}
         </p>
       ) : null}
-      <h4 className="mt-5 text-sm font-bold text-heritage-green">1. Add people</h4>
+      <h4 className="mt-5 text-sm font-bold text-heritage-green">Add people</h4>
       <div className="mt-3 grid gap-3">
         {wearers.map((wearer, index) => (
           <article
@@ -315,91 +346,73 @@ export const WearerAssignmentPanel = ({
                 </p>
               ) : null}
             </fieldset>
+            {wearers.length > 1 ? (
+              <fieldset
+                className="mt-4"
+                data-wearer-garment-assign="true"
+                disabled={wearer.fitContext === null}
+              >
+                <legend className="text-sm font-semibold text-heritage-ink">
+                  Garments for this person
+                </legend>
+                <ul className="mt-2 grid gap-2">
+                  {garments.map((garment) => {
+                    const label = labelFor(garment);
+                    const checked =
+                      order.assignmentByGarmentKey[garment.garmentKey] === wearer.wearerId;
+                    const fitMissing = wearer.fitContext === null;
+                    const rejection = assignmentRejectionByGarmentKey[garment.garmentKey];
+                    return (
+                      <li key={garment.garmentKey}>
+                        <label
+                          className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 text-sm ${
+                            checked
+                              ? "border-heritage-green bg-heritage-green/5 font-semibold text-heritage-green"
+                              : "border-heritage-gold/30 bg-white text-heritage-ink"
+                          } ${fitMissing ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+                        >
+                          <input
+                            type="checkbox"
+                            data-wearer-garment-key={garment.garmentKey}
+                            aria-label={`${label} for ${labelForWearer(wearer)}`}
+                            className="size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed"
+                            checked={checked}
+                            disabled={fitMissing}
+                            onChange={() => {
+                              if (fitMissing) return;
+                              if (checked) {
+                                clearAssignmentRejection(garment.garmentKey);
+                                onUnassignGarment?.(garment.garmentKey);
+                                return;
+                              }
+                              assignGarmentToCardWearer(garment.garmentKey, wearer.wearerId);
+                            }}
+                          />
+                          <span className="min-w-0 break-words">{label}</span>
+                        </label>
+                        {rejection && rejection.wearerId === wearer.wearerId ? (
+                          <p role="alert" className="mt-1 text-sm font-semibold text-red-700">
+                            {assignmentRejectionMessage(rejection.code, labelForWearer(wearer))}
+                          </p>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </fieldset>
+            ) : null}
           </article>
         ))}
       </div>
-      {addAnotherPerson}
-      {wearers.length > 1 ? (
-        <>
-          <h4 className="mt-8 text-sm font-bold text-heritage-green">
-            2. Assign garments
-          </h4>
-          <p className="mt-1 text-sm text-heritage-ink/65">
-            Choose who will wear each garment. Every garment must be assigned before
-            you continue.
-          </p>
-          <ul className="mt-4 space-y-3">
-            {garments.map((garment) => {
-              const label = labelFor(garment);
-              const assignedWearerId = order.assignmentByGarmentKey[garment.garmentKey] ?? "";
-              const rejection = assignmentRejectionByGarmentKey[garment.garmentKey];
-              const rejectedWearer = rejection
-                ? wearers.find((candidate) => candidate.wearerId === rejection.wearerId)
-                : undefined;
-              return (
-                <li key={garment.garmentKey} className="grid items-center gap-2 rounded-2xl border border-heritage-gold/20 p-3 text-sm sm:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)] sm:gap-4">
-                  <div className="font-semibold text-heritage-green">{label}</div>
-                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-wide text-heritage-ink/55">
-                    For:
-                    <select
-                      aria-label={`Wearer for ${label}`}
-                      className="min-h-11 w-full rounded-xl border border-heritage-gold/30 bg-white px-3 text-sm font-normal normal-case tracking-normal text-heritage-ink"
-                      value={assignedWearerId}
-                      onChange={(event) => {
-                        const wearerId = event.currentTarget.value;
-                        if (!wearerId) return;
-                        const result = onAssignGarment(garment.garmentKey, wearerId);
-                        if (result.status === "updated") {
-                          setAssignmentRejectionByGarmentKey((current) => {
-                            if (!(garment.garmentKey in current)) return current;
-                            const next = { ...current };
-                            delete next[garment.garmentKey];
-                            return next;
-                          });
-                          return;
-                        }
-                        if (
-                          result.code !== "WEARER_FIT_REQUIRED" &&
-                          result.code !== "GARMENT_INELIGIBLE_FOR_WEARER"
-                        ) {
-                          return;
-                        }
-                        setAssignmentRejectionByGarmentKey((current) => ({
-                          ...current,
-                          [garment.garmentKey]: {
-                            code: result.code,
-                            wearerId,
-                          },
-                        }));
-                      }}
-                    >
-                      <option value="" disabled>Choose a person</option>
-                      {wearers.map((wearer) => (
-                        <option key={wearer.wearerId} value={wearer.wearerId}>
-                          {labelForWearer(wearer)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {rejection ? (
-                    <p role="alert" className="mt-1 text-sm font-semibold text-red-700">
-                      {assignmentRejectionMessage(
-                        rejection.code,
-                        rejectedWearer ? labelForWearer(rejectedWearer) : "",
-                      )}
-                    </p>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-          {garmentsRemainUnassigned ? (
-            <p className="mt-4 text-sm font-semibold text-heritage-ink">
-              Assign all garments to continue.
-            </p>
-          ) : null}
-        </>
+      {wearers.length > 1 && garmentsRemainUnassigned ? (
+        <p
+          data-wearer-unassigned-note="true"
+          className="mt-4 text-sm font-semibold text-heritage-ink"
+        >
+          Assign all garments to continue.
+        </p>
       ) : null}
+      {addAnotherPerson}
     </section>
   );
 };
