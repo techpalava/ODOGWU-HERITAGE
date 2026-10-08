@@ -58,6 +58,7 @@ export const WearerAssignmentPanel = ({
   onAssignGarment,
   onUnassignGarment,
   onCollapseToSolo,
+  onPeopleUiChange,
 }: {
   order: WearerOrderStateV2;
   presentation?: "people" | "solo" | "fit";
@@ -75,6 +76,11 @@ export const WearerAssignmentPanel = ({
   onUnassignGarment?: (garmentKey: string) => void;
   /** Fired after Only for me successfully returns to the solo first-screen. */
   onCollapseToSolo?: () => void;
+  /**
+   * Reports whether the people panel is open (Add a person or 2+ people), so
+   * Design Studio can hide the solo-only Dimension fit. Reports false on unmount.
+   */
+  onPeopleUiChange?: (open: boolean) => void;
 }) => {
   const [deleteRejection, setDeleteRejection] = useState<string | null>(null);
   const [assignmentRejectionByGarmentKey, setAssignmentRejectionByGarmentKey] =
@@ -201,6 +207,21 @@ export const WearerAssignmentPanel = ({
     wearers.length > 1 || peopleExpanded || presentation === "people";
   // For me is the solo first-screen choice; Add a person / people UI deselects it.
   const forMeSelected = !showPeopleUi;
+
+  // Latest callback without re-firing on identity changes.
+  const onPeopleUiChangeRef = useRef(onPeopleUiChange);
+  useEffect(() => {
+    onPeopleUiChangeRef.current = onPeopleUiChange;
+  });
+  useEffect(() => {
+    onPeopleUiChangeRef.current?.(showPeopleUi);
+  }, [showPeopleUi]);
+  useEffect(
+    () => () => {
+      onPeopleUiChangeRef.current?.(false);
+    },
+    [],
+  );
 
   const clearAssignmentRejection = (garmentKey: string) => {
     setAssignmentRejectionByGarmentKey((current) => {
@@ -453,7 +474,9 @@ export const WearerAssignmentPanel = ({
               </div>
               {wearer.fitContext === null ? (
                 <p className="mt-2 text-sm text-heritage-ink/70">
-                  Select a fit for {labelForWearer(wearer)} before assigning garments.
+                  {wearers.length > 1
+                    ? `Select a fit for ${labelForWearer(wearer)} before assigning garments.`
+                    : `Select a fit for ${labelForWearer(wearer)} to see the right measurements.`}
                 </p>
               ) : null}
             </fieldset>

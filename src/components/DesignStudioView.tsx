@@ -1082,6 +1082,8 @@ export default function DesignStudioView({
   const [futureMeasurementState, setFutureMeasurementState] =
     useState<FutureMeasurementStateV1>(createEmptyFutureMeasurementState);
   const [wearerOrder, setWearerOrder] = useState(createEmptyWearerOrder);
+  /** People panel open (Add a person / 2+ people). The Dimension sole fit is solo-only. */
+  const [measurementPeopleUiOpen, setMeasurementPeopleUiOpen] = useState(false);
   const [activeWearerId, setActiveWearerId] = useState<string | null>(null);
   const pendingResumeScrollYRef = useRef<number | null>(null);
   const [hydratedMeasurementGarmentKey, setHydratedMeasurementGarmentKey] =
@@ -10565,6 +10567,7 @@ export default function DesignStudioView({
               sole?.measurement || createEmptyFutureMeasurementState(),
             );
           }}
+          onPeopleUiChange={setMeasurementPeopleUiOpen}
         />
         <DormantFutureMeasurementStep
           plan={futureMeasurementPlan}
@@ -10581,7 +10584,9 @@ export default function DesignStudioView({
           activeWearerLabel={measurementActiveWearerLabel}
           activeWearerGarmentLabels={measurementActiveWearerGarmentLabels}
           nextIncompleteWearer={measurementNextIncompleteWearer}
-          showSoleFitControl={wearerOrderForPlan.wearers.length === 1}
+          showSoleFitControl={
+            wearerOrderForPlan.wearers.length === 1 && !measurementPeopleUiOpen
+          }
           soleFitContext={wearerOrderForPlan.wearers[0]?.fitContext ?? null}
           onSetSoleFitContext={(fitContext) => {
             const sole = wearerOrderForPlan.wearers[0];
