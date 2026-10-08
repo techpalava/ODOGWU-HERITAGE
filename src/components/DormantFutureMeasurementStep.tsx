@@ -1189,36 +1189,41 @@ export const DormantFutureMeasurementStep = ({
         <p className="text-xs leading-relaxed text-heritage-ink/60">
           Information only. These do not complete your measurements.
         </p>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div
-            data-measurement-onsite-info="true"
-            className="min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-4"
+        <div
+          data-measurement-onsite-info="true"
+          className="mt-3 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-4"
+        >
+          <h3 className="break-words text-sm font-semibold text-heritage-green">
+            Onsite Physical measurements
+          </h3>
+          <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/65">
+            Reach out to the contact to arrange a measurement
+          </p>
+          <a
+            href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`WhatsApp ${FUTURE_PICKUP_ATELIER_PHONE_DISPLAY}`}
+            className="mt-2 inline-block text-sm font-semibold text-heritage-green underline underline-offset-2"
           >
-            <h3 className="break-words text-sm font-semibold text-heritage-green">
-              Onsite Physical measurements
-            </h3>
-            <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/65">
-              Reach out to the contact to arrange a measurement
-            </p>
-            <a
-              href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`WhatsApp ${FUTURE_PICKUP_ATELIER_PHONE_DISPLAY}`}
-              className="mt-2 inline-block text-sm font-semibold text-heritage-green underline underline-offset-2"
-            >
-              {FUTURE_PICKUP_ATELIER_PHONE_DISPLAY} (WhatsApp)
-            </a>
-          </div>
-          <div
-            data-measurement-ai-coming-soon="true"
-            aria-disabled="true"
-            className="min-w-0 cursor-not-allowed select-none rounded-xl border border-dashed border-heritage-green/15 bg-heritage-green/5 p-4 opacity-70"
-          >
-            <h3 className="break-words text-sm font-semibold text-heritage-green/80">
-              AI Measurements (coming soon)
-            </h3>
-          </div>
+            {FUTURE_PICKUP_ATELIER_PHONE_DISPLAY} (WhatsApp)
+          </a>
+        </div>
+      </section>
+
+      <section
+        className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6"
+        data-measurement-option-section="ai_measurements"
+        aria-label="AI Measurements"
+      >
+        <div
+          data-measurement-ai-coming-soon="true"
+          aria-disabled="true"
+          className="min-w-0 cursor-not-allowed select-none rounded-xl border border-dashed border-heritage-green/15 bg-heritage-green/5 p-4 opacity-70"
+        >
+          <h3 className="break-words text-sm font-semibold text-heritage-green/80">
+            AI Measurements (coming soon)
+          </h3>
         </div>
       </section>
 
