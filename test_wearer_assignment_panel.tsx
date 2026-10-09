@@ -284,6 +284,31 @@ console.log("PASS: wearer assignment panel blocks occupied removal");
 const alerts = (root: ReactTestInstance) =>
   root.findAllByProps({ role: "alert" }).map((node) => textContent(node));
 
+/** No person card's garment list may ever carry a red role="alert" fit rejection. */
+const assertNoGarmentListAlerts = (root: ReactTestInstance) => {
+  const groups = root
+    .findAllByProps({ "data-wearer-garment-assign": "true" })
+    .filter((node) => typeof node.type === "string");
+  for (const group of groups) {
+    assert.equal(
+      group.findAll((node) => node.props?.role === "alert").length,
+      0,
+      "no role=alert inside a garment assign fieldset",
+    );
+    assert.equal(textContent(group).includes("This garment is not available"), false);
+  }
+};
+
+const garmentRowIn = (root: ReactTestInstance, wearerLabel: string, garmentKey: string) => {
+  const row = cardFor(root, wearerLabel)
+    .findAllByType("li")
+    .find((candidate) =>
+      candidate.findAll((node) => node.props?.["data-wearer-garment-key"] === garmentKey).length > 0,
+    );
+  if (!row) throw new Error(`expected ${garmentKey} row for ${wearerLabel}`);
+  return row;
+};
+
 const unassignedNoteCount = (root: ReactTestInstance) =>
   root.findAllByProps({ "data-wearer-unassigned-note": "true" }).length;
 
@@ -620,6 +645,7 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
           return result;
         }}
         onUnassignGarment={(garmentKey) => publish(removeGarmentFromWearerOrder(order, garmentKey))}
+        garmentTypeSelection={garmentTypeSelection}
       />
     );
   };
@@ -651,47 +677,53 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
     false,
     "owned-by-other never shows the fit rejection",
   );
-  // The owner unticks: now unassigned, Chike's tick reaches the fit check (fit copy).
+  assertNoGarmentListAlerts(rejectionRenderer.root);
+  assert.equal(
+    garmentRowIn(rejectionRenderer.root, "Chike", "base:dress").findAllByProps({
+      "data-wearer-garment-unfit-note": "true",
+    }).length,
+    0,
+    "owned-by-other rows show Assigned to only, never the fit guide",
+  );
+  // The owner unticks: the dress is unassigned, and Chike's male fit cannot wear it.
   await toggleGarment(rejectionRenderer.root, dressOwnerLabel, "base:dress");
   assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], undefined);
-  assert.equal(garmentBox(rejectionRenderer.root, "Chike", "base:dress").props.disabled, false);
+  const unfitBox = garmentBox(rejectionRenderer.root, "Chike", "base:dress");
+  assert.equal(unfitBox.props.disabled, true, "fit eligibility is decided before any click");
+  assert.equal(unfitBox.props.checked, false);
+  assert.ok(unfitBox.props["aria-describedby"]);
+  const chikeDressRow = garmentRowIn(rejectionRenderer.root, "Chike", "base:dress");
+  assert.equal(chikeDressRow.props["data-wearer-garment-unfit"], "true");
+  const unfitNotes = chikeDressRow
+    .findAllByProps({ "data-wearer-garment-unfit-note": "true" })
+    .filter((node) => typeof node.type === "string");
+  assert.deepEqual(unfitNotes.map((node) => textContent(node)), [
+    "Not available for Chike's selected fit.",
+  ]);
+  assert.equal(unfitNotes[0].props.role, undefined, "quiet guide, not an alert");
+  assert.equal(String(unfitNotes[0].props.className).includes("red"), false);
+  assert.equal(textContent(chikeDressRow).includes("Assigned to"), false);
   await toggleGarment(rejectionRenderer.root, "Chike", "base:dress");
-  assert.equal(garmentBox(rejectionRenderer.root, "Chike", "base:dress").props.checked, false);
   assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], undefined);
-  assert.match(
-    alerts(rejectionRenderer.root).join(" "),
-    /This garment is not available for Chike's selected fit/,
-  );
-  const chikeDressRow = cardFor(rejectionRenderer.root, "Chike")
-    .findAllByType("li")
-    .find((row) =>
-      row.findAll((node) => node.props?.["data-wearer-garment-key"] === "base:dress").length > 0,
-    );
-  if (!chikeDressRow) throw new Error("expected Chike's dress row");
-  assert.equal(
-    textContent(chikeDressRow).includes("Assigned to"),
-    false,
-    "a fit-ineligible unassigned garment uses the fit copy, not Assigned to",
-  );
-  assert.match(textContent(chikeDressRow), /This garment is not available for Chike's selected fit/);
+  assertNoGarmentListAlerts(rejectionRenderer.root);
+  assert.equal(alerts(rejectionRenderer.root).length, 0, "no red alert anywhere for an unfit row");
   const chikeName = rejectionRenderer.root.findByProps({
     "aria-label": "Name or nickname for Chike",
   });
   await act(async () => {
     chikeName.props.onChange({ currentTarget: { value: "Chief" } });
   });
-  const rejectionText = alerts(rejectionRenderer.root).join(" ");
-  assert.match(rejectionText, /This garment is not available for Chief's selected fit/);
-  assert.equal(rejectionText.includes("Chike"), false);
+  assert.match(
+    textContent(garmentRowIn(rejectionRenderer.root, "Chief", "base:dress")),
+    /Not available for Chief's selected fit\./,
+  );
   await toggleGarment(rejectionRenderer.root, "You", "base:dress");
   assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], you.wearerId);
-  assert.equal(
-    alerts(rejectionRenderer.root).some((alert) => alert.includes("not available")),
-    false,
-    "a successful assignment clears the garment's rejection",
-  );
-  assert.match(textContent(cardFor(rejectionRenderer.root, "Chief")), /Assigned to You/);
+  const chiefDressRow = garmentRowIn(rejectionRenderer.root, "Chief", "base:dress");
+  assert.match(textContent(chiefDressRow), /Assigned to You/);
+  assert.equal(textContent(chiefDressRow).includes("Not available"), false, "owned-by-other wins over unfit");
   assert.equal(garmentBox(rejectionRenderer.root, "Chief", "base:dress").props.disabled, true);
+  assertNoGarmentListAlerts(rejectionRenderer.root);
 
   const withUnfittedPerson = addWearer({
     order: authority,
@@ -2116,6 +2148,7 @@ console.log("PASS: wearer assignment panel sole expanded card is simplified");
   assert.equal(nolShirt.props["aria-describedby"] !== undefined, true);
   await toggleGarment(fn.root, "nol", "base:shirt");
   assert.equal(fnAssignCalls, 0, "onAssignGarment is never called from an owned-by-other row");
+  assertNoGarmentListAlerts(fn.root);
   assert.equal(fnOrder.assignmentByGarmentKey["base:shirt"], fredId);
   assert.equal(cardFor(fn.root, "fred").findAllByProps({ "data-wearer-garment-owner-note": "true" }).length, 0);
   await toggleGarment(fn.root, "fred", "base:shirt");

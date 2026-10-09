@@ -10484,6 +10484,8 @@ export default function DesignStudioView({
           activeWearerId={activeWearer?.wearerId || null}
           garments={futureMeasurementPhysicalGarments}
           garmentLabels={yourGarmentsConstructionDisplayLabelByGarmentKey}
+          garmentTypeSelection={effectiveJourneyGarmentTypeSelection}
+          additionalGarmentConstructions={designSelections.additionalGarmentConstructions}
           onSelectWearer={handleSelectMeasurementWearer}
           onAddWearer={(displayName, fitContext) => {
             const result = addWearer({

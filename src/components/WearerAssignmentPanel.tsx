@@ -3,9 +3,14 @@ import { MAX_CONFIGURED_ACTIVE_WEARERS, resolveActiveWearerCap } from "../config
 import { getStep1GarmentDisplayLabel } from "../utils/garmentConstructionPricing";
 import { REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT } from "./FutureRemainingFabricCapacityOffer";
 import type { MeasurementPhysicalGarment } from "../utils/measurementBlueprint";
-import type { WearerOrderStateV2 } from "../types";
+import type {
+  AdditionalGarmentConstructionStateV1,
+  GarmentTypeStepSelection,
+  WearerOrderStateV2,
+} from "../types";
 import {
   hasUnassignedPhysicalGarments,
+  isGarmentEligibleForWearer,
   wearerAssignmentLabel,
   type WearerMutationResult,
 } from "../utils/wearerOrder";
@@ -25,24 +30,11 @@ const blockedWearerRemovalMessage = (displayName: string): string => {
   return `Cannot remove ${name} yet. Reassign their garments to another person first.`;
 };
 
-type AssignmentRejection = {
-  code: string;
-  wearerId: string;
-};
-
-const assignmentRejectionMessage = (
-  code: string,
-  displayName: string,
-): string | null => {
-  const name = displayName.trim() || "this person";
-  if (code === "WEARER_FIT_REQUIRED") {
-    return `Select a fit for ${name} before assigning this garment.`;
-  }
-  if (code === "GARMENT_INELIGIBLE_FOR_WEARER") {
-    return `This garment is not available for ${name}'s selected fit.`;
-  }
-  return null;
-};
+/** Quiet in-card guide for an unassigned garment this person's fit cannot wear. */
+const unfitGarmentGuide = (wearerLabel: string): string =>
+  wearerLabel === "You"
+    ? "Not available for your selected fit."
+    : `Not available for ${wearerLabel}'s selected fit.`;
 
 export const WearerAssignmentPanel = ({
   order,
@@ -60,6 +52,8 @@ export const WearerAssignmentPanel = ({
   onUnassignGarment,
   onCollapseToSolo,
   onPeopleUiChange,
+  garmentTypeSelection,
+  additionalGarmentConstructions,
   onAddGarment,
   spareFabricCapacityAvailable = false,
   initialPeopleExpanded = false,
@@ -86,6 +80,13 @@ export const WearerAssignmentPanel = ({
    */
   onPeopleUiChange?: (open: boolean) => void;
   /**
+   * Garment construction context for the up-front fit eligibility check on
+   * unassigned garment rows (same inputs as assignGarmentToWearer). Without it
+   * rows are treated as eligible and the assign mutation still guards.
+   */
+  garmentTypeSelection?: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+  /**
    * Starts Design Studio's existing Add Garment path (fabric-capacity offer or
    * the Step 5 Additional Garment chooser). Shown on the people panel when the
    * garment-tied cap blocks another person, or when spare fabric capacity exists.
@@ -97,8 +98,6 @@ export const WearerAssignmentPanel = ({
   initialPeopleExpanded?: boolean;
 }) => {
   const [deleteRejection, setDeleteRejection] = useState<string | null>(null);
-  const [assignmentRejectionByGarmentKey, setAssignmentRejectionByGarmentKey] =
-    useState<Readonly<Record<string, AssignmentRejection>>>({});
   const [peopleExpanded, setPeopleExpanded] = useState(
     () => order.wearers.length > 1 || presentation === "people" || initialPeopleExpanded,
   );
@@ -134,29 +133,6 @@ export const WearerAssignmentPanel = ({
   useEffect(() => {
     if (wearers.length > 1) setPeopleExpanded(true);
   }, [wearers.length]);
-
-  useEffect(() => {
-    const liveKeys = new Set(garments.map((garment) => garment.garmentKey));
-    setAssignmentRejectionByGarmentKey((current) => {
-      const next = Object.fromEntries(
-        Object.entries(current).filter(([garmentKey]) => liveKeys.has(garmentKey)),
-      );
-      return Object.keys(next).length === Object.keys(current).length ? current : next;
-    });
-  }, [garments]);
-
-  // A garment now owned by someone else drops any stale fit rejection for it.
-  useEffect(() => {
-    setAssignmentRejectionByGarmentKey((current) => {
-      const next = Object.fromEntries(
-        Object.entries(current).filter(([garmentKey, rejection]) => {
-          const ownerId = order.assignmentByGarmentKey[garmentKey];
-          return !ownerId || ownerId === rejection.wearerId;
-        }),
-      );
-      return Object.keys(next).length === Object.keys(current).length ? current : next;
-    });
-  }, [order.assignmentByGarmentKey]);
 
   useEffect(() => {
     const ids = wearers.map((wearer) => wearer.wearerId);
@@ -266,34 +242,6 @@ export const WearerAssignmentPanel = ({
     },
     [],
   );
-
-  const clearAssignmentRejection = (garmentKey: string) => {
-    setAssignmentRejectionByGarmentKey((current) => {
-      if (!(garmentKey in current)) return current;
-      const next = { ...current };
-      delete next[garmentKey];
-      return next;
-    });
-  };
-
-  /** In-card checkbox: assign to this person (moves it off anyone else). */
-  const assignGarmentToCardWearer = (garmentKey: string, wearerId: string) => {
-    const result = onAssignGarment(garmentKey, wearerId);
-    if (result.status === "updated") {
-      clearAssignmentRejection(garmentKey);
-      return;
-    }
-    if (
-      result.code !== "WEARER_FIT_REQUIRED" &&
-      result.code !== "GARMENT_INELIGIBLE_FOR_WEARER"
-    ) {
-      return;
-    }
-    setAssignmentRejectionByGarmentKey((current) => ({
-      ...current,
-      [garmentKey]: { code: result.code, wearerId },
-    }));
-  };
 
   /** Only for me / For me: remove extra people, then return to the solo first-screen. */
   const collapseToSolo = () => {
@@ -550,21 +498,33 @@ export const WearerAssignmentPanel = ({
                         ? wearers.find((candidate) => candidate.wearerId === ownerId) || null
                         : null;
                     const fitMissing = wearer.fitContext === null;
-                    const locked = fitMissing || otherOwner !== null;
-                    // The fit rejection never shows on an owned-by-other row.
-                    const rejection = otherOwner
-                      ? undefined
-                      : assignmentRejectionByGarmentKey[garment.garmentKey];
+                    // Unassigned garment this fit cannot wear: decided up front, so the
+                    // box is disabled before any click (quiet guide, never a red alert).
+                    const unfit =
+                      !checked &&
+                      !otherOwner &&
+                      !fitMissing &&
+                      garmentTypeSelection !== undefined &&
+                      !isGarmentEligibleForWearer({
+                        garment,
+                        fitContext: wearer.fitContext,
+                        garmentTypeSelection,
+                        additionalGarmentConstructions,
+                      });
+                    const locked = fitMissing || otherOwner !== null || unfit;
+                    const muted = otherOwner !== null || unfit;
+                    const noteId = `${wearer.wearerId}-${garment.garmentKey}-note`;
                     return (
                       <li
                         key={garment.garmentKey}
                         data-wearer-garment-owned-by-other={otherOwner ? otherOwner.wearerId : undefined}
+                        data-wearer-garment-unfit={unfit ? "true" : undefined}
                       >
                         <label
                           className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 text-sm ${
                             checked
                               ? "border-heritage-green bg-heritage-green/5 font-semibold text-heritage-green"
-                              : otherOwner
+                              : muted
                                 ? "border-heritage-gold/20 bg-heritage-cream/30 text-heritage-ink/55"
                                 : "border-heritage-gold/30 bg-white text-heritage-ink"
                           } ${locked ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
@@ -576,35 +536,34 @@ export const WearerAssignmentPanel = ({
                             className="size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed"
                             checked={checked}
                             disabled={locked}
-                            aria-describedby={
-                              otherOwner
-                                ? `${wearer.wearerId}-${garment.garmentKey}-owner`
-                                : undefined
-                            }
+                            aria-describedby={muted ? noteId : undefined}
                             onChange={() => {
                               if (locked) return;
                               if (checked) {
-                                clearAssignmentRejection(garment.garmentKey);
                                 onUnassignGarment?.(garment.garmentKey);
                                 return;
                               }
-                              assignGarmentToCardWearer(garment.garmentKey, wearer.wearerId);
+                              // Assign to this person only; a blocked result changes nothing.
+                              onAssignGarment(garment.garmentKey, wearer.wearerId);
                             }}
                           />
                           <span className="min-w-0 break-words">{label}</span>
                         </label>
                         {otherOwner ? (
                           <p
-                            id={`${wearer.wearerId}-${garment.garmentKey}-owner`}
+                            id={noteId}
                             data-wearer-garment-owner-note="true"
                             className="mt-1 text-xs text-heritage-ink/60"
                           >
                             Assigned to {labelForWearer(otherOwner)}
                           </p>
-                        ) : null}
-                        {rejection && rejection.wearerId === wearer.wearerId ? (
-                          <p role="alert" className="mt-1 text-sm font-semibold text-red-700">
-                            {assignmentRejectionMessage(rejection.code, labelForWearer(wearer))}
+                        ) : unfit ? (
+                          <p
+                            id={noteId}
+                            data-wearer-garment-unfit-note="true"
+                            className="mt-1 text-xs text-heritage-ink/60"
+                          >
+                            {unfitGarmentGuide(labelForWearer(wearer))}
                           </p>
                         ) : null}
                       </li>
