@@ -496,14 +496,16 @@ export const WearerAssignmentPanel = ({
           <article
             key={wearer.wearerId}
             onClick={() => onSelectWearer(wearer.wearerId)}
-            className={`rounded-2xl border p-3 ${
+            className={`rounded-2xl border p-2.5 ${
               wearer.wearerId === activeWearerId
                 ? "border-heritage-gold bg-heritage-cream/40"
                 : "border-heritage-gold/20 bg-white"
             }`}
           >
-            <div className="flex items-end gap-2">
-              <label className="block min-w-0 flex-1 text-sm font-semibold text-heritage-ink/70">
+            {/* Name + Save stay on one row; Move up / Remove trail it when they fit
+                (desktop) and wrap together onto a short second row otherwise. */}
+            <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
+              <label className="block min-w-0 flex-1 basis-36 text-xs font-semibold text-heritage-ink/70">
                 Name or nickname
                 <input
                   ref={(node) => {
@@ -511,7 +513,7 @@ export const WearerAssignmentPanel = ({
                     else nameInputByWearerId.current.delete(wearer.wearerId);
                   }}
                   aria-label={`Name or nickname for ${labelForWearer(wearer)}`}
-                  className="mt-1 min-h-10 w-full min-w-0 rounded-xl border border-heritage-gold/30 bg-white px-3 py-1.5 text-sm text-heritage-ink placeholder:text-heritage-ink/40"
+                  className="mt-0.5 min-h-9 w-full min-w-0 rounded-xl border border-heritage-gold/30 bg-white px-3 py-1 text-sm text-heritage-ink placeholder:text-heritage-ink/40"
                   placeholder={index === 0 ? "You" : "Add person"}
                   value={wearer.displayName}
                   onFocus={() => onSelectWearer(wearer.wearerId)}
@@ -539,7 +541,7 @@ export const WearerAssignmentPanel = ({
                 data-wearer-name-saved-flash={
                   isNameConfirmed(wearer) && flashingSavedIds.has(wearer.wearerId) ? "true" : undefined
                 }
-                className={`inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl border px-3 text-xs font-bold ${
+                className={`inline-flex min-h-9 shrink-0 items-center justify-center rounded-xl border px-3 text-xs font-bold ${
                   isNameConfirmed(wearer)
                     ? // Saved reads as success: bold green outline (ring keeps the 1px border box).
                       `gap-1 border-heritage-green text-heritage-green ring-1 ring-inset ring-heritage-green motion-safe:transition-colors motion-safe:duration-500 ${
@@ -563,66 +565,66 @@ export const WearerAssignmentPanel = ({
                   "Save"
                 )}
               </button>
+              <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                {/* Sole expanded card: no ordering to do, so Move up is hidden, not just disabled. */}
+                {wearers.length > 1 ? (
+                  <button
+                    type="button"
+                    data-wearer-move-up="true"
+                    className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={index === 0}
+                    onClick={(event) => {
+                      event?.stopPropagation();
+                      const ids = wearers.map((item) => item.wearerId);
+                      const swapped = [...ids];
+                      [swapped[index - 1], swapped[index]] = [
+                        swapped[index],
+                        swapped[index - 1],
+                      ];
+                      onReorderWearers(swapped);
+                    }}
+                  >
+                    Move up
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  data-wearer-remove="true"
+                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green"
+                  onClick={(event) => {
+                    event?.stopPropagation();
+                    // Sole expanded card: same path as Only for me (back to For me).
+                    if (wearers.length === 1) {
+                      collapseToSolo();
+                      return;
+                    }
+                    const result = onDeleteWearer(wearer.wearerId);
+                    if (
+                      result.status === "blocked" &&
+                      result.code === "WEARER_OWNS_GARMENTS"
+                    ) {
+                      setDeleteRejection(
+                        blockedWearerRemovalMessage(labelForWearer(wearer)),
+                      );
+                      return;
+                    }
+                    if (result.status === "updated") setDeleteRejection(null);
+                  }}
+                >
+                  Remove person
+                </button>
+              </div>
             </div>
             {nameHintWearerIds.has(wearer.wearerId) && wearer.displayName.trim().length === 0 ? (
               <p data-wearer-name-hint="true" className="mt-1 text-xs font-semibold text-red-700">
                 {NAME_REQUIRED_HINT}
               </p>
             ) : null}
-            <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              {/* Sole expanded card: no ordering to do, so Move up is hidden, not just disabled. */}
-              {wearers.length > 1 ? (
-                <button
-                  type="button"
-                  data-wearer-move-up="true"
-                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={index === 0}
-                  onClick={(event) => {
-                    event?.stopPropagation();
-                    const ids = wearers.map((item) => item.wearerId);
-                    const swapped = [...ids];
-                    [swapped[index - 1], swapped[index]] = [
-                      swapped[index],
-                      swapped[index - 1],
-                    ];
-                    onReorderWearers(swapped);
-                  }}
-                >
-                  Move up
-                </button>
-              ) : null}
-              <button
-                type="button"
-                data-wearer-remove="true"
-                className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green"
-                onClick={(event) => {
-                  event?.stopPropagation();
-                  // Sole expanded card: same path as Only for me (back to For me).
-                  if (wearers.length === 1) {
-                    collapseToSolo();
-                    return;
-                  }
-                  const result = onDeleteWearer(wearer.wearerId);
-                  if (
-                    result.status === "blocked" &&
-                    result.code === "WEARER_OWNS_GARMENTS"
-                  ) {
-                    setDeleteRejection(
-                      blockedWearerRemovalMessage(labelForWearer(wearer)),
-                    );
-                    return;
-                  }
-                  if (result.status === "updated") setDeleteRejection(null);
-                }}
-              >
-                Remove person
-              </button>
-            </div>
-            <fieldset className="mt-2">
-              <legend className="text-sm font-semibold text-heritage-ink">
+            <fieldset className="mt-1">
+              <legend className="text-xs font-semibold text-heritage-ink">
                 Fit for measurements
               </legend>
-              <div className="mt-1.5 grid grid-cols-2 gap-2 text-sm">
+              <div className="mt-1 grid grid-cols-2 gap-1.5 text-sm">
                 {(["male", "female"] as const).map((fitContext) => (
                   <label
                     key={fitContext}
@@ -644,7 +646,7 @@ export const WearerAssignmentPanel = ({
                 ))}
               </div>
               {wearer.fitContext === null ? (
-                <p className="mt-1.5 text-sm text-heritage-ink/70">
+                <p className="mt-1 text-sm text-heritage-ink/70">
                   {wearers.length > 1
                     ? `Select a fit for ${labelForWearer(wearer)} before assigning garments.`
                     : `Select a fit for ${labelForWearer(wearer)} to see the right measurements.`}
@@ -656,7 +658,7 @@ export const WearerAssignmentPanel = ({
               // this person, so there is nothing to tick. Split mode shows the checklist.
               <div
                 data-wearer-sole-all-assigned="true"
-                className="mt-2 rounded-xl bg-heritage-cream/40 px-3 py-2 text-xs text-heritage-ink/70"
+                className="mt-1.5 rounded-xl bg-heritage-cream/40 px-2.5 py-1.5 text-xs leading-snug text-heritage-ink/70"
               >
                 <p className="font-semibold text-heritage-ink">{SOLE_ALL_ASSIGNED_COPY}</p>
                 <p className="mt-0.5">{SOLE_SPLIT_HINT_COPY}</p>
@@ -668,14 +670,14 @@ export const WearerAssignmentPanel = ({
               </div>
             ) : (
               <fieldset
-                className="mt-2"
+                className="mt-1"
                 data-wearer-garment-assign="true"
                 disabled={wearer.fitContext === null}
               >
-                <legend className="text-sm font-semibold text-heritage-ink">
+                <legend className="text-xs font-semibold text-heritage-ink">
                   Garments for this person
                 </legend>
-                <ul className="mt-1.5 grid gap-1.5">
+                <ul className="mt-1 grid gap-1">
                   {garments.map((garment) => {
                     const label = labelFor(garment);
                     const ownerId = order.assignmentByGarmentKey[garment.garmentKey];
