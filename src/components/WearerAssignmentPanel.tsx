@@ -24,6 +24,9 @@ const NEED_GARMENT_FOR_PERSON_COPY =
   "Each person needs a garment. Add another garment to add another person.";
 const MAXIMUM_PEOPLE_COPY = `Maximum of ${MAX_CONFIGURED_ACTIVE_WEARERS} people per order.`;
 const NAME_REQUIRED_HINT = "Enter a name or nickname";
+/** Sole mode (people panel open, one person): the system owns the split. */
+const SOLE_ALL_ASSIGNED_COPY = "All garments are for this person.";
+const SOLE_SPLIT_HINT_COPY = "Add another person to split garments between people.";
 
 const blockedWearerRemovalMessage = (displayName: string): string => {
   const name = displayName.trim() || "this person";
@@ -392,7 +395,7 @@ export const WearerAssignmentPanel = ({
                 {NAME_REQUIRED_HINT}
               </p>
             ) : null}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
               {/* Sole expanded card: no ordering to do, so Move up is hidden, not just disabled. */}
               {wearers.length > 1 ? (
                 <button
@@ -441,18 +444,15 @@ export const WearerAssignmentPanel = ({
                 Remove person
               </button>
             </div>
-            <fieldset className="mt-3">
+            <fieldset className="mt-2">
               <legend className="text-sm font-semibold text-heritage-ink">
                 Fit for measurements
               </legend>
-              <p className="mt-1 text-xs text-heritage-ink/60">
-                Used to determine the correct measurement requirements.
-              </p>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+              <div className="mt-1.5 grid grid-cols-2 gap-2 text-sm">
                 {(["male", "female"] as const).map((fitContext) => (
                   <label
                     key={fitContext}
-                    className={`flex min-h-10 cursor-pointer items-center justify-center rounded-xl border px-3 font-semibold ${
+                    className={`flex min-h-9 cursor-pointer items-center justify-center rounded-xl border px-3 font-semibold ${
                       wearer.fitContext === fitContext
                         ? "border-heritage-green bg-heritage-green text-white"
                         : "border-heritage-gold/30 bg-white text-heritage-green"
@@ -470,23 +470,38 @@ export const WearerAssignmentPanel = ({
                 ))}
               </div>
               {wearer.fitContext === null ? (
-                <p className="mt-2 text-sm text-heritage-ink/70">
+                <p className="mt-1.5 text-sm text-heritage-ink/70">
                   {wearers.length > 1
                     ? `Select a fit for ${labelForWearer(wearer)} before assigning garments.`
                     : `Select a fit for ${labelForWearer(wearer)} to see the right measurements.`}
                 </p>
               ) : null}
             </fieldset>
-            {wearers.length > 1 ? (
+            {wearers.length === 1 ? (
+              // Sole mode: reconcileWearerOrder auto-assigns every eligible garment to
+              // this person, so there is nothing to tick. Split mode shows the checklist.
+              <div
+                data-wearer-sole-all-assigned="true"
+                className="mt-2 rounded-xl bg-heritage-cream/40 px-3 py-2 text-xs text-heritage-ink/70"
+              >
+                <p className="font-semibold text-heritage-ink">{SOLE_ALL_ASSIGNED_COPY}</p>
+                <p className="mt-0.5">{SOLE_SPLIT_HINT_COPY}</p>
+                {garments.length > 0 ? (
+                  <p data-wearer-sole-garment-names="true" className="mt-0.5 break-words text-heritage-ink/55">
+                    {garments.map((garment) => labelFor(garment)).join(", ")}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
               <fieldset
-                className="mt-3"
+                className="mt-2"
                 data-wearer-garment-assign="true"
                 disabled={wearer.fitContext === null}
               >
                 <legend className="text-sm font-semibold text-heritage-ink">
                   Garments for this person
                 </legend>
-                <ul className="mt-2 grid gap-2">
+                <ul className="mt-1.5 grid gap-1.5">
                   {garments.map((garment) => {
                     const label = labelFor(garment);
                     const ownerId = order.assignmentByGarmentKey[garment.garmentKey];
@@ -521,7 +536,7 @@ export const WearerAssignmentPanel = ({
                         data-wearer-garment-unfit={unfit ? "true" : undefined}
                       >
                         <label
-                          className={`flex min-h-10 items-center gap-3 rounded-xl border px-3 text-sm ${
+                          className={`flex min-h-9 items-center gap-3 rounded-xl border px-3 text-sm ${
                             checked
                               ? "border-heritage-green bg-heritage-green/5 font-semibold text-heritage-green"
                               : muted
@@ -553,7 +568,7 @@ export const WearerAssignmentPanel = ({
                           <p
                             id={noteId}
                             data-wearer-garment-owner-note="true"
-                            className="mt-1 text-xs text-heritage-ink/60"
+                            className="mt-0.5 text-xs text-heritage-ink/60"
                           >
                             Assigned to {labelForWearer(otherOwner)}
                           </p>
@@ -561,7 +576,7 @@ export const WearerAssignmentPanel = ({
                           <p
                             id={noteId}
                             data-wearer-garment-unfit-note="true"
-                            className="mt-1 text-xs text-heritage-ink/60"
+                            className="mt-0.5 text-xs text-heritage-ink/60"
                           >
                             {unfitGarmentGuide(labelForWearer(wearer))}
                           </p>
@@ -571,7 +586,7 @@ export const WearerAssignmentPanel = ({
                   })}
                 </ul>
               </fieldset>
-            ) : null}
+            )}
           </article>
         ))}
       </div>

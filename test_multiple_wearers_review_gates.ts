@@ -941,6 +941,24 @@ assert.equal(blockedEleventh.status, "blocked");
   assert.equal(addedPerson.status, "updated");
   if (addedPerson.status !== "updated") throw new Error("expected Friend");
   withYouFilled = addedPerson.order;
+  // Sole -> Split cleared the auto-assignments and stripped those garments' fields;
+  // shared body values (the Sample chest) stay with You.
+  assert.deepEqual(withYouFilled.assignmentByGarmentKey, {});
+  const youAfterSplit = withYouFilled.wearers.find((wearer) => wearer.wearerId === youId)!
+    .measurement;
+  assert.deepEqual(youAfterSplit.entered.byGarmentKey, {});
+  assert.equal(youAfterSplit.entered.shared.chest_bust_circumference?.valueCm, youChest);
+  // Split mode: You re-ticks the base shirt.
+  const youReticked = assignGarmentToWearer({
+    order: withYouFilled,
+    garmentKey: "base:shirt",
+    wearerId: youId,
+    garment: sampleGarments[0],
+    garmentTypeSelection: sampleSelection,
+    additionalGarmentConstructions: sampleAdditional,
+  });
+  if (youReticked.status !== "updated") throw new Error("You re-ticks base:shirt");
+  withYouFilled = youReticked.order;
   const friendId = withYouFilled.wearers.find(
     (wearer) => wearer.displayName === "Friend",
   )?.wearerId;

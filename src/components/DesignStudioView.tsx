@@ -10494,7 +10494,20 @@ export default function DesignStudioView({
               displayName,
               fitContext,
             });
-            if (result.status === "updated") setWearerOrder(result.order);
+            if (result.status !== "updated") return;
+            wearerOrderForPlanRef.current = result.order;
+            setWearerOrder(result.order);
+            if (wearerOrderForPlan.wearers.length === 1) {
+              // Sole -> Split cleared the assignments and stripped those garments'
+              // fields; keep the live form bag aligned so they cannot re-inject.
+              const activeId = activeWearer?.wearerId;
+              const synced =
+                result.order.wearers.find((wearer) => wearer.wearerId === activeId) ||
+                result.order.wearers[0];
+              setFutureMeasurementState(
+                synced?.measurement || createEmptyFutureMeasurementState(),
+              );
+            }
           }}
           onRenameWearer={(wearerId, displayName) => {
             const result = renameWearer(wearerOrderForPlan, wearerId, displayName);

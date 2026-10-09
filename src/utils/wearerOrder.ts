@@ -213,10 +213,33 @@ export const addWearer = ({
     return blocked(order, "WEARER_CAP_REACHED");
   }
   const nextOrder = order.wearers.length;
+  // Sole -> Split: the sole person's auto-assigned garments are cleared so the
+  // customer chooses the split. Only garment-keyed data for those garments is
+  // stripped (entered/derived byGarmentKey, garment diagnostics, invalid keys);
+  // shared body measurements (chest, waist, height...) stay with person 1.
+  // Adding a 3rd+ person keeps the existing split.
+  const soleToSplit = order.wearers.length === 1;
+  const formerGarmentKeys = soleToSplit ? Object.keys(order.assignmentByGarmentKey) : [];
+  const existingWearers = soleToSplit
+    ? order.wearers.map((wearer) =>
+        formerGarmentKeys.length === 0
+          ? wearer
+          : {
+              ...wearer,
+              measurement: markMeasurementIncomplete(
+                formerGarmentKeys.reduce(
+                  (current, garmentKey) => stripGarmentFromMeasurement(current, garmentKey),
+                  wearer.measurement,
+                ),
+              ),
+            },
+      )
+    : order.wearers;
   return updated({
     ...order,
+    assignmentByGarmentKey: soleToSplit ? {} : order.assignmentByGarmentKey,
     wearers: sortWearers([
-      ...order.wearers,
+      ...existingWearers,
       createWearerProfile({
         displayName,
         fitContext,

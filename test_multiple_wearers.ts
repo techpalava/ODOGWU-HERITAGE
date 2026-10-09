@@ -196,8 +196,34 @@ assert.equal(added.status, "updated");
 if (added.status !== "updated") throw new Error("expected second wearer");
 const friend = added.order.wearers.find((wearer) => wearer.displayName === "Friend");
 assert.ok(friend);
+// Sole -> Split: the sole person's auto-assigned garments are cleared; the customer splits.
+assert.ok(Object.keys(maleOrder.assignmentByGarmentKey).length > 0);
+assert.deepEqual(added.order.assignmentByGarmentKey, {}, "1 -> 2 clears every assignment");
+assert.deepEqual(
+  reconcileWearerOrder({
+    order: added.order,
+    garmentKeys: keys,
+    compatibilityDemographic: "male",
+    garments,
+    garmentTypeSelection: selection("unisex"),
+  }).assignmentByGarmentKey,
+  {},
+  "reconcile does not sole-auto-assign at 2 wearers",
+);
+// Split mode: person 1 re-ticks what they had before.
+const splitOrder = Object.keys(maleOrder.assignmentByGarmentKey).reduce((order, garmentKey) => {
+  const result = assignGarmentToWearer({
+    order,
+    garmentKey,
+    wearerId: maleOrder.wearers[0].wearerId,
+    garment: garments.find((candidate) => candidate.garmentKey === garmentKey)!,
+    garmentTypeSelection: selection("male"),
+  });
+  if (result.status !== "updated") throw new Error(`re-tick ${garmentKey}`);
+  return result.order;
+}, added.order);
 const blockedDress = assignGarmentToWearer({
-  order: added.order,
+  order: splitOrder,
   garmentKey: "base:dress",
   wearerId: maleOrder.wearers[0].wearerId,
   garment: garments[2],
@@ -205,13 +231,84 @@ const blockedDress = assignGarmentToWearer({
 });
 assert.equal(blockedDress.status, "blocked");
 const assignedDress = assignGarmentToWearer({
-  order: added.order,
+  order: splitOrder,
   garmentKey: "base:dress",
   wearerId: friend!.wearerId,
   garment: garments[2],
   garmentTypeSelection: selection("unisex"),
 });
 assert.equal(assignedDress.status, "updated");
+{
+  // Already in Split: adding a 3rd person keeps every prior tick.
+  const third = addWearer({
+    order: assignedDress.order,
+    physicalGarmentCount: keys.length,
+    displayName: "Third",
+    fitContext: "male",
+  });
+  assert.equal(third.status, "updated");
+  if (third.status !== "updated") throw new Error("expected third wearer");
+  assert.equal(third.order.wearers.length, 3);
+  assert.deepEqual(third.order.assignmentByGarmentKey, assignedDress.order.assignmentByGarmentKey);
+  for (const wearer of assignedDress.order.wearers) {
+    assert.deepEqual(
+      third.order.wearers.find((candidate) => candidate.wearerId === wearer.wearerId)?.measurement,
+      wearer.measurement,
+      "2 -> 3 leaves existing measurements alone",
+    );
+  }
+}
+{
+  // 1 -> 2 strips only garment-keyed data for the former garments; shared body values stay.
+  const typed = createEmptyFutureMeasurementState("low_risk");
+  typed.entered.shared.total_height = { valueCm: 180, provenance: "customer_entered" };
+  typed.entered.shared.chest_bust_circumference = { valueCm: 100, provenance: "customer_entered" };
+  typed.entered.byGarmentKey["base:shirt"] = {
+    shirt_length_long: { valueCm: 80, provenance: "customer_entered" },
+  };
+  typed.entered.byGarmentKey["base:trouser"] = {
+    waist_to_ankle_length: { valueCm: 100, provenance: "customer_entered" },
+  };
+  if (typed.enteredByRoute) {
+    typed.enteredByRoute.low_risk = structuredClone(typed.entered);
+    typed.enteredByRoute.sample_cloth.byGarmentKey["base:shirt"] = {
+      shirt_length_long: { valueCm: 40, provenance: "customer_entered" },
+    };
+  }
+  typed.derived.byGarmentKey["base:shirt"] = {
+    shirt_length_long: { valueCm: 80, provenance: "customer_entered" },
+  };
+  typed.diagnostics = [
+    { code: "required_measurement_missing", garmentKey: "base:shirt" },
+    { code: "required_measurement_missing", measurementId: "total_height" },
+  ];
+  typed.invalidInputKeys = ["shared:total_height"];
+  typed.calculationStatus = "complete";
+  const soleTyped = updateWearerMeasurement(maleOrder, maleOrder.wearers[0].wearerId, typed);
+  const split = addWearer({
+    order: soleTyped,
+    physicalGarmentCount: keys.length,
+    displayName: "Friend",
+    fitContext: null,
+  });
+  if (split.status !== "updated") throw new Error("expected split");
+  assert.deepEqual(split.order.assignmentByGarmentKey, {});
+  const first = split.order.wearers.find(
+    (wearer) => wearer.wearerId === maleOrder.wearers[0].wearerId,
+  )!.measurement;
+  assert.equal(first.entered.shared.total_height?.valueCm, 180, "shared body values kept");
+  assert.equal(first.entered.shared.chest_bust_circumference?.valueCm, 100);
+  assert.deepEqual(first.entered.byGarmentKey, {}, "former garments' fields stripped");
+  assert.deepEqual(first.enteredByRoute?.low_risk.byGarmentKey, {});
+  assert.deepEqual(first.enteredByRoute?.sample_cloth.byGarmentKey, {});
+  assert.equal(first.enteredByRoute?.low_risk.shared.total_height?.valueCm, 180);
+  assert.deepEqual(first.derived.byGarmentKey, {});
+  assert.deepEqual(first.diagnostics, [
+    { code: "required_measurement_missing", measurementId: "total_height" },
+  ]);
+  assert.ok(first.invalidInputKeys.includes("shared:total_height"), "shared invalid keys kept");
+  assert.equal(first.calculationStatus, "incomplete");
+}
 
 const withLength = {
   ...assignedDress.order,
@@ -431,13 +528,42 @@ assert.equal(
   reorderedStable.order.wearers.find((wearer) => wearer.wearerId === stableId)?.wearerId,
   stableId,
 );
-const reconciledStable = reconcileWearerOrder({
+const reconciledSplitStable = reconcileWearerOrder({
   order: reorderedStable.order,
   garmentKeys: ["base:shirt"],
   compatibilityDemographic: "male",
   garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
   garmentTypeSelection: selection("male"),
 });
+assert.equal(
+  reconciledSplitStable.assignmentByGarmentKey["base:shirt"],
+  undefined,
+  "1 -> 2 cleared the shirt and 2 wearers never auto-assign",
+);
+{
+  // Back to 1 person: the sole auto-assign returns.
+  const backToOne = deleteWearer(addedFriend.order, adaId);
+  assert.equal(backToOne.status, "updated");
+  if (backToOne.status !== "updated") throw new Error("delete ada");
+  const resoled = reconcileWearerOrder({
+    order: backToOne.order,
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "male",
+    garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    garmentTypeSelection: selection("male"),
+  });
+  assert.equal(resoled.wearers.length, 1);
+  assert.equal(resoled.assignmentByGarmentKey["base:shirt"], stableId);
+}
+const reTickedStable = assignGarmentToWearer({
+  order: reconciledSplitStable,
+  garmentKey: "base:shirt",
+  wearerId: stableId,
+  garment: { garmentKey: "base:shirt", garmentType: "shirt" },
+  garmentTypeSelection: selection("male"),
+});
+if (reTickedStable.status !== "updated") throw new Error("re-tick chief");
+const reconciledStable = reTickedStable.order;
 assert.equal(
   reconciledStable.wearers.find((wearer) => wearer.displayName === "Chief")?.wearerId,
   stableId,

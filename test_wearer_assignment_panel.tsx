@@ -336,8 +336,12 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
   const you = withAmaka.order.wearers.find((wearer) => wearer.displayName === "");
   const amakaWearer = withAmaka.order.wearers.find((wearer) => wearer.displayName === "Amaka");
   if (!you || !amakaWearer) throw new Error("expected You and Amaka");
-  const openingAssignment = { ...withAmaka.order.assignmentByGarmentKey };
-  delete openingAssignment["additional:shirt:1"];
+  // Sole -> Split cleared every tick; in Split, You has re-ticked the shirt and dress.
+  assert.deepEqual(withAmaka.order.assignmentByGarmentKey, {}, "1 -> 2 starts unticked");
+  const openingAssignment: Record<string, string> = {
+    "base:shirt": you.wearerId,
+    "base:dress": you.wearerId,
+  };
   let authority: WearerOrderStateV2 = {
     ...withAmaka.order,
     assignmentByGarmentKey: openingAssignment,
@@ -1427,7 +1431,20 @@ console.log("PASS: wearer assignment panel 1-garment order shows the garment cap
         }}
         onDeleteWearer={(wearerId) => {
           const result = deleteWearer(order, wearerId);
-          if (result.status === "updated") publish(result.order);
+          if (result.status === "updated") {
+            // Same as Design Studio: back to one person re-runs the sole auto-assign.
+            publish(
+              result.order.wearers.length === 1
+                ? reconcileWearerOrder({
+                    order: result.order,
+                    garmentKeys: twoKeys,
+                    compatibilityDemographic: "female",
+                    garments: twoGarments,
+                    garmentTypeSelection: selection(),
+                  })
+                : result.order,
+            );
+          }
           return result;
         }}
         onAssignGarment={(garmentKey, wearerId) => {
@@ -1532,7 +1549,22 @@ console.log("PASS: wearer assignment panel 1-garment order shows the garment cap
     bolaFemale.props.onChange();
   });
   assert.equal(capOrder.wearers[1].fitContext, "female");
-  // Ada still owns both garments: Bola's rows are locked until Ada unticks one.
+  // Sole -> Split cleared every tick: the customer now owns the split.
+  assert.deepEqual(capOrder.assignmentByGarmentKey, {}, "adding a 2nd person unticks everything");
+  assert.equal(garmentBox(root(), "Ada", "base:shirt").props.checked, false);
+  assert.equal(garmentBox(root(), "Ada", "additional:shirt:1").props.checked, false);
+  assert.equal(garmentBox(root(), "Bola", "additional:shirt:1").props.disabled, false);
+  assert.equal(root().findAllByProps({ "data-wearer-unassigned-note": "true" }).length, 1);
+  assert.match(textContent(root()), /Assign all garments to continue\./);
+  assert.equal(root().findAllByProps({ "data-wearer-sole-all-assigned": "true" }).length, 0);
+  assert.equal(
+    root().findAllByProps({ "data-wearer-garment-assign": "true" })
+      .filter((node) => typeof node.type === "string").length,
+    2,
+  );
+  // Ada ticks Shirt 2: Bola's row locks with "Assigned to Ada" until Ada unticks.
+  await toggleGarment(root(), "Ada", "additional:shirt:1");
+  assert.equal(capOrder.assignmentByGarmentKey["additional:shirt:1"], soleId);
   assert.equal(garmentBox(root(), "Bola", "additional:shirt:1").props.disabled, true);
   assert.match(textContent(cardFor(root(), "Bola")), /Assigned to Ada/);
   await toggleGarment(root(), "Bola", "additional:shirt:1");
@@ -1558,6 +1590,11 @@ console.log("PASS: wearer assignment panel 1-garment order shows the garment cap
   assert.equal(capOrder.wearers[0].wearerId, soleId);
   assert.equal(root().findAllByProps({ "data-wearer-people": "true" }).length, 1);
   assert.equal(addAnotherButton(root()).props.disabled, false, "under the cap again with Ada saved");
+  // Back to Sole: auto-assign returns and the notice replaces the checklist.
+  assert.equal(capOrder.assignmentByGarmentKey["base:shirt"], soleId);
+  assert.equal(capOrder.assignmentByGarmentKey["additional:shirt:1"], soleId);
+  assert.equal(root().findAllByProps({ "data-wearer-sole-all-assigned": "true" }).length, 1);
+  assert.equal(root().findAllByProps({ "data-wearer-garment-assign": "true" }).length, 0);
 }
 
 console.log("PASS: wearer assignment panel Save name unlocks Add another person until the cap");
@@ -2015,6 +2052,21 @@ console.log("PASS: wearer assignment panel Add Garment follows spare capacity an
     assert.equal(text.includes("Move up"), false);
     assert.equal(hostButtons(card, "data-wearer-garment-assign").length, 0, "no garment-assign block");
     assert.equal(text.includes("Garments for this person"), false);
+    assert.equal(
+      card.findAll((node) => node.type === "input" && node.props.type === "checkbox").length,
+      0,
+      "Sole: no garment checkboxes",
+    );
+    // Sole notice under Fit: the system owns the split.
+    const notice = hostButtons(card, "data-wearer-sole-all-assigned");
+    assert.equal(notice.length, 1, "Sole notice is shown");
+    const noticeText = textContent(notice[0]);
+    assert.match(noticeText, /All garments are for this person\./);
+    assert.match(noticeText, /Add another person to split garments between people\./);
+    assert.match(noticeText, /Standard Shirt, Standard Shirt 2/);
+    assert.equal(notice[0].props.role, undefined, "a quiet notice, not an alert");
+    assert.ok(text.indexOf("Fit for measurements") < text.indexOf("All garments are for this person"));
+    assert.equal(text.includes("Used to determine"), false, "card fit helper dropped");
   };
 
   let sole!: ReturnType<typeof create>;
@@ -2033,6 +2085,11 @@ console.log("PASS: wearer assignment panel Add Garment follows spare capacity an
   });
   const cards = sole.root.findAllByType("article");
   assert.equal(cards.length, 2, "second person added");
+  assert.equal(
+    hostButtons(sole.root, "data-wearer-sole-all-assigned").length,
+    0,
+    "Split hides the Sole notice",
+  );
   for (const card of cards) {
     assert.equal(hostButtons(card, "data-wearer-move-up").length, 1, "Move up returns with 2+ people");
     assert.equal(hostButtons(card, "data-wearer-remove").length, 1);
@@ -2092,8 +2149,21 @@ console.log("PASS: wearer assignment panel sole expanded card is simplified");
   if (withNol.status !== "updated") throw new Error("expected nol");
   const fredId = fnBase.wearers[0].wearerId;
   const nolId = withNol.order.wearers.find((wearer) => wearer.displayName === "nol")!.wearerId;
-  assert.equal(withNol.order.assignmentByGarmentKey["base:shirt"], fredId);
-  let fnOrder = withNol.order;
+  assert.deepEqual(withNol.order.assignmentByGarmentKey, {}, "adding nol starts the split unticked");
+  // Split mode: fred ticks both shirts.
+  const fredTicked = fnGarments.reduce((order, garment) => {
+    const result = assignGarmentToWearer({
+      order,
+      garmentKey: garment.garmentKey,
+      wearerId: fredId,
+      garment,
+      garmentTypeSelection: selection(),
+    });
+    if (result.status !== "updated") throw new Error(`fred ticks ${garment.garmentKey}`);
+    return result.order;
+  }, withNol.order);
+  assert.equal(fredTicked.assignmentByGarmentKey["base:shirt"], fredId);
+  let fnOrder = fredTicked;
   let fnAssignCalls = 0;
   const FredNolHarness = () => {
     const [order, setOrder] = useState(fnOrder);
