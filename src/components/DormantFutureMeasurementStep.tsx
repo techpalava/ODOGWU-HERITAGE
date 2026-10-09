@@ -940,13 +940,13 @@ export const DormantFutureMeasurementStep = ({
       data-measurement-blocked-by-assignment={
         progressPresentation.blockedByAssignment ? "true" : "false"
       }
-      className="space-y-5 font-sans"
+      className="space-y-4 font-sans"
     >
-      <header className="rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm sm:p-7">
+      <header className="rounded-2xl border border-heritage-gold/25 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions
           backDestination="AI Try-on"
           onBack={onBack}
-          className="mb-5"
+          className="mb-3"
           forward={{
             destination: "Summary",
             onClick: onContinue,
@@ -960,16 +960,16 @@ export const DormantFutureMeasurementStep = ({
         </p>
         <h2
           id="future-measurement-title"
-          className="mt-2 font-serif text-2xl font-bold text-heritage-green sm:text-3xl"
+          className="mt-1 font-serif text-xl font-bold text-heritage-green sm:text-2xl"
         >
           Dimension / Measurement
         </h2>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
+        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-heritage-ink/70">
           Add the measurements needed for your selected garments. Your values stay
           consistent when you switch between inches and centimetres.
         </p>
         {activeWearerLabel ? (
-          <div className="mt-5 space-y-3">
+          <div className="mt-3 space-y-2">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-heritage-gold">
                 Measuring for
@@ -979,7 +979,7 @@ export const DormantFutureMeasurementStep = ({
                   role="group"
                   aria-label="Measuring for"
                   data-measurement-wearer-chips="true"
-                  className="mt-2 flex flex-wrap gap-2"
+                  className="mt-1.5 flex flex-wrap gap-2"
                 >
                   {wearerChips.map((chip) => {
                     const selected = chip.wearerId === activeWearerId;
@@ -991,7 +991,7 @@ export const DormantFutureMeasurementStep = ({
                         data-measurement-wearer-chip-selected={selected ? "true" : "false"}
                         data-measurement-active-wearer={selected ? chip.label : undefined}
                         aria-pressed={selected}
-                        className={`inline-flex min-h-11 items-center rounded-xl border px-4 text-sm font-bold ${
+                        className={`inline-flex min-h-9 items-center rounded-xl border px-3 text-sm font-bold ${
                           selected
                             ? "border-heritage-green bg-heritage-green text-white"
                             : "border-heritage-green/30 bg-white text-heritage-green"
@@ -1008,7 +1008,7 @@ export const DormantFutureMeasurementStep = ({
               ) : (
                 <p
                   data-measurement-active-wearer={activeWearerLabel}
-                  className="mt-1 font-serif text-xl font-bold text-heritage-green sm:text-2xl"
+                  className="mt-1 font-serif text-lg font-bold text-heritage-green sm:text-xl"
                 >
                   {activeWearerLabel}
                 </p>
@@ -1037,7 +1037,7 @@ export const DormantFutureMeasurementStep = ({
         ) : null}
         {showSoleFitControl && onSetSoleFitContext ? (
           <div
-            className="mt-5 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/40 p-4"
+            className="mt-3 rounded-2xl border border-heritage-gold/30 bg-heritage-cream/40 p-3"
             data-measurement-sole-fit="true"
             role="group"
             aria-labelledby="measurement-sole-fit-heading"
@@ -1051,7 +1051,7 @@ export const DormantFutureMeasurementStep = ({
             <p className="mt-1 text-xs text-heritage-ink/60">
               Used to determine the correct measurement requirements.
             </p>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
               {(["male", "female"] as const).map((fitContext) => {
                 const selected = soleFitContext === fitContext;
                 return (
@@ -1060,7 +1060,7 @@ export const DormantFutureMeasurementStep = ({
                     type="button"
                     data-measurement-sole-fit-option={fitContext}
                     data-measurement-sole-fit-selected={selected ? "true" : "false"}
-                    className={`flex min-h-11 items-center justify-center rounded-xl border px-3 font-semibold ${
+                    className={`flex min-h-10 items-center justify-center rounded-xl border px-3 font-semibold ${
                       selected
                         ? "border-heritage-green bg-heritage-green text-white"
                         : "border-heritage-gold/30 bg-white text-heritage-green"
@@ -1077,7 +1077,7 @@ export const DormantFutureMeasurementStep = ({
       </header>
 
       <section
-        className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6"
+        className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-option-section="risk"
       >
         <header data-measurement-risk-heading="true">
@@ -1094,9 +1094,9 @@ export const DormantFutureMeasurementStep = ({
             Measurement by Risk Level
           </p>
         </header>
-        <fieldset data-measurement-risk-selector="true" className="mt-4">
+        <fieldset data-measurement-risk-selector="true" className="mt-3">
           <legend className="sr-only">Body Measurements</legend>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
             {ROUTES.map((route) => {
               const selected = selectedRoute === route.id;
               const unavailable = route.id === "critical_risk" && !criticalRiskSupported;
@@ -1116,7 +1116,7 @@ export const DormantFutureMeasurementStep = ({
                   data-measurement-risk-option={route.id}
                   data-measurement-risk-selected={selected ? "true" : "false"}
                   data-measurement-risk-disabled={unavailable ? "true" : "false"}
-                  className={`flex min-w-0 gap-3 rounded-xl border p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+                  className={`flex min-w-0 gap-3 rounded-xl border p-3 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
                     unavailable ? "cursor-not-allowed lg:col-span-3" : "cursor-pointer"
                   } ${
                     selected
@@ -1175,21 +1175,21 @@ export const DormantFutureMeasurementStep = ({
       </section>
 
       <section
-        className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6"
+        className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-option-section="sample_cloth"
       >
         <fieldset data-measurement-sample-selector="true">
           <legend className="font-serif text-lg font-bold text-heritage-green">
             {MEASUREMENT_SAMPLE_CLOTH_LABEL}
           </legend>
-          <p className="mt-2 text-sm leading-relaxed text-heritage-ink/70">
+          <p className="mt-1 text-sm leading-relaxed text-heritage-ink/70">
             {MEASUREMENT_SAMPLE_CLOTH_DESCRIPTION}
           </p>
-          <div className="mt-4">
+          <div className="mt-3">
             <label
               data-measurement-sample-option={MEASUREMENT_SAMPLE_CLOTH_METHOD}
               data-measurement-sample-selected={sampleSelected ? "true" : "false"}
-              className={`flex min-w-0 cursor-pointer gap-3 rounded-xl border p-4 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
+              className={`flex min-w-0 cursor-pointer gap-3 rounded-xl border p-3 transition focus-within:ring-2 focus-within:ring-heritage-gold focus-within:ring-offset-2 ${
                 sampleSelected
                   ? "border-heritage-gold bg-heritage-gold/10 shadow-sm ring-1 ring-heritage-gold/40"
                   : "border-heritage-green/15 hover:border-heritage-gold/45"
@@ -1225,7 +1225,7 @@ export const DormantFutureMeasurementStep = ({
       </section>
 
       <section
-        className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6"
+        className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-option-section="alternate_contact"
         aria-label="Other measurement options"
       >
@@ -1234,7 +1234,7 @@ export const DormantFutureMeasurementStep = ({
         </p>
         <div
           data-measurement-onsite-info="true"
-          className="mt-3 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-4"
+          className="mt-2 min-w-0 rounded-xl border border-heritage-green/15 bg-heritage-cream/30 p-3"
         >
           <h3 className="break-words text-sm font-semibold text-heritage-green">
             Onsite Physical measurements
@@ -1255,14 +1255,14 @@ export const DormantFutureMeasurementStep = ({
       </section>
 
       <section
-        className="rounded-2xl border border-heritage-gold/20 bg-white p-5 shadow-sm sm:p-6"
+        className="rounded-2xl border border-heritage-gold/20 bg-white p-4 shadow-sm sm:p-5"
         data-measurement-option-section="ai_measurements"
         aria-label="AI Measurements"
       >
         <div
           data-measurement-ai-coming-soon="true"
           aria-disabled="true"
-          className="min-w-0 cursor-not-allowed select-none rounded-xl border border-dashed border-heritage-green/15 bg-heritage-green/5 p-4 opacity-70"
+          className="min-w-0 cursor-not-allowed select-none rounded-xl border border-dashed border-heritage-green/15 bg-heritage-green/5 p-3 opacity-70"
         >
           <h3 className="break-words text-sm font-semibold text-heritage-green/80">
             AI Measurements (coming soon)

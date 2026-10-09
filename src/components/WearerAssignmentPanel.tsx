@@ -185,12 +185,12 @@ export const WearerAssignmentPanel = ({
     ((atWearerCap && wearers.length < MAX_CONFIGURED_ACTIVE_WEARERS) ||
       spareFabricCapacityAvailable);
   const addAnotherPerson = (
-    <div className="mt-4">
+    <div className="mt-3">
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           data-wearer-add-another="true"
-          className="inline-flex min-h-11 items-center rounded-xl border border-heritage-green bg-heritage-green px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex min-h-10 items-center rounded-xl border border-heritage-green bg-heritage-green px-4 py-1.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
           disabled={addAnotherDisabledReason !== null}
           title={addAnotherDisabledReason ?? undefined}
           aria-describedby={addAnotherDisabledReason ? addAnotherReasonId : undefined}
@@ -205,7 +205,7 @@ export const WearerAssignmentPanel = ({
           <button
             type="button"
             data-wearer-add-garment="true"
-            className="inline-flex min-h-11 items-center rounded-xl border border-heritage-green bg-white px-4 py-2 text-sm font-bold text-heritage-green"
+            className="inline-flex min-h-10 items-center rounded-xl border border-heritage-green bg-white px-4 py-1.5 text-sm font-bold text-heritage-green"
             onClick={() => onAddGarment?.()}
           >
             {REMAINING_FABRIC_CAPACITY_OFFER_ADD_GARMENT}
@@ -264,17 +264,17 @@ export const WearerAssignmentPanel = ({
   if (!showPeopleUi) {
     return (
       <section
-        className="mb-6 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm"
+        className="mb-4 rounded-2xl border border-heritage-gold/25 bg-white p-4 shadow-sm"
         data-wearer-solo-first="true"
       >
         <p className="text-sm text-heritage-ink/70">{SOLO_FIRST_COPY}</p>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
             type="button"
             data-wearer-for-me="true"
             data-wearer-for-me-selected={forMeSelected ? "true" : "false"}
             aria-pressed={forMeSelected}
-            className={`inline-flex min-h-11 items-center rounded-xl border px-4 py-2 text-sm font-bold ${
+            className={`inline-flex min-h-10 items-center rounded-xl border px-4 py-1.5 text-sm font-bold ${
               forMeSelected
                 ? "border-heritage-green bg-heritage-green text-white"
                 : "border-heritage-gold/30 bg-white text-heritage-green"
@@ -286,7 +286,7 @@ export const WearerAssignmentPanel = ({
           <button
             type="button"
             data-wearer-add-people="true"
-            className={`inline-flex min-h-11 items-center rounded-xl border px-4 py-2 text-sm font-bold ${
+            className={`inline-flex min-h-10 items-center rounded-xl border px-4 py-1.5 text-sm font-bold ${
               forMeSelected
                 ? "border-heritage-gold/30 bg-white text-heritage-green"
                 : "border-heritage-green bg-heritage-green text-white"
@@ -302,18 +302,18 @@ export const WearerAssignmentPanel = ({
 
   return (
     <section
-      className="mb-6 rounded-3xl border border-heritage-gold/25 bg-white p-5 shadow-sm"
+      className="mb-4 rounded-2xl border border-heritage-gold/25 bg-white p-4 shadow-sm"
       data-wearer-people="true"
     >
       <p className="text-sm text-heritage-ink/70">{SOLO_FIRST_COPY}</p>
-      <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
-        <h3 className="font-serif text-lg font-bold text-heritage-green">
+      <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+        <h3 className="font-serif text-base font-bold text-heritage-green">
           People in this order
         </h3>
         <button
           type="button"
           data-wearer-only-for-me="true"
-          className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green"
+          className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green"
           onClick={collapseToSolo}
         >
           Only for me
@@ -328,13 +328,13 @@ export const WearerAssignmentPanel = ({
           {deleteRejection}
         </p>
       ) : null}
-      <h4 className="mt-5 text-sm font-bold text-heritage-green">Add people</h4>
-      <div className="mt-3 grid gap-3">
+      <h4 className="mt-4 text-sm font-bold text-heritage-green">Add people</h4>
+      <div className="mt-2 grid gap-2">
         {wearers.map((wearer, index) => (
           <article
             key={wearer.wearerId}
             onClick={() => onSelectWearer(wearer.wearerId)}
-            className={`rounded-2xl border p-4 ${
+            className={`rounded-2xl border p-3 ${
               wearer.wearerId === activeWearerId
                 ? "border-heritage-gold bg-heritage-cream/40"
                 : "border-heritage-gold/20 bg-white"
@@ -349,7 +349,7 @@ export const WearerAssignmentPanel = ({
                     else nameInputByWearerId.current.delete(wearer.wearerId);
                   }}
                   aria-label={`Name or nickname for ${labelForWearer(wearer)}`}
-                  className="mt-1 min-h-11 w-full min-w-0 rounded-xl border border-heritage-gold/30 bg-white px-3 py-2 text-sm text-heritage-ink placeholder:text-heritage-ink/40"
+                  className="mt-1 min-h-10 w-full min-w-0 rounded-xl border border-heritage-gold/30 bg-white px-3 py-1.5 text-sm text-heritage-ink placeholder:text-heritage-ink/40"
                   placeholder={index === 0 ? "You" : "Add person"}
                   value={wearer.displayName}
                   onFocus={() => onSelectWearer(wearer.wearerId)}
@@ -374,7 +374,7 @@ export const WearerAssignmentPanel = ({
                     ? `Name saved for ${labelForWearer(wearer)}`
                     : `Save name for ${labelForWearer(wearer)}`
                 }
-                className={`inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border px-3 text-xs font-bold ${
+                className={`inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl border px-3 text-xs font-bold ${
                   isNameConfirmed(wearer)
                     ? "border-heritage-gold/30 bg-white text-heritage-ink/55"
                     : "border-heritage-green bg-heritage-green text-white"
@@ -392,13 +392,13 @@ export const WearerAssignmentPanel = ({
                 {NAME_REQUIRED_HINT}
               </p>
             ) : null}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               {/* Sole expanded card: no ordering to do, so Move up is hidden, not just disabled. */}
               {wearers.length > 1 ? (
                 <button
                   type="button"
                   data-wearer-move-up="true"
-                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={index === 0}
                   onClick={(event) => {
                     event?.stopPropagation();
@@ -417,7 +417,7 @@ export const WearerAssignmentPanel = ({
               <button
                 type="button"
                 data-wearer-remove="true"
-                className="inline-flex min-h-11 items-center justify-center rounded-xl px-3 text-xs font-bold text-heritage-ink/60"
+                className="inline-flex min-h-9 items-center justify-center rounded-xl px-3 text-xs font-bold text-heritage-ink/60"
                 onClick={(event) => {
                   event?.stopPropagation();
                   // Sole expanded card: same path as Only for me (back to For me).
@@ -441,7 +441,7 @@ export const WearerAssignmentPanel = ({
                 Remove person
               </button>
             </div>
-            <fieldset className="mt-4">
+            <fieldset className="mt-3">
               <legend className="text-sm font-semibold text-heritage-ink">
                 Fit for measurements
               </legend>
@@ -452,7 +452,7 @@ export const WearerAssignmentPanel = ({
                 {(["male", "female"] as const).map((fitContext) => (
                   <label
                     key={fitContext}
-                    className={`flex min-h-11 cursor-pointer items-center justify-center rounded-xl border px-3 font-semibold ${
+                    className={`flex min-h-10 cursor-pointer items-center justify-center rounded-xl border px-3 font-semibold ${
                       wearer.fitContext === fitContext
                         ? "border-heritage-green bg-heritage-green text-white"
                         : "border-heritage-gold/30 bg-white text-heritage-green"
@@ -479,7 +479,7 @@ export const WearerAssignmentPanel = ({
             </fieldset>
             {wearers.length > 1 ? (
               <fieldset
-                className="mt-4"
+                className="mt-3"
                 data-wearer-garment-assign="true"
                 disabled={wearer.fitContext === null}
               >
@@ -521,7 +521,7 @@ export const WearerAssignmentPanel = ({
                         data-wearer-garment-unfit={unfit ? "true" : undefined}
                       >
                         <label
-                          className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 text-sm ${
+                          className={`flex min-h-10 items-center gap-3 rounded-xl border px-3 text-sm ${
                             checked
                               ? "border-heritage-green bg-heritage-green/5 font-semibold text-heritage-green"
                               : muted
@@ -578,7 +578,7 @@ export const WearerAssignmentPanel = ({
       {wearers.length > 1 && garmentsRemainUnassigned ? (
         <p
           data-wearer-unassigned-note="true"
-          className="mt-4 text-sm font-semibold text-heritage-ink"
+          className="mt-3 text-sm font-semibold text-heritage-ink"
         >
           Assign all garments to continue.
         </p>
