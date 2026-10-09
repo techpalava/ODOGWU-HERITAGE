@@ -249,6 +249,37 @@ export const addWearer = ({
   });
 };
 
+/**
+ * Canonical stored name: leading/trailing whitespace trimmed and capped.
+ * Applied when a name is saved (Save / blur), when the order is persisted
+ * (draft and paid V2 snapshot) and on read (normalizeWearer). Label helpers
+ * (wearerPublicLabel / wearerAssignmentLabel) trim the same way, so a raw
+ * in-progress name never shows a trailing space anywhere else.
+ */
+export const canonicalWearerDisplayName = (displayName: string): string =>
+  displayName.trim().slice(0, DISPLAY_NAME_MAX).trim();
+
+/** Same order with every wearer name canonical (unchanged reference when already canonical). */
+export const canonicalizeWearerOrderNames = (
+  order: WearerOrderStateV2,
+): WearerOrderStateV2 =>
+  order.wearers.every(
+    (wearer) => wearer.displayName === canonicalWearerDisplayName(wearer.displayName),
+  )
+    ? order
+    : {
+        ...order,
+        wearers: order.wearers.map((wearer) => ({
+          ...wearer,
+          displayName: canonicalWearerDisplayName(wearer.displayName),
+        })),
+      };
+
+/**
+ * Stores the name as typed (length-capped only): no trim or space collapse, so
+ * typing "Ada Obi" keystroke by keystroke keeps the space. Callers that commit a
+ * name (the panel's Save / blur) pass canonicalWearerDisplayName(value).
+ */
 export const renameWearer = (
   order: WearerOrderStateV2,
   wearerId: string,
@@ -257,11 +288,11 @@ export const renameWearer = (
   if (!order.wearers.some((wearer) => wearer.wearerId === wearerId)) {
     return blocked(order, "WEARER_NOT_FOUND");
   }
-  const trimmed = displayName.trim().slice(0, DISPLAY_NAME_MAX);
+  const raw = displayName.slice(0, DISPLAY_NAME_MAX);
   return updated({
     ...order,
     wearers: order.wearers.map((wearer) =>
-      wearer.wearerId === wearerId ? { ...wearer, displayName: trimmed } : wearer,
+      wearer.wearerId === wearerId ? { ...wearer, displayName: raw } : wearer,
     ),
   });
 };
@@ -629,7 +660,7 @@ const normalizeWearer = (
   if (measurement.status !== "valid") return null;
   return {
     wearerId: value.wearerId,
-    displayName: value.displayName.trim().slice(0, DISPLAY_NAME_MAX),
+    displayName: canonicalWearerDisplayName(value.displayName),
     fitContext,
     presentationOrder: Number.isFinite(value.presentationOrder)
       ? Number(value.presentationOrder)

@@ -9,6 +9,7 @@ import type {
   WearerOrderStateV2,
 } from "../types";
 import {
+  canonicalWearerDisplayName,
   hasUnassignedPhysicalGarments,
   isGarmentEligibleForWearer,
   wearerAssignmentLabel,
@@ -299,8 +300,15 @@ export const WearerAssignmentPanel = ({
   /** Confirmed = a real non-empty name (not the "You" placeholder) that was saved or blurred. */
   const isNameConfirmed = (wearer: (typeof wearers)[number]) =>
     wearer.displayName.trim().length > 0 && !unsavedNameWearerIds.has(wearer.wearerId);
+  /**
+   * The only place a typed name is trimmed: Save and blur store the canonical
+   * (leading/trailing-trimmed) name; onChange stores the raw value. A name that
+   * is empty after trimming ("   ") is stored blank and never confirms.
+   */
   const confirmName = (wearer: (typeof wearers)[number], source: "save" | "blur") => {
-    if (wearer.displayName.trim().length === 0) {
+    const canonical = canonicalWearerDisplayName(wearer.displayName);
+    if (canonical !== wearer.displayName) onRenameWearer(wearer.wearerId, canonical);
+    if (canonical.length === 0) {
       if (source === "save") {
         setNameHintWearerIds((current) => withId(current, wearer.wearerId));
       }
@@ -546,7 +554,8 @@ export const WearerAssignmentPanel = ({
                   onFocus={() => onSelectWearer(wearer.wearerId)}
                   onChange={(event) => {
                     const value = event.currentTarget.value;
-                    // Any edit clears confirmation until Save or blur again.
+                    // Any edit clears confirmation until Save or blur again. The raw
+                    // value is stored (no trim) so internal/trailing spaces survive typing.
                     setUnsavedNameWearerIds((current) => withId(current, wearer.wearerId));
                     if (value.trim().length > 0) {
                       setNameHintWearerIds((current) => withoutId(current, wearer.wearerId));

@@ -317,6 +317,7 @@ import {
   planWearerOrderMeasurements,
   resolveWearerAssignmentPresentation,
   summarizeWearerOrderMeasurementCompletion,
+  canonicalizeWearerOrderNames,
   reconcileWearerOrder,
   removeGarmentFromWearerOrder,
   renameWearer,
@@ -6110,7 +6111,8 @@ export default function DesignStudioView({
         futureMeasurementState: preservedInvalidHydratedMeasurementsRef.current
           ? (preservedInvalidHydratedMeasurementsRef.current
               .preservedRaw as GuestDesignDraft["futureMeasurementState"])
-          : wearerOrderForPlanRef.current,
+          : // Draft stores canonical (trimmed) names; the live field keeps the raw value.
+            canonicalizeWearerOrderNames(wearerOrderForPlanRef.current),
         resumeLocus: createDesignStudioResumeLocus({
           activeWearerId,
           measurementGarmentKey:
