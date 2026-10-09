@@ -309,6 +309,36 @@ const garmentRowIn = (root: ReactTestInstance, wearerLabel: string, garmentKey: 
   return row;
 };
 
+/**
+ * Every owner / unfit note sits inside its own garment's bordered label (the pill),
+ * next to that garment's checkbox, never floating between rows.
+ */
+const assertGarmentNotesInsideTheirPill = (root: ReactTestInstance) => {
+  const notes = root.findAll(
+    (node) =>
+      typeof node.type === "string" &&
+      (node.props["data-wearer-garment-owner-note"] === "true" ||
+        node.props["data-wearer-garment-unfit-note"] === "true"),
+  );
+  for (const note of notes) {
+    let pill: ReactTestInstance | null = note.parent;
+    while (pill && pill.type !== "label") pill = pill.parent;
+    assert.ok(pill, "garment note is inside a label");
+    const boxes = pill!.findAll((node) => node.type === "input" && node.props.type === "checkbox");
+    assert.equal(boxes.length, 1, "the note's label holds exactly one garment checkbox");
+    assert.equal(boxes[0].props["aria-describedby"], note.props.id, "the note describes its own garment");
+    let row: ReactTestInstance | null = pill!.parent;
+    while (row && row.type !== "li") row = row.parent;
+    assert.ok(row, "the pill is inside the garment row");
+    assert.equal(
+      row!.findAll((node) => node.type === "label").length,
+      1,
+      "one pill per garment row",
+    );
+  }
+  return notes.length;
+};
+
 const unassignedNoteCount = (root: ReactTestInstance) =>
   root.findAllByProps({ "data-wearer-unassigned-note": "true" }).length;
 
@@ -706,6 +736,11 @@ const unassignedNoteCount = (root: ReactTestInstance) =>
   ]);
   assert.equal(unfitNotes[0].props.role, undefined, "quiet guide, not an alert");
   assert.equal(String(unfitNotes[0].props.className).includes("red"), false);
+  assert.ok(assertGarmentNotesInsideTheirPill(rejectionRenderer.root) >= 1);
+  assert.ok(
+    textContent(chikeDressRow.findByType("label")).includes("Not available for Chike's selected fit."),
+    "the unfit note trails the dress name inside the dress pill",
+  );
   assert.equal(textContent(chikeDressRow).includes("Assigned to"), false);
   await toggleGarment(rejectionRenderer.root, "Chike", "base:dress");
   assert.equal(rejectionAuthority.assignmentByGarmentKey["base:dress"], undefined);
@@ -2215,6 +2250,11 @@ console.log("PASS: wearer assignment panel sole expanded card is simplified");
     .filter((node) => typeof node.type === "string")
     .map((node) => textContent(node));
   assert.deepEqual(notes, ["Assigned to fred", "Assigned to fred"]);
+  assert.equal(assertGarmentNotesInsideTheirPill(fn.root), 2);
+  for (const garmentKey of ["base:shirt", "additional:shirt:1"]) {
+    const pill = garmentRowIn(fn.root, "nol", garmentKey).findByType("label");
+    assert.match(textContent(pill), /Assigned to fred$/, `owner note inside the ${garmentKey} pill`);
+  }
   assert.equal(nolShirt.props["aria-describedby"] !== undefined, true);
   await toggleGarment(fn.root, "nol", "base:shirt");
   assert.equal(fnAssignCalls, 0, "onAssignGarment is never called from an owned-by-other row");
@@ -2232,6 +2272,16 @@ console.log("PASS: wearer assignment panel sole expanded card is simplified");
     .filter((node) => typeof node.type === "string")
     .map((node) => textContent(node));
   assert.deepEqual(fredNotes, ["Assigned to nol"]);
+  assert.equal(assertGarmentNotesInsideTheirPill(fn.root), 2);
+  assert.match(
+    textContent(garmentRowIn(fn.root, "fred", "base:shirt").findByType("label")),
+    /^Shirt\s*Assigned to nol$/,
+    "the note sits in the Shirt pill, not the Shirt 2 pill",
+  );
+  assert.equal(
+    textContent(garmentRowIn(fn.root, "fred", "additional:shirt:1").findByType("label")).includes("Assigned to"),
+    false,
+  );
 }
 
 console.log("PASS: wearer assignment panel owned-by-other rows are locked with an owner guide");

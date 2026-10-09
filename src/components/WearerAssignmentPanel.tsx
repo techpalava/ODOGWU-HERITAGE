@@ -536,7 +536,7 @@ export const WearerAssignmentPanel = ({
                         data-wearer-garment-unfit={unfit ? "true" : undefined}
                       >
                         <label
-                          className={`flex min-h-9 items-center gap-3 rounded-xl border px-3 text-sm ${
+                          className={`flex min-h-9 flex-wrap items-center gap-x-2 gap-y-0.5 rounded-xl border px-3 py-1.5 text-sm ${
                             checked
                               ? "border-heritage-green bg-heritage-green/5 font-semibold text-heritage-green"
                               : muted
@@ -544,43 +544,47 @@ export const WearerAssignmentPanel = ({
                                 : "border-heritage-gold/30 bg-white text-heritage-ink"
                           } ${locked ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
                         >
-                          <input
-                            type="checkbox"
-                            data-wearer-garment-key={garment.garmentKey}
-                            aria-label={`${label} for ${labelForWearer(wearer)}`}
-                            className="size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed"
-                            checked={checked}
-                            disabled={locked}
-                            aria-describedby={muted ? noteId : undefined}
-                            onChange={() => {
-                              if (locked) return;
-                              if (checked) {
-                                onUnassignGarment?.(garment.garmentKey);
-                                return;
-                              }
-                              // Assign to this person only; a blocked result changes nothing.
-                              onAssignGarment(garment.garmentKey, wearer.wearerId);
-                            }}
-                          />
-                          <span className="min-w-0 break-words">{label}</span>
+                          <span className="flex min-w-0 flex-1 basis-36 items-center gap-3">
+                            <input
+                              type="checkbox"
+                              data-wearer-garment-key={garment.garmentKey}
+                              aria-label={`${label} for ${labelForWearer(wearer)}`}
+                              className="size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed"
+                              checked={checked}
+                              disabled={locked}
+                              aria-describedby={muted ? noteId : undefined}
+                              onChange={() => {
+                                if (locked) return;
+                                if (checked) {
+                                  onUnassignGarment?.(garment.garmentKey);
+                                  return;
+                                }
+                                // Assign to this person only; a blocked result changes nothing.
+                                onAssignGarment(garment.garmentKey, wearer.wearerId);
+                              }}
+                            />
+                            <span className="min-w-0 break-words">{label}</span>
+                          </span>
+                          {/* The note trails the name inside this garment's pill, so it can
+                              never read as belonging to the row above or below. */}
+                          {otherOwner ? (
+                            <span
+                              id={noteId}
+                              data-wearer-garment-owner-note="true"
+                              className="ml-auto shrink-0 text-xs font-normal text-heritage-ink/75"
+                            >
+                              Assigned to {labelForWearer(otherOwner)}
+                            </span>
+                          ) : unfit ? (
+                            <span
+                              id={noteId}
+                              data-wearer-garment-unfit-note="true"
+                              className="ml-auto shrink-0 text-xs font-normal text-heritage-ink/75"
+                            >
+                              {unfitGarmentGuide(labelForWearer(wearer))}
+                            </span>
+                          ) : null}
                         </label>
-                        {otherOwner ? (
-                          <p
-                            id={noteId}
-                            data-wearer-garment-owner-note="true"
-                            className="mt-0.5 text-xs text-heritage-ink/60"
-                          >
-                            Assigned to {labelForWearer(otherOwner)}
-                          </p>
-                        ) : unfit ? (
-                          <p
-                            id={noteId}
-                            data-wearer-garment-unfit-note="true"
-                            className="mt-0.5 text-xs text-heritage-ink/60"
-                          >
-                            {unfitGarmentGuide(labelForWearer(wearer))}
-                          </p>
-                        ) : null}
                       </li>
                     );
                   })}
