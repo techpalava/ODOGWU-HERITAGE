@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { useState } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
-import { FIT_CONFLICT_PULSE_MS, WearerAssignmentPanel } from "./src/components/WearerAssignmentPanel";
+import { FIT_CONFLICT_PULSE_MS, NAME_SAVED_FLASH_MS, WearerAssignmentPanel } from "./src/components/WearerAssignmentPanel";
 import type { GarmentTypeStepSelection, WearerOrderStateV2 } from "./src/types";
 import type { MeasurementPhysicalGarment } from "./src/utils/measurementBlueprint";
 import {
@@ -1399,7 +1399,7 @@ const NEED_GARMENT_REASON =
   assert.equal(textContent(oneRenderer.root).includes(SAVE_NAMES_REASON), false);
   await typeName(oneRenderer.root, "You", "Ada");
   await saveName(oneRenderer.root, "Ada");
-  assert.equal(textContent(nameSaveButton(oneRenderer.root, "Ada")), "Saved");
+  assert.equal(textContent(nameSaveButton(oneRenderer.root, "Ada")), "✓Saved");
   add = addAnotherButton(oneRenderer.root);
   assert.equal(add.props.disabled, true, "1-garment order caps at 1 person");
   assert.equal(add.props.title, NEED_GARMENT_REASON);
@@ -1533,7 +1533,7 @@ console.log("PASS: wearer assignment panel 1-garment order shows the garment cap
   assert.equal(addAnotherButton(root()).props.disabled, true, "an edit is not confirmed yet");
   await blurName(root(), "Ada");
   const savedButton = nameSaveButton(root(), "Ada");
-  assert.equal(textContent(savedButton), "Saved");
+  assert.equal(textContent(savedButton), "✓Saved");
   assert.equal(savedButton.props["data-wearer-name-confirmed"], "true");
   assert.equal(savedButton.props["aria-label"], "Name saved for Ada");
   add = addAnotherButton(root());
@@ -1547,7 +1547,7 @@ console.log("PASS: wearer assignment panel 1-garment order shows the garment cap
   assert.equal(textContent(nameSaveButton(root(), "Adaeze")), "Save");
   assert.equal(addAnotherButton(root()).props.disabled, true);
   await saveName(root(), "Adaeze");
-  assert.equal(textContent(nameSaveButton(root(), "Adaeze")), "Saved");
+  assert.equal(textContent(nameSaveButton(root(), "Adaeze")), "✓Saved");
   assert.equal(addAnotherButton(root()).props.disabled, false, "Save confirms");
   await typeName(root(), "Adaeze", "");
   assert.equal(addAnotherButton(root()).props.disabled, true, "clearing clears confirmation");
@@ -1790,7 +1790,7 @@ console.log("PASS: wearer assignment panel sole Remove person returns to For me"
     reloadRenderer.root
       .findAllByProps({ "data-wearer-name-save": "true" })
       .map((button) => textContent(button)),
-    ["Saved", "Saved"],
+    ["✓Saved", "✓Saved"],
   );
 }
 
@@ -2489,3 +2489,126 @@ console.log("PASS: wearer assignment panel owned-by-other rows are locked with a
 }
 
 console.log("PASS: wearer assignment panel fit-conflict attention");
+
+{
+  // Saved reads as success; Remove person is a visible bordered button (sole + multi cards).
+  const svGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+  ];
+  const svStart: WearerOrderStateV2 = {
+    ...createEmptyWearerOrder(),
+    wearers: [
+      createWearerProfile({ wearerId: "w-ada", displayName: "Ada", fitContext: "female", presentationOrder: 0 }),
+    ],
+    assignmentByGarmentKey: { "base:shirt": "w-ada", "additional:shirt:1": "w-ada" },
+  };
+  const SavedHarness = ({ initial }: { initial: WearerOrderStateV2 }) => {
+    const [order, setOrder] = useState(initial);
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        presentation="people"
+        activeWearerId={order.wearers[0]?.wearerId || null}
+        garments={svGarments}
+        garmentLabels={{ "base:shirt": "Standard Shirt", "additional:shirt:1": "Long Shirt" }}
+        onSelectWearer={() => {}}
+        onAddWearer={(displayName, fitContext) => {
+          const result = addWearer({ order, physicalGarmentCount: svGarments.length, displayName, fitContext });
+          if (result.status === "updated") setOrder(result.order);
+        }}
+        onRenameWearer={(wearerId, displayName) => {
+          const result = renameWearer(order, wearerId, displayName);
+          if (result.status === "updated") setOrder(result.order);
+        }}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(wearerId) => deleteWearer(order, wearerId)}
+        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order })}
+      />
+    );
+  };
+  const removeClass = /rounded-xl border border-heritage-green\/30 .*font-bold text-heritage-green/;
+  let sv!: ReturnType<typeof create>;
+  await act(async () => {
+    sv = create(<SavedHarness initial={svStart} />);
+  });
+  // Reloaded name: Saved on mount, success styling, no flash.
+  const savedOnMount = nameSaveButton(sv.root, "Ada");
+  assert.equal(savedOnMount.props["data-wearer-name-confirmed"], "true");
+  assert.equal(textContent(savedOnMount), "✓Saved");
+  assert.equal(savedOnMount.props["aria-label"], "Name saved for Ada", "accessible label unchanged");
+  const tick = savedOnMount.findAll((node) => node.type === "span" && node.props["aria-hidden"] === "true");
+  assert.deepEqual(tick.map((node) => textContent(node)), ["✓"], "the tick is aria-hidden");
+  const savedClass = String(savedOnMount.props.className);
+  for (const token of ["border-heritage-green", "ring-heritage-green", "text-heritage-green", "bg-heritage-green/5", "font-bold"]) {
+    assert.ok(savedClass.split(/\s+/).includes(token), `Saved has ${token}`);
+  }
+  assert.equal(/text-heritage-ink\/55|border-heritage-gold\/30/.test(savedClass), false, "no greyed-out Saved");
+  assert.equal(savedOnMount.props["data-wearer-name-saved-flash"], undefined, "no flash on mount");
+  // Sole card Remove person is bordered and green.
+  const soleRemove = removeButtonIn(sv.root, "Ada");
+  assert.match(String(soleRemove.props.className), removeClass);
+  assert.equal(String(soleRemove.props.className).includes("text-heritage-ink/60"), false);
+  assert.equal(/red/.test(String(soleRemove.props.className)), false, "not a danger button");
+
+  // Dirty name: solid green Save, unchanged.
+  await typeName(sv.root, "Ada", "Adaeze");
+  const dirty = nameSaveButton(sv.root, "Adaeze");
+  assert.equal(textContent(dirty), "Save");
+  assert.match(String(dirty.props.className), /border-heritage-green bg-heritage-green text-white/);
+  assert.equal(dirty.props["data-wearer-name-saved-flash"], undefined);
+  // Save -> Saved flashes once, then settles to the outline.
+  await saveName(sv.root, "Adaeze");
+  const flashing = nameSaveButton(sv.root, "Adaeze");
+  assert.equal(textContent(flashing), "✓Saved");
+  assert.equal(flashing.props["data-wearer-name-saved-flash"], "true");
+  assert.match(String(flashing.props.className), /bg-heritage-green\/25/);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, NAME_SAVED_FLASH_MS + 100));
+  });
+  const settled = nameSaveButton(sv.root, "Adaeze");
+  assert.equal(settled.props["data-wearer-name-saved-flash"], undefined, "flash cleared");
+  assert.match(String(settled.props.className), /bg-heritage-green\/5/);
+
+  // Multi cards: Remove person sits beside Move up with the same weight.
+  await act(async () => {
+    addAnotherButton(sv.root).props.onClick();
+  });
+  assert.equal(sv.root.findAllByType("article").length, 2);
+  for (const label of ["Adaeze", "Person 2"]) {
+    const card = cardFor(sv.root, label);
+    const moveUp = card.findAll((node) => node.type === "button" && node.props["data-wearer-move-up"] === "true")[0];
+    const remove = removeButtonIn(sv.root, label);
+    assert.match(String(remove.props.className), removeClass);
+    assert.match(String(moveUp.props.className), /border border-heritage-green\/30/);
+    assert.ok(String(remove.props.className).includes("min-h-9"));
+  }
+  assert.equal(
+    nameSaveButton(sv.root, "Person 2").props["data-wearer-name-saved-flash"],
+    undefined,
+    "a newly added person never flashes",
+  );
+
+  // Reduced motion: Save -> Saved without the flash.
+  const previousWindow = (globalThis as { window?: unknown }).window;
+  Object.assign(globalThis, { window: { matchMedia: () => ({ matches: true }) } });
+  try {
+    await typeName(sv.root, "Person 2", "Bola");
+    await saveName(sv.root, "Bola");
+    const reduced = nameSaveButton(sv.root, "Bola");
+    assert.equal(textContent(reduced), "✓Saved");
+    assert.equal(reduced.props["data-wearer-name-saved-flash"], undefined, "no flash under reduced motion");
+  } finally {
+    Object.assign(globalThis, { window: previousWindow });
+  }
+  // Unmount mid-flash: timers are cleaned up.
+  await typeName(sv.root, "Bola", "Bolaji");
+  await saveName(sv.root, "Bolaji");
+  await act(async () => {
+    sv.unmount();
+  });
+  await new Promise((resolve) => setTimeout(resolve, NAME_SAVED_FLASH_MS + 100));
+}
+
+console.log("PASS: wearer assignment panel Saved success state and visible Remove person");

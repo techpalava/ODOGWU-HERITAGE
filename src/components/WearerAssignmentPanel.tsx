@@ -39,6 +39,14 @@ const FIT_CONFLICT_LIVE_COPY = "Some garments are not available for this fit.";
 /** How long newly unfit pills pulse after a Fit change (matches the 1.2s keyframes). */
 export const FIT_CONFLICT_PULSE_MS = 1300;
 
+/** Save -> Saved success flash before settling to the green outline. */
+export const NAME_SAVED_FLASH_MS = 500;
+
+const prefersReducedMotion = (): boolean =>
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 const unfitGarmentGuide = (wearerLabel: string): string =>
   wearerLabel === "You"
     ? "Not available for your selected fit."
@@ -276,6 +284,55 @@ export const WearerAssignmentPanel = ({
   };
   const atWearerCap = wearers.length >= cap;
   const namesPending = wearers.some((wearer) => !isNameConfirmed(wearer));
+  /**
+   * Presentation only: flash a person's Save button once when it turns into
+   * Saved (any path), then settle to the outline. Not on mount, and never under
+   * reduced motion. Name confirmation itself is untouched.
+   */
+  const confirmedWearerIdsKey = wearers
+    .filter((wearer) => isNameConfirmed(wearer))
+    .map((wearer) => wearer.wearerId)
+    .join("|");
+  const allWearerIdsKey = wearers.map((wearer) => wearer.wearerId).join("|");
+  const previousNameState = useRef<{
+    confirmed: ReadonlySet<string>;
+    present: ReadonlySet<string>;
+  } | null>(null);
+  const [flashingSavedIds, setFlashingSavedIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const savedFlashTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const confirmed = new Set(confirmedWearerIdsKey ? confirmedWearerIdsKey.split("|") : []);
+    const present = new Set(allWearerIdsKey ? allWearerIdsKey.split("|") : []);
+    const previous = previousNameState.current;
+    previousNameState.current = { confirmed, present };
+    if (!previous || prefersReducedMotion()) return;
+    // Only people already on screen and unconfirmed last render (Save -> Saved).
+    const newlySaved = [...confirmed].filter(
+      (wearerId) => previous.present.has(wearerId) && !previous.confirmed.has(wearerId),
+    );
+    for (const wearerId of newlySaved) {
+      setFlashingSavedIds((current) => withId(current, wearerId));
+      const pending = savedFlashTimers.current.get(wearerId);
+      if (pending) clearTimeout(pending);
+      savedFlashTimers.current.set(
+        wearerId,
+        setTimeout(() => {
+          savedFlashTimers.current.delete(wearerId);
+          setFlashingSavedIds((current) => withoutId(current, wearerId));
+        }, NAME_SAVED_FLASH_MS),
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmedWearerIdsKey, allWearerIdsKey]);
+  useEffect(() => {
+    const timers = savedFlashTimers.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
   // The cap reason always wins over the save-name reason.
   const addAnotherDisabledReason = atWearerCap
     ? wearers.length >= MAX_CONFIGURED_ACTIVE_WEARERS
@@ -479,9 +536,17 @@ export const WearerAssignmentPanel = ({
                     ? `Name saved for ${labelForWearer(wearer)}`
                     : `Save name for ${labelForWearer(wearer)}`
                 }
+                data-wearer-name-saved-flash={
+                  isNameConfirmed(wearer) && flashingSavedIds.has(wearer.wearerId) ? "true" : undefined
+                }
                 className={`inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl border px-3 text-xs font-bold ${
                   isNameConfirmed(wearer)
-                    ? "border-heritage-gold/30 bg-white text-heritage-ink/55"
+                    ? // Saved reads as success: bold green outline (ring keeps the 1px border box).
+                      `gap-1 border-heritage-green text-heritage-green ring-1 ring-inset ring-heritage-green motion-safe:transition-colors motion-safe:duration-500 ${
+                        flashingSavedIds.has(wearer.wearerId)
+                          ? "bg-heritage-green/25"
+                          : "bg-heritage-green/5"
+                      }`
                     : "border-heritage-green bg-heritage-green text-white"
                 }`}
                 onClick={(event) => {
@@ -489,7 +554,14 @@ export const WearerAssignmentPanel = ({
                   confirmName(wearer, "save");
                 }}
               >
-                {isNameConfirmed(wearer) ? "Saved" : "Save"}
+                {isNameConfirmed(wearer) ? (
+                  <>
+                    <span aria-hidden="true">✓</span>
+                    Saved
+                  </>
+                ) : (
+                  "Save"
+                )}
               </button>
             </div>
             {nameHintWearerIds.has(wearer.wearerId) && wearer.displayName.trim().length === 0 ? (
@@ -522,7 +594,7 @@ export const WearerAssignmentPanel = ({
               <button
                 type="button"
                 data-wearer-remove="true"
-                className="inline-flex min-h-9 items-center justify-center rounded-xl px-3 text-xs font-bold text-heritage-ink/60"
+                className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green"
                 onClick={(event) => {
                   event?.stopPropagation();
                   // Sole expanded card: same path as Only for me (back to For me).
