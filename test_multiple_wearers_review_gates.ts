@@ -1105,9 +1105,23 @@ const studioSource = readFileSync(
 assert.match(studioSource, /wearerRuntimes:\s*wearerMeasurementRuntimes/);
 assert.match(studioSource, /buildFutureOrderCandidateV2\(\{/);
 assert.equal(studioSource.includes("buildFutureOrderCandidate("), false);
+// Assign / unassign sync the live form after the strip, to the person selected
+// right now (ref), never a stale one (B1).
 assert.match(
   studioSource,
-  /onAssignGarment[\s\S]*setFutureMeasurementState\(synced\.measurement\)/,
+  /onAssignGarment=\{\(garmentKey, wearerId\) =>\s*measurementGarmentToggleHandlers\.assign\(/,
+);
+assert.match(
+  studioSource,
+  /onUnassignGarment=\{\(garmentKey\) =>\s*measurementGarmentToggleHandlers\.unassign\(/,
+);
+assert.match(
+  studioSource,
+  /getActiveWearerId:\s*\(\) => activeWearerIdRef\.current/,
+);
+assert.match(
+  studioSource,
+  /setLiveForm:\s*\(measurement\) =>\s*setFutureMeasurementState\(/,
   "assign garment must sync live measurement form after strip",
 );
 assert.match(

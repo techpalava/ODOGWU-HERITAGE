@@ -705,6 +705,10 @@ export const WearerAssignmentPanel = ({
                     return (
                       <li
                         key={garment.garmentKey}
+                        // A tick is not a card select: React runs the card's onClick before
+                        // the checkbox onChange, so a bubbling click re-pointed the live
+                        // form mid-tick (B1). Card chrome outside the rows still selects.
+                        onClick={(event) => event.stopPropagation()}
                         ref={(node) => {
                           if (node) unfitRowByKey.current.set(rowKey, node);
                           else unfitRowByKey.current.delete(rowKey);
@@ -743,6 +747,7 @@ export const WearerAssignmentPanel = ({
                               className={`size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed ${unfit ? "opacity-50" : ""}`}
                               checked={checked}
                               disabled={locked}
+                              onClick={(event) => event.stopPropagation()}
                               aria-describedby={muted ? noteId : undefined}
                               onChange={() => {
                                 if (locked) return;

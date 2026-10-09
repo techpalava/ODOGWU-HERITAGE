@@ -309,7 +309,6 @@ import {
 import {
   addWearer,
   applyWearerMeasurementUpdate,
-  assignGarmentToWearer,
   classifyPersistedMeasurement,
   createEmptyWearerOrder,
   deleteWearer,
@@ -326,6 +325,7 @@ import {
   updateWearerMeasurement,
   wearerAssignmentLabel,
 } from "../utils/wearerOrder";
+import { createWearerGarmentToggleHandlers } from "../utils/wearerGarmentToggle";
 import {
   createDesignStudioResumeLocus,
   resolveDesignStudioResumeLocus,
@@ -3497,6 +3497,13 @@ export default function DesignStudioView({
   );
   const wearerOrderForPlanRef = useRef(wearerOrderForPlan);
   wearerOrderForPlanRef.current = wearerOrderForPlan;
+  /**
+   * Latest selected person, written on render and synchronously on select, so
+   * handlers that run later in the same event never sync the live form to a
+   * person selected in an earlier render (B1).
+   */
+  const activeWearerIdRef = useRef<string | null>(activeWearer?.wearerId || null);
+  activeWearerIdRef.current = activeWearer?.wearerId || null;
   const wearerMeasurementRuntimes = useMemo(
     () =>
       planWearerOrderMeasurements({
@@ -3629,10 +3636,25 @@ export default function DesignStudioView({
     );
     if (!next) return;
     setWearerOrder(wearerOrderForPlan);
+    activeWearerIdRef.current = wearerId;
     setActiveWearerId(wearerId);
     setHydratedMeasurementGarmentKey(null);
     setFutureMeasurementState(next.measurement);
   };
+  /** Person-card garment tick / untick: assignment only, live form re-synced to the current selection. */
+  const measurementGarmentToggleHandlers = createWearerGarmentToggleHandlers({
+    getOrder: () => wearerOrderForPlanRef.current,
+    getActiveWearerId: () => activeWearerIdRef.current,
+    garments: futureMeasurementPhysicalGarments,
+    garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+    additionalGarmentConstructions: designSelections.additionalGarmentConstructions,
+    commitOrder: (order) => {
+      wearerOrderForPlanRef.current = order;
+      setWearerOrder(order);
+    },
+    setLiveForm: (measurement) =>
+      setFutureMeasurementState(measurement || createEmptyFutureMeasurementState()),
+  });
   // Batch / Group Options (Site-wide adaptive ordering options)
   const [batchType, setBatchType] = useState<
     "community" | "alone" | "personalized" | "actual"
@@ -10557,54 +10579,12 @@ export default function DesignStudioView({
               ? { ...result, order: wearerOrderForPlanRef.current }
               : result;
           }}
-          onAssignGarment={(garmentKey, wearerId) => {
-            const garment = futureMeasurementPhysicalGarments.find(
-              (candidate) => candidate.garmentKey === garmentKey,
-            );
-            if (!garment || !wearerId) {
-              return {
-                status: "blocked",
-                code: "WEARER_NOT_FOUND",
-                order: wearerOrderForPlan,
-              };
-            }
-            const result = assignGarmentToWearer({
-              order: wearerOrderForPlan,
-              garmentKey,
-              wearerId,
-              garment,
-              garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
-              additionalGarmentConstructions:
-                designSelections.additionalGarmentConstructions,
-            });
-            if (result.status === "updated") {
-              setWearerOrder(result.order);
-              // Keep live form bag aligned with stripped garment fields so
-              // wearerOrderForPlan overlay cannot re-inject Sample Cloth values.
-              const activeId = activeWearer?.wearerId;
-              const synced =
-                result.order.wearers.find((wearer) => wearer.wearerId === activeId) ||
-                result.order.wearers[0];
-              if (synced) {
-                setFutureMeasurementState(synced.measurement);
-              } else {
-                setFutureMeasurementState(createEmptyFutureMeasurementState());
-              }
-            }
-            return result;
-          }}
-          onUnassignGarment={(garmentKey) => {
-            const nextOrder = removeGarmentFromWearerOrder(wearerOrderForPlan, garmentKey);
-            setWearerOrder(nextOrder);
-            // Same live-form sync as assign: stripped garment fields must not re-inject.
-            const activeId = activeWearer?.wearerId;
-            const synced =
-              nextOrder.wearers.find((wearer) => wearer.wearerId === activeId) ||
-              nextOrder.wearers[0];
-            setFutureMeasurementState(
-              synced?.measurement || createEmptyFutureMeasurementState(),
-            );
-          }}
+          onAssignGarment={(garmentKey, wearerId) =>
+            measurementGarmentToggleHandlers.assign(garmentKey, wearerId)
+          }
+          onUnassignGarment={(garmentKey) =>
+            measurementGarmentToggleHandlers.unassign(garmentKey)
+          }
           onCollapseToSolo={() => {
             const nextOrder = reconcileWearerOrder({
               order: wearerOrderForPlanRef.current,
