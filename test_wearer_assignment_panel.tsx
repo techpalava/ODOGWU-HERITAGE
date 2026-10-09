@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { useState } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
-import { WearerAssignmentPanel } from "./src/components/WearerAssignmentPanel";
+import { FIT_CONFLICT_PULSE_MS, WearerAssignmentPanel } from "./src/components/WearerAssignmentPanel";
 import type { GarmentTypeStepSelection, WearerOrderStateV2 } from "./src/types";
 import type { MeasurementPhysicalGarment } from "./src/utils/measurementBlueprint";
 import {
@@ -13,6 +13,7 @@ import {
   removeGarmentFromWearerOrder,
   renameWearer,
   createEmptyWearerOrder,
+  createWearerProfile,
   resolveWearerAssignmentPresentation,
   wearerAssignmentLabel,
   setWearerFitContext,
@@ -2285,3 +2286,206 @@ console.log("PASS: wearer assignment panel sole expanded card is simplified");
 }
 
 console.log("PASS: wearer assignment panel owned-by-other rows are locked with an owner guide");
+
+{
+  // Fit-conflict attention: resting gold beam on unfit pills; pulse + scroll + focus
+  // only when a Fit change makes a garment newly unfit on a Split card.
+  const fcSelection = (): GarmentTypeStepSelection => ({
+    ...selection(),
+    garmentTypes: ["shirt", "dress"],
+    constructionByGarment: {
+      ...selection().constructionByGarment,
+      dress: {
+        status: "resolved",
+        garmentType: "dress",
+        components: [{
+          componentKey: "dress:dress_construction:dress_std_short",
+          optionId: "dress_std_short",
+          selectionGroup: "dress_construction",
+          priceCents: 1,
+          price: 0.01,
+        }],
+        totalPriceCents: 1,
+        totalPrice: 0.01,
+      },
+    },
+  });
+  const fcGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+    { garmentKey: "base:dress", garmentType: "dress" },
+    { garmentKey: "additional:shirt:1", garmentType: "shirt" },
+  ];
+  const build = (fredFit: "male" | "female"): WearerOrderStateV2 => ({
+    ...createEmptyWearerOrder(),
+    wearers: [
+      createWearerProfile({ wearerId: "w-fred", displayName: "fred", fitContext: fredFit, presentationOrder: 0 }),
+      createWearerProfile({ wearerId: "w-nol", displayName: "nol", fitContext: "female", presentationOrder: 1 }),
+    ],
+    assignmentByGarmentKey: { "base:shirt": "w-nol" },
+  });
+  const focused: string[] = [];
+  const scrolled: unknown[] = [];
+  const nodeMock = (element: { type: unknown; props: Record<string, unknown> }) =>
+    element.type === "li"
+      ? {
+          focus: () => {
+            focused.push(String(element.props["data-wearer-garment-unfit-focus"] ?? ""));
+          },
+          scrollIntoView: (options: unknown) => {
+            scrolled.push(options);
+          },
+        }
+      : null;
+  let fcOrder = build("female");
+  let selectCalls = 0;
+  const FitConflictHarness = ({ initial }: { initial: WearerOrderStateV2 }) => {
+    const [order, setOrder] = useState(initial);
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        activeWearerId="w-fred"
+        garments={fcGarments}
+        garmentLabels={{ "base:shirt": "Standard Shirt", "base:dress": "Standard Dress", "additional:shirt:1": "Long Shirt" }}
+        garmentTypeSelection={fcSelection()}
+        onSelectWearer={() => {
+          selectCalls += 1;
+        }}
+        onAddWearer={() => {}}
+        onRenameWearer={() => {}}
+        onReorderWearers={() => {}}
+        onSetFitContext={(wearerId, fitContext) => {
+          const result = setWearerFitContext(order, wearerId, fitContext);
+          if (result.status === "updated") {
+            fcOrder = result.order;
+            setOrder(result.order);
+          }
+        }}
+        onDeleteWearer={(wearerId) => deleteWearer(order, wearerId)}
+        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order })}
+        onUnassignGarment={() => {}}
+      />
+    );
+  };
+  const fitRadio = (root: ReactTestInstance, wearerLabel: string, fit: "male" | "female") =>
+    cardFor(root, wearerLabel).findAll(
+      (node) => node.type === "input" && node.props.type === "radio",
+    )[fit === "male" ? 0 : 1];
+  const beams = (root: ReactTestInstance) =>
+    root.findAll((node) => node.type === "label" && node.props["data-wearer-garment-unfit-beam"] === "true");
+  const marked = (root: ReactTestInstance, marker: string) =>
+    root.findAll((node) => typeof node.type === "string" && node.props[marker] === "true");
+  const liveText = (root: ReactTestInstance) =>
+    textContent(root.findByProps({ "data-wearer-fit-attention-live": "true" }));
+
+  // Mount with fred already on Male fit: resting beam, but no pulse/scroll/focus.
+  let resting!: ReturnType<typeof create>;
+  await act(async () => {
+    resting = create(<FitConflictHarness initial={build("male")} />, { createNodeMock: nodeMock as never });
+  });
+  const restingDress = garmentRowIn(resting.root, "fred", "base:dress");
+  assert.equal(restingDress.props["data-wearer-garment-unfit"], "true");
+  const restingPill = restingDress.findByType("label");
+  assert.equal(restingPill.props["data-wearer-garment-unfit-beam"], "true");
+  assert.match(String(restingPill.props.className), /border-l-4 border-l-heritage-gold/);
+  assert.equal(String(restingPill.props.className).includes("opacity-50"), false, "no half-opacity wash on the unfit pill");
+  assert.match(String(garmentBox(resting.root, "fred", "base:dress").props.className), /opacity-50/, "muting stays on the checkbox");
+  assert.match(textContent(restingPill), /Not available for fred's selected fit\./);
+  const assertBeamsOnlyOnUnfitRows = (root: ReactTestInstance) => {
+    for (const row of root.findAllByType("li")) {
+      const pill = row.findAllByType("label")[0];
+      if (!pill) continue;
+      const beamed = pill.props["data-wearer-garment-unfit-beam"] === "true";
+      assert.equal(beamed, row.props["data-wearer-garment-unfit"] === "true", "beam iff unfit row");
+      if (row.props["data-wearer-garment-owned-by-other"]) {
+        assert.equal(beamed, false, "owner-note rows never get the beam");
+        assert.match(String(pill.props.className), /opacity-50/, "Assigned-to rows keep their muted look");
+      }
+    }
+  };
+  assertBeamsOnlyOnUnfitRows(resting.root);
+  assert.ok(beams(resting.root).length >= 1);
+  const fredShirtPill = garmentRowIn(resting.root, "fred", "base:shirt").findByType("label");
+  assert.match(textContent(fredShirtPill), /Assigned to nol/);
+  assert.equal(fredShirtPill.props["data-wearer-garment-unfit-beam"], undefined);
+  assert.deepEqual(focused, [], "no focus on mount");
+  assert.deepEqual(scrolled, [], "no scroll on mount");
+  assert.equal(marked(resting.root, "data-wearer-garment-unfit-pulse").length, 0, "no pulse on mount");
+  assert.equal(marked(resting.root, "data-wearer-garment-unfit-focus").length, 0);
+  assert.equal(liveText(resting.root), "");
+  // Selecting a person card does not trigger either.
+  await act(async () => {
+    cardFor(resting.root, "nol").props.onClick();
+  });
+  assert.equal(selectCalls, 1);
+  assert.deepEqual(focused, []);
+  // Male -> Female on fred: nothing becomes newly unfit, so no scroll / pulse / focus.
+  await act(async () => {
+    fitRadio(resting.root, "fred", "female").props.onChange();
+  });
+  assert.equal(fcOrder.wearers.find((wearer) => wearer.wearerId === "w-fred")?.fitContext, "female");
+  assert.deepEqual(focused, [], "no new unfit rows: no focus");
+  assert.deepEqual(scrolled, [], "no new unfit rows: no scroll");
+  assert.equal(marked(resting.root, "data-wearer-garment-unfit-pulse").length, 0);
+  assert.equal(garmentRowIn(resting.root, "fred", "base:dress").props["data-wearer-garment-unfit"], undefined);
+  await act(async () => {
+    resting.unmount();
+  });
+
+  // Female -> Male on fred: the dress becomes newly unfit -> pulse, scroll, focus, live.
+  focused.length = 0;
+  scrolled.length = 0;
+  let trigger!: ReturnType<typeof create>;
+  await act(async () => {
+    trigger = create(<FitConflictHarness initial={build("female")} />, { createNodeMock: nodeMock as never });
+  });
+  assert.equal(beams(trigger.root).length, 0, "Female fit: nothing unfit yet");
+  await act(async () => {
+    fitRadio(trigger.root, "fred", "male").props.onChange();
+  });
+  assert.equal(fcOrder.wearers.find((wearer) => wearer.wearerId === "w-fred")?.fitContext, "male");
+  const newlyUnfit = garmentRowIn(trigger.root, "fred", "base:dress");
+  assert.equal(newlyUnfit.props["data-wearer-garment-unfit"], "true");
+  assert.equal(newlyUnfit.props["data-wearer-garment-unfit-focus"], "true", "first newly unfit row is marked");
+  assert.equal(newlyUnfit.props.tabIndex, -1);
+  assert.equal(newlyUnfit.props["data-wearer-garment-unfit-pulse"], "true");
+  assert.match(String(newlyUnfit.findByType("label").props.className), /motion-safe:animate-step2-next-unassigned/);
+  assert.deepEqual(focused, ["true"], "focus lands on the first newly unfit row");
+  assert.deepEqual(scrolled, [{ block: "nearest" }]);
+  const focusRows = marked(trigger.root, "data-wearer-garment-unfit-focus");
+  assert.equal(focusRows.length, 1);
+  for (const row of marked(trigger.root, "data-wearer-garment-unfit-pulse")) {
+    assert.equal(row.props["data-wearer-garment-unfit"], "true", "only unfit rows pulse");
+    assert.equal(row.props["data-wearer-garment-owned-by-other"], undefined, "owner rows never pulse");
+  }
+  assert.equal(liveText(trigger.root), "Some garments are not available for this fit.");
+  assertBeamsOnlyOnUnfitRows(trigger.root);
+  assert.equal(
+    garmentRowIn(trigger.root, "fred", "base:shirt").findByType("label").props["data-wearer-garment-unfit-beam"],
+    undefined,
+  );
+  // The pulse and announcement clear after ~1.3s; the resting beam stays.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, FIT_CONFLICT_PULSE_MS + 100));
+  });
+  assert.equal(marked(trigger.root, "data-wearer-garment-unfit-pulse").length, 0, "pulse removed by the timeout");
+  assert.equal(liveText(trigger.root), "");
+  assert.equal(
+    garmentRowIn(trigger.root, "fred", "base:dress").findByType("label").props["data-wearer-garment-unfit-beam"],
+    "true",
+  );
+  assert.equal(focused.length, 1, "no extra focus after the pulse");
+  // Unmount mid-pulse: the timer is cleaned up (no state update after unmount).
+  await act(async () => {
+    fitRadio(trigger.root, "fred", "female").props.onChange();
+  });
+  await act(async () => {
+    fitRadio(trigger.root, "fred", "male").props.onChange();
+  });
+  assert.equal(focused.length, 2, "a later Female -> Male flip triggers again");
+  await act(async () => {
+    trigger.unmount();
+  });
+  await new Promise((resolve) => setTimeout(resolve, FIT_CONFLICT_PULSE_MS + 100));
+}
+
+console.log("PASS: wearer assignment panel fit-conflict attention");

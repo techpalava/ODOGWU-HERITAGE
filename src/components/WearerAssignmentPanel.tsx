@@ -34,6 +34,11 @@ const blockedWearerRemovalMessage = (displayName: string): string => {
 };
 
 /** Quiet in-card guide for an unassigned garment this person's fit cannot wear. */
+/** One-shot polite announcement when a Fit change leaves garments newly unfit. */
+const FIT_CONFLICT_LIVE_COPY = "Some garments are not available for this fit.";
+/** How long newly unfit pills pulse after a Fit change (matches the 1.2s keyframes). */
+export const FIT_CONFLICT_PULSE_MS = 1300;
+
 const unfitGarmentGuide = (wearerLabel: string): string =>
   wearerLabel === "You"
     ? "Not available for your selected fit."
@@ -128,6 +133,103 @@ export const WearerAssignmentPanel = ({
   const labelFor = (garment: MeasurementPhysicalGarment) =>
     garmentLabels[garment.garmentKey] ||
     getStep1GarmentDisplayLabel(garment.garmentType);
+  /**
+   * Same rule as the in-card unfit note: unassigned (no other owner, not this
+   * person's), a fit is chosen, and the garment is ineligible for that fit.
+   */
+  const isGarmentUnfitForWearer = (
+    wearerId: string,
+    fitContext: (typeof wearers)[number]["fitContext"],
+    garment: MeasurementPhysicalGarment,
+  ): boolean => {
+    const ownerId = order.assignmentByGarmentKey[garment.garmentKey];
+    const checked = ownerId === wearerId;
+    const otherOwner =
+      ownerId && !checked
+        ? wearers.find((candidate) => candidate.wearerId === ownerId) || null
+        : null;
+    return (
+      !checked &&
+      !otherOwner &&
+      fitContext !== null &&
+      garmentTypeSelection !== undefined &&
+      !isGarmentEligibleForWearer({
+        garment,
+        fitContext,
+        garmentTypeSelection,
+        additionalGarmentConstructions,
+      })
+    );
+  };
+  const unfitKeysFor = (
+    wearerId: string,
+    fitContext: (typeof wearers)[number]["fitContext"],
+  ): string[] =>
+    garments
+      .filter((garment) => isGarmentUnfitForWearer(wearerId, fitContext, garment))
+      .map((garment) => garment.garmentKey);
+
+  /**
+   * Fit-conflict attention: set only from a Fit change on a Split card that makes
+   * at least one garment newly unfit (never on mount, panel open or card select).
+   */
+  const [fitAttention, setFitAttention] = useState<{
+    wearerId: string;
+    garmentKeys: readonly string[];
+    pulsing: boolean;
+    nonce: number;
+  } | null>(null);
+  const [fitAttentionLive, setFitAttentionLive] = useState("");
+  const fitAttentionNonce = useRef(0);
+  const unfitRowByKey = useRef(new Map<string, HTMLLIElement>());
+  const fitAttentionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleFitChange = (
+    wearer: (typeof wearers)[number],
+    fitContext: "male" | "female",
+  ) => {
+    const before = new Set(unfitKeysFor(wearer.wearerId, wearer.fitContext));
+    const newlyUnfit =
+      wearers.length > 1 && wearer.fitContext !== fitContext
+        ? unfitKeysFor(wearer.wearerId, fitContext).filter((key) => !before.has(key))
+        : [];
+    onSetFitContext(wearer.wearerId, fitContext);
+    if (newlyUnfit.length === 0) return;
+    fitAttentionNonce.current += 1;
+    setFitAttention({
+      wearerId: wearer.wearerId,
+      garmentKeys: newlyUnfit,
+      pulsing: true,
+      nonce: fitAttentionNonce.current,
+    });
+    setFitAttentionLive(FIT_CONFLICT_LIVE_COPY);
+  };
+  useEffect(() => {
+    if (!fitAttention?.pulsing) return;
+    // Scroll/focus happen even with reduced motion; only the pulse is motion-safe.
+    const first = unfitRowByKey.current.get(
+      `${fitAttention.wearerId}|${fitAttention.garmentKeys[0]}`,
+    );
+    first?.scrollIntoView?.({ block: "nearest" });
+    first?.focus?.();
+    if (fitAttentionTimer.current) clearTimeout(fitAttentionTimer.current);
+    fitAttentionTimer.current = setTimeout(() => {
+      fitAttentionTimer.current = null;
+      setFitAttention((current) =>
+        current && current.nonce === fitAttention.nonce
+          ? { ...current, pulsing: false }
+          : current,
+      );
+      setFitAttentionLive("");
+    }, FIT_CONFLICT_PULSE_MS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitAttention?.nonce]);
+  useEffect(
+    () => () => {
+      if (fitAttentionTimer.current) clearTimeout(fitAttentionTimer.current);
+    },
+    [],
+  );
+
   const garmentsRemainUnassigned = hasUnassignedPhysicalGarments({
     order,
     physicalGarmentKeys: garments.map((garment) => garment.garmentKey),
@@ -463,7 +565,7 @@ export const WearerAssignmentPanel = ({
                       className="sr-only"
                       name={`wearer-fit-${wearer.wearerId}`}
                       checked={wearer.fitContext === fitContext}
-                      onChange={() => onSetFitContext(wearer.wearerId, fitContext)}
+                      onChange={() => handleFitChange(wearer, fitContext)}
                     />
                     {fitContext === "male" ? "Male fit" : "Female fit"}
                   </label>
@@ -515,41 +617,56 @@ export const WearerAssignmentPanel = ({
                     const fitMissing = wearer.fitContext === null;
                     // Unassigned garment this fit cannot wear: decided up front, so the
                     // box is disabled before any click (quiet guide, never a red alert).
-                    const unfit =
-                      !checked &&
-                      !otherOwner &&
-                      !fitMissing &&
-                      garmentTypeSelection !== undefined &&
-                      !isGarmentEligibleForWearer({
-                        garment,
-                        fitContext: wearer.fitContext,
-                        garmentTypeSelection,
-                        additionalGarmentConstructions,
-                      });
+                    const unfit = isGarmentUnfitForWearer(wearer.wearerId, wearer.fitContext, garment);
                     const locked = fitMissing || otherOwner !== null || unfit;
                     const muted = otherOwner !== null || unfit;
                     const noteId = `${wearer.wearerId}-${garment.garmentKey}-note`;
+                    const attentionHere =
+                      unfit && fitAttention?.wearerId === wearer.wearerId
+                        ? fitAttention.garmentKeys.indexOf(garment.garmentKey)
+                        : -1;
+                    const pulsing = attentionHere >= 0 && fitAttention?.pulsing === true;
+                    const focusTarget = attentionHere === 0;
+                    const rowKey = `${wearer.wearerId}|${garment.garmentKey}`;
                     return (
                       <li
                         key={garment.garmentKey}
+                        ref={(node) => {
+                          if (node) unfitRowByKey.current.set(rowKey, node);
+                          else unfitRowByKey.current.delete(rowKey);
+                        }}
+                        tabIndex={focusTarget ? -1 : undefined}
+                        data-wearer-garment-unfit-focus={focusTarget ? "true" : undefined}
+                        data-wearer-garment-unfit-pulse={pulsing ? "true" : undefined}
+                        className={focusTarget ? "rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-heritage-gold" : undefined}
                         data-wearer-garment-owned-by-other={otherOwner ? otherOwner.wearerId : undefined}
                         data-wearer-garment-unfit={unfit ? "true" : undefined}
                       >
                         <label
+                          data-wearer-garment-unfit-beam={unfit ? "true" : undefined}
                           className={`flex min-h-9 flex-wrap items-center gap-x-2 gap-y-0.5 rounded-xl border px-3 py-1.5 text-sm ${
                             checked
                               ? "border-heritage-green bg-heritage-green/5 font-semibold text-heritage-green"
-                              : muted
-                                ? "border-heritage-gold/20 bg-heritage-cream/30 text-heritage-ink/55"
-                                : "border-heritage-gold/30 bg-white text-heritage-ink"
-                          } ${locked ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+                              : unfit
+                                ? // Resting unfit: gold left beam; muting stays on the checkbox and name only.
+                                  "border-heritage-gold/60 border-l-4 border-l-heritage-gold bg-heritage-gold/5 text-heritage-ink"
+                                : muted
+                                  ? "border-heritage-gold/20 bg-heritage-cream/30 text-heritage-ink/55"
+                                  : "border-heritage-gold/30 bg-white text-heritage-ink"
+                          } ${
+                            unfit
+                              ? "cursor-not-allowed"
+                              : locked
+                                ? "cursor-not-allowed opacity-50"
+                                : "cursor-pointer"
+                          } ${pulsing ? "motion-safe:animate-step2-next-unassigned" : ""}`}
                         >
                           <span className="flex min-w-0 flex-1 basis-36 items-center gap-3">
                             <input
                               type="checkbox"
                               data-wearer-garment-key={garment.garmentKey}
                               aria-label={`${label} for ${labelForWearer(wearer)}`}
-                              className="size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed"
+                              className={`size-4 shrink-0 accent-heritage-green disabled:cursor-not-allowed ${unfit ? "opacity-50" : ""}`}
                               checked={checked}
                               disabled={locked}
                               aria-describedby={muted ? noteId : undefined}
@@ -563,7 +680,7 @@ export const WearerAssignmentPanel = ({
                                 onAssignGarment(garment.garmentKey, wearer.wearerId);
                               }}
                             />
-                            <span className="min-w-0 break-words">{label}</span>
+                            <span className={`min-w-0 break-words ${unfit ? "text-heritage-ink/60" : ""}`}>{label}</span>
                           </span>
                           {/* The note trails the name inside this garment's pill, so it can
                               never read as belonging to the row above or below. */}
@@ -579,7 +696,7 @@ export const WearerAssignmentPanel = ({
                             <span
                               id={noteId}
                               data-wearer-garment-unfit-note="true"
-                              className="ml-auto shrink-0 text-xs font-normal text-heritage-ink/75"
+                              className="ml-auto shrink-0 text-xs font-semibold text-heritage-bronze"
                             >
                               {unfitGarmentGuide(labelForWearer(wearer))}
                             </span>
@@ -603,6 +720,9 @@ export const WearerAssignmentPanel = ({
         </p>
       ) : null}
       {addAnotherPerson}
+      <p className="sr-only" aria-live="polite" data-wearer-fit-attention-live="true">
+        {fitAttentionLive}
+      </p>
     </section>
   );
 };
