@@ -30,7 +30,21 @@ import {
   shouldAcceptMeasurementAutosave,
   shouldReplacePersistedMeasurement,
   updateWearerMeasurement,
+  setWearerFitContext,
 } from "./src/utils/wearerOrder";
+
+/** Customer picks the sole fit on Measurement; Studio then reconciles (no demographic inference). */
+const reconcileWithChosenSoleFit = (
+  input: Parameters<typeof reconcileWearerOrder>[0],
+  fitContext: "male" | "female",
+) => {
+  const first = reconcileWearerOrder(input);
+  const sole = first.wearers[0];
+  if (first.wearers.length !== 1 || !sole || sole.fitContext !== null) return first;
+  const chosen = setWearerFitContext(first, sole.wearerId, fitContext);
+  if (chosen.status !== "updated") throw new Error("expected sole fit choice");
+  return reconcileWearerOrder({ ...input, order: chosen.order });
+};
 
 const construction = (
   garmentType: keyof GarmentTypeStepSelection["constructionByGarment"],
@@ -649,6 +663,80 @@ const oneWearerGroups = getFuturePaymentReviewMeasurementGroups({
   garments: [{ garmentKey: "base:dress", label: "Standard Dress" }],
 });
 assert.equal(oneWearerGroups.some((group) => group.garmentKey === "base:dress"), true);
+assert.ok(oneWearerGroups.length > 0);
+assert.equal(
+  oneWearerGroups.every((group) => group.title.startsWith("Amaka - ")),
+  true,
+  "a named solo wearer prefixes every measurement group like multi-person orders",
+);
+assert.equal(
+  oneWearerGroups.find((group) => group.garmentKey === "base:dress")?.title,
+  "Amaka - Standard Dress",
+);
+const oneWearerShared = oneWearerGroups.find((group) => group.garmentKey === null);
+if (oneWearerShared) {
+  assert.equal(oneWearerShared.title, "Amaka - Sample Cloth Measurements");
+}
+const youGroups = getFuturePaymentReviewMeasurementGroups({
+  measurements: youProjection,
+  garments: [{ garmentKey: "base:shirt", label: "Standard Shirt" }],
+});
+assert.ok(youGroups.length > 0);
+assert.equal(
+  youGroups.some((group) => group.title.startsWith("You")),
+  false,
+  "a generic 'You' sole stays unlabeled",
+);
+const blankSoleProjection = projectAuthoritativeOrderMeasurements({
+  measurementState: completeShirt,
+  measurementPlan: lowShirtPlan,
+  wearerRuntimes: [
+    {
+      wearerId: you.wearerId,
+      displayName: "   ",
+      fitContext: "male",
+      garmentKeys: ["base:shirt"],
+      plan: lowShirtPlan,
+      measurement: completeShirt,
+    },
+  ],
+});
+const blankSoleHeader = getFuturePaymentReviewMeasurementHeader(blankSoleProjection);
+if (blankSoleHeader.kind === "single") assert.equal(blankSoleHeader.wearerLabel, null);
+const blankSoleGroups = getFuturePaymentReviewMeasurementGroups({
+  measurements: blankSoleProjection,
+  garments: [{ garmentKey: "base:shirt", label: "Standard Shirt" }],
+});
+assert.ok(blankSoleGroups.length > 0);
+assert.equal(blankSoleGroups.some((group) => group.title.includes(" - ")), false, "blank sole stays unlabeled");
+assert.equal(blankSoleGroups.some((group) => group.title === "Shared measurements"), true);
+const fredProjection = projectAuthoritativeOrderMeasurements({
+  measurementState: completeShirt,
+  measurementPlan: lowShirtPlan,
+  wearerRuntimes: [
+    {
+      wearerId: you.wearerId,
+      displayName: "fred",
+      fitContext: "male",
+      garmentKeys: ["base:shirt"],
+      plan: lowShirtPlan,
+      measurement: completeShirt,
+    },
+  ],
+});
+if (isWearerOrderStateV2(fredProjection)) {
+  assert.equal(fredProjection.wearers[0]?.displayName, "fred", "paid V2 measurements keep the solo name");
+}
+const fredHeader = getFuturePaymentReviewMeasurementHeader(fredProjection);
+assert.equal(fredHeader.kind, "single");
+if (fredHeader.kind === "single") assert.equal(fredHeader.wearerLabel, "fred");
+const fredGroups = getFuturePaymentReviewMeasurementGroups({
+  measurements: fredProjection,
+  garments: [{ garmentKey: "base:shirt", label: "Standard Shirt" }],
+});
+assert.ok(fredGroups.length > 0);
+assert.equal(fredGroups.every((group) => group.title.startsWith("fred - ")), true);
+assert.equal(fredGroups.some((group) => group.title === "Shared measurements"), false);
 const historicalHeader = getFuturePaymentReviewMeasurementHeader(completeShirt);
 assert.equal(historicalHeader.kind, "single");
 if (historicalHeader.kind === "single") assert.equal(historicalHeader.wearerLabel, null);
@@ -804,7 +892,7 @@ assert.equal(blockedEleventh.status, "blocked");
       "additional:shirt:1": construction("shirt", "shirt_std_short", "shirt_construction"),
     },
   };
-  const soloSampleOrder = reconcileWearerOrder({
+  const soloSampleOrder = reconcileWithChosenSoleFit({
     order: {
       schemaVersion: 2,
       wearers: [],
@@ -815,7 +903,7 @@ assert.equal(blockedEleventh.status, "blocked");
     garments: sampleGarments,
     garmentTypeSelection: sampleSelection,
     additionalGarmentConstructions: sampleAdditional,
-  });
+  }, "male");
   assert.equal(soloSampleOrder.wearers.length, 1);
   const youId = soloSampleOrder.wearers[0].wearerId;
   const twoShirtSamplePlan = planMeasurementRequirements({
@@ -853,6 +941,24 @@ assert.equal(blockedEleventh.status, "blocked");
   assert.equal(addedPerson.status, "updated");
   if (addedPerson.status !== "updated") throw new Error("expected Friend");
   withYouFilled = addedPerson.order;
+  // Sole -> Split cleared the auto-assignments and stripped those garments' fields;
+  // shared body values (the Sample chest) stay with You.
+  assert.deepEqual(withYouFilled.assignmentByGarmentKey, {});
+  const youAfterSplit = withYouFilled.wearers.find((wearer) => wearer.wearerId === youId)!
+    .measurement;
+  assert.deepEqual(youAfterSplit.entered.byGarmentKey, {});
+  assert.equal(youAfterSplit.entered.shared.chest_bust_circumference?.valueCm, youChest);
+  // Split mode: You re-ticks the base shirt.
+  const youReticked = assignGarmentToWearer({
+    order: withYouFilled,
+    garmentKey: "base:shirt",
+    wearerId: youId,
+    garment: sampleGarments[0],
+    garmentTypeSelection: sampleSelection,
+    additionalGarmentConstructions: sampleAdditional,
+  });
+  if (youReticked.status !== "updated") throw new Error("You re-ticks base:shirt");
+  withYouFilled = youReticked.order;
   const friendId = withYouFilled.wearers.find(
     (wearer) => wearer.displayName === "Friend",
   )?.wearerId;
@@ -999,9 +1105,23 @@ const studioSource = readFileSync(
 assert.match(studioSource, /wearerRuntimes:\s*wearerMeasurementRuntimes/);
 assert.match(studioSource, /buildFutureOrderCandidateV2\(\{/);
 assert.equal(studioSource.includes("buildFutureOrderCandidate("), false);
+// Assign / unassign sync the live form after the strip, to the person selected
+// right now (ref), never a stale one (B1).
 assert.match(
   studioSource,
-  /onAssignGarment[\s\S]*setFutureMeasurementState\(synced\.measurement\)/,
+  /onAssignGarment=\{\(garmentKey, wearerId\) =>\s*measurementGarmentToggleHandlers\.assign\(/,
+);
+assert.match(
+  studioSource,
+  /onUnassignGarment=\{\(garmentKey\) =>\s*measurementGarmentToggleHandlers\.unassign\(/,
+);
+assert.match(
+  studioSource,
+  /getActiveWearerId:\s*\(\) => activeWearerIdRef\.current/,
+);
+assert.match(
+  studioSource,
+  /setLiveForm:\s*\(measurement\) =>\s*setFutureMeasurementState\(/,
   "assign garment must sync live measurement form after strip",
 );
 assert.match(

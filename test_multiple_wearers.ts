@@ -26,7 +26,21 @@ import {
   reorderWearers,
   summarizeWearerOrderMeasurementCompletion,
   updateWearerMeasurement,
+  setWearerFitContext,
 } from "./src/utils/wearerOrder";
+
+/** Customer picks the sole fit on Measurement; Studio then reconciles (no demographic inference). */
+const reconcileWithChosenSoleFit = (
+  input: Parameters<typeof reconcileWearerOrder>[0],
+  fitContext: "male" | "female",
+) => {
+  const first = reconcileWearerOrder(input);
+  const sole = first.wearers[0];
+  if (first.wearers.length !== 1 || !sole || sole.fitContext !== null) return first;
+  const chosen = setWearerFitContext(first, sole.wearerId, fitContext);
+  if (chosen.status !== "updated") throw new Error("expected sole fit choice");
+  return reconcileWearerOrder({ ...input, order: chosen.order });
+};
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
@@ -74,13 +88,24 @@ assert.equal(resolveActiveWearerCap(11), MAX_CONFIGURED_ACTIVE_WEARERS);
 assert.equal(resolveActiveWearerCap(3), 3);
 assert.equal(resolveActiveWearerCap(0), 0);
 
-const maleOrder = reconcileWearerOrder({
+const freshSolo = reconcileWearerOrder({
   order: createEmptyWearerOrder(),
   garmentKeys: keys,
   compatibilityDemographic: "male",
   garments,
   garmentTypeSelection: selection("male"),
 });
+assert.equal(freshSolo.wearers.length, 1);
+assert.equal(freshSolo.wearers[0].fitContext, null, "fresh solo starts with no fit selected");
+assert.deepEqual(freshSolo.assignmentByGarmentKey, {});
+
+const maleOrder = reconcileWithChosenSoleFit({
+  order: createEmptyWearerOrder(),
+  garmentKeys: keys,
+  compatibilityDemographic: "male",
+  garments,
+  garmentTypeSelection: selection("male"),
+}, "male");
 assert.equal(maleOrder.wearers.length, 1);
 assert.equal(maleOrder.wearers[0].displayName, "");
 assert.equal(maleOrder.wearers[0].fitContext, "male");
@@ -106,11 +131,30 @@ assert.equal(maleOrder.assignmentByGarmentKey["base:dress"], undefined);
     garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
     garmentTypeSelection: selection("female"),
   });
-  assert.equal(nullFitSolo.wearers[0]?.fitContext, "female");
+  assert.equal(
+    nullFitSolo.wearers[0]?.fitContext,
+    null,
+    "Step 1 demographic must not pre-select the sole fit",
+  );
   assert.equal(
     nullFitSolo.assignmentByGarmentKey["base:shirt"],
+    undefined,
+    "sole garments wait for the customer's fit choice",
+  );
+  const chosenFemale = setWearerFitContext(nullFitSolo, "wearer-sole-null-fit", "female");
+  if (chosenFemale.status !== "updated") throw new Error("expected fit choice");
+  const afterChoice = reconcileWearerOrder({
+    order: chosenFemale.order,
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "female",
+    garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    garmentTypeSelection: selection("female"),
+  });
+  assert.equal(afterChoice.wearers[0]?.fitContext, "female");
+  assert.equal(
+    afterChoice.assignmentByGarmentKey["base:shirt"],
     "wearer-sole-null-fit",
-    "demographic fit must unlock sole auto-assign",
+    "customer fit choice unlocks sole auto-assign",
   );
 
   const stillNull = reconcileWearerOrder({
@@ -152,8 +196,34 @@ assert.equal(added.status, "updated");
 if (added.status !== "updated") throw new Error("expected second wearer");
 const friend = added.order.wearers.find((wearer) => wearer.displayName === "Friend");
 assert.ok(friend);
+// Sole -> Split: the sole person's auto-assigned garments are cleared; the customer splits.
+assert.ok(Object.keys(maleOrder.assignmentByGarmentKey).length > 0);
+assert.deepEqual(added.order.assignmentByGarmentKey, {}, "1 -> 2 clears every assignment");
+assert.deepEqual(
+  reconcileWearerOrder({
+    order: added.order,
+    garmentKeys: keys,
+    compatibilityDemographic: "male",
+    garments,
+    garmentTypeSelection: selection("unisex"),
+  }).assignmentByGarmentKey,
+  {},
+  "reconcile does not sole-auto-assign at 2 wearers",
+);
+// Split mode: person 1 re-ticks what they had before.
+const splitOrder = Object.keys(maleOrder.assignmentByGarmentKey).reduce((order, garmentKey) => {
+  const result = assignGarmentToWearer({
+    order,
+    garmentKey,
+    wearerId: maleOrder.wearers[0].wearerId,
+    garment: garments.find((candidate) => candidate.garmentKey === garmentKey)!,
+    garmentTypeSelection: selection("male"),
+  });
+  if (result.status !== "updated") throw new Error(`re-tick ${garmentKey}`);
+  return result.order;
+}, added.order);
 const blockedDress = assignGarmentToWearer({
-  order: added.order,
+  order: splitOrder,
   garmentKey: "base:dress",
   wearerId: maleOrder.wearers[0].wearerId,
   garment: garments[2],
@@ -161,13 +231,84 @@ const blockedDress = assignGarmentToWearer({
 });
 assert.equal(blockedDress.status, "blocked");
 const assignedDress = assignGarmentToWearer({
-  order: added.order,
+  order: splitOrder,
   garmentKey: "base:dress",
   wearerId: friend!.wearerId,
   garment: garments[2],
   garmentTypeSelection: selection("unisex"),
 });
 assert.equal(assignedDress.status, "updated");
+{
+  // Already in Split: adding a 3rd person keeps every prior tick.
+  const third = addWearer({
+    order: assignedDress.order,
+    physicalGarmentCount: keys.length,
+    displayName: "Third",
+    fitContext: "male",
+  });
+  assert.equal(third.status, "updated");
+  if (third.status !== "updated") throw new Error("expected third wearer");
+  assert.equal(third.order.wearers.length, 3);
+  assert.deepEqual(third.order.assignmentByGarmentKey, assignedDress.order.assignmentByGarmentKey);
+  for (const wearer of assignedDress.order.wearers) {
+    assert.deepEqual(
+      third.order.wearers.find((candidate) => candidate.wearerId === wearer.wearerId)?.measurement,
+      wearer.measurement,
+      "2 -> 3 leaves existing measurements alone",
+    );
+  }
+}
+{
+  // 1 -> 2 strips only garment-keyed data for the former garments; shared body values stay.
+  const typed = createEmptyFutureMeasurementState("low_risk");
+  typed.entered.shared.total_height = { valueCm: 180, provenance: "customer_entered" };
+  typed.entered.shared.chest_bust_circumference = { valueCm: 100, provenance: "customer_entered" };
+  typed.entered.byGarmentKey["base:shirt"] = {
+    shirt_length_long: { valueCm: 80, provenance: "customer_entered" },
+  };
+  typed.entered.byGarmentKey["base:trouser"] = {
+    waist_to_ankle_length: { valueCm: 100, provenance: "customer_entered" },
+  };
+  if (typed.enteredByRoute) {
+    typed.enteredByRoute.low_risk = structuredClone(typed.entered);
+    typed.enteredByRoute.sample_cloth.byGarmentKey["base:shirt"] = {
+      shirt_length_long: { valueCm: 40, provenance: "customer_entered" },
+    };
+  }
+  typed.derived.byGarmentKey["base:shirt"] = {
+    shirt_length_long: { valueCm: 80, provenance: "customer_entered" },
+  };
+  typed.diagnostics = [
+    { code: "required_measurement_missing", garmentKey: "base:shirt" },
+    { code: "required_measurement_missing", measurementId: "total_height" },
+  ];
+  typed.invalidInputKeys = ["shared:total_height"];
+  typed.calculationStatus = "complete";
+  const soleTyped = updateWearerMeasurement(maleOrder, maleOrder.wearers[0].wearerId, typed);
+  const split = addWearer({
+    order: soleTyped,
+    physicalGarmentCount: keys.length,
+    displayName: "Friend",
+    fitContext: null,
+  });
+  if (split.status !== "updated") throw new Error("expected split");
+  assert.deepEqual(split.order.assignmentByGarmentKey, {});
+  const first = split.order.wearers.find(
+    (wearer) => wearer.wearerId === maleOrder.wearers[0].wearerId,
+  )!.measurement;
+  assert.equal(first.entered.shared.total_height?.valueCm, 180, "shared body values kept");
+  assert.equal(first.entered.shared.chest_bust_circumference?.valueCm, 100);
+  assert.deepEqual(first.entered.byGarmentKey, {}, "former garments' fields stripped");
+  assert.deepEqual(first.enteredByRoute?.low_risk.byGarmentKey, {});
+  assert.deepEqual(first.enteredByRoute?.sample_cloth.byGarmentKey, {});
+  assert.equal(first.enteredByRoute?.low_risk.shared.total_height?.valueCm, 180);
+  assert.deepEqual(first.derived.byGarmentKey, {});
+  assert.deepEqual(first.diagnostics, [
+    { code: "required_measurement_missing", measurementId: "total_height" },
+  ]);
+  assert.ok(first.invalidInputKeys.includes("shared:total_height"), "shared invalid keys kept");
+  assert.equal(first.calculationStatus, "incomplete");
+}
 
 const withLength = {
   ...assignedDress.order,
@@ -269,13 +410,13 @@ const capOrder = tenKeys.reduce((order, _garmentKey, index) => {
     fitContext: index % 2 === 0 ? "female" : "male",
   });
   return next.status === "updated" ? next.order : order;
-}, reconcileWearerOrder({
+}, reconcileWithChosenSoleFit({
   order: createEmptyWearerOrder(),
   garmentKeys: tenKeys,
   compatibilityDemographic: "male",
   garments: tenKeys.map((garmentKey) => ({ garmentKey, garmentType: "shirt" as const })),
   garmentTypeSelection: selection("male"),
-}));
+}, "male"));
 assert.equal(capOrder.wearers.length, 10);
 assert.equal(
   addWearer({
@@ -334,13 +475,13 @@ assert.notEqual(
   other.measurement.entered.shared.chest_bust_circumference?.valueCm,
 );
 
-const displayedYou = reconcileWearerOrder({
+const displayedYou = reconcileWithChosenSoleFit({
   order: createEmptyWearerOrder(),
   garmentKeys: ["base:shirt"],
   compatibilityDemographic: "male",
   garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
   garmentTypeSelection: selection("male"),
-});
+}, "male");
 const stableId = displayedYou.wearers[0]?.wearerId || "";
 assert.equal(displayedYou.wearers[0]?.displayName, "");
 assert.ok(stableId);
@@ -387,13 +528,42 @@ assert.equal(
   reorderedStable.order.wearers.find((wearer) => wearer.wearerId === stableId)?.wearerId,
   stableId,
 );
-const reconciledStable = reconcileWearerOrder({
+const reconciledSplitStable = reconcileWearerOrder({
   order: reorderedStable.order,
   garmentKeys: ["base:shirt"],
   compatibilityDemographic: "male",
   garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
   garmentTypeSelection: selection("male"),
 });
+assert.equal(
+  reconciledSplitStable.assignmentByGarmentKey["base:shirt"],
+  undefined,
+  "1 -> 2 cleared the shirt and 2 wearers never auto-assign",
+);
+{
+  // Back to 1 person: the sole auto-assign returns.
+  const backToOne = deleteWearer(addedFriend.order, adaId);
+  assert.equal(backToOne.status, "updated");
+  if (backToOne.status !== "updated") throw new Error("delete ada");
+  const resoled = reconcileWearerOrder({
+    order: backToOne.order,
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "male",
+    garments: [{ garmentKey: "base:shirt", garmentType: "shirt" }],
+    garmentTypeSelection: selection("male"),
+  });
+  assert.equal(resoled.wearers.length, 1);
+  assert.equal(resoled.assignmentByGarmentKey["base:shirt"], stableId);
+}
+const reTickedStable = assignGarmentToWearer({
+  order: reconciledSplitStable,
+  garmentKey: "base:shirt",
+  wearerId: stableId,
+  garment: { garmentKey: "base:shirt", garmentType: "shirt" },
+  garmentTypeSelection: selection("male"),
+});
+if (reTickedStable.status !== "updated") throw new Error("re-tick chief");
+const reconciledStable = reTickedStable.order;
 assert.equal(
   reconciledStable.wearers.find((wearer) => wearer.displayName === "Chief")?.wearerId,
   stableId,
@@ -557,6 +727,42 @@ const unassigned = {
 assert.equal(completionFor(unassigned, "wearer-chief", chiefComplete).completion.complete, false);
 assert.equal(completionFor(unassigned, "wearer-ada", adaFilled).completion.complete, false);
 
+{
+  // In-card uncheck: the garment is left unassigned, is not auto-stolen while
+  // 2+ people exist, and keeps Continue blocked.
+  const unchecked = removeGarmentFromWearerOrder(bothCompleteOrder, "additional:shirt:1");
+  assert.equal(unchecked.assignmentByGarmentKey["additional:shirt:1"], undefined);
+  const reconcileShirts = (order: typeof unchecked) =>
+    reconcileWearerOrder({
+      order,
+      garmentKeys: shirtKeys,
+      compatibilityDemographic: "male",
+      garments: shirtPhysical,
+      garmentTypeSelection: shirtSelection,
+      additionalGarmentConstructions: additionalShirtConstructions,
+    });
+  const twoPeople = reconcileShirts(unchecked);
+  assert.equal(
+    twoPeople.assignmentByGarmentKey["additional:shirt:1"],
+    undefined,
+    "2+ people: an unassigned garment is not auto-assigned",
+  );
+  assert.equal(completionFor(twoPeople, "wearer-chief", chiefComplete).completion.complete, false);
+  // Removing the now-empty second person hands the garment back to the sole wearer.
+  const adaRemoved = deleteWearer(twoPeople, "wearer-ada");
+  assert.equal(adaRemoved.status, "updated");
+  if (adaRemoved.status === "updated") {
+    const handedBack = reconcileShirts(adaRemoved.order);
+    assert.equal(handedBack.wearers.length, 1);
+    assert.equal(handedBack.assignmentByGarmentKey["base:shirt"], "wearer-chief");
+    assert.equal(
+      handedBack.assignmentByGarmentKey["additional:shirt:1"],
+      "wearer-chief",
+      "back to one wearer: sole reconcile assigns every eligible garment to You",
+    );
+  }
+}
+
 const measurementLine = (complete: boolean) => {
   const summary = {
     garmentSummary: [],
@@ -618,5 +824,41 @@ const continueButton = continueRenderer.root.findAllByType("button").find(
 assert.ok(continueButton, "expected Continue to Summary control");
 assert.equal(continueButton.props.disabled, !selectChief.completion.complete);
 assert.equal(selectChief.completion.complete, false);
+
+{
+  const chosenSoleFits: Array<"male" | "female"> = [];
+  let soleFitRenderer!: ReturnType<typeof create>;
+  act(() => {
+    soleFitRenderer = create(createElement(DormantFutureMeasurementStep, {
+      plan: chiefSeed.plan,
+      state: chiefComplete,
+      showSoleFitControl: true,
+      soleFitContext: null,
+      onSetSoleFitContext: (fitContext: "male" | "female") => {
+        chosenSoleFits.push(fitContext);
+      },
+      onChange: () => undefined,
+      onRouteChange: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    }));
+  });
+  const soleFitOptions = soleFitRenderer.root.findAll(
+    (node) => typeof node.props?.["data-measurement-sole-fit-option"] === "string",
+  );
+  assert.deepEqual(
+    soleFitOptions.map((node) => node.props["data-measurement-sole-fit-option"]),
+    ["male", "female"],
+  );
+  assert.equal(
+    soleFitOptions.every((node) => node.props["data-measurement-sole-fit-selected"] === "false"),
+    true,
+    "Dimension card shows Male/Female with neither selected until the customer picks",
+  );
+  act(() => {
+    soleFitOptions[1].props.onClick();
+  });
+  assert.deepEqual(chosenSoleFits, ["female"]);
+}
 
 console.log("multiple wearers domain tests passed");
