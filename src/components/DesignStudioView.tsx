@@ -176,9 +176,8 @@ import {
 } from "../utils/garmentScopedDesignStyleAssignment";
 import {
   createSummaryEditReturnLease,
-  shouldConsumeSummaryEditReturnOnContinue,
+  createSummaryEditReturnTripController,
   type SummaryEditFocusStageId,
-  type SummaryEditReturnLease,
   type SummaryEditReturnStageId,
 } from "../utils/designStudioSummaryEditReturn";
 import {
@@ -1049,7 +1048,10 @@ export default function DesignStudioView({
   const futureGarmentRemovalStageRetentionLeaseRef =
     useRef<RemovalStageRetentionLease | null>(null);
   const summaryEditReturnGenerationRef = useRef(0);
-  const summaryEditReturnLeaseRef = useRef<SummaryEditReturnLease | null>(null);
+  /** M2: the return lease and its trip phase (approach / focus / detour). */
+  const [summaryEditReturnTrip] = useState(() =>
+    createSummaryEditReturnTripController(DESIGN_STUDIO_STEPS.map((step) => step.id)),
+  );
   const [summaryFabricChangePending, setSummaryFabricChangePending] = useState<{
     garmentKey: string;
     garmentLabel: string;
@@ -5926,6 +5928,15 @@ export default function DesignStudioView({
     setHighestUnlockedStageIndex((current) => Math.max(current, stageIndex));
   }, [futureStageId]);
 
+  // M2: the single clear point. Every stage change re-checks the return lease;
+  // leaving its focus stage by anything but its own Back / Continue (which
+  // consume the lease first) drops it. Allowed: approach / correction detour
+  // on stages before the focus stage, and Step 5 sub-flows (Fabric picker,
+  // Design Style, Copy), which run as modals on Step 5 without a stage change.
+  useEffect(() => {
+    summaryEditReturnTrip.onStageChange(futureStageId);
+  }, [futureStageId, summaryEditReturnTrip]);
+
   useEffect(() => {
     const correctedStageId = resolveFutureStageCorrection({
       currentStageId: futureStageId,
@@ -5943,6 +5954,10 @@ export default function DesignStudioView({
     });
     if (!correctedStageId || correctedStageId === futureStageId) return;
     if (shouldRetainCurrentStageAfterGarmentRemoval(futureStageId)) return;
+    // M2: a correction bounce off a return lease's focus stage (e.g. a Step 5
+    // Add Garment session that left the new garment without Fabric / Design
+    // Style) is an allowed in-trip detour, not the customer leaving.
+    summaryEditReturnTrip.markCorrection();
     if (correctedStageId === "fabric") {
       // Bounce with unassigned-card focus instead of a silent stage-top dump.
       navigateToFutureStage("fabric", getValidationNavigationTarget());
@@ -7479,47 +7494,45 @@ export default function DesignStudioView({
     returnStageId?: SummaryEditReturnStageId;
   }) => {
     summaryEditReturnGenerationRef.current += 1;
-    summaryEditReturnLeaseRef.current = createSummaryEditReturnLease({
-      returnStageId,
-      focusStageId,
-      focusGarmentKey,
-      generation: summaryEditReturnGenerationRef.current,
-      sessionIdentityKey: futureDraftIdentityKey,
-    });
+    summaryEditReturnTrip.begin(
+      createSummaryEditReturnLease({
+        returnStageId,
+        focusStageId,
+        focusGarmentKey,
+        generation: summaryEditReturnGenerationRef.current,
+        sessionIdentityKey: futureDraftIdentityKey,
+      }),
+      futureStageId,
+    );
   };
   const clearSummaryEditReturnLease = () => {
-    summaryEditReturnLeaseRef.current = null;
+    summaryEditReturnTrip.clear();
   };
+  const summaryEditReturnContext = () => ({
+    generation: summaryEditReturnGenerationRef.current,
+    sessionIdentityKey: futureDraftIdentityKey,
+    currentStageId: futureStageId,
+  });
   const consumeSummaryEditReturnLeaseIfActive =
-    (): SummaryEditReturnStageId | null => {
-      const lease = summaryEditReturnLeaseRef.current;
-      if (
-        !shouldConsumeSummaryEditReturnOnContinue({
-          lease,
-          generation: summaryEditReturnGenerationRef.current,
-          sessionIdentityKey: futureDraftIdentityKey,
-          currentStageId: futureStageId,
-        })
-      ) {
-        return null;
-      }
-      const returnStageId = lease!.returnStageId;
-      summaryEditReturnLeaseRef.current = null;
-      return returnStageId;
-    };
+    (): SummaryEditReturnStageId | null =>
+      summaryEditReturnTrip.consumeOnContinue(summaryEditReturnContext());
+  /**
+   * Back returns to the lease's returnStageId only while the customer is still
+   * on its focus stage (M2). On an approach / detour stage it is a normal Back
+   * (lease kept for the way back); anywhere else the stale lease is dropped.
+   */
   const handleBackDuringSummaryEdit = (fallbackStage: DesignStudioStageId) => {
-    const lease = summaryEditReturnLeaseRef.current;
-    if (
-      lease &&
-      lease.generation === summaryEditReturnGenerationRef.current &&
-      lease.sessionIdentityKey === futureDraftIdentityKey
-    ) {
-      const returnStageId = lease.returnStageId;
-      clearSummaryEditReturnLease();
-      navigateToFutureStage(returnStageId);
-      return;
-    }
-    navigateToFutureStage(fallbackStage);
+    const returnStageId = summaryEditReturnTrip.back(summaryEditReturnContext());
+    navigateToFutureStage(returnStageId ?? fallbackStage);
+  };
+  /**
+   * Journey Stepper jumps share the stage-open handlers with Continue, which
+   * consume a return lease on its focus stage. A jump is never that Continue,
+   * so drop the lease first and go where the customer clicked (M2).
+   */
+  const handleStepperJump = (open: () => void) => () => {
+    clearSummaryEditReturnLease();
+    open();
   };
   /**
    * Step 7 people panel Add Garment. Reuses the existing Add Garment entries:
@@ -8448,6 +8461,8 @@ export default function DesignStudioView({
     // hydration, its Edit can fire before the historical-unlock effect catches
     // up; the already mounted stage is safe to target in that case.
     if (!liveOrderSummaryUnlockedStages.has(stage)) return;
+    // A live summary Edit is a jump, not a return-lease Continue (M2).
+    clearSummaryEditReturnLease();
     if (stage === "garment_type") {
       navigateToFutureStage("garment_type");
       return;
@@ -10202,16 +10217,18 @@ export default function DesignStudioView({
         canEnterSummary={isFutureSummaryStageUnlocked}
         canEnterShipping={isFutureShippingUnlocked}
         canEnterPayment={isFuturePaymentReviewUnlocked}
-        onSelectGarmentType={() => navigateToFutureStage("garment_type")}
-        onSelectFabric={handleOpenDormantFabricStage}
-        onSelectDesignStyle={handleOpenDormantDesignStyleStage}
-        onSelectCustomDetails={handleOpenDormantCustomDetailsStage}
-        onSelectPersonalizedAdditions={handleOpenDormantPersonalizedAdditionsStage}
-        onSelectTryOn={handleOpenDormantAiTryOnStage}
-        onSelectMeasurement={handleOpenDormantMeasurementStage}
-        onSelectSummary={handleOpenDormantSummaryStage}
-        onSelectShipping={handleOpenDormantShippingStage}
-        onSelectPayment={handleOpenDormantPaymentReviewStage}
+        onSelectGarmentType={handleStepperJump(() => navigateToFutureStage("garment_type"))}
+        onSelectFabric={handleStepperJump(handleOpenDormantFabricStage)}
+        onSelectDesignStyle={handleStepperJump(handleOpenDormantDesignStyleStage)}
+        onSelectCustomDetails={handleStepperJump(() => handleOpenDormantCustomDetailsStage())}
+        onSelectPersonalizedAdditions={handleStepperJump(() =>
+          handleOpenDormantPersonalizedAdditionsStage(),
+        )}
+        onSelectTryOn={handleStepperJump(handleOpenDormantAiTryOnStage)}
+        onSelectMeasurement={handleStepperJump(handleOpenDormantMeasurementStage)}
+        onSelectSummary={handleStepperJump(handleOpenDormantSummaryStage)}
+        onSelectShipping={handleStepperJump(handleOpenDormantShippingStage)}
+        onSelectPayment={handleStepperJump(handleOpenDormantPaymentReviewStage)}
       />
       <div
         className={
