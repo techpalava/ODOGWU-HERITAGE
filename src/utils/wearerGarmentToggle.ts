@@ -8,6 +8,7 @@ import type { MeasurementPhysicalGarment } from "./measurementBlueprint";
 import {
   assignGarmentToWearer,
   removeGarmentFromWearerOrder,
+  setWearerFitContext,
   type WearerMutationResult,
 } from "./wearerOrder";
 
@@ -24,7 +25,7 @@ export const resolveLiveFormAfterGarmentToggle = (
     order.wearers[0])?.measurement ?? null;
 
 /**
- * Step 7 person-card garment tick / untick. A toggle only changes
+ * Step 7 person-card garment tick / untick (and fit change). A toggle only changes
  * assignmentByGarmentKey (plus the garment-field strip on the former owner).
  *
  * The live form is re-synced from the updated order for the person selected
@@ -40,6 +41,7 @@ export const createWearerGarmentToggleHandlers = ({
   additionalGarmentConstructions,
   commitOrder,
   setLiveForm,
+  reconcileOrder = (order) => order,
 }: {
   getOrder: () => WearerOrderStateV2;
   getActiveWearerId: () => string | null;
@@ -48,6 +50,8 @@ export const createWearerGarmentToggleHandlers = ({
   additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
   commitOrder: (order: WearerOrderStateV2) => void;
   setLiveForm: (measurement: FutureMeasurementStateV1 | null) => void;
+  /** Applied after a fit change (e.g. Sole auto-assign of the still-eligible garments). */
+  reconcileOrder?: (order: WearerOrderStateV2) => WearerOrderStateV2;
 }) => ({
   assign: (garmentKey: string, wearerId: string): WearerMutationResult => {
     const order = getOrder();
@@ -73,5 +77,22 @@ export const createWearerGarmentToggleHandlers = ({
     const nextOrder = removeGarmentFromWearerOrder(getOrder(), garmentKey);
     commitOrder(nextOrder);
     setLiveForm(resolveLiveFormAfterGarmentToggle(nextOrder, getActiveWearerId()));
+  },
+  /**
+   * Fit change: garments the new fit cannot wear are unassigned like an untick
+   * (fields stripped, body kept). The live form is re-synced B1-safe, to the
+   * person selected right now.
+   */
+  setFit: (wearerId: string, fitContext: "male" | "female"): WearerMutationResult => {
+    const result = setWearerFitContext(getOrder(), wearerId, fitContext, {
+      garments,
+      garmentTypeSelection,
+      additionalGarmentConstructions,
+    });
+    if (result.status !== "updated") return result;
+    const nextOrder = reconcileOrder(result.order);
+    commitOrder(nextOrder);
+    setLiveForm(resolveLiveFormAfterGarmentToggle(nextOrder, getActiveWearerId()));
+    return { status: "updated", order: nextOrder };
   },
 });

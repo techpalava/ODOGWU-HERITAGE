@@ -12,6 +12,7 @@ import {
   hasUnassignedPhysicalGarments,
   isGarmentEligibleForWearer,
   wearerAssignmentLabel,
+  wearerFitConflictCopy,
   type WearerMutationResult,
 } from "../utils/wearerOrder";
 
@@ -27,6 +28,8 @@ const NAME_REQUIRED_HINT = "Enter a name or nickname";
 /** Sole mode (people panel open, one person): the system owns the split. */
 const SOLE_ALL_ASSIGNED_COPY = "All garments are for this person.";
 const SOLE_SPLIT_HINT_COPY = "Add another person to split garments between people.";
+/** Sole mode when the selected fit cannot wear some garments (they are listed separately). */
+const SOLE_SOME_ASSIGNED_COPY = "These garments are for this person.";
 
 const blockedWearerRemovalMessage = (displayName: string): string => {
   const name = displayName.trim() || "this person";
@@ -191,6 +194,30 @@ export const WearerAssignmentPanel = ({
   const fitAttentionNonce = useRef(0);
   const unfitRowByKey = useRef(new Map<string, HTMLLIElement>());
   const fitAttentionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Rows that read as unfit once `fitContext` applies: unassigned ones, plus this
+   * person's own garments the new fit cannot wear (the fit change unassigns them).
+   */
+  const unfitKeysAfterFitChange = (
+    wearerId: string,
+    fitContext: "male" | "female",
+  ): string[] =>
+    garmentTypeSelection === undefined
+      ? []
+      : garments
+          .filter((garment) => {
+            const ownerId = order.assignmentByGarmentKey[garment.garmentKey];
+            return (
+              (!ownerId || ownerId === wearerId) &&
+              !isGarmentEligibleForWearer({
+                garment,
+                fitContext,
+                garmentTypeSelection,
+                additionalGarmentConstructions,
+              })
+            );
+          })
+          .map((garment) => garment.garmentKey);
   const handleFitChange = (
     wearer: (typeof wearers)[number],
     fitContext: "male" | "female",
@@ -198,7 +225,7 @@ export const WearerAssignmentPanel = ({
     const before = new Set(unfitKeysFor(wearer.wearerId, wearer.fitContext));
     const newlyUnfit =
       wearers.length > 1 && wearer.fitContext !== fitContext
-        ? unfitKeysFor(wearer.wearerId, fitContext).filter((key) => !before.has(key))
+        ? unfitKeysAfterFitChange(wearer.wearerId, fitContext).filter((key) => !before.has(key))
         : [];
     onSetFitContext(wearer.wearerId, fitContext);
     if (newlyUnfit.length === 0) return;
@@ -656,18 +683,55 @@ export const WearerAssignmentPanel = ({
             {wearers.length === 1 ? (
               // Sole mode: reconcileWearerOrder auto-assigns every eligible garment to
               // this person, so there is nothing to tick. Split mode shows the checklist.
-              <div
-                data-wearer-sole-all-assigned="true"
-                className="mt-1.5 rounded-xl bg-heritage-cream/40 px-2.5 py-1.5 text-xs leading-snug text-heritage-ink/70"
-              >
-                <p className="font-semibold text-heritage-ink">{SOLE_ALL_ASSIGNED_COPY}</p>
-                <p className="mt-0.5">{SOLE_SPLIT_HINT_COPY}</p>
-                {garments.length > 0 ? (
-                  <p data-wearer-sole-garment-names="true" className="mt-0.5 break-words text-heritage-ink/55">
-                    {garments.map((garment) => labelFor(garment)).join(", ")}
-                  </p>
-                ) : null}
-              </div>
+              // Garments the selected fit cannot wear are never claimed as theirs.
+              (() => {
+                const soleFit = wearer.fitContext;
+                const ineligible =
+                  soleFit === null || garmentTypeSelection === undefined
+                    ? []
+                    : garments.filter(
+                        (garment) =>
+                          !isGarmentEligibleForWearer({
+                            garment,
+                            fitContext: soleFit,
+                            garmentTypeSelection,
+                            additionalGarmentConstructions,
+                          }),
+                      );
+                const theirs = garments.filter((garment) => !ineligible.includes(garment));
+                return (
+                  <div
+                    data-wearer-sole-all-assigned="true"
+                    className="mt-1.5 rounded-xl bg-heritage-cream/40 px-2.5 py-1.5 text-xs leading-snug text-heritage-ink/70"
+                  >
+                    {ineligible.length === 0 ? (
+                      <>
+                        <p className="font-semibold text-heritage-ink">{SOLE_ALL_ASSIGNED_COPY}</p>
+                        <p className="mt-0.5">{SOLE_SPLIT_HINT_COPY}</p>
+                      </>
+                    ) : theirs.length > 0 ? (
+                      <p className="font-semibold text-heritage-ink">{SOLE_SOME_ASSIGNED_COPY}</p>
+                    ) : null}
+                    {theirs.length > 0 ? (
+                      <p data-wearer-sole-garment-names="true" className="mt-0.5 break-words text-heritage-ink/55">
+                        {theirs.map((garment) => labelFor(garment)).join(", ")}
+                      </p>
+                    ) : null}
+                    {ineligible.length > 0 ? (
+                      <p
+                        data-wearer-sole-ineligible="true"
+                        className={`${theirs.length > 0 ? "mt-1" : ""} break-words font-semibold text-heritage-bronze`}
+                      >
+                        {wearerFitConflictCopy({
+                          wearerLabel: labelForWearer(wearer),
+                          garmentLabels: ineligible.map((garment) => labelFor(garment)),
+                          sole: true,
+                        })}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })()
             ) : (
               <fieldset
                 className="mt-1"

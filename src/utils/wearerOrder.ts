@@ -288,21 +288,113 @@ export const reorderWearers = (
   });
 };
 
+/** Garment context for fit-eligibility checks (same inputs as assignGarmentToWearer). */
+export interface WearerFitEligibilityContext {
+  garments: readonly MeasurementPhysicalGarment[];
+  garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+}
+
+/**
+ * Garments currently assigned to `wearerId` that `fitContext` cannot wear.
+ * A garment missing from `garments` is left alone (no evidence it is unfit).
+ */
+export const ineligibleAssignedGarmentKeys = ({
+  order,
+  wearerId,
+  fitContext,
+  eligibility,
+}: {
+  order: WearerOrderStateV2;
+  wearerId: string;
+  fitContext: WearerFitContext | null;
+  eligibility: WearerFitEligibilityContext;
+}): string[] =>
+  Object.entries(order.assignmentByGarmentKey)
+    .filter(([, ownerId]) => ownerId === wearerId)
+    .map(([garmentKey]) => garmentKey)
+    .filter((garmentKey) => {
+      const garment = eligibility.garments.find(
+        (candidate) => candidate.garmentKey === garmentKey,
+      );
+      return Boolean(
+        garment &&
+          fitContext !== null &&
+          !isGarmentEligibleForWearer({
+            garment,
+            fitContext,
+            garmentTypeSelection: eligibility.garmentTypeSelection,
+            additionalGarmentConstructions: eligibility.additionalGarmentConstructions,
+          }),
+      );
+    });
+
+/**
+ * Set a person's fit. With `eligibility`, every garment they own that the new
+ * fit cannot wear is unassigned the same way as an untick (assignment cleared,
+ * that garment's measurement fields stripped, shared body fields kept), so a
+ * fit change never leaves an ineligible garment assigned. Garments the new fit
+ * still allows stay assigned.
+ */
 export const setWearerFitContext = (
   order: WearerOrderStateV2,
   wearerId: string,
   fitContext: "male" | "female",
+  eligibility?: WearerFitEligibilityContext,
 ): WearerMutationResult => {
   if (!order.wearers.some((wearer) => wearer.wearerId === wearerId)) {
     return blocked(order, "WEARER_NOT_FOUND");
   }
-  return updated({
+  const withFit: WearerOrderStateV2 = {
     ...order,
     wearers: order.wearers.map((wearer) =>
       wearer.wearerId === wearerId ? { ...wearer, fitContext } : wearer,
     ),
+  };
+  if (!eligibility) return updated(withFit);
+  const released = ineligibleAssignedGarmentKeys({
+    order: withFit,
+    wearerId,
+    fitContext,
+    eligibility,
+  });
+  if (released.length === 0) return updated(withFit);
+  const stripped = released.reduce(
+    (current, garmentKey) => removeGarmentFromWearerOrder(current, garmentKey),
+    withFit,
+  );
+  return updated({
+    ...stripped,
+    wearers: stripped.wearers.map((wearer) =>
+      wearer.wearerId === wearerId
+        ? { ...wearer, measurement: markMeasurementIncomplete(wearer.measurement) }
+        : wearer,
+    ),
   });
 };
+
+const possessiveFitOwner = (wearerLabel: string): string =>
+  wearerLabel === "You" ? "your" : `${wearerLabel}'s`;
+
+/**
+ * Measurement fit-conflict copy: garments a person's selected fit cannot wear.
+ * Sole: change the fit or add another person. Split: change the fit or assign
+ * them to another person. Never "earlier steps" (that is for unmapped garments).
+ */
+export const wearerFitConflictCopy = ({
+  wearerLabel,
+  garmentLabels,
+  sole,
+}: {
+  wearerLabel: string;
+  garmentLabels: readonly string[];
+  sole: boolean;
+}): string =>
+  `Not available for ${possessiveFitOwner(wearerLabel)} selected fit: ${garmentLabels.join(", ")}. ${
+    sole
+      ? "Change the fit or add another person to split garments."
+      : `Change the fit or assign ${garmentLabels.length === 1 ? "it" : "them"} to another person.`
+  }`;
 
 export const deleteWearer = (
   order: WearerOrderStateV2,

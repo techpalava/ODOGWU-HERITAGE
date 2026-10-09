@@ -98,6 +98,13 @@ interface DormantFutureMeasurementStepProps {
    * without opening Add people. Multi-person uses person-card fit instead.
    */
   showSoleFitControl?: boolean;
+  /**
+   * Measurement fit conflict (garments a person's selected fit cannot wear):
+   * the status copy, and the garments it covers. Those garments are never
+   * reported as needing setup in earlier steps.
+   */
+  fitConflictMessage?: string | null;
+  fitConflictGarmentKeys?: readonly string[];
   soleFitContext?: "male" | "female" | null;
   onSetSoleFitContext?: (fitContext: "male" | "female") => void;
   onChange: (state: FutureMeasurementStateV1) => void;
@@ -601,6 +608,8 @@ export const DormantFutureMeasurementStep = ({
   activeWearerId = null,
   onSelectWearer,
   showSoleFitControl = false,
+  fitConflictMessage = null,
+  fitConflictGarmentKeys = [],
   soleFitContext = null,
   onSetSoleFitContext,
   onChange,
@@ -866,7 +875,9 @@ export const DormantFutureMeasurementStep = ({
   const unassignedLabels = assignmentPendingGarments.map((garment) =>
     formatGarmentLabel(occurrenceLabels, garment.garmentType, garment.garmentKey),
   );
-  const profilePendingLabels = profilePendingGarmentKeys.map((garmentKey) =>
+  const profilePendingLabels = profilePendingGarmentKeys
+    .filter((garmentKey) => !fitConflictGarmentKeys.includes(garmentKey))
+    .map((garmentKey) =>
     formatGarmentLabel(
       occurrenceLabels,
       measurementGarments.find((garment) => garment.garmentKey === garmentKey)
@@ -911,6 +922,7 @@ export const DormantFutureMeasurementStep = ({
     nextIncompleteGarmentLabel: statusNextGarmentLabel,
     otherWearerIncompleteLabels,
     emptyWearerLabels,
+    fitConflictMessage,
     riskSelectionNotice: MEASUREMENT_RISK_SELECTION_NOTICE,
     sampleFormTitle: MEASUREMENT_SAMPLE_CLOTH_FORM_TITLE,
   });

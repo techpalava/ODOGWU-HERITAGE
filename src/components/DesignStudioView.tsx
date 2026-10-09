@@ -312,6 +312,7 @@ import {
   classifyPersistedMeasurement,
   createEmptyWearerOrder,
   deleteWearer,
+  isGarmentEligibleForWearer,
   isWearerOrderMeasurementComplete,
   planWearerOrderMeasurements,
   resolveWearerAssignmentPresentation,
@@ -320,10 +321,10 @@ import {
   removeGarmentFromWearerOrder,
   renameWearer,
   reorderWearers,
-  setWearerFitContext,
   shouldReplacePersistedMeasurement,
   updateWearerMeasurement,
   wearerAssignmentLabel,
+  wearerFitConflictCopy,
 } from "../utils/wearerOrder";
 import { createWearerGarmentToggleHandlers } from "../utils/wearerGarmentToggle";
 import {
@@ -3620,6 +3621,49 @@ export default function DesignStudioView({
       (garment ? getStep1GarmentDisplayLabel(garment.garmentType) : garmentKey)
     );
   });
+  /**
+   * Measurement fit conflict: Sole garments the person's fit cannot wear (left
+   * unassigned by Sole auto-assign), or any garment still assigned to someone
+   * whose fit cannot wear it (e.g. an older draft). Split's unassigned rows use
+   * the assignment gate instead.
+   */
+  const measurementFitConflict = (() => {
+    const order = wearerOrderForPlan;
+    const isUnfit = (
+      garment: (typeof futureMeasurementPhysicalGarments)[number],
+      fitContext: (typeof order.wearers)[number]["fitContext"],
+    ) =>
+      fitContext !== null &&
+      !isGarmentEligibleForWearer({
+        garment,
+        fitContext,
+        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+        additionalGarmentConstructions: designSelections.additionalGarmentConstructions,
+      });
+    const garmentLabel = (garment: (typeof futureMeasurementPhysicalGarments)[number]) =>
+      yourGarmentsConstructionDisplayLabelByGarmentKey[garment.garmentKey] ||
+      getStep1GarmentDisplayLabel(garment.garmentType);
+    const sole = order.wearers.length === 1;
+    for (const wearer of [...order.wearers].sort(
+      (left, right) => left.presentationOrder - right.presentationOrder,
+    )) {
+      const conflicts = futureMeasurementPhysicalGarments.filter((garment) => {
+        const ownerId = order.assignmentByGarmentKey[garment.garmentKey];
+        return (ownerId === wearer.wearerId || (sole && !ownerId)) &&
+          isUnfit(garment, wearer.fitContext);
+      });
+      if (conflicts.length === 0) continue;
+      return {
+        garmentKeys: conflicts.map((garment) => garment.garmentKey),
+        message: wearerFitConflictCopy({
+          wearerLabel: labelForMeasurementWearer(wearer.wearerId, wearer.displayName),
+          garmentLabels: conflicts.map(garmentLabel),
+          sole,
+        }),
+      };
+    }
+    return null;
+  })();
   // Measuring-for chips: every person, in card order, with the card labels.
   const measurementWearerChips = measurementActiveWearerLabel
     ? [...wearerOrderForPlan.wearers]
@@ -3654,6 +3698,18 @@ export default function DesignStudioView({
     },
     setLiveForm: (measurement) =>
       setFutureMeasurementState(measurement || createEmptyFutureMeasurementState()),
+    reconcileOrder: (order) =>
+      reconcileWearerOrder({
+        order,
+        garmentKeys: futureMeasurementPhysicalGarments.map(
+          (garment) => garment.garmentKey,
+        ),
+        compatibilityDemographic: effectiveJourneyGarmentTypeSelection.demographic,
+        garments: futureMeasurementPhysicalGarments,
+        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+        additionalGarmentConstructions:
+          designSelections.additionalGarmentConstructions,
+      }),
   });
   // Batch / Group Options (Site-wide adaptive ordering options)
   const [batchType, setBatchType] = useState<
@@ -10540,12 +10596,8 @@ export default function DesignStudioView({
             if (result.status === "updated") setWearerOrder(result.order);
           }}
           onSetFitContext={(wearerId, fitContext) => {
-            const result = setWearerFitContext(
-              wearerOrderForPlan,
-              wearerId,
-              fitContext,
-            );
-            if (result.status === "updated") setWearerOrder(result.order);
+            // Unassigns garments the new fit cannot wear (fields stripped, body kept).
+            measurementGarmentToggleHandlers.setFit(wearerId, fitContext);
           }}
           onDeleteWearer={(wearerId) => {
             const result = deleteWearer(wearerOrderForPlanRef.current, wearerId);
@@ -10632,6 +10684,8 @@ export default function DesignStudioView({
           activeWearerId={activeWearer?.wearerId || null}
           onSelectWearer={handleSelectMeasurementWearer}
           nextIncompleteWearer={measurementNextIncompleteWearer}
+          fitConflictMessage={measurementFitConflict?.message ?? null}
+          fitConflictGarmentKeys={measurementFitConflict?.garmentKeys ?? []}
           showSoleFitControl={
             wearerOrderForPlan.wearers.length === 1 && !measurementPeopleUiOpen
           }
@@ -10639,25 +10693,9 @@ export default function DesignStudioView({
           onSetSoleFitContext={(fitContext) => {
             const sole = wearerOrderForPlan.wearers[0];
             if (!sole) return;
-            const result = setWearerFitContext(
-              wearerOrderForPlan,
-              sole.wearerId,
-              fitContext,
-            );
-            if (result.status !== "updated") return;
-            const nextOrder = reconcileWearerOrder({
-              order: result.order,
-              garmentKeys: futureMeasurementPhysicalGarments.map(
-                (garment) => garment.garmentKey,
-              ),
-              compatibilityDemographic:
-                effectiveJourneyGarmentTypeSelection.demographic,
-              garments: futureMeasurementPhysicalGarments,
-              garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
-              additionalGarmentConstructions:
-                designSelections.additionalGarmentConstructions,
-            });
-            setWearerOrder(nextOrder);
+            // Same path as the person-card Fit: ineligible garments are released,
+            // then Sole auto-assign re-runs for the still-eligible ones.
+            measurementGarmentToggleHandlers.setFit(sole.wearerId, fitContext);
           }}
           onGoToWearer={handleSelectMeasurementWearer}
           hydrationInvalid={futureMeasurementHydrationInvalid}
