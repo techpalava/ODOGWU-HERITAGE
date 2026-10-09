@@ -36,8 +36,9 @@ assert.equal(restored.canAdvance, true);
 
 const studioSource = readFileSync("src/components/DesignStudioView.tsx", "utf8");
 const appSource = readFileSync("src/App.tsx", "utf8");
-assert.match(studioSource, /onSelectGarmentType=\{\(\) => navigateToFutureStage\("garment_type"\)\}/);
-assert.match(studioSource, /onSelectFabric=\{handleOpenDormantFabricStage\}/);
+// Stepper jumps drop any return lease first (M2), then open the stage as before.
+assert.match(studioSource, /onSelectGarmentType=\{handleStepperJump\(\(\) => navigateToFutureStage\("garment_type"\)\)\}/);
+assert.match(studioSource, /onSelectFabric=\{handleStepperJump\(handleOpenDormantFabricStage\)\}/);
 assert.match(studioSource, /navigateToFutureStage\("fabric"\)/);
 assert.match(studioSource, /navigateToFutureStage\("design_style"\)/);
 assert.match(studioSource, /onContinue=\{handleOpenDormantDesignStyleStage\}/);

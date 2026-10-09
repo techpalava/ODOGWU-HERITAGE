@@ -213,10 +213,33 @@ export const addWearer = ({
     return blocked(order, "WEARER_CAP_REACHED");
   }
   const nextOrder = order.wearers.length;
+  // Sole -> Split: the sole person's auto-assigned garments are cleared so the
+  // customer chooses the split. Only garment-keyed data for those garments is
+  // stripped (entered/derived byGarmentKey, garment diagnostics, invalid keys);
+  // shared body measurements (chest, waist, height...) stay with person 1.
+  // Adding a 3rd+ person keeps the existing split.
+  const soleToSplit = order.wearers.length === 1;
+  const formerGarmentKeys = soleToSplit ? Object.keys(order.assignmentByGarmentKey) : [];
+  const existingWearers = soleToSplit
+    ? order.wearers.map((wearer) =>
+        formerGarmentKeys.length === 0
+          ? wearer
+          : {
+              ...wearer,
+              measurement: markMeasurementIncomplete(
+                formerGarmentKeys.reduce(
+                  (current, garmentKey) => stripGarmentFromMeasurement(current, garmentKey),
+                  wearer.measurement,
+                ),
+              ),
+            },
+      )
+    : order.wearers;
   return updated({
     ...order,
+    assignmentByGarmentKey: soleToSplit ? {} : order.assignmentByGarmentKey,
     wearers: sortWearers([
-      ...order.wearers,
+      ...existingWearers,
       createWearerProfile({
         displayName,
         fitContext,
@@ -226,6 +249,37 @@ export const addWearer = ({
   });
 };
 
+/**
+ * Canonical stored name: leading/trailing whitespace trimmed and capped.
+ * Applied when a name is saved (Save / blur), when the order is persisted
+ * (draft and paid V2 snapshot) and on read (normalizeWearer). Label helpers
+ * (wearerPublicLabel / wearerAssignmentLabel) trim the same way, so a raw
+ * in-progress name never shows a trailing space anywhere else.
+ */
+export const canonicalWearerDisplayName = (displayName: string): string =>
+  displayName.trim().slice(0, DISPLAY_NAME_MAX).trim();
+
+/** Same order with every wearer name canonical (unchanged reference when already canonical). */
+export const canonicalizeWearerOrderNames = (
+  order: WearerOrderStateV2,
+): WearerOrderStateV2 =>
+  order.wearers.every(
+    (wearer) => wearer.displayName === canonicalWearerDisplayName(wearer.displayName),
+  )
+    ? order
+    : {
+        ...order,
+        wearers: order.wearers.map((wearer) => ({
+          ...wearer,
+          displayName: canonicalWearerDisplayName(wearer.displayName),
+        })),
+      };
+
+/**
+ * Stores the name as typed (length-capped only): no trim or space collapse, so
+ * typing "Ada Obi" keystroke by keystroke keeps the space. Callers that commit a
+ * name (the panel's Save / blur) pass canonicalWearerDisplayName(value).
+ */
 export const renameWearer = (
   order: WearerOrderStateV2,
   wearerId: string,
@@ -234,11 +288,11 @@ export const renameWearer = (
   if (!order.wearers.some((wearer) => wearer.wearerId === wearerId)) {
     return blocked(order, "WEARER_NOT_FOUND");
   }
-  const trimmed = displayName.trim().slice(0, DISPLAY_NAME_MAX);
+  const raw = displayName.slice(0, DISPLAY_NAME_MAX);
   return updated({
     ...order,
     wearers: order.wearers.map((wearer) =>
-      wearer.wearerId === wearerId ? { ...wearer, displayName: trimmed } : wearer,
+      wearer.wearerId === wearerId ? { ...wearer, displayName: raw } : wearer,
     ),
   });
 };
@@ -265,21 +319,113 @@ export const reorderWearers = (
   });
 };
 
+/** Garment context for fit-eligibility checks (same inputs as assignGarmentToWearer). */
+export interface WearerFitEligibilityContext {
+  garments: readonly MeasurementPhysicalGarment[];
+  garmentTypeSelection: GarmentTypeStepSelection;
+  additionalGarmentConstructions?: AdditionalGarmentConstructionStateV1;
+}
+
+/**
+ * Garments currently assigned to `wearerId` that `fitContext` cannot wear.
+ * A garment missing from `garments` is left alone (no evidence it is unfit).
+ */
+export const ineligibleAssignedGarmentKeys = ({
+  order,
+  wearerId,
+  fitContext,
+  eligibility,
+}: {
+  order: WearerOrderStateV2;
+  wearerId: string;
+  fitContext: WearerFitContext | null;
+  eligibility: WearerFitEligibilityContext;
+}): string[] =>
+  Object.entries(order.assignmentByGarmentKey)
+    .filter(([, ownerId]) => ownerId === wearerId)
+    .map(([garmentKey]) => garmentKey)
+    .filter((garmentKey) => {
+      const garment = eligibility.garments.find(
+        (candidate) => candidate.garmentKey === garmentKey,
+      );
+      return Boolean(
+        garment &&
+          fitContext !== null &&
+          !isGarmentEligibleForWearer({
+            garment,
+            fitContext,
+            garmentTypeSelection: eligibility.garmentTypeSelection,
+            additionalGarmentConstructions: eligibility.additionalGarmentConstructions,
+          }),
+      );
+    });
+
+/**
+ * Set a person's fit. With `eligibility`, every garment they own that the new
+ * fit cannot wear is unassigned the same way as an untick (assignment cleared,
+ * that garment's measurement fields stripped, shared body fields kept), so a
+ * fit change never leaves an ineligible garment assigned. Garments the new fit
+ * still allows stay assigned.
+ */
 export const setWearerFitContext = (
   order: WearerOrderStateV2,
   wearerId: string,
   fitContext: "male" | "female",
+  eligibility?: WearerFitEligibilityContext,
 ): WearerMutationResult => {
   if (!order.wearers.some((wearer) => wearer.wearerId === wearerId)) {
     return blocked(order, "WEARER_NOT_FOUND");
   }
-  return updated({
+  const withFit: WearerOrderStateV2 = {
     ...order,
     wearers: order.wearers.map((wearer) =>
       wearer.wearerId === wearerId ? { ...wearer, fitContext } : wearer,
     ),
+  };
+  if (!eligibility) return updated(withFit);
+  const released = ineligibleAssignedGarmentKeys({
+    order: withFit,
+    wearerId,
+    fitContext,
+    eligibility,
+  });
+  if (released.length === 0) return updated(withFit);
+  const stripped = released.reduce(
+    (current, garmentKey) => removeGarmentFromWearerOrder(current, garmentKey),
+    withFit,
+  );
+  return updated({
+    ...stripped,
+    wearers: stripped.wearers.map((wearer) =>
+      wearer.wearerId === wearerId
+        ? { ...wearer, measurement: markMeasurementIncomplete(wearer.measurement) }
+        : wearer,
+    ),
   });
 };
+
+const possessiveFitOwner = (wearerLabel: string): string =>
+  wearerLabel === "You" ? "your" : `${wearerLabel}'s`;
+
+/**
+ * Measurement fit-conflict copy: garments a person's selected fit cannot wear.
+ * Sole: change the fit or add another person. Split: change the fit or assign
+ * them to another person. Never "earlier steps" (that is for unmapped garments).
+ */
+export const wearerFitConflictCopy = ({
+  wearerLabel,
+  garmentLabels,
+  sole,
+}: {
+  wearerLabel: string;
+  garmentLabels: readonly string[];
+  sole: boolean;
+}): string =>
+  `Not available for ${possessiveFitOwner(wearerLabel)} selected fit: ${garmentLabels.join(", ")}. ${
+    sole
+      ? "Change the fit or add another person to split garments."
+      : `Change the fit or assign ${garmentLabels.length === 1 ? "it" : "them"} to another person.`
+  }`;
 
 export const deleteWearer = (
   order: WearerOrderStateV2,
@@ -418,10 +564,17 @@ export const setWearerMeasurementRoute = (
   ),
 });
 
+/**
+ * Reconcile wearers with the live physical garments.
+ *
+ * The sole wearer's fit is never inferred from `compatibilityDemographic`:
+ * Measurement starts with no fit selected until the customer picks one (or a
+ * saved draft already carries an explicit fit). The field stays on the input
+ * type so existing call sites keep compiling.
+ */
 export const reconcileWearerOrder = ({
   order,
   garmentKeys,
-  compatibilityDemographic,
   garments = [],
   garmentTypeSelection,
   additionalGarmentConstructions,
@@ -439,7 +592,7 @@ export const reconcileWearerOrder = ({
     wearers = [
       createWearerProfile({
         presentationOrder: 0,
-        fitContext: resolveNewWearerFitContext(compatibilityDemographic),
+        fitContext: null,
       }),
     ];
   }
@@ -465,12 +618,6 @@ export const reconcileWearerOrder = ({
       wearer,
     ),
   );
-  if (wearers.length === 1) {
-    const inferredFit = resolveNewWearerFitContext(compatibilityDemographic);
-    if (wearers[0].fitContext === null && inferredFit !== null) {
-      wearers = [{ ...wearers[0], fitContext: inferredFit }];
-    }
-  }
   if (wearers.length === 1 && garmentTypeSelection) {
     const only = wearers[0];
     for (const garmentKey of uniqueKeys) {
@@ -513,7 +660,7 @@ const normalizeWearer = (
   if (measurement.status !== "valid") return null;
   return {
     wearerId: value.wearerId,
-    displayName: value.displayName.trim().slice(0, DISPLAY_NAME_MAX),
+    displayName: canonicalWearerDisplayName(value.displayName),
     fitContext,
     presentationOrder: Number.isFinite(value.presentationOrder)
       ? Number(value.presentationOrder)

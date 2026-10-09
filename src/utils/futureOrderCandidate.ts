@@ -29,7 +29,7 @@ import {
   validateRawFabricAssignments,
 } from "./designSourceState";
 import { projectActiveFutureMeasurementState } from "./measurementBlueprint";
-import { isWearerOrderStateV2 } from "./wearerOrder";
+import { canonicalWearerDisplayName, isWearerOrderStateV2 } from "./wearerOrder";
 import {
   getCanonicalOrderIdentity,
   type CanonicalOrderIdentity,
@@ -893,7 +893,8 @@ const projectWearerMeasurementsForCandidate = (
     assignmentByGarmentKey,
     wearers: runtimes.map((runtime, index) => ({
       wearerId: runtime.wearerId,
-      displayName: runtime.displayName,
+      // Paid V2 snapshot stores the canonical (trimmed) name, never a raw in-progress one.
+      displayName: canonicalWearerDisplayName(runtime.displayName),
       fitContext: runtime.fitContext,
       presentationOrder: index,
       measurement: projectActiveFutureMeasurementState({

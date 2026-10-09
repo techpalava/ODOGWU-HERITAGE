@@ -2017,6 +2017,7 @@ export const projectMeasurementStepProgressPresentation = ({
   nextIncompleteGarmentLabel = null,
   otherWearerIncompleteLabels = [],
   emptyWearerLabels = [],
+  fitConflictMessage = null,
   riskSelectionNotice,
   sampleFormTitle,
 }: {
@@ -2032,6 +2033,11 @@ export const projectMeasurementStepProgressPresentation = ({
   nextIncompleteGarmentLabel?: string | null;
   otherWearerIncompleteLabels?: readonly string[];
   emptyWearerLabels?: readonly string[];
+  /**
+   * Garments a person's selected Measurement fit cannot wear. Fixed here on
+   * Measurement (change the fit / reassign / add a person), never in earlier steps.
+   */
+  fitConflictMessage?: string | null;
   riskSelectionNotice: string;
   sampleFormTitle: string;
 }): MeasurementStepProgressPresentation => {
@@ -2067,6 +2073,14 @@ export const projectMeasurementStepProgressPresentation = ({
         unassignedLabels.length === 1
           ? `Assign ${list} to a person before Summary unlocks.`
           : `Assign these garments to a person before Summary unlocks: ${list}.`,
+      blockedByAssignment: true,
+      blockedByProfileSetup: false,
+    };
+  }
+  if (fitConflictMessage) {
+    return {
+      statusLabel: "Fit conflict",
+      statusMessage: fitConflictMessage,
       blockedByAssignment: true,
       blockedByProfileSetup: false,
     };

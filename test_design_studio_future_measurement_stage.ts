@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createElement } from "react";
+import { Fragment, createElement, useState } from "react";
 import { act, create } from "react-test-renderer";
 import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
+import { WearerAssignmentPanel } from "./src/components/WearerAssignmentPanel";
+import {
+  createEmptyWearerOrder,
+  deleteWearer,
+  reconcileWearerOrder,
+  resolveWearerAssignmentPresentation,
+} from "./src/utils/wearerOrder";
 import type { GarmentTypeStepSelection } from "./src/types";
 import {
   createEmptyFutureMeasurementState,
@@ -51,10 +58,56 @@ assert.match(measurementSource, /Assign person/);
 assert.match(measurementSource, /multiPersonAssignmentActive/);
 assert.match(measurementSource, /projectMeasurementGarmentChipStates/);
 assert.match(studioSource, /multiPersonAssignmentActive=\{wearerOrderForPlan\.wearers\.length > 1\}/);
-assert.match(studioSource, /onCollapseToSolo/);
 assert.match(
   studioSource,
-  /onAssignGarment[\s\S]*setFutureMeasurementState\(synced\.measurement\)/,
+  /onPeopleUiChange=\{\(open\) => \{\s*setMeasurementPeopleUiOpen\(open\);\s*if \(open\) setMeasurementResumePeopleExpanded\(false\);\s*\}\}/,
+);
+// Step 7 Add Garment reuses existing Add Garment entries (no Measurement modal stack).
+assert.match(studioSource, /onAddGarment=\{handleMeasurementAddGarment\}/);
+assert.match(
+  studioSource,
+  /spareFabricCapacityAvailable=\{Boolean\(remainingFabricCapacityOfferSignature\)\}/,
+);
+assert.match(studioSource, /initialPeopleExpanded=\{measurementResumePeopleExpanded\}/);
+{
+  const handlerStart = studioSource.indexOf("const handleMeasurementAddGarment = () => {");
+  assert.ok(handlerStart > 0, "Measurement Add Garment handler exists");
+  const handler = studioSource.slice(handlerStart, studioSource.indexOf("\n  };", handlerStart));
+  assert.match(
+    handler,
+    /remainingFabricCapacityOffers\.length > 0[\s\S]*setRemainingFabricCapacityOfferRequestedAllocationId\([\s\S]*setRemainingFabricCapacityOfferRequested\(true\);\s*return;/,
+    "spare capacity opens the existing fabric-capacity Add Garment modal",
+  );
+  assert.match(
+    handler,
+    /setMeasurementResumePeopleExpanded\(true\);\s*beginSummaryEditReturn\(\{\s*focusStageId: "personalized_additions",\s*returnStageId: "measurement",\s*\}\);\s*navigateToFutureStage\("personalized_additions"\);/,
+    "otherwise the Step 5 Additional Garment chooser under a return lease back to Measurement",
+  );
+  assert.doesNotMatch(handler, /Dialog|Modal|garment_type/, "no new modal stack or Step 1 fork");
+}
+assert.match(
+  studioSource,
+  /showSoleFitControl=\{\s*wearerOrderForPlan\.wearers\.length === 1 && !measurementPeopleUiOpen\s*\}/,
+  "Dimension sole fit is solo-only: one wearer AND the people panel closed",
+);
+assert.match(studioSource, /onCollapseToSolo/);
+// Assign / unassign sync the live form after the strip, to the person selected
+// right now (ref), never a stale one (B1).
+assert.match(
+  studioSource,
+  /onAssignGarment=\{\(garmentKey, wearerId\) =>\s*measurementGarmentToggleHandlers\.assign\(/,
+);
+assert.match(
+  studioSource,
+  /onUnassignGarment=\{\(garmentKey\) =>\s*measurementGarmentToggleHandlers\.unassign\(/,
+);
+assert.match(
+  studioSource,
+  /getActiveWearerId:\s*\(\) => activeWearerIdRef\.current/,
+);
+assert.match(
+  studioSource,
+  /setLiveForm:\s*\(measurement\) =>\s*setFutureMeasurementState\(/,
 );
 assert.match(
   studioSource,
@@ -517,6 +570,124 @@ assert.equal(
   );
 }
 console.log("PASS: measurement step compact sole-fit UI");
+
+{
+  // Dimension "Fit for measurements" is solo-only: hidden once Add a person opens the
+  // people panel (even with one wearer), shown again after Only for me / Remove.
+  const actEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+  const previousActEnvironment = actEnvironment.IS_REACT_ACT_ENVIRONMENT;
+  actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+  const soloFitGarments = [{ garmentKey: "base:shirt", garmentType: "shirt" as const }];
+  const soloFitOrder = reconcileWearerOrder({
+    order: createEmptyWearerOrder(),
+    garmentKeys: ["base:shirt"],
+    compatibilityDemographic: "female",
+    garments: soloFitGarments,
+    garmentTypeSelection: shirtSelection,
+  });
+  assert.equal(soloFitOrder.wearers.length, 1);
+  assert.equal(soloFitOrder.wearers[0].fitContext, null);
+  let peopleUiReports: boolean[] = [];
+  const SoloFitHarness = () => {
+    const [order] = useState(soloFitOrder);
+    const [peopleUiOpen, setPeopleUiOpen] = useState(false);
+    return createElement(
+      Fragment,
+      null,
+      createElement(WearerAssignmentPanel, {
+        order,
+        presentation: resolveWearerAssignmentPresentation({ wearerCount: order.wearers.length }),
+        activeWearerId: order.wearers[0]?.wearerId || null,
+        garments: soloFitGarments,
+        garmentLabels: { "base:shirt": "Standard Shirt" },
+        onSelectWearer: () => undefined,
+        onAddWearer: () => undefined,
+        onRenameWearer: () => undefined,
+        onReorderWearers: () => undefined,
+        onSetFitContext: () => undefined,
+        onDeleteWearer: (wearerId: string) => deleteWearer(order, wearerId),
+        onAssignGarment: () => ({ status: "blocked" as const, code: "WEARER_NOT_FOUND", order }),
+        onCollapseToSolo: () => undefined,
+        onPeopleUiChange: (open: boolean) => {
+          peopleUiReports = [...peopleUiReports, open];
+          setPeopleUiOpen(open);
+        },
+      }),
+      createElement(DormantFutureMeasurementStep, {
+        plan: shirtOnlyPlan,
+        state: completeShirt,
+        physicalGarments: soloFitGarments,
+        multiPersonAssignmentActive: false,
+        // Same rule as Design Studio: one wearer AND the people panel closed.
+        showSoleFitControl: order.wearers.length === 1 && !peopleUiOpen,
+        // The harness never sets a fit; the order starts with none (no inference).
+        soleFitContext: null,
+        onSetSoleFitContext: () => undefined,
+        orderMeasurementsComplete: false,
+        onChange: () => undefined,
+        onRouteChange: () => undefined,
+        onBack: () => undefined,
+        onContinue: () => undefined,
+      }),
+    );
+  };
+  let soloFitRenderer!: ReturnType<typeof create>;
+  act(() => {
+    soloFitRenderer = create(createElement(SoloFitHarness));
+  });
+  const soleFitCount = () =>
+    soloFitRenderer.root.findAllByProps({ "data-measurement-sole-fit": "true" }).length;
+  const soleFitNoneSelected = () =>
+    soloFitRenderer.root
+      .findAll((node) => typeof node.props?.["data-measurement-sole-fit-option"] === "string")
+      .every((node) => node.props["data-measurement-sole-fit-selected"] === "false");
+  assert.equal(soleFitCount(), 1, "solo strip shows the Dimension sole fit");
+  assert.equal(soleFitNoneSelected(), true, "no fit pre-selected");
+  assert.equal(peopleUiReports.at(-1), false);
+
+  act(() => {
+    soloFitRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  assert.equal(peopleUiReports.at(-1), true);
+  assert.equal(soleFitCount(), 0, "Add a person hides the Dimension sole fit, even with one wearer");
+  const cardRadios = soloFitRenderer.root
+    .findByProps({ "data-wearer-people": "true" })
+    .findAll((node) => node.type === "input" && node.props.type === "radio");
+  assert.equal(cardRadios.length, 2, "the person card's Male/Female is the fit UI now");
+  const expandedText = headingText(soloFitRenderer.root as unknown as { children?: unknown });
+  assert.match(expandedText, /Fit for measurements/);
+  assert.match(expandedText, /Select a fit for You to see the right measurements\./);
+  assert.equal(
+    expandedText.includes("before assigning garments"),
+    false,
+    "one wearer has no garment checkboxes, so the fit hint does not mention them",
+  );
+
+  act(() => {
+    soloFitRenderer.root.findByProps({ "data-wearer-only-for-me": "true" }).props.onClick();
+  });
+  assert.equal(peopleUiReports.at(-1), false);
+  assert.equal(soleFitCount(), 1, "Only for me brings the Dimension sole fit back");
+  assert.equal(soleFitNoneSelected(), true, "still nothing pre-selected after collapse");
+
+  act(() => {
+    soloFitRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  assert.equal(soleFitCount(), 0);
+  const removeSole = soloFitRenderer.root
+    .findAllByType("button")
+    .find((button) => headingText(button as unknown as { children?: unknown }) === "Remove person");
+  if (!removeSole) throw new Error("expected Remove person");
+  act(() => {
+    removeSole.props.onClick({ stopPropagation() {} });
+  });
+  assert.equal(soleFitCount(), 1, "sole Remove person (= For me) brings the Dimension sole fit back");
+  act(() => {
+    soloFitRenderer.unmount();
+  });
+  actEnvironment.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+}
+console.log("PASS: Dimension sole fit is solo-only (hidden after Add a person)");
 
 const renderPickerHarness = ({
   state,
@@ -1112,12 +1283,162 @@ console.log("PASS: measurement Go-to-person and shared chip honesty");
       (node) => typeof node.props?.["data-measurement-switch-wearer"] === "string",
     ).length,
     0,
-    "Measuring-for must not duplicate the People panel with a person switcher",
+    "the legacy switch-wearer control stays retired (Measuring-for chips replace it)",
+  );
+  assert.equal(
+    matchRenderer.root.findAll(
+      (node) => typeof node.props?.["data-measurement-wearer-chip"] === "string",
+    ).length,
+    0,
+    "no chip row without wearerChips / onSelectWearer",
   );
   assert.ok(matchText.includes("Medium Risk") || matchText.includes("Low Risk"));
 }
 
 console.log("PASS: measurement matching clarity person + garments banner");
+
+// Measuring-for person chips: every person is a chip; clicking switches the active person.
+{
+  assert.match(studioSource, /wearerChips=\{measurementWearerChips\}/);
+  assert.match(studioSource, /activeWearerId=\{activeWearer\?\.wearerId \|\| null\}/);
+  assert.equal(
+    (studioSource.match(/onSelectWearer=\{handleSelectMeasurementWearer\}/g) || []).length,
+    2,
+    "people panel and Measuring-for chips share one select-wearer path",
+  );
+  assert.match(studioSource, /onGoToWearer=\{handleSelectMeasurementWearer\}/);
+  assert.match(
+    studioSource,
+    /const measurementWearerChips = measurementActiveWearerLabel\s*\?/,
+    "chips only where Measuring-for already shows (not the solo first-screen)",
+  );
+  const chipPlan = planMeasurementRequirements({
+    route: "low_risk",
+    garmentTypeSelection: shirtSelection,
+    physicalGarments: physicalShirts,
+    additionalGarmentConstructions: {
+      schemaVersion: 1,
+      byGarmentKey: { "additional:shirt:1": shirtConstruction },
+    },
+  });
+  const chips = [
+    { wearerId: "wearer-a", label: "Ada" },
+    { wearerId: "wearer-b", label: "Person 2" },
+    { wearerId: "wearer-c", label: "Bola" },
+  ];
+  const garmentsByWearer: Record<string, string[]> = {
+    "wearer-a": ["Standard Shirt"],
+    "wearer-b": [],
+    "wearer-c": ["Standard Shirt 2"],
+  };
+  const selectCalls: string[] = [];
+  const ChipHarness = () => {
+    const [activeId, setActiveId] = useState("wearer-a");
+    const active = chips.find((chip) => chip.wearerId === activeId)!;
+    return createElement(DormantFutureMeasurementStep, {
+      plan: chipPlan,
+      state: setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk"),
+      physicalGarments: physicalShirts,
+      activeWearerLabel: active.label,
+      activeWearerGarmentLabels: garmentsByWearer[activeId],
+      wearerChips: chips,
+      activeWearerId: activeId,
+      onSelectWearer: (wearerId: string) => {
+        selectCalls.push(wearerId);
+        setActiveId(wearerId);
+      },
+      orderMeasurementsComplete: false,
+      onChange: () => undefined,
+      onRouteChange: () => undefined,
+      onBack: () => undefined,
+      onContinue: () => undefined,
+    });
+  };
+  let chipRenderer!: ReturnType<typeof create>;
+  act(() => {
+    chipRenderer = create(createElement(ChipHarness));
+  });
+  const chipButtons = () =>
+    chipRenderer.root.findAll(
+      (node) =>
+        node.type === "button" &&
+        typeof node.props?.["data-measurement-wearer-chip"] === "string",
+    );
+  const selectedFlags = () =>
+    chipButtons().map((chip) => [
+      chip.props["data-measurement-wearer-chip"],
+      chip.props["data-measurement-wearer-chip-selected"],
+      chip.props["aria-pressed"],
+    ]);
+  const garmentLine = () =>
+    headingText(chipRenderer.root.findByProps({ "data-measurement-active-garments": "true" }));
+  assert.deepEqual(
+    chipButtons().map((chip) => headingText(chip)),
+    ["Ada", "Person 2", "Bola"],
+    "every person label renders as a chip, in order",
+  );
+  assert.deepEqual(selectedFlags(), [
+    ["wearer-a", "true", true],
+    ["wearer-b", "false", false],
+    ["wearer-c", "false", false],
+  ]);
+  assert.equal(
+    chipRenderer.root.findByProps({ "data-measurement-active-wearer": "Ada" }).type,
+    "button",
+    "the selected chip carries data-measurement-active-wearer",
+  );
+  assert.match(garmentLine(), /Standard Shirt/);
+  act(() => {
+    chipButtons()[1].props.onClick();
+  });
+  assert.deepEqual(selectCalls, ["wearer-b"]);
+  assert.deepEqual(selectedFlags(), [
+    ["wearer-a", "false", false],
+    ["wearer-b", "true", true],
+    ["wearer-c", "false", false],
+  ]);
+  assert.match(garmentLine(), /No garments assigned to Person 2 yet\./);
+  act(() => {
+    chipButtons()[2].props.onClick();
+  });
+  assert.deepEqual(selectCalls, ["wearer-b", "wearer-c"]);
+  assert.match(garmentLine(), /Standard Shirt 2/);
+  assert.equal(garmentLine().includes("No garments assigned"), false);
+  act(() => {
+    chipButtons()[2].props.onClick();
+  });
+  assert.deepEqual(selectCalls, ["wearer-b", "wearer-c"], "clicking the selected chip is a no-op");
+
+  // Solo closed first-screen: no Measuring-for and no chip row.
+  let soloRenderer!: ReturnType<typeof create>;
+  act(() => {
+    soloRenderer = create(
+      createElement(DormantFutureMeasurementStep, {
+        plan: chipPlan,
+        state: setFutureMeasurementRoute(createEmptyFutureMeasurementState(), "low_risk"),
+        physicalGarments: physicalShirts,
+        activeWearerLabel: null,
+        wearerChips: [],
+        activeWearerId: "wearer-a",
+        onSelectWearer: () => undefined,
+        orderMeasurementsComplete: false,
+        onChange: () => undefined,
+        onRouteChange: () => undefined,
+        onBack: () => undefined,
+        onContinue: () => undefined,
+      }),
+    );
+  });
+  assert.equal(headingText(soloRenderer.root).includes("Measuring for"), false);
+  assert.equal(
+    soloRenderer.root.findAll(
+      (node) => typeof node.props?.["data-measurement-wearer-chip"] === "string",
+    ).length,
+    0,
+  );
+}
+
+console.log("PASS: measurement Measuring-for person chips switch the active wearer");
 
 {
   const mediumPlan = planMeasurementRequirements({

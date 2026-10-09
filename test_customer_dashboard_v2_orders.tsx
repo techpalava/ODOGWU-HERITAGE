@@ -158,6 +158,43 @@ for (const expected of [
 }
 assert.equal(paidDetails.includes("Awaiting payment"), false);
 
+// Named solo wearer (schema 2, one wearer "fred"): the dashboard measurement groups carry the name.
+const fredOrder = structuredClone(deliveredOrder);
+const fredCandidate = fredOrder.masterOrder.cartItem.candidate;
+fredCandidate.measurements = {
+  schemaVersion: 2,
+  wearers: [
+    {
+      wearerId: "wearer-fred",
+      displayName: "fred",
+      fitContext: "male",
+      presentationOrder: 0,
+      measurement: structuredClone(deliveredCandidate.measurements),
+    },
+  ],
+  assignmentByGarmentKey: { "base:shirt": "wearer-fred" },
+};
+const fredDetails = renderToStaticMarkup(
+  <CustomerFutureOrderV2Details
+    order={fredOrder as unknown as typeof paidOrder}
+    payment={paidRecord}
+    onClose={() => undefined}
+  />,
+);
+assert.ok(fredDetails.includes("fred - "), "named solo wearer shows on dashboard measurement groups");
+assert.ok(fredDetails.includes("Chest"));
+assert.equal(fredDetails.includes("Shared measurements"), false);
+const blankSoleOrder = structuredClone(fredOrder);
+blankSoleOrder.masterOrder.cartItem.candidate.measurements.wearers[0].displayName = "";
+const blankSoleDetails = renderToStaticMarkup(
+  <CustomerFutureOrderV2Details
+    order={blankSoleOrder as unknown as typeof paidOrder}
+    payment={paidRecord}
+    onClose={() => undefined}
+  />,
+);
+assert.ok(blankSoleDetails.includes("Shared measurements"), "blank sole stays unlabeled");
+
 const unpaidDetails = renderToStaticMarkup(
   <CustomerFutureOrderV2Details order={unpaidOrder} payment={undefined} onClose={() => undefined} />,
 );
