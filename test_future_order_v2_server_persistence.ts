@@ -9,10 +9,12 @@ import {
   createPrivateBatchAuthCoordinator,
   type PrivateBatchTokenUser,
 } from "./src/services/privateBatchAuthCoordinator";
+import { SEED_CUSTOM_DETAIL_CATALOG } from "./src/config/GarmentDetailsConfig";
 import {
   FutureOrderV2ServerError,
   persistFutureOrderV2ForVerifiedIdentity,
 } from "./src/server/futureOrderV2Persistence";
+import { recomputeFutureOrderPayableTotal } from "./src/utils/futureOrderPayableTotal";
 import { createFutureOrderV2PersistenceHandler } from "./src/server/futureOrderV2PersistenceHttp";
 import type { HttpRequest, HttpResponse } from "./src/server/httpTypes";
 import type { CustomGroup } from "./src/types";
@@ -23,7 +25,10 @@ import {
   type FutureOrderV2PersistenceTransaction,
   type PersistedFutureOrderV2,
 } from "./src/utils/futureOrderV2PersistenceContract";
-import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
+import {
+  createCatalogueAuthoritativeFutureOrderV2Fixture,
+  createFutureOrderV2Fixture,
+} from "./testing/futureOrderV2Fixture";
 
 const OWNER_UID = "future-order-owner";
 const OTHER_UID = "another-future-order-owner";
@@ -72,7 +77,7 @@ const persist = (
   persistFutureOrderV2ForVerifiedIdentity({
     identity: { uid: OWNER_UID, isAnonymous: false },
     request: {
-      masterOrder: createFutureOrderV2Fixture(orderId, styleName),
+      masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture(orderId, styleName),
       customerOwnerUid: OWNER_UID,
     },
     adapter,
@@ -82,6 +87,17 @@ const persist = (
 const adapter = new MemoryAdapter();
 const created = await persist(adapter, "server-order-1");
 assert.equal(created.status, "created");
+if (created.status !== "created") throw new Error("Expected the catalogue order to persist.");
+const recomputed = recomputeFutureOrderPayableTotal(
+  created.value.masterOrder.cartItem.candidate,
+);
+assert.equal(recomputed.status, "exact");
+if (recomputed.status !== "exact") throw new Error("Expected a catalogue quote.");
+assert.equal(
+  created.value.masterOrder.cartItem.candidate.pricing.exactTotalCents,
+  recomputed.exactTotalCents,
+);
+assert.ok(recomputed.exactTotalCents > 50);
 assert.equal(created.status === "created" && created.value.ownerUid, OWNER_UID);
 assert.equal(
   created.status === "created" && created.value.customer.fullName,
@@ -90,8 +106,158 @@ assert.equal(
 assert.equal(adapter.creates.length, 1);
 const original = structuredClone(adapter.values.get("server-order-1"));
 
+const cheapLedger = JSON.parse(
+  JSON.stringify(createFutureOrderV2Fixture("cheap-ledger")),
+);
+const cheapCandidate = cheapLedger.cartItem.candidate;
+cheapCandidate.garments.forEach(
+  (
+    garment: {
+      construction: unknown;
+      constructionTotalCents: number;
+    },
+    index: number,
+  ) => {
+    garment.construction = [
+      {
+        componentKey: "shirt:shirt_construction:shirt_std_short",
+        selectionGroup: "shirt_construction",
+        optionId: "shirt_std_short",
+        label: "Standard Length Shirt, Short Sleeve",
+        priceCents: index === 0 ? 50 : 0,
+      },
+    ];
+    garment.constructionTotalCents = index === 0 ? 50 : 0;
+  },
+);
+cheapCandidate.pricing.garmentConstructionSubtotalCents = 50;
+cheapCandidate.pricing.customDetailsCents = 0;
+cheapCandidate.pricing.selectedDesignTotalCents = 50;
+cheapCandidate.pricing.postEindhovenAdjustmentCents = 0;
+cheapCandidate.pricing.exactTotalCents = 50;
+cheapCandidate.pricing.components.customDetails.amountCents = 0;
+cheapCandidate.pricing.components.postEindhovenDelivery.amountCents = 0;
+cheapCandidate.shipping.additionalDeliveryFeeCents = 0;
+const cheapAdapter = new MemoryAdapter();
+const cheapResult = await persistFutureOrderV2ForVerifiedIdentity({
+  identity: { uid: OWNER_UID, isAnonymous: false },
+  request: { masterOrder: cheapLedger, customerOwnerUid: OWNER_UID },
+  adapter: cheapAdapter,
+  now: () => NOW,
+});
+assert.deepEqual(cheapResult, {
+  status: "invalid",
+  code: "NON_AUTHORITATIVE_TOTAL",
+  message: "The order total does not match the catalogue and shipping price.",
+});
+assert.equal(cheapAdapter.creates.length, 0);
+assert.equal(cheapAdapter.values.size, 0);
+
+const syntheticLedger = await persistFutureOrderV2ForVerifiedIdentity({
+  identity: { uid: OWNER_UID, isAnonymous: false },
+  request: {
+    masterOrder: createFutureOrderV2Fixture("synthetic-client-ledger"),
+    customerOwnerUid: OWNER_UID,
+  },
+  adapter: new MemoryAdapter(),
+  now: () => NOW,
+});
+assert.equal(syntheticLedger.status, "invalid");
+if (syntheticLedger.status === "invalid") {
+  assert.equal(syntheticLedger.code, "NON_AUTHORITATIVE_TOTAL");
+}
+
+const shirtOption = SEED_CUSTOM_DETAIL_CATALOG.find(
+  (option) => option.id === "shirt_std_short",
+);
+if (!shirtOption) throw new Error("Expected the shirt construction catalogue option.");
+const raisedCatalog = [{ ...shirtOption, priceCents: shirtOption.priceCents + 1000 }];
+const seedPricedAgainstRaisedCatalog = await persistFutureOrderV2ForVerifiedIdentity({
+  identity: { uid: OWNER_UID, isAnonymous: false },
+  request: {
+    masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture("raised-catalog-reject"),
+    customerOwnerUid: OWNER_UID,
+  },
+  adapter: new MemoryAdapter(),
+  catalog: raisedCatalog,
+  now: () => NOW,
+});
+assert.equal(seedPricedAgainstRaisedCatalog.status, "invalid");
+if (seedPricedAgainstRaisedCatalog.status === "invalid") {
+  assert.equal(seedPricedAgainstRaisedCatalog.code, "NON_AUTHORITATIVE_TOTAL");
+}
+
+const raisedOrder = JSON.parse(
+  JSON.stringify(
+    createCatalogueAuthoritativeFutureOrderV2Fixture("raised-catalog-match"),
+  ),
+);
+const raisedDelta = 1000;
+const raisedGarments = raisedOrder.cartItem.candidate.garments as Array<{
+  construction: Array<{ optionId: string; priceCents: number }>;
+  constructionTotalCents: number;
+}>;
+for (const garment of raisedGarments) {
+  for (const component of garment.construction) {
+    if (component.optionId === "shirt_std_short") component.priceCents += raisedDelta;
+  }
+  garment.constructionTotalCents += raisedDelta;
+}
+const raisedPricing = raisedOrder.cartItem.candidate.pricing;
+const raisedBump = raisedDelta * raisedGarments.length;
+raisedPricing.garmentConstructionSubtotalCents += raisedBump;
+raisedPricing.selectedDesignTotalCents += raisedBump;
+raisedPricing.exactTotalCents += raisedBump;
+const raisedAdapter = new MemoryAdapter();
+const raisedResult = await persistFutureOrderV2ForVerifiedIdentity({
+  identity: { uid: OWNER_UID, isAnonymous: false },
+  request: { masterOrder: raisedOrder, customerOwnerUid: OWNER_UID },
+  adapter: raisedAdapter,
+  catalog: raisedCatalog,
+  now: () => NOW,
+});
+assert.equal(raisedResult.status, "created");
+if (raisedResult.status !== "created") throw new Error("Expected the raised catalogue total to persist.");
+const raisedQuote = recomputeFutureOrderPayableTotal(
+  raisedResult.value.masterOrder.cartItem.candidate,
+  raisedCatalog,
+);
+assert.equal(raisedQuote.status, "exact");
+if (raisedQuote.status === "exact") {
+  assert.equal(
+    raisedResult.value.masterOrder.cartItem.candidate.pricing.exactTotalCents,
+    raisedQuote.exactTotalCents,
+  );
+  assert.equal(raisedQuote.exactTotalCents, recomputed.exactTotalCents + raisedBump);
+}
+
+const courierUnderpay = JSON.parse(
+  JSON.stringify(
+    createCatalogueAuthoritativeFutureOrderV2Fixture("courier-underpay"),
+  ),
+);
+courierUnderpay.cartItem.candidate.shipping.state.fulfilmentMethod =
+  "destination_delivery";
+courierUnderpay.cartItem.candidate.shipping.state.destinationSelectionMode =
+  "supported_country";
+courierUnderpay.cartItem.candidate.shipping.state.customerInformation.deliveryAddress.city =
+  "Amsterdam";
+courierUnderpay.cartItem.candidate.shipping.state.customerInformation.deliveryAddress.countryCode =
+  "NL";
+courierUnderpay.cartItem.candidate.shipping.additionalDeliveryFeeCents = 0;
+const courierResult = await persistFutureOrderV2ForVerifiedIdentity({
+  identity: { uid: OWNER_UID, isAnonymous: false },
+  request: { masterOrder: courierUnderpay, customerOwnerUid: OWNER_UID },
+  adapter: new MemoryAdapter(),
+  now: () => NOW,
+});
+assert.equal(courierResult.status, "invalid");
+if (courierResult.status === "invalid") {
+  assert.equal(courierResult.code, "NON_AUTHORITATIVE_TOTAL");
+}
+
 const identitylessNewOrder = structuredClone(
-  createFutureOrderV2Fixture("identityless-new-order"),
+  createCatalogueAuthoritativeFutureOrderV2Fixture("identityless-new-order"),
 );
 Reflect.deleteProperty(identitylessNewOrder.cartItem.candidate, "orderIdentity");
 const identitylessNewResult = await persistFutureOrderV2ForVerifiedIdentity({
@@ -110,7 +276,7 @@ assert.deepEqual(identitylessNewResult, {
 });
 
 const historicalEnvelope = createPersistedFutureOrderV2({
-  masterOrder: createFutureOrderV2Fixture("historical-identityless-order"),
+  masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture("historical-identityless-order"),
   owner: { uid: OWNER_UID, isAnonymous: false },
   customerOwnerUid: OWNER_UID,
   persistedAt: NOW.toISOString(),
@@ -139,7 +305,7 @@ const privateMemberIdentity = {
   orderType: "Group Member" as const,
   batchId: "private_batch_123456",
 };
-const privateMemberOrder = createFutureOrderV2Fixture(
+const privateMemberOrder = createCatalogueAuthoritativeFutureOrderV2Fixture(
   "private-member-order",
   undefined,
   privateMemberIdentity,
@@ -174,7 +340,7 @@ for (const [orderId, orderIdentity] of [
   const result = await persistFutureOrderV2ForVerifiedIdentity({
     identity: { uid: OWNER_UID, isAnonymous: false },
     request: {
-      masterOrder: createFutureOrderV2Fixture(orderId, undefined, orderIdentity),
+      masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture(orderId, undefined, orderIdentity),
       customerOwnerUid: OWNER_UID,
     },
     adapter: authorizedPrivateAdapter,
@@ -201,7 +367,7 @@ for (const orderIdentity of [
   const result = await persistFutureOrderV2ForVerifiedIdentity({
     identity: { uid: OWNER_UID, isAnonymous: false },
     request: {
-      masterOrder: createFutureOrderV2Fixture(
+      masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture(
         `public-${orderIdentity.orderType.replace(" ", "-")}`,
         undefined,
         orderIdentity,
@@ -259,7 +425,7 @@ await assert.rejects(
   persistFutureOrderV2ForVerifiedIdentity({
     identity: { uid: OWNER_UID, isAnonymous: true },
     request: {
-      masterOrder: createFutureOrderV2Fixture("anonymous-order"),
+      masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture("anonymous-order"),
       customerOwnerUid: OWNER_UID,
     },
     adapter,
@@ -272,7 +438,7 @@ await assert.rejects(
   persistFutureOrderV2ForVerifiedIdentity({
     identity: { uid: OWNER_UID, isAnonymous: false },
     request: {
-      masterOrder: createFutureOrderV2Fixture("spoofed-order"),
+      masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture("spoofed-order"),
       customerOwnerUid: OTHER_UID,
     },
     adapter,
@@ -335,7 +501,7 @@ const handler = createFutureOrderV2PersistenceHandler({
 const request = (
   authorization?: string,
   body: unknown = {
-    masterOrder: createFutureOrderV2Fixture("http-order"),
+    masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture("http-order"),
     customerOwnerUid: OWNER_UID,
   },
   method = "POST",
@@ -380,7 +546,7 @@ assert.equal(malformedIdentity.state.status, 401);
 const malformedBody = createResponse();
 await handler(
   request("Bearer valid-token", {
-    masterOrder: createFutureOrderV2Fixture("http-order"),
+    masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture("http-order"),
     customerOwnerUid: OWNER_UID,
     isAnonymous: false,
   }),
@@ -391,7 +557,7 @@ assert.equal(malformedBody.state.status, 400);
 const spoofedOwner = createResponse();
 await handler(
   request("Bearer valid-token", {
-    masterOrder: createFutureOrderV2Fixture("spoofed-http-order"),
+    masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture("spoofed-http-order"),
     customerOwnerUid: OTHER_UID,
   }),
   spoofedOwner.response,
@@ -407,6 +573,34 @@ await handler(request("Bearer valid-token"), httpCreated.response);
 assert.equal(httpCreated.state.status, 201);
 assert.equal((httpCreated.state.body as { status: string }).status, "created");
 
+const raisedHttp = createFutureOrderV2PersistenceHandler({
+  getServices: () => ({
+    auth: {
+      async verifyIdToken() {
+        return { uid: OWNER_UID, firebase: { sign_in_provider: "password" } };
+      },
+    },
+    db: null,
+  }),
+  createAdapter: () => new MemoryAdapter(),
+  readCatalog: async () => raisedCatalog,
+  now: () => NOW,
+  log: () => undefined,
+});
+const raisedHttpResponse = createResponse();
+await raisedHttp(
+  request("Bearer valid-token", {
+    masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture("http-raised-catalog"),
+    customerOwnerUid: OWNER_UID,
+  }),
+  raisedHttpResponse.response,
+);
+assert.equal(raisedHttpResponse.state.status, 400);
+assert.equal(
+  (raisedHttpResponse.state.body as { code?: string }).code,
+  "NON_AUTHORITATIVE_TOTAL",
+);
+
 const httpIdentical = createResponse();
 await handler(request("Bearer valid-token"), httpIdentical.response);
 assert.equal(httpIdentical.state.status, 200);
@@ -418,7 +612,7 @@ assert.equal(
 const httpConflict = createResponse();
 await handler(
   request("Bearer valid-token", {
-    masterOrder: createFutureOrderV2Fixture(
+    masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture(
       "http-order",
       "HTTP conflicting immutable style",
     ),
@@ -433,7 +627,7 @@ assert.deepEqual(httpConflict.state.body, {
 });
 
 const foreignEnvelope = createPersistedFutureOrderV2({
-  masterOrder: createFutureOrderV2Fixture("http-foreign-order"),
+  masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture("http-foreign-order"),
   owner: { uid: OTHER_UID, isAnonymous: false },
   customerOwnerUid: OTHER_UID,
   persistedAt: NOW.toISOString(),
@@ -444,7 +638,7 @@ httpAdapter.values.set("http-foreign-order", foreignEnvelope.value);
 const foreignCollision = createResponse();
 await handler(
   request("Bearer valid-token", {
-    masterOrder: createFutureOrderV2Fixture("http-foreign-order"),
+    masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture("http-foreign-order"),
     customerOwnerUid: OWNER_UID,
   }),
   foreignCollision.response,
@@ -476,7 +670,7 @@ const rawFailureHandler = createFutureOrderV2PersistenceHandler({
 const rawFailure = createResponse();
 await rawFailureHandler(
   request("Bearer valid-token", {
-    masterOrder: createFutureOrderV2Fixture("raw-failure-order"),
+    masterOrder: createCatalogueAuthoritativeFutureOrderV2Fixture("raw-failure-order"),
     customerOwnerUid: OWNER_UID,
   }),
   rawFailure.response,
@@ -487,7 +681,7 @@ assert.equal(JSON.stringify(rawFailure.state.body).includes("sensitive"), false)
 let tokenForceRefresh: boolean | undefined;
 let capturedPath = "";
 let capturedInit: RequestInit | undefined;
-const clientOrder = createFutureOrderV2Fixture("client-order");
+const clientOrder = createCatalogueAuthoritativeFutureOrderV2Fixture("client-order");
 const clientEnvelope = createPersistedFutureOrderV2({
   masterOrder: clientOrder,
   owner: { uid: OWNER_UID, isAnonymous: false },
@@ -593,7 +787,7 @@ const deferred = <T,>() => {
   });
   return { promise, resolve };
 };
-const privateClientOrder = createFutureOrderV2Fixture(
+const privateClientOrder = createCatalogueAuthoritativeFutureOrderV2Fixture(
   "private-client-continuity",
   undefined,
   { orderType: "Group Organizer", batchId: "private_batch_123456" },
@@ -789,7 +983,7 @@ for (const refreshScenario of [
 // Group Organizer/Member is not itself a privacy flag. A terminal PUBLIC
 // authority keeps normal persistence without a private capability, while a
 // terminal missing authority fails before a network request.
-const publicClientOrder = createFutureOrderV2Fixture(
+const publicClientOrder = createCatalogueAuthoritativeFutureOrderV2Fixture(
   "public-client-continuity",
   undefined,
   { orderType: "Group Member", batchId: "public_batch_1234567" },

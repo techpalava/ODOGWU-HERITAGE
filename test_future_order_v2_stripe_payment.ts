@@ -13,7 +13,13 @@ import {
 } from "./src/utils/futureOrderV2Payment";
 import { createFutureOrderV2PreparationAttempt } from "./src/utils/futureOrderV2Preparation";
 import { createPersistedFutureOrderV2 } from "./src/utils/futureOrderV2PersistenceContract";
-import { createFutureOrderV2Fixture } from "./testing/futureOrderV2Fixture";
+import { persistFutureOrderV2ForVerifiedIdentity } from "./src/server/futureOrderV2Persistence";
+import { recomputeFutureOrderPayableTotal } from "./src/utils/futureOrderPayableTotal";
+import type { FutureOrderV2PersistenceAdapter } from "./src/utils/futureOrderV2PersistenceContract";
+import {
+  createCatalogueAuthoritativeFutureOrderV2Fixture,
+  createFutureOrderV2Fixture,
+} from "./testing/futureOrderV2Fixture";
 
 const OWNER_UID = "stripe-payment-owner";
 const OTHER_UID = "stripe-payment-other";
@@ -519,6 +525,125 @@ try {
 } finally {
   registerFutureOrderV2PaymentConfirmer(null);
   registerFutureOrderV2PaymentIdentityResolver(null);
+}
+
+{
+  const cheap = JSON.parse(
+    JSON.stringify(createFutureOrderV2Fixture("stripe-cheap-ledger")),
+  );
+  const cheapCandidate = cheap.cartItem.candidate;
+  cheapCandidate.garments.forEach(
+    (
+      garment: { construction: unknown; constructionTotalCents: number },
+      index: number,
+    ) => {
+      garment.construction = [
+        {
+          componentKey: "shirt:shirt_construction:shirt_std_short",
+          selectionGroup: "shirt_construction",
+          optionId: "shirt_std_short",
+          label: "Standard Length Shirt, Short Sleeve",
+          priceCents: index === 0 ? 50 : 0,
+        },
+      ];
+      garment.constructionTotalCents = index === 0 ? 50 : 0;
+    },
+  );
+  cheapCandidate.pricing.garmentConstructionSubtotalCents = 50;
+  cheapCandidate.pricing.customDetailsCents = 0;
+  cheapCandidate.pricing.selectedDesignTotalCents = 50;
+  cheapCandidate.pricing.postEindhovenAdjustmentCents = 0;
+  cheapCandidate.pricing.exactTotalCents = 50;
+  cheapCandidate.pricing.components.customDetails.amountCents = 0;
+  cheapCandidate.pricing.components.postEindhovenDelivery.amountCents = 0;
+  cheapCandidate.shipping.additionalDeliveryFeeCents = 0;
+
+  const stored = new Map<string, unknown>();
+  const memoryAdapter: FutureOrderV2PersistenceAdapter = {
+    async runTransaction(operation) {
+      return operation({
+        get: async (orderId) => stored.get(orderId) ?? null,
+        create: (orderId, value) => {
+          stored.set(orderId, value);
+        },
+      });
+    },
+  };
+  const cheapPersisted = await persistFutureOrderV2ForVerifiedIdentity({
+    identity: { uid: OWNER_UID, isAnonymous: false },
+    request: { masterOrder: cheap, customerOwnerUid: OWNER_UID },
+    adapter: memoryAdapter,
+    now: () => new Date("2026-10-05T18:00:00.000Z"),
+  });
+  assert.equal(cheapPersisted.status, "invalid");
+  if (cheapPersisted.status === "invalid") {
+    assert.equal(cheapPersisted.code, "NON_AUTHORITATIVE_TOTAL");
+  }
+  assert.equal(stored.size, 0);
+
+  const authoritativeOrder = createCatalogueAuthoritativeFutureOrderV2Fixture(
+    "stripe-authoritative",
+  );
+  const authoritativePersisted = await persistFutureOrderV2ForVerifiedIdentity({
+    identity: { uid: OWNER_UID, isAnonymous: false },
+    request: { masterOrder: authoritativeOrder, customerOwnerUid: OWNER_UID },
+    adapter: memoryAdapter,
+    now: () => new Date("2026-10-05T18:00:00.000Z"),
+  });
+  assert.equal(authoritativePersisted.status, "created");
+  if (authoritativePersisted.status !== "created") {
+    throw new Error("Expected the catalogue total to persist.");
+  }
+  const payable = recomputeFutureOrderPayableTotal(
+    authoritativePersisted.value.masterOrder.cartItem.candidate,
+  );
+  assert.equal(payable.status, "exact");
+  if (payable.status !== "exact") throw new Error("Expected a catalogue quote.");
+  assert.equal(
+    authoritativePersisted.value.masterOrder.cartItem.candidate.pricing.exactTotalCents,
+    payable.exactTotalCents,
+  );
+  assert.notEqual(payable.exactTotalCents, 50);
+  assert.notEqual(payable.exactTotalCents, 1);
+
+  const authoritativeReference = `future-v2-payment-${authoritativePersisted.value.orderId}`;
+  const { res, state } = response();
+  let created: unknown = null;
+  await handleFutureOrderV2StripePayment(
+    {
+      method: "POST",
+      headers: ownerAuthHeaders,
+      body: {
+        orderId: authoritativePersisted.value.orderId,
+        paymentReference: authoritativeReference,
+        masterOrder: cheap,
+        amountCents: 1,
+        exactTotalCents: 50,
+      },
+    },
+    res,
+    {
+      ...authDependencies({ order: authoritativePersisted.value }),
+      readPersistedOrder: async (orderId: string) =>
+        orderId === authoritativePersisted.value.orderId
+          ? authoritativePersisted.value
+          : null,
+      async createPaymentIntent(input) {
+        created = input;
+        return {
+          id: "pi_test_authoritative",
+          clientSecret: "pi_test_authoritative_secret",
+          paymentMethodTypes: ["card", "ideal"],
+        };
+      },
+    },
+  );
+  assert.equal(state.statusCode, 200);
+  assert.deepEqual(created, {
+    amountCents: payable.exactTotalCents,
+    orderId: authoritativePersisted.value.orderId,
+    paymentReference: authoritativeReference,
+  });
 }
 
 console.log(

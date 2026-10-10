@@ -6,14 +6,14 @@ import type {
   MonogramPlacement,
   StyleCategory,
 } from "../types";
-import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig";
+import { DRESS_LINING_OPTION_ID } from "../config/GarmentDetailsConfig.js";
 import {
   calculateCustomDetailsPrice,
   getCustomDetailsBreakdown,
   getSelectedCustomDetailOptionIds,
   getSupportedCustomDetailGroupResolution,
-} from "./catalogHelpers";
-import { PRICING_CURRENCY_SYMBOL } from "./money";
+} from "./catalogHelpers.js";
+import { PRICING_CURRENCY_SYMBOL } from "./money.js";
 
 export const DECORATIVE_FEATURE_OPTIONS: readonly DecorativeFeature[] = [
   "Name Monogram",

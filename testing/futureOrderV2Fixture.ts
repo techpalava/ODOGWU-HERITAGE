@@ -1,6 +1,10 @@
+import type { FabricGarmentType } from "../src/types.js";
+import { normalizeCustomDetailCatalog } from "../src/utils/catalogHelpers.js";
 import type {
   FutureOrderCandidateV2,
 } from "../src/utils/futureOrderCandidate.js";
+import { quoteFutureOrderPayableTotal } from "../src/utils/futureOrderPayableTotal.js";
+import { resolveGarmentConstructionPricing } from "../src/utils/garmentConstructionPricing.js";
 import type { CanonicalOrderIdentity } from "../src/utils/orderContextIdentity.js";
 import {
   createFutureOrderCartItemV2,
@@ -195,4 +199,83 @@ export const createFutureOrderV2Fixture = (
     throw new Error("Expected a valid MasterOrder V2 fixture.");
   }
   return order.value;
+};
+
+/**
+ * Same fixture shape as `createFutureOrderV2Fixture`, with construction and
+ * the payable ledger replaced by the seed catalogue and Step 8 quote.
+ */
+interface CatalogueFixtureCandidate {
+  garments: Array<{
+    garmentType: string;
+    construction: Array<{
+      componentKey: string;
+      selectionGroup: string;
+      optionId: string;
+      label: string;
+      priceCents: number;
+    }>;
+    constructionTotalCents: number | null;
+  }>;
+  pricing: {
+    garmentConstructionSubtotalCents: number | null;
+    customDetailsCents: number | null;
+    selectedDesignTotalCents: number | null;
+    postEindhovenAdjustmentCents: number | null;
+    exactTotalCents: number | null;
+    components: {
+      customDetails: { amountCents: number | null };
+      postEindhovenDelivery: { amountCents: number | null };
+    };
+  };
+  shipping: { additionalDeliveryFeeCents: number | null };
+}
+
+export const createCatalogueAuthoritativeFutureOrderV2Fixture = (
+  orderId: string,
+  styleName?: string,
+  orderIdentity?: CanonicalOrderIdentity,
+): FutureOrderMasterOrderV2 => {
+  const order = structuredClone(
+    createFutureOrderV2Fixture(orderId, styleName, orderIdentity),
+  );
+  const catalog = normalizeCustomDetailCatalog([]);
+  const candidate = order.cartItem.candidate as unknown as CatalogueFixtureCandidate;
+  for (const garment of candidate.garments) {
+    const resolution = resolveGarmentConstructionPricing(
+      garment.garmentType as FabricGarmentType,
+      catalog,
+    );
+    if (resolution.status !== "resolved") {
+      throw new Error(
+        `Catalogue construction is unresolved for ${garment.garmentType}.`,
+      );
+    }
+    garment.construction = resolution.components.map((component) => ({
+      componentKey: component.componentKey,
+      selectionGroup: component.selectionGroup,
+      optionId: component.optionId,
+      label:
+        catalog.find((option) => option.id === component.optionId)?.label ||
+        component.optionId,
+      priceCents: component.priceCents,
+    }));
+    garment.constructionTotalCents = resolution.totalPriceCents;
+  }
+  const quoted = quoteFutureOrderPayableTotal(order.cartItem.candidate);
+  if (!quoted) {
+    throw new Error("The catalogue fixture could not be quoted.");
+  }
+  const pricing = candidate.pricing;
+  pricing.garmentConstructionSubtotalCents = quoted.garmentConstructionSubtotalCents;
+  pricing.customDetailsCents = quoted.customDetailsCents;
+  pricing.selectedDesignTotalCents = quoted.selectedDesignTotalCents;
+  pricing.postEindhovenAdjustmentCents = quoted.postEindhovenAdjustmentCents;
+  pricing.exactTotalCents = quoted.exactTotalCents;
+  pricing.components.customDetails.amountCents = quoted.customDetailsCents;
+  pricing.components.postEindhovenDelivery.amountCents =
+    quoted.postEindhovenAdjustmentCents;
+  candidate.shipping.additionalDeliveryFeeCents =
+    quoted.postEindhovenAdjustmentCents;
+  return order as FutureOrderMasterOrderV2;
 };
