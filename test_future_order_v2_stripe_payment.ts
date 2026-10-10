@@ -77,6 +77,11 @@ const authDependencies = ({
   }),
   readPersistedOrder: async (orderId: string) =>
     orderId === prepared.orderId ? order : null,
+  async resolveAuthoritativeTotalCents(candidate) {
+    const total = candidate.pricing.exactTotalCents;
+    if (typeof total !== "number") throw new Error("missing total");
+    return total;
+  },
 });
 
 const response = () => {
@@ -392,6 +397,7 @@ assert.match(stripeSource, /idempotencyKey/);
 assert.match(stripeSource, /AUTH_REQUIRED/);
 assert.match(stripeSource, /parsePersistedFutureOrderV2/);
 assert.match(stripeSource, /OWNER_MISMATCH/);
+assert.match(stripeSource, /PRICE_NOT_AUTHORITATIVE/);
 assert.equal(stripeSource.includes("parseFutureOrderMasterOrderV2"), false);
 const paymentIntentApi = readFileSync("api/future-order-v2/payment-intent.ts", "utf8");
 assert.equal(paymentIntentApi.includes("handleFutureOrderV2StripePayment"), true);

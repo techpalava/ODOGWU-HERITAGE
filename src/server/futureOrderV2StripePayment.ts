@@ -6,6 +6,11 @@ import {
   FUTURE_ORDER_V2_COLLECTION,
   parsePersistedFutureOrderV2,
 } from "../utils/futureOrderV2PersistenceContract.js";
+import {
+  FutureOrderV2PriceAuthorityError,
+  resolveAuthoritativeExactTotalCents,
+  type AuthoritativePriceCandidate,
+} from "./futureOrderV2AuthoritativePrice.js";
 
 const MINIMUM_EUR_CENTS = 50;
 const SAFE_ORDER_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -42,6 +47,14 @@ export interface FutureOrderV2StripePaymentDependencies {
   readPublishableKey?: () => string;
   getServices?: () => StripePaymentAdminServices;
   readPersistedOrder?: (orderId: string) => Promise<unknown | null>;
+  /**
+   * Tests that are not about catalogue prices pass a resolver.
+   * Production recomputes the total from `custom_detail_catalog` and
+   * refuses to charge a persisted ledger that does not match.
+   */
+  resolveAuthoritativeTotalCents?: (
+    candidate: AuthoritativePriceCandidate,
+  ) => Promise<number>;
 }
 
 const setNoStore = (res: HttpResponse): HttpResponse => {
@@ -330,9 +343,49 @@ export const handleFutureOrderV2StripePayment = async (
     );
   }
 
+  const resolveAuthoritativeTotal =
+    dependencies.resolveAuthoritativeTotalCents ??
+    ((candidate: AuthoritativePriceCandidate) =>
+      resolveAuthoritativeExactTotalCents(
+        candidate,
+        services.db as Parameters<typeof resolveAuthoritativeExactTotalCents>[1],
+      ));
+  let authoritativeTotalCents: number;
+  try {
+    authoritativeTotalCents = await resolveAuthoritativeTotal(
+      order.value.masterOrder.cartItem.candidate,
+    );
+  } catch (error) {
+    if (
+      error instanceof FutureOrderV2PriceAuthorityError &&
+      error.code === "PRICE_NOT_AUTHORITATIVE"
+    ) {
+      return sendError(
+        res,
+        409,
+        "PRICE_NOT_AUTHORITATIVE",
+        "The order total does not match the catalogue price.",
+      );
+    }
+    return sendError(
+      res,
+      503,
+      "PRICE_CATALOGUE_UNAVAILABLE",
+      "The catalogue price could not be confirmed. Retry this order.",
+    );
+  }
+  if (authoritativeTotalCents !== amountCents) {
+    return sendError(
+      res,
+      409,
+      "PRICE_NOT_AUTHORITATIVE",
+      "The order total does not match the catalogue price.",
+    );
+  }
+
   try {
     const paymentIntent = await createPaymentIntent({
-      amountCents,
+      amountCents: authoritativeTotalCents,
       orderId,
       paymentReference,
     });
