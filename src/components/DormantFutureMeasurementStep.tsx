@@ -1264,6 +1264,12 @@ export const DormantFutureMeasurementStep = ({
           <p className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/65">
             Reach out to the contact to arrange a measurement
           </p>
+          <p
+            data-measurement-onsite-booking-window="true"
+            className="mt-1 break-words text-xs leading-relaxed text-heritage-ink/65"
+          >
+            Please book within 3 days of placing your order, so we can keep your tailoring slot and deliver on time.
+          </p>
           <a
             href={FUTURE_PICKUP_ATELIER_WHATSAPP_URL}
             target="_blank"
