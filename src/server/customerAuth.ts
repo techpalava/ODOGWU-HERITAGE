@@ -121,16 +121,45 @@ async function findCustomerDocument(
   );
 }
 
+async function readFirebaseUserByEmail(auth: Auth, email: string) {
+  try {
+    return await auth.getUserByEmail(email);
+  } catch (error: any) {
+    if (error?.code !== "auth/user-not-found") throw error;
+    return null;
+  }
+}
+
 async function ensureFirebaseUser(
   auth: Auth,
   email: string,
   displayName: string,
 ) {
+  const existing = await readFirebaseUserByEmail(auth, email);
+  if (existing) return existing;
+  // A PIN is not mailbox proof. Leave the address unverified.
+  return auth.createUser({ email, displayName, emailVerified: false });
+}
+
+async function createUnverifiedPinUser(
+  auth: Auth,
+  email: string,
+  displayName: string,
+) {
+  if (await readFirebaseUserByEmail(auth, email)) {
+    throw new Error("EMAIL_ALREADY_REGISTERED");
+  }
   try {
-    return await auth.getUserByEmail(email);
+    return await auth.createUser({
+      email,
+      displayName,
+      emailVerified: false,
+    });
   } catch (error: any) {
-    if (error?.code !== "auth/user-not-found") throw error;
-    return auth.createUser({ email, displayName, emailVerified: true });
+    if (error?.code === "auth/email-already-exists") {
+      throw new Error("EMAIL_ALREADY_REGISTERED");
+    }
+    throw error;
   }
 }
 
@@ -359,7 +388,11 @@ export async function registerWithPin(
     throw new Error("ACCOUNT_EXISTS");
   }
 
-  const firebaseUser = await ensureFirebaseUser(auth, canonicalEmail, name);
+  const firebaseUser = await createUnverifiedPinUser(
+    auth,
+    canonicalEmail,
+    name,
+  );
   await setServerRole(auth, firebaseUser.uid, canonicalEmail);
 
   const customer: StoredCustomer = {
