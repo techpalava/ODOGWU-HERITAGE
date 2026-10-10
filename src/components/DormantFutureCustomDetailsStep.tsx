@@ -1602,6 +1602,8 @@ export const DormantFutureCustomDetailsStep = ({
   return (
     <section aria-labelledby={`future-${stage}-title`} data-stage-id={stage} data-stage-complete={canContinue} className="relative space-y-4 font-sans">
       <div data-custom-details-top-sentinel="true" aria-hidden="true" className="h-px w-full" />
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6">
+        <div className="min-w-0 space-y-4">
       <div className="rounded-3xl border border-heritage-gold/25 bg-white p-4 shadow-sm sm:p-5">
         <DesignStudioStepActions
           backDestination={previousStageLabel}
@@ -1737,7 +1739,6 @@ export const DormantFutureCustomDetailsStep = ({
         </div>
       ) : null}
 
-      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(19rem,24rem)] lg:gap-6">
         <div ref={contentRef} className="min-w-0 space-y-4">
           {isCustomDetailsStage && (
           <div data-custom-detail-section="main-garment-details" className="min-w-0 space-y-4">
@@ -2211,6 +2212,7 @@ export const DormantFutureCustomDetailsStep = ({
             )}
           </section>
           )}
+        </div>
         </div>
 
         {orderSummary ? (
