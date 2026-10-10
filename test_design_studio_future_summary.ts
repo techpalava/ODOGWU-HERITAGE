@@ -2631,4 +2631,166 @@ act(() => {
   partialCards.renderer.unmount();
 });
 
+const projectFabricPreviewSummary = (fabricOverrides: Partial<Fabric>) => {
+  const input = buildSummaryInput();
+  if (input.materialPricing.status !== "resolved") {
+    throw new Error("expected resolved fabric pricing");
+  }
+  const previewFabric: Fabric = {
+    ...input.materialPricing.baseFabric,
+    ...fabricOverrides,
+  };
+  return projectFutureDesignStudioSummary({
+    ...input,
+    materialPricing: {
+      ...input.materialPricing,
+      baseFabric: previewFabric,
+      allocationLines: input.materialPricing.allocationLines.map((line) => ({
+        ...line,
+        fabric: previewFabric,
+      })),
+    },
+  });
+};
+
+const renderFabricSummaryMarkup = (
+  summary: ReturnType<typeof projectFutureDesignStudioSummary>,
+) =>
+  renderToStaticMarkup(
+    createElement(DormantFutureSummaryStep, {
+      summary,
+      onBack: () => {},
+      onEditGarments: () => {},
+      onEditFabrics: () => {},
+      onEditDesignStyle: () => {},
+      onEditCustomDetails: () => {},
+      onEditAiTryOn: () => {},
+      onEditMeasurements: () => {},
+      canContinueToShipping: false,
+      onContinueToShipping: () => {},
+    }),
+  );
+
+const imagePreviewSummary = projectFabricPreviewSummary({
+  image: "  https://example.test/ankara.jpg  ",
+  colorHex: "  #0D3E26  ",
+});
+assert.equal(
+  imagePreviewSummary.fabricSummary[0]?.image,
+  "https://example.test/ankara.jpg",
+);
+assert.equal(imagePreviewSummary.fabricSummary[0]?.colorHex, "#0D3E26");
+const imagePreviewMarkup = renderFabricSummaryMarkup(imagePreviewSummary);
+assert.match(imagePreviewMarkup, /data-summary-fabric-image="true"/);
+assert.match(imagePreviewMarkup, /src="https:\/\/example\.test\/ankara\.jpg"/);
+assert.equal(imagePreviewMarkup.includes("data-summary-fabric-swatch"), false);
+assert.equal(imagePreviewMarkup.includes("data-summary-fabric-fallback"), false);
+assert.equal(imagePreviewMarkup.includes("No preview"), false);
+
+const swatchPreviewSummary = projectFabricPreviewSummary({
+  image: "   ",
+  colorHex: "  #abc  ",
+});
+assert.equal(swatchPreviewSummary.fabricSummary[0]?.image, null);
+assert.equal(swatchPreviewSummary.fabricSummary[0]?.colorHex, "#abc");
+const swatchPreviewMarkup = renderFabricSummaryMarkup(swatchPreviewSummary);
+assert.match(swatchPreviewMarkup, /data-summary-fabric-swatch="true"/);
+assert.match(swatchPreviewMarkup, /background-color:#abc/);
+assert.equal(swatchPreviewMarkup.includes("data-summary-fabric-image"), false);
+assert.equal(swatchPreviewMarkup.includes("No preview"), false);
+
+const missingPreviewSummary = projectFabricPreviewSummary({
+  image: "",
+  colorHex: "not-a-hex",
+});
+assert.equal(missingPreviewSummary.fabricSummary[0]?.image, null);
+assert.equal(missingPreviewSummary.fabricSummary[0]?.colorHex, null);
+const missingPreviewMarkup = renderFabricSummaryMarkup(missingPreviewSummary);
+assert.match(missingPreviewMarkup, /data-summary-fabric-fallback="true"/);
+assert.match(missingPreviewMarkup, /No preview/);
+assert.equal(missingPreviewMarkup.includes("data-summary-fabric-image"), false);
+assert.equal(missingPreviewMarkup.includes("data-summary-fabric-swatch"), false);
+
+const unresolvedPreviewSummary = projectFutureDesignStudioSummary({
+  ...buildSummaryInput(),
+  materialPricing: { status: "unresolved", reason: "FABRIC_NOT_FOUND" },
+});
+assert.equal(unresolvedPreviewSummary.fabricSummary[0]?.fabricName, "Fabric unavailable");
+assert.equal(unresolvedPreviewSummary.fabricSummary[0]?.image, null);
+assert.equal(unresolvedPreviewSummary.fabricSummary[0]?.colorHex, null);
+assert.match(renderFabricSummaryMarkup(unresolvedPreviewSummary), /No preview/);
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+let fabricPreviewRenderer!: ReturnType<typeof create>;
+act(() => {
+  fabricPreviewRenderer = create(
+    createElement(DormantFutureSummaryStep, {
+      summary: imagePreviewSummary,
+      onBack: () => {},
+      onEditGarments: () => {},
+      onEditFabrics: () => {},
+      onEditDesignStyle: () => {},
+      onEditCustomDetails: () => {},
+      onEditAiTryOn: () => {},
+      onEditMeasurements: () => {},
+      canContinueToShipping: false,
+      onContinueToShipping: () => {},
+    }),
+  );
+});
+assert.equal(
+  fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-image": "true" }).length,
+  1,
+);
+act(() => {
+  fabricPreviewRenderer.root
+    .findByProps({ "data-summary-fabric-image": "true" })
+    .props.onError();
+});
+assert.equal(
+  fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-image": "true" }).length,
+  0,
+);
+assert.equal(
+  fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-swatch": "true" }).length,
+  1,
+);
+
+const brokenImageSummary = projectFabricPreviewSummary({
+  image: "https://example.test/broken.jpg",
+  colorHex: "blue",
+});
+act(() => {
+  fabricPreviewRenderer.update(
+    createElement(DormantFutureSummaryStep, {
+      summary: brokenImageSummary,
+      onBack: () => {},
+      onEditGarments: () => {},
+      onEditFabrics: () => {},
+      onEditDesignStyle: () => {},
+      onEditCustomDetails: () => {},
+      onEditAiTryOn: () => {},
+      onEditMeasurements: () => {},
+      canContinueToShipping: false,
+      onContinueToShipping: () => {},
+    }),
+  );
+});
+act(() => {
+  fabricPreviewRenderer.root
+    .findByProps({ "data-summary-fabric-image": "true" })
+    .props.onError();
+});
+assert.equal(
+  fabricPreviewRenderer.root.findAllByProps({ "data-summary-fabric-fallback": "true" }).length,
+  1,
+);
+assert.match(
+  fabricPreviewRenderer.root.findByProps({ "data-summary-fabric-fallback": "true" }).children.join(""),
+  /No preview/,
+);
+act(() => {
+  fabricPreviewRenderer.unmount();
+});
+
 console.log("PASS: dormant future Summary projection and Step 7 integration");

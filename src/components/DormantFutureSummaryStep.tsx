@@ -4,12 +4,14 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { DesignStudioStepActions } from "./DesignStudioBackButton";
 import type React from "react";
 import { SELECTED_DESIGN_PRICE_SUPPORTING_TEXT } from "../utils/designPriceBreakdownPresentation";
 import {
   formatCompactWearerRouteLabel,
   type FutureDesignStudioSummary,
+  type FutureSummaryFabricAllocation,
 } from "../utils/designStudioFutureSummary";
 import { isSampleClothMeasurementMethod } from "../utils/measurementBlueprint";
 import type { FutureShippingStageResolution } from "../utils/designStudioFutureShipping";
@@ -144,6 +146,51 @@ const ChoiceActionButton = ({
     {label}
   </button>
 );
+
+/** Stage 8 fabric thumb: usable image, else colour swatch, else the Fabric step's "No preview". */
+const SummaryFabricPreview = ({
+  allocation,
+}: {
+  allocation: FutureSummaryFabricAllocation;
+}) => {
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => {
+    setImageFailed(false);
+  }, [allocation.allocationId, allocation.image]);
+
+  const showImage = Boolean(allocation.image) && !imageFailed;
+  return (
+    <div
+      className="aspect-[4/3] w-24 max-w-full overflow-hidden rounded-xl bg-heritage-cream/40"
+      data-summary-fabric-preview={allocation.allocationId}
+    >
+      {showImage ? (
+        <img
+          src={allocation.image!}
+          alt={`${allocation.fabricName} fabric swatch`}
+          className="h-full w-full object-cover"
+          onError={() => setImageFailed(true)}
+          data-summary-fabric-image="true"
+        />
+      ) : allocation.colorHex ? (
+        <div
+          className="h-full w-full"
+          style={{ backgroundColor: allocation.colorHex }}
+          aria-label={`${allocation.fabricName} fabric color`}
+          data-summary-fabric-swatch="true"
+        />
+      ) : (
+        <div
+          className="flex h-full w-full items-center justify-center bg-heritage-cream/70 px-1 text-center text-[10px] font-bold uppercase tracking-wider text-heritage-ink/45"
+          aria-label={`${allocation.fabricName} fabric preview unavailable`}
+          data-summary-fabric-fallback="true"
+        >
+          No preview
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const DormantFutureSummaryStep = ({
   summary,
@@ -595,46 +642,52 @@ export const DormantFutureSummaryStep = ({
             <article
               key={allocation.allocationId}
               className="min-w-0 rounded-xl border border-heritage-green/12 bg-heritage-cream/20 p-4"
+              data-summary-fabric-card={allocation.allocationId}
             >
-              <div className="flex min-w-0 flex-wrap justify-between gap-2">
+              <div className="grid min-w-0 gap-3 sm:grid-cols-[96px_minmax(0,1fr)] sm:items-start">
+                <SummaryFabricPreview allocation={allocation} />
                 <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
-                    Fabric Selection {index + 1}
+                  <div className="flex min-w-0 flex-wrap justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-heritage-gold">
+                        Fabric Selection {index + 1}
+                      </p>
+                      <h4 className="mt-1 break-words font-bold text-heritage-green">
+                        {allocation.fabricName}
+                      </h4>
+                      <p
+                        title={allocation.fabricCode}
+                        className="mt-1 break-words font-mono text-xs text-heritage-ink/60"
+                      >
+                        {allocation.fabricCode}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <span className="block font-mono font-bold text-heritage-green">
+                        {allocation.materialPrice === null
+                          ? "Price unavailable"
+                          : "Included"}
+                      </span>
+                      <span
+                        className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                          allocation.availability === "available"
+                            ? "bg-heritage-green/10 text-heritage-green"
+                            : "bg-heritage-gold/15 text-heritage-ink/70"
+                        }`}
+                      >
+                        {allocation.availability === "available"
+                          ? "Available"
+                          : allocation.availability === "unavailable"
+                            ? "Unavailable"
+                            : "Needs review"}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-heritage-ink/65">
+                    {allocation.garments.map((garment) => garment.label).join(", ")} | {formatCustomerFacingFabricCapacityAmount(allocation.capacityUnits)} capacity {formatCustomerFacingFabricCapacityNoun(allocation.capacityUnits)}
                   </p>
-                  <h4 className="mt-1 break-words font-bold text-heritage-green">
-                    {allocation.fabricName}
-                  </h4>
-                  <p
-                    title={allocation.fabricCode}
-                    className="mt-1 break-words font-mono text-xs text-heritage-ink/60"
-                  >
-                    {allocation.fabricCode}
-                  </p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <span className="block font-mono font-bold text-heritage-green">
-                    {allocation.materialPrice === null
-                      ? "Price unavailable"
-                      : "Included"}
-                  </span>
-                  <span
-                    className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
-                      allocation.availability === "available"
-                        ? "bg-heritage-green/10 text-heritage-green"
-                        : "bg-heritage-gold/15 text-heritage-ink/70"
-                    }`}
-                  >
-                    {allocation.availability === "available"
-                      ? "Available"
-                      : allocation.availability === "unavailable"
-                        ? "Unavailable"
-                        : "Needs review"}
-                  </span>
                 </div>
               </div>
-              <p className="mt-2 text-xs text-heritage-ink/65">
-                {allocation.garments.map((garment) => garment.label).join(", ")} | {formatCustomerFacingFabricCapacityAmount(allocation.capacityUnits)} capacity {formatCustomerFacingFabricCapacityNoun(allocation.capacityUnits)}
-              </p>
             </article>
           ))}
         </div>
