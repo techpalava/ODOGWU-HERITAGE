@@ -306,6 +306,15 @@ const createResponse = () => {
   return { response, state };
 };
 
+const echoAuthoritativeTotal = async (candidate: {
+  pricing: { exactTotalCents: number | null };
+}) => {
+  if (typeof candidate.pricing.exactTotalCents !== "number") {
+    throw new Error("missing total");
+  }
+  return candidate.pricing.exactTotalCents;
+};
+
 const httpAdapter = new MemoryAdapter();
 const handler = createFutureOrderV2PersistenceHandler({
   getServices: () => ({
@@ -330,6 +339,7 @@ const handler = createFutureOrderV2PersistenceHandler({
   createAdapter: () => httpAdapter,
   now: () => NOW,
   log: () => undefined,
+  resolveAuthoritativeTotalCents: echoAuthoritativeTotal,
 });
 
 const request = (
@@ -472,6 +482,7 @@ const rawFailureHandler = createFutureOrderV2PersistenceHandler({
     },
   }),
   log: () => undefined,
+  resolveAuthoritativeTotalCents: echoAuthoritativeTotal,
 });
 const rawFailure = createResponse();
 await rawFailureHandler(

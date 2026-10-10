@@ -10,6 +10,11 @@ import {
   parseFutureOrderV2PersistenceRequest,
   type FutureOrderV2PersistenceAdapter,
 } from "../utils/futureOrderV2PersistenceContract.js";
+import {
+  FutureOrderV2PriceAuthorityError,
+  resolveAuthoritativeExactTotalCents,
+  type AuthoritativePriceCandidate,
+} from "./futureOrderV2AuthoritativePrice.js";
 
 export interface VerifiedFutureOrderV2Token {
   readonly uid: string;
@@ -30,6 +35,14 @@ export interface FutureOrderV2PersistenceHttpDependencies {
   createAdapter?: (db: unknown) => FutureOrderV2PersistenceAdapter;
   now?: () => Date;
   log?: (message: string) => void;
+  /**
+   * Tests that are not about catalogue prices pass a resolver.
+   * Production loads `custom_detail_catalog` and rejects a client total
+   * that does not match those option prices.
+   */
+  resolveAuthoritativeTotalCents?: (
+    candidate: AuthoritativePriceCandidate,
+  ) => Promise<number>;
 }
 
 const getHeader = (req: HttpRequest, name: string): string | undefined => {
@@ -115,6 +128,43 @@ export const createFutureOrderV2PersistenceHandler = (
       if (request.status !== "valid") {
         log(`future-order-v2-persistence invalid=${request.code}`);
         return setNoStore(res).status(400).json(request);
+      }
+
+      if (signInProvider !== "anonymous") {
+        const candidate = request.value.masterOrder.cartItem.candidate;
+        const resolveAuthoritativeTotal =
+          dependencies.resolveAuthoritativeTotalCents ??
+          ((value: AuthoritativePriceCandidate) =>
+            resolveAuthoritativeExactTotalCents(
+              value,
+              services.db as Parameters<typeof resolveAuthoritativeExactTotalCents>[1],
+            ));
+        try {
+          const authoritativeTotal = await resolveAuthoritativeTotal(candidate);
+          if (authoritativeTotal !== candidate.pricing.exactTotalCents) {
+            throw new FutureOrderV2PriceAuthorityError("PRICE_NOT_AUTHORITATIVE");
+          }
+        } catch (error) {
+          if (
+            error instanceof FutureOrderV2PriceAuthorityError &&
+            error.code === "PRICE_NOT_AUTHORITATIVE"
+          ) {
+            log("future-order-v2-persistence error=PRICE_NOT_AUTHORITATIVE");
+            return sendError(
+              res,
+              409,
+              "PRICE_NOT_AUTHORITATIVE",
+              "The order total does not match the catalogue price.",
+            );
+          }
+          log("future-order-v2-persistence error=PRICE_CATALOGUE_UNAVAILABLE");
+          return sendError(
+            res,
+            503,
+            "PRICE_CATALOGUE_UNAVAILABLE",
+            "The catalogue price could not be confirmed. Retry this order.",
+          );
+        }
       }
 
       const result = await persistFutureOrderV2ForVerifiedIdentity({
