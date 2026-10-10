@@ -14,6 +14,7 @@ import type {
   GarmentScopedCustomDetailInputsV1,
   GarmentTypeStepSelection,
   StyleCategory,
+  WearerOrderStateV2,
 } from "../types";
 import type { CustomDetailCatalogInspection } from "./catalogHelpers";
 import type {
@@ -88,6 +89,8 @@ export interface FutureSummaryGarment {
   }>;
   construction: FutureSummaryConstructionOccurrence[];
   constructionTotalCents: number | null;
+  /** Public name beside the role badge. Null for a solo order or an unassigned garment. */
+  wearerLabel: string | null;
 }
 
 export interface FutureSummaryFabricAllocation {
@@ -234,6 +237,8 @@ export interface FutureDesignStudioSummaryInput {
   aiTryOnWorkflow: AiTryOnWorkflowStateV1;
   measurementPlan: MeasurementRequirementPlan;
   measurementState: FutureMeasurementStateV1;
+  /** Assignment authority for garment-card names. Absent projections stay unlabeled. */
+  wearerOrder?: WearerOrderStateV2 | null;
   wearerRuntimes?: readonly {
     wearerId: string;
     displayName: string;
@@ -333,6 +338,20 @@ const getSummaryStatus = ({
   return blockers.length === 0 ? "ready" : "incomplete";
 };
 
+const wearerLabelForAssignedGarment = (
+  wearerOrder: WearerOrderStateV2 | null | undefined,
+  garmentKey: string,
+): string | null => {
+  if (!wearerOrder || wearerOrder.wearers.length < 2) return null;
+  const wearerId = wearerOrder.assignmentByGarmentKey[garmentKey];
+  if (!wearerId) return null;
+  const wearer = wearerOrder.wearers.find(
+    (candidate) => candidate.wearerId === wearerId,
+  );
+  if (!wearer) return null;
+  return wearerPublicLabel(wearer.displayName, wearer.presentationOrder);
+};
+
 const mapGarments = ({
   step1GarmentTypeSelection,
   garmentTypeSelection,
@@ -341,6 +360,7 @@ const mapGarments = ({
   additionalGarmentConstructionState,
   catalogInspection,
   fabricAllocationState,
+  wearerOrder,
   wearerRuntimes,
   blockers,
 }: Pick<
@@ -352,6 +372,7 @@ const mapGarments = ({
   | "additionalGarmentConstructionState"
   | "catalogInspection"
   | "fabricAllocationState"
+  | "wearerOrder"
   | "wearerRuntimes"
 > & { blockers: FutureDesignStudioSummaryBlocker[] }): FutureSummaryGarment[] => {
   const occurrences = projectAuthoritativePhysicalOccurrences({
@@ -441,6 +462,7 @@ const mapGarments = ({
       construction: constructionOccurrences,
       constructionTotalCents:
         construction?.status === "resolved" ? construction.totalPriceCents : null,
+      wearerLabel: wearerLabelForAssignedGarment(wearerOrder, garmentKey),
     };
   });
 };
@@ -1054,6 +1076,7 @@ export const projectFutureDesignStudioSummary = (
     additionalGarmentConstructionState: input.additionalGarmentConstructionState,
     catalogInspection: input.catalogInspection,
     fabricAllocationState: input.fabricAllocationState,
+    wearerOrder: input.wearerOrder,
     wearerRuntimes: input.wearerRuntimes,
     blockers,
   });
