@@ -67,6 +67,11 @@ export interface LiveOrderSummaryLine {
   readonly detail: string | null;
   /** A second customer-facing status line, used when the primary detail is construction. */
   readonly supportingDetail?: string | null;
+  /**
+   * Assigned person's public name on a Garments Ordered row.
+   * Set only when the summary garment has a wearerLabel (2+ people, assigned).
+   */
+  readonly wearerLabel?: string | null;
   readonly amountLabel: string | null;
   /** Canonical selected Design thumbnail, scoped to this exact occurrence. */
   readonly imageUrl?: string | null;
@@ -674,6 +679,7 @@ export const projectDesignStudioLiveOrderSummary = ({
       id: `construction-${garment.garmentKey}`,
       label: garmentLabels.get(garment.garmentKey) || garment.label,
       detail: null,
+      ...(garment.wearerLabel ? { wearerLabel: garment.wearerLabel } : {}),
       amountLabel:
         garment.constructionTotalCents === null
           ? null

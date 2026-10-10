@@ -3796,6 +3796,7 @@ export default function DesignStudioView({
     aiTryOnWorkflow: futureAiTryOnWorkflow,
     measurementPlan: futureMeasurementPlan,
     measurementState: reconciledFutureMeasurementState,
+    wearerOrder: wearerOrderForPlan,
     wearerRuntimes: wearerMeasurementRuntimes,
     basePricing: futureFabricAuthoritativePricing,
   };

@@ -961,9 +961,16 @@ const buildFutureOrderCandidateCore = ({
   );
   const garments: FutureOrderCandidateGarmentV1[] = summary.garmentSummary.map(
     (garment) => ({
-      ...garment,
+      garmentKey: garment.garmentKey,
+      garmentType: garment.garmentType,
+      label: garment.label,
+      role: garment.role,
+      demographic: garment.demographic,
+      fabricUnits: garment.fabricUnits,
       physicalComponents: garment.physicalComponents.map((component) => ({
-        ...component,
+        garmentKey: component.garmentKey,
+        garmentType: component.garmentType,
+        label: component.label,
       })),
       construction: garment.construction.map((component) => ({
         componentKey: component.componentKey,
@@ -972,6 +979,7 @@ const buildFutureOrderCandidateCore = ({
         label: component.label,
         priceCents: component.priceCents,
       })),
+      constructionTotalCents: garment.constructionTotalCents,
     }),
   );
   const authoritativeOccurrenceKeys = summary.garmentSummary.map(
