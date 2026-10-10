@@ -268,7 +268,6 @@ const architectureView: LiveOrderSummaryView = {
       footer: { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€210.00", amountCents: 21000, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
       footers: [
         { id: "construction-subtotal", label: "Garment Subtotal", amountLabel: "€210.00", amountCents: 21000, note: "Includes fabric, tax, Lagos-to-Eindhoven shipping, and sewing." },
-        { id: "personalized-additions-subtotal", label: "Personalized Additions Subtotal", amountLabel: "€36.00", amountCents: 3600, note: "" },
       ],
     },
     {
@@ -276,9 +275,13 @@ const architectureView: LiveOrderSummaryView = {
       title: "Personalized Additions",
       editStage: "personalized_additions",
       lines: [
-        { id: "personalized-addition:order-detail:1:Name Monogram", label: "Monogram", detail: "Name Monogram", amountLabel: "Included" },
-        { id: "personalized-addition:order-detail:2:Embroidery", label: "Embroidery Design", detail: "Embroidery", amountLabel: "Included" },
-        { id: "personalized-addition:order-detail:3:Traditional Hat", label: "Accessories", detail: "Traditional Hat", amountLabel: "Included" },
+        { id: "personalized-addition:order-detail:1:Name Monogram", label: "Monogram", detail: "Name Monogram", amountLabel: "€12.00" },
+        { id: "personalized-addition:order-detail:2:Embroidery", label: "Embroidery Design", detail: "Embroidery", amountLabel: "€12.00" },
+        { id: "personalized-addition:order-detail:3:Traditional Hat", label: "Accessories", detail: "Traditional Hat", amountLabel: "€12.00" },
+      ],
+      footer: { id: "personalized-additions-subtotal", label: "Personalized Additions Subtotal", amountLabel: "€36.00", amountCents: 3600, note: "" },
+      footers: [
+        { id: "personalized-additions-subtotal", label: "Personalized Additions Subtotal", amountLabel: "€36.00", amountCents: 3600, note: "" },
       ],
     },
     {
@@ -422,8 +425,8 @@ assert.ok(!textOf(styleSection[0]).includes("€65.00"), "option rows never repe
   const constructionText = textOf(constructionNodes[0]);
   assert.ok(constructionText.includes("Garment Subtotal"));
   assert.ok(constructionText.includes("€210.00"));
-  assert.ok(constructionText.includes("Personalized Additions Subtotal"));
-  assert.ok(constructionText.includes("€36.00"));
+  assert.ok(!constructionText.includes("Personalized Additions Subtotal"));
+  assert.ok(!constructionText.includes("€36.00"));
   const personalizedNodes = architectureRenderer.root.findAll((n) => n.props?.["data-testid"] === "live-order-summary-section-personalized_additions");
   assert.equal(personalizedNodes.length, 1);
   const personalizedText = textOf(personalizedNodes[0]);
@@ -431,13 +434,51 @@ assert.ok(!textOf(styleSection[0]).includes("€65.00"), "option rows never repe
   assert.ok(personalizedText.includes("Name Monogram"));
   assert.ok(personalizedText.includes("Embroidery Design"));
   assert.ok(personalizedText.includes("Traditional Hat"));
+  assert.equal(
+    (personalizedText.match(/€12\.00/g) || []).length,
+    3,
+    "each exact personalized addition row shows its euro price",
+  );
+  const lineItemIndex = personalizedText.indexOf("Traditional Hat");
+  const subtotalIndex = personalizedText.indexOf("Personalized Additions Subtotal");
+  assert.ok(
+    lineItemIndex >= 0 && subtotalIndex > lineItemIndex,
+    "Personalized Additions Subtotal sits after the line items",
+  );
+  assert.ok(personalizedText.includes("€36.00"));
 }
+assert.equal(
+  oneByTestId(
+    architectureRenderer.root,
+    "live-order-summary-section-personalized_additions",
+  ).findAllByProps({
+    "data-testid": "live-order-summary-personalized_additions-subtotal",
+  }).length,
+  1,
+);
+assert.equal(
+  oneByTestId(
+    architectureRenderer.root,
+    "live-order-summary-personalized_additions-subtotal",
+  ).props["data-subtotal-cents"],
+  3600,
+);
+assert.equal(
+  oneByTestId(
+    architectureRenderer.root,
+    "live-order-summary-section-construction",
+  ).findAllByProps({
+    "data-testid":
+      "live-order-summary-construction-footer-personalized-additions-subtotal",
+  }).length,
+  0,
+);
 assert.equal(
   architectureRenderer.root.findAllByProps({
     "data-testid":
       "live-order-summary-construction-footer-personalized-additions-subtotal",
   }).length,
-  1,
+  0,
 );
 const emptyPersonalizedAdditionsView: LiveOrderSummaryView = {
   ...architectureView,

@@ -1941,21 +1941,21 @@ assert.deepEqual(
     {
       label: "Monogram",
       detail: "Standard Shirt: Name Monogram",
-      amountLabel: "Included",
+      amountLabel: "€12.00",
     },
     {
       label: "Monogram",
       detail: "Standard Shirt: Monogram Trimming",
-      amountLabel: "Included",
+      amountLabel: "€12.00",
     },
     {
       label: "Embroidery Design",
       detail: "Standard Shirt: Embroidery",
-      amountLabel: "Included",
+      amountLabel: "€12.00",
     },
-    { label: "Accessories", detail: "Traditional Hat", amountLabel: "Included" },
+    { label: "Accessories", detail: "Traditional Hat", amountLabel: "€12.00" },
   ],
-  "personalized addition detail lines show Included; money lives under Garments Ordered",
+  "exact personalized addition rows show each euro price; the subtotal remains the rollup",
 );
 const constructionSection = section(personalizedAdditions.view, "construction");
 assert.equal(
@@ -1977,6 +1977,24 @@ assert.deepEqual(
       amountCents: constructionSection.footer?.amountCents,
       note: LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
     },
+  ],
+  "Garments Ordered keeps only Garment Subtotal",
+);
+assert.equal(
+  constructionSection.footers?.some(
+    (footer) => footer.id === "personalized-additions-subtotal",
+  ),
+  false,
+  "Personalized Additions Subtotal is not under Garments Ordered",
+);
+assert.deepEqual(
+  personalizedSection.footers?.map(({ id, label, amountCents, note }) => ({
+    id,
+    label,
+    amountCents,
+    note,
+  })),
+  [
     {
       id: "personalized-additions-subtotal",
       label: LIVE_ORDER_SUMMARY_PERSONALIZED_ADDITIONS_SUBTOTAL_LABEL,
@@ -1984,7 +2002,12 @@ assert.deepEqual(
       note: "",
     },
   ],
-  "Garments Ordered stacks Garment Subtotal then Personalized Additions Subtotal",
+  "Personalized Additions Subtotal sits on the Personalized Additions section",
+);
+assert.equal(
+  personalizedSection.footer?.id,
+  "personalized-additions-subtotal",
+  "the section footer is the Personalized Additions Subtotal",
 );
 assert.equal(
   personalizedAdditions.view.totalLabel,
@@ -2006,6 +2029,128 @@ assert.equal(
     ?.lines.some((line) => line.label === "Order Details"),
   false,
   "order-level personalized additions no longer duplicate Style & Options",
+);
+
+const projectPersonalizedPrices = (
+  priceFor: (optionId: string) => {
+    priceStatus: "exact" | "evaluation_required" | "invalid";
+    priceCents: number | null;
+  },
+) =>
+  projectDesignStudioLiveOrderSummary({
+    summary: {
+      ...personalizedAdditions.summary,
+      customDetailsSummary:
+        personalizedAdditions.summary.customDetailsSummary.map((group) => ({
+          ...group,
+          occurrences: group.occurrences.map((occurrence) =>
+            occurrence.selectionGroup === "order_optional_detail"
+              ? { ...occurrence, ...priceFor(occurrence.optionId) }
+              : occurrence,
+          ),
+        })),
+    },
+    shippingResolution: personalizedAdditions.shippingResolution,
+    candidatePricing:
+      personalizedAdditions.candidateResult.candidate?.pricing ?? null,
+    fabricAllocationState: personalizedAdditions.allocation,
+    measurementState: personalizedAdditions.measurementState,
+    measurementPlan: personalizedAdditions.measurementPlan,
+    designSource: {
+      kind: "catalog",
+      sourceKey: "fixture",
+      styleId: "fixture",
+    },
+  });
+const mixedPersonalizedPrices = projectPersonalizedPrices((optionId) => {
+  if (optionId === "Name Monogram") {
+    return { priceStatus: "exact", priceCents: 1200 };
+  }
+  if (optionId === "Monogram Trimming") {
+    return { priceStatus: "exact", priceCents: 0 };
+  }
+  if (optionId === "Embroidery") {
+    return { priceStatus: "exact", priceCents: null };
+  }
+  return { priceStatus: "evaluation_required", priceCents: 1200 };
+});
+assert.deepEqual(
+  section(mixedPersonalizedPrices, "personalized_additions").lines.map(
+    ({ label, detail, amountLabel }) => ({ label, detail, amountLabel }),
+  ),
+  [
+    {
+      label: "Monogram",
+      detail: "Standard Shirt: Name Monogram",
+      amountLabel: "€12.00",
+    },
+    {
+      label: "Monogram",
+      detail: "Standard Shirt: Monogram Trimming",
+      amountLabel: "Included",
+    },
+    {
+      label: "Embroidery Design",
+      detail: "Standard Shirt: Embroidery",
+      amountLabel: "Included",
+    },
+    {
+      label: "Accessories",
+      detail: "Traditional Hat",
+      amountLabel: "Price requires evaluation",
+    },
+  ],
+  "zero and missing exact prices stay Included; a non-exact price requires evaluation",
+);
+assert.equal(
+  section(mixedPersonalizedPrices, "personalized_additions").footers?.find(
+    (footer) => footer.id === "personalized-additions-subtotal",
+  )?.amountCents,
+  1200,
+  "the Personalized Additions Subtotal still rolls up only exact prices above zero",
+);
+assert.equal(
+  section(mixedPersonalizedPrices, "construction").footers?.some(
+    (footer) => footer.id === "personalized-additions-subtotal",
+  ),
+  false,
+  "a partial Personalized Additions Subtotal stays off Garments Ordered",
+);
+assert.equal(
+  mixedPersonalizedPrices.totalAmountCents,
+  personalizedAdditions.view.totalAmountCents,
+  "row labels do not change total resolution",
+);
+const invalidPersonalizedPrice = projectPersonalizedPrices((optionId) =>
+  optionId === "Traditional Hat"
+    ? { priceStatus: "invalid", priceCents: 1200 }
+    : { priceStatus: "exact", priceCents: 0 },
+);
+assert.equal(
+  section(invalidPersonalizedPrice, "personalized_additions").lines.find(
+    (line) => line.detail === "Traditional Hat",
+  )?.amountLabel,
+  "Price requires evaluation",
+  "an invalid personalized addition price requires evaluation and is not shown as euros",
+);
+assert.equal(
+  section(invalidPersonalizedPrice, "personalized_additions").footers?.some(
+    (footer) => footer.id === "personalized-additions-subtotal",
+  ) ?? false,
+  false,
+  "a zero-priced exact set does not add a Personalized Additions Subtotal",
+);
+assert.equal(
+  section(invalidPersonalizedPrice, "construction").footers?.some(
+    (footer) => footer.id === "personalized-additions-subtotal",
+  ),
+  false,
+  "a zero-priced exact set does not put a Personalized Additions Subtotal under Garments Ordered",
+);
+assert.equal(
+  invalidPersonalizedPrice.totalAmountCents,
+  personalizedAdditions.view.totalAmountCents,
+  "invalid and zero row labels do not change total resolution",
 );
 
 const viewSource = readFileSync(

@@ -374,8 +374,10 @@ const personalizedAdditionsSubtotalCents = (
 
 /**
  * Embroidery/monogram rows are garment-scoped; accessories remain order-level.
- * Money is shown once under Garments Ordered as Personalized Additions Subtotal;
- * detail rows here use Included so euro amounts are not repeated.
+ * An exact price above zero shows that euro amount on the row. A zero or
+ * missing exact price stays Included, and a non-exact price says it requires
+ * evaluation. Personalized Additions Subtotal is the rollup at the bottom of
+ * this section, after the line items.
  */
 const personalizedAdditionLines = (
   selections: readonly PersonalizedAdditionOccurrence[],
@@ -393,10 +395,10 @@ const personalizedAdditionLines = (
           occurrence.garmentKey === "order"
             ? occurrence.optionLabel
             : `${occurrence.garmentLabel}: ${occurrence.optionLabel}`,
-        amountLabel:
-          occurrence.priceStatus === "exact"
-            ? "Included"
-            : "Price requires evaluation",
+        amountLabel: amountLabelForCustomDetail(
+          occurrence.priceCents,
+          occurrence.priceStatus,
+        ),
       })),
   );
 
@@ -769,16 +771,17 @@ export const projectDesignStudioLiveOrderSummary = ({
       note: LIVE_ORDER_SUMMARY_CONSTRUCTION_INCLUSION_NOTE,
     });
   }
-  if (personalizedSubtotalCents > 0) {
-    constructionFooters.push({
-      id: "personalized-additions-subtotal",
-      label: LIVE_ORDER_SUMMARY_PERSONALIZED_ADDITIONS_SUBTOTAL_LABEL,
-      amountLabel: moneyFromCents(personalizedSubtotalCents),
-      amountCents: personalizedSubtotalCents,
-      note: "",
-    });
-  }
   const constructionFooter = constructionFooters[0] || null;
+  const personalizedAdditionsFooter: LiveOrderSummarySectionFooter | null =
+    personalizedSubtotalCents > 0
+      ? {
+          id: "personalized-additions-subtotal",
+          label: LIVE_ORDER_SUMMARY_PERSONALIZED_ADDITIONS_SUBTOTAL_LABEL,
+          amountLabel: moneyFromCents(personalizedSubtotalCents),
+          amountCents: personalizedSubtotalCents,
+          note: "",
+        }
+      : null;
   const firstAdditionalMissingFabric = summary.garmentSummary.find(
     (garment) =>
       garment.role === "additional" &&
@@ -827,6 +830,10 @@ export const projectDesignStudioLiveOrderSummary = ({
           title: "Personalized Additions",
           editStage: "personalized_additions" as const,
           lines: selectedPersonalizedAdditions,
+          footer: personalizedAdditionsFooter,
+          ...(personalizedAdditionsFooter
+            ? { footers: [personalizedAdditionsFooter] }
+            : {}),
         }]
       : []),
     {
