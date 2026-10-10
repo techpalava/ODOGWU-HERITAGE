@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
-import { useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { act, create, type ReactTestInstance } from "react-test-renderer";
+import { DormantFutureMeasurementStep } from "./src/components/DormantFutureMeasurementStep";
 import { FIT_CONFLICT_PULSE_MS, NAME_SAVED_FLASH_MS, WearerAssignmentPanel } from "./src/components/WearerAssignmentPanel";
 import type { GarmentTypeStepSelection, WearerOrderStateV2 } from "./src/types";
-import type { MeasurementPhysicalGarment } from "./src/utils/measurementBlueprint";
+import {
+  createEmptyFutureMeasurementState,
+  planMeasurementRequirements,
+  type MeasurementPhysicalGarment,
+} from "./src/utils/measurementBlueprint";
 import {
   addWearer,
   assignGarmentToWearer,
+  clearWearerIdentity,
   deleteWearer,
   hasUnassignedPhysicalGarments,
   reconcileWearerOrder,
@@ -1127,8 +1133,13 @@ console.log("PASS: wearer assignment panel hides fit on first screen");
           return result;
         }}
         onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order })}
-        onCollapseToSolo={() => {
+        onCollapseToSolo={(options) => {
           collapseCalls += 1;
+          assert.equal(
+            options?.clearSoleIdentity,
+            undefined,
+            "Only for me keeps the current name and fit",
+          );
         }}
       />
     );
@@ -1256,8 +1267,9 @@ console.log("PASS: wearer assignment panel presentation defaults to solo");
           return result;
         }}
         onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order })}
-        onCollapseToSolo={() => {
+        onCollapseToSolo={(options) => {
           collapseCalls += 1;
+          assert.equal(options?.clearSoleIdentity, undefined, "For me does not clear identity");
         }}
       />
     );
@@ -1716,8 +1728,9 @@ console.log("PASS: wearer assignment panel hard ceiling copy");
           return deleteWearer(soleOrder, wearerId);
         }}
         onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order: soleOrder })}
-        onCollapseToSolo={() => {
+        onCollapseToSolo={(options) => {
           collapseCalls += 1;
+          assert.equal(options?.clearSoleIdentity, true, "sole Remove clears identity");
         }}
       />,
     );
@@ -1740,6 +1753,227 @@ console.log("PASS: wearer assignment panel hard ceiling copy");
 }
 
 console.log("PASS: wearer assignment panel sole Remove person returns to For me");
+
+{
+  // Remove on the last card blanks the name and fit. Only for me keeps both.
+  // The Dimension "For me" strip must not keep a Male/Female selection after Remove.
+  const identityGarments: MeasurementPhysicalGarment[] = [
+    { garmentKey: "base:shirt", garmentType: "shirt" },
+  ];
+  const namedSole = (() => {
+    const fitted = reconcileWithChosenSoleFit({
+      order: createEmptyWearerOrder(),
+      garmentKeys: ["base:shirt"],
+      compatibilityDemographic: "female",
+      garments: identityGarments,
+      garmentTypeSelection: selection(),
+    }, "female");
+    const renamed = renameWearer(fitted, fitted.wearers[0].wearerId, "Ada");
+    if (renamed.status !== "updated") throw new Error("expected Ada");
+    return renamed.order;
+  })();
+  const wearerId = namedSole.wearers[0].wearerId;
+  const identityPlan = planMeasurementRequirements({
+    route: null,
+    garmentTypeSelection: selection(),
+    physicalGarments: identityGarments,
+  });
+  const publishOrder = (
+    orderRef: { current: WearerOrderStateV2 },
+    setOrder: (order: WearerOrderStateV2) => void,
+    next: WearerOrderStateV2,
+  ) => {
+    orderRef.current = next;
+    setOrder(next);
+  };
+  const IdentityHarness = () => {
+    const [order, setOrder] = useState(namedSole);
+    const [peopleUiOpen, setPeopleUiOpen] = useState(false);
+    const orderRef = useRef(namedSole);
+    const soleFit =
+      order.wearers[0]?.fitContext === "male" || order.wearers[0]?.fitContext === "female"
+        ? order.wearers[0].fitContext
+        : null;
+    return (
+      <Fragment>
+        <WearerAssignmentPanel
+          order={order}
+          activeWearerId={order.wearers[0]?.wearerId || null}
+          garments={identityGarments}
+          garmentLabels={{ "base:shirt": "Standard Shirt" }}
+          garmentTypeSelection={selection()}
+          onSelectWearer={() => {}}
+          onAddWearer={(displayName, fitContext) => {
+            const result = addWearer({
+              order: orderRef.current,
+              physicalGarmentCount: identityGarments.length,
+              displayName,
+              fitContext,
+            });
+            if (result.status === "updated") publishOrder(orderRef, setOrder, result.order);
+          }}
+          onRenameWearer={(id, displayName) => {
+            const result = renameWearer(orderRef.current, id, displayName);
+            if (result.status === "updated") publishOrder(orderRef, setOrder, result.order);
+          }}
+          onReorderWearers={() => {}}
+          onSetFitContext={() => {}}
+          onDeleteWearer={(id) => {
+            const result = deleteWearer(orderRef.current, id);
+            if (result.status === "updated") publishOrder(orderRef, setOrder, result.order);
+            return result;
+          }}
+          onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order: orderRef.current })}
+          onCollapseToSolo={(options) => {
+            let base = orderRef.current;
+            if (options?.clearSoleIdentity && base.wearers.length === 1) {
+              const cleared = clearWearerIdentity(base, base.wearers[0].wearerId);
+              if (cleared.status === "updated") base = cleared.order;
+            }
+            publishOrder(orderRef, setOrder, reconcileWearerOrder({
+              order: base,
+              garmentKeys: ["base:shirt"],
+              compatibilityDemographic: "female",
+              garments: identityGarments,
+              garmentTypeSelection: selection(),
+            }));
+          }}
+          onPeopleUiChange={setPeopleUiOpen}
+        />
+        <DormantFutureMeasurementStep
+          plan={identityPlan}
+          state={createEmptyFutureMeasurementState()}
+          physicalGarments={identityGarments}
+          multiPersonAssignmentActive={false}
+          showSoleFitControl={order.wearers.length === 1 && !peopleUiOpen}
+          soleFitContext={soleFit}
+          onSetSoleFitContext={() => undefined}
+          orderMeasurementsComplete={false}
+          onChange={() => undefined}
+          onRouteChange={() => undefined}
+          onBack={() => undefined}
+          onContinue={() => undefined}
+        />
+      </Fragment>
+    );
+  };
+  const fitSelected = (root: ReactTestInstance, fit: "male" | "female") =>
+    root.findByProps({ "data-measurement-sole-fit-option": fit }).props["data-measurement-sole-fit-selected"];
+  const cardRadios = (root: ReactTestInstance) =>
+    root.findAll((node) => node.type === "input" && node.props.type === "radio");
+  const nameInput = (root: ReactTestInstance) =>
+    root.findAll(
+      (node) =>
+        node.type === "input" &&
+        typeof node.props["aria-label"] === "string" &&
+        String(node.props["aria-label"]).startsWith("Name or nickname"),
+    )[0];
+
+  let removeRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    removeRenderer = create(<IdentityHarness />);
+  });
+  assert.equal(fitSelected(removeRenderer.root, "female"), "true", "saved fit shows on the For me strip");
+  await act(async () => {
+    removeRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  assert.equal(nameInput(removeRenderer.root).props.value, "Ada");
+  await act(async () => {
+    removeRenderer.root.findByProps({ "data-wearer-remove": "true" }).props.onClick({ stopPropagation() {} });
+  });
+  assert.equal(removeRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length, 1);
+  assert.equal(fitSelected(removeRenderer.root, "male"), "false", "Remove clears Male on the For me strip");
+  assert.equal(fitSelected(removeRenderer.root, "female"), "false", "Remove clears Female on the For me strip");
+  await act(async () => {
+    removeRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  const reopened = removeRenderer.root.findByType("article");
+  assert.equal(
+    reopened.findAll((node) => node.type === "input" && !node.props.type)[0].props.value,
+    "",
+    "reopened name is empty",
+  );
+  assert.equal(
+    cardRadios(reopened).every((radio) => radio.props.checked !== true),
+    true,
+    "reopened card has no fit selected",
+  );
+  assert.equal(removeRenderer.root.findAllByType("article").length, 1);
+  await act(async () => {
+    removeRenderer.unmount();
+  });
+
+  const kept = addWearer({
+    order: namedSole,
+    physicalGarmentCount: 2,
+    displayName: "Bo",
+    fitContext: "male",
+  });
+  if (kept.status !== "updated") throw new Error("expected Bo");
+  const twoPeople = kept.order;
+  assert.equal(twoPeople.wearers[0].wearerId, wearerId);
+  const OnlyForMeHarness = () => {
+    const [order, setOrder] = useState(twoPeople);
+    const orderRef = useRef(twoPeople);
+    return (
+      <WearerAssignmentPanel
+        order={order}
+        activeWearerId={order.wearers[0]?.wearerId || null}
+        garments={identityGarments}
+        garmentLabels={{ "base:shirt": "Standard Shirt" }}
+        onSelectWearer={() => {}}
+        onAddWearer={() => {}}
+        onRenameWearer={() => {}}
+        onReorderWearers={() => {}}
+        onSetFitContext={() => {}}
+        onDeleteWearer={(id) => {
+          const result = deleteWearer(orderRef.current, id);
+          if (result.status === "updated") publishOrder(orderRef, setOrder, result.order);
+          return result;
+        }}
+        onAssignGarment={() => ({ status: "blocked", code: "WEARER_NOT_FOUND", order: orderRef.current })}
+        onCollapseToSolo={(options) => {
+          assert.equal(options?.clearSoleIdentity, undefined, "Only for me does not clear identity");
+          publishOrder(orderRef, setOrder, reconcileWearerOrder({
+            order: orderRef.current,
+            garmentKeys: ["base:shirt"],
+            compatibilityDemographic: "female",
+            garments: identityGarments,
+            garmentTypeSelection: selection(),
+          }));
+        }}
+      />
+    );
+  };
+  let onlyRenderer!: ReturnType<typeof create>;
+  await act(async () => {
+    onlyRenderer = create(<OnlyForMeHarness />);
+  });
+  await act(async () => {
+    onlyRenderer.root.findByProps({ "data-wearer-only-for-me": "true" }).props.onClick();
+  });
+  assert.equal(onlyRenderer.root.findAllByProps({ "data-wearer-solo-first": "true" }).length, 1);
+  await act(async () => {
+    onlyRenderer.root.findByProps({ "data-wearer-add-people": "true" }).props.onClick();
+  });
+  const keptCard = onlyRenderer.root.findByType("article");
+  assert.equal(nameInput(keptCard).props.value, "Ada", "Only for me keeps the name");
+  const keptRadios = cardRadios(keptCard);
+  assert.equal(keptRadios[0].props.checked, false, "Only for me does not switch to Male");
+  assert.equal(keptRadios[1].props.checked, true, "Only for me keeps Female fit");
+  assert.equal(
+    keptCard.findAll(
+      (node) => node.type === "input" && node.props.type === "radio" && node.props.checked === true,
+    )[0].props.name,
+    `wearer-fit-${wearerId}`,
+    "Only for me keeps the same wearer",
+  );
+  await act(async () => {
+    onlyRenderer.unmount();
+  });
+}
+
+console.log("PASS: wearer assignment panel Remove clears name and fit; Only for me keeps them");
 
 {
   // Reloaded draft: non-empty names already in the order count as confirmed.

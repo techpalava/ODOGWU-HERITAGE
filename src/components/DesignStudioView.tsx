@@ -311,20 +311,20 @@ import {
   classifyPersistedMeasurement,
   createEmptyWearerOrder,
   deleteWearer,
-  isGarmentEligibleForWearer,
   isWearerOrderMeasurementComplete,
   planWearerOrderMeasurements,
   resolveWearerAssignmentPresentation,
   summarizeWearerOrderMeasurementCompletion,
   canonicalizeWearerOrderNames,
+  clearWearerIdentity,
   reconcileWearerOrder,
   removeGarmentFromWearerOrder,
   renameWearer,
   reorderWearers,
+  resolveMeasurementFitConflict,
   shouldReplacePersistedMeasurement,
   updateWearerMeasurement,
   wearerAssignmentLabel,
-  wearerFitConflictCopy,
 } from "../utils/wearerOrder";
 import { createWearerGarmentToggleHandlers } from "../utils/wearerGarmentToggle";
 import {
@@ -3624,49 +3624,17 @@ export default function DesignStudioView({
       (garment ? getStep1GarmentDisplayLabel(garment.garmentType) : garmentKey)
     );
   });
-  /**
-   * Measurement fit conflict: Sole garments the person's fit cannot wear (left
-   * unassigned by Sole auto-assign), or any garment still assigned to someone
-   * whose fit cannot wear it (e.g. an older draft). Split's unassigned rows use
-   * the assignment gate instead.
-   */
-  const measurementFitConflict = (() => {
-    const order = wearerOrderForPlan;
-    const isUnfit = (
-      garment: (typeof futureMeasurementPhysicalGarments)[number],
-      fitContext: (typeof order.wearers)[number]["fitContext"],
-    ) =>
-      fitContext !== null &&
-      !isGarmentEligibleForWearer({
-        garment,
-        fitContext,
-        garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
-        additionalGarmentConstructions: designSelections.additionalGarmentConstructions,
-      });
-    const garmentLabel = (garment: (typeof futureMeasurementPhysicalGarments)[number]) =>
+  const measurementFitConflict = resolveMeasurementFitConflict({
+    order: wearerOrderForPlan,
+    garments: futureMeasurementPhysicalGarments,
+    garmentTypeSelection: effectiveJourneyGarmentTypeSelection,
+    additionalGarmentConstructions: designSelections.additionalGarmentConstructions,
+    garmentLabel: (garment) =>
       yourGarmentsConstructionDisplayLabelByGarmentKey[garment.garmentKey] ||
-      getStep1GarmentDisplayLabel(garment.garmentType);
-    const sole = order.wearers.length === 1;
-    for (const wearer of [...order.wearers].sort(
-      (left, right) => left.presentationOrder - right.presentationOrder,
-    )) {
-      const conflicts = futureMeasurementPhysicalGarments.filter((garment) => {
-        const ownerId = order.assignmentByGarmentKey[garment.garmentKey];
-        return (ownerId === wearer.wearerId || (sole && !ownerId)) &&
-          isUnfit(garment, wearer.fitContext);
-      });
-      if (conflicts.length === 0) continue;
-      return {
-        garmentKeys: conflicts.map((garment) => garment.garmentKey),
-        message: wearerFitConflictCopy({
-          wearerLabel: labelForMeasurementWearer(wearer.wearerId, wearer.displayName),
-          garmentLabels: conflicts.map(garmentLabel),
-          sole,
-        }),
-      };
-    }
-    return null;
-  })();
+      getStep1GarmentDisplayLabel(garment.garmentType),
+    wearerLabel: (wearer) =>
+      labelForMeasurementWearer(wearer.wearerId, wearer.displayName),
+  });
   // Measuring-for chips: every person, in card order, with the card labels.
   const measurementWearerChips = measurementActiveWearerLabel
     ? [...wearerOrderForPlan.wearers]
@@ -10656,9 +10624,17 @@ export default function DesignStudioView({
           onUnassignGarment={(garmentKey) =>
             measurementGarmentToggleHandlers.unassign(garmentKey)
           }
-          onCollapseToSolo={() => {
+          onCollapseToSolo={(options) => {
+            const current = wearerOrderForPlanRef.current;
+            const soleId = current.wearers[0]?.wearerId;
+            const cleared =
+              options?.clearSoleIdentity && current.wearers.length === 1 && soleId
+                ? clearWearerIdentity(current, soleId)
+                : null;
+            const base =
+              cleared && cleared.status === "updated" ? cleared.order : current;
             const nextOrder = reconcileWearerOrder({
-              order: wearerOrderForPlanRef.current,
+              order: base,
               garmentKeys: futureMeasurementPhysicalGarments.map(
                 (garment) => garment.garmentKey,
               ),

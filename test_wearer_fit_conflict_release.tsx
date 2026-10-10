@@ -25,11 +25,14 @@ import {
 import { createWearerGarmentToggleHandlers } from "./src/utils/wearerGarmentToggle";
 import {
   assignGarmentToWearer,
+  clearWearerIdentity,
   createEmptyWearerOrder,
   createWearerProfile,
   hasUnassignedPhysicalGarments,
   planWearerOrderMeasurements,
   reconcileWearerOrder,
+  removeGarmentFromWearerOrder,
+  resolveMeasurementFitConflict,
   setWearerFitContext,
   setWearerMeasurementRoute,
   updateWearerMeasurement,
@@ -400,16 +403,24 @@ const soleNotice = (order: WearerOrderStateV2) => {
     garmentTypeSelection: selection,
     physicalGarments: garments,
   })[0];
-  const renderStep = (withConflict: boolean) => {
+  const headingCount = (root: ReactTestInstance) =>
+    root.findAllByProps({ "data-measurement-fit-conflict-status": "true" }).length;
+  const renderStep = (
+    withConflict: boolean,
+    options?: { orderMeasurementsComplete?: boolean; route?: null },
+  ) => {
     let renderer!: ReturnType<typeof create>;
+    const state = options?.route === null
+      ? { ...runtime.measurement, route: null }
+      : runtime.measurement;
     act(() => {
       renderer = create(
         createElement(DormantFutureMeasurementStep, {
           plan: runtime.plan,
-          state: runtime.measurement,
+          state,
           physicalGarments: garments,
           multiPersonAssignmentActive: false,
-          orderMeasurementsComplete: false,
+          orderMeasurementsComplete: options?.orderMeasurementsComplete ?? false,
           ...(withConflict
             ? {
                 fitConflictMessage: wearerFitConflictCopy({
@@ -428,14 +439,81 @@ const soleNotice = (order: WearerOrderStateV2) => {
       );
     });
     const text = textOf(renderer.root);
+    const headings = headingCount(renderer.root);
     act(() => renderer.unmount());
-    return text;
+    return { text, headings };
   };
-  assert.match(renderStep(false), /earlier steps/, "control: without the conflict props the old copy shows");
+  assert.match(renderStep(false).text, /earlier steps/, "control: without the conflict props the old copy shows");
+  assert.equal(renderStep(false).headings, 0, "no Fit conflict heading when the gate is clear");
   const fixed = renderStep(true);
-  assert.equal(fixed.includes("earlier steps"), false, "fit conflict never says earlier steps");
-  assert.ok(fixed.includes(message), "status names the ineligible garment and the fix");
+  assert.equal(fixed.text.includes("earlier steps"), false, "fit conflict never says earlier steps");
+  assert.ok(fixed.text.includes(message), "status names the ineligible garment and the fix");
+  assert.ok(fixed.headings > 0, "Fit conflict heading is visible while Continue is blocked");
+  assert.ok(fixed.text.includes("Fit conflict"), "the heading reads Fit conflict");
+  const unlocked = renderStep(true, { orderMeasurementsComplete: true });
+  assert.equal(unlocked.headings, 0, "heading is absent once Continue is no longer blocked");
+  const beforeMethod = renderStep(true, { route: null });
+  assert.ok(beforeMethod.headings > 0, "heading is visible before a measurement method is chosen");
+  assert.equal(renderStep(false, { route: null }).headings, 0);
   pass("Measurement status names the fit conflict, never 'earlier steps'");
+}
+
+{
+  const labelGarment = (garment: (typeof garments)[number]) => garmentLabels[garment.garmentKey];
+  const labelWearer = (wearer: { displayName: string }) => wearer.displayName || "You";
+  const released = updated(setWearerFitContext(splitOrder(), "w-nol", "male", eligibility));
+  const splitConflict = resolveMeasurementFitConflict({
+    order: released,
+    garments,
+    garmentTypeSelection: selection,
+    garmentLabel: labelGarment,
+    wearerLabel: labelWearer,
+  });
+  assert.ok(splitConflict, "Split: a released dress nobody can wear is a fit conflict");
+  assert.deepEqual(splitConflict?.garmentKeys, ["base:dress"]);
+  assert.match(splitConflict?.message ?? "", /Not available for/);
+  const assignable = resolveMeasurementFitConflict({
+    order: splitOrder(),
+    garments,
+    garmentTypeSelection: selection,
+    garmentLabel: labelGarment,
+    wearerLabel: labelWearer,
+  });
+  assert.equal(assignable, null, "no heading when every assigned garment matches its fit");
+  let sole: WearerOrderStateV2 = {
+    ...createEmptyWearerOrder(),
+    wearers: [createWearerProfile({ wearerId: "w-ada", displayName: "Ada", fitContext: "female", presentationOrder: 0 })],
+  };
+  sole = reconcile(sole);
+  const adaId = sole.wearers[0].wearerId;
+  const soleConflict = resolveMeasurementFitConflict({
+    order: reconcile(updated(setWearerFitContext(sole, adaId, "male", eligibility))),
+    garments,
+    garmentTypeSelection: selection,
+    garmentLabel: labelGarment,
+    wearerLabel: labelWearer,
+  });
+  assert.deepEqual(soleConflict?.garmentKeys, ["base:dress"], "Sole ineligible dress is the same gate");
+  const cleared = reconcile(updated(clearWearerIdentity(sole, adaId)));
+  assert.equal(cleared.wearers[0].wearerId, adaId, "Remove keeps the wearer id");
+  assert.equal(cleared.wearers[0].displayName, "");
+  assert.equal(cleared.wearers[0].fitContext, null);
+  const dropped = removeGarmentFromWearerOrder(cleared, "base:dress");
+  const refit = reconcile(updated(setWearerFitContext(dropped, adaId, "female", eligibility)));
+  assert.equal(refit.wearers[0].wearerId, adaId);
+  assert.equal(refit.assignmentByGarmentKey["base:dress"], adaId, "choosing a fit again sole-auto-assigns");
+  assert.equal(
+    resolveMeasurementFitConflict({
+      order: refit,
+      garments,
+      garmentTypeSelection: selection,
+      garmentLabel: labelGarment,
+      wearerLabel: labelWearer,
+    }),
+    null,
+    "heading is absent once the fit can wear every garment",
+  );
+  pass("Fit conflict gate covers Split release and Sole ineligible; clear identity restores auto-assign");
 }
 
 console.log("test_wearer_fit_conflict_release: all passed");

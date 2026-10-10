@@ -92,8 +92,11 @@ export const WearerAssignmentPanel = ({
   onAssignGarment: (garmentKey: string, wearerId: string) => WearerMutationResult;
   /** Clears a garment's owner (in-card checkbox unchecked). Leaves it unassigned. */
   onUnassignGarment?: (garmentKey: string) => void;
-  /** Fired after Only for me successfully returns to the solo first-screen. */
-  onCollapseToSolo?: () => void;
+  /**
+   * Only for me / For me / sole Remove: return to the solo strip.
+   * `clearSoleIdentity` is set only for Remove on the last card.
+   */
+  onCollapseToSolo?: (options?: { clearSoleIdentity?: boolean }) => void;
   /**
    * Reports whether the people panel is open (Add a person or 2+ people), so
    * Design Studio can hide the solo-only Dimension fit. Reports false on unmount.
@@ -242,11 +245,19 @@ export const WearerAssignmentPanel = ({
   useEffect(() => {
     if (!fitAttention?.pulsing) return;
     // Scroll/focus happen even with reduced motion; only the pulse is motion-safe.
-    const first = unfitRowByKey.current.get(
-      `${fitAttention.wearerId}|${fitAttention.garmentKeys[0]}`,
-    );
-    first?.scrollIntoView?.({ block: "nearest" });
-    first?.focus?.();
+    const focusFirstUnfit = () => {
+      const first = unfitRowByKey.current.get(
+        `${fitAttention.wearerId}|${fitAttention.garmentKeys[0]}`,
+      );
+      first?.scrollIntoView?.({ block: "nearest" });
+      first?.focus?.();
+    };
+    // Sync focus covers the test renderer. A second pass after the click
+    // settles keeps the row focused if the Fit radio takes focus first.
+    focusFirstUnfit();
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(focusFirstUnfit);
+    }
     if (fitAttentionTimer.current) clearTimeout(fitAttentionTimer.current);
     fitAttentionTimer.current = setTimeout(() => {
       fitAttentionTimer.current = null;
@@ -440,8 +451,13 @@ export const WearerAssignmentPanel = ({
     [],
   );
 
-  /** Only for me / For me: remove extra people, then return to the solo first-screen. */
-  const collapseToSolo = () => {
+  /**
+   * Only for me / For me: remove extra people, then return to the solo strip
+   * and keep the remaining person's name and fit.
+   * Remove on the last card uses the same collapse and also clears that
+   * person's name and fit (`clearSoleIdentity`).
+   */
+  const collapseToSolo = (options?: { clearSoleIdentity?: boolean }) => {
     for (let index = wearers.length - 1; index >= 1; index -= 1) {
       const wearer = wearers[index];
       const result = onDeleteWearer(wearer.wearerId);
@@ -455,7 +471,7 @@ export const WearerAssignmentPanel = ({
       if (result.status === "updated") setDeleteRejection(null);
     }
     setPeopleExpanded(false);
-    onCollapseToSolo?.();
+    onCollapseToSolo?.(options);
   };
 
   if (!showPeopleUi) {
@@ -476,7 +492,7 @@ export const WearerAssignmentPanel = ({
                 ? "border-heritage-green bg-heritage-green text-white"
                 : "border-heritage-gold/30 bg-white text-heritage-green"
             }`}
-            onClick={collapseToSolo}
+            onClick={() => collapseToSolo()}
           >
             For me
           </button>
@@ -511,7 +527,7 @@ export const WearerAssignmentPanel = ({
           type="button"
           data-wearer-only-for-me="true"
           className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green"
-          onClick={collapseToSolo}
+          onClick={() => collapseToSolo()}
         >
           Only for me
         </button>
@@ -629,9 +645,12 @@ export const WearerAssignmentPanel = ({
                   className="inline-flex min-h-9 items-center justify-center rounded-xl border border-heritage-green/30 px-3 text-xs font-bold text-heritage-green"
                   onClick={(event) => {
                     event?.stopPropagation();
-                    // Sole expanded card: same path as Only for me (back to For me).
+                    // Last card: collapse to the solo strip and clear name + fit.
+                    // Only for me keeps both. The wearer id stays.
                     if (wearers.length === 1) {
-                      collapseToSolo();
+                      setNameHintWearerIds((current) => withoutId(current, wearer.wearerId));
+                      setUnsavedNameWearerIds((current) => withoutId(current, wearer.wearerId));
+                      collapseToSolo({ clearSoleIdentity: true });
                       return;
                     }
                     const result = onDeleteWearer(wearer.wearerId);
