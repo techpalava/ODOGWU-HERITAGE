@@ -276,9 +276,9 @@ const architectureView: LiveOrderSummaryView = {
       title: "Personalized Additions",
       editStage: "personalized_additions",
       lines: [
-        { id: "personalized-addition:order-detail:1:Name Monogram", label: "Monogram", detail: "Name Monogram", amountLabel: "Included" },
-        { id: "personalized-addition:order-detail:2:Embroidery", label: "Embroidery Design", detail: "Embroidery", amountLabel: "Included" },
-        { id: "personalized-addition:order-detail:3:Traditional Hat", label: "Accessories", detail: "Traditional Hat", amountLabel: "Included" },
+        { id: "personalized-addition:order-detail:1:Name Monogram", label: "Monogram", detail: "Name Monogram", amountLabel: "€12.00" },
+        { id: "personalized-addition:order-detail:2:Embroidery", label: "Embroidery Design", detail: "Embroidery", amountLabel: "€12.00" },
+        { id: "personalized-addition:order-detail:3:Traditional Hat", label: "Accessories", detail: "Traditional Hat", amountLabel: "€12.00" },
       ],
     },
     {
@@ -431,6 +431,15 @@ assert.ok(!textOf(styleSection[0]).includes("€65.00"), "option rows never repe
   assert.ok(personalizedText.includes("Name Monogram"));
   assert.ok(personalizedText.includes("Embroidery Design"));
   assert.ok(personalizedText.includes("Traditional Hat"));
+  assert.equal(
+    (personalizedText.match(/€12\.00/g) || []).length,
+    3,
+    "each exact personalized addition row shows its euro price",
+  );
+  assert.ok(
+    !personalizedText.includes("Personalized Additions Subtotal"),
+    "the rollup stays on the Garments Ordered footer",
+  );
 }
 assert.equal(
   architectureRenderer.root.findAllByProps({

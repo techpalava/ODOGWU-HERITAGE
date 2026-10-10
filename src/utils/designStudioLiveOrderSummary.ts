@@ -369,8 +369,10 @@ const personalizedAdditionsSubtotalCents = (
 
 /**
  * Embroidery/monogram rows are garment-scoped; accessories remain order-level.
- * Money is shown once under Garments Ordered as Personalized Additions Subtotal;
- * detail rows here use Included so euro amounts are not repeated.
+ * An exact price above zero shows that euro amount on the row. A zero or
+ * missing exact price stays Included, and a non-exact price says it requires
+ * evaluation. Personalized Additions Subtotal under Garments Ordered remains
+ * the rollup.
  */
 const personalizedAdditionLines = (
   selections: readonly PersonalizedAdditionOccurrence[],
@@ -388,10 +390,10 @@ const personalizedAdditionLines = (
           occurrence.garmentKey === "order"
             ? occurrence.optionLabel
             : `${occurrence.garmentLabel}: ${occurrence.optionLabel}`,
-        amountLabel:
-          occurrence.priceStatus === "exact"
-            ? "Included"
-            : "Price requires evaluation",
+        amountLabel: amountLabelForCustomDetail(
+          occurrence.priceCents,
+          occurrence.priceStatus,
+        ),
       })),
   );
 
