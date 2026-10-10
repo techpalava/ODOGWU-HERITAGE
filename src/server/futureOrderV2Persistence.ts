@@ -1,5 +1,6 @@
 import { Timestamp, type Firestore } from "firebase-admin/firestore";
 import type { CanonicalOrderIdentity } from "../utils/orderContextIdentity.js";
+import { recomputeFutureOrderPayableTotal } from "../utils/futureOrderPayableTotal.js";
 import {
   FUTURE_ORDER_V2_COLLECTION,
   createPersistedFutureOrderV2,
@@ -142,11 +143,14 @@ export const persistFutureOrderV2ForVerifiedIdentity = async ({
   identity,
   request,
   adapter,
+  catalog = [],
   now = () => new Date(),
 }: {
   identity: VerifiedFutureOrderV2Identity;
   request: FutureOrderV2PersistenceRequest;
   adapter: FutureOrderV2PersistenceAdapter;
+  /** Saved `custom_detail_catalog` rows. Empty uses the seed catalogue. */
+  catalog?: unknown;
   now?: () => Date;
 }): Promise<PersistFutureOrderV2Result> => {
   if (!hasText(identity.uid)) {
@@ -175,6 +179,20 @@ export const persistFutureOrderV2ForVerifiedIdentity = async ({
     persistedAt: now().toISOString(),
   });
   if (proposed.status !== "valid") return proposed;
+
+  // Reject a client ledger that does not match the catalogue and Step 8
+  // quote. Overwriting would store a total the customer did not submit.
+  const payable = recomputeFutureOrderPayableTotal(
+    proposed.value.masterOrder.cartItem.candidate,
+    catalog,
+  );
+  if (payable.status === "rejected") {
+    return {
+      status: "invalid",
+      code: payable.code,
+      message: payable.message,
+    };
+  }
 
   return adapter.runTransaction(async (transaction) => {
     const orderIdentity = proposed.value.masterOrder.cartItem.candidate.orderIdentity;
