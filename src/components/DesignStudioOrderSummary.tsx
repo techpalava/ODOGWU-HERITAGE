@@ -11,6 +11,9 @@ import { LIVE_ORDER_SUMMARY_HEADING } from "../utils/designStudioLiveOrderSummar
 import { formatCustomDetailsGarmentLabel } from "../utils/optionalShortsPresentation";
 import type { FutureGarmentRemovalTarget } from "./FutureGarmentRemovalConfirmationDialog";
 
+const quietGarmentMetaClassName =
+  "mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50";
+
 const GarmentWearerLine = ({
   line,
 }: {
@@ -19,9 +22,23 @@ const GarmentWearerLine = ({
   line.wearerLabel ? (
     <p
       data-live-order-summary-wearer={line.focusGarmentKey || line.id}
-      className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/50"
+      className={quietGarmentMetaClassName}
     >
       {line.wearerLabel}
+    </p>
+  ) : null;
+
+const GarmentFitLine = ({
+  line,
+}: {
+  line: LiveOrderSummaryLine;
+}) =>
+  line.fitLabel ? (
+    <p
+      data-live-order-summary-fit={line.focusGarmentKey || line.id}
+      className={quietGarmentMetaClassName}
+    >
+      {line.fitLabel}
     </p>
   ) : null;
 
@@ -185,6 +202,7 @@ const SummarySection = ({
                   {formatCustomDetailsGarmentLabel(line.label)}
                 </p>
                 <GarmentWearerLine line={line} />
+                <GarmentFitLine line={line} />
                 {line.detail ? (
                   <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
                     {line.detail}
@@ -351,6 +369,7 @@ const SummarySubsection = ({
               {formatCustomDetailsGarmentLabel(line.label)}
             </p>
             <GarmentWearerLine line={line} />
+            <GarmentFitLine line={line} />
             {line.detail ? (
               <p className="mt-0.5 break-words text-[11px] font-normal leading-snug text-heritage-ink/65">
                 {line.detail}
